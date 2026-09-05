@@ -70,12 +70,17 @@ export class WorkRestoreConflictError extends Error {
  */
 export interface WorkRepository {
   transaction<T>(operation: () => Promise<T>): Promise<T>;
+  readSnapshot<T>(operation: () => Promise<T>): Promise<T>;
   /** Locks the Work lifecycle row for the ambient transaction, then returns it. */
   lockById(id: WorkId): Promise<Work | null>;
   create(input: CreateWorkInput): Promise<Work>;
   findById(id: WorkId): Promise<Work | null>;
   /** Lists most recently updated first. */
   listByProject(projectId: ProjectId, opts?: ListWorksOptions): Promise<Work[]>;
+  snapshotIdentity(projectId: ProjectId): Promise<{
+    catalogGeneration: string;
+    authorityRevision: string;
+  }>;
   update(id: WorkId, input: UpdateWorkInput): Promise<Work>;
   archive(id: WorkId): Promise<Work>;
   unarchive(id: WorkId): Promise<Work>;
@@ -84,10 +89,5 @@ export interface WorkRepository {
   softDelete(id: WorkId): Promise<void>;
   /** Restores a soft-deleted Work when its stable name and slug remain available. */
   restore(id: WorkId): Promise<Work>;
-  /**
-   * Provision a concretely named Work only when the project has none. The omitted-root-create
-   * fallback policy belongs to resolveNewChatFallbackWork.
-   */
-  ensureDefaultForProject(projectId: ProjectId, name?: string): Promise<Work>;
   touch(id: WorkId): Promise<void>;
 }

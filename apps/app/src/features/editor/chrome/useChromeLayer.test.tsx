@@ -121,6 +121,36 @@ describe("nested layers", () => {
     expect(closeSource).toHaveBeenCalledOnce();
     expect(closeDialog).not.toHaveBeenCalled();
   });
+
+  it("offers a Radix layer the same semantic retreat before root dismissal", () => {
+    const closeSuggestion = vi.fn();
+    let onEscape: ((event: { preventDefault: () => void }) => void) | null = null;
+
+    function Suggestion() {
+      const layer = useChromeLayer(page.editor, {
+        id: "suggestion-menu",
+        open: true,
+        close: closeSuggestion,
+        dismissal: "self",
+      });
+      onEscape = layer.onEscapeKeyDown;
+      return null;
+    }
+
+    page.render(<Suggestion />);
+    const chrome = getEditorChrome(page.editor);
+    if (!chrome) throw new Error("kernel did not mount");
+    const backtrack = vi.fn(() => true);
+    chrome.registerLayerRetreat({ ownerId: "suggestion-menu", backtrack, dismiss: vi.fn() });
+    const preventDefault = vi.fn();
+
+    act(() => onEscape?.({ preventDefault }));
+
+    expect(backtrack).toHaveBeenCalledOnce();
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(closeSuggestion).not.toHaveBeenCalled();
+    expect(chrome.layers).toHaveLength(1);
+  });
 });
 
 describe("a layer's keys", () => {

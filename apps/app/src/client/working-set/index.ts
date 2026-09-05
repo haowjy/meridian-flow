@@ -6,6 +6,7 @@ export {
   readRecentRoutes,
   readRememberedThread,
   reconcileContextRoutes,
+  replaceRecentRoutes,
   retryWorkingSetHydration,
   setThread,
 } from "./driver";
@@ -14,5 +15,8 @@ export type { ReconcileContextRoutesInput } from "./store";
 export {
   buildWorkingSetRoute,
   recentRouteForEditorWork,
+  reconcileSnapshotContextRoutes,
+  replaceSnapshotRoute,
   workingSetRouteEquals,
+  workingSetRouteIdentityEquals,
 } from "./store";

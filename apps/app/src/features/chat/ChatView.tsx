@@ -19,15 +19,18 @@ import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import {
   Composer,
-  type ComposerDraftRestoration,
+  type ComposerDraftSnapshot,
   type ComposerHandle,
+  type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
+import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
@@ -70,6 +73,7 @@ export function ChatView({
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
   const queryClient = useQueryClient();
   const composerRef = useRef<ComposerHandle>(null);
+  const optimisticBySubmission = useRef(new Map<string, string>());
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
 
@@ -87,6 +91,11 @@ export function ChatView({
   const composerAgentSlug = threadStarted ? boundAgentSlug : draftAgentSlug;
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
+  const referenceCatalog = useReferenceBrowserCatalog(
+    projectId,
+    activeWork?.id,
+    t`Reference a file`,
+  );
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
@@ -98,11 +107,18 @@ export function ChatView({
     isStreaming,
   });
 
-  const restoreFirstSendDraft = useCallback((restoration: ComposerDraftRestoration) => {
-    return composerRef.current?.restoreDraft(restoration) ?? false;
+  const restoreFirstSendDraft = useCallback((snapshot: ComposerDraftSnapshot) => {
+    return composerRef.current?.restoreSnapshot(snapshot) ?? false;
   }, []);
+  const restoreFailedFirstSend = useCallback(
+    (id: string, submitted: ComposerDraftSnapshot, later?: ComposerDraftSnapshot | null) => {
+      return composerRef.current?.restoreFailedSubmission(id, submitted, later) ?? false;
+    },
+    [],
+  );
   useThreadHandoff(
     threadId,
+    projectId,
     controller,
     actions,
     {
@@ -110,6 +126,7 @@ export function ChatView({
       nextSeq: snapshotNextSeq,
     },
     restoreFirstSendDraft,
+    restoreFailedFirstSend,
   );
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
@@ -121,27 +138,49 @@ export function ChatView({
   const generating = isStreaming && draftMode;
   const dock = useDraftDock({ generating });
 
-  function handleSubmit(text: string): boolean {
+  async function handleSubmit(envelope: ComposerSubmitEnvelope) {
+    const text = envelope.text;
     requestTailFollow();
     const optimisticUserTurn = actions.appendUserTurn(threadId, text);
-
-    void controller
-      .submit(threadId, text, { optimisticUserTurnId: optimisticUserTurn.id })
-      .catch((error) => {
-        const message = error instanceof Error ? error.message : "Failed to submit message";
-        announceError(message);
-      })
-      .finally(() => {
-        // The PRIOR assistant turn may have errored and the projector clears it
-        // off `status:error` when the next user turn arrives — a side-effect with
-        // no journal/WS event. Refresh only after submit settles so this fetch
-        // cannot race ahead of a persisted user turn. Definitive API rejections
-        // roll back the optimistic row; ambiguous transport failures retain it
-        // until a later acknowledgement or reload can reconcile the write.
-        void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
+    optimisticBySubmission.current.set(envelope.submissionId, optimisticUserTurn.id);
+    try {
+      const outcome = await controller.submit(threadId, envelope, {
+        optimisticUserTurnId: optimisticUserTurn.id,
       });
-    return true;
+      if (outcome.kind !== "ambiguous")
+        optimisticBySubmission.current.delete(envelope.submissionId);
+      return outcome;
+    } catch (error) {
+      actions.removeOptimisticUserTurn(threadId, optimisticUserTurn.id);
+      announceError(error instanceof Error ? error.message : "Failed to submit message");
+      return {
+        kind: "rejected" as const,
+        submissionId: envelope.submissionId,
+        acceptedRevision: envelope.acceptedRevision,
+      };
+    } finally {
+      // The PRIOR assistant turn may have errored and the projector clears it
+      // off `status:error` when the next user turn arrives — a side-effect with
+      // no journal/WS event. Refresh only after submit settles so this fetch
+      // cannot race ahead of a persisted user turn. Definitive API rejections
+      // roll back the optimistic row; ambiguous transport failures retain it
+      // until a later acknowledgement or reload can reconcile the write.
+      void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
+    }
   }
+
+  const settleQuarantined = useCallback(
+    async (envelope: ComposerSubmitEnvelope, retire: boolean) => {
+      const optimisticUserTurnId = optimisticBySubmission.current.get(envelope.submissionId);
+      const outcome = await (retire
+        ? controller.retire(threadId, envelope, { optimisticUserTurnId })
+        : controller.lookup(threadId, envelope, { optimisticUserTurnId }));
+      if (outcome.kind !== "ambiguous")
+        optimisticBySubmission.current.delete(envelope.submissionId);
+      return outcome;
+    },
+    [controller, threadId],
+  );
 
   function handleStop() {
     controller.cancel(threadId);
@@ -166,7 +205,18 @@ export function ChatView({
             ref={composerRef}
             variant="pinned"
             streaming={isStreaming}
+            referenceCatalog={referenceCatalog}
+            uploadPort={uploadIntakePort}
+            uploadScope={
+              projectId
+                ? activeWork
+                  ? { kind: "work", projectId, workId: activeWork.id, workSlug: activeWork.slug }
+                  : { kind: "none", projectId }
+                : undefined
+            }
             onSubmit={handleSubmit}
+            onCheckSubmission={(envelope) => settleQuarantined(envelope, false)}
+            onRetireSubmission={(envelope) => settleQuarantined(envelope, true)}
             onStop={handleStop}
             toolbarLeft={
               projectId && activeWork ? (

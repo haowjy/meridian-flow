@@ -372,7 +372,7 @@
   mask-repeat: no-repeat, no-repeat;
 }
 
-/* Composer textarea typography. 16px on mobile keeps iOS Safari from
+/* Composer contenteditable typography. 16px on mobile keeps iOS Safari from
    auto-zooming the viewport on focus; tightens to 15px on desktop where
    zoom isn't a concern. Any focusable composer input must use this. */
 @utility composer-input {

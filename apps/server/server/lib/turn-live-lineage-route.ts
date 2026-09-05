@@ -117,7 +117,7 @@ function serializeLiveLineageDocument(document: {
   }
   return {
     documentId: document.documentId,
-    uri: parsed.value.canonical,
+    uri: parsed.value.normalized,
     path: `/${parsed.value.path}`,
     scope: document.scope,
   };

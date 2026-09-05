@@ -19,17 +19,18 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useRef } from "react";
 
-import { getProjectContextTree } from "@/client/api/projects-api";
+import { lookupContextCatalogFile } from "@/client/query/useContextCatalog";
 import { navigateToPassage } from "@/core/editor/passage-navigation";
 import { dismissPassageNotice, reportPassageChanged } from "@/core/editor/passage-notice-store";
 import type { ContextPassageAnchor } from "@/features/chat/ChatContextNavigation";
 import { LatestNavigationCoordinator } from "@/features/chat/latest-navigation-coordinator";
-import { findContextFile } from "@/features/project/context/context-tree";
+import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 
 export type PassageDoorTarget = {
   scheme: ProjectContextTreeScheme;
   path: string;
   workId: string | null;
+  uri: string;
 };
 
 /** Tell passage navigation that a door was opened. The passage is optional. */
@@ -37,6 +38,7 @@ export type PassageDoorOpened = (target: PassageDoorTarget, passage?: ContextPas
 
 export function usePassageDoors(projectId: string, activeWorkId: string | null): PassageDoorOpened {
   const coordinator = useRef(new LatestNavigationCoordinator());
+  const openDocument = useOpenProjectDocument(projectId);
 
   // A resolution belongs to the scope it began in. Changing project or work
   // retires it exactly as a newer door would: the transcript it came from is
@@ -55,13 +57,10 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
         dismissPassageNotice();
         if (!passage) return;
 
-        const { tree } = await getProjectContextTree(
-          projectId,
-          target.scheme,
-          target.workId ? { workId: target.workId } : undefined,
-        );
+        const file = await lookupContextCatalogFile(projectId, target.scheme, target.workId, {
+          uri: target.uri,
+        });
         if (signal.aborted) return;
-        const file = findContextFile(tree, target.path);
         // A binary or missing file has no Yjs document to land in; the door's
         // own destination already explains both.
         if (!file?.editable) return;
@@ -70,6 +69,7 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
           documentId: file.documentId,
           anchor: passage,
           signal,
+          openDocument: (documentId) => openDocument({ documentId, workId: target.workId, signal }),
         });
         // Report only while this door is still the writer's latest: a stale
         // verdict about somewhere they have already left is worse than silence.
@@ -80,6 +80,6 @@ export function usePassageDoors(projectId: string, activeWorkId: string | null):
       // promise; nothing here is worth interrupting the writer for.
       void resolving.catch(() => {});
     },
-    [projectId],
+    [openDocument, projectId],
   );
 }

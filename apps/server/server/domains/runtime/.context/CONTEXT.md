@@ -50,6 +50,8 @@ skeleton and delegates the moving parts.
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
 | `finalization.ts` | Terminal turn status + thread status transitions. Failed turn generator → `turn.error` (no more stuck "streaming"). |
 | `persistence.ts` | Transactional persist/project-then-emit helper. **Ordering**: `projectReadModelEvent` runs before `eventWriter.appendEvent` so the `event_journal.turn_id` FK can reference the turn row created by the projector. Both happen in the same repo transaction. |
+| `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, serialized persistence/provenance/upload consumption, lookup, and retirement. |
+| `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission, read-deduplicated, occurrence-budgeted, and quietly omitted without losing writer text. |
 | `permissions/` | `PermissionGate`; compose currently wires the `coding` profile explicitly. |
 
 `OrchestratorDeps` is fully required: gateway, repos, package repository, tool
@@ -161,7 +163,11 @@ facet.
   commits. Destructive effects are echoed to the model and writer-lineage
   overlap may elevate receiving-writer-specific session marks. Trail evidence
   stays lifecycle-neutral and read-only.
-- **One running turn per thread** — `TurnRunner` rejects `startTurn` if a turn is
+- **One running turn per thread** — writer callers enter through
+  `UserTurnAdmission`, whose replay lookup precedes the busy fence. An unseen
+  identity is durably reserved before token and run-claim settlement; definite
+  fence rejection settles that same row and cannot later re-enter effects. `TurnRunner`
+  rejects internal `startTurn` if a turn is
   already active or being claimed for that thread. The PostgreSQL adapter also
   rejects same-process reentry because session advisory locks themselves are
   reentrant. Production runners hold the cross-process claim through completion
@@ -199,7 +205,7 @@ facet.
   and tree budgets.
 - **Depends on `domains/collab` at composition** — active-document resolution
   and response-scoped write settlement are supplied through runtime ports.
-- **Consumed by `lib/` routes** — WS/HTTP handlers call
-  `turnRunner.startTurn` / `turnRunner.cancel`; composition wires adapters.
+- **Consumed by `lib/` routes** — HTTP writer sends call `UserTurnAdmission`;
+  cancellation still calls `turnRunner.cancel`. Composition wires both owners.
 - **No direct dependency on `domains/context`** — context-using tools receive
   handlers via DI at composition time.

@@ -10,7 +10,12 @@ import { resolve } from "node:path";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createDb, projects } from "@meridian/database";
 import { eq } from "drizzle-orm";
+import { createDrizzleContextCatalog } from "../../apps/server/server/domains/context/adapters/context-catalog.ts";
+import { createDrizzleProjectContextAvailability } from "../../apps/server/server/domains/context/adapters/project-context-availability.ts";
+import { createContextCatalogWakeHub } from "../../apps/server/server/domains/context/context-catalog-wake-hub.ts";
+import { createNoopEventSink } from "../../apps/server/server/domains/observability/adapters/noop/noop-event-sink.ts";
 import { createDrizzleProjectRepository } from "../../apps/server/server/domains/projects/adapters/project-repository/drizzle.ts";
+import { createWorkProjectionMutation } from "../../apps/server/server/domains/projects/adapters/work-projection-mutation.ts";
 import { createDrizzleWorkRepository } from "../../apps/server/server/domains/projects/adapters/work-repository/drizzle.ts";
 import { createDrizzleRepositories } from "../../apps/server/server/domains/threads/adapters/drizzle/repositories.ts";
 import { applyDevEnvToProcess } from "./lib/dev-env";
@@ -68,14 +73,30 @@ async function main(): Promise<void> {
   const databaseUrl = requireEnv("DATABASE_URL");
   const userId = await resolveSmokeUserId();
   const db = createDb(databaseUrl, { max: 1 });
+  const projectContextAvailability = createDrizzleProjectContextAvailability(
+    db,
+    createNoopEventSink(),
+  );
+  const contextCatalog = createDrizzleContextCatalog(db, createContextCatalogWakeHub(), {
+    availabilityMutations: projectContextAvailability,
+  });
+  const workProjectionMutation = createWorkProjectionMutation({
+    db,
+    availability: projectContextAvailability,
+    catalog: contextCatalog,
+  });
 
   try {
     await cleanupSmokeRows(db);
 
     const repos = {
       projects: createDrizzleProjectRepository({ db }),
-      works: createDrizzleWorkRepository({ db, hasUnreviewedDraft: async () => false }),
-      ...createDrizzleRepositories(db),
+      works: createDrizzleWorkRepository({
+        db,
+        hasUnreviewedDraft: async () => false,
+        projectionMutation: workProjectionMutation,
+      }),
+      ...createDrizzleRepositories(db, workProjectionMutation),
     };
 
     console.log("1. create + list");
@@ -106,7 +127,11 @@ async function main(): Promise<void> {
     }
 
     console.log("4. work in project");
-    const work = await repos.works.ensureDefaultForProject(PROJECT_ID, "Default Work");
+    const work = await repos.works.create({
+      projectId: PROJECT_ID,
+      createdByUserId: userId,
+      name: "Revision Pass",
+    });
     const works = await repos.works.listByProject(PROJECT_ID);
     if (works.length !== 1 || works[0]?.id !== work.id) {
       throw new Error(`listWorks failed: ${JSON.stringify(works)}`);
@@ -116,7 +141,7 @@ async function main(): Promise<void> {
     const thread = await repos.threads.create({
       userId,
       projectId: PROJECT_ID,
-      workId: work.id,
+      workId: null,
       title: "Chat",
     });
     const threads = await repos.threads.listByProject(PROJECT_ID);

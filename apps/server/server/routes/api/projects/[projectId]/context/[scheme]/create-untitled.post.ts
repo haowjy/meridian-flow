@@ -35,9 +35,10 @@ export async function createUntitledContextDocument(input: {
   userId: string;
   scheme: ContextScheme;
   workId: string | null;
+  authority?: import("@meridian/contracts/context-uri").CanonicalContextAuthority;
   body: CreateUntitledBody;
 }) {
-  const homeUri = toUri(input.scheme, input.body.folderPath ?? "", input.workId);
+  const homeUri = toUri(input.scheme, input.body.folderPath ?? "", input.authority);
   const result = await input.port.createUntitledDocument(homeUri, {
     documentId: input.body.documentId,
     origin: { type: "human", userId: input.userId },
@@ -53,7 +54,7 @@ export async function createUntitledContextDocument(input: {
 }
 
 export default defineEventHandler(async (event) => {
-  const { userId, scheme, workId, port } = await resolveContextRoute(event, {
+  const { userId, scheme, workId, authority, port } = await resolveContextRoute(event, {
     recoverAcrossProject: true,
   });
   return createUntitledContextDocument({
@@ -61,6 +62,7 @@ export default defineEventHandler(async (event) => {
     userId,
     scheme,
     workId,
+    authority,
     body: parseCreateUntitledBody(await readBody(event)),
   });
 });

@@ -80,6 +80,7 @@ export function useComposerWorkBinding({
           previousWorkId: state.observed.id,
         });
         if (outcome.kind === "superseded") {
+          if (!outcome.currentWork) return "close" as const;
           dispatch({
             type: "change.superseded",
             requestId: request.id,
@@ -97,7 +98,10 @@ export function useComposerWorkBinding({
           return "stay" as const;
         }
         const result = outcome.result;
-        const commit: NormalizedCommit = {
+        if (!result.work) {
+          throw new ThreadWorkOutcomeUnconfirmedError();
+        }
+        const commit: NormalizedCommit & { work: Work } = {
           threadId: result.threadId,
           work: result.work,
           changed: result.changed,

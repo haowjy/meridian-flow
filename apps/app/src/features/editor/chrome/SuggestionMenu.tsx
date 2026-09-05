@@ -47,6 +47,8 @@ export type SuggestionMenuRow = {
 
 export type SuggestionMenuProps = {
   editor: Editor;
+  /** The focused element whose typing drives this menu. */
+  typingElement: HTMLElement;
   /** Layer id, listbox id, and what a probe looks for. */
   id: string;
   open: boolean;
@@ -73,6 +75,7 @@ type Overflow = "none" | "top" | "bottom" | "both";
 
 export function SuggestionMenu({
   editor,
+  typingElement,
   id,
   open,
   label,
@@ -129,17 +132,16 @@ export function SuggestionMenu({
   // Tells a screen reader what the caret's own element now controls. The prose
   // keeps focus, so the announcement has to travel from there.
   useEffect(() => {
-    const prose = editor.isDestroyed ? null : editor.view.dom;
-    if (!prose || !shown) return;
-    prose.setAttribute("aria-expanded", "true");
-    prose.setAttribute("aria-controls", id);
-    if (activeKey) prose.setAttribute("aria-activedescendant", `${id}-${activeKey}`);
+    if (!shown) return;
+    typingElement.setAttribute("aria-expanded", "true");
+    typingElement.setAttribute("aria-controls", id);
+    if (activeKey) typingElement.setAttribute("aria-activedescendant", `${id}-${activeKey}`);
     return () => {
-      prose.removeAttribute("aria-expanded");
-      prose.removeAttribute("aria-controls");
-      prose.removeAttribute("aria-activedescendant");
+      typingElement.removeAttribute("aria-expanded");
+      typingElement.removeAttribute("aria-controls");
+      typingElement.removeAttribute("aria-activedescendant");
     };
-  }, [editor, id, shown, activeKey]);
+  }, [id, shown, activeKey, typingElement]);
 
   return (
     <EditorPopover
@@ -153,6 +155,7 @@ export function SuggestionMenu({
       align="start"
       side="bottom"
       focusOnOpen="prose"
+      returnFocus={() => typingElement.focus()}
       className={cn("meridian-suggestion-menu-shell min-w-64 p-0", className)}
     >
       {note ? (

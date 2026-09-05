@@ -8,7 +8,7 @@ export function attachmentFilename(name: string, extension: string): string {
 
 type DocumentDownloadRouteServices = {
   documentAccess: AppServices["documentAccess"];
-  uploadDocuments: AppServices["uploadDocuments"];
+  uploadIdentity: AppServices["uploadIdentity"];
   objectStore: AppServices["objectStore"];
   documentSync: AppServices["documentSync"];
 };
@@ -16,7 +16,7 @@ type DocumentDownloadRouteServices = {
 function selectDocumentDownloadRouteServices(app: AppServices): DocumentDownloadRouteServices {
   return {
     documentAccess: app.documentAccess,
-    uploadDocuments: app.uploadDocuments,
+    uploadIdentity: app.uploadIdentity,
     objectStore: app.objectStore,
     documentSync: app.documentSync,
   };
@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
   const membership = await services.documentSync.resolveManifestMembership({ projectId });
   if (!membership.members.includes(documentId))
     throw createError({ statusCode: 404, message: "Document not found" });
-  const document = await services.uploadDocuments.getDocument(documentId);
+  const document = await services.uploadIdentity.lookupDocument(documentId);
   if (!document) throw createError({ statusCode: 404, message: "Document not found" });
   if (!document.storageUrl) {
     const read = await services.documentSync.readAsMarkdown(documentId);

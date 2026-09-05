@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
       projects: app.projectRepo,
       obligations: app.repos.workContextDeliveries,
       workContextDelivery: app.workContextDelivery,
+      workAuthorityResolver: app.workAuthorityResolver,
     },
     threadId,
     user.userId,

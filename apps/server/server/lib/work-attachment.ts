@@ -1,12 +1,5 @@
-/**
- * Work membership resolution for newly-created threads. Creates the thread_works
- * primary membership after the thread row exists, so Work context scoping has one
- * source of truth and no stale threads.work_id column path.
- */
-import type { Project } from "@meridian/contracts/projects";
-import type { UserId } from "@meridian/contracts/runtime";
-import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
-import { resolveNewChatFallbackWork, type WorkRepository } from "../domains/projects/index.js";
+/** Nullable Work membership resolution for newly created root and child threads. */
+import type { WorkRepository } from "../domains/projects/index.js";
 import type { ThreadWorksRepository } from "../domains/threads/index.js";
 
 export class InvalidWorkAttachmentError extends Error {
@@ -16,74 +9,43 @@ export class InvalidWorkAttachmentError extends Error {
   }
 }
 
-export class MissingPrimaryWorkMembershipError extends Error {
-  constructor(public readonly parentThreadId: string) {
-    super(
-      `Cannot spawn subagent: parent thread "${parentThreadId}" has no primary Work membership`,
-    );
-    this.name = "MissingPrimaryWorkMembershipError";
-  }
-}
-
 export interface ResolveWorkMembershipDeps {
   workRepo: WorkRepository;
-  preferences: ProjectPreferencesRepository;
   threadWorks: ThreadWorksRepository;
 }
 
 export interface ResolveWorkMembershipArgs {
   threadId: string;
   projectId: string;
-  /** Required only when resolving the omitted-root new-chat fallback. */
-  project?: Project;
-  /** Required only when resolving the omitted-root new-chat fallback. */
-  userId?: UserId;
-  /** Explicit work assignment from the request, if any. */
-  workId?: string;
-  /** When set, this is a subagent thread — inherit the parent's primary Work. */
+  /** Explicit root assignment. Null and omission both mean no Work. */
+  workId?: string | null;
+  /** Child threads inherit the parent's real or absent primary membership. */
   parentThreadId?: string | null;
 }
 
-/**
- * Create thread-to-Work membership(s) for a newly-created thread.
- *
- * - An explicit `workId` wins: creates one membership (isPrimary = true).
- * - A subagent inherits its parent's primary Work as its own primary.
- * - A primary thread with no explicit work: attaches to the new-chat fallback.
- *
- * Returns the primary Work ID.
- */
 export async function resolveWorkMembership(
   deps: ResolveWorkMembershipDeps,
   args: ResolveWorkMembershipArgs,
-): Promise<string> {
-  let primaryWorkId: string;
+): Promise<string | null> {
+  let primaryWorkId: string | null = null;
 
-  if (args.workId !== undefined) {
+  if (args.parentThreadId) {
+    primaryWorkId = (await deps.threadWorks.findPrimary(args.parentThreadId))?.workId ?? null;
+  } else if (args.workId) {
     const work = await deps.workRepo.findById(args.workId);
-    if (!work || work.deletedAt || work.projectId !== args.projectId) {
+    if (
+      !work ||
+      work.deletedAt ||
+      work.status === "archived" ||
+      work.projectId !== args.projectId
+    ) {
       throw new InvalidWorkAttachmentError("Work is not available in this project");
     }
     primaryWorkId = args.workId;
-  } else if (args.parentThreadId) {
-    const parentPrimary = await deps.threadWorks.findPrimary(args.parentThreadId);
-    if (!parentPrimary) {
-      throw new MissingPrimaryWorkMembershipError(args.parentThreadId);
-    }
-    primaryWorkId = parentPrimary.workId;
-  } else {
-    if (!args.project || !args.userId) {
-      throw new Error("Project and user are required to resolve the new-chat fallback Work");
-    }
-    primaryWorkId = (
-      await resolveNewChatFallbackWork(
-        { works: deps.workRepo, preferences: deps.preferences },
-        { userId: args.userId },
-        args.project,
-      )
-    ).id;
   }
 
-  await deps.threadWorks.addMembership(args.threadId, primaryWorkId, true);
+  if (primaryWorkId) {
+    await deps.threadWorks.addMembership(args.threadId, primaryWorkId, true);
+  }
   return primaryWorkId;
 }

@@ -246,7 +246,7 @@ export function createFigureAssetService(options: FigureAssetServiceOptions): Fi
       let assetDocumentId: string | undefined;
       try {
         const created = await options.contextPorts
-          .forProject(input.projectId, input.userId)
+          .forProject(input.projectId, input.userId, new Map())
           .writeBinary(assetUri, {
             storageUrl: put.value.storageUrl,
             mimeType: input.mimeType,

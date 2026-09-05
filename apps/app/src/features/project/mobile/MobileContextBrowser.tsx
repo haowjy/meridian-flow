@@ -9,7 +9,7 @@
  * folder is driven entirely by the route's `scheme`/`folder` params, so
  * OS/browser back pops levels naturally and the top-bar breadcrumb stays in
  * sync. Data comes from the
- * same `useProjectContextTree` query the desktop tree panel uses — the
+ * same `useContextCatalogView` query the desktop tree panel uses — the
  * client tree is already fully loaded per scheme, so drilling is pure lookup
  * (`findContextDir`), not refetching.
  */
@@ -19,7 +19,12 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, ChevronRight, Folder, Loader2 } from "lucide-react";
 import { Fragment, useState } from "react";
-import { useProjectContextTree } from "@/client/query/useProjectContextTree";
+import type {
+  CatalogContextView,
+  CatalogDirectory as ContextDir,
+  CatalogFile as ContextFile,
+} from "@/client/query/context-catalog-projection";
+import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useWorks } from "@/client/query/useWorks";
 import { cn } from "@/lib/utils";
 import {
@@ -33,8 +38,7 @@ import type { ContextCreateKind } from "../context/context-create-kind";
 import { fileKindIcon } from "../context/context-file-icon";
 import { mobileContextTreeOverflowTriggerClassName } from "../context/context-row-geometry";
 import { schemeIcon, schemeLabel, visibleContextSchemes } from "../context/context-schemes";
-import { contextTabFromFile } from "../context/context-tab-from-file";
-import { type ContextDir, type ContextFile, findContextDir } from "../context/context-tree";
+import { useOpenProjectDocument } from "../context/open-project-document";
 import { useCreateEntryForm } from "../context/use-create-entry-form";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
 import type { ResolvedProjectViewProps } from "../ProjectView";
@@ -64,10 +68,17 @@ export type MobileContextBrowserProps = Pick<
   onCreateDone: () => void;
 };
 
-function MobileEntryActionsMenu({ onAction }: { onAction: (action: EntryAction) => void }) {
+function MobileEntryActionsMenu({
+  allowDelete,
+  onAction,
+}: {
+  allowDelete: boolean;
+  onAction: (action: EntryAction) => void;
+}) {
   return (
     <EntryKebabButton
       allowCreate={false}
+      allowDelete={allowDelete}
       align="end"
       sideOffset={6}
       className={mobileContextTreeOverflowTriggerClassName}
@@ -167,7 +178,7 @@ function MobileFolderListing({
   onCreateDone: () => void;
 }) {
   const workId = editorWorkId;
-  const { tree, isError, isFetching } = useProjectContextTree(projectId, scheme, {
+  const { catalog, isError, isFetching } = useContextCatalogView(projectId, scheme, {
     workId: editorWorkId,
   });
 
@@ -175,8 +186,11 @@ function MobileFolderListing({
   // the tree isn't loaded yet (or the folder URL is stale), fall back to an
   // empty list — the server still rejects duplicates, this just gives live
   // client-side feedback matching the desktop tree panel.
-  const currentDir = tree ? findContextDir(tree, folder ?? "") : null;
-  const siblingNames = currentDir ? currentDir.children.map((child) => child.name) : [];
+  const currentEntry = folder ? catalog?.findPath(folder) : catalog?.root;
+  const currentDir = currentEntry?.kind === "dir" ? currentEntry : null;
+  const siblingNames = currentDir
+    ? (catalog?.children(currentDir.entryId).map((child) => child.name) ?? [])
+    : [];
 
   const deleteConfirm = useDeleteConfirmation({ projectId, workId: editorWorkId, scheme });
 
@@ -198,7 +212,7 @@ function MobileFolderListing({
       ) : null}
       <div className="min-h-0 flex-1 overflow-y-auto">
         <FolderListingBody
-          tree={tree}
+          catalog={catalog}
           isError={isError}
           isFetching={isFetching}
           projectId={projectId}
@@ -223,7 +237,7 @@ function MobileFolderListing({
 }
 
 function FolderListingBody({
-  tree,
+  catalog,
   isError,
   isFetching,
   projectId,
@@ -235,7 +249,7 @@ function FolderListingBody({
   onSelectContextPath,
   onRequestDelete,
 }: {
-  tree: ContextDir | null;
+  catalog: CatalogContextView | null;
   isError: boolean;
   isFetching: boolean;
   projectId: string;
@@ -247,6 +261,7 @@ function FolderListingBody({
   onSelectContextPath: MobileContextBrowserProps["onSelectContextPath"];
   onRequestDelete: (target: EntryActionTarget) => void;
 }) {
+  const openDocument = useOpenProjectDocument(projectId);
   if (isError) {
     return (
       <ListingStatus tone="error">
@@ -255,7 +270,7 @@ function FolderListingBody({
       </ListingStatus>
     );
   }
-  if (!tree) {
+  if (!catalog) {
     return (
       <ListingStatus tone="muted">
         {isFetching ? (
@@ -270,7 +285,8 @@ function FolderListingBody({
     );
   }
 
-  const dir = findContextDir(tree, folder ?? "");
+  const found = folder ? catalog.findPath(folder) : catalog.root;
+  const dir = found?.kind === "dir" ? found : null;
   if (!dir) {
     // Stale URL (folder renamed/deleted out from under the route) — honest
     // dead-end; the breadcrumb/back chevron still leads out.
@@ -281,8 +297,9 @@ function FolderListingBody({
     );
   }
 
-  const folders = dir.children.filter((child): child is ContextDir => child.kind === "dir");
-  const files = dir.children.filter((child): child is ContextFile => child.kind === "file");
+  const children = catalog.children(dir.entryId);
+  const folders = children.filter((child): child is ContextDir => child.kind === "dir");
+  const files = children.filter((child): child is ContextFile => child.kind === "file");
 
   if (folders.length === 0 && files.length === 0) {
     return (
@@ -293,11 +310,14 @@ function FolderListingBody({
   }
 
   function openFile(file: ContextFile) {
-    const contextTab = contextTabFromFile(scheme, file, workId);
-    onSelectContextPath(contextTab.path, contextTab.scheme);
+    if (!file.editable) {
+      onSelectContextPath(file.path, scheme);
+      return;
+    }
+    void openDocument({ documentId: file.documentId, workId });
   }
 
-  const siblingNames = dir.children.map((c) => c.name);
+  const siblingNames = children.map((child) => child.name);
 
   return (
     <ul className="flex flex-col">
@@ -447,6 +467,7 @@ function MobileFolderRow({
         label={dir.name}
         trailing={
           <MobileEntryActionsMenu
+            allowDelete={scheme !== "uploads"}
             onAction={(action) => {
               if (action === "rename") setRenaming(true);
               else onRequestDelete({ name: dir.name, path: dir.path, kind: "dir" });
@@ -505,6 +526,7 @@ function MobileFileRow({
         label={file.name}
         trailing={
           <MobileEntryActionsMenu
+            allowDelete={scheme !== "uploads"}
             onAction={(action) => {
               if (action === "rename") setRenaming(true);
               else

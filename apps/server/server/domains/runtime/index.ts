@@ -2,7 +2,19 @@
 export type { OrchestratorEvent } from "@meridian/contracts/threads";
 export { MANUSCRIPT_URI as UNIFIED_MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 export type { WorkContextDelivery } from "../projects/index.js";
+export { createContextImageAssetPort } from "./adapters/context-image-assets.js";
 export { createDrizzleThreadRunOwnership } from "./adapters/drizzle-thread-run-ownership.js";
+export { createAdmissionTurnStarter } from "./admission/admission-turn-starter.js";
+export {
+  type AdmissionPersistencePort,
+  createDrizzleAdmissionRecords,
+} from "./admission/drizzle-admission-records.js";
+export {
+  AdmissionConflictError,
+  createUserTurnAdmission,
+  InvalidAdmissionError,
+  type UserTurnAdmission,
+} from "./admission/user-turn-admission.js";
 export * from "./gateway/index.js";
 export {
   createNoopInterruptArtifactFlushPort,
@@ -39,6 +51,8 @@ export {
   type WorkContextReader,
 } from "./loop/work-context.js";
 export { createWorkContextDelivery } from "./loop/work-context-delivery.js";
+export type { ImageAssetPort } from "./ports/image-asset.js";
+export { unavailableImageAssetPort } from "./ports/image-asset.js";
 export {
   type ChildRunCoordinator,
   createChildRunCoordinator,

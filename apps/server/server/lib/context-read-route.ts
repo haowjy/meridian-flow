@@ -1,3 +1,7 @@
+import {
+  type CanonicalContextAuthority,
+  parseUnifiedContextUri,
+} from "@meridian/contracts/context-uri";
 import type { ContextReadResponse, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
 import {
@@ -12,6 +16,7 @@ import {
 import { type EventSink, emitEvent } from "../domains/observability/index.js";
 import {
   type ProjectRepository,
+  type ProjectWorkAuthorityResolver,
   requireProjectOwner,
   type WorkRepository,
 } from "../domains/projects/index.js";
@@ -24,6 +29,7 @@ export interface ContextReadRouteDeps {
   contextPorts: UnifiedContextPortFactory;
   objectStore: ObjectStorePort;
   eventSink: EventSink;
+  workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 export interface ContextReadRouteInput {
   projectId: string;
@@ -51,7 +57,7 @@ function normalizeSchemePath(scheme: ProjectContextTreeScheme, path: string): st
 export function resolveContextReadPath(
   scheme: ProjectContextTreeScheme,
   rawPath: unknown,
-  workId?: string | null,
+  authority: CanonicalContextAuthority = { kind: "contextual" },
 ): ResolvedReadPath {
   if (Array.isArray(rawPath))
     throw createError({ statusCode: 400, message: "`path` must be a single string" });
@@ -63,17 +69,32 @@ export function resolveContextReadPath(
   if (explicitScheme) {
     if (explicitScheme[1] !== scheme)
       throw createError({ statusCode: 400, message: "Context path scheme does not match route" });
+    const parsed = parseUnifiedContextUri(trimmed);
+    if (!parsed.ok) throw createError({ statusCode: 400, message: parsed.error.reason });
     if (isWorkScopedBrowseScheme(scheme)) {
-      if (!workId) throw createError({ statusCode: 400, message: "`workId` is required" });
-      uri = workScopedBrowseUri(scheme, workId, explicitScheme[2]);
-    } else {
-      uri = normalizeSchemePath(scheme, explicitScheme[2]);
-    }
+      if (authority.kind === "contextual")
+        throw createError({ statusCode: 500, message: "Missing resolved context authority" });
+      if (parsed.value.authority.kind === "contextual") {
+        uri = workScopedBrowseUri(scheme, authority, parsed.value.path);
+      } else {
+        const sameAuthority =
+          parsed.value.authority.kind === authority.kind &&
+          (authority.kind !== "work" ||
+            (parsed.value.authority.kind === "work" &&
+              parsed.value.authority.workSlug === authority.workSlug));
+        if (!sameAuthority) {
+          throw createError({ statusCode: 400, message: "Context authority does not match route" });
+        }
+        uri = workScopedBrowseUri(scheme, authority, parsed.value.path);
+      }
+    } else uri = parsed.value.normalized;
   } else if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) {
     throw createError({ statusCode: 400, message: 'Malformed URI: expected "scheme://path"' });
   } else if (isWorkScopedBrowseScheme(scheme)) {
-    if (!workId) throw createError({ statusCode: 400, message: "`workId` is required" });
-    uri = workScopedBrowseUri(scheme, workId, trimmed);
+    if (authority.kind === "contextual") {
+      throw createError({ statusCode: 500, message: "Missing resolved context authority" });
+    }
+    uri = workScopedBrowseUri(scheme, authority, trimmed);
   } else {
     uri = normalizeSchemePath(scheme, trimmed);
   }
@@ -90,12 +111,24 @@ export async function handleContextReadRequest(
   input: ContextReadRouteInput,
 ): Promise<ContextReadResponse> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
-  if (isWorkScopedBrowseScheme(input.scheme) && !input.workId) {
-    throw createError({ statusCode: 400, message: "`workId` is required" });
+  let authority: CanonicalContextAuthority = { kind: "contextual" };
+  if (isWorkScopedBrowseScheme(input.scheme)) {
+    if (!input.workId) authority = { kind: "none" };
+    else {
+      const resolved = await deps.workAuthorityResolver.byId(input.projectId, input.workId);
+      if (!resolved) {
+        throw createError({ statusCode: 404, message: "Work not found" });
+      }
+      authority = resolved;
+    }
   }
-  const path = resolveContextReadPath(input.scheme, input.rawPath, input.workId);
+  const path = resolveContextReadPath(input.scheme, input.rawPath, authority);
   const port = await contextPortForProjectBrowse({
-    deps: { contextPorts: deps.contextPorts, works: deps.workRepo },
+    deps: {
+      contextPorts: deps.contextPorts,
+      works: deps.workRepo,
+      workAuthorityResolver: deps.workAuthorityResolver,
+    },
     projectId: input.projectId,
     userId: input.userId,
     workId: input.workId,

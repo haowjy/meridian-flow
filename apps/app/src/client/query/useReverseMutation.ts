@@ -16,6 +16,7 @@ import {
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 import { convergeWorkProjection } from "./work-projection-cache";
+import { repairWorksSnapshot } from "./works-projection-acquisition";
 
 export function useReverseDocumentMutation(threadId: string) {
   return useMutation({
@@ -38,6 +39,7 @@ export function useReverseTurnMutation(threadId: string) {
           projectId,
           operation: command,
         });
+        void repairWorksSnapshot(queryClient, projectId);
       }
     },
     onSettled: () => {

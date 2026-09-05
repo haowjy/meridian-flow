@@ -18,20 +18,20 @@ import { Trans } from "@lingui/react/macro";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import { ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { bodyFromTrailHashline, changeTrailDetailKey } from "@/client/change-trails";
 import { Button } from "@/components/ui/button";
 import { collaborationColorFor } from "@/core/editor/collaboration-colors";
-import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { peerMarkRect } from "@/core/editor/extensions/PeerMarkerExtension";
 import type { PeerMarkPress } from "@/core/editor/extensions/peer-mark-press";
 import type { SessionMarker } from "@/core/editor/session-marker-store";
 import { changeTrailDetailQuery } from "@/features/change-trail/trail-detail-query";
 import { ChangeExcerpts } from "@/features/chat/ChangeViewRows";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
+import { useAuthorizationLossEvidence } from "@/features/project/context/use-authorization-loss-evidence";
 import { formatRelativeTime } from "@/lib/date-groups";
-
 import { EditorPopover } from "../../chrome";
+import { useEditorScope } from "../../editor-scope";
 
 /** The press, plus the mark as the store reports it right now. */
 export type PeerMarkPopoverTarget = PeerMarkPress & { marker: SessionMarker };
@@ -49,11 +49,23 @@ export function PeerMarkPopover({
   returnFocus?: () => void;
 }) {
   const marker = target?.marker ?? null;
+  const { projectId } = useEditorScope();
   const agentAuthor = marker?.author.kind === "agent" ? marker.author : null;
   const queryClient = useQueryClient();
+  const evidenceQueryKey = agentAuthor
+    ? changeTrailDetailKey(agentAuthor.threadId, marker?.group.trailId ?? "")
+    : null;
+  const authorizationLost = useAuthorizationLossEvidence({
+    projectId,
+    documentIds: marker ? [marker.group.documentId] : [],
+    enabled: Boolean(marker && agentAuthor),
+    onLoss: useCallback(() => {
+      if (evidenceQueryKey) void queryClient.removeQueries({ queryKey: evidenceQueryKey });
+    }, [evidenceQueryKey, queryClient]),
+  });
   const detail = useQuery({
     ...changeTrailDetailQuery(agentAuthor?.threadId ?? "", marker?.group.trailId ?? ""),
-    enabled: Boolean(marker && agentAuthor),
+    enabled: Boolean(marker && agentAuthor && !authorizationLost),
   });
   const change = useMemo(() => {
     const document = detail.data?.find(
@@ -67,14 +79,6 @@ export function PeerMarkPopover({
 
   // Losing access to the document is the only reason to drop cached evidence
   // while the popover is open; closing it is not, or every open refetches.
-  useEffect(() => {
-    if (!marker || !agentAuthor) return;
-    const queryKey = changeTrailDetailKey(agentAuthor.threadId, marker.group.trailId);
-    return getDocumentSessionRegistry().observe(marker.group.documentId, (document) => {
-      if (document.status === "access-lost") void queryClient.removeQueries({ queryKey });
-    });
-  }, [agentAuthor, marker, queryClient]);
-
   if (!marker || !target) return null;
   const currentMarker = marker;
   const colorIdentity =

@@ -6,6 +6,7 @@ import {
   parseWorkingSetRouteList,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
+import type { DocumentId } from "@meridian/contracts/runtime";
 
 export const WORKING_SET_STORAGE_KEY = "meridian:working-set";
 
@@ -32,6 +33,7 @@ export type ProjectWorkingSetRecord = {
 };
 
 type PersistedWorkingSets = {
+  schemaVersion: 2;
   userId: string;
   projects: Record<string, ProjectWorkingSetRecord>;
 };
@@ -42,19 +44,31 @@ const EMPTY_SNAPSHOT: WorkingSetSnapshot = { recentRoutes: [], lastThreadId: nul
 
 /**
  * Canonical WorkingSetRoute builder from tab/route coordinates. Returns null
- * for empty paths or when a work-scoped scheme lacks its required Work. Empty
- * Scratch belongs only to the device desk and coordinator, never recency.
+ * for empty paths. Callers must resolve Work/no-Work authority before building
+ * a Work-capable route. Empty Scratch belongs only to the device desk and
+ * coordinator, never recency.
  */
 export function buildWorkingSetRoute(
+  documentId: DocumentId,
   scheme: ProjectContextTreeScheme,
   path: string,
   workId: string | null | undefined,
 ): WorkingSetRoute | null {
   if (path.length === 0) return null;
   if (isWorkScopedProjectContextScheme(scheme)) {
-    return workId ? { scheme, path, workId } : null;
+    if (workId === undefined) {
+      throw new TypeError("Work-capable working-set routes require resolved authority");
+    }
+    return { documentId, scheme, path, workId: workId as string | null };
   }
-  return { scheme, path };
+  return { documentId, scheme, path };
+}
+
+export function workingSetRouteIdentityEquals(
+  left: WorkingSetRoute | undefined,
+  right: WorkingSetRoute,
+): boolean {
+  return left?.documentId === right.documentId;
 }
 
 export function workingSetRouteEquals(
@@ -63,6 +77,7 @@ export function workingSetRouteEquals(
 ): boolean {
   return (
     left !== undefined &&
+    left.documentId === right.documentId &&
     left.scheme === right.scheme &&
     left.path === right.path &&
     left.workId === right.workId
@@ -130,14 +145,22 @@ function parsePersisted(raw: string | null): PersistedWorkingSets | null {
   try {
     const value: unknown = JSON.parse(raw);
     if (!value || typeof value !== "object") return null;
-    const { userId, projects } = value as Partial<PersistedWorkingSets>;
-    if (typeof userId !== "string" || !projects || typeof projects !== "object") return null;
+    const { schemaVersion, userId, projects } = value as Partial<PersistedWorkingSets>;
+    if (
+      schemaVersion !== 2 ||
+      typeof userId !== "string" ||
+      !projects ||
+      typeof projects !== "object" ||
+      Array.isArray(projects)
+    )
+      return null;
     const validProjects: Record<string, ProjectWorkingSetRecord> = {};
     for (const [projectId, record] of Object.entries(projects)) {
       const parsed = parseProjectRecord(record);
-      if (parsed) validProjects[projectId] = parsed;
+      if (!parsed) return null;
+      validProjects[projectId] = parsed;
     }
-    return { userId, projects: validProjects };
+    return { schemaVersion, userId, projects: validProjects };
   } catch {
     return null;
   }
@@ -203,7 +226,7 @@ export class DeviceWorkingSetStore {
     } catch {
       // The in-memory identity boundary still prevents a cross-user read.
     }
-    this.state = { userId, projects: {} };
+    this.state = { schemaVersion: 2, userId, projects: {} };
   }
 
   read(projectId: string): ProjectWorkingSetRecord | undefined {
@@ -263,7 +286,7 @@ export function promoteSnapshotRoute(
     ...snapshot,
     recentRoutes: [
       route,
-      ...snapshot.recentRoutes.filter((entry) => !workingSetRouteEquals(entry, route)),
+      ...snapshot.recentRoutes.filter((entry) => !workingSetRouteIdentityEquals(entry, route)),
     ].slice(0, 3),
   };
 }
@@ -277,11 +300,25 @@ export function removeSnapshotRoute(
   route: WorkingSetRoute,
 ): WorkingSetSnapshot {
   const recentRoutes = snapshot.recentRoutes.filter(
-    (entry) => !workingSetRouteEquals(entry, route),
+    (entry) => !workingSetRouteIdentityEquals(entry, route),
   );
   return recentRoutes.length === snapshot.recentRoutes.length
     ? snapshot
     : { ...snapshot, recentRoutes };
+}
+
+/** Replaces one already-recent identity in place without changing recency. */
+export function replaceSnapshotRoute(
+  snapshot: WorkingSetSnapshot,
+  route: WorkingSetRoute,
+): WorkingSetSnapshot {
+  const index = snapshot.recentRoutes.findIndex((entry) =>
+    workingSetRouteIdentityEquals(entry, route),
+  );
+  if (index < 0 || workingSetRouteEquals(snapshot.recentRoutes[index], route)) return snapshot;
+  const recentRoutes = [...snapshot.recentRoutes];
+  recentRoutes[index] = route;
+  return { ...snapshot, recentRoutes };
 }
 
 /** Applies a complete context-route transition at one snapshot boundary. */
@@ -291,12 +328,21 @@ export function reconcileSnapshotContextRoutes(
 ): WorkingSetSnapshot {
   if (input.clearAll) return clearSnapshotRoutes(snapshot);
   const isOwned = (route: WorkingSetRoute) =>
-    input.survivingOwnedLocators.some((owner) => workingSetRouteEquals(owner, route));
+    input.survivingOwnedLocators.some((owner) => workingSetRouteIdentityEquals(owner, route));
   const isRemoved = (route: WorkingSetRoute) =>
-    input.removedLocators.some((removed) => workingSetRouteEquals(removed, route));
-  const recentRoutes = snapshot.recentRoutes.filter((route) => !isRemoved(route) || isOwned(route));
+    input.removedLocators.some((removed) => workingSetRouteIdentityEquals(removed, route));
+  const recentRoutes = snapshot.recentRoutes
+    .filter((route) => !isRemoved(route) || isOwned(route))
+    .map(
+      (route) =>
+        input.survivingOwnedLocators.find((owner) => workingSetRouteIdentityEquals(owner, route)) ??
+        route,
+    );
   const reconciled =
-    recentRoutes.length === snapshot.recentRoutes.length ? snapshot : { ...snapshot, recentRoutes };
+    recentRoutes.length === snapshot.recentRoutes.length &&
+    recentRoutes.every((route, index) => workingSetRouteEquals(snapshot.recentRoutes[index], route))
+      ? snapshot
+      : { ...snapshot, recentRoutes };
   return input.promote ? promoteSnapshotRoute(reconciled, input.promote) : reconciled;
 }
 

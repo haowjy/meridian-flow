@@ -72,6 +72,7 @@ import {
 } from "@meridian/agent-edit/integration";
 import { meridianErrorFromGateway, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
+import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type TreeBudget } from "@meridian/contracts/spawn";
 import type {
@@ -98,6 +99,7 @@ import type {
 } from "../../threads/index.js";
 import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../gateway/index.js";
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
+import type { ImageAssetPort } from "../ports/image-asset.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
@@ -174,6 +176,7 @@ export interface OrchestratorDeps {
   modelRequestDebug: ModelRequestDebugStore;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
+  imageAssets: ImageAssetPort;
   /** Aggregate concurrent-edit rendering allowance derived from the selected registry model. */
   concurrentRenderBudgetBytes?(request: GenerateRequest): number;
   responseWrites: {
@@ -400,13 +403,36 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
         role: "user",
         status: "complete",
       });
-      const userBlock = contentForBlockInput({
-        turnId: userTurn.id,
-        blockType: "text",
-        sequence: 0,
-        textContent: input.userText,
-        status: "complete",
-      });
+      const userBlocks = (input.userBlocks ?? [{ type: "text", text: input.userText }]).map(
+        (block: UserMessageBlock, sequence) =>
+          block.type === "text"
+            ? contentForBlockInput({
+                turnId: userTurn.id,
+                blockType: "text",
+                sequence,
+                textContent: block.text,
+                status: "complete",
+              })
+            : block.type === "reference"
+              ? contentForBlockInput({
+                  turnId: userTurn.id,
+                  blockType: "text",
+                  sequence,
+                  content: block,
+                  status: "complete",
+                })
+              : contentForBlockInput({
+                  turnId: userTurn.id,
+                  blockType: "image",
+                  sequence,
+                  content: {
+                    type: "image_reference",
+                    documentId: block.documentId,
+                    uri: block.uri,
+                  },
+                  status: "complete",
+                }),
+      );
 
       const assistantTurn = createLocalTurn({
         threadId: input.threadId,
@@ -421,11 +447,21 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
         result: { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks },
         events: [
           { type: "turn.created", turn: userTurn },
-          { type: "block.upserted", block: userBlock },
+          ...userBlocks.map((block) => ({ type: "block.upserted" as const, block })),
           { type: "turn.created", turn: assistantTurn },
         ],
       };
     },
+    input.onStartPersisted
+      ? {
+          afterEvents: async ({ userTurn, assistantTurn }) => {
+            await input.onStartPersisted?.({
+              userTurnId: userTurn.id,
+              assistantTurnId: assistantTurn.id,
+            });
+          },
+        }
+      : undefined,
   );
 
   const { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks } = setup.result;
@@ -808,6 +844,8 @@ async function buildGenerateRequest(input: {
     blocks: input.blocks,
     packageRepository: input.deps.packageRepository,
     toolRegistry: input.deps.toolRegistry,
+    gateway: input.deps.gateway,
+    imageAssets: input.deps.imageAssets,
     baseTools: input.runInput.tools ?? input.deps.toolExecutor.getDefinitions?.(),
     persistBake: true,
     bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(

@@ -17,6 +17,7 @@ export default defineEventHandler(async (event) => {
       contextPorts: app.contextPorts,
       objectStore: app.objectStore,
       eventSink: app.eventSink,
+      workAuthorityResolver: app.workAuthorityResolver,
     },
     { projectId, userId: user.userId, scheme, rawPath: query.path, workId },
   );

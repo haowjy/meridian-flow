@@ -10,7 +10,6 @@ import {
   unknownToEventPayload,
 } from "../domains/observability/index.js";
 import type { PackageRepository } from "../domains/packages/index.js";
-import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
 import {
   type ProjectRepository,
   requireProjectOwner,
@@ -31,7 +30,6 @@ export class AgentBindingNotFoundError extends Error {
 export interface CreateThreadForProjectDeps {
   projects: ProjectRepository;
   workRepo: WorkRepository;
-  preferences: ProjectPreferencesRepository;
   threads: ThreadRepositories["threads"];
   threadWorks: ThreadRepositories["threadWorks"];
   transaction: ThreadRepositories["transaction"];
@@ -49,7 +47,7 @@ export interface CreateThreadForProjectArgs {
   /** Mars agent slug — when set, agent body becomes the thread system prompt. */
   currentAgent?: string | null;
   /** Explicit work assignment from the request, if any. */
-  workId?: string;
+  workId?: string | null;
   /** When set, this is a subagent thread — inherit the parent's work. */
   parentThreadId?: string | null;
 }
@@ -66,11 +64,7 @@ export async function createThreadForProject(
   args: CreateThreadForProjectArgs,
 ): Promise<Thread> {
   const eventSink = deps.eventSink;
-  const project = await requireProjectOwner(
-    { projects: deps.projects },
-    args.projectId,
-    args.userId,
-  );
+  await requireProjectOwner({ projects: deps.projects }, args.projectId, args.userId);
 
   const agentSlug = args.currentAgent ?? null;
   if (agentSlug) {
@@ -101,14 +95,11 @@ export async function createThreadForProject(
     resolvedWorkId = await resolveWorkMembership(
       {
         workRepo: deps.workRepo,
-        preferences: deps.preferences,
         threadWorks: deps.threadWorks,
       },
       {
         threadId: created.id,
         projectId: args.projectId,
-        project,
-        userId: args.userId,
         workId: args.workId,
         parentThreadId: args.parentThreadId,
       },

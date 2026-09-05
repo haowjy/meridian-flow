@@ -13,14 +13,19 @@ import {
   appendUserMessage,
   deserializeThreadSnapshot,
   getThreadSnapshot,
+  lookupUserMessageAdmission,
+  retireUserMessageAdmission,
   toThreadSnapshotApplyOptions,
 } from "@/client/api/threads-api";
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
+import type { ComposerSubmitEnvelope, ComposerSubmitOutcome } from "@/components/app/composer";
 import { applyAguiEventToStore } from "@/core/session/reduce-turn-event";
 import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
 
 type AppendUserMessageFn = typeof appendUserMessage;
+type LookupAdmissionFn = typeof lookupUserMessageAdmission;
+type RetireAdmissionFn = typeof retireUserMessageAdmission;
 
 type GetThreadSnapshotFn = typeof getThreadSnapshot;
 type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot>;
@@ -37,40 +42,19 @@ export type SubmitOptions = {
   optimisticUserTurnId?: string;
 };
 
-export type AdmissionFailureKind = "definite" | "ambiguous";
-
-/**
- * Typed boundary for message admission failures.
- *
- * `definite` means the controller knows the append was not accepted: local
- * arbitration, connection preflight, or an authoritative API rejection.
- * `ambiguous` means a dispatched append did not produce an authoritative
- * response, so callers must not retry it blindly.
- */
-export class ThreadAdmissionError extends Error {
-  readonly kind: AdmissionFailureKind;
-
-  constructor(kind: AdmissionFailureKind, cause: unknown) {
-    super(errorMessage(cause, "Failed to submit message"), { cause });
-    this.name = "ThreadAdmissionError";
-    this.kind = kind;
-  }
-}
-
-export function isThreadAdmissionError(value: unknown): value is ThreadAdmissionError {
-  return value instanceof ThreadAdmissionError;
-}
-
-function classifyAdmissionFailure(error: unknown): AdmissionFailureKind {
-  if (isThreadAdmissionError(error)) return error.kind;
-  if (isMeridianApiError(error) || error instanceof HttpResponseError) return "definite";
-  return "ambiguous";
+function isAdmissionPending(error: unknown): boolean {
+  return (
+    (error instanceof HttpResponseError || isMeridianApiError(error)) &&
+    (error.message === "admission_pending" || error.message.includes("admission_pending"))
+  );
 }
 
 export type ThreadRunControllerOptions = {
   transport: ThreadTransport;
   actions: ThreadStoreActions;
   appendUserMessageFn?: AppendUserMessageFn;
+  lookupAdmissionFn?: LookupAdmissionFn;
+  retireAdmissionFn?: RetireAdmissionFn;
   getThreadSnapshotFn?: GetThreadSnapshotFn;
 };
 
@@ -102,6 +86,8 @@ export class ThreadRunController {
   private readonly transport: ThreadTransport;
   private readonly actions: ThreadStoreActions;
   private readonly appendUserMessageFn: AppendUserMessageFn;
+  private readonly lookupAdmissionFn: LookupAdmissionFn;
+  private readonly retireAdmissionFn: RetireAdmissionFn;
   private readonly getThreadSnapshotFn: GetThreadSnapshotFn;
 
   private activeRun: ActiveRun | null = null;
@@ -115,15 +101,26 @@ export class ThreadRunController {
     this.transport = options.transport;
     this.actions = options.actions;
     this.appendUserMessageFn = options.appendUserMessageFn ?? appendUserMessage;
+    this.lookupAdmissionFn = options.lookupAdmissionFn ?? lookupUserMessageAdmission;
+    this.retireAdmissionFn = options.retireAdmissionFn ?? retireUserMessageAdmission;
     this.getThreadSnapshotFn = options.getThreadSnapshotFn ?? getThreadSnapshot;
   }
 
-  async submit(threadId: string, text: string, options: SubmitOptions = {}): Promise<void> {
+  async submit(
+    threadId: string,
+    envelope: ComposerSubmitEnvelope,
+    options: SubmitOptions = {},
+  ): Promise<ComposerSubmitOutcome> {
+    const outcome = (kind: ComposerSubmitOutcome["kind"]): ComposerSubmitOutcome => ({
+      kind,
+      submissionId: envelope.submissionId,
+      acceptedRevision: envelope.acceptedRevision,
+    });
     if (this.admissionInFlight) {
       if (options.optimisticUserTurnId) {
         this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
       }
-      throw new ThreadAdmissionError("definite", new Error("submit already in flight"));
+      return outcome("rejected");
     }
 
     this.admissionInFlight = true;
@@ -138,23 +135,29 @@ export class ThreadRunController {
         this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
       }
       this.admissionInFlight = false;
-      throw new ThreadAdmissionError("definite", error);
+      announceError(errorMessage(error, "Failed to submit message"));
+      return outcome("rejected");
     }
 
     try {
       result = await this.appendUserMessageFn({
         data: {
           threadId,
-          text,
+          submissionId: envelope.submissionId,
+          text: envelope.text,
+          blocks: envelope.blocks,
+          references: envelope.references,
           connectionToken,
         },
       });
     } catch (error) {
-      const kind = classifyAdmissionFailure(error);
-      if (options.optimisticUserTurnId && kind === "definite") {
-        this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
+      if (isAdmissionPending(error)) return outcome("ambiguous");
+      if (isMeridianApiError(error) || error instanceof HttpResponseError) {
+        if (options.optimisticUserTurnId)
+          this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
+        return outcome("rejected");
       }
-      throw isThreadAdmissionError(error) ? error : new ThreadAdmissionError(kind, error);
+      return this.reconcile(threadId, envelope, options, false);
     } finally {
       this.admissionInFlight = false;
     }
@@ -167,13 +170,73 @@ export class ThreadRunController {
         result.snapshotFloorNextSeq,
       );
     }
-    if (this.admissionEpoch !== admissionEpoch) return;
+    if (this.admissionEpoch !== admissionEpoch) return outcome("accepted");
 
     const token = this.startRun(threadId, { pruneAbandonedTurn: true });
     this.attachLiveSubscription(threadId, token, {
       after: result.resumeAfterSeq,
       expectedTurnId: result.assistantTurnId,
     });
+    return outcome("accepted");
+  }
+
+  lookup(
+    threadId: string,
+    envelope: ComposerSubmitEnvelope,
+    options: SubmitOptions = {},
+  ): Promise<ComposerSubmitOutcome> {
+    return this.reconcile(threadId, envelope, options, false);
+  }
+
+  retire(
+    threadId: string,
+    envelope: ComposerSubmitEnvelope,
+    options: SubmitOptions = {},
+  ): Promise<ComposerSubmitOutcome> {
+    return this.reconcile(threadId, envelope, options, true);
+  }
+
+  private async reconcile(
+    threadId: string,
+    envelope: ComposerSubmitEnvelope,
+    options: SubmitOptions,
+    retire: boolean,
+  ): Promise<ComposerSubmitOutcome> {
+    const outcome = (kind: ComposerSubmitOutcome["kind"]): ComposerSubmitOutcome => ({
+      kind,
+      submissionId: envelope.submissionId,
+      acceptedRevision: envelope.acceptedRevision,
+    });
+    try {
+      const result = await (retire ? this.retireAdmissionFn : this.lookupAdmissionFn)({
+        threadId,
+        submissionId: envelope.submissionId,
+      });
+      if (result.kind === "accepted" || result.kind === "already-accepted") {
+        if (options.optimisticUserTurnId) {
+          this.actions.acknowledgeUserTurn(
+            threadId,
+            options.optimisticUserTurnId,
+            result.userTurnId,
+            result.snapshotFloorNextSeq,
+          );
+        }
+        const token = this.startRun(threadId, { pruneAbandonedTurn: true });
+        this.attachLiveSubscription(threadId, token, {
+          after: result.resumeAfterSeq,
+          expectedTurnId: result.assistantTurnId,
+        });
+        return outcome("accepted");
+      }
+      if (result.kind === "rejected" || result.kind === "retired") {
+        if (options.optimisticUserTurnId)
+          this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
+        return outcome("rejected");
+      }
+      return outcome("ambiguous");
+    } catch {
+      return outcome("ambiguous");
+    }
   }
 
   resume(threadId: string, options: SubscribeLiveOptions = {}): void {

@@ -82,12 +82,13 @@ result through the same door.
 
 ## One document index, three questions
 
-`useLinkableDocuments` walks the two cached trees — the manuscript, and the
-active Work's scratch — and returns `{ documents, revision }`: every editable
-file with its title, its location, its `documents.id`, and its URI in the
-resolver's spelling, plus the identity of that whole set. The `[[` menu renders
-the rows; `ProjectLinkRuntime` finds its own row by id to get `baseUri`, and
-registers the port against the revision.
+`useLinkableDocuments` remains the legacy `[[` and relative-link projection.
+Canonical `@` and LinkForm completion instead read the normalized F1 catalog
+through `useReferenceBrowserCatalog` and let the F2 browser own scope,
+navigation, and ordering. LinkForm observes its focused href input through the
+shared DOM suggestion transport; one Chrome-reaching lease owns its semantic
+keys and retreat, and the shared menu attaches accessibility state to that href
+input rather than to editor prose.
 
 `revision` is content, not an object identity and not a counter: the row's id,
 URI, and title joined per document. A refetch that found the same documents is
@@ -115,10 +116,8 @@ renaming one is the writer's fix.
 Without a Work, the menu is the manuscript alone: the scratch query is not asked
 rather than asked with a null Work.
 
-The context tree spells a work-scoped document `scratch://<workId>/notes.md`;
-the link contract and the server both spell it `work://<workId>/notes.md`
-(tracked task #32). `resolverUri` swaps that one scheme and changes nothing else,
-so no third spelling enters the system.
+Catalog URIs remain canonical. This surface does not rewrite schemes or derive
+identity from a path or label.
 
 ## What a follow says, and who says it
 

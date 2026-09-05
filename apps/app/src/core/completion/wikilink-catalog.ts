@@ -17,6 +17,8 @@
  */
 
 export type WikilinkDocument = {
+  /** Persisted identity, stable across reorder, move, and rename. */
+  documentId: string;
   /** Exactly what `[[…]]` must spell to reach it. */
   title: string;
   /** Where it lives, for the row's quiet second column. */
@@ -34,7 +36,7 @@ export type WikilinkCatalog = {
 export type WikilinkMenuItem =
   | {
       kind: "document";
-      /** Stable within one list; the row's React key and option id. */
+      /** Stable catalog identity; the row's React key and option id. */
       key: string;
       /** The name the link will carry. */
       name: string;
@@ -73,9 +75,9 @@ export function filterWikilinkItems(
   const duplicated = duplicatedNames(documents);
   const matched = rankDocuments(documents, name)
     .slice(0, MAX_DOCUMENT_ROWS)
-    .map(({ document, matchedAlias }, index) => ({
+    .map(({ document, matchedAlias }) => ({
       kind: "document" as const,
-      key: `document-${index}-${document.title}`,
+      key: document.documentId,
       name: document.title,
       location: document.location,
       matchedAlias,

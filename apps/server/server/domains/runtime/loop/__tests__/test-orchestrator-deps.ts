@@ -4,7 +4,9 @@
  * exercises. Required runtime dependencies stay visible without repeating the
  * whole DI graph in every fixture.
  */
+
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
+import { testWorkSlug } from "../../../../test-support/work-slug.js";
 import {
   type CreditLedger,
   createBillingUsagePolicy,
@@ -95,6 +97,11 @@ export function createTestOrchestratorDeps(
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
     notices: createTestNoticePort(),
     activeDocuments,
+    imageAssets: overrides.imageAssets ?? {
+      async resolve() {
+        return null;
+      },
+    },
     workContextDelivery: overrides.workContextDelivery ?? {
       async deliverNow() {
         throw new Error("No Work-context delivery expected");
@@ -113,7 +120,15 @@ export function createTestOrchestratorDeps(
           text: "<work_context>\ntest\n</work_context>",
           current: {
             projectId: "00000000-0000-0000-0000-000000000001",
-            workId: "00000000-0000-0000-0000-000000000002",
+            execution: {
+              scope: {
+                kind: "work",
+                workId: "00000000-0000-0000-0000-000000000002",
+                workSlug: testWorkSlug("test-work"),
+              },
+              aiWriteMode: "direct",
+              draftOwner: null,
+            },
           },
         };
       },

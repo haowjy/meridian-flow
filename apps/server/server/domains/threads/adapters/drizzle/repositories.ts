@@ -12,6 +12,7 @@ import {
   type DrizzleTransaction,
   runInDrizzleTransaction,
 } from "../../../../shared/drizzle-transaction.js";
+import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type { InternalThreadRepositories } from "../../ports/repositories.js";
 import { createDrizzleBlockRepository } from "./block-repository.js";
@@ -29,7 +30,10 @@ import { createDrizzleWorkContextDeliveryRepository } from "./work-context-deliv
 
 export { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb, type DrizzleTransaction };
 
-export function createDrizzleRepositories(db: DrizzleDatabase): InternalThreadRepositories {
+function composeDrizzleRepositories(
+  db: DrizzleDatabase,
+  workActivity: Pick<WorkProjectionMutation, "touchWorks"> | null,
+): InternalThreadRepositories {
   const usageRecorder = createDrizzleUsageRecorder(db);
   return {
     threads: createDrizzleThreadRepository(db),
@@ -37,7 +41,7 @@ export function createDrizzleRepositories(db: DrizzleDatabase): InternalThreadRe
     workChatFeed: createDrizzleWorkChatFeedRepository(db),
     threadUserState: createDrizzleThreadUserStateRepository(db),
     threadWorks: createDrizzleThreadWorksRepository(db),
-    turns: createDrizzleTurnRepository(db),
+    turns: createDrizzleTurnRepository(db, workActivity),
     blocks: createDrizzleBlockRepository(db),
     modelResponses: createDrizzleModelResponseRepository(db),
     threadDocuments: createDrizzleThreadDocumentRepository(db),
@@ -57,4 +61,16 @@ export function createDrizzleRepositories(db: DrizzleDatabase): InternalThreadRe
     },
     recordModelResponseUsage: usageRecorder.recordModelResponseUsage,
   };
+}
+
+export function createDrizzleRepositories(
+  db: DrizzleDatabase,
+  workActivity: Pick<WorkProjectionMutation, "touchWorks">,
+): InternalThreadRepositories {
+  return composeDrizzleRepositories(db, workActivity);
+}
+
+/** Isolated adapter tests that do not compose cross-domain projection owners. */
+export function createDrizzleRepositoriesForTest(db: DrizzleDatabase): InternalThreadRepositories {
+  return composeDrizzleRepositories(db, null);
 }

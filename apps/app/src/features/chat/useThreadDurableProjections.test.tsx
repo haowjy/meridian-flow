@@ -156,7 +156,11 @@ describe("useThreadDurableProjections", () => {
       event: {
         type: EventType.CUSTOM,
         name: WORK_CONTEXT_PROJECTION_EVENT,
-        value: { threadId: "thread-1", projectId: "project-1", workId: "work-c" },
+        value: {
+          threadId: "thread-1",
+          projectId: "project-1",
+          scope: { kind: "work", workId: "work-c", workSlug: "c" },
+        },
       },
     };
 

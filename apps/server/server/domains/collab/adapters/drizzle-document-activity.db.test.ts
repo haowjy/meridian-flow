@@ -19,6 +19,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleDocumentProjectionEffects } = await import(
       "./drizzle-document-activity.js"
     );
+    const { createDrizzleProjectContextAvailability } = await import(
+      "../../context/adapters/project-context-availability.js"
+    );
+    const { createWorkProjectionMutation } = await import("../../projects/index.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000401";
     const PROJECT_ID = "00000000-0000-4000-8000-000000000402";
@@ -30,6 +34,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const NOW = new Date("2026-06-22T12:34:56.789Z");
 
     const db = createDb(DATABASE_URL, { max: 1 });
+    const availability = createDrizzleProjectContextAvailability(db);
+    const workProjection = createWorkProjectionMutation({
+      db,
+      availability,
+      catalog: {
+        async refreshProject() {},
+        async upsertWorkAuthorities() {},
+      },
+    });
 
     async function truncateAll(): Promise<void> {
       await truncateDrizzleTables(db, [
@@ -104,7 +117,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("touches thread, work, project activity and updates the markdown projection", async () => {
-      const effects = createDrizzleDocumentProjectionEffects(db);
+      const effects = createDrizzleDocumentProjectionEffects(db, workProjection);
       await effects.touchDocumentActivity({
         documentId: DOC_ID,
         threadId: THREAD_ID,

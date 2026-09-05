@@ -146,3 +146,23 @@ describe("WorkRepository", () => {
     );
   });
 });
+
+describe("Work entity revisions", () => {
+  it("increments create, rename, archive, unarchive, delete, and restore but not lifecycle no-ops", async () => {
+    const repo = createInMemoryWorkRepository();
+    const created = await repo.create({ projectId: PROJECT_ID, name: "Versioned" });
+    expect(created.entityRevision).toBe("1");
+    const renamed = await repo.update(created.id, { name: "Renamed" });
+    expect(renamed.entityRevision).toBe("2");
+    const archived = await repo.archive(created.id);
+    expect(archived.entityRevision).toBe("3");
+    expect((await repo.archive(created.id)).entityRevision).toBe("3");
+    const unarchived = await repo.unarchive(created.id);
+    expect(unarchived.entityRevision).toBe("4");
+    await repo.softDelete(created.id);
+    expect((await repo.findById(created.id))?.entityRevision).toBe("5");
+    const restored = await repo.restore(created.id);
+    expect(restored.entityRevision).toBe("6");
+    expect((await repo.restore(created.id)).entityRevision).toBe("6");
+  });
+});

@@ -8,11 +8,12 @@ import {
   pushLineage,
   works,
 } from "@meridian/database/schema";
-import { and, asc, countDistinct, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, countDistinct, eq, inArray, ne, sql } from "drizzle-orm";
 import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
+import type { WorkProjectionMutation } from "../../projects/index.js";
 import {
   type BranchJournalReadStore,
   type BranchJournalRow,
@@ -194,64 +195,77 @@ export function createDrizzlePushCommitStore(
   stagePendingSettlementWithinTx: StagePendingSettlementWithinTx,
   changeTrails: ChangeTrailPersistence,
   notices?: NoticePort,
+  workProjection?: WorkProjectionMutation,
 ): PushCommitStore {
+  const mutatePending = <T>(branchIds: readonly string[], operation: () => Promise<T>) =>
+    workProjection ? workProjection.mutatePendingBranches(branchIds, operation) : operation();
   return {
     async commitPush(input) {
-      return runInDrizzleTransaction(db, async () => {
-        const txDb = currentDrizzleDb(db);
-        const existing = await findLineage(txDb, input.idempotencyKey);
-        if (existing) return { status: "conflict" as const, push: existing };
-        const now = new Date();
-        const lineage = await commitPreparedPush(txDb, input, now);
-        const push = mapLineage(lineage);
-        await persistRequiredTrail(changeTrails, input, push, notices);
-        await stagePendingSettlementWithinTx(txDb, input, push);
-        return {
-          status: "inserted" as const,
-          push,
-        };
-      });
+      return runInDrizzleTransaction(db, () =>
+        mutatePending([input.branch.branchId], async () => {
+          const txDb = currentDrizzleDb(db);
+          const existing = await findLineage(txDb, input.idempotencyKey);
+          if (existing) return { status: "conflict" as const, push: existing };
+          const now = new Date();
+          const lineage = await commitPreparedPush(txDb, input, now);
+          const push = mapLineage(lineage);
+          await persistRequiredTrail(changeTrails, input, push, notices);
+          await stagePendingSettlementWithinTx(txDb, input, push);
+          return {
+            status: "inserted" as const,
+            push,
+          };
+        }),
+      );
     },
 
     async commitDiscard(input) {
-      return runInDrizzleTransaction(db, async () => {
-        await commitPreparedDiscard(currentDrizzleDb(db), input, new Date());
-      });
+      return runInDrizzleTransaction(db, () =>
+        mutatePending([input.branch.branchId], () =>
+          commitPreparedDiscard(currentDrizzleDb(db), input, new Date()),
+        ),
+      );
     },
 
     async commitTurnRedo(input) {
       return runWithActiveWorkDrafts(
         db,
         { branchIds: input.journalRows.map((row) => row.branchId) },
-        async () => {
-          await commitPreparedRedo(currentDrizzleDb(db), input, new Date());
-          await changeTrails.reopenOwners(trailOwnersForRows(input.journalRows));
-        },
+        () =>
+          mutatePending([input.branch.branchId], async () => {
+            await commitPreparedRedo(currentDrizzleDb(db), input, new Date());
+            await changeTrails.reopenOwners(trailOwnersForRows(input.journalRows));
+          }),
       );
     },
 
     async commitPushBatch(input) {
-      return runInDrizzleTransaction(db, async () => {
-        const txDb = currentDrizzleDb(db);
-        const pushes = sortPushesByDocumentId(input.pushes);
-        for (const push of pushes) {
-          const existing = await findLineage(txDb, push.idempotencyKey);
-          if (existing) throw new BranchPushCommitConflictError(push.branch.branchId);
-        }
-        const now = new Date();
-        const rows = [];
-        for (const push of pushes) {
-          const lineage = await commitPreparedPush(txDb, push, now);
-          rows.push(lineage);
-          const mapped = mapLineage(lineage);
-          await persistRequiredTrail(changeTrails, push, mapped, notices);
-          await stagePendingSettlementWithinTx(txDb, push, mapped);
-        }
-        const mappedPushes = rows.map(mapLineage);
-        return {
-          pushes: mappedPushes,
-        };
-      });
+      return runInDrizzleTransaction(db, () =>
+        mutatePending(
+          input.pushes.map(({ branch }) => branch.branchId),
+          async () => {
+            const txDb = currentDrizzleDb(db);
+            const pushes = sortPushesByDocumentId(input.pushes);
+            for (const push of pushes) {
+              const existing = await findLineage(txDb, push.idempotencyKey);
+              if (existing) throw new BranchPushCommitConflictError(push.branch.branchId);
+            }
+            const now = new Date();
+            const rows = [];
+            for (const push of pushes) {
+              const lineage = await commitPreparedPush(txDb, push, now);
+              rows.push(lineage);
+              const mapped = mapLineage(lineage);
+              await persistRequiredTrail(changeTrails, push, mapped, notices);
+              await stagePendingSettlementWithinTx(txDb, push, mapped);
+            }
+            const mappedPushes = rows.map(mapLineage);
+            return {
+              pushes: mappedPushes,
+            };
+          },
+        ),
+      );
     },
 
     async markRollbackPending(input) {
@@ -273,7 +287,10 @@ export function createDrizzlePushCommitStore(
   };
 }
 
-export function createDrizzleWorkPushPolicyStore(db: Database): WorkPushPolicyStore {
+export function createDrizzleWorkPushPolicyStore(
+  db: Database,
+  workProjection?: WorkProjectionMutation,
+): WorkPushPolicyStore {
   return {
     async updateWorkDraftPushPolicy(workId, policy) {
       await runInDrizzleTransaction(db, async () => {
@@ -287,10 +304,16 @@ export function createDrizzleWorkPushPolicyStore(db: Database): WorkPushPolicySt
               eq(documentBranches.status, "active"),
             ),
           );
-        await currentDrizzleDb(db)
+        const [changed] = await currentDrizzleDb(db)
           .update(works)
-          .set({ aiWriteMode: aiWriteModeProjection(policy), updatedAt: new Date() })
-          .where(eq(works.id, workId));
+          .set({
+            aiWriteMode: aiWriteModeProjection(policy),
+            entityRevision: sql`${works.entityRevision} + 1`,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(works.id, workId), ne(works.aiWriteMode, aiWriteModeProjection(policy))))
+          .returning({ projectId: works.projectId });
+        if (changed) await workProjection?.publishWorks([workId]);
       });
     },
   };

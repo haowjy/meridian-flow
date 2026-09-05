@@ -1,5 +1,8 @@
 /** PostgreSQL coverage for runtime Work-context claims and model-visible delivery. */
+
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
+import { testWorkSlug } from "../../../test-support/work-slug.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -26,7 +29,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       createDrizzleEventJournalWriter,
       createThreadEventHub,
     } = await import("../../threads/index.js");
-    const { createDrizzleRepositories } = await import("../../threads/adapters/drizzle/index.js");
+    const { createDrizzleRepositoriesForTest } = await import(
+      "../../threads/adapters/drizzle/index.js"
+    );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createWorkContextDelivery } = await import("./work-context-delivery.js");
     const { createTurnRunner } = await import("./turn-runner.js");
@@ -72,7 +77,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     function delivery(
-      repos: ReturnType<typeof createDrizzleRepositories>,
+      repos: ReturnType<typeof createDrizzleRepositoriesForTest>,
       eventWriter = createDrizzleEventJournalWriter(db),
       runOwnership = sharedRunOwnership,
     ) {
@@ -85,7 +90,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               text: "<work_context>current state</work_context>",
               current: {
                 projectId: "00000000-0000-0000-0000-000000000001",
-                workId: "00000000-0000-0000-0000-000000000002",
+                execution: {
+                  scope: {
+                    kind: "work",
+                    workId: "00000000-0000-0000-0000-000000000002",
+                    workSlug: testWorkSlug("test-work"),
+                  },
+                  aiWriteMode: "direct",
+                  draftOwner: null,
+                },
               },
             };
           },
@@ -97,7 +110,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     }
 
     it("revalidates deliverability when deletion wins after pending selection", async () => {
-      const repos = createDrizzleRepositories(db);
+      const repos = createDrizzleRepositoriesForTest(db);
       await repos.workContextDeliveries.enqueueThread(THREAD_ID);
       let entered!: () => void;
       const claimEntered = new Promise<void>((resolve) => {
@@ -130,10 +143,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("survives recreation and repeated append failure, then atomically appends and acknowledges", async () => {
-      const repos = createDrizzleRepositories(db);
+      const repos = createDrizzleRepositoriesForTest(db);
       const works = createDrizzleProjectWorkRepository({
         db,
         hasUnreviewedDraft: async () => false,
+        projectionMutation: createTestWorkProjectionMutation(db),
       });
       const created = await createWork(
         {
@@ -165,7 +179,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(true);
 
-      await delivery(createDrizzleRepositories(db)).sweep();
+      await delivery(createDrizzleRepositoriesForTest(db)).sweep();
       await expect(repos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
       await expect(repos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
       const [events] = await db
@@ -176,8 +190,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("admits one update across concurrent process claims", async () => {
-      const first = createDrizzleRepositories(db);
-      const second = createDrizzleRepositories(db);
+      const first = createDrizzleRepositoriesForTest(db);
+      const second = createDrizzleRepositoriesForTest(db);
       await first.workContextDeliveries.enqueueThread(THREAD_ID);
 
       await Promise.all([
@@ -244,7 +258,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           journalWriter: createDrizzleEventJournalWriter(db),
           eventSink: createInMemoryEventSink(),
         }),
-        repos: { turns: createDrizzleRepositories(db).turns },
+        repos: { turns: createDrizzleRepositoriesForTest(db).turns },
         runOwnership: createDrizzleThreadRunOwnership(db),
       });
 
@@ -259,8 +273,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("leaves a remote obligation with its live owner, then owner completion appends once", async () => {
-      const ownerRepos = createDrizzleRepositories(db);
-      const remoteRepos = createDrizzleRepositories(db);
+      const ownerRepos = createDrizzleRepositoriesForTest(db);
+      const remoteRepos = createDrizzleRepositoriesForTest(db);
       const ownerOwnership = createDrizzleThreadRunOwnership(db);
       const remoteOwnership = createDrizzleThreadRunOwnership(db);
       const ownerClaim = await ownerOwnership.tryAcquire(THREAD_ID);
@@ -291,10 +305,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("leaves a durable refresh when a Work changes between first render and freeze", async () => {
-      const repos = createDrizzleRepositories(db);
+      const repos = createDrizzleRepositoriesForTest(db);
       const works = createDrizzleProjectWorkRepository({
         db,
         hasUnreviewedDraft: async () => false,
+        projectionMutation: createTestWorkProjectionMutation(db),
       });
       const work = await works.create({
         projectId: PROJECT_ID,
@@ -307,7 +322,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .update(schema.threads)
         .set({ bakedSkillSlugs: null, composedSystemPrompt: null })
         .where(eq(schema.threads.id, THREAD_ID));
-      const workContext = createWorkContextReader({ works, threadWorks: repos.threadWorks });
+      const workContext = createWorkContextReader({
+        threads: repos.threads,
+        works,
+        threadWorks: repos.threadWorks,
+      });
 
       const staleRenderedContext = await workContext.renderForThread(THREAD_ID);
       expect(staleRenderedContext.text).toContain("Old Work Name");
@@ -337,8 +356,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("hydrates a competing deliverNow claim as idempotent success", async () => {
-      const first = createDrizzleRepositories(db);
-      const second = createDrizzleRepositories(db);
+      const first = createDrizzleRepositoriesForTest(db);
+      const second = createDrizzleRepositoriesForTest(db);
       await first.workContextDeliveries.enqueueThread(THREAD_ID);
 
       const [firstResult, secondResult] = await Promise.all([

@@ -8,10 +8,17 @@ const requests: Array<{ operation: string; workId: string | undefined }> = [];
 let releaseCreate: (() => void) | null = null;
 
 vi.mock("@/client/api/projects-api", () => ({
-  getProjectContextTree: vi.fn(async (_projectId, _scheme, options) => {
-    requests.push({ operation: "tree", workId: options?.workId });
-    return { tree: { kind: "dir", name: "", path: "", children: [] }, capabilities: {} };
+  getContextCatalogSnapshot: vi.fn(async (_projectId, scope) => {
+    requests.push({ operation: "tree", workId: scope.kind === "work" ? scope.workId : undefined });
+    return {
+      scope,
+      generation: "generation-1",
+      headRevision: "0",
+      cursor: "cursor-0",
+      entries: [],
+    };
   }),
+  getContextCatalogChanges: vi.fn(),
   getProjectContextRead: vi.fn(async (_projectId, _scheme, _path, options) => {
     requests.push({ operation: "read", workId: options?.workId });
     return { kind: "binary", url: "https://example.test/file", mimeType: "text/plain" };
@@ -36,7 +43,7 @@ vi.mock("@/client/api/projects-api", () => ({
 const { useCreateContextEntry } = await import("./useCreateContextEntry");
 const { useDeleteContextEntry } = await import("./useDeleteContextEntry");
 const { useProjectContextRead } = await import("./useProjectContextRead");
-const { useProjectContextTree } = await import("./useProjectContextTree");
+const { useContextCatalogView } = await import("./useContextCatalog");
 const { useRenameContextEntry } = await import("./useRenameContextEntry");
 
 type Commands = ReturnType<typeof useCommands>;
@@ -44,7 +51,7 @@ let commands: Commands | null = null;
 let changeWork: ((workId: string) => void) | null = null;
 
 function useCommands(workId: string) {
-  useProjectContextTree("project", "scratch", { workId });
+  useContextCatalogView("project", "scratch", { workId });
   useProjectContextRead("project", "scratch", "/file.md", { workId });
   return {
     create: useCreateContextEntry("project"),

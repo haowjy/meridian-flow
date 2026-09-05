@@ -1,10 +1,10 @@
 /**
- * MobileDocumentHost — read-only phone document/viewer host with registry retention.
+ * MobileDocumentHost — read-only phone document/viewer host with route-owned binding.
  *
  * Mobile never lets users type into collaborative documents, but it keeps the
  * TipTap/Yjs binding alive so AI edits stream into the read-only editor. This
- * host is the mobile registry owner: entering a document retains exactly that
- * document; leaving the view releases it so sessions do not leak. Mobile route
+ * host is the mobile binding owner: entering a document opens and binds exactly
+ * that document; leaving the view releases it so sessions do not leak. Mobile route
  * navigation deliberately derives the active tab from the context tree instead
  * of writing to the desktop tab strip's shared open-tab set.
  *
@@ -13,56 +13,42 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { lazy, Suspense, useEffect, useLayoutEffect, useMemo } from "react";
-import { useProjectContextTree } from "@/client/query/useProjectContextTree";
-import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef } from "react";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { PassageNotice } from "@/features/editor/PassageNotice";
-import { useContextRemovalCoordinator } from "../context/ContextRemovalAccountProvider";
+import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
-import { contextTabFromFile } from "../context/context-tab-from-file";
-import { findContextFile } from "../context/context-tree";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
+import { useLiveDocumentBinding } from "../context/use-live-document-binding";
+import { useLiveBindingAcknowledgementHost } from "../dock/editor-review-handoff";
+import { usePostApplyHostWake } from "../draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
+import type { MobileDocumentRoute } from "./mobile-document-route";
+
+let mobileHostGeneration = 0;
 
 const EditorView = lazy(() =>
   import("@/features/editor/EditorView").then((m) => ({ default: m.EditorView })),
 );
 
-const MOBILE_DOCUMENT_OWNER = "mobile-project-document-host";
-
 export type MobileDocumentHostProps = {
   projectId: string;
   editorWorkId: string | null;
-  activeContextScheme: ProjectContextTreeScheme | null;
-  activeContextPath: string | null;
+  route: MobileDocumentRoute;
 };
 
-export function MobileDocumentHost({
-  projectId,
-  editorWorkId,
-  activeContextScheme,
-  activeContextPath,
-}: MobileDocumentHostProps) {
+export function MobileDocumentHost({ projectId, editorWorkId, route }: MobileDocumentHostProps) {
   const workId = editorWorkId;
+  const projectionOwner = useRef({});
+  const hostGeneration = useRef(++mobileHostGeneration);
   const contextRemoval = useContextRemovalCoordinator();
   const removalState = useContextRemovalProject(projectId);
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
-  const hasRouteDocument = activeContextScheme !== null && activeContextPath !== null;
-  const { tree, isError, isFetching } = useProjectContextTree(
-    projectId,
-    activeContextScheme ?? "kb",
-    { enabled: hasRouteDocument, workId: editorWorkId },
-  );
-
-  const activeTab = useMemo(() => {
-    if (!hasRouteDocument || activeContextScheme === null || activeContextPath === null || !tree) {
-      return null;
-    }
-    const file = findContextFile(tree, activeContextPath);
-    return file ? contextTabFromFile(activeContextScheme, file, workId) : null;
-  }, [activeContextPath, activeContextScheme, hasRouteDocument, tree, workId]);
+  const hasRouteDocument = route.requested;
+  const activeContextScheme = route.scheme;
+  const activeContextPath = route.path;
+  const activeTab = route.tab;
+  const { catalogResolved, isError, isFetching } = route;
 
   useLayoutEffect(() => {
     if (!hasRouteDocument || activeContextScheme === null || activeContextPath === null) return;
@@ -79,7 +65,7 @@ export function MobileDocumentHost({
         kind: "server",
         documentId: activeTab.documentId,
       });
-    } else if (selection.status === "candidate" && tree && !isFetching && !isError) {
+    } else if (selection.status === "candidate" && catalogResolved && !isFetching && !isError) {
       contextRemoval.rejectRouteCandidate(projectId, selection.revision);
     }
   }, [
@@ -92,7 +78,7 @@ export function MobileDocumentHost({
     isError,
     projectId,
     removalState.selection,
-    tree,
+    catalogResolved,
     workId,
   ]);
 
@@ -114,10 +100,6 @@ export function MobileDocumentHost({
   }, [activeTab, contextRemoval, projectId, removalState]);
 
   const activeEditorDocumentId = activeTab?.editable ? activeTab.documentId : null;
-  useEffect(() => {
-    setActiveEditorDocumentId(activeEditorDocumentId);
-    return () => setActiveEditorDocumentId(null);
-  }, [activeEditorDocumentId, setActiveEditorDocumentId]);
   const selectedReviewDraftId =
     activeEditorDocumentId && controller.inlineReview?.documentId === activeEditorDocumentId
       ? controller.inlineReview.draftId
@@ -128,25 +110,39 @@ export function MobileDocumentHost({
       : null;
   const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
 
-  useEffect(() => {
-    if (!activeEditorDocumentId || !selectedReviewDraftId) return;
-    const session = getDocumentSessionRegistry().get(activeEditorDocumentId);
-    session.suspendPresence();
-    return () => session.resumePresence();
-  }, [activeEditorDocumentId, selectedReviewDraftId]);
+  const live = useLiveDocumentBinding({
+    projectId,
+    documentId: activeTab?.editable ? activeTab.documentId : null,
+    owner: "mobile-project-document-host",
+  });
+  useLiveBindingAcknowledgementHost(projectId, activeEditorDocumentId, live);
+  usePostApplyHostWake(projectId, activeEditorDocumentId, hostGeneration.current);
+  const liveState = live.state;
 
   useEffect(() => {
-    if (activeTab?.editable) {
-      getDocumentSessionRegistry().retain(MOBILE_DOCUMENT_OWNER, [activeTab.documentId]);
-      return () => getDocumentSessionRegistry().retain(MOBILE_DOCUMENT_OWNER, []);
+    if (liveState.kind !== "opened" || liveState.documentId !== activeEditorDocumentId) {
+      setActiveEditorDocumentId(null, null, false, projectionOwner.current);
+      return;
     }
-    getDocumentSessionRegistry().retain(MOBILE_DOCUMENT_OWNER, []);
-    return undefined;
-  }, [activeTab]);
+    setActiveEditorDocumentId(
+      activeEditorDocumentId,
+      liveState.session,
+      Boolean(reviewDraftId),
+      projectionOwner.current,
+    );
+    return () => setActiveEditorDocumentId(null, null, false, projectionOwner.current);
+  }, [activeEditorDocumentId, liveState, reviewDraftId, setActiveEditorDocumentId]);
 
   useEffect(() => {
-    return () => getDocumentSessionRegistry().release(MOBILE_DOCUMENT_OWNER);
-  }, []);
+    if (
+      !selectedReviewDraftId ||
+      liveState.kind !== "opened" ||
+      liveState.documentId !== activeEditorDocumentId
+    )
+      return;
+    liveState.session.suspendPresence();
+    return () => liveState.session.resumePresence();
+  }, [activeEditorDocumentId, liveState, selectedReviewDraftId]);
 
   if (!activeContextScheme || !activeContextPath) {
     return (
@@ -157,7 +153,7 @@ export function MobileDocumentHost({
   }
 
   if (!activeTab) {
-    if (isFetching && !tree) {
+    if (isFetching && !catalogResolved) {
       return (
         <DocumentStatus tone="muted">
           <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -165,7 +161,7 @@ export function MobileDocumentHost({
         </DocumentStatus>
       );
     }
-    if (isError || tree) {
+    if (isError || catalogResolved) {
       return (
         <DocumentStatus tone="error">
           <AlertCircle className="size-4" aria-hidden />
@@ -179,6 +175,27 @@ export function MobileDocumentHost({
   if (!activeTab.editable) {
     return (
       <ContextViewerBareHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
+    );
+  }
+
+  const liveSession =
+    liveState.kind === "opened" && liveState.documentId === activeTab.documentId
+      ? liveState.session
+      : null;
+  if (liveState.kind === "failed" && liveState.documentId === activeTab.documentId) {
+    return (
+      <DocumentStatus tone="error">
+        <AlertCircle className="size-4" aria-hidden />
+        <Trans>Couldn't open this document.</Trans>
+      </DocumentStatus>
+    );
+  }
+  if (!liveSession) {
+    return (
+      <DocumentStatus tone="muted">
+        <Loader2 className="size-4 animate-spin" aria-hidden />
+        <Trans>Opening document…</Trans>
+      </DocumentStatus>
     );
   }
 
@@ -197,6 +214,7 @@ export function MobileDocumentHost({
           projectId={projectId}
           workId={workId}
           documentId={activeTab.documentId}
+          session={liveSession}
           schemaType={activeTab.schemaType}
           editable={false}
           showToolbar={false}

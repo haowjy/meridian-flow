@@ -294,11 +294,13 @@ export interface ThreadWorksRepository {
   /** Demotes the previous membership and promotes/upserts the target under the thread row lock. */
   rebindPrimary(
     threadId: ThreadId,
-    workId: WorkId,
+    workId: WorkId | null,
   ): Promise<{ previousWorkId: WorkId | null; changed: boolean }>;
   /** Locks the thread after callers have acquired any Work lifecycle locks. */
   lockPrimary(threadId: ThreadId): Promise<{ workId: WorkId } | null>;
   findPrimary(threadId: ThreadId): Promise<{ workId: WorkId } | null>;
+  /** Demotes only the historical primary while restore holds the thread row lock. */
+  demotePrimaryForRestore(threadId: ThreadId, workId: WorkId): Promise<void>;
   listByThread(threadId: ThreadId): Promise<Array<{ workId: WorkId; isPrimary: boolean }>>;
 }
 
@@ -307,6 +309,14 @@ export class ThreadWorkProjectMismatchError extends Error {
   constructor(readonly workId: WorkId) {
     super("Work is not available in this project");
     this.name = "ThreadWorkProjectMismatchError";
+  }
+}
+
+/** Membership mutation lost the thread lifecycle race under its row lock. */
+export class ThreadMembershipUnavailableError extends Error {
+  constructor(readonly threadId: ThreadId) {
+    super("Thread is unavailable for membership mutation");
+    this.name = "ThreadMembershipUnavailableError";
   }
 }
 

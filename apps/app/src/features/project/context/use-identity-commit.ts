@@ -166,7 +166,9 @@ export function useIdentityCommit({
           locator: {
             scheme: moved.collision.scheme,
             path: `/${moved.collision.path}`,
-            ...(moved.collision.workId ? { workId: moved.collision.workId } : {}),
+            ...(moved.collision.authority.kind === "work"
+              ? { workId: moved.collision.authority.workId }
+              : {}),
           },
         };
       }

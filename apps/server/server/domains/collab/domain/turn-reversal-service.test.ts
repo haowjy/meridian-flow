@@ -19,6 +19,7 @@ function createService(input: {
   const refreshDocumentProjection = vi.fn(async () => undefined);
   const resolveContextDocument = vi.fn(async () => ({
     documentId: input.resolvedDocumentId === undefined ? "document-1" : input.resolvedDocumentId,
+    uri: "scratch://@original/context.md",
   }));
   const service = createTurnReversalService({
     live: {
@@ -82,6 +83,22 @@ describe("reverseThreadContext", () => {
     expect(refreshDocumentProjection).toHaveBeenCalledWith({
       documentId: "document-1",
       threadId: "thread-1",
+    });
+  });
+
+  it("publishes the resolver-returned stable URI instead of contextual request syntax", async () => {
+    const { service } = createService({});
+
+    await expect(
+      service.reverseThreadContext({
+        ...base,
+        uri: "scratch://context.md",
+        scope: "write",
+        turnId: "" as never,
+      }),
+    ).resolves.toMatchObject({
+      status: "reversed",
+      documents: [{ uri: "scratch://@original/context.md", status: "reversed" }],
     });
   });
 
@@ -163,7 +180,7 @@ describe("cross-scope reversal", () => {
       },
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
-        resolveContextDocument: async () => ({ documentId: null }),
+        resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
       },
     });
 
@@ -234,7 +251,7 @@ describe("cross-scope reversal", () => {
       },
       threadContext: {
         requireThreadOwner: async () => ({ projectId: "project-1" as never }),
-        resolveContextDocument: async () => ({ documentId: null }),
+        resolveContextDocument: async () => ({ documentId: null, uri: "scratch://@/missing.md" }),
       },
     });
 

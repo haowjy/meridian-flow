@@ -1,6 +1,7 @@
 /** Persistent owner for durable thread projections, including Work binding and trails. */
 import { EventType } from "@meridian/contracts/protocol";
 import {
+  decodeWorkSlug,
   parseWorkReceipt,
   WORK_CONTEXT_PROJECTION_EVENT,
   type WorkContextProjectionSignal,
@@ -19,6 +20,7 @@ import {
   readStableThreadWorkBinding,
 } from "@/client/query/thread-work-binding-cache";
 import { convergeWorkProjection } from "@/client/query/work-projection-cache";
+import { repairWorksSnapshot } from "@/client/query/works-projection-acquisition";
 
 type TrailEventValue = {
   threadId: string;
@@ -42,9 +44,33 @@ function decodeWorkProjection(
   if (event.type !== EventType.CUSTOM || event.name !== WORK_CONTEXT_PROJECTION_EVENT) return null;
   const value = event.value;
   if (!value || typeof value !== "object") return null;
-  const { threadId: eventThreadId, projectId, workId } = value as Record<string, unknown>;
-  return eventThreadId === threadId && typeof projectId === "string" && typeof workId === "string"
-    ? { seq, signal: { threadId, projectId, workId } }
+  const { threadId: eventThreadId, projectId, scope } = value as Record<string, unknown>;
+  if (
+    eventThreadId !== threadId ||
+    typeof projectId !== "string" ||
+    !scope ||
+    typeof scope !== "object"
+  ) {
+    return null;
+  }
+  const parsedScope = scope as Record<string, unknown>;
+  if (parsedScope.kind === "none") {
+    return { seq, signal: { threadId, projectId, scope: { kind: "none" } } };
+  }
+  const workSlug = decodeWorkSlug(parsedScope.workSlug);
+  return parsedScope.kind === "work" && typeof parsedScope.workId === "string" && workSlug
+    ? {
+        seq,
+        signal: {
+          threadId,
+          projectId,
+          scope: {
+            kind: "work",
+            workId: parsedScope.workId,
+            workSlug,
+          },
+        },
+      }
     : null;
 }
 
@@ -131,13 +157,21 @@ export function useThreadDurableProjections({
     const unsubscribe = transport.subscribe(threadId, {
       onEvent: ({ seq, event }) => {
         const receipt = decodeWorkReceipt(event);
-        if (projectId && receipt?.changed) {
-          convergeWorkProjection(
-            queryClient,
-            receipt.category === "binding"
-              ? { kind: "binding", projectId }
-              : { kind: "entity", projectId, operation: receipt.operation },
-          );
+        const receiptChanged =
+          receipt?.category === "binding"
+            ? JSON.stringify(receipt.before) !== JSON.stringify(receipt.after)
+            : receipt?.changed;
+        if (projectId && receipt && receiptChanged) {
+          if (receipt.category === "binding") {
+            convergeWorkProjection(queryClient, { kind: "binding", projectId });
+          } else {
+            convergeWorkProjection(queryClient, {
+              kind: "entity",
+              projectId,
+              operation: receipt.operation,
+            });
+            void repairWorksSnapshot(queryClient, projectId);
+          }
         }
         const projection = decodeWorkProjection(threadId, seq, event);
         if (projection) {

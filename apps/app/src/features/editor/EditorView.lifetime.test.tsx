@@ -111,6 +111,9 @@ const registry = {
   getDetached: sessionFor,
   has: () => false,
   get: sessionFor,
+  retainBranchRooms: () => {},
+  releaseBranchRooms: () => {},
+  getBranchRoom: sessionFor,
 };
 
 const controller = {
@@ -128,9 +131,9 @@ vi.mock("@lingui/react/macro", () => ({
 vi.mock("@/client/query/useProjectThreads", () => ({
   useProjectThreads: () => ({ threads: threadList.current, isError: false, isFetching: false }),
 }));
-vi.mock("@/client/query/useProjectContextTree", () => ({
-  useProjectContextTree: () => ({
-    tree: null,
+vi.mock("@/client/query/useContextCatalog", () => ({
+  useContextCatalogView: () => ({
+    catalog: null,
     isError: false,
     isFetching: false,
     refetch: () => {},
@@ -142,11 +145,15 @@ vi.mock("@/features/change-trail/trail-detail-query", () => ({
 vi.mock("@/features/chat/DraftReviewProvider", () => ({
   useDraftReview: () => ({ controller }),
 }));
-vi.mock("@/core/editor/document-session-registry", () => ({
-  getDocumentSessionRegistry: () => registry,
+vi.mock("@/features/project/context/account-feature-context", () => ({
+  useLiveDocumentSessionRegistry: () => registry,
 }));
 vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
+vi.mock("./surfaces/link", () => ({
+  ProjectLinkRuntime: () => null,
+  useLinkableDocuments: () => ({ documents: [] }),
+}));
 // Lifetime is about which editor exists, not what hangs off it. An empty
 // registry keeps every lane's own dependencies out of this suite.
 vi.mock("./chrome/chrome-surfaces", () => ({ EDITOR_CHROME_SURFACES: [] }));
@@ -189,7 +196,14 @@ let applyProps: (next: Partial<EditorViewProps>) => void = () => {};
 function Harness({ initial }: { initial: EditorViewProps }) {
   const [props, setProps] = useState(initial);
   applyProps = (next) => setProps((previous) => ({ ...previous, ...next }));
-  return <EditorView {...props} />;
+  const session = props.reviewDraftId
+    ? props.session
+    : (props.session ?? sessionFor(props.documentId));
+  return <EditorView {...props} session={session} />;
+}
+
+function ExactLiveEditor(props: EditorViewProps) {
+  return <EditorView {...props} session={props.session ?? sessionFor(props.documentId)} />;
 }
 
 describe("editor lifetime", () => {
@@ -206,7 +220,7 @@ describe("editor lifetime", () => {
       }),
     });
 
-    await withReactRoot(<EditorView documentId={documentId} />, async () => {
+    await withReactRoot(<ExactLiveEditor documentId={documentId} />, async () => {
       expect(document.querySelector(".ProseMirror")).toBeNull();
       await act(async () => {
         resolvePersistence();
@@ -236,19 +250,22 @@ describe("editor lifetime", () => {
       },
     ],
   ] as const)("opens valid content with zero repair verdicts in the %s config", async (_name, props) => {
-    await withReactRoot(<EditorView {...props} />, async () => {
-      expect(mountedEditor()).toBeDefined();
-      const roomKey = "reviewRoomName" in props ? props.reviewRoomName : props.documentId;
-      expect(sessionSnapshots.get(roomKey)?.schemaRepairs).toEqual([]);
-      expect(document.querySelector("[data-schema-repair-notice]")).toBeNull();
-    });
+    await withReactRoot(
+      "reviewRoomName" in props ? <EditorView {...props} /> : <ExactLiveEditor {...props} />,
+      async () => {
+        expect(mountedEditor()).toBeDefined();
+        const roomKey = "reviewRoomName" in props ? props.reviewRoomName : props.documentId;
+        expect(sessionSnapshots.get(roomKey)?.schemaRepairs).toEqual([]);
+        expect(document.querySelector("[data-schema-repair-notice]")).toBeNull();
+      },
+    );
   });
 
   it("double-mounts valid content under StrictMode with zero repair verdicts", async () => {
     const documentId = "clean-strict-mode";
     await withReactRoot(
       <StrictMode>
-        <EditorView documentId={documentId} projectId="project-1" />
+        <ExactLiveEditor documentId={documentId} projectId="project-1" />
       </StrictMode>,
       async () => {
         expect(mountedEditor()).toBeDefined();

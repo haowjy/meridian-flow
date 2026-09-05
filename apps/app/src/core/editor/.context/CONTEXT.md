@@ -12,8 +12,24 @@ Yjs document session. It must stay structurally aligned with
   enforced, so a node or attr added on either side is a two-file change.
 - Collaboration uses the shared `PROSEMIRROR_FRAGMENT_NAME` Y.XmlFragment. Do
   not create a second fragment name or a second editor sync path.
-- `DocumentSessionRegistry` is keyed by the Yjs room key, not by editor surface:
-  live rooms use the bare document id; review rooms use the opaque,
+- The account document-session runtime constructs the only production registry
+  for one immutable account epoch. Account close fences admission synchronously,
+  then drains local providers, lifetime leases, and adopted-session finalizers
+  before the epoch can close. A local-lineage terminal transition has one
+  lineage-owner continuation: it retains HL, re-enters and revalidates O, then
+  publishes, drains, purges exact P, acknowledges lineage, and finishes O.
+  Adoption becomes live only when a final O revalidation converges the owner map
+  and releases HL before releasing O; a terminal winner diverts that retained
+  owner into the same reconciliation continuation instead of returning a session.
+  An admitted continuation remains live during account close; no O-held path may
+  acquire HL. Active registry maps are lookup state, not teardown
+  ownership: every removed live or branch session transfers to the private
+  teardown owner, and its qualified room remains quarantined until the exact
+  session's retryable destroy ledger succeeds. Coordination close likewise
+  retains reconciliation, local-session, HA-before-HD hold, and authority-store
+  stages across rejected attempts. Live rooms are acquired only through
+  project-qualified availability leases and use explicit
+  account/document/generation persistence; review rooms use the opaque,
   generation-fenced `reviewRoomName` vended by the preview. Switching live ↔
   review is a session identity change and must remount the TipTap editor because
   Collaboration binds to a concrete Y.Doc/fragment at construction. A review
@@ -148,17 +164,17 @@ Yjs document session. It must stay structurally aligned with
   suspension. `suspend`/`resume`/`release` belong to the session alone. The
   negative-space guard fails the build on a `setLocalState`/`setLocalStateField`
   anywhere in `apps/app/src` outside `local-presence.ts`.
-- Live sessions may be created `detached`: their Y.Doc and IndexedDB persistence
-  exist before server transport. Ordinary acquisition of an existing detached
-  room leaves it detached; post-create reconciliation explicitly attaches
-  transport to that same session once. Retention accepts an explicit detached
-  room set so restored pending tabs create local sessions without probing a
-  server row that does not exist yet. If an older client already left that room
-  terminally denied, post-create reconciliation restarts it before attachment.
-  Teardown always preserves IndexedDB by
-  default because it may contain the only copy of unsynced words; only confirmed
-  cleanup paths may request persistence deletion. Retention and unavailable-room
-  recovery must not materialize or replace a detached session implicitly.
+- Before a server row exists, one local lineage envelope owns one opaque exact
+  IndexedDB name and one detached session under its stable lineage lifetime.
+  Remint changes only session identity. Same-bucket adoption reserves the
+  existing room authority as non-bindable, then makes that same provider and
+  exact name canonical. Room authority carries every exact purge locator;
+  session construction and cleanup never enumerate or infer IndexedDB names.
+  One generation/command-fenced room transaction accepts terminal work and makes
+  the room nonauthoring before lineage publication and provider close. Its exact
+  purge receipt survives native deletion until lineage acknowledgement and room
+  completion finish together, so every terminal prefix commits forward without
+  inferring a database name. Ordinary live operations remain lease-qualified.
 - A schema fence is orthogonal session state, not a connection status:
   `DocumentSessionSnapshot.schemaFence` composes with detached, synced, offline,
   and access-lost states. The first fence wins, is persisted through the

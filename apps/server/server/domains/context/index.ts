@@ -2,14 +2,18 @@ export {
   createDrizzleAssetPathResolver,
   type MutableAssetPathResolver,
 } from "./adapters/asset-path-resolver.js";
+export { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 export { ContextFS } from "./adapters/context-fs/context-fs.js";
 export {
   DrizzleContextDocumentStore,
   updateDocumentProjectionById,
 } from "./adapters/context-fs/drizzle-store.js";
+export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
 export { createDrizzleDocumentLinkResolver } from "./adapters/drizzle-document-link-resolver.js";
+export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export { InMemoryDocumentLinkResolver } from "./adapters/in-memory-document-link-resolver.js";
+export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";
 export { createContextPortRouter } from "./context/router.js";
 export {
@@ -18,6 +22,10 @@ export {
   toCanonical,
   UNIFIED_CONTEXT_SCHEMES,
 } from "./context/uri.js";
+export {
+  type ContextCatalogWakeHub,
+  createContextCatalogWakeHub,
+} from "./context-catalog-wake-hub.js";
 export {
   contextPortForProjectAuthorities,
   contextPortForProjectBrowse,
@@ -39,6 +47,11 @@ export type {
   SchemeCapabilities,
 } from "./ports/context-adapter.js";
 export { schemeCapabilities } from "./ports/context-adapter.js";
+export type {
+  ContextCatalog,
+  ContextCatalogMutationPort,
+  ContextCatalogWakePort,
+} from "./ports/context-catalog.js";
 export type {
   ContextDocumentStore,
   ContextFolder,
@@ -76,6 +89,10 @@ export type {
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";
+export type {
+  ProjectContextAvailabilityMutationPort,
+  ProjectContextAvailabilityPort,
+} from "./ports/project-context-availability.js";
 export { createDrizzleResultRepository } from "./promotion/adapters/drizzle-result-repository.js";
 export { createInMemoryResultRepository } from "./promotion/adapters/in-memory-result-repository.js";
 export { createInterruptArtifactFlush } from "./promotion/interrupt-artifact-flush.js";

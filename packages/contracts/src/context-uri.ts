@@ -1,4 +1,7 @@
-/** Shared parser, canonicalizer, and presentation-neutral derivations for context URIs. */
+/** Shared syntax parser, stable serializer, and presentation-neutral context URI derivations. */
+
+import type { ResolvedWorkAuthority, WorkSlug } from "./works/index.js";
+import { decodeWorkSlug } from "./works/index.js";
 
 export const CONTEXT_URI_SCHEMES = ["manuscript", "kb", "user", "scratch", "uploads"] as const;
 export type ContextUriScheme = (typeof CONTEXT_URI_SCHEMES)[number];
@@ -8,6 +11,9 @@ export type ProjectScopedContextUriScheme = (typeof PROJECT_SCOPED_CONTEXT_URI_S
 
 export const WORK_SCOPED_CONTEXT_URI_SCHEMES = ["scratch", "uploads"] as const;
 export type WorkScopedContextUriScheme = (typeof WORK_SCOPED_CONTEXT_URI_SCHEMES)[number];
+
+/** A URI already serialized with stable authority rather than contextual shorthand. */
+export type CanonicalContextUri = string;
 
 /** Server-declared operations available through a context scheme. */
 export interface ContextSchemeCapabilities {
@@ -20,21 +26,31 @@ export interface ContextSchemeCapabilities {
   readonly creatable: boolean;
 }
 
-/** An unresolved Work handle exactly as it appeared after `@` on the wire. */
-export type WorkSlugAuthority = string & { readonly __brand: "WorkSlugAuthority" };
+/** Syntax-only authority carried by a parsed Work-capable context URI. */
+export type ParsedContextAuthority =
+  | { kind: "contextual" }
+  | { kind: "none" }
+  | { kind: "work"; workSlug: WorkSlug };
+
+/** Authority accepted by stable URI serialization. */
+export type CanonicalContextAuthority =
+  | { kind: "contextual" }
+  | { kind: "none" }
+  | ResolvedWorkAuthority;
 
 export interface ParsedContextUri {
   scheme: ContextUriScheme;
-  authority: WorkSlugAuthority | null;
+  authority: ParsedContextAuthority;
   /** Normalized path: no edge slash, empty or `.` segments, or repeated slashes. */
   path: string;
-  canonical: string;
+  /** Grammar-normalized syntax. Real-Work identity is not resolved yet. */
+  normalized: string;
 }
 
 type ContextUriParseError = { ok: false; error: { uri: string; reason: string } };
 export type ContextUriParseResult = { ok: true; value: ParsedContextUri } | ContextUriParseError;
 type AuthorityParseResult =
-  | { ok: true; value: { authority: WorkSlugAuthority | null; rawPath: string } }
+  | { ok: true; value: { authority: ParsedContextAuthority; rawPath: string } }
   | ContextUriParseError;
 
 export interface ParseContextUriOptions {
@@ -44,14 +60,43 @@ export interface ParseContextUriOptions {
 
 /** Canonical string form of a parsed scheme + optional authority + path. */
 export function canonicalContextUri(
+  scheme: ProjectScopedContextUriScheme,
+  path: string,
+  authority?: Extract<CanonicalContextAuthority, { kind: "contextual" }>,
+): string;
+export function canonicalContextUri(
+  scheme: WorkScopedContextUriScheme,
+  path: string,
+  authority?: CanonicalContextAuthority,
+): string;
+export function canonicalContextUri(
   scheme: ContextUriScheme,
   path: string,
-  authority: string | null = null,
+  authority?: CanonicalContextAuthority,
+): string;
+export function canonicalContextUri(
+  scheme: ContextUriScheme,
+  path: string,
+  authority: CanonicalContextAuthority = { kind: "contextual" },
 ): string {
-  if (authority) {
-    return path ? `${scheme}://${authority}/${path}` : `${scheme}://${authority}`;
+  if (authority.kind !== "contextual" && isProjectScopedScheme(scheme)) {
+    throw new RangeError(`Scheme "${scheme}" does not support authority qualifiers`);
   }
-  return path ? `${scheme}://${path}` : `${scheme}://`;
+  const segments = path.split("/").filter((segment) => segment !== "" && segment !== ".");
+  if (segments.includes("..")) {
+    throw new RangeError('Path traversal (".." ) is not allowed');
+  }
+  if (segments.some((segment) => segment.startsWith("@"))) {
+    throw new RangeError('Path segments beginning with "@" are reserved');
+  }
+  const normalizedPath = segments.join("/");
+  const qualifier =
+    authority.kind === "work" ? `@${authority.workSlug}` : authority.kind === "none" ? "@" : null;
+  if (qualifier)
+    return normalizedPath
+      ? `${scheme}://${qualifier}/${normalizedPath}`
+      : `${scheme}://${qualifier}/`;
+  return normalizedPath ? `${scheme}://${normalizedPath}` : `${scheme}://`;
 }
 
 /** Strict serializer, lenient parser; bare paths resolve to `manuscript://`. */
@@ -92,19 +137,19 @@ export function parseContextUri(
   if (segments.includes("..")) {
     return invalidContextUri(raw, 'Path traversal (".." ) is not allowed');
   }
+  if (segments.some((segment) => segment.startsWith("@"))) {
+    return invalidContextUri(raw, 'Path segments beginning with "@" are reserved');
+  }
 
   const path = segments.join("/");
+  const normalized = formatParsedContextUri(scheme, path, authorityResult.value.authority);
   return {
     ok: true,
     value: {
       scheme,
       authority: authorityResult.value.authority,
       path,
-      canonical: canonicalContextUri(
-        scheme,
-        path,
-        authorityResult.value.authority ? `@${authorityResult.value.authority}` : null,
-      ),
+      normalized,
     },
   };
 }
@@ -134,14 +179,13 @@ function parseAuthorityPrefix(
   rawPath: string,
   rawUri: string,
 ): AuthorityParseResult {
-  if (!rawPath) return { ok: true, value: { authority: null, rawPath } };
+  if (!rawPath) return { ok: true, value: { authority: { kind: "contextual" }, rawPath } };
 
   const segments = rawPath.split("/").filter((segment) => segment !== "" && segment !== ".");
   const qualifiers: string[] = [];
   while (segments[0]?.startsWith("@")) qualifiers.push(segments.shift() ?? "");
-  if (qualifiers.length === 0) return { ok: true, value: { authority: null, rawPath } };
-  if (qualifiers.some((qualifier) => qualifier.length === 1)) {
-    return invalidContextUri(rawUri, "Work authority qualifier must include a slug after @");
+  if (qualifiers.length === 0) {
+    return { ok: true, value: { authority: { kind: "contextual" }, rawPath } };
   }
   if (qualifiers.length > 1) {
     return invalidContextUri(
@@ -155,11 +199,33 @@ function parseAuthorityPrefix(
       `Scheme "${scheme}" does not yet support authority qualifiers`,
     );
   }
-  const authority = qualifiers[0]?.slice(1) as WorkSlugAuthority;
+  const qualifier = qualifiers[0] ?? "";
+  if (qualifier === "@") {
+    return { ok: true, value: { authority: { kind: "none" }, rawPath: segments.join("/") } };
+  }
+  const workSlug = decodeWorkSlug(qualifier.slice(1));
+  if (!workSlug) {
+    return invalidContextUri(rawUri, `Invalid Work slug authority "${qualifier.slice(1)}"`);
+  }
   return {
     ok: true,
-    value: { authority, rawPath: segments.join("/") },
+    value: { authority: { kind: "work", workSlug }, rawPath: segments.join("/") },
   };
+}
+
+function isProjectScopedScheme(scheme: ContextUriScheme): scheme is ProjectScopedContextUriScheme {
+  return (PROJECT_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
+}
+
+function formatParsedContextUri(
+  scheme: ContextUriScheme,
+  path: string,
+  authority: ParsedContextAuthority,
+): string {
+  const qualifier =
+    authority.kind === "work" ? `@${authority.workSlug}` : authority.kind === "none" ? "@" : null;
+  if (qualifier) return path ? `${scheme}://${qualifier}/${path}` : `${scheme}://${qualifier}/`;
+  return path ? `${scheme}://${path}` : `${scheme}://`;
 }
 
 function invalidContextUri(uri: string, reason: string): ContextUriParseError {

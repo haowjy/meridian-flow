@@ -1,4 +1,5 @@
 import type { ListThreadRecentDocumentsResponse } from "@meridian/contracts/protocol";
+import { classifyFiletype } from "@meridian/contracts/protocol";
 import { defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireThreadOwner } from "../../../../domains/threads/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
@@ -21,5 +22,33 @@ export default defineEventHandler(async (event): Promise<ListThreadRecentDocumen
     thread.id,
     parseLimit(getQuery(event).limit),
   );
-  return { documents: await app.uploadDocuments.listRecent(touches) };
+  const rows = await app.uploadIdentity.lookupDocuments(touches.map((touch) => touch.documentId));
+  const byId = new Map(rows.map((row) => [row.documentId, row]));
+  return {
+    documents: touches.flatMap((touch) => {
+      const row = byId.get(touch.documentId);
+      if (!row) return [];
+      const classification = classifyFiletype(row.fileType);
+      return [
+        {
+          threadId: touch.threadId,
+          documentId: row.documentId,
+          name: row.name,
+          extension: row.extension,
+          sizeBytes: row.sizeBytes,
+          editable: classification.kind === "tracked",
+          filetype: row.fileType,
+          schemaType: classification.kind === "tracked" ? classification.schemaType : null,
+          fileType:
+            classification.kind === "tracked" || classification.kind === "unknown"
+              ? null
+              : classification.fileType,
+          mimeType: row.mimeType,
+          kind: classification.kind === "tracked" ? "tracked" : "binary",
+          touchedAt: touch.touchedAt,
+          updatedAt: row.updatedAt,
+        },
+      ];
+    }),
+  };
 });

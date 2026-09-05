@@ -13,9 +13,10 @@ A **browse surface** over the server's context port. Reads come from React Query
 Ordinary writes invalidate on success; delete is the exception because its exact
 evidence must enter the account-scoped removal coordinator before invalidation.
 
-`ContextTreePanel` renders the full tree recursively. `MobileContextBrowser`
-renders the phone Files destination one level at a time (scheme → folder → file),
-driven by `?scheme=` / `?folder=` / `?path=` params.
+`ContextTreePanel` and `ContextTreeRows` project direct children by stable parent
+ID from the normalized catalog. `MobileContextBrowser` renders the phone Files
+destination one level at a time (scheme → folder → file), driven by `?scheme=` /
+`?folder=` / `?path=` params.
 
 Shared across both shells:
 - **File suggestions** (`file-suggestions/`): reusable client-side flattening,
@@ -25,6 +26,8 @@ Shared across both shells:
 - **Entry actions** (`ContextEntryActions.tsx`): desktop has two triggers
   (right-click context menu + hover kebab) rendered from one ordered action
   specification. Add an action once; both primitive-specific renderers inherit it.
+  Uploads omits generic Delete because only the identity/revision-bound intake
+  contract may delete an upload.
 - **Validation** (`context-entry-name.ts`): collision check, empty rejection,
   whitespace warning.
 
@@ -42,7 +45,7 @@ Shared across both shells:
 ## File groups
 
 - **Shells**: `ContextTreePanel.tsx` (desktop scheme/query orchestration),
-  `ContextTreeRows.tsx` (recursive desktop rows), `MobileContextBrowser.tsx`
+  `ContextTreeRows.tsx` (direct-child desktop rows), `MobileContextBrowser.tsx`
   (phone Files destination)
 - **Actions**: `ContextEntryActions.tsx` (menus, delete dialog, `EntryActionTarget`)
 - **Inline forms**: `use-inline-name-form.ts` (core), `use-create-entry-form.ts`,
@@ -60,6 +63,7 @@ Shared across both shells:
   `untitled-reconciler-browser.ts` owns browser/API/React bindings.
 - **Creation coordination**: `TreeCreationProvider.tsx` owns the shared tree and
   Editor-empty-state create request
-- **Data**: `context-tree.ts` (query + invalidation), `context-schemes.ts`,
-  `context-file-icon.ts`, `context-create-kind.ts`
+- **Data**: `client/query/useContextCatalog.ts` (React Query acquisition,
+  invalidation, and flat projections), `context-schemes.ts`, `context-file-icon.ts`,
+  `context-create-kind.ts`
 - **Suggestions**: `file-suggestions/` (pure matcher, data hook, presentational list)

@@ -21,6 +21,18 @@ export type ProjectSearch = {
   work?: string;
 };
 
+export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): boolean {
+  return (
+    left.screen === right.screen &&
+    left.thread === right.thread &&
+    left.scheme === right.scheme &&
+    left.folder === right.folder &&
+    left.path === right.path &&
+    left.results === right.results &&
+    left.work === right.work
+  );
+}
+
 export type ExplicitWorkSearch =
   | { kind: "absent" }
   | { kind: "malformed"; value: string }

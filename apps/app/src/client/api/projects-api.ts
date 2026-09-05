@@ -12,13 +12,13 @@ import type { Project } from "@meridian/contracts/projects";
 import type { HomeChatFeedPage, HomeProjectResponse } from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
+  apiProjectContextCatalogPath,
   apiProjectContextCreatePath,
   apiProjectContextCreateUntitledPath,
   apiProjectContextDeletePath,
   apiProjectContextMovePath,
   apiProjectContextReadPath,
   apiProjectContextRenamePath,
-  apiProjectContextTreePath,
   apiProjectHomeFeedPath,
   apiProjectPath,
   apiProjectsHomePath,
@@ -27,6 +27,11 @@ import {
   apiProjectWorksPath,
   apiProjectWorkWriteModePath,
   apiWorkThreadsPath,
+  type CatalogChanges,
+  type CatalogChildrenResult,
+  type CatalogLookupResult,
+  type CatalogScope,
+  type CatalogSnapshot,
   type ContextReadResponse,
   type CreateProjectRequest,
   type CreateProjectResponse,
@@ -43,8 +48,8 @@ import {
   type ListWorkThreadsResponse,
   type MoveContextEntryRequest,
   type MoveContextEntryResult,
+  type ProjectContextIdentityLookupResult,
   type ProjectContextRequestOptions,
-  type ProjectContextTreeResponse,
   type ProjectContextTreeScheme,
   type ProjectWorkingSet,
   type RenameContextEntryRequest,
@@ -63,10 +68,6 @@ type RequestInitOptions = {
   origin?: string;
   headers?: HeadersInit;
   keepalive?: boolean;
-};
-
-type ListProjectWorksOptions = RequestInitOptions & {
-  status?: "active" | "archived" | "all";
 };
 
 type ListWorkThreadsOptions = RequestInitOptions & {
@@ -125,11 +126,10 @@ export async function listWorkThreads(
 
 export async function listProjectWorks(
   projectId: string,
-  options?: ListProjectWorksOptions,
+  options?: RequestInitOptions,
 ): Promise<ListWorksResponse> {
   const path = apiProjectWorksPath(projectId);
-  const pathWithStatus = options?.status ? `${path}?status=${options.status}` : path;
-  return getJson<ListWorksResponse>(urlFor(pathWithStatus, options), {
+  return getJson<ListWorksResponse>(urlFor(path, options), {
     headers: options?.headers,
   });
 }
@@ -176,6 +176,16 @@ export function deleteWork(workId: string): Promise<void> {
   return deleteRequest(`/api/works/${workId}`);
 }
 
+export function restoreWork(workId: string, init?: RequestInitOptions): Promise<Work> {
+  return postJson<Work>(
+    urlFor(`/api/works/${workId}/restore`, init),
+    {},
+    {
+      headers: init?.headers,
+    },
+  );
+}
+
 export async function getProjectWorkingSet(
   projectId: string,
   init?: RequestInitOptions,
@@ -214,17 +224,56 @@ export async function updateWorkWriteMode(
   );
 }
 
-export async function getProjectContextTree(
+function catalogQuery(scope: CatalogScope, extra?: Record<string, string>): string {
+  const query = new URLSearchParams({ scope: scope.kind, ...extra });
+  if (scope.kind === "work") query.set("workId", scope.workId);
+  return query.toString();
+}
+
+export async function getContextCatalogSnapshot(
   projectId: string,
-  scheme: ProjectContextTreeScheme,
-  opts?: ProjectContextRequestOptions,
-  init?: RequestInitOptions,
-): Promise<ProjectContextTreeResponse> {
-  return getJson<ProjectContextTreeResponse>(
-    urlFor(apiProjectContextTreePath(projectId, scheme, opts), init),
-    {
-      headers: init?.headers,
-    },
+  scope: CatalogScope,
+): Promise<CatalogSnapshot> {
+  return getJson(`${apiProjectContextCatalogPath(projectId, "snapshot")}?${catalogQuery(scope)}`);
+}
+
+export async function getContextCatalogChanges(
+  projectId: string,
+  scope: CatalogScope,
+  cursor: string,
+): Promise<CatalogChanges> {
+  return getJson(
+    `${apiProjectContextCatalogPath(projectId, "changes")}?${catalogQuery(scope, { cursor })}`,
+  );
+}
+
+export async function getContextCatalogChildren(
+  projectId: string,
+  scope: CatalogScope,
+  parentId: string,
+): Promise<CatalogChildrenResult> {
+  return getJson(
+    `${apiProjectContextCatalogPath(projectId, "children")}?${catalogQuery(scope, { parentId })}`,
+  );
+}
+
+export async function getContextCatalogLookup(
+  projectId: string,
+  scope: CatalogScope,
+  lookup: { entryId: string } | { uri: string },
+): Promise<CatalogLookupResult> {
+  return getJson(
+    `${apiProjectContextCatalogPath(projectId, "lookup")}?${catalogQuery(scope, lookup)}`,
+  );
+}
+
+export async function getProjectContextAvailability(
+  projectId: string,
+  documentIds: readonly string[],
+): Promise<ProjectContextIdentityLookupResult> {
+  return postJson<ProjectContextIdentityLookupResult>(
+    `/api/projects/${encodeURIComponent(projectId)}/context/availability`,
+    { projectId, documentIds },
   );
 }
 

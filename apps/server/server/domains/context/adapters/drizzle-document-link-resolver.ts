@@ -10,6 +10,7 @@ import {
 } from "@meridian/database/schema";
 import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { type DocumentLinkCandidate, resolveDocumentLink } from "../document-link-resolution.js";
+import { documentAliases } from "../document-metadata.js";
 import type {
   DocumentLinkResolver,
   ResolveDocumentLinkInput,
@@ -88,7 +89,7 @@ async function loadCandidates(
         projectId: input.projectId,
         documentId: row.documentId,
         title: row.name,
-        aliases: aliasesFromMetadata(row.metadata),
+        aliases: documentAliases(row.metadata),
         scheme: row.sourceWorkId ? ("work" as const) : ("manuscript" as const),
         path: [...folderPath, filename].join("/"),
         workId: row.sourceWorkId,
@@ -121,11 +122,4 @@ function resolveFolderPath(
     current = folder.parentId;
   }
   return names;
-}
-
-function aliasesFromMetadata(metadata: unknown): string[] {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return [];
-  const aliases = (metadata as { aliases?: unknown }).aliases;
-  if (!Array.isArray(aliases)) return [];
-  return aliases.filter((alias): alias is string => typeof alias === "string");
 }

@@ -9,19 +9,24 @@ import type {
   WorkContextProjectionSignal,
 } from "@meridian/contracts/works";
 import { notifyManager, type QueryClient } from "@tanstack/react-query";
-import { listProjectThreads, listProjectWorks } from "@/client/api/projects-api";
+import { listProjectThreads } from "@/client/api/projects-api";
 import { invalidateProjectHomeFeed } from "./project-invalidation";
 import {
-  isProjectContextTreeKey,
+  isProjectContextCatalogKey,
   isProjectWorkDerivedKey,
-  isWorkScopedProjectContextTreeKey,
+  isWorkScopedProjectContextCatalogKey,
   projectQueryKeys,
 } from "./project-query-keys";
 import { patchThreadInProjectCaches } from "./project-thread-cache";
 import { threadQueryKeys } from "./thread-query-keys";
 import { convergeWorkProjection } from "./work-projection-cache";
+import {
+  refreshWorksSnapshot,
+  repairWorksSnapshot,
+  seedWorksSnapshot,
+} from "./works-projection-acquisition";
 
-export type ThreadWorkProjectionCursor = { seq: string; workId: string };
+export type ThreadWorkProjectionCursor = { seq: string; workId: string | null };
 
 export type ThreadWorkConvergence =
   | { source: "confirmed"; projectId: string; result: RebindThreadWorkResponse }
@@ -61,10 +66,7 @@ export function invalidateThreadProjectionDependencies(
       queryKey: projectQueryKeys.threads(input.projectId),
       exact: true,
     });
-    void client.invalidateQueries({
-      queryKey: projectQueryKeys.works(input.projectId),
-      exact: true,
-    });
+    void repairWorksSnapshot(client, input.projectId);
   }
   void client.invalidateQueries({
     predicate: ({ queryKey }) => isProjectWorkDerivedKey(queryKey, input.projectId, ids),
@@ -72,12 +74,12 @@ export function invalidateThreadProjectionDependencies(
   void client.invalidateQueries({
     predicate: ({ queryKey }) =>
       input.contextTrees === "all"
-        ? isProjectContextTreeKey(queryKey, input.projectId)
-        : isWorkScopedProjectContextTreeKey(queryKey, input.projectId, ids),
+        ? isProjectContextCatalogKey(queryKey, input.projectId)
+        : isWorkScopedProjectContextCatalogKey(queryKey, input.projectId, ids),
   });
 }
 
-function patchSnapshot(client: QueryClient, threadId: string, workId: string): void {
+function patchSnapshot(client: QueryClient, threadId: string, workId: string | null): void {
   client.setQueryData<ThreadSnapshotResponse>(threadQueryKeys.snapshot(threadId), (current) =>
     current ? { ...current, thread: { ...current.thread, workId } } : current,
   );
@@ -93,17 +95,21 @@ export function convergeThreadWorkBinding(
     const cursor = client.getQueryData<ThreadWorkProjectionCursor>(cursorKey);
     if (cursor && compareSeq(seq, cursor.seq) <= 0) return;
     notifyManager.batch(() => {
-      client.setQueryData(cursorKey, { seq, workId: signal.workId });
+      const projectedWorkId = signal.scope.kind === "work" ? signal.scope.workId : null;
+      client.setQueryData(cursorKey, { seq, workId: projectedWorkId });
       const catalog = client.getQueryData<ListWorksResponse>(
         projectQueryKeys.works(signal.projectId),
       );
-      const work = catalog?.works.find(({ id }) => id === signal.workId);
+      const work = catalog?.works.find(({ id }) => id === projectedWorkId);
       if (work) {
         patchThreadInProjectCaches(client, signal.threadId, {
           workId: work.id,
           work: { id: work.id, title: work.name },
         });
         patchSnapshot(client, signal.threadId, work.id);
+      } else if (projectedWorkId === null) {
+        patchThreadInProjectCaches(client, signal.threadId, { workId: null, work: null });
+        patchSnapshot(client, signal.threadId, null);
       }
       invalidateThreadProjectionDependencies(client, {
         threadId: signal.threadId,
@@ -123,26 +129,27 @@ export function convergeThreadWorkBinding(
   notifyManager.batch(() => {
     if (transition.source === "confirmed") {
       const { result } = transition;
-      patchThreadInProjectCaches(client, threadId, {
-        workId: result.work.id,
-        work: { id: result.work.id, title: result.work.name },
-      });
-      patchSnapshot(client, threadId, result.work.id);
-      client.setQueryData<ListWorksResponse>(projectQueryKeys.works(projectId), (current) => {
-        if (!current) return current;
-        const known = current.works.some(({ id }) => id === result.work.id);
-        return {
-          ...current,
-          works: known
-            ? current.works.map((work) => (work.id === result.work.id ? result.work : work))
-            : [...current.works, result.work],
-        };
-      });
+      const afterWorkId = result.after.kind === "work" ? result.after.workId : null;
+      patchThreadInProjectCaches(
+        client,
+        threadId,
+        result.after.kind === "work"
+          ? {
+              workId: result.after.workId,
+              work: { id: result.after.workId, title: result.after.name },
+            }
+          : { workId: null, work: null },
+      );
+      patchSnapshot(client, threadId, afterWorkId);
       invalidateThreadProjectionDependencies(client, {
         threadId,
         projectId,
         refreshLists: false,
-        workIds: new Set([result.previousWorkId, result.work.id]),
+        workIds: new Set(
+          [result.before.kind === "work" ? result.before.workId : null, afterWorkId].filter(
+            Boolean,
+          ) as string[],
+        ),
         contextTrees: "work-scoped",
       });
       convergeWorkProjection(client, { kind: "binding", projectId });
@@ -150,9 +157,9 @@ export function convergeThreadWorkBinding(
     }
 
     client.setQueryData(projectQueryKeys.threads(projectId), transition.threads);
-    client.setQueryData(projectQueryKeys.works(projectId), transition.catalog);
+    seedWorksSnapshot(client, transition.catalog);
     const row = transition.threads.find(({ id }) => id === threadId);
-    if (row?.workId) patchSnapshot(client, threadId, row.workId);
+    patchSnapshot(client, threadId, row?.workId ?? null);
     const ids = new Set([transition.previousWorkId, row?.workId].filter(Boolean) as string[]);
     invalidateThreadProjectionDependencies(client, {
       threadId,
@@ -182,11 +189,10 @@ export async function readStableThreadWorkBinding(
     try {
       await Promise.all([
         client.cancelQueries({ queryKey: projectQueryKeys.threads(input.projectId), exact: true }),
-        client.cancelQueries({ queryKey: projectQueryKeys.works(input.projectId), exact: true }),
       ]);
       const [threads, catalog] = await Promise.all([
         listProjectThreads(input.projectId),
-        listProjectWorks(input.projectId, { status: "all" }),
+        refreshWorksSnapshot(client, input.projectId),
       ]);
       const after = client.getQueryData<ThreadWorkProjectionCursor>(cursorKey)?.seq ?? null;
       if (before !== after) continue;

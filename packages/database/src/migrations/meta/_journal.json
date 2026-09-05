@@ -533,6 +533,55 @@
       "when": 1787793848220,
       "tag": "0075_bumpy_golden_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1787970041181,
+      "tag": "0076_fuzzy_timeslip",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1787986542619,
+      "tag": "0077_supreme_darkstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1788004496587,
+      "tag": "0078_tricky_sharon_carter",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1788010993972,
+      "tag": "0079_free_whistler",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1788038964900,
+      "tag": "0080_reset_working_set_routes",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1788145941240,
+      "tag": "0081_cultured_lethal_legion",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1788150289921,
+      "tag": "0082_melted_peter_quill",
+      "breakpoints": true
     }
   ]
 }

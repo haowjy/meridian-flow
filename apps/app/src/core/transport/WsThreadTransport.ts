@@ -40,6 +40,10 @@ export class WsThreadTransport implements ThreadTransport {
   private connectionState: ConnectionState = { kind: "disconnected" };
   private readonly subscriptions = new WsThreadSubscriptionRegistry();
   private readonly connectionListeners = new Set<(state: ConnectionState) => void>();
+  private readonly catalogSubscriptions = new Map<
+    string,
+    Set<(hint: Extract<WsServerMessage, { type: "context-catalog-hint" }>) => void>
+  >();
   private wantsConnection = false;
   private serverConnected = false;
   private connectionToken: string | undefined;
@@ -132,6 +136,29 @@ export class WsThreadTransport implements ThreadTransport {
     this.send({ type: "interrupt.respond", ...input });
   }
 
+  subscribeCatalog(
+    projectId: string,
+    listener: (hint: Extract<WsServerMessage, { type: "context-catalog-hint" }>) => void,
+  ): () => void {
+    const listeners = this.catalogSubscriptions.get(projectId) ?? new Set();
+    const first = listeners.size === 0;
+    listeners.add(listener);
+    this.catalogSubscriptions.set(projectId, listeners);
+    this.ensureConnected();
+    if (first && this.socket.isSocketOpen() && this.serverConnected) {
+      this.send({ type: "catalog.subscribe", projectId });
+    }
+    return () => {
+      const current = this.catalogSubscriptions.get(projectId);
+      current?.delete(listener);
+      if (current?.size) return;
+      this.catalogSubscriptions.delete(projectId);
+      if (this.socket.isSocketOpen() && this.serverConnected) {
+        this.send({ type: "catalog.unsubscribe", projectId });
+      }
+    };
+  }
+
   cancel(threadId: string, turnId: string) {
     return cancelTurn({ data: { threadId, turnId } });
   }
@@ -190,6 +217,14 @@ export class WsThreadTransport implements ThreadTransport {
 
     const message = parseWsServerMessage(data);
     if (!message) return;
+    if (message.type === "context-catalog-hint") {
+      const projectId = message.scope.kind === "user" ? null : message.scope.projectId;
+      const targets = projectId
+        ? this.catalogSubscriptions.get(projectId)
+        : [...this.catalogSubscriptions.values()].flatMap((listeners) => [...listeners]);
+      if (targets) for (const listener of targets) listener(message);
+      return;
+    }
 
     dispatchWsServerMessage(message, {
       subscriptions: this.subscriptions,
@@ -203,6 +238,9 @@ export class WsThreadTransport implements ThreadTransport {
         this.serverConnected = true;
         this.publishConnectionState({ kind: "connected" });
         this.sendResume();
+        for (const projectId of this.catalogSubscriptions.keys()) {
+          this.send({ type: "catalog.subscribe", projectId });
+        }
       },
       onThreadError: (threadId, error) => {
         const subscription = this.subscriptions.get(threadId);

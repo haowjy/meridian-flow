@@ -53,6 +53,10 @@ function assistantTurn(id: string, status: Turn["status"]): Turn {
   };
 }
 
+function userTurn(id: string): Turn {
+  return { ...assistantTurn(id, "complete"), role: "user", finishReason: null, responseCount: 0 };
+}
+
 function toolUse(turnId: string, sequence: number, toolCallId: string): Block {
   return {
     id: `use-${toolCallId}`,
@@ -94,6 +98,55 @@ function danglingToolUseIds(messages: readonly Message[]): string[] {
 }
 
 describe("buildContext tool-call history", () => {
+  it("projects ordinary and structured text in exact persisted order", () => {
+    const turn = userTurn("writer-turn");
+    const blocks: Block[] = [
+      {
+        id: "ordinary",
+        turnId: turn.id,
+        responseId: null,
+        blockType: "text",
+        sequence: 0,
+        textContent: "Compare\n",
+        content: "Compare\n",
+        createdAt,
+      },
+      {
+        id: "occurrence",
+        turnId: turn.id,
+        responseId: null,
+        blockType: "text",
+        sequence: 1,
+        textContent: "[[Gate Map]]",
+        content: {
+          type: "reference",
+          text: "[[Gate Map]]",
+          documentId: "33333333-3333-4333-8333-333333333333",
+          uri: "uploads://@/gate-map.png",
+        },
+        createdAt,
+      },
+      {
+        id: "tail",
+        turnId: turn.id,
+        responseId: null,
+        blockType: "text",
+        sequence: 2,
+        textContent: " now",
+        content: " now",
+        createdAt,
+      },
+    ];
+    const message = buildContext({ thread, turns: [turn], blocks }).messages.at(-1);
+    expect(message?.role).toBe("user");
+    expect(
+      message?.content
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join(""),
+    ).toBe("Compare\n[[Gate Map]] now");
+  });
+
   it("synthesizes status-aware error results for dangling calls", () => {
     const scenarios = [
       {

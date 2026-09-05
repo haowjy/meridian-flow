@@ -74,7 +74,10 @@ describe("escStep", () => {
     const step = escStep(
       situation({
         gesture: "drag",
-        layers: [{ id: "diagram-dialog" }, { id: "diagram-source" }],
+        layers: [
+          { id: "diagram-dialog", ownerId: "diagram-dialog" },
+          { id: "diagram-source", ownerId: "diagram-source" },
+        ],
         context: objectContext,
       }),
     );
@@ -84,7 +87,12 @@ describe("escStep", () => {
 
   it("closes the topmost layer, not the one that opened first", () => {
     const step = escStep(
-      situation({ layers: [{ id: "diagram-dialog" }, { id: "diagram-source" }] }),
+      situation({
+        layers: [
+          { id: "diagram-dialog", ownerId: "diagram-dialog" },
+          { id: "diagram-source", ownerId: "diagram-source" },
+        ],
+      }),
     );
 
     expect(step).toEqual({ kind: "close-layer", layerId: "diagram-source" });
@@ -122,9 +130,16 @@ describe("the walk home", () => {
   const gestures: GesturePhase[] = ["idle", "drag", "sweep"];
   const layerStacks = [
     [],
-    [{ id: "menu" }],
-    [{ id: "dialog" }, { id: "source" }],
-    [{ id: "dialog" }, { id: "source" }, { id: "menu" }],
+    [{ id: "menu", ownerId: "menu" }],
+    [
+      { id: "dialog", ownerId: "dialog" },
+      { id: "source", ownerId: "source" },
+    ],
+    [
+      { id: "dialog", ownerId: "dialog" },
+      { id: "source", ownerId: "source" },
+      { id: "menu", ownerId: "menu" },
+    ],
   ];
   const contexts = [DOCUMENT_CHROME_CONTEXT, objectContext, sourceContext, cellContext];
 
@@ -155,7 +170,10 @@ describe("the walk home", () => {
   it("never repeats a step, so no state can trap a writer in a loop", () => {
     const start = situation({
       gesture: "sweep",
-      layers: [{ id: "dialog" }, { id: "source" }],
+      layers: [
+        { id: "dialog", ownerId: "dialog" },
+        { id: "source", ownerId: "source" },
+      ],
       context: objectContext,
     });
 

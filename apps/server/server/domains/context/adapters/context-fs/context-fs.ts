@@ -24,6 +24,10 @@ import type {
 import { createDocumentCreationAggregate } from "../../../collab/index.js";
 import { editCollabMarkdown, writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
+import {
+  createResultAwareCommandExecutor,
+  type ResultAwareCommandExecutor,
+} from "../../context/result-aware-command-executor.js";
 import type {
   AdapterDeleteResult,
   AdapterFault,
@@ -36,6 +40,7 @@ import type {
   SchemeCapabilities,
 } from "../../ports/context-adapter.js";
 import { schemeCapabilities } from "../../ports/context-adapter.js";
+import type { ContextCommandTransaction } from "../../ports/context-command-transaction.js";
 import type { ContextDocument, ContextDocumentStore } from "../../ports/context-document-store.js";
 import type {
   ContextCreateUntitledDocumentOptions,
@@ -45,6 +50,7 @@ import type {
 } from "../../ports/context-port.js";
 import type {
   ContextLocationToken,
+  ContextTreeDeleteCommand,
   ContextTreeMutationError,
   ContextTreeMutationStore,
   PreparedContextMove,
@@ -56,6 +62,7 @@ export interface ContextFSDeps {
   mutationStore: ContextTreeMutationStore;
   documentSync: MarkdownDocumentStore;
   documentCreation?: DocumentCreationAggregate;
+  commandTransaction?: ContextCommandTransaction;
   /** Scheme name used by the router for this filesystem instance. */
   scheme: ContextScheme;
   manifestView?: {
@@ -161,13 +168,14 @@ export class ContextFS implements ContextSchemeAdapter {
   private readonly mutationStore: ContextTreeMutationStore;
   private readonly documentSync: MarkdownDocumentStore;
   private readonly documentCreation: DocumentCreationAggregate;
+  private readonly commandExecutor: ResultAwareCommandExecutor<AdapterFault>;
   private readonly manifestView?: ContextFSDeps["manifestView"];
 
   readonly tree: ContextTreeAdapter = {
     inspectMovable: (path) => this.inspectMovable(path),
     commitProvisionalGraduation: (source) => this.commitProvisionalGraduation(source),
     commitPreparedMove: (prepared) => this.commitPreparedMove(prepared),
-    commitPreparedDelete: (token) => this.commitPreparedDelete(token),
+    commitRecursiveDelete: (command) => this.commitRecursiveDelete(command),
   };
 
   constructor(deps: ContextFSDeps) {
@@ -181,6 +189,12 @@ export class ContextFS implements ContextSchemeAdapter {
         atomic: (operation) => deps.store.transaction(operation),
         ensureDocument: (documentId) => deps.documentSync.ensureDocument(documentId),
       });
+    this.commandExecutor = createResultAwareCommandExecutor({
+      transaction: deps.commandTransaction ?? {
+        run: (operation) => deps.store.transaction(operation),
+      },
+      serializeThroughCallbacks: true,
+    });
     this.manifestView = deps.manifestView;
     this.name = deps.scheme;
   }
@@ -394,6 +408,14 @@ export class ContextFS implements ContextSchemeAdapter {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId?: string }, AdapterFault>> {
+    return this.commandExecutor.run(() => this.writeInTransaction(path, content, options));
+  }
+
+  private async writeInTransaction(
+    path: string,
+    content: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<{ documentId?: string }, AdapterFault>> {
     const { dir, filename } = splitPath(path);
     if (!filename) {
       return { ok: false, error: { code: "io_error", message: "Cannot write to source root" } };
@@ -443,6 +465,16 @@ export class ContextFS implements ContextSchemeAdapter {
     content: string,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string }, AdapterFault>> {
+    return this.commandExecutor.run(() =>
+      this.createTrackedDocumentInTransaction(path, content, options),
+    );
+  }
+
+  private async createTrackedDocumentInTransaction(
+    path: string,
+    content: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<{ documentId: string }, AdapterFault>> {
     const { dir, filename } = splitPath(path);
     if (!filename) return Err({ code: "io_error", message: "Cannot create source root" });
     const resolvedFiletype = trackedFiletypeForPath(filename);
@@ -460,6 +492,7 @@ export class ContextFS implements ContextSchemeAdapter {
       return Err({ code: "conflict" });
     }
     const created = await this.createTrackedDocumentAtomically({
+      id: options?.documentId,
       folderId,
       name,
       extension,
@@ -483,6 +516,18 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   async createUntitledDocument(
+    path: string,
+    options: ContextCreateUntitledDocumentOptions,
+  ): Promise<
+    Result<
+      { status: "created" | "already-exists"; documentId: string; path: string; name: string },
+      AdapterFault
+    >
+  > {
+    return this.commandExecutor.run(() => this.createUntitledDocumentInTransaction(path, options));
+  }
+
+  private async createUntitledDocumentInTransaction(
     path: string,
     options: ContextCreateUntitledDocumentOptions,
   ): Promise<
@@ -569,6 +614,13 @@ export class ContextFS implements ContextSchemeAdapter {
     path: string,
     options?: ContextWriteOptions,
   ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>> {
+    return this.commandExecutor.run(() => this.ensureTrackedDocumentInTransaction(path, options));
+  }
+
+  private async ensureTrackedDocumentInTransaction(
+    path: string,
+    options?: ContextWriteOptions,
+  ): Promise<Result<{ documentId: string; created: boolean }, AdapterFault>> {
     const { dir, filename } = splitPath(path);
     if (!filename) {
       return { ok: false, error: { code: "io_error", message: "Cannot create source root" } };
@@ -604,6 +656,14 @@ export class ContextFS implements ContextSchemeAdapter {
   }
 
   async edit(
+    path: string,
+    command: import("../../ports/context-port.js").ContextEditCommand,
+    options?: ContextWriteOptions,
+  ): Promise<Result<{ documentId?: string; markdown?: string; updateSeq?: number }, AdapterFault>> {
+    return this.commandExecutor.run(() => this.editInTransaction(path, command, options));
+  }
+
+  private async editInTransaction(
     path: string,
     command: import("../../ports/context-port.js").ContextEditCommand,
     options?: ContextWriteOptions,
@@ -658,26 +718,31 @@ export class ContextFS implements ContextSchemeAdapter {
     if (!filename) {
       return { ok: false, error: { code: "io_error", message: "Cannot write to source root" } };
     }
-    const folderId = await this.ensureFolderId(dir);
-    const { name, extension } = parseFilename(filename);
-    const doc = await this.store.createBinaryDocument({
-      folderId,
-      name,
-      extension,
-      fileType: options.fileType,
-      storageUrl: options.storageUrl,
-      mimeType: options.mimeType,
-      sizeBytes: options.sizeBytes,
+    return this.commandExecutor.run(async () => {
+      const folderId = await this.ensureFolderId(dir);
+      const { name, extension } = parseFilename(filename);
+      const doc = await this.store.createBinaryDocument({
+        id: options.documentId,
+        folderId,
+        name,
+        extension,
+        fileType: options.fileType,
+        storageUrl: options.storageUrl,
+        mimeType: options.mimeType,
+        sizeBytes: options.sizeBytes,
+      });
+      return Ok({ documentId: doc.id });
     });
-    return Ok({ documentId: doc.id });
   }
 
   async mkdir(path: string, _options?: ContextWriteOptions): Promise<Result<void, AdapterFault>> {
     const segments = path.split("/").filter(Boolean);
     // The source root always exists — empty `mkdir` is a no-op.
     if (segments.length === 0) return Ok(undefined);
-    await this.ensureFolderId(segments);
-    return Ok(undefined);
+    return this.commandExecutor.run(async () => {
+      await this.ensureFolderId(segments);
+      return Ok(undefined);
+    });
   }
 
   async list(path: string): Promise<Result<AdapterFileEntry[], AdapterFault>> {
@@ -917,15 +982,16 @@ export class ContextFS implements ContextSchemeAdapter {
     return Ok(undefined);
   }
 
-  private async commitPreparedDelete(
-    token: ContextLocationToken,
+  private async commitRecursiveDelete(
+    command: ContextTreeDeleteCommand,
   ): Promise<Result<AdapterDeleteResult, AdapterFault>> {
-    if (token.kind === "file" && !(await this.isVisibleDocument(token.nodeId)))
+    if (command.root.kind === "file" && !(await this.isVisibleDocument(command.root.nodeId)))
       return Err({ code: "invalid_operation" });
-    const committed = await this.mutationStore.commitDelete(token);
+    const committed = await this.mutationStore.commitRecursiveDelete(command);
     if (!committed.ok) return Err(this.mutationFault(committed.error));
     return Ok({
       deletedDocumentIds: committed.value.deletedDocumentIds,
+      availabilityGeneration: committed.value.availabilityGeneration,
     });
   }
 }

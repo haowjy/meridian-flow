@@ -6,13 +6,13 @@
 
 import {
   CONTEXT_URI_SCHEMES,
-  type ContextSchemeCapabilities,
   type ContextUriScheme,
   WORK_SCOPED_CONTEXT_URI_SCHEMES,
   type WorkScopedContextUriScheme,
 } from "../context-uri.js";
-import type { UserId, WorkId } from "../ids.js";
+import type { DocumentId, UserId, WorkId } from "../ids.js";
 import type { Project } from "../projects/index.js";
+import { parseRequestId } from "../request-id.js";
 import type {
   Block,
   BlockType,
@@ -27,8 +27,9 @@ import type {
   TurnStatus,
   TurnUsage,
 } from "../threads/index.js";
-import type { AiWriteMode, Work } from "../works/index.js";
+import type { AiWriteMode, Work, WorkSlug, WorksSnapshot } from "../works/index.js";
 import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
+import type { SubmittedReference } from "./user-turn-admission.js";
 
 export type { JsonValue } from "../threads/index.js";
 export type {
@@ -79,9 +80,7 @@ export type { WorkChatFeedPage as ListWorkThreadsResponse } from "../threads/pro
 
 export type { AiWriteMode, Work };
 
-export type ListWorksResponse = {
-  works: Work[];
-};
+export type ListWorksResponse = WorksSnapshot;
 
 export const PROJECT_CONTEXT_TREE_SCHEMES = CONTEXT_URI_SCHEMES;
 
@@ -99,7 +98,7 @@ export type CreateUntitledContextDocumentResponse = {
   path: string;
   name: string;
   /** Present only when the canonical location is Work-scoped. */
-  workId?: string;
+  workId?: string | null;
 };
 
 export type CreateUntitledContextDocumentResult =
@@ -119,6 +118,7 @@ export type RenameContextEntryResult = RenameContextEntrySuccess | RenameContext
 export type DeleteContextEntryResult = {
   status: "deleted";
   deletedDocumentIds: string[];
+  availabilityGeneration: string;
 };
 
 export type DeleteContextEntryRequest =
@@ -131,8 +131,10 @@ export type MoveContextEntryRequest = {
   /** Scheme-relative parent folder; the empty string means the scheme root. */
   destinationFolderPath: string;
   newName?: string;
-  sourceWorkId?: string;
-  destinationWorkId?: string;
+  /** Omitted or null selects explicit no-Work authority for Work-capable schemes. */
+  sourceWorkId?: WorkId | null;
+  /** Omitted or null selects explicit no-Work authority for Work-capable schemes. */
+  destinationWorkId?: WorkId | null;
 };
 
 export type MoveContextEntrySuccess = {
@@ -142,12 +144,17 @@ export type MoveContextEntrySuccess = {
   name: string;
 };
 /** Canonical, server-normalized location used by Open-existing recovery. */
-export type MoveContextEntryLocator = {
-  scheme: ProjectContextTreeScheme;
-  path: string;
-  /** Present only for scratch/uploads locations. */
-  workId?: string;
-};
+export type MoveContextEntryLocator =
+  | {
+      scheme: Exclude<ProjectContextTreeScheme, WorkAuthorityScheme>;
+      path: string;
+      authority: { kind: "project" };
+    }
+  | {
+      scheme: WorkAuthorityScheme;
+      path: string;
+      authority: { kind: "none" } | { kind: "work"; workId: WorkId; workSlug: WorkSlug };
+    };
 export type MoveContextEntryConflict = {
   status: "conflict";
   collision: MoveContextEntryLocator;
@@ -167,7 +174,7 @@ export function isProjectContextTreeScheme(value: unknown): value is ProjectCont
   );
 }
 
-/** Context tree schemes addressed as `scheme://<workId>/…` on the browse API. */
+/** Context tree schemes supporting contextual, `@slug`, and explicit `@/` authority. */
 export const WORK_SCOPED_PROJECT_CONTEXT_TREE_SCHEMES = new Set<ProjectContextTreeScheme>([
   ...WORK_SCOPED_CONTEXT_URI_SCHEMES,
 ]);
@@ -182,11 +189,12 @@ export type WorkAuthorityScheme = WorkScopedContextUriScheme;
 
 export type WorkingSetRoute =
   | {
+      documentId: DocumentId;
       scheme: Exclude<ProjectContextTreeScheme, WorkAuthorityScheme>;
       path: string;
       workId?: never;
     }
-  | { scheme: WorkAuthorityScheme; path: string; workId: WorkId };
+  | { documentId: DocumentId; scheme: WorkAuthorityScheme; path: string; workId: WorkId | null };
 
 export type WorkingSetRouteParseResult =
   | { ok: true; value: WorkingSetRoute }
@@ -226,6 +234,10 @@ export function parseWorkingSetRoute(input: unknown): WorkingSetRouteParseResult
   }
 
   const route = input as Record<string, unknown>;
+  const documentId = parseRequestId(route.documentId);
+  if (!documentId) {
+    return { ok: false, message: "Working-set route requires a valid documentId" };
+  }
   if (!isProjectContextTreeScheme(route.scheme)) {
     return { ok: false, message: "Working-set route has an unknown scheme" };
   }
@@ -234,19 +246,31 @@ export function parseWorkingSetRoute(input: unknown): WorkingSetRouteParseResult
   }
 
   if (isWorkScopedProjectContextScheme(route.scheme)) {
-    if (typeof route.workId !== "string" || route.workId.length === 0) {
-      return { ok: false, message: "Work-scoped routes require a workId" };
+    if (!("workId" in route) || (route.workId !== null && typeof route.workId !== "string")) {
+      return { ok: false, message: "Work-scoped routes require an explicit workId or null" };
+    }
+    const workId = route.workId === null ? null : parseRequestId(route.workId);
+    if (route.workId !== null && !workId) {
+      return { ok: false, message: "Working-set route workId must be a valid UUID or null" };
     }
     return {
       ok: true,
-      value: { scheme: route.scheme, path: route.path, workId: route.workId as WorkId },
+      value: {
+        documentId: documentId as DocumentId,
+        scheme: route.scheme,
+        path: route.path,
+        workId: workId as WorkId | null,
+      },
     };
   }
 
   if (route.workId !== undefined) {
     return { ok: false, message: "Non-work-scoped routes must not include a workId" };
   }
-  return { ok: true, value: { scheme: route.scheme, path: route.path } };
+  return {
+    ok: true,
+    value: { documentId: documentId as DocumentId, scheme: route.scheme, path: route.path },
+  };
 }
 
 export function parseWorkingSetRouteList(input: unknown): WorkingSetRouteListParseResult {
@@ -261,54 +285,6 @@ export function parseWorkingSetRouteList(input: unknown): WorkingSetRouteListPar
   }
   return { ok: true, value: routes };
 }
-
-type ProjectContextTreeFileBase = {
-  kind: "file";
-  /** Persisted documents.id UUID used by Yjs and figure routes. */
-  documentId: string;
-  name: string;
-  /** Slash-prefixed display/routing path, e.g. `/project/README.md`. */
-  path: string;
-  /** Canonical context URI, e.g. `kb://project/README.md`. */
-  uri: string;
-  sizeBytes?: number;
-  updatedAt?: string;
-  readonly?: boolean;
-  provisionalName: boolean;
-};
-
-export type ProjectContextTreeEditableFile = ProjectContextTreeFileBase & {
-  editable: true;
-  filetype: Filetype;
-  schemaType: YjsTrackedSchemaType;
-};
-
-export type ProjectContextTreeBinaryFile = ProjectContextTreeFileBase & {
-  editable: false;
-  fileType: DocumentFileType;
-  mimeType?: string;
-};
-
-export type ProjectContextTreeFile = ProjectContextTreeEditableFile | ProjectContextTreeBinaryFile;
-
-export type ProjectContextTreeDirectory = {
-  kind: "dir";
-  name: string;
-  /** Slash-prefixed display/routing path; root is `/`. */
-  path: string;
-  uri: string;
-  readonly?: boolean;
-  children: ProjectContextTreeNode[];
-};
-
-export type ProjectContextTreeNode = ProjectContextTreeDirectory | ProjectContextTreeFile;
-
-export type ProjectContextTreeResponse = {
-  projectId: string;
-  scheme: ProjectContextTreeScheme;
-  capabilities: ContextSchemeCapabilities;
-  tree: ProjectContextTreeDirectory;
-};
 
 export type ContextReadTrackedResponse = {
   kind: "tracked";
@@ -379,7 +355,8 @@ export type CreateThreadRequest = {
   systemPrompt?: string;
   /** Mars agent slug — when set, agent body becomes the thread system prompt. */
   currentAgent?: string;
-  workId?: string;
+  /** Omission and explicit null both create an executable no-Work root thread. */
+  workId?: WorkId | null;
 };
 
 export type CreateThreadResponse = Thread;
@@ -408,7 +385,10 @@ export type UpdateWorkWriteModeResponse =
     };
 
 export type SendMessageRequest = {
+  submissionId: string;
   text: string;
+  blocks: unknown;
+  references: SubmittedReference[];
   /** Client connection token from the WebSocket `connected` frame; rejects starts from stale sockets. */
   connectionToken?: string;
 };

@@ -113,7 +113,10 @@ function routeFixture(
 
 describe("thread Work rebind writer adapter", () => {
   it("parses only strict canonical {workId} bodies", () => {
-    expect(parseRebindThreadWorkRequest({ workId: TARGET_ID })).toEqual({ workId: TARGET_ID });
+    expect(parseRebindThreadWorkRequest({ workId: TARGET_ID })).toEqual({
+      target: { kind: "work", workId: TARGET_ID },
+    });
+    expect(parseRebindThreadWorkRequest({ workId: null })).toEqual({ target: { kind: "none" } });
     expect(() => parseRebindThreadWorkRequest({ workId: TARGET_ID, extra: true })).toThrow();
     expect(() => parseRebindThreadWorkRequest({})).toThrow();
     expect(() => parseRebindThreadWorkRequest({ workId: "target" })).toThrow();
@@ -125,7 +128,7 @@ describe("thread Work rebind writer adapter", () => {
       handleRebindThreadWorkRequest(h.deps, {
         threadId: THREAD_ID,
         userId: USER_ID,
-        body: { workId: TARGET_ID },
+        body: { target: { kind: "work", workId: TARGET_ID } },
       }),
     ).rejects.toMatchObject({
       statusCode: 409,
@@ -181,7 +184,7 @@ describe("thread Work rebind writer adapter", () => {
       {
         threadId: THREAD_ID,
         userId: USER_ID,
-        body: { workId: TARGET_ID },
+        body: { target: { kind: "work", workId: TARGET_ID } },
       },
     );
 
@@ -194,7 +197,7 @@ describe("thread Work rebind writer adapter", () => {
       handleRebindThreadWorkRequest(h.deps, {
         threadId: THREAD_ID,
         userId: USER_ID,
-        body: { workId: TARGET_ID },
+        body: { target: { kind: "work", workId: TARGET_ID } },
       }),
     ).resolves.toMatchObject({
       changed: true,
@@ -226,12 +229,12 @@ describe("thread Work rebind writer adapter", () => {
     await handleRebindThreadWorkRequest(h.deps, {
       threadId: THREAD_ID,
       userId: USER_ID,
-      body: { workId: TARGET_ID },
+      body: { target: { kind: "work", workId: TARGET_ID } },
     });
     await handleRebindThreadWorkRequest(h.deps, {
       threadId: THREAD_ID,
       userId: USER_ID,
-      body: { workId: SOURCE_ID },
+      body: { target: { kind: "work", workId: SOURCE_ID } },
     });
 
     expect(h.recordNotice).toHaveBeenNthCalledWith(
@@ -254,7 +257,7 @@ describe("thread Work rebind writer adapter", () => {
       handleRebindThreadWorkRequest(h.deps, {
         threadId: THREAD_ID,
         userId: USER_ID,
-        body: { workId: TARGET_ID },
+        body: { target: { kind: "work", workId: TARGET_ID } },
       }),
     ).resolves.toMatchObject({
       changed: false,
@@ -279,7 +282,7 @@ describe("thread Work rebind writer adapter", () => {
         handleRebindThreadWorkRequest(h.deps, {
           threadId: THREAD_ID,
           userId: USER_ID,
-          body: { workId: TARGET_ID },
+          body: { target: { kind: "work", workId: TARGET_ID } },
         }),
       ).rejects.toMatchObject({ statusCode: 404 });
     }
@@ -298,11 +301,6 @@ describe("thread Work rebind writer adapter", () => {
         code: "thread_busy",
       },
       {
-        fixture: routeFixture({ missingPrimary: true }),
-        status: 409,
-        code: "thread_work_missing",
-      },
-      {
         fixture: routeFixture({
           rebindFailure: new WorkLifecycleUnavailableError(TARGET_ID, "deleted"),
         }),
@@ -318,7 +316,7 @@ describe("thread Work rebind writer adapter", () => {
         await handleRebindThreadWorkRequest(entry.fixture.deps, {
           threadId: THREAD_ID,
           userId: USER_ID,
-          body: { workId: TARGET_ID },
+          body: { target: { kind: "work", workId: TARGET_ID } },
         });
       } catch (cause) {
         thrown = cause;
@@ -343,7 +341,7 @@ describe("thread Work rebind writer adapter", () => {
       handleRebindThreadWorkRequest(h.deps, {
         threadId: THREAD_ID,
         userId: USER_ID,
-        body: { workId: TARGET_ID },
+        body: { target: { kind: "work", workId: TARGET_ID } },
       }),
     ).rejects.toBe(failure);
     expect(h.recordNotice).not.toHaveBeenCalled();
@@ -356,7 +354,7 @@ describe("thread Work rebind writer adapter", () => {
       handleRebindThreadWorkRequest(h.deps, {
         threadId: THREAD_ID,
         userId: USER_ID,
-        body: { workId: TARGET_ID },
+        body: { target: { kind: "work", workId: TARGET_ID } },
       }),
     ).rejects.toBe(failure);
     expect(h.recordNotice).toHaveBeenCalledOnce();

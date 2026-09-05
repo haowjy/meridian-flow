@@ -3,12 +3,14 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useState } from "react";
+import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useHomeChatFeed } from "@/client/query/useHomeChatFeed";
 import { useWorks } from "@/client/query/useWorks";
 import { useAnnouncement, useThreadActions } from "@/client/stores";
 import { Composer } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
+import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { resolveCatalogWork } from "../catalog-work-resolution";
 import { HomeFeed } from "./HomeFeed";
 import { NewThreadComposerToolbar } from "./NewThreadComposerToolbar";
@@ -53,7 +55,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
   const movement = useHomeFavoriteMovement();
   const [now, setNow] = useState(Date.now());
   const [agentSlug, setAgentSlug] = useState(DEFAULT_AGENT_SLUG);
-  const [chosenWorkId, setChosenWorkId] = useState<string | null>(null);
+  const [chosenWorkId, setChosenWorkId] = useState<string | null | undefined>(undefined);
   const [modePending, setModePending] = useState(false);
   const [finePointer, setFinePointer] = useState(false);
 
@@ -78,9 +80,15 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
         ? { status: "loading" }
         : { status: "ready", works: worksQuery.works ?? [] },
   );
-  const selectedWork =
-    worksQuery.works?.find(({ id }) => id === chosenWorkId) ??
-    (catalogWork.status === "ready" ? catalogWork.work : null);
+  const initialWork =
+    worksQuery.works?.find(({ status }) => status === "active") ?? worksQuery.works?.[0] ?? null;
+  const effectiveWorkId = chosenWorkId === undefined ? (initialWork?.id ?? null) : chosenWorkId;
+  const selectedWork = worksQuery.works?.find(({ id }) => id === effectiveWorkId) ?? null;
+  const referenceCatalog = useReferenceBrowserCatalog(
+    projectId,
+    selectedWork?.id,
+    t`Reference a file`,
+  );
   const handleModePendingChange = useCallback((pending: boolean) => setModePending(pending), []);
 
   const rowProps = {
@@ -104,28 +112,32 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
         });
     },
   };
-  const worksReady = worksQuery.status === "ready" && selectedWork !== null;
+  const worksExecutable = catalogWork.status === "ready" || catalogWork.status === "empty";
   const submitDisabledReason = firstSend.busy
     ? t`Creating chat`
     : modePending
       ? t`Finishing write mode change`
       : worksQuery.status === "loading"
         ? t`Loading Work`
-        : !selectedWork
-          ? t`Choose a Work`
-          : firstSend.submitLocked
-            ? t`Finish the current chat attempt`
-            : undefined;
-  const submit = (text: string, draftRevision: number) => {
-    if (!selectedWork || modePending) return false;
-    return firstSend.submit(
-      text,
-      {
-        workId: selectedWork.id,
-        agentSlug,
-      },
-      draftRevision,
-    );
+        : firstSend.submitLocked
+          ? t`Finish the current chat attempt`
+          : undefined;
+  const submit = async (envelope: import("@/components/app/composer").ComposerSubmitEnvelope) => {
+    if (modePending)
+      return {
+        kind: "rejected" as const,
+        submissionId: envelope.submissionId,
+        acceptedRevision: envelope.acceptedRevision,
+      };
+    const accepted = await firstSend.submit(envelope, {
+      workId: selectedWork?.id ?? null,
+      agentSlug,
+    });
+    return {
+      kind: accepted ? ("accepted" as const) : ("rejected" as const),
+      submissionId: envelope.submissionId,
+      acceptedRevision: envelope.acceptedRevision,
+    };
   };
 
   return (
@@ -150,8 +162,20 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
                   variant="hero"
                   autoFocus={finePointer}
                   onSubmit={submit}
+                  referenceCatalog={referenceCatalog}
+                  uploadPort={uploadIntakePort}
+                  uploadScope={
+                    selectedWork
+                      ? {
+                          kind: "work",
+                          projectId,
+                          workId: selectedWork.id,
+                          workSlug: selectedWork.slug,
+                        }
+                      : { kind: "none", projectId }
+                  }
                   onDraftChange={firstSend.updateDraft}
-                  submitDisabled={!worksReady || modePending || firstSend.submitLocked}
+                  submitDisabled={!worksExecutable || modePending || firstSend.submitLocked}
                   submitDisabledReason={submitDisabledReason}
                   busy={firstSend.busy}
                   toolbarLeft={
@@ -170,7 +194,7 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
                       agentSlug={agentSlug}
                       disabled={firstSend.contextLocked}
                       onAgentChange={setAgentSlug}
-                      onWorkChange={(work) => setChosenWorkId(work.id)}
+                      onWorkChange={(work) => setChosenWorkId(work?.id ?? null)}
                       onRetryWorks={worksQuery.refetch}
                       onModePendingChange={handleModePendingChange}
                     />
@@ -199,8 +223,8 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
                   onRetry={() => {
                     if (firstSendError.action === "start_over") {
                       firstSend.startOver();
-                    } else if (selectedWork) {
-                      void firstSend.retry({ workId: selectedWork.id, agentSlug });
+                    } else {
+                      void firstSend.retry({ workId: selectedWork?.id ?? null, agentSlug });
                     }
                   }}
                 />

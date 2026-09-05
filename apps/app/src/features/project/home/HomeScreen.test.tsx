@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "@/lib/i18n";
+import "fake-indexeddb/auto";
+import { FirstSendContinuityProvider } from "@/client/first-send-continuity";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { HomeScreen } from "./HomeScreen";
 
@@ -18,6 +20,9 @@ vi.mock("@lingui/core/macro", () => ({
     parts.reduce((text, part, index) => `${text}${part}${values[index] ?? ""}`, ""),
 }));
 vi.mock("./NewThreadComposerToolbar", () => ({ NewThreadComposerToolbar: () => null }));
+vi.mock("@/features/editor/references/useReferenceBrowserCatalog", () => ({
+  useReferenceBrowserCatalog: () => null,
+}));
 vi.mock("@/client/stores", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/client/stores")>();
   return {
@@ -27,9 +32,7 @@ vi.mock("@/client/stores", async (importOriginal) => {
     useThreadActions: () => ({
       ensureThread: vi.fn(),
       appendUserTurn: vi.fn(),
-      stageFirstSend: vi.fn(),
-      preserveFirstSendRouteDraft: vi.fn(),
-      armFirstSend: vi.fn(),
+      removeOptimisticUserTurn: vi.fn(),
     }),
   };
 });
@@ -92,6 +95,10 @@ describe("HomeScreen", () => {
       "fetch",
       vi.fn((input: string | URL | Request, init?: RequestInit) => {
         if (String(input).includes("/home-feed")) return Promise.resolve(response(page));
+        if (!init?.body)
+          return Promise.resolve(
+            new Response(JSON.stringify({ message: "not configured" }), { status: 500 }),
+          );
         let resolve!: (value: Response) => void;
         const pending = new Promise<Response>((done) => {
           resolve = done;
@@ -104,7 +111,9 @@ describe("HomeScreen", () => {
     await withReactRoot(
       <I18nProvider i18n={i18n}>
         <QueryClientProvider client={client}>
-          <HomeScreen projectId="project-1" onSelectThread={vi.fn()} onOpenThread={vi.fn()} />
+          <FirstSendContinuityProvider accountId="account-1">
+            <HomeScreen projectId="project-1" onSelectThread={vi.fn()} onOpenThread={vi.fn()} />
+          </FirstSendContinuityProvider>
         </QueryClientProvider>
       </I18nProvider>,
       async () => {

@@ -1,4 +1,4 @@
-/** Catalog Work policy keeps loading, failure, empty, active, and archived-only states distinct. */
+/** Catalog Work policy keeps loading, failure, empty, and active states distinct. */
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it } from "vitest";
 import { resolveCatalogWork } from "./catalog-work-resolution";
@@ -23,11 +23,8 @@ describe("resolveCatalogWork", () => {
     });
   });
 
-  it("uses the first available Work for an archived-only catalog", () => {
+  it("does not resurrect an archived Work as a fallback", () => {
     const archived = work("archived", "archived");
-    expect(resolveCatalogWork({ status: "ready", works: [archived] })).toEqual({
-      status: "ready",
-      work: archived,
-    });
+    expect(resolveCatalogWork({ status: "ready", works: [archived] })).toEqual({ status: "empty" });
   });
 });

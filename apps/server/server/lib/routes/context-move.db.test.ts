@@ -2,6 +2,7 @@
 
 import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -20,12 +21,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createProductionUnifiedContextPortFactory } = await import(
       "../../domains/context/unified-context-port-factory.js"
     );
-    const { createDrizzleProjectBootstrapRepository } = await import(
-      "../../domains/projects/index.js"
-    );
-    const { createDrizzleRepositories } = await import(
-      "../../domains/threads/adapters/drizzle/index.js"
-    );
+    const { createDrizzleProjectBootstrapRepository, createDrizzleProjectWorkAuthorityResolver } =
+      await import("../../domains/projects/index.js");
     const { useRollbackTestDatabase } = await import(
       "../../test-support/rollback-test-database.js"
     );
@@ -34,17 +31,35 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../routes/api/projects/[projectId]/context/[scheme]/create-untitled.post.js"
     );
     const { commitContextMove, parseContextMove } = await import("../context-move-route.js");
-    const moveContextEntry = (input: {
+    const moveContextEntry = async (input: {
       port: import("../../domains/context/index.js").ContextPort;
       userId: string;
       sourceScheme: string;
       body: unknown;
-    }) =>
-      commitContextMove({
+    }) => {
+      const move = parseContextMove({ sourceScheme: input.sourceScheme, body: input.body });
+      const resolver = createDrizzleProjectWorkAuthorityResolver(db);
+      const resolveLocator = async (locator: typeof move.source) => {
+        if (locator.scope !== "work") return locator;
+        const [work] = await db
+          .select({ projectId: schema.works.projectId })
+          .from(schema.works)
+          .where(eq(schema.works.id, locator.workId));
+        if (!work) throw new Error("missing Work for move test");
+        const authority = await resolver.byId(work.projectId, locator.workId);
+        if (!authority) throw new Error("missing Work authority for move test");
+        return { scope: "work" as const, scheme: locator.scheme, path: locator.path, authority };
+      };
+      return commitContextMove({
         port: input.port,
         userId: input.userId,
-        move: parseContextMove({ sourceScheme: input.sourceScheme, body: input.body }),
+        move: {
+          source: await resolveLocator(move.source),
+          destination: await resolveLocator(move.destination),
+          ...(move.name ? { name: move.name } : {}),
+        },
       });
+    };
 
     const USER_ID = "00000000-0000-4000-8000-000000000941";
     const DOCUMENT_ID = "00000000-0000-4000-8000-000000000942";
@@ -62,6 +77,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     function createBoundCollab() {
       const collab = createCollabDomain({
         db,
+        workProjectionMutation: createTestWorkProjectionMutation(db),
+        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
         documentAccess: createDrizzleDocumentAccess(db),
       });
       collab.bindHocuspocus(
@@ -101,22 +118,30 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     async function arrangeUntitled() {
       const collab = createBoundCollab();
-      const { projectId, workId } = await createDrizzleProjectBootstrapRepository({
+      const { projectId } = await createDrizzleProjectBootstrapRepository({
         db,
-        threads: createDrizzleRepositories(db).threads,
-        threadWorks: createDrizzleRepositories(db).threadWorks,
         documents: collab,
       }).ensureDefaultBootstrap(USER_ID as never);
+      const workId = crypto.randomUUID();
+      await db.insert(schema.works).values({
+        id: workId,
+        projectId,
+        createdByUserId: USER_ID,
+        name: "Current Work",
+        slug: "current-work",
+      });
       const contextPorts = createProductionUnifiedContextPortFactory({
         db,
         documentSync: collab,
         manifestMembership: collab,
       });
+      const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
+      if (!authority) throw new Error("missing Work authority");
       const port = contextPorts.forWork(
-        workId,
+        authority,
         projectId,
         USER_ID,
-        new Map([["current-work", workId]]),
+        new Map([[authority.workSlug, authority]]),
       );
       await createUntitledContextDocument({
         port,
@@ -155,6 +180,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(
           and(eq(schema.documents.id, DOCUMENT_ID), eq(schema.contextSources.projectId, projectId)),
         );
+      return row;
+    }
+
+    async function documentOwner(documentId: string) {
+      const [row] = await db
+        .select({
+          documentId: schema.documents.id,
+          documentSourceId: schema.documents.contextSourceId,
+          sourceScope: schema.contextSources.scope,
+          sourceWorkId: schema.contextSources.workId,
+          sourceProjectId: schema.contextSources.projectId,
+          folderName: schema.folders.name,
+          folderSourceId: schema.folders.contextSourceId,
+          documentName: schema.documents.name,
+          extension: schema.documents.extension,
+        })
+        .from(schema.documents)
+        .innerJoin(
+          schema.contextSources,
+          eq(schema.documents.contextSourceId, schema.contextSources.id),
+        )
+        .leftJoin(schema.folders, eq(schema.documents.folderId, schema.folders.id))
+        .where(eq(schema.documents.id, documentId));
       return row;
     }
 
@@ -209,6 +257,100 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const manifestAfter = await collab.resolveManifestMembership({ projectId });
       expect(manifestAfter.members.filter((id) => id === DOCUMENT_ID)).toEqual([DOCUMENT_ID]);
       expect(await yjsState(DOCUMENT_ID)).toEqual(documentYjsBefore);
+    });
+
+    it("durably moves one document from no-Work to a real Work and back", async () => {
+      const { projectId, workId, port } = await arrangeUntitled();
+      const created = await port.write("scratch://@/Unassigned.md", "portable", {
+        origin: { type: "human", userId: USER_ID },
+      });
+      expect(created).toMatchObject({
+        ok: true,
+        value: { uri: "scratch://@/Unassigned.md", documentId: expect.any(String) },
+      });
+      if (!created.ok || !created.value.documentId) throw new Error("missing no-Work document");
+      const documentId = created.value.documentId;
+      await expect(documentOwner(documentId)).resolves.toMatchObject({
+        documentId,
+        sourceScope: "project",
+        sourceWorkId: null,
+        sourceProjectId: projectId,
+        folderName: null,
+        documentName: "Unassigned",
+        extension: "md",
+      });
+
+      await expect(
+        moveContextEntry({
+          port,
+          userId: USER_ID,
+          sourceScheme: "scratch",
+          body: {
+            path: "Unassigned.md",
+            sourceWorkId: null,
+            destinationScheme: "scratch",
+            destinationWorkId: workId,
+            destinationFolderPath: "Assigned",
+          },
+        }),
+      ).resolves.toEqual({
+        status: "moved",
+        scheme: "scratch",
+        path: "Assigned/Unassigned.md",
+        name: "Unassigned.md",
+      });
+      const assigned = await documentOwner(documentId);
+      expect(assigned).toMatchObject({
+        documentId,
+        sourceScope: "work",
+        sourceWorkId: workId,
+        sourceProjectId: null,
+        folderName: "Assigned",
+      });
+      expect(assigned?.documentSourceId).toBe(assigned?.folderSourceId);
+      await expect(
+        port.stat("scratch://@current-work/Assigned/Unassigned.md"),
+      ).resolves.toMatchObject({ ok: true, value: { documentId } });
+      await expect(port.stat("scratch://@/Unassigned.md")).resolves.toMatchObject({
+        ok: false,
+        error: { code: "not_found" },
+      });
+
+      await expect(
+        moveContextEntry({
+          port,
+          userId: USER_ID,
+          sourceScheme: "scratch",
+          body: {
+            path: "Assigned/Unassigned.md",
+            sourceWorkId: workId,
+            destinationScheme: "scratch",
+            destinationWorkId: null,
+            destinationFolderPath: "Returned",
+          },
+        }),
+      ).resolves.toEqual({
+        status: "moved",
+        scheme: "scratch",
+        path: "Returned/Unassigned.md",
+        name: "Unassigned.md",
+      });
+      const returned = await documentOwner(documentId);
+      expect(returned).toMatchObject({
+        documentId,
+        sourceScope: "project",
+        sourceWorkId: null,
+        sourceProjectId: projectId,
+        folderName: "Returned",
+      });
+      expect(returned?.documentSourceId).toBe(returned?.folderSourceId);
+      await expect(port.stat("scratch://@/Returned/Unassigned.md")).resolves.toMatchObject({
+        ok: true,
+        value: { documentId },
+      });
+      await expect(
+        port.stat("scratch://@current-work/Assigned/Unassigned.md"),
+      ).resolves.toMatchObject({ ok: false, error: { code: "not_found" } });
     });
 
     it("graduates provisional naming in place on a deliberate stay-put", async () => {
@@ -364,7 +506,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         }),
       ).resolves.toEqual({
         status: "conflict",
-        collision: { scheme: "manuscript", path: "Act 1/Source" },
+        collision: {
+          scheme: "manuscript",
+          path: "Act 1/Source",
+          authority: { kind: "project" },
+        },
       });
       await expect(port.list("manuscript://Act 1/Source")).resolves.toEqual({
         ok: true,

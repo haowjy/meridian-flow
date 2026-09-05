@@ -3,9 +3,32 @@ import { describe, expect, it } from "vitest";
 import {
   classifyLinkTarget,
   documentLinkTarget,
+  linkInputStepsAsideFromReferences,
   linkTargetHref,
   normalizeLinkHref,
 } from "./link-target";
+
+describe("reference completion step-aside", () => {
+  it.each([
+    "",
+    "   ",
+    "ftp:gate.md",
+    "https://example.com",
+    "//example.com",
+    "www.example.com",
+  ])("leaves %j to native link entry", (input) =>
+    expect(linkInputStepsAsideFromReferences(input)).toBe(true));
+
+  it.each([
+    "manuscript://Gate.md",
+    "work://work-1/notes.md",
+    "Gate",
+    "example.com",
+    "../notes/Gate.md",
+    "[[Gate]]",
+  ])("keeps %j in canonical completion", (input) =>
+    expect(linkInputStepsAsideFromReferences(input)).toBe(false));
+});
 
 describe("classifyLinkTarget", () => {
   it.each([

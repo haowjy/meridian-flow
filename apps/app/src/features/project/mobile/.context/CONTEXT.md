@@ -152,6 +152,8 @@ one-folder-per-screen navigation.
 - Opening a file pushes `path` and pins `folder` to the parent directory.
 - A missing folder from a stale URL is rendered as an honest dead-end, not
   silently rewritten by the browser component.
+- Upload rows omit generic Delete on phone as well as desktop. Draft-owned
+  removal remains the identity/revision-bound intake operation.
 
 ### Create file / folder
 

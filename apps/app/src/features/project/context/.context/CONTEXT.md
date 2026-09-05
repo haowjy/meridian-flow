@@ -7,7 +7,7 @@ Reference depth. Read the [AGENTS.md](../AGENTS.md) first.
 ```text
 ContextTreePanel (desktop)          MobileContextBrowser (mobile)
        │                                     │
-       ├─ useContextTree (React Query) ──────┤
+       ├─ useContextCatalogView (projection) ┤
        ├─ useCreateEntryForm ────────────────┤
        ├─ useRenameEntryForm ────────────────┤
        ├─ useDeleteConfirmation ─────────────┤
@@ -28,39 +28,57 @@ ContextPaneController
               └─ ContextViewerHost (active binary viewer)
 ```
 
-`useContextTree` fetches `/api/projects/:projectId/context/:scheme/tree`.
-Mutations invalidate the scheme-scoped tree cache on success. Delete admits its
+React Query acquires compact catalog snapshots and whole-commit deltas into one
+normalized stable-ID cache. One QueryClient-scoped high-water coordinator makes
+focus, polling, reconnect, hints, and multiple consumers join the same cursor
+drain. Applied revision advances only through contiguous whole commits; observed
+head can lead it while a bounded replay has more pages. Tree and picker are
+projections over those same entry objects.
+Mutations invalidate the affected catalog scope on success. Delete admits its
 exact evidence to live removal authority first; cache absence never supplies
 deletion evidence. Foreground identity saves and
 background untitled create/move reconciliation share
 `context-identity-mutation.ts`; every successful receipt invalidates its
 materialized tree or both move endpoints, even when no tab is open.
 
-`useFileSuggestions` composes those same cached per-scheme queries and ranks a
-flattened client-side view. It never adds a server-search path; hosts constrain
+The project availability coordinator watches server-backed tabs, bound route
+selection, retained sessions, and capped recent routes by stable file ID. Exact
+delete receipts enter it directly; explicit authorization-loss observers and
+focus, online, and bounded polling recheck watched identities. A catalog wake
+for a cold Work triggers the same exact-ID availability path without warming a
+second tree. Cache omission is presentation state and never removal evidence.
+Generation-bearing final commands own the atomic tab, route, selection,
+admission, working-set, and Yjs session effects; same-ID moves and local-new
+tabs survive. Opening requires exact final availability plus a live opener and
+admission.
+
+`useFileSuggestions` projects directly from the normalized scope views. It
+never walks or caches a second recursive tree and never adds a server-search path; hosts constrain
 schemes and file/directory kinds, then mount the presentation-only list.
 
 Desktop scheme/query orchestration lives in `ContextTreePanel`; `ContextTreeRows`
-renders recursive rows through one scheme-scoped environment. Mobile renders one
-level at a time via route params.
+selects each expanded row's direct children by stable parent ID through one
+scheme-scoped environment. Mobile renders one level at a time via route params.
 
 ## Editor tabs and untitled documents
 
 The writer-facing destination is **Editor**. One account-scoped,
 framework-independent `ContextRemovalCoordinator` owns every live removal
-transition: explicit close, locally acknowledged delete, Work pruning, and draft
-discard. Account construction precedes authenticated descendants. A project becomes
-live only after desk hydration, concrete Editor Work readiness, and one raw
+transition: explicit close, generation-bearing terminal availability, Work pruning,
+and draft discard. Account construction precedes authenticated descendants; device
+desk hydration starts afterward and never gates the visible shell. A project becomes
+live after its desk state reconciles, concrete Editor Work readiness, and one raw
 bootstrap/validation operation. Strict replay and pre-live Work interruption adopt
 that operation with fresh attempt tokens; after first completion, Work interruption
 only suspends the live host and can never restore raw bootstrap authority.
 The leaf route host registers first, then the rendered desktop or phone document host
 settles revisioned route identity in layout phase.
 
-Acknowledged delete carries the server-confirmed exact ID batch plus a request-time
-discriminated target and same-locator route witness. Admission is synchronous and
-idempotent by `commandId`, including terminal invalid first use, and precedes tree
-invalidation. Candidate identity is a pure typed selection/obligation protocol:
+Committed delete receipts carry the server-confirmed exact ID batch and availability
+generation directly into the project availability coordinator before tree invalidation.
+That generation-fenced coordinator normalizes the IDs and emits one deterministic
+`terminal-remove` batch; it is the sole server-deletion authority. Candidate identity
+remains a pure typed selection/obligation protocol for represented local transitions:
 browser locators own only their revision while admitted continuity independently owns
 memory and persistence. Receipt cardinality supplies no identity, and late or
 superseded settlement cannot repair a newer route. The protocol emits exact planning
@@ -102,11 +120,12 @@ Work navigation, while explicit close/deletion and fulfilled bootstrap absence
 still remove it. Server working-set bootstrap merges validated device-owned
 `new` and local-origin tabs by document ID without promoting them into recency.
 
-`untitled-reconciler.ts` is the browser-independent materialization engine;
-`untitled-reconciler-browser.ts` binds localStorage, APIs, editor sessions, and
-React hooks. The localStorage registry (`meridian:pending-untitled`) stores one
-record per document: a monotonic revision, materialization phase, desired identity, failure receipt,
-and the pending timestamp. Explicit writer actions and recovery receipts are
+`untitled-reconciler.ts` is the browser-independent materialization executor;
+`untitled-reconciler-browser.ts` binds APIs, the account-local owner, and React
+hooks. The account/project/document-qualified `LocalUntitledOwner` record is
+the sole durable pre-authority work source, including its monotonic work
+revision, materialization phase and result, desired identity, failure receipt,
+home, and pending timestamp. Explicit writer actions and recovery receipts are
 therefore crash-safe. Reconciliation re-reads the live revision after every
 await; an attempt may clear identity work or drain a record only when that exact
 revision is still current, so the last explicit writer identity wins. Events
@@ -277,7 +296,8 @@ replaces a pending one; Escape/blur semantics are the shared
 Deleting a file in `manuscript://` only refetches that scheme's tree for
 presentation metadata. Tree absence never proves document removal. The exact
 successful mutation result is the deletion evidence that the removal coordinator
-consumes before the tree invalidation can affect presentation.
+receives through the project availability coordinator before tree invalidation can
+affect presentation.
 
 ## Downlinks
 

@@ -33,8 +33,8 @@ const CHORD = "Alt-ArrowUp";
  * identity. A row builds the stack it is about and names the same objects in
  * its contributions, which is exactly what `chrome.layers` and `openLayer` do.
  */
-const dialog: ChromeLayer = { id: "diagram-dialog" };
-const pane: ChromeLayer = { id: "diagram-source" };
+const dialog: ChromeLayer = { id: "diagram-dialog", ownerId: "diagram-dialog" };
+const pane: ChromeLayer = { id: "diagram-source", ownerId: "diagram-source" };
 
 const objectContext: ChromeContext = {
   owner: "object",

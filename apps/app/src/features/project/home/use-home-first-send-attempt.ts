@@ -1,36 +1,34 @@
-/** Home-owned stable-ID thread creation, reconciliation, and route handoff. */
+/** Home-owned stable-ID creation joined to durable destination admission continuity. */
 import type { Thread, ThreadListItem } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef, useState } from "react";
 import { isMeridianApiError } from "@/client/api/http-client";
 import { createProjectThread, listProjectThreads } from "@/client/api/projects-api";
+import { useFirstSendContinuity } from "@/client/first-send-continuity";
 import { invalidateWorkThreads } from "@/client/query/project-invalidation";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { ThreadStoreActions } from "@/client/stores";
+import type { ComposerDraftChange, ComposerSubmitEnvelope } from "@/components/app/composer";
 import { threadCreateAgentField, wireAgentSlug } from "@/features/agents";
 import { deriveTitleFromMessage } from "@/lib/thread-title";
 
 export type HomeFirstSendEnvelope = {
   threadId: string;
   projectId: string;
-  text: string;
-  draftRevision: number;
+  submission: ComposerSubmitEnvelope;
   title: string;
-  workId: string;
+  workId: string | null;
   agentSlug: string;
 };
-
 export type HomeFirstSendRefusal = "agent_not_found" | "work_unavailable";
-
 export type HomeFirstSendLifecycle =
   | { kind: "idle" }
-  | { kind: "creating"; envelope: HomeFirstSendEnvelope }
-  | { kind: "reconciling"; envelope: HomeFirstSendEnvelope }
-  | { kind: "refused"; envelope: HomeFirstSendEnvelope; refusal: HomeFirstSendRefusal }
-  | { kind: "ambiguous"; envelope: HomeFirstSendEnvelope }
-  | { kind: "routing"; envelope: HomeFirstSendEnvelope; thread: Thread }
-  | { kind: "route_failed"; envelope: HomeFirstSendEnvelope; thread: Thread }
-  | { kind: "mismatched"; envelope: HomeFirstSendEnvelope };
+  | {
+      kind: "creating" | "reconciling" | "refused" | "ambiguous" | "mismatched";
+      envelope: HomeFirstSendEnvelope;
+      refusal?: HomeFirstSendRefusal;
+    }
+  | { kind: "routing" | "route_failed"; envelope: HomeFirstSendEnvelope; thread: Thread };
 
 type Dependencies = {
   projectId: string;
@@ -45,13 +43,11 @@ function deterministicRefusal(error: unknown): HomeFirstSendRefusal | null {
   if (!isMeridianApiError(error)) return null;
   return error.code === "agent_not_found" || error.code === "work_unavailable" ? error.code : null;
 }
-
 function matchesEnvelope(thread: Thread, envelope: HomeFirstSendEnvelope): boolean {
-  const expectedAgent = wireAgentSlug(envelope.agentSlug) ?? null;
   return (
     thread.id === envelope.threadId &&
     thread.projectId === envelope.projectId &&
-    thread.currentAgent === expectedAgent &&
+    thread.currentAgent === (wireAgentSlug(envelope.agentSlug) ?? null) &&
     thread.workId === envelope.workId
   );
 }
@@ -65,27 +61,21 @@ export function useHomeFirstSendAttempt({
   makeId = () => crypto.randomUUID(),
 }: Dependencies) {
   const queryClient = useQueryClient();
-  const latestDraftRef = useRef({ text: "", revision: 0 });
+  const continuity = useFirstSendContinuity();
+  const latestDraftRef = useRef<ComposerDraftChange | null>(null);
+  const continuityQueue = useRef(Promise.resolve());
   const stateRef = useRef<HomeFirstSendLifecycle>({ kind: "idle" });
   const [state, setState] = useState<HomeFirstSendLifecycle>(stateRef.current);
-
   const transition = useCallback((next: HomeFirstSendLifecycle) => {
     stateRef.current = next;
     setState(next);
   }, []);
 
-  const routeDraft = useCallback((envelope: HomeFirstSendEnvelope) => {
-    const latest = latestDraftRef.current;
-    return latest.revision > envelope.draftRevision ? latest.text : undefined;
-  }, []);
-
   const route = useCallback(
     async (envelope: HomeFirstSendEnvelope, thread: Thread) => {
       transition({ kind: "routing", envelope, thread });
-      actions.preserveFirstSendRouteDraft(thread.id, routeDraft(envelope));
       try {
         await onSelectThread(thread.id);
-        actions.armFirstSend(thread.id);
         transition({ kind: "idle" });
         return true;
       } catch {
@@ -93,7 +83,7 @@ export function useHomeFirstSendAttempt({
         return false;
       }
     },
-    [actions, onSelectThread, routeDraft, transition],
+    [onSelectThread, transition],
   );
 
   const prepareCanonical = useCallback(
@@ -102,19 +92,35 @@ export function useHomeFirstSendAttempt({
         transition({ kind: "mismatched", envelope });
         return false;
       }
-      const draftAfterRoute = routeDraft(envelope);
       actions.ensureThread(thread);
-      const optimistic = actions.appendUserTurn(thread.id, envelope.text);
-      actions.stageFirstSend({
+      const optimistic = actions.appendUserTurn(thread.id, envelope.submission.text);
+      const latest = latestDraftRef.current?.snapshot;
+      const key = {
+        projectId,
         threadId: thread.id,
-        text: envelope.text,
-        optimisticUserTurnId: optimistic.id,
-        draftAfterRoute,
-      });
+        submissionId: envelope.submission.submissionId,
+      };
+      continuityQueue.current = continuityQueue.current.then(() =>
+        continuity.stage({
+          ...key,
+          envelope: envelope.submission,
+          latestDraft:
+            latest && latest.revision > envelope.submission.acceptedRevision ? latest : null,
+          optimisticUserTurnId: optimistic.id,
+          state: "ready",
+        }),
+      );
+      try {
+        await continuityQueue.current;
+      } catch {
+        actions.removeOptimisticUserTurn(thread.id, optimistic.id);
+        transition({ kind: "ambiguous", envelope });
+        return false;
+      }
       if (thread.workId) void invalidateWorkThreads(queryClient, projectId, thread.workId);
       return route(envelope, thread);
     },
-    [actions, projectId, queryClient, route, routeDraft, transition],
+    [actions, continuity, projectId, queryClient, route, transition],
   );
 
   const reconcile = useCallback(
@@ -145,24 +151,25 @@ export function useHomeFirstSendAttempt({
   );
 
   const create = useCallback(
-    async function createAttempt(envelope: HomeFirstSendEnvelope, retryAfterKnownAbsence = true) {
+    async function createAttempt(
+      envelope: HomeFirstSendEnvelope,
+      retryAfterKnownAbsence = true,
+    ): Promise<boolean> {
       transition({ kind: "creating", envelope });
-      const request = {
-        id: envelope.threadId,
-        title: envelope.title,
-        workId: envelope.workId,
-        ...threadCreateAgentField(envelope.agentSlug),
-      };
       try {
-        return await prepareCanonical(envelope, await createThread(projectId, request));
+        const thread = await createThread(projectId, {
+          id: envelope.threadId,
+          title: envelope.title,
+          workId: envelope.workId,
+          ...threadCreateAgentField(envelope.agentSlug),
+        });
+        return prepareCanonical(envelope, thread);
       } catch (error) {
         const refusal = deterministicRefusal(error);
         if (refusal) return settleRefusal(envelope, refusal);
-
         const found = await reconcile(envelope);
         if (found) return prepareCanonical(envelope, found);
         if (found === null && retryAfterKnownAbsence) return createAttempt(envelope, false);
-
         transition({ kind: "ambiguous", envelope });
         return false;
       }
@@ -171,25 +178,21 @@ export function useHomeFirstSendAttempt({
   );
 
   const submit = useCallback(
-    (text: string, context: { workId: string; agentSlug: string }, draftRevision: number) => {
+    (submission: ComposerSubmitEnvelope, context: { workId: string | null; agentSlug: string }) => {
       if (stateRef.current.kind !== "idle") return Promise.resolve(false);
-      const envelope: HomeFirstSendEnvelope = {
+      return create({
         threadId: makeId(),
         projectId,
-        text,
-        draftRevision,
-        title: deriveTitleFromMessage(text),
-        workId: context.workId,
-        agentSlug: context.agentSlug,
-      };
-      latestDraftRef.current = { text, revision: draftRevision };
-      return create(envelope);
+        submission,
+        title: deriveTitleFromMessage(submission.text),
+        ...context,
+      });
     },
     [create, makeId, projectId],
   );
 
   const retry = useCallback(
-    async (context: { workId: string; agentSlug: string }) => {
+    async (context: { workId: string | null; agentSlug: string }) => {
       const current = stateRef.current;
       if (current.kind === "refused") return create({ ...current.envelope, ...context });
       if (current.kind === "ambiguous") {
@@ -204,7 +207,6 @@ export function useHomeFirstSendAttempt({
     },
     [create, prepareCanonical, reconcile, route, transition],
   );
-
   const startOver = useCallback(() => {
     if (stateRef.current.kind !== "mismatched") return false;
     transition({ kind: "idle" });
@@ -212,17 +214,24 @@ export function useHomeFirstSendAttempt({
   }, [transition]);
 
   const updateDraft = useCallback(
-    (text: string, revision: number) => {
-      latestDraftRef.current = { text, revision };
+    (change: ComposerDraftChange) => {
+      if (
+        !latestDraftRef.current ||
+        change.snapshot.revision > latestDraftRef.current.snapshot.revision
+      )
+        latestDraftRef.current = change;
       const current = stateRef.current;
-      if (current.kind === "routing" || current.kind === "route_failed") {
-        actions.preserveFirstSendRouteDraft(
-          current.envelope.threadId,
-          routeDraft(current.envelope),
-        );
-      }
+      if (!("envelope" in current)) return;
+      const key = {
+        projectId,
+        threadId: current.envelope.threadId,
+        submissionId: current.envelope.submission.submissionId,
+      };
+      continuityQueue.current = continuityQueue.current.then(() =>
+        continuity.updateLatest(key, change.snapshot),
+      );
     },
-    [actions, routeDraft],
+    [continuity, projectId],
   );
 
   const busy =

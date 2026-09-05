@@ -165,3 +165,10 @@ export async function deleteRequest(url: string): Promise<void> {
     throw errorFromResponse(payload, response.status);
   }
 }
+
+export async function deleteJson<T>(url: string): Promise<T> {
+  const response = await fetch(url, { method: "DELETE" });
+  const payload = await readResponsePayload(response);
+  if (!response.ok) throw errorFromResponse(payload, response.status);
+  return deserializeTransport<T>(payload as T);
+}

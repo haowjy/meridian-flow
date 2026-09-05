@@ -66,6 +66,14 @@ function hasAsciiControl(value: string): boolean {
 
 const EXPLICIT_SCHEME = /^([a-z][a-z\d+.-]*):/i;
 
+/** Whether reference completion must leave this writer-entered href entirely to the form. */
+export function linkInputStepsAsideFromReferences(input: string): boolean {
+  const value = input.trim();
+  if (!value || value.startsWith("//") || /^www\./i.test(value)) return true;
+  const scheme = EXPLICIT_SCHEME.exec(value)?.[1]?.toLowerCase();
+  return Boolean(scheme && !INTERNAL_SCHEMES.has(scheme));
+}
+
 /**
  * A writer-typed target that reads as a document path rather than a hostname.
  * `chapter-213.md` and `example.com` are the same shape, so the extension is

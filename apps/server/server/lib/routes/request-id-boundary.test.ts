@@ -176,6 +176,56 @@ const [
   ),
 ]);
 
+const [catalogSnapshot, catalogLookup] = await Promise.all([
+  import("../../routes/api/projects/[projectId]/context/catalog/snapshot.get.js").then(
+    (module) => module.default as unknown as TestHandler,
+  ),
+  import("../../routes/api/projects/[projectId]/context/catalog/lookup.get.js").then(
+    (module) => module.default as unknown as TestHandler,
+  ),
+]);
+
+describe("context catalog routes", () => {
+  it("authorizes the project before reading a catalog", async () => {
+    const snapshot = vi.fn();
+    const request = event({ projectId: VALID_ID }, undefined, {
+      projectRepo: {
+        findById: vi.fn(async () => ({ userId: CANONICAL_THREAD_ID, deletedAt: null })),
+      },
+      contextCatalog: { snapshot },
+    });
+    await expect(catalogSnapshot(request)).rejects.toMatchObject({ statusCode: 404 });
+    expect(snapshot).not.toHaveBeenCalled();
+  });
+
+  it("accepts canonical URI lookup and rejects slash-only compatibility lookup", async () => {
+    const lookup = vi.fn(async (input) => ({ entry: null, headRevision: "0", input }));
+    const ownedProjectRepo = {
+      findById: vi.fn(async () => ({ userId: VALID_ID, deletedAt: null })),
+    };
+    const canonical = event({ projectId: VALID_ID }, undefined, {
+      projectRepo: ownedProjectRepo,
+      contextCatalog: { lookup },
+    });
+    canonical.query = { scope: "project", uri: "manuscript://notes.md" };
+    await expect(catalogLookup(canonical)).resolves.toMatchObject({
+      __meridianTransport: true,
+      value: { headRevision: "0" },
+    });
+    expect(lookup).toHaveBeenCalledWith({
+      scope: { kind: "project", projectId: VALID_ID },
+      uri: "manuscript://notes.md",
+    });
+
+    const slashOnly = event({ projectId: VALID_ID }, undefined, {
+      projectRepo: ownedProjectRepo,
+      contextCatalog: { lookup },
+    });
+    slashOnly.query = { scope: "project", path: "/notes.md" };
+    await expect(catalogLookup(slashOnly)).rejects.toMatchObject({ statusCode: 400 });
+  });
+});
+
 describe("malformed HTTP request IDs", () => {
   beforeEach(() => {
     databaseCall.mockClear();
@@ -279,9 +329,13 @@ describe("malformed HTTP request IDs", () => {
   it.each([
     ["global", () => createThread(event({}, { projectId: VALID_ID, workId: null }))],
     ["project-scoped", () => createProjectThread(event({ projectId: VALID_ID }, { workId: null }))],
-  ])("rejects explicit null Work on %s root creation before fallback resolution", async (_surface, invoke) => {
-    await expect(invoke()).rejects.toMatchObject({ statusCode: 400 });
-    expect(createThreadForProject).not.toHaveBeenCalled();
+  ])("accepts explicit null Work on %s root creation", async (_surface, invoke) => {
+    createThreadForProject.mockResolvedValueOnce({ id: VALID_ID });
+    await expect(invoke()).resolves.toBeDefined();
+    expect(createThreadForProject).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ workId: null }),
+    );
   });
 
   it("normalizes project-scoped creation IDs before thread creation", async () => {
@@ -526,6 +580,72 @@ describe("malformed WebSocket thread IDs", () => {
 
     expect(requireOwnedThread).toHaveBeenCalledWith(CANONICAL_THREAD_ID, VALID_ID);
     expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it("authorizes project catalog subscriptions and forwards truth-free hints", async () => {
+    let listener: ((hint: unknown) => void) | undefined;
+    const unsubscribe = vi.fn();
+    const sent: string[] = [];
+    const peer = {
+      request: new Request("https://app.localhost/api/threads/ws"),
+      context: {
+        userId: VALID_ID,
+        app: {
+          projectRepo: {
+            findById: vi.fn(async () => ({ userId: VALID_ID, deletedAt: null })),
+          },
+          contextCatalogWakeHub: {
+            subscribe: vi.fn((input: { listener: (hint: unknown) => void }) => {
+              listener = input.listener;
+              return unsubscribe;
+            }),
+          },
+        },
+      },
+      send: (frame: string) => sent.push(frame),
+      close: vi.fn(),
+    } as unknown as WsPeer;
+    const session = createThreadWebSocketSession(peer);
+    await session.onMessage(JSON.stringify({ type: "catalog.subscribe", projectId: VALID_ID }));
+    listener?.({
+      type: "context-catalog-hint",
+      scope: { kind: "project", projectId: VALID_ID },
+      headRevision: "3",
+    });
+    await session.onMessage(JSON.stringify({ type: "catalog.unsubscribe", projectId: VALID_ID }));
+
+    expect(parseWsServerMessage(sent[0] ?? "")).toMatchObject({
+      type: "context-catalog-hint",
+      headRevision: "3",
+    });
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
+
+  it("refuses catalog subscriptions outside the authenticated project", async () => {
+    const sent: string[] = [];
+    const subscribe = vi.fn();
+    const peer = {
+      request: new Request("https://app.localhost/api/threads/ws"),
+      context: {
+        userId: VALID_ID,
+        app: {
+          projectRepo: {
+            findById: vi.fn(async () => ({ userId: CANONICAL_THREAD_ID, deletedAt: null })),
+          },
+          contextCatalogWakeHub: { subscribe },
+        },
+      },
+      send: (frame: string) => sent.push(frame),
+      close: vi.fn(),
+    } as unknown as WsPeer;
+    await createThreadWebSocketSession(peer).onMessage(
+      JSON.stringify({ type: "catalog.subscribe", projectId: VALID_ID }),
+    );
+    expect(subscribe).not.toHaveBeenCalled();
+    expect(parseWsServerMessage(sent[0] ?? "")).toMatchObject({
+      type: "error",
+      error: { code: "not_found" },
+    });
   });
 
   it("re-enters the immutable connection trace for delayed subscription delivery", async () => {

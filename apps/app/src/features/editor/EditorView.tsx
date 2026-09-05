@@ -30,9 +30,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
-import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { imageCaretTarget, openImagePicker } from "@/core/editor/images";
 import { registerLiveRangeEditor } from "@/core/editor/live-range-navigation-runtime";
 import {
@@ -43,12 +41,14 @@ import {
 } from "@/core/editor/mounted-editor";
 import { usePrefetchTrailDetails } from "@/features/change-trail/trail-detail-query";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { useLiveDocumentSessionRegistry } from "@/features/project/context/account-feature-context";
 import { cn } from "@/lib/utils";
 import { EditorChromeHost } from "./chrome/EditorChromeHost";
 import { EditorSurfaceFrame } from "./EditorSurfaceFrame";
 import { type EditorBindHorizonResult, waitForEditorBindHorizon } from "./editor-bind-horizon";
 import { editorColumnCanvas, editorColumnFill, editorProseClass } from "./editor-column";
 import { type EditorScope, EditorScopeProvider } from "./editor-scope";
+import { useReferenceBrowserCatalog } from "./references/useReferenceBrowserCatalog";
 import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
 import { SyncStatus } from "./SyncStatus";
@@ -62,6 +62,10 @@ import "./editor.css";
 
 export type EditorViewProps = {
   documentId: string;
+  /** Exact host-owned live/local session. Omitted only for branch review until F1-I3. */
+  session?: DocumentSession;
+  /** Stable editor lifetime across local identity remint/materialization. */
+  bindingKey?: string;
   /** Keep a not-yet-materialized live document off server transport. */
   detached?: boolean;
   projectId?: string;
@@ -109,6 +113,7 @@ let editorSessionOwnerSequence = 0;
 function mountIdentity(props: EditorViewProps): EditorMountIdentity {
   const shared = {
     documentId: props.documentId,
+    bindingKey: props.bindingKey,
     projectId: props.projectId,
     schemaType: props.schemaType ?? "document",
     collaborationDecorations: props.showCollaborationDecorations ?? true,
@@ -126,26 +131,30 @@ function mountIdentity(props: EditorViewProps): EditorMountIdentity {
 export function EditorView(props: EditorViewProps) {
   const identity = mountIdentity(props);
   const roomKey = editorRoomKey(identity);
-  const detached = identity.surface === "live" && identity.detached;
   const inReview = identity.surface === "review";
+  const registry = useLiveDocumentSessionRegistry();
   const [boundSession, setBoundSession] = useState<DocumentSession | null>(null);
   const sessionOwnerIdRef = useRef<string | null>(null);
   sessionOwnerIdRef.current ??= `editor-view:${++editorSessionOwnerSequence}`;
 
   useEffect(() => {
-    // The app-level registry owns teardown. This view only contributes the room
-    // it is currently bound to so short-lived draft sessions are reclaimed when
-    // inline review exits.
-    const registry = getDocumentSessionRegistry();
+    if (!inReview) {
+      setBoundSession(null);
+      return;
+    }
     const ownerId = sessionOwnerIdRef.current;
     if (!ownerId) return;
-    registry.retain(ownerId, [roomKey], {
-      detachedRoomKeys: detached ? [roomKey] : [],
-    });
-    const session = detached ? registry.getDetached(roomKey) : registry.getRoom(roomKey);
+    registry.retainBranchRooms(ownerId, [roomKey]);
+    let session: DocumentSession;
+    try {
+      session = registry.getBranchRoom(roomKey);
+    } catch (error) {
+      registry.releaseBranchRooms(ownerId);
+      throw error;
+    }
     setBoundSession(session);
-    return () => registry.release(ownerId);
-  }, [detached, roomKey]);
+    return () => registry.releaseBranchRooms(ownerId);
+  }, [inReview, registry, roomKey]);
 
   useEffect(() => {
     if (!inReview || boundSession?.roomKey !== roomKey) return;
@@ -161,7 +170,11 @@ export function EditorView(props: EditorViewProps) {
     });
   }, [boundSession, props.onReviewSessionUnavailable, inReview, roomKey]);
 
-  const session = boundSession?.roomKey === roomKey ? boundSession : null;
+  const session = inReview
+    ? boundSession?.roomKey === roomKey
+      ? boundSession
+      : null
+    : (props.session ?? null);
 
   if (!session) return <PendingEditorShell {...props} />;
 
@@ -174,6 +187,7 @@ export function EditorView(props: EditorViewProps) {
       {...props}
       identity={identity}
       session={session}
+      liveSession={props.session ?? null}
     />
   );
 }
@@ -181,6 +195,7 @@ export function EditorView(props: EditorViewProps) {
 type SessionEditorViewProps = EditorViewProps & {
   identity: EditorMountIdentity;
   session: DocumentSession;
+  liveSession: DocumentSession | null;
 };
 
 function SessionEditorView(props: SessionEditorViewProps) {
@@ -241,6 +256,7 @@ function ActiveSessionEditorView({
   reviewWorkId = null,
   onReviewSessionUnavailable,
   session,
+  liveSession,
   snapshot,
   evidenceDegraded,
 }: ActiveSessionEditorViewProps) {
@@ -248,8 +264,7 @@ function ActiveSessionEditorView({
   const { controller } = useDraftReview();
   const inReview = identity.surface === "review";
   const reviewDraftId = identity.surface === "review" ? identity.draftId : null;
-  const registry = getDocumentSessionRegistry();
-  const liveReviewSession = inReview && registry.has(documentId) ? registry.get(documentId) : null;
+  const liveReviewSession = inReview ? liveSession : null;
   const editorRef = useRef<Editor | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const effectiveEditableRef = useRef(true);
@@ -305,6 +320,11 @@ function ActiveSessionEditorView({
     if (identity.schemaType !== "document" || !effectiveEditable || !projectId) return null;
     return { label: t`Link a document`, documents: wikilinkDocuments };
   }, [effectiveEditable, identity.schemaType, projectId, wikilinkDocuments]);
+  const sharedReferenceCatalog = useReferenceBrowserCatalog(projectId, workId, t`Reference a file`);
+  const atReferenceCatalog = useCallback(
+    () => (identity.schemaType === "document" && effectiveEditable ? sharedReferenceCatalog : null),
+    [effectiveEditable, identity.schemaType, sharedReferenceCatalog],
+  );
 
   // Surface config: applied to the running editor, never a reason to rebuild it.
   // Only the prose node's own attributes live here; a lane that answers a press
@@ -326,6 +346,7 @@ function ActiveSessionEditorView({
     placeholder: t`Start writing…`,
     slashCommandCatalog,
     wikilinkCatalog,
+    atReferenceCatalog,
     surface: { editable: effectiveEditable, editorProps },
     evidenceDegraded,
   });

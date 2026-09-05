@@ -70,6 +70,13 @@ that block compose on it (an image's controls and its paragraph's grip).
   pressed, so a keydown listener beside it is a step the chain neither owns nor
   observes — which is what a block drag's own window listener was until it was
   deleted.
+- **A suggestion contributes retreat, never Escape.** Its host lease registers
+  `backtrack` plus root `dismiss` against the suggestion surface's stable owner
+  ID. The chain offers that action only when the matching layer is topmost; a
+  deeper overlay and an active gesture still win. Before React has registered
+  the layer, the newest retreat is the pending owner so the first Escape cannot
+  outrun the menu. The same operation serves prose, the document backstop, and
+  Radix's `onEscapeKeyDown`; there is no suggestion key binding or listener.
 - **A key pressed outside the prose still goes through the registry.** A
   portalled layer holds focus while it is open and ProseMirror hears none of its
   keys, so a `layer`-scoped contribution may declare `reach: "chrome"` and the

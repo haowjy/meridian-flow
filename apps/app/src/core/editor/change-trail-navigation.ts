@@ -2,7 +2,7 @@
 import { decodeNavigationPosition, validateLiveBlockRange } from "@meridian/agent-edit";
 import type * as Y from "yjs";
 import type { TrailChange } from "@/client/change-trails";
-import { getDocumentSessionRegistry } from "./document-session-registry";
+import type { ProjectDocumentLiveOpenResult } from "@/features/project/context/open-project-document";
 import { showLiveRangeInEditor, showPeerMarkerInEditor } from "./live-range-navigation-runtime";
 import { relativePositionTargetsFragment } from "./relative-position-runtime";
 
@@ -16,9 +16,8 @@ let navigationSequence = 0;
 export async function navigateToTrailChange(input: {
   documentId: string;
   change: TrailChange;
-  openDocument: (documentId: string) => Promise<boolean>;
+  openDocument: (documentId: string) => Promise<ProjectDocumentLiveOpenResult>;
   timeoutMs?: number;
-  registry?: Pick<ReturnType<typeof getDocumentSessionRegistry>, "get" | "retain" | "release">;
   showRange?: typeof showLiveRangeInEditor;
   showMarker?: typeof showPeerMarkerInEditor;
   signal?: AbortSignal;
@@ -26,15 +25,15 @@ export async function navigateToTrailChange(input: {
   const cancelled = () => input.signal?.aborted === true;
   if (cancelled()) return { kind: "could_not_open" };
   if (input.change.navigation.kind === "unavailable") return { kind: "unavailable" };
-  const opened = await input.openDocument(input.documentId).catch(() => false);
-  if (cancelled()) return { kind: "could_not_open" };
-  if (!opened) return { kind: "could_not_open" };
+  const opened = await input.openDocument(input.documentId).catch(() => null);
+  if (cancelled() || !opened || opened.kind !== "opened") return { kind: "could_not_open" };
 
-  const registry = input.registry ?? getDocumentSessionRegistry();
   const owner = `change-trail-navigation:${++navigationSequence}`;
-  registry.retain(owner, [input.documentId]);
+  let binding: Awaited<ReturnType<typeof opened.admission.bind>> | null = null;
   try {
-    const session = registry.get(input.documentId);
+    binding = await opened.admission.bind(owner);
+    if (cancelled()) return { kind: "could_not_open" };
+    const session = binding.session;
     await Promise.race([
       session.waitForCurrentSync(input.timeoutMs ?? 10_000),
       new Promise<void>((resolve) =>
@@ -113,6 +112,6 @@ export async function navigateToTrailChange(input: {
     } while (Date.now() < deadline);
     return { kind: "could_not_open" };
   } finally {
-    registry.release(owner);
+    binding?.release();
   }
 }

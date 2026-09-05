@@ -3,8 +3,12 @@ import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { projects } from "@meridian/database/schema";
 import { and, desc, eq, ilike, isNull, or } from "drizzle-orm";
-import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  runInDrizzleTransaction,
+} from "../../../../shared/drizzle-transaction.js";
 import { isUuid } from "../../../../shared/uuid.js";
+import type { ContextCatalogLifecyclePort } from "../../ports/context-catalog-lifecycle.js";
 import type {
   CreateProjectInput,
   ListProjectsOptions,
@@ -33,6 +37,7 @@ function mapProject(row: ProjectRow): Project {
 }
 export interface DrizzleProjectRepositoryDeps {
   db: Database;
+  catalogLifecycle?: ContextCatalogLifecyclePort;
 }
 export function createDrizzleProjectRepository(
   deps: DrizzleProjectRepositoryDeps,
@@ -40,21 +45,24 @@ export function createDrizzleProjectRepository(
   const { db } = deps;
   return {
     async create(input: CreateProjectInput): Promise<Project> {
-      const id = input.id ?? crypto.randomUUID();
-      const title = input.title?.trim() || DEFAULT_PROJECT_TITLE;
-      const [row] = await db
-        .insert(projects)
-        .values({
-          id,
-          userId: input.userId,
-          name: title,
-          slug: deriveSlug(title, id),
-          isPersonal: false,
-          systemPrompt: input.description ?? null,
-        })
-        .returning();
-      if (!row) throw new Error("Failed to create project");
-      return mapProject(row);
+      return runInDrizzleTransaction(db, async () => {
+        const id = input.id ?? crypto.randomUUID();
+        const title = input.title?.trim() || DEFAULT_PROJECT_TITLE;
+        const [row] = await currentDrizzleDb(db)
+          .insert(projects)
+          .values({
+            id,
+            userId: input.userId,
+            name: title,
+            slug: deriveSlug(title, id),
+            isPersonal: false,
+            systemPrompt: input.description ?? null,
+          })
+          .returning();
+        if (!row) throw new Error("Failed to create project");
+        await deps.catalogLifecycle?.refreshProject(row.id);
+        return mapProject(row);
+      });
     },
     async findById(id: ProjectId): Promise<Project | null> {
       // A non-UUID id (e.g. a slug in a `:projectId` route) would reach the
@@ -102,26 +110,37 @@ export function createDrizzleProjectRepository(
       return mapProject(row);
     },
     async softDelete(id: ProjectId): Promise<Project> {
-      const [existing] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);
-      if (!existing) throw new Error(`Project not found: ${id}`);
-      if (existing.deletedAt) return mapProject(existing);
-      const now = new Date();
-      const [row] = await db
-        .update(projects)
-        .set({ deletedAt: now, updatedAt: now, lastActivityAt: now })
-        .where(eq(projects.id, id))
-        .returning();
-      if (!row) throw new Error(`Project not found: ${id}`);
-      return mapProject(row);
+      return runInDrizzleTransaction(db, async () => {
+        const activeDb = currentDrizzleDb(db);
+        const [existing] = await activeDb
+          .select()
+          .from(projects)
+          .where(eq(projects.id, id))
+          .limit(1);
+        if (!existing) throw new Error(`Project not found: ${id}`);
+        if (existing.deletedAt) return mapProject(existing);
+        const now = new Date();
+        const [row] = await activeDb
+          .update(projects)
+          .set({ deletedAt: now, updatedAt: now, lastActivityAt: now })
+          .where(eq(projects.id, id))
+          .returning();
+        if (!row) throw new Error(`Project not found: ${id}`);
+        await deps.catalogLifecycle?.refreshProject(row.id);
+        return mapProject(row);
+      });
     },
     async restore(id: ProjectId): Promise<Project> {
-      const [row] = await db
-        .update(projects)
-        .set({ deletedAt: null, updatedAt: new Date() })
-        .where(eq(projects.id, id))
-        .returning();
-      if (!row) throw new Error(`Project not found: ${id}`);
-      return mapProject(row);
+      return runInDrizzleTransaction(db, async () => {
+        const [row] = await currentDrizzleDb(db)
+          .update(projects)
+          .set({ deletedAt: null, updatedAt: new Date() })
+          .where(eq(projects.id, id))
+          .returning();
+        if (!row) throw new Error(`Project not found: ${id}`);
+        await deps.catalogLifecycle?.refreshProject(row.id);
+        return mapProject(row);
+      });
     },
     async touch(id: ProjectId): Promise<void> {
       const [project] = await db.select().from(projects).where(eq(projects.id, id)).limit(1);

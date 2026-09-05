@@ -15,8 +15,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ContextTab } from "@/client/stores";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 import { cn } from "@/lib/utils";
+import { useLocalUntitledOwner } from "./account-feature-context";
 import { invalidContextEntryNameReason } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import {
@@ -65,6 +65,10 @@ export function IdentityPlacementField({
   onExit: (reason: ExitReason) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
 }) {
+  const localUntitled = useLocalUntitledOwner();
+  const localSessionRef = useRef<import("@/core/editor/document-session").DocumentSession | null>(
+    null,
+  );
   const provisionalPlacement =
     location.provisional && location.scheme === "scratch" && location.parentPath === "/";
   const inputRef = useRef<HTMLInputElement>(null);
@@ -77,7 +81,7 @@ export function IdentityPlacementField({
   const [value, setValue] = useState(
     () => failure?.name ?? (provisionalPlacement ? "" : location.leaf),
   );
-  const [ghost, setGhost] = useState(() => (provisionalPlacement ? suggestionForTab(tab) : ""));
+  const [ghost, setGhost] = useState("");
   const [noteValue, setNoteValue] = useState(value);
   const [conflict, setConflict] = useState<ConflictLocator | null>(() =>
     failure?.kind === "conflict"
@@ -103,13 +107,23 @@ export function IdentityPlacementField({
 
   useEffect(() => {
     if (!provisionalPlacement) return;
-    const session = getDocumentSessionRegistry().getDetached(tab.documentId);
+    const local = localUntitled.getDetached({
+      accountId: localUntitled.accountId,
+      projectId,
+      documentId: tab.documentId,
+    });
+    if (local) localSessionRef.current = local.session;
+    const session = local?.session ?? localSessionRef.current;
+    if (!session) {
+      setGhost("");
+      return;
+    }
     const fragment = session.document.getXmlFragment(session.fragmentName);
     const refresh = () => {
       if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
       suggestionTimer.current = window.setTimeout(() => {
         suggestionTimer.current = null;
-        setGhost(suggestionForTab(tab));
+        setGhost(suggestionForSession(tab, session));
       }, 300);
     };
     fragment.observeDeep(refresh);
@@ -117,7 +131,7 @@ export function IdentityPlacementField({
       fragment.unobserveDeep(refresh);
       if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
     };
-  }, [provisionalPlacement, tab]);
+  }, [localUntitled, projectId, provisionalPlacement, tab]);
 
   const suggestionOptions = useMemo(
     () => ({
@@ -131,6 +145,7 @@ export function IdentityPlacementField({
   const rootRows: AnnotatedFileSuggestion[] = useMemo(
     () =>
       WRITABLE_IDENTITY_DESTINATIONS.map((scheme) => ({
+        entryId: `root:${scheme}`,
         scheme,
         path: "/",
         name: schemeLabel(scheme),
@@ -281,7 +296,7 @@ export function IdentityPlacementField({
     setConflict(null);
     setRequestError(null);
     setCommitReason(null);
-    clearQueuedIdentityFailure(tab.documentId);
+    clearQueuedIdentityFailure(projectId, tab.documentId);
   };
 
   return (
@@ -450,8 +465,10 @@ function treeSegments(path: string): string[] {
   return path.split("/").filter(Boolean);
 }
 
-function suggestionForTab(tab: ContextTab): string {
-  const session = getDocumentSessionRegistry().getDetached(tab.documentId);
+function suggestionForSession(
+  tab: ContextTab,
+  session: import("@/core/editor/document-session").DocumentSession,
+): string {
   const suggestion = suggestedNameFromFragment(
     session.document.getXmlFragment(session.fragmentName),
   );

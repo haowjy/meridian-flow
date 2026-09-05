@@ -51,22 +51,23 @@ Two interfaces are the only paths between the visual layer and the substrate:
   (Zustand vanilla store, one instance per `ThreadStoreProvider`, SSR-safe).
   **Public imports:** `@/client/stores` only — do not reach into store internals from features.
   UI reads via `useThreadStore(selector)`, `useThreadTurns(threadId)`; writes via
-  `useThreadActions()` only. First-message transfer uses the thread-keyed
-  `stageFirstSend` → route-owned `armFirstSend` → Chat-owned claim/settlement
-  lifecycle in `useThreadHandoff`; an unarmed send cannot be claimed by a
-  persistent dock. `ThreadRunController` classifies admission through a typed
-  definite/ambiguous boundary. Definite rejection remains provider-owned until
+  `useThreadActions()` only. Project Home first-message continuity lives in one
+  account-scoped IndexedDB owner, not Zustand. Home stages the immutable
+  Composer envelope before navigation; destination Chat atomically claims
+  `ready` as `dispatching`, while a remounted `dispatching` or `ambiguous`
+  record performs ledger lookup only. `ThreadRunController` joins append,
+  lookup, and explicit retirement to a typed settlement boundary. Definite rejection remains durable until
   the matching shared Composer acknowledges an idempotent restoration; when a
   newer draft exists, the failed first send is prepended with a blank-line
-  separator so both writer-authored texts survive. Ambiguous admission stays
+  document separator so both writer-authored documents survive. Ambiguous admission stays
   quarantined without blind retry. If a writer changes the Home draft while
   creation or routing is pending, the immutable first message remains the
   admitted turn and the latest authored revision transfers separately into the
   destination Composer, even when that revision's text is byte-equal to the
   submitted message. The shared Composer reports a monotonic authoring revision;
   content equality is never a draft-version test.
-  This handoff lasts only for the authenticated provider lifetime and is not a
-  durable outbox. Deferred project-creation flows separately use
+  Continuity survives route and reload but is not an outbox: it has no timer,
+  worker, polling, or blind retry. Deferred project-creation flows separately use
   `markPendingCreation`, `clearPendingCreation`, and `removeOptimisticUserTurn`;
   the last one is only rollback for a locally appended user turn that failed
   before server acknowledgement.
@@ -99,12 +100,12 @@ Two interfaces are the only paths between the visual layer and the substrate:
   `useWorks` exposes only the owned-project Work catalog. Home derives its
   initial prospective choice from the first active (then first available) catalog
   Work and sends that explicit ID; omitted root-chat creation remains the sole
-  server boundary that resolves or repairs the internal new-chat fallback.
+  server boundary where omission and explicit null both mean no primary Work.
   Direct `/project/*` and `/chat/*` authenticated routes mount the project
   provider stack and seed the project list + `now`; the project route loader
   seeds per-project threads and works before the workspace renders, and carries
   the working-set read as an explicit `row` / `absent` / `unavailable` result.
-- **Zustand (thread-store):** per-thread `turnsByThread`, handoff flags,
+- **Zustand (thread-store):** per-thread `turnsByThread`,
   `streamingThreadId`, pending stream metadata, snapshot reconciliation
   watermark (`snapshotNextSeqFloorByThread`). Soft-delete undo lives in the
   **project-store**, not here. See "Thread snapshot reconciliation" below.
@@ -148,7 +149,7 @@ an unresolved create.
 
 Home first send deliberately orders the boundary differently: stable client ID
 → canonical create or same-ID ambiguity reconciliation → optimistic turn and
-staged handoff → route → arm. A definite stale Work or Agent refusal, whether
+durable continuity stage → route → destination claim. A definite stale Work or Agent refusal, whether
 returned by the initial create or its guarded same-ID retry after absence
 reconciliation, is identified only by the named `work_unavailable` or
 `agent_not_found` code, refreshes the relevant catalog, and unlocks prospective
@@ -195,9 +196,20 @@ Both HTTP snapshot callers must pass `nextSeq`. An unsequenced caller
 
 ## Authenticated layout shell
 
-`src/routes/_authenticated.tsx` mounts one unconditional provider tree for every
-authenticated route (`AppQueryProvider` → `ProjectStoreProvider` →
-`ThreadStoreProvider` → `TransportProvider` → `MeridianCopilotProvider`). No
+`src/routes/__root.tsx` owns AuthKit and renders the route outlet directly.
+The authenticated route's `AccountFeatureComposition` constructs its account
+feature lifetime synchronously, so its providers and descendants render on the
+first pass. An actual A-to-B account replacement synchronously fences the old
+lifetime and finishes its staged teardown before constructing B; only that
+replacement interval withholds descendants. The authenticated browser effect
+rehydrates the device Context desk after the shell is visible. Local persistence
+reconciliation never projects an account-preparation screen or gates initial
+rendering.
+
+`src/routes/_authenticated.tsx` mounts one unconditional route composition for
+every authenticated route (`AppQueryProvider` → `AccountFeatureComposition` →
+`DraftApplyRecoveryProvider` → `ProjectStoreProvider` → `ThreadStoreProvider` →
+`TransportProvider` → `MeridianCopilotProvider`). No
 pathname-based provider gating — conditional light↔workspace branches previously
 dropped `ThreadStoreProvider` during transitions.
 
@@ -222,9 +234,8 @@ same provider stack.
 The dedicated Work screen presents Active Work first and keeps Archived Work in a
 default-collapsed disclosure. Work management has no project-wide selection state;
 collection reads and actions never read, resolve, repair, or change the internal
-new-chat fallback, and never implicitly change a thread binding. The Work-list
-payload is catalog-only; fallback resolution belongs solely to omitted root-chat
-creation.
+thread creation, and never implicitly change a thread binding. The Work-list
+payload is catalog-only; omitted or null root creation remains explicitly no-Work.
 Home and Work each own exactly one screen-level `app-scroll`; neither screen
 adds a nested scroll owner. Their bodies share `project-screen-column`, whose
 named inline-size container controls collection columns independently of the

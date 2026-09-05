@@ -3,6 +3,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
+import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -46,9 +47,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createCollabDomain } = await import("./composition.js");
     const { createDrizzleDocumentAccess } = await import("../../lib/document-access.js");
+    const { createDrizzleProjectWorkAuthorityResolver } = await import("../projects/index.js");
     const { ContextFS } = await import("../context/adapters/context-fs/context-fs.js");
-    const { DrizzleContextDocumentStore, DrizzleContextTreeMutationStore } = await import(
+    const { DrizzleContextDocumentStore } = await import(
       "../context/adapters/context-fs/drizzle-store.js"
+    );
+    const { DrizzleContextTreeMutationStore } = await import(
+      "../context/adapters/context-fs/drizzle-tree-mutation-store.js"
     );
     const { checkDependentLaterLiveRows } = await import("./adapters/drizzle-live-dependencies.js");
     const { createDrizzleJournal } = await import("./adapters/drizzle-journal.js");
@@ -73,6 +78,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const createTestCollab = () =>
       createCollabDomain({
         db,
+        workProjectionMutation: createTestWorkProjectionMutation(db),
+        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
         documentAccess: createDrizzleDocumentAccess(db),
       });
 
@@ -1348,8 +1355,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(liveMembership.members).not.toContain(CREATED_DOC_ID);
 
       const { ContextFS } = await import("../context/adapters/context-fs/context-fs.js");
-      const { DrizzleContextDocumentStore, DrizzleContextTreeMutationStore } = await import(
+      const { DrizzleContextDocumentStore } = await import(
         "../context/adapters/context-fs/drizzle-store.js"
+      );
+      const { DrizzleContextTreeMutationStore } = await import(
+        "../context/adapters/context-fs/drizzle-tree-mutation-store.js"
       );
       const tree = new ContextFS({
         store: new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID }),

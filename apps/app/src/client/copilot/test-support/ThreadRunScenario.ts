@@ -7,7 +7,9 @@
  */
 
 import type {
+  AdmissionLookup,
   AGUIEvent,
+  RetireAdmissionResult,
   SendMessageResponse,
   SequencedEvent,
   ThreadSnapshotResponse,
@@ -15,6 +17,10 @@ import type {
 import { QueryClient } from "@tanstack/react-query";
 import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
+import {
+  plainComposerDoc,
+  serializeComposerDraft,
+} from "@/components/app/composer/composer-document";
 import type {
   InterruptRespondInput,
   ThreadTransport,
@@ -30,7 +36,10 @@ import {
 type AppendRequest = {
   data: {
     threadId: string;
+    submissionId: string;
     text: string;
+    blocks: readonly import("@meridian/contracts/protocol").UserMessageBlock[];
+    references: readonly import("@meridian/contracts/protocol").SubmittedReference[];
     connectionToken?: string;
   };
 };
@@ -88,6 +97,9 @@ class ScenarioThreadTransport implements ThreadTransport {
   }
 
   connect(): void {}
+  subscribeCatalog(): () => void {
+    return () => {};
+  }
   disconnect(): void {}
   reconnect(): void {}
   onConnectionState(): () => void {
@@ -160,6 +172,8 @@ export class ThreadRunScenario {
   readonly transport = new ScenarioThreadTransport();
   readonly appendRequests: AppendRequest[] = [];
   readonly snapshotRequests: string[] = [];
+  readonly lookupRequests: Array<{ threadId: string; submissionId: string }> = [];
+  readonly retireRequests: Array<{ threadId: string; submissionId: string }> = [];
   readonly controller: ThreadRunController;
 
   private append: (request: AppendRequest) => Promise<SendMessageResponse>;
@@ -169,6 +183,11 @@ export class ThreadRunScenario {
     options: {
       append?: (request: AppendRequest) => Promise<SendMessageResponse>;
       snapshot?: (threadId: string) => Promise<ThreadSnapshotResponse>;
+      lookup?: (input: { threadId: string; submissionId: string }) => Promise<AdmissionLookup>;
+      retire?: (input: {
+        threadId: string;
+        submissionId: string;
+      }) => Promise<RetireAdmissionResult>;
     } = {},
   ) {
     this.append = options.append ?? (async () => defaultSendResponse());
@@ -183,6 +202,20 @@ export class ThreadRunScenario {
       appendUserMessageFn: async (request) => {
         this.appendRequests.push(request);
         return this.append(request);
+      },
+      lookupAdmissionFn: async (input) => {
+        this.lookupRequests.push(input);
+        return options.lookup?.(input) ?? { kind: "not-seen", submissionId: input.submissionId };
+      },
+      retireAdmissionFn: async (input) => {
+        this.retireRequests.push(input);
+        return (
+          options.retire?.(input) ?? {
+            kind: "retired",
+            submissionId: input.submissionId,
+            code: "retired",
+          }
+        );
       },
       getThreadSnapshotFn: async ({ data }) => {
         this.snapshotRequests.push(data.threadId);
@@ -211,8 +244,12 @@ export class ThreadRunScenario {
     this.transport.rejectConnection(reason);
   }
 
-  submit(text: string, options: SubmitOptions = {}, threadId = "thread_1"): Promise<void> {
-    return this.controller.submit(threadId, text, options);
+  submit(text: string, options: SubmitOptions = {}, threadId = "thread_1") {
+    return this.controller.submit(
+      threadId,
+      serializeComposerDraft(plainComposerDoc(text)),
+      options,
+    );
   }
 
   resume(options: SubscribeLiveOptions = {}, threadId = "thread_1"): void {

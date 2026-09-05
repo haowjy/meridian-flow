@@ -39,6 +39,7 @@ type WsPeerState = {
   connectionToken: string;
   subscriptions: Map<ThreadId, () => void>;
   liveWatermark: Map<ThreadId, bigint>;
+  catalogSubscriptions: Map<string, () => void>;
 };
 
 const peerStates = new WeakMap<WsPeer, WsPeerState>();
@@ -51,6 +52,7 @@ function getPeerState(peer: WsPeer): WsPeerState {
       connectionToken: randomUUID(),
       subscriptions: new Map(),
       liveWatermark: new Map(),
+      catalogSubscriptions: new Map(),
     };
     peerStates.set(peer, state);
   }
@@ -192,6 +194,8 @@ function disposeSubscriptions(peer: WsPeer): void {
   for (const unsubscribe of state.subscriptions.values()) unsubscribe();
   state.subscriptions.clear();
   state.liveWatermark.clear();
+  for (const unsubscribe of state.catalogSubscriptions.values()) unsubscribe();
+  state.catalogSubscriptions.clear();
 }
 
 function unregisterPeerConnectionToken(peer: WsPeer): void {
@@ -259,6 +263,35 @@ export function createThreadWebSocketSession(peer: WsPeer) {
               state.subscriptions.get(threadId)?.();
               state.subscriptions.delete(threadId);
               state.liveWatermark.delete(threadId);
+              return;
+            }
+            case "catalog.subscribe": {
+              const projectId = parseRequestId(message.projectId);
+              if (!projectId || !peer.context) {
+                sendError(peer, meridianError("not_found", "Project not found"));
+                return;
+              }
+              const project = await peer.context.app.projectRepo.findById(projectId as never);
+              if (!project || project.userId !== peer.context.userId || project.deletedAt) {
+                sendError(peer, meridianError("not_found", "Project not found"));
+                return;
+              }
+              const state = getPeerState(peer);
+              state.catalogSubscriptions.get(projectId)?.();
+              state.catalogSubscriptions.set(
+                projectId,
+                peer.context.app.contextCatalogWakeHub.subscribe({
+                  projectId,
+                  userId: peer.context.userId,
+                  listener: (hint) => sendFrame(peer, hint),
+                }),
+              );
+              return;
+            }
+            case "catalog.unsubscribe": {
+              const state = getPeerState(peer);
+              state.catalogSubscriptions.get(message.projectId)?.();
+              state.catalogSubscriptions.delete(message.projectId);
               return;
             }
             case "interrupt.respond": {

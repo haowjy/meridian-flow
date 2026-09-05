@@ -3,7 +3,10 @@ import { createInMemoryCreditLedger } from "../../server/domains/billing/index.j
 import { createInMemoryCollabDomain } from "../../server/domains/collab/index.js";
 import { createInMemoryUnifiedContextPortFactory } from "../../server/domains/context/index.js";
 import { createInMemoryEventSink } from "../../server/domains/observability/index.js";
-import { createInMemoryProjectRepository } from "../../server/domains/projects/index.js";
+import {
+  createInMemoryProjectRepository,
+  createInMemoryWorkRepository,
+} from "../../server/domains/projects/index.js";
 import type {
   Gateway,
   GenerateRequest,
@@ -97,6 +100,7 @@ describe("smoke: in-process turn", () => {
     const toolRegistry = createToolRegistry({
       registrations: createWiredCoreToolRegistrations({
         threads: repos.threads,
+        works: createInMemoryWorkRepository(),
         contextPorts,
         documentSync,
         threadWorks: repos.threadWorks,

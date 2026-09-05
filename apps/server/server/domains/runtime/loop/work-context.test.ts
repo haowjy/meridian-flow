@@ -1,6 +1,8 @@
 /** Work-context rendering contract: current Work, capped recent list, and elision. */
+
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it } from "vitest";
+import { testWorkSlug } from "../../../test-support/work-slug.js";
 import { renderWorkContext, WORK_CONTEXT_ACTIVE_LIMIT } from "./work-context.js";
 
 function work(index: number, overrides: Partial<Work> = {}): Work {
@@ -10,12 +12,13 @@ function work(index: number, overrides: Partial<Work> = {}): Work {
     projectId: "00000000-0000-4000-8000-000000000100",
     createdByUserId: "00000000-0000-4000-8000-000000000101",
     name: `Work ${index}`,
-    slug: `work-${index}`,
+    slug: testWorkSlug(`work-${index}`),
     goal: `Goal ${index}`,
     description: null,
     status: "active",
     archivedAt: null,
     aiWriteMode: "direct",
+    entityRevision: "1",
     createdAt: timestamp,
     updatedAt: timestamp,
     lastActivityAt: timestamp,

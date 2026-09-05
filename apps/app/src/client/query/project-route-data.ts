@@ -19,10 +19,12 @@ import {
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 
 import { projectQueryKeys } from "./project-query-keys";
+import { beginWorksSnapshotRequest, seedWorksSnapshot } from "./works-projection-acquisition";
 
 export type ProjectRouteData = {
   threads: ThreadListItem[] | null;
   works: ListWorksResponse | null;
+  worksStarted: number;
   workingSet:
     | { status: "row"; row: ProjectWorkingSet }
     | { status: "absent" }
@@ -49,15 +51,17 @@ function settledValue<T>(result: PromiseSettledResult<T>): T | null {
 
 export async function loadProjectRouteData(projectId: string): Promise<ProjectRouteData> {
   const init = ssrApiRequestInit();
+  const worksStarted = beginWorksSnapshotRequest(projectId);
   const [threads, works, workingSet] = await Promise.allSettled([
     listProjectThreads(projectId, init),
-    listProjectWorks(projectId, { ...init, status: "all" }),
+    listProjectWorks(projectId, init),
     getProjectWorkingSet(projectId, init),
   ]);
 
   return {
     threads: settledValue(threads),
     works: settledValue(works),
+    worksStarted,
     workingSet:
       workingSet.status === "rejected"
         ? { status: "unavailable" }
@@ -76,6 +80,6 @@ export function seedProjectRouteData(
     client.setQueryData(projectQueryKeys.threads(projectId), data.threads);
   }
   if (data.works !== null) {
-    client.setQueryData(projectQueryKeys.works(projectId), data.works);
+    seedWorksSnapshot(client, data.works, data.worksStarted);
   }
 }

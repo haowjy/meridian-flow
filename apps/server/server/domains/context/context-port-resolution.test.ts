@@ -1,5 +1,8 @@
 import type { Thread } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { testWorkSlug } from "../../test-support/work-slug.js";
+import { resolvedWorkAuthority } from "../projects/domain/work-authority.js";
+import type { ProjectWorkAuthorityResolver } from "../projects/index.js";
 import {
   contextPortForProjectRecovery,
   contextPortForThread,
@@ -11,6 +14,16 @@ import type { UnifiedContextPortFactory } from "./unified-context-port-factory.j
 const CUSTOM_PROJECT_ID = "project-custom";
 const THREAD_ID = "thread-custom";
 const WORK_ID = "work-custom";
+
+function resolver(slugs: Record<string, string>): ProjectWorkAuthorityResolver {
+  const byId = async (_projectId: string, workId: string) => {
+    const slug = slugs[workId];
+    return slug
+      ? resolvedWorkAuthority({ kind: "work", workId, workSlug: testWorkSlug(slug) })
+      : null;
+  };
+  return { byId, lockById: byId, bySlug: async () => null };
+}
 
 function thread(): Thread {
   return {
@@ -45,6 +58,7 @@ describe("thread context-port resolution", () => {
         works: {
           listByProject: async () => [{ id: WORK_ID, slug: "current-work" }] as never,
         },
+        workAuthorityResolver: resolver({ [WORK_ID]: "current-work" }),
       },
       THREAD_ID,
     );
@@ -52,8 +66,8 @@ describe("thread context-port resolution", () => {
 
     const calls: Array<{ workId: string; projectId: string; threadId?: string }> = [];
     const contextPorts: UnifiedContextPortFactory = {
-      forWork: (workId, projectId, _userId, _workMemberships, threadId) => {
-        calls.push({ workId, projectId, ...(threadId ? { threadId } : {}) });
+      forWork: (authority, projectId, _userId, _workMemberships, threadId) => {
+        calls.push({ workId: authority.workId, projectId, ...(threadId ? { threadId } : {}) });
         return {} as ContextPort;
       },
       forProject: () => {
@@ -65,6 +79,42 @@ describe("thread context-port resolution", () => {
 
     expect(calls).toEqual([{ workId: WORK_ID, projectId: CUSTOM_PROJECT_ID, threadId: THREAD_ID }]);
   });
+
+  it("keeps every real Work explicitly addressable from a no-Work thread", async () => {
+    const resolution = await resolveThreadContext(
+      {
+        threads: { findById: async () => ({ ...thread(), workId: null }) },
+        threadWorks: { findPrimary: async () => null },
+        works: {
+          listByProject: async () => [{ id: WORK_ID, slug: "current-work" }] as never,
+        },
+        workAuthorityResolver: resolver({ [WORK_ID]: "current-work" }),
+      },
+      THREAD_ID,
+    );
+    if (!resolution) throw new Error("missing resolution");
+
+    const authorities: Array<ReadonlyMap<string, unknown> | undefined> = [];
+    const contextPorts = {
+      forWork: () => {
+        throw new Error("no-Work thread must use its project-owned base port");
+      },
+      forProject: (
+        _projectId: string,
+        _userId: string,
+        workAuthorities: ReadonlyMap<string, unknown>,
+      ) => {
+        authorities.push(workAuthorities);
+        return {} as ContextPort;
+      },
+    } as unknown as UnifiedContextPortFactory;
+
+    contextPortForThread(contextPorts, resolution);
+
+    expect([...(authorities[0]?.entries() ?? [])]).toEqual([
+      ["current-work", expect.objectContaining({ workId: WORK_ID })],
+    ]);
+  });
 });
 
 describe("project recovery context-port resolution", () => {
@@ -72,18 +122,18 @@ describe("project recovery context-port resolution", () => {
     const calls: Array<{ workId: string; authorities: string[] }> = [];
     const contextPorts = {
       forWork: (
-        workId: string,
+        authority: { workId: string },
         _projectId: string,
         _userId: string,
-        authorities: ReadonlyMap<string, string>,
+        authorities: ReadonlyMap<string, unknown>,
       ) => {
-        calls.push({ workId, authorities: [...authorities.keys()] });
+        calls.push({ workId: authority.workId, authorities: [...authorities.keys()] });
         return {} as ContextPort;
       },
       forProject: () => {
         throw new Error("active Works must use a Work-scoped recovery port");
       },
-    } as UnifiedContextPortFactory;
+    } as unknown as UnifiedContextPortFactory;
 
     await contextPortForProjectRecovery({
       deps: {
@@ -97,6 +147,7 @@ describe("project recovery context-port resolution", () => {
               ReturnType<import("../projects/index.js").WorkRepository["listByProject"]>
             >,
         },
+        workAuthorityResolver: resolver({ "work-1": "work-1", "work-2": "work-2" }),
       },
       projectId: CUSTOM_PROJECT_ID,
       userId: "user-1",

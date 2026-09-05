@@ -40,6 +40,8 @@ export type GesturePhase = "idle" | "drag" | "sweep";
  */
 export type ChromeLayer = {
   readonly id: string;
+  /** Stable surface owner shared with semantic contributions across mounts. */
+  readonly ownerId: string;
 };
 
 export type EscSituation = {

@@ -31,6 +31,7 @@ export default defineEventHandler(async (event) => {
       threads: app.threadRepos.threads,
       threadWorks: app.threadRepos.threadWorks,
       works: app.workRepo,
+      workAuthorityResolver: app.workAuthorityResolver,
     },
     {
       threadId,

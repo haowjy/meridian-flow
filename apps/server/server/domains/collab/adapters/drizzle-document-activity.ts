@@ -3,9 +3,13 @@ import type { Database } from "@meridian/database";
 import { contextSources, documents, projects, threadDocuments, works } from "@meridian/database";
 import { and, eq, isNull } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import type { WorkProjectionMutation } from "../../projects/index.js";
 import type { DocumentProjectionEffects } from "../domain/ports/document-projection-effects.js";
 
-export function createDrizzleDocumentProjectionEffects(db: Database): DocumentProjectionEffects {
+export function createDrizzleDocumentProjectionEffects(
+  db: Database,
+  workProjection?: WorkProjectionMutation,
+): DocumentProjectionEffects {
   return {
     async updateProjection(input) {
       const activeDb = currentDrizzleDb(db);
@@ -41,7 +45,7 @@ export function createDrizzleDocumentProjectionEffects(db: Database): DocumentPr
           );
       }
       if (scope?.workId) {
-        await activeDb.update(works).set({ updatedAt: input.at }).where(eq(works.id, scope.workId));
+        await workProjection?.touchWorks([scope.workId], input.at);
       }
       const projectId = scope?.sourceProjectId ?? scope?.workProjectId;
       if (projectId) {
@@ -63,7 +67,7 @@ export function createDrizzleDocumentProjectionEffects(db: Database): DocumentPr
         .set({ lastTouchedAt: input.at })
         .where(eq(threadDocuments.documentId, input.documentId));
       if (input.workId) {
-        await activeDb.update(works).set({ updatedAt: input.at }).where(eq(works.id, input.workId));
+        await workProjection?.touchWorks([input.workId], input.at);
       }
       const [scope] = await activeDb
         .select({ projectId: contextSources.projectId })

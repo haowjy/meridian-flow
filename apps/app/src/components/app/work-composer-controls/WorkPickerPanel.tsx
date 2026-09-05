@@ -100,6 +100,7 @@ export function WorkPickerPanel({
   operation,
   onQueryChange,
   onChoose,
+  onChooseNone,
   searchRef,
   focusRefs,
 }: {
@@ -108,6 +109,7 @@ export function WorkPickerPanel({
   operation: WorkPickerOperation;
   onQueryChange: (query: string) => void;
   onChoose: (work: Work) => void;
+  onChooseNone?: () => void;
   searchRef?: RefObject<HTMLInputElement | null>;
   focusRefs?: {
     selected: RefObject<HTMLButtonElement | null>;
@@ -169,6 +171,23 @@ export function WorkPickerPanel({
         />
       </div>
       <div className={`${dropdownResultsVariants({ kind: "picker" })} space-y-2`}>
+        {view.status === "ready" && onChooseNone ? (
+          <Button
+            type="button"
+            variant="ghost"
+            className={cn(dropdownRowVariants(), "w-full justify-start")}
+            data-work-choice
+            disabled={!view.enabled}
+            onClick={onChooseNone}
+          >
+            {operation.currentWorkId === "" ? (
+              <Check className="size-4" aria-hidden />
+            ) : (
+              <span className="size-4" />
+            )}
+            <Trans>No Work</Trans>
+          </Button>
+        ) : null}
         {view.status === "loading" ? (
           <PickerState>
             <Trans>Loading Work…</Trans>

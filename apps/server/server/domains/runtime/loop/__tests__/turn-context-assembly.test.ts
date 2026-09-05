@@ -1,5 +1,6 @@
 import type { Thread } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { testWorkSlug } from "../../../../test-support/work-slug.js";
 import { assembleComposedSystemPrompt } from "../composed-system-prompt.js";
 import { DOCUMENT_DIALECT_CORE_INSTRUCTION } from "../system-instructions/document-dialect.js";
 import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "../system-instructions/runtime-uris.js";
@@ -73,7 +74,15 @@ describe("assembleNextTurnContext", () => {
             text: "<work_context>\ntest\n</work_context>",
             current: {
               projectId: "00000000-0000-0000-0000-000000000001",
-              workId: "00000000-0000-0000-0000-000000000002",
+              execution: {
+                scope: {
+                  kind: "work",
+                  workId: "00000000-0000-0000-0000-000000000002",
+                  workSlug: testWorkSlug("test-work"),
+                },
+                aiWriteMode: "direct",
+                draftOwner: null,
+              },
             },
           };
         },
@@ -112,7 +121,15 @@ describe("assembleNextTurnContext", () => {
             text: "<work_context>\ntest\n</work_context>",
             current: {
               projectId: "00000000-0000-0000-0000-000000000001",
-              workId: "00000000-0000-0000-0000-000000000002",
+              execution: {
+                scope: {
+                  kind: "work",
+                  workId: "00000000-0000-0000-0000-000000000002",
+                  workSlug: testWorkSlug("test-work"),
+                },
+                aiWriteMode: "direct",
+                draftOwner: null,
+              },
             },
           };
         },
@@ -154,7 +171,15 @@ describe("assembleNextTurnContext", () => {
             text: "<work_context>\ntest\n</work_context>",
             current: {
               projectId: "00000000-0000-0000-0000-000000000001",
-              workId: "00000000-0000-0000-0000-000000000002",
+              execution: {
+                scope: {
+                  kind: "work",
+                  workId: "00000000-0000-0000-0000-000000000002",
+                  workSlug: testWorkSlug("test-work"),
+                },
+                aiWriteMode: "direct",
+                draftOwner: null,
+              },
             },
           };
         },

@@ -27,10 +27,12 @@ export async function createContextEntry(input: {
   port: ContextPort;
   userId: string;
   scheme: Parameters<typeof toUri>[0];
-  workId: string | null;
+  authority?: import("@meridian/contracts/context-uri").CanonicalContextAuthority;
+  /** Retained in the route-core test seam; authority, never an ID, owns URI serialization. */
+  workId?: string | null;
   body: CreateContextEntryBody;
 }) {
-  const uri = toUri(input.scheme, input.body.path, input.workId);
+  const uri = toUri(input.scheme, input.body.path, input.authority);
   if (input.body.type === "folder") {
     const result = await input.port.mkdir(uri, {
       origin: { type: "human", userId: input.userId },
@@ -50,12 +52,12 @@ export async function createContextEntry(input: {
 }
 
 export default defineEventHandler(async (event) => {
-  const { userId, scheme, workId, port } = await resolveContextRoute(event);
+  const { userId, scheme, authority, port } = await resolveContextRoute(event);
   const result = await createContextEntry({
     port,
     userId,
     scheme,
-    workId,
+    authority,
     body: parseCreateContextEntryBody(await readBody(event)),
   });
   if (result.status === "conflict") setResponseStatus(event, 409);

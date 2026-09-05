@@ -26,7 +26,6 @@ export default defineEventHandler(async (event) => {
       {
         projects: projectRepo,
         workRepo,
-        preferences: app.preferences,
         threads: repos.threads,
         threadWorks: repos.threadWorks,
         transaction: repos.transaction,
@@ -40,7 +39,7 @@ export default defineEventHandler(async (event) => {
         title: body.title ?? null,
         systemPrompt: body.systemPrompt ?? null,
         currentAgent: body.currentAgent ?? null,
-        workId: parseOptionalRequestId(body.workId, "workId"),
+        workId: body.workId == null ? null : parseOptionalRequestId(body.workId, "workId"),
       },
     );
 
