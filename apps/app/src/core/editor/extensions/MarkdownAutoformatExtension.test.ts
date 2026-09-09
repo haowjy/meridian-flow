@@ -377,3 +377,44 @@ describe("typed wikilink editing contracts", () => {
     expect(editor.view.dom.querySelector('a[href="[[Missing]]"]')).toBeNull();
   });
 });
+
+it.each(["image", "hard_break"])("does not autoformat across an inline %s", (kind) => {
+  for (const prefix of ["", "Before "]) {
+    const editor = openEditor();
+    editor.commands.setContent({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: `${prefix}[[Missing|` },
+            { type: kind, ...(kind === "image" ? { attrs: { src: "asset:1", alt: "map" } } : {}) },
+            { type: "text", text: "]" },
+          ],
+        },
+      ],
+    });
+    editor.commands.setTextSelection(editor.state.doc.content.size - 1);
+    const expected = editor.state.tr.insertText("]").doc;
+    expect(() => type(editor, "]")).not.toThrow();
+    expect(editor.state.doc.eq(expected)).toBe(true);
+    expect(editor.state.doc.firstChild?.child(1).type.name).toBe(kind);
+  }
+});
+
+it("separates following typing from the collaborative conversion history", () => {
+  const pair = createCollabPair({ type: "doc", content: [{ type: "paragraph" }] });
+  pairs.push(pair);
+  const editor = pair.local;
+  type(editor, "[[Missing|Name]]");
+  type(editor, " next");
+  expect(editor.commands.undo()).toBe(true);
+  expect(editor.state.doc.textContent).toBe("Name");
+  expect(editor.view.dom.querySelector("a")?.textContent).toBe("Name");
+  expect(editor.commands.undo()).toBe(true);
+  expect(editor.state.doc.textContent).toBe("[[Missing|Name]]");
+  expect(editor.commands.redo()).toBe(true);
+  expect(editor.state.doc.textContent).toBe("Name");
+  expect(editor.commands.redo()).toBe(true);
+  expect(editor.state.doc.textContent).toBe("Name next");
+});

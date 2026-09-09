@@ -24,6 +24,8 @@ import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import { classifyLinkTarget } from "../links/link-target";
 import { autoClosedRunLength } from "./auto-pair";
 
+const WIKILINK_CONVERSION = "wikilinkAutoformat";
+
 /**
  * A fence is an opening run of at least three fence characters and an info
  * string running to the first space. Capturing the run separately from the
@@ -84,9 +86,15 @@ export const MarkdownAutoformatExtension = Extension.create({
       // Use normal document Undo, isolated from the preceding typing instead.
       undoable: false,
       handler: ({ state, range, match }) => {
+        // Input rules flatten inline leaves to synthetic text whose length is
+        // not a document offset. Only a real, same-block text range is eligible.
+        if (range.from < 0 || range.from < state.doc.resolve(range.to).start()) return null;
         let protectedContent = false;
         state.doc.nodesBetween(range.from, range.to, (node) => {
-          if (node.marks.some((mark) => mark.type.name === "link" || mark.type.spec.code)) {
+          if (
+            (node.isInline && !node.isText) ||
+            node.marks.some((mark) => mark.type.name === "link" || mark.type.spec.code)
+          ) {
             protectedContent = true;
           }
         });
@@ -99,6 +107,7 @@ export const MarkdownAutoformatExtension = Extension.create({
         const tr = closeHistory(state.tr);
         tr.replaceWith(range.from, to, node.mark([...marks, ...node.marks]));
         tr.removeStoredMark(state.schema.marks.link);
+        tr.setMeta(WIKILINK_CONVERSION, true);
       },
     });
     const codeBlock = this.editor.schema.nodes.code_block;
@@ -117,6 +126,14 @@ export const MarkdownAutoformatExtension = Extension.create({
         getAttributes: fenceAttributes,
       }),
     ];
+  },
+
+  onTransaction({ transaction, editor }) {
+    if (!transaction.getMeta(WIKILINK_CONVERSION)) return;
+    // The binding has recorded the conversion now. Close its other boundary so
+    // subsequent prose is a separate Undo item, in both collaborative and PM history.
+    yUndoPluginKey.getState(editor.state)?.undoManager.stopCapturing();
+    editor.view.dispatch(closeHistory(editor.state.tr));
   },
 
   addKeyboardShortcuts() {

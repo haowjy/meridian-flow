@@ -524,11 +524,23 @@ writer who typed valid markdown holding literal `#### `. Fences accept `~~~` as
 well as ``` , and bullets accept `+`, for the same reason: all of them are GFM
 the codec reads, and all of them produce the same node.
 
-`MarkdownAutoformatExtension` owns only what inheritance gets wrong, and
+`MarkdownAutoformatExtension` owns completed wikilinks, the fence info string,
+and the Backspace recovery policy for inherited rules.
 `MarkdownAutoformatExtension.test.ts` is the truth table for the surface as a
 whole, inherited rules included: a dependency upgrade that drops a trigger has
 to fail there rather than in a manuscript.
 
+- Completing `[[target]]` or `[[target|display text]]` in manuscript prose
+  parses the shared wire grammar into an ordinary link mark without a catalog
+  choice. Automatic closers alone do not complete it. Missing targets use the
+  existing unresolved decoration after resolution; no resolution state is stored.
+  Code, existing links and ranges containing inline objects are not converted.
+  The input-rule string may contain synthetic leaf text with a different length
+  from document positions, so reject such ranges before mutation.
+- Wikilink conversion uses ordinary Undo/Redo, with capture boundaries on both
+  sides so subsequent typing is a separate item. Undo restores the literal
+  source. Generic `undoInputRule` Backspace replay would duplicate the final
+  auto-paired bracket, so this rule does not participate in that replay.
 - The code fence takes the whole GFM info string, lowercased. TipTap's rule
   captures `[a-z]+`, so ` ```Python `, ` ```c++ ` and ` ```ts-node ` produced no
   block at all. Lowercasing is what makes the attr a usable key: highlighting
@@ -538,7 +550,7 @@ to fail there rather than in a manuscript.
   fence's may hold anything — and because a run longer than three is one fence
   with no info, not a failed match. The fence rules live here and
   `MeridianCodeBlockLowlight` yields its own.
-- Backspace reverts the transform the last keystroke made. TipTap reaches for
+- Backspace reverts an inherited transform the last keystroke made. TipTap reaches for
   `undoInputRule` too, but from the core keymap, which sits below every node
   extension's: CodeBlock's "delete the empty block" binding got to a just-opened
   fence first and swallowed the ``` that opened it. A rule completed by Enter
