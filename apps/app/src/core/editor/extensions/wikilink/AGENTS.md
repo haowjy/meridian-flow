@@ -34,8 +34,10 @@ with the classifier about what a destination means.
 - **`allowSpaces` is on, and has to be.** Titles have spaces; a trigger that
   stopped at the first one could not find "The Second Gate". The cost is that the
   match runs to the end of the text node, which is why the catalog returns no
-  rows for a query carrying `]` or `|` — a writer who closed their own brackets
-  is left alone with their own text.
+  rows for a query carrying `]` or `|`. Completing the closing `]]` belongs to
+  `MarkdownAutoformatExtension`, which parses the wire syntax with the shared
+  codec and inserts a link even without a catalog match. Automatic closers alone
+  do not complete it; the writer must type the closing run.
 - **The brackets after the caret are already there.** Auto-pairing writes `]]`
   when the writer types the second `[`, so the trigger opens inside `[[]]` and
   the range a choice replaces has to reach past them — `autoClosedRunLength` is

@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+- `apps/app`: render completed hand-typed wikilinks with optional display text,
+  including missing destinations, without requiring a reference picker choice.
+
 - Clarify editing docs: semantic Markdown round trips, CRDT merge limits, and
   direct versus draft publication.
 

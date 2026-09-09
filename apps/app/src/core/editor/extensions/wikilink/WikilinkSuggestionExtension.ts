@@ -11,8 +11,8 @@
  * `allowSpaces` is on, and has to be: document titles have spaces in them, and
  * a menu that stopped filtering at "The Second" would be a menu that cannot
  * find "The Second Gate". The cost is that the match runs to the end of the
- * text node, which is why the catalog refuses a query carrying `]` — a writer
- * who closed the brackets themselves is left alone with their own text.
+ * text node, which is why the catalog refuses a query carrying `]`. Completed
+ * hand-typed wikilinks belong to MarkdownAutoformatExtension, not this menu.
  */
 
 import {
