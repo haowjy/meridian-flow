@@ -32,3 +32,14 @@ describe("referenceOccurrenceContent", () => {
     ).toBeNull();
   });
 });
+
+it("keeps reference identity recognizable after a server read snapshot is added", () => {
+  const content = {
+    ...occurrence,
+    read: { result: { command: "read", status: "document_not_found" } },
+  };
+  expect(referenceOccurrenceContent({ blockType: "text", content })).toEqual(content);
+  expect(
+    referenceOccurrenceContent({ blockType: "text", content: { ...occurrence, read: "fake" } }),
+  ).toBeNull();
+});

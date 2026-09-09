@@ -78,6 +78,11 @@ export function createTestOrchestratorDeps(
   return {
     gateway: inertGateway(),
     toolExecutor: inertToolExecutor(),
+    referenceReader: {
+      async read() {
+        throw new Error("Reference reader not configured");
+      },
+    },
     repos,
     eventWriter: createInMemoryEventJournalWriter(),
     packageRepository: createInMemoryPackageStore(),

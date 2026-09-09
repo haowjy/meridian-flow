@@ -3,6 +3,7 @@ import { type CanonicalContextUri, parseContextUri } from "../context-uri.js";
 import type { DocumentId, UserId } from "../ids.js";
 import { parseRequestId } from "../request-id.js";
 import type { ThreadId, TurnId } from "../runtime/index.js";
+import type { JsonValue } from "../threads/index.js";
 
 export type ReferenceOccurrence = {
   type: "reference";
@@ -73,10 +74,15 @@ export type UserTurnAdmissionResult =
   | { kind: "pending"; submissionId: string }
   | { kind: "rejected"; submissionId: string; code: AdmissionErrorCode };
 
+/** Server-generated snapshot; never accepted in a submitted reference. */
+export type ReadReferenceOccurrence = ReferenceOccurrence & {
+  read?: { result: JsonValue };
+};
+
 export function referenceOccurrenceContent(block: {
   blockType: unknown;
   content: unknown;
-}): ReferenceOccurrence | null {
+}): ReadReferenceOccurrence | null {
   if (
     block.blockType !== "text" ||
     !block.content ||
@@ -86,7 +92,9 @@ export function referenceOccurrenceContent(block: {
     return null;
   }
   const content = block.content as Record<string, unknown>;
-  const keys = Object.keys(content).sort();
+  const keys = Object.keys(content)
+    .filter((key) => key !== "read")
+    .sort();
   if (
     keys.length !== 4 ||
     !["documentId", "text", "type", "uri"].every((key, index) => keys[index] === key) ||
@@ -99,6 +107,18 @@ export function referenceOccurrenceContent(block: {
   ) {
     return null;
   }
+  if ("read" in content) {
+    const read = content.read;
+    if (
+      !read ||
+      typeof read !== "object" ||
+      Array.isArray(read) ||
+      Object.keys(read).length !== 1 ||
+      !("result" in read) ||
+      read.result === undefined
+    )
+      return null;
+  }
   const parsedUri = parseContextUri(content.uri);
   if (
     !parsedUri.ok ||
@@ -108,5 +128,5 @@ export function referenceOccurrenceContent(block: {
   ) {
     return null;
   }
-  return content as ReferenceOccurrence;
+  return content as ReadReferenceOccurrence;
 }

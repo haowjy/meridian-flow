@@ -64,6 +64,7 @@ import {
 import {
   createCoreToolRegistrations,
   type InterruptToolHandlerContext,
+  type ReferenceReader,
   type ToolHandlerContext,
   type ToolRegistration,
   WorkCommandSchema,
@@ -291,7 +292,7 @@ function modelContextError(
 function recordTouchInBackground(
   deps: ToolWiringDeps,
   documentId: string | undefined,
-  ctx: ToolHandlerContext,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
 ): void {
   if (!deps.documentTouches || !documentId) return;
   const eventSink = deps.eventSink;
@@ -611,6 +612,41 @@ async function askUserHandler(input: unknown, ctx: InterruptToolHandlerContext) 
   const resolvedProps = interruptResolvedPropsFromAnswer(response);
   await ctx.updateComponentBlock(request.interruptId, resolvedProps);
   return { value: resolvedProps.resolvedValue, provenance: response.provenance };
+}
+
+/** Reference loading uses the same context resolution and agent-edit read core as the write tool. */
+export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
+  return {
+    async read(reference, ctx) {
+      const execution = await resolveExecutionContext(deps, ctx.threadId);
+      if ("isError" in execution) return JSON.parse(JSON.stringify(execution.output));
+      const context = await resolveContextPort(deps, ctx.threadId);
+      if ("isError" in context) return JSON.parse(JSON.stringify(context.output));
+      const command = { command: "read" as const, path: reference.uri, format: "auto" as const };
+      const address = await resolveDocumentAddress(context, command);
+      if (isToolError(address)) return JSON.parse(JSON.stringify(address.output));
+      if (address.documentId !== reference.documentId) {
+        return JSON.parse(
+          JSON.stringify(
+            writeToolError(
+              "read",
+              "Referenced document is no longer available at this URI.",
+              "document_not_found",
+            ).output,
+          ),
+        );
+      }
+      const outcome = await deps.documentSync
+        .agentEdit(execution)
+        .write(buildAgentWriteCommand(command, address, undefined), {
+          sessionId: ctx.threadId,
+          threadId: ctx.threadId,
+          turnId: ctx.turnId,
+        });
+      if (!outcome.isError) recordTouchInBackground(deps, address.documentId, ctx);
+      return JSON.parse(JSON.stringify(outcome.result));
+    },
+  };
 }
 
 export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {

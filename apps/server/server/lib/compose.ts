@@ -160,6 +160,7 @@ import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { readThreadContextDocument } from "./thread-context-route.js";
 import {
   createAgentEditResponseWriteLifecycle,
+  createReferenceReader,
   createWiredCoreToolRegistrations,
 } from "./wired-core-tools.js";
 
@@ -542,7 +543,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threadWorks: ports.threadRepos.threadWorks,
     works: ports.workRepo,
   });
-  for (const registration of createWiredCoreToolRegistrations({
+  const coreToolDeps = {
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
     documentSync: ports.documentSync,
@@ -556,7 +557,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
     transaction: ports.threadRepos.transaction,
-  })) {
+  };
+  for (const registration of createWiredCoreToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
   }
   toolRegistry.register(
@@ -655,6 +657,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const orchestrator = createOrchestrator({
     gateway: ports.gateway,
+    referenceReader: createReferenceReader(coreToolDeps),
     toolExecutor,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,

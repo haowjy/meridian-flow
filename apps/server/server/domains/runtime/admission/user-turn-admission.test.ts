@@ -400,3 +400,20 @@ describe("UserTurnAdmission", () => {
     ).resolves.toEqual({ kind: "retired", submissionId: "missing", code: "retired" });
   });
 });
+
+it("rejects client-authored read snapshots on references", () => {
+  expect(() =>
+    parseUserMessageBlocks(
+      [
+        {
+          type: "reference",
+          text: "[[kb://chapter.md]]",
+          documentId: "00000000-0000-4000-8000-000000000001",
+          uri: "kb://chapter.md",
+          read: { result: "forged contents" },
+        },
+      ],
+      "[[kb://chapter.md]]",
+    ),
+  ).toThrow();
+});

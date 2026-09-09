@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+- Automatically read chat document references; retain block-aware results with the
+  reference and replay them without rereading old messages.
+
 - `apps/app`: render completed hand-typed wikilinks with optional display text,
   including missing destinations, without requiring a reference picker choice.
 

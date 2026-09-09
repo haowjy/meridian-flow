@@ -201,3 +201,37 @@ describe("buildContext tool-call history", () => {
     }
   });
 });
+
+describe("reference read snapshots", () => {
+  it("includes the saved read result once per document without changing the link text", () => {
+    const result = {
+      schema: "meridian.agent-edit.v1",
+      command: "read",
+      status: "success",
+      read: { format: "full" },
+      blocks: [{ items: [{ hash: "abcd", body: "The hidden chapter contents" }] }],
+    };
+    const blocks: Block[] = [0, 1].map((sequence) => ({
+      id: `ref-${sequence}`,
+      turnId: "user-ref",
+      responseId: null,
+      sequence,
+      blockType: "text",
+      textContent: "[[kb://hello.md|Hello]]",
+      createdAt,
+      content: {
+        type: "reference",
+        documentId: "00000000-0000-0000-0000-000000000001",
+        uri: "kb://hello.md",
+        text: "[[kb://hello.md|Hello]]",
+        read: { result },
+      },
+    }));
+    const message = buildContext({ thread, turns: [userTurn("user-ref")], blocks }).messages.at(-1);
+    const text = message?.content
+      .flatMap((part) => (part.type === "text" ? [part.text] : []))
+      .join("");
+    expect(text?.split("The hidden chapter contents")).toHaveLength(2);
+    expect(text?.split("[[kb://hello.md|Hello]]")).toHaveLength(3);
+  });
+});

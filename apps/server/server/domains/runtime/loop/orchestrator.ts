@@ -123,6 +123,7 @@ import {
   persistAndAppendEvents,
   persistAndAppendTurnStartEvents,
 } from "./persistence.js";
+import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
 import type { RunTurnHandle, RunTurnInput, RunTurnPort } from "./run-turn-port.js";
 import {
   collectToolCalls,
@@ -153,6 +154,7 @@ export interface OrchestratorRepositories {
 export interface OrchestratorDeps {
   gateway: LlmGateway;
   toolExecutor: ToolExecutor;
+  referenceReader: ReferenceReader;
   repos: OrchestratorRepositories;
   eventWriter: EventJournalWriter;
   packageRepository: PackageRepository;
@@ -945,6 +947,39 @@ async function* generateEvents(
           },
           { once: true },
         );
+      }
+
+      if (iteration === 1) {
+        const loaded = await loadReferenceReads({
+          blocks: allBlocks,
+          userTurnId: userTurn.id,
+          threadId: input.threadId,
+          assistantTurnId: currentAssistantTurn.id,
+          reader: deps.referenceReader,
+          signal: input.signal,
+        });
+        if (loaded.length > 0) {
+          const persisted = await persistAndAppendEvents(deps, input.threadId, async () => ({
+            result: loaded,
+            events: loaded.map((block) => ({
+              type: "block.upserted" as const,
+              block: contentForBlockInput({
+                id: block.id,
+                turnId: block.turnId,
+                responseId: block.responseId,
+                blockType: block.blockType,
+                sequence: block.sequence,
+                content: block.content,
+                status: "complete",
+              }),
+            })),
+          }));
+          for (const block of persisted.result) {
+            const index = allBlocks.findIndex((existing) => existing.id === block.id);
+            allBlocks[index] = block;
+          }
+          yield* persisted.events;
+        }
       }
 
       const built = await buildGenerateRequest({

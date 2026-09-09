@@ -27,6 +27,7 @@ export {
 } from "./loop/interrupts.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
 export * from "./loop/permissions/index.js";
+export type { ReferenceReader } from "./loop/reference-context.js";
 export {
   createLateBindRunTurnPort,
   type ReturnResultCompleter,

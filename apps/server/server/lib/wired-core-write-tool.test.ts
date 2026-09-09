@@ -18,7 +18,9 @@ import type { ToolHandlerContext } from "../domains/runtime/index.js";
 import { Ok } from "../shared/result.js";
 import {
   createAgentEditResponseWriteLifecycle,
+  createReferenceReader,
   createWiredCoreToolRegistrations,
+  type ToolWiringDeps,
 } from "./wired-core-tools.js";
 
 type TestWriteHandler = (input: unknown, ctx: ToolHandlerContext) => Promise<unknown>;
@@ -448,8 +450,20 @@ function wiredWriteHandler(input: {
   core: AgentEditCore;
   port?: ContextPort;
 }) {
+  const [writeRegistration] = createWiredCoreToolRegistrations(wiredDeps(input));
+  if (writeRegistration?.definition.name !== "write") throw new Error("missing write");
+  if (writeRegistration.execution.type !== "server") throw new Error("missing handler");
+  return writeRegistration.execution.handler as TestWriteHandler;
+}
+
+function wiredDeps(input: {
+  documentId: string;
+  filePath: string;
+  core: AgentEditCore;
+  port?: ContextPort;
+}): ToolWiringDeps {
   const port = input.port ?? contextPortFor(input.documentId, input.filePath);
-  const [writeRegistration] = createWiredCoreToolRegistrations({
+  return {
     threads: { findById: async () => thread() } as never,
     threadWorks: {
       findPrimary: async () => null,
@@ -471,12 +485,7 @@ function wiredWriteHandler(input: {
     responseWrites: { trackStagedCreate: () => {} },
     eventSink: createInMemoryEventSink(),
     transaction: async (operation) => operation(),
-  });
-  if (writeRegistration?.definition.name !== "write") {
-    throw new Error("missing wired write registration");
-  }
-  if (writeRegistration.execution.type !== "server") throw new Error("write must be server-backed");
-  return writeRegistration.execution.handler as TestWriteHandler;
+  };
 }
 
 function contextPortFor(documentId: string, filePath: string): ContextPort {
@@ -547,3 +556,34 @@ function thread() {
     updatedAt: new Date().toISOString(),
   };
 }
+
+describe("automatic reference reads", () => {
+  it("returns the official block-aware read result and refuses a replaced path identity", async () => {
+    const documentId = "00000000-0000-4000-8000-000000000041";
+    const filePath = "manuscript://chapter.md";
+    const harness = createWriteToolHarness({ [documentId]: "# Chapter\n\nThe original chapter." });
+    const deps = wiredDeps({ documentId, filePath, core: harness.core });
+    const reader = createReferenceReader(deps);
+    const reference = {
+      type: "reference" as const,
+      text: "[[manuscript://chapter.md]]",
+      documentId,
+      uri: filePath,
+    };
+    const ctx = toolContext();
+    const automatic = await reader.read(reference, ctx);
+    const manual = await wiredWriteHandler({ documentId, filePath, core: harness.core })(
+      { command: "read", path: filePath, format: "auto" },
+      ctx,
+    );
+    expect(automatic).toEqual((manual as { output: unknown }).output);
+    expect(JSON.stringify(automatic)).toContain("The original chapter.");
+    expect(automatic).toMatchObject({ command: "read", read: { format: "full" } });
+    const unavailable = await reader.read(
+      { ...reference, documentId: "00000000-0000-4000-8000-000000000042" },
+      ctx,
+    );
+    expect(unavailable).toMatchObject({ status: "document_not_found" });
+    expect(JSON.stringify(unavailable)).not.toContain("The original chapter.");
+  });
+});
