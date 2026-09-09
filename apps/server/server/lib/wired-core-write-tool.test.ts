@@ -558,6 +558,50 @@ function thread() {
 }
 
 describe("automatic reference reads", () => {
+  it.each([
+    "none",
+    "direct",
+    "draft",
+  ] as const)("reads the correct document world in %s mode", async (mode) => {
+    const documentId = "00000000-0000-4000-8000-000000000051";
+    const filePath = "manuscript://chapter.md";
+    const live = createWriteToolHarness({ [documentId]: "Published chapter." });
+    const draft = createWriteToolHarness({ [documentId]: "Unpublished revision." });
+    const deps = wiredDeps({ documentId, filePath, core: live.core });
+    if (mode !== "none") {
+      const works = createInMemoryWorkRepository();
+      const work = await works.create({
+        id: "00000000-0000-4000-8000-000000000052",
+        projectId: "project-a",
+        createdByUserId: "user-a",
+        name: "Revision",
+      });
+      deps.works = {
+        ...works,
+        findById: async () => ({ ...work, aiWriteMode: mode }),
+      };
+      deps.workAuthorityResolver = workAuthorityResolver(deps.works);
+      deps.threadWorks.findPrimary = async () => ({ workId: work.id });
+    }
+    deps.documentSync.agentEdit = (execution) =>
+      asThreadPeerAgentEditCore(execution?.draftOwner === null ? live.core : draft.core);
+    const result = await createReferenceReader(deps).read(
+      {
+        type: "reference",
+        documentId,
+        uri: filePath,
+        text: "[[manuscript://chapter.md]]",
+      },
+      toolContext(),
+    );
+    expect(JSON.stringify(result)).toContain(
+      mode === "draft" ? "Unpublished revision." : "Published chapter.",
+    );
+    expect(JSON.stringify(result)).not.toContain(
+      mode === "draft" ? "Published chapter." : "Unpublished revision.",
+    );
+  });
+
   it("returns the official block-aware read result and refuses a replaced path identity", async () => {
     const documentId = "00000000-0000-4000-8000-000000000041";
     const filePath = "manuscript://chapter.md";

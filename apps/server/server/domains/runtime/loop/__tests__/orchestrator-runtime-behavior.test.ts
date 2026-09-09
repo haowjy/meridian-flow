@@ -4,6 +4,7 @@
  */
 
 import { modelResult } from "@meridian/agent-edit/integration";
+import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
@@ -1373,4 +1374,50 @@ describe("automatic reference context", () => {
     expect(read).toHaveBeenCalledTimes(2);
     expect(messageText(requests[2]?.messages.at(-1))).toContain("The revised chapter");
   });
+});
+
+it("persists and replays a failed reference read while retaining transcript navigation identity", async () => {
+  const result = {
+    schema: "meridian.agent-edit.v1",
+    command: "read",
+    status: "document_not_found",
+    message: "Reference disappeared after admission",
+  };
+  const read = vi.fn(async () => result);
+  const requests: GenerateRequest[] = [];
+  const rig = await setupOrchestrator(
+    undefined,
+    {
+      ...textGateway(),
+      async *stream(request) {
+        requests.push(request);
+        yield* textGateway().stream(request);
+      },
+    },
+    { read },
+  );
+  const thread = await rig.repos.threads.create({ userId: "user-1", projectId: rig.projectId });
+  const reference = {
+    type: "reference" as const,
+    documentId: "00000000-0000-4000-8000-000000000061",
+    uri: "kb://missing.md",
+    text: "[[kb://missing.md|Missing alias]]",
+  };
+  await collectEvents(
+    await rig.orchestrator.runTurn({
+      threadId: thread.id,
+      userText: reference.text,
+      userBlocks: [reference],
+    }),
+  );
+  await collectEvents(
+    await rig.orchestrator.runTurn({ threadId: thread.id, userText: "Continue" }),
+  );
+  expect(read).toHaveBeenCalledTimes(1);
+  for (const request of requests)
+    expect(JSON.stringify(request.messages)).toContain(result.message);
+  const occurrence = (await rig.repos.blocks.listByThread(thread.id))
+    .map(referenceOccurrenceContent)
+    .find((value) => value !== null);
+  expect(occurrence).toEqual({ ...reference, read: { result } });
 });
