@@ -105,39 +105,49 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
     typeof value.imageCapable !== "boolean"
   )
     return null;
-  const authority = value.authority;
-  if (!authority || typeof authority !== "object") return null;
-  if (authority.kind === "user") {
-    if (typeof authority.userId !== "string") return null;
-  } else if (
-    authority.kind === "project" ||
-    authority.kind === "none" ||
-    authority.kind === "work"
-  ) {
-    if (typeof authority.projectId !== "string") return null;
-    if (
-      authority.kind === "work" &&
-      (typeof authority.workId !== "string" || typeof authority.workSlug !== "string")
-    )
+  const documentId = parseRequestId(value.documentId);
+  if (!documentId) return null;
+  const rawAuthority = value.authority;
+  if (!rawAuthority || typeof rawAuthority !== "object") return null;
+  let authority: ComposerReferenceAttrs["authority"];
+  switch (rawAuthority.kind) {
+    case "user": {
+      const userId = parseRequestId(rawAuthority.userId);
+      if (!userId) return null;
+      authority = { kind: "user", userId };
+      break;
+    }
+    case "project":
+    case "none": {
+      const projectId = parseRequestId(rawAuthority.projectId);
+      if (!projectId) return null;
+      authority = { kind: rawAuthority.kind, projectId };
+      break;
+    }
+    case "work": {
+      const projectId = parseRequestId(rawAuthority.projectId);
+      const workId = parseRequestId(rawAuthority.workId);
+      const workSlug = decodeWorkSlug(rawAuthority.workSlug);
+      if (!projectId || !workId || !workSlug) return null;
+      authority = { kind: "work", projectId, workId, workSlug };
+      break;
+    }
+    default:
       return null;
-  } else return null;
-  if (!parseRequestId(value.documentId)) return null;
-  if (authority.kind === "user") {
-    if (!parseRequestId(authority.userId)) return null;
-  } else if (!parseRequestId(authority.projectId)) return null;
-  if (
-    authority.kind === "work" &&
-    (!parseRequestId(authority.workId) || !decodeWorkSlug(authority.workSlug))
-  )
-    return null;
+  }
   const uri = referenceUriForAuthority(value.uri, authority);
   const classification = classifyFiletype(value.fileType);
   if (!uri || classification.kind === "unknown") return null;
   // A copied occurrence owns no upload lifecycle; capability derives from the
   // file classification, not an independently supplied clipboard boolean.
   return {
-    ...value,
+    documentId,
+    authority,
     uri,
+    fileType: value.fileType,
+    label: value.label,
+    spelling: value.spelling,
+    ...(value.displayText !== undefined ? { displayText: value.displayText } : {}),
     upload: null,
     imageCapable: classification.kind === "binary" && classification.fileType === "image",
   };

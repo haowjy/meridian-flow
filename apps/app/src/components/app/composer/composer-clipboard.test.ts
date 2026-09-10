@@ -115,3 +115,43 @@ it.each([
     editor.destroy();
   }
 });
+
+it("normalizes copied UUIDs before deduplicating reference identity", () => {
+  const id = "abcdef12-3456-4789-abcd-1234567890ab";
+  const payload = {
+    documentId: id,
+    uri: "scratch://@revision/notes.md",
+    fileType: "markdown",
+    label: "Notes",
+    spelling: "[[Notes]]",
+    imageCapable: false,
+    upload: null,
+    authority: { kind: "work", projectId: id, workId: id, workSlug: "revision" },
+  };
+  const html = [
+    payload,
+    {
+      ...payload,
+      documentId: id.toUpperCase(),
+      authority: { ...payload.authority, projectId: id.toUpperCase(), workId: id.toUpperCase() },
+    },
+  ]
+    .map((value) => {
+      const span = document.createElement("span");
+      span.setAttribute("data-composer-reference", JSON.stringify(value));
+      span.textContent = "Notes";
+      return span.outerHTML;
+    })
+    .join("");
+  const editor = new Editor({ extensions: [StarterKit, ComposerReferenceNode] });
+  try {
+    editor.view.pasteHTML(html, new Event("paste") as ClipboardEvent);
+    const result = serializeComposerDraft(editor.getJSON(), 1, { anchor: 1, head: 1 });
+    expect(result.references).toHaveLength(1);
+    expect(editor.state.doc.firstChild?.lastChild?.attrs.reference.authority).toEqual(
+      payload.authority,
+    );
+  } finally {
+    editor.destroy();
+  }
+});
