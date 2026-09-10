@@ -32,8 +32,9 @@ lib/ plugins/ routes/ shared/
 
 ### projects
 
-Owns default project/work bootstrap and project/work persistence. WorkOS AuthKit
-credentials are resolved at the HTTP/WS edge and mapped to the internal user id
+Owns personal-project bootstrap, explicit Work persistence, and no-Work thread
+creation. Bootstrap creates no Work or thread. WorkOS AuthKit credentials are resolved at the HTTP/WS edge and mapped to the
+internal user id
 used by project/thread ownership.
 
 ### threads

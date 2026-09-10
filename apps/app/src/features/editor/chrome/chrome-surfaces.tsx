@@ -21,7 +21,7 @@ import type { ReactNode } from "react";
 import { BLOCK_MOVEMENT_SURFACE_ID, BlockMovementSurface } from "../surfaces/blocks";
 import { FormattingMenu } from "../surfaces/formatting";
 import { ImageIngressOverlay } from "../surfaces/images";
-import { FollowOutcomeDialog, LinkSurfaces, WikilinkMenu } from "../surfaces/link";
+import { AtReferenceMenu, FollowOutcomeDialog, LinkSurfaces, WikilinkMenu } from "../surfaces/link";
 import { ObjectControls } from "../surfaces/objects";
 import { PeerMarkSurface } from "../surfaces/peer-marks";
 import { SlashMenu } from "../surfaces/slash";
@@ -48,6 +48,7 @@ export const EDITOR_CHROME_SURFACES: readonly EditorChromeSurface[] = [
   }, // L-E block movement (M9)
   { id: "link", render: ({ editor }) => <LinkSurfaces editor={editor} /> }, // L-F links (M7)
   { id: "wikilink-menu", render: (props) => <WikilinkMenu {...props} /> }, // `[[` documents (P4c)
+  { id: "at-reference-menu", render: (props) => <AtReferenceMenu {...props} /> },
   {
     // What a follow found, when it found nothing. The app half that asked is
     // `ProjectLinkRuntime`, which renders nothing and mounts no surface.

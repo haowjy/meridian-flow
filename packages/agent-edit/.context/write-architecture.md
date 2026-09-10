@@ -12,8 +12,9 @@ its concern.
 ```
 Block hash prefix added by `AgentEditCodec.serializeBlock()` at render time (not stored as
 attribute). In the built-in adapter the hash is derived from the adapter-internal
-Y.XmlElement CRDT item ID (`clientID + clock`); kernel callers see only the
-neutral `BlockRef`.
+Y.XmlElement CRDT item ID (`clientID`, `clock`); the displayed prefix is unique
+within the current sibling set and is not durable identity. Kernel callers see
+only the neutral `BlockRef`.
 
 ### Semantic certification and apply (`src/semantic-edit-ir.ts`, `src/apply/tiers.ts`)
 The resolver emits `SemanticEditIRV1` bound to the exact input Yjs revision. It

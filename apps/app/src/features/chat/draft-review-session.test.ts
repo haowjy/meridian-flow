@@ -142,7 +142,7 @@ describe("draft review derived identity", () => {
 
 function commandPorts(): DraftReviewCommandPorts {
   return {
-    apply: vi.fn(async () => {}),
+    apply: vi.fn(async () => ({ kind: "live-ready" as const })),
     discard: vi.fn(async () => {}),
     operationDiscardStarted: vi.fn(),
     batchStarted: vi.fn(),

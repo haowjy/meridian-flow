@@ -389,9 +389,11 @@ function performEscStep(
       // A Radix layer hears Escape through its own listener, and closing it
       // here as well would spend one key on two surfaces.
       if (reach === "chrome" && chrome.topLayerDismissal !== "kernel") return false;
+      if (chrome.retreatTopLayer()) return true;
       return chrome.closeTopLayer();
 
     case "select-object": {
+      if (chrome.retreatTopLayer()) return true;
       const transaction = selectObjectTransaction(view.state, step.pos);
       if (!transaction) return false;
       view.dispatch(transaction);
@@ -400,6 +402,7 @@ function performEscStep(
     }
 
     case "caret-after-block": {
+      if (chrome.retreatTopLayer()) return true;
       const transaction = caretHomeFromObjectTransaction(view.state, step.pos);
       if (!transaction) return false;
       view.dispatch(transaction);
@@ -410,6 +413,6 @@ function performEscStep(
     case "at-home":
       // Home is not "handled". Leaving the key alone is what lets a browser
       // dialog, an IME composition, or a native affordance still see it.
-      return false;
+      return chrome.retreatTopLayer();
   }
 }

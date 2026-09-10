@@ -34,12 +34,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { TurnStartConflictError } = await import("../../domain/turn-start-transition.js");
-    const { createDrizzleRepositories } = await import("./repositories.js");
+    const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
-    const firstInstance = createDrizzleRepositories(db);
-    const secondInstance = createDrizzleRepositories(db);
+    const firstInstance = createDrizzleRepositoriesForTest(db);
+    const secondInstance = createDrizzleRepositoriesForTest(db);
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [schema.users]);

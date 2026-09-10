@@ -2,12 +2,12 @@
 
 import type { EditorWorkScope } from "./editor-work-scope";
 
-export type BootstrapAttempt = { token: number; workId: string };
+export type BootstrapAttempt = { token: number; workId: string | null };
 
 export type ContextProjectReadiness =
   | { status: "waiting-for-desk" }
   | { status: "waiting-for-work"; work: Exclude<EditorWorkScope, { status: "ready" }> }
-  | { status: "ready"; workId: string };
+  | { status: "ready"; workId: string | null };
 
 export type ContextProjectAuthority = {
   hasCompletedBootstrap: boolean;
@@ -23,7 +23,7 @@ export type ContextProjectPhase =
   | { status: "waiting-for-work"; work: Exclude<EditorWorkScope, { status: "ready" }> }
   | { status: "bootstrapping"; attempt: BootstrapAttempt }
   | { status: "suspended"; work: Exclude<EditorWorkScope, { status: "ready" }> }
-  | { status: "live"; workId: string };
+  | { status: "live"; workId: string | null };
 
 export type BootstrapAttemptEffect = {
   attempt: BootstrapAttempt;

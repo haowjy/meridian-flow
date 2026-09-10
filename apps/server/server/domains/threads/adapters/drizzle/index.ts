@@ -2,4 +2,4 @@
 export { createDrizzleEventJournalReader } from "./event-reader.js";
 export { createDrizzleEventJournalWriter } from "./event-writer.js";
 export type { DrizzleDatabase } from "./repositories.js";
-export { createDrizzleRepositories } from "./repositories.js";
+export { createDrizzleRepositories, createDrizzleRepositoriesForTest } from "./repositories.js";

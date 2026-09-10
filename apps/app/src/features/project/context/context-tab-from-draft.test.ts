@@ -7,6 +7,7 @@ describe("contextTabFromDraftGroup", () => {
       contextTabFromDraftGroup({
         workId: "work-a",
         documentId: "document-1",
+        draftId: "draft-1",
         contextPath: "/chapter.md",
         isNewDocument: true,
       }),
@@ -20,6 +21,7 @@ describe("contextTabFromDraftGroup", () => {
       contextTabFromDraftGroup({
         workId: "work-a",
         documentId: "document-1",
+        draftId: "draft-1",
         contextPath: "/chapter.md",
         isNewDocument: true,
       }),

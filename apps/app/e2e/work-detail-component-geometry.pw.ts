@@ -22,7 +22,7 @@ test.beforeAll(async () => {
         "@lingui/react",
         "@tanstack/react-router",
         "@/client/query/useWorkDrafts",
-        "@/client/query/useProjectContextTree",
+        "@/client/query/useContextCatalog",
         "@/client/query/useWorkThreads",
         "@/client/query/useProjectChatUserState",
         "@/client/query/useWorks",
@@ -80,18 +80,8 @@ test("Work detail component fixture contains long content at 390px", async ({ pa
             drafts: [{ status: "active" }],
           },
         ],
-        scratch: {
-          kind: "dir",
-          name: "",
-          path: "",
-          children: [{ kind: "file", name: unbroken, path: `/${unbroken}` }],
-        },
-        uploads: {
-          kind: "dir",
-          name: "",
-          path: "",
-          children: [{ kind: "file", name: unbroken, path: `/${unbroken}` }],
-        },
+        scratch: [{ kind: "file", name: unbroken, path: `/${unbroken}` }],
+        uploads: [{ kind: "file", name: unbroken, path: `/${unbroken}` }],
         threads: [
           {
             id: "thread",
@@ -189,8 +179,8 @@ test("virtual range pins focused and open-menu rows across a loaded page boundar
     window.__WORK_DETAIL_FIXTURE__ = {
       work,
       drafts: [],
-      scratch: { kind: "dir", name: "", path: "", children: [] },
-      uploads: { kind: "dir", name: "", path: "", children: [] },
+      scratch: [],
+      uploads: [],
       threads: chats(0),
       nextThreads: chats(50),
     };
@@ -252,8 +242,8 @@ for (const associationCount of [100, 500, 2_500]) {
       window.__WORK_DETAIL_FIXTURE__ = {
         work,
         drafts: [],
-        scratch: { kind: "dir", name: "", path: "", children: [] },
-        uploads: { kind: "dir", name: "", path: "", children: [] },
+        scratch: [],
+        uploads: [],
         threads: Array.from({ length: associationCount }, (_, index) => ({
           id: `thread-${index}`,
           title: `Chat ${index}`,

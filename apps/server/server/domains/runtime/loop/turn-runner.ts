@@ -30,6 +30,8 @@
  * - **Child runs**: spawn-driven child turns register under their parent so
  *   parent cancel propagates parent→child.
  */
+
+import type { AcceptedAdmission, UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
@@ -167,6 +169,11 @@ export function createTurnRunner(deps: {
       threadId: ThreadId;
       userText: string;
       connectionToken?: string;
+      userBlocks?: readonly UserMessageBlock[];
+      admissionIdentity?: {
+        submissionId: string;
+        onAccepted(response: AcceptedAdmission): Promise<void>;
+      };
     }): Promise<{
       userTurnId: string;
       assistantTurnId: string;
@@ -197,7 +204,20 @@ export function createTurnRunner(deps: {
         const handle = await deps.orchestrator.runTurn({
           threadId: input.threadId,
           userText: input.userText,
+          userBlocks: input.userBlocks,
           signal: controller.signal,
+          onStartPersisted: input.admissionIdentity
+            ? async ({ userTurnId, assistantTurnId }) =>
+                input.admissionIdentity?.onAccepted({
+                  kind: "accepted",
+                  threadId: input.threadId,
+                  submissionId: input.admissionIdentity.submissionId,
+                  userTurnId,
+                  assistantTurnId,
+                  resumeAfterSeq: resumeAfterSeqBeforeStart,
+                  snapshotFloorNextSeq: ((await deps.hub.headSeq(input.threadId)) + 1n).toString(),
+                }) ?? Promise.resolve()
+            : undefined,
         });
 
         // runTurn only constructs a lazy async generator; no generator event can

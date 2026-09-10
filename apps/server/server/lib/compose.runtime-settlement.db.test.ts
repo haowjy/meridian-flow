@@ -19,7 +19,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { useRollbackTestDatabase } = await import("../test-support/rollback-test-database.js");
     const { truncateDrizzleTables } = await import("../test-support/drizzle-reset.js");
-    const { createNoopEventSink } = await import("../domains/observability/index.js");
+    const { createInMemoryEventSink, createNoopEventSink } = await import(
+      "../domains/observability/index.js"
+    );
     const { composeAppServices, createProductionAppPorts } = await import("./compose.js");
 
     const USER_ID = "00000000-0000-4000-8000-000000000901";
@@ -92,6 +94,73 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("S10 hard-delete evidence survives cold composition", () => runScenario(true));
 
     it("reports writer prose overwritten without a concurrent edit", () => runScenario(false));
+
+    it("routes a no-Work model write through the live production core", async () => {
+      await db.delete(schema.threadWorks).where(eq(schema.threadWorks.threadId, THREAD_ID));
+      const eventSink = createInMemoryEventSink();
+      const runtime = await composeRuntime(eventSink);
+      await runtime.ports.documentSync.writeDocument({
+        documentId: DOC_ID,
+        markdown: "Writer live content.",
+        origin: { type: "user", actorUserId: USER_ID },
+        threadId: THREAD_ID,
+      });
+      await runtime.ports.documentSync.recordManifestDocumentCreated(DOC_ID, {
+        projectId: PROJECT_ID,
+      });
+      await db.insert(schema.modelResponses).values({
+        id: RESPONSE_ID,
+        turnId: TURN_ID,
+        sequence: 1,
+        provider: "runtime-test",
+        model: "runtime-test",
+      });
+
+      const toolContext = {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        responseId: RESPONSE_ID,
+        agentSlug: null,
+      } as const;
+      const read = await runtime.app.toolExecutor.executeTool(
+        {
+          id: "00000000-0000-4000-8000-000000000910",
+          name: "write",
+          arguments: { command: "read", path: "manuscript://runtime-settlement.md" },
+        },
+        toolContext,
+      );
+      if (read.isError) throw new Error(JSON.stringify(read.output));
+
+      const result = await runtime.app.toolExecutor.executeTool(
+        {
+          id: "00000000-0000-4000-8000-000000000909",
+          name: "write",
+          arguments: {
+            command: "replace",
+            path: "manuscript://runtime-settlement.md",
+            find: "Writer live content.",
+            content: "Model direct content.",
+            all: true,
+          },
+        },
+        toolContext,
+      );
+
+      if (result.isError) {
+        throw new Error(JSON.stringify({ output: result.output, events: eventSink.events }));
+      }
+      await runtime.ports.documentSync.finalizeResponseCommit(RESPONSE_ID, {
+        threadId: THREAD_ID,
+        turnId: TURN_ID,
+        execution: { scope: { kind: "none" }, aiWriteMode: "direct", draftOwner: null },
+      });
+      const live = await runtime.ports.documentSync.readAsMarkdown(DOC_ID);
+      expect(live.ok && live.value.trim()).toBe("Model direct content.");
+      expect(await db.select().from(schema.documentBranches)).toHaveLength(0);
+      expect(await db.select().from(schema.threadWorks)).toHaveLength(0);
+      await unloadRuntime(runtime.hocuspocus);
+    });
 
     async function runScenario(writerAfterRead: boolean): Promise<void> {
       let runtime = await composeRuntime();
@@ -246,10 +315,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     }
 
-    async function composeRuntime() {
+    async function composeRuntime(eventSink = createNoopEventSink()) {
       const ports = await createProductionAppPorts({
         db,
-        eventSink: createNoopEventSink(),
+        eventSink,
         environment: { OPENAI_API_KEY: "sk-test-runtime-composition" },
       });
       const server = new Hocuspocus({

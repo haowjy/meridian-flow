@@ -57,6 +57,9 @@ The shipped route surface covers:
 - Package preview/apply, update check/apply, and export.
 - Global thread list/create, snapshot, delete/restore, turn cancel, model-request debug,
   turn-context preview, and owner-gated favorite/read desired-state mutation.
+- Writer-message routes authenticate and delegate replay, exact block/reference
+  admission, persistence, provenance, retirement, and late image degradation to
+  the runtime `UserTurnAdmission` owner.
 - Authenticated `PUT /api/threads/:threadId/work` explicitly rebinds an idle
   owned thread through the shared thread-domain transition while holding the
   same cross-process run claim as model turns. Running threads return canonical,

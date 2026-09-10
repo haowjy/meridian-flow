@@ -35,7 +35,8 @@ vi.mock("@lingui/core/macro", () => ({
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
-vi.mock("@tanstack/react-query", () => ({
+vi.mock("@tanstack/react-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/react-query")>()),
   queryOptions: <T,>(options: T) => options,
   useQueryClient: () => ({ removeQueries: () => {} }),
   useQuery: () => ({ data: undefined, isPending: false, isError: false }),
@@ -43,9 +44,7 @@ vi.mock("@tanstack/react-query", () => ({
 vi.mock("@/client/query/useCreateContextEntry", () => ({
   useCreateContextEntry: () => ({ isPending: false, mutateAsync: async () => null }),
 }));
-vi.mock("@/core/editor/document-session-registry", () => ({
-  getDocumentSessionRegistry: () => ({ observe: () => () => {} }),
-}));
+
 vi.mock("@/features/project/context/open-project-document", () => ({
   useOpenProjectDocument: () => async () => true,
 }));

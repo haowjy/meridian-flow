@@ -18,7 +18,7 @@ describe("POST /api/projects/:projectId/works", () => {
     vi.mocked(requireAppUser).mockReset();
   });
 
-  it("creates a Work without changing the new-chat fallback", async () => {
+  it("creates a Work without selecting it for any thread", async () => {
     const project = { id: PROJECT_ID, userId: USER_ID, deletedAt: null } as Project;
     const created = {
       id: WORK_ID,

@@ -2,11 +2,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
-import { lazy, Suspense, useEffect, useMemo } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo } from "react";
 import { getAccountSettings } from "@/client/api/account-api";
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
+import { FirstSendContinuityProvider } from "@/client/first-send-continuity";
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
 import {
@@ -20,19 +21,24 @@ import { configureWorkingSetSync } from "@/client/working-set";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import { configureDocumentSessionUser } from "@/core/editor/document-session-registry";
 import {
   isSettingsSection,
   SettingsDialog,
   type SettingsSection,
 } from "@/features/account/SettingsDialog";
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
-import { ContextRemovalAccountProvider } from "@/features/project/context/ContextRemovalAccountProvider";
+import {
+  AccountFeatureComposition,
+  useLocalUntitledOwner,
+  useProjectContextAvailabilityCoordinator,
+  useProjectDocumentLiveOpener,
+} from "@/features/project/context/account-feature-context";
 import { createContextIdentityMutationService } from "@/features/project/context/context-identity-mutation";
 import {
   getUntitledReconciler,
   syncUntitledReceiptOwners,
 } from "@/features/project/context/untitled-reconciler-browser";
+import { DraftApplyRecoveryProvider } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
 import { loadAccountSettingsWithDeadline } from "./authenticated-account-settings";
@@ -134,7 +140,6 @@ export const Route = createFileRoute("/_authenticated")({
 function AuthenticatedLayout() {
   const { projects, now, user } = Route.useLoaderData();
   configureWorkingSetSync(user.userId, user.workingSetSyncEnabled === true);
-  configureDocumentSessionUser(user.userId);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   // One unconditional provider tree for every authenticated route — the settings
@@ -143,10 +148,36 @@ function AuthenticatedLayout() {
   // ThreadStoreProvider during light↔workspace transitions.
   return (
     <AppQueryProvider initialProjects={projects}>
-      <ContextRemovalAccountProvider key={user.userId} accountId={user.userId}>
-        <AuthenticatedProviderTree now={now} pathname={pathname} user={user} />
-      </ContextRemovalAccountProvider>
+      <AuthenticatedAccountProviderTree now={now} pathname={pathname} user={user} />
     </AppQueryProvider>
+  );
+}
+
+function AuthenticatedAccountProviderTree({
+  now,
+  pathname,
+  user,
+}: {
+  now: number;
+  pathname: string;
+  user: { userId: string; workingSetSyncEnabled: boolean | null };
+}) {
+  const queryClient = useQueryClient();
+  const repairProjectCatalog = useCallback(
+    (projectId: string) =>
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "context-catalog"],
+      }),
+    [queryClient],
+  );
+  return (
+    <AccountFeatureComposition accountId={user.userId} repairProjectCatalog={repairProjectCatalog}>
+      <DraftApplyRecoveryProvider accountId={user.userId}>
+        <FirstSendContinuityProvider accountId={user.userId}>
+          <AuthenticatedProviderTree now={now} pathname={pathname} user={user} />
+        </FirstSendContinuityProvider>
+      </DraftApplyRecoveryProvider>
+    </AccountFeatureComposition>
   );
 }
 
@@ -160,12 +191,20 @@ function AuthenticatedProviderTree({
   user: { userId: string; workingSetSyncEnabled: boolean | null };
 }) {
   const queryClient = useQueryClient();
+  const localUntitled = useLocalUntitledOwner();
+  const liveOpener = useProjectDocumentLiveOpener();
+  const availability = useProjectContextAvailabilityCoordinator();
   const untitledReconciler = useMemo(
     () =>
       typeof window === "undefined"
         ? null
-        : getUntitledReconciler(createContextIdentityMutationService(queryClient)),
-    [queryClient],
+        : getUntitledReconciler(
+            createContextIdentityMutationService(queryClient),
+            localUntitled,
+            liveOpener,
+            availability,
+          ),
+    [queryClient, localUntitled, liveOpener, availability],
   );
 
   // Browser persistence is initialized only after the Query composition root
@@ -174,7 +213,7 @@ function AuthenticatedProviderTree({
     if (!untitledReconciler) return;
     untitledReconciler.rehydrate();
     untitledReconciler.start();
-    rehydrateContextDesks(user.userId);
+    void rehydrateContextDesks(user.userId);
     syncUntitledReceiptOwners();
     void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();

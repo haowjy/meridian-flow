@@ -173,6 +173,7 @@ function renderActiveView(
             projectId={props.projectId}
             threadId={props.activeThreadId}
             activeWork={props.chatWork}
+            availableWorks={props.availableWorks}
             onSelectThread={props.onSelectThread}
             onOpenContextTarget={props.onOpenContextTarget}
           />
@@ -200,8 +201,7 @@ function renderActiveView(
             <MobileDocumentHost
               projectId={props.projectId}
               editorWorkId={props.editorWorkId}
-              activeContextScheme={props.activeContextScheme}
-              activeContextPath={props.activeContextPath}
+              route={props.mobileDocumentRoute}
             />
           ) : (
             <MobileContextBrowser

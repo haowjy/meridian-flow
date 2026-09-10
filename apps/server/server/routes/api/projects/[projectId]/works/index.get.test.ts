@@ -26,10 +26,9 @@ function work(id: string, status: Work["status"] = "active"): Work {
   } as Work;
 }
 
-function event(status?: "active" | "archived" | "all") {
-  const query = status ? `?status=${status}` : "";
+function event() {
   return {
-    req: new Request(`https://server.local/api/projects/${PROJECT_ID}/works${query}`),
+    req: new Request(`https://server.local/api/projects/${PROJECT_ID}/works`),
     context: { params: { projectId: PROJECT_ID } },
     res: { status: 200 },
   };
@@ -40,52 +39,46 @@ describe("GET /api/projects/:projectId/works", () => {
     vi.mocked(requireAppUser).mockReset();
   });
 
-  it.each([
-    [undefined, { status: "active" }],
-    ["active", { status: "active" }],
-    ["archived", { status: "archived" }],
-    ["all", undefined],
-  ] as const)("lists exactly the requested %s Work collection", async (status, expectedFilter) => {
-    const works =
-      status === "archived"
-        ? [work("archived", "archived")]
-        : status === "all"
-          ? [work("active"), work("archived", "archived")]
-          : [work("work-2"), work("work-1")];
+  it("returns the one complete lifecycle snapshot", async () => {
+    const works = [work("active"), work("archived", "archived")];
     const listByProject = vi.fn(async () => works);
     const countPendingByWorkIds = vi.fn(
       async (workIds: readonly string[]) => new Map(workIds.map((workId) => [workId, 0])),
     );
-    const preferences = {
-      getNewChatFallbackWorkId: vi.fn(async () => {
-        throw new Error("collection GET must not read fallback preference");
-      }),
-      repairNewChatFallbackWorkId: vi.fn(async () => {
-        throw new Error("collection GET must not repair fallback preference");
-      }),
-    };
+    const preferences = {};
     vi.mocked(requireAppUser).mockResolvedValue({
       user: { userId: USER_ID },
       app: {
         projectRepo: { findById: async () => project },
-        workRepo: { listByProject },
+        workRepo: {
+          readSnapshot: async (operation: () => Promise<unknown>) => operation(),
+          snapshotIdentity: async () => ({
+            catalogGeneration: "00000000-0000-4000-8000-000000000001",
+            authorityRevision: "2",
+          }),
+          listByProject,
+        },
         preferences,
         documentSync: { countPendingByWorkIds },
       },
     } as never);
 
-    const response = await handler(event(status) as never);
+    const response = await handler(event() as never);
 
     expect(response).toMatchObject({
       value: {
         works: works.map((work) => ({ ...work, unpushedChangeCount: 0 })),
       },
     });
-    expect(Object.keys(response.value)).toEqual(["works"]);
-    expect(listByProject).toHaveBeenCalledWith(PROJECT_ID, expectedFilter);
+    expect(Object.keys(response.value)).toEqual([
+      "projectId",
+      "catalogGeneration",
+      "authorityRevision",
+      "requestId",
+      "works",
+    ]);
+    expect(listByProject).toHaveBeenCalledWith(PROJECT_ID, { includeDeleted: true });
     expect(countPendingByWorkIds).toHaveBeenCalledOnce();
     expect(countPendingByWorkIds).toHaveBeenCalledWith(works.map(({ id }) => id));
-    expect(preferences.getNewChatFallbackWorkId).not.toHaveBeenCalled();
-    expect(preferences.repairNewChatFallbackWorkId).not.toHaveBeenCalled();
   });
 });

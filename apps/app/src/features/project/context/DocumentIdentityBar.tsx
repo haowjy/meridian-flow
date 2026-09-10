@@ -71,7 +71,7 @@ export function DocumentIdentityBar({
   // A queued placement that failed after this document materialized reopens
   // the field with the writer's name restored and the failure's recovery
   // note — the receipt must never be dropped silently.
-  const identityFailure = useQueuedIdentityFailure(tab.documentId);
+  const identityFailure = useQueuedIdentityFailure(projectId, tab.documentId);
   useEffect(() => {
     if (!identityFailure) return;
     setFieldOpen(true);
@@ -106,7 +106,7 @@ export function DocumentIdentityBar({
             onExit={(reason) => {
               // Leaving the field acknowledges any failure receipt — it must
               // not reopen the editor it just closed.
-              clearQueuedIdentityFailure(tab.documentId);
+              clearQueuedIdentityFailure(projectId, tab.documentId);
               setFieldOpen(false);
               if (reason === "escape") focusEditorProse(tab.documentId);
             }}
@@ -118,6 +118,7 @@ export function DocumentIdentityBar({
         <span className="min-w-1 flex-1" />
         <DraftReviewChip documentId={tab.documentId} />
         <IdentityChipSlot
+          projectId={projectId}
           documentId={tab.documentId}
           location={location}
           show={showChip && !fieldOpen}
@@ -195,17 +196,19 @@ function IdentityPath({ location }: { location: TabLocation }) {
  * yields (the open field *is* the action).
  */
 function IdentityChipSlot({
+  projectId,
   documentId,
   location,
   show,
   onChooseHome,
 }: {
+  projectId: string;
   documentId: string;
   location: TabLocation;
   show: boolean;
   onChooseHome: () => void;
 }) {
-  const deviceOnly = useDeviceOnly(documentId);
+  const deviceOnly = useDeviceOnly(projectId, documentId);
   if (!deviceOnly && !show) return null;
   return (
     <>
@@ -289,8 +292,8 @@ const DEVICE_ONLY_GRACE_MS = 2_000;
  * reconciler's per-document `pendingSince` — remounting the bar (tab
  * switches) cannot restart the window.
  */
-function useDeviceOnly(documentId: string): boolean {
-  const since = useUntitledPendingSince(documentId);
+function useDeviceOnly(projectId: string, documentId: string): boolean {
+  const since = useUntitledPendingSince(projectId, documentId);
   const [sustained, setSustained] = useState(false);
   useEffect(() => {
     if (since === null) {

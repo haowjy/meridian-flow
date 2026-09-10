@@ -1,6 +1,7 @@
 /** JSON-natural Work mutation receipts shared by runtime, reversal, and UI. */
 import type { WorkId } from "../ids.js";
 import type { WorkStatus } from "./index.js";
+import { decodeWorkSlug, type WorkSlug } from "./work-slug.js";
 
 export type WorkReceiptState = {
   name: string;
@@ -8,6 +9,10 @@ export type WorkReceiptState = {
   description: string | null;
   status: WorkStatus;
 };
+
+export type WorkBindingReceiptState =
+  | { kind: "none" }
+  | ({ kind: "work"; workId: WorkId; workSlug: WorkSlug } & WorkReceiptState);
 
 export type WorkReceiptInverse =
   | { command: "delete"; workId: WorkId }
@@ -28,9 +33,11 @@ export type WorkMutationReceipt = WorkReceiptBase & {
   inverse: WorkReceiptInverse | null;
 };
 
-export type WorkBindingReceipt = WorkReceiptBase & {
+export type WorkBindingReceipt = {
   operation: "switch";
   category: "binding";
+  before: WorkBindingReceiptState;
+  after: WorkBindingReceiptState;
   inverse: null;
 };
 
@@ -56,25 +63,25 @@ export function parseWorkReceipt(value: unknown): WorkReceipt | null {
   }
   const expectedCategory: WorkReceipt["category"] = operation === "switch" ? "binding" : "mutate";
   if (receipt.category !== expectedCategory) return null;
+  if (operation === "switch") {
+    if (receipt.inverse !== null) return null;
+    const before = parseBindingState(receipt.before);
+    const after = parseBindingState(receipt.after);
+    if (!before || !after) return null;
+    return {
+      operation,
+      category: "binding",
+      before,
+      after,
+      inverse: null,
+    };
+  }
   if (typeof receipt.changed !== "boolean") return null;
   if (typeof receipt.workId !== "string" || typeof receipt.workName !== "string") return null;
   const before = receipt.before === null ? null : parseState(receipt.before);
   const after = receipt.after === null ? null : parseState(receipt.after);
   if (receipt.before !== null && !before) return null;
   if (receipt.after !== null && !after) return null;
-  if (operation === "switch") {
-    if (receipt.inverse !== null) return null;
-    return {
-      operation,
-      category: "binding",
-      changed: receipt.changed,
-      workId: receipt.workId as WorkId,
-      workName: receipt.workName,
-      before,
-      after,
-      inverse: null,
-    };
-  }
   const inverse = receipt.inverse === null ? null : parseInverse(receipt.inverse);
   if (receipt.inverse !== null && !inverse) return null;
   if (receipt.changed !== (inverse !== null)) return null;
@@ -88,6 +95,24 @@ export function parseWorkReceipt(value: unknown): WorkReceipt | null {
     after,
     inverse,
   };
+}
+
+function parseBindingState(value: unknown): WorkBindingReceiptState | null {
+  const state = record(value);
+  if (!state) return null;
+  if (state.kind === "none") return { kind: "none" };
+  if (
+    state.kind !== "work" ||
+    typeof state.workId !== "string" ||
+    typeof state.workSlug !== "string"
+  ) {
+    return null;
+  }
+  const details = parseState(state);
+  const workSlug = decodeWorkSlug(state.workSlug);
+  return details && workSlug
+    ? { kind: "work", workId: state.workId as WorkId, workSlug, ...details }
+    : null;
 }
 
 function parseState(value: unknown): WorkReceiptState | null {

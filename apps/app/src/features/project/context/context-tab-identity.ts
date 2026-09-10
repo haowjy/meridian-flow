@@ -20,7 +20,7 @@ export function contextTabMatchesRoute(
 ): boolean {
   if (tab.kind === "new") return false;
   if (tab.scheme !== scheme || tab.path !== path) return false;
-  if (isWorkScopedProjectContextScheme(scheme)) return tab.workId === workId;
+  if (isWorkScopedProjectContextScheme(scheme)) return (tab.workId ?? null) === workId;
   return true;
 }
 

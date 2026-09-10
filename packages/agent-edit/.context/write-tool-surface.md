@@ -121,15 +121,15 @@ mutation claims surface through `onResponseClaimDiscarded` and
 `ResponseCommitResult.discardedClaims`. Observer exceptions never change
 mutation control flow.
 
-**`documentId` vs `file` / `filePath`:** The model-visible schema uses a
-human-readable path (for Meridian, a context URI such as `work://chapter-2.md`).
-The host resolves that path to an internal `documentId` and passes both into the
-package. `documentId` is only storage/journal/runtime/coordinator identity;
-model-facing text must render the display `file` / `filePath`, including read
-commands, creation guidance, not-found messages, and re-sync hints. The package
-stays host-agnostic: it does not invent display paths, it only echoes the path
-the host supplied. Tests should prefer UUID-like document ids plus friendly
-paths so accidental UUID interpolation fails loudly.
+**`documentId` vs package `file` / host locator names:** The host-independent
+package command schema names its human-readable locator `file`; internal code
+may call the parsed value `filePath`. A host may publish another model-facing
+name. Meridian's server publishes `path` (for example,
+`manuscript://chapter-2.md`), resolves it to an internal `documentId`, and
+translates it to package `file`. `documentId` is storage/journal/runtime/coordinator
+identity. Package diagnostics and re-sync hints echo the display `file` supplied
+by the host. Tests should prefer UUID-like IDs plus friendly locators so
+accidental UUID interpolation fails loudly.
 
 ## v1 simplifications (deferred, documented for discoverability)
 
@@ -138,8 +138,11 @@ paths so accidental UUID interpolation fails loudly.
   envelope. The seam stays clean through pure resolvers, stable `ResolvedEdit`,
   and a version-agnostic apply layer; no command-contract pinning is needed until
   a second command version exists.
-- **Read auto-budget/truncation** deferred. Current `read` returns full
-  content. Thread-level context management is not yet implemented.
+- **Read auto-budget/truncation is not implemented.** `format: "auto"` resolves
+  to full; outline requires explicit selection and falls back to full selected
+  content when no headings exist. Read results do not report changes since an
+  earlier read; `write(command: "diff")` queries the current turn's mutation trail.
+  These limitations are tracked in [#523](https://github.com/haowjy/meridian-flow/issues/523).
 - **Generic concurrent attribution** deferred to server adapter. `concurrent
   edits` reports `human` vs `agent` categories; no individual actor names.
 

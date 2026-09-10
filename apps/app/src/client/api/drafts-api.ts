@@ -51,10 +51,21 @@ export async function applyDraft(
   documentId: string,
   request: DraftApplyRequest,
 ): Promise<DraftApplyResponse> {
-  return postJson<DraftApplyResponse>(
+  const response: unknown = await postJson<unknown>(
     apiProjectWorkDocumentDraftApplyPath(projectId, workId, documentId),
     request,
   );
+  if (
+    typeof response !== "object" ||
+    response === null ||
+    !("status" in response) ||
+    response.status !== "applied" ||
+    !("draftId" in response) ||
+    response.draftId !== request.draftId
+  ) {
+    throw new Error("Draft Apply response did not prove the requested draft was applied");
+  }
+  return response as DraftApplyResponse;
 }
 
 export async function discardDraft(

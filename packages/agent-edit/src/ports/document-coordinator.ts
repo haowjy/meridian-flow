@@ -16,12 +16,12 @@ export function isDocumentNotFoundError(cause: unknown): cause is DocumentNotFou
 }
 
 /**
- * Exclusive access to live Y.Docs — one mutator at a time per document.
- * Server adapters use KeyedMutex + Hocuspocus; desktop uses a process-level lock.
+ * Serializes port callers against the host-owned canonical Y.Doc (live or branch).
+ * Mutations through other transports require the host's separate concurrency fence.
  */
 export interface DocumentCoordinator {
   /**
-   * Acquire exclusive access to a document's live Y.Doc for the duration of fn.
+   * Acquire coordinator access to a document's canonical Y.Doc for the duration of fn.
    * Serializes concurrent callers for the same docId; different documents run concurrently.
    * Rejects with DocumentNotFoundError when the document is missing; other
    * rejections are runtime failures and surface as retryable internal errors.
@@ -49,7 +49,7 @@ export interface DocumentCoordinator {
 
   /**
    * Replay persisted-but-not-applied updates on startup or recovery.
-   * Idempotent: safe to call multiple times; applies only updates missing from the live doc.
+   * Idempotent: safe to call multiple times; applies only updates missing from the coordinated doc.
    */
   recover(docId: string): Promise<void>;
 }

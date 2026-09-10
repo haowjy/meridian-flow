@@ -50,10 +50,11 @@ export async function requireThreadOwner(
 }
 
 export interface SetOwnedThreadTrashStateDeps {
-  repos: Pick<ThreadRepositories, "threads" | "transaction">;
+  repos: Pick<ThreadRepositories, "threads" | "threadWorks" | "transaction">;
   projects: Pick<ProjectRepository, "findById">;
   obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
   workContextDelivery: Pick<WorkContextDelivery, "deliverAfterCommit">;
+  workAuthorityResolver: import("../projects/index.js").ProjectWorkAuthorityResolver;
 }
 
 /** Authenticated adapter for the serialized trash command and restore wake. */

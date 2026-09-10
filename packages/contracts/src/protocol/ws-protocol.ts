@@ -56,6 +56,16 @@ const wsUnsubscribeMessageSchema = z.object({
   threadId: z.string().min(1),
 });
 
+const wsCatalogSubscribeMessageSchema = z.object({
+  type: z.literal("catalog.subscribe"),
+  projectId: z.string().min(1),
+});
+
+const wsCatalogUnsubscribeMessageSchema = z.object({
+  type: z.literal("catalog.unsubscribe"),
+  projectId: z.string().min(1),
+});
+
 const wsResumeMessageSchema = z.object({
   type: z.literal("resume"),
   subscriptions: z.array(
@@ -84,6 +94,8 @@ export const wsClientMessageSchema = z.discriminatedUnion("type", [
   wsResumeMessageSchema,
   wsPongMessageSchema,
   wsInterruptRespondMessageSchema,
+  wsCatalogSubscribeMessageSchema,
+  wsCatalogUnsubscribeMessageSchema,
 ]);
 
 export type WsClientMessage = z.infer<typeof wsClientMessageSchema>;
@@ -139,6 +151,11 @@ export type WsServerMessage =
     }
   | { type: "ping"; ts: number }
   | {
+      type: "context-catalog-hint";
+      scope: import("./context-catalog.js").CatalogScope;
+      headRevision: string;
+    }
+  | {
       type: "error";
       kind: "error";
       error: MeridianError;
@@ -182,6 +199,20 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
   z.object({
     type: z.literal("ping"),
     ts: z.number(),
+  }),
+  z.object({
+    type: z.literal("context-catalog-hint"),
+    scope: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("project"), projectId: z.string().min(1) }),
+      z.object({ kind: z.literal("user"), userId: z.string().min(1) }),
+      z.object({ kind: z.literal("none"), projectId: z.string().min(1) }),
+      z.object({
+        kind: z.literal("work"),
+        projectId: z.string().min(1),
+        workId: z.string().min(1),
+      }),
+    ]),
+    headRevision: wsEventSeqSchema,
   }),
   z.object({
     type: z.literal("error"),

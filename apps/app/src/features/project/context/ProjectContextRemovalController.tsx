@@ -3,7 +3,7 @@
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useLayoutEffect, useMemo, useRef } from "react";
 import type { ScreenKey } from "../shell/screens";
-import { useContextRemovalCoordinator } from "./ContextRemovalAccountProvider";
+import { useContextRemovalCoordinator } from "./account-feature-context";
 import type { ContextRemovalRoutePort } from "./context-removal-coordinator";
 
 export type ProjectContextRemovalControllerProps = {
@@ -11,7 +11,7 @@ export type ProjectContextRemovalControllerProps = {
   activeScreen: ScreenKey;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
-  editorWorkId: string;
+  editorWorkId: string | null;
   route: ContextRemovalRoutePort;
 };
 
@@ -37,7 +37,7 @@ export function ProjectContextRemovalController({
   const registrationRef = useRef<{
     token: symbol;
     release: () => void;
-    editorWorkId: string;
+    editorWorkId: string | null;
   } | null>(null);
 
   useLayoutEffect(() => {

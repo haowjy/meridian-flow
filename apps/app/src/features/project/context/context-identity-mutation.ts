@@ -53,7 +53,11 @@ export function createContextIdentityMutationService(
     await Promise.all(
       [...unique.values()].map((location) =>
         queryClient.invalidateQueries({
-          queryKey: projectQueryKeys.contextTree(projectId, location.scheme, location.workId),
+          queryKey: projectQueryKeys.contextCatalogView(
+            projectId,
+            location.scheme,
+            location.workId,
+          ),
         }),
       ),
     );
@@ -61,7 +65,9 @@ export function createContextIdentityMutationService(
 
   const service: ContextIdentityMutationService = {
     materialized(projectId: string, result: CreateUntitledContextDocumentResponse) {
-      return invalidate(projectId, [result]);
+      return invalidate(projectId, [
+        { scheme: result.scheme, path: result.path, workId: result.workId ?? undefined },
+      ]);
     },
 
     async move(

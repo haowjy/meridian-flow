@@ -1,125 +1,44 @@
-/** Attachment precedence: explicit, parent primary, then the new-chat fallback. */
-import type { Project } from "@meridian/contracts/projects";
-import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
 import { resolveWorkMembership } from "./work-attachment.js";
 
-const PROJECT_ID = "00000000-0000-4000-8000-000000000001";
-const USER_ID = "00000000-0000-4000-8000-000000000002";
-const THREAD_ID = "00000000-0000-4000-8000-000000000003";
-const PARENT_ID = "00000000-0000-4000-8000-000000000004";
-const project = { id: PROJECT_ID, userId: USER_ID, name: "Novel" } as Project;
-
-function work(id: string): Work {
-  return { id, projectId: PROJECT_ID, deletedAt: null, status: "active" } as Work;
-}
+const threadWorks = (parentWorkId: string | null) => ({
+  findPrimary: vi.fn(async () => (parentWorkId ? { workId: parentWorkId } : null)),
+  addMembership: vi.fn(async () => undefined),
+});
 
 describe("resolveWorkMembership", () => {
-  it("prefers an explicit Work over parent inheritance and the new-chat fallback", async () => {
-    const explicit = work("explicit");
-    const findPrimary = vi.fn();
-    const getNewChatFallbackWorkId = vi.fn();
-    const addMembership = vi.fn();
-
-    await expect(
-      resolveWorkMembership(
-        {
-          workRepo: { findById: async () => explicit } as never,
-          preferences: { getNewChatFallbackWorkId } as never,
-          threadWorks: { findPrimary, addMembership } as never,
-        },
-        {
-          threadId: THREAD_ID,
-          projectId: PROJECT_ID,
-          project,
-          userId: USER_ID,
-          workId: explicit.id,
-          parentThreadId: PARENT_ID,
-        },
-      ),
-    ).resolves.toBe(explicit.id);
-    expect(findPrimary).not.toHaveBeenCalled();
-    expect(getNewChatFallbackWorkId).not.toHaveBeenCalled();
-    expect(addMembership).toHaveBeenCalledWith(THREAD_ID, explicit.id, true);
+  it("keeps an omitted or explicit-null root unassigned", async () => {
+    for (const workId of [undefined, null]) {
+      const memberships = threadWorks(null);
+      await expect(
+        resolveWorkMembership(
+          { workRepo: { findById: vi.fn() } as never, threadWorks: memberships as never },
+          { threadId: "thread", projectId: "project", workId },
+        ),
+      ).resolves.toBeNull();
+      expect(memberships.addMembership).not.toHaveBeenCalled();
+    }
   });
 
-  it("inherits a parent's primary Work before resolving the new-chat fallback", async () => {
-    const parent = work("parent");
-    const getNewChatFallbackWorkId = vi.fn();
-    const addMembership = vi.fn();
-
+  it("inherits a parent's absent scope", async () => {
+    const memberships = threadWorks(null);
     await expect(
       resolveWorkMembership(
-        {
-          workRepo: {} as never,
-          preferences: { getNewChatFallbackWorkId } as never,
-          threadWorks: {
-            findPrimary: async () => ({ workId: parent.id }),
-            addMembership,
-          } as never,
-        },
-        {
-          threadId: THREAD_ID,
-          projectId: PROJECT_ID,
-          parentThreadId: PARENT_ID,
-        },
+        { workRepo: { findById: vi.fn() } as never, threadWorks: memberships as never },
+        { threadId: "child", projectId: "project", parentThreadId: "parent" },
       ),
-    ).resolves.toBe(parent.id);
-    expect(getNewChatFallbackWorkId).not.toHaveBeenCalled();
-    expect(addMembership).toHaveBeenCalledWith(THREAD_ID, parent.id, true);
+    ).resolves.toBeNull();
+    expect(memberships.addMembership).not.toHaveBeenCalled();
   });
 
-  it("uses the saved new-chat fallback for a new root conversation", async () => {
-    const fallback = work("fallback");
-    const listByProject = vi.fn();
-
+  it("inherits a parent's real Work", async () => {
+    const memberships = threadWorks("work");
     await expect(
       resolveWorkMembership(
-        {
-          workRepo: {
-            findById: async () => fallback,
-            listByProject,
-          } as never,
-          preferences: { getNewChatFallbackWorkId: async () => fallback.id } as never,
-          threadWorks: { addMembership: async () => {} } as never,
-        },
-        { threadId: THREAD_ID, projectId: PROJECT_ID, project, userId: USER_ID },
+        { workRepo: { findById: vi.fn() } as never, threadWorks: memberships as never },
+        { threadId: "child", projectId: "project", parentThreadId: "parent" },
       ),
-    ).resolves.toBe(fallback.id);
-    expect(listByProject).not.toHaveBeenCalled();
-  });
-
-  it("creates a concrete default only after every earlier source is absent", async () => {
-    const created = work("created");
-    const ensureDefaultForProject = vi.fn(async () => created);
-    const repairFallbackPointer = vi.fn();
-
-    await expect(
-      resolveWorkMembership(
-        {
-          workRepo: {
-            listByProject: async () => [],
-            ensureDefaultForProject,
-          } as never,
-          preferences: {
-            getNewChatFallbackWorkId: async () => null,
-            repairNewChatFallbackWorkId: async (
-              _userId: string,
-              _projectId: string,
-              expectedWorkId: string | null,
-              workId: string,
-            ) => {
-              if (expectedWorkId !== null) return false;
-              repairFallbackPointer(_userId, _projectId, workId);
-              return true;
-            },
-          } as never,
-          threadWorks: { addMembership: async () => {} } as never,
-        },
-        { threadId: THREAD_ID, projectId: PROJECT_ID, project, userId: USER_ID },
-      ),
-    ).resolves.toBe(created.id);
-    expect(ensureDefaultForProject).toHaveBeenCalledWith(PROJECT_ID, "Novel");
-    expect(repairFallbackPointer).toHaveBeenCalledWith(USER_ID, PROJECT_ID, created.id);
+    ).resolves.toBe("work");
+    expect(memberships.addMembership).toHaveBeenCalledWith("child", "work", true);
   });
 });

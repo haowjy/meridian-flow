@@ -1,11 +1,11 @@
 /** Cached client-side suggestions composed across the project's context trees. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
-import { useProjectContextTree } from "@/client/query/useProjectContextTree";
+import { contextCatalogScope, useContextCatalogScope } from "@/client/query/useContextCatalog";
 import {
+  catalogFileSuggestions,
   type FileSuggestion,
   type FileSuggestionKind,
-  flattenFileSuggestionTrees,
   matchFileSuggestions,
 } from "./file-suggestions";
 
@@ -20,49 +20,29 @@ export function useFileSuggestions(
   query: string,
   options: Options,
 ): { suggestions: FileSuggestion[]; isFetching: boolean; isError: boolean } {
-  const enabled = (scheme: ProjectContextTreeScheme) => options.schemes.includes(scheme);
-  const manuscript = useProjectContextTree(projectId, "manuscript", {
-    enabled: enabled("manuscript"),
-    workId: options.workId,
-  });
-  const kb = useProjectContextTree(projectId, "kb", {
-    enabled: enabled("kb"),
-    workId: options.workId,
-  });
-  const user = useProjectContextTree(projectId, "user", {
-    enabled: enabled("user"),
-    workId: options.workId,
-  });
-  const scratch = useProjectContextTree(projectId, "scratch", {
-    enabled: enabled("scratch"),
-    workId: options.workId,
-  });
-  const uploads = useProjectContextTree(projectId, "uploads", {
-    enabled: enabled("uploads"),
-    workId: options.workId,
-  });
-  // Memoize from the stable `.tree` references (query wrapper objects get a
-  // fresh identity every render) plus the options object, which callers must
-  // keep referentially stable — a per-render options literal silently defeats
-  // this cache and reruns the full flatten+match pipeline on every keystroke.
+  const project = useContextCatalogScope(
+    projectId,
+    contextCatalogScope(projectId, "manuscript", options.workId),
+    options.schemes.some((scheme) => scheme === "manuscript" || scheme === "kb"),
+  );
+  const user = useContextCatalogScope(
+    projectId,
+    contextCatalogScope(projectId, "user", options.workId),
+    options.schemes.includes("user"),
+  );
+  const current = useContextCatalogScope(
+    projectId,
+    contextCatalogScope(projectId, "scratch", options.workId),
+    options.schemes.some((scheme) => scheme === "scratch" || scheme === "uploads"),
+  );
   const suggestions = useMemo(() => {
-    const trees = [
-      { scheme: "manuscript" as const, tree: manuscript.tree },
-      { scheme: "kb" as const, tree: kb.tree },
-      { scheme: "user" as const, tree: user.tree },
-      { scheme: "scratch" as const, tree: scratch.tree },
-      { scheme: "uploads" as const, tree: uploads.tree },
-    ].flatMap(({ scheme, tree }) => (tree ? [{ scheme, tree }] : []));
-    return matchFileSuggestions(flattenFileSuggestionTrees(trees), query, options);
-  }, [manuscript.tree, kb.tree, user.tree, scratch.tree, uploads.tree, query, options]);
+    const entries = catalogFileSuggestions(
+      [project.data, user.data, current.data].filter((view) => view !== undefined),
+    );
+    return matchFileSuggestions(entries, query, options);
+  }, [project.data, user.data, current.data, query, options]);
 
-  const allowedResults = [
-    { scheme: "manuscript" as const, ...manuscript },
-    { scheme: "kb" as const, ...kb },
-    { scheme: "user" as const, ...user },
-    { scheme: "scratch" as const, ...scratch },
-    { scheme: "uploads" as const, ...uploads },
-  ].filter(({ scheme }) => enabled(scheme));
+  const allowedResults = [project, user, current];
   return {
     suggestions,
     isFetching: allowedResults.some(({ isFetching }) => isFetching),

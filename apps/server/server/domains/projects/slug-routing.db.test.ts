@@ -19,10 +19,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "./adapters/project-repository/drizzle.js"
     );
     const { createDrizzleWorkRepository } = await import("./adapters/work-repository/drizzle.js");
+    const { createWorkProjectionMutation } = await import("./adapters/work-projection-mutation.js");
+    const { createDrizzleContextCatalog } = await import("../context/adapters/context-catalog.js");
+    const { createDrizzleProjectContextAvailability } = await import(
+      "../context/adapters/project-context-availability.js"
+    );
     const { WorkNameConflictError } = await import("./ports/work-repository.js");
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
 
     const db = createDb(DATABASE_URL, { max: 4 });
+    const availability = createDrizzleProjectContextAvailability(db);
+    const projectionMutation = createWorkProjectionMutation({
+      db,
+      availability,
+      catalog: createDrizzleContextCatalog(db, undefined, {
+        availabilityMutations: availability,
+      }),
+    });
+    const workRepository = () =>
+      createDrizzleWorkRepository({
+        db,
+        hasUnreviewedDraft: async () => false,
+        projectionMutation,
+      });
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [schema.users, schema.projects, schema.works]);
@@ -35,7 +54,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("work findById on a non-UUID slug resolves to null", async () => {
-      const repo = createDrizzleWorkRepository({ db, hasUnreviewedDraft: async () => false });
+      const repo = workRepository();
       await expect(repo.findById("also-a-slug" as never)).resolves.toBeNull();
     });
 
@@ -50,7 +69,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       const projects = createDrizzleProjectRepository({ db });
-      const works = createDrizzleWorkRepository({ db, hasUnreviewedDraft: async () => false });
+      const works = workRepository();
       await projects.create({ id: projectId, userId, title: "UUID grammar" });
       await works.create({ id: workId, projectId, createdByUserId: userId, name: "Work" });
 
@@ -70,7 +89,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       const projects = createDrizzleProjectRepository({ db });
-      const works = createDrizzleWorkRepository({ db, hasUnreviewedDraft: async () => false });
+      const works = workRepository();
       await projects.create({ id: projectId, userId, title: "Name conflict" });
       await works.create({ projectId, createdByUserId: userId, name: "Book Two" });
 

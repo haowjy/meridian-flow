@@ -8,7 +8,8 @@ The public surface combines a pure ranking core, a cached data hook, and a
 presentational list. A host supplies a query and explicit `schemes`/`kinds`
 filters; it receives matching `{ scheme, path, name, kind, parents }` entries.
 
-`flattenFileSuggestionTrees` preserves source order and ancestor labels.
+`catalogFileSuggestions` derives source order and ancestor labels directly from
+normalized entries.
 `matchFileSuggestions` filters first, then ranks a normalized query by:
 
 1. leaf-name prefix;
@@ -18,11 +19,10 @@ filters; it receives matching `{ scheme, path, name, kind, parents }` entries.
 Ties prefer shallower entries and then source order. Keep this logic pure and
 host-agnostic.
 
-`useFileSuggestions` always declares all five React Query hooks
-(`manuscript`, `kb`, `user`, `scratch`, `uploads`) to preserve hook ordering,
-but disables schemes excluded by the host. It flattens the cached trees in the
-same order and aggregates fetch/error state only across enabled schemes. There
-is no server search or suggestion-specific cache.
+`useFileSuggestions` declares the project, user, and current Work/no-Work scope
+queries in stable hook order, disabling scopes excluded by the host. Tree
+expansion does not affect picker completeness. There is no server search or
+suggestion-specific cache.
 
 ## Keyboard model
 

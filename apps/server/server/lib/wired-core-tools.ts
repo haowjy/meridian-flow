@@ -28,7 +28,12 @@ import {
   parseAskUserToolInput,
 } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
-import type { Work, WorkReceipt, WorkReceiptState } from "@meridian/contracts/works";
+import type {
+  ThreadExecutionContext,
+  Work,
+  WorkReceipt,
+  WorkReceiptState,
+} from "@meridian/contracts/works";
 import type {
   AgentEditAccess,
   CollabDrafts,
@@ -59,6 +64,7 @@ import {
 import {
   createCoreToolRegistrations,
   type InterruptToolHandlerContext,
+  type ReferenceReader,
   type ToolHandlerContext,
   type ToolRegistration,
   WorkCommandSchema,
@@ -69,7 +75,13 @@ import type {
   TurnDocumentTouchRepository,
   WorkContextDeliveryRepository,
 } from "../domains/threads/index.js";
-import { rebindThreadWork } from "../domains/threads/index.js";
+import {
+  RebindThreadWorkError,
+  rebindThreadWork,
+  requireWorkDraftOwner,
+  threadExecutionContext,
+  WorkRequiredError,
+} from "../domains/threads/index.js";
 
 export const UNIFIED_MANUSCRIPT_URI = MANUSCRIPT_URI;
 
@@ -80,6 +92,7 @@ export interface ToolWiringDeps {
   responseWrites: Pick<AgentEditResponseWriteLifecycle, "trackStagedCreate">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary" | "rebindPrimary">;
   works: WorkRepository;
+  workAuthorityResolver: import("../domains/projects/index.js").ProjectWorkAuthorityResolver;
   workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
   obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
   drafts: Pick<CollabDrafts, "draftReview">;
@@ -121,7 +134,6 @@ type ModelWork = Pick<
 type ResolvedModelContextPort = {
   port: ContextPort;
   primaryWorkId: string | null;
-  workAuthorities: ReadonlyMap<string, string>;
 };
 
 export type StagedCreateCleanup = {
@@ -187,15 +199,45 @@ async function resolveContextPort(
   responseId?: string,
 ): Promise<ResolvedModelContextPort | ToolErrorOutput> {
   const resolution = await resolveThreadContext(
-    { threads: deps.threads, threadWorks: deps.threadWorks, works: deps.works },
+    {
+      threads: deps.threads,
+      threadWorks: deps.threadWorks,
+      works: deps.works,
+      workAuthorityResolver: deps.workAuthorityResolver,
+    },
     threadId,
   );
   if (!resolution) return toolError({ message: `Thread not found: ${threadId}` });
   return {
     port: contextPortForThread(deps.contextPorts, resolution, { responseId }),
     primaryWorkId: resolution.primaryWorkId,
-    workAuthorities: resolution.workAuthorities,
   };
+}
+
+async function resolveExecutionContext(
+  deps: ToolWiringDeps,
+  threadId: string,
+): Promise<ThreadExecutionContext | ToolErrorOutput> {
+  const primary = await deps.threadWorks.findPrimary(threadId);
+  if (!primary) return threadExecutionContext(null);
+  const work = await deps.works.findById(primary.workId);
+  if (!work || work.deletedAt || work.status === "archived") {
+    return toolError({ code: "work_unavailable", message: "The current Work is unavailable" });
+  }
+  return threadExecutionContext(work);
+}
+
+async function resolveExecutionContextOrThrow(
+  deps: Pick<ToolWiringDeps, "threadWorks" | "works">,
+  threadId: string,
+): Promise<ThreadExecutionContext> {
+  const primary = await deps.threadWorks.findPrimary(threadId);
+  if (!primary) return threadExecutionContext(null);
+  const work = await deps.works.findById(primary.workId);
+  if (!work || work.deletedAt || work.status === "archived") {
+    throw new Error("The current Work is unavailable during response finalization");
+  }
+  return threadExecutionContext(work);
 }
 
 function modelWork(work: Work): ModelWork {
@@ -226,13 +268,8 @@ function modelWork(work: Work): ModelWork {
 }
 
 function modelContextUri(uri: string, context: ResolvedModelContextPort): string {
-  const match = /^(scratch|uploads):\/\/([^/]+)(\/.*)?$/.exec(uri);
-  if (!match) return uri;
-  const workId = match[2];
-  const path = match[3] ?? "";
-  if (workId === context.primaryWorkId) return `${match[1]}://${path.replace(/^\//, "")}`;
-  const slug = [...context.workAuthorities].find(([, id]) => id === workId)?.[0];
-  return slug ? `${match[1]}://@${slug}${path}` : uri;
+  void context;
+  return uri;
 }
 
 function modelContextResults<T extends { uri: string }>(
@@ -242,8 +279,7 @@ function modelContextResults<T extends { uri: string }>(
   return values.map((value) => ({ ...value, uri: modelContextUri(value.uri, context) }));
 }
 
-// Error payloads reach the model too: a canonical WorkId URI inside a
-// ContextError leaks the identity the @slug grammar exists to hide.
+// Error payloads reach the model through the same canonical URI boundary.
 function modelContextError(
   error: ContextError,
   context: ResolvedModelContextPort,
@@ -256,7 +292,7 @@ function modelContextError(
 function recordTouchInBackground(
   deps: ToolWiringDeps,
   documentId: string | undefined,
-  ctx: ToolHandlerContext,
+  ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
 ): void {
   if (!deps.documentTouches || !documentId) return;
   const eventSink = deps.eventSink;
@@ -467,7 +503,8 @@ async function refreshProjectionAfterToolWrite(
 }
 
 export function createAgentEditResponseWriteLifecycle(
-  deps: Pick<ToolWiringDeps, "documentSync">,
+  deps: Pick<ToolWiringDeps, "documentSync"> &
+    Partial<Pick<ToolWiringDeps, "threadWorks" | "works">>,
 ): AgentEditResponseWriteLifecycle {
   const stagedCreates = new Map<string, StagedCreateCleanup[]>();
 
@@ -521,7 +558,17 @@ export function createAgentEditResponseWriteLifecycle(
       };
       const result = await deps.documentSync.finalizeResponseCommit(
         responseId,
-        ctx,
+        {
+          ...ctx,
+          ...(deps.threadWorks && deps.works
+            ? {
+                execution: await resolveExecutionContextOrThrow(
+                  { threadWorks: deps.threadWorks, works: deps.works },
+                  ctx.threadId,
+                ),
+              }
+            : {}),
+        },
         async (commitResult) => beforeTransactionCommit?.(mapResult(commitResult)),
       );
       await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
@@ -533,7 +580,17 @@ export function createAgentEditResponseWriteLifecycle(
       responseId: string,
       ctx: Pick<ToolHandlerContext, "threadId" | "turnId">,
     ): Promise<void> {
-      const result = await deps.documentSync.finalizeResponseRollback(responseId, ctx);
+      const result = await deps.documentSync.finalizeResponseRollback(responseId, {
+        ...ctx,
+        ...(deps.threadWorks && deps.works
+          ? {
+              execution: await resolveExecutionContextOrThrow(
+                { threadWorks: deps.threadWorks, works: deps.works },
+                ctx.threadId,
+              ),
+            }
+          : {}),
+      });
       try {
         await cleanupDiscardedStagedCreates(responseId, result.stagedCreates.discarded);
       } finally {
@@ -555,6 +612,41 @@ async function askUserHandler(input: unknown, ctx: InterruptToolHandlerContext) 
   const resolvedProps = interruptResolvedPropsFromAnswer(response);
   await ctx.updateComponentBlock(request.interruptId, resolvedProps);
   return { value: resolvedProps.resolvedValue, provenance: response.provenance };
+}
+
+/** Reference loading uses the same context resolution and agent-edit read core as the write tool. */
+export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
+  return {
+    async read(reference, ctx) {
+      const execution = await resolveExecutionContext(deps, ctx.threadId);
+      if ("isError" in execution) return JSON.parse(JSON.stringify(execution.output));
+      const context = await resolveContextPort(deps, ctx.threadId);
+      if ("isError" in context) return JSON.parse(JSON.stringify(context.output));
+      const command = { command: "read" as const, path: reference.uri, format: "auto" as const };
+      const address = await resolveDocumentAddress(context, command);
+      if (isToolError(address)) return JSON.parse(JSON.stringify(address.output));
+      if (address.documentId !== reference.documentId) {
+        return JSON.parse(
+          JSON.stringify(
+            writeToolError(
+              "read",
+              "Referenced document is no longer available at this URI.",
+              "document_not_found",
+            ).output,
+          ),
+        );
+      }
+      const outcome = await deps.documentSync
+        .agentEdit(execution)
+        .write(buildAgentWriteCommand(command, address, undefined), {
+          sessionId: ctx.threadId,
+          threadId: ctx.threadId,
+          turnId: ctx.turnId,
+        });
+      if (!outcome.isError) recordTouchInBackground(deps, address.documentId, ctx);
+      return JSON.parse(JSON.stringify(outcome.result));
+    },
+  };
 }
 
 export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
@@ -602,6 +694,47 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                 inverse: { command: "delete", workId: work.id },
               } satisfies WorkReceipt,
               workContextChanged: true,
+            },
+          };
+        }
+
+        if (command.command === "switch") {
+          const selected =
+            command.target.kind === "work"
+              ? await workBySlug(deps, thread.projectId, command.target.work)
+              : null;
+          if (isToolError(selected)) return selected;
+          if (!selected && command.target.kind === "work") {
+            return toolError({ message: `Unknown Work ${command.target.work}` });
+          }
+          const rebound = await deps.transaction(() =>
+            rebindThreadWork(
+              {
+                threads: deps.threads,
+                threadWorks: deps.threadWorks,
+                works: deps.works,
+                obligations: deps.obligations,
+              },
+              {
+                threadId: thread.id,
+                target: selected ? { kind: "work", workId: selected.id } : { kind: "none" },
+              },
+            ),
+          );
+          return {
+            output:
+              rebound.after.kind === "work"
+                ? {
+                    slug: rebound.after.workSlug,
+                    name: rebound.after.name,
+                    goal: rebound.after.goal,
+                    description: rebound.after.description,
+                    status: rebound.after.status,
+                  }
+                : { kind: "none", aiWriteMode: "direct", draftOwner: null },
+            metadata: {
+              workReceipt: rebound.receipt,
+              ...(rebound.changed ? { workContextChanged: true } : {}),
             },
           };
         }
@@ -686,29 +819,14 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             },
           };
         }
-
-        const rebound = await deps.transaction(() =>
-          rebindThreadWork(
-            {
-              threads: deps.threads,
-              threadWorks: deps.threadWorks,
-              works: deps.works,
-              obligations: deps.obligations,
-            },
-            {
-              threadId: thread.id,
-              targetWorkId: selected.id,
-            },
-          ),
-        );
-        return {
-          output: modelWork(rebound.work),
-          metadata: {
-            workReceipt: rebound.receipt,
-            ...(rebound.changed ? { workContextChanged: true } : {}),
-          },
-        };
       } catch (error) {
+        if (error instanceof RebindThreadWorkError) {
+          return toolError({
+            code: error.code,
+            message: error.message,
+            ...(error.workId ? { workId: error.workId } : {}),
+          });
+        }
         if (error instanceof WorkNameRequiredError) {
           return toolError({ code: "invalid_work_name", message: error.message });
         }
@@ -726,8 +844,23 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       const parsed = parseWriteToolInput(input);
       if (isToolError(parsed)) return parsed;
 
+      const execution = await resolveExecutionContext(deps, ctx.threadId);
+      if ("isError" in execution) return execution;
+
       if (parsed.command === "diff") {
-        const outcome = await deps.documentSync.agentEdit().write(parsed, {
+        try {
+          requireWorkDraftOwner(execution, "write.diff");
+        } catch (error) {
+          if (error instanceof WorkRequiredError) {
+            return toolError({
+              code: error.code,
+              operation: error.operation,
+              message: error.message,
+            });
+          }
+          throw error;
+        }
+        const outcome = await deps.documentSync.agentEdit(execution).write(parsed, {
           sessionId: ctx.threadId,
           threadId: ctx.threadId,
           turnId: ctx.turnId,
@@ -750,7 +883,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
       if (isToolError(address)) return address;
 
       const outcome = await deps.documentSync
-        .agentEdit()
+        .agentEdit(execution)
         .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId), {
           sessionId: ctx.threadId,
           threadId: ctx.threadId,

@@ -25,7 +25,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../../../test-support/rollback-test-database.js"
     );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
-    const { createDrizzleRepositories } = await import("./repositories.js");
+    const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
     const { getWorkChatFeedPage } = await import("../../domain/work-chat-feed.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
@@ -94,7 +94,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("projects current primary identity and state while paging historical membership", async () => {
-      const repos = createDrizzleRepositories(database.current);
+      const repos = createDrizzleRepositoriesForTest(database.current);
       const first = await repos.workChatFeed.queryPage({
         projectId: PROJECT_ID,
         workId: HISTORICAL_WORK_ID,
@@ -165,7 +165,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         `);
         const startedAt = performance.now();
         const page = await getWorkChatFeedPage({
-          repository: createDrizzleRepositories(db).workChatFeed,
+          repository: createDrizzleRepositoriesForTest(db).workChatFeed,
           projectId: PROJECT_ID,
           workId,
           userId: USER_ID,
@@ -178,7 +178,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect(bytes).toBeLessThan(25_000);
         if (size === 2_500 && page.nextCursor) {
           const next = await getWorkChatFeedPage({
-            repository: createDrizzleRepositories(db).workChatFeed,
+            repository: createDrizzleRepositoriesForTest(db).workChatFeed,
             projectId: PROJECT_ID,
             workId,
             userId: USER_ID,

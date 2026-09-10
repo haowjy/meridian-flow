@@ -4,15 +4,13 @@
  * document holding the link.
  *
  * Answers used to be dropped between the app and the link system. The resolver
- * was asked with the project alone, so `work://` shorthand had no Work to fall
+ * was asked with the project alone, so `scratch://` shorthand had no Work to fall
  * back to; the `[[` menu offered the manuscript alone, so a note in the Work's
  * scratch was a document the resolver would happily find and the menu refused to
  * name; and the Work and base URI rode a mutable ref, so a scope change decided
  * what a future question asked without invalidating a single cached answer.
  */
 import type {
-  ProjectContextTreeDirectory,
-  ProjectContextTreeNode,
   ResolveDocumentLinkRequest,
   ResolveDocumentLinkResponse,
 } from "@meridian/contracts/protocol";
@@ -20,6 +18,11 @@ import { Editor } from "@tiptap/core";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  CatalogContextView,
+  CatalogFile,
+  CatalogNode,
+} from "@/client/query/context-catalog-projection";
 
 import { createStandaloneEditorExtensions } from "@/core/editor/config";
 import { getLinkResolution } from "@/core/editor/links";
@@ -34,7 +37,7 @@ const resolveDocumentLink = vi.fn(
     _body: ResolveDocumentLinkRequest,
   ): Promise<ResolveDocumentLinkResponse> => ({ document: null }),
 );
-const trees = new Map<string, ProjectContextTreeDirectory | null>();
+const trees = new Map<string, CatalogContextView | null>();
 
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray) => strings.join(""),
@@ -43,13 +46,14 @@ vi.mock("@/client/api/document-links-api", () => ({
   resolveDocumentLink: (projectId: string, body: ResolveDocumentLinkRequest) =>
     resolveDocumentLink(projectId, body),
 }));
-vi.mock("@/client/query/useProjectContextTree", () => ({
-  useProjectContextTree: (
+vi.mock("@/client/query/useContextCatalog", () => ({
+  useContextCatalogView: (
     _projectId: string,
     scheme: string,
     options?: { enabled?: boolean; workId?: string | null },
   ) => ({
-    tree: options?.enabled === false ? null : (trees.get(treeKey(scheme, options?.workId)) ?? null),
+    catalog:
+      options?.enabled === false ? null : (trees.get(treeKey(scheme, options?.workId)) ?? null),
     isError: false,
     isFetching: false,
     refetch: () => {},
@@ -134,12 +138,12 @@ describe("the scope a resolved answer belongs to", () => {
 
     mount({ workId: "work-1" });
     await act(async () => {
-      answers.push(await getLinkResolution(editor)?.resolve("work://notes.md"));
+      answers.push(await getLinkResolution(editor)?.resolve("scratch://notes.md"));
     });
 
     mount({ workId: "work-2" });
     await act(async () => {
-      answers.push(await getLinkResolution(editor)?.resolve("work://notes.md"));
+      answers.push(await getLinkResolution(editor)?.resolve("scratch://notes.md"));
     });
 
     expect(asked().map((body) => body.workId)).toEqual(["work-1", "work-2"]);
@@ -177,7 +181,7 @@ describe("the scope a resolved answer belongs to", () => {
     expect(asked()).toEqual([
       {
         workId: "work-1",
-        target: { kind: "relative", path: "./cast.md", baseUri: "work://work-1/notes.md" },
+        target: { kind: "relative", path: "./cast.md", baseUri: "scratch://@work-1/notes.md" },
       },
     ]);
   });
@@ -268,10 +272,11 @@ function answerWikilinksFromTheManuscript() {
   resolveDocumentLink.mockImplementation(async (_projectId, body) => {
     if (body.target.kind !== "wikilink") return { document: null };
     const { name } = body.target;
-    const match = (trees.get(treeKey("manuscript"))?.children ?? []).find(
-      (node) => node.kind === "file" && node.name.replace(/\.md$/, "") === name,
-    );
-    return { document: match?.kind === "file" ? resolvedLink(match.documentId) : null };
+    const match = trees
+      .get(treeKey("manuscript"))
+      ?.files()
+      .find((node) => node.name.replace(/\.md$/, "") === name);
+    return { document: match ? resolvedLink(match.documentId) : null };
   });
 }
 
@@ -312,9 +317,9 @@ function resolvedLink(documentId: string) {
   return {
     documentId,
     title: "Notes",
-    scheme: "work" as const,
+    scheme: "scratch" as const,
     path: "notes.md",
-    uri: "work://notes.md",
+    uri: "scratch://notes.md",
     workId: null,
   };
 }
@@ -339,28 +344,32 @@ function treeKey(scheme: string, workId?: string | null): string {
   return `${scheme}:${workId ?? ""}`;
 }
 
-function manuscriptTree(...names: readonly string[]): ProjectContextTreeDirectory {
+function manuscriptTree(...names: readonly string[]): CatalogContextView {
   return directory(
     "manuscript://",
     names.map((name) => file(name, `manuscript://${name}`)),
   );
 }
 
-/** The context tree spells scratch `scratch://<workId>/…` (tracked task #32). */
-function scratchTree(workId: string, ...names: readonly string[]): ProjectContextTreeDirectory {
+/** Context trees expose stable slug-qualified Scratch authority. */
+function scratchTree(workSlug: string, ...names: readonly string[]): CatalogContextView {
   return directory(
-    `scratch://${workId}`,
-    names.map((name) => file(name, `scratch://${workId}/${name}`)),
+    `scratch://@${workSlug}`,
+    names.map((name) => file(name, `scratch://@${workSlug}/${name}`)),
   );
 }
 
-function directory(uri: string, children: ProjectContextTreeNode[]): ProjectContextTreeDirectory {
-  return { kind: "dir", name: "", path: "/", uri, children };
+function directory(_uri: string, children: CatalogNode[]): CatalogContextView {
+  return {
+    files: () => children.filter((node): node is CatalogFile => node.kind === "file"),
+  } as unknown as CatalogContextView;
 }
 
-function file(name: string, uri: string): ProjectContextTreeNode {
+function file(name: string, uri: string): CatalogNode {
   return {
     kind: "file",
+    entryId: `document-${name}`,
+    parentId: uri,
     documentId: `document-${name}`,
     name,
     path: `/${name}`,

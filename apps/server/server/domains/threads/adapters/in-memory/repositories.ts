@@ -36,7 +36,10 @@ import type {
   UpdateSpawnLifecycleInput,
   UpdateTurnStatusInput,
 } from "../../ports/repositories.js";
-import { ThreadWorkProjectMismatchError } from "../../ports/repositories.js";
+import {
+  ThreadMembershipUnavailableError,
+  ThreadWorkProjectMismatchError,
+} from "../../ports/repositories.js";
 import { createInMemoryProjectChatAdapter } from "./project-chat-adapter.js";
 
 // USD rollups are display-side only; integer millicredits in the billing
@@ -417,8 +420,8 @@ export function createInMemoryRepositories(
   const threadWorksRepo: ThreadWorksRepository = {
     async addMembership(threadId, workId, isPrimary) {
       const thread = threads.get(threadId);
-      if (!thread) throw new Error("Thread membership requires an existing thread");
-      if (options.works) {
+      if (!thread || thread.deletedAt) throw new ThreadMembershipUnavailableError(threadId);
+      if (options.works && workId) {
         const work = await options.works.findById(workId);
         if (!work || work.deletedAt || work.id !== workId) {
           throw new WorkLifecycleUnavailableError(workId, !work ? "missing" : "deleted");
@@ -453,8 +456,8 @@ export function createInMemoryRepositories(
     },
     async rebindPrimary(threadId, workId) {
       const thread = threads.get(threadId);
-      if (!thread) throw new Error("Thread membership requires an existing thread");
-      if (options.works) {
+      if (!thread || thread.deletedAt) throw new ThreadMembershipUnavailableError(threadId);
+      if (options.works && workId) {
         const work = await options.works.findById(workId);
         if (!work || work.deletedAt) {
           throw new WorkLifecycleUnavailableError(workId, !work ? "missing" : "deleted");
@@ -468,8 +471,15 @@ export function createInMemoryRepositories(
         const previous = threadWorks.get(previousKey);
         if (previous) threadWorks.set(previousKey, { ...previous, isPrimary: false });
       }
-      threadWorks.set(membershipKey(threadId, workId), { threadId, workId, isPrimary: true });
+      if (workId) {
+        threadWorks.set(membershipKey(threadId, workId), { threadId, workId, isPrimary: true });
+      }
       return { previousWorkId, changed: true };
+    },
+    async demotePrimaryForRestore(threadId, workId) {
+      const key = membershipKey(threadId, workId);
+      const membership = threadWorks.get(key);
+      if (membership?.isPrimary) threadWorks.set(key, { ...membership, isPrimary: false });
     },
     async listByThread(threadId) {
       return [...threadWorks.values()]

@@ -77,16 +77,21 @@ describe("work command phrases", () => {
   it("wears the receipt line as the complete tense, without its period", () => {
     const tool = toolView({
       toolName: "work",
-      input: { command: "switch", work: "tournament-arc" },
+      input: { command: "switch", target: { kind: "work", work: "tournament-arc" } },
       metadata: {
         workReceipt: {
           operation: "switch",
           category: "binding",
-          changed: true,
-          workId: "w1",
-          workName: "Tournament arc",
-          before: null,
-          after: null,
+          before: { kind: "none" },
+          after: {
+            kind: "work",
+            workId: "w1",
+            workSlug: "tournament-arc",
+            name: "Tournament arc",
+            goal: null,
+            description: null,
+            status: "active",
+          },
           inverse: null,
         },
       },

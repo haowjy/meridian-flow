@@ -130,7 +130,7 @@ export const threads = pgTable(
   ],
 );
 
-/** M:N thread↔work membership; primary Work is the default work-scoped authority. */
+/** M:N thread↔Work history; the optional primary row is contextual authority. */
 export const threadWorks = pgTable(
   "thread_works",
   {
@@ -378,6 +378,35 @@ export const threadDocuments = pgTable(
     check(
       "thread_documents_relationship_valid",
       sql`${table.relationship} IN ('editing', 'reading', 'created')`,
+    ),
+  ],
+);
+
+export const userTurnAdmissions = pgTable(
+  "user_turn_admissions",
+  {
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    submissionId: text("submission_id").notNull(),
+    actorUserId: uuid("actor_user_id").$type<UserId>().notNull(),
+    fingerprint: text("fingerprint"),
+    state: text("state").notNull(),
+    rejectionCode: text("rejection_code"),
+    userTurnId: uuid("user_turn_id").$type<TurnId>(),
+    assistantTurnId: uuid("assistant_turn_id").$type<TurnId>(),
+    resumeAfterSeq: text("resume_after_seq"),
+    snapshotFloorNextSeq: text("snapshot_floor_next_seq"),
+    claimExpiresAt: timestamp("claim_expires_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.threadId, table.submissionId] }),
+    check(
+      "user_turn_admissions_state_valid",
+      sql`${table.state} IN ('pending', 'accepted', 'rejected', 'retired')`,
     ),
   ],
 );

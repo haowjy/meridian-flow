@@ -39,7 +39,7 @@ export function NewThreadComposerToolbar({
   agentSlug: string;
   disabled: boolean;
   onAgentChange(slug: string): void;
-  onWorkChange(work: Work): void;
+  onWorkChange(work: Work | null): void;
   onRetryWorks(): void;
   onModePendingChange(pending: boolean): void;
 }) {
@@ -131,7 +131,7 @@ function useProspectiveWorkControl({
   works: Work[];
   worksStatus: "loading" | "error" | "ready";
   disabled: boolean;
-  onWorkChange(work: Work): void;
+  onWorkChange(work: Work | null): void;
   onRetryWorks(): void;
 }): ComposerToolbarControl {
   const [query, setQuery] = useState("");
@@ -148,7 +148,7 @@ function useProspectiveWorkControl({
   const view = deriveWorkPickerViewModel(catalog, query, disabled);
   const label = work
     ? t`Choose Work for new chat, currently ${work.name}`
-    : t`Choose Work for new chat, current choice unavailable`;
+    : t`Choose Work for new chat, currently No Work`;
   return {
     kind: "panel",
     id: "work",
@@ -157,11 +157,11 @@ function useProspectiveWorkControl({
     item: {
       ariaLabel: label,
       label: <Trans>Work</Trans>,
-      value: work?.name ?? t`Unavailable`,
+      value: work?.name ?? t`No Work`,
     },
     inline: ({ trigger }) => (
       <ComposerCurrentValueTrigger binding={trigger} ariaLabel={label}>
-        <WorkIdentity name={work?.name} unavailableLabel={t`Unavailable`} />
+        <WorkIdentity name={work?.name} unavailableLabel={t`No Work`} />
       </ComposerCurrentValueTrigger>
     ),
     panel: {
@@ -195,6 +195,10 @@ function useProspectiveWorkControl({
           onQueryChange={setQuery}
           onChoose={(next) => {
             onWorkChange(next);
+            terminalClose();
+          }}
+          onChooseNone={() => {
+            onWorkChange(null);
             terminalClose();
           }}
           searchRef={searchRef}

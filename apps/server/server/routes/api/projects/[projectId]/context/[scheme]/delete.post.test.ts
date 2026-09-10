@@ -18,7 +18,11 @@ describe("POST context delete", () => {
 
   it("returns the exact successful deletion result", async () => {
     const deleteEntry = vi.fn(async () =>
-      Ok({ status: "deleted" as const, deletedDocumentIds: [DOCUMENT_ID] }),
+      Ok({
+        status: "deleted" as const,
+        deletedDocumentIds: [DOCUMENT_ID],
+        availabilityGeneration: "42",
+      }),
     );
     vi.mocked(resolveContextRoute).mockResolvedValue({
       userId: "00000000-0000-4000-8000-000000000001",
@@ -41,6 +45,7 @@ describe("POST context delete", () => {
     await expect(handler(event as never)).resolves.toEqual({
       status: "deleted",
       deletedDocumentIds: [DOCUMENT_ID],
+      availabilityGeneration: "42",
     });
     expect(deleteEntry).toHaveBeenCalledWith(
       "manuscript://chapter.md",
@@ -48,27 +53,38 @@ describe("POST context delete", () => {
     );
   });
 
-  it("does not acknowledge a post-commit callback failure", async () => {
-    const callbackFailure = new Error("membership callback failed");
+  it("returns the exact populated-folder receipt", async () => {
     vi.mocked(resolveContextRoute).mockResolvedValue({
       userId: "00000000-0000-4000-8000-000000000001",
       scheme: "manuscript",
       workId: null,
-      port: { delete: vi.fn(async () => Promise.reject(callbackFailure)) },
+      port: {
+        delete: vi.fn(async () =>
+          Ok({
+            status: "deleted" as const,
+            deletedDocumentIds: [DOCUMENT_ID, "00000000-0000-4000-8000-000000000003"],
+            availabilityGeneration: "43",
+          }),
+        ),
+      },
     } as never);
     const event = {
       req: new Request("https://server.local/delete", {
         method: "POST",
         body: JSON.stringify({
-          path: "chapter.md",
-          expected: { kind: "file", documentId: DOCUMENT_ID },
+          path: "chapters",
+          expected: { kind: "folder" },
         }),
         headers: { "content-type": "application/json" },
       }),
       res: { status: 200 },
     };
 
-    await expect(handler(event as never)).rejects.toBe(callbackFailure);
+    await expect(handler(event as never)).resolves.toEqual({
+      status: "deleted",
+      deletedDocumentIds: [DOCUMENT_ID, "00000000-0000-4000-8000-000000000003"],
+      availabilityGeneration: "43",
+    });
   });
 
   it("preserves stale_target as a named structured conflict", async () => {

@@ -10,7 +10,10 @@ import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import { HttpResponseError } from "@/client/api/http-client";
 import { MeridianApiError } from "@/client/api/meridian-error";
-import { isThreadAdmissionError } from "./ThreadRunController";
+import {
+  plainComposerDoc,
+  serializeComposerDraft,
+} from "@/components/app/composer/composer-document";
 import {
   defaultSendResponse,
   scenarioGate,
@@ -115,7 +118,16 @@ describe("ThreadRunController", () => {
     scenario.connect("conn-late");
     await submit;
     expect(scenario.appendRequests).toEqual([
-      { data: { threadId: "thread_1", text: "Hello", connectionToken: "conn-late" } },
+      {
+        data: expect.objectContaining({
+          threadId: "thread_1",
+          text: "Hello",
+          connectionToken: "conn-late",
+          blocks: [{ type: "text", text: "Hello" }],
+          references: [],
+          submissionId: expect.any(String),
+        }),
+      },
     ]);
     expect(scenario.activeSubscription()).toMatchObject({
       threadId: "thread_1",
@@ -248,8 +260,8 @@ describe("ThreadRunController", () => {
     scenario.resume({ after: "42", expectedTurnId: "turn_interrupt" });
 
     const submit = scenario.submit("too soon");
-    admission.reject(new Error("Turn already running"));
-    await expect(submit).rejects.toThrow("Turn already running");
+    admission.reject(new HttpResponseError("Turn already running", 409, null));
+    await expect(submit).resolves.toMatchObject({ kind: "rejected" });
 
     expect(scenario.activeSubscription()).toBeDefined();
     expect(scenario.turns()).toEqual([waitingInterruptTurn]);
@@ -264,10 +276,7 @@ describe("ThreadRunController", () => {
     const optimistic = scenario.store.getState().appendUserTurn("thread_1", "second");
     await expect(
       scenario.submit("second", { optimisticUserTurnId: optimistic.id }),
-    ).rejects.toMatchObject({
-      kind: "definite",
-      message: "submit already in flight",
-    });
+    ).resolves.toMatchObject({ kind: "rejected" });
     expect(scenario.turns()).toEqual([]);
     scenario.controller.cancel("thread_1");
     expect(scenario.transport.cancelRequests).toEqual([
@@ -286,10 +295,7 @@ describe("ThreadRunController", () => {
 
     const submit = scenario.submit("not dispatched", { optimisticUserTurnId: optimistic.id });
     scenario.rejectConnection(new Error("connection unavailable"));
-    const error = await submit.catch((reason: unknown) => reason);
-
-    expect(isThreadAdmissionError(error)).toBe(true);
-    expect(error).toMatchObject({ kind: "definite", message: "connection unavailable" });
+    await expect(submit).resolves.toMatchObject({ kind: "rejected" });
     expect(scenario.appendRequests).toEqual([]);
     expect(scenario.turns()).toEqual([]);
   });
@@ -304,7 +310,7 @@ describe("ThreadRunController", () => {
         source: "system",
       }),
       remaining: 0,
-      kind: "definite",
+      kind: "rejected",
     },
     {
       label: "authoritative plain HTTP rejection",
@@ -313,7 +319,7 @@ describe("ThreadRunController", () => {
         message: "Turn already running",
       }),
       remaining: 0,
-      kind: "definite",
+      kind: "rejected",
     },
     {
       label: "ambiguous network failure",
@@ -327,8 +333,50 @@ describe("ThreadRunController", () => {
 
     await expect(
       scenario.submit("possibly persisted", { optimisticUserTurnId: optimistic.id }),
-    ).rejects.toMatchObject({ kind });
+    ).resolves.toMatchObject({ kind });
     expect(scenario.turns()).toHaveLength(remaining);
+  });
+
+  it("reconciles response loss by lookup of the same identity without a second POST", async () => {
+    const scenario = new ThreadRunScenario({
+      append: async () => Promise.reject(new TypeError("response lost")),
+      lookup: async ({ threadId, submissionId }) => ({
+        kind: "accepted",
+        threadId: threadId as never,
+        submissionId,
+        userTurnId: "turn-user" as never,
+        assistantTurnId: "turn_1" as never,
+        resumeAfterSeq: "42",
+        snapshotFloorNextSeq: "43",
+      }),
+    });
+    const outcome = await scenario.submit("exact");
+    expect(outcome.kind).toBe("accepted");
+    expect(scenario.appendRequests).toHaveLength(1);
+    expect(scenario.lookupRequests).toEqual([
+      {
+        threadId: "thread_1",
+        submissionId: scenario.appendRequests[0]?.data.submissionId,
+      },
+    ]);
+  });
+
+  it("keeps pending lookup ambiguous and maps explicit retirement's durable winner", async () => {
+    const scenario = new ThreadRunScenario({
+      lookup: async ({ submissionId }) => ({ kind: "pending", submissionId }),
+      retire: async ({ submissionId }) => ({ kind: "retired", submissionId, code: "retired" }),
+    });
+    const envelope = serializeComposerDraft(plainComposerDoc("uncertain"));
+    await expect(scenario.controller.lookup("thread_1", envelope)).resolves.toMatchObject({
+      kind: "ambiguous",
+    });
+    await expect(scenario.controller.retire("thread_1", envelope)).resolves.toMatchObject({
+      kind: "rejected",
+    });
+    expect(scenario.appendRequests).toEqual([]);
+    expect(scenario.retireRequests).toEqual([
+      { threadId: "thread_1", submissionId: envelope.submissionId },
+    ]);
   });
 
   it("prunes an abandoned assistant row only after a new submit is accepted", async () => {

@@ -11,7 +11,7 @@
 
 import { type MdastImage, type MdastWikiLinkImage, stringifyBlock } from "../../helpers.js";
 import type { BlockCodec, ParseContext, PMNode } from "../../types.js";
-import { wikilinkTarget } from "../wikilink-target.js";
+import { formatWikilink, wikilinkTarget } from "../wikilink-target.js";
 import {
   type ImageHtmlAttributes,
   imageHtmlTag,
@@ -40,7 +40,7 @@ export const imageCodec: BlockCodec<MdastImage | MdastWikiLinkImage> = {
   parse(ast, ctx) {
     if (ast.type === "wikiLinkImage") {
       return imageNodeFromAttributes(ctx, {
-        url: `[[${ast.target}]]`,
+        url: formatWikilink(ast.target),
         alt: ast.alt ?? null,
         title: ast.title ?? null,
         width: null,
@@ -71,7 +71,12 @@ export function imageNodeFromAttributes(ctx: ParseContext, tag: ImageHtmlAttribu
   const target = wikilinkTarget(tag.url);
   const assetDocumentId = tag.url === "" ? null : ctx.assetPathResolver.assetForPath(tag.url);
   return ctx.schema.node("image", {
-    src: target !== null ? `[[${target}]]` : assetDocumentId ? `asset:${assetDocumentId}` : tag.url,
+    src:
+      target !== null
+        ? formatWikilink(target)
+        : assetDocumentId
+          ? `asset:${assetDocumentId}`
+          : tag.url,
     alt: tag.alt,
     title: tag.title,
     width: tag.width,

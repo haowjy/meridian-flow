@@ -27,11 +27,13 @@ type OpenContextTarget = (target: ContextRouteTarget) => void;
 export function ProjectChatContextNavigationProvider({
   projectId,
   activeWork,
+  availableWorks,
   onOpenContextTarget,
   children,
 }: {
   projectId: string;
   activeWork: { id: string; slug: string } | null;
+  availableWorks: readonly { id: string; slug: string }[];
   onOpenContextTarget?: OpenContextTarget;
   children: ReactNode;
 }) {
@@ -39,16 +41,16 @@ export function ProjectChatContextNavigationProvider({
   const openContextUri = useCallback(
     (uri: string, passage?: ContextPassageAnchor) => {
       if (!onOpenContextTarget) return;
-      const target = contextRouteTargetFromUri(uri, activeWork);
-      if (!target || !activeWork) return;
-      onOpenContextTarget({ ...target, workId: activeWork.id });
-      doorOpened(target, passage);
+      const target = contextRouteTargetFromUri(uri, activeWork, availableWorks);
+      if (!target) return;
+      onOpenContextTarget(target);
+      doorOpened({ ...target, uri }, passage);
     },
-    [activeWork, doorOpened, onOpenContextTarget],
+    [activeWork, availableWorks, doorOpened, onOpenContextTarget],
   );
   const canOpenContextUri = useCallback(
-    (uri: string) => isContextUriRoutable(uri, activeWork),
-    [activeWork],
+    (uri: string) => isContextUriRoutable(uri, activeWork, availableWorks),
+    [activeWork, availableWorks],
   );
 
   return (

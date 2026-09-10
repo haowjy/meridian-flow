@@ -25,9 +25,14 @@ afterEach(() => {
 const CATALOG: WikilinkCatalog = {
   label: "Link a document",
   documents: [
-    { title: "The Third Gate", location: "Chapters" },
-    { title: "Third Gate Aspirants", location: "Worldbuilding" },
-    { title: "Warden Ilsever", location: "Characters", aliases: ["The Warden"] },
+    { documentId: "third-gate", title: "The Third Gate", location: "Chapters" },
+    { documentId: "aspirants", title: "Third Gate Aspirants", location: "Worldbuilding" },
+    {
+      documentId: "warden",
+      title: "Warden Ilsever",
+      location: "Characters",
+      aliases: ["The Warden"],
+    },
   ],
 };
 

@@ -39,6 +39,7 @@ export function SlashMenu({ editor }: EditorChromeSurfaceProps) {
   return (
     <SuggestionMenu
       editor={editor}
+      typingElement={editor.view.dom}
       id="slash-menu"
       open={snapshot.open}
       label={snapshot.label}

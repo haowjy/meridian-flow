@@ -4,21 +4,10 @@ import type {
   ContextSourceId,
   DocumentId,
   ProjectId,
-  ThreadId,
   UserId,
-  WorkId,
 } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  agentDefinitions,
-  contextSources,
-  documents,
-  projects,
-  threadDocuments,
-  threads,
-  threadWorks,
-  works,
-} from "@meridian/database";
+import { agentDefinitions, contextSources, documents, projects } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type {
@@ -27,10 +16,15 @@ import type {
   MarkdownDocumentStore,
 } from "../collab/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
-import type { ThreadRepository, ThreadWorksRepository } from "../threads/index.js";
+import type { ContextCatalogLifecyclePort } from "./ports/context-catalog-lifecycle.js";
 
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
 
+export { createDrizzleProjectWorkAuthorityResolver } from "./adapters/drizzle-work-authority.js";
+export {
+  type ProjectWorkAuthorityResolver,
+  resolvedWorkAuthority,
+} from "./domain/work-authority.js";
 export {
   type WorkLifecycleState,
   WorkLifecycleUnavailableError,
@@ -52,12 +46,10 @@ export type BootstrapProjectInput = {
   notes?: string | null;
 };
 
-export type DefaultBootstrap = {
+export type ProjectBootstrapResult = {
   projectId: ProjectId;
-  workId: WorkId;
-  threadId: ThreadId;
   documentId: DocumentId;
-  contextSourceId: ContextSourceId;
+  manuscriptSourceId: ContextSourceId;
   agentDefinitionId: AgentDefinitionId;
   uri: typeof DEFAULT_BOOTSTRAP_URI;
 };
@@ -71,7 +63,7 @@ export type ProjectBootstrapRepository = {
    * authenticated request that discovered them.
    */
   ensureDefaultBootstrapReady(userId: UserId): Promise<boolean>;
-  ensureDefaultBootstrap(userId: UserId): Promise<DefaultBootstrap>;
+  ensureDefaultBootstrap(userId: UserId): Promise<ProjectBootstrapResult>;
 };
 
 export function createInMemoryProjectBootstrapRepository(): ProjectBootstrapRepository {
@@ -93,8 +85,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   documents: Pick<MarkdownDocumentStore, "seedFromMarkdown"> &
     Pick<DocumentCreationAggregate, "createDocumentAtomically" | "repairDocumentAtomically"> &
     Pick<BranchPeerShadowAccess, "recordManifestDocumentCreated">;
-  threads: Pick<ThreadRepository, "create">;
-  threadWorks: Pick<ThreadWorksRepository, "addMembership">;
+  catalogLifecycle?: ContextCatalogLifecyclePort;
 }): ProjectBootstrapRepository {
   const { db } = deps;
   const repairedReadyUsers = new Set<UserId>();
@@ -174,40 +165,10 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     return agent.id;
   }
 
-  async function ensureWork(
-    tx: BootstrapDb,
-    projectId: ProjectId,
-    userId: UserId,
-  ): Promise<WorkId> {
-    const [existing] = await tx
-      .select({ id: works.id })
-      .from(works)
-      .where(
-        and(
-          eq(works.projectId, projectId),
-          eq(works.createdByUserId, userId),
-          isNull(works.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (existing) return existing.id;
-
-    const [work] = await tx
-      .insert(works)
-      .values({
-        projectId,
-        createdByUserId: userId,
-        name: "Book 1",
-        slug: "book-1",
-      })
-      .returning({ id: works.id });
-    if (!work) throw new Error("Failed to create default work");
-    return work.id;
-  }
-
   async function ensureContextSource(
     tx: BootstrapDb,
     projectId: ProjectId,
+    input: { slug: "manuscript" | "scratch" | "uploads"; name: string; isPrimary?: boolean },
   ): Promise<ContextSourceId> {
     const [existing] = await tx
       .select({ id: contextSources.id })
@@ -215,7 +176,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       .where(
         and(
           eq(contextSources.projectId, projectId),
-          eq(contextSources.slug, "manuscript"),
+          eq(contextSources.slug, input.slug),
           isNull(contextSources.deletedAt),
         ),
       )
@@ -226,14 +187,14 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       .insert(contextSources)
       .values({
         projectId,
-        name: "Manuscript",
-        slug: "manuscript",
+        name: input.name,
+        slug: input.slug,
         scope: "project",
         adapterType: "local",
-        isPrimary: true,
+        isPrimary: input.isPrimary ?? false,
       })
       .returning({ id: contextSources.id });
-    if (!source) throw new Error("Failed to create manuscript context source");
+    if (!source) throw new Error(`Failed to create ${input.slug} context source`);
     return source.id;
   }
 
@@ -307,55 +268,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     return documentId;
   }
 
-  async function ensureThread(
-    tx: BootstrapDb,
-    input: {
-      projectId: ProjectId;
-      workId: WorkId;
-      userId: UserId;
-      documentId: DocumentId;
-      agentDefinitionId: AgentDefinitionId;
-      agentSlug?: string;
-    },
-  ): Promise<ThreadId> {
-    const [linked] = await tx
-      .select({ id: threads.id })
-      .from(threadDocuments)
-      .innerJoin(threads, eq(threads.id, threadDocuments.threadId))
-      .innerJoin(
-        threadWorks,
-        and(eq(threadWorks.threadId, threads.id), eq(threadWorks.workId, input.workId)),
-      )
-      .where(
-        and(
-          eq(threadDocuments.documentId, input.documentId),
-          eq(threadDocuments.relationship, "editing"),
-          eq(threads.kind, "primary"),
-          isNull(threads.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (linked) return linked.id;
-
-    const thread = await deps.threads.create({
-      projectId: input.projectId,
-      userId: input.userId,
-      title: "Chapter 1",
-      kind: "primary",
-      currentAgent: input.agentSlug ?? "writer",
-    });
-
-    await deps.threadWorks.addMembership(thread.id, input.workId, true);
-
-    await tx.insert(threadDocuments).values({
-      threadId: thread.id,
-      documentId: input.documentId,
-      relationship: "editing",
-    });
-
-    return thread.id;
-  }
-
   async function findPersonalProjectId(userId: UserId): Promise<ProjectId | null> {
     const [existing] = await db
       .select({ id: projects.id })
@@ -378,33 +290,28 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     return project?.ready === true;
   }
 
-  async function attemptDefaultBootstrap(userId: UserId): Promise<DefaultBootstrap> {
+  async function attemptDefaultBootstrap(userId: UserId): Promise<ProjectBootstrapResult> {
     const bootstrap = await runInDrizzleTransaction(db, async () => {
       const tx = currentDrizzleDb(db) as BootstrapDb;
       await lockBootstrap(tx, userId);
       const projectId = await ensureProject(tx, userId);
       const agentDefinitionId = await ensureAgent(tx, projectId);
-      const workId = await ensureWork(tx, projectId, userId);
-      const contextSourceId = await ensureContextSource(tx, projectId);
-      const documentId = await ensureDocument(tx, projectId, contextSourceId);
-      const threadId = await ensureThread(tx, {
-        projectId,
-        workId,
-        userId,
-        documentId,
-        agentDefinitionId,
-        agentSlug: "writer",
+      const manuscriptSourceId = await ensureContextSource(tx, projectId, {
+        slug: "manuscript",
+        name: "Manuscript",
+        isPrimary: true,
       });
+      await ensureContextSource(tx, projectId, { slug: "scratch", name: "Scratch" });
+      await ensureContextSource(tx, projectId, { slug: "uploads", name: "Uploads" });
+      const documentId = await ensureDocument(tx, projectId, manuscriptSourceId);
 
       const result = {
         projectId,
-        workId,
-        threadId,
         documentId,
-        contextSourceId,
+        manuscriptSourceId,
         agentDefinitionId,
         uri: DEFAULT_BOOTSTRAP_URI,
-      } satisfies DefaultBootstrap;
+      } satisfies ProjectBootstrapResult;
 
       const [updated] = await tx
         .update(projects)
@@ -412,6 +319,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         .where(eq(projects.id, projectId))
         .returning({ id: projects.id });
       if (!updated) throw new Error("Failed to mark default bootstrap ready");
+      await deps.catalogLifecycle?.refreshProject(projectId);
       return result;
     });
     repairedReadyUsers.add(userId);
@@ -436,19 +344,23 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   };
 }
 
+export type { WorkCatalogEntry } from "@meridian/contracts/works";
 // ── Project CRUD ────────────────────────────────────────────────────────────
 export { createDrizzleProjectRepository } from "./adapters/project-repository/drizzle.js";
 export { createInMemoryProjectRepository } from "./adapters/project-repository/in-memory.js";
 // ── User provisioning ───────────────────────────────────────────────────────
 export { createDrizzleUserRepository } from "./adapters/user-repository/drizzle.js";
 export { createInMemoryUserRepository } from "./adapters/user-repository/in-memory.js";
+export {
+  createWorkProjectionMutation,
+  type WorkProjectionMutation,
+} from "./adapters/work-projection-mutation.js";
 // ── Work CRUD ───────────────────────────────────────────────────────────────
 export { createDrizzleWorkRepository as createDrizzleProjectWorkRepository } from "./adapters/work-repository/drizzle.js";
 export { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
 export { createWork } from "./create-work.js";
 export { deleteWork, deleteWorkTransition, restoreWork } from "./delete-work.js";
-export { listWorkCatalog, type WorkCatalogEntry } from "./list-work-catalog.js";
-export { resolveNewChatFallbackWork } from "./new-chat-fallback-work.js";
+export { listWorkCatalog } from "./list-work-catalog.js";
 export type {
   CreateProjectInput,
   ListProjectsOptions,

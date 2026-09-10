@@ -27,7 +27,7 @@ export type ThreadContextReversalResolver = {
     threadId: string;
     userId: string;
     uri: string;
-  }): Promise<{ documentId?: string | null }>;
+  }): Promise<{ documentId?: string | null; uri: string }>;
 };
 
 export type TurnReversalServiceDeps = {
@@ -176,7 +176,7 @@ export function createTurnReversalService(input: TurnReversalServiceDeps): TurnR
         await documentReversalResult({
           documentId: document.documentId,
           outcome,
-          resolveDocumentUri: async () => command.uri ?? null,
+          resolveDocumentUri: async () => document.uri,
         }),
       ];
       return { status: aggregateStatus(command.direction, documents), documents };

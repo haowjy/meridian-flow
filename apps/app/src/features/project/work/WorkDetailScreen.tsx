@@ -1,7 +1,7 @@
 /** Focused Work detail composition with independently resilient resources. */
 import { t } from "@lingui/core/macro";
 import { Plural, Trans } from "@lingui/react/macro";
-import type { ProjectContextTreeDirectory } from "@meridian/contracts/protocol";
+import type {} from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { Work } from "@meridian/contracts/works";
 import { useBlocker } from "@tanstack/react-router";
@@ -15,7 +15,8 @@ import {
   Upload,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useProjectContextTree } from "@/client/query/useProjectContextTree";
+import type { CatalogContextView } from "@/client/query/context-catalog-projection";
+import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
 import { useWorkMutations } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -28,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { usePostApplyDraftGroupProjections } from "../draft-apply-recovery/DraftApplyRecoveryProvider";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { WorkAssociatedChats } from "./WorkAssociatedChats";
 import { WorkDialog, type WorkDialogAction } from "./WorkDialog";
@@ -210,7 +212,9 @@ function Drafts({
   controller: WorkMetadataController;
 }) {
   const query = useWorkDrafts(projectId, work.id);
-  const groups = activeWorkDraftGroups(query.groups);
+  const groups = activeWorkDraftGroups(
+    usePostApplyDraftGroupProjections(query.groups, projectId, work.id).commandEligibleGroups,
+  );
   const workId = parseRequestId(work.id);
   return (
     <ResourceSection title={t`Pending drafts`}>
@@ -285,8 +289,8 @@ function TreeSummary({
   commands: ProjectRouteCommands;
   controller: WorkMetadataController;
 }) {
-  const query = useProjectContextTree(projectId, scheme, { workId: work.id });
-  const count = query.tree ? countFiles(query.tree) : 0;
+  const query = useContextCatalogView(projectId, scheme, { workId: work.id });
+  const count = query.catalog?.files().length ?? 0;
   const label = scheme === "scratch" ? t`Scratch` : t`Uploads`;
   const workId = parseRequestId(work.id);
   return (
@@ -297,7 +301,7 @@ function TreeSummary({
           onRetry={query.refetch}
           actionLabel={t`Retry ${label}`}
         />
-      ) : !query.tree ? (
+      ) : !query.catalog ? (
         <Loading />
       ) : (
         <div className="min-w-0 space-y-2">
@@ -329,7 +333,7 @@ function TreeSummary({
               </span>
             </span>
           </button>
-          <TreePreview tree={query.tree} />
+          <CatalogPreview catalog={query.catalog} />
         </div>
       )}
     </ResourceSection>
@@ -353,14 +357,9 @@ function Loading() {
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>;
 }
-function countFiles(node: ProjectContextTreeDirectory): number {
-  return node.children.reduce(
-    (sum, child) => sum + (child.kind === "dir" ? countFiles(child) : 1),
-    0,
-  );
-}
-function TreePreview({ tree }: { tree: ProjectContextTreeDirectory }) {
-  const visible = tree.children.slice(0, 3);
+function CatalogPreview({ catalog }: { catalog: CatalogContextView }) {
+  const children = catalog.children(catalog.root.entryId);
+  const visible = children.slice(0, 3);
   if (!visible.length) return null;
   return (
     <ul className="space-y-1 px-1" aria-label={t`Contents preview`}>
@@ -377,13 +376,9 @@ function TreePreview({ tree }: { tree: ProjectContextTreeDirectory }) {
           <span className="min-w-0 truncate">{node.name}</span>
         </li>
       ))}
-      {tree.children.length > visible.length ? (
+      {children.length > visible.length ? (
         <li className="text-meta text-muted-foreground">
-          <Plural
-            value={tree.children.length - visible.length}
-            one="# more item"
-            other="# more items"
-          />
+          <Plural value={children.length - visible.length} one="# more item" other="# more items" />
         </li>
       ) : null}
     </ul>

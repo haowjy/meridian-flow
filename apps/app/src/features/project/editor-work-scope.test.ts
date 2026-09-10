@@ -3,6 +3,11 @@ import type { Work } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import { describe, expect, it } from "vitest";
 import { resolveEditorWorkScope } from "./editor-work-scope";
+import {
+  openContextRouteSearch,
+  parseExplicitWork,
+  resolveRouteWork,
+} from "./routing/project-route";
 
 const work = (id: string): Work =>
   ({ id, projectId: "project", name: id, slug: id, status: "active" }) as Work;
@@ -40,7 +45,7 @@ describe("resolveEditorWorkScope", () => {
     ).toEqual({ status: "error", workId: routeWorkA });
   });
 
-  it("uses selected Chat then the first available catalog Work only when no route Work exists", () => {
+  it("uses a selected Chat but never implicitly selects a catalog Work", () => {
     const chatB = work("work-b");
     expect(
       resolveEditorWorkScope({ status: "absent" }, chatB.id, {
@@ -57,11 +62,7 @@ describe("resolveEditorWorkScope", () => {
         status: "ready",
         work: work("fallback"),
       }),
-    ).toMatchObject({
-      status: "ready",
-      workId: "fallback",
-      source: "catalog",
-    });
+    ).toEqual({ status: "empty" });
   });
 
   it("keeps an authoritative empty catalog distinct from loading", () => {
@@ -95,5 +96,19 @@ describe("resolveEditorWorkScope", () => {
       status: "error",
       workId: "",
     });
+  });
+});
+
+it("keeps a followed no-Work upload independent from the selected chat", () => {
+  const search = openContextRouteSearch(
+    { screen: "chat", thread: "thread-a" },
+    { scheme: "uploads", path: "/Map.png", workId: null },
+  );
+  const route = resolveRouteWork(parseExplicitWork(search.work), { status: "loading" });
+  expect(search.work).toBe("none");
+  expect(resolveEditorWorkScope(route, "work-a", { status: "loading" })).toEqual({
+    status: "ready",
+    workId: null,
+    source: "route",
   });
 });

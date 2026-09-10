@@ -1,14 +1,18 @@
-/** Renders and resolves the frozen model-facing Work context block. */
-import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import type { Work } from "@meridian/contracts/works";
+/** Renders and resolves the frozen model-facing nullable Work context block. */
+import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadExecutionContext, Work } from "@meridian/contracts/works";
 import type { WorkRepository } from "../../projects/index.js";
-import type { ThreadWorksRepository } from "../../threads/index.js";
+import {
+  type ThreadRepository,
+  type ThreadWorksRepository,
+  threadExecutionContext,
+} from "../../threads/index.js";
 
 export const WORK_CONTEXT_ACTIVE_LIMIT = 20;
 
 export interface RenderedWorkContext {
   text: string;
-  current: { projectId: ProjectId; workId: WorkId };
+  current: { projectId: ProjectId; execution: ThreadExecutionContext };
 }
 
 export interface WorkContextReader {
@@ -28,11 +32,11 @@ function workLine(work: Pick<Work, "slug" | "name" | "goal">): string {
 }
 
 export function renderWorkContext(input: {
-  current: Pick<Work, "id" | "slug" | "name" | "goal">;
+  current: Pick<Work, "id" | "slug" | "name" | "goal"> | null;
   activeWorks: Array<Pick<Work, "id" | "slug" | "name" | "goal" | "lastActivityAt">>;
 }): string {
   const otherActive = input.activeWorks
-    .filter((work) => work.id !== input.current.id)
+    .filter((work) => work.id !== input.current?.id)
     .sort(
       (left, right) =>
         right.lastActivityAt.localeCompare(left.lastActivityAt) ||
@@ -42,7 +46,7 @@ export function renderWorkContext(input: {
   const elided = otherActive.length - visible.length;
   const lines = [
     "<work_context>",
-    `current: ${workLine(input.current)}`,
+    input.current ? `current: ${workLine(input.current)}` : "current: none (direct writes)",
     `active (most recent first; max ${WORK_CONTEXT_ACTIVE_LIMIT}):`,
     ...visible.map((work) => `  ${workLine(work)}`),
   ];
@@ -53,25 +57,24 @@ export function renderWorkContext(input: {
 }
 
 export function createWorkContextReader(deps: {
+  threads: Pick<ThreadRepository, "findById">;
   works: Pick<WorkRepository, "findById" | "listByProject">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
 }): WorkContextReader {
-  async function currentForThread(threadId: ThreadId): Promise<Work> {
-    const primary = await deps.threadWorks.findPrimary(threadId);
-    if (!primary) throw new Error(`Thread has no primary Work: ${threadId}`);
-    const current = await deps.works.findById(primary.workId);
-    if (!current || current.deletedAt) {
-      throw new Error(`Thread primary Work is unavailable: ${threadId}`);
-    }
-    return current;
-  }
   return {
     async renderForThread(threadId) {
-      const current = await currentForThread(threadId);
-      const activeWorks = await deps.works.listByProject(current.projectId, { status: "active" });
+      const thread = await deps.threads.findById(threadId);
+      if (!thread || thread.deletedAt) throw new Error(`Thread unavailable: ${threadId}`);
+      const primary = await deps.threadWorks.findPrimary(threadId);
+      const current = primary ? await deps.works.findById(primary.workId) : null;
+      if (primary && (!current || current.deletedAt)) {
+        throw new Error(`Thread primary Work is unavailable: ${threadId}`);
+      }
+      const activeWorks = await deps.works.listByProject(thread.projectId, { status: "active" });
+      const execution: ThreadExecutionContext = threadExecutionContext(current);
       return {
         text: renderWorkContext({ current, activeWorks }),
-        current: { projectId: current.projectId, workId: current.id },
+        current: { projectId: thread.projectId, execution },
       };
     },
   };

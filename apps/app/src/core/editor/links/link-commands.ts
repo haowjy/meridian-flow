@@ -10,11 +10,19 @@
  * rather than on wherever the caret happened to be.
  */
 import { type Editor, getMarkRange } from "@tiptap/core";
+import { closeHistory } from "@tiptap/pm/history";
 import type { Mark } from "@tiptap/pm/model";
 import type { EditorState } from "@tiptap/pm/state";
 import type { Mappable } from "@tiptap/pm/transform";
+import { yUndoPluginKey } from "@tiptap/y-tiptap";
 
-import { anchorRange, type EditorAnchor, followAnchor, resolveAnchor } from "../anchors";
+import {
+  anchorRange,
+  type EditorAnchor,
+  followAnchor,
+  resolveAnchor,
+  resolveAnchorIn,
+} from "../anchors";
 import { normalizeLinkHref } from "./link-target";
 
 export type LinkSelection = {
@@ -80,9 +88,10 @@ export type LinkDraft = LinkAnchor & {
    *  Carried as a `LinkAnchor`, so it survives an AI write landing under it. */
   /** A link mark already covers the range; committing edits or removes it. */
   existing: boolean;
+  identity: Mark | null;
   /**
-   * A bare caret has no text to link, so the form asks for it. A non-empty
-   * selection already supplies the text and asks only for the URL (§5.5).
+   * A bare caret has no content to preserve; a destination-only edit otherwise
+   * updates the mark without flattening the selected prose.
    */
   needsText: boolean;
   text: string;
@@ -101,8 +110,9 @@ export function resolveLinkDraft(editor: Editor): LinkDraft {
     return {
       ...anchorLinkRange(editor.state, { from, to }),
       existing: false,
+      identity: null,
       needsText: empty,
-      text: "",
+      text: editor.state.doc.textBetween(from, to),
       href: "",
     };
   }
@@ -110,7 +120,8 @@ export function resolveLinkDraft(editor: Editor): LinkDraft {
   return {
     ...anchorLinkRange(editor.state, { from: link.from, to: link.to }),
     existing: true,
-    needsText: empty,
+    identity: link.identity,
+    needsText: false,
     text: editor.state.doc.textBetween(link.from, link.to),
     href: linkHref(link),
   };
@@ -131,7 +142,9 @@ export function mapLinkDraft(
   mapping: Mappable,
 ): LinkDraft | null {
   const at = followAnchor(state, draft, mapping);
-  return at ? { ...draft, ...at } : null;
+  if (!at || (draft.existing && at.from === at.to)) return null;
+  if (draft.identity && !linkAt(state, at.from + 1)?.identity.eq(draft.identity)) return null;
+  return { ...draft, ...at };
 }
 
 /**
@@ -170,42 +183,74 @@ export function commitLinkDraft(
 ): LinkCommitResult {
   if (editor.isDestroyed || !editor.isEditable) return "refused";
 
-  const range = { from: draft.from, to: draft.to };
+  const range = resolveAnchorIn(editor.state, draft);
+  if (!range || (draft.existing && range.from === range.to)) return "refused";
+  if (draft.identity && !linkAt(editor.state, range.from + 1)?.identity.eq(draft.identity))
+    return "refused";
   const href = commit.href.trim();
   if (!href) {
     if (!draft.existing) return "invalid";
-    const removed = editor.chain().focus().setTextSelection(range).unsetLink().run();
+    const removed = runLinkEdit(editor, () =>
+      editor.chain().focus().setTextSelection(range).unsetLink().run(),
+    );
     return removed ? "removed" : "refused";
   }
 
   const normalized = normalizeLinkHref(href);
   if (!normalized) return "invalid";
 
-  if (!draft.needsText) {
-    const applied = editor
-      .chain()
-      .focus()
-      .setTextSelection(range)
-      .setLink({ href: normalized, title: null })
-      .run();
+  if (!draft.needsText && (!commit.text.trim() || commit.text === draft.text)) {
+    const applied = runLinkEdit(editor, () =>
+      editor
+        .chain()
+        .focus()
+        .setTextSelection(range)
+        .setLink({ href: normalized, title: null })
+        .run(),
+    );
     return applied ? "applied" : "refused";
   }
 
-  // Nothing was selected, so the commit writes the link's own text. A URL with
-  // no label reads as itself, which is what pasting a bare link produces.
   const text = commit.text.trim() || normalized;
-  const applied = editor
-    .chain()
-    .focus()
-    .insertContentAt(range, {
-      type: "text",
-      text,
-      marks: linkTextMarks(editor, draft, normalized).map((mark) => ({
-        type: mark.type.name,
-        attrs: mark.attrs,
-      })),
-    })
-    .run();
+  const applied = runLinkEdit(editor, () => {
+    const { state } = editor;
+    const linkType = state.schema.marks.link;
+    if (!linkType) return false;
+    const original = state.doc.textBetween(range.from, range.to);
+    const before = Array.from(original);
+    const after = Array.from(text);
+    let prefix = 0;
+    let suffix = 0;
+    while (prefix < Math.min(before.length, after.length) && before[prefix] === after[prefix])
+      prefix += 1;
+    while (
+      suffix < Math.min(before.length, after.length) - prefix &&
+      before[before.length - suffix - 1] === after[after.length - suffix - 1]
+    )
+      suffix += 1;
+    const from = range.from + before.slice(0, prefix).join("").length;
+    const to = range.to - before.slice(before.length - suffix).join("").length;
+    const inserted = after.slice(prefix, after.length - suffix).join("");
+    // Surviving text keeps its mark runs. New wording inherits only marks
+    // common to the replaced slice, never formatting sampled from its first word.
+    let marks: readonly Mark[] | undefined;
+    state.doc.nodesBetween(from, to, (node) => {
+      if (!node.isInline) return;
+      marks = marks ? marks.filter((mark) => mark.isInSet(node.marks)) : node.marks;
+    });
+    marks ??= state.storedMarks ?? state.doc.resolve(from).marks();
+    const tr = state.tr;
+    if (inserted) tr.replaceWith(from, to, state.schema.text(inserted, marks));
+    else tr.delete(from, to);
+    tr.addMark(
+      range.from,
+      range.from + text.length,
+      linkType.create({ href: normalized, title: null }),
+    );
+    editor.view.dispatch(tr);
+    editor.commands.focus();
+    return true;
+  });
   return applied ? "applied" : "refused";
 }
 
@@ -230,22 +275,19 @@ export function selectionCoversLink(
 /** Drop the link mark over a range the pointer chose, not the caret (§5.5). */
 export function removeLinkAt(editor: Editor, range: { from: number; to: number }): boolean {
   if (editor.isDestroyed || !editor.isEditable) return false;
-  return editor.chain().focus().setTextSelection(range).unsetLink().run();
+  return runLinkEdit(editor, () =>
+    editor.chain().focus().setTextSelection(range).unsetLink().run(),
+  );
 }
 
-/**
- * The marks the rewritten text should carry. Rewriting a link's text replaces
- * real content, so everything that content already wore comes with it: a bold
- * link stays bold, and only the link mark itself is exchanged.
- */
-function linkTextMarks(editor: Editor, draft: LinkDraft, href: string): Mark[] {
-  const { state } = editor;
-  const linkType = state.schema.marks.link;
-  const $from = state.doc.resolve(draft.from);
-  const existing = draft.existing
-    ? ($from.nodeAfter?.marks ?? [])
-    : (state.storedMarks ?? $from.marks());
-
-  const kept = existing.filter((mark) => mark.type !== linkType);
-  return linkType ? [...kept, linkType.create({ href, title: null })] : kept;
+/** A summoned link action is one undo unit, separate from typing on either side. */
+function runLinkEdit(editor: Editor, apply: () => boolean): boolean {
+  const boundary = () => {
+    yUndoPluginKey.getState(editor.state)?.undoManager.stopCapturing();
+    editor.view.dispatch(closeHistory(editor.state.tr));
+  };
+  boundary();
+  const applied = apply();
+  boundary();
+  return applied;
 }

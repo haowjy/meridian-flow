@@ -107,7 +107,8 @@ export const DOCUMENT_DIALECT_CONTRACT = {
   },
   wikilink: {
     wire: "[[Chapter 213]]",
-    labeledLiteral: "[[Chapter 213|Arrival]]",
+    labeledWire: "[[Chapter 213|Arrival]]",
+    escapedWire: "[[Gate\\|Map.png|Walkthrough]]",
   },
   codeFences: [
     {
@@ -135,6 +136,8 @@ export const DOCUMENT_DIALECT_CONTRACT = {
 export const DOCUMENT_DIALECT_ROUND_TRIP_SPELLINGS = [
   { id: "gfm", wire: DOCUMENT_DIALECT_CONTRACT.gfm.wire },
   { id: "wikilink", wire: DOCUMENT_DIALECT_CONTRACT.wikilink.wire },
+  { id: "wikilink-label", wire: DOCUMENT_DIALECT_CONTRACT.wikilink.labeledWire },
+  { id: "wikilink-escaped-target", wire: DOCUMENT_DIALECT_CONTRACT.wikilink.escapedWire },
   ...DOCUMENT_DIALECT_CONTRACT.codeFences.map((spelling) => ({
     id: `fence-${spelling.language}`,
     wire: spelling.wire,
@@ -161,7 +164,7 @@ export const DOCUMENT_DIALECT_CORE_INSTRUCTION = [
   "Write manuscript documents as GFM Markdown. Prefer prose and ordinary GFM forms.",
   "",
   "Meridian adds these wire rules:",
-  `- Link to another document as \`${DOCUMENT_DIALECT_CONTRACT.wikilink.wire}\`. The target is the label; \`${DOCUMENT_DIALECT_CONTRACT.wikilink.labeledLiteral}\` is literal text, not a link.`,
+  `- Link to another document as \`${DOCUMENT_DIALECT_CONTRACT.wikilink.wire}\`. Use \`${DOCUMENT_DIALECT_CONTRACT.wikilink.labeledWire}\` for separate display text. The text after the pipe is literal prose; only the destination before it is resolved. A scoped Context URI may be the destination. Escape destination backslashes, brackets, and pipes with a backslash, as in \`${DOCUMENT_DIALECT_CONTRACT.wikilink.escapedWire}\`.`,
   `- Put block code in a language-tagged fence such as \`\`\`\` ${DOCUMENT_DIALECT_CONTRACT.codeFences[0].opening} \`\`\`\`. Use \`\`\`\` ${DOCUMENT_DIALECT_CONTRACT.codeFences[1].opening} \`\`\`\` for a diagram.`,
   `- Write every table as raw HTML \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlTable.open}\`. Put block children inside each \`<td>\` or \`<th>\`: \`<p>\`, \`<h1>\` through \`<h6>\`, \`<ul>\`, \`<ol>\`, \`<blockquote>\`, \`<pre><code class="language-...">\`, \`<hr />\`, or a nested \`<table>\`. Use \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlLiteralNewline}\` for a literal newline and \`${DOCUMENT_DIALECT_CONTRACT.syntax.htmlHardBreak}\` for a hard break. ${DOCUMENT_DIALECT_CONTRACT.table.ingressNote}`,
   `- Use this table form:\n\n\`\`\`html\n${DOCUMENT_DIALECT_CONTRACT.table.wire}\n\`\`\``,

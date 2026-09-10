@@ -1,3 +1,4 @@
+import type { CatalogFile } from "@/client/query/context-catalog-projection";
 /**
  * Maps canonical context file metadata to a monochrome kind glyph (rendered at
  * `text-muted-foreground` by the call site). Deliberately mono — tinted
@@ -6,15 +7,11 @@
  * *shape* carries the kind; color stays calm.
  */
 
-import {
-  classifyFiletype,
-  filetypeForKnownPath,
-  type ProjectContextTreeFile,
-} from "@meridian/contracts/protocol";
+import { classifyFiletype, filetypeForKnownPath } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
 import { FileCode, FileImage, FileText, FileType } from "lucide-react";
 
-export function fileKindIcon(file: ProjectContextTreeFile | string): LucideIcon {
+export function fileKindIcon(file: CatalogFile | string): LucideIcon {
   if (typeof file !== "string") {
     if (file.editable) return file.schemaType === "code" ? FileCode : FileText;
     if (file.fileType === "image") return FileImage;

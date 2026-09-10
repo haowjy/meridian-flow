@@ -30,7 +30,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
     const { buildThreadSnapshot } = await import("../../thread-snapshot.js");
-    const { createDrizzleRepositories } = await import("./repositories.js");
+    const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const database = useRollbackTestDatabase(DATABASE_URL, {
@@ -38,7 +38,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
     });
     let db = database.current;
-    let repos = createDrizzleRepositories(db);
+    let repos = createDrizzleRepositoriesForTest(db);
     const emptyHub: ThreadEventHub = {
       publishPersistedEvent: () => {},
       appendEvent: async () => {
@@ -70,7 +70,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     beforeEach(async () => {
       db = database.current;
-      repos = createDrizzleRepositories(db);
+      repos = createDrizzleRepositoriesForTest(db);
       await db.insert(schema.users).values(conformanceUserValues(USER_ID, "thread-head"));
       await db.insert(schema.projects).values({
         id: PROJECT_ID,

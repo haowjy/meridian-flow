@@ -1,139 +1,121 @@
-/** Pure resolution policy shared by persisted and in-memory document-link adapters. */
-
-import { parseRequestId } from "../../shared/uuid.js";
+/** Scoped internal-link lookup over the authoritative Context catalog and Work authority. */
+import { type ContextUriScheme, documentTitleFromUri, parseContextUri } from "@meridian/contracts";
+import type { CatalogFileEntry, CatalogScope } from "@meridian/contracts/protocol";
+import type { ProjectWorkAuthorityResolver } from "../projects/domain/work-authority.js";
+import type { ContextCatalog } from "./ports/context-catalog.js";
 import type {
+  DocumentLinkResolver,
   ResolveDocumentLinkInput,
   ResolvedDocumentLink,
 } from "./ports/document-link-resolver.js";
 
-export interface DocumentLinkCandidate {
-  projectId: string;
-  documentId: string;
-  title: string;
-  aliases?: readonly string[];
-  scheme: "manuscript" | "work";
-  path: string;
-  workId: string | null;
-}
+type Location = { scope: CatalogScope; scheme: ContextUriScheme; path: string };
 
-export function resolveDocumentLink(
-  candidates: readonly DocumentLinkCandidate[],
-  input: ResolveDocumentLinkInput,
-): ResolvedDocumentLink | null {
-  const inProject = candidates.filter((candidate) => candidate.projectId === input.projectId);
-  const matches = matchCandidates(inProject, input);
-  if (matches.length !== 1) return null;
-  const match = matches[0];
-  if (!match) return null;
+export function createDocumentLinkResolver({
+  catalog,
+  workAuthorityResolver,
+}: {
+  catalog: ContextCatalog;
+  workAuthorityResolver: ProjectWorkAuthorityResolver;
+}): DocumentLinkResolver {
+  async function currentScope(input: ResolveDocumentLinkInput): Promise<CatalogScope | null> {
+    if (!input.workId) return { kind: "none", projectId: input.projectId };
+    const work = await workAuthorityResolver.byId(input.projectId, input.workId);
+    return work ? { kind: "work", projectId: input.projectId, workId: work.workId } : null;
+  }
+  async function location(input: ResolveDocumentLinkInput, uri: string): Promise<Location | null> {
+    if (!uri.includes("://")) return null;
+    const parsed = parseContextUri(uri);
+    if (!parsed.ok || !parsed.value.path) return null;
+    const { scheme, path, authority } = parsed.value;
+    let scope: CatalogScope | null;
+    if (scheme === "user") scope = { kind: "user", userId: input.userId };
+    else if (scheme === "manuscript" || scheme === "kb")
+      scope = { kind: "project", projectId: input.projectId };
+    else if (authority.kind === "none") scope = { kind: "none", projectId: input.projectId };
+    else if (authority.kind === "work") {
+      const work = await workAuthorityResolver.bySlug(input.projectId, authority.workSlug);
+      scope = work ? { kind: "work", projectId: input.projectId, workId: work.workId } : null;
+    } else scope = await currentScope(input);
+    return scope ? { scope, scheme, path } : null;
+  }
+  async function files(scope: CatalogScope) {
+    return (await catalog.snapshot(scope)).entries.filter(
+      (entry): entry is CatalogFileEntry => entry.kind === "file",
+    );
+  }
   return {
-    documentId: match.documentId,
-    title: match.title,
-    scheme: match.scheme,
-    path: match.path,
-    uri:
-      match.scheme === "work"
-        ? `work://${match.workId}/${match.path}`
-        : `manuscript://${match.path}`,
-    workId: match.workId,
+    async resolve(input) {
+      const { target } = input;
+      if (target.kind === "wikilink") {
+        const name = target.name.trim().toLowerCase();
+        if (!name || /[\r\n[\]|]/.test(name)) return null;
+        const current = await currentScope(input);
+        if (!current) return null;
+        const scopes: CatalogScope[] = [
+          { kind: "project", projectId: input.projectId },
+          { kind: "user", userId: input.userId },
+          current,
+        ];
+        const candidates = (await Promise.all(scopes.map(files))).flat();
+        return unique(
+          candidates.filter((file) =>
+            [file.name, documentTitleFromUri(file.uri), ...file.aliases].some(
+              (alias) => alias?.trim().toLowerCase() === name,
+            ),
+          ),
+        );
+      }
+      const base = await location(input, target.kind === "scheme" ? target.uri : target.baseUri);
+      if (!base) return null;
+      const path = target.kind === "relative" ? relativePath(base.path, target.path) : base.path;
+      if (!path) return null;
+      return unique(
+        (await files(base.scope)).filter((file) => {
+          const parsed = parseContextUri(file.uri);
+          return (
+            parsed.ok && parsed.value.scheme === base.scheme && pathMatches(parsed.value.path, path)
+          );
+        }),
+      );
+    },
   };
 }
 
-function matchCandidates(
-  candidates: readonly DocumentLinkCandidate[],
-  input: ResolveDocumentLinkInput,
-): DocumentLinkCandidate[] {
-  switch (input.target.kind) {
-    case "wikilink": {
-      const name = normalizedName(input.target.name);
-      if (!name || name.includes("|")) return [];
-      return candidates.filter(
-        (candidate) =>
-          normalizedName(candidate.title) === name ||
-          candidate.aliases?.some((alias) => normalizedName(alias) === name),
-      );
-    }
-    case "scheme": {
-      const location = parseSchemeLocation(input.target.uri, input.workId ?? null);
-      if (!location) return [];
-      return candidates.filter(
-        (candidate) =>
-          candidate.scheme === location.scheme &&
-          (location.scheme !== "work" || candidate.workId === location.workId) &&
-          pathMatches(candidate.path, location.path),
-      );
-    }
-    case "relative": {
-      const base = parseSchemeLocation(input.target.baseUri, input.workId ?? null);
-      if (!base) return [];
-      const path = resolveRelativePath(base.path, input.target.path);
-      if (!path) return [];
-      return candidates.filter(
-        (candidate) =>
-          candidate.scheme === base.scheme &&
-          (base.scheme !== "work" || candidate.workId === base.workId) &&
-          pathMatches(candidate.path, path),
-      );
-    }
-  }
+function unique(files: readonly CatalogFileEntry[]): ResolvedDocumentLink | null {
+  if (files.length !== 1) return null;
+  const file = files[0];
+  if (!file) return null;
+  const parsed = parseContextUri(file.uri);
+  if (!parsed.ok) return null;
+  return {
+    documentId: file.entryId,
+    title: documentTitleFromUri(file.uri) ?? file.name,
+    scheme: parsed.value.scheme,
+    path: parsed.value.path,
+    uri: file.uri,
+    workId: file.scope.kind === "work" ? file.scope.workId : null,
+  };
 }
 
-function normalizedName(value: string): string {
-  return value.trim().toLowerCase();
+function pathMatches(candidate: string, requested: string): boolean {
+  return (
+    candidate === requested ||
+    (candidate.lastIndexOf(".") > candidate.lastIndexOf("/") &&
+      candidate.slice(0, candidate.lastIndexOf(".")) === requested)
+  );
 }
 
-function pathMatches(candidatePath: string, requestedPath: string): boolean {
-  if (candidatePath === requestedPath) return true;
-  const finalSlash = candidatePath.lastIndexOf("/");
-  const finalDot = candidatePath.lastIndexOf(".");
-  return finalDot > finalSlash && candidatePath.slice(0, finalDot) === requestedPath;
-}
-
-function parseSchemeLocation(
-  uri: string,
-  fallbackWorkId: string | null,
-): { scheme: "manuscript" | "work"; path: string; workId: string | null } | null {
-  if (uri.startsWith("manuscript://")) {
-    const path = normalizeAbsolutePath(uri.slice("manuscript://".length));
-    return path ? { scheme: "manuscript", path, workId: null } : null;
-  }
-  if (!uri.startsWith("work://")) return null;
-
-  const body = uri.slice("work://".length).replace(/^\/+/, "");
-  const [first, ...rest] = body.split("/");
-  const authority = parseRequestId(first);
-  const workId = authority ?? fallbackWorkId;
-  const path = normalizeAbsolutePath(authority ? rest.join("/") : body);
-  return workId && path ? { scheme: "work", path, workId } : null;
-}
-
-function resolveRelativePath(basePath: string, relativePath: string): string | null {
-  if (
-    relativePath.length === 0 ||
-    relativePath.startsWith("/") ||
-    /^[a-z][a-z0-9+.-]*:/i.test(relativePath)
-  ) {
-    return null;
-  }
-  const segments = basePath.split("/");
+function relativePath(base: string, relative: string): string | null {
+  if (!relative || relative.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(relative)) return null;
+  const segments = base.split("/");
   segments.pop();
-  for (const segment of relativePath.split("/")) {
-    if (!segment || segment === ".") continue;
-    if (segment === "..") {
-      if (segments.length === 0) return null;
+  for (const part of relative.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (!segments.length) return null;
       segments.pop();
-      continue;
-    }
-    segments.push(segment);
+    } else segments.push(part);
   }
-  return segments.length > 0 ? segments.join("/") : null;
-}
-
-function normalizeAbsolutePath(path: string): string | null {
-  const segments: string[] = [];
-  for (const segment of path.replace(/^\/+/, "").split("/")) {
-    if (!segment || segment === ".") continue;
-    if (segment === "..") return null;
-    segments.push(segment);
-  }
-  return segments.length > 0 ? segments.join("/") : null;
+  return segments.length ? segments.join("/") : null;
 }

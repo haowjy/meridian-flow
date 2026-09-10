@@ -49,9 +49,7 @@ export function useProjectContextRead(
   const workId = options.workId;
   const callerEnabled = options.enabled ?? true;
   const resolvedScheme = scheme ?? "kb";
-  const workScoped = scheme !== null && isWorkScopedProjectContextScheme(scheme);
-  const enabled =
-    callerEnabled && Boolean(scheme) && Boolean(path) && (!workScoped || workId !== null);
+  const enabled = callerEnabled && Boolean(scheme) && Boolean(path);
   const contextOpts = scheme ? contextRequestOptionsForScheme(scheme, workId) : undefined;
   const result = useQuery({
     queryKey: contextReadQueryKey(projectId, resolvedScheme, path ?? "", workId),

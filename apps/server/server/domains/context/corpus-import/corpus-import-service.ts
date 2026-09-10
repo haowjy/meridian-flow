@@ -162,7 +162,7 @@ export function createCorpusImportService({
     files: CorpusImportInputFile[];
     source: CorpusImportSource;
   }): Promise<CorpusImportBatchResult> => {
-    const port = contextPorts.forProject(input.projectId, input.userId);
+    const port = contextPorts.forProject(input.projectId, input.userId, new Map());
     const taken = new Set<string>();
     const exists = async (path: string) => {
       const stat = await port.stat(`kb://${path}`);

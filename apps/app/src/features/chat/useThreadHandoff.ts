@@ -8,20 +8,22 @@
 
 import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createProject } from "@/client/api/projects-api";
 import { createThread } from "@/client/api/threads-api";
-import {
-  isThreadAdmissionError,
-  type ThreadRunController,
-} from "@/client/copilot/ThreadRunController";
+import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
+import { useFirstSendContinuity } from "@/client/first-send-continuity";
 import {
   invalidateProjectThreadData,
   invalidateWorkThreads,
 } from "@/client/query/project-invalidation";
 import type { ThreadStoreActions } from "@/client/stores";
-import { announceError, useThreadStore } from "@/client/stores";
-import type { ComposerDraftRestoration } from "@/components/app/composer";
+import { announceError } from "@/client/stores";
+import type { ComposerDraftSnapshot } from "@/components/app/composer";
+import {
+  plainComposerDoc,
+  serializeComposerDraft,
+} from "@/components/app/composer/composer-document";
 import { threadCreateAgentField } from "@/features/agents/constants";
 
 type Controller = ThreadRunController;
@@ -53,69 +55,76 @@ export function activeSnapshotResumeAfterSeq(liveState: ThreadLiveState): string
  */
 export function useThreadHandoff(
   threadId: string,
+  projectId: string | null,
   controller: Controller,
   actions: ThreadStoreActions,
   snapshotResume?: SnapshotResumeState,
-  restoreFirstSendDraft?: (restoration: ComposerDraftRestoration) => boolean,
+  restoreLatestDraft?: (snapshot: ComposerDraftSnapshot) => boolean,
+  restoreFailedSubmission?: (
+    id: string,
+    submitted: ComposerDraftSnapshot,
+    later?: ComposerDraftSnapshot | null,
+  ) => boolean,
 ): void {
   const pendingResumeRef = useRef(false);
   const handoffStartedRef = useRef(false);
   const snapshotEvaluatedRef = useRef(false);
-  const restoredFirstSendIdsRef = useRef(new Set<string>());
+  const continuityStartedRef = useRef(false);
+  const [continuityChecked, setContinuityChecked] = useState(projectId === null);
   const queryClient = useQueryClient();
-  const firstSend = useThreadStore((state) => state.firstSendByThreadId[threadId] ?? null);
-
-  useEffect(() => {
-    if (firstSend?.draftAfterRoute === undefined || firstSend.draftAfterRouteRestored) return;
-    if (firstSend.status !== "armed" && firstSend.status !== "claimed") return;
-    const restored = restoreFirstSendDraft?.({
-      id: `${threadId}:route-draft`,
-      text: firstSend.draftAfterRoute,
-    });
-    if (restored) actions.ackFirstSendRouteDraftRestored(threadId);
-  }, [actions, firstSend, restoreFirstSendDraft, threadId]);
+  const continuity = useFirstSendContinuity();
 
   useEffect(() => {
     pendingResumeRef.current = false;
     handoffStartedRef.current = false;
     snapshotEvaluatedRef.current = false;
-  }, [threadId]);
+    continuityStartedRef.current = false;
+    setContinuityChecked(projectId === null);
+  }, [projectId, threadId]);
 
   useEffect(() => {
-    if (firstSend?.status !== "failed") return;
-    const restorationId = `${threadId}:${firstSend.claimId}`;
-    if (restoredFirstSendIdsRef.current.has(restorationId)) return;
-    const restored = restoreFirstSendDraft?.({
-      id: restorationId,
-      text: firstSend.text,
-    });
-    if (restored) {
-      restoredFirstSendIdsRef.current.add(restorationId);
-      actions.ackFirstSendDraftRestored(threadId, firstSend.claimId);
-    }
-  }, [actions, firstSend, restoreFirstSendDraft, threadId]);
+    if (!projectId || continuityStartedRef.current) return;
+    continuityStartedRef.current = true;
+    void continuity
+      .findForThread(projectId, threadId)
+      .then(async (claim) => {
+        if (!claim) return;
+        handoffStartedRef.current = true;
+        const { record } = claim;
+        const key = { projectId: record.projectId, threadId, submissionId: record.submissionId };
+        const laterRestored =
+          !record.latestDraft || (restoreLatestDraft?.(record.latestDraft) ?? false);
+        const outcome = claim.dispatch
+          ? await controller.submit(threadId, record.envelope, {
+              optimisticUserTurnId: record.optimisticUserTurnId,
+            })
+          : await controller.lookup(threadId, record.envelope, {
+              optimisticUserTurnId: record.optimisticUserTurnId,
+            });
+        if (outcome.kind === "ambiguous") {
+          await continuity.markAmbiguous(key);
+          return;
+        }
+        if (outcome.kind === "accepted") {
+          if (laterRestored) await continuity.remove(key);
+          return;
+        }
+        const restored =
+          restoreFailedSubmission?.(
+            `${threadId}:${record.submissionId}`,
+            record.envelope.draft,
+            record.latestDraft,
+          ) ?? false;
+        if (restored) await continuity.remove(key);
+      })
+      .catch((error) =>
+        announceError(error instanceof Error ? error.message : "Failed to reconcile submission"),
+      )
+      .finally(() => setContinuityChecked(true));
+  }, [continuity, controller, projectId, restoreFailedSubmission, restoreLatestDraft, threadId]);
 
   useEffect(() => {
-    if (firstSend) {
-      const claim = actions.claimFirstSend(threadId);
-      if (!claim) return;
-      handoffStartedRef.current = true;
-      void controller
-        .submit(threadId, claim.text, {
-          optimisticUserTurnId: claim.optimisticUserTurnId,
-        })
-        .then(() => {
-          actions.ackFirstSend(threadId, claim.claimId);
-        })
-        .catch((error) => {
-          const rejection = isThreadAdmissionError(error) ? error.kind : "ambiguous";
-          actions.rejectFirstSend(threadId, claim.claimId, rejection);
-          const message = error instanceof Error ? error.message : "Failed to start stream";
-          announceError(message);
-        });
-      return;
-    }
-
+    if (!continuityChecked) return;
     const startResume = (after?: string, expectedTurnId?: string) => {
       try {
         controller.resume(threadId, { after, expectedTurnId });
@@ -128,8 +137,9 @@ export function useThreadHandoff(
     };
 
     const startSubmit = (text: string, optimisticUserTurnId?: string) => {
+      const envelope = serializeComposerDraft(plainComposerDoc(text));
       void controller
-        .submit(threadId, text, { optimisticUserTurnId })
+        .submit(threadId, envelope, { optimisticUserTurnId })
         .catch((error) => {
           const message = error instanceof Error ? error.message : "Failed to start stream";
           announceError(message);
@@ -208,9 +218,12 @@ export function useThreadHandoff(
   }, [
     actions,
     controller,
+    continuityChecked,
     queryClient,
-    restoreFirstSendDraft,
-    firstSend,
+    continuity,
+    projectId,
+    restoreFailedSubmission,
+    restoreLatestDraft,
     snapshotResume?.liveState,
     threadId,
   ]);

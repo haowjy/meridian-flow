@@ -7,7 +7,9 @@
  * headered host; phone documents use the bare host because their top-bar
  * breadcrumb already owns filename chrome.
  */
+
 import { Trans } from "@lingui/react/macro";
+import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
 import type { ContextTab } from "@/client/stores";
@@ -40,7 +42,7 @@ function ContextViewerContent({
   header,
 }: ContextViewerHostProps & { header?: ReadOnlyViewerHeader }) {
   const read = useProjectContextRead(projectId, tab.scheme, tab.path, {
-    workId: tab.workId ?? editorWorkId,
+    workId: isWorkScopedProjectContextScheme(tab.scheme) ? (tab.workId ?? null) : editorWorkId,
   });
   if (read.status === "loading") {
     return (

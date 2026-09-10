@@ -1,23 +1,28 @@
 /** Re-materializes hydrated working-set routes as inactive, tree-validated tabs. */
 
 import {
+  isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
+  type ProjectContextIdentityResolution,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
-import { projectContextTreeQueryOptions } from "@/client/query/useProjectContextTree";
-import type { ContextTab } from "@/client/stores";
-import { useContextTabsStore } from "@/client/stores";
+import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
+import { fetchContextCatalogView, projectCatalogFile } from "@/client/query/useContextCatalog";
+import {
+  type ContextTab,
+  reconcileContextDeskBootstrap,
+  useContextTabsStore,
+} from "@/client/stores";
 import type { WorkingSetHydrationPlan } from "@/client/working-set";
 import {
-  buildWorkingSetRoute,
   readRecentRoutes,
   reconcileContextRoutes,
   workingSetRouteEquals,
 } from "@/client/working-set";
+import { workingSetRouteForTab } from "./context/context-removal-planner";
 import { contextTabFromFile } from "./context/context-tab-from-file";
-import { findContextFile, findContextFileByDocumentId } from "./context/context-tree";
 
 export function contextDeskReconciliation(
   hydration: WorkingSetHydrationPlan,
@@ -46,6 +51,41 @@ function deviceOwnedTab(tab: ContextTab): boolean {
   return tab.kind === "new" || (tab.kind === "tracked" && tab.origin === "local-untitled");
 }
 
+function availableTab(
+  resolution: Extract<ProjectContextIdentityResolution, { kind: "available" }>,
+): ContextTab {
+  const scheme = resolution.entry.uri.slice(0, resolution.entry.uri.indexOf(":"));
+  if (!isProjectContextTreeScheme(scheme)) throw new TypeError("Invalid available route scheme");
+  const workId = isWorkScopedProjectContextScheme(scheme)
+    ? resolution.authority.kind === "work"
+      ? resolution.authority.workId
+      : resolution.authority.kind === "none"
+        ? null
+        : undefined
+    : undefined;
+  if (isWorkScopedProjectContextScheme(scheme) && workId === undefined) {
+    throw new TypeError("Invalid available route authority");
+  }
+  return contextTabFromFile(scheme, projectCatalogFile(resolution.entry), workId);
+}
+
+async function restoreServerRoute(projectId: string, route: WorkingSetRoute): Promise<SeededRoute> {
+  const result = await lookupProjectContextAvailability(projectId, [route.documentId]);
+  const resolution = result.resolutions[0];
+  if (!resolution || resolution.documentId !== route.documentId) {
+    throw new TypeError("Invalid project availability response");
+  }
+  if (resolution.kind === "available") {
+    const tab = availableTab(resolution);
+    if (tab.documentId !== route.documentId) {
+      throw new TypeError("Availability entry does not match its stable identity");
+    }
+    return { tab, removedRoute: route };
+  }
+  if (resolution.kind === "indeterminate") throw new Error("Document identity is indeterminate");
+  return { tab: null, removedRoute: route };
+}
+
 export function mergeBootstrapDeskTabs(
   serverTabs: readonly ContextTab[],
   localResults: readonly ContextTab[],
@@ -72,10 +112,8 @@ async function validateDeviceOwnedTabs(
     tabs.filter(deviceOwnedTab).map(async (tab): Promise<ContextTab | null> => {
       if (tab.kind === "new") return tab;
       const workId = isWorkScopedProjectContextScheme(tab.scheme) ? (tab.workId ?? null) : null;
-      const result = await queryClient.fetchQuery(
-        projectContextTreeQueryOptions(projectId, tab.scheme, workId),
-      );
-      const file = findContextFileByDocumentId(result.tree, tab.documentId);
+      const result = await fetchContextCatalogView(queryClient, projectId, tab.scheme, workId);
+      const file = result.findDocument(tab.documentId);
       if (!file) return null;
       const refreshed = contextTabFromFile(tab.scheme, file, workId);
       return refreshed.kind === "tracked" ? { ...refreshed, origin: "local-untitled" } : null;
@@ -107,9 +145,8 @@ export function settleSeededRoutes(
     const preserved = restored.find(
       (tab) =>
         tab.kind !== "new" &&
-        tab.scheme === route.scheme &&
-        tab.path === route.path &&
-        (tab.workId ?? null) === (route.workId ?? null),
+        tab.documentId === route.documentId &&
+        workingSetRouteEquals(workingSetRouteForTab(tab) ?? undefined, route),
     );
     if (preserved) settled.push({ tab: preserved, removedRoute: null });
   });
@@ -131,22 +168,12 @@ export async function seedWorkingSetTabs({
   const restored = useContextTabsStore.getState().byProject[projectId]?.tabs ?? [];
   const results = await Promise.allSettled(
     routes.map(async (route) => {
-      const workScoped = isWorkScopedProjectContextScheme(route.scheme);
-      const workId: string | null = workScoped ? (route.workId ?? null) : null;
-      const result = await queryClient.fetchQuery(
-        projectContextTreeQueryOptions(projectId, route.scheme, workId),
-      );
-      const file = findContextFile(result.tree, route.path);
-      if (!file) {
-        // Each persisted route is validated in its own stored Work. The live
-        // coordinator applies the currently selected Work after bootstrap.
-        return { tab: null, removedRoute: route };
-      }
+      const restored = await restoreServerRoute(projectId, route);
       if (!isLiveScope(scope)) return { tab: null, removedRoute: null };
       if (!isWorkingSetRouteDesired(route, readRecentRoutes(projectId))) {
         return { tab: null, removedRoute: null };
       }
-      return { tab: contextTabFromFile(route.scheme, file, workId), removedRoute: null };
+      return restored;
     }),
   );
   const settled = settleSeededRoutes(routes, restored, results);
@@ -157,12 +184,12 @@ export async function seedWorkingSetTabs({
   reconcileContextRoutes(projectId, {
     removedLocators: settled.flatMap(({ removedRoute }) => removedRoute ?? []),
     survivingOwnedLocators: tabs.flatMap((tab) =>
-      tab.kind === "new" ? [] : (buildWorkingSetRoute(tab.scheme, tab.path, tab.workId) ?? []),
+      tab.kind === "new" ? [] : (workingSetRouteForTab(tab) ?? []),
     ),
     promote: null,
     clearAll: false,
   });
-  useContextTabsStore.getState().replaceTabs(projectId, tabs);
+  await reconcileContextDeskBootstrap(projectId, restored, tabs);
 }
 
 /** Refreshes restored tab metadata and drops routes that no longer exist. */
@@ -181,21 +208,20 @@ export async function validateContextDeskTabs({
     restored.map(
       async (tab): Promise<{ tab: ContextTab | null; removedRoute: WorkingSetRoute | null }> => {
         if (tab.kind === "new") return { tab, removedRoute: null };
-        const workScoped = isWorkScopedProjectContextScheme(tab.scheme);
-        const workId = workScoped ? (tab.workId ?? null) : null;
-        const result = await queryClient.fetchQuery(
-          projectContextTreeQueryOptions(projectId, tab.scheme, workId),
-        );
-        const file =
-          tab.kind === "tracked" && tab.origin === "local-untitled"
-            ? findContextFileByDocumentId(result.tree, tab.documentId)
-            : findContextFile(result.tree, tab.path);
+        if (tab.kind !== "tracked" || tab.origin !== "local-untitled") {
+          const restored = await restoreServerRoute(
+            projectId,
+            workingSetRouteForTab(tab) as WorkingSetRoute,
+          );
+          return restored;
+        }
+        const workId = isWorkScopedProjectContextScheme(tab.scheme) ? (tab.workId ?? null) : null;
+        const result = await fetchContextCatalogView(queryClient, projectId, tab.scheme, workId);
+        const file = result.findDocument(tab.documentId);
         if (!file) {
-          // Local provenance is validated by exact document identity; ordinary
-          // restored server tabs remain route records and validate by locator.
           return {
             tab: null,
-            removedRoute: buildWorkingSetRoute(tab.scheme, tab.path, tab.workId),
+            removedRoute: workingSetRouteForTab(tab),
           };
         }
         const refreshed = contextTabFromFile(tab.scheme, file, workId);
@@ -223,12 +249,10 @@ export async function validateContextDeskTabs({
   reconcileContextRoutes(projectId, {
     removedLocators: tabs.flatMap(({ removedRoute }) => removedRoute ?? []),
     survivingOwnedLocators: survivingTabs.flatMap((tab) =>
-      tab.kind === "new" ? [] : (buildWorkingSetRoute(tab.scheme, tab.path, tab.workId) ?? []),
+      tab.kind === "new" ? [] : (workingSetRouteForTab(tab) ?? []),
     ),
     promote: null,
     clearAll: false,
   });
-  useContextTabsStore
-    .getState()
-    .reconcileTabs(projectId, new Set(restored.map((tab) => tab.documentId)), survivingTabs);
+  await reconcileContextDeskBootstrap(projectId, restored, survivingTabs);
 }

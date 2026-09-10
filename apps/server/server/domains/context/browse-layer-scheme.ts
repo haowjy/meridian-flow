@@ -3,6 +3,10 @@
  * Project routes use the same scheme names as the unified ContextPort.
  */
 import {
+  type CanonicalContextAuthority,
+  canonicalContextUri,
+} from "@meridian/contracts/context-uri";
+import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
   type WorkAuthorityScheme,
@@ -10,21 +14,37 @@ import {
 
 export const isWorkScopedBrowseScheme = isWorkScopedProjectContextScheme;
 
-/** Project browse routes bind `workId` while resolving their port, so their URI stays unqualified. */
+/** Serialize the canonical authority selected by the project browse route. */
+export function projectBrowseContextUri(
+  scheme: WorkAuthorityScheme,
+  path: string,
+  authority: CanonicalContextAuthority,
+): string;
+export function projectBrowseContextUri(
+  scheme: Exclude<ProjectContextTreeScheme, WorkAuthorityScheme>,
+  path: string,
+  authority?: Extract<CanonicalContextAuthority, { kind: "contextual" }>,
+): string;
 export function projectBrowseContextUri(
   scheme: ProjectContextTreeScheme,
   path: string,
-  _workId?: string | null,
+  authority?: CanonicalContextAuthority,
+): string;
+export function projectBrowseContextUri(
+  scheme: ProjectContextTreeScheme,
+  path: string,
+  authority: CanonicalContextAuthority = { kind: "contextual" },
 ): string {
   const normalized = path.replace(/^\/+/, "").replace(/\/+$/, "");
-  return normalized ? `${scheme}://${normalized}` : `${scheme}://`;
+  return isWorkScopedBrowseScheme(scheme)
+    ? canonicalContextUri(scheme, normalized, authority)
+    : canonicalContextUri(scheme, normalized);
 }
 
 export function workScopedBrowseUri(
   scheme: WorkAuthorityScheme,
-  _workId: string,
+  authority: Extract<CanonicalContextAuthority, { kind: "work" | "none" }>,
   path = "",
 ): string {
-  const normalized = path.replace(/^\/+/, "").replace(/\/+$/, "");
-  return normalized ? `${scheme}://${normalized}` : `${scheme}://`;
+  return projectBrowseContextUri(scheme, path, authority);
 }

@@ -1,18 +1,18 @@
 // @vitest-environment jsdom
 /** Phone document hosting publishes and renders the Editor review scope. */
 
-import type { ProjectContextTreeDirectory } from "@meridian/contracts/protocol";
 import { act, StrictMode, useCallback, useEffect, useMemo, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import {
   DraftReviewBoundary,
   type DraftReviewContextValue,
 } from "@/features/chat/DraftReviewProvider";
-import { withReactRoot } from "@/test-support/react-dom-harness";
 import {
-  ContextRemovalAccountProvider,
+  AccountFeatureTestProvider,
   useContextRemovalCoordinator,
-} from "../context/ContextRemovalAccountProvider";
+} from "@/test-support/account-feature-provider";
+import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ProjectContextRemovalController } from "../context/ProjectContextRemovalController";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import type { AiDraftLaunchTarget } from "../dock/editor-review-handoff";
@@ -23,15 +23,24 @@ import {
 } from "../dock/editor-review-handoff";
 import type { OpenContextRoute } from "../routing/ProjectContextRoute";
 import { MobileDocumentHost } from "./MobileDocumentHost";
+import { resolveMobileDocumentRoute } from "./mobile-document-route";
 
 const mocks = vi.hoisted(() => ({
   editorProps: [] as Array<Record<string, unknown>>,
   enterInlineReview: vi.fn(),
+  liveSession: { suspendPresence: vi.fn(), resumePresence: vi.fn() },
+  liveOpener: { open: vi.fn() },
   openTab: vi.fn(),
   registry: {
     retain: vi.fn(),
     release: vi.fn(),
     get: vi.fn(() => ({ suspendPresence: vi.fn(), resumePresence: vi.fn() })),
+    observeRetainedLiveDocuments: (observer: (snapshot: readonly unknown[]) => void) => {
+      observer([]);
+      return () => undefined;
+    },
+    revokeDocument: vi.fn(),
+    revokeAccess: vi.fn(),
   },
   desk: {
     byProject: {
@@ -44,16 +53,34 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
+vi.mock("../context/account-feature-context", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../context/account-feature-context")>();
+  return {
+    ...actual,
+    useProjectDocumentLiveOpener: () => mocks.liveOpener,
+  };
+});
+vi.mock("../context/project-document-live-opener-context", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../context/project-document-live-opener-context")>();
+  return {
+    ...actual,
+    useProjectDocumentLiveOpener: () => mocks.liveOpener,
+  };
+});
+
 vi.mock("@lingui/core/macro", () => ({ t: (parts: TemplateStringsArray) => parts.join("") }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children?: unknown }) => children,
 }));
 vi.mock("@/client/stores", () => ({
+  commitContextAvailability: vi.fn(),
+  commitDraftApplyMetadata: vi.fn(),
+  commitPlannedContextRemoval: vi.fn(),
+  commitReviewOverlayClose: vi.fn(),
+  getContextTabs: () => mocks.desk.byProject["project-1"] ?? { tabs: [], selectedTabIdByWork: {} },
   useContextTabsActions: () => ({ openTab: mocks.openTab }),
   useContextTabsStore: Object.assign(() => null, { getState: () => mocks.desk }),
-}));
-vi.mock("@/core/editor/document-session-registry", () => ({
-  getDocumentSessionRegistry: () => mocks.registry,
 }));
 vi.mock("@/features/editor/EditorView", () => ({
   EditorView: (props: Record<string, unknown>) => {
@@ -70,27 +97,34 @@ const target: AiDraftLaunchTarget = {
   contextPath: "chapters/shared.md",
 };
 
-const tree = {
-  kind: "dir",
-  path: "/",
-  name: "Manuscript",
-  children: [
-    {
-      kind: "file",
-      path: target.contextPath,
-      name: "shared.md",
-      documentId: target.documentId,
-      editable: true,
-      filetype: "markdown",
-      schemaType: "document",
-    },
-  ],
-} as unknown as ProjectContextTreeDirectory;
+const file = {
+  kind: "file" as const,
+  entryId: target.documentId,
+  parentId: "source",
+  path: target.contextPath,
+  name: "shared.md",
+  documentId: target.documentId,
+  editable: true as const,
+  filetype: "markdown" as const,
+  schemaType: "document" as const,
+};
+const catalog = { findPath: vi.fn((_path: string) => file) };
 
-vi.mock("@/client/query/useProjectContextTree", () => ({
-  useProjectContextTree: () => ({
-    tree,
-    capabilities: null,
+function mobileRoute(path: string | null) {
+  return resolveMobileDocumentRoute({
+    enabled: path !== null,
+    scheme: path ? "manuscript" : null,
+    path,
+    workId: target.workId,
+    catalog: catalog as unknown as CatalogContextView,
+    isError: false,
+    isFetching: false,
+  });
+}
+
+vi.mock("@/client/query/useContextCatalog", () => ({
+  useContextCatalogView: () => ({
+    catalog,
     isError: false,
     isFetching: false,
     refetch: vi.fn(),
@@ -100,6 +134,7 @@ vi.mock("@/client/query/useProjectContextTree", () => ({
 let openReview: ((target: AiDraftLaunchTarget) => Promise<void>) | null = null;
 let settledDocumentId: string | null = null;
 let removalCoordinator: ReturnType<typeof useContextRemovalCoordinator> | null = null;
+let setDirectPath: ((path: string | null) => void) | null = null;
 
 function CoordinatorCapture() {
   removalCoordinator = useContextRemovalCoordinator();
@@ -184,13 +219,44 @@ function PhoneRouteHarness({ navigate }: { navigate: OpenContextRoute }) {
           <MobileDocumentHost
             projectId="project-1"
             editorWorkId={route.workId}
-            activeContextScheme="manuscript"
-            activeContextPath={route.contextPath}
+            route={mobileRoute(route.contextPath)}
           />
           <RemovalObserver />
         </DraftReviewBoundary>
       ) : null}
     </EditorReviewHandoffProvider>
+  );
+}
+
+function DirectMobileHarness() {
+  const [path, setPath] = useState<string | null>(target.contextPath);
+  setDirectPath = setPath;
+  const review = useMemo(
+    () =>
+      ({
+        controller: {
+          workId: target.workId,
+          inlineReview: null,
+          enterInlineReview: vi.fn(),
+          exitInlineReview: vi.fn(),
+        },
+        groups: [],
+        drafts: { status: "ready", groups: [] },
+        groupForDocument: () => null,
+        reviewRoomNameForDraft: () => null,
+        activeEditorDocumentId: null,
+        setActiveEditorDocumentId: vi.fn(),
+      }) as unknown as DraftReviewContextValue,
+    [],
+  );
+  return (
+    <DraftReviewBoundary value={review}>
+      <MobileDocumentHost
+        projectId="project-1"
+        editorWorkId={target.workId}
+        route={mobileRoute(path)}
+      />
+    </DraftReviewBoundary>
   );
 }
 
@@ -202,6 +268,26 @@ describe("MobileDocumentHost review binding", () => {
     mocks.openTab.mockClear();
     mocks.registry.retain.mockClear();
     mocks.registry.release.mockClear();
+    mocks.liveOpener.open.mockReset();
+    mocks.liveOpener.open.mockResolvedValue({
+      kind: "opened",
+      document: file,
+      admission: {
+        projectId: "project-1",
+        documentId: target.documentId,
+        generation: "1",
+        bind: async () => ({
+          projectId: "project-1",
+          documentId: target.documentId,
+          generation: "1",
+          session: mocks.liveSession,
+          release: vi.fn(),
+        }),
+      },
+    });
+    catalog.findPath.mockReset();
+    catalog.findPath.mockReturnValue(file);
+    setDirectPath = null;
     settledDocumentId = null;
   });
 
@@ -209,10 +295,10 @@ describe("MobileDocumentHost review binding", () => {
     const navigate = vi.fn().mockResolvedValue(undefined);
     await withReactRoot(
       <StrictMode>
-        <ContextRemovalAccountProvider accountId="account-1">
+        <AccountFeatureTestProvider accountId="account-1">
           <CoordinatorCapture />
           <PhoneRouteHarness navigate={navigate} />
-        </ContextRemovalAccountProvider>
+        </AccountFeatureTestProvider>
       </StrictMode>,
       async () => {
         await act(async () => {
@@ -234,6 +320,64 @@ describe("MobileDocumentHost review binding", () => {
           reviewWorkId: target.workId,
           editable: false,
         });
+      },
+    );
+  });
+
+  it("releases on route replacement and exit", async () => {
+    const releases = new Map<string, ReturnType<typeof vi.fn>>();
+    const second = { ...file, documentId: "document-second", entryId: "document-second" };
+    catalog.findPath.mockImplementation((path) => (path === "chapters/second.md" ? second : file));
+    mocks.liveOpener.open.mockImplementation(async (input: { documentId: string }) => {
+      const release = vi.fn();
+      releases.set(input.documentId, release);
+      return {
+        kind: "opened",
+        document: file,
+        admission: {
+          projectId: "project-1",
+          documentId: input.documentId,
+          generation: "1",
+          bind: async () => ({
+            projectId: "project-1",
+            documentId: input.documentId,
+            generation: "1",
+            session: mocks.liveSession,
+            release,
+          }),
+        },
+      };
+    });
+
+    await withReactRoot(
+      <AccountFeatureTestProvider accountId="account-1">
+        <DirectMobileHarness />
+      </AccountFeatureTestProvider>,
+      async () => {
+        await act(async () => undefined);
+        await act(async () => setDirectPath?.("chapters/second.md"));
+        expect(releases.get(target.documentId)).toHaveBeenCalledOnce();
+        await act(async () => setDirectPath?.(null));
+        expect(releases.get("document-second")).toHaveBeenCalledOnce();
+      },
+    );
+  });
+
+  it.each([
+    "not-editable",
+    "unavailable",
+  ] as const)("does not render an editor for %s", async (kind) => {
+    mocks.liveOpener.open.mockResolvedValue(
+      kind === "not-editable" ? { kind, document: file } : { kind, reason: "not-visible" },
+    );
+    await withReactRoot(
+      <AccountFeatureTestProvider accountId="account-1">
+        <DirectMobileHarness />
+      </AccountFeatureTestProvider>,
+      async () => {
+        await act(async () => undefined);
+        expect(mocks.editorProps).toHaveLength(0);
+        expect(document.body.textContent).toContain("Couldn't open this document.");
       },
     );
   });

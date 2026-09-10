@@ -5,7 +5,9 @@
  */
 
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
+import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
 import type { DeleteContextEntryResult } from "@meridian/contracts/protocol";
+import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type {
   AdapterFault,
@@ -14,6 +16,7 @@ import type {
   AdapterSearchHit,
   ContextSchemeAdapter,
 } from "../ports/context-adapter.js";
+import type { ContextCommandTransaction } from "../ports/context-command-transaction.js";
 import type {
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentResult,
@@ -39,21 +42,26 @@ import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri
 export interface ContextPortRouterDeps {
   adapters: ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
   /** Canonical Work authority for Work-scoped adapters already present in the base map. */
-  adapterAuthorities?: ReadonlyMap<ContextScheme, string>;
-  /** Non-deleted, same-project Work handles. Values are stable IDs used below this seam. */
-  workAuthorities?: ReadonlyMap<string, string>;
+  adapterAuthorities?: ReadonlyMap<ContextScheme, CanonicalContextAuthority>;
+  /** Non-deleted, same-project Work authorities indexed only by exact slug. */
+  workAuthorities: ReadonlyMap<WorkSlug, ResolvedWorkAuthority>;
   /** Primary Work for bare Work-scoped URIs in this router. */
-  primaryWorkId?: string;
+  primaryWorkAuthority?: ResolvedWorkAuthority;
   /** Lazily builds Work-scoped adapters for an authority-addressed target Work. */
-  resolveWorkAdapters?: (workId: string) => ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
+  resolveWorkAdapters?: (
+    authority: ResolvedWorkAuthority,
+  ) => ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
+  /** Builds project-owned Scratch and Uploads adapters for explicit no-Work authority. */
+  resolveNoWorkAdapters?: () => ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
   /** URI parse options — unified port passes manuscript default + extended schemes. */
   parseOptions?: ParseContextUriOptions;
+  commandTransaction?: ContextCommandTransaction;
 }
 
 interface Dispatch extends ContextTreeDispatch {
   adapter: ContextSchemeAdapter;
   scheme: ContextScheme;
-  authority: string | null;
+  authority: CanonicalContextAuthority;
   workScopeId: string | null;
   path: string;
   canonical: string;
@@ -77,13 +85,13 @@ function crossSchemeCreationDenied(
     : null;
 }
 
-function uriFor(scheme: ContextScheme, path: string, authority: string | null): string {
+function uriFor(scheme: ContextScheme, path: string, authority: CanonicalContextAuthority): string {
   return toCanonical(scheme, path, authority);
 }
 
 function toSearchResult(
   scheme: ContextScheme,
-  authority: string | null,
+  authority: CanonicalContextAuthority,
   hit: AdapterSearchHit,
 ): SearchResult {
   return {
@@ -96,7 +104,7 @@ function toSearchResult(
 
 function toFileRef(
   scheme: ContextScheme,
-  authority: string | null,
+  authority: CanonicalContextAuthority,
   ref: AdapterFileRef,
   readonly: boolean,
 ): FileRef {
@@ -126,7 +134,7 @@ function toFileRef(
 
 function toFileEntry(
   scheme: ContextScheme,
-  authority: string | null,
+  authority: CanonicalContextAuthority,
   entry: AdapterFileEntry,
   readonly: boolean,
 ): FileEntry {
@@ -158,7 +166,7 @@ async function callAdapter<T>(
 
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
   const { adapters, parseOptions } = deps;
-  const treeMover = new ContextTreeMover();
+  const treeMover = new ContextTreeMover(deps.commandTransaction);
 
   async function resolve(uri: string): Promise<Result<Dispatch, ContextError>> {
     const parsed = parseContextUri(uri, parseOptions);
@@ -166,32 +174,43 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     const { scheme, authority, path } = parsed.value;
 
     let adapterMap = adapters;
-    let resolvedAuthority: string | null = null;
-    if (authority) {
-      resolvedAuthority = deps.workAuthorities?.get(authority) ?? null;
+    let canonicalAuthority: CanonicalContextAuthority =
+      authority.kind === "contextual"
+        ? (deps.adapterAuthorities?.get(scheme) ?? authority)
+        : authority.kind === "none"
+          ? authority
+          : { kind: "contextual" };
+    let workScopeId =
+      authority.kind === "contextual" ? (deps.primaryWorkAuthority?.workId ?? null) : null;
+    if (authority.kind === "none") {
+      adapterMap = deps.resolveNoWorkAdapters?.() ?? adapters;
+    } else if (authority.kind === "work") {
+      const resolvedAuthority = deps.workAuthorities.get(authority.workSlug) ?? null;
       if (!resolvedAuthority) {
-        const validWorkSlugs = [...(deps.workAuthorities?.keys() ?? [])];
+        const validWorkSlugs = [...deps.workAuthorities.keys()];
         const valid = validWorkSlugs.map((slug) => `@${slug}`).join(", ");
         return Err({
           code: "invalid_uri",
-          uri: parsed.value.canonical,
-          reason: `Unknown Work @${authority}. Valid Work slugs: ${valid || "none"}`,
-          workSlug: authority,
+          uri: parsed.value.normalized,
+          reason: `Unknown Work @${authority.workSlug}. Valid Work slugs: ${valid || "none"}`,
+          workSlug: authority.workSlug,
           validWorkSlugs,
         });
       }
       try {
         adapterMap = deps.resolveWorkAdapters?.(resolvedAuthority) ?? adapters;
+        workScopeId = resolvedAuthority.workId;
+        canonicalAuthority = resolvedAuthority;
       } catch (error) {
         return Err({
           code: "io_error",
-          uri: parsed.value.canonical,
+          uri: parsed.value.normalized,
           message: error instanceof Error ? error.message : String(error),
         });
       }
     }
 
-    const canonical = toCanonical(scheme, path, resolvedAuthority);
+    const canonical = toCanonical(scheme, path, canonicalAuthority);
 
     const adapter = adapterMap.get(scheme);
     if (!adapter) {
@@ -204,8 +223,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     return Ok({
       adapter,
       scheme,
-      authority: resolvedAuthority,
-      workScopeId: resolvedAuthority ?? deps.primaryWorkId ?? null,
+      authority: canonicalAuthority,
+      workScopeId,
       path,
       canonical,
     });
@@ -246,7 +265,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       const result = await callAdapter(canonical, () => adapter.read(path));
       if (!result.ok) return result;
       if (result.value === null) return Err({ code: "not_found", uri: canonical });
-      return Ok(result.value);
+      return Ok({ ...result.value, uri: canonical });
     },
 
     async write(
@@ -260,7 +279,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!adapter.capabilities.writable) {
         return Err({ code: "permission_denied", uri: canonical });
       }
-      return callAdapter(canonical, () => adapter.write(path, content, options));
+      const result = await callAdapter(canonical, () => adapter.write(path, content, options));
+      return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
     },
 
     async ensureTrackedDocument(
@@ -286,7 +306,9 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!r.ok) return r;
       const { adapter, path, canonical } = r.value;
       if (!adapter.capabilities.writable) return Err({ code: "permission_denied", uri: canonical });
-      if (!adapter.capabilities.creatable) return entryCreationDenied(canonical);
+      if (!adapter.capabilities.creatable && !options?.documentId) {
+        return entryCreationDenied(canonical);
+      }
       return callAdapter(canonical, () => adapter.createTrackedDocument(path, content, options));
     },
 
@@ -301,26 +323,33 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
 
       const locations: Array<{
         scheme: ContextScheme;
-        authority: string | null;
+        authority: CanonicalContextAuthority;
+        workScopeId: string | null;
         adapter: ContextSchemeAdapter;
       }> = [];
       const locationKeys = new Set<string>();
       const addLocation = (
         scheme: ContextScheme,
-        authority: string | null,
+        authority: CanonicalContextAuthority,
+        workScopeId: string | null,
         candidate: ContextSchemeAdapter,
       ) => {
-        const key = `${scheme}:${authority ?? ""}`;
+        const key = `${scheme}:${JSON.stringify(authority)}`;
         if (locationKeys.has(key)) return;
         locationKeys.add(key);
-        locations.push({ scheme, authority, adapter: candidate });
+        locations.push({ scheme, authority, workScopeId, adapter: candidate });
       };
       for (const [scheme, candidate] of adapters) {
-        addLocation(scheme, deps.adapterAuthorities?.get(scheme) ?? null, candidate);
+        addLocation(
+          scheme,
+          deps.adapterAuthorities?.get(scheme) ?? { kind: "contextual" },
+          deps.primaryWorkAuthority?.workId ?? null,
+          candidate,
+        );
       }
-      for (const authority of deps.workAuthorities?.values() ?? []) {
+      for (const authority of deps.workAuthorities.values()) {
         for (const [scheme, candidate] of deps.resolveWorkAdapters?.(authority) ?? []) {
-          addLocation(scheme, authority, candidate);
+          addLocation(scheme, authority, authority.workId, candidate);
         }
       }
       for (const location of locations) {
@@ -340,7 +369,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           scheme: location.scheme,
           path: finalized.value.path,
           name: finalized.value.name,
-          ...(location.authority ? { workId: location.authority } : {}),
+          ...(location.workScopeId ? { workId: location.workScopeId } : {}),
         });
       }
 
@@ -362,7 +391,7 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
             scheme: r.value.scheme,
             path: created.value.path,
             name: created.value.name,
-            ...(r.value.authority ? { workId: r.value.authority } : {}),
+            ...(r.value.workScopeId ? { workId: r.value.workScopeId } : {}),
           });
     },
 
@@ -377,7 +406,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       if (!adapter.capabilities.writable) {
         return Err({ code: "permission_denied", uri: canonical });
       }
-      return callAdapter(canonical, () => adapter.edit(path, command, options));
+      const result = await callAdapter(canonical, () => adapter.edit(path, command, options));
+      return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
     },
 
     async writeBinary(
@@ -397,7 +427,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
           message: UPLOAD_FOLDER_CREATION_DENIED_MESSAGE,
         });
       }
-      return callAdapter(canonical, () => adapter.writeBinary(path, options));
+      const result = await callAdapter(canonical, () => adapter.writeBinary(path, options));
+      return result.ok ? Ok({ ...result.value, uri: canonical }) : result;
     },
 
     async move(
@@ -498,7 +529,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         if (!adapter.capabilities.searchable) continue;
         const result = await callAdapter(`${scheme}://`, () => adapter.search(query));
         if (!result.ok) continue;
-        for (const hit of result.value) hits.push(toSearchResult(scheme, null, hit));
+        const authority = deps.adapterAuthorities?.get(scheme) ?? { kind: "contextual" as const };
+        for (const hit of result.value) hits.push(toSearchResult(scheme, authority, hit));
       }
       hits.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
       return Ok(hits);

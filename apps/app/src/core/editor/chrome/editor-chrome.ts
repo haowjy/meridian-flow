@@ -37,6 +37,8 @@ export type ChromeLayerDismissal =
 export type ChromeLayerOptions = {
   /** Unique while open; used in traces and by the Esc chain. */
   id: string;
+  /** Stable surface owner used to match host actions to this exact top layer. */
+  ownerId?: string;
   /**
    * The layer this one opened INSIDE, when there is one.
    *
@@ -81,6 +83,12 @@ type ChromeLayerRecord = {
   close: () => void;
 };
 
+export type ChromeLayerRetreat = {
+  ownerId: string;
+  backtrack: () => boolean;
+  dismiss: () => void;
+};
+
 export type EditorChrome = {
   /**
    * Identifies this editor's chrome. Two documents open side by side are two
@@ -118,6 +126,12 @@ export type EditorChrome = {
    * the tidier property of never over-stepping a surface that is still fading.
    */
   closeTopLayer: () => boolean;
+  /**
+   * Offer semantic retreat to the current top owner. Before its React layer
+   * exists, the newest registration is the pending owner for that first key.
+   */
+  retreatTopLayer: () => boolean;
+  registerLayerRetreat: (retreat: ChromeLayerRetreat) => () => void;
 
   /** Take right-clicks at a rung of the claim ladder. Returns an unregister. */
   registerContextClaim: (handler: ContextClaimHandler) => () => void;
@@ -189,6 +203,7 @@ export function createEditorChrome(
   const keymaps: KeymapContribution[] = [];
   const hoverIntents = new Set<HoverIntent<unknown>>();
   const layerRecords = new Map<string, ChromeLayerRecord>();
+  const layerRetreats: ChromeLayerRetreat[] = [];
 
   let layerSequence = 0;
   let layers: ChromeLayer[] = [];
@@ -260,7 +275,7 @@ export function createEditorChrome(
       return () => listeners.delete(listener);
     },
 
-    openLayer({ id, parentId = null, close, dismissal = "kernel" }) {
+    openLayer({ id, ownerId = id, parentId = null, close, dismissal = "kernel" }) {
       // Law 4: one transient surface. A surface summoned at the top level
       // REPLACES whatever was there — the slash menu and the link form both
       // staying live left two inputs competing for the same keystrokes. A
@@ -273,7 +288,7 @@ export function createEditorChrome(
       // would leave a ghost step in the walk home.
       const key = layerRecords.has(id) ? `${id}#${layerSequence}` : id;
       layerSequence += 1;
-      const layer: ChromeLayer = { id: key };
+      const layer: ChromeLayer = { id: key, ownerId };
       layerRecords.set(key, {
         layer,
         parentId,
@@ -303,6 +318,29 @@ export function createEditorChrome(
       reorderLayers();
       topmost.close();
       return true;
+    },
+
+    retreatTopLayer() {
+      const topmost = topRecord();
+      const retreat = topmost
+        ? [...layerRetreats].reverse().find((entry) => entry.ownerId === topmost.layer.ownerId)
+        : layerRetreats.at(-1);
+      if (!retreat) return false;
+      if (retreat.backtrack()) return true;
+      // With a real layer, its existing close path owns Radix animation and
+      // focus return. Before React registers that layer, the semantic lease is
+      // the only owner available and closes the suggestion directly.
+      if (topmost) return false;
+      retreat.dismiss();
+      return true;
+    },
+
+    registerLayerRetreat(retreat) {
+      layerRetreats.push(retreat);
+      return () => {
+        const index = layerRetreats.indexOf(retreat);
+        if (index >= 0) layerRetreats.splice(index, 1);
+      };
     },
 
     registerContextClaim(handler) {
@@ -453,6 +491,7 @@ export function createEditorChrome(
       listeners.clear();
       claims.length = 0;
       keymaps.length = 0;
+      layerRetreats.length = 0;
       layerRecords.clear();
       layers = [];
     },

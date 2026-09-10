@@ -18,15 +18,15 @@ describe("Work catalog", () => {
     const result = await listWorkCatalog(
       {
         projects: { findById: vi.fn(async () => project()) } as never,
-        works: { listByProject: vi.fn(async () => works) },
+        works: snapshotRepo(works),
         pendingDrafts: { countPendingByWorkIds },
       },
-      { projectId: PROJECT_ID, userId: USER_ID, status: "active" },
+      { projectId: PROJECT_ID, userId: USER_ID },
     );
 
     expect(countPendingByWorkIds).toHaveBeenCalledTimes(1);
     expect(countPendingByWorkIds).toHaveBeenCalledWith([WORK_A, WORK_B]);
-    expect(result.map(({ id, unpushedChangeCount }) => [id, unpushedChangeCount])).toEqual([
+    expect(result.works.map(({ id, unpushedChangeCount }) => [id, unpushedChangeCount])).toEqual([
       [WORK_A, 0],
       [WORK_B, 3],
     ]);
@@ -39,12 +39,12 @@ describe("Work catalog", () => {
       listWorkCatalog(
         {
           projects: { findById: vi.fn(async () => project()) } as never,
-          works: { listByProject: vi.fn(async () => []) },
+          works: snapshotRepo([]),
           pendingDrafts: { countPendingByWorkIds },
         },
         { projectId: PROJECT_ID, userId: USER_ID },
       ),
-    ).resolves.toEqual([]);
+    ).resolves.toMatchObject({ authorityRevision: "0", works: [] });
     expect(countPendingByWorkIds).toHaveBeenCalledOnce();
     expect(countPendingByWorkIds).toHaveBeenCalledWith([]);
   });
@@ -56,4 +56,15 @@ function project(): Project {
 
 function work(id: WorkId): Work {
   return { id, projectId: PROJECT_ID, status: "active", deletedAt: null } as Work;
+}
+
+function snapshotRepo(rows: Work[]) {
+  return {
+    readSnapshot: async <T>(operation: () => Promise<T>) => operation(),
+    snapshotIdentity: async () => ({
+      catalogGeneration: "00000000-0000-4000-8000-000000000109",
+      authorityRevision: "0",
+    }),
+    listByProject: vi.fn(async () => rows),
+  };
 }

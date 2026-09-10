@@ -8,7 +8,6 @@ import {
   ContextRemovalCoordinator,
   type ContextRemovalRoutePort,
 } from "./context-removal-coordinator";
-import type { AcknowledgedContextDeleteCommand } from "./context-removal-protocol";
 
 const projectId = "project-1";
 
@@ -26,10 +25,37 @@ function tracked(documentId: string, path: string): Extract<ContextTab, { kind: 
 }
 
 function setDesk(tabs: ContextTab[], selectedTabId: string | null) {
+  const normalized = tabs.map((tab) =>
+    tab.kind !== "new" && tab.draftOnly
+      ? {
+          ...tab,
+          tabInstanceId: tab.tabInstanceId ?? `${tab.documentId}-instance`,
+          reviewDraftId: tab.reviewDraftId ?? `${tab.documentId}-draft`,
+          tabInstanceToken: tab.tabInstanceToken ?? `${tab.documentId}-token`,
+        }
+      : tab,
+  );
+  const durable = normalized.filter((tab) => !tab.draftOnly);
+  const review = normalized.filter((tab) => tab.draftOnly);
   useContextTabsStore.setState({
     byProject: {
-      [projectId]: { tabs, selectedTabIdByWork: selectedTabId ? { "work-1": selectedTabId } : {} },
+      [projectId]: {
+        tabs: durable,
+        selectedTabIdByWork:
+          selectedTabId && durable.some((tab) => tab.documentId === selectedTabId)
+            ? { "work-1": selectedTabId }
+            : {},
+      },
     },
+    _reviewOverlayByProject:
+      review.length === 0
+        ? {}
+        : {
+            [projectId]: {
+              tabs: review,
+              selectedTabIdByWork: selectedTabId ? { "work-1": selectedTabId } : {},
+            },
+          },
     _deskHydrated: false,
   });
 }
@@ -45,6 +71,7 @@ function scenario(initialSearch: ProjectSearch = { screen: "context" }) {
   };
   const workingSet = {
     readRecentRoutes: () => routes,
+    replaceRecentRoutes: (_id: string, routes: readonly WorkingSetRoute[]) => [...routes],
     reconcileContextRoutes: (_projectId: string, input: ReconcileContextRoutesInput) => {
       routes = reconcileSnapshotContextRoutes(
         { recentRoutes: routes, lastThreadId: null },
@@ -56,6 +83,7 @@ function scenario(initialSearch: ProjectSearch = { screen: "context" }) {
   const coordinator = new ContextRemovalCoordinator("account-1", { workingSet, route });
   return {
     coordinator,
+    route,
     search: () => search,
     routes: () => routes,
     setRoutes: (next: WorkingSetRoute[]) => {
@@ -64,29 +92,16 @@ function scenario(initialSearch: ProjectSearch = { screen: "context" }) {
   };
 }
 
-function admit(
-  coordinator: ContextRemovalCoordinator,
-  capture: ReturnType<ContextRemovalCoordinator["captureDeleteInitiation"]>,
-  deletedDocumentIds: readonly string[],
-): AcknowledgedContextDeleteCommand {
-  const command: AcknowledgedContextDeleteCommand = {
-    ...capture,
-    cause: "acknowledged-delete",
-    confirmed: { status: "deleted", deletedDocumentIds },
-  };
-  coordinator.acceptAcknowledgedDelete(command);
-  return command;
-}
-
 describe("ContextRemovalCoordinator exact evidence protocol", () => {
   beforeEach(() => setDesk([], null));
 
   it("never publishes candidate persistence across begin, supersede, leave, or rejection", () => {
     const reports: WorkingSetRoute[][] = [];
-    let routes: WorkingSetRoute[] = [{ scheme: "kb", path: "/keep.md" }];
+    let routes: WorkingSetRoute[] = [{ documentId: "keep", scheme: "kb", path: "/keep.md" }];
     const coordinator = new ContextRemovalCoordinator("account-1", {
       workingSet: {
         readRecentRoutes: () => routes,
+        replaceRecentRoutes: (_id: string, routes: readonly WorkingSetRoute[]) => [...routes],
         reconcileContextRoutes: (_projectId, input) => {
           routes = reconcileSnapshotContextRoutes(
             { recentRoutes: routes, lastThreadId: null },
@@ -129,14 +144,16 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
     expect(rejectedRevision).toBeGreaterThan(candidateA);
     coordinator.rejectRouteCandidate(projectId, rejectedRevision);
     expect(reports).toHaveLength(1);
-    expect(reports[0]).toEqual([{ scheme: "kb", path: "/keep.md" }]);
+    expect(reports[0]).toEqual([{ documentId: "keep", scheme: "kb", path: "/keep.md" }]);
     expect(reports.flat()).not.toContainEqual(expect.objectContaining({ path: "/candidate-a.md" }));
     expect(reports.flat()).not.toContainEqual(expect.objectContaining({ path: "/candidate-b.md" }));
   });
 
   it("lets a same-path replacement defeat a delayed candidate-rejection repair", () => {
     setDesk([tracked("knowledge", "/knowledge.md")], "knowledge");
-    let routes: WorkingSetRoute[] = [{ scheme: "kb", path: "/knowledge.md" }];
+    let routes: WorkingSetRoute[] = [
+      { documentId: "knowledge", scheme: "kb", path: "/knowledge.md" },
+    ];
     const delayedRepair: { current: ((latest: ProjectSearch) => ProjectSearch) | null } = {
       current: null,
     };
@@ -149,6 +166,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
     const coordinator = new ContextRemovalCoordinator("account-1", {
       workingSet: {
         readRecentRoutes: () => routes,
+        replaceRecentRoutes: (_id: string, routes: readonly WorkingSetRoute[]) => [...routes],
         reconcileContextRoutes: (_projectId, input) => {
           routes = reconcileSnapshotContextRoutes(
             { recentRoutes: routes, lastThreadId: null },
@@ -192,148 +210,18 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
       selection: { status: "bound", identity: { documentId: "replacement" } },
       admitted: locator,
     });
-    expect(routes[0]).toEqual({ scheme: "manuscript", path: "/same.md" });
-  });
-
-  it("does not admit a candidate phone locator during an unrelated desk removal", () => {
-    setDesk([tracked("desktop", "/desktop.md")], "desktop");
-    const rig = scenario({ screen: "context", work: "work-1", scheme: "kb", path: "/phone.md" });
-    rig.setRoutes([
-      { scheme: "kb", path: "/phone.md" },
-      { scheme: "manuscript", path: "/desktop.md" },
-    ]);
-    rig.coordinator.beginRouteSelection(projectId, {
-      scheme: "kb",
-      path: "/phone.md",
-      workId: "work-1",
+    expect(routes[0]).toEqual({
+      documentId: "replacement",
+      scheme: "manuscript",
+      path: "/same.md",
     });
-
-    admit(
-      rig.coordinator,
-      rig.coordinator.captureDeleteInitiation(projectId, {
-        kind: "file",
-        locator: { scheme: "manuscript", path: "/desktop.md", workId: "work-1" },
-        documentId: "desktop",
-      }),
-      ["desktop"],
-    );
-
-    expect(rig.routes()[0]).toEqual({ scheme: "kb", path: "/phone.md" });
-    expect(rig.coordinator.getProjectSnapshot(projectId).admitted).toBeNull();
-    expect(rig.search().path).toBe("/phone.md");
-  });
-
-  it("admits an exact pending phone delete synchronously and settles it later", () => {
-    const rig = scenario({ screen: "context", work: "work-1", scheme: "kb", path: "/phone.md" });
-    rig.setRoutes([{ scheme: "kb", path: "/phone.md" }]);
-    const revision = rig.coordinator.beginRouteSelection(projectId, {
-      scheme: "kb",
-      path: "/phone.md",
-      workId: "work-1",
-    });
-    const capture = rig.coordinator.captureDeleteInitiation(projectId, {
-      kind: "file",
-      locator: { scheme: "kb", path: "/phone.md", workId: "work-1" },
-      documentId: "phone",
-    });
-
-    const command = admit(rig.coordinator, capture, ["phone"]);
-    expect(rig.coordinator.acceptAcknowledgedDelete(command)).toEqual({
-      status: "replayed",
-      outcome: "obligated",
-    });
-    expect(rig.routes()).toEqual([{ scheme: "kb", path: "/phone.md" }]);
-
-    rig.coordinator.rejectRouteCandidate(projectId, revision);
-    expect(rig.routes()).toEqual([]);
-    expect(rig.search()).toEqual({ screen: "context", work: "work-1" });
-  });
-
-  it("rejects conflicting command ID reuse without a second effect", () => {
-    setDesk([tracked("a", "/a.md"), tracked("b", "/b.md")], "b");
-    const rig = scenario();
-    const capture = rig.coordinator.captureDeleteInitiation(projectId, {
-      kind: "file",
-      locator: { scheme: "manuscript", path: "/a.md", workId: null },
-      documentId: "a",
-    });
-    const command = admit(rig.coordinator, capture, ["a"]);
-    const conflict = {
-      ...command,
-      confirmed: { status: "deleted" as const, deletedDocumentIds: ["a", "b"] },
-    };
-
-    expect(rig.coordinator.acceptAcknowledgedDelete(conflict)).toEqual({
-      status: "rejected",
-      reason: "command_conflict",
-    });
-    expect(useContextTabsStore.getState().byProject[projectId]?.tabs).toMatchObject([
-      { documentId: "b" },
-    ]);
-  });
-
-  it.each([
-    ["bound-same", "phone", true, true],
-    ["bound-other", "replacement", true, false],
-    ["unbound", null, true, true],
-  ])("reduces late same-revision admission after %s settlement", (_case, identity, removes, repairs) => {
-    const rig = scenario({ screen: "context", work: "work-1", scheme: "kb", path: "/phone.md" });
-    rig.coordinator.changeWorkSelection(projectId, "work-1", null);
-    rig.setRoutes([{ scheme: "kb", path: "/phone.md" }]);
-    const revision = rig.coordinator.beginRouteSelection(projectId, {
-      scheme: "kb",
-      path: "/phone.md",
-      workId: "work-1",
-    });
-    const capture = rig.coordinator.captureDeleteInitiation(projectId, {
-      kind: "file",
-      locator: { scheme: "kb", path: "/phone.md", workId: "work-1" },
-      documentId: "phone",
-    });
-    if (identity) {
-      rig.coordinator.bindRouteSelection(projectId, revision, {
-        kind: "server",
-        documentId: identity,
-      });
-    } else {
-      rig.coordinator.rejectRouteCandidate(projectId, revision);
-    }
-
-    admit(rig.coordinator, capture, ["phone"]);
-
-    expect(rig.routes().some((route) => route.path === "/phone.md")).toBe(!removes);
-    expect(rig.search().path === "/phone.md").toBe(!repairs);
-  });
-
-  it("never assigns an unrelated singleton receipt to a superseded locator", () => {
-    const rig = scenario({ screen: "context", work: "work-1", scheme: "kb", path: "/phone.md" });
-    rig.setRoutes([{ scheme: "kb", path: "/phone.md" }]);
-    rig.coordinator.beginRouteSelection(projectId, {
-      scheme: "kb",
-      path: "/phone.md",
-      workId: "work-1",
-    });
-    const unrelated = rig.coordinator.captureDeleteInitiation(projectId, {
-      kind: "file",
-      locator: { scheme: "kb", path: "/other.md", workId: "work-1" },
-      documentId: "other",
-    });
-    rig.coordinator.beginRouteSelection(projectId, {
-      scheme: "kb",
-      path: "/new.md",
-      workId: "work-1",
-    });
-
-    admit(rig.coordinator, unrelated, ["other"]);
-
-    expect(rig.routes()).toEqual([{ scheme: "kb", path: "/phone.md" }]);
   });
 
   it.each([
     "writer-close",
     "work-prune",
     "draft-discard",
-  ] as const)("settles the named %s command against its represented pending route", (cause) => {
+  ] as const)("settles the named %s command against its represented pending route", async (cause) => {
     const tab = {
       ...tracked("a", "/a.md"),
       ...(cause === "work-prune" ? { scheme: "scratch" as const, workId: "work-1" } : {}),
@@ -349,8 +237,8 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
     });
     rig.setRoutes([
       scheme === "scratch"
-        ? { scheme, path: "/a.md", workId: "work-1" }
-        : { scheme, path: "/a.md" },
+        ? { documentId: "a", scheme, path: "/a.md", workId: "work-1" }
+        : { documentId: "a", scheme, path: "/a.md" },
     ]);
     const revision = rig.coordinator.beginRouteSelection(projectId, {
       scheme,
@@ -360,7 +248,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
 
     if (cause === "writer-close") rig.coordinator.writerClose(projectId, "a");
     else if (cause === "work-prune") rig.coordinator.changeWorkSelection(projectId, "work-2", null);
-    else rig.coordinator.discardDraft(projectId, "work-1", "a");
+    else await rig.coordinator.discardDraft(projectId, "work-1", "a");
     expect(useContextTabsStore.getState().byProject[projectId]?.tabs).toEqual([]);
     expect(rig.routes()).toEqual([]);
 
@@ -385,88 +273,6 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
       revision: revision + 1,
       identity: { documentId: "b" },
     });
-  });
-
-  it("rejects stale activation after the selected document was removed", () => {
-    setDesk([tracked("a", "/a.md")], "a");
-    const rig = scenario({ screen: "context", scheme: "manuscript", path: "/a.md" });
-    rig.coordinator.registerRoutePort(
-      projectId,
-      { readSearch: rig.search, updateSearch: () => undefined },
-      "work-1",
-    );
-    const revision = rig.coordinator.beginRouteSelection(projectId, {
-      scheme: "manuscript",
-      path: "/a.md",
-      workId: "work-1",
-    });
-    rig.coordinator.bindRouteSelection(projectId, revision, {
-      kind: "server",
-      documentId: "a",
-    });
-    const before = rig.coordinator.getProjectSnapshot(projectId);
-    const capture = rig.coordinator.captureDeleteInitiation(projectId, {
-      kind: "file",
-      locator: { scheme: "manuscript", path: "/a.md", workId: "work-1" },
-      documentId: "a",
-    });
-    admit(rig.coordinator, capture, ["a"]);
-
-    expect(
-      rig.coordinator.activate({
-        projectId,
-        selectionRevision: revision,
-        transitionRevision: before.transitionRevision,
-        locator: { scheme: "manuscript", path: "/a.md", workId: "work-1" },
-        identity: { kind: "server", documentId: "a" },
-        owner: { kind: "desk", documentId: "a" },
-      }),
-    ).toBe(false);
-    expect(rig.coordinator.getProjectSnapshot(projectId).admitted).toBeNull();
-  });
-
-  it("rejects a surviving route's stale transition ticket and accepts its fresh ticket", () => {
-    setDesk([tracked("a", "/a.md"), tracked("b", "/b.md")], "b");
-    const rig = scenario({ screen: "context", scheme: "manuscript", path: "/b.md" });
-    rig.coordinator.registerRoutePort(
-      projectId,
-      { readSearch: rig.search, updateSearch: () => undefined },
-      "work-1",
-    );
-    const revision = rig.coordinator.beginRouteSelection(projectId, {
-      scheme: "manuscript",
-      path: "/b.md",
-      workId: "work-1",
-    });
-    rig.coordinator.bindRouteSelection(projectId, revision, {
-      kind: "server",
-      documentId: "b",
-    });
-    const staleTransition = rig.coordinator.getProjectSnapshot(projectId).transitionRevision;
-    admit(
-      rig.coordinator,
-      rig.coordinator.captureDeleteInitiation(projectId, {
-        kind: "file",
-        locator: { scheme: "manuscript", path: "/a.md", workId: "work-1" },
-        documentId: "a",
-      }),
-      ["a"],
-    );
-    const freshTransition = rig.coordinator.getProjectSnapshot(projectId).transitionRevision;
-    const activation = {
-      projectId,
-      selectionRevision: revision,
-      locator: { scheme: "manuscript" as const, path: "/b.md", workId: "work-1" },
-      identity: { kind: "server" as const, documentId: "b" },
-      owner: { kind: "desk" as const, documentId: "b" },
-    };
-
-    expect(rig.coordinator.activate({ ...activation, transitionRevision: staleTransition })).toBe(
-      false,
-    );
-    expect(rig.coordinator.activate({ ...activation, transitionRevision: freshTransition })).toBe(
-      true,
-    );
   });
 
   it("admits a bound phone route through route-only ownership without a desk tab", () => {
@@ -508,7 +314,9 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
       path: "/phone.md",
       workId: "work-1",
     });
-    expect(rig.routes()).toEqual([{ scheme: "manuscript", path: "/phone.md" }]);
+    expect(rig.routes()).toEqual([
+      { documentId: "phone", scheme: "manuscript", path: "/phone.md" },
+    ]);
   });
 
   it("admits local untitled Scratch in memory without a working-set route", () => {
@@ -555,3 +363,76 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
 function identityFor(documentId: string) {
   return { kind: "server" as const, documentId };
 }
+
+it.each([
+  { rawWork: "none", workId: null },
+  { rawWork: undefined, workId: "work-1" },
+])("preserves raw $rawWork authority through missing-route repair, phone activation, and relocation", async ({
+  rawWork,
+  workId,
+}) => {
+  setDesk([], null);
+  const rig = scenario({
+    screen: "context",
+    work: rawWork,
+    scheme: "uploads",
+    path: "/missing.png",
+  });
+  rig.coordinator.registerRoutePort(projectId, rig.route, workId);
+  const missing = rig.coordinator.beginRouteSelection(projectId, {
+    scheme: "uploads",
+    path: "/missing.png",
+    workId,
+  });
+  rig.coordinator.rejectRouteCandidate(projectId, missing);
+  expect(rig.search().path).toBeUndefined();
+  expect(rig.search().work).toBe(rawWork);
+
+  rig.route.updateSearch(projectId, (search) => ({
+    ...search,
+    scheme: "uploads",
+    path: "/Map.png",
+  }));
+  const locator = { scheme: "uploads" as const, path: "/Map.png", workId };
+  const revision = rig.coordinator.beginRouteSelection(projectId, locator);
+  rig.coordinator.bindRouteSelection(projectId, revision, identityFor("image"));
+  expect(
+    rig.coordinator.activate({
+      projectId,
+      selectionRevision: revision,
+      transitionRevision: rig.coordinator.getProjectSnapshot(projectId).transitionRevision,
+      locator,
+      identity: identityFor("image"),
+      owner: { kind: "route-only" },
+    }),
+  ).toBe(true);
+  expect(rig.routes()).toEqual([
+    { documentId: "image", scheme: "uploads", path: "/Map.png", workId },
+  ]);
+
+  await rig.coordinator.reconcileDocumentAvailability([
+    {
+      kind: "available",
+      projectId,
+      commandId: "move-image",
+      generation: "1",
+      document: {
+        kind: "file",
+        entryId: "image",
+        scope: workId ? { kind: "work", projectId, workId } : { kind: "none", projectId },
+        sourceId: "source",
+        parentId: "source",
+        name: "Moved.png",
+        aliases: [],
+        path: ["Moved.png"],
+        uri: `uploads://${workId ? "@work-1" : "@"}/Moved.png`,
+        provisionalName: false,
+        editable: false,
+        disposition: "binary",
+        fileType: "image",
+        mimeType: "image/png",
+      },
+    },
+  ]);
+  expect(rig.search()).toMatchObject({ path: "/Moved.png", work: workId ?? "none" });
+});

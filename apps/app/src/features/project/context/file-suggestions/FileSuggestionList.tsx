@@ -136,7 +136,7 @@ export const FileSuggestionList = forwardRef<
                       ? ""
                       : schemeLabel(suggestion.scheme);
               return (
-                <li key={`${suggestion.scheme}:${suggestion.path}`}>
+                <li key={suggestion.entryId}>
                   <button
                     data-file-suggestion
                     type="button"

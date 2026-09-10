@@ -12,6 +12,7 @@ export type { DocumentLinkTarget, ResolvedDocumentLink };
 
 export interface ResolveDocumentLinkInput {
   projectId: string;
+  userId: string;
   workId?: string | null;
   target: DocumentLinkTarget;
 }

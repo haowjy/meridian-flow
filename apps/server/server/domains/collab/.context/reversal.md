@@ -12,6 +12,10 @@ to `{}` before validation and returns `400 direction must be undo or redo`.
 or the declared unsupported stubs; do not restore optional dependencies that
 fail only when a command reaches them.
 
+Context-document reversal adopts the context resolver's successful canonical
+URI together with its document ID. The request URI is syntax to resolve, never
+stable reversal-result identity.
+
 - **Live receipt reversal state uses the command planner**:
   `drizzle-turn-receipt.ts` asks agent-edit `planUndo` and `planRedo` for each
   live document instead of projecting availability from mutation status.

@@ -1,3 +1,4 @@
+import type { CatalogEntry } from "@meridian/contracts/protocol";
 import { act, type ReactNode, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -17,11 +18,20 @@ const queryClientMock = {
 };
 const applyDraftMetadataMock = vi.fn();
 const discardDraftMock = vi.fn(async () => ({ kind: "noop" as const }));
+const acknowledgeServerAppliedMock = vi.fn(
+  async (_documentId: string, _draftId: string, workId = "work-1") => {
+    applyDraftMetadataMock("project-1", workId, _documentId);
+    return { kind: "applied" };
+  },
+);
 const exitReviewMock = vi.fn();
+const recordServerAppliedMock = vi.fn();
+const discardRemoteDraftWitnessMock = vi.fn(() => true);
 let currentGroups: ThreadDraftGroup[] = [];
 let currentInlineReview: { documentId: string; draftId: string } | null = null;
 let currentReviewRoomName: string | null = null;
 let currentTabIsDraftOnly = false;
+let hasRemoteWitness = false;
 let rerenderProvider: (() => void) | null = null;
 let controllerMounts = 0;
 let controllerUnmounts = 0;
@@ -29,12 +39,40 @@ let queriedWorkIds: Array<string | null> = [];
 let controllerWorkIds: string[] = [];
 
 const docUpdateHandlers = new Map<string, Set<() => void>>();
+function sessionFor(documentId: string) {
+  if (!docUpdateHandlers.has(documentId)) docUpdateHandlers.set(documentId, new Set());
+  return {
+    document: {
+      on: (event: string, handler: () => void) => {
+        if (event === "update") docUpdateHandlers.get(documentId)?.add(handler);
+      },
+      off: (event: string, handler: () => void) => {
+        if (event === "update") docUpdateHandlers.get(documentId)?.delete(handler);
+      },
+    },
+  };
+}
 
 vi.mock("@tanstack/react-query", () => ({
   queryOptions: (options: unknown) => options,
   useQueryClient: () => queryClientMock,
 }));
 vi.mock("@/client/stores", () => ({
+  getContextTabs: () => ({
+    tabs: currentTabIsDraftOnly
+      ? [
+          {
+            kind: "tracked",
+            documentId: "doc-terminal",
+            draftOnly: true,
+            reviewWorkId: "work-1",
+            reviewDraftId: "draft-terminal",
+            tabInstanceToken: "tab-terminal",
+          },
+        ]
+      : [],
+    selectedTabIdByWork: {},
+  }),
   useContextTabsStore: {
     getState: () => ({
       byProject: {
@@ -46,6 +84,8 @@ vi.mock("@/client/stores", () => ({
                   documentId: "doc-terminal",
                   draftOnly: true,
                   reviewWorkId: "work-1",
+                  reviewDraftId: "draft-terminal",
+                  tabInstanceToken: "tab-terminal",
                 },
               ]
             : [],
@@ -54,10 +94,59 @@ vi.mock("@/client/stores", () => ({
     }),
   },
 }));
-vi.mock("@/features/project/context/ContextRemovalAccountProvider", () => ({
+vi.mock("@/features/project/context/account-feature-context", () => ({
   useContextRemovalCoordinator: () => ({
     applyDraftMetadata: applyDraftMetadataMock,
     discardDraft: discardDraftMock,
+  }),
+  useLiveDocumentSessionRegistry: () => ({
+    retainBranchRooms: vi.fn(),
+    releaseBranchRooms: vi.fn(),
+    getBranchRoom: (roomName: string) => sessionFor(roomName),
+  }),
+  useProjectDocumentLiveOpener: () => ({
+    open: async ({ documentId }: { documentId: string }) => ({
+      kind: "opened",
+      admission: { bind: async () => ({ documentId, session: {}, release: vi.fn() }) },
+    }),
+  }),
+}));
+vi.mock("@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider", () => ({
+  usePostApplyAccountId: () => "account-1",
+  usePostApplyDispositionOwner: () => ({
+    reconcileForcedDraftList: vi.fn(),
+    recordServerApplied: recordServerAppliedMock,
+    discardRemoteDraftWitness: discardRemoteDraftWitnessMock,
+  }),
+  usePostApplySnapshot: () => ({
+    nextVersion: 1,
+    reservations: [],
+    items: [],
+    appliedSuppressions: [],
+    remoteDraftWitnesses: hasRemoteWitness
+      ? [
+          {
+            identity: {
+              accountId: "account-1",
+              projectId: "project-1",
+              workId: "work-1",
+              documentId: "doc-terminal",
+              draftId: "draft-terminal",
+            },
+            witnessVersion: 1,
+            presentation: { documentName: "New document", contextPath: null },
+            obligations: {
+              draftTab: {
+                kind: "draft-only",
+                reviewWorkId: "work-1",
+                reviewDraftId: "draft-terminal",
+                tabInstanceToken: "tab-terminal",
+              },
+              branch: { kind: "none" },
+            },
+          },
+        ]
+      : [],
   }),
 }));
 vi.mock("@/client/query/useWorkDrafts", () => ({
@@ -81,44 +170,13 @@ vi.mock("./useDraftReviewController", () => ({
     return {
       workId,
       exitReview: exitReviewMock,
+      acknowledgeServerApplied: (documentId: string, draftId: string) =>
+        acknowledgeServerAppliedMock(documentId, draftId, workId),
+      isServerAppliedAwaitingHost: vi.fn(() => false),
       inlineReview: currentInlineReview,
       reviewRoomName: currentReviewRoomName,
     };
   },
-}));
-vi.mock("@/core/editor/document-session-registry", () => ({
-  getDocumentSessionRegistry: () => ({
-    get: (documentId: string) => {
-      if (!docUpdateHandlers.has(documentId)) {
-        docUpdateHandlers.set(documentId, new Set());
-      }
-      return {
-        document: {
-          on: (event: string, handler: () => void) => {
-            if (event !== "update") return;
-            docUpdateHandlers.get(documentId)?.add(handler);
-          },
-          off: (event: string, handler: () => void) => {
-            if (event !== "update") return;
-            docUpdateHandlers.get(documentId)?.delete(handler);
-          },
-        },
-      };
-    },
-    getRoom: (roomName: string) => ({
-      document: {
-        on: (event: string, handler: () => void) => {
-          if (event !== "update") return;
-          docUpdateHandlers.get(roomName)?.add(handler);
-        },
-        off: (event: string, handler: () => void) => {
-          if (event !== "update") return;
-          docUpdateHandlers.get(roomName)?.delete(handler);
-        },
-      },
-    }),
-    has: (documentId: string) => docUpdateHandlers.has(documentId),
-  }),
 }));
 
 const { DraftReviewBoundary, DraftReviewProvider, useDraftReview, useDraftReviewScopeValue } =
@@ -127,7 +185,8 @@ const { DraftReviewBoundary, DraftReviewProvider, useDraftReview, useDraftReview
 function SetActiveEditorDocument({ documentId }: { documentId: string }) {
   const { setActiveEditorDocumentId } = useDraftReview();
   useEffect(() => {
-    setActiveEditorDocumentId(documentId);
+    setActiveEditorDocumentId(documentId, sessionFor(documentId) as never);
+    return () => setActiveEditorDocumentId(null);
   }, [documentId, setActiveEditorDocumentId]);
   return null;
 }
@@ -189,6 +248,7 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     fetchQueryMock.mockReset();
     getQueryDataMock.mockReset();
     applyDraftMetadataMock.mockClear();
+    acknowledgeServerAppliedMock.mockClear();
     discardDraftMock.mockClear();
     exitReviewMock.mockClear();
     docUpdateHandlers.clear();
@@ -196,6 +256,9 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     currentInlineReview = null;
     currentReviewRoomName = null;
     currentTabIsDraftOnly = false;
+    hasRemoteWitness = false;
+    recordServerAppliedMock.mockClear();
+    discardRemoteDraftWitnessMock.mockClear();
     controllerMounts = 0;
     controllerUnmounts = 0;
     queriedWorkIds = [];
@@ -260,10 +323,11 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     });
   });
 
-  it("commits a draft-only tab when a remotely accepted draft vanishes", async () => {
+  it("leaves remote Apply settlement to the account disposition owner", async () => {
     currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
     currentGroups = [activeGroup()];
     currentTabIsDraftOnly = true;
+    hasRemoteWitness = true;
     getQueryDataMock.mockReturnValue([]);
     fetchQueryMock.mockResolvedValue(contextTreeResponse(true));
 
@@ -271,7 +335,29 @@ describe("DraftReviewProvider live lineage invalidation", () => {
       currentGroups = [];
       await act(async () => rerenderProvider?.());
 
-      expect(applyDraftMetadataMock).toHaveBeenCalledWith("project-1", "work-1", "doc-terminal");
+      expect(applyDraftMetadataMock).not.toHaveBeenCalled();
+      expect(acknowledgeServerAppliedMock).not.toHaveBeenCalled();
+      expect(recordServerAppliedMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("classifies a witnessed remote Apply after the inline observer is gone", async () => {
+    currentGroups = [activeGroup()];
+    currentTabIsDraftOnly = true;
+    hasRemoteWitness = true;
+    getQueryDataMock.mockReturnValue([]);
+    fetchQueryMock.mockResolvedValue(contextTreeResponse(true));
+
+    await withReactRoot(<ProviderHarness />, async () => {
+      currentGroups = [];
+      await act(async () => rerenderProvider?.());
+
+      expect(recordServerAppliedMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "remote-new-document-manifest",
+          manifestDocumentId: "doc-terminal",
+        }),
+      );
     });
   });
 
@@ -279,6 +365,7 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
     currentGroups = [activeGroup()];
     currentTabIsDraftOnly = true;
+    hasRemoteWitness = true;
     getQueryDataMock.mockReturnValue([]);
     fetchQueryMock.mockResolvedValue(contextTreeResponse(false));
 
@@ -294,6 +381,7 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
     currentGroups = [activeGroup()];
     currentTabIsDraftOnly = true;
+    hasRemoteWitness = true;
     getQueryDataMock.mockReturnValue([]);
     fetchQueryMock.mockRejectedValue(new Error("offline"));
 
@@ -310,6 +398,7 @@ describe("DraftReviewProvider live lineage invalidation", () => {
     currentInlineReview = { documentId: "doc-terminal", draftId: "draft-terminal" };
     currentGroups = [activeGroup()];
     currentTabIsDraftOnly = true;
+    hasRemoteWitness = true;
     getQueryDataMock.mockReturnValue(activeGroup().drafts);
     fetchQueryMock.mockResolvedValue(contextTreeResponse(false));
 
@@ -393,29 +482,47 @@ function activeGroup(): ThreadDraftGroup {
 }
 
 function contextTreeResponse(materialized: boolean) {
+  const scope = { kind: "project" as const, projectId: "project-1" };
+  const source = {
+    kind: "source" as const,
+    entryId: "source-1",
+    scope,
+    scheme: "manuscript" as const,
+    name: "Manuscript",
+    uri: "manuscript://",
+  };
   return {
-    projectId: "project-1",
-    scheme: "manuscript",
-    tree: {
-      kind: "dir",
-      name: "Manuscript",
-      path: "/",
-      uri: "manuscript://",
-      children: materialized
-        ? [
-            {
-              kind: "file",
-              documentId: "doc-terminal",
-              name: "terminal.md",
-              path: "/terminal.md",
-              uri: "manuscript://terminal.md",
-              provisionalName: false,
-              editable: true,
-              filetype: "markdown",
-              schemaType: "prosemirror",
-            },
-          ]
-        : [],
-    },
+    scope,
+    generation: "generation-1",
+    headRevision: "1",
+    cursor: "cursor-1",
+    entries: new Map<string, CatalogEntry>([
+      [source.entryId, source],
+      ...(materialized
+        ? ([
+            [
+              "doc-terminal",
+              {
+                kind: "file" as const,
+                entryId: "doc-terminal",
+                scope,
+                sourceId: source.entryId,
+                parentId: source.entryId,
+                name: "terminal.md",
+                aliases: [],
+                path: ["terminal.md"],
+                uri: "manuscript://terminal.md",
+                editable: true as const,
+                filetype: "markdown" as const,
+                schemaType: "document" as const,
+                provisionalName: false,
+              },
+            ],
+          ] as const)
+        : []),
+    ]),
+    invalidatedEntryIds: new Set<string>(),
+    childIdsByParentId: new Map([[source.entryId, materialized ? ["doc-terminal"] : []]]),
+    sourceIdsByScheme: new Map([["manuscript", source.entryId]]),
   };
 }

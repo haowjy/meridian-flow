@@ -1,4 +1,4 @@
-import type { ProjectId, UserId, WorkId } from "@meridian/contracts";
+import type { ProjectId, UserId } from "@meridian/contracts";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -10,7 +10,7 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
-import { projects, works } from "./content";
+import { projects } from "./content";
 import { users } from "./users";
 
 export const projectUserPreferences = pgTable(
@@ -24,9 +24,6 @@ export const projectUserPreferences = pgTable(
       .$type<ProjectId>()
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    newChatFallbackWorkId: uuid("new_chat_fallback_work_id")
-      .$type<WorkId>()
-      .references(() => works.id, { onDelete: "set null" }),
     threadGroupBy: text("thread_group_by").notNull().default("work"),
     pinnedThreadIds: text("pinned_thread_ids").array().notNull().default(sql`'{}'::text[]`),
     defaultAgentSlug: text("default_agent_slug"),

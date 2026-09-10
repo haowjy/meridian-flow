@@ -8,9 +8,8 @@ import {
 } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import { parseRequestId } from "@meridian/contracts/request-id";
 
-export type ContextUri = Omit<ParsedContextUri, "path" | "canonical"> & {
+export type ContextUri = Omit<ParsedContextUri, "path"> & {
   path: string;
 };
 
@@ -32,17 +31,15 @@ export function parseContextUri(uri: string): ContextUri | null {
 export function contextUriFromWritePath(path: string): string {
   const parsed = parseUnifiedContextUri(path);
   return parsed.ok
-    ? parsed.value.canonical
+    ? parsed.value.normalized
     : canonicalContextUri("manuscript", path.replace(/^\/+/, ""));
 }
 
 export function contextRouteTargetFromUri(
   uri: string,
   activeWork: ActiveWorkHandle | null,
+  availableWorks: readonly ActiveWorkHandle[] = activeWork ? [activeWork] : [],
 ): ParsedContextUriTarget | null {
-  const persisted = persistedWorkRouteTarget(uri, activeWork);
-  if (persisted !== undefined) return persisted;
-
   const parsed = parseContextUri(uri);
   if (!parsed) return null;
 
@@ -50,31 +47,23 @@ export function contextRouteTargetFromUri(
     return { scheme: parsed.scheme, path: parsed.path, workId: null };
   }
 
-  // URI navigation never changes the displayed Work. A qualifier is routable
-  // here only when it names that already-active Work.
-  if (!activeWork || (parsed.authority && parsed.authority !== activeWork.slug)) return null;
-  return { scheme: parsed.scheme, path: parsed.path, workId: activeWork.id };
+  if (parsed.authority.kind === "none") {
+    return { scheme: parsed.scheme, path: parsed.path, workId: null };
+  }
+  if (parsed.authority.kind === "contextual") {
+    return { scheme: parsed.scheme, path: parsed.path, workId: activeWork?.id ?? null };
+  }
+  const requestedSlug = parsed.authority.workSlug;
+  const qualified = availableWorks.find(({ slug }) => slug === requestedSlug);
+  return qualified ? { scheme: parsed.scheme, path: parsed.path, workId: qualified.id } : null;
 }
 
-/** Stable persisted context locations use Work IDs, not the LLM-facing `@slug` grammar. */
-function persistedWorkRouteTarget(
+export function canOpenContextUri(
   uri: string,
   activeWork: ActiveWorkHandle | null,
-): ParsedContextUriTarget | null | undefined {
-  const match = uri.trim().match(/^(scratch|uploads):\/\/([^/]+)(?:\/(.*))?$/);
-  if (!match) return undefined;
-  const workId = parseRequestId(match[2]);
-  if (!workId) return undefined;
-  if (!activeWork || workId !== activeWork.id) return null;
-  return {
-    scheme: match[1] as ProjectContextTreeScheme,
-    path: formatContextPath(match[3] ?? ""),
-    workId,
-  };
-}
-
-export function canOpenContextUri(uri: string, activeWork: ActiveWorkHandle | null): boolean {
-  return contextRouteTargetFromUri(uri, activeWork) !== null;
+  availableWorks?: readonly ActiveWorkHandle[],
+): boolean {
+  return contextRouteTargetFromUri(uri, activeWork, availableWorks) !== null;
 }
 
 function formatContextPath(value: string): string {

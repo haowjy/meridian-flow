@@ -18,6 +18,8 @@ export const MAX_EVENT_RECORD_BYTES = 8 * 1_024;
 /** Metric keys whose names collide with the sensitive pattern may carry only finite numbers. */
 const SAFE_METRIC_KEYS = new Set(["firstOutputMs", "inputTokens", "outputTokens"]);
 const SAFE_PAYLOAD_IDENTIFIER_KEYS = new Set([
+  "callbackKind",
+  "commandId",
   "deletedNodeTypes",
   "documentId",
   "documentIds",

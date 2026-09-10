@@ -2,11 +2,20 @@
 
 ## Key invariants
 
-- **Block hash = the live `Y.XmlElement`'s CRDT item ID** (assigned at element
-  creation). Stable across content edits of that element, and across **neighbor**
-  insert/delete shifts (insert/delete preserve relative order, so y-prosemirror's
-  prefix/suffix matching leaves untouched blocks' item ids intact). Lost on type
-  change or deletion (new element → new ID).
+“Live” and “canonical” below mean the document supplied by this core's
+coordinator. A host may supply a branch rather than the published document.
+The memory-only runtime replica is distinct from that host-owned branch.
+
+- **Block identity and display address are different.** Canonical identity is the
+  Yjs item tuple `{ clientID, clock }`, assigned when the `Y.XmlElement` is
+  created. It survives supported content edits and neighbor insert/delete shifts;
+  type replacement or deletion loses that element identity. Full hash material
+  is derived deterministically from the tuple. The agent-visible hash is its
+  shortest currently sibling-unique prefix (minimum four characters), so a
+  colliding sibling can lengthen it and removal can shorten it. A held prefix
+  works only while lookup remains unique. Durable Trail/navigation records use
+  the item tuple with document identity, not the display prefix; content is
+  separate evidence.
 
 - **In-place block reorder is NOT a supported operation — by policy.** y-prosemirror
   reconciles a same-order-breaking change (a drag/move) by *position*: it keeps each
@@ -29,8 +38,8 @@ scope. `replace({ find, content: "" })` remains exact text-span deletion, while
 an empty scope-only `replace` is rejected so an empty-string sentinel cannot be
 confused with structural deletion.
 
-Scope addresses are view-scoped; durable identity is the full CRDT item hash and
-its content. When canonical state advances, the runtime rebuilds and resolves the
+Scope addresses are view-scoped; durable identity is the CRDT item tuple within
+its document, with content recorded separately as evidence. When canonical state advances, the runtime rebuilds and resolves the
 writer-requested command against the current document instead of requiring a
 reread. A missing target returns ordinary `not_found`. Any wrong-target residual
 is visible in the result receipt and recoverable through durable undo lineage;
@@ -38,7 +47,10 @@ target uncertainty never becomes an approval or refusal gate on the writer's
 instruction.
 
 - **Markup round-trip stability.** Arbitrary markdown/MDX normalizes on first
-  parse. Repeated serialize → parse cycles produce identical output.
+  parse. Repeated serialize → parse cycles produce identical canonical output
+  for supported content. This preserves document semantics, not Yjs item IDs,
+  tombstones, state vectors, or history; never reconstruct an existing replica
+  from Markdown as a merge strategy.
 - **Public mutations stay at turn/tool seams.** Low-level mutators
   (`applyTextEdit`, `insertBlocks`, etc.) are not exported from the package
   root; callers mutate through `write()` or the write-level undo/redo seams.
@@ -118,8 +130,10 @@ going blind to a concurrent human edit.
   redo, and write errors return `meridian.agent-edit.v1`. Provider adapters
   JSON-stringify that object; no provider receives the internal diagnostic
   hashline stream or a parallel compatibility rendering.
-- **Mangled-but-intact.** Two edits to the same span CRDT-merge at character level
-  → garbled but never lost. The model is **told** via the echo, never prevented.
+- **Convergence is not intent preservation.** Two edits to the same span can CRDT-merge at character level
+  into garbled prose. Convergence does not guarantee intent preservation or that
+  every concurrent word remains visible. The model is **told** via the echo,
+  never prevented.
   Whole-document overwrite preserves this behavior for positional same-type
   counterparts, including complex blocks. Shrinking deletes unmatched parents,
   and shrink plus a block-type change can still lose all concurrent text nested

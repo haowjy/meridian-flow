@@ -7,15 +7,14 @@ export async function recordWriterWorkSwitchNotice(
   transition: RebindThreadWorkResult,
 ): Promise<void> {
   if (!transition.changed) return;
-  const previousWorkName = transition.receipt.before?.name;
-  if (!previousWorkName) throw new Error("Work switch receipt is missing its previous name");
+  if (transition.before.kind === "none" || transition.after.kind === "none") return;
   await notices.record(
     createWriterWorkSwitchedNotice({
       threadId: transition.threadId,
-      previousWorkId: transition.previousWorkId,
-      previousWorkName,
-      workId: transition.work.id,
-      workName: transition.work.name,
+      previousWorkId: transition.before.workId,
+      previousWorkName: transition.before.name,
+      workId: transition.after.workId,
+      workName: transition.after.name,
     }),
   );
 }

@@ -1,7 +1,6 @@
 /** Canonical HTML spelling for every table, including block-capable cells. */
 
 import type { Mark, Node as PMNode } from "prosemirror-model";
-
 import { inlineContentToMdast, type MdastInline, rawTextForAst } from "../../helpers.js";
 import { getRuntime } from "../../runtime.js";
 import type { ParseContext, SerializeContext } from "../../types.js";
@@ -15,6 +14,7 @@ import {
   type HtmlNode,
   parseHtml,
 } from "../html-tag.js";
+import { formatWikilink } from "../wikilink-target.js";
 import { imageNodeFromAttributes } from "./image.js";
 import { imageHtmlTag, parseRawImageHtmlAttributes } from "./image-html.js";
 
@@ -474,7 +474,7 @@ function inlineNodeToHtml(node: MdastInline): string {
     }
     case "wikiLink": {
       const link = node as { target: string; children: MdastInline[] };
-      return `<a href="${escapeHtmlAttribute(`[[${link.target}]]`)}">${inlineToHtml(
+      return `<a href="${escapeHtmlAttribute(formatWikilink(link.target))}">${inlineToHtml(
         link.children,
       )}</a>`;
     }
@@ -485,7 +485,7 @@ function inlineNodeToHtml(node: MdastInline): string {
         children: MdastInline[];
       };
       const title = link.title === null ? "" : ` title="${escapeHtmlAttribute(link.title)}"`;
-      return `<a href="${escapeHtmlAttribute(`[[${link.target}]]`)}"${title}>${inlineToHtml(
+      return `<a href="${escapeHtmlAttribute(formatWikilink(link.target))}"${title}>${inlineToHtml(
         link.children,
       )}</a>`;
     }
@@ -497,7 +497,7 @@ function inlineNodeToHtml(node: MdastInline): string {
     }
     case "wikiLinkImage": {
       const image = node as { target: string; alt: string | null; title: string | null };
-      return imageHtmlTag({ ...image, url: `[[${image.target}]]`, width: null });
+      return imageHtmlTag({ ...image, url: formatWikilink(image.target), width: null });
     }
     // Sized pictures have already escalated to their own HTML tag.
     case "html":

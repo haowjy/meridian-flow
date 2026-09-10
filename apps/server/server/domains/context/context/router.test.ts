@@ -1,9 +1,14 @@
 /** Context router metadata propagation at the adapter-to-public-port boundary. */
 import { describe, expect, it, vi } from "vitest";
 import { Err, Ok } from "../../../shared/result.js";
+import { testWorkSlug } from "../../../test-support/work-slug.js";
+import { resolvedWorkAuthority } from "../../projects/domain/work-authority.js";
 import { type ContextSchemeAdapter, schemeCapabilities } from "../ports/context-adapter.js";
 import type { ContextScheme } from "../ports/context-port.js";
 import { createContextPortRouter } from "./router.js";
+
+const authority = (workId: string, slug: string) =>
+  resolvedWorkAuthority({ kind: "work", workId, workSlug: testWorkSlug(slug) });
 
 function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
   return {
@@ -45,8 +50,11 @@ function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
       commitPreparedMove: vi.fn(async (prepared) =>
         Ok({ movedNodeId: prepared.source.nodeId, path: prepared.destinationPath }),
       ),
-      commitPreparedDelete: vi.fn(async (token) =>
-        Ok({ deletedDocumentIds: token.kind === "file" ? [token.nodeId] : [] }),
+      commitRecursiveDelete: vi.fn(async (command) =>
+        Ok({
+          deletedDocumentIds: command.root.kind === "file" ? [command.root.nodeId] : [],
+          availabilityGeneration: "7",
+        }),
       ),
     },
   } as unknown as ContextSchemeAdapter;
@@ -72,6 +80,7 @@ describe("context router listings", () => {
     } as unknown as ContextSchemeAdapter;
     const port = createContextPortRouter({
       adapters: new Map([["manuscript", adapter]]),
+      workAuthorities: new Map(),
     });
 
     await expect(port.list("manuscript://")).resolves.toMatchObject({
@@ -88,22 +97,28 @@ describe("context router deletion receipts", () => {
     [{ kind: "file" as const, documentId: "document-old" }, "empty"],
   ])("rejects a stale initiating target %#", async (expected, path) => {
     const adapter = writableAdapter("manuscript");
-    const port = createContextPortRouter({ adapters: new Map([["manuscript", adapter]]) });
+    const port = createContextPortRouter({
+      adapters: new Map([["manuscript", adapter]]),
+      workAuthorities: new Map(),
+    });
 
     await expect(port.delete(`manuscript://${path}`, { expected })).resolves.toEqual({
       ok: false,
       error: { code: "stale_target", uri: `manuscript://${path}` },
     });
-    expect(adapter.tree?.commitPreparedDelete).not.toHaveBeenCalled();
+    expect(adapter.tree?.commitRecursiveDelete).not.toHaveBeenCalled();
   });
 
   it("reports a replacement that wins after inspection as a stale target", async () => {
     const adapter = writableAdapter("manuscript");
     if (!adapter.tree) throw new Error("writable test adapter must provide tree mutations");
-    vi.spyOn(adapter.tree, "commitPreparedDelete").mockResolvedValueOnce(
+    vi.spyOn(adapter.tree, "commitRecursiveDelete").mockResolvedValueOnce(
       Err({ code: "stale_source" }),
     );
-    const port = createContextPortRouter({ adapters: new Map([["manuscript", adapter]]) });
+    const port = createContextPortRouter({
+      adapters: new Map([["manuscript", adapter]]),
+      workAuthorities: new Map(),
+    });
 
     await expect(
       port.delete("manuscript://old.md", {
@@ -118,6 +133,7 @@ describe("context router deletion receipts", () => {
   it("preserves the committed file identity", async () => {
     const port = createContextPortRouter({
       adapters: new Map([["manuscript", writableAdapter("manuscript")]]),
+      workAuthorities: new Map(),
     });
 
     await expect(
@@ -129,6 +145,7 @@ describe("context router deletion receipts", () => {
       value: {
         status: "deleted",
         deletedDocumentIds: ["document-old"],
+        availabilityGeneration: "7",
       },
     });
   });
@@ -136,6 +153,7 @@ describe("context router deletion receipts", () => {
   it("acknowledges an empty-folder deletion without document identities", async () => {
     const port = createContextPortRouter({
       adapters: new Map([["manuscript", writableAdapter("manuscript")]]),
+      workAuthorities: new Map(),
     });
 
     await expect(
@@ -145,6 +163,7 @@ describe("context router deletion receipts", () => {
       value: {
         status: "deleted",
         deletedDocumentIds: [],
+        availabilityGeneration: "7",
       },
     });
   });
@@ -180,13 +199,13 @@ describe("context router Work slug resolution", () => {
     const sibling = workAdapter(SIBLING_ID);
     return createContextPortRouter({
       adapters: new Map([["scratch", primary]]),
-      primaryWorkId: PRIMARY_ID,
+      primaryWorkAuthority: authority(PRIMARY_ID, "drafting"),
       workAuthorities: new Map([
-        ["drafting", PRIMARY_ID],
-        ["revision-pass", SIBLING_ID],
+        [testWorkSlug("drafting"), authority(PRIMARY_ID, "drafting")],
+        [testWorkSlug("revision-pass"), authority(SIBLING_ID, "revision-pass")],
       ]),
-      resolveWorkAdapters: (workId) =>
-        new Map([["scratch", workId === SIBLING_ID ? sibling : primary]]),
+      resolveWorkAdapters: (resolved) =>
+        new Map([["scratch", resolved.workId === SIBLING_ID ? sibling : primary]]),
     });
   }
 
@@ -194,11 +213,11 @@ describe("context router Work slug resolution", () => {
     const context = port();
     await expect(context.read("scratch://@revision-pass/notes.md")).resolves.toEqual({
       ok: true,
-      value: { content: SIBLING_ID },
+      value: { content: SIBLING_ID, uri: "scratch://@revision-pass/notes.md" },
     });
     await expect(context.write("scratch://@revision-pass/notes.md", "revised")).resolves.toEqual({
       ok: true,
-      value: { documentId: SIBLING_ID },
+      value: { documentId: SIBLING_ID, uri: "scratch://@revision-pass/notes.md" },
     });
   });
 
@@ -215,10 +234,10 @@ describe("context router Work slug resolution", () => {
     });
   });
 
-  it("returns stable Work IDs in canonical URIs rather than persistable slugs", async () => {
+  it("returns stable Work slugs in canonical URIs", async () => {
     await expect(port().list("scratch://@revision-pass")).resolves.toMatchObject({
       ok: true,
-      value: [{ uri: `scratch://${SIBLING_ID}/notes.md` }],
+      value: [{ uri: `scratch://@revision-pass/notes.md` }],
     });
   });
 
@@ -228,7 +247,7 @@ describe("context router Work slug resolution", () => {
       error: {
         code: "invalid_uri",
         uri: "scratch://notes/@evil.md",
-        reason: 'File and folder names cannot begin with "@" (@evil.md)',
+        reason: 'Path segments beginning with "@" are reserved',
       },
     });
   });
@@ -251,9 +270,9 @@ describe("context router untitled identity recovery", () => {
     } as unknown as ContextSchemeAdapter;
     const port = createContextPortRouter({
       adapters: new Map([["scratch", scratch]]),
-      adapterAuthorities: new Map([["scratch", "work-1"]]),
-      primaryWorkId: "work-1",
-      workAuthorities: new Map([["primary", "work-1"]]),
+      adapterAuthorities: new Map([["scratch", authority("work-1", "primary")]]),
+      primaryWorkAuthority: authority("work-1", "primary"),
+      workAuthorities: new Map([[testWorkSlug("primary"), authority("work-1", "primary")]]),
       resolveWorkAdapters: () => new Map([["scratch", scratch]]),
     });
 
@@ -295,7 +314,7 @@ describe("context router untitled identity recovery", () => {
     } as unknown as ContextSchemeAdapter;
     const port = createContextPortRouter({
       adapters: new Map([["manuscript", manuscript]]),
-      workAuthorities: new Map([["secondary", "work-2"]]),
+      workAuthorities: new Map([[testWorkSlug("secondary"), authority("work-2", "secondary")]]),
       resolveWorkAdapters: () => new Map([["scratch", scratch]]),
     });
 
@@ -333,8 +352,8 @@ describe("context router scheme creation capabilities", () => {
           ["scratch", scratch],
           ["uploads", uploads],
         ]),
-        workAuthorities: new Map([["current", workId]]),
-        primaryWorkId: workId,
+        workAuthorities: new Map([[testWorkSlug("current"), authority(workId, "current")]]),
+        primaryWorkAuthority: authority(workId, "current"),
       }),
     };
   }
@@ -355,6 +374,18 @@ describe("context router scheme creation capabilities", () => {
     });
     expect(uploads.createTrackedDocument).not.toHaveBeenCalled();
     expect(uploads.mkdir).not.toHaveBeenCalled();
+  });
+
+  it("admits only reserved tracked upload identity through the intake seam", async () => {
+    const { port, uploads } = createPort();
+    await expect(
+      port.createTrackedDocument("uploads://@current/notes.md", "notes", {
+        documentId: "00000000-0000-4000-8000-000000000001",
+      }),
+    ).resolves.toEqual({ ok: true, value: { documentId: "document-new" } });
+    expect(uploads.createTrackedDocument).toHaveBeenCalledWith("notes.md", "notes", {
+      documentId: "00000000-0000-4000-8000-000000000001",
+    });
   });
 
   it("allows file and directory creation in scratch", async () => {
@@ -380,7 +411,7 @@ describe("context router scheme creation capabilities", () => {
       ok: false,
       error: {
         code: "invalid_operation",
-        uri: `uploads://${workId}/old.md`,
+        uri: "uploads://@current/old.md",
         message: expect.stringContaining("scratch://"),
       },
     });
@@ -388,7 +419,7 @@ describe("context router scheme creation capabilities", () => {
       port.commitWriterLocation(`scratch://@current/old.md`, `uploads://@current/old.md`),
     ).resolves.toMatchObject({
       ok: false,
-      error: { code: "invalid_operation", uri: `uploads://${workId}/old.md` },
+      error: { code: "invalid_operation", uri: "uploads://@current/old.md" },
     });
     await expect(
       port.move(`uploads://@current/old.md`, `uploads://@current/renamed.md`),
@@ -410,7 +441,7 @@ describe("context router scheme creation capabilities", () => {
 
     await expect(port.writeBinary(`uploads://@current/cover.png`, options)).resolves.toEqual({
       ok: true,
-      value: { documentId: "binary-new" },
+      value: { documentId: "binary-new", uri: "uploads://@current/cover.png" },
     });
     expect(uploads.writeBinary).toHaveBeenCalledOnce();
   });
@@ -430,7 +461,7 @@ describe("context router scheme creation capabilities", () => {
       ok: false,
       error: {
         code: "invalid_operation",
-        uri: `uploads://${workId}/nest/deep.png`,
+        uri: "uploads://@current/nest/deep.png",
         message: expect.stringMatching(/flat files.+folders are not available/i),
       },
     });
@@ -448,7 +479,7 @@ describe("context router scheme creation capabilities", () => {
 
     await expect(port.writeBinary(`scratch://@current/nest/deep.png`, options)).resolves.toEqual({
       ok: true,
-      value: { documentId: "binary-new" },
+      value: { documentId: "binary-new", uri: "scratch://@current/nest/deep.png" },
     });
     expect(scratch.writeBinary).toHaveBeenCalledWith("nest/deep.png", options);
   });

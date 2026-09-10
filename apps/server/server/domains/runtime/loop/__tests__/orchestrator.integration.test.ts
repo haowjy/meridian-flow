@@ -9,6 +9,7 @@ import { EventType } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { JsonValue, OrchestratorEvent } from "@meridian/contracts/threads";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { testWorkSlug } from "../../../../test-support/work-slug.js";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
 import { createInMemoryProjectRepository } from "../../../projects/index.js";
 import { deriveJournalTurnId } from "../../../threads/domain/journal-turn-id.js";
@@ -128,7 +129,15 @@ describe("runtime loop integration", () => {
                       text: "<work_context>\ncurrent: target-work\n</work_context>",
                       current: {
                         projectId: "00000000-0000-0000-0000-000000000001",
-                        workId: "00000000-0000-0000-0000-000000000002",
+                        execution: {
+                          scope: {
+                            kind: "work",
+                            workId: "00000000-0000-0000-0000-000000000002",
+                            workSlug: testWorkSlug("test-work"),
+                          },
+                          aiWriteMode: "direct",
+                          draftOwner: null,
+                        },
                       },
                     };
                   },
@@ -1112,7 +1121,15 @@ describe("runtime loop integration", () => {
                 text: "<work_context>current: target</work_context>",
                 current: {
                   projectId: "00000000-0000-0000-0000-000000000001",
-                  workId: "00000000-0000-0000-0000-000000000002",
+                  execution: {
+                    scope: {
+                      kind: "work",
+                      workId: "00000000-0000-0000-0000-000000000002",
+                      workSlug: testWorkSlug("test-work"),
+                    },
+                    aiWriteMode: "direct",
+                    draftOwner: null,
+                  },
                 },
               };
             },

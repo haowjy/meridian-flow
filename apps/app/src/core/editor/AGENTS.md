@@ -85,10 +85,22 @@ change-trail events, not manuscript content.
   the kernel keymap, and the catalog fence for every lane; `/` and `[[` each
   declare a spec (char, envelope predicate, matches, row projection, choice) and
   nothing else, so a third trigger is a spec rather than a third copy of the
-  lifecycle. The presentation-neutral half — the open-menu store and the document
-  catalog's ranking — sits in [`../completion/`](../completion/AGENTS.md) rather
-  than here, because the chat composer completes references into a textarea and
-  must not import the editor to do it. See
+  lifecycle. The presentation-neutral half — the generation-fenced suggestion
+  lifecycle and the document catalog's ranking — sits in
+  [`../completion/`](../completion/AGENTS.md) rather than here, because another
+  host must not import the editor to complete a reference. Each lane spec
+  creates one `SuggestionDriver`; extension storage owns that driver, while the
+  TipTap transport forwards frames and owns only the plugin
+  and semantic host lease. Session identity and generation stay private behind
+  the driver. The TipTap adapter
+  sees interaction only through its injected `SuggestionHost`; the editor
+  adapter contributes ordinary keys to Chrome's keymap and semantic retreat to
+  Chrome's one Escape chain under one lease. Composer can place the same retreat
+  in its own precedence without importing editor Chrome. The `@` lane keeps
+  spaces inside a nonempty multiword query, but immediate whitespace after the
+  triggering `@` makes that occurrence literal; eligibility reads document text
+  so paste, composition, caret re-entry, and catalog refresh agree. Do not replace
+  that delimiter rule with `allowSpaces: false` or a Space key handler. See
   [`extensions/suggestion/suggestion-lane.ts`](extensions/suggestion/suggestion-lane.ts).
 
 - Control-surface policy is the chrome kernel's, not an extension's private

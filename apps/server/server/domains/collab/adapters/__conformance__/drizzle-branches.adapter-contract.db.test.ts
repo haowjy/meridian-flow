@@ -68,6 +68,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { createDrizzleDocumentAccess } = await import("../../../../lib/document-access.js");
     const { resolveDocumentUri } = await import("../../../context/document-uri-resolver.js");
+    const { createDrizzleProjectWorkAuthorityResolver } = await import(
+      "../../../projects/index.js"
+    );
     const { DocumentSchemaMajorMismatchError } = await import("../../domain/stale-schema.js");
     const { COLLAB_SCHEMA_VERSION, packCollabSchemaVersion } = await import(
       "@meridian/prosemirror-schema"
@@ -541,7 +544,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(contentStore.listDocuments(null)).resolves.toEqual([
         expect.objectContaining({ id: DOC_ID }),
       ]);
-      await expect(resolveDocumentUri(db, manifest.documentId)).resolves.toBeNull();
+      await expect(
+        resolveDocumentUri(db, createDrizzleProjectWorkAuthorityResolver(db), manifest.documentId),
+      ).resolves.toBeNull();
       await expect(
         contentStore.upsertDocument({
           id: "00000000-0000-4000-8000-000000000607" as never,
@@ -585,16 +590,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         fileType: "markdown",
       });
 
-      await expect(resolveDocumentUri(db, scratchDocumentId)).resolves.toBe(
-        `scratch://${WORK_ID}/lineage.md`,
-      );
+      await expect(
+        resolveDocumentUri(db, createDrizzleProjectWorkAuthorityResolver(db), scratchDocumentId),
+      ).resolves.toBe("scratch://@branch-work/lineage.md");
       await db
         .update(threadWorks)
         .set({ workId: NEXT_WORK_ID })
         .where(eq(threadWorks.threadId, THREAD_ID));
-      await expect(resolveDocumentUri(db, scratchDocumentId)).resolves.toBe(
-        `scratch://${WORK_ID}/lineage.md`,
-      );
+      await expect(
+        resolveDocumentUri(db, createDrizzleProjectWorkAuthorityResolver(db), scratchDocumentId),
+      ).resolves.toBe("scratch://@branch-work/lineage.md");
     });
 
     it("persists manifest membership as a live Yjs peer across store reload", async () => {

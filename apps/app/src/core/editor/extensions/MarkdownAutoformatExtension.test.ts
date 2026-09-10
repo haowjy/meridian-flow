@@ -9,14 +9,17 @@
  * and presses real keys through the keymap.
  */
 import { Editor } from "@tiptap/core";
-import { afterEach, describe, expect, it } from "vitest";
-
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { type CollabPair, createCollabPair } from "@/test-support/collab-editors";
 import { createStandaloneEditorExtensions } from "../config";
+import { getLinkResolution } from "../links/LinkSurfaceExtension";
 
 const live: Editor[] = [];
+const pairs: CollabPair[] = [];
 
 afterEach(() => {
   for (const editor of live.splice(0)) editor.destroy();
+  for (const pair of pairs.splice(0)) pair.destroy();
 });
 
 function openEditor(content = "<p></p>"): Editor {
@@ -296,4 +299,122 @@ describe("Backspace reverts the transform it just made", () => {
     expect(press(editor, "Backspace")).toBe(false);
     expect(outline(editor)).toBe('paragraph("prose")');
   });
+});
+
+describe("hand-typed wikilinks", () => {
+  it.each([
+    ["[[Missing chapter]]", "Missing chapter", "[[Missing chapter]]"],
+    ["[[hello | wefwef]]", " wefwef", "[[hello]]"],
+    [String.raw`[[Gate\[Map\].md|A\|B]]`, "A|B", String.raw`[[Gate\[Map\].md]]`],
+  ])("renders %s without a catalog selection", (source, label, href) => {
+    const editor = openEditor();
+    type(editor, source);
+    expect(editor.state.doc.textContent).toBe(label);
+    expect(editor.state.doc.firstChild?.firstChild?.marks[0]?.attrs.href).toBe(href);
+    type(editor, " next");
+    expect(editor.state.doc.lastChild?.lastChild?.marks).toEqual([]);
+  });
+
+  it("leaves the auto-paired source alone until the writer closes it", () => {
+    const editor = openEditor();
+    type(editor, "[[Missing|Name");
+    expect(editor.state.doc.textContent).toBe("[[Missing|Name]]");
+    expect(marksOnFirstText(editor)).toEqual([]);
+    type(editor, "]");
+    expect(marksOnFirstText(editor)).toEqual([]);
+    type(editor, "]");
+    expect(editor.state.doc.textContent).toBe("Name");
+  });
+
+  it.each([
+    "[[|Name]]",
+    "[[Missing|]]",
+    String.raw`\[[Missing]]`,
+  ])("keeps malformed or escaped source literal: %s", (source) => {
+    const editor = openEditor();
+    type(editor, source);
+    expect(marksOnFirstText(editor)).toEqual([]);
+  });
+});
+
+describe("typed wikilink editing contracts", () => {
+  it("uses the existing unresolved decoration and preserves ordinary Undo/Redo", async () => {
+    const pair = createCollabPair({ type: "doc", content: [{ type: "paragraph" }] });
+    pairs.push(pair);
+    const editor = pair.local;
+    getLinkResolution(editor)?.registerResolver(async () => null);
+    type(editor, "[[Missing|Name]");
+    const before = editor.getJSON();
+    type(editor, "]");
+    await vi.waitFor(() => {
+      expect(editor.view.dom.querySelector('a [data-link-state="unresolved"]')).not.toBeNull();
+    });
+    expect(editor.view.dom.querySelector("a")?.textContent).toBe("Name");
+    expect(editor.commands.undo()).toBe(true);
+    expect(editor.getJSON()).toEqual(before);
+    expect(editor.state.selection.from).toBe(1 + "[[Missing|Name]]".length);
+    expect(editor.commands.redo()).toBe(true);
+    expect(editor.state.doc.textContent).toBe("Name");
+  });
+
+  it("completes an unpaired closing bracket without eating following text", () => {
+    const editor = openEditor("<p>Before [[Missing|Name] after</p>");
+    editor.commands.setTextSelection(1 + "Before [[Missing|Name]".length);
+    type(editor, "]");
+    expect(editor.state.doc.textContent).toBe("Before Name after");
+    expect(editor.view.dom.querySelector("a")?.textContent).toBe("Name");
+  });
+
+  it.each([
+    "<pre><code>[[Missing|Name]</code></pre>",
+    "<p><code>[[Missing|Name]</code></p>",
+    '<p><a href="[[Old]]">[[Missing|Name]</a></p>',
+  ])("does not reinterpret source inside code or an existing link", (content) => {
+    const editor = openEditor(content);
+    editor.commands.setTextSelection(1 + "[[Missing|Name]".length);
+    type(editor, "]");
+    expect(editor.state.doc.textContent).toBe("[[Missing|Name]]");
+    expect(editor.view.dom.querySelector('a[href="[[Missing]]"]')).toBeNull();
+  });
+});
+
+it.each(["image", "hard_break"])("does not autoformat across an inline %s", (kind) => {
+  for (const prefix of ["", "Before "]) {
+    const editor = openEditor();
+    editor.commands.setContent({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: `${prefix}[[Missing|` },
+            { type: kind, ...(kind === "image" ? { attrs: { src: "asset:1", alt: "map" } } : {}) },
+            { type: "text", text: "]" },
+          ],
+        },
+      ],
+    });
+    editor.commands.setTextSelection(editor.state.doc.content.size - 1);
+    const expected = editor.state.tr.insertText("]").doc;
+    expect(() => type(editor, "]")).not.toThrow();
+    expect(editor.state.doc.eq(expected)).toBe(true);
+    expect(editor.state.doc.firstChild?.child(1).type.name).toBe(kind);
+  }
+});
+
+it("separates following typing from the collaborative conversion history", () => {
+  const pair = createCollabPair({ type: "doc", content: [{ type: "paragraph" }] });
+  pairs.push(pair);
+  const editor = pair.local;
+  type(editor, "[[Missing|Name]]");
+  type(editor, " next");
+  expect(editor.commands.undo()).toBe(true);
+  expect(editor.state.doc.textContent).toBe("Name");
+  expect(editor.view.dom.querySelector("a")?.textContent).toBe("Name");
+  expect(editor.commands.undo()).toBe(true);
+  expect(editor.state.doc.textContent).toBe("[[Missing|Name]]");
+  expect(editor.commands.redo()).toBe(true);
+  expect(editor.state.doc.textContent).toBe("Name");
+  expect(editor.commands.redo()).toBe(true);
+  expect(editor.state.doc.textContent).toBe("Name next");
 });

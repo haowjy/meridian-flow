@@ -13,6 +13,7 @@ import {
  */
 
 import { Err, Ok, type Result } from "../../../../shared/result.js";
+import type { EventSink } from "../../../observability/index.js";
 import { parseFilename, splitPath } from "../../context/paths.js";
 import type {
   ContextDocument,
@@ -26,12 +27,18 @@ import {
   CONTEXT_ROOT_DIRECTORY_ID,
   type ContextLocationToken,
   type ContextTargetExpectation,
+  type ContextTreeDeleteCommand,
   type ContextTreeDeleteResult,
   type ContextTreeMoveCommand,
   type ContextTreeMutationError,
   type ContextTreeMutationResult,
   type ContextTreeMutationStore,
 } from "../../ports/context-tree-mutation-store.js";
+import {
+  type ContextDocumentMembershipObserver,
+  createMembershipCommandId,
+  dispatchMembershipEvents,
+} from "./membership-event-dispatcher.js";
 
 type FolderRow = ContextFolder & {
   contextSourceId: string;
@@ -48,6 +55,7 @@ export interface InMemoryContextDocumentStoreBacking {
   folders: Map<string, FolderRow>;
   documents: Map<string, DocumentRow>;
   clock: { value: number };
+  availabilityGeneration: { value: bigint };
 }
 
 export interface InMemoryContextDocumentStoreOptions {
@@ -56,7 +64,12 @@ export interface InMemoryContextDocumentStoreOptions {
 }
 
 export function createInMemoryContextDocumentStoreBacking(): InMemoryContextDocumentStoreBacking {
-  return { folders: new Map(), documents: new Map(), clock: { value: 0 } };
+  return {
+    folders: new Map(),
+    documents: new Map(),
+    clock: { value: 0 },
+    availabilityGeneration: { value: 0n },
+  };
 }
 
 export function findInMemoryContextDocumentsById(
@@ -414,7 +427,14 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
   private mutationTail: Promise<void> = Promise.resolve();
   private mutatorTouchedBacking = false;
 
-  constructor(private readonly backing: InMemoryContextDocumentStoreBacking) {}
+  constructor(
+    private readonly backing: InMemoryContextDocumentStoreBacking,
+    private readonly membershipObserver?: Pick<
+      ContextDocumentMembershipObserver,
+      "documentDeleted"
+    >,
+    private readonly eventSink?: EventSink,
+  ) {}
 
   /** Test hook: runs after CAS rechecks, immediately before destructive writes. */
   setBeforeDestructiveWrite(hook: (() => void | Promise<void>) | null): void {
@@ -439,6 +459,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       folders: new Map([...this.backing.folders].map(([id, row]) => [id, { ...row }] as const)),
       documents: new Map([...this.backing.documents].map(([id, row]) => [id, { ...row }] as const)),
       clock: this.backing.clock.value,
+      availabilityGeneration: this.backing.availabilityGeneration.value,
     };
   }
 
@@ -448,6 +469,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     this.backing.documents.clear();
     for (const entry of snapshot.documents) this.backing.documents.set(...entry);
     this.backing.clock.value = snapshot.clock;
+    this.backing.availabilityGeneration.value = snapshot.availabilityGeneration;
   }
 
   private async atomic<T>(
@@ -644,29 +666,6 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     return ids;
   }
 
-  private folderHasLiveChildren(folderId: string, sourceId: string): boolean {
-    for (const folder of this.backing.folders.values()) {
-      if (
-        folder.contextSourceId === sourceId &&
-        folder.deletedAt === null &&
-        folder.parentId === folderId
-      ) {
-        return true;
-      }
-    }
-    for (const doc of this.backing.documents.values()) {
-      if (
-        doc.contextSourceId === sourceId &&
-        isContentDocumentKind(doc.kind) &&
-        doc.deletedAt === null &&
-        doc.folderId === folderId
-      ) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   async commitMove(
     input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
@@ -818,10 +817,11 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     });
   }
 
-  async commitDelete(
-    token: ContextLocationToken,
+  async commitRecursiveDelete(
+    command: ContextTreeDeleteCommand,
   ): Promise<Result<ContextTreeDeleteResult, ContextTreeMutationError>> {
-    return this.atomic(async () => {
+    const result = await this.atomic(async () => {
+      const token = command.root;
       if (token.nodeId === CONTEXT_ROOT_DIRECTORY_ID) return Err({ code: "invalid_operation" });
       const current = await this.inspect(token.sourceId, token.path);
       if (!sameLocation(current, token)) return Err({ code: "stale_source" });
@@ -835,23 +835,57 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         doc.deletedAt = now;
         doc.updatedAt = now;
         this.markMutatorWrite();
-        return Ok({ deletedDocumentIds: [doc.id] });
+        this.backing.availabilityGeneration.value += 1n;
+        return Ok({
+          deletedDocumentIds: [doc.id],
+          availabilityGeneration: String(this.backing.availabilityGeneration.value),
+        });
       }
       const folder = this.backing.folders.get(token.nodeId);
       if (!folder || folder.deletedAt !== null) return Err({ code: "stale_source" });
-      if (this.folderHasLiveChildren(folder.id, token.sourceId)) {
-        return Err({ code: "invalid_operation" });
-      }
       await this.runBeforeDestructiveWrite();
       const folderNow = this.backing.folders.get(token.nodeId);
       if (!folderNow || folderNow.deletedAt !== null) return Err({ code: "stale_source" });
-      if (this.folderHasLiveChildren(folderNow.id, token.sourceId)) {
-        return Err({ code: "invalid_operation" });
+      const subtree = this.collectSubtree(folderNow.id, token.sourceId);
+      const deletedDocumentIds = this.documentIdsInSubtree(subtree, token.sourceId).sort();
+      for (const document of this.backing.documents.values()) {
+        if (
+          document.contextSourceId === token.sourceId &&
+          document.deletedAt === null &&
+          document.folderId !== null &&
+          subtree.has(document.folderId)
+        ) {
+          document.deletedAt = now;
+          document.updatedAt = now;
+        }
       }
-      folderNow.deletedAt = now;
-      folderNow.updatedAt = now;
+      for (const folderId of subtree) {
+        const descendant = this.backing.folders.get(folderId);
+        if (!descendant || descendant.deletedAt !== null) return Err({ code: "stale_source" });
+        descendant.deletedAt = now;
+        descendant.updatedAt = now;
+      }
       this.markMutatorWrite();
-      return Ok({ deletedDocumentIds: [] });
+      this.backing.availabilityGeneration.value += 1n;
+      return Ok({
+        deletedDocumentIds,
+        availabilityGeneration: String(this.backing.availabilityGeneration.value),
+      });
     });
+    if (result.ok && this.membershipObserver) {
+      await dispatchMembershipEvents({
+        observer: {
+          documentCreated: () => undefined,
+          documentDeleted: (documentId) => this.membershipObserver?.documentDeleted(documentId),
+        },
+        events: result.value.deletedDocumentIds.map((documentId) => ({
+          method: "documentDeleted" as const,
+          documentId,
+        })),
+        commandId: createMembershipCommandId(),
+        eventSink: this.eventSink,
+      });
+    }
+    return result;
   }
 }

@@ -55,7 +55,7 @@ describe("command classification", () => {
     [{ command: "create", name: "Tournament arc" }, "work-create"],
     [{ command: "update", work: "tournament-arc" }, "work-update"],
     [{ command: "delete", work: "tournament-arc" }, "work-delete"],
-    [{ command: "switch", work: "tournament-arc" }, "work-switch"],
+    [{ command: "switch", target: { kind: "work", work: "tournament-arc" } }, "work-switch"],
   ])("reads work %o as its writer-facing command", (input, expected) => {
     expect(toolCommand(toolView({ toolName: "work", input }))).toBe(expected);
   });
@@ -73,11 +73,15 @@ describe("command classification", () => {
         workReceipt: {
           operation,
           category,
-          changed: false,
-          workId: "w1",
-          workName: "Tournament arc",
-          before: null,
-          after: null,
+          ...(category === "binding"
+            ? { before: { kind: "none" }, after: { kind: "none" } }
+            : {
+                changed: false,
+                workId: "w1",
+                workName: "Tournament arc",
+                before: null,
+                after: null,
+              }),
           inverse: null,
         },
       },

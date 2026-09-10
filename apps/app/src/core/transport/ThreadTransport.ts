@@ -7,6 +7,7 @@
  */
 import type {
   CancelTurnResponse,
+  CatalogWakeHint,
   SequencedEvent,
   WsClientMessage,
   WsGapCause,
@@ -78,6 +79,9 @@ export interface ThreadTransport {
     handlers: ThreadTransportHandlers,
     opts?: ThreadTransportSubscribeOptions,
   ): () => void;
+
+  /** Receive truth-free catalog wake hints over the existing authenticated socket. */
+  subscribeCatalog(projectId: string, listener: (hint: CatalogWakeHint) => void): () => void;
 
   /** Send a interrupt answer over the existing thread WebSocket. */
   respondInterrupt(input: InterruptRespondInput): void;

@@ -3,13 +3,9 @@
  * desktop document surface.
  */
 import { documentTitleFromUri } from "@meridian/contracts/context-uri";
-import type {
-  ProjectContextTreeDirectory,
-  ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import type { ContextTab } from "@/client/stores";
-
-import { findContextFile } from "./context-tree";
 
 export type OptimisticContextTab = { id: string; name: string };
 
@@ -30,7 +26,7 @@ export type ContextPaneState =
 export function deriveContextPaneState({
   activeTab,
   destination,
-  tree,
+  catalog,
   isFetching,
   isError,
   removalFenced,
@@ -41,7 +37,7 @@ export function deriveContextPaneState({
     scheme: ProjectContextTreeScheme;
     optimisticTab: OptimisticContextTab;
   } | null;
-  tree: ProjectContextTreeDirectory | null;
+  catalog: CatalogContextView | null;
   isFetching: boolean;
   isError: boolean;
   removalFenced: boolean;
@@ -49,8 +45,8 @@ export function deriveContextPaneState({
   if (activeTab) return { kind: "document", tab: activeTab };
   if (!destination || removalFenced) return { kind: "empty-desk" };
 
-  const routeExists = tree !== null && findContextFile(tree, destination.path) !== null;
-  if (routeExists || isFetching || (!tree && !isError)) {
+  const routeExists = catalog?.findPath(destination.path)?.kind === "file";
+  if (routeExists || isFetching || (!catalog && !isError)) {
     return { kind: "optimistic-loading", tab: destination.optimisticTab };
   }
   if (isError) return { kind: "route-error" };

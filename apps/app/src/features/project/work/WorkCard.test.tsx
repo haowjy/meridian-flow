@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
+
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { testWorkSlug } from "@/test-support/work-slug";
 import { WorkCard } from "./WorkCard";
 
 vi.mock("@lingui/core/macro", () => ({
@@ -43,7 +45,7 @@ function work(): Work {
     projectId: "project-1",
     createdByUserId: "user-1",
     name: "Draft the ascent",
-    slug: "draft-the-ascent",
+    slug: testWorkSlug("draft-the-ascent"),
     goal: "Write the trial",
     description: null,
     status: "active",
@@ -51,6 +53,7 @@ function work(): Work {
     deletedAt: null,
     lastActivityAt: "2026-08-15T00:00:00.000Z",
     aiWriteMode: "draft",
+    entityRevision: "1",
     unpushedChangeCount: 0,
     createdAt: "2026-08-15T00:00:00.000Z",
     updatedAt: "2026-08-15T00:00:00.000Z",

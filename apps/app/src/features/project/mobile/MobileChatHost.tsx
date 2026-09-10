@@ -14,6 +14,7 @@ export type MobileChatHostProps = {
   projectId: string;
   threadId: string | null;
   activeWork: Work | null;
+  availableWorks: readonly Work[];
   onSelectThread: (threadId: string) => void;
   onOpenContextTarget?: (target: ContextRouteTarget) => void;
 };
@@ -22,6 +23,7 @@ export function MobileChatHost({
   projectId,
   threadId,
   activeWork,
+  availableWorks,
   onSelectThread,
   onOpenContextTarget,
 }: MobileChatHostProps) {
@@ -31,6 +33,7 @@ export function MobileChatHost({
         projectId={projectId}
         threadId={threadId}
         activeWork={activeWork}
+        availableWorks={availableWorks}
         onSelectThread={onSelectThread}
         onOpenContextTarget={onOpenContextTarget}
       />

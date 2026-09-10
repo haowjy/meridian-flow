@@ -13,10 +13,11 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts/runtime";
+import type { ThreadExecutionContext } from "@meridian/contracts/works";
 import type { CollabSchemaVersion } from "@meridian/prosemirror-schema";
 import type * as Y from "yjs";
 import type { Result } from "../../shared/result.js";
-import type { ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
+import type { LiveAgentEditCore, ThreadPeerAgentEditCore } from "./domain/agent-edit-cores.js";
 import type {
   ActiveDraft,
   DraftApplyResult,
@@ -148,7 +149,8 @@ export type CollabTransport = {
 };
 
 export type AgentEditAccess = {
-  agentEdit(): ThreadPeerAgentEditCore;
+  /** Selects live or Work-draft mutation from the caller's frozen execution context. */
+  agentEdit(context?: ThreadExecutionContext): LiveAgentEditCore | ThreadPeerAgentEditCore;
 };
 
 export type ReverseThreadContextInput = {
@@ -244,12 +246,12 @@ export type ResponseWriteRollbackFinalizeResult = {
 export type ResponseWriteFinalizer = {
   finalizeResponseCommit(
     responseId: string,
-    ctx: { threadId: ThreadId; turnId: TurnId },
+    ctx: { threadId: ThreadId; turnId: TurnId; execution?: ThreadExecutionContext },
     beforeTransactionCommit?: (result: ResponseWriteCommitFinalizeResult) => Promise<void>,
   ): Promise<ResponseWriteCommitFinalizeResult>;
   finalizeResponseRollback(
     responseId: string,
-    ctx: { threadId: ThreadId; turnId: TurnId },
+    ctx: { threadId: ThreadId; turnId: TurnId; execution?: ThreadExecutionContext },
   ): Promise<ResponseWriteRollbackFinalizeResult>;
 };
 

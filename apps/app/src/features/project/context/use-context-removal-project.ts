@@ -1,9 +1,10 @@
 /** React subscription adapter for the framework-independent removal coordinator. */
 import { useSyncExternalStore } from "react";
-import { useContextRemovalCoordinator } from "./ContextRemovalAccountProvider";
+import { useContextRemovalCoordinator } from "./account-feature-context";
 import type { ContextRemovalProjectSnapshot } from "./context-removal-coordinator";
 
 const EMPTY_SNAPSHOT: ContextRemovalProjectSnapshot = {
+  activeWorkId: null,
   selection: { status: "none", revision: 0 },
   admitted: null,
   removalFence: null,

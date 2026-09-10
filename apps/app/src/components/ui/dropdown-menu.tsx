@@ -30,6 +30,7 @@ function DropdownMenuTrigger({
 function DropdownMenuContent({
   className,
   sideOffset = 4,
+  onPointerUpCapture,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   return (
@@ -37,6 +38,11 @@ function DropdownMenuContent({
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
+        onPointerUpCapture={(event) => {
+          onPointerUpCapture?.(event);
+          // Radix selects the row under a release even when its press opened the context menu.
+          if (event.button !== 0) event.preventDefault();
+        }}
         className={cn(
           dropdownNavigationPageClass,
           dropdownMenuContentClass,

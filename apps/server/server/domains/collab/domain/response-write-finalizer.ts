@@ -83,7 +83,9 @@ export function createResponseWriteFinalizer(input: {
 
   return {
     async finalizeResponseCommit(responseId, ctx, beforeTransactionCommit) {
-      const result = await input.agentEdit.commitResponse(responseId, {
+      const direct = ctx.execution?.draftOwner === null;
+      const core = direct ? input.liveAgentEdit : input.agentEdit;
+      const result = await core.commitResponse(responseId, {
         beforeTransactionCommit: async (commitResult) => {
           await beforeTransactionCommit?.(mapResult(commitResult));
         },
@@ -106,7 +108,12 @@ export function createResponseWriteFinalizer(input: {
             lateSweep,
           });
         }
-        await input.branches.checkpointThreadPeer(document.documentId as DocumentId, ctx.threadId);
+        if (!direct) {
+          await input.branches.checkpointThreadPeer(
+            document.documentId as DocumentId,
+            ctx.threadId,
+          );
+        }
         await input.projections.refresh(
           { documentId: document.documentId as DocumentId, threadId: ctx.threadId },
           "collab.response_finalize",
@@ -116,8 +123,12 @@ export function createResponseWriteFinalizer(input: {
     },
 
     async finalizeResponseRollback(responseId, ctx) {
-      const markRollbackPending = await input.branches.prepareFailedResponseRollback(ctx);
-      const result = await input.agentEdit.rollbackResponse(responseId);
+      const direct = ctx.execution?.draftOwner === null;
+      const markRollbackPending = direct
+        ? async () => {}
+        : await input.branches.prepareFailedResponseRollback(ctx);
+      const core = direct ? input.liveAgentEdit : input.agentEdit;
+      const result = await core.rollbackResponse(responseId);
       await markRollbackPending();
       await reverseTurn(
         {

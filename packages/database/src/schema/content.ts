@@ -87,6 +87,7 @@ export const works = pgTable(
     status: text("status").notNull().default("active"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     aiWriteMode: text("ai_write_mode").notNull().default("direct"),
+    entityRevision: bigint("entity_revision", { mode: "bigint" }).notNull().default(sql`1`),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     deletedAt: softDeleteAt(),
@@ -257,6 +258,55 @@ export const documents = pgTable(
       sql`${table.fileType} IN ('markdown', 'python', 'typescript', 'javascript', 'json', 'shell', 'yaml', 'text', 'csv', 'notebook', 'pdf', 'png', 'jpg', 'svg', 'docx', 'image', 'binary')`,
     ),
     check("documents_kind_valid", sql`${table.kind} IN ('content', 'manifest')`),
+  ],
+);
+
+export const uploadIntakes = pgTable(
+  "upload_intakes",
+  {
+    projectId: uuid("project_id")
+      .$type<ProjectId>()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    intakeId: text("intake_id").notNull(),
+    actorUserId: uuid("actor_user_id")
+      .$type<UserId>()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    workId: uuid("work_id")
+      .$type<WorkId>()
+      .references(() => works.id, { onDelete: "cascade" }),
+    contextSourceId: uuid("context_source_id")
+      .$type<ContextSourceId>()
+      .notNull()
+      .references(() => contextSources.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id").$type<DocumentId>().notNull(),
+    fingerprint: text("fingerprint").notNull(),
+    byteDigest: text("byte_digest").notNull(),
+    filename: text("filename").notNull(),
+    mimeType: text("mime_type").notNull(),
+    finalPath: text("final_path").notNull(),
+    objectKey: text("object_key").notNull(),
+    fileType: text("file_type").notNull(),
+    canonicalUri: text("canonical_uri").notNull(),
+    locationRevision: uuid("location_revision").notNull(),
+    state: text("state").notNull().default("reserved"),
+    storageUrl: text("storage_url"),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    unique("upload_intakes_project_intake_unique").on(table.projectId, table.intakeId),
+    unique("upload_intakes_document_unique").on(table.documentId),
+    uniqueIndex("upload_intakes_source_path_live")
+      .on(table.contextSourceId, sql`lower(${table.finalPath})`)
+      .where(sql`${table.state} <> 'deleted'`),
+    check(
+      "upload_intakes_state_valid",
+      sql`${table.state} IN ('reserved', 'object_stored', 'finalized', 'deleted')`,
+    ),
+    check("upload_intakes_digest_valid", sql`${table.byteDigest} ~ '^[0-9a-f]{64}$'`),
   ],
 );
 

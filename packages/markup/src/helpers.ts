@@ -552,7 +552,7 @@ function inlineMdastToMarkdown(tokens: readonly InlineToken[], ctx: SerializeCon
   );
 }
 
-function inlineMarkdownToMdast(markdown: string, ctx: SerializeContext): MdastInline[] {
+export function inlineMarkdownToMdast(markdown: string, ctx: SerializeContext): MdastInline[] {
   if (markdown.length === 0) return [];
   const root = getRuntime(ctx).parseMarkdown(markdown);
   const paragraph = root.children[0];

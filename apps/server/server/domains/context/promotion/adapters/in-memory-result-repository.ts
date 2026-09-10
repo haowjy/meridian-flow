@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type {
   CreateProjectResultInput,
   ProjectResultRecord,
@@ -7,9 +6,19 @@ import type {
 
 export class InMemoryResultRepository implements ResultRepository {
   private readonly records: ProjectResultRecord[] = [];
-  async create(input: CreateProjectResultInput): Promise<ProjectResultRecord> {
+  async createOrConverge(input: CreateProjectResultInput) {
+    const existing = this.records.find((row) => row.id === input.id);
+    if (existing) {
+      return JSON.stringify({ ...existing, createdAt: undefined }) ===
+        JSON.stringify({ ...input, createdAt: undefined })
+        ? {
+            kind: "committed" as const,
+            record: { ...existing, provenance: { ...existing.provenance } },
+          }
+        : { kind: "unknown" as const, error: "Result ID already has different payload" };
+    }
     const record: ProjectResultRecord = {
-      id: randomUUID(),
+      id: input.id,
       projectId: input.projectId,
       sourcePath: input.sourcePath,
       resultsUri: input.resultsUri,
@@ -20,7 +29,10 @@ export class InMemoryResultRepository implements ResultRepository {
       createdAt: new Date().toISOString(),
     };
     this.records.push(record);
-    return { ...record, provenance: { ...record.provenance } };
+    return {
+      kind: "committed" as const,
+      record: { ...record, provenance: { ...record.provenance } },
+    };
   }
   async listByProject(projectId: string): Promise<ProjectResultRecord[]> {
     return this.records

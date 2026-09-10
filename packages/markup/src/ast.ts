@@ -62,6 +62,7 @@ export interface MdastLink {
 export interface MdastWikiLink {
   type: "wikiLink";
   target: string;
+  label?: string;
   children: MdastInline[];
 }
 

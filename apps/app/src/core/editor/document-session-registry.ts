@@ -1,338 +1,48 @@
-/**
- * DocumentSessionRegistry — app-level owner of `DocumentSession` instances,
- * keyed by Yjs room key.
- *
- * Key decision: a session's lifecycle is driven by the union of retained
- * **open-document sets** (desktop context tabs, mobile single-file viewer),
- * NOT by any view's mount. Views are pure consumers (`get`); the session
- * survives view unmount and is destroyed only when every opener has released
- * that document from its open set, after a short grace window so rapid
- * release→retain (e.g. React strict mode) does not detach the Hocuspocus
- * provider from its room-scoped socket.
- *
- * The Hocuspocus adapter owns each room's socket; this registry owns the
- * corresponding per-room session and prevents duplicate sockets for that room.
- */
-import { parseYjsRoomName } from "@meridian/contracts/protocol";
-import type { UserId } from "@meridian/contracts/runtime";
+/** Structural, lease-qualified session-registry surfaces. */
+import type {
+  AccountId,
+  LiveDocumentSessionAuthority,
+  LiveDocumentSessionLease,
+} from "@meridian/contracts/protocol";
+import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 
-import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
+import type { DocumentSession, DocumentSessionSnapshot } from "./document-session";
 
-import { DocumentSession, type DocumentSessionSnapshot } from "./document-session";
-import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
+export type RetainedLiveDocumentReference = Readonly<{
+  projectId: ProjectId;
+  documentId: DocumentId;
+}>;
 
-/** Warn once above the soft cap; never evict a writer's open session. */
-const LIVE_DOC_SOFT_CAP = 50;
-
-/**
- * Grace window before tearing down an unretained session. Rapid
- * release→retain (React strict mode, fast navigation) cancels the timer so
- * the live provider stays attached to its socket — avoiding a stale
- * CloseMessage racing a new SyncStep1.
- */
-const SESSION_TEARDOWN_GRACE_MS = 3_000;
-
-export class DocumentSessionRegistry {
-  private ownUserId: UserId | null = null;
-  private readonly sessions = new Map<string, DocumentSession>();
-  /** opener id → Yjs room keys plus whether first acquisition must stay detached. */
-  private readonly retainedByOwner = new Map<
-    string,
-    { roomKeys: Set<string>; detachedRoomKeys: Set<string> }
-  >();
-  /** room key → pending deferred teardown timer. */
-  private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private liveDocCapWarningEmitted = false;
-  private readonly sessionObservers = new Map<
-    string,
-    Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
-  >();
-
-  /**
-   * Acquire the live session for a document, creating it (and its transport
-   * subscription) once on first request. Callers must NOT destroy the returned
-   * session — lifecycle is owned here and reconciled via {@link retain} and
-   * {@link release}.
-   */
-  get(documentId: string): DocumentSession {
-    return this.getRoom(documentId);
-  }
-
-  /**
-   * Read an existing session without acquiring lifecycle ownership. Unlike
-   * {@link get}, this neither creates a session nor cancels deferred teardown.
-   */
-  peek(roomKey: string): DocumentSession | undefined {
-    return this.sessions.get(roomKey);
-  }
-
-  /**
-   * Acquire a session for any Yjs room. The room key is the document identity:
-   * after a branch generation reset the room name changes, so this map must
-   * create exactly one Y.Doc per room name and never carry a Y.Doc across room
-   * keys. The server handshake fence assumes that client identity contract.
-   *
-   * Live rooms are bare document ids; branch review rooms are generation-fenced
-   * branch room names. Non-live rooms skip IndexedDB because their durable
-   * source of truth is server branch state.
-   */
-  getRoom(roomKey: string): DocumentSession {
-    this.cancelPendingTeardown(roomKey);
-    const existing = this.sessions.get(roomKey);
-    if (existing) return existing;
-
-    const session = this.getOrCreateRoom(roomKey);
-    this.attachSessionTransport(session);
-    return session;
-  }
-
-  /**
-   * Acquire a live session without materializing its server room. Ordinary
-   * acquisition leaves an existing detached session untouched; callers attach
-   * it explicitly with {@link attachDetached} after server creation succeeds.
-   */
-  getDetached(documentId: string): DocumentSession {
-    const room = parseYjsRoomName(documentId);
-    if (room?.kind !== "live") {
-      throw new Error(`Detached sessions require a live document id: ${documentId}`);
-    }
-    return this.getOrCreateRoom(documentId);
-  }
-
-  /** Attach transport to a detached live session without replacing its Y.Doc. */
-  attachDetached(documentId: string): DocumentSession {
-    const session = this.getDetached(documentId);
-    if (session.getSnapshot().status === "detached") this.attachSessionTransport(session);
-    return session;
-  }
-
-  private attachSessionTransport(session: DocumentSession): void {
-    if (session.getSnapshot().schemaFence) return;
-    session.attachTransport(({ roomKey, document, awareness }) =>
-      createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
-    );
-  }
-
-  private getOrCreateRoom(roomKey: string): DocumentSession {
-    const room = parseYjsRoomName(roomKey);
-    if (!room) throw new Error(`Invalid Yjs room key: ${roomKey}`);
-
-    this.cancelPendingTeardown(roomKey);
-    const existing = this.sessions.get(roomKey);
-    if (existing) return existing;
-    const session = new DocumentSession({
-      roomKey,
-      enableIndexedDb: room.kind === "live" ? undefined : false,
-      ownUserId: this.ownUserId,
-      persistSchemaFence: (fence) => {
-        writeSchemaFenceQuarantine(roomKey, fence);
-      },
-    });
-    const quarantine = readSchemaFenceQuarantine(roomKey);
-    if (quarantine) session.raiseSchemaFence(quarantine);
-    if (room.kind === "branch") {
-      session.subscribe((snapshot) => {
-        if (snapshot.connectionState?.kind !== "reset") return;
-        void session.destroy().finally(() => {
-          if (this.sessions.get(roomKey) === session) this.sessions.delete(roomKey);
-        });
-      });
-    }
-    this.sessions.set(roomKey, session);
-    for (const [observer] of this.sessionObservers.get(roomKey) ?? []) {
-      this.sessionObservers.get(roomKey)?.set(observer, session.subscribe(observer));
-    }
-    if (room.kind === "live") this.maybeWarnLiveDocCap();
-    return session;
-  }
-
-  setOwnUserId(userId: UserId): void {
-    if (this.ownUserId === userId) return;
-    // Sessions are process-local authenticated state; never retain a prior
-    // account's marker suppression identity across an account switch.
-    if (this.ownUserId !== null) {
-      this.destroyAll();
-    } else {
-      // Warm hosts can materialize a session before the authenticated layout
-      // supplies its user. Bring those stores onto the authenticated identity
-      // instead of leaving self-admission suppression permanently disabled.
-      for (const session of this.sessions.values()) session.markerStore.setOwnUserId(userId);
-    }
-    this.ownUserId = userId;
-  }
-
-  /** Whether a session currently exists for a room key. */
-  has(roomKey: string): boolean {
-    return this.sessions.has(roomKey);
-  }
-
-  /**
-   * Observe a room without opening it. The observer follows registry lifecycle,
-   * so it attaches both to an existing session and to one created later.
-   */
-  observe(roomKey: string, observer: (snapshot: DocumentSessionSnapshot) => void): () => void {
-    let observers = this.sessionObservers.get(roomKey);
-    if (!observers) {
-      observers = new Map();
-      this.sessionObservers.set(roomKey, observers);
-    }
-    observers.set(observer, this.sessions.get(roomKey)?.subscribe(observer));
-    return () => {
-      observers?.get(observer)?.();
-      observers?.delete(observer);
-      if (observers?.size === 0) this.sessionObservers.delete(roomKey);
-    };
-  }
-
-  /**
-   * Restart transport for a room whose authorization failed before the document existed.
-   * Authorization denials are terminal at the transport layer, so a newly
-   * materialized draft document needs a fresh provider rather than a normal
-   * reconnect attempt. Healthy sessions are deliberately left untouched.
-   */
-  async restartUnavailableRoom(roomKey: string): Promise<boolean> {
-    const session = this.sessions.get(roomKey);
-    if (!session) return false;
-    const snapshot = session.getSnapshot();
-    if (snapshot.schemaFence || snapshot.status === "detached") return false;
-    if (
-      snapshot.status !== "access-lost" &&
-      snapshot.connectionState?.kind !== "unauthorized" &&
-      snapshot.connectionState?.kind !== "terminal"
-    ) {
-      return false;
-    }
-
-    this.cancelPendingTeardown(roomKey);
-    await session.restartTransport(({ roomKey, document, awareness }) =>
-      createHocuspocusDocumentTransport({ roomName: roomKey, document, awareness }),
-    );
-    return true;
-  }
-
-  /**
-   * Reconcile one opener's currently-open document set.
-   *
-   * Desktop tabs and the mobile single-file route are independent openers. The
-   * registry destroys a session only after the document disappears from the
-   * UNION of every opener's retained set, which prevents one mount path from
-   * accidentally closing a session still owned by another path.
-   */
+export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthority {
+  get(lease: LiveDocumentSessionLease): DocumentSession;
+  getDetached(lease: LiveDocumentSessionLease): DocumentSession;
+  attachDetached(lease: LiveDocumentSessionLease): DocumentSession;
+  restartUnavailableRoom(lease: LiveDocumentSessionLease): Promise<boolean>;
   retain(
     ownerId: string,
-    openRoomKeys: Iterable<string>,
-    options: { detachedRoomKeys?: Iterable<string> } = {},
-  ): void {
-    this.retainedByOwner.set(ownerId, {
-      roomKeys: new Set(openRoomKeys),
-      detachedRoomKeys: new Set(options.detachedRoomKeys),
-    });
-    this.reconcileRetainedSessions();
-  }
-
-  /** Release all documents retained by one opener (typically on host unmount). */
-  release(ownerId: string): void {
-    this.retainedByOwner.delete(ownerId);
-    this.reconcileRetainedSessions();
-  }
-
-  /** Destroy every live session (e.g. on full teardown / tests). */
-  destroyAll(): void {
-    this.retainedByOwner.clear();
-    this.liveDocCapWarningEmitted = false;
-    for (const timer of this.pendingTeardownTimers.values()) {
-      clearTimeout(timer);
-    }
-    this.pendingTeardownTimers.clear();
-    for (const [id, session] of this.sessions) {
-      void session.destroy();
-      this.sessions.delete(id);
-    }
-  }
-
-  /** Remove one session from registry ownership, optionally clearing IndexedDB. */
-  async destroyRoom(roomKey: string, options: { clearPersistence?: boolean } = {}): Promise<void> {
-    this.cancelPendingTeardown(roomKey);
-    const session = this.sessions.get(roomKey);
-    if (!session) return;
-    this.sessions.delete(roomKey);
-    await session.destroy(options);
-  }
-
-  private maybeWarnLiveDocCap(): void {
-    if (this.liveDocCapWarningEmitted || this.sessions.size <= LIVE_DOC_SOFT_CAP) return;
-    this.liveDocCapWarningEmitted = true;
-    console.warn(
-      `[document-session-registry] live document session count (${this.sessions.size}) exceeds soft cap (${LIVE_DOC_SOFT_CAP})`,
-    );
-  }
-
-  private reconcileRetainedSessions(): void {
-    const keep = new Set<string>();
-    const attachOnCreate = new Set<string>();
-    for (const { roomKeys, detachedRoomKeys } of this.retainedByOwner.values()) {
-      for (const id of roomKeys) {
-        keep.add(id);
-        if (!detachedRoomKeys.has(id)) attachOnCreate.add(id);
-      }
-    }
-
-    for (const id of keep) {
-      this.cancelPendingTeardown(id);
-      if (!this.sessions.has(id)) {
-        if (attachOnCreate.has(id)) this.get(id);
-        else this.getDetached(id);
-      }
-    }
-
-    for (const id of this.sessions.keys()) {
-      if (!keep.has(id)) {
-        this.scheduleTeardown(id);
-      }
-    }
-  }
-
-  private cancelPendingTeardown(roomKey: string): void {
-    const timer = this.pendingTeardownTimers.get(roomKey);
-    if (!timer) return;
-    clearTimeout(timer);
-    this.pendingTeardownTimers.delete(roomKey);
-  }
-
-  private scheduleTeardown(roomKey: string): void {
-    if (this.pendingTeardownTimers.has(roomKey)) return;
-
-    const timer = setTimeout(() => {
-      this.pendingTeardownTimers.delete(roomKey);
-      if (this.isRetained(roomKey)) return;
-
-      const session = this.sessions.get(roomKey);
-      if (!session) return;
-      void session.destroy();
-      this.sessions.delete(roomKey);
-    }, SESSION_TEARDOWN_GRACE_MS);
-
-    this.pendingTeardownTimers.set(roomKey, timer);
-  }
-
-  private isRetained(roomKey: string): boolean {
-    for (const { roomKeys } of this.retainedByOwner.values()) {
-      if (roomKeys.has(roomKey)) return true;
-    }
-    return false;
-  }
+    leases: Iterable<LiveDocumentSessionLease>,
+    options?: { detachedDocumentIds?: Iterable<DocumentId> },
+  ): void;
+  release(ownerId: string): void;
+  observeRetainedLiveDocuments(
+    observer: (snapshot: readonly RetainedLiveDocumentReference[]) => void,
+  ): () => void;
+  peekLive(lease: LiveDocumentSessionLease): DocumentSession | undefined;
+  hasLive(lease: LiveDocumentSessionLease): boolean;
+  observeLive(
+    lease: LiveDocumentSessionLease,
+    observer: (snapshot: DocumentSessionSnapshot) => void,
+  ): () => void;
+  getBranchRoom(roomKey: string): DocumentSession;
+  retainBranchRooms(ownerId: string, roomKeys: Iterable<string>): void;
+  releaseBranchRooms(ownerId: string): void;
 }
 
-let sharedRegistry: DocumentSessionRegistry | null = null;
-
-/** The process-wide document-session registry (lazy singleton). */
-export function getDocumentSessionRegistry(): DocumentSessionRegistry {
-  if (!sharedRegistry) {
-    sharedRegistry = new DocumentSessionRegistry();
-  }
-  return sharedRegistry;
-}
-
-export function configureDocumentSessionUser(userId: UserId): void {
-  getDocumentSessionRegistry().setOwnUserId(userId);
+export interface LocalUntitledDocumentSessionFactory {
+  createDetached(input: {
+    accountId: AccountId;
+    projectId: ProjectId;
+    documentId: DocumentId;
+    persistenceKey: string;
+  }): DocumentSession;
 }

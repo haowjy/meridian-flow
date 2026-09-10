@@ -19,6 +19,7 @@ export type ChatScreenProps = {
   /** ProjectView's resolved thread. */
   threadId: string | null;
   activeWork: Work | null;
+  availableWorks: readonly Work[];
   /** Called when the user clicks the parent breadcrumb in a subagent banner. */
   onSelectThread: (threadId: string) => void;
   onOpenContextTarget?: (target: ContextRouteTarget) => void;
@@ -29,6 +30,7 @@ export function ChatScreen({
   projectId,
   threadId,
   activeWork,
+  availableWorks,
   onSelectThread,
   onOpenContextTarget,
 }: ChatScreenProps) {
@@ -57,6 +59,7 @@ export function ChatScreen({
       projectId={projectId}
       threadId={threadId}
       activeWork={activeWork}
+      availableWorks={availableWorks}
       projectThreads={projectThreads ?? []}
       onSelectThread={onSelectThread}
       onOpenContextTarget={onOpenContextTarget}
@@ -68,6 +71,7 @@ function ChatScreenLoaded({
   projectId,
   threadId,
   activeWork,
+  availableWorks,
   projectThreads,
   onSelectThread,
   onOpenContextTarget,
@@ -75,6 +79,7 @@ function ChatScreenLoaded({
   projectId: string;
   threadId: string;
   activeWork: Work | null;
+  availableWorks: readonly Work[];
   projectThreads: Thread[];
   onSelectThread: (threadId: string) => void;
   onOpenContextTarget?: (target: ContextRouteTarget) => void;
@@ -115,6 +120,7 @@ function ChatScreenLoaded({
         <ProjectChatContextNavigationProvider
           projectId={projectId}
           activeWork={activeWork}
+          availableWorks={availableWorks}
           onOpenContextTarget={onOpenContextTarget}
         >
           <ChatView

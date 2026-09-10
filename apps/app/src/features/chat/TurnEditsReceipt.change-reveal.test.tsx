@@ -29,9 +29,6 @@ vi.mock("./ChatContextNavigation", () => ({
   useChatContextNavigation: () => null,
   useChatContextRoutability: () => null,
 }));
-vi.mock("@/core/editor/document-session-registry", () => ({
-  getDocumentSessionRegistry: () => ({ observe: () => () => {} }),
-}));
 
 const mocks = vi.hoisted(() => ({ readChangeTrail: vi.fn() }));
 vi.mock("@/client/change-trails", async (importOriginal) => ({

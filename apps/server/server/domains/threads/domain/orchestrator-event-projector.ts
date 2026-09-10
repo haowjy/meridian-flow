@@ -139,7 +139,7 @@ export function createOrchestratorEventProjector() {
             value: {
               threadId: event.threadId,
               projectId: event.projectId,
-              workId: event.workId,
+              scope: event.scope,
             } satisfies WorkContextProjectionSignal,
           }),
         ];

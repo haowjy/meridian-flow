@@ -14,7 +14,7 @@ sanitizePath, contextErrorToHttp). Inline name forms share `useInlineNameForm`.
 
 Remaining from #144 — **manuscript ordering + drag-reorder:**
 
-Sibling order is derived (`tree.get.ts` `sortTree` → dirs-first,
+Sibling order is derived by the catalog projection (dirs-first, then
 `name.localeCompare`); `folders.sort_order` exists in schema but is unwired,
 and `documents` has no order column. Manual order decouples order from
 filename → explicit order field on `documents`, serializer sorts by order, a

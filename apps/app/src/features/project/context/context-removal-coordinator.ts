@@ -2,30 +2,41 @@
 
 import {
   isWorkScopedProjectContextScheme,
+  type LiveDocumentSessionAuthority,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
 import {
   type ContextTab,
-  type ProjectTabsSlice,
-  type ServerContextTab,
-  useContextTabsStore,
-} from "@/client/stores";
-import {
+  commitContextAvailability,
   commitDraftApplyMetadata,
   commitPlannedContextRemoval,
-} from "@/client/stores/context-tabs-store/context-tabs-store";
+  commitReviewOverlayClose,
+  type DraftDeskSettlementReceipt,
+  getContextTabs,
+  type ProjectTabsSlice,
+  type ReviewOverlayConsumeReceipt,
+  type ReviewOverlayTabIdentity,
+  type ServerContextTab,
+} from "@/client/stores";
 import {
   type ReconcileContextRoutesInput,
   readRecentRoutes,
   reconcileContextRoutes,
+  replaceRecentRoutes,
   workingSetRouteEquals,
 } from "@/client/working-set";
 import {
   applyContextRepairIfCurrent,
   type ContextRouteRepair,
   type ContextRouteTarget,
+  contextRouteMatchesSearch,
   type ProjectSearch,
+  projectSearchEquals,
 } from "../routing/project-route";
+import {
+  type ContextAvailabilityLocalBatchPlan,
+  planContextAvailabilityBatch,
+} from "./context-availability-effect-planner";
 import {
   type ContextRemovalIntent,
   type ContextRemovalOutcome,
@@ -39,17 +50,11 @@ import {
   workingSetRouteForTarget,
 } from "./context-removal-planner";
 import {
-  type AcknowledgedContextDeleteCommand,
-  type AcknowledgedDeleteAdmission,
   beginSelection,
   bindSelection,
-  type CommandAdmissionRecord,
-  type ContextDeleteInitiator,
   type ContextRouteSelection,
-  type InitiatingRouteWitness,
   leaveSelection,
   type RemovalPlanningEffect,
-  reduceAcknowledgedDelete,
   reduceRepresentedRemoval,
   rejectSelection,
   type SelectionTransition,
@@ -57,11 +62,24 @@ import {
   supersedeSelectionForWorkChange,
   type TerminalRouteRemoval,
 } from "./context-removal-protocol";
+import type { ProjectDocumentAvailabilityCommand } from "./project-context-availability-coordinator";
 
 type ContextRemovalWorkingSetPort = {
   readRecentRoutes(projectId: string): WorkingSetRoute[];
   reconcileContextRoutes(projectId: string, input: ReconcileContextRoutesInput): WorkingSetRoute[];
+  replaceRecentRoutes(projectId: string, routes: readonly WorkingSetRoute[]): WorkingSetRoute[];
 };
+
+export interface DraftTabMutationFencePort {
+  currentFence(input: {
+    accountId: string;
+    projectId: string;
+    workId: string;
+    documentId: string;
+    draftId: string;
+    tabInstanceToken: string;
+  }): "unfenced" | "apply-reservation-pending";
+}
 
 export type ContextRemovalRoutePort = {
   readSearch(projectId: string): ProjectSearch;
@@ -77,7 +95,20 @@ type DeskPort = {
       deskSelection?: { workId: string; documentId: string | null };
     },
   ): ContextTab[];
-  resolveDraftApply(projectId: string, reviewWorkId: string, documentId: string): void;
+  settleDraft(
+    projectId: string,
+    identity: ReviewOverlayTabIdentity,
+    disposition?: "applied" | "discarded",
+  ): Promise<DraftDeskSettlementReceipt>;
+  closeReviewTab(
+    projectId: string,
+    identity: ReviewOverlayTabIdentity,
+  ): ReviewOverlayConsumeReceipt;
+  applyAvailability(
+    projectId: string,
+    prior: ProjectTabsSlice,
+    next: ProjectTabsSlice,
+  ): Promise<void> | void;
 };
 
 type RemovalFence = {
@@ -110,17 +141,82 @@ type CoordinatorProjectState = {
 
 export type ContextRemovalProjectSnapshot = Pick<
   CoordinatorProjectState,
-  "selection" | "admitted" | "removalFence" | "transitionRevision" | "live"
+  "activeWorkId" | "selection" | "admitted" | "removalFence" | "transitionRevision" | "live"
 >;
+
+export type AppliedAvailabilityCommand = Readonly<{
+  generation: string;
+  commandId: string;
+  kind: ProjectDocumentAvailabilityCommand["kind"];
+}>;
+
+export type ContextAvailabilitySessionEffectResult =
+  | Readonly<{
+      commandId: string;
+      operation: "revoke-document" | "revoke-access";
+      status: "fulfilled";
+    }>
+  | Readonly<{
+      commandId: string;
+      operation: "revoke-document" | "revoke-access";
+      status: "rejected";
+      reason: unknown;
+    }>;
+
+export type ContextAvailabilityEffectReceipt = Readonly<{
+  committedCommandIds: readonly string[];
+  replayedCommandIds: readonly string[];
+  staleCommandIds: readonly string[];
+  localSettlement: Promise<void>;
+  sessionSettlement: Promise<readonly ContextAvailabilitySessionEffectResult[]>;
+}>;
+
+type PendingSessionAvailabilityEffect = ContextAvailabilityLocalBatchPlan["sessionEffects"][number];
 
 export type ContextRemovalLifetimeLease = {
   suspend(): void;
   resume(): void;
-  disposeIfSuspended(): void;
+  disposeIfSuspended(): boolean;
 };
 
-const EMPTY_SLICE: ProjectTabsSlice = { tabs: [], selectedTabIdByWork: {} };
+export type DraftRecoveryContextCommand = Readonly<{
+  identity: {
+    accountId: string;
+    projectId: string;
+    workId: string;
+    documentId: string;
+    draftId: string;
+  };
+  entryVersion: number;
+  dispositionToken: number;
+  disposition: "live-ready" | "writer-abandoned";
+  draftTab:
+    | { kind: "none" }
+    | {
+        kind: "draft-only";
+        reviewWorkId: string;
+        reviewDraftId: string;
+        tabInstanceToken: string;
+      };
+}>;
+
+export type DraftRecoveryContextReceipt = Readonly<{
+  kind:
+    | "metadata-resolved"
+    | "tab-removed"
+    | "already-absent"
+    | "obsolete-obligation"
+    | "not-applicable"
+    | "stale-obligation";
+  recovery: {
+    identity: DraftRecoveryContextCommand["identity"];
+    entryVersion: number;
+  };
+  dispositionToken: number;
+}>;
+
 const EMPTY_PROJECT_SNAPSHOT: ContextRemovalProjectSnapshot = {
+  activeWorkId: null,
   selection: { status: "none", revision: 0 },
   admitted: null,
   removalFence: null,
@@ -129,27 +225,33 @@ const EMPTY_PROJECT_SNAPSHOT: ContextRemovalProjectSnapshot = {
 };
 
 const productionDesk: DeskPort = {
-  read: (projectId) => useContextTabsStore.getState().byProject[projectId] ?? EMPTY_SLICE,
+  read: getContextTabs,
   commit: commitPlannedContextRemoval,
-  resolveDraftApply: commitDraftApplyMetadata,
+  settleDraft: commitDraftApplyMetadata,
+  closeReviewTab: commitReviewOverlayClose,
+  applyAvailability: commitContextAvailability,
 };
 
 const productionWorkingSet: ContextRemovalWorkingSetPort = {
   readRecentRoutes,
   reconcileContextRoutes,
+  replaceRecentRoutes,
 };
-
-function newCommandId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `delete-${Date.now()}-${Math.random()}`;
-}
 
 export class ContextRemovalCoordinator {
   private readonly projects = new Map<string, CoordinatorProjectState>();
   private readonly routePorts = new Map<string, { token: symbol; port: ContextRemovalRoutePort }>();
-  private commandAdmissions: ReadonlyMap<string, CommandAdmissionRecord> = new Map();
   private readonly fallbackRoute: ContextRemovalRoutePort | null;
   private readonly desk: DeskPort;
   private readonly workingSet: ContextRemovalWorkingSetPort;
+  private readonly sessions: LiveDocumentSessionAuthority | null;
+  private readonly draftTabFence: DraftTabMutationFencePort | null;
+  private readonly appliedAvailability = new Map<string, AppliedAvailabilityCommand>();
+  private readonly pendingSessionEffects = new Map<string, PendingSessionAvailabilityEffect>();
+  private readonly sessionEffectRuns = new Map<
+    string,
+    Promise<ContextAvailabilitySessionEffectResult>
+  >();
   private disposed = false;
   private suspended = false;
 
@@ -162,12 +264,16 @@ export class ContextRemovalCoordinator {
           desk?: DeskPort;
           workingSet?: ContextRemovalWorkingSetPort;
           route?: ContextRemovalRoutePort;
+          sessions?: LiveDocumentSessionAuthority;
+          draftTabFence?: DraftTabMutationFencePort;
         }
       | null = null,
     explicitDependencies: {
       desk?: DeskPort;
       workingSet?: ContextRemovalWorkingSetPort;
       route?: ContextRemovalRoutePort;
+      sessions?: LiveDocumentSessionAuthority;
+      draftTabFence?: DraftTabMutationFencePort;
     } = {},
   ) {
     const dependencies =
@@ -178,6 +284,8 @@ export class ContextRemovalCoordinator {
     this.desk = dependencies.desk ?? productionDesk;
     this.workingSet = dependencies.workingSet ?? productionWorkingSet;
     this.fallbackRoute = dependencies.route ?? null;
+    this.sessions = dependencies.sessions ?? null;
+    this.draftTabFence = dependencies.draftTabFence ?? null;
   }
 
   /** A reversible provider lifetime: cleanup revokes now; replay may reacquire before disposal. */
@@ -195,7 +303,9 @@ export class ContextRemovalCoordinator {
         this.suspended = false;
       },
       disposeIfSuspended: () => {
-        if (!held) this.dispose();
+        if (held) return false;
+        this.dispose();
+        return true;
       },
     };
   }
@@ -235,10 +345,7 @@ export class ContextRemovalCoordinator {
       const search = route?.readSearch(activation.projectId);
       if (
         activation.identity.kind !== "server" ||
-        search?.screen !== "context" ||
-        search.scheme !== activation.locator.scheme ||
-        search.path !== activation.locator.path ||
-        (search.work ?? null) !== activation.locator.workId
+        !contextRouteMatchesSearch(search, activation.locator, state.activeWorkId)
       ) {
         return false;
       }
@@ -259,7 +366,9 @@ export class ContextRemovalCoordinator {
     ) {
       return true;
     }
-    const route = tab ? workingSetRouteForTab(tab) : workingSetRouteForTarget(activation.locator);
+    const route = tab
+      ? workingSetRouteForTab(tab)
+      : workingSetRouteForTarget(activation.identity.documentId, activation.locator);
     if (route) {
       this.workingSet.reconcileContextRoutes(activation.projectId, {
         removedLocators: [],
@@ -341,7 +450,7 @@ export class ContextRemovalCoordinator {
     const token = Symbol(projectId);
     this.routePorts.set(projectId, { token, port });
     state.live = true;
-    if (activeWorkId !== null && state.activeWorkId !== activeWorkId) {
+    if (state.activeWorkId !== activeWorkId) {
       this.changeWorkSelection(projectId, activeWorkId, null);
     }
     this.publish(state);
@@ -405,48 +514,316 @@ export class ContextRemovalCoordinator {
     return this.projects.get(projectId)?.snapshot ?? EMPTY_PROJECT_SNAPSHOT;
   }
 
-  captureDeleteInitiation(
-    projectId: string,
-    initiated: ContextDeleteInitiator,
-  ): Omit<AcknowledgedContextDeleteCommand, "cause" | "confirmed"> {
-    const selection = this.projects.get(projectId)?.selection ?? EMPTY_PROJECT_SNAPSHOT.selection;
-    let routeWitness: InitiatingRouteWitness = null;
-    if (selection.status === "candidate" && sameLocator(selection.locator, initiated.locator)) {
-      routeWitness = {
-        status: "candidate",
-        revision: selection.revision,
-        locator: selection.locator,
+  async settleDraftRecovery(
+    command: DraftRecoveryContextCommand,
+  ): Promise<DraftRecoveryContextReceipt> {
+    const receipt = (kind: DraftRecoveryContextReceipt["kind"]): DraftRecoveryContextReceipt => ({
+      kind,
+      recovery: { identity: command.identity, entryVersion: command.entryVersion },
+      dispositionToken: command.dispositionToken,
+    });
+    if (this.unavailable() || command.identity.accountId !== this.accountId)
+      return receipt("stale-obligation");
+    if (command.draftTab.kind === "none") return receipt("not-applicable");
+    const draftTab = command.draftTab;
+    const tabs = this.desk.read(command.identity.projectId).tabs;
+    const exact = tabs.find(
+      (tab) =>
+        tab.documentId === command.identity.documentId &&
+        tab.kind !== "new" &&
+        tab.draftOnly &&
+        tab.reviewWorkId === draftTab.reviewWorkId &&
+        tab.reviewDraftId === draftTab.reviewDraftId &&
+        tab.tabInstanceToken === draftTab.tabInstanceToken,
+    );
+    if (!exact) {
+      const oldToken = tabs.find(
+        (tab) => tab.kind !== "new" && tab.tabInstanceToken === draftTab.tabInstanceToken,
+      );
+      if (oldToken) return receipt("stale-obligation");
+      const replacement = tabs.find((tab) => tab.documentId === command.identity.documentId);
+      return receipt(replacement ? "obsolete-obligation" : "already-absent");
+    }
+    if (command.disposition === "live-ready") {
+      if (!exact.tabInstanceId) return receipt("stale-obligation");
+      const identity = {
+        documentId: exact.documentId,
+        tabInstanceId: exact.tabInstanceId,
+        reviewWorkId: draftTab.reviewWorkId,
+        reviewDraftId: draftTab.reviewDraftId,
+        tabInstanceToken: draftTab.tabInstanceToken,
       };
-    } else if (selection.status === "bound" && sameLocator(selection.locator, initiated.locator)) {
-      routeWitness = {
-        status: "bound",
-        revision: selection.revision,
-        locator: selection.locator,
-        identity: selection.identity,
+      const settled = await this.desk.settleDraft(command.identity.projectId, identity);
+      if (settled.kind !== "settled") return receipt("stale-obligation");
+      const consumed = this.desk.closeReviewTab(command.identity.projectId, identity);
+      return receipt(consumed.kind === "consumed" ? "metadata-resolved" : "stale-obligation");
+    }
+    if (!exact.tabInstanceId) return receipt("stale-obligation");
+    const identity = {
+      documentId: exact.documentId,
+      tabInstanceId: exact.tabInstanceId,
+      reviewWorkId: draftTab.reviewWorkId,
+      reviewDraftId: draftTab.reviewDraftId,
+      tabInstanceToken: draftTab.tabInstanceToken,
+    };
+    const settled = await this.desk.settleDraft(command.identity.projectId, identity, "discarded");
+    if (settled.kind !== "settled") return receipt("stale-obligation");
+    const consumed = this.desk.closeReviewTab(command.identity.projectId, identity);
+    return receipt(consumed.kind === "consumed" ? "tab-removed" : "stale-obligation");
+  }
+
+  /** One logical project-final batch across desk, route, recent-route, selection, and sessions. */
+  reconcileDocumentAvailability(
+    commands: readonly ProjectDocumentAvailabilityCommand[],
+  ): ContextAvailabilityEffectReceipt {
+    if (this.unavailable()) return this.emptyAvailabilityReceipt();
+    const normalized = this.normalizeAvailabilityCommands(commands);
+    if (normalized.length === 0) return this.emptyAvailabilityReceipt();
+
+    const committed: ProjectDocumentAvailabilityCommand[] = [];
+    const replayed: ProjectDocumentAvailabilityCommand[] = [];
+    const staleCommandIds: string[] = [];
+    for (const command of normalized) {
+      const id = availabilityDocumentId(command);
+      const key = `${command.projectId}/${id}`;
+      const previous = this.appliedAvailability.get(key);
+      if (!previous) {
+        committed.push(command);
+        continue;
+      }
+      const comparison = BigInt(command.generation) - BigInt(previous.generation);
+      if (comparison < 0n) {
+        staleCommandIds.push(command.commandId);
+      } else if (comparison === 0n) {
+        if (previous.commandId !== command.commandId || previous.kind !== command.kind) {
+          throw new Error(`Availability command collision for ${key}`);
+        }
+        replayed.push(command);
+      } else {
+        committed.push(command);
+      }
+    }
+
+    const projectId = normalized[0]?.projectId as string;
+    const state = this.project(projectId);
+    let plan: ContextAvailabilityLocalBatchPlan | null = null;
+    if (committed.length > 0) {
+      const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
+      const routeSearch = route?.readSearch(projectId) ?? null;
+      const priorDesk = this.desk.read(projectId);
+      plan = planContextAvailabilityBatch({
+        commands: committed,
+        project: state.snapshot,
+        tabs: priorDesk,
+        recentRoutes: this.workingSet.readRecentRoutes(projectId),
+        routeSearch,
+        appliedGenerations: this.appliedAvailability,
+      });
+
+      const deskSettlement = this.desk.applyAvailability(projectId, priorDesk, {
+        tabs: [...plan.tabs],
+        selectedTabIdByWork: { ...plan.selectedTabIdByWork },
+      });
+      const settledPlan = plan;
+      const settleLocal = () => {
+        this.workingSet.replaceRecentRoutes(projectId, settledPlan.recentRoutes);
+        state.selection = settledPlan.selection;
+        state.admitted = settledPlan.admitted;
+        state.removalFence = settledPlan.removalFence;
+        state.transitionRevision = settledPlan.transitionRevision;
+        for (const record of settledPlan.generationRecords) {
+          this.appliedAvailability.set(`${projectId}/${record.documentId}`, {
+            generation: record.generation,
+            commandId: record.commandId,
+            kind: record.kind,
+          });
+        }
+        if (route && routeSearch && settledPlan.routeSearch) {
+          const nextRouteSearch = settledPlan.routeSearch;
+          route.updateSearch(projectId, (latest) =>
+            projectSearchEquals(latest, routeSearch) ? nextRouteSearch : latest,
+          );
+        }
+        this.publish(state);
+        return settledPlan.sessionEffects;
+      };
+
+      const replayEffects = replayed.flatMap((command) => availabilitySessionEffect(command));
+      const settleEffects = (plannedEffects: typeof settledPlan.sessionEffects) => {
+        const effects = [...plannedEffects, ...replayEffects].map((effect) => {
+          const pending = this.pendingSessionEffects.get(effect.commandId);
+          if (pending) return pending;
+          this.pendingSessionEffects.set(effect.commandId, effect);
+          return effect;
+        });
+        return Promise.all(effects.map((effect) => this.startSessionEffect(effect)));
+      };
+      if (!deskSettlement) {
+        const sessionSettlement = settleEffects(settleLocal());
+        return {
+          committedCommandIds: committed.map((command) => command.commandId),
+          replayedCommandIds: replayed.map((command) => command.commandId),
+          staleCommandIds,
+          localSettlement: Promise.resolve(),
+          sessionSettlement,
+        };
+      }
+      const plannedEffects = deskSettlement.then(settleLocal);
+      return {
+        committedCommandIds: committed.map((command) => command.commandId),
+        replayedCommandIds: replayed.map((command) => command.commandId),
+        staleCommandIds,
+        localSettlement: plannedEffects.then(() => undefined),
+        sessionSettlement: plannedEffects.then(settleEffects, () => []),
       };
     }
-    return { commandId: newCommandId(), projectId, initiated, routeWitness };
+
+    const replayEffects = replayed.flatMap((command) => availabilitySessionEffect(command));
+    const effects = replayEffects.map((effect) => {
+      const pending = this.pendingSessionEffects.get(effect.commandId);
+      if (pending) return pending;
+      this.pendingSessionEffects.set(effect.commandId, effect);
+      return effect;
+    });
+    const runs = effects.map((effect) => this.startSessionEffect(effect));
+    return {
+      committedCommandIds: committed.map((command) => command.commandId),
+      replayedCommandIds: replayed.map((command) => command.commandId),
+      staleCommandIds,
+      localSettlement: Promise.resolve(),
+      sessionSettlement: Promise.all(runs),
+    };
   }
 
-  acceptAcknowledgedDelete(command: AcknowledgedContextDeleteCommand): AcknowledgedDeleteAdmission {
-    if (this.unavailable()) return { status: "rejected", reason: "coordinator_disposed" };
-    const state = this.project(command.projectId);
-    const transition = reduceAcknowledgedDelete(this.commandAdmissions, state.selection, command);
-    this.commandAdmissions = transition.records;
-    if (transition.admission.status !== "accepted") return transition.admission;
-    state.selection = transition.selection;
-    if (transition.planning) this.executePlanning(command.projectId, transition.planning);
-    this.publish(state);
-    return transition.admission;
+  retryPendingSessionEffects(): Promise<readonly ContextAvailabilitySessionEffectResult[]> {
+    const effects = [...this.pendingSessionEffects.values()].sort((left, right) =>
+      left.commandId.localeCompare(right.commandId),
+    );
+    return Promise.all(effects.map((effect) => this.startSessionEffect(effect)));
   }
 
-  applyDraftMetadata(projectId: string, reviewWorkId: string, documentId: string): void {
-    if (this.unavailable()) return;
-    this.desk.resolveDraftApply(projectId, reviewWorkId, documentId);
+  private normalizeAvailabilityCommands(
+    commands: readonly ProjectDocumentAvailabilityCommand[],
+  ): ProjectDocumentAvailabilityCommand[] {
+    const projectId = commands[0]?.projectId;
+    const byDocument = new Map<string, ProjectDocumentAvailabilityCommand>();
+    for (const command of commands) {
+      if (command.projectId !== projectId) throw new Error("Availability batch mixes projects");
+      const id = availabilityDocumentId(command);
+      const previous = byDocument.get(id);
+      if (!previous) {
+        byDocument.set(id, command);
+      } else if (JSON.stringify(previous) !== JSON.stringify(command)) {
+        throw new Error(`Availability batch conflicts for document ${id}`);
+      }
+    }
+    return [...byDocument.values()].sort((left, right) =>
+      left.commandId.localeCompare(right.commandId),
+    );
   }
 
-  writerClose(projectId: string, documentId: string): ContextRemovalOutcome {
+  private startSessionEffect(
+    effect: PendingSessionAvailabilityEffect,
+  ): Promise<ContextAvailabilitySessionEffectResult> {
+    const existing = this.sessionEffectRuns.get(effect.commandId);
+    if (existing) return existing;
+    let operation: Promise<unknown>;
+    try {
+      operation =
+        effect.operation === "revoke-document"
+          ? (this.sessions?.revokeDocument(
+              effect.projectId,
+              effect.documentId,
+              effect.generation,
+              effect.commandId,
+            ) ?? Promise.resolve())
+          : (this.sessions?.revokeAccess(
+              effect.projectId,
+              effect.documentId,
+              effect.generation,
+              effect.commandId,
+            ) ?? Promise.resolve());
+    } catch (reason) {
+      operation = Promise.reject(reason);
+    }
+    const run = operation.then(
+      (): ContextAvailabilitySessionEffectResult => {
+        if (this.pendingSessionEffects.get(effect.commandId) === effect) {
+          this.pendingSessionEffects.delete(effect.commandId);
+        }
+        return { commandId: effect.commandId, operation: effect.operation, status: "fulfilled" };
+      },
+      (reason: unknown): ContextAvailabilitySessionEffectResult => ({
+        commandId: effect.commandId,
+        operation: effect.operation,
+        status: "rejected",
+        reason,
+      }),
+    );
+    this.sessionEffectRuns.set(effect.commandId, run);
+    void run.finally(() => {
+      if (this.sessionEffectRuns.get(effect.commandId) === run) {
+        this.sessionEffectRuns.delete(effect.commandId);
+      }
+    });
+    return run;
+  }
+
+  private emptyAvailabilityReceipt(): ContextAvailabilityEffectReceipt {
+    return {
+      committedCommandIds: [],
+      replayedCommandIds: [],
+      staleCommandIds: [],
+      localSettlement: Promise.resolve(),
+      sessionSettlement: Promise.resolve([]),
+    };
+  }
+
+  writerClose(
+    projectId: string,
+    documentId: string,
+  ): ContextRemovalOutcome | { kind: "apply-disposition-pending" } {
     if (this.unavailable()) return { kind: "noop" };
+    const slice = this.desk.read(projectId);
+    const tab = slice.tabs.find((candidate) => candidate.documentId === documentId);
+    if (tab?.kind !== "new" && tab?.draftOnly) {
+      if (!tab.tabInstanceId || !tab.reviewWorkId || !tab.reviewDraftId || !tab.tabInstanceToken)
+        return { kind: "noop" };
+      if (
+        this.accountId &&
+        this.draftTabFence?.currentFence({
+          accountId: this.accountId,
+          projectId,
+          workId: tab.reviewWorkId,
+          documentId,
+          draftId: tab.reviewDraftId,
+          tabInstanceToken: tab.tabInstanceToken,
+        }) === "apply-reservation-pending"
+      )
+        return { kind: "apply-disposition-pending" };
+      const identity = {
+        documentId,
+        tabInstanceId: tab.tabInstanceId,
+        reviewWorkId: tab.reviewWorkId,
+        reviewDraftId: tab.reviewDraftId,
+        tabInstanceToken: tab.tabInstanceToken,
+      };
+      const consumed = this.desk.closeReviewTab(projectId, identity);
+      if (consumed.kind !== "consumed") return { kind: "noop" };
+      const state = this.project(projectId);
+      const transition = reduceRepresentedRemoval(
+        state.selection,
+        [tab, ...consumed.current.tabs],
+        { cause: "writer-close", documentIds: [documentId] },
+      );
+      state.selection = transition.selection;
+      const outcome = this.executePlanning(projectId, transition.planning, [], {
+        removed: [tab],
+        current: consumed.current,
+      });
+      this.publish(state);
+      return outcome;
+    }
     return this.executeRepresented(projectId, {
       cause: "writer-close",
       documentIds: [documentId],
@@ -456,7 +833,7 @@ export class ContextRemovalCoordinator {
   /** Owns the synchronous old-Work prune and next-Work route transition. */
   changeWorkSelection(
     projectId: string,
-    activeWorkId: string,
+    activeWorkId: string | null,
     locator: ContextRouteTarget | null,
   ): number | null {
     if (this.unavailable()) return null;
@@ -474,7 +851,9 @@ export class ContextRemovalCoordinator {
     );
     const recentRoutes = this.workingSet.readRecentRoutes(projectId);
     const remainingTabs = tabs.filter((tab) => !documentIds.includes(tab.documentId));
-    const targetSelection = this.desk.read(projectId).selectedTabIdByWork[activeWorkId] ?? null;
+    const targetSelection = activeWorkId
+      ? (this.desk.read(projectId).selectedTabIdByWork[activeWorkId] ?? null)
+      : null;
     const fallback = chooseAdmittedFallback({
       activeWorkId,
       tabs: remainingTabs,
@@ -493,12 +872,10 @@ export class ContextRemovalCoordinator {
     state.admitted = fallback;
 
     if (documentIds.length > 0) {
-      const represented = reduceRepresentedRemoval(
-        previousSelection,
-        tabs,
-        { cause: "work-prune", documentIds },
-        newCommandId(),
-      );
+      const represented = reduceRepresentedRemoval(previousSelection, tabs, {
+        cause: "work-prune",
+        documentIds,
+      });
       this.executePlanning(
         projectId,
         { ...represented.planning, current: { kind: "none" }, repair: "never" },
@@ -517,12 +894,16 @@ export class ContextRemovalCoordinator {
         : null;
       this.desk.commit(projectId, {
         documentIds: [],
-        deskSelection: {
-          workId: activeWorkId,
-          documentId: compatibleSelected?.documentId ?? fallbackTab?.documentId ?? null,
-        },
+        ...(activeWorkId
+          ? {
+              deskSelection: {
+                workId: activeWorkId,
+                documentId: compatibleSelected?.documentId ?? fallbackTab?.documentId ?? null,
+              },
+            }
+          : {}),
       });
-      const promotedRoute = fallback ? workingSetRouteForTarget(fallback) : null;
+      const promotedRoute = fallbackTab ? workingSetRouteForTab(fallbackTab) : null;
       this.workingSet.reconcileContextRoutes(projectId, {
         removedLocators: obsoleteRoutes,
         survivingOwnedLocators: [
@@ -540,28 +921,53 @@ export class ContextRemovalCoordinator {
     return transition.selection.status === "none" ? null : transition.selection.revision;
   }
 
-  discardDraft(projectId: string, reviewWorkId: string, documentId: string): ContextRemovalOutcome {
+  async discardDraft(
+    projectId: string,
+    reviewWorkId: string,
+    documentId: string,
+  ): Promise<ContextRemovalOutcome> {
     if (this.unavailable()) return { kind: "noop" };
-    const tab = this.desk
-      .read(projectId)
-      .tabs.find((candidate) => candidate.documentId === documentId);
-    return this.executeRepresented(projectId, {
-      cause: "draft-discard",
-      documentIds:
-        tab !== undefined &&
-        tab.kind !== "new" &&
-        tab.draftOnly &&
-        tab.reviewWorkId === reviewWorkId
-          ? [documentId]
-          : [],
+    const slice = this.desk.read(projectId);
+    const tab = slice.tabs.find((candidate) => candidate.documentId === documentId);
+    if (
+      tab === undefined ||
+      tab.kind === "new" ||
+      !tab.draftOnly ||
+      tab.reviewWorkId !== reviewWorkId
+    )
+      return { kind: "noop" };
+    if (!tab.tabInstanceId || !tab.reviewDraftId || !tab.tabInstanceToken) return { kind: "noop" };
+    const identity = {
+      documentId,
+      tabInstanceId: tab.tabInstanceId,
+      reviewWorkId,
+      reviewDraftId: tab.reviewDraftId,
+      tabInstanceToken: tab.tabInstanceToken,
+    };
+    const settled = await this.desk.settleDraft(projectId, identity, "discarded");
+    if (settled.kind !== "settled" || this.unavailable()) return { kind: "noop" };
+    const consumed = this.desk.closeReviewTab(projectId, identity);
+    if (consumed.kind !== "consumed" || this.unavailable()) return { kind: "noop" };
+    const intent = { cause: "draft-discard" as const, documentIds: [documentId] };
+    const state = this.project(projectId);
+    const transition = reduceRepresentedRemoval(
+      state.selection,
+      [tab, ...consumed.current.tabs],
+      intent,
+    );
+    state.selection = transition.selection;
+    const outcome = this.executePlanning(projectId, transition.planning, [], {
+      removed: [tab],
+      current: consumed.current,
     });
+    this.publish(state);
+    return outcome;
   }
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     for (const projectId of [...this.projects.keys()]) this.disposeProject(projectId);
-    this.commandAdmissions = new Map();
   }
 
   disposeProject(projectId: string): void {
@@ -594,7 +1000,6 @@ export class ContextRemovalCoordinator {
       state.selection,
       this.desk.read(projectId).tabs,
       intent,
-      newCommandId(),
     );
     state.selection = transition.selection;
     const outcome = this.executePlanning(projectId, transition.planning, additionalRemovedLocators);
@@ -604,7 +1009,7 @@ export class ContextRemovalCoordinator {
 
   private readWorkPruneEvidence(
     projectId: string,
-    activeWorkId: string,
+    activeWorkId: string | null,
     selection: ContextRouteSelection,
   ): { documentIds: string[]; obsoleteRoutes: WorkingSetRoute[] } {
     const documentIds = this.desk
@@ -614,7 +1019,7 @@ export class ContextRemovalCoordinator {
           tab.kind !== "new" &&
           (tab.kind !== "tracked" || tab.origin !== "local-untitled") &&
           isWorkScopedProjectContextScheme(tab.scheme) &&
-          tab.workId !== activeWorkId,
+          (tab.workId ?? null) !== activeWorkId,
       )
       .map((tab) => tab.documentId);
     if (
@@ -649,10 +1054,11 @@ export class ContextRemovalCoordinator {
     projectId: string,
     effect: RemovalPlanningEffect,
     additionalRemovedLocators: readonly WorkingSetRoute[] = [],
+    consumed?: { removed: readonly ContextTab[]; current: ProjectTabsSlice },
   ): ContextRemovalOutcome {
     const { intent, current, cleanup, repair } = effect;
     if (intent.documentIds.length === 0) return { kind: "noop" };
-    const slice = this.desk.read(projectId);
+    const slice = consumed?.current ?? this.desk.read(projectId);
     const state = this.project(projectId);
     const plan = planContextRemoval({
       activeWorkId: state.activeWorkId,
@@ -663,6 +1069,9 @@ export class ContextRemovalCoordinator {
       admitted: state.admitted,
       route: { cleanup, current },
       intent,
+      consumed: consumed
+        ? { removed: consumed.removed, survivors: consumed.current.tabs }
+        : undefined,
     });
     if (plan.outcome.kind === "noop") {
       if (additionalRemovedLocators.length > 0) {
@@ -685,17 +1094,18 @@ export class ContextRemovalCoordinator {
       return plan.outcome;
     }
 
-    this.desk.commit(projectId, {
-      documentIds: plan.outcome.removed.map((tab) => tab.documentId),
-      ...(this.project(projectId).activeWorkId
-        ? {
-            deskSelection: {
-              workId: this.project(projectId).activeWorkId as string,
-              documentId: plan.nextSelectedTabId,
-            },
-          }
-        : {}),
-    });
+    if (!consumed)
+      this.desk.commit(projectId, {
+        documentIds: plan.outcome.removed.map((tab) => tab.documentId),
+        ...(this.project(projectId).activeWorkId
+          ? {
+              deskSelection: {
+                workId: this.project(projectId).activeWorkId as string,
+                documentId: plan.nextSelectedTabId,
+              },
+            }
+          : {}),
+      });
     this.workingSet.reconcileContextRoutes(projectId, {
       ...plan.workingSet,
       removedLocators: [...plan.workingSet.removedLocators, ...additionalRemovedLocators],
@@ -721,7 +1131,7 @@ export class ContextRemovalCoordinator {
         current.kind === "none" || !plan.outcome.routedDocumentRemoved ? null : current.locator,
       removedDocumentIds: [...intent.documentIds],
     };
-    if (cleanup && (intent.cause === "acknowledged-delete" || intent.cause === "draft-discard")) {
+    if (cleanup && (intent.cause === "catalog-unavailable" || intent.cause === "draft-discard")) {
       state.terminalRemovals.set(locatorKey(cleanup.locator), { cleanup, intent });
     }
     this.publish(state);
@@ -731,10 +1141,8 @@ export class ContextRemovalCoordinator {
       const search = route?.readSearch(projectId);
       if (
         route &&
-        search?.screen === "context" &&
-        search.scheme === current.locator.scheme &&
-        search.path === current.locator.path &&
-        (search.work ?? null) === current.locator.workId
+        search &&
+        contextRouteMatchesSearch(search, current.locator, state.activeWorkId)
       ) {
         const repairPlan: ContextRouteRepair = {
           expectedSearch: {
@@ -804,7 +1212,10 @@ export class ContextRemovalCoordinator {
       return;
     }
     const slice = this.desk.read(projectId);
+    const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
+    const search = route?.readSearch(projectId);
     const plan = planCandidateRejection({
+      rawRouteWork: search?.work,
       revision: rejection.revision,
       rejected: rejection.locator,
       activeWorkId: state.activeWorkId,
@@ -831,15 +1242,7 @@ export class ContextRemovalCoordinator {
     state.admitted = plan.fallback;
     this.publish(state);
 
-    const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
-    const search = route?.readSearch(projectId);
-    if (
-      !route ||
-      search?.screen !== "context" ||
-      search.scheme !== rejection.locator.scheme ||
-      search.path !== rejection.locator.path ||
-      (search.work ?? null) !== rejection.locator.workId
-    ) {
+    if (!route || !contextRouteMatchesSearch(search, rejection.locator, state.activeWorkId)) {
       return;
     }
     route.updateSearch(projectId, (latest) =>
@@ -889,6 +1292,7 @@ export class ContextRemovalCoordinator {
 
   private publish(state: CoordinatorProjectState): void {
     state.snapshot = {
+      activeWorkId: state.activeWorkId,
       selection: state.selection,
       admitted: state.admitted,
       removalFence: state.removalFence,
@@ -901,4 +1305,23 @@ export class ContextRemovalCoordinator {
 
 function locatorKey(locator: ContextRouteTarget): string {
   return `${locator.scheme}\u0000${locator.path}\u0000${locator.workId ?? ""}`;
+}
+
+function availabilityDocumentId(command: ProjectDocumentAvailabilityCommand): string {
+  return command.kind === "available" ? command.document.entryId : command.documentId;
+}
+
+function availabilitySessionEffect(
+  command: ProjectDocumentAvailabilityCommand,
+): PendingSessionAvailabilityEffect[] {
+  if (command.kind === "available") return [];
+  return [
+    {
+      commandId: command.commandId,
+      operation: command.kind === "terminal-remove" ? "revoke-document" : "revoke-access",
+      projectId: command.projectId,
+      documentId: command.documentId,
+      generation: command.generation,
+    },
+  ];
 }

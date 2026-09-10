@@ -25,18 +25,28 @@ const tree = {
   ],
 };
 
-const getProjectContextTree = vi.fn(async () => ({ tree }) as never);
+const lookupContextCatalogFile = vi.fn(async () => tree.children[0] as never);
 const navigateToPassage = vi.fn();
 
-vi.mock("@/client/api/projects-api", () => ({
-  getProjectContextTree: (...args: unknown[]) => getProjectContextTree(...(args as [])),
+vi.mock("@/client/query/useContextCatalog", () => ({
+  lookupContextCatalogFile: (...args: unknown[]) => lookupContextCatalogFile(...(args as [])),
 }));
 vi.mock("@/core/editor/passage-navigation", () => ({
   navigateToPassage: (...args: unknown[]) => navigateToPassage(...(args as [])),
 }));
 
-const CHAPTER_2 = { scheme: "manuscript" as const, path: "/chapter-2.md", workId: null };
-const CHAPTER_3 = { scheme: "manuscript" as const, path: "/chapter-3.md", workId: null };
+const CHAPTER_2 = {
+  scheme: "manuscript" as const,
+  path: "/chapter-2.md",
+  uri: "manuscript://chapter-2.md",
+  workId: null,
+};
+const CHAPTER_3 = {
+  scheme: "manuscript" as const,
+  path: "/chapter-3.md",
+  uri: "manuscript://chapter-3.md",
+  workId: null,
+};
 const ANCHOR = { blockHash: "79b9", term: "elara" };
 
 /** Mounts the hook and hands its callback plus a live read of the notice. */
@@ -58,7 +68,7 @@ async function withDoors(
 
 beforeEach(() => {
   dismissPassageNotice();
-  getProjectContextTree.mockClear();
+  lookupContextCatalogFile.mockClear();
   navigateToPassage.mockClear();
 });
 
@@ -105,7 +115,7 @@ describe("passage doors", () => {
     await withDoors(async (open) => {
       await act(async () => open(CHAPTER_3));
 
-      expect(getProjectContextTree).not.toHaveBeenCalled();
+      expect(lookupContextCatalogFile).not.toHaveBeenCalled();
       expect(navigateToPassage).not.toHaveBeenCalled();
     });
   });

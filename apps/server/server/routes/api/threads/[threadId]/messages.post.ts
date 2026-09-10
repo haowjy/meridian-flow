@@ -7,26 +7,37 @@ import {
   readBody,
   setResponseStatus,
 } from "nitro/h3";
-import { StaleConnectionTokenError } from "../../../../domains/runtime/loop/turn-runner.js";
-import { TurnStartConflictError } from "../../../../domains/threads/index.js";
+import {
+  AdmissionConflictError,
+  InvalidAdmissionError,
+} from "../../../../domains/runtime/index.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../../lib/request-id.js";
 
 export default defineEventHandler(async (event): Promise<SendMessageResponse> => {
   const { app, user } = await requireAppUser(event);
   const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId") as ThreadId;
-  const body = (await readBody<SendMessageRequest>(event)) ?? { text: "" };
-  if (typeof body.text !== "string" || body.text.length === 0) {
-    throw createError({ statusCode: 400, message: "text is required" });
-  }
-
+  const body = ((await readBody<SendMessageRequest>(event)) ?? {}) as SendMessageRequest;
   await app.threadRuntime.requireOwnedThread(threadId, user.userId);
   try {
-    const result = await app.runner.startTurn({
+    const result = await app.userTurnAdmission.admit({
+      actorUserId: user.userId,
       threadId,
-      userText: body.text,
+      submissionId: body.submissionId,
+      text: body.text,
+      blocks: body.blocks,
+      references: body.references,
       connectionToken: body.connectionToken,
     });
+    if (result.kind === "pending") {
+      throw createError({ statusCode: 409, message: "admission_pending" });
+    }
+    if (result.kind === "rejected") {
+      throw createError({
+        statusCode: result.code === "invalid_message" ? 400 : 409,
+        message: result.code,
+      });
+    }
     setResponseStatus(event, 202);
     return {
       threadId,
@@ -37,9 +48,10 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
       status: "accepted",
     };
   } catch (error) {
-    if (error instanceof StaleConnectionTokenError || error instanceof TurnStartConflictError) {
-      throw createError({ statusCode: 409, message: error.message });
-    }
+    if (error instanceof InvalidAdmissionError)
+      throw createError({ statusCode: 400, message: error.code });
+    if (error instanceof AdmissionConflictError)
+      throw createError({ statusCode: 409, message: error.code });
     throw error;
   }
 });

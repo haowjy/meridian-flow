@@ -1,4 +1,9 @@
 /** One command/state policy for Work-draft selection and disposition. */
+import type {
+  ApplyExecutionResult,
+  ApplyReservationRef,
+  DraftRecoveryRef,
+} from "@/features/project/draft-apply-recovery/draft-apply-recovery-owner";
 
 export type DraftDispositionTarget =
   | { kind: "apply-draft"; documentId: string; draftId: string }
@@ -64,13 +69,19 @@ export class DraftDispositionLock {
 export type DraftCommandOutcome =
   | { kind: "blocked" }
   | { kind: "applied" }
+  | { kind: "server-applied-awaiting-live"; recovery: DraftRecoveryRef }
+  | { kind: "apply-outcome-unknown"; reservation: ApplyReservationRef }
+  | {
+      kind: "server-applied-settled-elsewhere";
+      outcome: "live-ready" | "writer-abandoned";
+    }
   | { kind: "discarded" }
   | { kind: "failed"; code: InlineReviewMessageCode };
 
 export type DraftBatchErrorCode = "apply-failed" | "discard-offline";
 
 export type DraftReviewCommandPorts = {
-  apply: (selection: DraftReviewSelection) => Promise<void>;
+  apply: (selection: DraftReviewSelection) => Promise<ApplyExecutionResult>;
   discard: (selection: DraftReviewSelection, input?: { operationIds: string[] }) => Promise<void>;
   operationDiscardStarted: () => void;
   batchStarted: () => void;
@@ -157,9 +168,12 @@ export class DraftReviewSession {
   ): Promise<DraftCommandOutcome> {
     this.disposition.retarget(reservation, { kind: "apply-draft", ...selection });
     try {
-      await ports.apply(selection);
-      ports.draftApplied(selection);
-      return { kind: "applied" };
+      const result = await ports.apply(selection);
+      if (result.kind === "live-ready") {
+        ports.draftApplied(selection);
+        return { kind: "applied" };
+      }
+      return result;
     } catch {
       ports.draftFailed(selection, "apply-failed");
       return { kind: "failed", code: "apply-failed" };

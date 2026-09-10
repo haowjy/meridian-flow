@@ -24,5 +24,8 @@ runtime shapes, and observability records.
   never belong in a field a document persists.
 - Context entry validation reserves a leading `@` in every path segment for
   Work authority qualifiers. An `@` elsewhere in a segment remains valid.
+- `WorkSlug` proves ordinary slug grammar and field role only; UUID-shaped
+  slugs are valid. Parsed URI `normalized` text is syntax, while stable
+  real-Work serialization requires opaque project-resolved authority.
 - Keep types JSON-natural at boundaries.
 - Do not import server adapters, database clients, React, or provider SDKs.

@@ -27,7 +27,7 @@ export function parseRenameContextEntryBody(raw: unknown): RenameContextEntryReq
 }
 
 export default defineEventHandler(async (event) => {
-  const { userId, scheme, workId, port } = await resolveContextRoute(event);
+  const { userId, scheme, authority, port } = await resolveContextRoute(event);
   const body = parseRenameContextEntryBody(await readBody(event));
 
   // Build the destination path: same parent directory, new basename.
@@ -35,8 +35,8 @@ export default defineEventHandler(async (event) => {
   segments.pop();
   const destinationPath = [...segments, body.newName].join("/");
 
-  const sourceUri = toUri(scheme, body.path, workId);
-  const destinationUri = toUri(scheme, destinationPath, workId);
+  const sourceUri = toUri(scheme, body.path, authority);
+  const destinationUri = toUri(scheme, destinationPath, authority);
   const result = await port.move(sourceUri, destinationUri, {
     origin: { type: "human", userId },
   });

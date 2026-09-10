@@ -9,16 +9,18 @@ host-provided read-only query port.
 
 Agent-edit edits a memory-only runtime Y.Doc. The host supplies durable journal
 ports and live/branch coordinators; the package never owns Postgres, Hocuspocus,
-routes, auth, or Meridian Work/Project concepts.
+routes, auth, or Meridian Work/Project concepts. The coordinator's document is
+this core's canonical world; it need not be the host's published live document.
 
 Runtime sync state is memory-only. The journal is the only durable record;
 restart/cold paths reconstruct from retained updates/checkpoints. Attribution is
 host-provided per interaction and must not depend on session-lifetime snapshots.
 
 `ResponseCommitter` owns deferred response writes as an explicit durability
-lifecycle: buffered updates become journal-committed before they are projected to
-the live document. Recovery decisions follow that state, never an inferred catch
-path. The committer owns one immutable snapshot and one promise while committing;
+lifecycle: journal submission precedes coordinator projection, but submission can
+be host-staged rather than durable. Finalization follows the host transaction;
+recovery follows the explicit acceptance state, never an inferred catch path.
+The committer owns one immutable snapshot and one promise while committing;
 immediate writes use the journal kind returned by submission to restore or recover atomically.
 
 ## Rules

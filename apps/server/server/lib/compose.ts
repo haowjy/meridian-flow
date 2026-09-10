@@ -22,25 +22,33 @@ import {
   createInMemoryCollabDomain,
 } from "../domains/collab/index.js";
 import {
+  type ContextCatalog,
+  type ContextCatalogWakeHub,
+  createContextCatalogWakeHub,
+  createContextUploadContentPort,
+  createDocumentLinkResolver,
   createDrizzleAssetPathResolver,
-  createDrizzleDocumentLinkResolver,
+  createDrizzleContextCatalog,
   createDrizzleFigureDocumentRepository,
+  createDrizzleProjectContextAvailability,
   createDrizzleResultRepository,
-  createDrizzleThreadUploadDocumentStore,
+  createDrizzleUploadIdentityPort,
+  createDrizzleUploadIntakeRepository,
   createFigureAssetService,
   createInMemoryUnifiedContextPortFactory,
   createInterruptArtifactFlush,
   createProductionUnifiedContextPortFactory,
   createPromotionService,
-  createThreadUploadImportService,
+  createUploadIntake,
   type DocumentLinkResolver,
   type FigureAssetService,
-  InMemoryDocumentLinkResolver,
+  InMemoryContextCatalog,
+  type ProjectContextAvailabilityPort,
   type PromotionService,
   type ResultRepository,
-  type ThreadUploadDocumentStore,
-  type ThreadUploadImportService,
   type UnifiedContextPortFactory,
+  type UploadIdentityPort,
+  type UploadIntake,
 } from "../domains/context/index.js";
 import { createDrizzleNoticePort, type Notice, type NoticePort } from "../domains/notices/index.js";
 import {
@@ -66,17 +74,23 @@ import { createDrizzleProjectPreferencesRepository } from "../domains/preference
 import {
   createDrizzleProjectBootstrapRepository,
   createDrizzleProjectRepository,
+  createDrizzleProjectWorkAuthorityResolver,
   createDrizzleProjectWorkRepository,
   createDrizzleUserRepository,
+  createWorkProjectionMutation,
   type ProjectBootstrapRepository,
   type ProjectRepository,
+  type ProjectWorkAuthorityResolver,
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
 } from "../domains/projects/index.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
   computeEffectivePermissions,
+  createAdmissionTurnStarter,
   createChildRunCoordinator,
+  createContextImageAssetPort,
+  createDrizzleAdmissionRecords,
   createDrizzleThreadRunOwnership,
   createGatewayFromEnv,
   createHelperResultDelivery,
@@ -90,6 +104,7 @@ import {
   createToolExecutor,
   createToolRegistry,
   createTurnRunner,
+  createUserTurnAdmission,
   createWorkContextDelivery,
   createWorkContextReader,
   type Gateway,
@@ -99,6 +114,7 @@ import {
   type ToolExecutor,
   type ToolRegistry,
   type TurnRunner,
+  type UserTurnAdmission,
   type WorkContextDelivery,
   type WorkContextReader,
 } from "../domains/runtime/index.js";
@@ -144,6 +160,7 @@ import { createObjectStoreFromEnv } from "./object-store-factory.js";
 import { readThreadContextDocument } from "./thread-context-route.js";
 import {
   createAgentEditResponseWriteLifecycle,
+  createReferenceReader,
   createWiredCoreToolRegistrations,
 } from "./wired-core-tools.js";
 
@@ -162,12 +179,16 @@ export type AppServices = {
   threadRuntime: ThreadRuntimeService;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
+  contextCatalog: ContextCatalog;
+  projectContextAvailability: ProjectContextAvailabilityPort;
+  contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
   users: UserRepository;
   workRepo: ProjectWorkRepository;
+  workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContext: WorkContextReader;
   workContextDelivery: WorkContextDelivery;
   billing: BillingService;
@@ -183,14 +204,15 @@ export type AppServices = {
   workingSet: WorkingSetRepository;
   orchestrator: RunTurnPort;
   runner: TurnRunner;
+  userTurnAdmission: UserTurnAdmission;
   runOwnership: ThreadRunOwnership;
   toolRegistry: ToolRegistry;
   toolExecutor: ToolExecutor;
   modelRequestDebug: ModelRequestDebugStore;
   objectStore: ObjectStorePort;
   localObjectStore: LocalObjectStoreAdapter | null;
-  uploadDocuments: ThreadUploadDocumentStore;
-  threadUploadImports: ThreadUploadImportService;
+  uploadIntake: UploadIntake;
+  uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
   results: ResultRepository;
   documentAccess: DocumentAccessPort;
@@ -213,12 +235,16 @@ export type ProductionAppPorts = {
   eventQuery?: EventQuery;
   documentSync: CollabDomain;
   contextPorts: UnifiedContextPortFactory;
+  contextCatalog: ContextCatalog;
+  projectContextAvailability: ProjectContextAvailabilityPort;
+  contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
   projects: ProjectBootstrapRepository;
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
   users: UserRepository;
   workRepo: ProjectWorkRepository;
+  workAuthorityResolver: ProjectWorkAuthorityResolver;
   billing: BillingService;
   billingUsage: BillingUsagePolicy;
   billingSpendReader: BillingSpendReader;
@@ -231,8 +257,8 @@ export type ProductionAppPorts = {
   modelRequestDebug: ModelRequestDebugStore;
   objectStore: ObjectStorePort;
   localObjectStore: LocalObjectStoreAdapter | null;
-  uploadDocuments: ThreadUploadDocumentStore;
-  threadUploadImports: ThreadUploadImportService;
+  uploadIntake: UploadIntake;
+  uploadIdentity: UploadIdentityPort;
   figureAssets: FigureAssetService;
   results: ResultRepository;
   promotionService: PromotionService;
@@ -303,7 +329,17 @@ export async function createProductionAppPorts(input: {
     }),
   });
   const db = input.db;
-  const threadRepos = createDrizzleRepositories(db);
+  const contextCatalogWakeHub = createContextCatalogWakeHub();
+  const projectContextAvailability = createDrizzleProjectContextAvailability(db, eventSink);
+  const contextCatalog = createDrizzleContextCatalog(db, contextCatalogWakeHub, {
+    availabilityMutations: projectContextAvailability,
+  });
+  const workProjectionMutation = createWorkProjectionMutation({
+    db,
+    availability: projectContextAvailability,
+    catalog: contextCatalog,
+  });
+  const threadRepos = createDrizzleRepositories(db, workProjectionMutation);
   const runOwnership = createDrizzleThreadRunOwnership(db);
   const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);
@@ -311,7 +347,8 @@ export async function createProductionAppPorts(input: {
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const documentAccess = createDrizzleDocumentAccess(db);
   const notices = createDrizzleNoticePort(db);
-  const projectRepo = createDrizzleProjectRepository({ db });
+  const projectRepo = createDrizzleProjectRepository({ db, catalogLifecycle: contextCatalog });
+  const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
   let contextPorts: UnifiedContextPortFactory;
   let workRepo: ProjectWorkRepository;
   const preferences = createDrizzleProjectPreferencesRepository({ db });
@@ -323,6 +360,8 @@ export async function createProductionAppPorts(input: {
     documentAccess,
     eventSink,
     notices,
+    workAuthorityResolver,
+    workProjectionMutation,
     threadContext: {
       async requireThreadOwner(input) {
         const thread = await requireThreadOwner(
@@ -339,26 +378,33 @@ export async function createProductionAppPorts(input: {
             threads: threadRepos.threads,
             threadWorks: threadRepos.threadWorks,
             works: workRepo,
+            workAuthorityResolver,
           },
           input as never,
         ),
     },
   });
-  const uploadDocuments = createDrizzleThreadUploadDocumentStore(db, threadRepos.threadDocuments);
-  const threadUploadImports = createThreadUploadImportService({
-    repos: threadRepos,
-    uploadDocuments,
-    documentSync,
+  const results = createDrizzleResultRepository(db);
+  const promotionService = createPromotionService({
     objectStore,
+    results,
+    workAuthorityResolver,
     eventSink,
   });
-  const results = createDrizzleResultRepository(db);
-  const promotionService = createPromotionService({ objectStore, results });
   contextPorts = createProductionUnifiedContextPortFactory({
     db,
     documentSync,
     manifestMembership: documentSync,
+    catalogMutations: contextCatalog,
+    eventSink,
   });
+  const uploadIntake = createUploadIntake({
+    repository: createDrizzleUploadIntakeRepository(db, contextCatalog),
+    content: createContextUploadContentPort(contextPorts),
+    objectStore,
+    eventSink,
+  });
+  const uploadIdentity = createDrizzleUploadIdentityPort(db);
   // Upload creates the asset as a context document, so the service needs the
   // context ports; it feeds each new path straight back into the resolver the
   // codec reads.
@@ -383,11 +429,11 @@ export async function createProductionAppPorts(input: {
   const projects = createDrizzleProjectBootstrapRepository({
     db,
     documents: documentSync,
-    threads: threadRepos.threads,
-    threadWorks: threadRepos.threadWorks,
+    catalogLifecycle: contextCatalog,
   });
   workRepo = createDrizzleProjectWorkRepository({
     db,
+    projectionMutation: workProjectionMutation,
     hasUnreviewedDraft: async (workId) =>
       ((await documentSync.countPendingByWorkIds([workId])).get(workId) ?? 0) > 0,
   });
@@ -417,12 +463,16 @@ export async function createProductionAppPorts(input: {
     eventQuery: input.eventQuery,
     documentSync,
     contextPorts,
-    documentLinks: createDrizzleDocumentLinkResolver(input.db),
+    contextCatalog,
+    projectContextAvailability,
+    contextCatalogWakeHub,
+    documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
     projects,
     works: workRepo,
     projectRepo,
     users,
     workRepo,
+    workAuthorityResolver,
     billing: billingDomain.service,
     billingUsage: billingDomain.usagePolicy,
     billingSpendReader: billingDomain.spendReader,
@@ -435,8 +485,8 @@ export async function createProductionAppPorts(input: {
     modelRequestDebug: createModelRequestDebugStoreFromEnv(eventSink),
     objectStore,
     localObjectStore,
-    uploadDocuments,
-    threadUploadImports,
+    uploadIntake,
+    uploadIdentity,
     figureAssets,
     results,
     promotionService,
@@ -463,6 +513,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const interruptRegistry = createInterruptRegistry();
   const workContext = createWorkContextReader({
+    threads: ports.threadRepos.threads,
     works: ports.workRepo,
     threadWorks: ports.threadRepos.threadWorks,
   });
@@ -489,21 +540,25 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const responseWrites = createAgentEditResponseWriteLifecycle({
     documentSync: ports.documentSync,
+    threadWorks: ports.threadRepos.threadWorks,
+    works: ports.workRepo,
   });
-  for (const registration of createWiredCoreToolRegistrations({
+  const coreToolDeps = {
     threads: ports.threadRepos.threads,
     contextPorts: ports.contextPorts,
     documentSync: ports.documentSync,
     responseWrites,
     threadWorks: ports.threadRepos.threadWorks,
     works: ports.workRepo,
+    workAuthorityResolver: ports.workAuthorityResolver,
     drafts: ports.documentSync,
     workContextDelivery,
     obligations: ports.threadRepos.workContextDeliveries,
     documentTouches: ports.threadRepos.documentTouches,
     eventSink: ports.eventSink,
     transaction: ports.threadRepos.transaction,
-  })) {
+  };
+  for (const registration of createWiredCoreToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
   }
   toolRegistry.register(
@@ -541,6 +596,31 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     workContextDelivery,
   });
+  const admissionRecords = createDrizzleAdmissionRecords(ports.db);
+  const imageAssets = createContextImageAssetPort({
+    identities: ports.uploadIdentity,
+    availability: ports.projectContextAvailability,
+    objects: ports.objectStore,
+    eventSink: ports.eventSink,
+  });
+  const userTurnAdmission = createUserTurnAdmission({
+    records: admissionRecords,
+    availability: ports.projectContextAvailability,
+    async threadProject(threadId) {
+      return (await ports.threadRepos.threads.findById(threadId as never))?.projectId ?? null;
+    },
+    async verifyDraftUpload(reference) {
+      const identity = await ports.uploadIdentity.lookupUpload(reference.documentId);
+      return identity?.intakeId === reference.intakeId && identity.uri === reference.uri;
+    },
+    starter: createAdmissionTurnStarter({
+      runner,
+      records: admissionRecords,
+      consumeUploads: (documentIds) => ports.uploadIntake.consume(documentIds),
+      attachDocument: (threadId, documentId, relationship) =>
+        ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
+    }),
+  });
   helperResultDelivery = createHelperResultDelivery({
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
@@ -561,7 +641,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       return resolveWorkMembership(
         {
           workRepo: ports.workRepo,
-          preferences: ports.preferences,
           threadWorks: ports.threadRepos.threadWorks,
         },
         input,
@@ -578,6 +657,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const orchestrator = createOrchestrator({
     gateway: ports.gateway,
+    referenceReader: createReferenceReader(coreToolDeps),
     toolExecutor,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
@@ -607,6 +687,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     responseWrites,
     notices: ports.notices,
     activeDocuments: ports.activeDocuments,
+    imageAssets,
     concurrentRenderBudgetBytes,
   });
   runTurnProxy.bind(orchestrator);
@@ -622,12 +703,16 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threadRuntime: createThreadRuntimeService({ db: ports.db }),
     documentSync: ports.documentSync,
     contextPorts: ports.contextPorts,
+    contextCatalog: ports.contextCatalog,
+    projectContextAvailability: ports.projectContextAvailability,
+    contextCatalogWakeHub: ports.contextCatalogWakeHub,
     documentLinks: ports.documentLinks,
     projects: ports.projects,
     works: ports.works,
     projectRepo: ports.projectRepo,
     users: ports.users,
     workRepo: ports.workRepo,
+    workAuthorityResolver: ports.workAuthorityResolver,
     workContext,
     workContextDelivery,
     billing: ports.billing,
@@ -645,14 +730,15 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workingSet: ports.workingSet,
     orchestrator,
     runner,
+    userTurnAdmission,
     runOwnership: ports.runOwnership,
     toolRegistry,
     toolExecutor,
     modelRequestDebug: ports.modelRequestDebug,
     objectStore: ports.objectStore,
     localObjectStore: ports.localObjectStore,
-    uploadDocuments: ports.uploadDocuments,
-    threadUploadImports: ports.threadUploadImports,
+    uploadIntake: ports.uploadIntake,
+    uploadIdentity: ports.uploadIdentity,
     figureAssets: ports.figureAssets,
     results: ports.results,
     documentAccess: ports.documentAccess,
@@ -728,6 +814,19 @@ export function createInMemoryAppServices(): AppServices {
     },
   };
 
+  const contextCatalog = new InMemoryContextCatalog();
+  const workAuthorityResolver: ProjectWorkAuthorityResolver = {
+    async byId() {
+      return null;
+    },
+    async bySlug() {
+      return null;
+    },
+    async lockById() {
+      return null;
+    },
+  };
+
   return {
     gateway: {
       async *stream(request) {
@@ -794,7 +893,22 @@ export function createInMemoryAppServices(): AppServices {
     },
     documentSync,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
-    documentLinks: new InMemoryDocumentLinkResolver(),
+    contextCatalog,
+    projectContextAvailability: {
+      async lookup(input) {
+        return {
+          projectId: input.projectId,
+          resolutionId: crypto.randomUUID(),
+          resolutions: [...new Set(input.documentIds)].map((documentId) => ({
+            kind: "not-visible" as const,
+            documentId,
+            checkedGeneration: "0",
+          })),
+        };
+      },
+    },
+    contextCatalogWakeHub: createContextCatalogWakeHub(),
+    documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
     projects: {
       async findPersonalProjectId() {
         return null;
@@ -809,6 +923,12 @@ export function createInMemoryAppServices(): AppServices {
     works: {
       async transaction(operation) {
         return operation();
+      },
+      async readSnapshot(operation) {
+        return operation();
+      },
+      async snapshotIdentity() {
+        return { catalogGeneration: crypto.randomUUID(), authorityRevision: "0" };
       },
       async create() {
         throw new Error("in-memory work repository is not implemented");
@@ -838,9 +958,6 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async restore() {
-        throw new Error("in-memory work repository is not implemented");
-      },
-      async ensureDefaultForProject() {
         throw new Error("in-memory work repository is not implemented");
       },
       async touch() {},
@@ -888,6 +1005,12 @@ export function createInMemoryAppServices(): AppServices {
       async transaction(operation) {
         return operation();
       },
+      async readSnapshot(operation) {
+        return operation();
+      },
+      async snapshotIdentity() {
+        return { catalogGeneration: crypto.randomUUID(), authorityRevision: "0" };
+      },
       async create() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -918,11 +1041,9 @@ export function createInMemoryAppServices(): AppServices {
       async restore() {
         throw new Error("in-memory work repository is not implemented");
       },
-      async ensureDefaultForProject() {
-        throw new Error("in-memory work repository is not implemented");
-      },
       async touch() {},
     },
+    workAuthorityResolver,
     workContext: unavailableWorkContext,
     workContextDelivery: noopWorkContextDelivery,
     billing: billingDomain.service,
@@ -973,6 +1094,17 @@ export function createInMemoryAppServices(): AppServices {
         return "not_found" as const;
       },
     },
+    userTurnAdmission: {
+      async admit(input) {
+        return { kind: "rejected", submissionId: input.submissionId, code: "already_running" };
+      },
+      async lookup(input) {
+        return { kind: "not-seen", submissionId: input.submissionId };
+      },
+      async retire(input) {
+        return { kind: "retired", submissionId: input.submissionId, code: "retired" };
+      },
+    },
     runOwnership,
     toolRegistry: {
       getDefinitions() {
@@ -1006,32 +1138,24 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     localObjectStore: null,
-    uploadDocuments: {
-      async transaction(operation) {
-        return operation();
+    uploadIntake: {
+      async intake() {
+        throw new Error("in-memory upload intake is not implemented");
       },
-      async createUploadDocument() {
-        throw new Error("in-memory upload documents are not implemented");
+      async deleteDraft() {
+        return { kind: "identity_mismatch" };
       },
-      async updateMarkdownProjection() {
-        throw new Error("in-memory upload documents are not implemented");
-      },
-      async getDocument() {
-        return null;
-      },
-      async getUpload() {
-        return null;
-      },
-      async listUploads() {
-        return [];
-      },
-      async listRecent() {
-        return [];
-      },
+      async consume() {},
     },
-    threadUploadImports: {
-      async importUpload() {
-        throw new Error("in-memory upload imports are not implemented");
+    uploadIdentity: {
+      async lookupUpload() {
+        return null;
+      },
+      async lookupDocument() {
+        return null;
+      },
+      async lookupDocuments() {
+        return [];
       },
     },
     figureAssets: {
@@ -1043,7 +1167,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     results: {
-      async create() {
+      async createOrConverge() {
         throw new Error("in-memory results are not implemented");
       },
       async listByProject() {

@@ -5,9 +5,14 @@
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { applyDraft, discardDraft } from "@/client/api/drafts-api";
-import { getDocumentSessionRegistry } from "@/core/editor/document-session-registry";
-
-import { isProjectContextTreeKey, projectQueryKeys } from "./project-query-keys";
+import { usePostApplyDispositionOwner } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
+import type {
+  ApplyExecutionResult,
+  DraftRecoveryIdentity,
+  DraftRecoveryObligations,
+  DraftRecoveryPresentation,
+} from "@/features/project/draft-apply-recovery/draft-apply-recovery-owner";
+import { isProjectContextCatalogKey, projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 
 type DraftReviewMutationBase = {
@@ -16,6 +21,12 @@ type DraftReviewMutationBase = {
   threadId?: string | null;
   documentId: string;
   draftId: string;
+};
+
+export type DraftApplyMutationInput = DraftReviewMutationBase & {
+  identity: DraftRecoveryIdentity;
+  presentation: DraftRecoveryPresentation;
+  obligations: DraftRecoveryObligations;
 };
 
 export type DraftReviewMutationInput = DraftReviewMutationBase & {
@@ -56,22 +67,67 @@ function invalidateDraftReviewQueries(
 
 export function useApplyDraft() {
   const queryClient = useQueryClient();
+  const owner = usePostApplyDispositionOwner();
 
   return useMutation({
-    mutationFn: ({ projectId, workId, documentId, draftId }: DraftReviewMutationBase) =>
-      applyDraft(projectId, workId, documentId, { draftId }),
-    onSuccess: async (_response, variables) => {
-      // A draft-only tab may have opened its live room before the document was
-      // materialized, leaving a terminal authorization denial cached in the
-      // registry. Apply grants access; replace only that unavailable session
-      // so EditorView can bind a freshly authorized provider on review exit.
-      await getDocumentSessionRegistry().restartUnavailableRoom(variables.documentId);
-      void queryClient.invalidateQueries({
-        predicate: (query) => isProjectContextTreeKey(query.queryKey, variables.projectId),
+    mutationFn: async (variables: DraftApplyMutationInput): Promise<ApplyExecutionResult> => {
+      void queryClient.cancelQueries({
+        queryKey: projectQueryKeys.workDrafts(variables.projectId, variables.workId),
       });
-      await invalidateDraftReviewQueries(queryClient, variables);
+      const reserved = owner.reserveApply({
+        identity: variables.identity,
+        presentation: variables.presentation,
+        obligations: variables.obligations,
+      });
+      if (reserved.kind === "existing")
+        return { kind: "server-applied-awaiting-live", recovery: reserved.recovery };
+      if (reserved.kind === "settled")
+        return { kind: "server-applied-settled-elsewhere", outcome: reserved.outcome };
+      if (reserved.kind === "blocked") throw new Error("Draft Apply is already pending");
+      const acquired = owner.acquireApplyDispatch(reserved.unsent);
+      if (acquired.kind === "existing")
+        return { kind: "server-applied-awaiting-live", recovery: acquired.recovery };
+      if (acquired.kind === "settled")
+        return { kind: "server-applied-settled-elsewhere", outcome: acquired.outcome };
+      if (acquired.kind === "stale") throw new Error("Draft Apply dispatch became stale");
+      try {
+        const response = await applyDraft(
+          variables.projectId,
+          variables.workId,
+          variables.documentId,
+          {
+            draftId: variables.draftId,
+          },
+        );
+        const promoted = owner.recordServerApplied({
+          kind: "local-response",
+          dispatch: acquired.dispatch,
+          responseDraftId: response.draftId,
+        });
+        if (promoted.kind === "recorded" || promoted.kind === "existing") {
+          void Promise.all([
+            queryClient.invalidateQueries({
+              predicate: (query) => isProjectContextCatalogKey(query.queryKey, variables.projectId),
+            }),
+            invalidateDraftReviewQueries(queryClient, variables),
+          ]).catch(() => undefined);
+          return { kind: "server-applied-awaiting-live", recovery: promoted.recovery };
+        }
+        if (promoted.kind === "already-settled")
+          return { kind: "server-applied-settled-elsewhere", outcome: promoted.outcome };
+        throw new Error("Draft Apply response could not be validated");
+      } catch (error) {
+        const unknown = owner.markApplyOutcomeUnknown(acquired.dispatch);
+        void invalidateDraftReviewQueries(queryClient, variables).catch(() => undefined);
+        if (unknown.kind === "outcome-unknown")
+          return { kind: "apply-outcome-unknown", reservation: unknown.reservation };
+        if (unknown.kind === "existing")
+          return { kind: "server-applied-awaiting-live", recovery: unknown.recovery };
+        if (unknown.kind === "settled")
+          return { kind: "server-applied-settled-elsewhere", outcome: unknown.outcome };
+        throw error;
+      }
     },
-    onError: (_error, variables) => invalidateDraftReviewQueries(queryClient, variables),
   });
 }
 
