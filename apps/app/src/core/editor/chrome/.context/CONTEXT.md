@@ -313,7 +313,7 @@ whole document.
 
 | Scope | Live when |
 |---|---|
-| `layer` | the contribution's own layer is open (or, for keys that name none, any layer is) |
+| `layer` | its named layer is open; an unnamed suggestion lease is live from registration until release |
 | `object` | `context.owner === "object"` |
 | `table` | `context.chain` contains `table` |
 | `block`, `document` | always — these two are order, not place |
@@ -352,11 +352,10 @@ already showing registers the pane first; a writer who opens the pane later
 registers it second. Both are the same situation, and only `chrome.layers`
 knows it.
 
-`layer: null` is one deliberate case: a suggestion menu's trigger registers the
-arrow keys the instant the trigger text lands, a beat before React opens the
-popover that becomes their layer, so it has no token to name. Those keys are
-the shallowest rung of the scope — any open layer claiming the same chord
-answers first.
+`layer: null` is one deliberate case: a suggestion trigger registers its keys
+before React opens the popover. That lease stays eligible until release; named
+open layers claiming the same chord still answer first. The first Arrow key must
+reach the suggestion rather than fall through during the mount gap.
 
 React lanes never pass a token by hand: `useChromeLayer({ keys })` holds the
 one the kernel gave it and re-registers the keys if the layer is ever replaced.

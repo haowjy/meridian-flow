@@ -95,6 +95,7 @@ function harness(owner: "work" | "none" = "none") {
     }),
     content,
     objectStore,
+    reservation: () => row,
   };
 }
 
@@ -114,6 +115,27 @@ function input(owner: "work" | "none" = "none") {
 }
 
 describe("UploadIntake", () => {
+  it.each([
+    "Gate|Map.txt",
+    "Gate?Map.txt",
+    "Gate:Map.txt",
+  ])("rejects invalid filename %s before allocating identity or storing content", async (filename) => {
+    const h = harness();
+    expect(await h.service.intake({ ...input(), filename })).toMatchObject({
+      ok: false,
+      error: { code: "invalid_filename", reason: "name/invalid-character" },
+    });
+    expect(h.reservation()).toBeNull();
+    expect(h.content.persist).not.toHaveBeenCalled();
+    expect(h.objectStore.put).not.toHaveBeenCalled();
+  });
+  it("accepts brackets in a filename", async () => {
+    const h = harness();
+    expect(await h.service.intake({ ...input(), filename: "Gate[Map].txt" })).toMatchObject({
+      ok: true,
+      value: { uri: "uploads://@/Gate[Map].txt" },
+    });
+  });
   it.each([
     "none",
     "work",

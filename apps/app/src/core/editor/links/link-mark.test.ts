@@ -3,6 +3,7 @@ import { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../config";
+import { sanitizePastedHTML } from "../sanitize-paste";
 
 let editor: Editor | null = null;
 
@@ -12,7 +13,11 @@ afterEach(() => {
 });
 
 function editorWith(content: string): Editor {
-  editor = new Editor({ extensions: createStandaloneEditorExtensions(), content });
+  editor = new Editor({
+    extensions: createStandaloneEditorExtensions(),
+    editorProps: { transformPastedHTML: sanitizePastedHTML },
+    content,
+  });
   return editor;
 }
 
@@ -109,6 +114,29 @@ describe("the link mark carries the whole internal family", () => {
       ),
     );
     expect(parsed.view.dom.querySelector("a")?.getAttribute("href")).toBe("");
+  });
+});
+
+describe("reference clipboard", () => {
+  it.each([
+    "javascript:alert(1)",
+    "https://other.example",
+  ])("does not let rejected metadata %s override a valid external href", (metadata) => {
+    const target = editorWith(
+      `<p><a href="https://safe.example" data-meridian-link="${metadata}">safe</a></p>`,
+    );
+    expect(hrefsIn(target)).toEqual(["https://safe.example"]);
+  });
+  it("copies internal aliases as Markdown and restores the link from rich HTML", () => {
+    const target = editorWith('<p><a href="[[scratch://@revision/notes.md]]">My notes</a></p>');
+    target.commands.selectAll();
+    const { dom, text } = target.view.serializeForClipboard(target.state.selection.content());
+    expect(text).toBe("[[scratch://@revision/notes.md|My notes]]");
+    expect(target.view.dom.querySelector("a")?.hasAttribute("href")).toBe(false);
+    target.commands.clearContent();
+    target.view.pasteHTML(dom.innerHTML, new Event("paste") as ClipboardEvent);
+    expect(hrefsIn(target)).toEqual(["[[scratch://@revision/notes.md]]"]);
+    expect(target.state.doc.textContent).toBe("My notes");
   });
 });
 

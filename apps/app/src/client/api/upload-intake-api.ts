@@ -1,4 +1,5 @@
 /** Browser adapter for authoritative material intake; removing a reference never deletes the file. */
+import { t } from "@lingui/core/macro";
 import type { UploadIntakeResult } from "@meridian/contracts/protocol";
 import type { ComposerUploadPort, ComposerUploadScope } from "@/components/app/composer";
 import { readResponsePayload } from "./http-client";
@@ -10,12 +11,23 @@ function url(scope: ComposerUploadScope) {
 async function response<T>(request: Promise<Response>): Promise<T> {
   const value = await request;
   const payload = await readResponsePayload(value);
-  if (!value.ok)
+  if (!value.ok) {
+    if (
+      typeof payload === "object" &&
+      payload &&
+      "message" in payload &&
+      payload.message === "invalid_filename"
+    ) {
+      throw new Error(
+        t`This filename contains unsupported characters. Rename the file and attach it again.`,
+      );
+    }
     throw new Error(
       typeof payload === "object" && payload && "message" in payload
         ? String(payload.message)
         : `Upload request failed: ${value.status}`,
     );
+  }
   return payload as T;
 }
 export const uploadIntakePort: ComposerUploadPort = {

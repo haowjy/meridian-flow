@@ -5,12 +5,17 @@ import type {
   UploadIntakeResult,
   UserMessageBlock,
 } from "@meridian/contracts/protocol";
+import { classifyFiletype } from "@meridian/contracts/protocol";
+import { parseRequestId } from "@meridian/contracts/request-id";
+import { decodeWorkSlug } from "@meridian/contracts/works";
 import { formatWikilink, wikilinkTarget } from "@meridian/markup";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { mergeAttributes, Node } from "@tiptap/core";
 import type { Selection } from "@tiptap/pm/state";
-import { TextSelection } from "@tiptap/pm/state";
+import { Plugin, TextSelection } from "@tiptap/pm/state";
 import type { AuthoritativeReference } from "@/core/completion";
+import { referenceUriForAuthority } from "@/core/completion";
+import { internalClipboardTarget } from "@/core/editor/links";
 
 export type ComposerDraftRevision = number;
 export type ComposerSelection = Readonly<{ anchor: number; head: number }>;
@@ -81,20 +86,134 @@ export type ComposerPendingUploadAttrs = {
   error: string | null;
 };
 
+/** HTML clipboard metadata is untrusted input; turn admission still authorizes identity. */
+function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | null {
+  if (!raw) return null;
+  let value: ComposerReferenceAttrs;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (
+    !value ||
+    typeof value !== "object" ||
+    ![value.documentId, value.uri, value.fileType, value.label, value.spelling].every(
+      (field) => typeof field === "string",
+    ) ||
+    (value.displayText !== undefined && typeof value.displayText !== "string") ||
+    typeof value.imageCapable !== "boolean"
+  )
+    return null;
+  const documentId = parseRequestId(value.documentId);
+  if (!documentId) return null;
+  const rawAuthority = value.authority;
+  if (!rawAuthority || typeof rawAuthority !== "object") return null;
+  let authority: ComposerReferenceAttrs["authority"];
+  switch (rawAuthority.kind) {
+    case "user": {
+      const userId = parseRequestId(rawAuthority.userId);
+      if (!userId) return null;
+      authority = { kind: "user", userId };
+      break;
+    }
+    case "project":
+    case "none": {
+      const projectId = parseRequestId(rawAuthority.projectId);
+      if (!projectId) return null;
+      authority = { kind: rawAuthority.kind, projectId };
+      break;
+    }
+    case "work": {
+      const projectId = parseRequestId(rawAuthority.projectId);
+      const workId = parseRequestId(rawAuthority.workId);
+      const workSlug = decodeWorkSlug(rawAuthority.workSlug);
+      if (!projectId || !workId || !workSlug) return null;
+      authority = { kind: "work", projectId, workId, workSlug };
+      break;
+    }
+    default:
+      return null;
+  }
+  const uri = referenceUriForAuthority(value.uri, authority);
+  const classification = classifyFiletype(value.fileType);
+  if (!uri || classification.kind === "unknown") return null;
+  // A copied occurrence owns no upload lifecycle; capability derives from the
+  // file classification, not an independently supplied clipboard boolean.
+  return {
+    documentId,
+    authority,
+    uri,
+    fileType: value.fileType,
+    label: value.label,
+    spelling: value.spelling,
+    ...(value.displayText !== undefined ? { displayText: value.displayText } : {}),
+    upload: null,
+    imageCapable: classification.kind === "binary" && classification.fileType === "image",
+  };
+}
+
 export const ComposerReferenceNode = Node.create({
   name: "composerReference",
   group: "inline",
   inline: true,
   atom: true,
   selectable: true,
-  addAttributes: () => ({ reference: { default: null } }),
-  parseHTML: () => [{ tag: "span[data-composer-reference]" }],
+  addAttributes: () => ({
+    reference: {
+      default: null,
+      rendered: false,
+      parseHTML: (element) =>
+        parseClipboardReference(element.getAttribute("data-composer-reference")),
+    },
+  }),
+  parseHTML: () => [
+    {
+      tag: "span[data-composer-reference]",
+      getAttrs: (element) =>
+        parseClipboardReference(element.getAttribute("data-composer-reference")) ? {} : false,
+    },
+  ],
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          transformPastedHTML(html) {
+            const container = document.createElement("div");
+            container.innerHTML = html;
+            for (const element of container.querySelectorAll("[data-meridian-link]")) {
+              if (parseClipboardReference(element.getAttribute("data-composer-reference")))
+                continue;
+              // Manuscript marks carry a target, not admitted attachment identity.
+              // Preserve their Markdown rather than inventing a Composer attachment.
+              const target = internalClipboardTarget(element.getAttribute("data-meridian-link"));
+              if (!target) continue;
+              element.replaceWith(
+                document.createTextNode(
+                  formatWikilink(
+                    wikilinkTarget(target) ?? target,
+                    element.textContent ?? undefined,
+                  ),
+                ),
+              );
+            }
+            return container.innerHTML;
+          },
+        },
+      }),
+    ];
+  },
+  renderText: ({ node }) => {
+    const value = node.attrs.reference as ComposerReferenceAttrs;
+    return formatWikilink(value.uri, value.displayText ?? value.label);
+  },
   renderHTML: ({ node, HTMLAttributes }) => {
     const value = node.attrs.reference as ComposerReferenceAttrs;
     return [
       "span",
       mergeAttributes(HTMLAttributes, {
-        "data-composer-reference": "",
+        "data-composer-reference": JSON.stringify({ ...value, upload: null }),
+        "data-meridian-link": formatWikilink(value.uri),
         role: "link",
         tabindex: "0",
         "aria-label": value.displayText ?? value.label,
@@ -125,7 +244,9 @@ export const ComposerUploadNode = Node.create({
         contenteditable: "false",
         "aria-label": `${value.state} upload: ${value.name}`,
       }),
-      value.state === "pending" ? `${value.name}…` : `${value.name} (failed)`,
+      value.state === "pending"
+        ? `${value.name}…`
+        : `${value.name} (${value.error ?? "Upload failed"})`,
     ];
   },
 });

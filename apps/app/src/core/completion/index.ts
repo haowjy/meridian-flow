@@ -60,6 +60,7 @@ export {
   type ReferenceSelectAction,
   rankReferenceRows,
   referenceAuthorityIndex,
+  referenceUriForAuthority,
   type StableReferenceAuthority,
   validReferenceQuery,
 } from "./reference-policy";

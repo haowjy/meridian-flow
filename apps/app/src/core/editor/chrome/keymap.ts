@@ -153,7 +153,10 @@ export function keymapContributionApplies(
   contribution: KeymapContribution,
   state: KeymapApplicability,
 ): boolean {
-  if (!keymapScopeApplies(contribution.scope, state)) return false;
+  // A suggestion lease is live before React mounts its visual layer. Named
+  // layers still require their exact token; this exception ends with the lease.
+  const pending = contribution.scope === "layer" && contribution.layer === null;
+  if (!pending && !keymapScopeApplies(contribution.scope, state)) return false;
   // A layer's keys are live exactly while that layer is. A token missing from
   // the list is a surface already out of the walk home, and its keys go with it.
   if (contribution.layer && !state.layers.includes(contribution.layer)) return false;

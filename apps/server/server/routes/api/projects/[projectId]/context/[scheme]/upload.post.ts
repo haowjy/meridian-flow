@@ -36,6 +36,9 @@ export default defineEventHandler(async (event): Promise<UploadIntakeResult> => 
     bytes: file.data,
   });
   if (!result.ok) {
+    if (result.error.code === "invalid_filename") {
+      throw createError({ statusCode: 400, message: "invalid_filename", data: result.error });
+    }
     const statusCode =
       result.error.code === "idempotency_conflict"
         ? 409

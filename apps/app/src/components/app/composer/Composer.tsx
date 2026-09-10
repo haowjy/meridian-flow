@@ -18,7 +18,7 @@ import {
 } from "react";
 import { Button } from "@/components/ui/button";
 import type { AuthoritativeReference } from "@/core/completion";
-import { ChromeKernelExtension } from "@/core/editor/chrome";
+import { ChromeKernelExtension, getEditorChrome } from "@/core/editor/chrome";
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
 import { AtReferenceExtension } from "@/core/editor/extensions/at-reference";
 import { editorSuggestionHost } from "@/core/editor/suggestion-host";
@@ -451,6 +451,25 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       setPending((n) => Math.max(0, n - 1));
     }
   }
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
+  useEffect(() => {
+    const chrome = getEditorChrome(editor);
+    if (!chrome) return;
+    const send = () => {
+      void submitRef.current();
+      return true;
+    };
+    return chrome.registerKeymap({
+      id: "composer-submit",
+      scope: "document",
+      bindings: {
+        Enter: () => (streaming ? false : send()),
+        "Mod-Enter": send,
+      },
+    });
+  }, [editor, streaming]);
+
   const keyDown = (event: React.KeyboardEvent) => {
     if (
       event.target instanceof Element &&
@@ -460,13 +479,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     if (event.key === "Escape" && streaming) {
       event.preventDefault();
       onStop?.();
-    } else if (
-      event.key === "Enter" &&
-      !event.shiftKey &&
-      (event.metaKey || event.ctrlKey || !streaming)
-    ) {
-      event.preventDefault();
-      void submit();
     }
   };
   return (

@@ -108,7 +108,7 @@ export function authoritativeReferenceForFile(
 ): AuthoritativeReference | null {
   const authority = stableAuthority(entry.scope, authorities);
   if (!authority) return null;
-  const uri = verifiedCanonicalUri(entry.scope, entry.uri, authority);
+  const uri = referenceUriForAuthority(entry.uri, authority);
   if (!uri) return null;
 
   return {
@@ -127,7 +127,7 @@ export function canonicalReferenceUri(
   authorities: ReferenceAuthorityIndex,
 ): CanonicalContextUri | null {
   const authority = stableAuthority(scope, authorities);
-  return authority ? verifiedCanonicalUri(scope, uri, authority) : null;
+  return authority ? referenceUriForAuthority(uri, authority) : null;
 }
 
 /**
@@ -229,8 +229,7 @@ function stableAuthority(
   }
 }
 
-function verifiedCanonicalUri(
-  scope: CatalogScope,
+export function referenceUriForAuthority(
   uri: CanonicalContextUri,
   authority: StableReferenceAuthority,
 ): CanonicalContextUri | null {
@@ -245,7 +244,7 @@ function verifiedCanonicalUri(
   if (authority.kind === "none") {
     return parsed.value.authority.kind === "none" ? parsed.value.normalized : null;
   }
-  return (scope.kind === "project" || scope.kind === "user") &&
+  return (authority.kind === "project" || authority.kind === "user") &&
     parsed.value.authority.kind === "contextual" &&
     parsed.value.scheme !== "scratch" &&
     parsed.value.scheme !== "uploads"

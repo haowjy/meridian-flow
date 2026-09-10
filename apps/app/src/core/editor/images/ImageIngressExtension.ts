@@ -22,7 +22,7 @@ import { Plugin } from "@tiptap/pm/state";
 import type { DecorationSet } from "@tiptap/pm/view";
 
 import { resolveAnchorIn } from "../anchors";
-import { markdownClipboardParser } from "../markdown-paste";
+import { markdownClipboardParser, markdownClipboardSerializer } from "../markdown-paste";
 import { tableDropDecision } from "../table-drop";
 import { startImageImport } from "./image-imports";
 import {
@@ -208,6 +208,7 @@ export const ImageIngressExtension = Extension.create({
           // project-relative paths on the clipboard, so an id never escapes
           // into another surface.
           clipboardTextParser: markdownClipboardParser(undefined, assetIndex),
+          clipboardTextSerializer: markdownClipboardSerializer,
           transformCopied: (slice) => resolveAssetRefsForClipboard(slice, assetIndex),
           transformPasted: (slice, view) => {
             const resolved = resolveImagesFromClipboard(slice, view.state.schema, assetIndex);

@@ -340,7 +340,7 @@ function menuTarget(state: EditorState, link: LinkSelection): LinkMenuTarget {
 }
 
 function hrefOf(element: HTMLElement): string {
-  return element.getAttribute("href") ?? "";
+  return element.getAttribute("data-meridian-link") ?? element.getAttribute("href") ?? "";
 }
 
 function travelFrom(origin: LinkPoint | null, event: MouseEvent): number {

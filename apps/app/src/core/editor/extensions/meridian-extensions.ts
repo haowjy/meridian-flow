@@ -34,7 +34,13 @@ import { imageDragPreviewPlugin } from "../images/image-drag-preview";
 import { IMAGE_WIDTH_ATTRIBUTE } from "../images/image-resize";
 import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending-images";
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
-import { classifyLinkTarget, linkTargetHref, normalizeLinkHref } from "../links/link-target";
+import {
+  classifyLinkTarget,
+  internalClipboardTarget,
+  isInternalLinkTarget,
+  linkTargetHref,
+  normalizeLinkHref,
+} from "../links/link-target";
 import { objectSelectedInDecorations } from "../objects";
 import { tableSweepPastePlugin } from "../table-sweep-paste";
 
@@ -294,14 +300,14 @@ export const MeridianLink = Link.extend({
    */
   renderHTML({ HTMLAttributes }) {
     const target = classifyLinkTarget(String(HTMLAttributes.href ?? ""));
-    // The rendered href is the classifier's, never the stored one. A peer or
-    // an AI writes marks straight into the document, and a browser reads a URL
-    // more loosely than any parser does: what lands in the DOM has to be the
-    // destination this editor actually approved.
+    // Internal targets are semantic references, not browser URLs. Keep their
+    // exact spelling in clipboard HTML; only external targets get a live href.
     const attributes = target
       ? {
           ...HTMLAttributes,
-          href: linkTargetHref(target),
+          href: isInternalLinkTarget(target) ? undefined : linkTargetHref(target),
+          "data-meridian-link": isInternalLinkTarget(target) ? HTMLAttributes.href : undefined,
+          role: "link",
           tabindex: "0",
           "data-link-kind": target.kind,
         }
@@ -309,9 +315,27 @@ export const MeridianLink = Link.extend({
     return ["a", mergeAttributes(this.options.HTMLAttributes, attributes), 0];
   },
 
+  parseHTML() {
+    return [
+      {
+        tag: "[data-meridian-link]",
+        getAttrs: (element) => {
+          const href = internalClipboardTarget(element.getAttribute("data-meridian-link"));
+          return href ? { href } : false;
+        },
+      },
+      ...(this.parent?.() ?? []),
+    ];
+  },
+
   addAttributes() {
     return {
-      href: { default: "" },
+      href: {
+        default: "",
+        parseHTML: (element) =>
+          internalClipboardTarget(element.getAttribute("data-meridian-link")) ??
+          element.getAttribute("href"),
+      },
       title: { default: null },
     };
   },

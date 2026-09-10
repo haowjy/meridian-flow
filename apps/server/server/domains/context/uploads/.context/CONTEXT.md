@@ -19,6 +19,14 @@ persisted file classification.
   adapters. Thread provenance is `thread_documents`; it is never upload storage
   ownership.
 
+## Filename admission
+
+Intake applies the shared Context entry-name validator after upload normalization
+and before reservation or storage. Invalid names return a typed client error,
+not a storage outage. This boundary does not relax ContextFS filename policy.
+The HTTP adapter returns 400 with the validation reason and offending character
+when present.
+
 ## Invariants
 
 - Real Work authority serializes as `uploads://@slug/name`; no-Work serializes as

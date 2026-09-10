@@ -117,3 +117,22 @@ function defaultPlainTextPaste(): Slice {
   // its TypeScript signature only permits Slice. Keep the runtime contract.
   return undefined as unknown as Slice;
 }
+
+/** Plain clipboard text is Markdown; the parallel HTML slice keeps exact editor structure. */
+export const markdownClipboardSerializer: NonNullable<EditorProps["clipboardTextSerializer"]> = (
+  slice,
+  view,
+) => {
+  const schema = view.state.schema;
+  const blocks: PMNode[] = [];
+  if (slice.content.firstChild?.isInline) {
+    blocks.push(schema.nodes.paragraph.create(null, slice.content));
+  } else {
+    slice.content.forEach((node) => {
+      blocks.push(node);
+    });
+  }
+  return markdownCodec({ schema, assetPathResolver: unresolvedAssetPathResolver })
+    .serializeBlocks(blocks)
+    .join("\n\n");
+};
