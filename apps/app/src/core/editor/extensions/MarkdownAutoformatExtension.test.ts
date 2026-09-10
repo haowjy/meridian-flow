@@ -374,7 +374,7 @@ describe("typed wikilink editing contracts", () => {
     editor.commands.setTextSelection(1 + "[[Missing|Name]".length);
     type(editor, "]");
     expect(editor.state.doc.textContent).toBe("[[Missing|Name]]");
-    expect(editor.view.dom.querySelector('a[href="[[Missing]]"]')).toBeNull();
+    expect(editor.view.dom.querySelector('a[data-meridian-link="[[Missing]]"]')).toBeNull();
   });
 });
 
