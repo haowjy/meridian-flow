@@ -1,11 +1,5 @@
 /** Immutable account epoch and narrowed facets over one private session core. */
 import type { AccountId } from "@meridian/contracts/protocol";
-import {
-  createLocalIdentityReservationPort,
-  createLocalUntitledCrossContextLeasePort,
-  type LocalIdentityReservationPort,
-  type LocalUntitledCrossContextLeasePort,
-} from "./document-session-cross-context-coordination";
 import type {
   LiveDocumentSessionRegistry,
   LocalUntitledDocumentSessionFactory,
@@ -26,8 +20,6 @@ export interface AccountDocumentSessionRuntime {
   readonly localReservation: LocalDocumentSessionReservationPort;
   readonly localAdoption: LocalDocumentSessionAdoptionPort;
   readonly localConstruction: LocalUntitledDocumentSessionFactory;
-  readonly localLifetime: LocalUntitledCrossContextLeasePort;
-  readonly localIdentityReservation: LocalIdentityReservationPort;
   connectLocalLineageTerminal(port: LocalLineageTerminalPort): void;
   beginClose(): void;
   finishClose(): Promise<void>;
@@ -40,8 +32,6 @@ export interface AccountDocumentSessionCore {
   readonly localReservation: LocalDocumentSessionReservationPort;
   readonly localAdoption: LocalDocumentSessionAdoptionPort;
   readonly localConstruction: LocalUntitledDocumentSessionFactory;
-  readonly localLifetime?: LocalUntitledCrossContextLeasePort;
-  readonly localIdentityReservation?: LocalIdentityReservationPort;
   connectLocalLineageTerminal?(port: LocalLineageTerminalPort): void;
   beginClose(): void;
   finishClose(): Promise<void>;
@@ -60,8 +50,6 @@ function createCore(accountId: AccountId): AccountDocumentSessionCore {
     localReservation: registry,
     localAdoption: registry,
     localConstruction: registry,
-    localLifetime: createLocalUntitledCrossContextLeasePort({ accountId }),
-    localIdentityReservation: createLocalIdentityReservationPort({ accountId }),
     connectLocalLineageTerminal: (port: LocalLineageTerminalPort) =>
       registry.connectLocalLineageTerminal(port),
     beginClose: () => registry.beginCloseAccountRuntime(),
@@ -144,21 +132,6 @@ export function createAccountDocumentSessionRuntime(
       return core.localConstruction.createDetached(request);
     },
   };
-  const lifetimeCore =
-    core.localLifetime ?? createLocalUntitledCrossContextLeasePort({ accountId: input.accountId });
-  const localLifetime: LocalUntitledCrossContextLeasePort = {
-    async tryAcquire(projectId, documentId) {
-      requireOpen();
-      const lease = await lifetimeCore.tryAcquire(projectId, documentId);
-      if (state === "open") return lease;
-      await lease?.release();
-      throw new Error(`Account document session runtime is ${state}`);
-    },
-  };
-  const localIdentityReservation =
-    core.localIdentityReservation ??
-    createLocalIdentityReservationPort({ accountId: input.accountId });
-
   const beginClose = () => {
     if (state !== "open") return;
     state = "closing";
@@ -172,8 +145,6 @@ export function createAccountDocumentSessionRuntime(
     localReservation,
     localAdoption,
     localConstruction,
-    localLifetime,
-    localIdentityReservation,
     connectLocalLineageTerminal: (port: LocalLineageTerminalPort) =>
       core.connectLocalLineageTerminal?.(port),
     beginClose,

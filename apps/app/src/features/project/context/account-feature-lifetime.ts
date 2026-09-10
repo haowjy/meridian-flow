@@ -4,6 +4,10 @@ import { createAccountDocumentSessionRuntime } from "@/core/editor/account-docum
 import { AccountPostApplyDispositionOwner } from "../draft-apply-recovery/draft-apply-recovery-owner";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { BrowserLocalUntitledLineageLedger } from "./local-untitled-lineage-ledger";
+import {
+  createLocalIdentityReservationPort,
+  createLocalUntitledCrossContextLeasePort,
+} from "./local-untitled-locks";
 import { LocalUntitledOwner } from "./local-untitled-owner";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
@@ -70,8 +74,14 @@ export class AccountFeatureLifetime {
         : window.localStorage;
     this.localOwner = new LocalUntitledOwner({
       accountId,
-      ledger: new BrowserLocalUntitledLineageLedger(storage, this.runtime.localLifetime),
-      identityReservations: this.runtime.localIdentityReservation,
+      ledger: new BrowserLocalUntitledLineageLedger(
+        storage,
+        createLocalUntitledCrossContextLeasePort({
+          accountId,
+          epochSignal: this.runtime.epochSignal,
+        }),
+      ),
+      identityReservations: createLocalIdentityReservationPort({ accountId }),
       sessions: this.runtime.localConstruction,
       reservations: this.runtime.localReservation,
       adoption: this.runtime.localAdoption,

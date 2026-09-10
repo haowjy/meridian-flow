@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import type { LocalUntitledCrossContextLeasePort } from "@/core/editor/document-session-cross-context-coordination";
 import type { LocalLineageEnvelope } from "./local-untitled-lineage";
 import { BrowserLocalUntitledLineageLedger } from "./local-untitled-lineage-ledger";
+import type { LocalUntitledCrossContextLeasePort } from "./local-untitled-locks";
 
 class MemoryStorage implements Storage {
   private values = new Map<string, string>();

@@ -1,6 +1,5 @@
 /** Locked browser ledger for v3 local Untitled lineage envelopes. */
 import type { AccountId } from "@meridian/contracts/protocol";
-import type { LocalUntitledCrossContextLeasePort } from "@/core/editor/document-session-cross-context-coordination";
 import {
   type LocalUntitledLineage,
   type LocalUntitledLineageRef,
@@ -8,6 +7,7 @@ import {
   type LocalUntitledTransitionResult,
   reduceLocalUntitledLineage,
 } from "./local-untitled-lineage";
+import type { LocalUntitledCrossContextLeasePort } from "./local-untitled-locks";
 
 const LINEAGE_PREFIX = "meridian:local-untitled-lineage:v3:";
 

@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+- Separate document admission, recovery, browser locks, and local Untitled ownership;
+  preserve cross-tab editing and account-close behavior.
+
 - Automatically read chat document references; retain block-aware results with the
   reference and replay them without rereading old messages.
 

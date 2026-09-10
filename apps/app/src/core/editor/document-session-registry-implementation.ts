@@ -20,16 +20,15 @@ import {
   documentSessionPersistenceKey,
   type LocalAdoptionPendingReceipt,
 } from "./document-session-authority-store";
-
 import {
-  createDocumentSessionCrossContextCoordination,
   DocumentSessionCoordinationError,
   type DocumentSessionCrossContextCoordination,
   type LocalLineageTerminalPort,
   type LocalSessionAuthority,
-} from "./document-session-cross-context-coordination";
+} from "./document-session-coordination-contract";
+import { createDocumentSessionCrossContextCoordination } from "./document-session-cross-context-coordination";
 
-export type { LocalLineageTerminalPort } from "./document-session-cross-context-coordination";
+export type { LocalLineageTerminalPort } from "./document-session-coordination-contract";
 
 import type {
   LocalUntitledDocumentSessionFactory,

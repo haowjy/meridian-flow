@@ -17,6 +17,15 @@ binary/custom metadata still opens a viewer tab and route. The resolved file's
 Work/no-Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
 
+## Local Untitled ownership
+
+`local-untitled-locks.ts` owns the project/lineage lifetime and identity-reservation
+names and ports. `AccountFeatureLifetime` composes them with the account runtime's
+epoch signal and the lineage ledger/owner. An acquisition that crosses account
+close releases its lease before rejecting; teardown may still release existing
+leases. Native Web Locks adaptation is shared in `core/cross-context-locks.ts`,
+which knows nothing about projects or lineages.
+
 ## Architecture
 
 ```text

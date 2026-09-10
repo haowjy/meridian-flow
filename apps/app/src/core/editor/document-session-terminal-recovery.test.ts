@@ -13,16 +13,16 @@ vi.mock("@/core/transport/hocuspocus-document-transport", () => ({
 }));
 
 import { BrowserLocalUntitledLineageLedger } from "@/features/project/context/local-untitled-lineage-ledger";
-import { LocalUntitledOwner } from "@/features/project/context/local-untitled-owner";
-import { createAccountDocumentSessionRuntime } from "./account-document-session-runtime";
-import { DocumentSessionAuthorityStore } from "./document-session-authority-store";
 import {
-  type CrossContextLockManager,
-  createDocumentSessionCrossContextCoordination,
   createLocalIdentityReservationPort,
   createLocalUntitledCrossContextLeasePort,
-  type DocumentSessionCrossContextCoordination,
-} from "./document-session-cross-context-coordination";
+} from "@/features/project/context/local-untitled-locks";
+import { LocalUntitledOwner } from "@/features/project/context/local-untitled-owner";
+import type { CrossContextLockManager } from "../cross-context-locks";
+import { createAccountDocumentSessionRuntime } from "./account-document-session-runtime";
+import { DocumentSessionAuthorityStore } from "./document-session-authority-store";
+import type { DocumentSessionCrossContextCoordination } from "./document-session-coordination-contract";
+import { createDocumentSessionCrossContextCoordination } from "./document-session-cross-context-coordination";
 import { DocumentSessionRegistry } from "./document-session-registry-implementation";
 
 class MemoryStorage implements Storage {
@@ -263,10 +263,6 @@ function composeAccountRuntime(
   wakeBus?: WakeBus,
 ) {
   const composition = compose(accountId, storage, false, locks, wakeBus);
-  const lifetime = createLocalUntitledCrossContextLeasePort({
-    accountId,
-    locks: composition.locks,
-  });
   const identity = createLocalIdentityReservationPort({ accountId, locks: composition.locks });
   const runtime = createAccountDocumentSessionRuntime({
     accountId,
@@ -276,18 +272,23 @@ function composeAccountRuntime(
       localReservation: composition.registry,
       localAdoption: composition.registry,
       localConstruction: composition.registry,
-      localLifetime: lifetime,
-      localIdentityReservation: identity,
       connectLocalLineageTerminal: (port) => composition.registry.connectLocalLineageTerminal(port),
       beginClose: () => composition.registry.beginCloseAccountRuntime(),
       finishClose: () => composition.registry.closeAccountRuntime(),
     },
   });
-  const ledger = new BrowserLocalUntitledLineageLedger(storage, runtime.localLifetime);
+  const ledger = new BrowserLocalUntitledLineageLedger(
+    storage,
+    createLocalUntitledCrossContextLeasePort({
+      accountId,
+      locks: composition.locks,
+      epochSignal: runtime.epochSignal,
+    }),
+  );
   const owner = new LocalUntitledOwner({
     accountId,
     ledger,
-    identityReservations: runtime.localIdentityReservation,
+    identityReservations: identity,
     sessions: runtime.localConstruction,
     reservations: runtime.localReservation,
     adoption: runtime.localAdoption,

@@ -8,7 +8,6 @@ import {
   deleteIndexedDb,
 } from "@/core/editor/document-session";
 import type { LocalAdoptionPendingReceipt } from "@/core/editor/document-session-authority-store";
-import type { LocalIdentityReservationPort } from "@/core/editor/document-session-cross-context-coordination";
 import type { LocalUntitledDocumentSessionFactory } from "@/core/editor/document-session-registry";
 import type { LocalLineageTerminalPort } from "@/core/editor/document-session-registry-implementation";
 import type {
@@ -26,6 +25,7 @@ import type {
   LocalUntitledLineageAccess,
   LocalUntitledLineageLedger,
 } from "./local-untitled-lineage-ledger";
+import type { LocalIdentityReservationPort } from "./local-untitled-locks";
 
 export type LocalUntitledKey = Readonly<{
   accountId: AccountId;

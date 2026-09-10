@@ -4,6 +4,22 @@ The app editor builds the browser-side TipTap schema and binds it to the shared
 Yjs document session. It must stay structurally aligned with
 `@meridian/prosemirror-schema`; schema drift corrupts y-prosemirror documents.
 
+## Session authority ownership
+
+`document-session-cross-context-coordination.ts` owns admission, local session/lease
+maps and account-close ordering. `document-session-recovery.ts` owns durable
+pending-drain/purge reconciliation and terminal-lineage joins, using that same
+owner's operation and lifecycle locks. It must not acquire a second session map
+or authority store. `document-session-locks.ts` implements document lock naming
+and callback lifetimes; `document-session-wakeup.ts` only requests reconciliation
+through advisory broadcasts, browser lifecycle events and timed scans.
+
+Project-local Untitled lifetime and identity reservations belong to
+`features/project/context/local-untitled-locks.ts`, composed by
+`AccountFeatureLifetime`. The account runtime supplies its epoch signal, not
+feature-specific lock factories. Keep lineage acquisition outside operation-held
+paths; recovery reaches the feature owner through the terminal continuation port.
+
 ## Contracts
 
 - `createEditorExtensions()` is the only app-side extension assembly point for
