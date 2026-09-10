@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Let suggestion keys answer before their popover mounts instead of falling through into document editing.
+
 - Separate document admission, recovery, browser locks, and local Untitled ownership;
   preserve cross-tab editing and account-close behavior.
 
