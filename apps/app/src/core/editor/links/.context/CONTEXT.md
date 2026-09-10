@@ -244,3 +244,13 @@ one draft path serves all three doors. `linkAt` answers null for a position
 outside the document rather than throwing: it is called from inside a Yjs
 update handler, where a throw is swallowed and the editor quietly stops
 applying peer writes.
+
+## Clipboard references
+
+Internal links have no browser `href`. Their validated stored target travels in
+`data-meridian-link` in rich HTML, and plain clipboard text uses the Markdown
+codec (including wikilink aliases). The app's click handler reads the semantic
+target; native URL copying must not interpret it relative to the current route.
+The link menu copies the pointed-at slice without moving the writer's selection.
+External links retain URL copying. Rich HTML restores stored mark spelling and
+formatting; it never persists resolver answers or manufactures document identity.

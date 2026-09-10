@@ -9,7 +9,7 @@ import { formatWikilink, wikilinkTarget } from "@meridian/markup";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { mergeAttributes, Node } from "@tiptap/core";
 import type { Selection } from "@tiptap/pm/state";
-import { TextSelection } from "@tiptap/pm/state";
+import { Plugin, TextSelection } from "@tiptap/pm/state";
 import type { AuthoritativeReference } from "@/core/completion";
 
 export type ComposerDraftRevision = number;
@@ -81,20 +81,105 @@ export type ComposerPendingUploadAttrs = {
   error: string | null;
 };
 
+/** HTML clipboard metadata is untrusted input; turn admission still authorizes identity. */
+function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | null {
+  if (!raw) return null;
+  let value: ComposerReferenceAttrs;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (
+    !value ||
+    typeof value !== "object" ||
+    ![value.documentId, value.uri, value.fileType, value.label, value.spelling].every(
+      (field) => typeof field === "string",
+    ) ||
+    (value.displayText !== undefined && typeof value.displayText !== "string") ||
+    typeof value.imageCapable !== "boolean"
+  )
+    return null;
+  const authority = value.authority;
+  if (!authority || typeof authority !== "object") return null;
+  if (authority.kind === "user") {
+    if (typeof authority.userId !== "string") return null;
+  } else if (
+    authority.kind === "project" ||
+    authority.kind === "none" ||
+    authority.kind === "work"
+  ) {
+    if (typeof authority.projectId !== "string") return null;
+    if (
+      authority.kind === "work" &&
+      (typeof authority.workId !== "string" || typeof authority.workSlug !== "string")
+    )
+      return null;
+  } else return null;
+  // A copied occurrence does not own the source draft's upload lifecycle.
+  return { ...value, upload: null };
+}
+
 export const ComposerReferenceNode = Node.create({
   name: "composerReference",
   group: "inline",
   inline: true,
   atom: true,
   selectable: true,
-  addAttributes: () => ({ reference: { default: null } }),
-  parseHTML: () => [{ tag: "span[data-composer-reference]" }],
+  addAttributes: () => ({
+    reference: {
+      default: null,
+      rendered: false,
+      parseHTML: (element) =>
+        parseClipboardReference(element.getAttribute("data-composer-reference")),
+    },
+  }),
+  parseHTML: () => [
+    {
+      tag: "span[data-composer-reference]",
+      getAttrs: (element) =>
+        parseClipboardReference(element.getAttribute("data-composer-reference")) ? {} : false,
+    },
+  ],
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          transformPastedHTML(html) {
+            const container = document.createElement("div");
+            container.innerHTML = html;
+            for (const element of container.querySelectorAll("[data-meridian-link]")) {
+              if (parseClipboardReference(element.getAttribute("data-composer-reference")))
+                continue;
+              // Manuscript marks carry a target, not admitted attachment identity.
+              // Preserve their Markdown rather than inventing a Composer attachment.
+              const target = element.getAttribute("data-meridian-link") ?? "";
+              element.replaceWith(
+                document.createTextNode(
+                  formatWikilink(
+                    wikilinkTarget(target) ?? target,
+                    element.textContent ?? undefined,
+                  ),
+                ),
+              );
+            }
+            return container.innerHTML;
+          },
+        },
+      }),
+    ];
+  },
+  renderText: ({ node }) => {
+    const value = node.attrs.reference as ComposerReferenceAttrs;
+    return formatWikilink(value.uri, value.displayText ?? value.label);
+  },
   renderHTML: ({ node, HTMLAttributes }) => {
     const value = node.attrs.reference as ComposerReferenceAttrs;
     return [
       "span",
       mergeAttributes(HTMLAttributes, {
-        "data-composer-reference": "",
+        "data-composer-reference": JSON.stringify({ ...value, upload: null }),
+        "data-meridian-link": formatWikilink(value.uri),
         role: "link",
         tabindex: "0",
         "aria-label": value.displayText ?? value.label,

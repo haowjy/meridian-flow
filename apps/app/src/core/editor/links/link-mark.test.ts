@@ -112,6 +112,20 @@ describe("the link mark carries the whole internal family", () => {
   });
 });
 
+describe("reference clipboard", () => {
+  it("copies internal aliases as Markdown and restores the link from rich HTML", () => {
+    const target = editorWith('<p><a href="[[scratch://@revision/notes.md]]">My notes</a></p>');
+    target.commands.selectAll();
+    const { dom, text } = target.view.serializeForClipboard(target.state.selection.content());
+    expect(text).toBe("[[scratch://@revision/notes.md|My notes]]");
+    expect(target.view.dom.querySelector("a")?.hasAttribute("href")).toBe(false);
+    target.commands.clearContent();
+    target.view.pasteHTML(dom.innerHTML, new Event("paste") as ClipboardEvent);
+    expect(hrefsIn(target)).toEqual(["[[scratch://@revision/notes.md]]"]);
+    expect(target.state.doc.textContent).toBe("My notes");
+  });
+});
+
 describe("bare-URL autolink", () => {
   it("links a hostname the writer typed", () => {
     const target = editorWith("<p></p>");

@@ -55,6 +55,7 @@ import {
 import {
   type ClipboardAvailability,
   clipboardAccess,
+  writeClipboardRichText,
   writeClipboardText,
 } from "@/features/editor/clipboard";
 
@@ -132,14 +133,22 @@ export function LinkMenu({
           // that happened. Closing on the press would report success by
           // disappearing, which is law 5's silent rejection with a smile.
           event.preventDefault();
-          void writeClipboardText(menu.href).then((write) => {
+          const range = linkMenuRange(menu);
+          const internal = menu.target && menu.target.kind !== "external";
+          const copied = internal
+            ? editor.view.serializeForClipboard(editor.state.doc.slice(range.from, range.to))
+            : null;
+          const write = copied
+            ? writeClipboardRichText(copied.dom.innerHTML, copied.text)
+            : writeClipboardText(menu.href);
+          void write.then((write) => {
             if (write.status === "done") close();
             else setClipboard("unavailable");
           });
         }}
       >
         <Copy aria-hidden />
-        {t`Copy link address`}
+        {menu.target && menu.target.kind !== "external" ? t`Copy reference` : t`Copy link address`}
       </EditorMenuItem>
       <EditorMenuItem
         onSelect={() => {

@@ -893,6 +893,10 @@ msgstr ""
 msgid "Copy link address"
 msgstr ""
 
+#: src/features/editor/surfaces/link/LinkMenu.tsx
+msgid "Copy reference"
+msgstr ""
+
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Copy removed text"
 msgstr ""
@@ -3324,6 +3328,10 @@ msgstr ""
 #. placeholder {0}: mimeType || "application/octet-stream"
 #: src/features/project/context/viewers/BinaryFallbackViewer.tsx
 msgid "This file type ({0}) doesn't have an inline viewer yet. Download the original to inspect it."
+msgstr ""
+
+#: src/client/api/upload-intake-api.ts
+msgid "This filename contains unsupported characters. Rename the file and attach it again."
 msgstr ""
 
 #: src/features/project/mobile/MobileContextBrowser.tsx

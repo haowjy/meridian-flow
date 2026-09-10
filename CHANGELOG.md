@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Copy internal links as Markdown wikilinks with rich reference data, not browser URLs. Preserve display text on paste.
+
 - Reject unsupported upload filenames before storage and show actionable attachment errors.
 
 - Let suggestion keys answer before their popover mounts instead of falling through into document editing.

@@ -150,14 +150,7 @@ export function normalizeLinkHref(input: string): string | null {
   return validExternalHref(`https://${value}`);
 }
 
-/**
- * The href a classified target actually addresses — what a link renders and
- * what the hover hint shows.
- *
- * Rendering this rather than the stored attribute is the second half of the
- * fence: whatever reached the mark, the DOM carries only a destination this
- * module read and approved, spelled the way the URL parser itself spells it.
- */
+/** Canonical semantic spelling for resolution and hints, not an internal browser URL. */
 export function linkTargetHref(target: LinkTarget): string {
   switch (target.kind) {
     case "wikilink":
