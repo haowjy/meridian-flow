@@ -5,7 +5,6 @@ import type { PackageRepository } from "../domains/packages/index.js";
 import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
 import type { EventJournalWriter, InternalThreadRepositories } from "../domains/threads/index.js";
 import { AgentBindingNotFoundError } from "./thread-creation.js";
-import { MissingPrimaryWorkMembershipError } from "./work-attachment.js";
 
 export interface ThreadAgentSwapDeps {
   threads: InternalThreadRepositories["threads"];
@@ -100,11 +99,13 @@ export async function forkThreadAgent(
 async function createDerivedPrimaryWithMembership(
   deps: ThreadAgentSwapDeps,
   input: Parameters<InternalThreadRepositories["threads"]["createDerivedPrimary"]>[0],
-  membershipWorkId: WorkId,
+  membershipWorkId: WorkId | null,
 ): Promise<Thread> {
   return deps.transaction(async () => {
     const target = await deps.threads.createDerivedPrimary(input);
-    await deps.threadWorks.addMembership(target.id as ThreadId, membershipWorkId, true);
+    if (membershipWorkId) {
+      await deps.threadWorks.addMembership(target.id as ThreadId, membershipWorkId, true);
+    }
     return { ...target, workId: membershipWorkId };
   });
 }
@@ -112,10 +113,9 @@ async function createDerivedPrimaryWithMembership(
 async function requirePrimaryWorkId(
   deps: Pick<ThreadAgentSwapDeps, "threadWorks">,
   threadId: string,
-): Promise<WorkId> {
+): Promise<WorkId | null> {
   const membership = await deps.threadWorks.findPrimary(threadId as ThreadId);
-  if (!membership) throw new MissingPrimaryWorkMembershipError(threadId);
-  return membership.workId;
+  return membership?.workId ?? null;
 }
 
 async function requireOwnedSourceThread(

@@ -7,7 +7,7 @@ import { useLingui } from "@lingui/react";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   loadProjectRouteData,
@@ -17,6 +17,7 @@ import {
 import { useWorks } from "@/client/query/useWorks";
 import { useThreadStore } from "@/client/stores";
 import { setThread } from "@/client/working-set";
+import { ProjectDocumentNavigationProvider } from "@/features/project/context/open-project-document";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { ProjectView } from "@/features/project/ProjectView";
 import { ProjectContextRouteProvider } from "@/features/project/routing/ProjectContextRoute";
@@ -192,51 +193,55 @@ function RouteComponent() {
     });
   }
 
-  function handleOpenContextTarget(target: ContextRouteTarget, options?: { replace?: boolean }) {
-    return navigate({
-      to: "/project/$projectId",
-      params: { projectId },
-      search: (previous) => openContextRouteSearch(parseProjectSearch(previous), target),
-      replace: options?.replace ?? false,
-    });
-  }
+  const handleOpenContextTarget = useCallback(
+    (target: ContextRouteTarget, options?: { replace?: boolean }) =>
+      navigate({
+        to: "/project/$projectId",
+        params: { projectId },
+        search: (previous) => openContextRouteSearch(parseProjectSearch(previous), target),
+        replace: options?.replace ?? false,
+      }),
+    [navigate, projectId],
+  );
 
   return (
     <ProjectContextRouteProvider openContextRoute={handleOpenContextTarget}>
-      <ProjectView
-        key={projectId}
-        projectId={projectId}
-        workingSet={routeData.workingSet}
-        workingSetSyncEnabled={user.workingSetSyncEnabled === true}
-        activeScreen={resolvedScreen}
-        activeThreadId={activeThreadId}
-        routeWork={routeWork}
-        routeCommands={routeCommands}
-        contextRemovalRoute={{
-          readSearch: () => search,
-          updateSearch: (_projectId, update) => {
-            void navigate({
-              to: "/project/$projectId",
-              params: { projectId },
-              search: (previous) => update(parseProjectSearch(previous)),
-              replace: true,
-            });
-          },
-        }}
-        activeContextScheme={scheme ?? null}
-        activeContextFolder={folder ?? null}
-        activeContextPath={path ?? null}
-        resultsOpen={results === ""}
-        onSelectScreen={handleSelectScreen}
-        onSelectThread={handleSelectThread}
-        onSelectDockThread={handleSelectDockThread}
-        onSelectContextScheme={handleSelectContextScheme}
-        onExitContextScheme={handleExitContextScheme}
-        onSelectContextFolder={handleSelectContextFolder}
-        onOpenContextTarget={handleOpenContextTarget}
-        onOpenResults={() => patchSearch({ results: "" })}
-        onCloseResults={() => patchSearch({ results: undefined })}
-      />
+      <ProjectDocumentNavigationProvider projectId={projectId}>
+        <ProjectView
+          key={projectId}
+          projectId={projectId}
+          workingSet={routeData.workingSet}
+          workingSetSyncEnabled={user.workingSetSyncEnabled === true}
+          activeScreen={resolvedScreen}
+          activeThreadId={activeThreadId}
+          routeWork={routeWork}
+          routeCommands={routeCommands}
+          contextRemovalRoute={{
+            readSearch: () => search,
+            updateSearch: (_projectId, update) => {
+              void navigate({
+                to: "/project/$projectId",
+                params: { projectId },
+                search: (previous) => update(parseProjectSearch(previous)),
+                replace: true,
+              });
+            },
+          }}
+          activeContextScheme={scheme ?? null}
+          activeContextFolder={folder ?? null}
+          activeContextPath={path ?? null}
+          resultsOpen={results === ""}
+          onSelectScreen={handleSelectScreen}
+          onSelectThread={handleSelectThread}
+          onSelectDockThread={handleSelectDockThread}
+          onSelectContextScheme={handleSelectContextScheme}
+          onExitContextScheme={handleExitContextScheme}
+          onSelectContextFolder={handleSelectContextFolder}
+          onOpenContextTarget={handleOpenContextTarget}
+          onOpenResults={() => patchSearch({ results: "" })}
+          onCloseResults={() => patchSearch({ results: undefined })}
+        />
+      </ProjectDocumentNavigationProvider>
     </ProjectContextRouteProvider>
   );
 }
@@ -248,8 +253,4 @@ function useProjectRouteCacheSeed(projectId: string, data: ProjectRouteData): vo
     seedProjectRouteData(queryClient, projectId, data);
     return null;
   });
-
-  useEffect(() => {
-    seedProjectRouteData(queryClient, projectId, data);
-  }, [data, projectId, queryClient]);
 }

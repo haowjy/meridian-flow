@@ -147,6 +147,45 @@ describe("chrome layers", () => {
     second.release();
     expect(chrome.layers).toHaveLength(1);
   });
+
+  it("offers retreat only to the stable owner of the top layer", () => {
+    const { chrome } = createEditorChrome();
+    const backtrack = vi.fn(() => true);
+    chrome.registerLayerRetreat({ ownerId: "suggestion", backtrack, dismiss: vi.fn() });
+    const suggestion = chrome.openLayer({
+      id: "suggestion#instance",
+      ownerId: "suggestion",
+      close: vi.fn(),
+    });
+    const rival = chrome.openLayer({
+      id: "rival",
+      parentId: suggestion.id,
+      close: vi.fn(),
+    });
+
+    expect(chrome.retreatTopLayer()).toBe(false);
+    expect(backtrack).not.toHaveBeenCalled();
+    rival.release();
+    expect(chrome.retreatTopLayer()).toBe(true);
+    expect(backtrack).toHaveBeenCalledOnce();
+  });
+
+  it("uses the semantic owner before its layer exists and releases idempotently", () => {
+    const { chrome } = createEditorChrome();
+    const dismiss = vi.fn();
+    const release = chrome.registerLayerRetreat({
+      ownerId: "suggestion",
+      backtrack: () => false,
+      dismiss,
+    });
+
+    expect(chrome.retreatTopLayer()).toBe(true);
+    expect(dismiss).toHaveBeenCalledOnce();
+    release();
+    release();
+    expect(chrome.retreatTopLayer()).toBe(false);
+    expect(dismiss).toHaveBeenCalledOnce();
+  });
 });
 
 describe("gesture suppression", () => {

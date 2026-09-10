@@ -12,7 +12,7 @@ import {
   WorkNameConflictError,
   WorkRestoreConflictError,
 } from "../../ports/work-repository.js";
-import { DEFAULT_WORK_NAME, nextWorkSlug } from "./shared.js";
+import { nextWorkSlug } from "./shared.js";
 
 export interface InMemoryWorkRepositoryOptions {
   hasLiveThreads?: (workId: WorkId) => boolean | Promise<boolean>;
@@ -26,6 +26,21 @@ export function createInMemoryWorkRepository(
   options: InMemoryWorkRepositoryOptions = {},
 ): WorkRepository {
   const rows = new Map<string, Work>();
+  const projects = new Map<string, { catalogGeneration: string; revision: bigint }>();
+
+  function projectState(projectId: string) {
+    let state = projects.get(projectId);
+    if (!state) {
+      state = { catalogGeneration: crypto.randomUUID(), revision: 0n };
+      projects.set(projectId, state);
+    }
+    return state;
+  }
+
+  function advance(work: Work): void {
+    work.entityRevision = String(BigInt(work.entityRevision) + 1n);
+    projectState(work.projectId).revision += 1n;
+  }
 
   function now(): string {
     return new Date().toISOString();
@@ -49,6 +64,7 @@ export function createInMemoryWorkRepository(
       status: "active",
       archivedAt: null,
       aiWriteMode: "direct",
+      entityRevision: "1",
       lastActivityAt: timestamp,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -70,13 +86,20 @@ export function createInMemoryWorkRepository(
   const repo: WorkRepository = {
     async transaction<T>(operation: () => Promise<T>): Promise<T> {
       const snapshot = structuredClone(rows);
+      const projectSnapshot = structuredClone(projects);
       try {
         return await operation();
       } catch (cause) {
         rows.clear();
         for (const [id, work] of snapshot) rows.set(id, work);
+        projects.clear();
+        for (const [id, state] of projectSnapshot) projects.set(id, state);
         throw cause;
       }
+    },
+
+    async readSnapshot<T>(operation: () => Promise<T>): Promise<T> {
+      return operation();
     },
 
     async lockById(id: WorkId): Promise<Work | null> {
@@ -87,6 +110,7 @@ export function createInMemoryWorkRepository(
       const work = build(input);
       if (nameIsTaken(work.projectId, work.name)) throw new WorkNameConflictError();
       rows.set(work.id, work);
+      projectState(work.projectId).revision += 1n;
       return { ...work };
     },
 
@@ -101,6 +125,14 @@ export function createInMemoryWorkRepository(
         .filter((w) => !opts?.status || w.status === opts.status)
         .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
         .map((w) => ({ ...w }));
+    },
+
+    async snapshotIdentity(projectId: ProjectId) {
+      const state = projectState(projectId);
+      return {
+        catalogGeneration: state.catalogGeneration,
+        authorityRevision: String(state.revision),
+      };
     },
 
     async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
@@ -119,6 +151,7 @@ export function createInMemoryWorkRepository(
       }
       row.updatedAt = timestamp;
       row.lastActivityAt = timestamp;
+      advance(row);
       return { ...row };
     },
 
@@ -130,6 +163,7 @@ export function createInMemoryWorkRepository(
         row.archivedAt = now();
         row.updatedAt = row.archivedAt;
         row.lastActivityAt = row.updatedAt;
+        advance(row);
       }
       return { ...row };
     },
@@ -142,6 +176,7 @@ export function createInMemoryWorkRepository(
         row.archivedAt = null;
         row.updatedAt = now();
         row.lastActivityAt = row.updatedAt;
+        advance(row);
       }
       return { ...row };
     },
@@ -160,6 +195,7 @@ export function createInMemoryWorkRepository(
       row.deletedAt = now();
       row.updatedAt = row.deletedAt;
       row.lastActivityAt = row.updatedAt;
+      advance(row);
     },
 
     async restore(id: WorkId): Promise<Work> {
@@ -180,18 +216,8 @@ export function createInMemoryWorkRepository(
       row.deletedAt = null;
       row.updatedAt = now();
       row.lastActivityAt = row.updatedAt;
+      advance(row);
       return { ...row };
-    },
-
-    async ensureDefaultForProject(projectId: ProjectId, name?: string): Promise<Work> {
-      const existing = [...rows.values()].filter(
-        (work) => work.projectId === projectId && work.deletedAt === null,
-      );
-      existing.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-      if (existing[0]) return { ...existing[0] };
-      const work = build({ projectId, name: name?.trim() || DEFAULT_WORK_NAME });
-      rows.set(work.id, work);
-      return { ...work };
     },
 
     async touch(id: WorkId): Promise<void> {
@@ -200,6 +226,7 @@ export function createInMemoryWorkRepository(
       const timestamp = now();
       row.lastActivityAt = timestamp;
       row.updatedAt = timestamp;
+      advance(row);
     },
   };
 

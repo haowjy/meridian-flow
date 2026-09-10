@@ -21,15 +21,15 @@ const { DocumentSession } = await import("./document-session");
 describe("DocumentSession persistence cleanup", () => {
   afterEach(() => {
     vi.useRealTimers();
-    persistence.clearData.mockClear();
-    persistence.destroy.mockClear();
+    persistence.clearData.mockReset().mockResolvedValue();
+    persistence.destroy.mockReset().mockResolvedValue();
     persistence.createWhenSynced.mockReset().mockResolvedValue();
   });
 
   it("preserves IndexedDB when a never-attached session is destroyed", async () => {
     const session = new DocumentSession({
       roomKey: "doc-never-materialized",
-      enableIndexedDb: true,
+      persistence: { kind: "indexeddb", key: "test:document-session" },
     });
 
     await session.destroy();
@@ -39,7 +39,10 @@ describe("DocumentSession persistence cleanup", () => {
   });
 
   it("preserves an attached room cache unless cleanup is explicitly requested", async () => {
-    const session = new DocumentSession({ roomKey: "doc-materialized", enableIndexedDb: true });
+    const session = new DocumentSession({
+      roomKey: "doc-materialized",
+      persistence: { kind: "indexeddb", key: "test:document-session" },
+    });
     session.attachTransport(() => ({ destroy: vi.fn() }));
 
     await session.destroy();
@@ -49,7 +52,10 @@ describe("DocumentSession persistence cleanup", () => {
   });
 
   it("can explicitly clear an attached room cache after server deletion", async () => {
-    const session = new DocumentSession({ roomKey: "doc-deleted", enableIndexedDb: true });
+    const session = new DocumentSession({
+      roomKey: "doc-deleted",
+      persistence: { kind: "indexeddb", key: "test:document-session" },
+    });
     session.attachTransport(() => ({ destroy: vi.fn() }));
 
     await session.destroy({ clearPersistence: true });
@@ -59,7 +65,10 @@ describe("DocumentSession persistence cleanup", () => {
   });
 
   it("can explicitly clear a detached empty room cache after confirmed cleanup", async () => {
-    const session = new DocumentSession({ roomKey: "doc-empty", enableIndexedDb: true });
+    const session = new DocumentSession({
+      roomKey: "doc-empty",
+      persistence: { kind: "indexeddb", key: "test:document-session" },
+    });
 
     await session.destroy({ clearPersistence: true });
 
@@ -67,9 +76,31 @@ describe("DocumentSession persistence cleanup", () => {
     expect(persistence.destroy).not.toHaveBeenCalled();
   });
 
+  it("retries only failed teardown stages and freezes the first persistence policy", async () => {
+    persistence.clearData.mockRejectedValueOnce(new Error("clear failed"));
+    const transportDestroy = vi.fn(async () => undefined);
+    const session = new DocumentSession({
+      roomKey: "doc-retry-clear",
+      persistence: { kind: "indexeddb", key: "test:document-session" },
+      transportFactory: () => ({ destroy: transportDestroy }),
+    });
+    await session.whenLocalPersistenceSynced();
+    await Promise.resolve();
+
+    await expect(session.destroy({ clearPersistence: true })).rejects.toThrow("clear failed");
+    await expect(session.destroy()).resolves.toBeUndefined();
+
+    expect(persistence.clearData).toHaveBeenCalledTimes(2);
+    expect(persistence.destroy).not.toHaveBeenCalled();
+    expect(transportDestroy).toHaveBeenCalledOnce();
+  });
+
   it("settles whenSynced when a detached session is destroyed before local sync", async () => {
     persistence.createWhenSynced.mockReturnValue(new Promise(() => {}));
-    const session = new DocumentSession({ roomKey: "doc-local-pending", enableIndexedDb: true });
+    const session = new DocumentSession({
+      roomKey: "doc-local-pending",
+      persistence: { kind: "indexeddb", key: "test:document-session" },
+    });
     const synced = session.whenSynced();
 
     await session.destroy();
@@ -88,7 +119,7 @@ describe("DocumentSession persistence cleanup", () => {
 
     const session = new DocumentSession({
       roomKey: "doc-local-replay",
-      enableIndexedDb: true,
+      persistence: { kind: "indexeddb", key: "test:document-session" },
       transportFactory,
     });
 
@@ -107,7 +138,7 @@ describe("DocumentSession persistence cleanup", () => {
     const transportFactory = vi.fn(() => ({ destroy: vi.fn() }));
     const session = new DocumentSession({
       roomKey: "doc-local-blocked",
-      enableIndexedDb: true,
+      persistence: { kind: "indexeddb", key: "test:document-session" },
       transportFactory,
     });
 

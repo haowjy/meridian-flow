@@ -3,10 +3,8 @@
  * What the menu writes has to survive the wire, or the writer picked a
  * document and got a link the resolver has never heard of.
  *
- * The codec spells a link as `[[target]]` only when its text IS its target and
- * it carries no title; anything else serializes as `[text]([[target]])`. That
- * makes these two assertions one contract: the shape in the document, and the
- * `[[…]]` an LLM would read back.
+ * Display text is independent of the destination. Names with wire delimiters
+ * must be escaped rather than mistaken for aliases.
  */
 import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { Editor } from "@tiptap/core";
@@ -91,13 +89,11 @@ describe("choosing a row inserts a wikilink", () => {
     expect(serialize(target)).toBe("[[Warden Ilsever]]\n");
   });
 
-  it("refuses a name the wire format cannot carry, rather than writing half of one", () => {
+  it("escapes a delimiter-bearing name and refuses a blank name", () => {
     const target = editorWith("<p>[[</p>");
-
-    // The aliased spelling `[[target|label]]` is not what this document
-    // format carries, and neither is an unclosed bracket.
-    expect(insertWikilink(target, triggerRange(target, "[["), "Kael|the warden")).toBe(false);
     expect(insertWikilink(target, triggerRange(target, "[["), "   ")).toBe(false);
-    expect(serialize(target)).toBe("\\[\\[\n");
+    expect(insertWikilink(target, triggerRange(target, "[["), "Kael|the keeper")).toBe(true);
+    expect(target.state.doc.textContent).toBe("Kael|the keeper");
+    expect(serialize(target)).toBe("[[Kael\\|the keeper]]\n");
   });
 });

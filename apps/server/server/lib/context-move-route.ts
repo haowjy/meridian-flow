@@ -5,6 +5,7 @@ import {
   isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
+import type { ResolvedWorkAuthority } from "@meridian/contracts/works";
 import { createError } from "nitro/h3";
 import { projectBrowseContextUri } from "../domains/context/browse-layer-scheme.js";
 import {
@@ -17,6 +18,7 @@ import {
 } from "../domains/context/index.js";
 import {
   type ProjectRepository,
+  type ProjectWorkAuthorityResolver,
   requireProjectOwner,
   type WorkRepository,
 } from "../domains/projects/index.js";
@@ -30,6 +32,7 @@ export interface ContextMoveRouteDeps {
   projectRepo: ProjectRepository;
   workRepo: WorkRepository;
   contextPorts: UnifiedContextPortFactory;
+  workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 
 type ProjectLocator = {
@@ -45,7 +48,13 @@ type WorkLocator = {
   path: string;
 };
 
-export type ContextMoveLocator = ProjectLocator | WorkLocator;
+type NoWorkLocator = {
+  scope: "none";
+  scheme: WorkScopedContextFsScheme;
+  path: string;
+};
+
+export type ContextMoveLocator = ProjectLocator | NoWorkLocator | WorkLocator;
 
 export interface ParsedContextMove {
   source: ContextMoveLocator;
@@ -53,8 +62,16 @@ export interface ParsedContextMove {
   name?: string;
 }
 
+type ResolvedWorkLocator = Omit<WorkLocator, "workId"> & { authority: ResolvedWorkAuthority };
+export type ResolvedContextMoveLocator = ProjectLocator | NoWorkLocator | ResolvedWorkLocator;
+export type ResolvedContextMove = {
+  source: ResolvedContextMoveLocator;
+  destination: ResolvedContextMoveLocator;
+  name?: string;
+};
+
 function parseWorkId(raw: unknown, field: "sourceWorkId" | "destinationWorkId") {
-  if (raw === undefined) return undefined;
+  if (raw === undefined || raw === null) return null;
   if (typeof raw !== "string" || raw.trim() === "") {
     throw createError({ statusCode: 400, message: `\`${field}\` must be a non-empty string` });
   }
@@ -64,7 +81,7 @@ function parseWorkId(raw: unknown, field: "sourceWorkId" | "destinationWorkId") 
 function parseLocator(input: {
   scheme: unknown;
   path: string;
-  workId: string | undefined;
+  workId: string | null;
   workIdField: "sourceWorkId" | "destinationWorkId";
 }): ContextMoveLocator {
   if (!isProjectContextTreeScheme(input.scheme)) {
@@ -72,10 +89,7 @@ function parseLocator(input: {
   }
   if (isWorkScopedProjectContextScheme(input.scheme)) {
     if (!input.workId) {
-      throw createError({
-        statusCode: 400,
-        message: `\`${input.workIdField}\` is required for ${input.scheme}`,
-      });
+      return { scope: "none", scheme: input.scheme, path: input.path };
     }
     return {
       scope: "work",
@@ -84,7 +98,7 @@ function parseLocator(input: {
       path: input.path,
     };
   }
-  if (input.workId) {
+  if (input.workId !== null) {
     throw createError({
       statusCode: 400,
       message: `\`${input.workIdField}\` is not valid for ${input.scheme}`,
@@ -136,33 +150,26 @@ function joinPath(parent: string, name: string): string {
   return parent ? `${parent}/${name}` : name;
 }
 
-function locatorUri(
-  locator: ContextMoveLocator,
-  path = locator.path,
-  qualifiedWorkSlugs?: ReadonlyMap<string, string>,
-): string {
+function locatorUri(locator: ResolvedContextMoveLocator, path = locator.path): string {
   if (locator.scope === "work") {
-    const slug = qualifiedWorkSlugs?.get(locator.workId);
-    if (slug) return `${locator.scheme}://@${slug}/${path}`;
+    return projectBrowseContextUri(locator.scheme, path, locator.authority);
   }
-  return projectBrowseContextUri(
-    locator.scheme,
-    path,
-    locator.scope === "work" ? locator.workId : undefined,
-  );
+  if (locator.scope === "none") {
+    return projectBrowseContextUri(locator.scheme, path, { kind: "none" });
+  }
+  return projectBrowseContextUri(locator.scheme, path);
 }
 
 export async function commitContextMove(input: {
   port: ContextPort;
   userId: string;
-  move: ParsedContextMove;
-  qualifiedWorkSlugs?: ReadonlyMap<string, string>;
+  move: ResolvedContextMove;
 }): Promise<MoveContextEntryResult> {
   const name = input.move.name ?? basename(input.move.source.path);
   const destinationPath = joinPath(input.move.destination.path, name);
   const result = await input.port.commitWriterLocation(
-    locatorUri(input.move.source, input.move.source.path, input.qualifiedWorkSlugs),
-    locatorUri(input.move.destination, destinationPath, input.qualifiedWorkSlugs),
+    locatorUri(input.move.source, input.move.source.path),
+    locatorUri(input.move.destination, destinationPath),
     { origin: { type: "human", userId: input.userId } },
   );
   if (!result.ok) {
@@ -175,13 +182,48 @@ export async function commitContextMove(input: {
     if (result.error.code === "conflict") {
       const collision = parseUnifiedContextUri(result.error.uri);
       if (!collision.ok) contextErrorToHttp(collision.error);
+      const destination = input.move.destination;
+      const authorityMatches =
+        destination.scope === "project"
+          ? collision.value.authority.kind === "contextual"
+          : destination.scope === "none"
+            ? collision.value.authority.kind === "none"
+            : collision.value.authority.kind === "work" &&
+              collision.value.authority.workSlug === destination.authority.workSlug;
+      if (
+        collision.value.scheme !== destination.scheme ||
+        collision.value.path !== destinationPath ||
+        !authorityMatches
+      ) {
+        throw createError({
+          statusCode: 500,
+          message: "Context move conflict identity breached the resolved destination",
+        });
+      }
       return {
         status: "conflict",
-        collision: {
-          scheme: collision.value.scheme,
-          path: collision.value.path,
-          ...(collision.value.authority ? { workId: collision.value.authority } : {}),
-        },
+        collision:
+          destination.scope === "work"
+            ? {
+                scheme: destination.scheme,
+                path: collision.value.path,
+                authority: {
+                  kind: "work",
+                  workId: destination.authority.workId,
+                  workSlug: destination.authority.workSlug,
+                },
+              }
+            : destination.scope === "none"
+              ? {
+                  scheme: destination.scheme,
+                  path: collision.value.path,
+                  authority: { kind: "none" },
+                }
+              : {
+                  scheme: destination.scheme,
+                  path: collision.value.path,
+                  authority: { kind: "project" },
+                },
       };
     }
     contextErrorToHttp(result.error);
@@ -200,6 +242,17 @@ export async function handleContextMoveRequest(
 ): Promise<MoveContextEntryResult> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   const move = parseContextMove({ sourceScheme: input.sourceScheme, body: input.body });
+  async function resolveLocator(locator: ContextMoveLocator): Promise<ResolvedContextMoveLocator> {
+    if (locator.scope !== "work") return locator;
+    const authority = await deps.workAuthorityResolver.byId(input.projectId, locator.workId);
+    if (!authority) throw createError({ statusCode: 404, message: "Work not found" });
+    return { scope: "work", scheme: locator.scheme, path: locator.path, authority };
+  }
+  const resolvedMove: ResolvedContextMove = {
+    source: await resolveLocator(move.source),
+    destination: await resolveLocator(move.destination),
+    ...(move.name ? { name: move.name } : {}),
+  };
   const workIds = new Set(
     [move.source, move.destination]
       .filter((locator): locator is WorkLocator => locator.scope === "work")
@@ -208,7 +261,11 @@ export async function handleContextMoveRequest(
   const primaryWorkId = move.source.scope === "work" ? move.source.workId : [...workIds][0];
   const works = await deps.workRepo.listByProject(input.projectId);
   const port = await contextPortForProjectAuthorities({
-    deps: { contextPorts: deps.contextPorts, works: deps.workRepo },
+    deps: {
+      contextPorts: deps.contextPorts,
+      works: deps.workRepo,
+      workAuthorityResolver: deps.workAuthorityResolver,
+    },
     projectId: input.projectId,
     userId: input.userId,
     workIds,
@@ -216,9 +273,5 @@ export async function handleContextMoveRequest(
     projectWorks: works,
   });
   if (!port) throw createError({ statusCode: 404, message: "Work not found" });
-  const qualifiedWorkSlugs =
-    workIds.size > 1
-      ? new Map(works.filter((work) => workIds.has(work.id)).map((work) => [work.id, work.slug]))
-      : undefined;
-  return commitContextMove({ port, userId: input.userId, move, qualifiedWorkSlugs });
+  return commitContextMove({ port, userId: input.userId, move: resolvedMove });
 }

@@ -13,6 +13,7 @@ export interface ProjectResultRecord {
 }
 
 export interface CreateProjectResultInput {
+  id: string;
   projectId: string;
   sourcePath: string;
   resultsUri: string;
@@ -23,6 +24,11 @@ export interface CreateProjectResultInput {
 }
 
 export interface ResultRepository {
-  create(input: CreateProjectResultInput): Promise<ProjectResultRecord>;
+  createOrConverge(input: CreateProjectResultInput): Promise<CreateProjectResultOutcome>;
   listByProject(projectId: string): Promise<ProjectResultRecord[]>;
 }
+
+export type CreateProjectResultOutcome =
+  | { kind: "committed"; record: ProjectResultRecord }
+  | { kind: "definitely_not_committed"; error: string }
+  | { kind: "unknown"; error: string };

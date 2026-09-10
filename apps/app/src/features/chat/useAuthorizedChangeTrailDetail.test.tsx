@@ -13,20 +13,25 @@ import { useAuthorizedChangeTrailDetail } from "./useAuthorizedChangeTrailDetail
 
 const mocks = vi.hoisted(() => ({
   readChangeTrail: vi.fn(),
-  authorizationObserver: undefined as ((snapshot: { status: string }) => void) | undefined,
+  authorizationObserver: undefined as (() => void) | undefined,
 }));
 vi.mock("@/client/change-trails", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/client/change-trails")>()),
   readChangeTrail: mocks.readChangeTrail,
 }));
-vi.mock("@/core/editor/document-session-registry", () => ({
-  getDocumentSessionRegistry: () => ({
-    observe: (_documentId: string, observer: (snapshot: { status: string }) => void) => {
-      mocks.authorizationObserver = observer;
-      return () => {
+vi.mock("@/features/project/context/open-project-document", () => ({
+  useProjectDocumentNavigationProjectId: () => "project-1",
+}));
+vi.mock("@/features/project/context/account-feature-context", () => ({
+  useOptionalProjectContextAvailabilityCoordinator: () => ({
+    attachProject: () => ({
+      observeAuthorizationLoss: (_producer: string, _records: unknown, observer: () => void) => {
+        mocks.authorizationObserver = observer;
+      },
+      release: () => {
         mocks.authorizationObserver = undefined;
-      };
-    },
+      },
+    }),
   }),
 }));
 
@@ -88,9 +93,11 @@ describe("useAuthorizedChangeTrailDetail", () => {
     await act(async () => Promise.resolve());
     expect(mocks.readChangeTrail).toHaveBeenCalledWith("thread-1", "trail-1");
     await vi.waitFor(() => expect(mocks.authorizationObserver).toBeTypeOf("function"));
-    await act(async () => mocks.authorizationObserver?.({ status: "access-lost" }));
-    expect(queryClient.getQueriesData({ queryKey: ["change-trail-detail", "thread-1"] })).toEqual(
-      [],
+    await act(async () => mocks.authorizationObserver?.());
+    await vi.waitFor(() =>
+      expect(
+        queryClient.getQueryData(["change-trail-detail", "thread-1", "trail-1"]),
+      ).toBeUndefined(),
     );
     await act(async () => root.unmount());
   });

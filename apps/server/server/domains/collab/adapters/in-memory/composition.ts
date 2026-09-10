@@ -144,7 +144,9 @@ export function createInMemoryCollabDomain(): CollabDomain {
       getPersistenceQueueMetrics: hocuspocusPersistence.getPersistenceQueueMetrics,
     },
     authorityHeads,
-    agentEdit: { agentEdit: () => agentEdit },
+    agentEdit: {
+      agentEdit: (context) => (context?.draftOwner === null ? runtime.liveUtilityCore : agentEdit),
+    },
     reversal: {
       reverseTurn: (input) =>
         reverseTurn(

@@ -152,7 +152,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         markdownProjection: after?.markdownProjection,
       }).toEqual(hostBefore);
 
-      const context = contextPorts.forProject(PROJECT_ID, USER_ID);
+      const context = contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
       await expect(context.stat("manuscript://chapter-one.md")).resolves.toMatchObject({
         ok: true,
         value: { kind: "tracked" },

@@ -6,13 +6,30 @@ import {
   DeviceWorkingSetStore,
   reconcileSnapshotContextRoutes,
   type WorkingSetSnapshot,
+  workingSetRouteEquals,
 } from "./store";
 
 describe("atomic context-route reconciliation", () => {
+  it("treats stable identity as part of full equality and adopts the replacement identity", () => {
+    const oldRoute = { documentId: "old", scheme: "kb" as const, path: "/shared.md" };
+    const newRoute = { documentId: "new", scheme: "kb" as const, path: "/shared.md" };
+    const store = new DeviceWorkingSetStore({
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    });
+    store.setUser("user-a");
+    store.adopt("project-1", { recentRoutes: [oldRoute], lastThreadId: null });
+
+    expect(workingSetRouteEquals(oldRoute, newRoute)).toBe(false);
+    store.adopt("project-1", { recentRoutes: [newRoute], lastThreadId: null });
+    expect(store.read("project-1")?.snapshot.recentRoutes).toEqual([newRoute]);
+  });
+
   it("removes only unowned locators and promotes in one snapshot result", () => {
-    const same = { scheme: "kb" as const, path: "/same.md" };
-    const removed = { scheme: "kb" as const, path: "/removed.md" };
-    const promoted = { scheme: "manuscript" as const, path: "/next.md" };
+    const same = { documentId: "same", scheme: "kb" as const, path: "/same.md" };
+    const removed = { documentId: "removed", scheme: "kb" as const, path: "/removed.md" };
+    const promoted = { documentId: "promoted", scheme: "manuscript" as const, path: "/next.md" };
 
     expect(
       reconcileSnapshotContextRoutes(
@@ -25,6 +42,23 @@ describe("atomic context-route reconciliation", () => {
         },
       ),
     ).toEqual({ recentRoutes: [promoted, same], lastThreadId: "thread-1" });
+  });
+
+  it("replaces a same-ID move in place without promoting it", () => {
+    const first = { documentId: "first", scheme: "kb" as const, path: "/first.md" };
+    const moved = { documentId: "moved", scheme: "kb" as const, path: "/old.md" };
+    const replacement = { ...moved, path: "/new.md" };
+    expect(
+      reconcileSnapshotContextRoutes(
+        { recentRoutes: [first, moved], lastThreadId: null },
+        {
+          removedLocators: [moved],
+          survivingOwnedLocators: [first, replacement],
+          promote: null,
+          clearAll: false,
+        },
+      ),
+    ).toEqual({ recentRoutes: [first, replacement], lastThreadId: null });
   });
 });
 
@@ -113,7 +147,7 @@ describe("working-set identity sessions", () => {
       row: {
         userId: "user-a",
         projectId: "project-1",
-        recentRoutes: [{ scheme: "kb" as const, path: "/server.md" }],
+        recentRoutes: [{ documentId: "server", scheme: "kb" as const, path: "/server.md" }],
         lastThreadId: "thread-server",
         revision: 3,
         updatedAt: "2026-07-17T00:00:00.000Z",
@@ -127,7 +161,7 @@ describe("working-set identity sessions", () => {
     expect(second).toEqual(first);
     expect(store.read("project-1")).toEqual({
       snapshot: {
-        recentRoutes: [{ scheme: "kb", path: "/server.md" }],
+        recentRoutes: [{ documentId: "server", scheme: "kb", path: "/server.md" }],
         lastThreadId: "thread-server",
       },
     });
@@ -173,7 +207,7 @@ describe("working-set identity sessions", () => {
     const serverRow = {
       userId: "user-a",
       projectId: "project-1",
-      recentRoutes: [{ scheme: "kb" as const, path: "/server.md" }],
+      recentRoutes: [{ documentId: "server", scheme: "kb" as const, path: "/server.md" }],
       lastThreadId: "thread-server",
       updatedAt: "2026-07-17T00:00:00.000Z",
     };
@@ -194,7 +228,7 @@ describe("working-set identity sessions", () => {
     ).toMatchObject({ status: "server", row: { revision: 6 } });
     expect(store.read("project-1")).toEqual({
       snapshot: {
-        recentRoutes: [{ scheme: "kb", path: "/server.md" }],
+        recentRoutes: [{ documentId: "server", scheme: "kb", path: "/server.md" }],
         lastThreadId: "thread-server",
       },
     });
@@ -241,6 +275,57 @@ describe("working-set identity sessions", () => {
 });
 
 describe("working-set browser storage", () => {
+  it("deletes obsolete unversioned and partially invalid persisted state", () => {
+    const removeItem = vi.fn();
+    const storage = {
+      getItem: () =>
+        JSON.stringify({
+          userId: "user-a",
+          projects: {
+            valid: { snapshot: { recentRoutes: [], lastThreadId: null } },
+            obsolete: {
+              snapshot: {
+                recentRoutes: [{ scheme: "kb", path: "/locator-only.md" }],
+                lastThreadId: null,
+              },
+            },
+          },
+        }),
+      setItem: vi.fn(),
+      removeItem,
+    };
+    const store = new DeviceWorkingSetStore(storage);
+    store.setUser("user-a");
+
+    expect(removeItem).toHaveBeenCalledWith("meridian:working-set");
+    expect(store.projectIds()).toEqual([]);
+  });
+
+  it("reloads the versioned stable-identity DTO without transforming it", () => {
+    const documentId = "00000000-0000-0000-0000-000000000001";
+    const store = new DeviceWorkingSetStore({
+      getItem: () =>
+        JSON.stringify({
+          schemaVersion: 2,
+          userId: "user-a",
+          projects: {
+            project: {
+              snapshot: {
+                recentRoutes: [{ documentId, scheme: "scratch", path: "/notes.md", workId: null }],
+                lastThreadId: null,
+              },
+            },
+          },
+        }),
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+    });
+    store.setUser("user-a");
+    expect(store.read("project")?.snapshot.recentRoutes).toEqual([
+      { documentId, scheme: "scratch", path: "/notes.md", workId: null },
+    ]);
+  });
+
   it("falls back when the localStorage getter throws", () => {
     const blockedWindow = Object.defineProperty({}, "localStorage", {
       get: () => {
@@ -268,7 +353,7 @@ describe("suspect baseline recovery", () => {
   const serverRowAt = (revision: number) => ({
     userId: "user-a",
     projectId: "project-1",
-    recentRoutes: [{ scheme: "kb" as const, path: `/rev-${revision}.md` }],
+    recentRoutes: [{ documentId: "server", scheme: "kb" as const, path: `/rev-${revision}.md` }],
     lastThreadId: "thread-server",
     revision,
     updatedAt: "2026-07-17T00:00:00.000Z",
@@ -287,7 +372,11 @@ describe("suspect baseline recovery", () => {
 
     driver.configure("user-a", true);
     driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
-    promoteRoute(driver, "project-1", { scheme: "kb", path: "/local.md" });
+    promoteRoute(driver, "project-1", {
+      documentId: "document-route",
+      scheme: "kb",
+      path: "/local.md",
+    });
     expect(store.read("project-1")?.pending).toMatchObject({ baseRevision: 22, localVersion: 1 });
 
     driver.markSuspectOnReconnect();
@@ -298,15 +387,21 @@ describe("suspect baseline recovery", () => {
     expect(get).toHaveBeenCalledTimes(1);
     expect(store.read("project-1")?.pending).toBeUndefined();
     expect(store.read("project-1")?.snapshot.recentRoutes[0]).toEqual({
+      documentId: "server",
       scheme: "kb",
       path: "/rev-23.md",
     });
 
-    promoteRoute(driver, "project-1", { scheme: "kb", path: "/after-reconcile.md" });
+    promoteRoute(driver, "project-1", {
+      documentId: "document-route",
+      scheme: "kb",
+      path: "/after-reconcile.md",
+    });
     driver.flush();
     await vi.runAllTimersAsync();
     expect(put).toHaveBeenCalledTimes(1);
     expect(put.mock.calls[0]?.[1].recentRoutes[0]).toEqual({
+      documentId: "document-route",
       scheme: "kb",
       path: "/after-reconcile.md",
     });
@@ -325,7 +420,11 @@ describe("suspect baseline recovery", () => {
 
     driver.configure("user-a", true);
     driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
-    promoteRoute(driver, "project-1", { scheme: "kb", path: "/local.md" });
+    promoteRoute(driver, "project-1", {
+      documentId: "document-route",
+      scheme: "kb",
+      path: "/local.md",
+    });
 
     driver.markSuspectOnReconnect();
     driver.flush();
@@ -333,7 +432,11 @@ describe("suspect baseline recovery", () => {
 
     expect(get).toHaveBeenCalledTimes(1);
     expect(put).toHaveBeenCalledTimes(1);
-    expect(put.mock.calls[0]?.[1].recentRoutes[0]).toEqual({ scheme: "kb", path: "/local.md" });
+    expect(put.mock.calls[0]?.[1].recentRoutes[0]).toEqual({
+      documentId: "document-route",
+      scheme: "kb",
+      path: "/local.md",
+    });
   });
 
   it("withholds further PUTs after failure until a successful GET", async () => {
@@ -355,7 +458,11 @@ describe("suspect baseline recovery", () => {
 
     driver.configure("user-a", true);
     driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
-    promoteRoute(driver, "project-1", { scheme: "kb", path: "/local.md" });
+    promoteRoute(driver, "project-1", {
+      documentId: "document-route",
+      scheme: "kb",
+      path: "/local.md",
+    });
     driver.flush();
     await vi.advanceTimersByTimeAsync(0);
     expect(put).toHaveBeenCalledTimes(1);
@@ -384,7 +491,11 @@ describe("suspect baseline recovery", () => {
 
     driver.configure("user-a", true);
     driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
-    promoteRoute(driver, "project-1", { scheme: "kb", path: "/local.md" });
+    promoteRoute(driver, "project-1", {
+      documentId: "document-route",
+      scheme: "kb",
+      path: "/local.md",
+    });
     driver.markSuspectOnReconnect();
     driver.hydrate("project-1", { status: "row", row: serverRowAt(22) });
 

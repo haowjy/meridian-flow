@@ -4,8 +4,9 @@
  */
 
 import { modelResult } from "@meridian/agent-edit/integration";
+import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
 import { createInMemoryProjectRepository } from "../../../projects/index.js";
 import {
@@ -61,7 +62,11 @@ function messageText(message: GenerateRequest["messages"][number] | undefined): 
   );
 }
 
-async function setupOrchestrator(toolExecutor?: ToolExecutor, gateway: Gateway = textGateway()) {
+async function setupOrchestrator(
+  toolExecutor?: ToolExecutor,
+  gateway: Gateway = textGateway(),
+  referenceReader?: Parameters<typeof createOrchestrator>[0]["referenceReader"],
+) {
   const projectRepo = createInMemoryProjectRepository();
   const repos = createInMemoryRepositories({ projects: projectRepo });
   const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
@@ -77,6 +82,7 @@ async function setupOrchestrator(toolExecutor?: ToolExecutor, gateway: Gateway =
   const orchestrator = createOrchestrator(
     createTestOrchestratorDeps({
       gateway,
+      ...(referenceReader ? { referenceReader } : {}),
       toolExecutor: toolExecutor ?? {
         executeTool: async (call) => ({ toolCallId: call.id, output: { ok: true } }),
       },
@@ -1296,4 +1302,122 @@ describe("runtime orchestrator behavior", () => {
     expect(events.some((event) => event.type === "tool.result")).toBe(true);
     expect(events.some((event) => event.type === "turn.cancelled")).toBe(true);
   });
+});
+
+describe("automatic reference context", () => {
+  it("persists shared read results before the first model call and replays without rereading old turns", async () => {
+    let contents = "The chapter before revision";
+    const read = vi.fn(async () => ({
+      schema: "meridian.agent-edit.v1",
+      command: "read",
+      status: "success",
+      read: { format: "full" },
+      blocks: [{ items: [{ hash: "abcd", body: contents }] }],
+    }));
+    const requests: GenerateRequest[] = [];
+    const gateway = textGateway();
+    const rig = await setupOrchestrator(
+      undefined,
+      {
+        ...gateway,
+        async *stream(request) {
+          requests.push(request);
+          const persisted = await rig.repos.blocks.listByThread(thread.id);
+          expect(JSON.stringify(persisted)).toContain("The chapter before revision");
+          yield* textGateway().stream(request);
+        },
+      },
+      { read },
+    );
+    const thread = await rig.repos.threads.create({ userId: "user-1", projectId: rig.projectId });
+    const reference = {
+      type: "reference" as const,
+      documentId: "00000000-0000-4000-8000-000000000001",
+      uri: "kb://chapter.md",
+      text: "[[kb://chapter.md|Chapter]]",
+    };
+    await collectEvents(
+      await rig.orchestrator.runTurn({
+        threadId: thread.id,
+        userText: reference.text + reference.text,
+        userBlocks: [reference, reference],
+      }),
+    );
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(messageText(requests[0]?.messages.at(-1))).toContain("The chapter before revision");
+    expect(
+      messageText(requests[0]?.messages.at(-1)).split("The chapter before revision"),
+    ).toHaveLength(2);
+    const userBlocks = (await rig.repos.blocks.listByThread(thread.id)).filter(
+      (b) =>
+        b.content &&
+        typeof b.content === "object" &&
+        !Array.isArray(b.content) &&
+        b.content.type === "reference",
+    );
+    expect(userBlocks).toHaveLength(2);
+    expect(userBlocks[0]?.content).toMatchObject({ read: { result: { command: "read" } } });
+    contents = "The revised chapter";
+    await collectEvents(
+      await rig.orchestrator.runTurn({ threadId: thread.id, userText: "Continue" }),
+    );
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(requests[1]?.messages)).toContain("The chapter before revision");
+    expect(JSON.stringify(requests[1]?.messages)).not.toContain("The revised chapter");
+    await collectEvents(
+      await rig.orchestrator.runTurn({
+        threadId: thread.id,
+        userText: reference.text,
+        userBlocks: [reference],
+      }),
+    );
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(messageText(requests[2]?.messages.at(-1))).toContain("The revised chapter");
+  });
+});
+
+it("persists and replays a failed reference read while retaining transcript navigation identity", async () => {
+  const result = {
+    schema: "meridian.agent-edit.v1",
+    command: "read",
+    status: "document_not_found",
+    message: "Reference disappeared after admission",
+  };
+  const read = vi.fn(async () => result);
+  const requests: GenerateRequest[] = [];
+  const rig = await setupOrchestrator(
+    undefined,
+    {
+      ...textGateway(),
+      async *stream(request) {
+        requests.push(request);
+        yield* textGateway().stream(request);
+      },
+    },
+    { read },
+  );
+  const thread = await rig.repos.threads.create({ userId: "user-1", projectId: rig.projectId });
+  const reference = {
+    type: "reference" as const,
+    documentId: "00000000-0000-4000-8000-000000000061",
+    uri: "kb://missing.md",
+    text: "[[kb://missing.md|Missing alias]]",
+  };
+  await collectEvents(
+    await rig.orchestrator.runTurn({
+      threadId: thread.id,
+      userText: reference.text,
+      userBlocks: [reference],
+    }),
+  );
+  await collectEvents(
+    await rig.orchestrator.runTurn({ threadId: thread.id, userText: "Continue" }),
+  );
+  expect(read).toHaveBeenCalledTimes(1);
+  for (const request of requests)
+    expect(JSON.stringify(request.messages)).toContain(result.message);
+  const occurrence = (await rig.repos.blocks.listByThread(thread.id))
+    .map(referenceOccurrenceContent)
+    .find((value) => value !== null);
+  expect(occurrence).toEqual({ ...reference, read: { result } });
 });

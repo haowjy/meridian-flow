@@ -24,7 +24,7 @@ export function useRenameContextEntry(projectId: string, scheme: ProjectContextT
       ),
     onSuccess: (_result, args) => {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.contextTree(
+        queryKey: projectQueryKeys.contextCatalogView(
           projectId,
           scheme,
           isWorkScopedProjectContextScheme(scheme) ? args.workId : undefined,

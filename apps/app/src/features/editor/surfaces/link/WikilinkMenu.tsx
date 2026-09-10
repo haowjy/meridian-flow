@@ -31,6 +31,7 @@ export function WikilinkMenu({ editor }: EditorChromeSurfaceProps) {
   return (
     <SuggestionMenu
       editor={editor}
+      typingElement={editor.view.dom}
       id="wikilink-menu"
       open={snapshot.open}
       label={snapshot.label}

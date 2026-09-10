@@ -144,7 +144,7 @@
     height: 100svh;
     max-height: 100svh;
   }
-  button, a, [role="button"] {
+  button, a, [role="button"], [role="link"] {
     touch-action: manipulation;
   }
   /* Anything you can act on says so under the pointer. This is a deliberate
@@ -160,14 +160,19 @@
      purpose so their tooltip still answers. */
   button:not(:disabled):not([aria-disabled="true"]),
   [role="button"]:not([aria-disabled="true"]),
+  [role="link"]:not([aria-disabled="true"]),
   a[href],
   summary {
     cursor: pointer;
   }
-  /* Except in the manuscript, where a link is text the writer is editing and
-     a click puts the caret in it. Prose is never a destination here. */
-  .ProseMirror a[href] {
-    cursor: text;
+  [data-composer-reference] {
+    text-decoration: underline;
+    text-decoration-color: var(--color-border-subtle);
+    text-underline-offset: 0.15em;
+  }
+  [data-composer-reference]:focus-visible {
+    outline: 2px solid var(--color-border-focus);
+    outline-offset: 2px;
   }
   /* Headings inherit the single app font (Inter, set on `body`) and are
      distinguished by size + weight only — matching stock ProseMirror/TipTap,
@@ -372,7 +377,7 @@
   mask-repeat: no-repeat, no-repeat;
 }
 
-/* Composer textarea typography. 16px on mobile keeps iOS Safari from
+/* Composer contenteditable typography. 16px on mobile keeps iOS Safari from
    auto-zooming the viewport on focus; tightens to 15px on desktop where
    zoom isn't a concern. Any focusable composer input must use this. */
 @utility composer-input {

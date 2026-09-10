@@ -177,7 +177,9 @@ describe("createToolRegistry core tools", () => {
     expect(workCommandCategory({ command: "list" })).toBe("read");
     expect(workCommandCategory({ command: "show", work: "drafting" })).toBe("read");
     expect(workCommandCategory({ command: "create", name: "Drafting" })).toBe("mutate");
-    expect(workCommandCategory({ command: "switch", work: "drafting" })).toBe("binding");
+    expect(
+      workCommandCategory({ command: "switch", target: { kind: "work", work: "drafting" } }),
+    ).toBe("binding");
   });
 
   it("publishes a satisfiable write schema for model tool calls", () => {

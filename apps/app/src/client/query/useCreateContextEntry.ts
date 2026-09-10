@@ -32,7 +32,7 @@ export function useCreateContextEntry(projectId: string) {
       ),
     onSuccess: (_result, args) => {
       void queryClient.invalidateQueries({
-        queryKey: projectQueryKeys.contextTree(
+        queryKey: projectQueryKeys.contextCatalogView(
           projectId,
           args.scheme,
           isWorkScopedProjectContextScheme(args.scheme) ? args.workId : undefined,

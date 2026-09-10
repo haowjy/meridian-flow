@@ -1,7 +1,11 @@
 /** Work command wiring protocol coverage. */
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
-import { createInMemoryWorkRepository, WorkDeleteBlockedError } from "../domains/projects/index.js";
+import {
+  createInMemoryWorkRepository,
+  resolvedWorkAuthority,
+  WorkDeleteBlockedError,
+} from "../domains/projects/index.js";
 import type { ToolHandlerContext } from "../domains/runtime/index.js";
 import { createWiredCoreToolRegistrations } from "./wired-core-tools.js";
 
@@ -30,7 +34,7 @@ describe("wired work tool", () => {
           },
         }
       : baseWorks;
-    let primaryWorkId = current.id;
+    let primaryWorkId: string | null = current.id;
     const invalidateThread = vi.fn(async () => {});
     const threadChanged = vi.fn(async () => {});
     const listRecentByWork = vi.fn(async () => [
@@ -41,6 +45,28 @@ describe("wired work tool", () => {
       },
     ]);
     const registrations = createWiredCoreToolRegistrations({
+      workAuthorityResolver: {
+        async byId(projectId, workId) {
+          const work = await works.findById(workId);
+          return work && work.projectId === projectId
+            ? resolvedWorkAuthority({ kind: "work", workId: work.id, workSlug: work.slug })
+            : null;
+        },
+        async bySlug(projectId, workSlug) {
+          const work = (await works.listByProject(projectId)).find(
+            (candidate) => candidate.slug === workSlug,
+          );
+          return work
+            ? resolvedWorkAuthority({ kind: "work", workId: work.id, workSlug: work.slug })
+            : null;
+        },
+        async lockById(projectId, workId) {
+          const work = await works.lockById(workId);
+          return work && work.projectId === projectId
+            ? resolvedWorkAuthority({ kind: "work", workId: work.id, workSlug: work.slug })
+            : null;
+        },
+      },
       threads: {
         findById: async () =>
           ({
@@ -52,7 +78,7 @@ describe("wired work tool", () => {
         listRecentByWork,
       } as never,
       threadWorks: {
-        findPrimary: async () => ({ workId: primaryWorkId }),
+        findPrimary: async () => (primaryWorkId ? { workId: primaryWorkId } : null),
         rebindPrimary: async (_threadId, workId) => {
           const previousWorkId = primaryWorkId;
           primaryWorkId = workId;
@@ -127,8 +153,10 @@ describe("wired work tool", () => {
         workContextChanged: true,
       },
     });
-    await expect(handler({ command: "switch", work: target.slug }, ctx)).resolves.toMatchObject({
-      metadata: { workReceipt: { operation: "switch", category: "binding", changed: true } },
+    await expect(
+      handler({ command: "switch", target: { kind: "work", work: target.slug } }, ctx),
+    ).resolves.toMatchObject({
+      metadata: { workReceipt: { operation: "switch", category: "binding" } },
     });
     const created = (await handler({ command: "create", name: "Delete Me" }, ctx)) as {
       output: { slug: string };
@@ -145,7 +173,7 @@ describe("wired work tool", () => {
     const [listOutput, showOutput, switchResult] = await Promise.all([
       handler({ command: "list" }, ctx),
       handler({ command: "show", work: target.slug }, ctx),
-      handler({ command: "switch", work: target.slug }, ctx),
+      handler({ command: "switch", target: { kind: "work", work: target.slug } }, ctx),
     ]);
     const outputs = [listOutput, showOutput, (switchResult as { output: unknown }).output];
     expect(JSON.stringify(outputs)).not.toMatch(
@@ -186,25 +214,37 @@ describe("wired work tool", () => {
   it("marks changed switches for post-result delivery", async () => {
     const primary = await setup("primary", true);
     await expect(
-      primary.handler({ command: "switch", work: primary.target.slug }, toolContext()),
+      primary.handler(
+        { command: "switch", target: { kind: "work", work: primary.target.slug } },
+        toolContext(),
+      ),
     ).resolves.toMatchObject({ metadata: { workContextChanged: true } });
     expect(primary.invalidateThread).not.toHaveBeenCalled();
     expect(primary.threadChanged).toHaveBeenCalledOnce();
 
     const subagent = await setup("subagent", false);
-    await subagent.handler({ command: "switch", work: subagent.target.slug }, toolContext());
+    await subagent.handler(
+      { command: "switch", target: { kind: "work", work: subagent.target.slug } },
+      toolContext(),
+    );
     expect(subagent.invalidateThread).not.toHaveBeenCalled();
   });
 
   it("keeps an already-current switch side-effect free beyond its receipt", async () => {
     const fixture = await setup();
-    await fixture.handler({ command: "switch", work: fixture.target.slug }, toolContext());
+    await fixture.handler(
+      { command: "switch", target: { kind: "work", work: fixture.target.slug } },
+      toolContext(),
+    );
     expect(fixture.threadChanged).toHaveBeenCalledOnce();
     await expect(
-      fixture.handler({ command: "switch", work: fixture.target.slug }, toolContext()),
+      fixture.handler(
+        { command: "switch", target: { kind: "work", work: fixture.target.slug } },
+        toolContext(),
+      ),
     ).resolves.toMatchObject({
       metadata: {
-        workReceipt: { operation: "switch", changed: false, inverse: null },
+        workReceipt: { operation: "switch", inverse: null },
       },
     });
     expect(fixture.threadChanged).toHaveBeenCalledOnce();

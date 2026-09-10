@@ -2,7 +2,7 @@
  * One mechanism for every menu the writer types underneath, reading a spec.
  *
  * `/` and `[[` are the same machine with different envelopes: a plugin key, a
- * store in extension storage, a `@tiptap/suggestion` lifecycle, arrow keys
+ * driver in extension storage, one `@tiptap/suggestion` plugin, arrow keys
  * registered against the chrome kernel, and a plugin view that closes the menu
  * when the host's catalog is withdrawn. None of that is where the lanes differ,
  * and all of it is where the failures live — first-keystroke keymap timing,
@@ -18,10 +18,9 @@
  *
  * Two things this deliberately does NOT do, for every lane at once:
  *
- * - **Own Escape.** The chrome kernel does (`escStep`), and it runs first at
- *   priority 1050; a menu takes its step by being a registered layer, which the
- *   React surface does when it opens. Suggestion's own Escape handling stays as
- *   the floor under that, for the frame before React has rendered.
+ * - **Own Escape.** The host does. The lane registers semantic retreat beside
+ *   its ordinary bindings, so editor Chrome and Composer can place the same
+ *   backtrack/root-dismiss action in their own arbitration order.
  * - **Gate on transaction origin.** `shouldShow` is evaluated on every
  *   transaction, so using it to keep remote writes from opening a menu would
  *   also close an open menu every time a collaborator typed anywhere in the
@@ -39,12 +38,16 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import Suggestion, { exitSuggestion, type SuggestionProps } from "@tiptap/suggestion";
 
 import {
-  createSuggestionMenu,
+  createDefaultSuggestionDriver,
+  type SuggestionChoiceAction,
+  type SuggestionDriver,
+  type SuggestionDriverFrame,
+  type SuggestionHost,
+  type SuggestionHostLease,
+  type SuggestionKeyBindings,
   type SuggestionMenu,
-  type SuggestionMenuController,
-  type SuggestionMenuSession,
+  type SuggestionMenuModel,
 } from "@/core/completion";
-import { getEditorChrome } from "../../chrome";
 
 /**
  * What the host offers a lane.
@@ -57,14 +60,29 @@ import { getEditorChrome } from "../../chrome";
  */
 export type SuggestionLaneOptions<TCatalog> = {
   catalog: () => TCatalog | null;
+  suggestionHost: (editor: Editor) => SuggestionHost | null;
 };
+
+export type SuggestionLaneDriverRuntime<TCatalog, TCandidate, TRow, TMeta> = {
+  editor: Editor;
+  catalog: () => TCatalog | null;
+  defaultProject: (
+    frame: SuggestionDriverFrame<TCandidate>,
+  ) => SuggestionMenuModel<TRow, TMeta> | null;
+};
+export type SuggestionLaneDriverFactory<TCatalog, TCandidate, TRow, TMeta> = (
+  runtime: SuggestionLaneDriverRuntime<TCatalog, TCandidate, TRow, TMeta>,
+) => SuggestionDriver<TCandidate, TRow, TMeta>;
+export const defaultSuggestionLaneDriver = <TCatalog, TCandidate, TRow, TMeta>(
+  runtime: SuggestionLaneDriverRuntime<TCatalog, TCandidate, TRow, TMeta>,
+) => createDefaultSuggestionDriver({ project: runtime.defaultProject });
 
 /**
  * A lane's own answers. `TItem` is what matched the query; `TEntry` is how the
  * menu shows it, which is the same thing until a lane has something to say about
  * a row that the query cannot answer (the slash menu's refusals).
  */
-export type SuggestionLaneSpec<TCatalog, TItem, TEntry extends TItem = TItem, TMeta = null> = {
+export type SuggestionLaneSpec<TCatalog, TCandidate, TRow = TCandidate, TMeta = null> = {
   /** Extension name, storage key, and the plugin key's name. */
   name: string;
   /** The text that opens the menu: `/`, `[[`, `@`. */
@@ -86,7 +104,9 @@ export type SuggestionLaneSpec<TCatalog, TItem, TEntry extends TItem = TItem, TM
    */
   allows: (doc: PMNode, from: number) => boolean;
   /** What matched what the writer has typed after the trigger. */
-  items: (catalog: TCatalog, query: string) => readonly TItem[];
+  items: (catalog: TCatalog, query: string) => readonly TCandidate[];
+  /** Stable identity across reorder and same-session catalog refreshes. */
+  rowId: (entry: TRow) => string;
   /**
    * How the visible list reads where the caret is — per-row state that depends
    * on the document rather than the query. Asked once per update, so every row
@@ -97,14 +117,28 @@ export type SuggestionLaneSpec<TCatalog, TItem, TEntry extends TItem = TItem, TM
     editor: Editor;
     catalog: TCatalog;
     range: Range;
-    items: readonly TItem[];
-  }) => readonly TEntry[];
+    items: readonly TCandidate[];
+  }) => readonly TRow[];
   /** Rows this lane will refuse (law 5). Absent means every row works. */
-  choosable?: (entry: TEntry) => boolean;
+  choosable?: (entry: TRow) => boolean;
   /** What the menu needs that a row does not carry. Absent means nothing. */
   meta?: (catalog: TCatalog) => TMeta;
   /** What a choice writes into the document, over the trigger's own range. */
-  choose: (input: { editor: Editor; catalog: TCatalog; range: Range; entry: TEntry }) => void;
+  choose: (input: {
+    editor: Editor;
+    catalog: TCatalog;
+    range: Range;
+    entry: TRow;
+    action: SuggestionChoiceAction;
+  }) => void;
+  driver: SuggestionLaneDriverFactory<TCatalog, TCandidate, TRow, TMeta>;
+  /**
+   * Overrides the current three-key behavior for a richer lane. The menu owns
+   * navigation and action intent; the host only registers the returned chords.
+   */
+  keyBindings?: (menu: SuggestionMenu<TRow, TMeta>) => SuggestionKeyBindings;
+  /** Hierarchical retreat. False tells the host to dismiss the root. */
+  backtrack?: (input: { editor: Editor; catalog: TCatalog; range: Range }) => boolean;
 };
 
 export type SuggestionLane<TCatalog, TEntry, TMeta = null> = {
@@ -116,143 +150,124 @@ export type SuggestionLane<TCatalog, TEntry, TMeta = null> = {
   getMenu: (editor: Editor | null | undefined) => SuggestionMenu<TEntry, TMeta> | null;
 };
 
-export function createSuggestionLane<TCatalog, TItem, TEntry extends TItem = TItem, TMeta = null>(
-  spec: SuggestionLaneSpec<TCatalog, TItem, TEntry, TMeta>,
-): SuggestionLane<TCatalog, TEntry, TMeta> {
+export function createSuggestionLane<TCatalog, TCandidate, TRow = TCandidate, TMeta = null>(
+  spec: SuggestionLaneSpec<TCatalog, TCandidate, TRow, TMeta>,
+): SuggestionLane<TCatalog, TRow, TMeta> {
   const pluginKey = new PluginKey(spec.name);
   const catalogFencePluginKey = new PluginKey(`${spec.name}CatalogFence`);
 
-  type LaneStorage = {
-    menu: SuggestionMenu<TEntry, TMeta>;
-    /** @internal driven by this lane's plugin only. */
-    controller: SuggestionMenuController<TEntry, TMeta>;
-  };
+  type LaneStorage = { driver: SuggestionDriver<TCandidate, TRow, TMeta> | null };
 
   const extension = Extension.create<SuggestionLaneOptions<TCatalog>, LaneStorage>({
     name: spec.name,
-
     addOptions() {
-      return { catalog: () => null };
+      return { catalog: () => null, suggestionHost: () => null };
     },
-
     addStorage(): LaneStorage {
-      return createSuggestionMenu<TEntry, TMeta>();
+      return { driver: null };
     },
-
     addProseMirrorPlugins() {
       const editor = this.editor;
       const options = this.options;
-      const { menu, controller } = this.storage;
-
-      const sessionFrom = (
-        props: SuggestionProps<TItem, TEntry>,
-      ): SuggestionMenuSession<TEntry, TMeta> | null => {
-        const catalog = options.catalog();
-        if (!catalog) return null;
+      const catalog = options.catalog;
+      const defaultProject = (
+        frame: SuggestionDriverFrame<TCandidate>,
+      ): SuggestionMenuModel<TRow, TMeta> | null => {
+        const current = catalog();
+        if (!current) return null;
         const entries = spec.entries
-          ? spec.entries({ editor, catalog, range: props.range, items: props.items })
-          : // No projection means this lane's rows ARE its matches, which is
-            // exactly what `TEntry = TItem` says. A defaulted type parameter is
-            // not something the compiler can read that off of, so the identity
-            // is asserted here rather than made every lane's boilerplate.
-            (props.items as unknown as readonly TEntry[]);
+          ? spec.entries({
+              editor,
+              catalog: current,
+              range: frame.triggerRange,
+              items: frame.candidates,
+            })
+          : (frame.candidates as unknown as readonly TRow[]);
         return {
-          items: entries,
-          query: props.query,
-          anchorRect: props.clientRect ?? (() => null),
-          label: spec.label(catalog),
-          meta: (spec.meta?.(catalog) ?? null) as TMeta,
-          choose: (entry) => props.command(entry),
+          rows: entries,
+          rowId: spec.rowId,
+          label: spec.label(current),
+          meta: (spec.meta?.(current) ?? null) as TMeta,
           choosable: spec.choosable,
-          dismiss: () => exitSuggestion(editor.view, pluginKey),
+          choose: (entry, action) => {
+            const live = catalog();
+            if (live)
+              spec.choose({ editor, catalog: live, range: frame.triggerRange, entry, action });
+          },
+          backtrack: spec.backtrack
+            ? () => {
+                const live = catalog();
+                return live
+                  ? (spec.backtrack?.({ editor, catalog: live, range: frame.triggerRange }) ??
+                      false)
+                  : false;
+              }
+            : undefined,
         };
       };
-
+      const driver = spec.driver({ editor, catalog, defaultProject });
+      this.storage.driver = driver;
+      const frameFrom = (
+        props: SuggestionProps<TCandidate, TRow>,
+      ): SuggestionDriverFrame<TCandidate> => ({
+        query: props.query,
+        text: props.text,
+        triggerRange: props.range,
+        candidates: props.items,
+        anchorRect: props.clientRect ?? (() => null),
+        loading: props.loading,
+        requestExit: () => exitSuggestion(editor.view, pluginKey),
+      });
       return [
-        Suggestion<TItem, TEntry>({
+        Suggestion<TCandidate, TRow>({
           editor,
           pluginKey,
           char: spec.char,
           allowSpaces: spec.allowSpaces ?? false,
-          // The envelope is the lane predicate's, not the plugin's:
-          // `startOfLine` and `allowedPrefixes` would express part of a rule in
-          // configuration and leave the rest in code, which is how the old slash
-          // trigger ended up with rules nobody could read.
           startOfLine: false,
           allowedPrefixes: null,
           allow: ({ state, range }) =>
             options.catalog() !== null && spec.allows(state.doc, range.from),
           items: ({ query }) => {
-            const catalog = options.catalog();
-            return catalog ? [...spec.items(catalog, query)] : [];
+            const current = options.catalog();
+            return current ? [...spec.items(current, query)] : [];
           },
-          command: ({ editor: target, range, props }) => {
-            const catalog = options.catalog();
-            // Withdrawn between the row being drawn and the row being chosen:
-            // take the menu down rather than write from a dead list.
-            if (!catalog) {
-              exitSuggestion(target.view, pluginKey);
-              return;
-            }
-            spec.choose({ editor: target, catalog, range, entry: props });
-          },
+          command: () => {},
           render: () => {
-            let releaseKeymap: (() => void) | null = null;
-
+            let hostLease: SuggestionHostLease | null = null;
             return {
               onStart(props) {
-                const session = sessionFrom(props);
-                if (!session) return;
-                controller.open(session);
-
-                // Registered here rather than from the surface's effect: the
-                // menu is on screen the instant the trigger text lands, and a
-                // writer who types it and ArrowDown in one motion must not
-                // out-run React.
-                releaseKeymap =
-                  getEditorChrome(editor)?.registerKeymap({
+                hostLease?.release();
+                hostLease =
+                  options.suggestionHost(editor)?.register({
                     id: spec.keymapId,
-                    scope: "layer",
-                    // No token to name: this runs a beat before React opens the
-                    // popover that becomes this menu's layer, which is the
-                    // point of registering here. The keys are then the
-                    // shallowest rung of layer scope, and an open layer that
-                    // claims the same chord answers it instead.
-                    layer: null,
-                    bindings: {
-                      ArrowDown: () => menu.move(1),
-                      ArrowUp: () => menu.move(-1),
-                      Enter: () => menu.chooseActive(),
+                    bindings: spec.keyBindings?.(driver.menu) ?? {
+                      ArrowDown: () => driver.menu.move(1),
+                      ArrowUp: () => driver.menu.move(-1),
+                      Enter: () => driver.menu.chooseActive("enter"),
+                    },
+                    retreat: {
+                      backtrack: () => driver.menu.backtrack(),
+                      dismiss: () => driver.menu.dismiss(),
                     },
                   }) ?? null;
+                driver.start(frameFrom(props));
               },
-
-              onUpdate(props) {
-                const session = sessionFrom(props);
-                if (session) controller.update(session);
-              },
-
+              onUpdate: (props) => driver.update(frameFrom(props)),
               onExit() {
-                releaseKeymap?.();
-                releaseKeymap = null;
-                controller.close();
+                hostLease?.release();
+                hostLease = null;
+                driver.exit();
               },
             };
           },
         }),
-
-        // The catalog can be withdrawn without a transaction to notice it: a
-        // schema fence or a read-only host flips editability, and `setEditable`
-        // re-runs plugin VIEWS rather than plugin `apply`. Suggestion would keep
-        // an open menu whose every row is dead, which is the control law 5
-        // forbids. Exiting here means withdrawal leaves by the same door as
-        // Escape, so the keymap and the chrome layer are released once.
         new Plugin({
           key: catalogFencePluginKey,
           view: (view) => ({
             update() {
-              if (!pluginKey.getState(view.state)?.active) return;
-              if (options.catalog() === null) exitSuggestion(view, pluginKey);
+              if (pluginKey.getState(view.state)?.active && options.catalog() === null)
+                exitSuggestion(view, pluginKey);
             },
           }),
         }),
@@ -260,13 +275,13 @@ export function createSuggestionLane<TCatalog, TItem, TEntry extends TItem = TIt
     },
   });
 
-  const getMenu = (editor: Editor | null | undefined): SuggestionMenu<TEntry, TMeta> | null => {
+  const getMenu = (editor: Editor | null | undefined): SuggestionMenu<TRow, TMeta> | null => {
     if (!editor || editor.isDestroyed) return null;
     // TipTap's storage registry is keyed by extension-name literals, and a lane
     // brings its name at runtime. The cast is the price of one mechanism
     // serving every lane; the shape is this factory's own `addStorage`.
     const storage = editor.storage as unknown as Record<string, LaneStorage | undefined>;
-    return storage[spec.name]?.menu ?? null;
+    return storage[spec.name]?.driver?.menu ?? null;
   };
 
   // The plugin key stays inside: a lane's open state is read through its menu,

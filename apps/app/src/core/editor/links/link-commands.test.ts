@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { Editor } from "@tiptap/core";
+import { yUndoPluginKey } from "@tiptap/y-tiptap";
 import { afterEach, describe, expect, it } from "vitest";
+import { createCollabPair } from "@/test-support/collab-editors";
 
 import { createStandaloneEditorExtensions } from "../config";
 import { commitLinkDraft, mapLinkDraft, resolveLinkDraft } from "./link-commands";
@@ -210,4 +212,75 @@ describe("link commit", () => {
     );
     expect(firstLinkHref(target)).toBeNull();
   });
+});
+
+describe("destination-oriented editing", () => {
+  it("exposes selected prose and edits a selected link's label", () => {
+    const target = editorWith('<p><a href="[[Gate]]">the gate</a></p>');
+    target.commands.setTextSelection({ from: 1, to: 9 });
+    const draft = resolveLinkDraft(target);
+    expect(draft.text).toBe("the gate");
+    expect(commitLinkDraft(target, draft, { text: "the second gate", href: draft.href })).toBe(
+      "applied",
+    );
+    expect(target.state.doc.textContent).toBe("the second gate");
+  });
+  it("preserves mixed emphasis when only the destination changes", () => {
+    const target = editorWith('<p><a href="[[Gate]]">the <em>gate</em></a></p>');
+    target.commands.setTextSelection(2);
+    const draft = resolveLinkDraft(target);
+    expect(commitLinkDraft(target, draft, { text: draft.text, href: "[[Tower]]" })).toBe("applied");
+    expect(target.getHTML()).toContain("<em>gate</em>");
+  });
+  it("retains surviving emphasis without spreading the first run over replacement text", () => {
+    const target = editorWith(
+      '<p><a href="[[Gate]]"><em>the</em> second <strong>gate</strong></a></p>',
+    );
+    target.commands.setTextSelection(2);
+    const draft = resolveLinkDraft(target);
+    expect(commitLinkDraft(target, draft, { text: "western gate", href: draft.href })).toBe(
+      "applied",
+    );
+    expect(target.getHTML()).toContain("<strong>gate</strong>");
+    expect(target.getHTML()).not.toContain("<em>");
+  });
+  it("retains internal mark transitions outside the changed prefix", () => {
+    const target = editorWith(
+      '<p><a href="[[Gate]]">the <em>second</em> <strong>gate</strong></a></p>',
+    );
+    target.commands.setTextSelection(2);
+    const draft = resolveLinkDraft(target);
+    expect(commitLinkDraft(target, draft, { text: "a second gate", href: draft.href })).toBe(
+      "applied",
+    );
+    expect(target.getHTML()).toContain("<em>second</em>");
+    expect(target.getHTML()).toContain("<strong>gate</strong>");
+  });
+  it("refuses a stale draft after the destination is replaced", () => {
+    const target = editorWith('<p><a href="[[Gate]]">gate</a></p>');
+    target.commands.setTextSelection(2);
+    const draft = resolveLinkDraft(target);
+    target.chain().extendMarkRange("link").setLink({ href: "[[Tower]]" }).run();
+    expect(commitLinkDraft(target, draft, { text: draft.text, href: "[[Other]]" })).toBe("refused");
+    expect(firstLinkHref(target)).toBe("[[Tower]]");
+  });
+});
+
+it("undoes a link save separately from adjacent collaborative typing", () => {
+  const pair = createCollabPair({
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text: "Start" }] }],
+  });
+  try {
+    const target = pair.local;
+    yUndoPluginKey.getState(target.state)?.undoManager.clear();
+    target.commands.setTextSelection(6);
+    target.commands.insertContent(" words");
+    const draft = resolveLinkDraft(target);
+    expect(commitLinkDraft(target, draft, { text: "Gate", href: "[[Gate]]" })).toBe("applied");
+    target.commands.undo();
+    expect(target.state.doc.textContent).toBe("Start words");
+  } finally {
+    pair.destroy();
+  }
 });

@@ -69,6 +69,8 @@ export {
   documentLinkTarget,
   isInternalLinkTarget,
   type LinkTarget,
+  linkInputStepsAsideFromReferences,
   linkTargetHref,
+  linkTargetLabel,
   normalizeLinkHref,
 } from "./link-target";

@@ -20,8 +20,6 @@ if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
 type BootstrapResponse = {
   projectId: string;
-  workId: string;
-  threadId: string;
   documentId: string;
   uri: string;
 };
@@ -45,15 +43,23 @@ if (bootstrapResponse.status !== 201) {
   );
 }
 const bootstrap = (await bootstrapResponse.json()) as BootstrapResponse;
+const threadResponse = await fetch(new URL("/api/threads", serverUrl), {
+  method: "POST",
+  headers: { ...authHeaders, "content-type": "application/json" },
+  body: JSON.stringify({ projectId: bootstrap.projectId, workId: null, title: "Phase 4 smoke" }),
+});
+if (threadResponse.status !== 201) {
+  throw new Error(
+    `thread creation failed: ${threadResponse.status} ${await threadResponse.text()}`,
+  );
+}
+const thread = (await threadResponse.json()) as { id: string };
 
-const messageResponse = await fetch(
-  new URL(`/api/threads/${bootstrap.threadId}/messages`, serverUrl),
-  {
-    method: "POST",
-    headers: { ...authHeaders, "content-type": "application/json" },
-    body: JSON.stringify({ text: "prepare a Phase 4 document edit" }),
-  },
-);
+const messageResponse = await fetch(new URL(`/api/threads/${thread.id}/messages`, serverUrl), {
+  method: "POST",
+  headers: { ...authHeaders, "content-type": "application/json" },
+  body: JSON.stringify({ text: "prepare a Phase 4 document edit" }),
+});
 if (messageResponse.status !== 202) {
   throw new Error(`message failed: ${messageResponse.status} ${await messageResponse.text()}`);
 }
@@ -61,27 +67,21 @@ const messageBody = (await messageResponse.json()) as { assistantTurnId: string 
 
 const markdown = `# Chapter 1\n\nPhase 4 smoke ${Date.now()}\n`;
 const expectedMarkdown = markdown.trimEnd();
-const writeResponse = await fetch(
-  new URL(`/api/threads/${bootstrap.threadId}/context/write`, serverUrl),
-  {
-    method: "POST",
-    headers: { ...authHeaders, "content-type": "application/json" },
-    body: JSON.stringify({
-      uri: bootstrap.uri,
-      markdown,
-    }),
-  },
-);
+const writeResponse = await fetch(new URL(`/api/threads/${thread.id}/context/write`, serverUrl), {
+  method: "POST",
+  headers: { ...authHeaders, "content-type": "application/json" },
+  body: JSON.stringify({
+    uri: bootstrap.uri,
+    markdown,
+  }),
+});
 if (writeResponse.status !== 202) {
   throw new Error(`context write failed: ${writeResponse.status} ${await writeResponse.text()}`);
 }
 const writeBody = (await writeResponse.json()) as { updateSeq: number };
 
 const readResponse = await fetch(
-  new URL(
-    `/api/threads/${bootstrap.threadId}/context?uri=${encodeURIComponent(bootstrap.uri)}`,
-    serverUrl,
-  ),
+  new URL(`/api/threads/${thread.id}/context?uri=${encodeURIComponent(bootstrap.uri)}`, serverUrl),
   { headers: authHeaders },
 );
 if (readResponse.status !== 200) {
@@ -120,8 +120,8 @@ console.log(
       ok: true,
       serverUrl,
       projectId: bootstrap.projectId,
-      workId: bootstrap.workId,
-      threadId: bootstrap.threadId,
+      scope: "none",
+      threadId: thread.id,
       documentId: bootstrap.documentId,
       assistantTurnId: messageBody.assistantTurnId,
       updateSeq: writeBody.updateSeq,

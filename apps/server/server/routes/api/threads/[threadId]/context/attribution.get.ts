@@ -10,6 +10,7 @@ type AttributionRouteServices = {
   threads: AppServices["threadRepos"]["threads"];
   threadWorks: AppServices["threadRepos"]["threadWorks"];
   works: AppServices["workRepo"];
+  workAuthorityResolver: AppServices["workAuthorityResolver"];
   documentSync: DocumentAttribution;
 };
 
@@ -19,6 +20,7 @@ function selectAttributionRouteServices(app: AppServices): AttributionRouteServi
     threads: app.threadRepos.threads,
     threadWorks: app.threadRepos.threadWorks,
     works: app.workRepo,
+    workAuthorityResolver: app.workAuthorityResolver,
     documentSync: app.documentSync,
   };
 }
@@ -38,6 +40,7 @@ export default defineEventHandler(async (event) => {
       threads: services.threads,
       threadWorks: services.threadWorks,
       works: services.works,
+      workAuthorityResolver: services.workAuthorityResolver,
     },
     { threadId, userId: user.userId, uri },
   );
@@ -47,7 +50,7 @@ export default defineEventHandler(async (event) => {
   const attribution = await services.documentSync.getLastUpdateAttribution(document.documentId);
   return {
     documentId: document.documentId,
-    uri,
+    uri: document.uri,
     ...attribution,
   };
 });

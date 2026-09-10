@@ -41,7 +41,7 @@ const SECOND_GATE: ResolvedDocumentLink = {
 const SECOND_GATE_ELSEWHERE: ResolvedDocumentLink = {
   ...SECOND_GATE,
   documentId: "doc-elsewhere",
-  uri: "work://elsewhere/the-second-gate.md",
+  uri: "scratch://elsewhere/the-second-gate.md",
 };
 
 function editorWith(content: string): Editor {

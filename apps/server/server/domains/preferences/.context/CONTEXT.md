@@ -1,14 +1,13 @@
 # domains/preferences — project preferences
 
 Manages per-project user preferences (thread grouping, pinned threads, default
-agent, auto-resume settings, and the narrow new-chat fallback). Copy-on-write merge semantics
+agent, auto-resume settings). Copy-on-write merge semantics
 keep in-memory and Drizzle adapters behaviorally identical.
 
 ## What it owns
 
 - **`ProjectPreferencesRepository` port** — `read` / `upsert` with
-  `defaultProjectPreferences()` fallback, plus new-chat fallback lookup and
-  compare-and-set repair (`repairNewChatFallbackWorkId`).
+  `defaultProjectPreferences()` fallback,.
 - **Domain helpers** — `copyProjectPreferences` (defensive copy),
   `mergeProjectPreferences` (patch application),
   `defaultProjectPreferences` (canonical defaults).
@@ -19,7 +18,7 @@ keep in-memory and Drizzle adapters behaviorally identical.
 
 | Port | Surface |
 |---|---|
-| `ProjectPreferencesRepository` | Reads/upserts UI preferences and reads or compare-and-set repairs the omitted-New-Chat fallback. It exposes no general fallback setter. |
+| `ProjectPreferencesRepository` | Reads/upserts UI preferences. |
 
 ## Adapters
 
@@ -42,11 +41,6 @@ hermetic tests and local reference behavior.
 - **Patch semantics.** Nullable fields (`autoResume`) can be set to `undefined`
   via `UpdateProjectPreferencesRequest`.
 - **Persistence.** Production preferences survive server restart through Drizzle/Postgres.
-- **Fallback is not selection.** It stays on the same `(userId, projectId)` row,
-  and archive does not clear it. Only omitted-root-chat resolution may repair a
-  null or dangling value; that write is compare-and-set against the value read,
-  then retries on contention. A thread's “current Work” is its primary binding.
-
 ## Cross-domain dependencies
 
 - **Consumed by `domains/runtime`** — orchestrator reads preferences for agent

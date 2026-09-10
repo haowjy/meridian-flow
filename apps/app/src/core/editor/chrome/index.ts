@@ -32,6 +32,7 @@ export type {
   ChromeLayerDismissal,
   ChromeLayerHandle,
   ChromeLayerOptions,
+  ChromeLayerRetreat,
   EditorChrome,
 } from "./editor-chrome";
 // `escStep` is the policy a surface reasons against; the walk-home proof and

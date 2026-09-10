@@ -22,8 +22,9 @@ Key rules:
   enables the driver.
 - Hydration adoption is synchronous render-time state, keyed by
   projectId. Never adopt via effects.
-- Build routes with `buildWorkingSetRoute` (work-scoped schemes require
-  a workId); never hand-assemble the union.
+- Build routes with `buildWorkingSetRoute`: every server route requires its
+  stable document ID, and Work-capable schemes require explicit real-Work or
+  no-Work authority. Never hand-assemble the union.
 - Do not grow this into a general sync engine — the narrowness is the
   design. If a new state kind needs syncing, give it its own tier and
   policy instead of widening this record.

@@ -1,12 +1,11 @@
-/** Pure context-tree flattening and ranking for file suggestion hosts. */
-import type {
-  ProjectContextTreeDirectory,
-  ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+/** Pure normalized-catalog projection and ranking for file suggestion hosts. */
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import type { CatalogCacheView } from "@/client/query/context-catalog-cache";
 
 export type FileSuggestionKind = "file" | "dir";
 
 export type FileSuggestion = {
+  entryId: string;
   scheme: ProjectContextTreeScheme;
   path: string;
   name: string;
@@ -14,27 +13,49 @@ export type FileSuggestion = {
   parents: readonly string[];
 };
 
-export type FileSuggestionTree = {
-  scheme: ProjectContextTreeScheme;
-  tree: ProjectContextTreeDirectory;
-};
-
-export function flattenFileSuggestionTrees(trees: readonly FileSuggestionTree[]): FileSuggestion[] {
-  const entries: FileSuggestion[] = [];
-  for (const { scheme, tree } of trees) {
-    const visit = (
-      node: ProjectContextTreeDirectory["children"][number] | ProjectContextTreeDirectory,
-      parents: readonly string[],
-    ) => {
-      entries.push({ scheme, path: node.path, name: node.name, kind: node.kind, parents });
-      if (node.kind === "dir") {
-        const childParents = node.path === "/" ? parents : [...parents, node.name];
-        for (const child of node.children) visit(child, childParents);
+export function catalogFileSuggestions(views: readonly CatalogCacheView[]): FileSuggestion[] {
+  const suggestions: FileSuggestion[] = [];
+  const seen = new Set<string>();
+  for (const view of views) {
+    const sources = new Map(
+      [...view.entries.values()].flatMap((entry) =>
+        entry.kind === "source" ? [[entry.entryId, entry] as const] : [],
+      ),
+    );
+    for (const entry of view.entries.values()) {
+      if (view.invalidatedEntryIds.has(entry.entryId)) continue;
+      if (entry.kind === "source") {
+        const key = `${entry.scheme}:${entry.entryId}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          suggestions.push({
+            entryId: entry.entryId,
+            scheme: entry.scheme,
+            path: "/",
+            name: entry.name,
+            kind: "dir",
+            parents: [],
+          });
+        }
+        continue;
       }
-    };
-    visit(tree, []);
+      if (entry.kind !== "folder" && entry.kind !== "file") continue;
+      const source = sources.get(entry.sourceId);
+      if (!source) continue;
+      const key = `${source.scheme}:${entry.entryId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      suggestions.push({
+        entryId: entry.entryId,
+        scheme: source.scheme,
+        path: `/${entry.path.join("/")}`,
+        name: entry.name,
+        kind: entry.kind === "folder" ? "dir" : "file",
+        parents: entry.path.slice(0, -1),
+      });
+    }
   }
-  return entries;
+  return suggestions;
 }
 
 /**

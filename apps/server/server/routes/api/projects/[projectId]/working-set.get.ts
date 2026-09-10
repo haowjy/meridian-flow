@@ -12,6 +12,7 @@ export default defineEventHandler(async (event) => {
       workingSet: app.workingSet,
       works: app.works,
       threads: app.repos.threads,
+      projectContextAvailability: app.projectContextAvailability,
     },
     { projectId: getRouterParam(event, "projectId") ?? "", userId: user.userId },
   );

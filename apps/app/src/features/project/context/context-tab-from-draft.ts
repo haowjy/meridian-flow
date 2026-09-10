@@ -22,6 +22,7 @@ import type { ServerContextTab } from "@/client/stores";
 export function contextTabFromDraftGroup(group: {
   workId: string;
   documentId: string;
+  draftId: string;
   contextPath?: string | null;
   documentName?: string | null;
   /**
@@ -54,6 +55,12 @@ export function contextTabFromDraftGroup(group: {
     filetype,
     schemaType: classification.schemaType,
     reviewWorkId: group.workId,
-    ...(group.isNewDocument ? { draftOnly: true } : {}),
+    ...(group.isNewDocument
+      ? {
+          draftOnly: true,
+          reviewDraftId: group.draftId,
+          tabInstanceToken: crypto.randomUUID(),
+        }
+      : {}),
   };
 }

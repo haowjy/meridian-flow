@@ -34,11 +34,11 @@ describe("document-link route", () => {
     expect(
       parseDocumentLinkResolveBody({
         workId: WORK_ID.toUpperCase(),
-        target: { kind: "scheme", uri: "work://notes/plan.md" },
+        target: { kind: "scheme", uri: "scratch://notes/plan.md" },
       }),
     ).toEqual({
       workId: WORK_ID,
-      target: { kind: "scheme", uri: "work://notes/plan.md" },
+      target: { kind: "scheme", uri: "scratch://notes/plan.md" },
     });
     expect(
       parseDocumentLinkResolveBody({
@@ -56,7 +56,7 @@ describe("document-link route", () => {
       null,
       { target: { kind: "wikilink", name: "" } },
       { target: { kind: "wikilink", name: "x".repeat(2_049) } },
-      { workId: "not-a-uuid", target: { kind: "scheme", uri: "work://notes/a.md" } },
+      { workId: "not-a-uuid", target: { kind: "scheme", uri: "scratch://notes/a.md" } },
       { target: { kind: "relative", path: "a.md" } },
       { target: { kind: "external", uri: "https://example.com" } },
     ]) {
@@ -77,6 +77,7 @@ describe("document-link route", () => {
     ).resolves.toEqual({ document: null });
     expect(deps.documentLinks.resolve).toHaveBeenCalledWith({
       projectId: "project-1",
+      userId: "user-1",
       workId: undefined,
       target: { kind: "wikilink", name: "Future chapter" },
     });

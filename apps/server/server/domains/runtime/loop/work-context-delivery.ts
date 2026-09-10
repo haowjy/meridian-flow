@@ -167,7 +167,7 @@ export function createWorkContextDelivery(deps: {
                 turnId: turn.id,
                 threadId,
                 projectId: rendered.current.projectId,
-                workId: rendered.current.workId,
+                scope: rendered.current.execution.scope,
               },
               ...pendingBlocks.flatMap(acknowledgedPresentationEvents),
             ];

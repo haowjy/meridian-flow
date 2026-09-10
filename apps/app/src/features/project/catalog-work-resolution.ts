@@ -14,6 +14,6 @@ export type CatalogWorkResolution =
 
 export function resolveCatalogWork(read: WorkCatalogRead): CatalogWorkResolution {
   if (read.status !== "ready") return read;
-  const work = read.works.find(({ status }) => status === "active") ?? read.works[0];
+  const work = read.works.find(({ status }) => status === "active");
   return work ? { status: "ready", work } : { status: "empty" };
 }

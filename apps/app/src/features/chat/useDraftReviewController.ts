@@ -10,6 +10,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
 import {
+  type Dispatch,
   useCallback,
   useEffect,
   useMemo,
@@ -21,7 +22,10 @@ import {
 import { getDraftPreview } from "@/client/api/drafts-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useApplyDraft, useDiscardDraft } from "@/client/query/useDraftReviewMutations";
-import { useContextRemovalCoordinator } from "@/features/project/context/ContextRemovalAccountProvider";
+import { getContextTabs } from "@/client/stores";
+import { useContextRemovalCoordinator } from "@/features/project/context/account-feature-context";
+import { usePostApplyAccountId } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
+import { useProjectDraftApplyRecovery } from "@/features/project/draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
 import {
   type DraftBatchErrorCode,
   type DraftCommandOutcome,
@@ -37,6 +41,16 @@ import {
 } from "./draft-review-session";
 
 export type { DraftReviewSelection, InlineDraftReview, InlineReviewMessageCode };
+
+export type DraftReviewStateOwner = Readonly<{
+  state: typeof EMPTY_DRAFT_REVIEW_STATE;
+  dispatch: Dispatch<Parameters<typeof draftReviewReducer>[1]>;
+}>;
+
+export function useDraftReviewStateOwner(): DraftReviewStateOwner {
+  const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
+  return { state, dispatch };
+}
 
 /**
  * The single review-runtime claim: the mounted editor a review card can scroll
@@ -106,12 +120,17 @@ export function useDraftReviewController(
   projectId: string,
   workId: string,
   threadId: string | null = null,
+  owningWorkLabel: string | null = null,
+  stateOwner?: DraftReviewStateOwner,
 ): DraftReviewController {
   const queryClient = useQueryClient();
+  const accountId = usePostApplyAccountId();
+  const recovery = useProjectDraftApplyRecovery();
   const contextRemoval = useContextRemovalCoordinator();
   const applyMutation = useApplyDraft();
   const discardMutation = useDiscardDraft();
-  const [state, dispatch] = useReducer(draftReviewReducer, EMPTY_DRAFT_REVIEW_STATE);
+  const localStateOwner = useDraftReviewStateOwner();
+  const { state, dispatch } = stateOwner ?? localStateOwner;
   const commandPortsRef = useRef<DraftReviewCommandPorts | null>(null);
   const reviewSession = useMemo(
     () =>
@@ -131,12 +150,20 @@ export function useDraftReviewController(
   const [reviewRoomName, setReviewRoomName] = useState<string | null>(null);
   const [reviewRoomError, setReviewRoomError] = useState(false);
   const stateRef = useRef(state);
+  const activeRef = useRef(true);
   const inlineRuntimeRef = useRef<InlineReviewRuntime | null>(null);
   const activeReviewRequestRef = useRef<(DraftReviewSelection & { attemptId: number }) | null>(
     null,
   );
   const nextReviewAttemptIdRef = useRef(0);
   stateRef.current = state;
+
+  useEffect(() => {
+    activeRef.current = true;
+    return () => {
+      activeRef.current = false;
+    };
+  }, []);
 
   const inlineReview = inlineReviewFromState(state);
   const inlineReviewMessage = state.inlineReviewMessage;
@@ -208,13 +235,56 @@ export function useDraftReviewController(
 
   commandPortsRef.current = {
     apply: async ({ documentId, draftId }) => {
-      await applyMutation.mutateAsync({
+      let applyRoomName = reviewRoomName;
+      if (!applyRoomName) {
+        const preview = await getDraftPreview(projectId, workId, documentId, draftId);
+        if (preview.status !== "active" || preview.draftId !== draftId)
+          throw new Error("Draft Apply branch is no longer active");
+        applyRoomName = preview.reviewRoomName;
+        queryClient.setQueryData(
+          projectQueryKeys.workDraftPreview(projectId, workId, documentId, draftId),
+          preview,
+        );
+      }
+      const tab = getContextTabs(projectId).tabs.find(
+        (candidate) => candidate.documentId === documentId,
+      );
+      const result = await applyMutation.mutateAsync({
         projectId,
         workId,
         threadId,
         documentId,
         draftId,
+        identity: { accountId, projectId, workId, documentId, draftId },
+        presentation: {
+          documentName: tab?.name ?? null,
+          contextPath: tab && tab.kind !== "new" ? tab.path : null,
+          owningWorkLabel,
+        },
+        obligations: {
+          draftTab:
+            tab?.kind === "tracked" &&
+            tab.draftOnly &&
+            tab.reviewWorkId === workId &&
+            tab.reviewDraftId === draftId &&
+            tab.tabInstanceToken
+              ? {
+                  kind: "draft-only",
+                  reviewWorkId: workId,
+                  reviewDraftId: draftId,
+                  tabInstanceToken: tab.tabInstanceToken,
+                }
+              : { kind: "none" },
+          branch: { kind: "generation-qualified", reviewRoomName: applyRoomName },
+        },
       });
+      if (result.kind !== "server-applied-awaiting-live") return result;
+      const initial = await recovery.awaitInitialOutcome(result.recovery);
+      return initial.kind === "live-ready"
+        ? { kind: "live-ready" }
+        : initial.kind === "writer-abandoned"
+          ? { kind: "server-applied-settled-elsewhere", outcome: "writer-abandoned" }
+          : result;
     },
     discard: async ({ documentId, draftId }, input) => {
       await discardMutation.mutateAsync({
@@ -237,7 +307,6 @@ export function useDraftReviewController(
     },
     draftApplied: ({ documentId, draftId }) => {
       dispatch({ type: "applySucceeded", documentId, draftId });
-      contextRemoval.applyDraftMetadata(projectId, workId, documentId);
     },
     draftFailed: (selection, code) => {
       dispatch({ type: "draftCommandFailed", selection, code });

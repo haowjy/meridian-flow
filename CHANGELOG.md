@@ -5,6 +5,137 @@
 
 ## [Unreleased]
 
+- Separate document admission, recovery, browser locks, and local Untitled ownership;
+  preserve cross-tab editing and account-close behavior.
+
+- Automatically read chat document references; retain block-aware results with the
+  reference and replay them without rereading old messages.
+
+- `apps/app`: render completed hand-typed wikilinks with optional display text,
+  including missing destinations, without requiring a reference picker choice.
+
+- Clarify editing docs: semantic Markdown round trips, CRDT merge limits, and
+  direct versus draft publication.
+
+- `apps/app`, `packages/markup`: escape reference destination delimiters without
+  truncating filenames; keep explicitly authored URI labels in transcripts.
+
+- `apps/app`, `packages/markup`: edit reference display text independently; serialize
+  plain aliases as `[[destination|display text]]` and preserve them in transcripts,
+  including pasted tabs and escaped punctuation.
+
+- `apps/app`: close reference suggestions on @ followed by Space; keep the text
+  literal and preserve multiword reference searches.
+
+- `apps/app`: omit empty containers from reference suggestions; keep explicit URI
+  searches readable with empty/loading feedback and Back navigation, including
+  uncreated KB namespaces; refresh open pickers as catalog data changes.
+
+- `apps/app`: keep explicit No Work through link routes, Context bootstrap, tab
+  matching, and viewer reads even while a Work-bound chat is open.
+
+- `apps/app`: follow image and binary references into their Context viewer and
+  preserve exact no-Work authority rather than inheriting the invoking Work.
+
+- `apps/server`: resolve document links through the canonical Context catalog,
+  with authenticated personal scope and exact Work/no-Work navigation.
+
+- `apps/app`: retain uploaded files when references change or are removed, keeping
+  duplicates and Undo valid; preserve intake provenance on same-target Change.
+
+- `apps/app`: route upload retry keys through the button action before the editor
+  consumes Enter, preserving one retry and preventing accidental submission.
+
+- `apps/app`: open the reference replacement picker after its context menu
+  releases focus, so Change stays open in Home and Chat.
+
+- `apps/app`: expose pending uploads as status and failed uploads as native retry
+  buttons, without treating them as links or submitting on retry keys.
+
+- `apps/app`: keep unavailable transcript links inspectable and expose consistent
+  Composer link semantics, pointer affordance, and keyboard focus.
+
+- `apps/app`: preserve surviving rich-text mark runs when rewriting link labels.
+
+- `apps/app`: undo link saves and removals separately from adjacent collaborative typing.
+
+- `apps/app`: show friendly destination names while resolution is pending and
+  focus the link search field when changing an address without a catalog.
+
+- `apps/app`: keep context-click release from activating the menu row under it.
+
+- `apps/app`: render readable transcript links through the shared wiki grammar,
+  preserve exact source-range authority, and open model-authored links through
+  project-scoped resolution. Right-click exposes read-only link actions.
+
+- `apps/app`: show readable Composer reference titles without changing wire text;
+  first click opens the document and context actions change or remove only the
+  selected occurrence, with keyboard access and Undo.
+
+- `apps/app`: edit manuscript links through display text and a destination picker,
+  preserve styled prose on destination changes, refuse stale link edits, and
+  support focused-link navigation and keyboard context menus.
+
+- `apps/app`: add one renderer-neutral reference identity/ranking policy and
+  hierarchical browser over the normalized scoped Context catalog, with strict
+  lexical tiers, canonical Work/no-Work terminals, semantic segment navigation,
+  stable refresh selection, and stale acquisition fencing.
+
+- `apps/server`: fence exact-ID `user://` availability when its personal backing
+  project is deleted, preserve restore, validate Work catalog IDs before
+  authority lookup, and keep catalog replay limits explicit and bounded.
+- `apps/app`: route committed recursive-delete receipts through the canonical
+  generation-fenced availability batch so descendant tabs, routes, working-set
+  state, and document sessions settle atomically; remove the parallel
+  committed-delete authority hierarchy.
+
+- `apps/server`: conceal malformed foreign Context identities behind the same
+  project-final availability result as missing documents.
+- `apps/server`: read Work catalog authorization, lifecycle, revision, rows,
+  and pending counts from one repeatable-read snapshot.
+- `apps/app`: delete the unused Context catalog capability projection so the
+  server scheme policy remains the sole owner.
+- `apps/app`: fence account workspace replacement until the prior account's
+  document sessions and project feature owners finish their staged teardown.
+
+- `apps/app`: make document-session ownership exclusively lease-qualified, settle adopted local providers and lifetime leases in exact retryable stages before account close, fence local Untitled remint across every asynchronous lifecycle boundary, keep local persistence explicit, and remove the unfenced registry facade and unqualified persistence-key surface.
+- `apps/app`: atomically advance canonical Editor routes and working state for
+  project-final same-ID moves while preserving newer writer navigation and live
+  document sessions.
+
+- `apps/app`: make generation-bearing project-final availability commands the
+  sole remote terminal-removal boundary while preserving local Untitled tabs.
+
+- `database`, `contracts`, `apps/server`, `apps/app`: add the authoritative
+  Context metadata catalog with command-owned atomic metadata publication,
+  persisted tracked, custom, and binary classification, checkpoint-consistent
+  whole-commit replay, Work/no-Work authority,
+  authenticated snapshot/delta/children/stable-ID-or-URI lookup routes, and
+  lossy wake hints over the authenticated thread socket. React Query owns one
+  normalized stable-ID cache and one high-water acquisition drain shared by
+  direct-child tree rows, picker, and placement consumers. Catalog changes trigger
+  exact project-final rechecks; generation-bearing final commands remove stale
+  tabs, routes, and Yjs sessions by stable ID. Remove the recursive tree transport
+  and duplicate client owner.
+
+- `apps/app`: deepen the shared suggestion menu into a host-independent,
+  generation-fenced and reentrancy-safe lifecycle with stable-row refresh
+  selection, ordinary key actions, and a semantic host retreat lease that maps
+  hierarchical backtracking and root dismissal into each host's own Escape
+  precedence while preserving the `/` and `[[` editor lanes.
+- `contracts`, `apps/server`: separate grammar-only Work slugs from opaque,
+  project-resolved URI authority; preserve exact move and historical restore
+  identity; return resolved canonical identity from successful context and
+  reversal operations; and reconcile promoted result rows before compensating
+  stored bytes.
+
+- `contracts`, `apps/server`, `apps/app`: make absent Work scope executable for thread
+  creation, inheritance, direct live model edits, response settlement, canonical URI
+  authority, rebinds, and project-owned Scratch/Uploads; Work-only writes return typed
+  `work_required`; canonical no-Work/slug-qualified moves and promoted-result identities
+  never expose Work IDs; thread deletion and rebind serialize under one lifecycle lock; and
+  implicit Work/thread bootstrap and fallback preference state are gone.
+
 - `apps/app`: separate ordinary Editor screen continuity from atomic Work
   supersession, keep guarded deleted routes out of obligation settlement and
   durable reconstruction,
@@ -24,8 +155,8 @@
   initiating target identity, admit exact removal effects before invalidation,
   and reconcile route continuity through account-scoped, Work-gated protocol state.
 
-- `contracts`, `apps/server`: acknowledge context deletion with the exact
-  committed document IDs while preserving empty-folder and non-recursive folder semantics.
+- `contracts`, `apps/server`: acknowledge file and recursive folder deletion with
+  the exact committed document IDs, including every populated-folder descendant.
 
 - `apps/server`: serialize concurrent authenticated-user provisioning so one
   WorkOS principal converges on one local account and cross-principal email
@@ -57,8 +188,6 @@
 - `apps/app`: normalized thread user state serializes optimistic Favorite
   commands and prevents stale feed responses from overwriting newer truth.
 
-- `database`, `contracts`, `apps/server`, `apps/app`: cut over the former project-wide current Work to a narrowly named new-chat fallback with CAS repair; delete its GET/PUT selection API and all creation/rebind/receipt side effects; preserve fallback-only omitted root creation; canonicalize human/model Work metadata (including blank-field clearing); converge Work catalogs and associated chats from writer, model, reconciliation, and reversal paths; and prove fallback precedence and contention against PostgreSQL.
-
 - `apps/app`: give persistent Chat and Editor separate sibling draft-review
   controllers on desktop and phone, with a route-owned latest-wins handoff that
   carries Chat or prospective Work review commands into the matching Editor
@@ -85,7 +214,7 @@
   projection semantics.
 
 - `apps/server`: protect multi-Work project listing with a real-Postgres route
-  regression covering two active Works, truthful fallback persistence, and
+  regression covering two active Works, historical primary association, and
   cross-owner concealment.
 
 - `apps/app`: compact active and archived Work cards onto the shared shadcn card
@@ -168,10 +297,9 @@
   disclosure once, while a deliberate close remains closed across rerenders of
   that same selection and names it in the collapsed summary.
 
-- `apps/app`: New Chat now creates immediately in the server-resolved
-  current/default Work from Home and the thread switcher, with inline failure
-  alerts and retry at each entry surface; writers can rebind afterward from the
-  composer.
+- `apps/app`: New Chat now preserves the caller's explicit no-Work or selected
+  Work scope from Home and the thread switcher, with inline failure alerts and
+  retry at each entry surface; writers can rebind afterward from the composer.
 - `apps/app`: the desktop workspace selection now begins flush with the shared
   40px pane-header boundary while phone navigation spacing remains unchanged.
 - `apps/app`: composer Agent, write-mode, and Work controls now share one
@@ -938,10 +1066,9 @@
   unique per-run database without touching the worktree database; `dev:gc-dbs`
   preserves active runs and the reserved manual-test namespace while reclaiming
   stopped managed runs.
-- `apps/server`, `apps/app`: work-scoped Scratch/Uploads documents now resolve
-  project ownership and register in the live project manifest, so their Yjs
-  editors can connect; the works bootstrap response also exposes the project's
-  single default Work for chat-independent Scratch surfaces.
+- `apps/server`, `apps/app`: work-scoped and explicit no-Work Scratch/Uploads
+  documents now resolve project ownership and register in the live project
+  manifest, so their Yjs editors can connect without a fallback Work.
 - `apps/server`: opening or reconnecting to a Review now catches its chapter
   draft up with the live manuscript first, instead of leaving an inactive draft stale.
 - `apps/server`, `packages/agent-edit`: writer-approved Apply text is now

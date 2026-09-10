@@ -36,7 +36,7 @@ export function createInMemoryUnifiedContextStoreRegistry(): InMemoryUnifiedCont
 function projectStoreKey(
   projectId: string,
   userId: string,
-  scheme: ProjectContextFsScheme,
+  scheme: ProjectContextFsScheme | WorkScopedContextFsScheme,
 ): string {
   if (scheme === "user") return `user:${userId}`;
   return `project:${projectId}:${scheme}`;
@@ -50,7 +50,7 @@ export function getInMemoryProjectContextStore(
   registry: InMemoryUnifiedContextStoreRegistry,
   projectId: string,
   userId: string,
-  scheme: ProjectContextFsScheme,
+  scheme: ProjectContextFsScheme | WorkScopedContextFsScheme,
 ): InMemoryContextDocumentStore {
   const key = projectStoreKey(projectId, userId, scheme);
   let store = registry.projectStores.get(key);

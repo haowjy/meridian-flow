@@ -21,8 +21,21 @@ export type ProjectSearch = {
   work?: string;
 };
 
+export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): boolean {
+  return (
+    left.screen === right.screen &&
+    left.thread === right.thread &&
+    left.scheme === right.scheme &&
+    left.folder === right.folder &&
+    left.path === right.path &&
+    left.results === right.results &&
+    left.work === right.work
+  );
+}
+
 export type ExplicitWorkSearch =
   | { kind: "absent" }
+  | { kind: "none" }
   | { kind: "malformed"; value: string }
   | { kind: "valid"; id: ParsedRequestId; canonical: boolean };
 
@@ -33,6 +46,7 @@ export type WorkCatalog =
 
 export type RouteWorkResolution =
   | { status: "absent" }
+  | { status: "none" }
   | { status: "malformed"; value: string }
   | { status: "loading"; workId: ParsedRequestId }
   | { status: "catalog-error"; workId: ParsedRequestId }
@@ -81,12 +95,28 @@ export function openContextRouteSearch(
   return stripEmptySearch({
     ...search,
     screen: "context",
-    work: target.workId ?? undefined,
+    work: target.workId ?? "none",
     scheme: target.scheme,
     folder: segments.length ? `/${segments.join("/")}` : undefined,
     path: target.path,
     results: undefined,
   });
+}
+
+/** Compare raw route state with a resolved target without losing omitted Work inheritance. */
+export function contextRouteMatchesSearch(
+  search: ProjectSearch | null | undefined,
+  target: ContextRouteTarget,
+  inheritedWorkId: string | null,
+): boolean {
+  if (!search) return false;
+  const workId = search.work === "none" ? null : (search.work ?? inheritedWorkId);
+  return (
+    search.screen === "context" &&
+    search.scheme === target.scheme &&
+    search.path === target.path &&
+    workId === target.workId
+  );
 }
 
 export type WorkContextTarget = {
@@ -146,6 +176,7 @@ export function parseProjectSearch(search: Record<string, unknown>): ProjectSear
 
 export function parseExplicitWork(value: string | undefined): ExplicitWorkSearch {
   if (value === undefined) return { kind: "absent" };
+  if (value === "none") return { kind: "none" };
   const id = parseRequestId(value);
   if (!id) return { kind: "malformed", value };
   return { kind: "valid", id, canonical: value === id };
@@ -156,6 +187,7 @@ export function resolveRouteWork(
   catalog: WorkCatalog,
 ): RouteWorkResolution {
   if (explicit.kind === "absent") return { status: "absent" };
+  if (explicit.kind === "none") return { status: "none" };
   if (explicit.kind === "malformed") return { status: "malformed", value: explicit.value };
   if (catalog.status === "loading") return { status: "loading", workId: explicit.id };
   if (catalog.status === "error") return { status: "catalog-error", workId: explicit.id };

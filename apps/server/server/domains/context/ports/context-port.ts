@@ -32,11 +32,15 @@ export type ProjectContextFsScheme = ProjectScopedContextUriScheme;
 export type WorkScopedContextFsScheme = WorkScopedContextUriScheme;
 
 export interface ContextReadResult {
+  /** Stable identity resolved by the router for this successful operation. */
+  uri: string;
   content: string;
   documentId?: string;
 }
 
 export interface ContextWriteResult {
+  /** Stable identity resolved by the router for this successful operation. */
+  uri: string;
   documentId?: string;
   markdown?: string;
   updateSeq?: number;
@@ -189,6 +193,8 @@ export type WriteProvenance =
 
 export interface ContextWriteOptions {
   origin?: WriteProvenance;
+  /** Stable identity reserved by an authoritative aggregate before content creation. */
+  documentId?: string;
   /**
    * Create only the context row for a tracked document; the caller must ensure
    * the live Y.Doc before committed content is applied.

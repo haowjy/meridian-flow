@@ -1,5 +1,6 @@
 /** Postgres coverage for Work handles, restore conflicts, and durable-content deletion guards. */
 import { setTimeout as delay } from "node:timers/promises";
+import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import { eq } from "drizzle-orm";
 import postgres from "postgres";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -21,22 +22,39 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { truncateDrizzleTables } = await import("../../test-support/drizzle-reset.js");
+    const { createDrizzleProjectContextAvailability } = await import(
+      "../context/adapters/project-context-availability.js"
+    );
+    const { createDrizzleContextCatalog } = await import("../context/adapters/context-catalog.js");
     const {
       createDrizzleProjectWorkRepository,
+      createDrizzleProjectWorkAuthorityResolver,
       deleteWorkTransition,
       restoreWork,
       updateWorkTransition,
       WorkDeleteBlockedError,
       WorkRestoreConflictError,
+      createWorkProjectionMutation,
     } = await import("./index.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 4 });
     const control = postgres(DATABASE_URL, { max: 1 });
+    const availability = createDrizzleProjectContextAvailability(db);
+    const catalog = createDrizzleContextCatalog(db, undefined, {
+      availabilityMutations: availability,
+    });
+    const projectionMutation = createWorkProjectionMutation({
+      db,
+      availability,
+      catalog,
+    });
     const works = createDrizzleProjectWorkRepository({
       db,
       hasUnreviewedDraft: async () => false,
+      projectionMutation,
     });
+    const authorities = createDrizzleProjectWorkAuthorityResolver(db);
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [schema.users]);
@@ -77,6 +95,26 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(works.update(first.id, { name: "Renamed" })).resolves.toMatchObject({
         slug: "book-2",
       });
+    });
+
+    it("keeps UUID-shaped slugs and resolves ambiguous strings by exact field role", async () => {
+      const ambiguous = "123e4567-e89b-12d3-a456-426614174000";
+      const byIdWork = await works.create({ id: ambiguous, projectId: PROJECT_ID, name: "Alpha" });
+      const bySlugWork = await works.create({ projectId: PROJECT_ID, name: ambiguous });
+      const collision = await works.create({ projectId: PROJECT_ID, name: `${ambiguous}!` });
+
+      expect([bySlugWork.slug, collision.slug]).toEqual([ambiguous, `${ambiguous}-2`]);
+      const idAuthority = await authorities.byId(PROJECT_ID, byIdWork.id);
+      const slugAuthority = await authorities.bySlug(PROJECT_ID, bySlugWork.slug);
+      expect(idAuthority).toMatchObject({ workId: byIdWork.id, workSlug: "alpha" });
+      expect(slugAuthority).toMatchObject({ workId: bySlugWork.id, workSlug: ambiguous });
+      if (!idAuthority || !slugAuthority) throw new Error("missing resolved authority");
+      expect(canonicalContextUri("scratch", "notes.md", idAuthority)).toBe(
+        "scratch://@alpha/notes.md",
+      );
+      expect(canonicalContextUri("scratch", "notes.md", slugAuthority)).toBe(
+        `scratch://@${ambiguous}/notes.md`,
+      );
     });
 
     it("captures update and delete receipts from the locked committing transition", async () => {
@@ -136,7 +174,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("serializes Work restore and enqueues only the transition that restores", async () => {
-      const { createDrizzleRepositories } = await import("../threads/adapters/drizzle/index.js");
+      const { createDrizzleRepositoriesForTest } = await import(
+        "../threads/adapters/drizzle/index.js"
+      );
       await db.insert(schema.threads).values({
         id: THREAD_ID,
         projectId: PROJECT_ID,
@@ -145,7 +185,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const work = await works.create({ projectId: PROJECT_ID, name: "Restorable" });
       await works.softDelete(work.id);
-      const threads = createDrizzleRepositories(db);
+      const threads = createDrizzleRepositoriesForTest(db);
       let release!: () => void;
       const gate = new Promise<void>((resolve) => {
         release = resolve;
@@ -397,44 +437,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
       await db.update(schema.folders).set({ deletedAt: new Date() });
       await expect(works.softDelete(work.id)).resolves.toBeUndefined();
-    });
-
-    it("serializes named and default creation on one project lock", async () => {
-      const insertBarrier = 748_210_842;
-      await control.unsafe(`
-        CREATE FUNCTION test_block_work_insert() RETURNS trigger
-        LANGUAGE plpgsql AS $$
-        BEGIN
-          PERFORM pg_advisory_xact_lock(${insertBarrier});
-          RETURN NEW;
-        END;
-        $$;
-        CREATE TRIGGER test_block_work_insert
-        BEFORE INSERT ON works
-        FOR EACH ROW EXECUTE FUNCTION test_block_work_insert();
-      `);
-      await control`SELECT pg_advisory_lock(${insertBarrier})`;
-      let barrierHeld = true;
-
-      try {
-        const named = works.create({ projectId: PROJECT_ID, name: "Book 1" });
-        await waitForLock("advisory");
-        const defaulted = works.ensureDefaultForProject(PROJECT_ID, "Book 1");
-        await waitForLock("advisory", 2);
-
-        await control`SELECT pg_advisory_unlock(${insertBarrier})`;
-        barrierHeld = false;
-        const [namedWork, defaultWork] = await Promise.all([named, defaulted]);
-
-        expect(defaultWork.id).toBe(namedWork.id);
-        await expect(works.listByProject(PROJECT_ID)).resolves.toHaveLength(1);
-      } finally {
-        if (barrierHeld) await control`SELECT pg_advisory_unlock(${insertBarrier})`;
-        await control.unsafe(`
-          DROP TRIGGER IF EXISTS test_block_work_insert ON works;
-          DROP FUNCTION IF EXISTS test_block_work_insert();
-        `);
-      }
     });
 
     it("serializes Work content creation before deletion", async () => {

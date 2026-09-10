@@ -17,7 +17,10 @@ vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
-vi.mock("@/client/stores", () => ({ useIsThreadPendingCreation: () => false }));
+vi.mock("@/client/stores", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/client/stores")>()),
+  useIsThreadPendingCreation: () => false,
+}));
 
 const { useTurnLiveLineage } = await import("@/client/query/useTurnLiveLineage");
 const { TurnEditsReceipt } = await import("./TurnEditsReceipt");

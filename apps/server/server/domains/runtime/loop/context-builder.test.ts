@@ -53,6 +53,10 @@ function assistantTurn(id: string, status: Turn["status"]): Turn {
   };
 }
 
+function userTurn(id: string): Turn {
+  return { ...assistantTurn(id, "complete"), role: "user", finishReason: null, responseCount: 0 };
+}
+
 function toolUse(turnId: string, sequence: number, toolCallId: string): Block {
   return {
     id: `use-${toolCallId}`,
@@ -94,6 +98,55 @@ function danglingToolUseIds(messages: readonly Message[]): string[] {
 }
 
 describe("buildContext tool-call history", () => {
+  it("projects ordinary and structured text in exact persisted order", () => {
+    const turn = userTurn("writer-turn");
+    const blocks: Block[] = [
+      {
+        id: "ordinary",
+        turnId: turn.id,
+        responseId: null,
+        blockType: "text",
+        sequence: 0,
+        textContent: "Compare\n",
+        content: "Compare\n",
+        createdAt,
+      },
+      {
+        id: "occurrence",
+        turnId: turn.id,
+        responseId: null,
+        blockType: "text",
+        sequence: 1,
+        textContent: "[[Gate Map]]",
+        content: {
+          type: "reference",
+          text: "[[Gate Map]]",
+          documentId: "33333333-3333-4333-8333-333333333333",
+          uri: "uploads://@/gate-map.png",
+        },
+        createdAt,
+      },
+      {
+        id: "tail",
+        turnId: turn.id,
+        responseId: null,
+        blockType: "text",
+        sequence: 2,
+        textContent: " now",
+        content: " now",
+        createdAt,
+      },
+    ];
+    const message = buildContext({ thread, turns: [turn], blocks }).messages.at(-1);
+    expect(message?.role).toBe("user");
+    expect(
+      message?.content
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join(""),
+    ).toBe("Compare\n[[Gate Map]] now");
+  });
+
   it("synthesizes status-aware error results for dangling calls", () => {
     const scenarios = [
       {
@@ -146,5 +199,39 @@ describe("buildContext tool-call history", () => {
         expect(recorded.isError).not.toBe(true);
       }
     }
+  });
+});
+
+describe("reference read snapshots", () => {
+  it("includes the saved read result once per document without changing the link text", () => {
+    const result = {
+      schema: "meridian.agent-edit.v1",
+      command: "read",
+      status: "success",
+      read: { format: "full" },
+      blocks: [{ items: [{ hash: "abcd", body: "The hidden chapter contents" }] }],
+    };
+    const blocks: Block[] = [0, 1].map((sequence) => ({
+      id: `ref-${sequence}`,
+      turnId: "user-ref",
+      responseId: null,
+      sequence,
+      blockType: "text",
+      textContent: "[[kb://hello.md|Hello]]",
+      createdAt,
+      content: {
+        type: "reference",
+        documentId: "00000000-0000-0000-0000-000000000001",
+        uri: "kb://hello.md",
+        text: "[[kb://hello.md|Hello]]",
+        read: { result },
+      },
+    }));
+    const message = buildContext({ thread, turns: [userTurn("user-ref")], blocks }).messages.at(-1);
+    const text = message?.content
+      .flatMap((part) => (part.type === "text" ? [part.text] : []))
+      .join("");
+    expect(text?.split("The hidden chapter contents")).toHaveLength(2);
+    expect(text?.split("[[kb://hello.md|Hello]]")).toHaveLength(3);
   });
 });

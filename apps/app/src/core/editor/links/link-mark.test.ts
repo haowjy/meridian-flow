@@ -34,7 +34,7 @@ describe("the link mark carries the whole internal family", () => {
   it.each([
     ["[[The Second Gate]]", "wikilink"],
     ["manuscript://appendix/vault-charter", "scheme"],
-    ["work://a1b2/notes.md", "scheme"],
+    ["scratch://a1b2/notes.md", "scheme"],
     ["chapter-213.md", "relative"],
     ["https://example.com", "external"],
   ])("keeps %s on parse and renders it as %s", (href, kind) => {

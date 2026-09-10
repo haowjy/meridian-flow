@@ -5,17 +5,15 @@
  * so file classification, schema type, and viewer metadata cannot drift between
  * shells.
  */
-import type {
-  ProjectContextTreeFile,
-  ProjectContextTreeScheme,
-} from "@meridian/contracts/protocol";
+import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import type { CatalogFile } from "@/client/query/context-catalog-projection";
 
 import type { ServerContextTab } from "@/client/stores";
 
 export function contextTabFromFile(
   scheme: ProjectContextTreeScheme,
-  file: ProjectContextTreeFile,
+  file: CatalogFile,
   workId?: string | null,
 ): ServerContextTab {
   const base = {

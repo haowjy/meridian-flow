@@ -3,8 +3,8 @@
  * data (list, detail, threads, works, context tree). Single source of key
  * shapes so reads, writes, and invalidations stay consistent.
  */
-import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+import type { CatalogScope, ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { catalogScopeKey } from "@meridian/contracts/protocol";
 
 export function isProjectWorkDerivedKey(
   queryKey: readonly unknown[],
@@ -19,32 +19,34 @@ export function isProjectWorkDerivedKey(
   return queryKey[4] === "drafts" || (queryKey[4] === "documents" && queryKey.includes("draft"));
 }
 
-export function isWorkScopedProjectContextTreeKey(
+export function isWorkScopedProjectContextCatalogKey(
   queryKey: readonly unknown[],
   projectId: string,
   workIds?: ReadonlySet<string>,
 ): boolean {
   if (
-    queryKey.length !== 6 ||
+    queryKey.length !== 4 ||
     queryKey[0] !== "projects" ||
     queryKey[1] !== projectId ||
-    queryKey[2] !== "context" ||
-    queryKey[5] !== "tree"
+    queryKey[2] !== "context-catalog"
   ) {
     return false;
   }
-  const workId = queryKey[4];
-  return typeof workId === "string" && (!workIds || workIds.has(workId));
+  const scopeKey = queryKey[3];
+  if (typeof scopeKey !== "string" || !scopeKey.startsWith("work:")) return false;
+  const workId = scopeKey.split(":").at(-1);
+  return Boolean(workId && (!workIds || workIds.has(workId)));
 }
 
-export function isProjectContextTreeKey(queryKey: readonly unknown[], projectId: string): boolean {
+export function isProjectContextCatalogKey(
+  queryKey: readonly unknown[],
+  projectId: string,
+): boolean {
   return (
-    (queryKey.length === 5 || queryKey.length === 6) &&
+    queryKey.length === 4 &&
     queryKey[0] === "projects" &&
     queryKey[1] === projectId &&
-    queryKey[2] === "context" &&
-    queryKey[4] !== "read" &&
-    queryKey[queryKey.length - 1] === "tree"
+    queryKey[2] === "context-catalog"
   );
 }
 
@@ -74,10 +76,23 @@ export const projectQueryKeys = {
       "draft",
       draftId ?? null,
     ] as const,
-  contextTree: (projectId: string, scheme: ProjectContextTreeScheme, workId?: string | null) =>
-    isWorkScopedProjectContextScheme(scheme) && workId
-      ? (["projects", projectId, "context", scheme, workId, "tree"] as const)
-      : (["projects", projectId, "context", scheme, "tree"] as const),
+  contextCatalog: (projectId: string, scope: CatalogScope) =>
+    ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const,
+  contextCatalogView: (
+    projectId: string,
+    scheme: ProjectContextTreeScheme,
+    workId?: string | null,
+  ) => {
+    const scope: CatalogScope =
+      scheme === "user"
+        ? { kind: "user", userId: "self" }
+        : scheme === "scratch" || scheme === "uploads"
+          ? workId
+            ? { kind: "work", projectId, workId }
+            : { kind: "none", projectId }
+          : { kind: "project", projectId };
+    return ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const;
+  },
   agents: (projectId: string) => ["projects", projectId, "agents"] as const,
   results: (projectId: string) => ["projects", projectId, "results"] as const,
   resultSignedUrl: (projectId: string, resultId: string) =>

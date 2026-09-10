@@ -11,12 +11,11 @@
  * a file is refused, is `ImageIngressOverlay`.
  */
 
-import type { ProjectContextTreeNode } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import { useEffect, useMemo } from "react";
 
 import { uploadFigure } from "@/client/api/figures-api";
-import { useProjectContextTree } from "@/client/query/useProjectContextTree";
+import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
   editorAssetIndex,
   type ImageBytesPort,
@@ -34,7 +33,7 @@ export function ImageIngressRuntime({
   projectId: string | undefined;
   documentId: string;
 }) {
-  const { tree: manuscriptTree } = useProjectContextTree(projectId ?? "", "manuscript", {
+  const { catalog: manuscriptCatalog } = useContextCatalogView(projectId ?? "", "manuscript", {
     enabled: Boolean(projectId),
     workId: null,
   });
@@ -53,18 +52,13 @@ export function ImageIngressRuntime({
   // both directions, and it can only do that for assets it has been told about.
   useEffect(() => {
     const assetIndex = editorAssetIndex(editor);
-    if (!assetIndex || !manuscriptTree) return;
-    const remember = (node: ProjectContextTreeNode) => {
-      if (node.kind === "file") {
-        if (!node.editable && node.fileType === "image") {
-          assetIndex.remember(node.documentId, node.path.replace(/^\//, ""));
-        }
-        return;
+    if (!assetIndex || !manuscriptCatalog) return;
+    for (const file of manuscriptCatalog.files()) {
+      if (!file.editable && file.fileType === "image") {
+        assetIndex.remember(file.documentId, file.path.replace(/^\//, ""));
       }
-      for (const child of node.children) remember(child);
-    };
-    remember(manuscriptTree);
-  }, [editor, manuscriptTree]);
+    }
+  }, [editor, manuscriptCatalog]);
 
   return null;
 }

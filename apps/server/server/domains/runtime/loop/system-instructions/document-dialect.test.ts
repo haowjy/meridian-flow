@@ -53,17 +53,15 @@ describe("document dialect card codec gate", () => {
     expectWireFixpoint(wire);
   });
 
-  it("maps the wikilink spelling to an ordinary link and declines labeled syntax", () => {
+  it("maps plain and labeled wikilinks to the same destination", () => {
     const [wikilink] = expectWireFixpoint(DOCUMENT_DIALECT_CONTRACT.wikilink.wire);
     expect(wikilink?.firstChild?.marks[0]?.attrs.href).toBe(
       DOCUMENT_DIALECT_CONTRACT.wikilink.wire,
     );
 
-    const labeled = codec.parse(DOCUMENT_DIALECT_CONTRACT.wikilink.labeledLiteral).blocks;
-    expect(labeled[0]?.rangeHasMark(0, labeled[0].content.size, schema.marks.link)).toBe(false);
-    expect(codec.serialize(labeled)).not.toContain(
-      DOCUMENT_DIALECT_CONTRACT.wikilink.labeledLiteral,
-    );
+    const [labeled] = expectWireFixpoint(DOCUMENT_DIALECT_CONTRACT.wikilink.labeledWire);
+    expect(labeled?.firstChild?.marks[0]?.attrs.href).toBe(DOCUMENT_DIALECT_CONTRACT.wikilink.wire);
+    expect(labeled?.textContent).toBe("Arrival");
   });
 
   it("preserves fenced language attributes, including mermaid", () => {
@@ -146,7 +144,7 @@ describe("document dialect card codec gate", () => {
     );
     expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(DOCUMENT_DIALECT_CONTRACT.wikilink.wire);
     expect(DOCUMENT_DIALECT_CORE_INSTRUCTION).toContain(
-      DOCUMENT_DIALECT_CONTRACT.wikilink.labeledLiteral,
+      DOCUMENT_DIALECT_CONTRACT.wikilink.labeledWire,
     );
     for (const spelling of [
       DOCUMENT_DIALECT_CONTRACT.codeFences[0].opening,

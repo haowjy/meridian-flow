@@ -4,6 +4,22 @@ The app editor builds the browser-side TipTap schema and binds it to the shared
 Yjs document session. It must stay structurally aligned with
 `@meridian/prosemirror-schema`; schema drift corrupts y-prosemirror documents.
 
+## Session authority ownership
+
+`document-session-cross-context-coordination.ts` owns admission, local session/lease
+maps and account-close ordering. `document-session-recovery.ts` owns durable
+pending-drain/purge reconciliation and terminal-lineage joins, using that same
+owner's operation and lifecycle locks. It must not acquire a second session map
+or authority store. `document-session-locks.ts` implements document lock naming
+and callback lifetimes; `document-session-wakeup.ts` only requests reconciliation
+through advisory broadcasts, browser lifecycle events and timed scans.
+
+Project-local Untitled lifetime and identity reservations belong to
+`features/project/context/local-untitled-locks.ts`, composed by
+`AccountFeatureLifetime`. The account runtime supplies its epoch signal, not
+feature-specific lock factories. Keep lineage acquisition outside operation-held
+paths; recovery reaches the feature owner through the terminal continuation port.
+
 ## Contracts
 
 - `createEditorExtensions()` is the only app-side extension assembly point for
@@ -12,8 +28,24 @@ Yjs document session. It must stay structurally aligned with
   enforced, so a node or attr added on either side is a two-file change.
 - Collaboration uses the shared `PROSEMIRROR_FRAGMENT_NAME` Y.XmlFragment. Do
   not create a second fragment name or a second editor sync path.
-- `DocumentSessionRegistry` is keyed by the Yjs room key, not by editor surface:
-  live rooms use the bare document id; review rooms use the opaque,
+- The account document-session runtime constructs the only production registry
+  for one immutable account epoch. Account close fences admission synchronously,
+  then drains local providers, lifetime leases, and adopted-session finalizers
+  before the epoch can close. A local-lineage terminal transition has one
+  lineage-owner continuation: it retains HL, re-enters and revalidates O, then
+  publishes, drains, purges exact P, acknowledges lineage, and finishes O.
+  Adoption becomes live only when a final O revalidation converges the owner map
+  and releases HL before releasing O; a terminal winner diverts that retained
+  owner into the same reconciliation continuation instead of returning a session.
+  An admitted continuation remains live during account close; no O-held path may
+  acquire HL. Active registry maps are lookup state, not teardown
+  ownership: every removed live or branch session transfers to the private
+  teardown owner, and its qualified room remains quarantined until the exact
+  session's retryable destroy ledger succeeds. Coordination close likewise
+  retains reconciliation, local-session, HA-before-HD hold, and authority-store
+  stages across rejected attempts. Live rooms are acquired only through
+  project-qualified availability leases and use explicit
+  account/document/generation persistence; review rooms use the opaque,
   generation-fenced `reviewRoomName` vended by the preview. Switching live ↔
   review is a session identity change and must remount the TipTap editor because
   Collaboration binds to a concrete Y.Doc/fragment at construction. A review
@@ -148,17 +180,17 @@ Yjs document session. It must stay structurally aligned with
   suspension. `suspend`/`resume`/`release` belong to the session alone. The
   negative-space guard fails the build on a `setLocalState`/`setLocalStateField`
   anywhere in `apps/app/src` outside `local-presence.ts`.
-- Live sessions may be created `detached`: their Y.Doc and IndexedDB persistence
-  exist before server transport. Ordinary acquisition of an existing detached
-  room leaves it detached; post-create reconciliation explicitly attaches
-  transport to that same session once. Retention accepts an explicit detached
-  room set so restored pending tabs create local sessions without probing a
-  server row that does not exist yet. If an older client already left that room
-  terminally denied, post-create reconciliation restarts it before attachment.
-  Teardown always preserves IndexedDB by
-  default because it may contain the only copy of unsynced words; only confirmed
-  cleanup paths may request persistence deletion. Retention and unavailable-room
-  recovery must not materialize or replace a detached session implicitly.
+- Before a server row exists, one local lineage envelope owns one opaque exact
+  IndexedDB name and one detached session under its stable lineage lifetime.
+  Remint changes only session identity. Same-bucket adoption reserves the
+  existing room authority as non-bindable, then makes that same provider and
+  exact name canonical. Room authority carries every exact purge locator;
+  session construction and cleanup never enumerate or infer IndexedDB names.
+  One generation/command-fenced room transaction accepts terminal work and makes
+  the room nonauthoring before lineage publication and provider close. Its exact
+  purge receipt survives native deletion until lineage acknowledgement and room
+  completion finish together, so every terminal prefix commits forward without
+  inferring a database name. Ordinary live operations remain lease-qualified.
 - A schema fence is orthogonal session state, not a connection status:
   `DocumentSessionSnapshot.schemaFence` composes with detached, synced, offline,
   and access-lost states. The first fence wins, is persisted through the
@@ -508,11 +540,23 @@ writer who typed valid markdown holding literal `#### `. Fences accept `~~~` as
 well as ``` , and bullets accept `+`, for the same reason: all of them are GFM
 the codec reads, and all of them produce the same node.
 
-`MarkdownAutoformatExtension` owns only what inheritance gets wrong, and
+`MarkdownAutoformatExtension` owns completed wikilinks, the fence info string,
+and the Backspace recovery policy for inherited rules.
 `MarkdownAutoformatExtension.test.ts` is the truth table for the surface as a
 whole, inherited rules included: a dependency upgrade that drops a trigger has
 to fail there rather than in a manuscript.
 
+- Completing `[[target]]` or `[[target|display text]]` in manuscript prose
+  parses the shared wire grammar into an ordinary link mark without a catalog
+  choice. Automatic closers alone do not complete it. Missing targets use the
+  existing unresolved decoration after resolution; no resolution state is stored.
+  Code, existing links and ranges containing inline objects are not converted.
+  The input-rule string may contain synthetic leaf text with a different length
+  from document positions, so reject such ranges before mutation.
+- Wikilink conversion uses ordinary Undo/Redo, with capture boundaries on both
+  sides so subsequent typing is a separate item. Undo restores the literal
+  source. Generic `undoInputRule` Backspace replay would duplicate the final
+  auto-paired bracket, so this rule does not participate in that replay.
 - The code fence takes the whole GFM info string, lowercased. TipTap's rule
   captures `[a-z]+`, so ` ```Python `, ` ```c++ ` and ` ```ts-node ` produced no
   block at all. Lowercasing is what makes the attr a usable key: highlighting
@@ -522,7 +566,7 @@ to fail there rather than in a manuscript.
   fence's may hold anything — and because a run longer than three is one fence
   with no info, not a failed match. The fence rules live here and
   `MeridianCodeBlockLowlight` yields its own.
-- Backspace reverts the transform the last keystroke made. TipTap reaches for
+- Backspace reverts an inherited transform the last keystroke made. TipTap reaches for
   `undoInputRule` too, but from the core keymap, which sits below every node
   extension's: CodeBlock's "delete the empty block" binding got to a just-opened
   fence first and swallowed the ``` that opened it. A rule completed by Enter

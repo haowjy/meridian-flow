@@ -58,11 +58,8 @@ vi.mock("@/components/ui/popover", () => ({
   PopoverTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("@/core/editor/document-session-registry", () => ({
-  getDocumentSessionRegistry: () => ({
-    observe: () => vi.fn(),
-    peek: () => null,
-  }),
+vi.mock("@/features/project/context/use-authorization-loss-evidence", () => ({
+  useAuthorizationLossEvidence: vi.fn(),
 }));
 
 const { PeerMarkPopover } = await import("./PeerMarkPopover");

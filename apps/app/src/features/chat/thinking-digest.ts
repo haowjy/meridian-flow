@@ -88,7 +88,7 @@ function stringField(input: Record<string, JsonValue>, field: string): string | 
 
 function documentIdentity(uriOrPath: string): string {
   const parsed = parseContextUri(uriOrPath);
-  return parsed.ok ? parsed.value.canonical : uriOrPath;
+  return parsed.ok ? parsed.value.normalized : uriOrPath;
 }
 
 function capitalizeFirst(value: string): string {

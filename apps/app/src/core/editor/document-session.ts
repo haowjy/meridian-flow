@@ -30,14 +30,7 @@ import {
   WS_CLOSE,
   type YjsRoomName,
 } from "@meridian/contracts/protocol";
-import {
-  COLLAB_SCHEMA_VERSION,
-  type CollabSchemaVersion,
-  cmpMajorMinor,
-  collabSchemaKeyTag,
-  createCollabYDoc,
-  parseCollabSchemaVersion,
-} from "@meridian/prosemirror-schema";
+import { createCollabYDoc } from "@meridian/prosemirror-schema";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import type * as Y from "yjs";
@@ -61,38 +54,17 @@ export type { SchemaFence } from "./schema-fence";
 
 import { SessionMarkerStore } from "./session-marker-store";
 
-export function documentSessionPersistenceKey(roomKey: string): string {
-  return `meridian:document:${collabSchemaKeyTag()}:${roomKey}`;
-}
-
-const PERSISTENCE_KEY_PREFIX = "meridian:document:v";
 /** Give normal IndexedDB replay priority without letting blocked storage hold collaboration offline. */
 const LOCAL_PERSISTENCE_TRANSPORT_TIMEOUT_MS = 1_000;
 
-/** Best-effort delete of obsolete schema-partitioned IndexedDB entries for one document. */
-export function deleteStaleVersionedIndexedDb(
-  roomKey: string,
-  currentVersion: CollabSchemaVersion = COLLAB_SCHEMA_VERSION,
-): void {
-  if (typeof indexedDB === "undefined" || typeof indexedDB.databases !== "function") return;
-
-  const suffix = `:${roomKey}`;
-  void indexedDB
-    .databases()
-    .then((databases) => {
-      for (const db of databases ?? []) {
-        const name = db.name;
-        if (!name?.startsWith(PERSISTENCE_KEY_PREFIX) || !name.endsWith(suffix)) continue;
-        const versionPart = name.slice(PERSISTENCE_KEY_PREFIX.length, name.length - suffix.length);
-        const version = parseCollabSchemaVersion(`${versionPart}.0`);
-        if (!version || cmpMajorMinor(version, currentVersion) < 0) {
-          indexedDB.deleteDatabase(name);
-        }
-      }
-    })
-    .catch(() => {
-      // Fire-and-forget GC; versioned key alone guarantees correctness.
-    });
+export function deleteIndexedDb(name: string): Promise<void> {
+  if (typeof indexedDB === "undefined") return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(name);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error(`IndexedDB deletion blocked: ${name}`));
+  });
 }
 
 export type DocumentSessionStatus =
@@ -172,10 +144,8 @@ export type DocumentSessionTransportFactory = (opts: {
 export type DocumentSessionOptions = {
   /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`, branch review rooms use `branch:<branchId>:gen:<generation>`. */
   roomKey: string;
-  /** Defaults to y-indexeddb's document name, scoped to Meridian app content. */
-  persistenceKey?: string;
-  /** Tests and SSR can disable IndexedDB; browser sessions enable it by default. */
-  enableIndexedDb?: boolean;
+  /** Persistence identity is always explicit; a room name never silently becomes a database key. */
+  persistence: { kind: "indexeddb"; key: string } | { kind: "none" };
   /** Plugs the server document-sync provider into the session-owned Y.Doc. */
   transportFactory?: DocumentSessionTransportFactory;
   /** Registry-owned persistence hook for the first fence transition. */
@@ -184,27 +154,26 @@ export type DocumentSessionOptions = {
 };
 
 type Listener = (snapshot: DocumentSessionSnapshot) => void;
-
-function canUseIndexedDb(): boolean {
-  return typeof indexedDB !== "undefined";
-}
+type DestroyStage = { settled: boolean; run: () => void | Promise<void> };
 
 export class DocumentSession {
-  readonly roomKey: string;
-  readonly room: YjsRoomName;
-  readonly documentId: string;
+  roomKey: string;
+  room: YjsRoomName;
+  documentId: string;
   readonly document: Y.Doc;
   readonly awareness: Awareness;
   readonly fragmentName = PROSEMIRROR_FRAGMENT_NAME;
   readonly markerStore: SessionMarkerStore;
 
-  private readonly persistence: IndexeddbPersistence | null;
+  private persistence: IndexeddbPersistence | null;
   private transportProvider: DocumentSessionTransportProvider | null = null;
   private transportAttachmentPending = false;
   private readonly listeners = new Set<Listener>();
   private unsubscribeTransportStatus: (() => void) | null = null;
   private unsubscribeChangeEvents: (() => void) | null = null;
   private destroyed = false;
+  private destroyPromise: Promise<void> | null = null;
+  private destroyStages: DestroyStage[] | null = null;
   private localPersistenceSynced = false;
   /** True after the transport's first `whenSynced` — blocks empty-local false `synced`. */
   private transportInitialSyncComplete = false;
@@ -228,8 +197,7 @@ export class DocumentSession {
 
   constructor({
     roomKey,
-    persistenceKey = documentSessionPersistenceKey(roomKey),
-    enableIndexedDb = canUseIndexedDb(),
+    persistence,
     transportFactory,
     persistSchemaFence,
     ownUserId = null,
@@ -244,9 +212,8 @@ export class DocumentSession {
     this.markerStore = new SessionMarkerStore(ownUserId);
     this.awareness = new Awareness(this.document);
     this.localPresence = createLocalPresence(this.awareness);
-    if (enableIndexedDb) {
-      deleteStaleVersionedIndexedDb(roomKey);
-      this.persistence = new IndexeddbPersistence(persistenceKey, this.document);
+    if (persistence.kind === "indexeddb") {
+      this.persistence = new IndexeddbPersistence(persistence.key, this.document);
     } else {
       this.persistence = null;
     }
@@ -281,13 +248,20 @@ export class DocumentSession {
   }
 
   private connectTransport(transportFactory: DocumentSessionTransportFactory): void {
-    this.transportProvider = transportFactory({
-      roomKey: this.roomKey,
-      room: this.room,
-      document: this.document,
-      awareness: this.awareness,
-      fragmentName: this.fragmentName,
-    });
+    try {
+      this.transportProvider = transportFactory({
+        roomKey: this.roomKey,
+        room: this.room,
+        document: this.document,
+        awareness: this.awareness,
+        fragmentName: this.fragmentName,
+      });
+    } catch (error) {
+      this.transportAttachmentPending = false;
+      this.recomputeStatus();
+      this.emit();
+      throw error;
+    }
     this.transportAttachmentPending = false;
     this.resolveTransportAttached();
     this.status = "syncing";
@@ -454,21 +428,39 @@ export class DocumentSession {
     return Promise.race([durableSequence(), terminal, this.lifecycleCompletedPromise]);
   }
 
-  /**
-   * Wait for all IndexedDB transactions queued before this call. Applying a
-   * Yjs update starts y-indexeddb's write transaction synchronously; a later
-   * readonly transaction cannot complete until that write commits.
-   */
-  async flushLocalPersistence(): Promise<void> {
-    await this.whenLocalPersistenceSynced();
-    const db = this.persistence?.db;
-    if (!db || this.destroyed) return;
-    await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction("updates", "readonly");
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error ?? new Error("IndexedDB flush aborted"));
-    });
+  /** Local-only same-session identity change used by conflict remint. */
+  prepareDetachedReidentity(documentId: string): { commit(): void; abort(): void } {
+    if (this.transportProvider || this.status !== "detached")
+      throw new Error("Only a detached local session may be reminted");
+    const room = parseYjsRoomName(documentId);
+    if (room?.kind !== "live") throw new Error("Invalid reminted document identity");
+    let settled = false;
+    return {
+      commit: () => {
+        if (settled) return;
+        settled = true;
+        this.roomKey = documentId;
+        this.room = room;
+        this.documentId = documentId;
+        try {
+          this.emit();
+        } catch {
+          // Durable lineage authority already committed; observers cannot roll identity back.
+        }
+      },
+      abort: () => {
+        settled = true;
+      },
+    };
+  }
+
+  get persistenceName(): string | null {
+    return this.persistence?.name ?? null;
+  }
+
+  /** Opaque identity observation for authority transfer; callers cannot mutate the provider. */
+  get localPersistenceProvider(): object | null {
+    return this.persistence;
   }
 
   /**
@@ -503,29 +495,59 @@ export class DocumentSession {
    * TipTap editor first, then calls this method so providers can detach before
    * the Y.Doc is destroyed.
    */
-  async destroy(options: { clearPersistence?: boolean } = {}): Promise<void> {
-    if (this.destroyed) return;
-    this.destroyed = true;
-    this.resolveTransportAttached();
-    this.resolveLifecycleCompleted();
-    this.status = "destroyed";
-    this.emit();
-    this.markerStore.clear();
-
-    this.localPresence.release();
-    removeAwarenessStates(this.awareness, [this.document.clientID], "document-session-destroy");
-
-    this.unsubscribeTransportStatus?.();
-    this.unsubscribeChangeEvents?.();
-    await this.transportProvider?.destroy();
-    if (options.clearPersistence) {
-      await this.persistence?.clearData();
-    } else {
-      await this.persistence?.destroy();
+  destroy(options: { clearPersistence?: boolean } = {}): Promise<void> {
+    if (this.destroyPromise) return this.destroyPromise;
+    if (!this.destroyStages) {
+      this.destroyed = true;
+      this.resolveTransportAttached();
+      this.resolveLifecycleCompleted();
+      this.status = "destroyed";
+      this.destroyStages = [
+        { settled: false, run: () => this.emit() },
+        { settled: false, run: () => this.markerStore.clear() },
+        { settled: false, run: () => this.localPresence.release() },
+        {
+          settled: false,
+          run: () =>
+            removeAwarenessStates(
+              this.awareness,
+              [this.document.clientID],
+              "document-session-destroy",
+            ),
+        },
+        { settled: false, run: () => this.unsubscribeTransportStatus?.() },
+        { settled: false, run: () => this.unsubscribeChangeEvents?.() },
+        { settled: false, run: () => this.transportProvider?.destroy() },
+        {
+          settled: false,
+          run: () =>
+            options.clearPersistence ? this.persistence?.clearData() : this.persistence?.destroy(),
+        },
+        { settled: false, run: () => this.awareness.destroy() },
+        { settled: false, run: () => this.document.destroy() },
+        { settled: false, run: () => this.listeners.clear() },
+      ];
     }
-    this.awareness.destroy();
-    this.document.destroy();
-    this.listeners.clear();
+
+    const attempt = (async () => {
+      const errors: unknown[] = [];
+      for (const stage of this.destroyStages ?? []) {
+        if (stage.settled) continue;
+        try {
+          await stage.run();
+          stage.settled = true;
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, "Document session teardown failed");
+    })().finally(() => {
+      if (this.destroyPromise === attempt) this.destroyPromise = null;
+    });
+    this.destroyPromise = attempt;
+    return attempt;
   }
 
   private async watchLocalPersistence(): Promise<void> {

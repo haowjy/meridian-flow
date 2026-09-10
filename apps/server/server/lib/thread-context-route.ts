@@ -5,7 +5,7 @@ import {
   resolveThreadContext,
 } from "../domains/context/context-port-resolution.js";
 import type { UnifiedContextPortFactory } from "../domains/context/unified-context-port-factory.js";
-import type { WorkRepository } from "../domains/projects/index.js";
+import type { ProjectWorkAuthorityResolver, WorkRepository } from "../domains/projects/index.js";
 import type { ThreadRepository, ThreadWorksRepository } from "../domains/threads/index.js";
 import { contextErrorToHttp } from "./context-error-http.js";
 import { requireRequestId } from "./request-id.js";
@@ -15,6 +15,7 @@ export interface ThreadContextRouteDeps {
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "findPrimary">;
   works: Pick<WorkRepository, "listByProject">;
+  workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 
 export async function resolveThreadContextPort(
@@ -22,10 +23,7 @@ export async function resolveThreadContextPort(
   threadId: ThreadId,
   userId: UserId,
 ) {
-  const resolution = await resolveThreadContext(
-    { threads: deps.threads, threadWorks: deps.threadWorks, works: deps.works },
-    threadId,
-  );
+  const resolution = await resolveThreadContext(deps, threadId);
   if (!resolution || resolution.thread.userId !== userId) {
     throw createError({ statusCode: 404, message: "Thread not found" });
   }
@@ -42,7 +40,7 @@ export async function readThreadContextDocument(
   if (!result.ok) contextErrorToHttp(result.error);
   return {
     documentId: result.value.documentId,
-    uri: input.uri,
+    uri: result.value.uri,
     markdown: result.value.content,
   };
 }
@@ -59,7 +57,7 @@ export async function writeThreadContextDocument(
   if (!result.ok) contextErrorToHttp(result.error);
   return {
     documentId: result.value.documentId,
-    uri: input.uri,
+    uri: result.value.uri,
     markdown: result.value.markdown ?? input.markdown,
     updateSeq: result.value.updateSeq ?? 0,
   };

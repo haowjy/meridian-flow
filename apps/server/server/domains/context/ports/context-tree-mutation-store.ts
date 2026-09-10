@@ -85,9 +85,15 @@ export interface ContextTreeMutationResult {
 }
 
 export interface ContextTreeDeleteResult {
-  /** Exact deleted document identities. Empty-folder deletion has none. */
+  /** Exact deleted content identities. Empty-folder deletion has none. */
   deletedDocumentIds: string[];
+  availabilityGeneration: string;
 }
+
+export type ContextTreeDeleteCommand = {
+  root: ContextLocationToken;
+  mode: "recursive";
+};
 
 export interface ContextTreeMutationStore {
   inspect(sourceId: string, path: string): Promise<ContextLocationToken | null>;
@@ -98,7 +104,7 @@ export interface ContextTreeMutationStore {
   commitMove(
     input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>>;
-  commitDelete(
-    token: ContextLocationToken,
+  commitRecursiveDelete(
+    command: ContextTreeDeleteCommand,
   ): Promise<Result<ContextTreeDeleteResult, ContextTreeMutationError>>;
 }

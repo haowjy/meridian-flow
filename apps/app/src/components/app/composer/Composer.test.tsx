@@ -1,167 +1,154 @@
-// @vitest-environment jsdom
-/** Submission ownership contract for the shared Composer presentation. */
-import { act, createRef } from "react";
-import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+/** Ordered serialization contracts for the shared TipTap Composer. */
+import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@lingui/core/macro", () => ({
-  t: (strings: TemplateStringsArray) => strings.join(""),
-}));
+vi.mock("@lingui/core/macro", () => ({ t: (value: TemplateStringsArray) => value.join("") }));
 vi.mock("./placeholders", () => ({ useComposerPlaceholder: () => "Write" }));
+vi.stubGlobal("crypto", { randomUUID: () => "submission-1" });
 
-import { Composer, type ComposerHandle } from "./Composer";
+import { type ComposerOwnedUpload, serializeComposerDraft } from "./Composer";
+import { mergeComposerDraftSnapshots } from "./composer-document";
 
-let host: HTMLDivElement;
-let root: Root;
-
-async function render(onSubmit: (text: string) => boolean | Promise<boolean>) {
-  host = document.createElement("div");
-  document.body.append(host);
-  root = createRoot(host);
-  await act(async () => root.render(<Composer onSubmit={onSubmit} />));
-  return host.querySelector("textarea") as HTMLTextAreaElement;
-}
-
-async function enterDraft(textarea: HTMLTextAreaElement, text: string) {
-  await act(async () => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
-    setter?.call(textarea, text);
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+const reference = {
+  documentId: "01900000-0000-7000-8000-000000000001",
+  uri: "uploads://@/Gate Map.png",
+  fileType: "image",
+  authority: { kind: "none", projectId: "project-1" },
+  label: "Gate Map",
+  spelling: "[[Gate Map]]",
+  imageCapable: true,
+  upload: null as ComposerOwnedUpload | null,
+};
+const token = (attrs = reference) => ({ type: "composerReference", attrs: { reference: attrs } });
+describe("one ordered Composer serializer", () => {
+  it("preserves paragraphs, hard breaks, typed prose, and duplicate occurrences", () => {
+    const result = serializeComposerDraft(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "Compare " },
+              token(),
+              { type: "hardBreak" },
+              { type: "text", text: "with " },
+              token(),
+            ],
+          },
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "uploads://@/Gate Map.png and [[Gate Map]]" }],
+          },
+        ],
+      },
+      7,
+      { anchor: 3, head: 9 },
+    );
+    expect(result.text).toBe(
+      "Compare [[Gate Map]]\nwith [[Gate Map]]\nuploads://@/Gate Map.png and [[Gate Map]]",
+    );
+    expect(result.blocks.filter((b) => b.type === "reference")).toHaveLength(2);
+    expect(result.blocks.filter((b) => b.type === "image")).toHaveLength(2);
+    expect(result.references).toHaveLength(1);
+    expect(
+      result.blocks
+        .filter((b) => b.type === "text" || b.type === "reference")
+        .map((b) => b.text)
+        .join(""),
+    ).toBe(result.text);
+    expect(result.draft.selection).toEqual({ anchor: 3, head: 9 });
+    expect(result.acceptedRevision).toBe(7);
   });
-}
-
-async function pressEnter(textarea: HTMLTextAreaElement) {
-  await act(async () => {
-    textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  it("gives created provenance precedence and retains deletion identity", () => {
+    const upload = {
+      intakeId: "intake-1",
+      documentId: reference.documentId,
+      uri: reference.uri,
+      locationRevision: "r1",
+    };
+    const result = serializeComposerDraft({
+      type: "doc",
+      content: [{ type: "paragraph", content: [token(), token({ ...reference, upload })] }],
+    });
+    expect(result.references).toEqual([
+      {
+        documentId: reference.documentId,
+        uri: reference.uri,
+        purpose: "draft-upload",
+        intakeId: "intake-1",
+      },
+    ]);
+    expect(result.draft.ownedUploads).toEqual([upload]);
   });
-}
-
-afterEach(async () => {
-  if (root) await act(async () => root.unmount());
-  document.body.replaceChildren();
+  it("never adopts pending or failed placeholders", () => {
+    const result = serializeComposerDraft({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "before" },
+            {
+              type: "composerUpload",
+              attrs: { upload: { intakeId: "i", name: "x", state: "failed", error: "no" } },
+            },
+            { type: "text", text: "after" },
+          ],
+        },
+      ],
+    });
+    expect(result.text).toBe("beforeafter");
+    expect(result.references).toEqual([]);
+  });
 });
 
-describe("Composer submission ownership", () => {
-  it("names the textarea and associates the caller's disabled reason with Send", async () => {
-    host = document.createElement("div");
-    document.body.append(host);
-    root = createRoot(host);
-    await act(async () =>
-      root.render(
-        <Composer
-          onSubmit={() => true}
-          submitDisabled
-          submitDisabledReason="Finishing write mode change"
-          busy
-        />,
-      ),
-    );
-    expect(host.querySelector('textarea[aria-label="Message"]')).not.toBeNull();
-    const send = host.querySelector('button[aria-label="Send message"]') as HTMLButtonElement;
-    expect(send.disabled).toBe(true);
-    const reason = document.getElementById(send.getAttribute("aria-describedby") ?? "");
-    expect(reason?.textContent).toBe("Finishing write mode change");
-    expect(host.firstElementChild?.getAttribute("aria-busy")).toBe("true");
-  });
-
-  it("retains the exact draft while an async caller rejects acceptance", async () => {
-    let settle!: (accepted: boolean) => void;
-    const onSubmit = vi.fn(
-      () =>
-        new Promise<boolean>((resolve) => {
-          settle = resolve;
-        }),
-    );
-    const textarea = await render(onSubmit);
-    await enterDraft(textarea, "  exact draft  ");
-    await pressEnter(textarea);
-
-    expect(onSubmit).toHaveBeenCalledWith("exact draft", 1);
-    expect(textarea.value).toBe("  exact draft  ");
-    await act(async () => settle(false));
-    expect(textarea.value).toBe("  exact draft  ");
-  });
-
-  it("retains byte-equal text authored again while acceptance is pending", async () => {
-    let settle!: (accepted: boolean) => void;
-    const onSubmit = vi.fn(
-      () =>
-        new Promise<boolean>((resolve) => {
-          settle = resolve;
-        }),
-    );
-    const textarea = await render(onSubmit);
-    await enterDraft(textarea, "same words");
-    await pressEnter(textarea);
-
-    await enterDraft(textarea, "different words");
-    await enterDraft(textarea, "same words");
-    await act(async () => settle(true));
-
-    expect(textarea.value).toBe("same words");
-  });
-
-  it("retains a restored draft while acceptance is pending", async () => {
-    let settle!: (accepted: boolean) => void;
-    const composerRef = createRef<ComposerHandle>();
-    host = document.createElement("div");
-    document.body.append(host);
-    root = createRoot(host);
-    await act(async () =>
-      root.render(
-        <Composer
-          ref={composerRef}
-          onSubmit={() =>
-            new Promise<boolean>((resolve) => {
-              settle = resolve;
-            })
-          }
-        />,
-      ),
-    );
-    const textarea = host.querySelector("textarea") as HTMLTextAreaElement;
-    await enterDraft(textarea, "failed send");
-    await pressEnter(textarea);
-
-    await act(async () => {
-      composerRef.current?.restoreDraft({ id: "thread-1:1", text: "failed send" });
-    });
-    await act(async () => settle(true));
-
-    expect(textarea.value).toBe("failed send");
-  });
-
-  it("preserves Chat parity by clearing and refocusing an accepted submit", async () => {
-    const textarea = await render(() => true);
-    await enterDraft(textarea, "Next chapter");
-    textarea.blur();
-    await pressEnter(textarea);
-
-    expect(textarea.value).toBe("");
-    expect(document.activeElement).toBe(textarea);
-  });
-
-  it("restores a failed first send before a newer draft without duplicating either", async () => {
-    const composerRef = createRef<ComposerHandle>();
-    host = document.createElement("div");
-    document.body.append(host);
-    root = createRoot(host);
-    await act(async () => root.render(<Composer ref={composerRef} onSubmit={() => true} />));
-    const textarea = host.querySelector("textarea") as HTMLTextAreaElement;
-    await enterDraft(textarea, "newer follow-up");
-
-    await act(async () => {
-      expect(
-        composerRef.current?.restoreDraft({ id: "thread-1:1", text: "failed first send" }),
-      ).toBe(true);
-    });
-    expect(textarea.value).toBe("failed first send\n\nnewer follow-up");
-
-    await act(async () => {
-      expect(
-        composerRef.current?.restoreDraft({ id: "thread-1:1", text: "failed first send" }),
-      ).toBe(true);
-    });
-    expect(textarea.value).toBe("failed first send\n\nnewer follow-up");
+describe("document-level failed submission merge", () => {
+  it("preserves duplicate atoms, upload rights, hard breaks, equal text, and later selection", () => {
+    const upload = {
+      intakeId: "intake-1",
+      documentId: reference.documentId,
+      uri: reference.uri,
+      locationRevision: "r1",
+    };
+    const submitted = serializeComposerDraft(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              token({ ...reference, upload }),
+              { type: "hardBreak" },
+              token({ ...reference, upload }),
+            ],
+          },
+        ],
+      },
+      4,
+      { anchor: 2, head: 1 },
+    ).draft;
+    const later = serializeComposerDraft(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              token({ ...reference, upload }),
+              { type: "hardBreak" },
+              token({ ...reference, upload }),
+            ],
+          },
+        ],
+      },
+      5,
+      { anchor: 3, head: 2 },
+    ).draft;
+    const merged = mergeComposerDraftSnapshots(submitted, later);
+    expect(merged.doc.content).toHaveLength(3);
+    expect(JSON.stringify(merged.doc).match(/composerReference/g)).toHaveLength(4);
+    expect(merged.ownedUploads).toEqual([upload]);
+    expect(merged.selection.anchor).toBeGreaterThan(later.selection.anchor);
+    expect(merged.selection.anchor - merged.selection.head).toBe(1);
   });
 });

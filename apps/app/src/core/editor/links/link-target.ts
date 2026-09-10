@@ -19,11 +19,12 @@
 
 import { CONTEXT_URI_SCHEMES } from "@meridian/contracts";
 import type { DocumentLinkTarget } from "@meridian/contracts/protocol";
+import { formatWikilink, wikilinkTarget } from "@meridian/markup";
 
 export type LinkTarget =
   /** `[[The Second Gate]]` — resolved by title or alias. Unresolved is normal. */
   | { kind: "wikilink"; name: string }
-  /** `manuscript://appendix/vault-charter`, `work://<id>/notes.md`. */
+  /** `manuscript://appendix/vault-charter`, `scratch://@revision-pass/notes.md`. */
   | { kind: "scheme"; uri: string }
   /** `chapter-213.md`, `../notes/kael.md` — resolved against the holder's URI. */
   | { kind: "relative"; path: string }
@@ -35,14 +36,8 @@ export function isInternalLinkTarget(target: LinkTarget): boolean {
   return target.kind !== "external";
 }
 
-/**
- * Schemes that address a project document. The context URI schemes plus
- * `work`, which is not a context URI but is how a work-scoped document is
- * spelled to the resolver. A scheme the resolver does not handle yet still
- * classifies as internal and simply resolves to nothing, which is the designed
- * unresolved state rather than a second kind of dead link.
- */
-const INTERNAL_SCHEMES: ReadonlySet<string> = new Set<string>([...CONTEXT_URI_SCHEMES, "work"]);
+/** Canonical Context schemes share the server resolver's grammar. */
+const INTERNAL_SCHEMES: ReadonlySet<string> = new Set(CONTEXT_URI_SCHEMES);
 
 /** Web schemes a link mark may carry. Anything else is not a link we honor. */
 const EXTERNAL_SCHEMES: ReadonlySet<string> = new Set(["http:", "https:", "mailto:"]);
@@ -66,6 +61,14 @@ function hasAsciiControl(value: string): boolean {
 
 const EXPLICIT_SCHEME = /^([a-z][a-z\d+.-]*):/i;
 
+/** Whether reference completion must leave this writer-entered href entirely to the form. */
+export function linkInputStepsAsideFromReferences(input: string): boolean {
+  const value = input.trim();
+  if (!value || value.startsWith("//") || /^www\./i.test(value)) return true;
+  const scheme = EXPLICIT_SCHEME.exec(value)?.[1]?.toLowerCase();
+  return Boolean(scheme && !INTERNAL_SCHEMES.has(scheme));
+}
+
 /**
  * A writer-typed target that reads as a document path rather than a hostname.
  * `chapter-213.md` and `example.com` are the same shape, so the extension is
@@ -84,8 +87,13 @@ export function classifyLinkTarget(href: string): LinkTarget | null {
   const value = href.trim();
   if (!value || hasAsciiControl(value)) return null;
 
-  const name = wikilinkName(value);
-  if (name) return { kind: "wikilink", name };
+  const name = wikilinkTarget(value);
+  if (name) {
+    const scheme = EXPLICIT_SCHEME.exec(name)?.[1]?.toLowerCase();
+    return scheme && INTERNAL_SCHEMES.has(scheme)
+      ? { kind: "scheme", uri: name }
+      : { kind: "wikilink", name };
+  }
   // A bracketed href that is not a well-formed wikilink is not a path either.
   if (value.startsWith("[[")) return null;
 
@@ -128,8 +136,8 @@ export function normalizeLinkHref(input: string): string | null {
   const value = input.trim();
   if (!value || hasAsciiControl(value)) return null;
 
-  const name = wikilinkName(value);
-  if (name) return `[[${name}]]`;
+  const name = wikilinkTarget(value);
+  if (name) return formatWikilink(name);
   if (value.startsWith("[[")) return null;
 
   if (value.startsWith("//")) return validExternalHref(`https:${value}`);
@@ -153,7 +161,7 @@ export function normalizeLinkHref(input: string): string | null {
 export function linkTargetHref(target: LinkTarget): string {
   switch (target.kind) {
     case "wikilink":
-      return `[[${target.name}]]`;
+      return formatWikilink(target.name);
     case "scheme":
       return target.uri;
     case "relative":
@@ -163,13 +171,12 @@ export function linkTargetHref(target: LinkTarget): string {
   }
 }
 
-/** The inner name of `[[…]]`, or null when the brackets do not close a target. */
-function wikilinkName(value: string): string | null {
-  if (!value.startsWith("[[") || !value.endsWith("]]") || value.length < 5) return null;
-  const name = value.slice(2, -2).trim();
-  // `|` is the aliased spelling the wire format does not carry, and a bracket
-  // or newline inside means the brackets never closed a single target.
-  return name && !/[\r\n[\]|]/.test(name) ? name : null;
+/** A readable fallback while an internal destination's catalog title is unavailable. */
+export function linkTargetLabel(target: LinkTarget): string {
+  if (target.kind === "wikilink") return target.name;
+  if (target.kind === "external") return target.url;
+  const path = target.kind === "scheme" ? target.uri : target.path;
+  return path.slice(path.lastIndexOf("/") + 1) || path;
 }
 
 function externalTarget(candidate: string): LinkTarget | null {

@@ -1,3 +1,4 @@
+import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 /**
  * Every document a link in this scope can reach, from the trees the app already
  * has.
@@ -27,21 +28,16 @@
  * already pays for, so opening the menu costs no request.
  */
 
-import type {
-  ProjectContextTreeDirectory,
-  ProjectContextTreeNode,
-} from "@meridian/contracts/protocol";
+import type {} from "@meridian/contracts/protocol";
 import { useMemo } from "react";
 
-import { useProjectContextTree } from "@/client/query/useProjectContextTree";
+import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import type { WikilinkDocument } from "@/core/completion";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 
 import type { EditorScope } from "../../editor-scope";
 
 export type LinkableDocument = WikilinkDocument & {
-  /** The persisted `documents.id`, which is what a follow opens. */
-  documentId: string;
   /**
    * The document's URI in the resolver's spelling, which is what a relative
    * link in it resolves against.
@@ -61,11 +57,11 @@ export type LinkableDocumentIndex = {
 };
 
 export function useLinkableDocuments({ projectId, workId }: EditorScope): LinkableDocumentIndex {
-  const { tree: manuscript } = useProjectContextTree(projectId ?? "", "manuscript", {
+  const { catalog: manuscript } = useContextCatalogView(projectId ?? "", "manuscript", {
     enabled: Boolean(projectId),
     workId: null,
   });
-  const { tree: scratch } = useProjectContextTree(projectId ?? "", "scratch", {
+  const { catalog: scratch } = useContextCatalogView(projectId ?? "", "scratch", {
     enabled: Boolean(projectId) && Boolean(workId),
     workId,
   });
@@ -100,39 +96,22 @@ function catalogRevision(documents: readonly LinkableDocument[]): string {
  * the only thing separating two documents whose titles look alike.
  */
 function linkableDocuments(
-  tree: ProjectContextTreeDirectory,
+  catalog: CatalogContextView,
   root: readonly string[],
 ): LinkableDocument[] {
   const documents: LinkableDocument[] = [];
-
-  const visit = (node: ProjectContextTreeNode, folders: readonly string[]) => {
-    if (node.kind === "dir") {
-      const inside = node.path === "/" ? folders : [...folders, node.name];
-      for (const child of node.children) visit(child, inside);
-      return;
-    }
+  for (const node of catalog.files()) {
     // An image or a PDF has no title a wikilink can name.
-    if (!node.editable) return;
+    if (!node.editable) continue;
+    const folders = [...root, ...node.path.split("/").filter(Boolean).slice(0, -1)];
     documents.push({
       documentId: node.documentId,
       title: documentTitle(node.name),
       location: folders.join("/"),
-      uri: resolverUri(node.uri),
+      uri: node.uri,
     });
-  };
-
-  visit(tree, root);
+  }
   return documents;
-}
-
-/**
- * The context tree spells a work-scoped document `scratch://`; the link contract
- * and the server that answers it both spell the same document `work://` (tracked
- * task #32). That one scheme swap is the whole translation, and doing it here is
- * what lets a scratch note be a base URI rather than only a destination.
- */
-function resolverUri(uri: string): string {
-  return uri.startsWith("scratch://") ? `work://${uri.slice("scratch://".length)}` : uri;
 }
 
 function documentTitle(filename: string): string {

@@ -1,7 +1,7 @@
 /**
  * SpikeEditorSurface — the REAL production TipTap editor mounted with the REAL
  * extension set (`createEditorConfig` from `@/core/editor/config`), but bound
- * to a fully LOCAL DocumentSession (no WS, no IndexedDB).
+ * to a fully local Y.Doc (no session authority, WS, or IndexedDB).
  *
  * Per the integration report (p1506) FALLBACK path: this gives us pixel-identical
  * pointer surface to the production EditorView (same StarterKit config, same
@@ -12,17 +12,16 @@
  * gate #1 (portal survival) can prove scroll position + caret state survive
  * being moved between grid slots.
  *
- * NOTE on path choice: we did NOT use the production `EditorView` directly
- * because it calls `getDocumentSessionRegistry().get(documentId)`, which would
- * open a real WS session against the dev stack. Sync correctness is
- * irrelevant to this spike — only pointer-event behavior. The fallback path is
- * what the spike spec explicitly endorses for that reason.
+ * This prototype deliberately uses a plain Y.Doc because sync correctness is
+ * irrelevant to its pointer-event gate. It never enters live-session authority.
  */
 import { EditorContent, useEditor } from "@tiptap/react";
 import { useEffect, useMemo, useRef } from "react";
+import { Awareness } from "y-protocols/awareness";
+import * as Y from "yjs";
 
 import { createEditorConfig } from "@/core/editor/config";
-import { DocumentSession } from "@/core/editor/document-session";
+import { createLocalPresence } from "@/core/editor/local-presence";
 
 const SEED_PARAGRAPHS = [
   "This is the live contenteditable surface — Gate #2 is testing that a resize drag swept across THIS region does not steal the drag, move the caret, select text, or steal focus.",
@@ -64,10 +63,19 @@ export function SpikeEditorSurface({
   /** Gate #6: called exactly once if the surface is never remounted. */
   onMount?: () => void;
 }) {
-  // Local-only session — no transportFactory, no IndexedDB.
-  const session = useMemo(
-    () => new DocumentSession({ roomKey: documentId, enableIndexedDb: false }),
-    [documentId],
+  const local = useMemo(() => {
+    const document = new Y.Doc({ guid: documentId });
+    const awareness = new Awareness(document);
+    return { document, awareness, presence: createLocalPresence(awareness) };
+  }, [documentId]);
+
+  useEffect(
+    () => () => {
+      local.presence.release();
+      local.awareness.destroy();
+      local.document.destroy();
+    },
+    [local],
   );
 
   // One-shot mount counter (gate #6). Fires after mount, not during render,
@@ -82,8 +90,8 @@ export function SpikeEditorSurface({
   const editor = useEditor(
     {
       ...createEditorConfig({
-        document: session.document,
-        presence: session.presence,
+        document: local.document,
+        presence: local.presence,
         user: { name: "Spike user", color: "#2e7d6b" },
         editorProps: {
           attributes: {
@@ -103,7 +111,7 @@ export function SpikeEditorSurface({
         }
       },
     },
-    [session],
+    [local],
   );
 
   return (

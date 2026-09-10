@@ -15,7 +15,6 @@ function preferenceKey(userId: UserId, projectId: ProjectId): string {
 
 export function createInMemoryProjectPreferencesRepository(): ProjectPreferencesRepository {
   const rows = new Map<string, ReturnType<typeof defaultProjectPreferences>>();
-  const newChatFallbackWorkIds = new Map<string, string>();
 
   return {
     async read(userId, projectId) {
@@ -28,17 +27,6 @@ export function createInMemoryProjectPreferencesRepository(): ProjectPreferences
       const merged = mergeProjectPreferences(rows.get(key), input);
       rows.set(key, copyProjectPreferences(merged));
       return merged;
-    },
-
-    async getNewChatFallbackWorkId(userId, projectId) {
-      return newChatFallbackWorkIds.get(preferenceKey(userId, projectId)) ?? null;
-    },
-
-    async repairNewChatFallbackWorkId(userId, projectId, expectedWorkId, workId) {
-      const key = preferenceKey(userId, projectId);
-      if ((newChatFallbackWorkIds.get(key) ?? null) !== expectedWorkId) return false;
-      newChatFallbackWorkIds.set(key, workId);
-      return true;
     },
   };
 }

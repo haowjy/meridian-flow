@@ -8,6 +8,7 @@ import type { Turn } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
+import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
 import { toDate } from "../../domain/contract-serialization.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type {
@@ -78,7 +79,10 @@ export async function writeTurnRollupRecompute(db: DrizzleDb, id: TurnId) {
   return mapTurn(row);
 }
 
-export function createDrizzleTurnRepository(db: DrizzleDatabase): TurnRepository {
+export function createDrizzleTurnRepository(
+  db: DrizzleDatabase,
+  workActivity: Pick<WorkProjectionMutation, "touchWorks"> | null,
+): TurnRepository {
   return {
     async create(input: CreateTurnInput) {
       return runInDrizzleTransaction(db, async () => {
@@ -158,10 +162,13 @@ export function createDrizzleTurnRepository(db: DrizzleDatabase): TurnRepository
           .where(eq(schema.threads.id, row.threadId))
           .limit(1);
         if (thread?.workId) {
-          await activeDb
-            .update(schema.works)
-            .set({ updatedAt: now })
-            .where(eq(schema.works.id, thread.workId));
+          if (workActivity) await workActivity.touchWorks([thread.workId], now);
+          else {
+            await activeDb
+              .update(schema.works)
+              .set({ updatedAt: now })
+              .where(eq(schema.works.id, thread.workId));
+          }
           await activeDb
             .update(schema.projects)
             .set({ updatedAt: now, lastActivityAt: now })

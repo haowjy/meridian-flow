@@ -9,6 +9,10 @@
 import type { DeleteContextEntryResult } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
 import type { AdapterFault, ContextSchemeAdapter } from "../ports/context-adapter.js";
+import {
+  type ContextCommandTransaction,
+  directContextCommandTransaction,
+} from "../ports/context-command-transaction.js";
 import type {
   ContextDeleteOptions,
   ContextError,
@@ -21,6 +25,10 @@ import type {
   PreparedContextMove,
 } from "../ports/context-tree-mutation-store.js";
 import { adapterFaultToContextError } from "./adapter-fault.js";
+import {
+  createResultAwareCommandExecutor,
+  type ResultAwareCommandExecutor,
+} from "./result-aware-command-executor.js";
 
 async function callAdapter<T>(
   uri: string,
@@ -69,7 +77,24 @@ function joinPath(...parts: string[]): string {
 
 /** Coordinates ContextFS tree mutations without owning durable state. */
 export class ContextTreeMover {
+  private readonly commandExecutor: ResultAwareCommandExecutor<ContextError>;
+
+  constructor(transaction: ContextCommandTransaction = directContextCommandTransaction) {
+    this.commandExecutor = createResultAwareCommandExecutor({
+      transaction,
+      serializeThroughCallbacks: false,
+    });
+  }
+
   async move(
+    source: ContextTreeDispatch,
+    destination: ContextTreeDispatch,
+    options?: ContextMoveOptions,
+  ): Promise<Result<ContextMoveResult, ContextError>> {
+    return this.commandExecutor.run(() => this.moveCommand(source, destination, options));
+  }
+
+  private async moveCommand(
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
     options?: ContextMoveOptions,
@@ -103,6 +128,13 @@ export class ContextTreeMover {
   }
 
   async commitWriterLocation(
+    source: ContextTreeDispatch,
+    destination: ContextTreeDispatch,
+  ): Promise<Result<ContextMoveResult, ContextError>> {
+    return this.commandExecutor.run(() => this.commitWriterLocationCommand(source, destination));
+  }
+
+  private async commitWriterLocationCommand(
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
   ): Promise<Result<ContextMoveResult, ContextError>> {
@@ -160,6 +192,13 @@ export class ContextTreeMover {
     target: ContextTreeDispatch,
     options: ContextDeleteOptions,
   ): Promise<Result<DeleteContextEntryResult, ContextError>> {
+    return this.commandExecutor.run(() => this.deleteCommand(target, options));
+  }
+
+  private async deleteCommand(
+    target: ContextTreeDispatch,
+    options: ContextDeleteOptions,
+  ): Promise<Result<DeleteContextEntryResult, ContextError>> {
     if (!target.adapter.capabilities.writable || !target.adapter.tree) {
       return Err({ code: "permission_denied", uri: target.canonical });
     }
@@ -178,15 +217,21 @@ export class ContextTreeMover {
     const result = await callAdapter(
       target.canonical,
       () =>
-        target.adapter.tree?.commitPreparedDelete(token.value as ContextLocationToken) ??
-        Promise.resolve(Err({ code: "permission_denied" } as const)),
+        target.adapter.tree?.commitRecursiveDelete({
+          root: token.value as ContextLocationToken,
+          mode: "recursive",
+        }) ?? Promise.resolve(Err({ code: "permission_denied" } as const)),
     );
     if (!result.ok) {
       return result.error.code === "stale_source"
         ? Err({ code: "stale_target", uri: target.canonical })
         : result;
     }
-    return Ok({ status: "deleted", deletedDocumentIds: result.value.deletedDocumentIds });
+    return Ok({
+      status: "deleted",
+      deletedDocumentIds: result.value.deletedDocumentIds,
+      availabilityGeneration: result.value.availabilityGeneration,
+    });
   }
 
   private async prepareMove(

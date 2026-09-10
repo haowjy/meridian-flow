@@ -3,6 +3,8 @@
  * Defined here (not in orchestrator.ts) to break the import cycle between
  * the orchestrator and child-run-coordinator/turn-runner.
  */
+
+import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture, TreeBudget } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
@@ -13,6 +15,8 @@ export type ReturnResultCompleter = (capture: ReturnResultCapture) => Promise<{ 
 export interface RunTurnInput {
   threadId: ThreadId;
   userText: string;
+  userBlocks?: readonly UserMessageBlock[];
+  onStartPersisted?: (turns: { userTurnId: TurnId; assistantTurnId: TurnId }) => Promise<void>;
   tools?: Tool[];
   signal?: AbortSignal;
   treeBudget?: TreeBudget;

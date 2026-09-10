@@ -6,12 +6,55 @@
  */
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { act } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const { applyDraftMock } = vi.hoisted(() => ({
   applyDraftMock: vi.fn(),
+}));
+
+const owner = {
+  reserveApply: vi.fn(() => ({
+    kind: "reserved",
+    unsent: {
+      reservation: {
+        identity: {
+          accountId: "account-1",
+          projectId: "project-1",
+          workId: "work-1",
+          documentId: "doc-1",
+          draftId: "branch-1",
+        },
+        reservationVersion: 1,
+      },
+    },
+  })),
+  acquireApplyDispatch: vi.fn((unsent) => ({
+    kind: "dispatch-granted",
+    dispatch: { reservation: unsent.reservation, dispatchVersion: 1 },
+  })),
+  recordServerApplied: vi.fn(() => ({
+    kind: "recorded",
+    recovery: {
+      identity: {
+        accountId: "account-1",
+        projectId: "project-1",
+        workId: "work-1",
+        documentId: "doc-1",
+        draftId: "branch-1",
+      },
+      entryVersion: 2,
+    },
+  })),
+  markApplyOutcomeUnknown: vi.fn((dispatch) => ({
+    kind: "outcome-unknown",
+    reservation: dispatch.reservation,
+  })),
+};
+
+vi.mock("@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider", () => ({
+  usePostApplyDispositionOwner: () => owner,
 }));
 
 vi.mock("@/client/api/drafts-api", () => ({
@@ -29,8 +72,57 @@ const flushNotifications = () =>
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
-describe("useApplyDraft pending lifecycle", () => {
-  it("holds isPending until the workDrafts refetch settles", async () => {
+describe("useApplyDraft committed outcome", () => {
+  beforeEach(() => {
+    applyDraftMock.mockReset();
+    owner.recordServerApplied.mockClear();
+    owner.markApplyOutcomeUnknown.mockClear();
+  });
+
+  it("routes a non-authoritative Apply 2xx through the exact outcome-unknown grant", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const harnessRef: { apply: ReturnType<typeof useApplyDraft> | null } = { apply: null };
+    function Harness() {
+      harnessRef.apply = useApplyDraft();
+      return null;
+    }
+    applyDraftMock.mockRejectedValue(
+      new Error("Draft Apply response did not prove the requested draft was applied"),
+    );
+    await withReactRoot(
+      <QueryClientProvider client={queryClient}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        const result = await harnessRef.apply?.mutateAsync({
+          projectId: "project-1",
+          workId: "work-1",
+          documentId: "doc-1",
+          draftId: "branch-1",
+          identity: {
+            accountId: "account-1",
+            projectId: "project-1",
+            workId: "work-1",
+            documentId: "doc-1",
+            draftId: "branch-1",
+          },
+          presentation: {
+            documentName: "Chapter",
+            contextPath: "chapter.md",
+            owningWorkLabel: "Work one",
+          },
+          obligations: { draftTab: { kind: "none" }, branch: { kind: "none" } },
+        });
+        expect(result).toMatchObject({ kind: "apply-outcome-unknown" });
+        expect(applyDraftMock).toHaveBeenCalledOnce();
+        expect(owner.recordServerApplied).not.toHaveBeenCalled();
+        expect(owner.markApplyOutcomeUnknown).toHaveBeenCalledOnce();
+      },
+      { drainMacrotask: true },
+    );
+  });
+
+  it("does not let freshness refetch hold or reject the committed command", async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
@@ -54,7 +146,7 @@ describe("useApplyDraft pending lifecycle", () => {
         },
       });
       useQuery({
-        queryKey: projectQueryKeys.contextTree("project-1", "manuscript"),
+        queryKey: projectQueryKeys.contextCatalogView("project-1", "manuscript"),
         queryFn: async () => {
           treeFetchCount += 1;
           return [];
@@ -80,6 +172,19 @@ describe("useApplyDraft pending lifecycle", () => {
               workId: "work-1",
               documentId: "doc-1",
               draftId: "branch-1",
+              identity: {
+                accountId: "account-1",
+                projectId: "project-1",
+                workId: "work-1",
+                documentId: "doc-1",
+                draftId: "branch-1",
+              },
+              presentation: {
+                documentName: "Chapter",
+                contextPath: "chapter.md",
+                owningWorkLabel: null,
+              },
+              obligations: { draftTab: { kind: "none" }, branch: { kind: "none" } },
             });
           });
           // Flush the resolved server call and the onSuccess invalidation kickoff.
@@ -90,7 +195,7 @@ describe("useApplyDraft pending lifecycle", () => {
           expect(applyDraftMock).toHaveBeenCalledTimes(1);
           expect(fetchCount).toBe(2);
           expect(treeFetchCount).toBe(2);
-          expect(harnessRef.apply?.isPending).toBe(true);
+          expect(harnessRef.apply?.isPending).toBe(false);
 
           await act(async () => {
             releaseRefetch?.();

@@ -7,6 +7,7 @@ import {
 } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import type { ProjectContextAvailabilityPort } from "../domains/context/index.js";
 import {
   type ProjectRepository,
   requireProjectOwner,
@@ -26,6 +27,7 @@ export interface WorkingSetRouteDeps {
   workingSet: WorkingSetRepository;
   works: WorkRepository;
   threads: ThreadRepository;
+  projectContextAvailability: ProjectContextAvailabilityPort;
 }
 
 function isWorkScopedRoute(
@@ -47,11 +49,20 @@ export function parsePutWorkingSetRequest(raw: unknown): PutWorkingSetRequest {
   if (body.lastThreadId !== null && typeof body.lastThreadId !== "string") {
     throw createError({ statusCode: 400, message: "`lastThreadId` must be a string or null" });
   }
-  const recentRoutes = routes.value.map((route) =>
-    isWorkScopedRoute(route)
-      ? { ...route, workId: requireRequestId(route.workId, "recentRoutes[].workId") }
-      : route,
-  );
+  const seenDocumentIds = new Set<string>();
+  const recentRoutes = routes.value
+    .map((route) => ({
+      ...route,
+      documentId: requireRequestId(route.documentId, "recentRoutes[].documentId"),
+      ...(isWorkScopedRoute(route) && route.workId !== null
+        ? { workId: requireRequestId(route.workId, "recentRoutes[].workId") }
+        : {}),
+    }))
+    .filter((route) => {
+      if (seenDocumentIds.has(route.documentId)) return false;
+      seenDocumentIds.add(route.documentId);
+      return true;
+    }) as WorkingSetRoute[];
   const lastThreadId =
     typeof body.lastThreadId === "string"
       ? (requireRequestId(body.lastThreadId, "lastThreadId") as ThreadId)
@@ -75,12 +86,30 @@ export async function handlePutWorkingSetRequest(
 
   for (const route of input.body.recentRoutes) {
     if (!isWorkScopedRoute(route)) continue;
+    if (route.workId === null) continue;
     const work = await deps.works.findById(route.workId);
     if (!work || work.projectId !== input.projectId) {
       throw createError({
         statusCode: 400,
         message: "Working-set route references another project",
       });
+    }
+  }
+
+  if (input.body.recentRoutes.length > 0) {
+    const documentIds = input.body.recentRoutes.map((route) => route.documentId);
+    const availability = await deps.projectContextAvailability.lookup(
+      { projectId: input.projectId, documentIds },
+      { userId: input.userId },
+    );
+    if (
+      availability.resolutions.length !== documentIds.length ||
+      availability.resolutions.some(
+        (resolution, index) =>
+          resolution.documentId !== documentIds[index] || resolution.kind !== "available",
+      )
+    ) {
+      throw createError({ statusCode: 400, message: "Invalid working-set route" });
     }
   }
 

@@ -27,6 +27,7 @@ export async function handleDocumentLinkResolveRequest(
   return {
     document: await deps.documentLinks.resolve({
       projectId: input.projectId,
+      userId: input.userId,
       workId: input.workId,
       target: input.target,
     }),

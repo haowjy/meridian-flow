@@ -11,7 +11,7 @@ export type ThreadRuntimeService = ReturnType<typeof createThreadRuntimeService>
 type OwnedThread = {
   id: ThreadId;
   projectId: ProjectId;
-  workId: WorkId;
+  workId: WorkId | null;
   currentAgentId: string | null;
   activeLeafTurnId: TurnId | null;
   nextSeq: bigint;
@@ -46,7 +46,7 @@ export function createThreadRuntimeService(deps: { db: Database }) {
       )
       .limit(1);
 
-    if (!thread?.workId) throw new HTTPError({ status: 404, message: "Thread not found" });
+    if (!thread) throw new HTTPError({ status: 404, message: "Thread not found" });
     return thread as OwnedThread;
   }
 

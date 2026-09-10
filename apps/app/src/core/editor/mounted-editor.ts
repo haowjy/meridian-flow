@@ -17,15 +17,17 @@ import { Editor, type EditorOptions } from "@tiptap/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { WikilinkCatalog } from "@/core/completion";
-
 import type { AgentNameStore } from "./agent-name-store";
 import { createEditorConfig } from "./config";
 import type { DocumentSession } from "./document-session";
+import type { AtReferenceCatalog } from "./extensions/at-reference";
 import type { SlashCommandCatalog } from "./extensions/slash";
 import { createSchemaRepairWitness, type SchemaRepairEvent } from "./schema-repair-witness";
 
 type EditorMountBase = {
   documentId: string;
+  /** Stable local binding identity across a pre-authority remint. */
+  bindingKey?: string;
   /** Asset image rendering resolves `asset:` refs against the owning project. */
   projectId?: string;
   schemaType: YjsTrackedSchemaType;
@@ -68,10 +70,10 @@ export function editorRoomKey(identity: EditorMountIdentity): string {
 
 /** React key that owns the editor's lifetime. Equal keys keep the instance. */
 export function editorMountKey(identity: EditorMountIdentity): string {
-  const shared = `${identity.documentId}|${identity.projectId ?? ""}|${identity.schemaType}|${identity.collaborationDecorations}`;
+  const shared = `${identity.bindingKey ?? identity.documentId}|${identity.projectId ?? ""}|${identity.schemaType}|${identity.collaborationDecorations}`;
   return identity.surface === "review"
     ? `review|${identity.roomName}|${identity.draftId}|${shared}`
-    : `live|${identity.documentId}|${identity.detached}|${shared}`;
+    : `live|${shared}`;
 }
 
 export type MountedEditorInput = {
@@ -97,6 +99,7 @@ export type MountedEditorInput = {
    * is not.
    */
   wikilinkCatalog?: () => WikilinkCatalog | null;
+  atReferenceCatalog?: () => AtReferenceCatalog | null;
   surface: EditorSurfaceOptions;
   /** The horizon expired, so any resulting verdict must carry that limitation. */
   evidenceDegraded?: boolean;
@@ -109,6 +112,7 @@ export function useMountedEditor({
   placeholder,
   slashCommandCatalog,
   wikilinkCatalog,
+  atReferenceCatalog,
   surface,
   evidenceDegraded = false,
 }: MountedEditorInput): Editor | null {
@@ -119,6 +123,8 @@ export function useMountedEditor({
   catalogRef.current = slashCommandCatalog;
   const wikilinkCatalogRef = useRef(wikilinkCatalog);
   wikilinkCatalogRef.current = wikilinkCatalog;
+  const atReferenceCatalogRef = useRef(atReferenceCatalog);
+  atReferenceCatalogRef.current = atReferenceCatalog;
   // Frozen on first render: identity is constant for the mount by construction
   // (the mount key covers it), and freezing keeps the extension array's identity
   // stable so TipTap's option sync never sees a reason to touch the schema.
@@ -139,6 +145,7 @@ export function useMountedEditor({
       autofocus: false,
       slashCommands: { catalog: () => catalogRef.current?.() ?? null },
       wikilinks: { catalog: () => wikilinkCatalogRef.current?.() ?? null },
+      atReferences: { catalog: () => atReferenceCatalogRef.current?.() ?? null },
     });
     return {
       editorConfig,

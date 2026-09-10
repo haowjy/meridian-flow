@@ -11,6 +11,7 @@ export default defineEventHandler(async (event) => {
       projectRepo: app.projectRepo,
       workRepo: app.workRepo,
       contextPorts: app.contextPorts,
+      workAuthorityResolver: app.workAuthorityResolver,
     },
     {
       projectId: getRouterParam(event, "projectId") ?? "",

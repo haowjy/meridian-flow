@@ -20,7 +20,7 @@
  */
 import { lookupBlockHash } from "@meridian/agent-edit";
 import * as Y from "yjs";
-import { getDocumentSessionRegistry } from "./document-session-registry";
+import type { ProjectDocumentLiveOpenResult } from "@/features/project/context/open-project-document";
 import { showPassageInEditor } from "./live-range-navigation-runtime";
 import { PROSEMIRROR_FRAGMENT_NAME } from "./schema";
 
@@ -41,19 +41,22 @@ export async function navigateToPassage(input: {
   documentId: string;
   anchor: PassageAnchor;
   timeoutMs?: number;
-  registry?: Pick<ReturnType<typeof getDocumentSessionRegistry>, "get" | "retain" | "release">;
+  openDocument: (documentId: string) => Promise<ProjectDocumentLiveOpenResult>;
   showPassage?: typeof showPassageInEditor;
   signal?: AbortSignal;
 }): Promise<PassageNavigationResult> {
   const cancelled = () => input.signal?.aborted === true;
   if (cancelled()) return { kind: "unavailable" };
 
-  const registry = input.registry ?? getDocumentSessionRegistry();
+  const opened = await input.openDocument(input.documentId).catch(() => null);
+  if (cancelled() || !opened || opened.kind !== "opened") return { kind: "unavailable" };
   const owner = `passage-navigation:${++navigationSequence}`;
-  registry.retain(owner, [input.documentId]);
+  let binding: Awaited<ReturnType<typeof opened.admission.bind>> | null = null;
   try {
+    binding = await opened.admission.bind(owner);
+    if (cancelled()) return { kind: "unavailable" };
     const timeoutMs = input.timeoutMs ?? 10_000;
-    const session = registry.get(input.documentId);
+    const session = binding.session;
     await Promise.race([
       session.waitForCurrentSync(timeoutMs),
       new Promise<void>((resolve) =>
@@ -86,7 +89,7 @@ export async function navigateToPassage(input: {
     } while (Date.now() < deadline);
     return { kind: "unavailable" };
   } finally {
-    registry.release(owner);
+    binding?.release();
   }
 }
 

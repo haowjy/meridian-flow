@@ -7,7 +7,7 @@ export interface CreateDerivedPrimaryThreadInput {
   id?: ThreadId;
   userId: UserId;
   projectId: ProjectId;
-  workId: WorkId;
+  workId: WorkId | null;
   parentThreadId: ThreadId;
   originType: Extract<ThreadOriginType, "handoff" | "fork">;
   originTurnId?: TurnId | null;

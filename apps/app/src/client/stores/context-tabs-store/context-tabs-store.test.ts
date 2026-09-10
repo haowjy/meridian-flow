@@ -2,35 +2,100 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   commitDraftApplyMetadata,
   commitPlannedContextRemoval,
+  commitReviewOverlayClose,
+  getContextTabs,
   useContextTabsStore,
 } from "./context-tabs-store";
 
 describe("context tabs draft-only lifecycle", () => {
   beforeEach(() => {
-    useContextTabsStore.setState({ byProject: {}, _deskHydrated: false });
+    useContextTabsStore.setState({
+      byProject: {},
+      _reviewOverlayByProject: {},
+      _deskHydrated: false,
+    });
   });
 
-  it("clears the draft-only marker when a live tree tab refreshes the document", () => {
+  it("preserves the draft-only marker until an exact disposition receipt settles it", () => {
     const store = useContextTabsStore.getState();
     store.openTab("project-1", trackedTab(true));
     store.openTab("project-1", trackedTab(false));
 
-    expect(useContextTabsStore.getState().byProject["project-1"]?.tabs).toEqual([
-      trackedTab(false),
-    ]);
+    expect(getContextTabs("project-1").tabs[0]).toMatchObject(trackedTab(true));
+    expect(useContextTabsStore.getState().byProject["project-1"]?.tabs[0]).not.toHaveProperty(
+      "draftOnly",
+    );
   });
 
-  it("resolves applied draft metadata only from its owning review Work", () => {
+  it("resolves applied draft metadata only from its owning review Work", async () => {
     const store = useContextTabsStore.getState();
     store.openTab("project-1", trackedTab(true));
 
-    commitDraftApplyMetadata("project-1", "work-b", "document-1");
-    expect(useContextTabsStore.getState().byProject["project-1"]?.tabs).toEqual([trackedTab(true)]);
+    const identity = {
+      documentId: "document-1",
+      tabInstanceId: "tab-a",
+      reviewWorkId: "work-a",
+      reviewDraftId: "draft-a",
+      tabInstanceToken: "token-a",
+    };
+    await expect(
+      commitDraftApplyMetadata("project-1", { ...identity, reviewWorkId: "work-b" }),
+    ).resolves.toEqual({ kind: "not-settled" });
+    expect(getContextTabs("project-1").tabs[0]).toMatchObject(trackedTab(true));
 
-    commitDraftApplyMetadata("project-1", "work-a", "document-1");
-    expect(useContextTabsStore.getState().byProject["project-1"]?.tabs).toEqual([
-      trackedTab(false),
-    ]);
+    await expect(commitDraftApplyMetadata("project-1", identity)).resolves.toEqual({
+      kind: "settled",
+    });
+    expect(commitReviewOverlayClose("project-1", identity).kind).toBe("consumed");
+    expect(getContextTabs("project-1").tabs[0]).toMatchObject(trackedTab(false));
+  });
+
+  it("does not let a repeated catalog or launcher upsert replace a draft-only token", () => {
+    const store = useContextTabsStore.getState();
+    store.openTab("project-1", {
+      ...trackedTab(true),
+      reviewDraftId: "draft-a",
+      tabInstanceToken: "token-a",
+    });
+    store.openTab("project-1", {
+      ...trackedTab(true),
+      reviewDraftId: "draft-a",
+      tabInstanceToken: "token-b",
+    });
+    expect(getContextTabs("project-1").tabs[0]).toMatchObject({
+      reviewDraftId: "draft-a",
+      tabInstanceToken: "token-a",
+    });
+  });
+
+  it("rejects every exact review identity mismatch before consuming", async () => {
+    const tab = {
+      ...trackedTab(true),
+      tabInstanceId: "tab-a",
+      reviewWorkId: "work-a",
+      reviewDraftId: "draft-a",
+      tabInstanceToken: "token-a",
+    };
+    await useContextTabsStore.getState().openTab("project-1", tab);
+    const mismatches = [
+      { ...tab, documentId: "other-document" },
+      { ...tab, tabInstanceId: "other-tab" },
+      { ...tab, reviewWorkId: "other-work" },
+      { ...tab, reviewDraftId: "other-draft" },
+      { ...tab, tabInstanceToken: "other-token" },
+    ];
+    for (const identity of mismatches) {
+      const before = structuredClone(getContextTabs("project-1"));
+      expect(commitReviewOverlayClose("project-1", identity)).toEqual({
+        kind: "not-consumed",
+        current: before,
+      });
+      expect(getContextTabs("project-1")).toEqual(before);
+    }
+
+    expect(commitReviewOverlayClose("project-1", tab).kind).toBe("consumed");
+    expect(getContextTabs("project-1").tabs).toEqual([]);
+    expect(useContextTabsStore.getState().byProject["project-1"]).toBeUndefined();
   });
 });
 
@@ -64,11 +129,11 @@ describe("context tab identity and removal commits", () => {
 
   it("commits an exact multi-id removal and final selection once", () => {
     const store = useContextTabsStore.getState();
-    store.replaceTabs("project-1", [
-      trackedAt("a", "/a.md"),
-      trackedAt("b", "/b.md"),
-      trackedAt("c", "/c.md"),
-    ]);
+    store.reconcileBootstrap(
+      "project-1",
+      [],
+      [trackedAt("a", "/a.md"), trackedAt("b", "/b.md"), trackedAt("c", "/c.md")],
+    );
     store.selectTab("project-1", "work-1", "b");
 
     const removed = commitPlannedContextRemoval("project-1", {
@@ -85,7 +150,14 @@ describe("context tab identity and removal commits", () => {
 
   it("keeps independent Work selections and rewrites every reference on remint", () => {
     const store = useContextTabsStore.getState();
-    store.openTab("project-1", { kind: "new", documentId: "local", name: "Untitled", workId: "a" });
+    store.openTab("project-1", {
+      kind: "new",
+      documentId: "local",
+      name: "Untitled",
+      workId: "a",
+      lineageHandle: "lineage-local",
+      identityRevision: 1,
+    });
     store.openTab("project-1", trackedAt("chapter", "/chapter.md"));
     store.selectTab("project-1", "a", "local");
     store.selectTab("project-1", "b", "chapter");
@@ -98,7 +170,14 @@ describe("context tab identity and removal commits", () => {
 
   it("materializes in place with durable local origin and scrubs incompatible metadata", () => {
     const store = useContextTabsStore.getState();
-    store.openTab("project-1", { kind: "new", documentId: "local", name: "Untitled", workId: "a" });
+    store.openTab("project-1", {
+      kind: "new",
+      documentId: "local",
+      name: "Untitled",
+      workId: "a",
+      lineageHandle: "lineage-local",
+      identityRevision: 1,
+    });
     store.selectTab("project-1", "a", "local");
     store.materializeNewTab("project-1", "local", {
       kind: "tracked",
@@ -143,7 +222,15 @@ function trackedTab(draftOnly: boolean) {
     editable: true as const,
     filetype: "markdown" as const,
     schemaType: "document" as const,
-    ...(draftOnly ? { draftOnly: true, reviewWorkId: "work-a" } : {}),
+    ...(draftOnly
+      ? {
+          tabInstanceId: "tab-a",
+          draftOnly: true,
+          reviewWorkId: "work-a",
+          reviewDraftId: "draft-a",
+          tabInstanceToken: "token-a",
+        }
+      : {}),
   };
 }
 

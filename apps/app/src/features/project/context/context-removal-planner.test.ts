@@ -44,6 +44,26 @@ describe("context removal planner", () => {
     ).toBeNull();
   });
 
+  it("persists explicit no-Work authority for Work-capable tabs", () => {
+    expect(
+      workingSetRouteForTab({
+        kind: "tracked",
+        documentId: "unscoped",
+        scheme: "scratch",
+        path: "/unscoped.md",
+        name: "unscoped.md",
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+      }),
+    ).toEqual({
+      documentId: "unscoped",
+      scheme: "scratch",
+      path: "/unscoped.md",
+      workId: null,
+    });
+  });
+
   it("retains local origin for Work pruning but not explicit close", () => {
     const localOrigin = {
       ...tracked("local", "/Untitled.md"),
@@ -71,6 +91,7 @@ describe("context removal planner", () => {
     const knowledge = { ...tracked("knowledge", "/knowledge.md"), scheme: "kb" as const };
     const rejected = { scheme: "scratch" as const, path: "/wrong.md", workId: "work-1" };
     const plan = planCandidateRejection({
+      rawRouteWork: "work-1",
       revision: 4,
       rejected,
       activeWorkId: "work-1",
@@ -78,8 +99,8 @@ describe("context removal planner", () => {
       selectedTabId: "knowledge",
       admitted: { scheme: "scratch", path: "/old.md", workId: "work-1" },
       recentRoutes: [
-        { scheme: "scratch", path: "/wrong.md", workId: "work-1" },
-        { scheme: "kb", path: "/recent.md" },
+        { documentId: "wrong", scheme: "scratch", path: "/wrong.md", workId: "work-1" },
+        { documentId: "recent", scheme: "kb", path: "/recent.md" },
       ],
     });
 
@@ -101,13 +122,16 @@ describe("context removal planner", () => {
   it("excludes wrong-Work admitted and recent routes from rejection fallback", () => {
     const rejected = { scheme: "scratch" as const, path: "/wrong.md", workId: "work-1" };
     const plan = planCandidateRejection({
+      rawRouteWork: "work-1",
       revision: 2,
       rejected,
       activeWorkId: "work-1",
       tabs: [{ ...tracked("draft", "/draft.md"), draftOnly: true }],
       selectedTabId: null,
       admitted: { scheme: "scratch", path: "/work-2.md", workId: "work-2" },
-      recentRoutes: [{ scheme: "uploads", path: "/work-2.bin", workId: "work-2" }],
+      recentRoutes: [
+        { documentId: "work-2.bin", scheme: "uploads", path: "/work-2.bin", workId: "work-2" },
+      ],
     });
 
     expect(plan.fallback).toBeNull();
@@ -124,7 +148,14 @@ describe("context removal planner", () => {
       [],
       "/admitted.md",
     ],
-    ["recent", [], null, null, [{ scheme: "kb" as const, path: "/recent.md" }], "/recent.md"],
+    [
+      "recent",
+      [],
+      null,
+      null,
+      [{ documentId: "recent", scheme: "kb" as const, path: "/recent.md" }],
+      "/recent.md",
+    ],
     [
       "surviving desk",
       [{ ...tracked("survivor", "/survivor.md"), scheme: "kb" as const }],
@@ -135,6 +166,7 @@ describe("context removal planner", () => {
     ],
   ])("uses the %s candidate-rejection fallback tier", (_case, tabs, selectedTabId, admitted, recentRoutes, path) => {
     const plan = planCandidateRejection({
+      rawRouteWork: "work-1",
       revision: 3,
       rejected: { scheme: "scratch", path: "/missing.md", workId: "work-1" },
       activeWorkId: "work-1",
@@ -206,7 +238,7 @@ describe("context removal planner", () => {
       intent: { cause: "writer-close", documentIds: ["desktop"] },
     });
     expect(plan.workingSet.clearAll).toBe(false);
-    expect(plan.workingSet.promote).toEqual({ scheme: "kb", path: "/phone.md" });
+    expect(plan.workingSet.promote).toBeNull();
     expect(plan.admitted).toEqual(phoneSelection.locator);
   });
 
@@ -217,7 +249,7 @@ describe("context removal planner", () => {
       selectedTabId: "desktop",
       admitted: null,
       route: { cleanup: null, current: phoneSelection },
-      intent: { cause: "acknowledged-delete", documentIds: ["desktop"] },
+      intent: { cause: "catalog-unavailable", documentIds: ["desktop"] },
     });
 
     expect(plan.outcome.kind).toBe("empty-desk");
@@ -254,7 +286,7 @@ describe("context removal planner", () => {
           identity: { kind: "server", documentId: "replacement" },
         },
       },
-      intent: { cause: "acknowledged-delete", documentIds: ["removed"] },
+      intent: { cause: "catalog-unavailable", documentIds: ["removed"] },
     });
 
     expect(plan.admitted).toBeNull();
@@ -275,7 +307,7 @@ describe("context removal planner", () => {
         },
         current: { ...phoneSelection, kind: "proven-removed" },
       },
-      intent: { cause: "acknowledged-delete", documentIds: ["phone"] },
+      intent: { cause: "catalog-unavailable", documentIds: ["phone"] },
     });
 
     expect(plan.outcome.kind).toBe("route-only-removal");
@@ -300,7 +332,7 @@ describe("context removal planner", () => {
       selectedTabId: "local",
       admitted: null,
       route: { cleanup: null, current: { kind: "none" } },
-      intent: { cause: "acknowledged-delete", documentIds: ["local", "draft"] },
+      intent: { cause: "catalog-unavailable", documentIds: ["local", "draft"] },
     });
 
     expect(plan.outcome.kind).toBe("noop");
@@ -324,7 +356,7 @@ describe("context removal planner", () => {
       selectedTabId: null,
       admitted: current.locator,
       route: { cleanup, current },
-      intent: { cause: "acknowledged-delete", documentIds: ["a"] },
+      intent: { cause: "catalog-unavailable", documentIds: ["a"] },
     });
 
     expect(plan.nextSelectedTabId).toBeNull();
@@ -332,6 +364,7 @@ describe("context removal planner", () => {
     expect(plan.admitted).toEqual(current.locator);
     expect(plan.workingSet.clearAll).toBe(false);
     expect(plan.workingSet.promote).toEqual({
+      documentId: current.identity.documentId,
       scheme: current.locator.scheme,
       path: current.locator.path,
     });
@@ -358,7 +391,7 @@ describe("context removal planner", () => {
         },
         current,
       },
-      intent: { cause: "acknowledged-delete", documentIds: ["a"] },
+      intent: { cause: "catalog-unavailable", documentIds: ["a"] },
     });
 
     expect(plan.nextSelectedTabId).toBe("c");

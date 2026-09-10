@@ -1,15 +1,10 @@
-import type { ProjectContextTreeDirectory } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
+import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 
 import { deriveContextPaneState } from "./context-pane-state";
 
 /** A project whose tree loaded fine and simply does not hold the route. */
-const emptyTree: ProjectContextTreeDirectory = {
-  kind: "directory",
-  name: "",
-  path: "",
-  children: [],
-} as unknown as ProjectContextTreeDirectory;
+const emptyCatalog = { findPath: () => null } as unknown as CatalogContextView;
 
 function derive(overrides: Partial<Parameters<typeof deriveContextPaneState>[0]> = {}) {
   return deriveContextPaneState({
@@ -19,7 +14,7 @@ function derive(overrides: Partial<Parameters<typeof deriveContextPaneState>[0]>
       scheme: "manuscript",
       optimisticTab: { id: "optimistic:1", name: "chapter-1.md" },
     },
-    tree: emptyTree,
+    catalog: emptyCatalog,
     isFetching: false,
     isError: false,
     removalFenced: false,

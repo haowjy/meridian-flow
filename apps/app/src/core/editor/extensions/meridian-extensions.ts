@@ -299,7 +299,12 @@ export const MeridianLink = Link.extend({
     // more loosely than any parser does: what lands in the DOM has to be the
     // destination this editor actually approved.
     const attributes = target
-      ? { ...HTMLAttributes, href: linkTargetHref(target), "data-link-kind": target.kind }
+      ? {
+          ...HTMLAttributes,
+          href: linkTargetHref(target),
+          tabindex: "0",
+          "data-link-kind": target.kind,
+        }
       : { ...HTMLAttributes, href: "" };
     return ["a", mergeAttributes(this.options.HTMLAttributes, attributes), 0];
   },

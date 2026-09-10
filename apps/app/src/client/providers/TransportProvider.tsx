@@ -28,9 +28,13 @@ export function TransportProvider({ children }: { children: ReactNode }) {
 }
 
 export function useThreadTransport(): ThreadTransport {
-  const transport = useContext(ThreadTransportContext);
+  const transport = useOptionalThreadTransport();
   if (!transport) {
     throw new Error("useThreadTransport must be used within TransportProvider");
   }
   return transport;
+}
+
+export function useOptionalThreadTransport(): ThreadTransport | null {
+  return useContext(ThreadTransportContext);
 }

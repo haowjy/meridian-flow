@@ -72,7 +72,7 @@ msgstr "'.' and '..' cannot be used as names"
 msgid "(also {0})"
 msgstr "(also {0})"
 
-#. placeholder {0}: tree.children.length - visible.length
+#. placeholder {0}: children.length - visible.length
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "{0, plural, one {# more item} other {# more items}}"
 msgstr "{0, plural, one {# more item} other {# more items}}"
@@ -112,7 +112,7 @@ msgstr "{0} added to favorites"
 msgid "{0} additional balance"
 msgstr "{0} additional balance"
 
-#. placeholder {0}: dock.rows.length
+#. placeholder {0}: dock.serverActiveCount
 #: src/features/chat/DraftDock.tsx
 msgid "{0} documents"
 msgstr "{0} documents"
@@ -325,7 +325,6 @@ msgid "Add column"
 msgstr "Add column"
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
-#: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Add link"
 msgstr "Add link"
 
@@ -412,6 +411,10 @@ msgid "Appearance and behavior settings."
 msgstr "Appearance and behavior settings."
 
 #: src/features/chat/DraftDock.tsx
+msgid "Applied. Reopening live document."
+msgstr "Applied. Reopening live document."
+
+#: src/features/chat/DraftDock.tsx
 msgid "Apply"
 msgstr "Apply"
 
@@ -458,6 +461,10 @@ msgstr "Associated chats"
 msgid "Associated chats couldn’t load"
 msgstr "Associated chats couldn’t load"
 
+#: src/components/app/composer/Composer.tsx
+msgid "Attach file"
+msgstr "Attach file"
+
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Auto-apply"
 msgstr "Auto-apply"
@@ -469,6 +476,7 @@ msgid "auto-selected"
 msgstr "auto-selected"
 
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
+#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 msgid "Back"
 msgstr "Back"
 
@@ -575,6 +583,14 @@ msgstr "Center"
 msgid "Centered"
 msgstr "Centered"
 
+#: src/features/editor/surfaces/link/LinkForm.tsx
+msgid "Change"
+msgstr "Change"
+
+#: src/components/app/composer/ComposerReferenceMenu.tsx
+msgid "Change reference"
+msgstr "Change reference"
+
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/ComposerWorkControl.tsx
 msgid "Change work for this chat"
@@ -642,6 +658,15 @@ msgstr "Chat was created but couldn’t open"
 msgid "Chats couldn’t load"
 msgstr "Chats couldn’t load"
 
+#: src/features/chat/DraftDock.tsx
+#: src/features/editor/DraftReviewHeader.tsx
+msgid "Check again"
+msgstr "Check again"
+
+#: src/components/app/composer/Composer.tsx
+msgid "Check submission status"
+msgstr "Check submission status"
+
 #: src/features/project/home/HomeFeed.tsx
 msgid "Check your connection and try again."
 msgstr "Check your connection and try again."
@@ -662,6 +687,10 @@ msgstr "Checking pending changes…"
 msgid "Checking recent changes…"
 msgstr "Checking recent changes…"
 
+#: src/features/chat/DraftDock.tsx
+msgid "Checking whether Apply finished."
+msgstr "Checking whether Apply finished."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Checking Work…"
 msgstr "Checking Work…"
@@ -674,6 +703,10 @@ msgstr "Checkout unavailable."
 msgid "Chime in"
 msgstr "Chime in"
 
+#: src/features/editor/surfaces/link/LinkForm.tsx
+msgid "Choose a document or enter a web address or document path."
+msgstr "Choose a document or enter a web address or document path."
+
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Choose a home"
 msgstr "Choose a home"
@@ -681,10 +714,6 @@ msgstr "Choose a home"
 #: src/features/chat/FormBlock.tsx
 msgid "Choose a listed option"
 msgstr "Choose a listed option"
-
-#: src/features/project/home/HomeScreen.tsx
-msgid "Choose a Work"
-msgstr "Choose a Work"
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent"
@@ -707,15 +736,17 @@ msgstr "Choose what to do before continuing."
 msgid "Choose Work for new chat"
 msgstr "Choose Work for new chat"
 
-#: src/features/project/home/NewThreadComposerToolbar.tsx
-msgid "Choose Work for new chat, current choice unavailable"
-msgstr "Choose Work for new chat, current choice unavailable"
-
 #. placeholder {0}: work.name
 #: src/features/project/home/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat, currently {0}"
 msgstr "Choose Work for new chat, currently {0}"
 
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Choose Work for new chat, currently No Work"
+msgstr "Choose Work for new chat, currently No Work"
+
+#: src/features/chat/DraftDock.tsx
+#: src/features/editor/DraftReviewHeader.tsx
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/project/mobile/MobileResultViewerOverlay.tsx
 #: src/features/project/shell/ResultViewerOverlay.tsx
@@ -930,10 +961,6 @@ msgstr "Couldn't find {name}."
 msgid "Couldn't finish that step"
 msgstr "Couldn't finish that step"
 
-#: src/features/project/work/WorkResourceState.tsx
-#~ msgid "couldn’t load"
-#~ msgstr "couldn’t load"
-
 #: src/features/agents/AgentPicker.tsx
 msgid "Couldn't load agents."
 msgstr "Couldn't load agents."
@@ -950,6 +977,10 @@ msgstr "Couldn't load files."
 msgid "Couldn't load recent documents."
 msgstr "Couldn't load recent documents."
 
+#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
+msgid "Couldn't load references."
+msgstr "Couldn't load references."
+
 #: src/features/project/shell/RailSection.tsx
 msgid "Couldn't load results."
 msgstr "Couldn't load results."
@@ -961,10 +992,6 @@ msgstr "Couldn't load this file."
 #: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Couldn't load this result."
 msgstr "Couldn't load this result."
-
-#: src/features/project/shell/ContextSidebar.tsx
-msgid "Couldn't load uploads."
-msgstr "Couldn't load uploads."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Couldn't load Work."
@@ -978,6 +1005,7 @@ msgstr "Couldn't load. Check your connection."
 msgid "Couldn't open review mode."
 msgstr "Couldn't open review mode."
 
+#: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
@@ -1160,6 +1188,10 @@ msgstr "Describe the picture for a reader who cannot see it"
 msgid "Description"
 msgstr "Description"
 
+#: src/features/editor/surfaces/link/LinkForm.tsx
+msgid "Destination"
+msgstr "Destination"
+
 #: src/routes/dev-login.tsx
 msgid "Dev login"
 msgstr "Dev login"
@@ -1194,6 +1226,11 @@ msgstr "Discard changes"
 #: src/features/editor/SchemaRepairNotice.tsx
 msgid "Dismiss"
 msgstr "Dismiss"
+
+#: src/components/app/composer/ComposerReferenceMenu.tsx
+#: src/features/editor/surfaces/link/LinkForm.tsx
+msgid "Display text"
+msgstr "Display text"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Divider"
@@ -1267,6 +1304,10 @@ msgstr "Duplicate"
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Edit {0}"
 msgstr "Edit {0}"
+
+#: src/components/app/composer/ComposerReferenceMenu.tsx
+msgid "Edit display text"
+msgstr "Edit display text"
 
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Edit link"
@@ -1430,9 +1471,27 @@ msgstr "File suggestions"
 msgid "Files"
 msgstr "Files"
 
+#: src/features/chat/DraftDock.tsx
+#: src/features/editor/DraftReviewHeader.tsx
+msgid "Finish close"
+msgstr "Finish close"
+
+#: src/features/chat/DraftDock.tsx
+#: src/features/editor/DraftReviewHeader.tsx
+msgid "Finish reopening"
+msgstr "Finish reopening"
+
 #: src/features/project/home/HomeScreen.tsx
 msgid "Finish the current chat attempt"
 msgstr "Finish the current chat attempt"
+
+#: src/features/chat/DraftDock.tsx
+msgid "Finishing close"
+msgstr "Finishing close"
+
+#: src/features/chat/DraftDock.tsx
+msgid "Finishing reopening"
+msgstr "Finishing reopening"
 
 #: src/features/project/home/HomeScreen.tsx
 msgid "Finishing write mode change"
@@ -1702,7 +1761,6 @@ msgstr "Let's work on it"
 msgid "Light"
 msgstr "Light"
 
-#: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Link"
 msgstr "Link"
@@ -1710,6 +1768,10 @@ msgstr "Link"
 #: src/features/editor/EditorView.tsx
 msgid "Link a document"
 msgstr "Link a document"
+
+#: src/features/editor/surfaces/link/LinkForm.tsx
+msgid "Link a file"
+msgstr "Link a file"
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Link text"
@@ -1781,6 +1843,10 @@ msgstr "Loading more chats"
 msgid "Loading recent documents…"
 msgstr "Loading recent documents…"
 
+#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
+msgid "Loading references…"
+msgstr "Loading references…"
+
 #: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Loading result…"
 msgstr "Loading result…"
@@ -1792,10 +1858,6 @@ msgstr "Loading results…"
 #: src/core/editor/FigureNodeView.tsx
 msgid "Loading signed image URL…"
 msgstr "Loading signed image URL…"
-
-#: src/features/project/shell/ContextSidebar.tsx
-msgid "Loading uploads…"
-msgstr "Loading uploads…"
 
 #: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/home/HomeScreen.tsx
@@ -2056,7 +2118,10 @@ msgstr "No context files yet."
 msgid "No document answers to this name. A document can be created for it once the name works as a filename."
 msgstr "No document answers to this name. A document can be created for it once the name works as a filename."
 
+#: src/features/chat/ChatView.tsx
+#: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkHint.tsx
+#: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "No document with this name yet"
 msgstr "No document with this name yet"
 
@@ -2064,9 +2129,14 @@ msgstr "No document with this name yet"
 msgid "No fields required; confirm to continue."
 msgstr "No fields required; confirm to continue."
 
-#: src/features/project/shell/ContextSidebar.tsx
-msgid "No files uploaded yet."
-msgstr "No files uploaded yet."
+#. placeholder {0}: snapshot.meta.containerLabel
+#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
+#~ msgid "No files in {0}."
+#~ msgstr "No files in {0}."
+
+#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
+msgid "No files in {containerLabel}."
+msgstr "No files in {containerLabel}."
 
 #: src/features/project/work/WorkCard.tsx
 msgid "No goal yet"
@@ -2076,9 +2146,14 @@ msgstr "No goal yet"
 msgid "No matching chats"
 msgstr "No matching chats"
 
+#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
 #: src/features/project/context/file-suggestions/FileSuggestionList.tsx
 msgid "No matching files"
 msgstr "No matching files"
+
+#: src/features/editor/surfaces/link/AtReferenceMenu.tsx
+#~ msgid "No matching files."
+#~ msgstr "No matching files."
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "No messages yet."
@@ -2103,6 +2178,11 @@ msgstr "No projects yet."
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "No results yet."
 msgstr "No results yet."
+
+#: src/components/app/work-composer-controls/WorkPickerPanel.tsx
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "No Work"
+msgstr "No Work"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "No Work matches your search."
@@ -2186,10 +2266,6 @@ msgid "Open {title}"
 msgstr "Open {title}"
 
 #: src/features/project/shell/ContextSidebar.tsx
-msgid "Open a chat to see its uploads."
-msgstr "Open a chat to see its uploads."
-
-#: src/features/project/shell/ContextSidebar.tsx
 msgid "Open a chat to see what the AI referenced."
 msgstr "Open a chat to see what the AI referenced."
 
@@ -2217,7 +2293,9 @@ msgstr "Open existing"
 msgid "Open full screen"
 msgstr "Open full screen"
 
+#: src/components/app/composer/ComposerReferenceMenu.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
+#: src/rich-content/TranscriptReference.tsx
 msgid "Open link"
 msgstr "Open link"
 
@@ -2291,8 +2369,8 @@ msgid "Paste"
 msgstr "Paste"
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
-msgid "Paste a link or type [[a document name]]"
-msgstr "Paste a link or type [[a document name]]"
+#~ msgid "Paste a link or type [[a document name]]"
+#~ msgstr "Paste a link or type [[a document name]]"
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Pending drafts"
@@ -2443,6 +2521,12 @@ msgstr "Redo is no longer available because the manuscript changed."
 msgid "Redoing…"
 msgstr "Redoing…"
 
+#: src/features/chat/ChatView.tsx
+#: src/features/editor/EditorView.tsx
+#: src/features/project/home/HomeScreen.tsx
+msgid "Reference a file"
+msgstr "Reference a file"
+
 #: src/components/app/ConnectionBanner.tsx
 msgid "Refresh"
 msgstr "Refresh"
@@ -2463,6 +2547,10 @@ msgstr "Remove from favorites"
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "Remove link"
 msgstr "Remove link"
+
+#: src/components/app/composer/ComposerReferenceMenu.tsx
+msgid "Remove reference"
+msgstr "Remove reference"
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Removed"
@@ -2542,6 +2630,8 @@ msgstr "Resume where I left off on any device"
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/SettingsDialog.tsx
+#: src/features/chat/DraftDock.tsx
+#: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/home/HomeFeed.tsx
@@ -2611,6 +2701,7 @@ msgstr "rule"
 msgid "Save {0}"
 msgstr "Save {0}"
 
+#: src/components/app/composer/ComposerReferenceMenu.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Save changes"
 msgstr "Save changes"
@@ -2618,6 +2709,10 @@ msgstr "Save changes"
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Save failed"
 msgstr "Save failed"
+
+#: src/features/editor/surfaces/link/LinkForm.tsx
+msgid "Save link"
+msgstr "Save link"
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Save metadata changes?"
@@ -2652,6 +2747,14 @@ msgstr "Scratch for Work {workName}"
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Search chats"
 msgstr "Search chats"
+
+#: src/components/app/composer/ComposerReferenceMenu.tsx
+msgid "Search documents"
+msgstr "Search documents"
+
+#: src/features/editor/surfaces/link/LinkForm.tsx
+msgid "Search documents or paste a web link"
+msgstr "Search documents or paste a web link"
 
 #: src/features/home/first-party-packages.ts
 msgid "Search papers, extract findings, and synthesize a summary across sources."
@@ -2786,6 +2889,7 @@ msgstr "Split cell"
 msgid "Start a quick chat without a project"
 msgstr "Start a quick chat without a project"
 
+#: src/components/app/composer/Composer.tsx
 #: src/features/project/home/HomeScreen.tsx
 msgid "Start over"
 msgstr "Start over"
@@ -2808,6 +2912,8 @@ msgid "status"
 msgstr "status"
 
 #: src/components/app/composer/Composer.tsx
+#: src/features/chat/DraftDock.tsx
+#: src/features/editor/DraftReviewHeader.tsx
 msgid "Stop"
 msgstr "Stop"
 
@@ -2902,7 +3008,6 @@ msgstr "Talk it out"
 msgid "Task Assignment"
 msgstr "Task Assignment"
 
-#: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Text"
 msgstr "Text"
@@ -2947,6 +3052,7 @@ msgstr "That image could not be read."
 msgid "That image did not upload."
 msgstr "That image did not upload."
 
+#: src/features/chat/ChatView.tsx
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "That link could not be checked"
 msgstr "That link could not be checked"
@@ -3186,6 +3292,10 @@ msgstr "This document changed elsewhere. Reopen it and try again."
 msgid "This document is not taking changes right now."
 msgstr "This document is not taking changes right now."
 
+#: src/features/project/context/ContextEditorMountHost.tsx
+msgid "This document is open in another tab"
+msgstr "This document is open in another tab"
+
 #: src/features/editor/surfaces/table/table-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This document is read only right now."
@@ -3227,6 +3337,10 @@ msgstr "This folder no longer exists."
 #: src/core/editor/images/ImageNodeView.tsx
 msgid "This image never finished uploading."
 msgstr "This image never finished uploading."
+
+#: src/features/editor/surfaces/link/LinkForm.tsx
+msgid "This link can no longer be edited. Close the form and try again."
+msgstr "This link can no longer be edited. Close the form and try again."
 
 #: src/routes/dev-login.tsx
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
@@ -3286,8 +3400,8 @@ msgid "Top up any time. Extra usage carries over month to month."
 msgstr "Top up any time. Extra usage carries over month to month."
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
-msgid "Try a web address, a document path, or [[a document name]]."
-msgstr "Try a web address, a document path, or [[a document name]]."
+#~ msgid "Try a web address, a document path, or [[a document name]]."
+#~ msgstr "Try a web address, a document path, or [[a document name]]."
 
 #: src/features/chat/TurnEditsReceipt.tsx
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
@@ -3330,7 +3444,6 @@ msgstr "Unarchived Work {name}"
 
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
-#: src/features/project/home/NewThreadComposerToolbar.tsx
 msgid "Unavailable"
 msgstr "Unavailable"
 
@@ -3378,8 +3491,8 @@ msgid "Untitled project"
 msgstr "Untitled project"
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
-msgid "Update link"
-msgstr "Update link"
+#~ msgid "Update link"
+#~ msgstr "Update link"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Updated a Work"
@@ -3421,7 +3534,6 @@ msgid "Uploading elsewhere…"
 msgstr "Uploading elsewhere…"
 
 #: src/features/project/context/context-schemes.ts
-#: src/features/project/shell/ContextSidebar.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Uploads"
 msgstr "Uploads"

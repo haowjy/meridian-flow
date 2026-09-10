@@ -46,6 +46,7 @@
  *   content, not as turn-structured data.
  */
 
+import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
 import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
@@ -111,6 +112,19 @@ export function buildContext(input: BuildContextInput): {
     const turnBlocks = blocksByTurn.get(turn.id as string) ?? [];
     if (turn.role === "user") {
       const parts = turnBlocksToContentParts(turnBlocks, ["text", "image", "file"]);
+      const included = new Set<string>();
+      for (const block of turnBlocks) {
+        const reference = referenceOccurrenceContent(block);
+        if (!reference?.read) continue;
+        const key = `${reference.documentId}\0${reference.uri}`;
+        if (included.has(key)) continue;
+        included.add(key);
+        parts.push(
+          text(
+            `\n\nReference read result for ${reference.uri}:\n${JSON.stringify(reference.read.result)}`,
+          ),
+        );
+      }
       if (parts.length > 0) {
         messages.push({ role: "user", content: parts });
       }

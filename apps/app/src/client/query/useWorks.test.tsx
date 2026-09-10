@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   archiveWork: vi.fn(),
   unarchiveWork: vi.fn(),
   deleteWork: vi.fn(),
+  restoreWork: vi.fn(),
   updateWorkWriteMode: vi.fn(),
 }));
 
@@ -22,15 +23,20 @@ vi.mock("@/client/stores", () => ({
 
 const { useUpdateWorkWriteMode, useWorkMutations, useWorks } = await import("./useWorks");
 const { projectQueryKeys } = await import("./project-query-keys");
+const { seedProjectRouteData } = await import("./project-route-data");
+const { beginWorksSnapshotRequest } = await import("./works-projection-acquisition");
 const { threadQueryKeys } = await import("./thread-query-keys");
 
 const flush = () => act(async () => new Promise((resolve) => setTimeout(resolve, 0)));
 
 describe("Work client queries", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.listProjectWorks.mockResolvedValue(snapshot([]));
+  });
 
   it("loads the complete Work catalog, including archived Works", async () => {
-    api.listProjectWorks.mockResolvedValue({ works: [] });
+    api.listProjectWorks.mockResolvedValue(snapshot([]));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const state: { value: ReturnType<typeof useWorks> | null } = { value: null };
 
@@ -46,7 +52,7 @@ describe("Work client queries", () => {
         </QueryClientProvider>,
         async () => {
           await flush();
-          expect(api.listProjectWorks).toHaveBeenCalledWith("project-1", { status: "all" });
+          expect(api.listProjectWorks).toHaveBeenCalledWith("project-1");
           expect(state.value?.works).toEqual([]);
           expect(state.value?.status).toBe("empty");
         },
@@ -55,6 +61,41 @@ describe("Work client queries", () => {
     } finally {
       client.clear();
     }
+  });
+
+  it("keeps a newer-started equal-authority loader seed over an older mounted query", async () => {
+    let resolveOlder!: (value: ReturnType<typeof snapshot>) => void;
+    api.listProjectWorks.mockImplementation(
+      () => new Promise((resolve) => (resolveOlder = resolve)),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Harness() {
+      useWorks("project-1");
+      return null;
+    }
+    await withReactRoot(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+      async () => {
+        await flush();
+        const loaderStarted = beginWorksSnapshotRequest("project-1");
+        seedProjectRouteData(client, "project-1", {
+          threads: null,
+          works: snapshot([{ id: "work-1", name: "newer loader" } as Work], "2"),
+          worksStarted: loaderStarted,
+          workingSet: { status: "absent" },
+        });
+        resolveOlder(snapshot([{ id: "work-1", name: "older in-flight" } as Work], "2"));
+        await flush();
+        expect(
+          client.getQueryData<ReturnType<typeof snapshot>>(projectQueryKeys.works("project-1"))
+            ?.works[0]?.name,
+        ).toBe("newer loader");
+      },
+      { drainMacrotask: true },
+    );
+    client.clear();
   });
 
   it.each([
@@ -117,10 +158,9 @@ describe("Work client queries", () => {
       name: "New Work",
     } as Work;
     api.createProjectWork.mockResolvedValue(created);
+    api.listProjectWorks.mockResolvedValue(snapshot([created], "1"));
     const client = new QueryClient();
-    client.setQueryData(projectQueryKeys.works("project-1"), {
-      works: [],
-    });
+    client.setQueryData(projectQueryKeys.works("project-1"), snapshot([]));
     const state: { value: ReturnType<typeof useWorkMutations> | null } = { value: null };
     function Harness() {
       state.value = useWorkMutations("project-1");
@@ -137,9 +177,7 @@ describe("Work client queries", () => {
         const catalog = client.getQueryData<{
           works: (typeof created)[];
         }>(projectQueryKeys.works("project-1"));
-        expect(catalog).toEqual({
-          works: [created],
-        });
+        expect(catalog?.works).toEqual([{ ...created, unpushedChangeCount: 0 }]);
         expect(
           resolveRouteWork(parseExplicitWork(created.id), {
             status: "success",
@@ -296,3 +334,13 @@ describe("Work client queries", () => {
     }
   });
 });
+
+function snapshot(works: Work[], authorityRevision = "0") {
+  return {
+    projectId: "project-1",
+    catalogGeneration: "generation-1",
+    authorityRevision,
+    requestId: `request-${authorityRevision}`,
+    works: works.map((work) => ({ ...work, unpushedChangeCount: work.unpushedChangeCount ?? 0 })),
+  };
+}

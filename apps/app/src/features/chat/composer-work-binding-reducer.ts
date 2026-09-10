@@ -38,7 +38,12 @@ export type ComposerWorkBindingState = {
 export type ComposerWorkBindingEvent =
   | { type: "query.changed"; query: string }
   | { type: "change.started"; request: WorkBindingRequest; message: string }
-  | { type: "change.committed"; requestId: string; commit: NormalizedCommit; message: string }
+  | {
+      type: "change.committed";
+      requestId: string;
+      commit: NormalizedCommit & { work: Work };
+      message: string;
+    }
   | { type: "change.notCurrent"; requestId: string; message: string }
   | { type: "change.superseded"; requestId: string; work: Work; message: string }
   | { type: "change.refused"; requestId: string; failure: WorkBindingFailure; message: string }

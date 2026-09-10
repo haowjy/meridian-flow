@@ -10,9 +10,11 @@
 - `AssetPathResolver` adapters: `unresolvedAssetPathResolver` (refuses to
   serialize an asset ref) and `createAssetPathResolver(entries)`.
 - Plugin factories: `markdown()` and `mdx({ components })`.
+- `remarkWikiLink`: the same syntax grammar for read-only renderers. Consumers
+  own inline presentation and navigation authority; the parser resolves neither.
 - Both presets include the first-class `[[target]]` wikilink extension. It maps
   to the existing link mark with `href: "[[target]]"` and `title: null`; labels
-  are deliberately not part of the syntax.
+  may be authored with `[[target|display text]]`.
 - Codec author helpers for converting between ProseMirror nodes and mdast/MDX
   AST nodes.
 - Codec and AST types, `CodecParseError`, and MDX component registry types.
@@ -143,17 +145,27 @@ deterministic instead of exposing it as a JSX opener.
 
 ## Wikilinks
 
-`[[target]]` is a non-GFM inline construct shared by the markdown and MDX
-presets. It carries only the target text: `[[target|label]]` is literal text, not
-an alternate spelling. A parsed wikilink uses the ordinary ProseMirror `link`
-mark, so it needs no schema node or extra mark attributes. Resolution never
-occurs in the codec; unresolved targets round-trip unchanged. Outer whitespace
-inside the brackets is canonicalized away; whitespace within a target is kept.
-Horizontal tabs and line endings are not valid target content.
-Recognition belongs to the micromark label-end grammar and opaque mdast
-resource nodes; do not normalize wikilink-looking destinations with a
-source-wide scanner.
-When display text differs from the target, ordinary Markdown link and image
-resources may carry the same href, such as `[label]([[target]])` or
-`![alt]([[target]])`. Those resource spellings round-trip too; they do not make
-`[[target|label]]` valid wikilink syntax.
+`[[target]]` and `[[target|display text]]` are non-GFM inline constructs shared
+by the markdown and MDX presets. Parsing stores only `[[target]]` in the ordinary
+ProseMirror `link` mark; the display text is its text content. Resolution never
+occurs in the codec. Unresolved destinations round-trip unchanged.
+
+Display text is literal prose, not nested Markdown. Backslash escapes backslash,
+closing bracket, and pipe inside the label. Destinations also escape both brackets,
+pipes, and backslashes, so destination text such as `Gate|Map.png` becomes
+`[[Gate\|Map.png]]`, not an alias for `Gate`. The shared formatter/decoder owns
+this boundary for editor insertion, Composer, images, and transcript rendering.
+Empty labels and line endings are not recognized; tabs remain literal label text.
+Target outer whitespace is trimmed; label whitespace is preserved. Plain labeled Markdown links such as `[label]([[target]])` normalize
+to the pipe spelling. Rich labels and links with title metadata retain the
+ordinary Markdown resource spelling to avoid losing marks or metadata. Images
+retain `![alt]([[target]])`.
+
+The shared micromark grammar owns recognition, including MDX ingress protection
+and read-only transcript parsing. `formatWikilink` spells plain labels;
+`wikilinkTarget` extracts a destination-only href, not a complete aliased link.
+App routing interprets scoped URI destinations without changing the label.
+
+Wire recognition does not authorize creating a Context file with that name.
+The app's shared Context entry-name validator owns filename policy separately;
+for example, it permits brackets but currently rejects pipe characters.

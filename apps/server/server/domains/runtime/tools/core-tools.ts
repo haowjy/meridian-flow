@@ -40,7 +40,15 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
     status: WorkStatusSchema.optional(),
   }).strict(),
   WorkSelectorSchema.extend({ command: z.literal("delete") }).strict(),
-  WorkSelectorSchema.extend({ command: z.literal("switch") }).strict(),
+  z
+    .object({
+      command: z.literal("switch"),
+      target: z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("none") }).strict(),
+        z.object({ kind: z.literal("work"), work: z.string().min(1) }).strict(),
+      ]),
+    })
+    .strict(),
 ]);
 
 export type WorkCommand = z.infer<typeof WorkCommandSchema>;

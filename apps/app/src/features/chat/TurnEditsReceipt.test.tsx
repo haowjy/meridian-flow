@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { testWorkSlug } from "@/test-support/work-slug";
 
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -56,11 +57,16 @@ const deletedWorkReceipt = {
 const switchedWorkReceipt = {
   operation: "switch",
   category: "binding",
-  changed: true,
-  workId: "work-1",
-  workName: "Side quests",
-  before: null,
-  after: null,
+  before: { kind: "none" },
+  after: {
+    kind: "work",
+    workId: "work-1",
+    workSlug: testWorkSlug("side-quests"),
+    name: "Side quests",
+    goal: null,
+    description: null,
+    status: "active",
+  },
   inverse: null,
 } as const;
 const settledTrail = {

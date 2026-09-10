@@ -104,12 +104,11 @@ export function apiProjectAgentsPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/agents`;
 }
 
-export function apiProjectContextTreePath(
+export function apiProjectContextCatalogPath(
   projectId: string,
-  scheme: ProjectContextTreeScheme,
-  opts?: ProjectContextRequestOptions,
+  operation: "snapshot" | "changes" | "children" | "lookup",
 ): string {
-  return `${apiProjectPath(projectId)}/context/${scheme}/tree${projectContextQuery(scheme, opts)}`;
+  return `${apiProjectPath(projectId)}/context/catalog/${operation}`;
 }
 
 export function apiProjectContextCreatePath(
@@ -190,12 +189,13 @@ export function apiThreadMessagePath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/messages`;
 }
 
-export function apiThreadCancelPath(threadId: string, turnId: string): string {
-  return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/cancel`;
+/** Durable identity used to reconcile or explicitly retire one message admission. */
+export function apiThreadAdmissionPath(threadId: string, submissionId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/admissions/${encodeURIComponent(submissionId)}`;
 }
 
-export function apiThreadUploadsPath(threadId: string): string {
-  return `${API_THREADS_PATH}/${threadId}/uploads`;
+export function apiThreadCancelPath(threadId: string, turnId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/turns/${turnId}/cancel`;
 }
 
 export function apiThreadRecentDocumentsPath(threadId: string, opts?: { limit?: number }): string {

@@ -132,6 +132,7 @@ export function useChromeLayer(
     if (!chrome || !open) return;
     const handle = chrome.openLayer({
       id: layerId,
+      ownerId: id,
       parentId,
       dismissal,
       close: () => closeRef.current(),
@@ -179,9 +180,14 @@ export function useChromeLayer(
         return;
       }
       const topmost = chrome?.layers[chrome.layers.length - 1];
-      if (!topmost || topmost.id === layerId) return;
+      if (!topmost) return;
+      if (topmost.id === layerId) {
+        if (!chrome?.retreatTopLayer()) return;
+        event.preventDefault();
+        return;
+      }
       event.preventDefault();
-      chrome?.closeTopLayer();
+      if (!chrome?.retreatTopLayer()) chrome?.closeTopLayer();
     },
     [chrome, layerId],
   );

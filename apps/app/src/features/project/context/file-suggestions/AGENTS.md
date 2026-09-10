@@ -1,14 +1,14 @@
 # context/file-suggestions — client-side file finding
 
-Reusable file suggestions over the project's cached context trees. This module
-ranks locally; it does not own fetching policy beyond composing existing tree
-queries and must not introduce a server-search path.
+Reusable file suggestions over the normalized context catalog. This module
+ranks locally; React Query owns catalog acquisition and it must not introduce a
+server-search path or suggestion-specific cache.
 
 ## Mental model
 
-- `file-suggestions.ts` is the pure core: flatten tree entries, filter by
+- `file-suggestions.ts` is the pure core: project normalized entries, filter by
   scheme/kind, then rank by leaf prefix, leaf word boundary, and full path.
-- `use-file-suggestions.ts` composes the five cached scheme queries and exposes
+- `use-file-suggestions.ts` composes the three warm scope queries and exposes
   suggestions plus aggregate fetch/error state.
 - `FileSuggestionList.tsx` is keyboard-accessible presentation. Hosts own the
   input, popover, selection effect, and allowed schemes/kinds.

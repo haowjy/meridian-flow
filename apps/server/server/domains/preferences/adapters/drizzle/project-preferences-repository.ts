@@ -7,10 +7,10 @@ import type {
   ThreadGroupBy,
   UpdateProjectPreferencesRequest,
 } from "@meridian/contracts/preferences";
-import type { ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { projectUserPreferences } from "@meridian/database/schema";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { defaultProjectPreferences, mergeProjectPreferences } from "../../domain.js";
 import type { ProjectPreferencesRepository } from "../../ports/project-preferences-repository.js";
@@ -88,51 +88,6 @@ export function createDrizzleProjectPreferencesRepository(
         .returning();
       if (!row) throw new Error("Failed to upsert project preferences");
       return mapPreferences(row);
-    },
-
-    async getNewChatFallbackWorkId(userId: UserId, projectId: ProjectId): Promise<WorkId | null> {
-      const [row] = await currentDrizzleDb(db)
-        .select({ newChatFallbackWorkId: projectUserPreferences.newChatFallbackWorkId })
-        .from(projectUserPreferences)
-        .where(
-          and(
-            eq(projectUserPreferences.userId, userId),
-            eq(projectUserPreferences.projectId, projectId),
-          ),
-        )
-        .limit(1);
-      return row?.newChatFallbackWorkId ?? null;
-    },
-
-    async repairNewChatFallbackWorkId(
-      userId: UserId,
-      projectId: ProjectId,
-      expectedWorkId: WorkId | null,
-      workId: WorkId,
-    ): Promise<boolean> {
-      const activeDb = currentDrizzleDb(db);
-      const [updated] = await activeDb
-        .update(projectUserPreferences)
-        .set({ newChatFallbackWorkId: workId, updatedAt: new Date() })
-        .where(
-          and(
-            eq(projectUserPreferences.userId, userId),
-            eq(projectUserPreferences.projectId, projectId),
-            expectedWorkId === null
-              ? isNull(projectUserPreferences.newChatFallbackWorkId)
-              : eq(projectUserPreferences.newChatFallbackWorkId, expectedWorkId),
-          ),
-        )
-        .returning({ userId: projectUserPreferences.userId });
-      if (updated) return true;
-      if (expectedWorkId !== null) return false;
-
-      const [inserted] = await activeDb
-        .insert(projectUserPreferences)
-        .values({ userId, projectId, newChatFallbackWorkId: workId })
-        .onConflictDoNothing()
-        .returning({ userId: projectUserPreferences.userId });
-      return Boolean(inserted);
     },
   };
 }

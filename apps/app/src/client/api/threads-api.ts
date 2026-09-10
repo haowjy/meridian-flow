@@ -6,7 +6,9 @@
  * network surface the chat flow and snapshot sync build on.
  */
 import {
+  type AdmissionLookup,
   API_THREADS_PATH,
+  apiThreadAdmissionPath,
   apiThreadCancelPath,
   apiThreadMessagePath,
   apiThreadModelRequestsDebugPath,
@@ -14,26 +16,25 @@ import {
   apiThreadRecentDocumentsPath,
   apiThreadSnapshotPath,
   apiThreadTurnContextPreviewDebugPath,
-  apiThreadUploadsPath,
   apiThreadUserStatePath,
   apiThreadWorkPath,
   type CancelTurnResponse,
   type ListThreadRecentDocumentsResponse,
   type ListThreadsResponse,
-  type ListThreadUploadsResponse,
   type ModelRequestDebugListResponse,
+  type RetireAdmissionResult,
   type SendMessageResponse,
   type Thread,
   type ThreadRecentDocumentItem,
   type ThreadSnapshotResponse,
-  type ThreadUploadDocumentItem,
   type TurnContextPreview,
   type UpdateThreadUserStateRequest,
   type UpdateThreadUserStateResponse,
 } from "@meridian/contracts/protocol";
+import type { WorkId } from "@meridian/contracts/runtime";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
 
-import { deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
+import { deleteJson, deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
 
 type CreateThreadInput = {
   id?: string;
@@ -41,11 +42,15 @@ type CreateThreadInput = {
   title?: string;
   systemPrompt?: string | null;
   currentAgent?: string;
+  workId?: WorkId | null;
 };
 
 export type AppendUserMessageInput = {
   threadId: string;
+  submissionId: string;
   text: string;
+  blocks: readonly import("@meridian/contracts/protocol").UserMessageBlock[];
+  references: readonly import("@meridian/contracts/protocol").SubmittedReference[];
   connectionToken?: string;
 };
 
@@ -83,6 +88,20 @@ export function appendUserMessage({
   return postJson(apiThreadMessagePath(data.threadId), data);
 }
 
+export function lookupUserMessageAdmission(input: {
+  threadId: string;
+  submissionId: string;
+}): Promise<AdmissionLookup> {
+  return getJson(apiThreadAdmissionPath(input.threadId, input.submissionId));
+}
+
+export function retireUserMessageAdmission(input: {
+  threadId: string;
+  submissionId: string;
+}): Promise<RetireAdmissionResult> {
+  return deleteJson(apiThreadAdmissionPath(input.threadId, input.submissionId));
+}
+
 export function cancelTurn({ data }: { data: CancelTurnInput }): Promise<CancelTurnResponse> {
   return postJson(apiThreadCancelPath(data.threadId, data.turnId), {
     reason: data.reason,
@@ -112,7 +131,9 @@ export function rebindThreadWork(
   threadId: string,
   body: RebindThreadWorkRequest,
 ): Promise<RebindThreadWorkResponse> {
-  return putJson(apiThreadWorkPath(threadId), body);
+  return putJson(apiThreadWorkPath(threadId), {
+    workId: body.target.kind === "work" ? body.target.workId : null,
+  });
 }
 
 /**
@@ -138,15 +159,6 @@ export function toThreadSnapshotApplyOptions(snapshot: ThreadSnapshotResponse) {
     },
     nextSeq: snapshot.nextSeq,
   };
-}
-
-/**
- * GET /api/threads/:threadId/uploads — files the user uploaded into this
- * thread (`thread_documents` rows where the relationship is an upload).
- */
-export async function getThreadUploads(threadId: string): Promise<ThreadUploadDocumentItem[]> {
-  const response = await getJson<ListThreadUploadsResponse>(apiThreadUploadsPath(threadId));
-  return response.uploads;
 }
 
 /**

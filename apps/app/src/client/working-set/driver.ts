@@ -121,6 +121,11 @@ export class WorkingSetSyncDriver {
     return this.readRecentRoutes(projectId);
   }
 
+  replaceRecentRoutes(projectId: string, routes: readonly WorkingSetRoute[]): WorkingSetRoute[] {
+    this.report(projectId, (snapshot) => ({ ...snapshot, recentRoutes: [...routes] }));
+    return this.readRecentRoutes(projectId);
+  }
+
   setThread(projectId: string, threadId: string): void {
     this.report(projectId, (snapshot) => setSnapshotThread(snapshot, threadId));
   }
@@ -293,6 +298,13 @@ export function reconcileContextRoutes(
   const activeDriver = browserDriver();
   if (!activeDriver) return [];
   return activeDriver.reconcileContextRoutes(projectId, input);
+}
+
+export function replaceRecentRoutes(
+  projectId: string,
+  routes: readonly WorkingSetRoute[],
+): WorkingSetRoute[] {
+  return browserDriver()?.replaceRecentRoutes(projectId, routes) ?? [];
 }
 
 export function setThread(projectId: string, threadId: string): void {

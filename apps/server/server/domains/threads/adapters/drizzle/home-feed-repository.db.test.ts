@@ -21,7 +21,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "../../../../test-support/rollback-test-database.js"
     );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
-    const { createDrizzleRepositories } = await import("./repositories.js");
+    const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
     const { getHomeChatFeedPage } = await import("../../domain/home-feed.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
@@ -48,7 +48,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("projects the visible lineage with microsecond activity and isolated writer state", async () => {
       const db = database.current;
-      const repos = createDrizzleRepositories(db);
+      const repos = createDrizzleRepositoriesForTest(db);
       const threadId = "00000000-0000-4000-8000-000000000510";
       const assistantId = "00000000-0000-4000-8000-000000000512";
       await db.execute(sql`
@@ -137,7 +137,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         UPDATE threads t SET active_leaf_turn_id = md5(replace(t.title, 'Equal ', 'equal-turn-'))::uuid
         WHERE t.project_id = ${PROJECT_ID}::uuid
       `);
-      const repos = createDrizzleRepositories(db);
+      const repos = createDrizzleRepositoriesForTest(db);
       const favoriteIds = ["md5-placeholder"];
       const [favorite] = await db.execute(sql`SELECT md5('equal-thread-75')::uuid::text AS id`);
       if (!favorite) throw new Error("missing favorite");
@@ -206,7 +206,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           (${activeId}::uuid, 'text', 3, E'  second\\n', '{}', false),
           (${abandonedId}::uuid, 'text', 0, 'abandoned', '{}', false)
       `);
-      const repos = createDrizzleRepositories(db);
+      const repos = createDrizzleRepositoriesForTest(db);
       const page = await repos.homeFeed.queryPage({
         projectId: PROJECT_ID,
         userId: USER_ID,
@@ -250,7 +250,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           (${threadId}::uuid, '00000000-0000-4000-8000-000000000531', ${PROJECT_ID}::uuid, true),
           (${threadId}::uuid, '00000000-0000-4000-8000-000000000532', ${PROJECT_ID}::uuid, false)
       `);
-      const repos = createDrizzleRepositories(db);
+      const repos = createDrizzleRepositoriesForTest(db);
       const archived = await repos.homeFeed.queryPage({
         projectId: PROJECT_ID,
         userId: USER_ID,
@@ -311,7 +311,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         UPDATE threads t SET active_leaf_turn_id = md5('home-turn-' || substring(t.title from 6))::uuid
         WHERE t.project_id = ${PROJECT_ID}::uuid
       `);
-      const repos = createDrizzleRepositories(db);
+      const repos = createDrizzleRepositoriesForTest(db);
       const startedAt = performance.now();
       const page = await repos.homeFeed.queryPage({
         projectId: PROJECT_ID,

@@ -36,6 +36,7 @@ describe("guarded context route repair", () => {
       thread: "thread-1",
       scheme: "manuscript",
       path: "/next.md",
+      work: "none",
     });
   });
 

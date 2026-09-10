@@ -23,7 +23,8 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useProjectContextTree } from "@/client/query/useProjectContextTree";
+import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
+import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useWorks } from "@/client/query/useWorks";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -36,7 +37,6 @@ import {
   schemeLabel,
   visibleContextSchemes,
 } from "./context-schemes";
-import { type ContextFile, findContextFile } from "./context-tree";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
 
@@ -167,23 +167,31 @@ function SchemeSection({
   // later user collapse sticks until the user reopens it or a new selection
   // lands inside.
   const [expanded, setExpanded] = useState(defaultExpanded);
-  const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>({});
+  const [expandedEntryIds, setExpandedEntryIds] = useState<Record<string, boolean>>({});
   const activeLocationPath = activeScheme === scheme ? activePath : null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
+  const { catalog, isError, refetch } = useContextCatalogView(projectId, scheme, {
+    workId: editorWorkId,
+  });
 
-  const revealPath = useCallback((path: string) => {
-    const segments = path.split("/").filter(Boolean);
-    if (segments.length === 0) return;
-    setExpandedPaths((current) => {
-      const next = { ...current };
-      let ancestor = "";
-      for (const segment of segments) {
-        ancestor += `/${segment}`;
-        next[ancestor] = true;
-      }
-      return next;
-    });
-  }, []);
+  const revealPath = useCallback(
+    (path: string) => {
+      if (!catalog) return;
+      const segments = path.split("/").filter(Boolean);
+      if (segments.length === 0) return;
+      setExpandedEntryIds((current) => {
+        const next = { ...current };
+        let ancestor = "";
+        for (const segment of segments) {
+          ancestor += `/${segment}`;
+          const entry = catalog.findPath(ancestor);
+          if (entry?.kind === "dir") next[entry.entryId] = true;
+        }
+        return next;
+      });
+    },
+    [catalog],
+  );
 
   useEffect(() => {
     if (!activeLocationPath) return;
@@ -206,8 +214,11 @@ function SchemeSection({
     [onRequestCreate, revealPath],
   );
 
-  const togglePath = useCallback((path: string, defaultOpen: boolean) => {
-    setExpandedPaths((current) => ({ ...current, [path]: !(current[path] ?? defaultOpen) }));
+  const toggleEntry = useCallback((entryId: string, defaultOpen: boolean) => {
+    setExpandedEntryIds((current) => ({
+      ...current,
+      [entryId]: !(current[entryId] ?? defaultOpen),
+    }));
   }, []);
 
   // The query is unconditionally enabled: it prefetches at rail mount so the
@@ -215,34 +226,36 @@ function SchemeSection({
   // workId inside the hook). `pendingOpenPath` waits on the same always-live
   // query so a just-created file can resolve and open; its onSelectFile then
   // lands a new selection here, which re-expands via the effect above.
-  const { tree, isError, refetch } = useProjectContextTree(projectId, scheme, {
-    workId: editorWorkId,
-  });
   useEffect(() => {
-    if (!pendingOpenPath || !tree) return;
-    const file = findContextFile(tree, pendingOpenPath);
-    if (!file) return;
+    if (!pendingOpenPath || !catalog) return;
+    const entry = catalog.findPath(pendingOpenPath);
+    if (entry?.kind !== "file") return;
+    const file = entry;
     onSelectFile(scheme, file);
     setPendingOpenPath(null);
-  }, [pendingOpenPath, tree, onSelectFile, scheme]);
+  }, [pendingOpenPath, catalog, onSelectFile, scheme]);
 
   const deleteConfirm = useDeleteConfirmation({ projectId, workId: editorWorkId, scheme });
-  const env = useMemo<TreeEnv>(
-    () => ({
-      projectId,
-      workId: editorWorkId,
-      scheme,
-      activeScheme,
-      activePath,
-      creating,
-      onSelectFile,
-      onRequestCreate: requestCreate,
-      onRequestDelete: deleteConfirm.requestDelete,
-      onCreateDone,
-      onCreatedFilePath: setPendingOpenPath,
-      isExpanded: (path, depth) => expandedPaths[path] ?? depth < 2,
-      togglePath,
-    }),
+  const env = useMemo<TreeEnv | null>(
+    () =>
+      catalog
+        ? ({
+            projectId,
+            workId: editorWorkId,
+            scheme,
+            activeScheme,
+            activePath,
+            creating,
+            onSelectFile,
+            onRequestCreate: requestCreate,
+            onRequestDelete: deleteConfirm.requestDelete,
+            onCreateDone,
+            onCreatedFilePath: setPendingOpenPath,
+            catalog,
+            isExpanded: (entryId, depth) => expandedEntryIds[entryId] ?? depth < 2,
+            toggleEntry,
+          } satisfies TreeEnv)
+        : null,
     [
       projectId,
       editorWorkId,
@@ -254,8 +267,9 @@ function SchemeSection({
       requestCreate,
       deleteConfirm.requestDelete,
       onCreateDone,
-      expandedPaths,
-      togglePath,
+      expandedEntryIds,
+      toggleEntry,
+      catalog,
     ],
   );
 
@@ -323,17 +337,17 @@ function SchemeSection({
           </TooltipContent>
         </Tooltip>
       )}
-      {expanded ? (
+      {expanded && catalog && env ? (
         <TreeEnvProvider value={env}>
           <div>
-            <TreeChildren parentPath="" children={tree?.children ?? []} depth={1} />
+            <TreeChildren parentId={catalog.root.entryId} parentPath="" depth={1} />
             {/* "No context files yet." is a claim about the tree, so it waits
                 for a RESOLVED tree. While the query is in flight with nothing
                 cached the pane body stays blank (no spinner) — prefetch at
                 mount makes that window nearly unhittable. */}
             {isError ? (
               <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
-            ) : tree && tree.children.length === 0 && !creating ? (
+            ) : catalog.children(catalog.root.entryId).length === 0 && !creating ? (
               <EmptyHint depth={1}>
                 <Trans>No context files yet.</Trans>
               </EmptyHint>

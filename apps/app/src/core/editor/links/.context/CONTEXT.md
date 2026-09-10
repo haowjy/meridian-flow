@@ -7,7 +7,7 @@ Reference depth. Read [`AGENTS.md`](../AGENTS.md) first.
 ```ts
 export type LinkTarget =
   | { kind: "wikilink"; name: string }   // [[The Second Gate]]
-  | { kind: "scheme"; uri: string }      // manuscript://…, work://…
+  | { kind: "scheme"; uri: string }      // manuscript://…, scratch://…
   | { kind: "relative"; path: string }   // chapter-213.md, ../notes/kael.md
   | { kind: "external"; url: string };   // http, https, mailto
 
@@ -34,9 +34,9 @@ and `example.com` in the form is a website.
 |---|---|---|
 | `[[The Second Gate]]` | wikilink | `[[The Second Gate]]` |
 | `[[ Warden Ilsever ]]` | wikilink | `[[Warden Ilsever]]` |
-| `[[Kael\|the warden]]` | null | null |
+| `[[Kael\|the warden]]` | null | null (an href is destination-only; display text is stored in linked prose) |
 | `manuscript://appendix/charter` | scheme | unchanged |
-| `work://a1b2/notes.md` | scheme | unchanged |
+| `scratch://@revision-pass/notes.md` | scheme | unchanged |
 | `chapter-213.md`, `../notes/kael.md` | relative | unchanged |
 | `example.com` | relative | `https://example.com` |
 | `https://…`, `mailto:…`, `//host/p` | external | unchanged (`//` gains `https:`) |
@@ -60,10 +60,12 @@ the href is nothing the editor will act on.
 | Shift+click | any | caret, because Shift extends a selection |
 | Right-click | plain prose | unclaimed: the browser's menu, and spellcheck with it |
 | Hover, settled | any classified link | destination hint below the link |
-| Ctrl+K | selection | form, one field |
-| Ctrl+K | bare caret | form, two fields, inserts a finished link |
-| Ctrl+K | caret in a link | form, pre-filled; an emptied URL removes the link |
+| Ctrl+K | selection | form with display text and destination |
+| Ctrl+K | bare caret | display text and destination, inserts a finished link |
+| Ctrl+K | caret in a link | pre-filled display text and destination; explicit Remove link |
 | Alt+Enter | caret in a followable link | follows |
+| Enter | focused link | follows immediately |
+| Context-menu key / Shift+F10 | focused link or caret in link | context menu without navigation |
 
 Every follow cancels the browser's own navigation first, unconditionally, on
 `click` and on `auxclick` alike — the middle button is the one path where a raw
@@ -76,6 +78,12 @@ of the link they pressed.
 External ignores the disposition — §5.5 sends it to a new tab either way. It is
 the internal family where `current` and `new-tab` are different places, and the
 navigator receives it so the app can decide.
+
+> [!NOTE]
+> Copy link address still exposes the rendered/stored href instead of the
+> runtime-resolved navigation destination for internal wikilinks. That separate
+> defect is tracked in [#520](https://github.com/haowjy/meridian-flow/issues/520);
+> display-text support does not fix or bless it.
 
 The external guard is ruling 9: none. Mockup 06 state F records the alternative.
 
@@ -165,6 +173,17 @@ changes (see
 so a change landing while questions are in flight is the ordinary case here,
 not an exotic one.
 
+### Server authority
+
+All five canonical Context schemes resolve through the same server port. Wiki
+names search project/personal content plus the selected Work/no-Work, not other
+Works. An explicit canonical Work slug may navigate to that Work in the same
+project; contextual scratch/uploads use the host's selected Work and `@/` is
+explicit no-Work. The server gets personal scope from authenticated identity.
+There is no legacy `work://` adapter or client-side title-search fallback.
+Submitted transcript `(documentId, uri)` authority remains separate from syntax
+lookup; rendering a title does not adopt it as an attachment.
+
 ## Rendering a state nobody stored
 
 `linkResolutionPlugin` scans the document for internal link marks, decorates
@@ -203,8 +222,9 @@ under the `.md` TLD and rewrites a project document into an external site.
 
 `resolveLinkDraft` reads the selection when the form opens, not when it
 commits: focus moves into the form, and the commit must rewrite the range the
-writer was looking at. `needsText` (a bare caret) is the only thing that
-chooses between the one-field and two-field forms.
+writer was looking at. The form always exposes display text and destination. `needsText` means a bare
+caret has no existing prose to preserve. Unchanged display text updates only
+the link mark, retaining mixed formatting within the range.
 
 The range travels, on the anchor above. `mapLinkDraft` follows every
 transaction and returns null when the words are gone, which closes the form —
@@ -214,7 +234,8 @@ inverts it the moment somebody types there.
 
 `commitLinkDraft` returns `applied`, `removed`, `invalid`, or `refused`. The
 form stays open on `invalid` so a bad URL never closes over a change that did
-not happen, and `refused` covers a document that turned read-only mid-form.
+not happen, and `refused` covers a document that turned read-only mid-form or a replaced
+link identity. The form reports refusal without presenting a successful save.
 Rewriting a link's text keeps the marks that text already wore.
 
 The menu acts by position instead: `linkAt(state, pos)` resolves the whole mark

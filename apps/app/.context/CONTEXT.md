@@ -51,22 +51,23 @@ Two interfaces are the only paths between the visual layer and the substrate:
   (Zustand vanilla store, one instance per `ThreadStoreProvider`, SSR-safe).
   **Public imports:** `@/client/stores` only — do not reach into store internals from features.
   UI reads via `useThreadStore(selector)`, `useThreadTurns(threadId)`; writes via
-  `useThreadActions()` only. First-message transfer uses the thread-keyed
-  `stageFirstSend` → route-owned `armFirstSend` → Chat-owned claim/settlement
-  lifecycle in `useThreadHandoff`; an unarmed send cannot be claimed by a
-  persistent dock. `ThreadRunController` classifies admission through a typed
-  definite/ambiguous boundary. Definite rejection remains provider-owned until
+  `useThreadActions()` only. Project Home first-message continuity lives in one
+  account-scoped IndexedDB owner, not Zustand. Home stages the immutable
+  Composer envelope before navigation; destination Chat atomically claims
+  `ready` as `dispatching`, while a remounted `dispatching` or `ambiguous`
+  record performs ledger lookup only. `ThreadRunController` joins append,
+  lookup, and explicit retirement to a typed settlement boundary. Definite rejection remains durable until
   the matching shared Composer acknowledges an idempotent restoration; when a
   newer draft exists, the failed first send is prepended with a blank-line
-  separator so both writer-authored texts survive. Ambiguous admission stays
+  document separator so both writer-authored documents survive. Ambiguous admission stays
   quarantined without blind retry. If a writer changes the Home draft while
   creation or routing is pending, the immutable first message remains the
   admitted turn and the latest authored revision transfers separately into the
   destination Composer, even when that revision's text is byte-equal to the
   submitted message. The shared Composer reports a monotonic authoring revision;
   content equality is never a draft-version test.
-  This handoff lasts only for the authenticated provider lifetime and is not a
-  durable outbox. Deferred project-creation flows separately use
+  Continuity survives route and reload but is not an outbox: it has no timer,
+  worker, polling, or blind retry. Deferred project-creation flows separately use
   `markPendingCreation`, `clearPendingCreation`, and `removeOptimisticUserTurn`;
   the last one is only rollback for a locally appended user turn that failed
   before server acknowledgement.
@@ -99,12 +100,12 @@ Two interfaces are the only paths between the visual layer and the substrate:
   `useWorks` exposes only the owned-project Work catalog. Home derives its
   initial prospective choice from the first active (then first available) catalog
   Work and sends that explicit ID; omitted root-chat creation remains the sole
-  server boundary that resolves or repairs the internal new-chat fallback.
+  server boundary where omission and explicit null both mean no primary Work.
   Direct `/project/*` and `/chat/*` authenticated routes mount the project
   provider stack and seed the project list + `now`; the project route loader
   seeds per-project threads and works before the workspace renders, and carries
   the working-set read as an explicit `row` / `absent` / `unavailable` result.
-- **Zustand (thread-store):** per-thread `turnsByThread`, handoff flags,
+- **Zustand (thread-store):** per-thread `turnsByThread`,
   `streamingThreadId`, pending stream metadata, snapshot reconciliation
   watermark (`snapshotNextSeqFloorByThread`). Soft-delete undo lives in the
   **project-store**, not here. See "Thread snapshot reconciliation" below.
@@ -131,6 +132,37 @@ default-collapsed `Thinking` fold plus its visible `ActivityBlock` frontier.
 image-producing tool results as image blocks. For the full Thinking/Activity
 contract, see [`features/chat/.context/CONTEXT.md`](../src/features/chat/.context/CONTEXT.md).
 
+### Transcript reference rendering
+
+`src/rich-content/Markdown.tsx` uses the public `@meridian/markup` wikilink
+grammar for presentation and `reference-occurrences.ts` for submitted-reference
+authority. Those are separate decisions: grammar may make syntax readable, but
+only an exact submitted `(documentId, uri)` match grants occurrence navigation.
+Syntax-only navigation still goes through the project-scoped link resolver and
+must never inherit attachment authority.
+
+Occurrence coordinates are offsets in the original serialized message, not in
+decoded mdast text. Keep authorized content in one source block, use
+CommonMark's string decoder when mapping entity/backslash-decoded text
+boundaries, and leave code and raw HTML inert. A regex scanner or a second
+wikilink tokenizer will drift from the wire grammar.
+
+Streamdown caches processors by plugin function identity/name and does not
+rebuild them merely because React props changed. Keep the occurrence plugin a
+stable named option-taking plugin, key the renderer by occurrence metadata, and
+pass live resolution through React context. Removing any one of those seams can
+reuse stale authority or stale resolution while rendering unchanged text.
+
+### Composer reference actions and uploaded material
+
+Reference removal changes the draft, not the uploaded file. Uploaded material
+remains in Uploads until explicit file deletion, so duplicate occurrences and
+Undo/Redo cannot revive references to files deleted by an atom observer.
+Same-identity Change retains intake provenance; a different destination does
+not acquire ownership of the former upload. Composer exposes intake but no
+file-deletion port. Keep removal one history unit and never put cleanup into a
+reference menu, transaction observer, or timer.
+
 ## Wire types as protocol contract
 
 `@meridian/contracts/protocol` defines the canonical `AGUIEvent` payload and
@@ -148,7 +180,7 @@ an unresolved create.
 
 Home first send deliberately orders the boundary differently: stable client ID
 → canonical create or same-ID ambiguity reconciliation → optimistic turn and
-staged handoff → route → arm. A definite stale Work or Agent refusal, whether
+durable continuity stage → route → destination claim. A definite stale Work or Agent refusal, whether
 returned by the initial create or its guarded same-ID retry after absence
 reconciliation, is identified only by the named `work_unavailable` or
 `agent_not_found` code, refreshes the relevant catalog, and unlocks prospective
@@ -195,9 +227,20 @@ Both HTTP snapshot callers must pass `nextSeq`. An unsequenced caller
 
 ## Authenticated layout shell
 
-`src/routes/_authenticated.tsx` mounts one unconditional provider tree for every
-authenticated route (`AppQueryProvider` → `ProjectStoreProvider` →
-`ThreadStoreProvider` → `TransportProvider` → `MeridianCopilotProvider`). No
+`src/routes/__root.tsx` owns AuthKit and renders the route outlet directly.
+The authenticated route's `AccountFeatureComposition` constructs its account
+feature lifetime synchronously, so its providers and descendants render on the
+first pass. An actual A-to-B account replacement synchronously fences the old
+lifetime and finishes its staged teardown before constructing B; only that
+replacement interval withholds descendants. The authenticated browser effect
+rehydrates the device Context desk after the shell is visible. Local persistence
+reconciliation never projects an account-preparation screen or gates initial
+rendering.
+
+`src/routes/_authenticated.tsx` mounts one unconditional route composition for
+every authenticated route (`AppQueryProvider` → `AccountFeatureComposition` →
+`DraftApplyRecoveryProvider` → `ProjectStoreProvider` → `ThreadStoreProvider` →
+`TransportProvider` → `MeridianCopilotProvider`). No
 pathname-based provider gating — conditional light↔workspace branches previously
 dropped `ThreadStoreProvider` during transitions.
 
@@ -222,9 +265,8 @@ same provider stack.
 The dedicated Work screen presents Active Work first and keeps Archived Work in a
 default-collapsed disclosure. Work management has no project-wide selection state;
 collection reads and actions never read, resolve, repair, or change the internal
-new-chat fallback, and never implicitly change a thread binding. The Work-list
-payload is catalog-only; fallback resolution belongs solely to omitted root-chat
-creation.
+thread creation, and never implicitly change a thread binding. The Work-list
+payload is catalog-only; omitted or null root creation remains explicitly no-Work.
 Home and Work each own exactly one screen-level `app-scroll`; neither screen
 adds a nested scroll owner. Their bodies share `project-screen-column`, whose
 named inline-size container controls collection columns independently of the
@@ -232,6 +274,10 @@ viewport.
 
 Ownership rules:
 
+- **`?work=none` is explicit No Work, not a Work ID.** Context navigation
+  serializes resolved null authority this way; only an omitted `work` may inherit
+  the selected Chat Work. Explicit No Work is ready without a Work catalog and
+  may mount Context viewers. It never creates a sentinel/default Work.
 - **`?screen=` wins; a bare `?thread=` (no screen) implies `chat`.** The
   Context/KB, extensions, and home screens are therefore reachable *with threads
   present* — a thread no longer forces the chat screen.
@@ -389,6 +435,13 @@ as another card. Search
 fields, headings, and state copy add their own local gutters. This keeps
 selected, hover, and focus boundaries edge-attached across menus, selects,
 pickers, composer navigation, and the thread switcher.
+
+Shared Radix dropdown and context-menu content must cancel non-primary
+`pointerup` during capture. Radix otherwise selects the row underneath the
+release that summoned a context menu, even though that row never received the
+press; a right-click can therefore run Open, Copy, or another first-row action
+while the writer is only asking to inspect. Keep the guard in the shared
+`components/ui/` wrappers rather than repeating it at feature call sites.
 
 ### Typography
 

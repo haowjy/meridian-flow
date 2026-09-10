@@ -39,6 +39,7 @@ import {
   type LinkMenuRequest,
   type LinkSurface,
   linkMenuRange,
+  linkTargetLabel,
   openLinkForm,
   removeLinkAt,
   selectionCoversLink,
@@ -46,6 +47,7 @@ import {
 import {
   EditorMenu,
   EditorMenuItem,
+  EditorMenuLabel,
   EditorMenuSeparator,
   EditorMenuShortcut,
   shortcutLabel,
@@ -57,6 +59,7 @@ import {
 } from "@/features/editor/clipboard";
 
 import { ClipboardMenuItems } from "../formatting";
+import { useLinkResolution } from "./useLinkResolution";
 
 export function LinkMenu({
   editor,
@@ -68,6 +71,13 @@ export function LinkMenu({
   menu: LinkMenuRequest;
 }) {
   const close = () => surface.closeMenu();
+  const resolution = useLinkResolution(editor, menu.href);
+  const label =
+    resolution?.state === "resolved"
+      ? resolution.document.title
+      : menu.target
+        ? linkTargetLabel(menu.target)
+        : menu.href;
   const followable = canFollowLink(menu.target, surface.navigator);
   // A refusal is remembered for as long as this menu is open: the row greys
   // where the writer pressed it, in the same words the clipboard block below
@@ -89,6 +99,15 @@ export function LinkMenu({
         if (!next) close();
       }}
     >
+      <EditorMenuLabel>{label}</EditorMenuLabel>
+      {resolution?.state === "resolved" ? (
+        <EditorMenuLabel className="font-normal text-muted-foreground">
+          {resolution.document.path}
+        </EditorMenuLabel>
+      ) : null}
+      {resolution?.state === "unresolved" ? (
+        <EditorMenuLabel>{t`No document with this name yet`}</EditorMenuLabel>
+      ) : null}
       {followable ? (
         <EditorMenuItem
           onSelect={() => {

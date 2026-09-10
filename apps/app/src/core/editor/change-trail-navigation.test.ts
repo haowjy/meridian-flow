@@ -25,36 +25,49 @@ function deletionChange(doc: Y.Doc): TrailChange {
   };
 }
 
-function registryFor(doc: Y.Doc, status: "synced" | "syncing", markerIds: readonly string[] = []) {
+function bindingFor(doc: Y.Doc, status: "synced" | "syncing", markerIds: readonly string[] = []) {
   const events: string[] = [];
   return {
     events,
-    registry: {
-      retain: () => events.push("retain"),
-      release: () => events.push("release"),
-      get: () => ({
-        document: doc,
-        markerStore: {
-          getSnapshot: () => markerIds.map((changeId) => ({ changeId, dismissed: false })),
+    openDocument: async () => ({
+      kind: "opened" as const,
+      document: {} as never,
+      admission: {
+        projectId: "project-1",
+        documentId: "doc-1",
+        generation: "1",
+        bind: async () => {
+          events.push("retain");
+          return {
+            projectId: "project-1",
+            documentId: "doc-1",
+            generation: "1",
+            session: {
+              document: doc,
+              markerStore: {
+                getSnapshot: () => markerIds.map((changeId) => ({ changeId, dismissed: false })),
+              },
+              waitForCurrentSync: async () => events.push("sync"),
+              getSnapshot: () => ({ status }),
+            } as never,
+            release: () => events.push("release"),
+          };
         },
-        waitForCurrentSync: async () => events.push("sync"),
-        getSnapshot: () => ({ status }),
-      }),
-    },
+      },
+    }),
   };
 }
 
 describe("change trail navigation", () => {
   it("retains the session through sync and releases after editor handoff", async () => {
     const doc = new Y.Doc({ gc: false });
-    const { registry, events } = registryFor(doc, "synced");
+    const { openDocument, events } = bindingFor(doc, "synced");
     const showRange = vi.fn(() => ({ shown: true }));
     await expect(
       navigateToTrailChange({
         documentId: "doc-1",
         change: deletionChange(doc),
-        openDocument: async () => true,
-        registry: registry as never,
+        openDocument,
         showRange,
       }),
     ).resolves.toEqual({ kind: "shown" });
@@ -64,7 +77,7 @@ describe("change trail navigation", () => {
 
   it("reveals an existing session mark instead of adding a generic range", async () => {
     const doc = new Y.Doc({ gc: false });
-    const { registry } = registryFor(doc, "synced", ["change-1"]);
+    const { openDocument } = bindingFor(doc, "synced", ["change-1"]);
     const showMarker = vi.fn(() => ({ shown: true }));
     const showRange = vi.fn(() => ({ shown: true }));
 
@@ -72,8 +85,7 @@ describe("change trail navigation", () => {
       navigateToTrailChange({
         documentId: "doc-1",
         change: deletionChange(doc),
-        openDocument: async () => true,
-        registry: registry as never,
+        openDocument,
         showMarker,
         showRange,
       }),
@@ -84,13 +96,12 @@ describe("change trail navigation", () => {
 
   it("reports a sync timeout honestly and still releases", async () => {
     const doc = new Y.Doc({ gc: false });
-    const { registry, events } = registryFor(doc, "syncing");
+    const { openDocument, events } = bindingFor(doc, "syncing");
     await expect(
       navigateToTrailChange({
         documentId: "doc-1",
         change: deletionChange(doc),
-        openDocument: async () => true,
-        registry: registry as never,
+        openDocument,
       }),
     ).resolves.toEqual({ kind: "could_not_open" });
     expect(events).toEqual(["retain", "sync", "release"]);
@@ -110,14 +121,13 @@ describe("change trail navigation", () => {
         targetBlockId: { ...getBlockItemId(root.get(0) as Y.XmlElement), clock: 999 },
       },
     };
-    const { registry } = registryFor(doc, "synced");
+    const { openDocument } = bindingFor(doc, "synced");
     const showRange = vi.fn(() => ({ shown: true }));
     await expect(
       navigateToTrailChange({
         documentId: "doc-1",
         change,
-        openDocument: async () => true,
-        registry: registry as never,
+        openDocument,
         showRange,
       }),
     ).resolves.toEqual({ kind: "unavailable" });
@@ -139,7 +149,7 @@ describe("change trail navigation", () => {
         targetBlockId: getBlockItemId(block),
       },
     };
-    const { registry } = registryFor(doc, "synced");
+    const { openDocument } = bindingFor(doc, "synced");
     const showRange = vi.fn(() => {
       root.delete(0, 1);
       return { shown: false };
@@ -149,8 +159,7 @@ describe("change trail navigation", () => {
       navigateToTrailChange({
         documentId: "doc-1",
         change,
-        openDocument: async () => true,
-        registry: registry as never,
+        openDocument,
         showRange,
         timeoutMs: 100,
       }),
@@ -160,7 +169,7 @@ describe("change trail navigation", () => {
 
   it("cancellation releases retention and prevents a later highlight", async () => {
     const doc = new Y.Doc({ gc: false });
-    const { registry, events } = registryFor(doc, "synced");
+    const { openDocument, events } = bindingFor(doc, "synced");
     const controller = new AbortController();
     const showRange = vi.fn(() => {
       controller.abort();
@@ -171,8 +180,7 @@ describe("change trail navigation", () => {
       navigateToTrailChange({
         documentId: "doc-1",
         change: deletionChange(doc),
-        openDocument: async () => true,
-        registry: registry as never,
+        openDocument,
         showRange,
         signal: controller.signal,
       }),
@@ -187,16 +195,29 @@ describe("change trail navigation", () => {
     const navigation = navigateToTrailChange({
       documentId: "doc-1",
       change: deletionChange(doc),
-      openDocument: async () => true,
-      registry: {
-        retain: () => events.push("retain"),
-        release: () => events.push("release"),
-        get: () => ({
-          document: doc,
-          waitForCurrentSync: () => new Promise<void>(() => undefined),
-          getSnapshot: () => ({ status: "syncing" }),
-        }),
-      } as never,
+      openDocument: async () => ({
+        kind: "opened",
+        document: {} as never,
+        admission: {
+          projectId: "project-1",
+          documentId: "doc-1",
+          generation: "1",
+          bind: async () => {
+            events.push("retain");
+            return {
+              projectId: "project-1",
+              documentId: "doc-1",
+              generation: "1",
+              session: {
+                document: doc,
+                waitForCurrentSync: () => new Promise<void>(() => undefined),
+                getSnapshot: () => ({ status: "syncing" }),
+              } as never,
+              release: () => events.push("release"),
+            };
+          },
+        },
+      }),
       signal: controller.signal,
     });
     await vi.waitFor(() => expect(events).toEqual(["retain"]));

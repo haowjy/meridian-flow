@@ -1,33 +1,37 @@
-/** Wire-boundary coverage for draft review responses. */
+/** Runtime contract proofs for draft HTTP acknowledgements. */
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { getDraftPreview } from "./drafts-api";
+const { postJsonMock } = vi.hoisted(() => ({ postJsonMock: vi.fn() }));
 
-afterEach(() => vi.unstubAllGlobals());
+vi.mock("./http-client", () => ({
+  getJson: vi.fn(),
+  postJson: postJsonMock,
+}));
 
-describe("draft preview response", () => {
-  it("rejects an active response without its review room", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        Promise.resolve(
-          Response.json({
-            status: "active",
-            draftId: "branch_test-draft",
-            live: "Live text",
-            preview: "Draft text",
-            liveRevisionToken: 1,
-            draftRevisionToken: 2,
-            inlineModelPresent: true,
-            operations: [],
-            hunks: [],
-          }),
-        ),
-      ),
+const { applyDraft } = await import("./drafts-api");
+const request = { draftId: "draft-1" } as const;
+
+describe("applyDraft", () => {
+  beforeEach(() => postJsonMock.mockReset());
+
+  it.each([
+    ["non-object JSON", null],
+    ["empty object", {}],
+    ["missing draft ID", { status: "applied" }],
+    ["non-applied discriminator", { status: "not-applied", draftId: "draft-1" }],
+    ["wrong draft ID", { status: "applied", draftId: "draft-2" }],
+  ])("rejects %s as an outcome-unknown Apply acknowledgement", async (_name, response) => {
+    postJsonMock.mockResolvedValue(response);
+    await expect(applyDraft("project-1", "work-1", "doc-1", request)).rejects.toThrow(
+      "did not prove",
     );
+    expect(postJsonMock).toHaveBeenCalledOnce();
+  });
 
-    await expect(
-      getDraftPreview("project-1", "work-1", "document-1", "branch_test-draft"),
-    ).rejects.toThrow("Draft preview response is missing reviewRoomName");
+  it("accepts the exact authoritative Apply acknowledgement", async () => {
+    const response = { status: "applied", draftId: "draft-1" };
+    postJsonMock.mockResolvedValue(response);
+    await expect(applyDraft("project-1", "work-1", "doc-1", request)).resolves.toEqual(response);
+    expect(postJsonMock).toHaveBeenCalledOnce();
   });
 });

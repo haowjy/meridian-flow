@@ -153,3 +153,16 @@ describe("Copy link address", () => {
     expect(row("Copy link address").getAttribute("aria-disabled")).toBe("true");
   });
 });
+
+it("does not activate the row under a released context-click", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  stubClipboard({ writeText });
+  const { closeMenu } = openMenu();
+  await act(async () =>
+    row("Copy link address").dispatchEvent(
+      new MouseEvent("pointerup", { button: 2, bubbles: true, cancelable: true }),
+    ),
+  );
+  expect(writeText).not.toHaveBeenCalled();
+  expect(closeMenu).not.toHaveBeenCalled();
+});

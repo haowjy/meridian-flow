@@ -44,7 +44,7 @@ export function getBlockItemId(block: Y.XmlElement | BlockRef): BlockItemId {
   return { clientID: item.id.client, clock: item.id.clock };
 }
 
-/** Stable block hash, unique among currently live sibling blocks. */
+/** Display prefix derived from item identity, unique among current live siblings. */
 export function getBlockHash(block: Y.XmlElement | BlockRef): string {
   const siblings = siblingBlocks(block);
   const element = block as unknown as Y.XmlElement;

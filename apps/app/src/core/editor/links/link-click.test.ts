@@ -317,3 +317,26 @@ describe("a followed click while a collaborator writes", () => {
     expect(local.state.selection.from).toBe(local.state.doc.content.size - 1);
   });
 });
+
+describe("focused manuscript links", () => {
+  it("Enter follows the focused link, while Shift+F10 inspects it", () => {
+    const target = editorWith('<p><a href="[[Gate]]">gate</a></p>');
+    document.body.append(target.view.dom);
+    const navigate = vi.fn();
+    const surface = getLinkSurface(target);
+    surface?.registerNavigator(navigate);
+    const anchor = anchorOf(target);
+    anchor.focus();
+    anchor.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+    );
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(surface?.state.menu).toBeNull();
+    anchor.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true, cancelable: true }),
+    );
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(surface?.state.menu?.href).toBe("[[Gate]]");
+    target.view.dom.remove();
+  });
+});

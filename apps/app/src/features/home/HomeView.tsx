@@ -32,9 +32,13 @@ export function HomeView() {
           variant="hero"
           autoFocus
           placeholder={t`Start writing…`}
-          onSubmit={(text) => {
-            handleSubmit(text, selectedAgentSlug);
-            return true;
+          onSubmit={(envelope) => {
+            handleSubmit(envelope.text, selectedAgentSlug);
+            return {
+              kind: "accepted",
+              submissionId: envelope.submissionId,
+              acceptedRevision: envelope.acceptedRevision,
+            };
           }}
           toolbarLeft={
             <AgentOnlyComposerToolbar

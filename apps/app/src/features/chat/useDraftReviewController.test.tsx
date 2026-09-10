@@ -1,13 +1,23 @@
 /** Focused disposition coverage for the shared draft review controller. */
 import { act, useEffect } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const applyDraftMetadataMock = vi.fn();
+let acknowledgementAvailable = true;
+let trackedHost = false;
+let acknowledgementPromise: Promise<{ kind: "acknowledged" }> | null = null;
+const acknowledgeLiveBindingMock = vi.fn(async () => {
+  if (acknowledgementPromise) return acknowledgementPromise;
+  return acknowledgementAvailable
+    ? { kind: "acknowledged" as const }
+    : { kind: "unusable" as const };
+});
 const discardDraftTabMock = vi.fn(async () => ({ kind: "noop" as const }));
 const wholeDraftResponse: unknown = null;
 let wholeDraftResponses: unknown[] = [];
-let applyPromise: Promise<{ status: "applied"; draftId: string }> | null = null;
+let reopenAvailable = true;
+let applyPromise: Promise<{ kind: "live-ready" }> | null = null;
 const draftPreview = {
   status: "active",
   draftId: "draft-1",
@@ -28,7 +38,7 @@ const applyMutateMock = vi.fn(async (_input: unknown) => {
       ? wholeDraftResponses.shift()
       : wholeDraftResponse
         ? wholeDraftResponse
-        : { status: "applied" as const, draftId: "draft-1" };
+        : { kind: "live-ready" as const };
   if (response instanceof Error) throw response;
   return response;
 });
@@ -47,10 +57,39 @@ vi.mock("@/client/api/drafts-api", () => ({
   getDraftPreview: (_projectId: string, _workId: string, _documentId: string, draftId: string) =>
     Promise.resolve(draftPreviews.get(draftId) ?? draftPreview),
 }));
-vi.mock("@/features/project/context/ContextRemovalAccountProvider", () => ({
+vi.mock("@/features/project/context/account-feature-context", () => ({
   useContextRemovalCoordinator: () => ({
     applyDraftMetadata: applyDraftMetadataMock,
     discardDraft: discardDraftTabMock,
+  }),
+  useProjectDocumentLiveOpener: () => ({
+    open: async ({ documentId }: { documentId: string }) =>
+      reopenAvailable
+        ? {
+            kind: "opened",
+            admission: {
+              bind: async () => ({
+                documentId,
+                session: {
+                  waitForCurrentSync: async () => undefined,
+                  getSnapshot: () => ({ status: "synced", schemaFence: null }),
+                },
+                release: vi.fn(),
+              }),
+            },
+          }
+        : { kind: "unavailable" },
+  }),
+}));
+vi.mock("@/features/project/dock/editor-review-handoff", () => ({
+  useAcknowledgeLiveBinding: () => acknowledgeLiveBindingMock,
+}));
+vi.mock("@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider", () => ({
+  usePostApplyAccountId: () => "account-1",
+}));
+vi.mock("@/features/project/draft-apply-recovery/ProjectDraftApplyRecoveryExecutor", () => ({
+  useProjectDraftApplyRecovery: () => ({
+    awaitInitialOutcome: async () => ({ kind: "live-ready" }),
   }),
 }));
 vi.mock("@/client/query/useDraftReviewMutations", () => ({
@@ -58,14 +97,29 @@ vi.mock("@/client/query/useDraftReviewMutations", () => ({
   useDiscardDraft: () => ({ mutateAsync: discardMutateMock }),
 }));
 vi.mock("@/client/stores", () => ({
+  getContextTabs: () =>
+    trackedHost
+      ? { tabs: [{ kind: "tracked", documentId: "document-1" }], selectedTabIdByWork: {} }
+      : { tabs: [], selectedTabIdByWork: {} },
   useContextTabsStore: {
-    getState: () => ({}),
+    getState: () => ({
+      byProject: trackedHost
+        ? { "project-1": { tabs: [{ kind: "tracked", documentId: "document-1" }] } }
+        : {},
+    }),
   },
 }));
 
 const { useDraftReviewController } = await import("./useDraftReviewController");
 
 describe("useDraftReviewController", () => {
+  beforeEach(() => {
+    reopenAvailable = true;
+    acknowledgementAvailable = true;
+    acknowledgementPromise = null;
+    trackedHost = false;
+    applyDraftMetadataMock.mockClear();
+  });
   it("applies by product draft identity without rendered operation cards", async () => {
     let controller: ReturnType<typeof useDraftReviewController> | null = null;
     applyMutateMock.mockClear();
@@ -92,7 +146,7 @@ describe("useDraftReviewController", () => {
       expect(applyMutateMock).not.toHaveBeenCalledWith(
         expect.objectContaining({ operationIds: expect.anything() }),
       );
-      expect(applyDraftMetadataMock).toHaveBeenCalledWith("project-1", "work-1", "document-1");
+      expect(applyDraftMetadataMock).not.toHaveBeenCalled();
     });
   });
 
@@ -300,7 +354,7 @@ describe("useDraftReviewController", () => {
         controller?.inlineReviewModelAvailable("draft-1:0:1", "document-1", "draft-1");
       });
 
-      let resolveApply!: (response: { status: "applied"; draftId: string }) => void;
+      let resolveApply!: (response: { kind: "live-ready" }) => void;
       applyPromise = new Promise((resolve) => {
         resolveApply = resolve;
       });
@@ -319,7 +373,7 @@ describe("useDraftReviewController", () => {
       expect(discardMutateMock).not.toHaveBeenCalled();
 
       await act(async () => {
-        resolveApply({ status: "applied", draftId: "draft-1" });
+        resolveApply({ kind: "live-ready" });
         await wholeApply;
       });
       applyPromise = null;

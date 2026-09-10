@@ -10,7 +10,7 @@ const ordinary = Array.from(
   (_, index): ProjectChatItem => ({
     id: `ordinary-${index + 1}`,
     title: `Recent Chapter ${index + 1}`,
-    work: { id: `work-${index + 1}`, title: index % 2 ? "Arc Two" : "Book 1" },
+    work: { id: `work-${index + 1}`, title: index % 2 ? "Arc Two" : "Arc One" },
     lastMessagePreview: "A normal preview remains readable beside its activity date.",
     lastActivityAt: "2026-08-24T12:00:00.000Z",
     actionRequired: false,

@@ -1,5 +1,5 @@
 /**
- * Type-based auto-promotion policy for generated artifacts → `scratch://<workId>/results/…`.
+ * Type-based auto-promotion policy for generated artifacts into canonical Scratch results.
  * Single table — extend here when new pilot output types land.
  */
 

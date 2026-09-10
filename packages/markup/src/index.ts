@@ -18,6 +18,8 @@ export {
   stringifyBlock,
 } from "./helpers.js";
 export { markdown, markdownCodec } from "./markdown/index.js";
+export { remarkWikiLink } from "./markdown/wikilink.js";
+export { formatWikilink, wikilinkTarget } from "./markdown/wikilink-target.js";
 export { mdx, mdxCodec } from "./mdx/index.js";
 export type {
   AssetPathResolver,

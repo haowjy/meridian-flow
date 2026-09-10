@@ -61,9 +61,10 @@ export async function persistAndAppendTurnStartEvents<T>(
   threadId: ThreadId,
   expectedActiveLeafTurnId: import("@meridian/contracts/runtime").TurnId | null,
   operation: () => Promise<{ result: T; events: OrchestratorEvent[] }>,
+  options?: { afterEvents?: (result: T) => Promise<void> },
 ): Promise<{ result: T; events: OrchestratorEvent[] }> {
   return deps.repos.runTurnStartTransition(threadId, expectedActiveLeafTurnId, () =>
-    projectAndAppendEvents(deps, threadId, operation),
+    projectAndAppendEvents(deps, threadId, operation, options),
   );
 }
 

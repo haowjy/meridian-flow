@@ -10,6 +10,7 @@ function expectBadRequest(run: () => unknown): void {
 function dependencies(input?: {
   work?: { id: string; projectId: string } | null;
   threadProjectId?: string | null;
+  availabilityKind?: "available" | "not-visible";
 }): WorkingSetRouteDeps {
   return {
     projectRepo: {
@@ -23,6 +24,25 @@ function dependencies(input?: {
     works: { findById: vi.fn().mockResolvedValue(input?.work ?? null) },
     threads: {
       findProjectIdByIdIncludingDeleted: vi.fn().mockResolvedValue(input?.threadProjectId ?? null),
+    },
+    projectContextAvailability: {
+      lookup: vi.fn().mockImplementation(({ projectId, documentIds }) =>
+        Promise.resolve({
+          projectId,
+          resolutionId: "lookup-1",
+          resolutions: documentIds.map((documentId: string) =>
+            input?.availabilityKind === "available"
+              ? {
+                  kind: "available",
+                  documentId,
+                  generation: "1",
+                  authority: { kind: "project", projectId },
+                  entry: {},
+                }
+              : { kind: "not-visible", documentId, checkedGeneration: "1" },
+          ),
+        }),
+      ),
     },
   } as unknown as WorkingSetRouteDeps;
 }
@@ -64,13 +84,71 @@ describe("working-set route core", () => {
     );
   });
 
+  it("rejects locator-only routes and validates stable identities through project availability", async () => {
+    expectBadRequest(() =>
+      parsePutWorkingSetRequest({
+        recentRoutes: [{ scheme: "kb", path: "/a" }],
+        lastThreadId: null,
+      }),
+    );
+    const documentId = "00000000-0000-0000-0000-000000000001";
+    const body = parsePutWorkingSetRequest({
+      recentRoutes: [{ documentId, scheme: "kb", path: "/a" }],
+      lastThreadId: null,
+    });
+    const unavailable = dependencies();
+    await expect(
+      handlePutWorkingSetRequest(unavailable, {
+        userId: "user-1",
+        projectId: "project-1",
+        body,
+      }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(unavailable.projectContextAvailability.lookup).toHaveBeenCalledWith(
+      { projectId: "project-1", documentIds: [documentId] },
+      { userId: "user-1" },
+    );
+
+    await expect(
+      handlePutWorkingSetRequest(dependencies({ availabilityKind: "available" }), {
+        userId: "user-1",
+        projectId: "project-1",
+        body,
+      }),
+    ).resolves.toEqual({ revision: 1 });
+  });
+
+  it("accepts explicit no-Work authority without consulting the Work repository", async () => {
+    const documentId = "00000000-0000-0000-0000-000000000001";
+    const deps = dependencies({ availabilityKind: "available" });
+    const body = parsePutWorkingSetRequest({
+      recentRoutes: [{ documentId, scheme: "scratch", path: "/notes.md", workId: null }],
+      lastThreadId: null,
+    });
+    await expect(
+      handlePutWorkingSetRequest(deps, {
+        userId: "user-1",
+        projectId: "project-1",
+        body,
+      }),
+    ).resolves.toEqual({ revision: 1 });
+    expect(deps.works.findById).not.toHaveBeenCalled();
+  });
+
   it("rejects work and thread references outside the project", async () => {
     await expect(
       handlePutWorkingSetRequest(dependencies({ work: { id: "work-2", projectId: "project-2" } }), {
         userId: "user-1",
         projectId: "project-1",
         body: {
-          recentRoutes: [{ scheme: "scratch", path: "/a", workId: "work-2" }],
+          recentRoutes: [
+            {
+              documentId: "00000000-0000-0000-0000-000000000001",
+              scheme: "scratch",
+              path: "/a",
+              workId: "work-2",
+            },
+          ],
           lastThreadId: null,
         },
       }),

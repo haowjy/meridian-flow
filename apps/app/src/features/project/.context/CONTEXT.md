@@ -50,7 +50,7 @@ are desktop shell grammar.
 Work is the dedicated collection/detail management destination. The collection reads
 active and archived Work and owns creation and lifecycle entry points; it never selects
 a project-wide Work or rebinds a chat. Its response contains only catalog Works and
-never resolves, repairs, or exposes the internal new-chat fallback. Route-owned detail and inline metadata consume
+never resolves or invents a Work for no-Work chats. Route-owned detail and inline metadata consume
 the typed catalog, PATCH mutation, and associated-chat query seams.
 Work detail owns one page-scoped metadata controller. It coordinates the active field,
 authoritative returned Work, field-local failure, and an awaited Save/Discard/Keep

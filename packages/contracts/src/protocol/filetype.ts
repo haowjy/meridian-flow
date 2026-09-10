@@ -42,7 +42,10 @@ export type Filetype =
   | "pdf"
   | "png"
   | "jpg"
-  | "svg";
+  | "svg"
+  | "docx"
+  | "image"
+  | "binary";
 
 export type FiletypeDisposition =
   | { kind: "tracked"; schemaType: YjsTrackedSchemaType }
@@ -70,6 +73,9 @@ const FILETYPE_DISPOSITIONS = {
   png: { kind: "binary", fileType: "image" },
   jpg: { kind: "binary", fileType: "image" },
   svg: { kind: "binary", fileType: "image" },
+  docx: { kind: "binary", fileType: "docx" },
+  image: { kind: "binary", fileType: "image" },
+  binary: { kind: "binary", fileType: "binary" },
 } as const satisfies Record<Filetype, FiletypeDisposition>;
 
 const dispositionsByPersistedValue: Readonly<Record<string, FiletypeDisposition | undefined>> =

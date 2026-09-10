@@ -25,9 +25,12 @@ row component; Work identity inside every list row is display-only.
 `agent_not_found` server refusals unlock creation-context repair. Ambiguous
 attempts retain their stable ID, text, Work, and Agent until same-ID
 reconciliation succeeds. A mismatch is never staged or opened; **Start over**
-retires it so the next submission allocates a fresh ID. The thread store begins
-its distinct destination handoff lifecycle only after a matching canonical
-thread has been prepared; it does not model Home creation.
+retires it so the next submission allocates a fresh ID. An empty Work catalog
+is valid No Work, and the writer may switch explicitly between No Work and a
+real Work. After a matching canonical thread is prepared, Home stages the
+complete immutable Composer envelope plus the latest full draft snapshot in
+account-scoped IndexedDB before navigation. Destination Chat owns admission
+claim and settlement; the thread store does not model first-send continuity.
 
 ## Row layout and feed behavior
 

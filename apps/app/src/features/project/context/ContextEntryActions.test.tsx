@@ -17,7 +17,7 @@ it("opens on right click and dispatches the selected action after the menu close
   const onAction = vi.fn();
 
   await withReactRoot(
-    <ContextEntryMenu allowCreate onAction={onAction}>
+    <ContextEntryMenu allowCreate allowDelete onAction={onAction}>
       <button type="button">Chapter one</button>
     </ContextEntryMenu>,
     async () => {
@@ -39,9 +39,28 @@ it("opens on right click and dispatches the selected action after the menu close
         rename?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
       });
 
-      expect(document.querySelector('[role="menu"]')).toBeNull();
-      expect(onAction).toHaveBeenCalledOnce();
+      await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).toBeNull());
+      await vi.waitFor(() => expect(onAction).toHaveBeenCalledOnce());
       expect(onAction).toHaveBeenCalledWith("rename");
+    },
+  );
+});
+
+it("exposes no generic delete action when the source owns deletion", async () => {
+  await withReactRoot(
+    <ContextEntryMenu allowCreate={false} allowDelete={false} onAction={vi.fn()}>
+      <button type="button">Upload</button>
+    </ContextEntryMenu>,
+    async () => {
+      const trigger = document.querySelector("button");
+      await act(async () => {
+        trigger?.dispatchEvent(new window.MouseEvent("contextmenu", { bubbles: true }));
+      });
+
+      const labels = [...document.querySelectorAll('[role="menuitem"]')].map(
+        (item) => item.textContent,
+      );
+      expect(labels).toEqual(["Rename"]);
     },
   );
 });

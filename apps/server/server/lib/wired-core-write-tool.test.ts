@@ -9,15 +9,59 @@ import {
   createContextPortRouter,
 } from "../domains/context/index.js";
 import { createInMemoryEventSink } from "../domains/observability/index.js";
-import { createInMemoryWorkRepository } from "../domains/projects/index.js";
+import {
+  createInMemoryWorkRepository,
+  resolvedWorkAuthority,
+  type WorkRepository,
+} from "../domains/projects/index.js";
 import type { ToolHandlerContext } from "../domains/runtime/index.js";
 import { Ok } from "../shared/result.js";
 import {
   createAgentEditResponseWriteLifecycle,
+  createReferenceReader,
   createWiredCoreToolRegistrations,
+  type ToolWiringDeps,
 } from "./wired-core-tools.js";
 
 type TestWriteHandler = (input: unknown, ctx: ToolHandlerContext) => Promise<unknown>;
+function workAuthorityResolver(works: WorkRepository) {
+  const resolve = async (
+    projectId: Parameters<WorkRepository["listByProject"]>[0],
+    workId: string,
+  ) => {
+    const work = await works.findById(workId);
+    return work && work.projectId === projectId
+      ? resolvedWorkAuthority({ kind: "work", workId: work.id, workSlug: work.slug })
+      : null;
+  };
+  return {
+    byId: resolve,
+    async bySlug(
+      projectId: Parameters<WorkRepository["listByProject"]>[0],
+      workSlug: import("@meridian/contracts/works").WorkSlug,
+    ) {
+      const work = (await works.listByProject(projectId)).find(
+        (candidate) => candidate.slug === workSlug,
+      );
+      return work
+        ? resolvedWorkAuthority({ kind: "work", workId: work.id, workSlug: work.slug })
+        : null;
+    },
+    lockById: resolve,
+  };
+}
+
+const noWorkAuthorityResolver = {
+  async byId() {
+    return null;
+  },
+  async bySlug() {
+    return null;
+  },
+  async lockById() {
+    return null;
+  },
+};
 function noopResponseFinalizer() {
   return {
     finalizeResponseCommit: async () => ({
@@ -49,7 +93,11 @@ describe("wired write tool", () => {
         }
         const deletedDocumentId = occupant;
         occupant = null;
-        return Ok({ status: "deleted" as const, deletedDocumentIds: [deletedDocumentId] });
+        return Ok({
+          status: "deleted" as const,
+          deletedDocumentIds: [deletedDocumentId],
+          availabilityGeneration: "17",
+        });
       }),
     } satisfies ContextPort;
     const lifecycle = createAgentEditResponseWriteLifecycle({
@@ -85,7 +133,10 @@ describe("wired write tool", () => {
       stat: async () => Ok(null),
       ensureTrackedDocument,
     } as unknown as ContextSchemeAdapter;
-    const port = createContextPortRouter({ adapters: new Map([["scratch", adapter]]) });
+    const port = createContextPortRouter({
+      adapters: new Map([["scratch", adapter]]),
+      workAuthorities: new Map(),
+    });
     const write = wiredWriteHandler({
       documentId: "00000000-0000-4000-8000-000000000031",
       filePath: "scratch://notes/@evil.md",
@@ -134,7 +185,7 @@ describe("wired write tool", () => {
         if (uri.endsWith("/missing.md")) {
           return {
             ok: false as const,
-            error: { code: "not_found" as const, uri: `scratch://${targetId}/missing.md` },
+            error: { code: "not_found" as const, uri: "scratch://@target/missing.md" },
           };
         }
         return {
@@ -153,7 +204,7 @@ describe("wired write tool", () => {
         value: [
           {
             kind: "file" as const,
-            uri: `scratch://${targetId}/notes.md`,
+            uri: "scratch://@target/notes.md",
             documentId,
             editable: true as const,
             readonly: false,
@@ -166,7 +217,7 @@ describe("wired write tool", () => {
         ok: true as const,
         value: [
           {
-            uri: `scratch://${targetId}/notes.md`,
+            uri: "scratch://@target/notes.md",
             matches: [],
             matchCount: 1,
           },
@@ -181,6 +232,7 @@ describe("wired write tool", () => {
         rebindPrimary: async () => ({ previousWorkId: currentId, changed: false }),
       },
       works,
+      workAuthorityResolver: workAuthorityResolver(works),
       workContextDelivery: {
         projectChanged: async () => {},
       },
@@ -265,10 +317,9 @@ describe("wired write tool", () => {
     await expect(write({ command: "diff" }, ctx)).resolves.toMatchObject({
       isError: true,
       output: {
-        schema: "meridian.agent-edit.v1",
-        command: "diff",
-        status: "invalid_write",
-        message: "Turn diff queries are not available in this host.",
+        code: "work_required",
+        message: "Work required for write.diff",
+        details: { operation: "write.diff" },
       },
     });
   });
@@ -399,14 +450,27 @@ function wiredWriteHandler(input: {
   core: AgentEditCore;
   port?: ContextPort;
 }) {
+  const [writeRegistration] = createWiredCoreToolRegistrations(wiredDeps(input));
+  if (writeRegistration?.definition.name !== "write") throw new Error("missing write");
+  if (writeRegistration.execution.type !== "server") throw new Error("missing handler");
+  return writeRegistration.execution.handler as TestWriteHandler;
+}
+
+function wiredDeps(input: {
+  documentId: string;
+  filePath: string;
+  core: AgentEditCore;
+  port?: ContextPort;
+}): ToolWiringDeps {
   const port = input.port ?? contextPortFor(input.documentId, input.filePath);
-  const [writeRegistration] = createWiredCoreToolRegistrations({
+  return {
     threads: { findById: async () => thread() } as never,
     threadWorks: {
       findPrimary: async () => null,
       rebindPrimary: async () => ({ previousWorkId: null, changed: true }),
     },
     works: { listByProject: async () => [] } as never,
+    workAuthorityResolver: noWorkAuthorityResolver,
     workContextDelivery: {
       projectChanged: async () => {},
     },
@@ -421,12 +485,7 @@ function wiredWriteHandler(input: {
     responseWrites: { trackStagedCreate: () => {} },
     eventSink: createInMemoryEventSink(),
     transaction: async (operation) => operation(),
-  });
-  if (writeRegistration?.definition.name !== "write") {
-    throw new Error("missing wired write registration");
-  }
-  if (writeRegistration.execution.type !== "server") throw new Error("write must be server-backed");
-  return writeRegistration.execution.handler as TestWriteHandler;
+  };
 }
 
 function contextPortFor(documentId: string, filePath: string): ContextPort {
@@ -455,7 +514,7 @@ function contextPortFor(documentId: string, filePath: string): ContextPort {
     }),
     delete: async () => ({
       ok: true,
-      value: { status: "deleted", deletedDocumentIds: [documentId] },
+      value: { status: "deleted", deletedDocumentIds: [documentId], availabilityGeneration: "17" },
     }),
     list: async () => ({ ok: true, value: [] }),
     search: async () => ({ ok: true, value: [] }),
@@ -497,3 +556,78 @@ function thread() {
     updatedAt: new Date().toISOString(),
   };
 }
+
+describe("automatic reference reads", () => {
+  it.each([
+    "none",
+    "direct",
+    "draft",
+  ] as const)("reads the correct document world in %s mode", async (mode) => {
+    const documentId = "00000000-0000-4000-8000-000000000051";
+    const filePath = "manuscript://chapter.md";
+    const live = createWriteToolHarness({ [documentId]: "Published chapter." });
+    const draft = createWriteToolHarness({ [documentId]: "Unpublished revision." });
+    const deps = wiredDeps({ documentId, filePath, core: live.core });
+    if (mode !== "none") {
+      const works = createInMemoryWorkRepository();
+      const work = await works.create({
+        id: "00000000-0000-4000-8000-000000000052",
+        projectId: "project-a",
+        createdByUserId: "user-a",
+        name: "Revision",
+      });
+      deps.works = {
+        ...works,
+        findById: async () => ({ ...work, aiWriteMode: mode }),
+      };
+      deps.workAuthorityResolver = workAuthorityResolver(deps.works);
+      deps.threadWorks.findPrimary = async () => ({ workId: work.id });
+    }
+    deps.documentSync.agentEdit = (execution) =>
+      asThreadPeerAgentEditCore(execution?.draftOwner === null ? live.core : draft.core);
+    const result = await createReferenceReader(deps).read(
+      {
+        type: "reference",
+        documentId,
+        uri: filePath,
+        text: "[[manuscript://chapter.md]]",
+      },
+      toolContext(),
+    );
+    expect(JSON.stringify(result)).toContain(
+      mode === "draft" ? "Unpublished revision." : "Published chapter.",
+    );
+    expect(JSON.stringify(result)).not.toContain(
+      mode === "draft" ? "Published chapter." : "Unpublished revision.",
+    );
+  });
+
+  it("returns the official block-aware read result and refuses a replaced path identity", async () => {
+    const documentId = "00000000-0000-4000-8000-000000000041";
+    const filePath = "manuscript://chapter.md";
+    const harness = createWriteToolHarness({ [documentId]: "# Chapter\n\nThe original chapter." });
+    const deps = wiredDeps({ documentId, filePath, core: harness.core });
+    const reader = createReferenceReader(deps);
+    const reference = {
+      type: "reference" as const,
+      text: "[[manuscript://chapter.md]]",
+      documentId,
+      uri: filePath,
+    };
+    const ctx = toolContext();
+    const automatic = await reader.read(reference, ctx);
+    const manual = await wiredWriteHandler({ documentId, filePath, core: harness.core })(
+      { command: "read", path: filePath, format: "auto" },
+      ctx,
+    );
+    expect(automatic).toEqual((manual as { output: unknown }).output);
+    expect(JSON.stringify(automatic)).toContain("The original chapter.");
+    expect(automatic).toMatchObject({ command: "read", read: { format: "full" } });
+    const unavailable = await reader.read(
+      { ...reference, documentId: "00000000-0000-4000-8000-000000000042" },
+      ctx,
+    );
+    expect(unavailable).toMatchObject({ status: "document_not_found" });
+    expect(JSON.stringify(unavailable)).not.toContain("The original chapter.");
+  });
+});

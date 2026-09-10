@@ -73,6 +73,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
         <DraftReviewProvider
           projectId={projectId}
           workId={thread?.workId ?? null}
+          owningWorkLabel={activeWork?.name ?? null}
           threadId={threadId}
         >
           <ChatView

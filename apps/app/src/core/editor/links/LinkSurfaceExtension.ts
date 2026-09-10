@@ -201,12 +201,37 @@ export const LinkSurfaceExtension = Extension.create({
               },
             }) ?? null;
 
+          const openKeyboardMenu = () => {
+            const anchor = anchorIn(view, document.activeElement);
+            const link = anchor
+              ? linkAt(view.state, view.posAtDOM(anchor, 0) + 1)
+              : linkAtSelection(editor);
+            if (!link) return false;
+            const rect = anchor?.getBoundingClientRect();
+            surface.openMenu({
+              at: rect ? { x: rect.left, y: rect.bottom } : caretPoint(view),
+              ...menuTarget(view.state, link),
+            });
+            return true;
+          };
           const releaseKeymap = chrome?.registerKeymap({
             id: "link-surface",
             scope: "document",
             bindings: {
               "Mod-k": () => openLinkForm(editor),
               "Alt-Enter": () => followLinkAtSelection(editor),
+              Enter: () => {
+                const anchor = anchorIn(view, document.activeElement);
+                if (!anchor) return false;
+                return (
+                  followLink(
+                    { target: classifyLinkTarget(hrefOf(anchor)), disposition: "current" },
+                    surface.navigator,
+                  ) !== "unavailable"
+                );
+              },
+              ContextMenu: openKeyboardMenu,
+              "Shift-F10": openKeyboardMenu,
             },
           });
 

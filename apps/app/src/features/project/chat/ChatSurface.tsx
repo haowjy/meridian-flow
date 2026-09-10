@@ -33,6 +33,7 @@ export type ChatSurfaceProps = {
   projectId: string;
   threadId: string | null;
   activeWork: Work | null;
+  availableWorks: readonly Work[];
   /** Active screen — drives the dock view set when this surface is docked. */
   activeScreen: ScreenKey;
   onSelectThread: (threadId: string) => void;
@@ -52,6 +53,7 @@ export function ChatSurface({
   projectId,
   threadId,
   activeWork,
+  availableWorks,
   activeScreen,
   onSelectThread,
   placement,
@@ -95,6 +97,7 @@ export function ChatSurface({
             projectId={projectId}
             threadId={threadId}
             activeWork={activeWork}
+            availableWorks={availableWorks}
             onSelectThread={onSelectThread}
             onOpenContextTarget={onOpenContextTarget}
           />

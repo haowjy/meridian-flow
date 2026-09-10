@@ -10,11 +10,11 @@ import {
   reconcileContextRoutes,
 } from "@/client/working-set/driver";
 import { DeviceWorkingSetStore, WORKING_SET_STORAGE_KEY } from "@/client/working-set/store";
-import { withReactRoot } from "@/test-support/react-dom-harness";
 import {
-  ContextRemovalAccountProvider,
+  AccountFeatureTestProvider,
   useContextRemovalCoordinator,
-} from "./context/ContextRemovalAccountProvider";
+} from "@/test-support/account-feature-provider";
+import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { ContextRemovalCoordinator } from "./context/context-removal-coordinator";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
@@ -23,16 +23,17 @@ import type { ProjectSearch } from "./routing/project-route";
 import { useContextProjectAuthority } from "./use-context-project-authority";
 
 const mocks = vi.hoisted(() => ({
-  readTree: vi.fn(),
+  availability: vi.fn(),
   updateWorkingSet: vi.fn(),
   localSnapshots: [] as Array<{ projectId: string; snapshot: unknown; raw: string | null }>,
 }));
+vi.mock("@/client/query/project-context-availability", () => ({
+  lookupProjectContextAvailability: mocks.availability,
+}));
 vi.mock("@/client/api/projects-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/client/api/projects-api")>()),
-  getProjectContextTree: mocks.readTree,
   updateProjectWorkingSet: mocks.updateWorkingSet,
 }));
-
 const workingSetStorage = window.localStorage;
 configureWorkingSetSync("project-authority-bootstrap", false);
 
@@ -64,11 +65,8 @@ beforeEach(() => {
 });
 
 it("withholds live hosts through one held raw bootstrap and never restores raw authority", async () => {
-  const read = deferred<{
-    tree: { kind: "dir"; path: string; name: string; children: [] };
-    capabilities: null;
-  }>();
-  mocks.readTree.mockImplementation(() => read.promise);
+  const read = deferred<unknown>();
+  mocks.availability.mockImplementation(() => read.promise);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
@@ -97,12 +95,13 @@ it("withholds live hosts through one held raw bootstrap and never restores raw a
     </StrictMode>,
     async () => {
       expect(document.querySelector("[data-phase]")?.textContent).toBe("withheld");
-      expect(mocks.readTree).toHaveBeenCalledOnce();
+      expect(mocks.availability).toHaveBeenCalledOnce();
 
       await act(async () =>
         read.resolve({
-          tree: { kind: "dir", path: "/", name: "Knowledge Base", children: [] },
-          capabilities: null,
+          projectId: "project",
+          resolutionId: "lookup-1",
+          resolutions: [{ kind: "not-visible", documentId: "restored", checkedGeneration: "1" }],
         }),
       );
       expect(document.querySelector("[data-phase]")?.getAttribute("data-phase")).toBe("live");
@@ -115,7 +114,7 @@ it("withholds live hosts through one held raw bootstrap and never restores raw a
       expect(document.querySelector("[data-phase]")?.getAttribute("data-phase")).toBe("suspended");
       await act(async () => setWork?.({ status: "ready", workId: "work-2", source: "route" }));
       expect(document.querySelector("[data-phase]")?.getAttribute("data-phase")).toBe("live");
-      expect(mocks.readTree).toHaveBeenCalledOnce();
+      expect(mocks.availability).toHaveBeenCalledOnce();
       expect(useContextTabsStore.getState().byProject.project?.tabs).toEqual([restored]);
     },
   );
@@ -135,24 +134,8 @@ it("keeps a fulfilled bootstrap removal authoritative when the explicit live rou
     },
     _deskHydrated: true,
   });
-  const read = deferred<{
-    tree: {
-      kind: "dir";
-      path: string;
-      name: string;
-      children: Array<{
-        kind: "file";
-        path: string;
-        name: string;
-        documentId: string;
-        editable: true;
-        filetype: "markdown";
-        schemaType: "document";
-      }>;
-    };
-    capabilities: null;
-  }>();
-  mocks.readTree.mockImplementation(() => read.promise);
+  const read = deferred<unknown>();
+  mocks.availability.mockImplementation(() => read.promise);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   });
@@ -178,10 +161,10 @@ it("keeps a fulfilled bootstrap removal authoritative when the explicit live rou
   reconcileContextRoutes("project", {
     removedLocators: [],
     survivingOwnedLocators: [
-      { scheme: "kb", path: "/deleted.md" },
-      { scheme: "kb", path: "/knowledge.md" },
+      { documentId: "deleted", scheme: "kb", path: "/deleted.md" },
+      { documentId: "knowledge", scheme: "kb", path: "/knowledge.md" },
     ],
-    promote: { scheme: "kb", path: "/deleted.md" },
+    promote: { documentId: "deleted", scheme: "kb", path: "/deleted.md" },
     clearAll: false,
   });
   mocks.localSnapshots.length = 0;
@@ -239,32 +222,41 @@ it("keeps a fulfilled bootstrap removal authoritative when the explicit live rou
 
   try {
     await withReactRoot(
-      <ContextRemovalAccountProvider accountId="bootstrap-account">
+      <AccountFeatureTestProvider accountId="bootstrap-account">
         <Harness />
-      </ContextRemovalAccountProvider>,
+      </AccountFeatureTestProvider>,
       async () => {
         expect(document.querySelector("[data-phase]")?.textContent).toBe("withheld");
         expect(useContextTabsStore.getState().byProject.project?.tabs).toHaveLength(2);
 
         await act(async () =>
           read.resolve({
-            tree: {
-              kind: "dir",
-              path: "/",
-              name: "Knowledge Base",
-              children: [
-                {
+            projectId: "project",
+            resolutionId: "lookup-2",
+            resolutions: [
+              { kind: "not-visible", documentId: "deleted", checkedGeneration: "1" },
+              {
+                kind: "available",
+                documentId: "knowledge",
+                generation: "1",
+                authority: { kind: "project", projectId: "project" },
+                entry: {
                   kind: "file",
-                  path: "/knowledge.md",
+                  entryId: "knowledge",
+                  scope: { kind: "project", projectId: "project" },
+                  sourceId: "kb-source",
+                  parentId: "kb-source",
+                  aliases: [],
+                  path: ["knowledge.md"],
+                  uri: "kb://knowledge.md",
                   name: "knowledge.md",
-                  documentId: "knowledge",
                   editable: true,
                   filetype: "markdown",
                   schemaType: "document",
+                  provisionalName: false,
                 },
-              ],
-            },
-            capabilities: null,
+              },
+            ],
           }),
         );
 
@@ -277,7 +269,9 @@ it("keeps a fulfilled bootstrap removal authoritative when the explicit live rou
           selection: { status: "rejected", locator: { path: "/deleted.md" } },
           admitted: { path: "/knowledge.md" },
         });
-        expect(readRecentRoutes("project")).toEqual([{ scheme: "kb", path: "/knowledge.md" }]);
+        expect(readRecentRoutes("project")).toEqual([
+          { documentId: "knowledge", scheme: "kb", path: "/knowledge.md" },
+        ]);
         expect(search).toMatchObject({ scheme: "kb", path: "/knowledge.md" });
         const rawWorkingSet = workingSetStorage.getItem(WORKING_SET_STORAGE_KEY);
         expect(rawWorkingSet).not.toBeNull();

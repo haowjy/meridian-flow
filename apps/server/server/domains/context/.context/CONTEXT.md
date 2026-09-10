@@ -4,9 +4,27 @@ Agent-readable/writable project workspace content addressed by context URIs.
 The context-URI cleanse (A0–A3) deleted the legacy dual-port and replaced it
 with a single unified `ContextPort` that resolves durable project schemes
 (`manuscript://`, `kb://`, `user://`) and work-item-scoped schemes
-(`scratch://<workId>/…`, `uploads://<workId>/…`).
+(`scratch://@slug/…`, `uploads://@slug/…`) plus explicit no-Work `@/` authority.
 
 ## What it owns
+
+- **Authoritative metadata catalog** — one normalized catalog beside ContextFS
+  with per-scope heads, complete repeatable-read snapshots, bounded whole-commit
+  replay/reset from an explicit captured head, direct children, and ID/path
+  lookup. `ContextFS` owns result-aware single-source transactions;
+  `ContextTreeMover` owns full preflight-through-CAS tree transactions. Lazy
+  sources and Drizzle stores join those boundaries. Wake hints run only after
+  commit and cannot fail a mutation.
+  Catalog replay limits are positive safe integers at HTTP boundaries and are
+  defensively capped by the shared domain policy. Work catalog IDs pass through
+  the canonical request-ID parser before authority resolution.
+
+- **Project-final availability** — stable-ID lookup classifies current
+  project/no-Work/Work/user authority from authoritative rows and advances
+  generation heads with mutations. A deleted request project or deleted backing
+  source project returns `authority-unavailable/project_deleted`; restoring the
+  backing project makes the same identity available again. Foreign identities
+  remain indistinguishable from missing IDs.
 
 - **Unified `ContextPort`** — single port interface (`ports/context-port.ts`)
   providing `stat`/`read`/`write`/`writeBinary`/`mkdir`/`list`/`search` for all
@@ -16,13 +34,13 @@ with a single unified `ContextPort` that resolves durable project schemes
   normalize the five registered schemes: `manuscript`, `kb`, `user`, `scratch`,
   `uploads`. Bare paths default to `manuscript://`. Work-scoped schemes
 (`scratch://`, `uploads://`) carry an `@<work-slug>` wire qualifier that the
-router resolves to a stable Work ID before dispatch.
+router resolves to exact project-scoped Work authority before dispatch.
 - **Unified context port factory** (`unified-context-port-factory.ts`) — two deep
   modules: `context-source-provisioning.ts` (race-safe `context_sources`
   provisioning + lazy promise-cached resolution) and the factory composition root.
 - **ContextPort router** (`context/router.ts`) — dispatches scheme-relative paths
-  to the correct scheme adapter; converts faults into `ContextError` results with
-  the canonical URI attached. Router and tree-move boundaries share the canonical
+  to the correct scheme adapter; attaches its resolved canonical URI to successful
+  reads/writes and to `ContextError` results. Router and tree-move boundaries share the canonical
   mapper in `context/adapter-fault.ts`, including actionable invalid-operation messages.
 - **Scheme/storage ports** — `ContextPort`, `ContextSchemeAdapter`,
   `ContextDocumentStore`, and `ContextTreeMutationStore` (for `move`/`delete`
@@ -54,14 +72,19 @@ router resolves to a stable Work ID before dispatch.
   by more than one asset resolves to nothing: the id direction is unique, the
   path direction is not.
 - **Document-link resolver port** (`ports/document-link-resolver.ts`) — one
-  resolution boundary for wikilink titles/aliases, `manuscript://` and
-  `work://` locations, and paths relative to the containing document. The
-  Drizzle adapter reads authoritative document/folder state for every
-  resolution; the in-memory adapter obeys the same contract.
+  resolution boundary for wikilink titles/aliases, all five canonical Context
+  schemes, and relative paths. The domain reads the existing Context catalog
+  and resolves Work qualifiers through project Work authority; it has no separate
+  candidate loader or resolution cache. Personal scope comes from authenticated
+  route identity, never from the URI.
 - **Corpus import** — folded into `kb://imports/…` ingest (ceremony deleted;
   `corpus-import-service.ts` keeps slugging/dedupe/normalization helpers).
 - **Browse layer scheme** (`browse-layer-scheme.ts`) — HTTP browse scheme
   vocabulary, routing, and work-scope membership gating for work-scoped schemes.
+- **Result promotion** prepares exact resolved/no-Work URI identity before an
+  object put. The result repository owns same-ID terminal reconciliation;
+  compensation occurs only for `definitely_not_committed`, while unknown
+  outcomes retain bytes and emit diagnostics.
 
 ## Contracts
 
@@ -69,16 +92,17 @@ router resolves to a stable Work ID before dispatch.
 |---|---|
 | `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `edit`, `writeBinary`, `move`, `commitWriterLocation`, identity-required `delete`, `list`, `mkdir`, and `search`. No errors cross as throws. |
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
-| `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration. The tree HTTP response exposes the same object used by router enforcement. |
+| `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration owned in `ports/context-adapter.ts` and enforced by the server router and adapters. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
-| `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/`delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve exact document IDs; deleting an empty folder returns none. |
-| `DocumentLinkResolver` | `resolve({ projectId, workId?, target })` returns one canonical manuscript/Work document or `null`. A target is a discriminated `wikilink`, `scheme`, or `relative` value. |
+| `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant document ID; deleting an empty folder returns none. |
+| `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target })` returns one canonical Context document or `null`. A target is a discriminated `wikilink`, `scheme`, or `relative` value. |
 
 ## URI and router invariants
 
 - Wire context URIs are `scheme://[@slug]/path`; a scheme root is `scheme://`.
-  Canonical server results use the resolved Work ID so persisted references do
-  not rebind if a deleted Work's slug is reused.
+  Parsing validates syntax and returns `normalized`; it does not authorize a
+  Work. Stable server results use the persisted slug carried by opaque,
+  same-project resolved authority; explicit `@/` is no-Work authority.
 - Bare paths default to `manuscript://` (project-scoped).
 - Leading/trailing slashes and repeated slashes are normalized away; `.` segments
   are dropped; `..` is rejected.
@@ -86,18 +110,26 @@ router resolves to a stable Work ID before dispatch.
   The prefix is reserved for Work authority qualifiers; interior `@` characters
   remain valid.
 - Work-scoped schemes (`scratch://`, `uploads://`) accept one `@<work-slug>`
-  qualifier. Omitted authority resolves to the thread's primary Work. Every
+  qualifier. Omitted authority resolves contextually to the thread's real or absent scope; absent scope uses writable project-owned Scratch and Uploads sources. Every
   non-deleted Work in the same project is addressable regardless of thread
   membership; cross-project Works are refused. `manuscript://`,
   `kb://`, `user://` carry no work authority.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.
 - Wikilink title/alias matching is case-insensitive and trims outer whitespace.
   Scheme and relative paths are exact (an omitted final extension may match);
-  relative traversal cannot escape its scheme root. `work://` maps to the
-  selected Work's `scratch` source and serializes with its Work ID authority.
-  Zero or multiple matches both resolve to `null`; resolution never guesses.
-- Router methods attach the canonical URI to every `ContextError`.
-- `uploads://` is intake, not an authoring workspace: tracked creation, untitled
+  relative traversal cannot escape its scheme root. Wiki names search durable
+  project and authenticated personal files plus the selected Work/no-Work scope,
+  never another Work's titles. Canonical qualifiers may explicitly name another
+  available (active) Work in the project. Contextual scratch/uploads use the selected
+  scope; `@/` always means no Work. Legacy `work://` is not accepted.
+  Archived Work identity still parses/resolves as authority, but the catalog
+  excludes its files from navigation. Zero or multiple matches both resolve to
+  `null`; resolution never guesses.
+- Router methods attach the resolved canonical URI to every `ContextError` and
+  successful read/write result. Transport and collab callers publish that value;
+  they never echo syntax-only request URIs as document identity.
+- `uploads://` is intake, not an authoring workspace. F0 owns its authority,
+  provisioning, and resolution; F4 owns the actual `UploadIntake` lifecycle. Tracked creation, untitled
   allocation, directory creation, and cross-scheme move-in are rejected with an
   actionable `invalid_operation`. Same-scheme moves and flat binary upload intake
   stay available; nested intake paths are rejected because they would implicitly
@@ -196,15 +228,16 @@ router resolves to a stable Work ID before dispatch.
   its initiating `documents.id`; mismatch or CAS replacement is `stale_target`
   and acknowledges nothing. This is the same CAS boundary for HTTP deletion and
   internal exact-file cleanup; there is no path-only file-delete contract.
-  Files contribute their one committed `documents.id`; empty folders contribute
-  none. Non-empty folders remain invalid operations, and post-commit membership
-  delivery failure prevents a successful acknowledgement.
+  Files contribute their one committed `documents.id`; recursive folder deletion
+  contributes every committed descendant document ID, while an empty folder
+  contributes none. Post-commit membership callback failure is diagnostic; the
+  committed receipt remains successful.
 
 ## Deleted (cleanse removal)
 
 - **Legacy `ContextPortFactory`** (dual-port with `forThread`/`forProject`) — deleted.
 - **`fs1://`** scheme — sandbox-era vestige, removed.
-- **`scratch://.results`** — promotion cruft, removed. Results → `scratch://<workId>/results/…`.
+- **`scratch://.results`** — promotion cruft, removed. Results use canonical Scratch paths.
 - **`LegacyThreadContextPort`** / `manuscriptContextPort` / `REQUIRED_MANUSCRIPT_URI` — deleted.
 - **Corpus-import domain ceremony** — folded into `kb://imports/…` ingest.
 

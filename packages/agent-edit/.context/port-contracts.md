@@ -63,8 +63,10 @@ atomically. Reversal rows also carry `redoUpdateSeq` while `status: "redone"`;
 `persistUndo` clears it when the same write enters a new undo cycle.
 
 ### DocumentCoordinator (`src/ports/document-coordinator.ts`)
-Exclusive access to a live Y.Doc. `withDocument(docId, fn)` serializes callers
-for the same docId (KeyedMutex on server, process-level lock on desktop).
+Access to the coordinator-owned canonical Y.Doc, which may be a host branch
+rather than published live. `withDocument(docId, fn)` serializes callers through
+this port for the same docId. It does not by itself exclude mutations arriving
+through another transport; the host owns that concurrency fence.
 `recover(docId)` replays persisted-but-unapplied updates on startup. Rejects
 `DocumentNotFoundError` when the doc is missing.
 

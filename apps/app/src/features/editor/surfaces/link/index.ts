@@ -7,6 +7,8 @@
  * component a host mounts directly is `ProjectLinkRuntime`, which renders
  * nothing: it is the app's ports, not a surface.
  */
+
+export { AtReferenceMenu } from "./AtReferenceMenu";
 export { FollowOutcomeDialog } from "./FollowOutcomeDialog";
 export { LinkSurfaces } from "./LinkSurfaces";
 export { ProjectLinkRuntime } from "./ProjectLinkRuntime";

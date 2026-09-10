@@ -6,11 +6,16 @@ describe("parseWorkReceipt", () => {
     const receipt = {
       operation: "switch",
       category: "binding",
-      changed: true,
-      workId: "w1",
-      workName: "Arc",
-      before: null,
-      after: null,
+      before: { kind: "none" },
+      after: {
+        kind: "work",
+        workId: "w1",
+        workSlug: "arc",
+        name: "Arc",
+        goal: null,
+        description: null,
+        status: "active",
+      },
       inverse: null,
     };
     expect(parseWorkReceipt(receipt)).toEqual(receipt);

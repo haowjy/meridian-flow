@@ -1,17 +1,19 @@
 // @vitest-environment jsdom
 /** Production desktop route materialization under a pending removal repair. */
 
+import "fake-indexeddb/auto";
+
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { act, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { type ContextTab, rehydrateContextDesks, useContextTabsStore } from "@/client/stores";
+import {
+  AccountFeatureTestProvider,
+  useContextRemovalCoordinator,
+} from "@/test-support/account-feature-provider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ContextViewerSurfaceController } from "../ContextPaneController";
 import type { ProjectSearch } from "../routing/project-route";
-import {
-  ContextRemovalAccountProvider,
-  useContextRemovalCoordinator,
-} from "./ContextRemovalAccountProvider";
 import type {
   ContextRemovalCoordinator,
   ContextRemovalRoutePort,
@@ -37,14 +39,13 @@ const tree = {
 
 const queryState = {
   tree,
-  capabilities: null,
   isError: false,
   isFetching: false,
   refetch: vi.fn(),
 };
 
-vi.mock("@/client/query/useProjectContextTree", () => ({
-  useProjectContextTree: () => queryState,
+vi.mock("@/client/query/useContextCatalog", () => ({
+  useContextCatalogView: () => queryState,
 }));
 type ViewerCapture = {
   tabs: ContextTab[];
@@ -98,11 +99,22 @@ beforeEach(() => {
         selectedTabIdByWork: { "work-1": "a" },
       },
     },
-    _deskHydrated: true,
+    _deskHydrated: false,
   });
 });
 
 it("persists and admits the real New action without an empty working-set route", async () => {
+  const originalLocks = navigator.locks;
+  Object.defineProperty(navigator, "locks", {
+    configurable: true,
+    value: {
+      request: async (
+        _name: string,
+        _options: LockOptions,
+        callback: (lock: Lock) => Promise<unknown>,
+      ) => callback({ name: "test", mode: "exclusive" } as Lock),
+    },
+  });
   localStorage.clear();
   const writes: Array<{ key: string; value: string }> = [];
   const originalSetItem = Storage.prototype.setItem;
@@ -113,7 +125,7 @@ it("persists and admits the real New action without an empty working-set route",
       return originalSetItem.call(localStorage, key, value);
     });
   useContextTabsStore.setState({ byProject: {}, _deskHydrated: false });
-  rehydrateContextDesks(`new-action-${crypto.randomUUID()}`);
+  await rehydrateContextDesks(`new-action-${crypto.randomUUID()}`);
   let search: ProjectSearch = { screen: "context", work: "work-a" };
   let releaseScratchRoute: (() => void) | null = null;
 
@@ -134,7 +146,7 @@ it("persists and admits the real New action without an empty working-set route",
       else commit();
     };
     return (
-      <ContextRemovalAccountProvider accountId="new-action-account">
+      <AccountFeatureTestProvider accountId="new-action-account">
         <CaptureCoordinator />
         <ProjectContextRemovalController
           projectId="project"
@@ -164,7 +176,7 @@ it("persists and admits the real New action without an empty working-set route",
           onSelectContextPath={updateRoute}
           onOpenContextTarget={(target) => updateRoute(target.path, target.scheme)}
         />
-      </ContextRemovalAccountProvider>
+      </AccountFeatureTestProvider>
     );
   }
 
@@ -185,7 +197,7 @@ it("persists and admits the real New action without an empty working-set route",
         .filter((write) => write.key === "meridian:context-desk")
         .map((write) => JSON.parse(write.value));
       expect(deskWrites.length).toBeGreaterThan(0);
-      expect(deskWrites.every((desk) => desk.version === 2)).toBe(true);
+      expect(deskWrites.every((desk) => desk.version === 3)).toBe(true);
       expect(deskWrites.at(-1)?.projects.project).toMatchObject({
         selectedTabIdByWork: { "work-a": local?.documentId },
       });
@@ -205,7 +217,11 @@ it("persists and admits the real New action without an empty working-set route",
       ).toBe(false);
     });
   } finally {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    localStorage.clear();
+    await rehydrateContextDesks(`cleanup-${crypto.randomUUID()}`);
     setItem.mockRestore();
+    Object.defineProperty(navigator, "locks", { configurable: true, value: originalLocks });
   }
 });
 
@@ -238,7 +254,7 @@ it("guarded-redirects a selected materialized local owner before admitting its s
   function Harness() {
     const [path, setPath] = useState("");
     return (
-      <ContextRemovalAccountProvider accountId="materialized-redirect-account">
+      <AccountFeatureTestProvider accountId="materialized-redirect-account">
         <CaptureCoordinator />
         <ProjectContextRemovalController
           projectId="project"
@@ -265,7 +281,7 @@ it("guarded-redirects a selected materialized local owner before admitting its s
           onSelectContextPath={vi.fn()}
           onOpenContextTarget={vi.fn()}
         />
-      </ContextRemovalAccountProvider>
+      </AccountFeatureTestProvider>
     );
   }
 
@@ -294,7 +310,7 @@ it("restores the exact older local owner across A to B to A through mounted cont
         selectedTabIdByWork: { "work-a": older.documentId, "work-b": chapter.documentId },
       },
     },
-    _deskHydrated: true,
+    _deskHydrated: false,
   });
   let selectWork: ((workId: string) => void) | null = null;
   let search: ProjectSearch = {
@@ -314,7 +330,7 @@ it("restores the exact older local owner across A to B to A through mounted cont
       setWorkId(next);
     };
     return (
-      <ContextRemovalAccountProvider accountId="untitled-owner-account">
+      <AccountFeatureTestProvider accountId="untitled-owner-account">
         <CaptureCoordinator />
         <ProjectContextRemovalController
           projectId="project"
@@ -340,7 +356,7 @@ it("restores the exact older local owner across A to B to A through mounted cont
           onSelectContextPath={vi.fn()}
           onOpenContextTarget={vi.fn()}
         />
-      </ContextRemovalAccountProvider>
+      </AccountFeatureTestProvider>
     );
   }
 
@@ -349,7 +365,9 @@ it("restores the exact older local owner across A to B to A through mounted cont
       selection: { status: "bound", identity: { documentId: older.documentId } },
       admitted: { scheme: "scratch", path: "", workId: "work-a" },
     });
-    expect(viewerProps?.tabs).toEqual(expect.arrayContaining([older, newer]));
+    expect(viewerProps?.tabs).toEqual(
+      expect.arrayContaining([expect.objectContaining(older), expect.objectContaining(newer)]),
+    );
 
     await act(async () => selectWork?.("work-b"));
     expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
@@ -365,7 +383,9 @@ it("restores the exact older local owner across A to B to A through mounted cont
       selection: { status: "bound", identity: { documentId: older.documentId } },
       admitted: { scheme: "scratch", path: "", workId: "work-a" },
     });
-    expect(viewerProps?.tabs).toEqual(expect.arrayContaining([older, newer]));
+    expect(viewerProps?.tabs).toEqual(
+      expect.arrayContaining([expect.objectContaining(older), expect.objectContaining(newer)]),
+    );
   });
 });
 
@@ -386,7 +406,7 @@ it.each([
   };
 
   await withReactRoot(
-    <ContextRemovalAccountProvider accountId={`account-${_case}`}>
+    <AccountFeatureTestProvider accountId={`account-${_case}`}>
       <CaptureCoordinator />
       <ProjectContextRemovalController
         projectId="project"
@@ -407,83 +427,11 @@ it.each([
         onSelectContextPath={vi.fn()}
         onOpenContextTarget={vi.fn()}
       />
-    </ContextRemovalAccountProvider>,
+    </AccountFeatureTestProvider>,
     () => {
       if (!coordinator) throw new Error("coordinator did not mount");
       expect(coordinator.getProjectSnapshot("project")).toMatchObject({
         selection: { status: "candidate", locator: { path: "/missing.md" } },
-        admitted: null,
-      });
-    },
-  );
-});
-
-it.each([
-  "delayed",
-  "failed",
-] as const)("does not reopen cached A while %s route repair leaves the old URL visible", async () => {
-  const search = {
-    screen: "context" as const,
-    work: "work-1",
-    scheme: "manuscript" as const,
-    path: "/a.md",
-  };
-  let delayedUpdate: ((latest: typeof search) => typeof search) | null = null;
-  const route: ContextRemovalRoutePort = {
-    readSearch: () => search,
-    updateSearch: (_projectId, update) => {
-      delayedUpdate = update as (latest: typeof search) => typeof search;
-    },
-  };
-
-  await withReactRoot(
-    <ContextRemovalAccountProvider accountId="account-1">
-      <CaptureCoordinator />
-      <ProjectContextRemovalController
-        projectId="project"
-        activeScreen="context"
-        activeContextScheme="manuscript"
-        activeContextPath="/a.md"
-        editorWorkId="work-1"
-        route={route}
-      />
-      <ContextViewerSurfaceController
-        projectId="project"
-        editorWorkId="work-1"
-        activeContextScheme="manuscript"
-        activeContextPath="/a.md"
-        active
-        sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
-        dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
-        onSelectContextPath={vi.fn()}
-        onOpenContextTarget={vi.fn()}
-      />
-    </ContextRemovalAccountProvider>,
-    async () => {
-      const service = coordinator;
-      if (!service) throw new Error("coordinator did not mount");
-      const capture = service.captureDeleteInitiation("project", {
-        kind: "file",
-        locator: { scheme: "manuscript", path: "/a.md", workId: "work-1" },
-        documentId: "a",
-      });
-      await act(async () => {
-        service.acceptAcknowledgedDelete({
-          ...capture,
-          cause: "acknowledged-delete",
-          confirmed: { status: "deleted", deletedDocumentIds: ["a"] },
-        });
-      });
-
-      expect(delayedUpdate).not.toBeNull();
-      expect(search.path).toBe("/a.md");
-      expect(useContextTabsStore.getState().byProject.project).toMatchObject({
-        tabs: [],
-        selectedTabIdByWork: {},
-      });
-      expect(service.getProjectSnapshot("project")).toMatchObject({
-        live: true,
-        removalFence: { removedDocumentIds: ["a"] },
         admitted: null,
       });
     },

@@ -13,6 +13,7 @@ import {
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testWorkSlug } from "@/test-support/work-slug";
 
 const save = vi.hoisted(() => vi.fn());
 (
@@ -32,9 +33,9 @@ vi.mock("@/client/query/useWorkDrafts", () => ({
   useWorkDrafts: () => ({ status: "success", groups: [], refetch: vi.fn() }),
   activeWorkDraftGroups: (groups: unknown[]) => groups,
 }));
-vi.mock("@/client/query/useProjectContextTree", () => ({
-  useProjectContextTree: () => ({
-    tree: { kind: "dir", name: "", path: "", children: [] },
+vi.mock("@/client/query/useContextCatalog", () => ({
+  useContextCatalogView: () => ({
+    catalog: { root: { entryId: "root" }, files: () => [], children: () => [] },
     isError: false,
     refetch: vi.fn(),
   }),
@@ -152,13 +153,14 @@ function fixture(): Work {
     projectId: "project-1",
     createdByUserId: "user-1",
     name: "Work A",
-    slug: "work-a",
+    slug: testWorkSlug("work-a"),
     goal: null,
     description: null,
     status: "active",
     archivedAt: null,
     deletedAt: null,
     aiWriteMode: "draft",
+    entityRevision: "1",
     unpushedChangeCount: 0,
     lastActivityAt: "2026-08-15T00:00:00.000Z",
     createdAt: "2026-08-15T00:00:00.000Z",

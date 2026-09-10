@@ -1,12 +1,18 @@
+import {
+  type CanonicalContextAuthority,
+  canonicalContextUri,
+} from "@meridian/contracts/context-uri";
+
 export function parentSourcePath(sourcePath: string): string {
   const normalized = sourcePath.replace(/^\/+|\/+$/g, "");
   const idx = normalized.lastIndexOf("/");
   return idx <= 0 ? "." : normalized.slice(0, idx);
 }
 
-/** Maps a source path to a work-scoped results URI under the promoting Work. */
+/** Maps a source path to canonical Scratch results under its factual owner. */
+
 export function resultsUriForSourcePath(
-  workId: string,
+  authority: Exclude<CanonicalContextAuthority, { kind: "contextual" }>,
   rootThreadId: string,
   sourcePath: string,
 ): string {
@@ -15,7 +21,7 @@ export function resultsUriForSourcePath(
   const relative = normalized.startsWith(runPrefix)
     ? normalized.slice(runPrefix.length)
     : normalized;
-  return `scratch://${workId}/results/${relative}`;
+  return canonicalContextUri("scratch", `results/${relative}`, authority);
 }
 
 export function objectStoreKeyForResult(
