@@ -1,6 +1,6 @@
 /** Sanitizes clipboard HTML down to the elements understood by the editor schema. */
 
-import { normalizeLinkHref } from "./links";
+import { internalClipboardTarget, normalizeLinkHref } from "./links";
 
 const DANGEROUS_ELEMENTS = new Set(["script", "style", "iframe", "embed", "object", "form"]);
 
@@ -65,7 +65,9 @@ function appendSanitizedChildren(source: Node, target: Node, output: Document): 
     const sourceName = child.localName.toLowerCase();
     if (DANGEROUS_ELEMENTS.has(sourceName)) continue;
 
-    const outputName = ELEMENT_NAMES.get(sourceName);
+    const outputName = internalClipboardTarget(child.getAttribute("data-meridian-link"))
+      ? "a"
+      : ELEMENT_NAMES.get(sourceName);
     if (!outputName) {
       appendSanitizedChildren(child, target, output);
       continue;
@@ -81,6 +83,11 @@ function appendSanitizedChildren(source: Node, target: Node, output: Document): 
 }
 
 function copyLinkHref(source: Element, target: Element): void {
+  const internal = internalClipboardTarget(source.getAttribute("data-meridian-link"));
+  if (internal) {
+    target.setAttribute("data-meridian-link", internal);
+    return;
+  }
   const rawHref = source.getAttribute("href");
   if (rawHref === null) return;
   const href = normalizeLinkHref(withoutAsciiControls(rawHref));

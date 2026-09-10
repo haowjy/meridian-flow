@@ -5,12 +5,17 @@ import type {
   UploadIntakeResult,
   UserMessageBlock,
 } from "@meridian/contracts/protocol";
+import { classifyFiletype } from "@meridian/contracts/protocol";
+import { parseRequestId } from "@meridian/contracts/request-id";
+import { decodeWorkSlug } from "@meridian/contracts/works";
 import { formatWikilink, wikilinkTarget } from "@meridian/markup";
 import type { Editor, JSONContent } from "@tiptap/core";
 import { mergeAttributes, Node } from "@tiptap/core";
 import type { Selection } from "@tiptap/pm/state";
 import { Plugin, TextSelection } from "@tiptap/pm/state";
 import type { AuthoritativeReference } from "@/core/completion";
+import { referenceUriForAuthority } from "@/core/completion";
+import { internalClipboardTarget } from "@/core/editor/links";
 
 export type ComposerDraftRevision = number;
 export type ComposerSelection = Readonly<{ anchor: number; head: number }>;
@@ -116,8 +121,26 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
     )
       return null;
   } else return null;
-  // A copied occurrence does not own the source draft's upload lifecycle.
-  return { ...value, upload: null };
+  if (!parseRequestId(value.documentId)) return null;
+  if (authority.kind === "user") {
+    if (!parseRequestId(authority.userId)) return null;
+  } else if (!parseRequestId(authority.projectId)) return null;
+  if (
+    authority.kind === "work" &&
+    (!parseRequestId(authority.workId) || !decodeWorkSlug(authority.workSlug))
+  )
+    return null;
+  const uri = referenceUriForAuthority(value.uri, authority);
+  const classification = classifyFiletype(value.fileType);
+  if (!uri || classification.kind === "unknown") return null;
+  // A copied occurrence owns no upload lifecycle; capability derives from the
+  // file classification, not an independently supplied clipboard boolean.
+  return {
+    ...value,
+    uri,
+    upload: null,
+    imageCapable: classification.kind === "binary" && classification.fileType === "image",
+  };
 }
 
 export const ComposerReferenceNode = Node.create({
@@ -153,7 +176,8 @@ export const ComposerReferenceNode = Node.create({
                 continue;
               // Manuscript marks carry a target, not admitted attachment identity.
               // Preserve their Markdown rather than inventing a Composer attachment.
-              const target = element.getAttribute("data-meridian-link") ?? "";
+              const target = internalClipboardTarget(element.getAttribute("data-meridian-link"));
+              if (!target) continue;
               element.replaceWith(
                 document.createTextNode(
                   formatWikilink(

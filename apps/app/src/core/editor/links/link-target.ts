@@ -197,3 +197,10 @@ function parseExternalUrl(candidate: string): URL | null {
     return null;
   }
 }
+
+/** Namespaced clipboard metadata may carry internal targets only. */
+export function internalClipboardTarget(value: string | null): string | null {
+  if (value === null) return null;
+  const target = classifyLinkTarget(value);
+  return target && isInternalLinkTarget(target) ? value : null;
+}

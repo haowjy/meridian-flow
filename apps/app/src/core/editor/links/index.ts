@@ -67,6 +67,7 @@ export {
 export {
   classifyLinkTarget,
   documentLinkTarget,
+  internalClipboardTarget,
   isInternalLinkTarget,
   type LinkTarget,
   linkInputStepsAsideFromReferences,

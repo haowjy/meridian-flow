@@ -36,6 +36,7 @@ import { pendingImageSignature, UPLOAD_TOKEN_ATTRIBUTE } from "../images/pending
 import { JsxContainerNodeView, JsxLeafNodeView } from "../JsxNodeViews";
 import {
   classifyLinkTarget,
+  internalClipboardTarget,
   isInternalLinkTarget,
   linkTargetHref,
   normalizeLinkHref,
@@ -319,9 +320,8 @@ export const MeridianLink = Link.extend({
       {
         tag: "[data-meridian-link]",
         getAttrs: (element) => {
-          const href = element.getAttribute("data-meridian-link") ?? "";
-          const target = classifyLinkTarget(href);
-          return target && isInternalLinkTarget(target) ? { href } : false;
+          const href = internalClipboardTarget(element.getAttribute("data-meridian-link"));
+          return href ? { href } : false;
         },
       },
       ...(this.parent?.() ?? []),
@@ -333,7 +333,8 @@ export const MeridianLink = Link.extend({
       href: {
         default: "",
         parseHTML: (element) =>
-          element.getAttribute("data-meridian-link") ?? element.getAttribute("href"),
+          internalClipboardTarget(element.getAttribute("data-meridian-link")) ??
+          element.getAttribute("href"),
       },
       title: { default: null },
     };
