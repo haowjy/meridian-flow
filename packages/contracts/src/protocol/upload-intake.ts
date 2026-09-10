@@ -1,4 +1,5 @@
 /** JSON contracts for authoritative project upload intake. */
+import type { ContextEntryValidationReason } from "../context-entry-validation.js";
 import type { CanonicalContextUri } from "../context-uri.js";
 import type { Filetype } from "./filetype.js";
 
@@ -13,11 +14,11 @@ export interface UploadIntakeResult {
   locationRevision: string;
 }
 
-export type UploadIntakeErrorCode = "owner_unavailable" | "idempotency_conflict" | "storage_failed";
+export type UploadIntakeError =
+  | { code: "owner_unavailable" | "idempotency_conflict" | "storage_failed" }
+  | { code: "invalid_filename"; reason: ContextEntryValidationReason; character?: string };
 
-export interface UploadIntakeError {
-  code: UploadIntakeErrorCode;
-}
+export type UploadIntakeErrorCode = UploadIntakeError["code"];
 
 export interface DeleteDraftUploadInput {
   intakeId: string;

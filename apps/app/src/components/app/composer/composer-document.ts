@@ -125,7 +125,9 @@ export const ComposerUploadNode = Node.create({
         contenteditable: "false",
         "aria-label": `${value.state} upload: ${value.name}`,
       }),
-      value.state === "pending" ? `${value.name}…` : `${value.name} (failed)`,
+      value.state === "pending"
+        ? `${value.name}…`
+        : `${value.name} (${value.error ?? "Upload failed"})`,
     ];
   },
 });
