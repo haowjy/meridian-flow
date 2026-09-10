@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Let Composer suggestions handle Enter before message submission.
+
 - Copy internal links as Markdown wikilinks with rich reference data, not browser URLs. Preserve display text on paste.
 
 - Reject unsupported upload filenames before storage and show actionable attachment errors.
