@@ -1,5 +1,6 @@
 /** Authoritative, resumable upload intake aggregate. */
 import { createHash } from "node:crypto";
+import { validateContextEntryName } from "@meridian/contracts/context-entry-validation";
 import type {
   DeleteDraftUploadInput,
   DeleteDraftUploadResult,
@@ -200,6 +201,17 @@ export function createUploadIntake(deps: {
   return {
     async intake(raw) {
       const filename = normalizeFilename(raw.filename);
+      const validation = validateContextEntryName(filename);
+      if (!validation.ok) {
+        return {
+          ok: false,
+          error: {
+            code: "invalid_filename",
+            reason: validation.reason,
+            ...(validation.character ? { character: validation.character } : {}),
+          },
+        };
+      }
       const mimeType = normalizeMime(raw.mimeType);
       const byteDigest = raw.byteDigest.trim().toLowerCase();
       const actualDigest = createHash("sha256").update(raw.bytes).digest("hex");

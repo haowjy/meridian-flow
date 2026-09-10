@@ -256,7 +256,9 @@ describe("typing the closer steps over the one that was written", () => {
     type(editor, "[[The Third Gate]]");
 
     expect(shape(editor)).toBe("The Third Gate|");
-    expect(editor.view.dom.querySelector("a")?.getAttribute("href")).toBe("[[The Third Gate]]");
+    expect(editor.view.dom.querySelector("a")?.getAttribute("data-meridian-link")).toBe(
+      "[[The Third Gate]]",
+    );
   });
 
   it("writes a real bracket in front of one the writer typed themselves", () => {

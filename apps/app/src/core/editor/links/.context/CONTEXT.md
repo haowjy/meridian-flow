@@ -79,12 +79,6 @@ External ignores the disposition — §5.5 sends it to a new tab either way. It 
 the internal family where `current` and `new-tab` are different places, and the
 navigator receives it so the app can decide.
 
-> [!NOTE]
-> Copy link address still exposes the rendered/stored href instead of the
-> runtime-resolved navigation destination for internal wikilinks. That separate
-> defect is tracked in [#520](https://github.com/haowjy/meridian-flow/issues/520);
-> display-text support does not fix or bless it.
-
 The external guard is ruling 9: none. Mockup 06 state F records the alternative.
 
 ## Surviving a write that lands underneath
@@ -244,3 +238,13 @@ one draft path serves all three doors. `linkAt` answers null for a position
 outside the document rather than throwing: it is called from inside a Yjs
 update handler, where a throw is swallowed and the editor quietly stops
 applying peer writes.
+
+## Clipboard references
+
+Internal links have no browser `href`. Their validated stored target travels in
+`data-meridian-link` in rich HTML, and plain clipboard text uses the Markdown
+codec (including wikilink aliases). The app's click handler reads the semantic
+target; native URL copying must not interpret it relative to the current route.
+The link menu copies the pointed-at slice without moving the writer's selection.
+External links retain URL copying. Rich HTML restores stored mark spelling and
+formatting; it never persists resolver answers or manufactures document identity.

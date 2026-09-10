@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 /** Real TipTap settlement and upload-ownership behavior. */
+import type { Editor } from "@tiptap/core";
 import { act, createRef, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { getEditorChrome } from "@/core/editor/chrome";
 
 vi.mock("@lingui/core/macro", () => ({ t: (value: TemplateStringsArray) => value.join("") }));
 vi.mock("@lingui/react/macro", () => ({
@@ -482,4 +484,40 @@ it("edits display text without changing occurrence identity and undoes the edit"
       ),
   );
   expect(ref.current?.getDraft()).toBe("[[Guide]]");
+});
+
+it("lets a pending suggestion consume Enter before submitting the Composer", async () => {
+  const onSubmit = vi.fn((e: ComposerSubmitEnvelope) => outcome(e, "accepted"));
+  const ref = await mount(onSubmit);
+  await act(async () => ref.current?.restoreSnapshot(textSnapshot("@", 1)));
+  const prose = host.querySelector(".tiptap") as HTMLElement & { editor: Editor };
+  const choose = vi.fn(() => true);
+  const release = getEditorChrome(prose.editor)?.registerKeymap({
+    id: "pending-reference",
+    scope: "layer",
+    layer: null,
+    bindings: { Enter: choose },
+  });
+  await act(async () => {
+    prose.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  expect(choose).toHaveBeenCalledOnce();
+  expect(onSubmit).not.toHaveBeenCalled();
+  release?.();
+  await act(async () => {
+    prose.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  expect(onSubmit).toHaveBeenCalledOnce();
 });

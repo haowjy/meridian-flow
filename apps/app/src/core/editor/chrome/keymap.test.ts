@@ -124,6 +124,22 @@ function pressChord(row: ChordRow): { handled: boolean; ran: string[] } {
 
 const CHORD_ROWS: readonly ChordRow[] = [
   {
+    claim: "lets a pending suggestion answer before its popover mounts",
+    lanes: [layerLane("suggestion", null, true), lane("table", "table", true)],
+    layers: [],
+    context: cellContext,
+    handled: true,
+    ran: ["suggestion"],
+  },
+  {
+    claim: "does not revive an unmounted named layer",
+    lanes: [layerLane("closed", dialog, true), lane("table", "table", true)],
+    layers: [],
+    context: cellContext,
+    handled: true,
+    ran: ["table"],
+  },
+  {
     claim: "gives the chord to the deepest owner first (law 4)",
     lanes: [lane("table", "table", true), layerLane("slash", dialog, true)],
     handled: true,

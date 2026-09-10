@@ -5,6 +5,14 @@
 
 ## [Unreleased]
 
+- Let Composer suggestions handle Enter before message submission.
+
+- Copy internal links as Markdown wikilinks with rich reference data, not browser URLs. Preserve display text on paste.
+
+- Reject unsupported upload filenames before storage and show actionable attachment errors.
+
+- Let suggestion keys answer before their popover mounts instead of falling through into document editing.
+
 - Separate document admission, recovery, browser locks, and local Untitled ownership;
   preserve cross-tab editing and account-close behavior.
 
