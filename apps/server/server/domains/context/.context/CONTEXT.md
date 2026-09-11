@@ -90,7 +90,7 @@ router resolves to exact project-scoped Work authority before dispatch.
 
 | Contract | Shape |
 |---|---|
-| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `edit`, `writeBinary`, `move`, `commitWriterLocation`, identity-required `delete`, `list`, `mkdir`, and `search`. Domain failures are Results; transaction infrastructure exceptions propagate unchanged. |
+| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `edit`, `writeBinary`, `move`, `commitWriterLocation`, identity-required `delete`, `list`, `mkdir`, and `search`. `move` preserves filesystem container-target and optional-overwrite semantics; `commitWriterLocation` is the writer exact-target, provisional-name-graduating policy. Both delegate to one location mutation. Domain failures are Results; transaction infrastructure exceptions propagate unchanged. |
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
 | `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration owned in `ports/context-adapter.ts` and enforced by the server router and adapters. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
