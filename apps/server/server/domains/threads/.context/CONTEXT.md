@@ -180,13 +180,14 @@ contract shapes.
   enqueues its targeted Work-context obligation; retries, concurrent no-ops, and
   deletion never wake delivery.
 - Trash preserves the last committed primary membership as history. A deleted
-  thread has no active scope. Restore never substitutes a Work that reclaimed
-  the old slug: membership follows Work ID, and a missing/deleted historical
+  thread has no active scope. Restore never substitutes a same-name Work: membership follows Work ID, and a missing/deleted historical
   primary remains associated but non-primary after no-Work restore.
-- A thread receives its project-unique slug when created with its first
-  non-empty title, including the bootstrap `Chapter 1` conversation (`chapter-1`).
-  Collisions use `-2`, `-3`, and later mutations never regenerate the handle;
-  untitled threads keep `slug = null`.
+- A thread receives its project-unique slug at creation. Untitled chats use
+  `chat`; titled chats derive it from their initial title. Collisions use `-2`,
+  `-3`; later title mutations never regenerate it, and soft deletion reserves it.
+  Persisted handles are NOT NULL; pre-insert/optimistic Thread values can still
+  have no handle until allocation. Exact project-slug lookup excludes deleted threads and deleted projects;
+  its caller must authorize project access.
 - **Work membership mutation is serialized.** Primary additions and rebinds lock
   the current and target Works in canonical id order before the thread row;
   non-primary additions lock their target Work before the thread. A changed

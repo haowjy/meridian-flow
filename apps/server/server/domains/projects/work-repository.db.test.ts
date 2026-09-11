@@ -178,6 +178,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "../threads/adapters/drizzle/index.js"
       );
       await db.insert(schema.threads).values({
+        slug: `fixture-${THREAD_ID}`,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -369,7 +370,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("restores a deleted Work unless its name or slug was reclaimed", async () => {
+    it("reserves deleted Work slugs but refuses a reclaimed name", async () => {
       const available = await works.create({ projectId: PROJECT_ID, name: "Available" });
       await works.softDelete(available.id);
       await expect(works.restore(available.id)).resolves.toMatchObject({ deletedAt: null });
@@ -383,10 +384,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const slugOwner = await works.create({ projectId: PROJECT_ID, name: "Same slug!" });
       await works.softDelete(slugOwner.id);
-      await works.create({ projectId: PROJECT_ID, name: "Same slug?" });
-      await expect(works.restore(slugOwner.id)).rejects.toEqual(
-        new WorkRestoreConflictError("slug"),
+      expect((await works.create({ projectId: PROJECT_ID, name: "Same slug?" })).slug).toBe(
+        "same-slug-2",
       );
+      await expect(works.restore(slugOwner.id)).resolves.toMatchObject({ slug: "same-slug" });
     });
 
     it("allows empty provisioned context sources but blocks live files", async () => {

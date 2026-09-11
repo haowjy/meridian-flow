@@ -16,6 +16,7 @@ import type {
   MarkdownDocumentStore,
 } from "../collab/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
+import { nextProjectSlug } from "./adapters/project-repository/shared.js";
 import type { ContextCatalogLifecyclePort } from "./ports/context-catalog-lifecycle.js";
 
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
@@ -122,12 +123,19 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       .limit(1);
     if (existing) return existing.id;
 
+    const reserved = await tx
+      .select({ slug: projects.slug })
+      .from(projects)
+      .where(eq(projects.userId, userId));
     const [project] = await tx
       .insert(projects)
       .values({
         userId,
         name: projectName(input),
-        slug: `default-${randomUUID()}`,
+        slug: nextProjectSlug(
+          projectName(input),
+          reserved.map((row) => row.slug),
+        ),
         isPersonal: true,
         systemPrompt: projectSystemPrompt(input),
       })

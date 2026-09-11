@@ -183,11 +183,11 @@ export function createInMemoryRepositories(
     );
   }
 
-  function nextSlug(projectId: string, title: string | null | undefined): string | null {
+  function nextSlug(projectId: string, title: string | null | undefined): string {
     return uniqueThreadSlug(
       title,
       [...threads.values()]
-        .filter((thread) => thread.projectId === projectId && !thread.deletedAt)
+        .filter((thread) => thread.projectId === projectId)
         .flatMap((thread) => (thread.slug ? [thread.slug] : [])),
     );
   }
@@ -235,30 +235,22 @@ export function createInMemoryRepositories(
     });
   }
 
+  function insertThread(thread: Thread): Thread {
+    if (threads.has(thread.id)) throw new Error(`Thread already exists: ${thread.id}`);
+    const row = { ...thread, workId: null, slug: nextSlug(thread.projectId, thread.title) };
+    threads.set(row.id, row);
+    return projectThread(row);
+  }
+
   const threadRepo: ThreadRepository & SubagentThreadFactory & DerivedPrimaryThreadFactory = {
     async create(input) {
-      const thread = {
-        ...defaultThread(input),
-        slug: nextSlug(input.projectId, input.title),
-      };
-      threads.set(thread.id, thread);
-      return projectThread(thread);
+      return insertThread(defaultThread(input));
     },
     async createSubagent(input) {
-      const thread = {
-        ...buildSubagentThreadRow(input),
-        slug: nextSlug(input.projectId, input.title),
-      };
-      threads.set(thread.id, { ...thread, workId: null });
-      return projectThread(thread);
+      return insertThread(buildSubagentThreadRow(input));
     },
     async createDerivedPrimary(input) {
-      const thread = {
-        ...buildDerivedPrimaryThreadRow(input),
-        slug: nextSlug(input.projectId, input.title),
-      };
-      threads.set(thread.id, { ...thread, workId: null });
-      return projectThread(thread);
+      return insertThread(buildDerivedPrimaryThreadRow(input));
     },
     async updateSpawnLifecycle(id, input: UpdateSpawnLifecycleInput) {
       const thread = threads.get(id);
@@ -275,6 +267,13 @@ export function createInMemoryRepositories(
     async findById(id) {
       const thread = threads.get(id);
       if (!thread || thread.deletedAt || !(await threadInActiveProject(thread))) return null;
+      return projectThread(thread);
+    },
+    async findLiveByProjectSlug(projectId, slug) {
+      const thread = [...threads.values()].find(
+        (thread) => thread.projectId === projectId && thread.slug === slug && !thread.deletedAt,
+      );
+      if (!thread || !(await threadInActiveProject(thread))) return null;
       return projectThread(thread);
     },
     async findProjectIdByIdIncludingDeleted(id) {

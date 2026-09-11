@@ -8,7 +8,7 @@ import type {
   ProjectRepository,
   UpdateProjectInput,
 } from "../../ports/project-repository.js";
-import { DEFAULT_PROJECT_TITLE, deriveSlug } from "./shared.js";
+import { DEFAULT_PROJECT_TITLE, nextProjectSlug } from "./shared.js";
 
 /** In-memory {@link ProjectRepository} for tests. */
 export function createInMemoryProjectRepository(): ProjectRepository {
@@ -22,6 +22,7 @@ export function createInMemoryProjectRepository(): ProjectRepository {
     async create(input: CreateProjectInput): Promise<Project> {
       const timestamp = now();
       const id = input.id ?? crypto.randomUUID();
+      if (rows.has(id)) throw new Error(`Project already exists: ${id}`);
       const title = input.title?.trim() || DEFAULT_PROJECT_TITLE;
       const description = input.description ?? null;
       const project: Project = {
@@ -29,7 +30,10 @@ export function createInMemoryProjectRepository(): ProjectRepository {
         userId: input.userId,
         name: title,
         title,
-        slug: deriveSlug(title, id),
+        slug: nextProjectSlug(
+          title,
+          [...rows.values()].filter((row) => row.userId === input.userId).map((row) => row.slug),
+        ),
         isPersonal: false,
         systemPrompt: description,
         description,
@@ -45,6 +49,13 @@ export function createInMemoryProjectRepository(): ProjectRepository {
 
     async findById(id: ProjectId): Promise<Project | null> {
       const row = rows.get(id);
+      return row ? { ...row } : null;
+    },
+
+    async findLiveByOwnerSlug(userId: UserId, slug: string): Promise<Project | null> {
+      const row = [...rows.values()].find(
+        (row) => row.userId === userId && row.slug === slug && row.deletedAt === null,
+      );
       return row ? { ...row } : null;
     },
 

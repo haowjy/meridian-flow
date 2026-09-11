@@ -56,9 +56,7 @@ export const projects = pgTable(
     deletedAt: softDeleteAt(),
   },
   (table) => [
-    uniqueIndex("projects_user_slug_active")
-      .on(table.userId, table.slug)
-      .where(sql`${table.deletedAt} IS NULL`),
+    uniqueIndex("projects_user_slug").on(table.userId, table.slug),
     index("projects_user_last_activity_active")
       .on(table.userId, table.lastActivityAt.desc())
       .where(sql`${table.deletedAt} IS NULL`),
@@ -102,9 +100,7 @@ export const works = pgTable(
     uniqueIndex("works_project_name_active")
       .on(table.projectId, sql`lower(${table.name})`)
       .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("works_project_slug_active")
-      .on(table.projectId, table.slug)
-      .where(sql`${table.deletedAt} IS NULL`),
+    uniqueIndex("works_project_slug").on(table.projectId, table.slug),
     check("works_name_nonempty", sql`btrim(${table.name}) <> ''`),
     check("works_slug_valid", sql`${table.slug} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`),
     check("works_status_valid", sql`${table.status} IN ('active', 'archived')`),

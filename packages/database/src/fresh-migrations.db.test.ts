@@ -27,6 +27,48 @@ if (!enabled || !databaseUrl) {
         expect(tail[index]?.when).toBeGreaterThan(tail[index - 1]?.when ?? 0);
       }
     });
+    it("backfills readable project and untitled chat handles with deleted reservations", {
+      timeout: 90_000,
+    }, async () => {
+      await withPopulatedMigrationDatabase({
+        databaseUrl,
+        seedBefore: "0083_watery_wind_dancer",
+        seed: async (target) => {
+          await target.unsafe(`
+            INSERT INTO users (id, external_id, email) VALUES ('00000000-0000-4000-8000-000000000231', 'readable-upgrade', 'readable-upgrade@test.invalid');
+            INSERT INTO projects (id, user_id, name, slug, created_at, deleted_at) VALUES
+              ('00000000-0000-4000-8000-000000000232', '00000000-0000-4000-8000-000000000231', 'Silver Moon', 'silver-moon-12345678', '2026-01-01', '2026-01-02'),
+              ('00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Silver Moon', 'silver-moon-87654321', '2026-01-03', NULL);
+            INSERT INTO threads (id, project_id, created_by_user_id, title, slug) VALUES
+              ('00000000-0000-4000-8000-000000000234', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', '', NULL),
+              ('00000000-0000-4000-8000-000000000235', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Chat', 'chat'),
+              ('00000000-0000-4000-8000-000000000236', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Fight Scene', NULL);
+            INSERT INTO threads (id, project_id, created_by_user_id, title, slug, deleted_at) VALUES
+              ('00000000-0000-4000-8000-000000000237', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Deleted Chat', 'chat', '2026-01-01');
+          `);
+        },
+        verify: async (target) => {
+          expect(
+            await target`SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'threads' AND column_name = 'slug'`,
+          ).toEqual([{ is_nullable: "NO" }]);
+          await expect(
+            target`INSERT INTO threads (id, project_id, created_by_user_id, title) VALUES ('00000000-0000-4000-8000-000000000238', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Missing handle')`,
+          ).rejects.toMatchObject({ code: "23502" });
+          expect(
+            await target`SELECT slug FROM projects WHERE user_id = '00000000-0000-4000-8000-000000000231' ORDER BY created_at`,
+          ).toEqual([{ slug: "silver-moon" }, { slug: "silver-moon-2" }]);
+          expect(
+            await target`SELECT slug FROM threads WHERE project_id = '00000000-0000-4000-8000-000000000233' ORDER BY id`,
+          ).toEqual([
+            { slug: "chat-3" },
+            { slug: "chat" },
+            { slug: "fight-scene" },
+            { slug: "chat-2" },
+          ]);
+        },
+      });
+    });
+
     it("deletes working-set rows whose routes predate stable identity", {
       timeout: 90_000,
     }, async () => {
@@ -105,7 +147,7 @@ if (!enabled || !databaseUrl) {
         await target.end();
       }
     });
-    it("backfills active Work slugs without letting deleted Works reserve them", {
+    it("preserves active Work handles while reserving disambiguated deleted handles", {
       timeout: 90_000,
     }, async () => {
       const ids = {
@@ -146,8 +188,8 @@ if (!enabled || !databaseUrl) {
           const slugs = new Map(rows.map((row) => [row.id, row.slug]));
           expect(slugs.get(ids.live)).toBe("book-2");
           expect(slugs.get(ids.archived)).toBe("book-2-2");
-          expect(slugs.get(ids.deletedFirst)).toBe("book-2");
-          expect(slugs.get(ids.deletedLast)).toBe("book-2");
+          expect(slugs.get(ids.deletedFirst)).toBe("book-2-3");
+          expect(slugs.get(ids.deletedLast)).toBe("book-2-4");
         },
       });
     });
