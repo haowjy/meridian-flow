@@ -63,11 +63,10 @@ export type ApplicationBranchStore = BranchStore &
     ): Promise<ManifestMutationResult>;
   };
 
-/** Removes one draft-only creation without applying any content to live. */
-export type DraftOnlyDocumentDiscard = (input: {
-  projectId: ProjectId;
+/** Discards one Work draft and its draft-only membership without applying content to live. */
+export type WorkDraftDiscard = (input: {
+  draftOnlyProjectId?: ProjectId;
   workId: WorkId;
   documentId: DocumentId;
   contentBranchId: string;
-  liveDoc: Y.Doc;
 }) => Promise<void>;

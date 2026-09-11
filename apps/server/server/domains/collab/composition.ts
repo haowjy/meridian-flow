@@ -43,7 +43,6 @@ import {
   createDrizzleAuthorityGenerationReader,
   createDrizzleDocumentAuthorityHeads,
 } from "./adapters/drizzle-document-authority-head.js";
-import { createDrizzleDraftOnlyDocumentDiscard } from "./adapters/drizzle-draft-only-document-discard.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleLiveTurnDependencyStore } from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
@@ -54,6 +53,7 @@ import {
 import { createDrizzleTurnDiffQuery } from "./adapters/drizzle-turn-diff-query.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
+import { createDrizzleWorkDraftDiscard } from "./adapters/drizzle-work-draft-discard.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
 import { createHocuspocusChangeEventDelivery } from "./adapters/hocuspocus-change-event-delivery.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
@@ -340,11 +340,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     notices: postDurabilityNotices,
   });
   const drafts = createWorkDraftReviewService({
-    discardDraftOnlyDocument: createDrizzleDraftOnlyDocumentDiscard(
+    discardWorkDraft: createDrizzleWorkDraftDiscard(
       deps.db,
       branches,
       branchCoordinator,
       criticalSections,
+      liveCoordinator,
     ),
     branches,
     branchCoordinator,

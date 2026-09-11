@@ -1358,7 +1358,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             draftId: previewB.draftId,
             userId: USER_ID as never,
           }),
-        ).rejects.toThrow(`Work not found: ${WORK_ID}`);
+        ).rejects.toMatchObject({
+          name: "WorkLifecycleUnavailableError",
+          workId: WORK_ID,
+          state: "archived",
+        });
         const live = await collab.resolveManifestMembership({ projectId: PROJECT_ID as never });
         expect(live.members).not.toContain(CREATED_DOC_ID);
         expect(live.members).not.toContain(CREATED_DOC_B_ID);
@@ -1367,19 +1371,95 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .set({ status: "active", archivedAt: null })
           .where(eq(works.id, WORK_ID));
       }
-      await collab.draftReview.applyWorkDraft({
-        projectId: PROJECT_ID as never,
+      // Pause another process after live acquisition so Apply wins before its Work lock.
+      const { createDrizzleBranchStore } = await import("./adapters/drizzle-branches.js");
+      const { createDrizzleCollabPersistence } = await import("./adapters/drizzle-journal.js");
+      const { createBranchCoordinator } = await import("./domain/branch-coordinator.js");
+      const { createBranchCriticalSections } = await import("./domain/branch-critical-sections.js");
+      const { createDrizzleWorkDraftDiscard } = await import(
+        "./adapters/drizzle-work-draft-discard.js"
+      );
+      const persistence = createDrizzleCollabPersistence(db);
+      let entered!: () => void;
+      let release!: () => void;
+      const atLive = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const proceed = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const independentLive = {
+        async recover(documentId: string) {
+          await this.withDocument(documentId, async () => undefined);
+        },
+        async withDocument<T>(documentId: string, run: (doc: Y.Doc) => Promise<T>): Promise<T> {
+          entered();
+          await proceed;
+          const persisted = await persistence.journal.read(documentId as never);
+          const doc = new Y.Doc({ gc: false });
+          if (persisted.checkpoint) Y.applyUpdate(doc, persisted.checkpoint);
+          for (const row of persisted.updates) Y.applyUpdate(doc, row.update);
+          try {
+            return await run(doc);
+          } finally {
+            doc.destroy();
+          }
+        },
+      };
+      const locks = createBranchCriticalSections();
+      const independentBranches = createDrizzleBranchStore(
+        db,
+        {
+          journal: persistence.journal,
+          lifecycle: persistence.lifecycle,
+          coordinator: independentLive,
+        },
+        locks,
+      );
+      const independentCoordinator = createBranchCoordinator({
+        store: independentBranches,
+        criticalSections: locks,
+      });
+      const discard = createDrizzleWorkDraftDiscard(
+        db,
+        independentBranches,
+        independentCoordinator,
+        locks,
+        independentLive,
+      )({
+        draftOnlyProjectId: PROJECT_ID as never,
         workId: WORK_ID as never,
         documentId: CREATED_DOC_B_ID as never,
-        draftId: previewB.draftId,
-        userId: USER_ID as never,
+        contentBranchId: previewB.draftId,
       });
+      await atLive;
+      let accepted: Awaited<ReturnType<typeof independentBranches.getBranch>>;
+      try {
+        await collab.draftReview.applyWorkDraft({
+          projectId: PROJECT_ID as never,
+          workId: WORK_ID as never,
+          documentId: CREATED_DOC_B_ID as never,
+          draftId: previewB.draftId,
+          userId: USER_ID as never,
+        });
 
-      const liveMembership = await collab.resolveManifestMembership({
+        const liveMembership = await collab.resolveManifestMembership({
+          projectId: PROJECT_ID as never,
+        });
+        expect(liveMembership.members).toContain(CREATED_DOC_B_ID);
+        expect(liveMembership.members).not.toContain(CREATED_DOC_ID);
+
+        accepted = await independentBranches.getBranch(previewB.draftId);
+      } finally {
+        release();
+      }
+      await discard;
+      expect(await independentBranches.getBranch(previewB.draftId)).toEqual(accepted);
+      const afterStaleDiscard = await collab.resolveManifestMembership({
         projectId: PROJECT_ID as never,
+        workId: WORK_ID as never,
       });
-      expect(liveMembership.members).toContain(CREATED_DOC_B_ID);
-      expect(liveMembership.members).not.toContain(CREATED_DOC_ID);
+      expect(afterStaleDiscard.members).toContain(CREATED_DOC_B_ID);
 
       const { ContextFS } = await import("../context/adapters/context-fs/context-fs.js");
       const { DrizzleContextDocumentStore } = await import(
