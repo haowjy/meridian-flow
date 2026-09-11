@@ -75,9 +75,10 @@ targets.
 Home is the shared, container-responsive Composer-led entry surface on desktop
 and phone, followed by the server-owned Continue, Favorites, and
 cursor-paginated Recent feed. First send creates and reconciles the canonical
-thread under one stable client-chosen ID before routing. Home derives the first
-active, then first available, catalog Work and submits its `workId` explicitly;
-loading, error, and authoritative empty catalogs remain distinct. The submitted
+thread under one stable client-chosen ID before routing. Home and Chats share
+the saved prospective Work/Agent choices. Without a saved Work choice, creation
+starts with the first active Work or No Work; archived Works are not defaults.
+Loading, error, and authoritative empty catalogs remain distinct. The submitted
 Work ID is an immutable reconciliation fact, along with project and Agent, and
 no cache, handoff, visibility, admission, or route effect may run until the
 canonical thread matches those captured facts.
