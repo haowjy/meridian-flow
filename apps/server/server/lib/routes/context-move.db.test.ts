@@ -220,6 +220,39 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return row;
     }
 
+    it("revokes archived Work mutations without losing its management identity", async () => {
+      const { projectId, workId, port } = await arrangeUntitled();
+      await db
+        .update(schema.works)
+        .set({ status: "archived", archivedAt: new Date() })
+        .where(eq(schema.works.id, workId));
+      await expect(port.write("scratch://@current-work/new.md", "blocked")).resolves.toMatchObject({
+        ok: false,
+        error: { code: "context_unavailable" },
+      });
+      await expect(
+        port.commitWriterLocation(
+          "scratch://@current-work/Untitled 1.md",
+          "manuscript://moved.md",
+          { expected: { kind: "file", nodeId: DOCUMENT_ID } },
+        ),
+      ).resolves.toMatchObject({ ok: false, error: { code: "context_unavailable" } });
+      const authority = createDrizzleProjectWorkAuthorityResolver(db);
+      await expect(authority.byId(projectId, workId)).resolves.toMatchObject({ workId });
+      expect((await documentOwner(DOCUMENT_ID)).sourceWorkId).toBe(workId);
+      await db
+        .update(schema.works)
+        .set({ status: "active", archivedAt: null })
+        .where(eq(schema.works.id, workId));
+      await expect(
+        port.commitWriterLocation(
+          "scratch://@current-work/Untitled 1.md",
+          "manuscript://moved.md",
+          { expected: { kind: "file", nodeId: DOCUMENT_ID } },
+        ),
+      ).resolves.toMatchObject({ ok: true });
+    });
+
     it("promotes scratch into manuscript, graduating provisional naming without touching Yjs authority", async () => {
       const { projectId, workId, collab, port } = await arrangeUntitled();
       const manifestBefore = await collab.resolveManifestMembership({ projectId });

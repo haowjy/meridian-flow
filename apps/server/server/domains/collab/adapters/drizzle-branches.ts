@@ -41,12 +41,14 @@ import type { WorkProjectionMutation } from "../../projects/index.js";
 import {
   type AppendBranchJournalInput,
   assertReadableBranch,
+  BranchCasConflictError,
   type BranchSnapshot,
   type CommitBranchMutationInput,
   type PersistBranchInput,
   type ResetBranchSnapshotInput,
 } from "../domain/branch-coordinator.js";
 import {
+  assertBranchLeaseCovers,
   type BranchCriticalSections,
   createBranchCriticalSections,
 } from "../domain/branch-critical-sections.js";
@@ -632,6 +634,39 @@ export function createDrizzleBranchStore(
     }
   }
 
+  async function persistManifestMembership(
+    branch: BranchSnapshot,
+    doc: Y.Doc,
+    updateData: Uint8Array,
+    documentId: DocumentId,
+    present: boolean,
+  ): Promise<boolean> {
+    const updated = await updateBranchSnapshot({
+      branchId: branch.branchId,
+      expectedGeneration: branch.generation,
+      expectedStateVector: branch.stateVector,
+      expectedState: branch.state,
+      state: Y.encodeStateAsUpdate(doc),
+      stateVector: Y.encodeStateVector(doc),
+    });
+    if (!updated) return false;
+    await currentDrizzleDb(db)
+      .insert(branchWriteJournal)
+      .values({
+        branchId: branch.branchId,
+        generation: branch.generation,
+        updateData: Buffer.from(updateData),
+        draftBaseUpdateSeq: draftBaseForBranch(branch.branchId),
+        source: "agent",
+        updateMeta: {
+          kind: "manifest_membership",
+          present,
+          documentId,
+        },
+      });
+    return true;
+  }
+
   async function mutateWorkManifest(
     documentId: DocumentId,
     present: boolean,
@@ -659,30 +694,7 @@ export function createDrizzleBranchStore(
               db,
               { workIds: [view.workId] },
               async () => {
-                const updated = await updateBranchSnapshot({
-                  branchId: branch.branchId,
-                  expectedGeneration: branch.generation,
-                  expectedStateVector: branch.stateVector,
-                  expectedState: branch.state,
-                  state: Y.encodeStateAsUpdate(doc),
-                  stateVector: Y.encodeStateVector(doc),
-                });
-                if (!updated) return false;
-                await currentDrizzleDb(db)
-                  .insert(branchWriteJournal)
-                  .values({
-                    branchId: branch.branchId,
-                    generation: branch.generation,
-                    updateData: Buffer.from(updateData),
-                    draftBaseUpdateSeq: draftBaseForBranch(branch.branchId),
-                    source: "agent",
-                    updateMeta: {
-                      kind: "manifest_membership",
-                      present,
-                      documentId,
-                    },
-                  });
-                return true;
+                return persistManifestMembership(branch, doc, updateData, documentId, present);
               },
             );
             if (persisted) {
@@ -1049,6 +1061,38 @@ export function createDrizzleBranchStore(
               workId: view.workId,
             })
           : mutateLiveManifest(documentId, true),
+    async removeWorkManifestEntryForDraftDiscard(command) {
+      assertBranchLeaseCovers(command.lease, command.manifestBranchId);
+      return mutatePending([command.manifestBranchId], async () => {
+        const branch = await getBranchSnapshot(command.manifestBranchId);
+        if (
+          branch.kind !== "work_draft" ||
+          branch.status !== "active" ||
+          branch.workId !== command.workId ||
+          branch.documentId !== command.manifestDocumentId
+        )
+          throw new Error("Draft discard manifest owner changed");
+        const doc = materializeBranch(branch, "" as ThreadId);
+        try {
+          const map = doc.getMap<{ present: true }>("documents");
+          if (!map.has(command.documentId)) return;
+          const before = Y.encodeStateVector(doc);
+          map.delete(command.documentId);
+          if (
+            !(await persistManifestMembership(
+              branch,
+              doc,
+              Y.encodeStateAsUpdate(doc, before),
+              command.documentId,
+              false,
+            ))
+          )
+            throw new BranchCasConflictError(branch.branchId);
+        } finally {
+          doc.destroy();
+        }
+      });
+    },
     recordManifestDocumentDeleted: (documentId, view) =>
       view?.threadId
         ? mutateThreadManifest(documentId, false, {

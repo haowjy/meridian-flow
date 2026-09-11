@@ -22,6 +22,7 @@ import type {
   SyncError,
 } from "../../../collab/index.js";
 import { createDocumentCreationAggregate } from "../../../collab/index.js";
+import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { editCollabMarkdown, writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
 import {
@@ -191,6 +192,10 @@ export class ContextFS implements ContextSchemeAdapter {
         run: (operation) => deps.store.transaction(operation),
       },
       serializeThroughCallbacks: true,
+      mapThrownError: (error) =>
+        error instanceof WorkLifecycleUnavailableError
+          ? { code: "context_unavailable" }
+          : undefined,
     });
     this.manifestView = deps.manifestView;
     this.name = deps.scheme;

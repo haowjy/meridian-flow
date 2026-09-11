@@ -1245,7 +1245,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(readMarkdown(collab, createdDocumentId)).resolves.toContain("Opening line.");
     });
 
-    it("does not resurrect a rejected new document when a sibling draft is accepted", async () => {
+    it.each([
+      false,
+      true,
+    ])("does not resurrect a rejected new document when a sibling draft is accepted (archived: %s)", async (archived) => {
       await db.insert(documents).values([
         {
           id: CREATED_DOC_ID,
@@ -1312,6 +1315,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         turnId: TURN_2_ID,
       });
 
+      if (archived)
+        await db
+          .update(works)
+          .set({ status: "archived", archivedAt: new Date() })
+          .where(eq(works.id, WORK_ID));
       const previewA = await collab.draftReview.preview({
         projectId: PROJECT_ID as never,
         workId: WORK_ID as never,
@@ -1341,6 +1349,24 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         draftId: await currentDraftId(collab, CREATED_DOC_B_ID as never as string),
       });
       if (previewB.status !== "active" || !previewB.draftId) throw new Error("missing draft B");
+      if (archived) {
+        await expect(
+          collab.draftReview.applyWorkDraft({
+            projectId: PROJECT_ID as never,
+            workId: WORK_ID as never,
+            documentId: CREATED_DOC_B_ID as never,
+            draftId: previewB.draftId,
+            userId: USER_ID as never,
+          }),
+        ).rejects.toThrow(`Work not found: ${WORK_ID}`);
+        const live = await collab.resolveManifestMembership({ projectId: PROJECT_ID as never });
+        expect(live.members).not.toContain(CREATED_DOC_ID);
+        expect(live.members).not.toContain(CREATED_DOC_B_ID);
+        await db
+          .update(works)
+          .set({ status: "active", archivedAt: null })
+          .where(eq(works.id, WORK_ID));
+      }
       await collab.draftReview.applyWorkDraft({
         projectId: PROJECT_ID as never,
         workId: WORK_ID as never,

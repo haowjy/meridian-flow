@@ -21,6 +21,7 @@ class ResultRollback<TError> extends Error {
 export function createResultAwareCommandExecutor<TError>(input: {
   transaction: ContextCommandTransaction;
   serializeThroughCallbacks: boolean;
+  mapThrownError?: (error: unknown) => TError | undefined;
 }): ResultAwareCommandExecutor<TError> {
   let tail = Promise.resolve();
 
@@ -36,6 +37,8 @@ export function createResultAwareCommandExecutor<TError>(input: {
       }, scopes);
     } catch (error) {
       if (error instanceof ResultRollback) return Err(error.error as TError);
+      const mapped = input.mapThrownError?.(error);
+      if (mapped !== undefined) return Err(mapped);
       throw error;
     }
   };

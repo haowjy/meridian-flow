@@ -11,6 +11,7 @@ import {
   isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { AdapterFault, ContextSchemeAdapter } from "../ports/context-adapter.js";
 import {
   type ContextCommandTransaction,
@@ -33,6 +34,12 @@ import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,
 } from "./result-aware-command-executor.js";
+
+function lifecycleCommandFailure(error: unknown, uri: string): Result<never, ContextError> {
+  if (error instanceof WorkLifecycleUnavailableError)
+    return Err({ code: "context_unavailable", uri });
+  throw error;
+}
 
 async function callAdapter<T>(
   uri: string,
@@ -126,47 +133,49 @@ export class ContextTreeMover {
           expected?: ContextLocationOptions["expected"];
         },
   ): Promise<Result<ContextMoveResult, ContextError>> {
-    return this.commandExecutor.run(
-      async () => {
-        if (policy.target === "exact" && policy.expected) {
-          const token = await this.inspect(source);
-          if (!token.ok) return token;
-          const kind = policy.expected.kind === "folder" ? "directory" : "file";
-          if (token.value?.kind !== kind || token.value.nodeId !== policy.expected.nodeId) {
-            return Err({ code: "stale_source", uri: source.canonical });
+    return this.commandExecutor
+      .run(
+        async () => {
+          if (policy.target === "exact" && policy.expected) {
+            const token = await this.inspect(source);
+            if (!token.ok) return token;
+            const kind = policy.expected.kind === "folder" ? "directory" : "file";
+            if (token.value?.kind !== kind || token.value.nodeId !== policy.expected.nodeId) {
+              return Err({ code: "stale_source", uri: source.canonical });
+            }
           }
-        }
-        if (source.canonical === destination.canonical) {
-          return policy.target === "exact"
-            ? this.graduateInPlace(source)
-            : Err({ code: "invalid_operation", uri: destination.canonical });
-        }
-        if (!source.adapter.capabilities.writable || !destination.adapter.capabilities.writable) {
-          return Err({ code: "permission_denied", uri: destination.canonical });
-        }
-        if (!source.adapter.tree || !destination.adapter.tree) {
-          return Err({ code: "permission_denied", uri: destination.canonical });
-        }
+          if (source.canonical === destination.canonical) {
+            return policy.target === "exact"
+              ? this.graduateInPlace(source)
+              : Err({ code: "invalid_operation", uri: destination.canonical });
+          }
+          if (!source.adapter.capabilities.writable || !destination.adapter.capabilities.writable) {
+            return Err({ code: "permission_denied", uri: destination.canonical });
+          }
+          if (!source.adapter.tree || !destination.adapter.tree) {
+            return Err({ code: "permission_denied", uri: destination.canonical });
+          }
 
-        const prepared = await this.prepareMove(source, destination, policy);
-        if (!prepared.ok) return prepared;
-        const result = await callAdapter(
-          destination.canonical,
-          () =>
-            destination.adapter.tree?.commitPreparedMove(prepared.value) ??
-            Promise.resolve(Err({ code: "permission_denied" } as const)),
-        );
-        if (!result.ok) return result;
-        return Ok({
-          movedNodeId: result.value.movedNodeId,
-          destinationPath: prepared.value.destinationPath,
-        });
-      },
-      [source, destination].map((dispatch) => ({
-        scheme: dispatch.scheme,
-        workId: isWorkScopedProjectContextScheme(dispatch.scheme) ? dispatch.workScopeId : null,
-      })),
-    );
+          const prepared = await this.prepareMove(source, destination, policy);
+          if (!prepared.ok) return prepared;
+          const result = await callAdapter(
+            destination.canonical,
+            () =>
+              destination.adapter.tree?.commitPreparedMove(prepared.value) ??
+              Promise.resolve(Err({ code: "permission_denied" } as const)),
+          );
+          if (!result.ok) return result;
+          return Ok({
+            movedNodeId: result.value.movedNodeId,
+            destinationPath: prepared.value.destinationPath,
+          });
+        },
+        [source, destination].map((dispatch) => ({
+          scheme: dispatch.scheme,
+          workId: isWorkScopedProjectContextScheme(dispatch.scheme) ? dispatch.workScopeId : null,
+        })),
+      )
+      .catch((error) => lifecycleCommandFailure(error, source.canonical));
   }
 
   private async graduateInPlace(
@@ -196,15 +205,17 @@ export class ContextTreeMover {
     target: ContextTreeDispatch,
     options: ContextDeleteOptions,
   ): Promise<Result<DeleteContextEntryResult, ContextError>> {
-    return this.commandExecutor.run(
-      () => this.deleteCommand(target, options),
-      [
-        {
-          scheme: target.scheme,
-          workId: isWorkScopedProjectContextScheme(target.scheme) ? target.workScopeId : null,
-        },
-      ],
-    );
+    return this.commandExecutor
+      .run(
+        () => this.deleteCommand(target, options),
+        [
+          {
+            scheme: target.scheme,
+            workId: isWorkScopedProjectContextScheme(target.scheme) ? target.workScopeId : null,
+          },
+        ],
+      )
+      .catch((error) => lifecycleCommandFailure(error, target.canonical));
   }
 
   private async deleteCommand(

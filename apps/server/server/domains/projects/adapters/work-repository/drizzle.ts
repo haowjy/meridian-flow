@@ -246,7 +246,8 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
 
       await runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
-        if ((await lockWorkLifecycle(db, id)) !== "active") return;
+        const lifecycle = await lockWorkLifecycle(db, id);
+        if (lifecycle === "missing" || lifecycle === "deleted") return;
         if (await hasUnreviewedDraft(id)) throw new WorkDeleteBlockedError("drafts");
 
         const [membership] = await activeDb

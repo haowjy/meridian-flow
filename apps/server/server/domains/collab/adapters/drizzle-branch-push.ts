@@ -13,6 +13,7 @@ import type { DrizzleDb } from "../../../shared/drizzle-transaction.js";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
 import type { NoticePort } from "../../notices/index.js";
+import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import {
   type BranchJournalReadStore,
@@ -201,7 +202,7 @@ export function createDrizzlePushCommitStore(
     workProjection ? workProjection.mutatePendingBranches(branchIds, operation) : operation();
   return {
     async commitPush(input) {
-      return runInDrizzleTransaction(db, () =>
+      return runWithActiveWorkDrafts(db, { branchIds: [input.branch.branchId] }, () =>
         mutatePending([input.branch.branchId], async () => {
           const txDb = currentDrizzleDb(db);
           const existing = await findLineage(txDb, input.idempotencyKey);
@@ -216,7 +217,14 @@ export function createDrizzlePushCommitStore(
             push,
           };
         }),
-      );
+      ).catch(async (error: unknown) => {
+        if (!(error instanceof WorkLifecycleUnavailableError)) throw error;
+        // Archive can win after another process committed this exact attempt.
+        // A durable receipt is history, not permission to perform another write.
+        const existing = await findLineage(currentDrizzleDb(db), input.idempotencyKey);
+        if (existing) return { status: "conflict" as const, push: existing };
+        throw error;
+      });
     },
 
     async commitDiscard(input) {
@@ -240,32 +248,43 @@ export function createDrizzlePushCommitStore(
     },
 
     async commitPushBatch(input) {
-      return runInDrizzleTransaction(db, () =>
-        mutatePending(
-          input.pushes.map(({ branch }) => branch.branchId),
-          async () => {
-            const txDb = currentDrizzleDb(db);
-            const pushes = sortPushesByDocumentId(input.pushes);
-            for (const push of pushes) {
-              const existing = await findLineage(txDb, push.idempotencyKey);
-              if (existing) throw new BranchPushCommitConflictError(push.branch.branchId);
-            }
-            const now = new Date();
-            const rows = [];
-            for (const push of pushes) {
-              const lineage = await commitPreparedPush(txDb, push, now);
-              rows.push(lineage);
-              const mapped = mapLineage(lineage);
-              await persistRequiredTrail(changeTrails, push, mapped, notices);
-              await stagePendingSettlementWithinTx(txDb, push, mapped);
-            }
-            const mappedPushes = rows.map(mapLineage);
-            return {
-              pushes: mappedPushes,
-            };
-          },
-        ),
-      );
+      return runWithActiveWorkDrafts(
+        db,
+        { branchIds: input.pushes.map(({ branch }) => branch.branchId) },
+        () =>
+          mutatePending(
+            input.pushes.map(({ branch }) => branch.branchId),
+            async () => {
+              const txDb = currentDrizzleDb(db);
+              const pushes = sortPushesByDocumentId(input.pushes);
+              for (const push of pushes) {
+                const existing = await findLineage(txDb, push.idempotencyKey);
+                if (existing) throw new BranchPushCommitConflictError(push.branch.branchId);
+              }
+              const now = new Date();
+              const rows = [];
+              for (const push of pushes) {
+                const lineage = await commitPreparedPush(txDb, push, now);
+                rows.push(lineage);
+                const mapped = mapLineage(lineage);
+                await persistRequiredTrail(changeTrails, push, mapped, notices);
+                await stagePendingSettlementWithinTx(txDb, push, mapped);
+              }
+              const mappedPushes = rows.map(mapLineage);
+              return {
+                pushes: mappedPushes,
+              };
+            },
+          ),
+      ).catch(async (error: unknown) => {
+        if (!(error instanceof WorkLifecycleUnavailableError)) throw error;
+        for (const push of sortPushesByDocumentId(input.pushes)) {
+          if (await findLineage(currentDrizzleDb(db), push.idempotencyKey)) {
+            throw new BranchPushCommitConflictError(push.branch.branchId);
+          }
+        }
+        throw error;
+      });
     },
 
     async markRollbackPending(input) {
