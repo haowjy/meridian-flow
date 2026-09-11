@@ -13,6 +13,7 @@ import {
   useEffect,
   useId,
   useImperativeHandle,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -69,6 +70,8 @@ export type ComposerUploadPort = Readonly<{
 }>;
 
 export type ComposerProps = {
+  /** Hydrated before mounting; later prop changes never replace writer input. */
+  initialDraft?: ComposerDraftSnapshot | null;
   onSubmit: (
     envelope: ComposerSubmitEnvelope,
   ) => ComposerSubmitOutcome | Promise<ComposerSubmitOutcome>;
@@ -126,7 +129,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     referenceCatalog = null,
   } = props;
   const rotatingPlaceholder = useComposerPlaceholder(streaming);
-  const revision = useRef(0);
+  const [initialDraft] = useState(props.initialDraft);
+  const revision = useRef(initialDraft?.revision ?? 0);
   const restored = useRef(new Set<string>());
   const inFlight = useRef<ComposerSubmitEnvelope | null>(null);
   const [quarantined, setQuarantined] = useState<ComposerSubmitEnvelope | null>(null);
@@ -141,7 +145,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const suppressDraftChangeRef = useRef(false);
   const [pending, setPending] = useState(0);
   const [locked, setLocked] = useState(false);
-  const [hasContent, setHasContent] = useState(false);
+  const [hasContent, setHasContent] = useState(() => {
+    if (!initialDraft) return false;
+    const projection = serializeComposerDraft(initialDraft.doc);
+    return projection.text.length > 0 || projection.references.length > 0;
+  });
   const disabledReasonId = useId();
   const fileRef = useRef<HTMLInputElement>(null);
   const intakeFilesRef = useRef(new Map<string, File>());
@@ -193,7 +201,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),
       }),
     ],
-    content: { type: "doc", content: [{ type: "paragraph" }] },
+    content: initialDraft?.doc ?? { type: "doc", content: [{ type: "paragraph" }] },
     autofocus: autoFocus,
     editorProps: {
       handleDOMEvents: {
@@ -249,6 +257,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         onDraftChange?.({ text: envelope.text, snapshot: envelope.draft });
     },
   });
+  useLayoutEffect(() => {
+    if (editor && initialDraft) restoreComposerSelection(editor, initialDraft.selection);
+  }, [editor, initialDraft]);
   const snapshot = useCallback((): ComposerDraftSnapshot => {
     if (!editor)
       return {

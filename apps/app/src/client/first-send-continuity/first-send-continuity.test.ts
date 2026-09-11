@@ -106,7 +106,7 @@ describe("FirstSendContinuity", () => {
     const value = record();
     await continuity.stage(value);
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const opened = indexedDB.open(`meridian-first-send-${encodeURIComponent(account)}`, 1);
+      const opened = indexedDB.open(`meridian-first-send-${encodeURIComponent(account)}`);
       opened.onsuccess = () => resolve(opened.result);
       opened.onerror = () => reject(opened.error);
     });
@@ -120,5 +120,79 @@ describe("FirstSendContinuity", () => {
     });
     expect(await continuity.claim(value)).toBeNull();
     database.close();
+  });
+});
+
+describe("single creation slot", () => {
+  it("rejects a stale tab write and returns the authoritative draft", async () => {
+    const account = crypto.randomUUID();
+    const a = owner(account);
+    const b = new FirstSendContinuity(account);
+    const first = record().envelope.draft;
+    expect((await a.saveCreationDraft("project", 0, first)).kind).toBe("saved");
+    const stale = await b.saveCreationDraft("project", 0, { ...first, revision: 4 });
+    expect(stale).toMatchObject({ kind: "conflict", slot: { revision: 1, draft: first } });
+    expect((await a.readCreation(null)).draft).toBeNull();
+    expect((await owner().readCreation("project")).draft).toBeNull();
+  });
+
+  it("reserves one immutable attempt and late acknowledgement preserves newer typing", async () => {
+    const continuity = owner();
+    const envelope = record().envelope;
+    const saved = await continuity.saveCreationDraft("project", 0, envelope.draft);
+    const attempt = {
+      attemptId: "attempt",
+      projectId: "project",
+      threadId: "thread",
+      title: "Opening",
+      workId: null,
+      agentSlug: "writer",
+      submission: envelope,
+      phase: "creating" as const,
+    };
+    const claims = await Promise.all([
+      continuity.beginCreation("project", saved.slot.revision, attempt),
+      continuity.beginCreation("project", saved.slot.revision, { ...attempt, attemptId: "other" }),
+    ]);
+    expect(claims.filter((value) => value.kind === "saved")).toHaveLength(1);
+    const reserved = await continuity.readCreation("project");
+    const later = { ...envelope.draft, revision: 4 };
+    await continuity.saveCreationDraft("project", reserved.revision, later);
+    const ready = await continuity.settleCreation("project", "attempt", {
+      phase: "ready",
+      projectSlug: "serial",
+      threadSlug: "opening",
+    });
+    expect(ready.slot.attempt).toMatchObject({ ...attempt, phase: "ready" });
+    expect((await continuity.finishCreation("project", "other")).kind).toBe("conflict");
+    expect((await continuity.finishCreation("project", "attempt")).slot).toMatchObject({
+      draft: later,
+      attempt: null,
+    });
+  });
+
+  it("clears only an acknowledged unchanged draft, and discard keeps an uncertain attempt", async () => {
+    const continuity = owner();
+    const envelope = record().envelope;
+    const saved = await continuity.saveCreationDraft(null, 0, envelope.draft);
+    const attempt = {
+      attemptId: "attempt",
+      projectId: "new",
+      threadId: "thread",
+      title: "Opening",
+      workId: null,
+      agentSlug: "writer",
+      submission: envelope,
+      phase: "ambiguous" as const,
+    };
+    const begun = await continuity.beginCreation(null, saved.slot.revision, attempt);
+    const discarded = await continuity.saveCreationDraft(null, begun.slot.revision, null);
+    expect(discarded.slot.attempt?.attemptId).toBe("attempt");
+    expect((await continuity.finishCreation(null, "attempt")).kind).toBe("conflict");
+    await continuity.settleCreation(null, "attempt", { phase: "ready" });
+    expect((await continuity.finishCreation(null, "attempt")).slot).toMatchObject({
+      draft: null,
+      attempt: null,
+    });
   });
 });

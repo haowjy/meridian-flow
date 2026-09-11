@@ -1,4 +1,4 @@
-/** Account-scoped durable continuity for the one Project Home first submission. */
+/** Account-scoped creation draft slots and first-send admission continuity. */
 import type { ComposerDraftSnapshot, ComposerSubmitEnvelope } from "@/components/app/composer";
 
 export type FirstSendContinuityKey = Readonly<{
@@ -18,6 +18,34 @@ export type FirstSendContinuityClaim = Readonly<{
   dispatch: boolean;
 }>;
 
+export type CreationAttempt = Readonly<{
+  attemptId: string;
+  projectId: string;
+  threadId: string;
+  title: string;
+  workId: string | null;
+  agentSlug: string;
+  submission: ComposerSubmitEnvelope | null;
+  phase: "creating" | "ambiguous" | "refused" | "mismatched" | "ready";
+  projectSlug?: string;
+  threadSlug?: string;
+}>;
+export type CreationSlot = Readonly<{
+  version: 1;
+  revision: number;
+  draftRevision: number;
+  draft: ComposerDraftSnapshot | null;
+  attempt: (CreationAttempt & { draftRevision: number }) | null;
+}>;
+export type CreationSlotResult = { kind: "saved" | "conflict"; slot: CreationSlot };
+const EMPTY_CREATION: CreationSlot = {
+  version: 1,
+  revision: 0,
+  draftRevision: 0,
+  draft: null,
+  attempt: null,
+};
+const CREATION_STORE = "creation";
 const STORE = "continuity";
 
 function id(key: FirstSendContinuityKey): string {
@@ -82,15 +110,42 @@ function valid(value: unknown): value is FirstSendContinuityRecord {
     typeof row.envelope !== "object"
   )
     return false;
-  const envelope = row.envelope as Record<string, unknown>;
   return (
-    envelope.submissionId === row.submissionId &&
+    validSubmission(row.envelope) &&
+    row.envelope.submissionId === row.submissionId &&
+    (row.latestDraft === null || validSnapshot(row.latestDraft))
+  );
+}
+function validSubmission(value: unknown): value is ComposerSubmitEnvelope {
+  if (!value || typeof value !== "object") return false;
+  const envelope = value as Record<string, unknown>;
+  return (
+    typeof envelope.submissionId === "string" &&
     typeof envelope.acceptedRevision === "number" &&
     typeof envelope.text === "string" &&
     Array.isArray(envelope.blocks) &&
     Array.isArray(envelope.references) &&
-    validSnapshot(envelope.draft) &&
-    (row.latestDraft === null || validSnapshot(row.latestDraft))
+    validSnapshot(envelope.draft)
+  );
+}
+function validCreationAttempt(value: unknown): value is CreationSlot["attempt"] {
+  if (value === null) return true;
+  if (!value || typeof value !== "object") return false;
+  const attempt = value as Record<string, unknown>;
+  return (
+    [
+      attempt.attemptId,
+      attempt.projectId,
+      attempt.threadId,
+      attempt.title,
+      attempt.agentSlug,
+    ].every((field) => typeof field === "string") &&
+    Number.isSafeInteger(attempt.draftRevision) &&
+    (attempt.workId === null || typeof attempt.workId === "string") &&
+    (attempt.submission === null || validSubmission(attempt.submission)) &&
+    ["creating", "ambiguous", "refused", "mismatched", "ready"].includes(String(attempt.phase)) &&
+    (attempt.projectSlug === undefined || typeof attempt.projectSlug === "string") &&
+    (attempt.threadSlug === undefined || typeof attempt.threadSlug === "string")
   );
 }
 
@@ -98,6 +153,92 @@ export class FirstSendContinuity {
   private database: Promise<IDBDatabase> | null = null;
 
   constructor(readonly accountId: string) {}
+
+  /** A null project identifies the account's single new-project composer. */
+  async readCreation(projectId: string | null): Promise<CreationSlot> {
+    const db = await this.open();
+    const tx = db.transaction(CREATION_STORE, "readonly");
+    const value = await request(tx.objectStore(CREATION_STORE).get(projectId ?? ""));
+    await complete(tx);
+    return this.creationSlot(value);
+  }
+
+  async saveCreationDraft(
+    projectId: string | null,
+    expectedRevision: number,
+    draft: ComposerDraftSnapshot | null,
+  ): Promise<CreationSlotResult> {
+    return this.changeCreation(projectId, (slot) =>
+      slot.revision === expectedRevision
+        ? { ...slot, draft, draftRevision: slot.draftRevision + 1 }
+        : null,
+    );
+  }
+
+  async beginCreation(
+    projectId: string | null,
+    expectedRevision: number,
+    attempt: CreationAttempt,
+  ): Promise<CreationSlotResult> {
+    return this.changeCreation(projectId, (slot) =>
+      slot.revision === expectedRevision && !slot.attempt
+        ? { ...slot, attempt: { ...attempt, draftRevision: slot.draftRevision } }
+        : null,
+    );
+  }
+
+  async settleCreation(
+    projectId: string | null,
+    attemptId: string,
+    outcome: Pick<CreationAttempt, "phase" | "projectSlug" | "threadSlug">,
+  ): Promise<CreationSlotResult> {
+    return this.changeCreation(projectId, (slot) =>
+      slot.attempt?.attemptId === attemptId
+        ? { ...slot, attempt: { ...slot.attempt, ...outcome } }
+        : null,
+    );
+  }
+
+  async finishCreation(projectId: string | null, attemptId: string): Promise<CreationSlotResult> {
+    return this.changeCreation(projectId, (slot) =>
+      slot.attempt?.attemptId === attemptId && slot.attempt.phase === "ready"
+        ? {
+            ...slot,
+            draft: slot.draftRevision === slot.attempt.draftRevision ? null : slot.draft,
+            attempt: null,
+          }
+        : null,
+    );
+  }
+
+  private creationSlot(value: unknown): CreationSlot {
+    if (value === undefined) return EMPTY_CREATION;
+    const slot = value as CreationSlot;
+    if (
+      slot?.version !== 1 ||
+      !Number.isSafeInteger(slot.revision) ||
+      !Number.isSafeInteger(slot.draftRevision) ||
+      (slot.draft !== null && !validSnapshot(slot.draft)) ||
+      !validCreationAttempt(slot.attempt)
+    )
+      throw new Error("Creation draft is unreadable");
+    return slot;
+  }
+
+  private async changeCreation(
+    projectId: string | null,
+    update: (slot: CreationSlot) => CreationSlot | null,
+  ): Promise<CreationSlotResult> {
+    const db = await this.open();
+    const tx = db.transaction(CREATION_STORE, "readwrite");
+    const store = tx.objectStore(CREATION_STORE);
+    const slot = this.creationSlot(await request(store.get(projectId ?? "")));
+    const changed = update(slot);
+    const next = changed ? { ...changed, revision: slot.revision + 1 } : slot;
+    if (changed) store.put(next, projectId ?? "");
+    await complete(tx);
+    return { kind: changed ? "saved" : "conflict", slot: next };
+  }
 
   async stage(record: FirstSendContinuityRecord): Promise<void> {
     const db = await this.open();
@@ -193,8 +334,12 @@ export class FirstSendContinuity {
   private open(): Promise<IDBDatabase> {
     if (this.database) return this.database;
     this.database = new Promise((resolve, reject) => {
-      const open = indexedDB.open(`meridian-first-send-${encodeURIComponent(this.accountId)}`, 1);
-      open.onupgradeneeded = () => open.result.createObjectStore(STORE);
+      const open = indexedDB.open(`meridian-first-send-${encodeURIComponent(this.accountId)}`, 2);
+      open.onupgradeneeded = () => {
+        if (!open.result.objectStoreNames.contains(STORE)) open.result.createObjectStore(STORE);
+        if (!open.result.objectStoreNames.contains(CREATION_STORE))
+          open.result.createObjectStore(CREATION_STORE);
+      };
       open.onsuccess = () => resolve(open.result);
       open.onerror = () => reject(open.error);
     });

@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Add revision-checked creation draft storage and lossless Composer initialization for reload continuity.
+
 - Fence archived Work content mutations and draft Apply while retaining management, cleanup, and thread-history access.
 
 - Reject stale rename requests after path reuse, and keep file and folder names exclusive.

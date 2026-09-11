@@ -62,6 +62,18 @@ const textSnapshot = (text: string, revision: number) => ({
   ownedUploads: [],
 });
 describe("Composer draft changes", () => {
+  it("resumes a persisted snapshot without treating hydration as writer input", async () => {
+    const initialDraft = textSnapshot("Continue this scene", 13);
+    const onDraftChange = vi.fn();
+    const submitted = vi.fn((e: ComposerSubmitEnvelope) => outcome(e, "accepted"));
+    const ref = await mount(submitted, { initialDraft, onDraftChange });
+    expect(ref.current?.snapshot()).toEqual(initialDraft);
+    expect(onDraftChange).not.toHaveBeenCalled();
+    await send();
+    expect(submitted).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Continue this scene", acceptedRevision: 13 }),
+    );
+  });
   it("emits one authoritative snapshot with atomic JSON, selection, and owned uploads", async () => {
     const onDraftChange = vi.fn();
     const ref = await mount((e) => outcome(e, "accepted"), { onDraftChange });
