@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Serialize full draft Discard with Apply and preserve accepted documents when a stale Discard finishes later.
+
 - Add revision-checked creation draft storage and lossless Composer initialization for reload continuity.
 
 - Fence archived Work content mutations and draft Apply while retaining management, cleanup, and thread-history access.

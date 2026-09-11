@@ -1,7 +1,11 @@
 /** Route-core coverage for Work-draft preview identity. */
 
 import { describe, expect, it, vi } from "vitest";
-import { handleWorkDraftPreviewRequest } from "./draft-review-route.js";
+import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
+import {
+  handleApplyWorkDraftRequest,
+  handleWorkDraftPreviewRequest,
+} from "./draft-review-route.js";
 
 describe("Work-draft preview route", () => {
   it("includes the generation-fenced review room in an active response", async () => {
@@ -75,4 +79,38 @@ describe("Work-draft preview route", () => {
       ),
     ).resolves.toEqual({ status: "gone", draftId, live: "Live text" });
   });
+});
+
+it.each([
+  "archived",
+  "deleted",
+  "missing",
+] as const)("returns typed unavailability when Apply loses Work authority: %s", async (state) => {
+  const dependencies = {
+    projects: { findById: async () => ({ userId: "user", deletedAt: null }) },
+    works: { findById: async () => ({ projectId: "project" }) },
+    documentAccess: {
+      canAccessDocument: async () => true,
+      canAccessProjectDocument: async () => true,
+    },
+    documentSync: {
+      draftReview: {
+        applyWorkDraft: async () => {
+          throw new WorkLifecycleUnavailableError("work", state);
+        },
+      },
+    },
+  };
+  await expect(
+    handleApplyWorkDraftRequest(
+      dependencies as never,
+      {
+        projectId: "project",
+        workId: "work",
+        documentId: "document",
+        draftId: "draft",
+        userId: "user",
+      } as never,
+    ),
+  ).rejects.toMatchObject({ statusCode: 404, message: "Draft not found" });
 });
