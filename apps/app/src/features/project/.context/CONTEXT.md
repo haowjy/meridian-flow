@@ -241,6 +241,11 @@ UUID project routes and `?screen`/`?thread` grammar are gone. `project-route.ts`
 retains stable-ID command types and the context-removal CAS snapshot only; it is
 not a second address grammar.
 
+Empty Chat/Work selections are stored in href-scoped browser history state, not
+serialized as `?chat=&work=`. Actual selections remain readable query parameters.
+A fresh copied URL without these parameters may use local defaults; Back/Forward
+and reload preserve the entry's explicit no-selection intent.
+
 A readable address has explicit selections, not defaults: absent, no-Work,
 slug, malformed, and unavailable remain distinct. Only genuinely absent Chat
 or Editor selections may use their respective local continuity rules. An

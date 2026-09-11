@@ -65,7 +65,7 @@ describe("readable project addresses", () => {
       address: { chat: { kind: "absent" }, work: { kind: "absent" } },
     });
     expect(parseProjectAddress("/p/serial/editor", "?chat=&work=")).toMatchObject({
-      href: "/p/serial/editor?chat=&work=",
+      href: "/p/serial/editor",
       address: { chat: { kind: "none" }, work: { kind: "none" } },
     });
     expect(

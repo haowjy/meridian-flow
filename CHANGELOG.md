@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Keep empty Chat and Work selections out of URLs; preserve no-selection intent in browser history.
+
 - Use readable project, chat, Work, document, and folder addresses. Preserve renamed bookmarks and exact Back/Forward selections.
 - Keep desktop chat and editor sessions mounted across project screens and unavailable addresses.
 - Persist one creation draft per account/project context; reconcile uncertain creation without duplicate sends or lost newer text.

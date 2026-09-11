@@ -84,7 +84,11 @@ function parseDestination(parts: string[]): ProjectDestination | null {
 }
 
 /** Called with the router's original search string, before its default parser collapses duplicates. */
-export function parseProjectAddress(pathname: string, rawSearch = ""): ParsedProjectAddress {
+export function parseProjectAddress(
+  pathname: string,
+  rawSearch = "",
+  state: object = {},
+): ParsedProjectAddress {
   let parts: string[];
   try {
     if (!pathname.startsWith("/") || /%2f|%5c/i.test(pathname) || pathname.includes("\\"))
@@ -138,12 +142,27 @@ export function parseProjectAddress(pathname: string, rawSearch = ""): ParsedPro
     ...(isSettingsSection(settings) ? { settings } : {}),
     results: (editor || destination.kind === "chat") && query.has("results"),
   };
-  return { kind: "valid", address, href: projectAddressHref(address) };
+  const href = projectAddressHref(address);
+  const empty =
+    "meridianProjectEmptySelection" in state ? state.meridianProjectEmptySelection : undefined;
+  // History can pin no selection without leaking empty selectors into copied addresses.
+  // A marker copied by unrelated navigation must never affect another address.
+  if (
+    empty &&
+    typeof empty === "object" &&
+    "href" in empty &&
+    empty.href === projectAddressHref({ ...address, settings: undefined, results: false })
+  ) {
+    if (address.chat.kind === "absent" && "chat" in empty && empty.chat === true)
+      address.chat = { kind: "none" };
+    if (editor && address.work.kind === "absent" && "work" in empty && empty.work === true)
+      address.work = { kind: "none" };
+  }
+  return { kind: "valid", address, href };
 }
 
 function writeSelection(query: URLSearchParams, key: string, value: AddressSelection): void {
-  if (value.kind === "none") query.set(key, "");
-  else if (value.kind === "slug") query.set(key, value.slug);
+  if (value.kind === "slug") query.set(key, value.slug);
   else if (value.kind === "malformed") query.set(key, value.value);
 }
 
@@ -188,4 +207,22 @@ export function projectAddressHref(address: ProjectAddress): string {
   if (address.settings) query.set("settings", address.settings);
   const search = query.toString();
   return `/${parts.map(encodeURIComponent).join("/")}${search ? `?${search}` : ""}`;
+}
+
+/** Entry-local no-selection intent; actual selections remain in the public address. */
+export function projectAddressState(
+  address: ProjectAddress,
+  state: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    ...state,
+    meridianProjectEmptySelection:
+      address.chat.kind === "none" || address.work.kind === "none"
+        ? {
+            href: projectAddressHref({ ...address, settings: undefined, results: false }),
+            chat: address.chat.kind === "none",
+            work: address.work.kind === "none",
+          }
+        : undefined,
+  };
 }
