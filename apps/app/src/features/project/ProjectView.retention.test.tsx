@@ -91,15 +91,13 @@ it("parks the same desktop children through collection, creation and unavailable
       const editor = document.querySelector('[data-editor="work-a"]');
       expect(chat).not.toBeNull();
       expect(editor).not.toBeNull();
-      for (const chatDestination of ["chats", "new-chat"] as const) {
-        await act(async () =>
-          change({ activeScreen: "chat", activeThreadId: null, chatDestination }),
-        );
-        expect(document.querySelector('[data-chat="chat-a"]')).toBe(chat);
-        expect(chat?.getAttribute("data-active")).toBe("false");
-        expect(document.querySelector('[data-editor="work-a"]')).toBe(editor);
-        expect(editor?.getAttribute("data-active")).toBe("false");
-      }
+      await act(async () =>
+        change({ activeScreen: "chat", activeThreadId: null, chatDestination: "chats" }),
+      );
+      expect(document.querySelector('[data-chat="chat-a"]')).toBe(chat);
+      expect(chat?.getAttribute("data-active")).toBe("false");
+      expect(document.querySelector('[data-editor="work-a"]')).toBe(editor);
+      expect(editor?.getAttribute("data-active")).toBe("false");
       for (const issue of ["loading", "error", "unavailable"] as const) {
         await act(async () =>
           change({

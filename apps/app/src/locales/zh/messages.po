@@ -658,7 +658,6 @@ msgstr ""
 #~ msgid "Chat was created but couldn’t open"
 #~ msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/HomePaneController.tsx
 msgid "Chats"
 msgstr ""
@@ -2082,8 +2081,6 @@ msgstr ""
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
-#: src/features/project/home/HomeScreen.tsx
-#: src/features/project/HomePaneController.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "新对话"

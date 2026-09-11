@@ -118,7 +118,7 @@ export type ProjectViewProps = {
   activeScreen: ScreenKey;
   /** Active chat / subagent thread, also used by the persistent dock. */
   activeThreadId: string | null;
-  chatDestination?: "chats" | "new-chat";
+  chatDestination?: "chats";
   /** Explicit route Work state; loading/error never collapses into absence. */
   routeWork: RouteWorkResolution;
   editorRouteWork?: RouteWorkResolution;

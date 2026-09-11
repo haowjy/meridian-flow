@@ -56,6 +56,5 @@ describe("authorized address resolution", () => {
       kind: "slug",
       slug: "fight",
     });
-    expect(addressChatSelection(address("/p/serial/chats/new"))).toEqual({ kind: "none" });
   });
 });

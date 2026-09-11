@@ -5,20 +5,16 @@ import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { useEffect, useState } from "react";
 import { useHomeChatFeed } from "@/client/query/useHomeChatFeed";
 import { useAnnouncement } from "@/client/stores";
-import { Button } from "@/components/ui/button";
 import { CreationComposer } from "@/features/chat/CreationComposer";
-import { useOpenNewChatRoute } from "../routing/ProjectNavigationContext";
 import { HomeFeed } from "./HomeFeed";
 import { useHomeFavoriteMovement } from "./use-home-favorite-movement";
 
 export type HomeScreenProps = {
-  mode?: "home" | "chats" | "new-chat";
   projectId: string;
   onOpenThread: (threadId: string) => void;
 };
 
-export function HomeScreen({ projectId, onOpenThread, mode = "home" }: HomeScreenProps) {
-  const openNewChat = useOpenNewChatRoute();
+export function HomeScreen({ projectId, onOpenThread }: HomeScreenProps) {
   const feed = useHomeChatFeed(projectId);
   const { announce, announceError } = useAnnouncement();
   const movement = useHomeFavoriteMovement();
@@ -68,33 +64,20 @@ export function HomeScreen({ projectId, onOpenThread, mode = "home" }: HomeScree
     >
       <div className="project-screen-column">
         <div className="flex flex-col gap-6">
-          {mode !== "chats" ? (
-            <section>
-              <div className="mx-auto w-full max-w-3xl">
-                <h1 className="home-composer-heading text-headline-section">
-                  <Trans>What will you write next?</Trans>
-                </h1>
-                <p className="mt-2 text-body text-muted-foreground">
-                  <Trans>Start with a scene, a question, or a problem to solve.</Trans>
-                </p>
-                <div className="mt-4">
-                  <CreationComposer projectId={projectId} autoFocus={finePointer} />
-                </div>
-              </div>
-            </section>
-          ) : (
-            <div className="flex items-center justify-between gap-4">
-              <h1 className="text-headline-section">
-                <Trans>Chats</Trans>
+          <section>
+            <div className="mx-auto w-full max-w-3xl">
+              <h1 className="home-composer-heading text-headline-section">
+                <Trans>What will you write next?</Trans>
               </h1>
-              <Button disabled={!openNewChat} onClick={() => void openNewChat?.()}>
-                <Trans>New chat</Trans>
-              </Button>
+              <p className="mt-2 text-body text-muted-foreground">
+                <Trans>Start with a scene, a question, or a problem to solve.</Trans>
+              </p>
+              <div className="mt-4">
+                <CreationComposer projectId={projectId} autoFocus={finePointer} />
+              </div>
             </div>
-          )}
-          {mode !== "new-chat" ? (
-            <HomeFeed projectId={projectId} feed={feed} rowProps={rowProps} />
-          ) : null}
+          </section>
+          <HomeFeed projectId={projectId} feed={feed} rowProps={rowProps} />
         </div>
       </div>
     </div>

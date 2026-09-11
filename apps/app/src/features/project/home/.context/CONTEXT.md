@@ -20,7 +20,7 @@ and scroll/focus restoration in the favorite-movement hook. Do not duplicate
 any of those concerns in the screen orchestrator. Work detail renders that same
 row component; Work identity inside every list row is display-only.
 
-Project Home and New chat observe one persisted creation slot per account and
+Project Home and the Chats landing observe one persisted creation slot per account and
 creation context. The account owner, not a mounted Home or destination Chat,
 atomically claims, creates, and reconciles project-scoped entities. Only
 definite Work/Agent refusals allow correcting captured choices; uncertain
@@ -30,6 +30,12 @@ restores continuity only when its Composer revision still permits it, then
 retires exactly the restored durable revision. A newer destination edit must
 never be overwritten or retired to finish a handoff. Favorite/feed state is
 independent from this creation lifecycle.
+
+The Chats landing (`/p/:project/chats`) always composes the shared creation
+Composer above the existing chat feed, on desktop and phone. No button or
+separate `/chats/new` destination gates drafting. Opening the landing creates
+nothing; first send remains the account-owned creation operation. Home uses the
+same content, with its own pane title.
 
 ## Row layout and feed behavior
 

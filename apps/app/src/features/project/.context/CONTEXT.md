@@ -272,6 +272,10 @@ surface until the context tree validates and materializes its durable tab; a
 resolved missing address returns to the empty state. Context paths are reusable
 locations, never document identity.
 
+The Chat navigation item opens the composer-and-history landing, including from
+a chat detail. An already-open landing is a no-op. The switcher’s New chat
+shortcut targets that same landing; there is no separate `/chats/new` route.
+
 Chat switching lives in `features/chat/ThreadSwitcherPopover`; it filters by
 chat title, groups chats by Work when meaningful, and delegates actual
 navigation to the route owner. `ProjectView` resolves a chat once and passes its

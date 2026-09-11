@@ -187,13 +187,7 @@ function renderActiveView(
       );
     case "chat":
       if (props.chatDestination)
-        return (
-          <HomeScreen
-            projectId={props.projectId}
-            mode={props.chatDestination}
-            onOpenThread={props.onOpenThread}
-          />
-        );
+        return <HomeScreen projectId={props.projectId} onOpenThread={props.onOpenThread} />;
       return (
         <DraftReviewBoundary value={props.chatReview}>
           <MobileChatHost

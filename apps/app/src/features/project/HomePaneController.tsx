@@ -12,7 +12,7 @@ import { PaneTitle } from "./PaneTitle";
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type HomePaneControllerProps = {
-  mode?: "home" | "chats" | "new-chat";
+  mode?: "home" | "chats";
   projectId: string;
   sidebarToggle: PaneHeaderRailToggle;
   chatToggle: PaneHeaderRailToggle;
@@ -30,21 +30,13 @@ export function HomePaneController({
     <main className="main-pane flex min-h-0 flex-1 flex-col">
       <PaneHeader
         title={
-          <PaneTitle>
-            {mode === "chats" ? (
-              <Trans>Chats</Trans>
-            ) : mode === "new-chat" ? (
-              <Trans>New chat</Trans>
-            ) : (
-              <Trans>Home</Trans>
-            )}
-          </PaneTitle>
+          <PaneTitle>{mode === "chats" ? <Trans>Chats</Trans> : <Trans>Home</Trans>}</PaneTitle>
         }
         left={sidebarToggle}
         right={chatToggle}
       />
       <div className="page-sheet min-h-0">
-        <HomeScreen projectId={projectId} mode={mode} onOpenThread={onOpenThread} />
+        <HomeScreen projectId={projectId} onOpenThread={onOpenThread} />
       </div>
     </main>
   );

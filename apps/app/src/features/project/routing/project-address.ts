@@ -14,7 +14,7 @@ export type AddressSelection =
   | { kind: "malformed"; value: string };
 
 export type ProjectDestination =
-  | { kind: "home" | "chats" | "new-chat" | "works" | "editor" }
+  | { kind: "home" | "chats" | "works" | "editor" }
   | { kind: "chat"; chatSlug: string }
   | { kind: "work"; workSlug: string }
   | {
@@ -59,7 +59,6 @@ function parseDestination(parts: string[]): ProjectDestination | null {
       return { kind: parts[0] };
     if (parts[0] === "browse") return { kind: "browse", scheme: null, path: "", workSlug: null };
   }
-  if (parts.length === 2 && parts[0] === "chats" && parts[1] === "new") return { kind: "new-chat" };
   if (parts.length === 2 && parts[0] === "chat") {
     const slug = handle(parts[1]);
     return slug ? { kind: "chat", chatSlug: slug } : null;
@@ -135,7 +134,7 @@ export function parseProjectAddress(
     projectSlug,
     destination,
     chat:
-      destination.kind === "chat" || destination.kind === "chats" || destination.kind === "new-chat"
+      destination.kind === "chat" || destination.kind === "chats"
         ? ABSENT
         : selection(query.get("chat")),
     work,
@@ -178,9 +177,6 @@ export function projectAddressHref(address: ProjectAddress): string {
     case "work":
       parts.push("work", d.workSlug);
       break;
-    case "new-chat":
-      parts.push("chats", "new");
-      break;
     case "chats":
     case "works":
     case "editor":
@@ -195,8 +191,7 @@ export function projectAddressHref(address: ProjectAddress): string {
       break;
   }
   const query = new URLSearchParams();
-  if (d.kind !== "chat" && d.kind !== "chats" && d.kind !== "new-chat")
-    writeSelection(query, "chat", address.chat);
+  if (d.kind !== "chat" && d.kind !== "chats") writeSelection(query, "chat", address.chat);
   const context = d.kind === "editor" || d.kind === "document" || d.kind === "browse";
   const pathOwnsWork =
     (d.kind === "document" || d.kind === "browse") &&

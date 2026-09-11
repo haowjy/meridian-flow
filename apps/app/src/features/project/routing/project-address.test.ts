@@ -6,7 +6,6 @@ describe("readable project addresses", () => {
   it.each([
     "/p/serial",
     "/p/serial/chats",
-    "/p/serial/chats/new",
     "/p/serial/chat/editor",
     "/p/serial/works",
     "/p/serial/work/browse",
@@ -44,6 +43,7 @@ describe("readable project addresses", () => {
     "/p/serial/manuscript",
     "/p/serial/chat",
     "/p/serial/chat/a/b",
+    "/p/serial/chats/new",
     "/p/serial/agents",
     "/p/serial/publish",
     "/p/serial//",
