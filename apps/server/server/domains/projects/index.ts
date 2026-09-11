@@ -15,6 +15,7 @@ import type {
   DocumentCreationAggregate,
   MarkdownDocumentStore,
 } from "../collab/index.js";
+import { DrizzleContextDocumentStore } from "../context/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 import { nextProjectSlug } from "./adapters/project-repository/shared.js";
 import type { ContextCatalogLifecyclePort } from "./ports/context-catalog-lifecycle.js";
@@ -250,18 +251,17 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     const created = await deps.documents.createDocumentAtomically({
       documentId,
       persistIdentity: async () => {
-        const [document] = await tx
-          .insert(documents)
-          .values({
-            id: documentId,
-            contextSourceId,
-            name: "chapter-1",
-            extension: "md",
-            fileType: "markdown",
-            mimeType: "text/markdown",
-          })
-          .onConflictDoNothing()
-          .returning({ id: documents.id });
+        const document = await new DrizzleContextDocumentStore({
+          db,
+          contextSourceId,
+        }).createDocumentRecordIfAbsent({
+          id: documentId,
+          folderId: null,
+          name: "chapter-1",
+          extension: "md",
+          filetype: "markdown",
+          markdown: "",
+        });
         return Boolean(document);
       },
       persistMembership: () =>

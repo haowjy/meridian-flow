@@ -4,10 +4,8 @@ import type { Database } from "@meridian/database";
 import {
   contentDocumentKindSql,
   contentDocumentPredicate,
-  contextSources,
   documents,
   folders,
-  works,
 } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
@@ -30,6 +28,12 @@ import {
   type ContextTreeMutationResult,
   type ContextTreeMutationStore,
 } from "../../ports/context-tree-mutation-store.js";
+import {
+  claimDocumentLocation,
+  lockContextSources,
+  readTreeLocations,
+  recordDocumentMove,
+} from "./document-locations.js";
 import {
   type ContextDocumentMembershipEvent,
   type ContextDocumentMembershipObserver,
@@ -137,26 +141,6 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     return result;
   }
 
-  private async lockSources(sourceIds: readonly string[]): Promise<void> {
-    const uniqueIds = [...new Set(sourceIds)].sort();
-    const db = currentDrizzleDb(this.db);
-    for (const sourceId of uniqueIds) {
-      // Serialize ContextFS tree mutations per involved source. Row locks cannot
-      // protect absent target paths, so the advisory lock is the operation-level
-      // mutex while unique indexes remain the final guard against non-mutator writes.
-      await db.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`context-tree:${sourceId}`}))`);
-    }
-    const lockedWorks = await db
-      .select({ id: works.id, deletedAt: works.deletedAt })
-      .from(works)
-      .innerJoin(contextSources, eq(contextSources.workId, works.id))
-      .where(inArray(contextSources.id, uniqueIds))
-      .orderBy(works.id)
-      .for("update", { of: works });
-    const unavailable = lockedWorks.find((work) => work.deletedAt !== null);
-    if (unavailable) throw new Error(`Work not found: ${unavailable.id}`);
-  }
-
   private async findDirectFolder(
     sourceId: string,
     parentId: string | null,
@@ -204,6 +188,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         .returning({ id: folders.id });
       const createdFolderId = createdRows[0]?.id;
       if (!createdFolderId) rollback("conflict");
+      await claimDocumentLocation(this.db, sourceId, parentId, name);
       parentId = createdFolderId;
     }
     return parentId;
@@ -319,7 +304,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     input: ContextTreeMoveCommand,
   ): Promise<Result<ContextTreeMutationResult, ContextTreeMutationError>> {
     return this.withMutationTransaction(async (events) => {
-      await this.lockSources([input.source.sourceId, input.destinationSourceId]);
+      await lockContextSources(this.db, [input.source.sourceId, input.destinationSourceId]);
       const destinationPath = normalizeTreePath(input.destinationPath);
       const targetBasename = treeBasename(destinationPath);
       if (!targetBasename || input.source.nodeId === CONTEXT_ROOT_DIRECTORY_ID) {
@@ -358,6 +343,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         return Err({ code: "invalid_operation" });
       }
 
+      const previousLocations = await readTreeLocations(this.db, input.source);
       const destParentId = await this.ensureFolderPath(
         input.destinationSourceId,
         treePathSegments(targetParentPath),
@@ -408,6 +394,14 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           )
           .returning({ id: documents.id });
         if (moved.length !== 1) rollback("stale_source");
+        await recordDocumentMove(
+          this.db,
+          input.source.sourceId,
+          input.destinationSourceId,
+          previousLocations,
+          input.source.path,
+          destinationPath,
+        );
         await this.catalogMutations?.refreshSources(
           [input.source.sourceId, input.destinationSourceId],
           [input.source.nodeId],
@@ -433,6 +427,14 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           )
           .returning({ id: folders.id });
         if (movedRoot.length !== 1) rollback("stale_source");
+        await recordDocumentMove(
+          this.db,
+          input.source.sourceId,
+          input.destinationSourceId,
+          previousLocations,
+          input.source.path,
+          destinationPath,
+        );
         await this.catalogMutations?.refreshSources([input.source.sourceId], [input.source.nodeId]);
         return Ok({ movedNodeId: input.source.nodeId });
       }
@@ -492,6 +494,14 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
           AND folder_id IN (SELECT id FROM subtree)
       `);
 
+      await recordDocumentMove(
+        this.db,
+        input.source.sourceId,
+        input.destinationSourceId,
+        previousLocations,
+        input.source.path,
+        destinationPath,
+      );
       await this.catalogMutations?.refreshSources(
         [input.source.sourceId, input.destinationSourceId],
         [input.source.nodeId],
@@ -505,7 +515,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     source: Extract<ContextLocationToken, { kind: "file" }>,
   ): Promise<Result<void, ContextTreeMutationError>> {
     return this.withMutationTransaction(async () => {
-      await this.lockSources([source.sourceId]);
+      await lockContextSources(this.db, [source.sourceId]);
       const current = await this.inspect(source.sourceId, source.path);
       if (!sameLocation(current, source)) return Err({ code: "stale_source" });
       const graduated = await currentDrizzleDb(this.db)
@@ -534,7 +544,7 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
     const catalogMutations = this.catalogMutations;
     return this.withMutationTransaction(async (events) => {
       const token = command.root;
-      await this.lockSources([token.sourceId]);
+      await lockContextSources(this.db, [token.sourceId]);
       if (token.nodeId === CONTEXT_ROOT_DIRECTORY_ID) return Err({ code: "invalid_operation" });
       const current = await this.inspect(token.sourceId, token.path);
       if (!sameLocation(current, token)) return Err({ code: "stale_source" });

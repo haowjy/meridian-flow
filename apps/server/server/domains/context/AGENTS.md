@@ -31,7 +31,7 @@ journaling.
 
 ## HTTP routes
 
-Eight filesystem mutation/content routes live under
+Filesystem mutation/content routes live under
 `routes/api/projects/[projectId]/context/[scheme]/`. Most use `_helpers.ts` for
 auth, project ownership, scheme/Work resolution, canonical error translation,
 and URI construction. Writer-facing mutation input goes through the shared
@@ -49,10 +49,16 @@ recover that ID across all project and authorized Work schemes, returning its
 canonical scheme/path/Work authority. Returned `name` values are full filenames.
 
 Routes: `read.get.ts`, `create.post.ts`, `create-untitled.post.ts`,
-`rename.post.ts`, `move.post.ts`, `delete.post.ts`, `upload.post.ts`, and the
+`move.post.ts`, `delete.post.ts`, `upload.post.ts`, and the
 identity-bound `upload.delete.ts`. Upload routes delegate all authority,
 classification, collision, persistence, and deletion decisions to `UploadIntake`.
 Composer reference removal never calls the separate upload-delete route.
+
+Browser bookmarks use `address.get.ts`, a current-occupant-first lookup with
+previous paths pointing directly to stable document IDs. This does not change
+wikilink resolution. Every successful namespace claim consumes the exact old
+alias in the same transaction; source provisioning and hidden manifests are not
+path claims.
 
 Metadata browsing uses the sibling catalog routes: complete compact snapshot,
 whole-commit changes, direct children, and stable-ID/canonical-URI lookup. Every

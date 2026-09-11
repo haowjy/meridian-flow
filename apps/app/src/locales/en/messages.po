@@ -3065,6 +3065,10 @@ msgstr "That link could not be checked"
 msgid "That location does not exist"
 msgstr "That location does not exist"
 
+#: src/features/project/context/use-rename-entry-form.ts
+msgid "That name is already in use."
+msgstr "That name is already in use."
+
 #: src/features/chat/ChangeViewRows.tsx
 msgid "That part of the chapter is no longer available."
 msgstr "That part of the chapter is no longer available."
@@ -3131,6 +3135,10 @@ msgstr "The header row does not merge into the body."
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row stays first."
 msgstr "The header row stays first."
+
+#: src/features/project/context/use-rename-entry-form.ts
+msgid "The location changed. Try again."
+msgstr "The location changed. Try again."
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "The project could not be reached. The link itself is fine."

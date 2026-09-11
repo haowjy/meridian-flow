@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+- Record document rename and folder-move history atomically. Reused paths consume old bookmarks.
+- Share tree rename and document-location mutation, including collision and retry feedback.
+
 - Allocate readable project and chat handles; reserve project, Work, and chat handles through soft deletion.
 
 - Let Composer suggestions handle Enter before message submission.

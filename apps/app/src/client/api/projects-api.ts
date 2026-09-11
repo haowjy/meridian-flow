@@ -12,13 +12,14 @@ import type { Project } from "@meridian/contracts/projects";
 import type { HomeChatFeedPage, HomeProjectResponse } from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
+  apiProjectAddressPath,
   apiProjectContextCatalogPath,
   apiProjectContextCreatePath,
   apiProjectContextCreateUntitledPath,
   apiProjectContextDeletePath,
   apiProjectContextMovePath,
   apiProjectContextReadPath,
-  apiProjectContextRenamePath,
+  apiProjectDocumentAddressPath,
   apiProjectHomeFeedPath,
   apiProjectPath,
   apiProjectsHomePath,
@@ -42,6 +43,7 @@ import {
   type CreateUntitledContextDocumentResult,
   type DeleteContextEntryRequest,
   type DeleteContextEntryResult,
+  type DocumentAddressResult,
   type ListProjectsResponse,
   type ListProjectThreadsResponse,
   type ListWorksResponse,
@@ -52,8 +54,6 @@ import {
   type ProjectContextRequestOptions,
   type ProjectContextTreeScheme,
   type ProjectWorkingSet,
-  type RenameContextEntryRequest,
-  type RenameContextEntryResult,
   type ThreadListItem,
   type UpdateWorkWriteModeRequest,
   type UpdateWorkWriteModeResponse,
@@ -184,6 +184,22 @@ export function restoreWork(workId: string, init?: RequestInitOptions): Promise<
       headers: init?.headers,
     },
   );
+}
+
+export async function getProjectBySlug(slug: string, init?: RequestInitOptions): Promise<Project> {
+  return getJson(urlFor(apiProjectAddressPath(slug), init), { headers: init?.headers });
+}
+
+export async function getProjectDocumentAddress(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  path: string,
+  opts?: ProjectContextRequestOptions,
+  init?: RequestInitOptions,
+): Promise<DocumentAddressResult> {
+  return getJson(urlFor(apiProjectDocumentAddressPath(projectId, scheme, path, opts), init), {
+    headers: init?.headers,
+  });
 }
 
 export async function getProjectWorkingSet(
@@ -330,26 +346,6 @@ export async function createUntitledContextDocument(
     path: response.path.startsWith("/") ? response.path : `/${response.path}`,
   };
 }
-export async function renameContextEntry(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  body: RenameContextEntryRequest,
-  opts?: ProjectContextRequestOptions,
-  init?: RequestInitOptions,
-): Promise<RenameContextEntryResult> {
-  const response = await postJson<{ status?: number; statusCode?: number } | { status: "renamed" }>(
-    urlFor(apiProjectContextRenamePath(projectId, scheme, opts), init),
-    body,
-    { headers: init?.headers, acceptStatuses: [409] },
-  );
-  return {
-    status:
-      response.status === 409 || ("statusCode" in response && response.statusCode === 409)
-        ? "conflict"
-        : "renamed",
-  };
-}
-
 /**
  * Move (and optionally rename) a context entry across folders or schemes.
  * Paths in the request/response are scheme-relative WITHOUT a leading slash

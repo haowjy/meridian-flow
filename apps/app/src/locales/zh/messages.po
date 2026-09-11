@@ -3065,6 +3065,10 @@ msgstr ""
 msgid "That location does not exist"
 msgstr ""
 
+#: src/features/project/context/use-rename-entry-form.ts
+msgid "That name is already in use."
+msgstr ""
+
 #: src/features/chat/ChangeViewRows.tsx
 msgid "That part of the chapter is no longer available."
 msgstr ""
@@ -3130,6 +3134,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "The header row stays first."
+msgstr ""
+
+#: src/features/project/context/use-rename-entry-form.ts
+msgid "The location changed. Try again."
 msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx

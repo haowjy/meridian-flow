@@ -328,3 +328,9 @@ affect presentation.
 - [Server context domain](../../../../../../../apps/server/server/domains/context/AGENTS.md)
 - [Desktop project shell](../../.context/CONTEXT.md)
 - [Mobile project shell](../../mobile/.context/CONTEXT.md)
+
+Tree rename and the identity bar share `context-identity-mutation.ts`, including
+per-entry latest-wins sequencing and catalog invalidation. Inline rename keeps
+the stable file/folder entry ID; it must not bypass this service with a separate
+rename transport. Work selection is attached only to Scratch/Uploads, never
+project-owned Manuscript/KB/User paths.
