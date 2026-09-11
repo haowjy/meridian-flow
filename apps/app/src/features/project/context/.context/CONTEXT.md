@@ -21,10 +21,13 @@ files retain host Work context. Never add upload-specific navigation in Composer
 
 `local-untitled-locks.ts` owns the project/lineage lifetime and identity-reservation
 names and ports. `AccountFeatureLifetime` composes them with the account runtime's
-epoch signal and the lineage ledger/owner. An acquisition that crosses account
-close releases its lease before rejecting; teardown may still release existing
-leases. Native Web Locks adaptation is shared in `core/cross-context-locks.ts`,
-which knows nothing about projects or lineages.
+epoch `AbortSignal` and the lineage ledger/owner. The signal aborts on account
+close, including the render-before-unmount fence; asynchronous acquisition and
+live-document adoption must observe it rather than completing into the old
+account lifetime. An acquisition that crosses account close releases its lease
+before rejecting; teardown may still release existing leases. Native Web Locks
+adaptation is shared in `core/cross-context-locks.ts`, which knows nothing about
+projects or lineages.
 
 ## Architecture
 

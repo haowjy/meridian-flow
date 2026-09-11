@@ -222,9 +222,11 @@ Related: the project removal coordinator publishes a revisioned auto-open block.
 `ContextPaneController` consumes that external-store snapshot, so a removal blocks
 same-render and delayed cached-tree resurrection. A registered route host stays
 live while the writer visits another project screen; only host release or Work
-readiness suspension disables activation. Writer close and Work pruning are
-reversible, while acknowledged deletion and draft discard keep exact re-entry
-guards against stale resurrection.
+readiness suspension disables activation. A parked desktop Editor retains its
+private document and review state but is inactive: `ContextPaneController` must
+not admit its retained document or repair the address until its host is active
+again. Writer close and Work pruning are reversible, while acknowledged deletion
+and draft discard keep exact re-entry guards against stale resurrection.
 
 ## Readable routing, selection, and controllers
 
