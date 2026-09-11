@@ -30,6 +30,7 @@ import {
 } from "../../ports/context-tree-mutation-store.js";
 import {
   claimDocumentLocation,
+  hasOppositeContextEntry,
   lockContextSources,
   readTreeLocations,
   recordDocumentMove,
@@ -182,6 +183,8 @@ export class DrizzleContextTreeMutationStore implements ContextTreeMutationStore
         parentId = existing.id;
         continue;
       }
+      if (await hasOppositeContextEntry(this.db, sourceId, parentId, name, "folder"))
+        rollback("conflict");
       const createdRows: Array<{ id: string }> = await currentDrizzleDb(this.db)
         .insert(folders)
         .values({ contextSourceId: sourceId, parentId, name })

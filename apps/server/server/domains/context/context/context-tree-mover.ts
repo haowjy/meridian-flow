@@ -19,6 +19,7 @@ import {
 import type {
   ContextDeleteOptions,
   ContextError,
+  ContextLocationOptions,
   ContextMoveOptions,
   ContextMoveResult,
   ContextScheme,
@@ -103,10 +104,12 @@ export class ContextTreeMover {
   async commitWriterLocation(
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
+    expected?: ContextLocationOptions["expected"],
   ): Promise<Result<ContextMoveResult, ContextError>> {
     return this.changeLocation(source, destination, {
       target: "exact",
       graduateProvisionalName: true,
+      expected,
       overwrite: false,
     });
   }
@@ -116,10 +119,23 @@ export class ContextTreeMover {
     destination: ContextTreeDispatch,
     policy:
       | { target: "container"; overwrite: boolean }
-      | { target: "exact"; overwrite: false; graduateProvisionalName: true },
+      | {
+          target: "exact";
+          overwrite: false;
+          graduateProvisionalName: true;
+          expected?: ContextLocationOptions["expected"];
+        },
   ): Promise<Result<ContextMoveResult, ContextError>> {
     return this.commandExecutor.run(
       async () => {
+        if (policy.target === "exact" && policy.expected) {
+          const token = await this.inspect(source);
+          if (!token.ok) return token;
+          const kind = policy.expected.kind === "folder" ? "directory" : "file";
+          if (token.value?.kind !== kind || token.value.nodeId !== policy.expected.nodeId) {
+            return Err({ code: "stale_source", uri: source.canonical });
+          }
+        }
         if (source.canonical === destination.canonical) {
           return policy.target === "exact"
             ? this.graduateInPlace(source)
@@ -235,7 +251,12 @@ export class ContextTreeMover {
     destination: ContextTreeDispatch,
     policy:
       | { target: "container"; overwrite: boolean }
-      | { target: "exact"; overwrite: false; graduateProvisionalName: true },
+      | {
+          target: "exact";
+          overwrite: false;
+          graduateProvisionalName: true;
+          expected?: ContextLocationOptions["expected"];
+        },
   ): Promise<Result<PreparedContextMove, ContextError>> {
     const sourceToken = await this.inspect(source);
     if (!sourceToken.ok) return sourceToken;

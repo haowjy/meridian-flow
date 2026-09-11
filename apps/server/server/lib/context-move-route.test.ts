@@ -11,6 +11,7 @@ const OTHER_WORK_ID = "00000000-0000-4000-8000-000000000702";
 
 function body(overrides: Record<string, unknown> = {}) {
   return {
+    expected: { kind: "file", nodeId: "node-1" },
     path: "Source.md",
     destinationScheme: "manuscript",
     destinationFolderPath: "Dest",
@@ -102,6 +103,7 @@ describe("parseContextMove", () => {
         }),
       }),
     ).toEqual({
+      expected: { kind: "file", nodeId: "node-1" },
       source: {
         scope: "work",
         scheme: "scratch",
@@ -196,7 +198,7 @@ describe("handleContextMoveRequest", () => {
     expect(deps.port.commitWriterLocation).toHaveBeenCalledWith(
       "scratch://@work-1/Source.md",
       "scratch://@work-2/Drafts/Source.md",
-      { origin: { type: "human", userId: "user-1" } },
+      { origin: { type: "human", userId: "user-1" }, expected: { kind: "file", nodeId: "node-1" } },
     );
   });
 
@@ -212,7 +214,7 @@ describe("handleContextMoveRequest", () => {
     expect(deps.port.commitWriterLocation).toHaveBeenCalledWith(
       "scratch://@/Source.md",
       "scratch://@/Dest/Source.md",
-      { origin: { type: "human", userId: "user-1" } },
+      { origin: { type: "human", userId: "user-1" }, expected: { kind: "file", nodeId: "node-1" } },
     );
   });
 

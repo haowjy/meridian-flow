@@ -17,6 +17,7 @@ import type {
   ContextSchemeAdapter,
 } from "../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../ports/context-command-transaction.js";
+import { ContextEntryConflictError } from "../ports/context-document-store.js";
 import type {
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentResult,
@@ -154,6 +155,7 @@ async function callAdapter<T>(
   try {
     result = await op();
   } catch (error) {
+    if (error instanceof ContextEntryConflictError) return Err({ code: "conflict", uri });
     return Err({
       code: "io_error",
       uri,
@@ -458,14 +460,14 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return treeMover.move(source.value, destination.value, options);
     },
 
-    async commitWriterLocation(sourceUri, destinationUri, _options) {
+    async commitWriterLocation(sourceUri, destinationUri, options) {
       const source = await resolve(sourceUri);
       if (!source.ok) return source;
       const destination = await resolveMutation(destinationUri);
       if (!destination.ok) return destination;
       const creationDenied = crossSchemeCreationDenied(source.value, destination.value);
       if (creationDenied) return creationDenied;
-      return treeMover.commitWriterLocation(source.value, destination.value);
+      return treeMover.commitWriterLocation(source.value, destination.value, options?.expected);
     },
 
     async delete(

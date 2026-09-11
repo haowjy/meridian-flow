@@ -57,6 +57,24 @@ function dispatch(input: {
 }
 
 describe("ContextTreeMover result-aware command ownership", () => {
+  it.each([
+    "archive.md",
+    "draft.md",
+  ])("rejects a replaced source identity before moving or graduating to %s", async (path) => {
+    const mover = new ContextTreeMover();
+    const source = dispatch({ canonical: "manuscript://draft.md", path: "draft.md" });
+    const destination =
+      path === "draft.md"
+        ? source
+        : dispatch({ canonical: `manuscript://${path}`, path, token: null });
+    await expect(
+      mover.commitWriterLocation(source, destination, {
+        kind: "file",
+        nodeId: "original-document",
+      }),
+    ).resolves.toEqual(Err({ code: "stale_source", uri: "manuscript://draft.md" }));
+  });
+
   it("enters one transaction and preserves semantic move results", async () => {
     const transaction: ContextCommandTransaction = { run: vi.fn((operation) => operation()) };
     const mover = new ContextTreeMover(transaction);

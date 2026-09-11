@@ -14,14 +14,15 @@ import {
 
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { EventSink } from "../../../observability/index.js";
-import { parseFilename, splitPath } from "../../context/paths.js";
-import type {
-  ContextDocument,
-  ContextDocumentStore,
-  ContextFolder,
-  CreateBinaryDocumentInput,
-  UpsertBinaryDocumentInput,
-  UpsertDocumentInput,
+import { parseFilename, renderFilename, splitPath } from "../../context/paths.js";
+import {
+  type ContextDocument,
+  type ContextDocumentStore,
+  ContextEntryConflictError,
+  type ContextFolder,
+  type CreateBinaryDocumentInput,
+  type UpsertBinaryDocumentInput,
+  type UpsertDocumentInput,
 } from "../../ports/context-document-store.js";
 import {
   CONTEXT_ROOT_DIRECTORY_ID,
@@ -89,6 +90,31 @@ export function findInMemoryContextDocumentsById(
     } = row;
     return [{ ...document }];
   });
+}
+
+function hasOppositeEntry(
+  backing: InMemoryContextDocumentStoreBacking,
+  sourceId: string,
+  parentId: string | null,
+  filename: string,
+  kind: "file" | "folder",
+): boolean {
+  return kind === "file"
+    ? [...backing.folders.values()].some(
+        (row) =>
+          row.contextSourceId === sourceId &&
+          row.parentId === parentId &&
+          row.name === filename &&
+          row.deletedAt === null,
+      )
+    : [...backing.documents.values()].some(
+        (row) =>
+          row.contextSourceId === sourceId &&
+          row.folderId === parentId &&
+          renderFilename(row.name, row.extension) === filename &&
+          isContentDocumentKind(row.kind) &&
+          row.deletedAt === null,
+      );
 }
 
 function locationPath(
@@ -229,6 +255,8 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {
+    if (hasOppositeEntry(this.backing, this.sourceId, parentId, name, "folder"))
+      throw new ContextEntryConflictError();
     const existing = await this.findFolder(parentId, name);
     if (existing) return existing;
     const folder: FolderRow = {
@@ -274,6 +302,16 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument> {
+    if (
+      hasOppositeEntry(
+        this.backing,
+        this.sourceId,
+        input.folderId,
+        renderFilename(input.name, input.extension),
+        "file",
+      )
+    )
+      throw new ContextEntryConflictError();
     const existing = await this.findDocument(input.folderId, input.name, input.extension);
     if (existing && existing.fileType !== null) {
       throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
@@ -323,6 +361,16 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async createDocumentRecordIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
+    if (
+      hasOppositeEntry(
+        this.backing,
+        this.sourceId,
+        input.folderId,
+        renderFilename(input.name, input.extension),
+        "file",
+      )
+    )
+      return null;
     if (this.backing.documents.has(input.id ?? "")) return null;
     for (const row of this.backing.documents.values()) {
       if (
@@ -385,6 +433,16 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument> {
+    if (
+      hasOppositeEntry(
+        this.backing,
+        this.sourceId,
+        input.folderId,
+        renderFilename(input.name, input.extension),
+        "file",
+      )
+    )
+      throw new ContextEntryConflictError();
     const existing = await this.findDocument(input.folderId, input.name, input.extension);
     if (existing) {
       throw new Error(
@@ -419,6 +477,16 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument> {
+    if (
+      hasOppositeEntry(
+        this.backing,
+        this.sourceId,
+        input.folderId,
+        renderFilename(input.name, input.extension),
+        "file",
+      )
+    )
+      throw new ContextEntryConflictError();
     const existing = await this.findDocument(input.folderId, input.name, input.extension);
     if (existing) {
       const row = this.backing.documents.get(existing.id);
@@ -577,6 +645,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       return result;
     } catch (error) {
       if (this.mutatorTouchedBacking) this.restore(snapshot);
+      if (error instanceof ContextEntryConflictError) return Err({ code: "conflict" });
       throw error;
     } finally {
       releaseMutation();
@@ -612,6 +681,8 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         parentId = existing.id;
         continue;
       }
+      if (hasOppositeEntry(this.backing, sourceId, parentId, name, "folder"))
+        throw new ContextEntryConflictError();
       const folder: FolderRow = {
         id: crypto.randomUUID(),
         contextSourceId: sourceId,

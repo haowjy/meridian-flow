@@ -82,6 +82,39 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     }
 
+    it("keeps file and folder namespace claims exclusive in either order", async () => {
+      const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
+      await store.upsertDocument({
+        folderId: null,
+        name: "file",
+        extension: "md",
+        filetype: "markdown",
+        markdown: "original",
+      });
+      await expect(store.createFolder(null, "file.md")).rejects.toThrow(
+        "Context entry already exists",
+      );
+      await store.createFolder(null, "folder.md");
+      await expect(
+        store.createDocumentRecordIfAbsent({
+          folderId: null,
+          name: "folder",
+          extension: "md",
+          filetype: "markdown",
+          markdown: "replacement",
+        }),
+      ).resolves.toBeNull();
+      await expect(
+        store.upsertDocument({
+          folderId: null,
+          name: "folder",
+          extension: "md",
+          filetype: "markdown",
+          markdown: "replacement",
+        }),
+      ).rejects.toThrow("Context entry already exists");
+    });
+
     it("records direct identity history and permanently consumes reused file and folder paths", async () => {
       await insertDocument(DOC_DELETE_ID, "alpha");
       const tree = new DrizzleContextTreeMutationStore(db);
