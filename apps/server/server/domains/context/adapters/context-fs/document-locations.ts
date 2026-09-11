@@ -1,12 +1,15 @@
 /** Transactional namespace claims and direct-to-identity document location history. */
 import type { Database } from "@meridian/database";
 import {
+  contentDocumentPredicate,
   contextSources,
   documentPreviousLocations,
+  documents,
+  folders,
   projects,
   works,
 } from "@meridian/database/schema";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../../shared/drizzle-transaction.js";
 import { requireLockedActiveWork } from "../../../../shared/work-lifecycle-lock.js";
 import type { ContextCommandScope } from "../../ports/context-command-transaction.js";
@@ -182,4 +185,44 @@ export async function recordDocumentMove(
         ),
       );
   }
+}
+
+/** Caller holds the logical namespace lock; files and folders share rendered names. */
+export async function hasOppositeContextEntry(
+  db: Database,
+  sourceId: string,
+  parentId: string | null,
+  filename: string,
+  kind: "file" | "folder",
+): Promise<boolean> {
+  const tx = currentDrizzleDb(db);
+  if (kind === "file") {
+    const [row] = await tx
+      .select({ id: folders.id })
+      .from(folders)
+      .where(
+        and(
+          eq(folders.contextSourceId, sourceId),
+          parentId === null ? isNull(folders.parentId) : eq(folders.parentId, parentId),
+          eq(folders.name, filename),
+          isNull(folders.deletedAt),
+        ),
+      )
+      .limit(1);
+    return !!row;
+  }
+  const [row] = await tx
+    .select({ id: documents.id })
+    .from(documents)
+    .where(
+      and(
+        eq(documents.contextSourceId, sourceId),
+        contentDocumentPredicate(),
+        parentId === null ? isNull(documents.folderId) : eq(documents.folderId, parentId),
+        sql`CASE WHEN ${documents.extension} = '' THEN ${documents.name} ELSE ${documents.name} || '.' || ${documents.extension} END = ${filename}`,
+        isNull(documents.deletedAt),
+      ),
+    )
+    .limit(1);
+  return !!row;
 }

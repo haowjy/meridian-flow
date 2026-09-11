@@ -118,6 +118,7 @@ export type DeleteContextEntryRequest =
 
 export type MoveContextEntryRequest = {
   path: string;
+  expected: { kind: "file" | "folder"; nodeId: string };
   destinationScheme: ProjectContextTreeScheme;
   /** Scheme-relative parent folder; the empty string means the scheme root. */
   destinationFolderPath: string;

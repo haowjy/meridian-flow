@@ -23,6 +23,7 @@ export interface ContextIdentityMutationService {
     projectId: string,
     source: ContextLocation,
     desired: DesiredIdentity,
+    kind?: "file" | "folder",
   ): Promise<{ result: MoveContextEntryResult; isLatest: boolean }>;
 }
 
@@ -75,6 +76,7 @@ export function createContextIdentityMutationService(
       projectId: string,
       source: ContextLocation,
       desired: DesiredIdentity,
+      kind: "file" | "folder" = "file",
     ): Promise<{ result: MoveContextEntryResult; isLatest: boolean }> {
       const operation = operations.get(documentId) ?? { generation: 0, tail: Promise.resolve() };
       const generation = ++operation.generation;
@@ -83,6 +85,7 @@ export function createContextIdentityMutationService(
         const { destination } = desired;
         const currentName = actualSource.path.slice(actualSource.path.lastIndexOf("/") + 1);
         const result = await move(projectId, actualSource.scheme, {
+          expected: { kind, nodeId: documentId },
           path: actualSource.path.replace(/^\/+/, ""),
           ...(actualSource.workId ? { sourceWorkId: actualSource.workId } : {}),
           destinationScheme: destination.scheme,

@@ -28,6 +28,7 @@ describe("context entry authority-prefix guard", () => {
     [
       "root destination name",
       {
+        expected: { kind: "file", nodeId: "selected-document" },
         path: "notes.md",
         destinationScheme: "manuscript",
         destinationFolderPath: "",
@@ -37,6 +38,7 @@ describe("context entry authority-prefix guard", () => {
     [
       "nested destination folder",
       {
+        expected: { kind: "file", nodeId: "selected-document" },
         path: "notes.md",
         destinationScheme: "manuscript",
         destinationFolderPath: "Drafts/@Revision",

@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Reject stale rename requests after path reuse, and keep file and folder names exclusive.
+
 - Record document rename and folder-move history atomically. Reused paths consume old bookmarks.
 - Share tree rename and document-location mutation, including collision and retry feedback.
 

@@ -63,6 +63,7 @@ export function useRenameEntryForm({
             ...(ownedWorkId ? { workId: ownedWorkId } : {}),
           },
         },
+        kind,
       );
       if (result.result.status === "conflict") throw new Error(t`That name is already in use.`);
       if (result.result.status === "retry") throw new Error(t`The location changed. Try again.`);
