@@ -21,42 +21,31 @@ Only the chrome changes: top bar, drawer, and one active view at a time.
 
 ### Route ownership is the navigation model
 
-The project route owns all phone navigation state:
+Phone consumes the same readable address as desktop. The route parent owns
+navigation; mobile leaves call the typed handlers passed through `ProjectViewProps`
+and never construct paths or query strings. Primary destinations live beneath
+`/p/<project-slug>` (`/chats`, `/chat/<chat-slug>`, `/works`,
+`/work/<work-slug>`, `/editor`, and context browse/document paths). Context
+paths carry scheme and location in path segments; Work-scoped paths carry their
+Work slug in the path. `chat`, `work`, `settings`, and `results` are the only
+recognized query keys. The removed `screen`, `thread`, `scheme`, `folder`, and
+`path` query parameters are not compatibility inputs.
 
-| Param | Meaning |
-|---|---|
-| `?screen=` | Active primary project destination: `home`, `work`, `chat`, or `context`. |
-| `?results=` | Phone Results auxiliary surface. Presence means open; desktop ignores it. |
-| `?thread=` | Active chat thread. It rides along when switching screens. |
-| `?scheme=` | Active context source (`kb`, `user`, `work`, `fs1`). |
-| `?folder=` | Active folder within the scheme. Empty/root is omitted. |
-| `?path=` | Active file path within the scheme. |
+User navigation normally pushes so browser/OS Back walks destinations, Results,
+and context drill-in; canonicalization and an explicitly guarded controller
+repair replace. Results is auxiliary state: it preserves the underlying readable
+destination and Back closes it. Explicit unavailable or malformed selections
+remain inert and must not be rewritten to remembered/default content.
 
-Handlers push by default, not replace, so browser/OS back walks screen changes,
-Results open/close, and context drill-in levels. Replacement is reserved for
-route normalization (stale thread ids, explicit controller calls that pass
-`{ replace: true }`).
-
-Results is auxiliary state, not a primary destination. Opening Results sets
-`?results=` while preserving the underlying `?screen=` / `?thread=` state; Back
-closes it by returning to the previous URL. Closing with the top-bar
-`MessageSquare` also clears only `?results=`. Desktop does not normalize or
-fallback this param because its rail already surfaces Results.
-
-Load-bearing context invariant: **when a file is open, `folder === dirname(path)`**.
-`handleSelectContextPath()` pins `folder` to the file's parent directory. The
-mobile breadcrumb depends on this: folder ancestry doubles as the document
-screen's ancestor trail.
-
-Do not set URL params inside mobile leaf components. They call the route-owned
-handlers passed through `ProjectViewProps`.
+When a file is open, its breadcrumb derives from its parsed path. Mobile leaf
+components do not duplicate filename/path parsing or URL mutation.
 
 ### Primary screens derive from `SCREENS`
 
 `features/project/shell/screens.ts` has one primary destination registry:
-`SCREENS`. Route validation derives legal `?screen=` values from it. Settings and
-Results are not entries there because they are routed auxiliary surfaces
-(`?settings=` and `?results=`), not drawer/sidebar destinations.
+`SCREENS`. It supplies shell destination vocabulary, not browser query parsing.
+Settings and Results are auxiliary routed surfaces (`?settings=` and
+`?results=`), not drawer/sidebar destinations.
 
 ### Document sessions: mobile is a registry owner
 
