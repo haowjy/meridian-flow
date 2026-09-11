@@ -4,12 +4,16 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, FolderPlus } from "lucide-react";
 import { useCallback } from "react";
+import { getProject } from "@/client/api/projects-api";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { useWorks } from "@/client/query/useWorks";
 import { promoteIndependentProject } from "@/client/stores";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
 import { ChatView } from "@/features/chat/ChatView";
@@ -35,14 +39,23 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
   } = useThreadSnapshotSync(threadId);
   const projectId = thread?.projectId ?? null;
 
+  const project = useQuery({
+    queryKey: projectQueryKeys.detail(projectId ?? ""),
+    queryFn: () => getProject(projectId ?? ""),
+    enabled: !!projectId,
+  });
+
   const { works } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
   const activeWork = works?.find((work) => work.id === thread?.workId) ?? null;
 
   const handlePromote = useCallback(() => {
-    if (!projectId) return;
-    promoteIndependentProject(projectId);
-    void navigate({ to: "/project/$projectId", params: { projectId } });
-  }, [navigate, projectId]);
+    if (!project.data) return;
+    promoteIndependentProject(project.data.id);
+    void navigate({
+      to: "/p/$projectSlug/$",
+      params: { projectSlug: project.data.slug, _splat: "" },
+    });
+  }, [navigate, project.data]);
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-background text-foreground">
@@ -62,12 +75,15 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
           variant="outline"
           size="sm"
           onClick={handlePromote}
-          disabled={!projectId}
+          disabled={!project.data}
         >
           <FolderPlus className="size-3.5" aria-hidden />
           <Trans>Create project</Trans>
         </Button>
       </header>
+      {project.isError ? (
+        <InlineErrorRow message={t`Project couldn’t load`} onRetry={() => void project.refetch()} />
+      ) : null}
 
       <main className="min-h-0 flex-1">
         <DraftReviewProvider

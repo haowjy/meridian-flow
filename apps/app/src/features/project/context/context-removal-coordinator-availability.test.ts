@@ -6,7 +6,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
-import { type ProjectSearch, parseProjectSearch } from "../routing/project-route";
+import type { ProjectSearch } from "../routing/project-route";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { resolveDeskRoute } from "./context-route-desk-owner";
 
@@ -99,7 +99,7 @@ describe("ContextRemovalCoordinator availability batches", () => {
           search = nextLatestSearch;
           nextLatestSearch = null;
         }
-        search = update(parseProjectSearch(search));
+        search = update(search);
       },
     };
     let routes: WorkingSetRoute[] = [

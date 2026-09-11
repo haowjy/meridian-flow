@@ -11,7 +11,7 @@ import {
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { AdmittedLiveDocument } from "../context/open-project-document";
 import type { LiveDocumentHostBinding } from "../context/use-live-document-binding";
-import type { OpenContextRoute } from "../routing/ProjectContextRoute";
+import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import type { AiDraftLaunchTarget } from "./editor-review-handoff";
 import {
   EditorReviewHandoffProvider,

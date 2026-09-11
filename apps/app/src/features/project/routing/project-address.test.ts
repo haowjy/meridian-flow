@@ -104,7 +104,7 @@ describe("readable project addresses", () => {
         "/p/serial/chat/fight-scene",
         "?chat=other&work=revision&doc=ignored&results=&settings=profile",
       ),
-    ).toMatchObject({ href: "/p/serial/chat/fight-scene?settings=profile" });
+    ).toMatchObject({ href: "/p/serial/chat/fight-scene?results=&settings=profile" });
   });
 
   it("path-owned Work cannot be overridden by query context", () => {

@@ -35,7 +35,7 @@ export function WorkScreen(props: WorkScreenProps) {
       <WorkDetailScreen {...props} work={props.routeWork.work} catalogWorks={catalog.works ?? []} />
     );
   }
-  if (props.routeWork.status === "catalog-error") {
+  if (props.routeWork.status === "unresolved" && props.routeWork.reason === "error") {
     return (
       <div className="app-scroll">
         <div className="project-screen-column">
@@ -48,7 +48,7 @@ export function WorkScreen(props: WorkScreenProps) {
       </div>
     );
   }
-  if (props.routeWork.status === "loading") {
+  if (props.routeWork.status === "unresolved") {
     return (
       <div className="app-scroll">
         <div className="project-screen-column">
@@ -128,7 +128,8 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
   };
   const hrefFor = (work: Work) => {
     const workId = parseRequestId(work.id);
-    return workId ? routeCommands.workHref({ kind: "work-detail", workId }) : "?screen=work";
+    if (!workId) throw new Error("Invalid persisted Work identity");
+    return routeCommands.workHref({ kind: "work-detail", workId });
   };
   return (
     <div className="app-scroll" aria-busy={isFetching}>

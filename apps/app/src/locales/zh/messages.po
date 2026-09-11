@@ -14,11 +14,6 @@ msgstr ""
 "Plural-Forms: \n"
 
 #. js-lingui-explicit-id
-#: src/routes/_authenticated/project/$projectId.tsx
-msgid "Loading project…"
-msgstr ""
-
-#. js-lingui-explicit-id
 #: src/core/editor/change-mark-labels.ts
 msgid "Added a passage"
 msgstr "新增了一段内容"
@@ -62,6 +57,11 @@ msgstr ""
 #: src/core/editor/change-mark-labels.ts
 msgid "{agentName} deleted a passage"
 msgstr ""
+
+#. js-lingui-explicit-id
+#: src/routes/_authenticated/project/$projectId.tsx
+#~ msgid "Loading project…"
+#~ msgstr ""
 
 #: src/features/project/context/context-entry-name.ts
 msgid "'.' and '..' cannot be used as names"
@@ -647,11 +647,20 @@ msgid "Chat context"
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Chat creation is still being reconciled"
+#~ msgid "Chat creation is still being reconciled"
+#~ msgstr ""
+
+#: src/features/chat/CreationComposer.tsx
+msgid "Chat creation is still being reconciled."
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Chat was created but couldn’t open"
+#~ msgid "Chat was created but couldn’t open"
+#~ msgstr ""
+
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/HomePaneController.tsx
+msgid "Chats"
 msgstr ""
 
 #: src/features/project/home/HomeFeed.tsx
@@ -702,6 +711,10 @@ msgstr ""
 #: src/components/app/composer/placeholders.ts
 msgid "Chime in"
 msgstr "我来说两句"
+
+#: src/features/project/ProjectView.tsx
+msgid "Choose a chat to continue."
+msgstr ""
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Choose a document or enter a web address or document path."
@@ -864,6 +877,10 @@ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Continue navigation"
+msgstr ""
+
+#: src/features/chat/CreationComposer.tsx
+msgid "Continue the saved creation attempt."
 msgstr ""
 
 #: src/components/app/CopyTextButton.tsx
@@ -1084,8 +1101,8 @@ msgid "Created a Work"
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Created chat didn’t match your choices"
-msgstr ""
+#~ msgid "Created chat didn’t match your choices"
+#~ msgstr ""
 
 #. js-lingui-explicit-id
 #: src/features/chat/work-receipt-copy.ts
@@ -1096,7 +1113,7 @@ msgstr ""
 msgid "Creating a Work…"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/chat/CreationComposer.tsx
 msgid "Creating chat"
 msgstr ""
 
@@ -1485,7 +1502,7 @@ msgstr ""
 msgid "Finish reopening"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/chat/CreationComposer.tsx
 msgid "Finish the current chat attempt"
 msgstr ""
 
@@ -1497,7 +1514,7 @@ msgstr ""
 msgid "Finishing reopening"
 msgstr ""
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/chat/CreationComposer.tsx
 msgid "Finishing write mode change"
 msgstr ""
 
@@ -1826,6 +1843,14 @@ msgstr ""
 msgid "Loading chats"
 msgstr ""
 
+#: src/features/project/routing/ProjectRouteBoundary.tsx
+msgid "Loading destination…"
+msgstr ""
+
+#: src/features/chat/CreationComposer.tsx
+msgid "Loading draft…"
+msgstr ""
+
 #: src/features/project/context/ContextViewerHost.tsx
 msgid "Loading file…"
 msgstr ""
@@ -1841,6 +1866,10 @@ msgstr "正在加载图片"
 
 #: src/features/project/home/HomeFeed.tsx
 msgid "Loading more chats"
+msgstr ""
+
+#: src/routes/_authenticated/p/$projectSlug.tsx
+msgid "Loading project…"
 msgstr ""
 
 #: src/features/project/shell/ContextSidebar.tsx
@@ -1863,8 +1892,8 @@ msgstr ""
 msgid "Loading signed image URL…"
 msgstr ""
 
+#: src/features/chat/CreationComposer.tsx
 #: src/features/project/context/ContextTreePanel.tsx
-#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Loading Work"
 msgstr ""
@@ -2053,6 +2082,8 @@ msgstr ""
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
+#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/HomePaneController.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "新对话"
@@ -2075,8 +2106,8 @@ msgid "New folder"
 msgstr ""
 
 #: src/features/chat/useComposerNewProject.ts
-msgid "New project started"
-msgstr ""
+#~ msgid "New project started"
+#~ msgstr ""
 
 #: src/features/project/context/ContextTabBar.tsx
 msgid "New tab"
@@ -2193,8 +2224,6 @@ msgid "No Work matches your search."
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#: src/features/project/EditorWorkRecovery.tsx
-#: src/features/project/home/HomeScreen.tsx
 msgid "No Work yet."
 msgstr ""
 
@@ -2275,6 +2304,14 @@ msgstr ""
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "Open a project to see its results."
+msgstr ""
+
+#: src/features/project/context/ContextTabBar.tsx
+msgid "Open a Work to create an Untitled document"
+msgstr ""
+
+#: src/features/project/context/ContextViewer.tsx
+msgid "Open a Work to create an Untitled document, or pick a file from the tree."
 msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
@@ -2421,6 +2458,10 @@ msgstr ""
 msgid "Profile"
 msgstr ""
 
+#: src/features/chat/IndependentChatView.tsx
+msgid "Project couldn’t load"
+msgstr ""
+
 #: src/features/home/first-party-packages.ts
 msgid "Protocol Designer"
 msgstr ""
@@ -2526,8 +2567,8 @@ msgid "Redoing…"
 msgstr ""
 
 #: src/features/chat/ChatView.tsx
+#: src/features/chat/CreationComposer.tsx
 #: src/features/editor/EditorView.tsx
-#: src/features/project/home/HomeScreen.tsx
 msgid "Reference a file"
 msgstr ""
 
@@ -2639,6 +2680,7 @@ msgstr ""
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/home/HomeFeed.tsx
+#: src/routes/_authenticated/p/$projectSlug.tsx
 msgid "Retry"
 msgstr ""
 
@@ -2894,7 +2936,7 @@ msgid "Start a quick chat without a project"
 msgstr ""
 
 #: src/components/app/composer/Composer.tsx
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/chat/CreationComposer.tsx
 msgid "Start over"
 msgstr ""
 
@@ -2903,7 +2945,6 @@ msgid "Start with a scene, a question, or a problem to solve."
 msgstr ""
 
 #: src/features/editor/EditorView.tsx
-#: src/features/home/HomeView.tsx
 msgid "Start writing…"
 msgstr ""
 
@@ -3116,6 +3157,10 @@ msgstr ""
 msgid "The change could not be confirmed. Try again."
 msgstr ""
 
+#: src/features/chat/CreationComposer.tsx
+msgid "The created destination didn’t match your choices."
+msgstr ""
+
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "The document could not be created. Try again."
 msgstr ""
@@ -3276,6 +3321,18 @@ msgstr ""
 msgid "workReceipt.alreadyCurrent"
 msgstr ""
 
+#: src/features/chat/CreationComposer.tsx
+msgid "This creation attempt is open in another tab."
+msgstr ""
+
+#: src/features/project/routing/ProjectRouteBoundary.tsx
+msgid "This destination couldn’t load."
+msgstr ""
+
+#: src/features/project/routing/ProjectRouteBoundary.tsx
+msgid "This destination is unavailable."
+msgstr ""
+
 #: src/features/account/SettingsDialog.tsx
 msgid "This device"
 msgstr ""
@@ -3321,6 +3378,10 @@ msgstr ""
 msgid "This document keeps changing elsewhere. Reopen it and try again."
 msgstr ""
 
+#: src/features/chat/CreationComposer.tsx
+msgid "This draft changed in another tab. The saved version has been loaded."
+msgstr ""
+
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 msgstr ""
@@ -3362,6 +3423,10 @@ msgstr ""
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
 msgstr ""
 
+#: src/routes/_authenticated/p/$projectSlug.tsx
+msgid "This project couldn’t load. It may be unavailable."
+msgstr ""
+
 #: src/features/project/chat/ChatScreen.tsx
 msgid "This project has no chats yet."
 msgstr ""
@@ -3396,6 +3461,10 @@ msgstr ""
 
 #: src/features/project/work/WorkDialog.tsx
 msgid "This Work is archived."
+msgstr ""
+
+#: src/features/project/EditorWorkRecovery.tsx
+msgid "This Work is unavailable."
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -3491,6 +3560,10 @@ msgstr ""
 
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"
+msgstr ""
+
+#: src/features/project/mobile/MobileProject.tsx
+msgid "Untitled"
 msgstr ""
 
 #: src/features/chat/document-display-name.ts
@@ -3601,7 +3674,6 @@ msgid "Why this is marked merged"
 msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx
-#: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/home/NewThreadComposerToolbar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/screens.ts
@@ -3615,8 +3687,8 @@ msgstr ""
 msgid "workReceipt.upToDate"
 msgstr ""
 
+#: src/features/chat/CreationComposer.tsx
 #: src/features/project/EditorWorkRecovery.tsx
-#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Work couldn’t load"
 msgstr ""
@@ -3693,6 +3765,10 @@ msgstr ""
 msgid "Your chats will appear here after you send a message."
 msgstr ""
 
+#: src/features/chat/CreationComposer.tsx
+msgid "Your draft couldn’t be saved on this device."
+msgstr ""
+
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."
 msgstr ""
@@ -3710,7 +3786,11 @@ msgid "Your saved preference is unavailable. Sync is paused until retry succeeds
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx
-msgid "Your Work or Agent choice is no longer available"
+#~ msgid "Your Work or Agent choice is no longer available"
+#~ msgstr ""
+
+#: src/features/chat/CreationComposer.tsx
+msgid "Your Work or Agent choice is no longer available."
 msgstr ""
 
 #: src/features/account/SettingsDialog.tsx

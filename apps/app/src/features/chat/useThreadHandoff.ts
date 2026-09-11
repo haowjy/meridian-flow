@@ -1,7 +1,7 @@
 /**
  * useThreadHandoff — starts the chat stream that belongs to this thread mount.
  *
- * The hook owns both optimistic Home→Project handoff resume and snapshot-based
+ * The hook owns both durable project first-send admission and snapshot-based
  * reload resume. Keeping them in one place prevents two controller runs from
  * subscribing to the same active thread during mount.
  */
@@ -51,7 +51,7 @@ export function activeSnapshotResumeAfterSeq(liveState: ThreadLiveState): string
 
 /**
  * Consumes {@link ThreadStoreActions.consumePendingStream} once per mount: resumes
- * an in-flight run or performs the deferred Home/Draft first-message handoff.
+ * an in-flight run or claims a durable first-send admission or retained standalone creation.
  */
 export function useThreadHandoff(
   threadId: string,
@@ -59,12 +59,13 @@ export function useThreadHandoff(
   controller: Controller,
   actions: ThreadStoreActions,
   snapshotResume?: SnapshotResumeState,
-  restoreLatestDraft?: (snapshot: ComposerDraftSnapshot) => boolean,
+  restoreLatestDraft?: (snapshot: ComposerDraftSnapshot, expectedRevision: number) => number | null,
   restoreFailedSubmission?: (
     id: string,
     submitted: ComposerDraftSnapshot,
-    later?: ComposerDraftSnapshot | null,
-  ) => boolean,
+    later: ComposerDraftSnapshot | null | undefined,
+    expectedRevision: number,
+  ) => number | null,
 ): void {
   const pendingResumeRef = useRef(false);
   const handoffStartedRef = useRef(false);
@@ -85,15 +86,19 @@ export function useThreadHandoff(
   useEffect(() => {
     if (!projectId || continuityStartedRef.current) return;
     continuityStartedRef.current = true;
+    let mounted = true;
     void continuity
       .findForThread(projectId, threadId)
       .then(async (claim) => {
-        if (!claim) return;
+        if (!claim || !mounted) return;
         handoffStartedRef.current = true;
         const { record } = claim;
         const key = { projectId: record.projectId, threadId, submissionId: record.submissionId };
-        const laterRestored =
-          !record.latestDraft || (restoreLatestDraft?.(record.latestDraft) ?? false);
+        let destinationRevision: number | null = 0;
+        if (record.latestDraft)
+          destinationRevision =
+            restoreLatestDraft?.(record.latestDraft, destinationRevision) ?? null;
+        let restoredStamp = JSON.stringify([record.latestDraft, record.creation?.draftRevision]);
         const outcome = claim.dispatch
           ? await controller.submit(threadId, record.envelope, {
               optimisticUserTurnId: record.optimisticUserTurnId,
@@ -105,22 +110,41 @@ export function useThreadHandoff(
           await continuity.markAmbiguous(key);
           return;
         }
-        if (outcome.kind === "accepted") {
-          if (laterRestored) await continuity.remove(key);
-          return;
+        // Admission and creation acknowledgement retire together, only after the
+        // destination has restored the latest revision observed in that transaction.
+        let observed = await continuity.peek(key);
+        while (mounted && observed) {
+          if (destinationRevision === null) return;
+          const stamp = JSON.stringify([observed.latestDraft, observed.creation?.draftRevision]);
+          if (outcome.kind === "accepted") {
+            if (stamp !== restoredStamp) {
+              const draft =
+                observed.latestDraft ?? serializeComposerDraft(plainComposerDoc("")).draft;
+              destinationRevision = restoreLatestDraft?.(draft, destinationRevision) ?? null;
+            }
+          } else {
+            destinationRevision =
+              restoreFailedSubmission?.(
+                `${threadId}:${record.submissionId}:${observed.creation?.draftRevision ?? observed.latestDraft?.revision ?? "submitted"}`,
+                record.envelope.draft,
+                observed.latestDraft,
+                destinationRevision,
+              ) ?? null;
+          }
+          if (destinationRevision === null || (await continuity.retire(observed))) return;
+          restoredStamp = stamp;
+          observed = await continuity.peek(key);
         }
-        const restored =
-          restoreFailedSubmission?.(
-            `${threadId}:${record.submissionId}`,
-            record.envelope.draft,
-            record.latestDraft,
-          ) ?? false;
-        if (restored) await continuity.remove(key);
       })
       .catch((error) =>
         announceError(error instanceof Error ? error.message : "Failed to reconcile submission"),
       )
-      .finally(() => setContinuityChecked(true));
+      .finally(() => {
+        if (mounted) setContinuityChecked(true);
+      });
+    return () => {
+      mounted = false;
+    };
   }, [continuity, controller, projectId, restoreFailedSubmission, restoreLatestDraft, threadId]);
 
   useEffect(() => {
@@ -155,9 +179,9 @@ export function useThreadHandoff(
       pendingResumeRef.current = true;
       handoffStartedRef.current = true;
 
-      if (pendingStream.deferredSend) {
+      if (pendingStream.independentCreation) {
         const { projectId, title, text, optimisticUserTurnId, currentAgent } =
-          pendingStream.deferredSend;
+          pendingStream.independentCreation;
         void (async () => {
           try {
             await createProject({ id: projectId, title });

@@ -42,7 +42,7 @@ describe("ServerTabSessionBoundary", () => {
       return (
         <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
           {open ? (
-            <ServerTabSessionBoundary projectId="project-a" documentId="document-a">
+            <ServerTabSessionBoundary projectId="project-a" documentId="document-a" active={warm}>
               {(bound) => {
                 if (warm) seen.push(bound);
                 return null;
@@ -60,6 +60,9 @@ describe("ServerTabSessionBoundary", () => {
 
       await act(async () => setWarm(false));
       expect(release).not.toHaveBeenCalled();
+      await act(async () => setWarm(true));
+      expect(bind).toHaveBeenCalledOnce();
+      expect(seen.at(-1)).toBe(session);
 
       await act(async () => setOpen(false));
       expect(release).toHaveBeenCalledOnce();

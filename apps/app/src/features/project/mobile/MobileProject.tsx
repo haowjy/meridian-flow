@@ -9,10 +9,11 @@
  * up-navigation in the chrome is the top bar's breadcrumb (ancestor taps),
  * not a back button — the drawer trigger stays on every screen.
  */
+
 import { t } from "@lingui/core/macro";
 import { MessageSquare, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
-
+import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import { DraftReviewBoundary } from "@/features/chat/DraftReviewProvider";
@@ -23,6 +24,7 @@ import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
 import { EditorWorkRecovery } from "../EditorWorkRecovery";
 import { HomeScreen } from "../home/HomeScreen";
 import type { ReviewScopedProjectProps } from "../ProjectView";
+import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { WorkScreen } from "../work/WorkScreen";
 import { folderAncestry, pathLeafName } from "./context-location";
 import { MobileBreadcrumb, type MobileBreadcrumbSegment } from "./MobileBreadcrumb";
@@ -38,6 +40,10 @@ type MobileProjectProps = ReviewScopedProjectProps;
 
 export function MobileProject(props: MobileProjectProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const { tabs } = useContextTabs(props.projectId);
+  const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
+  const localTab =
+    selectedLocal?.kind === "new" || selectedLocal?.kind === "tracked" ? selectedLocal : undefined;
   // Pending inline create row (file/folder) in the Files browser. Lifted here
   // because the `+` entry point lives in the top bar's trailing slot while the
   // editable row renders inside MobileContextBrowser's folder listing. The
@@ -85,7 +91,20 @@ export function MobileProject(props: MobileProjectProps) {
         }
       />
       <main className="main-pane flex min-h-0 flex-1 flex-col overflow-hidden">
-        {renderActiveView(props, creating, () => setCreating(null))}
+        <ProjectRouteBoundary
+          issue={
+            props.routeIssues?.main ??
+            (props.activeScreen === "chat"
+              ? props.routeIssues?.chat
+              : props.activeScreen === "context"
+                ? props.editorScope.status === "ready"
+                  ? props.routeIssues?.editor
+                  : undefined
+                : undefined)
+          }
+        >
+          {renderActiveView(props, creating, () => setCreating(null), localTab)}
+        </ProjectRouteBoundary>
       </main>
       <NavigationDrawer
         open={drawerOpen}
@@ -125,7 +144,7 @@ function trailingAction(
       </PhoneIconButton>
     );
   }
-  if (props.activeScreen === "chat") {
+  if (props.activeScreen === "chat" && !props.chatDestination) {
     return (
       <PhoneIconButton onClick={props.onOpenResults} aria-label={t`Open results`}>
         <Sparkles className="size-5" aria-hidden />
@@ -133,7 +152,12 @@ function trailingAction(
     );
   }
   // All schemes accept creation when browsing a scheme root, matching the desktop tree's per-scheme `+`.
-  if (props.activeScreen === "context" && props.activeContextScheme && !props.activeContextPath) {
+  if (
+    props.activeScreen === "context" &&
+    props.activeContextScheme &&
+    !props.activeContextPath &&
+    !props.activeLocalDocumentId
+  ) {
     return <MobileCreateEntryMenu onSelect={onRequestCreate} />;
   }
   return undefined;
@@ -143,6 +167,7 @@ function renderActiveView(
   props: MobileProjectProps,
   creating: TreeCreationRequest | null,
   onCreateDone: () => void,
+  localTab?: Extract<ContextTab, { kind: "new" | "tracked" }>,
 ) {
   if (props.resultsOpen) {
     return <MobileResultsView projectId={props.projectId} />;
@@ -150,13 +175,7 @@ function renderActiveView(
 
   switch (props.activeScreen) {
     case "home":
-      return (
-        <HomeScreen
-          projectId={props.projectId}
-          onSelectThread={props.onSelectThread}
-          onOpenThread={props.onOpenThread}
-        />
-      );
+      return <HomeScreen projectId={props.projectId} onOpenThread={props.onOpenThread} />;
     case "work":
       return (
         <WorkScreen
@@ -167,6 +186,14 @@ function renderActiveView(
         />
       );
     case "chat":
+      if (props.chatDestination)
+        return (
+          <HomeScreen
+            projectId={props.projectId}
+            mode={props.chatDestination}
+            onOpenThread={props.onOpenThread}
+          />
+        );
       return (
         <DraftReviewBoundary value={props.chatReview}>
           <MobileChatHost
@@ -181,13 +208,7 @@ function renderActiveView(
       );
     case "context":
       if (props.editorScope.status !== "ready") {
-        return (
-          <EditorWorkRecovery
-            scope={props.editorScope}
-            onRetry={props.retryEditorWork}
-            onOpenWork={() => props.onSelectScreen("work")}
-          />
-        );
+        return <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />;
       }
       if (!props.contextLive) return null;
       return (
@@ -197,11 +218,12 @@ function renderActiveView(
             activeScheme={props.activeContextScheme}
             activePath={props.activeContextPath}
           />
-          {props.activeContextPath ? (
+          {props.activeContextPath || localTab ? (
             <MobileDocumentHost
               projectId={props.projectId}
               editorWorkId={props.editorWorkId}
               route={props.mobileDocumentRoute}
+              localTab={localTab}
             />
           ) : (
             <MobileContextBrowser
@@ -244,6 +266,11 @@ function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBread
   // `t` resolves at render time (this runs per render), matching how
   // schemeLabel localizes — both produce plain strings for the segment.
   const filesLabel = t`Files`;
+  if (props.activeLocalDocumentId)
+    return [
+      { label: filesLabel, onSelect: () => props.onExitContextScheme() },
+      { label: t`Untitled` },
+    ];
   if (!props.activeContextScheme) {
     // Files root: nothing is drilled in, so "Files" is the current location.
     return [{ label: filesLabel }];

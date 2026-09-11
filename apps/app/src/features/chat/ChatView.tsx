@@ -112,12 +112,26 @@ export function ChatView({
     isStreaming,
   });
 
-  const restoreFirstSendDraft = useCallback((snapshot: ComposerDraftSnapshot) => {
-    return composerRef.current?.restoreSnapshot(snapshot) ?? false;
-  }, []);
+  const restoreFirstSendDraft = useCallback(
+    (snapshot: ComposerDraftSnapshot, expectedRevision: number) => {
+      const composer = composerRef.current;
+      return composer?.restoreSnapshot(snapshot, expectedRevision)
+        ? composer.snapshot().revision
+        : null;
+    },
+    [],
+  );
   const restoreFailedFirstSend = useCallback(
-    (id: string, submitted: ComposerDraftSnapshot, later?: ComposerDraftSnapshot | null) => {
-      return composerRef.current?.restoreFailedSubmission(id, submitted, later) ?? false;
+    (
+      id: string,
+      submitted: ComposerDraftSnapshot,
+      later: ComposerDraftSnapshot | null | undefined,
+      expectedRevision: number,
+    ) => {
+      const composer = composerRef.current;
+      return composer?.restoreFailedSubmission(id, submitted, later, expectedRevision)
+        ? composer.snapshot().revision
+        : null;
     },
     [],
   );

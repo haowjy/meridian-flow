@@ -15,7 +15,6 @@ import {
   contextRouteMatchesSearch,
   openContextRouteSearch,
   type ProjectSearch,
-  transitionProjectSearch,
 } from "../routing/project-route";
 import type {
   AppliedAvailabilityCommand,
@@ -303,7 +302,15 @@ export function planContextAvailabilityBatch(
       }
       if (admitted?.workId === activeWorkId) admitted = null;
       if (input.routeSearch?.work === activeWorkId && routeSearch) {
-        routeSearch = transitionProjectSearch(routeSearch, { kind: "work-collection" });
+        routeSearch = {
+          ...routeSearch,
+          screen: "work",
+          work: undefined,
+          scheme: undefined,
+          folder: undefined,
+          path: undefined,
+          results: undefined,
+        };
       }
     }
   }

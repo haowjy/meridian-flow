@@ -112,7 +112,7 @@ describe("HomeScreen", () => {
       <I18nProvider i18n={i18n}>
         <QueryClientProvider client={client}>
           <FirstSendContinuityProvider accountId="account-1">
-            <HomeScreen projectId="project-1" onSelectThread={vi.fn()} onOpenThread={vi.fn()} />
+            <HomeScreen mode="chats" projectId="project-1" onOpenThread={vi.fn()} />
           </FirstSendContinuityProvider>
         </QueryClientProvider>
       </I18nProvider>,

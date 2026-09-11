@@ -7,6 +7,8 @@ import type { LocalUntitledOwner } from "./local-untitled-owner";
 import type { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
 import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
 
+const AccountEpochContext = createContext<AbortSignal | null>(null);
+
 const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
 const ProjectAvailabilityAccountContext =
   createContext<ProjectContextAvailabilityCoordinator | null>(null);
@@ -121,19 +123,21 @@ function AccountFeatureProviders({
     };
   }, [lifetime]);
   return (
-    <ContextRemovalAccountContext.Provider value={lifetime.removal}>
-      <ProjectAvailabilityAccountContext.Provider value={lifetime.availability}>
-        <LocalUntitledAccountContext.Provider value={lifetime.localOwner}>
-          <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
-            <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
-              <PostApplyOwnerAccountContext.Provider value={lifetime.postApplyOwner}>
-                {children}
-              </PostApplyOwnerAccountContext.Provider>
-            </ProjectDocumentLiveOpenerContext.Provider>
-          </LiveDocumentRegistryAccountContext.Provider>
-        </LocalUntitledAccountContext.Provider>
-      </ProjectAvailabilityAccountContext.Provider>
-    </ContextRemovalAccountContext.Provider>
+    <AccountEpochContext.Provider value={lifetime.runtime.epochSignal}>
+      <ContextRemovalAccountContext.Provider value={lifetime.removal}>
+        <ProjectAvailabilityAccountContext.Provider value={lifetime.availability}>
+          <LocalUntitledAccountContext.Provider value={lifetime.localOwner}>
+            <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
+              <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
+                <PostApplyOwnerAccountContext.Provider value={lifetime.postApplyOwner}>
+                  {children}
+                </PostApplyOwnerAccountContext.Provider>
+              </ProjectDocumentLiveOpenerContext.Provider>
+            </LiveDocumentRegistryAccountContext.Provider>
+          </LocalUntitledAccountContext.Provider>
+        </ProjectAvailabilityAccountContext.Provider>
+      </ContextRemovalAccountContext.Provider>
+    </AccountEpochContext.Provider>
   );
 }
 
@@ -171,4 +175,11 @@ export function useAccountPostApplyDispositionOwner(): PostApplyDispositionOwner
 
 export function useOptionalProjectContextAvailabilityCoordinator(): ProjectContextAvailabilityCoordinator | null {
   return useContext(ProjectAvailabilityAccountContext);
+}
+
+/** Immediate account-close fence, including the render-before-unmount transition. */
+export function useAccountEpochSignal(): AbortSignal {
+  const signal = useContext(AccountEpochContext);
+  if (!signal) throw new Error("AccountFeatureComposition is required");
+  return signal;
 }

@@ -2,63 +2,27 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
-import { useCallback, useEffect, useState } from "react";
-import { uploadIntakePort } from "@/client/api/upload-intake-api";
+import { useEffect, useState } from "react";
 import { useHomeChatFeed } from "@/client/query/useHomeChatFeed";
-import { useWorks } from "@/client/query/useWorks";
-import { useAnnouncement, useThreadActions } from "@/client/stores";
-import { Composer } from "@/components/app/composer";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { DEFAULT_AGENT_SLUG } from "@/features/agents";
-import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
-import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { resolveCatalogWork } from "../catalog-work-resolution";
+import { useAnnouncement } from "@/client/stores";
+import { Button } from "@/components/ui/button";
+import { CreationComposer } from "@/features/chat/CreationComposer";
+import { useOpenNewChatRoute } from "../routing/ProjectNavigationContext";
 import { HomeFeed } from "./HomeFeed";
-import { NewThreadComposerToolbar } from "./NewThreadComposerToolbar";
 import { useHomeFavoriteMovement } from "./use-home-favorite-movement";
-import {
-  type HomeFirstSendLifecycle,
-  useHomeFirstSendAttempt,
-} from "./use-home-first-send-attempt";
-
-function firstSendFailure(state: HomeFirstSendLifecycle) {
-  switch (state.kind) {
-    case "refused":
-      return {
-        message: t`Your Work or Agent choice is no longer available`,
-        action: "retry" as const,
-      };
-    case "ambiguous":
-      return { message: t`Chat creation is still being reconciled`, action: "retry" as const };
-    case "route_failed":
-      return { message: t`Chat was created but couldn’t open`, action: "retry" as const };
-    case "mismatched":
-      return { message: t`Created chat didn’t match your choices`, action: "start_over" as const };
-    case "idle":
-    case "creating":
-    case "reconciling":
-    case "routing":
-      return null;
-  }
-}
 
 export type HomeScreenProps = {
+  mode?: "home" | "chats" | "new-chat";
   projectId: string;
-  onSelectThread: (threadId: string) => Promise<void>;
   onOpenThread: (threadId: string) => void;
 };
 
-export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScreenProps) {
+export function HomeScreen({ projectId, onOpenThread, mode = "home" }: HomeScreenProps) {
+  const openNewChat = useOpenNewChatRoute();
   const feed = useHomeChatFeed(projectId);
-  const worksQuery = useWorks(projectId);
-  const openReferenceDocument = useOpenProjectDocument(projectId ?? undefined);
-  const actions = useThreadActions();
   const { announce, announceError } = useAnnouncement();
   const movement = useHomeFavoriteMovement();
   const [now, setNow] = useState(Date.now());
-  const [agentSlug, setAgentSlug] = useState(DEFAULT_AGENT_SLUG);
-  const [chosenWorkId, setChosenWorkId] = useState<string | null | undefined>(undefined);
-  const [modePending, setModePending] = useState(false);
   const [finePointer, setFinePointer] = useState(false);
 
   useEffect(() => {
@@ -73,26 +37,6 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
     media.addEventListener("change", sync);
     return () => media.removeEventListener("change", sync);
   }, []);
-  const firstSend = useHomeFirstSendAttempt({ projectId, actions, onSelectThread });
-  const firstSendError = firstSendFailure(firstSend.state);
-  const catalogWork = resolveCatalogWork(
-    worksQuery.status === "error"
-      ? { status: "error" }
-      : worksQuery.status === "loading" || worksQuery.status === "disabled"
-        ? { status: "loading" }
-        : { status: "ready", works: worksQuery.works ?? [] },
-  );
-  const initialWork =
-    worksQuery.works?.find(({ status }) => status === "active") ?? worksQuery.works?.[0] ?? null;
-  const effectiveWorkId = chosenWorkId === undefined ? (initialWork?.id ?? null) : chosenWorkId;
-  const selectedWork = worksQuery.works?.find(({ id }) => id === effectiveWorkId) ?? null;
-  const referenceCatalog = useReferenceBrowserCatalog(
-    projectId,
-    selectedWork?.id,
-    t`Reference a file`,
-  );
-  const handleModePendingChange = useCallback((pending: boolean) => setModePending(pending), []);
-
   const rowProps = {
     now,
     onOpen: (item: ProjectChatItem) => onOpenThread(item.id),
@@ -114,33 +58,6 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
         });
     },
   };
-  const worksExecutable = catalogWork.status === "ready" || catalogWork.status === "empty";
-  const submitDisabledReason = firstSend.busy
-    ? t`Creating chat`
-    : modePending
-      ? t`Finishing write mode change`
-      : worksQuery.status === "loading"
-        ? t`Loading Work`
-        : firstSend.submitLocked
-          ? t`Finish the current chat attempt`
-          : undefined;
-  const submit = async (envelope: import("@/components/app/composer").ComposerSubmitEnvelope) => {
-    if (modePending)
-      return {
-        kind: "rejected" as const,
-        submissionId: envelope.submissionId,
-        acceptedRevision: envelope.acceptedRevision,
-      };
-    const accepted = await firstSend.submit(envelope, {
-      workId: selectedWork?.id ?? null,
-      agentSlug,
-    });
-    return {
-      kind: accepted ? ("accepted" as const) : ("rejected" as const),
-      submissionId: envelope.submissionId,
-      acceptedRevision: envelope.acceptedRevision,
-    };
-  };
 
   return (
     <div
@@ -151,99 +68,33 @@ export function HomeScreen({ projectId, onSelectThread, onOpenThread }: HomeScre
     >
       <div className="project-screen-column">
         <div className="flex flex-col gap-6">
-          <section>
-            <div className="mx-auto w-full max-w-3xl">
-              <h1 className="home-composer-heading text-headline-section">
-                <Trans>What will you write next?</Trans>
-              </h1>
-              <p className="mt-2 text-body text-muted-foreground">
-                <Trans>Start with a scene, a question, or a problem to solve.</Trans>
-              </p>
-              <div className="mt-4">
-                <Composer
-                  onOpenReference={
-                    projectId
-                      ? (reference) => {
-                          void openReferenceDocument({
-                            documentId: reference.documentId,
-                            disposition: "current",
-                          });
-                        }
-                      : undefined
-                  }
-                  variant="hero"
-                  autoFocus={finePointer}
-                  onSubmit={submit}
-                  referenceCatalog={referenceCatalog}
-                  uploadPort={uploadIntakePort}
-                  uploadScope={
-                    selectedWork
-                      ? {
-                          kind: "work",
-                          projectId,
-                          workId: selectedWork.id,
-                          workSlug: selectedWork.slug,
-                        }
-                      : { kind: "none", projectId }
-                  }
-                  onDraftChange={firstSend.updateDraft}
-                  submitDisabled={!worksExecutable || modePending || firstSend.submitLocked}
-                  submitDisabledReason={submitDisabledReason}
-                  busy={firstSend.busy}
-                  toolbarLeft={
-                    <NewThreadComposerToolbar
-                      projectId={projectId}
-                      work={selectedWork}
-                      selectedWorkId={selectedWork?.id ?? null}
-                      works={worksQuery.works ?? []}
-                      worksStatus={
-                        catalogWork.status === "error"
-                          ? "error"
-                          : catalogWork.status === "loading"
-                            ? "loading"
-                            : "ready"
-                      }
-                      agentSlug={agentSlug}
-                      disabled={firstSend.contextLocked}
-                      onAgentChange={setAgentSlug}
-                      onWorkChange={(work) => setChosenWorkId(work?.id ?? null)}
-                      onRetryWorks={worksQuery.refetch}
-                      onModePendingChange={handleModePendingChange}
-                    />
-                  }
-                />
-                {firstSend.busy ? (
-                  <p role="status" aria-live="polite" className="sr-only">
-                    <Trans>Creating chat</Trans>
-                  </p>
-                ) : null}
-              </div>
-              {worksQuery.status === "error" ? (
-                <InlineErrorRow message={t`Work couldn’t load`} onRetry={worksQuery.refetch} />
-              ) : null}
-              {catalogWork.status === "empty" ? (
-                <p className="mt-3 text-sm text-muted-foreground">
-                  <Trans>No Work yet.</Trans>
+          {mode !== "chats" ? (
+            <section>
+              <div className="mx-auto w-full max-w-3xl">
+                <h1 className="home-composer-heading text-headline-section">
+                  <Trans>What will you write next?</Trans>
+                </h1>
+                <p className="mt-2 text-body text-muted-foreground">
+                  <Trans>Start with a scene, a question, or a problem to solve.</Trans>
                 </p>
-              ) : null}
-              {firstSendError ? (
-                <InlineErrorRow
-                  message={firstSendError.message}
-                  actionLabel={
-                    firstSendError.action === "start_over" ? <Trans>Start over</Trans> : undefined
-                  }
-                  onRetry={() => {
-                    if (firstSendError.action === "start_over") {
-                      firstSend.startOver();
-                    } else {
-                      void firstSend.retry({ workId: selectedWork?.id ?? null, agentSlug });
-                    }
-                  }}
-                />
-              ) : null}
+                <div className="mt-4">
+                  <CreationComposer projectId={projectId} autoFocus={finePointer} />
+                </div>
+              </div>
+            </section>
+          ) : (
+            <div className="flex items-center justify-between gap-4">
+              <h1 className="text-headline-section">
+                <Trans>Chats</Trans>
+              </h1>
+              <Button disabled={!openNewChat} onClick={() => void openNewChat?.()}>
+                <Trans>New chat</Trans>
+              </Button>
             </div>
-          </section>
-          <HomeFeed projectId={projectId} feed={feed} rowProps={rowProps} />
+          )}
+          {mode !== "new-chat" ? (
+            <HomeFeed projectId={projectId} feed={feed} rowProps={rowProps} />
+          ) : null}
         </div>
       </div>
     </div>

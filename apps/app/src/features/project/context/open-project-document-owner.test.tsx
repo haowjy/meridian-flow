@@ -5,7 +5,10 @@ import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { act, type ReactNode, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { type OpenContextRoute, ProjectContextRouteProvider } from "../routing/ProjectContextRoute";
+import {
+  type OpenContextRoute,
+  ProjectNavigationProvider,
+} from "../routing/ProjectNavigationContext";
 import {
   type OpenProjectDocument,
   type ProjectDocumentLiveOpener,
@@ -67,11 +70,11 @@ function Owner({
 }) {
   return (
     <ProjectDocumentLiveOpenerContext.Provider value={opener as ProjectDocumentLiveOpener}>
-      <ProjectContextRouteProvider openContextRoute={openRoute}>
+      <ProjectNavigationProvider openContextRoute={openRoute}>
         <ProjectDocumentNavigationProvider projectId={projectId}>
           {children}
         </ProjectDocumentNavigationProvider>
-      </ProjectContextRouteProvider>
+      </ProjectNavigationProvider>
     </ProjectDocumentLiveOpenerContext.Provider>
   );
 }

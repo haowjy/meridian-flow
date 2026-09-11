@@ -18,7 +18,7 @@ import type {
   LiveDocumentAcknowledgement,
   LiveDocumentHostBinding,
 } from "../context/use-live-document-binding";
-import type { OpenContextRoute } from "../routing/ProjectContextRoute";
+import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 
 export type AiDraftLaunchTarget = {
   workId: string;
