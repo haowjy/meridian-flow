@@ -174,6 +174,10 @@ describe("single creation slot", () => {
     expect((await a.saveCreationDraft("project", 0, first)).kind).toBe("saved");
     const stale = await b.saveCreationDraft("project", 0, { ...first, revision: 4 });
     expect(stale).toMatchObject({ kind: "conflict", slot: { revision: 1, draft: first } });
+    expect(await b.saveCreationChoices("project", 0, { workId: "stale-work" })).toMatchObject({
+      kind: "conflict",
+      slot: { revision: 1, draft: first },
+    });
     expect((await a.readCreation(null)).draft).toBeNull();
     expect((await owner().readCreation("project")).draft).toBeNull();
   });
@@ -198,6 +202,12 @@ describe("single creation slot", () => {
     ]);
     expect(claims.filter((value) => value.kind === "saved")).toHaveLength(1);
     const reserved = await continuity.readCreation("project");
+    expect(
+      await continuity.saveCreationChoices("project", reserved.revision, { agentSlug: "other" }),
+    ).toMatchObject({
+      kind: "conflict",
+      slot: { attempt },
+    });
     const later = { ...envelope.draft, revision: 4 };
     await continuity.saveCreationDraft("project", reserved.revision, later);
     const ready = await continuity.publishCreation("project", "attempt", {

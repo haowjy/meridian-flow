@@ -90,6 +90,37 @@ const submission = () =>
   serializeComposerDraft(plainComposerDoc("Exact opening"), 4, { anchor: 6, head: 2 });
 
 describe("CreationController", () => {
+  it("keeps prospective Work and Agent with the draft across creation surface remounts", async () => {
+    const { continuity, ports } = setup();
+    const controller = new CreationController("project", continuity, ports);
+    await controller.load();
+    vi.spyOn(ports, "createThread");
+    const draft = submission().draft;
+    controller.updateDraft(draft);
+    controller.updateChoices({ workId: "work-b" });
+    controller.updateChoices({ agentSlug: "editor" });
+    await controller.reload();
+    controller.dispose();
+    const remounted = new CreationController("project", continuity, ports);
+    await remounted.load();
+    expect(remounted.getSnapshot().slot).toMatchObject({
+      draft,
+      choices: { workId: "work-b", agentSlug: "editor" },
+    });
+    expect(ports.createThread).not.toHaveBeenCalled();
+    // A submit immediately after another choice must use the queued intent, not stale UI props.
+    remounted.updateChoices({ workId: "work-a" });
+    await remounted.submit({
+      submission: submission(),
+      title: "Exact opening",
+      workId: "work-b",
+      agentSlug: "writer",
+    });
+    expect(ports.createThread).toHaveBeenCalledWith(
+      expect.objectContaining({ workId: "work-a", agentSlug: "editor" }),
+    );
+    remounted.dispose();
+  });
   it("captures the selected Work and transfers typing that races server creation", async () => {
     const { continuity, ports, makeThread } = setup();
     const started = deferred<CreationAttempt>();

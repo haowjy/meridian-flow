@@ -754,8 +754,12 @@ msgid "Choose Work for new chat, currently {0}"
 msgstr ""
 
 #: src/features/project/home/NewThreadComposerToolbar.tsx
-msgid "Choose Work for new chat, currently No Work"
+msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr ""
+
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+#~ msgid "Choose Work for new chat, currently No Work"
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
@@ -982,6 +986,7 @@ msgid "Couldn't finish that step"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
+#: src/features/chat/CreationComposer.tsx
 msgid "Couldn't load agents."
 msgstr ""
 
@@ -1835,6 +1840,7 @@ msgid "Loading {name}"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
+#: src/features/chat/CreationComposer.tsx
 msgid "Loading agents…"
 msgstr ""
 
@@ -3529,6 +3535,10 @@ msgstr ""
 msgid "Unavailable"
 msgstr ""
 
+#: src/features/project/home/NewThreadComposerToolbar.tsx
+msgid "Unavailable Work"
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Undid"
 msgstr ""
@@ -3780,6 +3790,14 @@ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Your saved preference is unavailable. Sync is paused until retry succeeds."
+msgstr ""
+
+#: src/features/chat/CreationComposer.tsx
+msgid "Your selected Agent is unavailable. Choose another Agent."
+msgstr ""
+
+#: src/features/chat/CreationComposer.tsx
+msgid "Your selected Work is unavailable. Choose another Work or No Work."
 msgstr ""
 
 #: src/features/project/home/HomeScreen.tsx

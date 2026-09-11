@@ -6,6 +6,7 @@
 ## [Unreleased]
 
 - Show the new-chat composer above previous chats on the Chats page. No extra creation screen or button required.
+- Preserve a draft’s chosen Work and Agent across Home, Chats, and reload.
 
 - Keep empty Chat and Work selections out of URLs; preserve no-selection intent in browser history.
 

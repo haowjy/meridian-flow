@@ -34,10 +34,12 @@ export type CreationAttempt = Readonly<{
   projectSlug?: string;
   threadSlug?: string;
 }>;
+export type CreationChoices = { workId?: string | null; agentSlug?: string };
 export type CreationSlot = Readonly<{
   version: 1;
   revision: number;
   draftRevision: number;
+  choices?: CreationChoices;
   draft: ComposerDraftSnapshot | null;
   attempt: (CreationAttempt & { draftRevision: number | null }) | null;
 }>;
@@ -205,6 +207,18 @@ export class FirstSendContinuity {
     return this.changeCreation(projectId, (slot) =>
       slot.revision === expectedRevision
         ? { ...slot, draft, draftRevision: slot.draftRevision + 1 }
+        : null,
+    );
+  }
+
+  async saveCreationChoices(
+    projectId: string | null,
+    expectedRevision: number,
+    choices: CreationChoices,
+  ): Promise<CreationSlotResult> {
+    return this.changeCreation(projectId, (slot) =>
+      slot.revision === expectedRevision && (!slot.attempt || slot.attempt.phase === "refused")
+        ? { ...slot, choices: { ...slot.choices, ...choices } }
         : null,
     );
   }
@@ -411,6 +425,13 @@ export class FirstSendContinuity {
       !Number.isSafeInteger(slot.revision) ||
       !Number.isSafeInteger(slot.draftRevision) ||
       (slot.draft !== null && !validSnapshot(slot.draft)) ||
+      (slot.choices !== undefined &&
+        (!slot.choices ||
+          typeof slot.choices !== "object" ||
+          (slot.choices.workId !== undefined &&
+            slot.choices.workId !== null &&
+            typeof slot.choices.workId !== "string") ||
+          (slot.choices.agentSlug !== undefined && typeof slot.choices.agentSlug !== "string"))) ||
       !validCreationAttempt(slot.attempt)
     )
       throw new Error("Creation draft is unreadable");
