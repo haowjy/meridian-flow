@@ -46,11 +46,20 @@ vi.mock("./chat/ChatSurface", () => ({
 vi.mock("./ContextPaneController", () => ({
   ContextViewerSurfaceController: ({
     editorWorkId,
+    activeContextPath,
     active,
   }: {
     editorWorkId: string | null;
+    activeContextPath: string | null;
     active: boolean;
-  }) => <textarea data-editor={editorWorkId} data-active={active} defaultValue="Live document" />,
+  }) => (
+    <textarea
+      data-editor={editorWorkId}
+      data-path={activeContextPath}
+      data-active={active}
+      defaultValue="Live document"
+    />
+  ),
 }));
 
 it("parks the same desktop children through collection, creation and unavailable requests", async () => {
@@ -91,6 +100,17 @@ it("parks the same desktop children through collection, creation and unavailable
       const editor = document.querySelector('[data-editor="work-a"]');
       expect(chat).not.toBeNull();
       expect(editor).not.toBeNull();
+      await act(async () =>
+        change({
+          activeContextPath: "/b.md",
+          routeIssues: { editor: "loading" },
+        }),
+      );
+      expect(document.querySelector('[data-editor="work-a"]')).toBe(editor);
+      expect(editor?.getAttribute("data-path")).toBe("/a.md");
+      expect(editor?.closest('[aria-hidden="true"]')).toBeNull();
+      await act(async () => change({ activeContextPath: "/b.md" }));
+      expect(editor?.getAttribute("data-path")).toBe("/b.md");
       await act(async () =>
         change({ activeScreen: "chat", activeThreadId: null, chatDestination: "chats" }),
       );

@@ -335,3 +335,25 @@ it("retains a no-Work binary tab and unrelated desk entries across reload", asyn
     "image",
   ]);
 });
+
+it("does not publish an open superseded while waiting for the desk lock", async () => {
+  const storage = new MemoryStorage();
+  let enter!: () => Promise<unknown>;
+  const delayedLocks = {
+    request: <T>(_name: string, _options: { mode: "exclusive" }, callback: () => T | Promise<T>) =>
+      new Promise<T>((resolve) => {
+        enter = async () => resolve(await callback());
+      }),
+  };
+  const ledger = new DeviceContextDeskLedger(storage, "account", delayedLocks);
+  let current = true;
+  const pending = ledger.apply(
+    { kind: "open", projectId: "project", tab: localTab("obsolete") },
+    () => current,
+  );
+  current = false;
+  await enter();
+  expect((await pending).kind).toBe("stale");
+  expect(storage.value).toBeNull();
+  expect(ledger.snapshot().projects.project).toBeUndefined();
+});

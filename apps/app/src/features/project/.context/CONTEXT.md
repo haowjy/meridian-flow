@@ -258,8 +258,19 @@ first Work for Editor.
 
 A cold different-project transition immediately replaces the old shell with an
 inert boundary, so stale Context publishers cannot remain active. A same-project
-child pending/error preserves the parent and parks the requested primary or
-secondary host. The removal coordinator's route repair is still an identity and
+child error preserves the parent and parks the requested primary or secondary
+host. During same-Work Editor document navigation, the last usable document
+remains visible while the new address resolves; its identity chrome stays with
+its content. A delayed, nonblocking progress indicator handles slow transitions.
+Work recovery and unavailable/error destinations still mask retained content.
+The authorized address response publishes tab metadata directly and awaits desk
+publication; the document host owns live-session binding, not a second
+background open in the URL layer. Cached address metadata cannot repair an
+address until its active refetch settles; aliases stay pending until the
+canonical replacement owns the route. Replacement reports an owned failure
+against its own revision and unchanged source entry, so a rejected alias repair
+settles to an error without resurfacing a superseded request. Navigation-owned desk publication checks
+its current-entry/attempt predicate under the desk lock before persistence. The removal coordinator's route repair is still an identity and
 revision guarded CAS; it operates over the current address projection and must
 not recreate obsolete search grammar.
 
@@ -268,9 +279,10 @@ name. It owns address-admitted opens, temporary-tab projection, scroll
 restoration, and screen-entry defaults. Project-entry desk seed/validation is
 hydration-scoped and never re-runs on a Work change. The removal coordinator
 owns close fallback, atomic old/new Work continuity, remembered destination,
-and guarded route repair. A known address can project a loading tab and document
-surface until the context tree validates and materializes its durable tab; a
-resolved missing address returns to the empty state. Context paths are reusable
+and guarded route repair. A cold address can project loading until the
+authoritative address resolver publishes its durable tab. Session binding and
+content startup belong to the document host. An explicitly unavailable address
+stays unavailable rather than selecting a fallback. Context paths are reusable
 locations, never document identity.
 
 The Chat navigation item opens the composer-and-history landing, including from

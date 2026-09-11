@@ -98,7 +98,7 @@ type ContextTabsState = {
 };
 
 type ContextTabsActions = {
-  openTab: (projectId: string, tab: ContextTab) => Promise<void>;
+  openTab: (projectId: string, tab: ContextTab, isCurrent?: () => boolean) => Promise<void>;
   remintNewTab: (projectId: string, documentId: string, replacementId: string) => Promise<void>;
   materializeNewTab: (
     projectId: string,
@@ -226,7 +226,8 @@ function projectSnapshot(snapshot: {
 export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>()(
   devtools(
     (rawSet, get) => {
-      const dispatchResult = async (build: DeskCommandBuilder) => {
+      const dispatchResult = async (build: DeskCommandBuilder, isCurrent?: () => boolean) => {
+        if (isCurrent?.() === false) return null;
         const current = get();
         const command = build(current);
         if (!command) return null;
@@ -244,7 +245,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           return reduced;
         }
         const ledger = deviceDesk;
-        const result = await ledger.apply(command);
+        const result = await ledger.apply(command, isCurrent);
         const mounted = get();
         if (
           deviceDesk === ledger &&
@@ -254,8 +255,8 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           rawSet(projectSnapshot(result.snapshot));
         return result;
       };
-      const dispatch = (build: DeskCommandBuilder): Promise<void> =>
-        dispatchResult(build).then(() => undefined);
+      const dispatch = (build: DeskCommandBuilder, isCurrent?: () => boolean): Promise<void> =>
+        dispatchResult(build, isCurrent).then(() => undefined);
 
       return {
         byProject: {},
@@ -263,7 +264,8 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         _deskHydrated: false,
         _deskRevision: 0,
 
-        openTab: (projectId, input) => {
+        openTab: (projectId, input, isCurrent) => {
+          if (isCurrent?.() === false) return Promise.resolve();
           const tab = { ...input, tabInstanceId: input.tabInstanceId ?? crypto.randomUUID() };
           if (tab.draftOnly) {
             rawSet((base) => {
@@ -312,6 +314,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                 ...(tab.kind === "new" ? { expectedDeskRevision: base._deskRevision } : {}),
                 tab,
               }) as DeviceContextDeskCommand,
+            isCurrent,
           );
         },
 

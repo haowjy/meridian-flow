@@ -503,7 +503,8 @@ export function ReadableProjectRoute({
             href={location.href}
             entryKey={location.state.__TSR_key ?? ""}
             address={address}
-            result={documentLookup.data}
+            // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
+            result={documentLookup.isFetching ? undefined : documentLookup.data}
             workId={workId}
             workSlug={editorWork.status === "resolved" ? editorWork.value.slug : null}
             navigation={navigation}

@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Keep the current document visible during Editor navigation; remove redundant route-level session opening.
+
 - Show the new-chat composer above previous chats on the Chats page. No extra creation screen or button required.
 - Preserve a draft’s chosen Work and Agent across Home, Chats, and reload.
 

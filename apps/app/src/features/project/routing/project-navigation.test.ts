@@ -81,7 +81,7 @@ describe("project navigation", () => {
         lateDefault,
         address("/p/serial/editor?chat=new-default&work=revision"),
       ),
-    ).toBe(false);
+    ).toEqual({ kind: "superseded" });
     history.back();
     expect(history.location.href).toBe("/p/serial/editor");
     expect(history.location.state).toMatchObject({
@@ -148,11 +148,11 @@ describe("project navigation", () => {
     expect(history.location.href).toBe(ticket.href);
     expect(
       await navigation.replaceIfCurrent(ticket, address("/p/serial/manuscript/renamed.md")),
-    ).toBe(false);
+    ).toEqual({ kind: "superseded" });
     const current = navigation.capture();
     expect(
       await navigation.replaceIfCurrent(current, address("/p/serial/manuscript/current.md")),
-    ).toBe(true);
+    ).toEqual({ kind: "replaced" });
     navigation.dispose();
   });
   it("retains a scoped local pointer without putting its UUID in the public URL", async () => {
