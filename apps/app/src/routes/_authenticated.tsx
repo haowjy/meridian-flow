@@ -21,11 +21,8 @@ import { configureWorkingSetSync } from "@/client/working-set";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import {
-  isSettingsSection,
-  SettingsDialog,
-  type SettingsSection,
-} from "@/features/account/SettingsDialog";
+import { SettingsDialog } from "@/features/account/SettingsDialog";
+import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
 import {
   AccountFeatureComposition,
