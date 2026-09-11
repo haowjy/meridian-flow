@@ -173,10 +173,10 @@ Both transports emit this shape; the reducer consumes this shape.
 
 ## Client-led creation patterns
 
-`src/lib/optimistic-project.ts` is the template for client-led writes:
-client-generated UUID → navigate immediately → call `threads-api.ts` → reconcile
-on response. It remains the pattern for flows whose destination can safely own
-an unresolved create.
+`src/lib/optimistic-independent-chat.ts` owns the retained standalone-chat
+optimistic flow: client-generated UUID → navigate immediately → API call →
+reconcile on response. It is deliberately separate from project-address
+creation, whose destination must not own an unresolved project/thread create.
 
 Home first send deliberately orders the boundary differently: stable client ID
 → canonical create or same-ID ambiguity reconciliation → optimistic turn and
@@ -248,58 +248,53 @@ dropped `ThreadStoreProvider` during transitions.
 `/_authenticated`) so the settings dialog is URL-addressable from any authenticated
 route without changing path. See `features/account/SettingsDialog.tsx`.
 
-## Project screen routing
+## Readable project addresses and route lifetime
 
-`SCREENS` (`features/project/shell/screens.ts`) is the single source of
-route-valid primary destinations: **home, work, chat, context** (Import removed).
-Settings and phone Results are auxiliary routed surfaces (`?settings=`,
-`?results=`), not drawer/sidebar destinations.
+The authenticated project workspace has one readable public grammar rooted at
+`/p/<project-slug>`; all internal query/cache/session identities remain IDs.
+The parent resolves the owner-scoped project slug, mounts `ProjectView` once
+keyed by that resolved ID, and its `$` catch-all selects child destinations.
+There is no `/project/<UUID>` or `/projects/<UUID>` project route and no
+`screen`/`thread`/`scheme`/`folder`/`path` query grammar. `/chat/<thread-UUID>`
+remains the deliberately independent chat route and is outside project-address
+cutover scope.
 
-`src/routes/_authenticated/project/$projectId.tsx` owns the workspace search
-params (`?screen=`, `?thread=`, `?work=`, `?scheme=`, `?folder=`, `?path=`, `?results`) and
-is the single source of screen/thread/context ownership. `ProjectView` and its
-children are controlled — they never set the URL directly, only call the route's
-handlers. Direct `/chat/$threadId` renders the independent chat view inside the
-same provider stack.
+Path destinations are Home (`/p/<project>`), chat collection/new/detail
+(`/chats`, `/chats/new`, `/chat/<chat-slug>`), Work collection/detail
+(`/works`, `/work/<work-slug>`), Editor (`/editor`), and context browse or
+document paths. A Work-scoped context path carries its Work slug in the path;
+project-scoped context can use the explicit `work` query selector. The only
+project-address query keys are `chat`, `work`, `settings`, and `results`.
+Selectors distinguish omitted, explicit no-Work (empty), a slug, and malformed
+input; duplicate recognized keys and malformed encodings are invalid rather
+than normalized into another destination. Case and trailing-slash canonical
+replacement use the address serializer. Settings remains the layout-owned
+overlay; Results remains auxiliary state.
 
-The dedicated Work screen presents Active Work first and keeps Archived Work in a
-default-collapsed disclosure. Work management has no project-wide selection state;
-collection reads and actions never read, resolve, repair, or change the internal
-thread creation, and never implicitly change a thread binding. The Work-list
-payload is catalog-only; omitted or null root creation remains explicitly no-Work.
-Home and Work each own exactly one screen-level `app-scroll`; neither screen
-adds a nested scroll owner. Their bodies share `project-screen-column`, whose
-named inline-size container controls collection columns independently of the
-viewport.
+`ReadableProjectRoute` is the sole browser-address parser/resolver and
+`createProjectNavigation` owns history admission. Project, Work, and chat
+slugs resolve only through successful owner/project catalogs. An unavailable or
+malformed explicit target parks/disables its requested host; it never falls
+through to a remembered or catalog-default target. Main-destination navigation
+pushes a concrete selection; dock selection, canonicalization, and repair
+replace only when their captured entry is still current. Keep route parsing and
+browser history behavior out of `routing/project-route.ts`: that module now
+contains stable-ID navigation command types plus `ProjectSearch`, the
+compare-and-swap snapshot used only by context-removal repair, not URL grammar.
 
-Ownership rules:
+The desktop parent retains its stateful children across readable child paths and
+parks inactive surfaces. Phone is a sibling shell and may mount/unmount its
+active leaf; the account/provider fence is above both. Replacing an account
+fences the prior account lifetime immediately. A cross-project pending or error
+replaces the old project subtree with an inert boundary, while a same-project
+child failure parks only the requested host.
 
-- **`?work=none` is explicit No Work, not a Work ID.** Context navigation
-  serializes resolved null authority this way; only an omitted `work` may inherit
-  the selected Chat Work. Explicit No Work is ready without a Work catalog and
-  may mount Context viewers. It never creates a sentinel/default Work.
-- **`?screen=` wins; a bare `?thread=` (no screen) implies `chat`.** The
-  Context/KB, extensions, and home screens are therefore reachable *with threads
-  present* — a thread no longer forces the chat screen.
-- **`onSelectThread` is screen-changing** (sets `screen: undefined` + `thread`,
-  i.e. navigate to chat); **`onSelectDockThread` is screen-preserving** (patches
-  only `thread`). The persistent `ChatDockPanel` (right-hand dock beside non-chat
-  screens) uses the dock handler so its thread switcher swaps the conversation
-  without stealing `?screen=` from the KB/file view.
-- **The dock's fallback thread is display-only.** When no valid `?thread=` is set,
-  the dock shows the first primary thread in its selector but **must not** write
-  that fallback into the route — non-chat screens own `?screen=`, so forcing the
-  fallback into the URL would flip the screen to chat.
-- **Stale/invalid params are normalized at the route.** A `?thread=` that isn't in
-  the loaded thread set is stripped via a `replace` navigation once threads load;
-  `validateSearch` rejects `folder`/`path` supplied without a `scheme` (no
-  contradictory KB state from hand-typed/stale URLs). Explicit Work IDs use the
-  contracts-owned UUID grammar: malformed values return immediately to the Work
-  collection, uppercase values canonicalize, and a valid missing ID returns only
-  after the all-status Work catalog succeeds. Loading/error preserves the URL,
-  and every Work normalization compares its original `screen/work` pair before
-  replacing so stale validation cannot overwrite newer navigation. Switching
-  screens drops the subordinate params of the screen left behind.
+The dedicated Work screen presents Active Work first and keeps Archived Work in
+a default-collapsed disclosure. Work management has no project-wide selection
+state and never resolves, repairs, or changes a chat binding. The catalog is
+catalog-only: omitted/null root creation is explicitly no-Work. Home and Work
+each own exactly one screen-level `app-scroll`; neither adds a nested scroll
+owner.
 
 ## Visual conventions — tonal manuscript shell
 
