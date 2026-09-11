@@ -108,7 +108,11 @@ export function ReadableProjectRoute({
   );
   const router = useRouter();
   const location = useRouterState({ select: (state) => state.location });
-  const parsed = parseProjectAddress(location.pathname, originalBrowserSearch(location.search));
+  const parsed = parseProjectAddress(
+    location.pathname,
+    originalBrowserSearch(location.search),
+    location.state,
+  );
   const address: ProjectAddress =
     parsed.kind === "valid"
       ? parsed.address
@@ -317,7 +321,7 @@ export function ReadableProjectRoute({
       next = { ...next, chat: selection(displayedChat?.slug ?? null) };
     if (activeScreen === "context" && address.work.kind === "absent" && !issue(editorWork))
       next = { ...next, work: editorSelection };
-    if (projectAddressHref(next) !== location.href) void navigation.replaceIfCurrent(ticket, next);
+    void navigation.replaceIfCurrent(ticket, next);
   }, [
     navigation,
     location.href,

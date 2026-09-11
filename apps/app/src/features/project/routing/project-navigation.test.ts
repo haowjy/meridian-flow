@@ -83,7 +83,45 @@ describe("project navigation", () => {
       ),
     ).toBe(false);
     history.back();
-    expect(history.location.href).toBe("/p/serial/editor?chat=&work=");
+    expect(history.location.href).toBe("/p/serial/editor");
+    expect(history.location.state).toMatchObject({
+      meridianProjectEmptySelection: { href: "/p/serial/editor", chat: true, work: true },
+    });
+    navigation.dispose();
+  });
+  it("pins empty defaults at the same clean URL and restores them through history", async () => {
+    const { history, navigation, changes } = setup("/p/serial/editor");
+    const empty = address("/p/serial/editor?chat=&work=");
+    await navigation.replaceIfCurrent(navigation.capture(), empty);
+    expect(history.location.href).toBe("/p/serial/editor");
+    const restored = parseProjectAddress("/p/serial/editor", "", history.location.state);
+    expect(restored).toMatchObject({
+      address: { chat: { kind: "none" }, work: { kind: "none" } },
+    });
+    expect(
+      parseProjectAddress("/p/serial/editor", "?settings=preferences", history.location.state),
+    ).toMatchObject({
+      address: { chat: { kind: "none" }, work: { kind: "none" } },
+    });
+    await navigation.replaceIfCurrent(navigation.capture(), empty);
+    expect(changes).toEqual(["replace:/p/serial/editor"]);
+    await navigation.navigate(address("/p/serial/editor?chat=other&work=revision"), {
+      replace: false,
+    });
+    expect(history.location.state).not.toHaveProperty(
+      "meridianProjectEmptySelection",
+      expect.anything(),
+    );
+    history.back();
+    expect(parseProjectAddress("/p/serial/editor", "", history.location.state)).toEqual(restored);
+    expect(parseProjectAddress("/p/another/editor", "", history.location.state)).toMatchObject({
+      address: { chat: { kind: "absent" }, work: { kind: "absent" } },
+    });
+    expect(
+      parseProjectAddress("/p/serial/editor", "?chat=other", history.location.state),
+    ).toMatchObject({
+      address: { chat: { kind: "slug", slug: "other" }, work: { kind: "absent" } },
+    });
     navigation.dispose();
   });
   it("replaces dock and Work choices without another Back entry", async () => {
@@ -103,7 +141,7 @@ describe("project navigation", () => {
     navigation.dispose();
   });
   it("rejects stale repairs even after Back returns to the same entry and href", async () => {
-    const { history, navigation } = setup("/p/serial/editor?chat=&work=");
+    const { history, navigation } = setup("/p/serial/editor");
     const ticket = navigation.capture();
     await navigation.navigate(address("/p/serial/works"), { replace: false });
     history.back();
@@ -126,7 +164,10 @@ describe("project navigation", () => {
     });
     await navigation.navigate(address("/p/serial/chats"), { replace: false });
     history.back();
-    expect(history.location.href).toBe("/p/serial/editor?chat=&work=");
+    expect(history.location.href).toBe("/p/serial/editor");
+    expect(history.location.state).toMatchObject({
+      meridianProjectEmptySelection: { href: "/p/serial/editor", chat: true, work: true },
+    });
     expect(history.location.state).toMatchObject({
       meridianProjectSelection: { version: 1, ...local },
     });

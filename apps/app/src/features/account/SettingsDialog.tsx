@@ -60,6 +60,7 @@ export function useSettingsNavigation() {
       void navigate({
         to: ".",
         search: (prev: Record<string, unknown>) => ({ ...prev, settings: section }),
+        state: (prev) => prev,
         replace,
       });
     },

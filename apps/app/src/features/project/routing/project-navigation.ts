@@ -1,5 +1,10 @@
 /** One history policy for project destinations, secondary choices, and delayed address repair. */
-import { type ProjectAddress, parseProjectAddress, projectAddressHref } from "./project-address";
+import {
+  type ProjectAddress,
+  parseProjectAddress,
+  projectAddressHref,
+  projectAddressState,
+} from "./project-address";
 
 export type ProjectHistoryEntry = { href: string; key: string; state: Record<string, unknown> };
 export type ProjectNavigationPort = {
@@ -41,7 +46,11 @@ export function createProjectNavigation(
   function parsedEntry(entry: ProjectHistoryEntry) {
     const href = entry.href.split("#", 1)[0];
     const cut = href.indexOf("?");
-    return parseProjectAddress(cut < 0 ? href : href.slice(0, cut), cut < 0 ? "" : href.slice(cut));
+    return parseProjectAddress(
+      cut < 0 ? href : href.slice(0, cut),
+      cut < 0 ? "" : href.slice(cut),
+      entry.state,
+    );
   }
 
   function freezeDeparture(): void {
@@ -66,11 +75,13 @@ export function createProjectNavigation(
           : current.work,
     };
     const href = projectAddressHref(frozen);
-    if (href === entry.href && !shown.local && !entry.state.meridianProjectSelection) return;
-    port.replaceEntry(href, {
-      ...entry.state,
-      meridianProjectSelection: shown.local ? { version: 1, ...shown.local } : undefined,
-    });
+    port.replaceEntry(
+      href,
+      projectAddressState(frozen, {
+        ...entry.state,
+        meridianProjectSelection: shown.local ? { version: 1, ...shown.local } : undefined,
+      }),
+    );
   }
 
   return {
@@ -92,15 +103,27 @@ export function createProjectNavigation(
           ? { ...address, settings: current.address.settings }
           : address;
       if (!options.replace) freezeDeparture();
-      return port.navigate(projectAddressHref(next), options);
+      return port.navigate(projectAddressHref(next), {
+        ...options,
+        state: projectAddressState(next, options.state),
+      });
     },
     async replaceIfCurrent(
       ticket: ProjectNavigationTicket,
       address: ProjectAddress,
     ): Promise<boolean> {
       if (!isCurrent(ticket)) return false;
+      const entry = port.read();
+      const href = projectAddressHref(address);
+      const state = projectAddressState(address, entry.state);
+      if (
+        href === entry.href &&
+        JSON.stringify(state.meridianProjectEmptySelection) ===
+          JSON.stringify(entry.state.meridianProjectEmptySelection)
+      )
+        return true;
       revision += 1;
-      await port.navigate(projectAddressHref(address), { replace: true, state: port.read().state });
+      await port.navigate(href, { replace: true, state });
       return true;
     },
     dispose: unsubscribe,
