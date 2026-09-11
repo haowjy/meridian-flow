@@ -26,9 +26,11 @@ import {
   type ContextCatalogWakeHub,
   createContextCatalogWakeHub,
   createContextUploadContentPort,
+  createDocumentAddressResolver,
   createDocumentLinkResolver,
   createDrizzleAssetPathResolver,
   createDrizzleContextCatalog,
+  createDrizzleDocumentAddressStore,
   createDrizzleFigureDocumentRepository,
   createDrizzleProjectContextAvailability,
   createDrizzleResultRepository,
@@ -40,6 +42,7 @@ import {
   createProductionUnifiedContextPortFactory,
   createPromotionService,
   createUploadIntake,
+  type DocumentAddressResolver,
   type DocumentLinkResolver,
   type FigureAssetService,
   InMemoryContextCatalog,
@@ -181,6 +184,7 @@ export type AppServices = {
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
   projectContextAvailability: ProjectContextAvailabilityPort;
+  documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
   projects: ProjectBootstrapRepository;
@@ -237,6 +241,7 @@ export type ProductionAppPorts = {
   contextPorts: UnifiedContextPortFactory;
   contextCatalog: ContextCatalog;
   projectContextAvailability: ProjectContextAvailabilityPort;
+  documentAddresses: DocumentAddressResolver;
   contextCatalogWakeHub: ContextCatalogWakeHub;
   documentLinks: DocumentLinkResolver;
   projects: ProjectBootstrapRepository;
@@ -465,6 +470,10 @@ export async function createProductionAppPorts(input: {
     contextPorts,
     contextCatalog,
     projectContextAvailability,
+    documentAddresses: createDocumentAddressResolver({
+      locations: createDrizzleDocumentAddressStore(db),
+      availability: projectContextAvailability,
+    }),
     contextCatalogWakeHub,
     documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
     projects,
@@ -705,6 +714,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     contextPorts: ports.contextPorts,
     contextCatalog: ports.contextCatalog,
     projectContextAvailability: ports.projectContextAvailability,
+    documentAddresses: ports.documentAddresses,
     contextCatalogWakeHub: ports.contextCatalogWakeHub,
     documentLinks: ports.documentLinks,
     projects: ports.projects,
@@ -894,6 +904,11 @@ export function createInMemoryAppServices(): AppServices {
     documentSync,
     contextPorts: createInMemoryUnifiedContextPortFactory({ documentSync }),
     contextCatalog,
+    documentAddresses: {
+      async resolve() {
+        return { kind: "unavailable" };
+      },
+    },
     projectContextAvailability: {
       async lookup(input) {
         return {

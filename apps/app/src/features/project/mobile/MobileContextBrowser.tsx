@@ -449,6 +449,7 @@ function MobileFolderRow({
           projectId={projectId}
           editorWorkId={editorWorkId}
           scheme={scheme}
+          entryId={dir.entryId}
           path={dir.path}
           currentName={dir.name}
           siblingNames={siblingNames}
@@ -508,6 +509,7 @@ function MobileFileRow({
           projectId={projectId}
           editorWorkId={editorWorkId}
           scheme={scheme}
+          entryId={file.documentId}
           path={file.path}
           currentName={file.name}
           siblingNames={siblingNames}
@@ -550,6 +552,7 @@ function MobileRenameRow({
   projectId,
   editorWorkId,
   scheme,
+  entryId,
   path,
   currentName,
   siblingNames,
@@ -560,6 +563,7 @@ function MobileRenameRow({
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
+  entryId: string;
   path: string;
   currentName: string;
   siblingNames: readonly string[];
@@ -571,6 +575,7 @@ function MobileRenameRow({
     projectId,
     workId: editorWorkId,
     scheme,
+    entryId,
     path,
     currentName,
     siblingNames,

@@ -90,12 +90,35 @@ router resolves to exact project-scoped Work authority before dispatch.
 
 | Contract | Shape |
 |---|---|
-| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `edit`, `writeBinary`, `move`, `commitWriterLocation`, identity-required `delete`, `list`, `mkdir`, and `search`. No errors cross as throws. |
+| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `edit`, `writeBinary`, `move`, `commitWriterLocation`, identity-required `delete`, `list`, `mkdir`, and `search`. Domain failures are Results; transaction infrastructure exceptions propagate unchanged. |
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
 | `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration owned in `ports/context-adapter.ts` and enforced by the server router and adapters. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant document ID; deleting an empty folder returns none. |
 | `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target })` returns one canonical Context document or `null`. A target is a discriminated `wikilink`, `scheme`, or `relative` value. |
+
+## Browser document addresses
+
+`document_previous_locations` is direct-to-identity bookmark history, not a
+second wikilink resolver. Moves capture only their file/subtree before DML and
+record each vacated file path. Successful file/folder claims consume the exact
+previous location. Failed inserts and rolled-back commands consume nothing.
+Bootstrap uses the same store; hidden manifest identities are outside this
+namespace. Project/Work restore changes availability, not file locations.
+
+The Context command transaction receives the complete resolved scheme/Work set.
+Personal User scopes first share the personal-project provisioning owner lock.
+Production then acquires sorted Work lifecycle locks and sorted logical namespace
+locks **before** source provisioning, preflight, or catalog publication. Logical
+keys exist before lazy source rows; direct Drizzle stores derive the same keys
+from backing ownership. Do not enter a single-source transaction and then issue
+a multi-source command with a larger lock set.
+
+Full paths can exceed the PostgreSQL B-tree tuple limit. History uses a hash
+index with exact equality rechecks, and namespace-locked replacement owns
+source/path uniqueness. All folder batches commit atomically. Current files or
+folders suppress aliases; an alias is returned only if its stable identity is
+currently available to the request owner in the requested project.
 
 ## URI and router invariants
 

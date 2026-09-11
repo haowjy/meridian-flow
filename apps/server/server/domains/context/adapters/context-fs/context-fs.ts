@@ -153,12 +153,9 @@ function moveFiletypeTransition(
  * store, but read/write content flows through the collab domain. The store's
  * markdown is only a search/listing projection cache.
  *
- * v1 semantics are last-write-wins:
- * `ensureFolderId` find-then-create and the store's find-then-upsert are not
- * atomic, so two concurrent writers to the same new path can race into a
- * unique-constraint violation. The router converts that rejection into an
- * `io_error` rather than crashing. Concurrency-safe upsert (ON CONFLICT) is
- * deferred to the Yjs-merge work in Phase 2.
+ * Production commands lock the complete logical namespace before preflight.
+ * Stores join that transaction; successful claims and tree changes publish
+ * catalog metadata only after their location history has been reconciled.
  */
 export class ContextFS implements ContextSchemeAdapter {
   readonly name: string;

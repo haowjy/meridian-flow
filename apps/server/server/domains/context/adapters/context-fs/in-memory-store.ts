@@ -52,6 +52,7 @@ type DocumentRow = ContextDocument & {
 };
 
 export interface InMemoryContextDocumentStoreBacking {
+  previousLocations: Map<string, string>;
   folders: Map<string, FolderRow>;
   documents: Map<string, DocumentRow>;
   clock: { value: number };
@@ -65,6 +66,7 @@ export interface InMemoryContextDocumentStoreOptions {
 
 export function createInMemoryContextDocumentStoreBacking(): InMemoryContextDocumentStoreBacking {
   return {
+    previousLocations: new Map(),
     folders: new Map(),
     documents: new Map(),
     clock: { value: 0 },
@@ -87,6 +89,69 @@ export function findInMemoryContextDocumentsById(
     } = row;
     return [{ ...document }];
   });
+}
+
+function locationPath(
+  backing: InMemoryContextDocumentStoreBacking,
+  parentId: string | null,
+  name: string,
+): string {
+  const segments = [name];
+  while (parentId) {
+    const folder = backing.folders.get(parentId);
+    if (!folder || folder.deletedAt !== null) throw new Error("Namespace parent not found");
+    segments.unshift(folder.name);
+    parentId = folder.parentId;
+  }
+  return segments.join("/");
+}
+
+function claimLocation(
+  backing: InMemoryContextDocumentStoreBacking,
+  sourceId: string,
+  parentId: string | null,
+  name: string,
+): void {
+  backing.previousLocations.delete(
+    JSON.stringify([sourceId, locationPath(backing, parentId, name)]),
+  );
+}
+
+function memoryFileLocations(backing: InMemoryContextDocumentStoreBacking, sourceId: string) {
+  return [...backing.documents.values()]
+    .filter(
+      (row) => row.contextSourceId === sourceId && row.deletedAt === null && row.kind === "content",
+    )
+    .map((row) => ({
+      id: row.id,
+      path: locationPath(
+        backing,
+        row.folderId,
+        row.extension ? `${row.name}.${row.extension}` : row.name,
+      ),
+    }));
+}
+
+function recordMemoryMove(
+  backing: InMemoryContextDocumentStoreBacking,
+  sourceId: string,
+  destinationSourceId: string,
+  previous: ReturnType<typeof memoryFileLocations>,
+): void {
+  const current = memoryFileLocations(backing, destinationSourceId);
+  const byId = new Map(current.map((entry) => [entry.id, entry]));
+  for (const old of previous) {
+    const next = byId.get(old.id);
+    if (next && (sourceId !== destinationSourceId || next.path !== old.path)) {
+      backing.previousLocations.set(JSON.stringify([sourceId, old.path]), old.id);
+    }
+  }
+  for (const entry of current)
+    backing.previousLocations.delete(JSON.stringify([destinationSourceId, entry.path]));
+  for (const folder of backing.folders.values()) {
+    if (folder.contextSourceId === destinationSourceId && folder.deletedAt === null)
+      claimLocation(backing, destinationSourceId, folder.parentId, folder.name);
+  }
 }
 
 /**
@@ -134,6 +199,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     const documentsSnapshot = new Map(
       [...this.backing.documents].map(([id, row]) => [id, { ...row }] as const),
     );
+    const previousLocationsSnapshot = new Map(this.backing.previousLocations);
     const clockSnapshot = this.backing.clock.value;
     try {
       return await operation();
@@ -142,6 +208,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       for (const entry of foldersSnapshot) this.backing.folders.set(...entry);
       this.backing.documents.clear();
       for (const entry of documentsSnapshot) this.backing.documents.set(...entry);
+      this.backing.previousLocations = previousLocationsSnapshot;
       this.backing.clock.value = clockSnapshot;
       throw error;
     }
@@ -173,6 +240,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       updatedAt: this.nextTimestamp(),
     };
     this.backing.folders.set(folder.id, folder);
+    claimLocation(this.backing, folder.contextSourceId, folder.parentId, folder.name);
     return this.publicFolder(folder);
   }
 
@@ -245,6 +313,12 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
+    claimLocation(
+      this.backing,
+      doc.contextSourceId,
+      doc.folderId,
+      doc.extension ? `${doc.name}.${doc.extension}` : doc.name,
+    );
     return this.publicDocument(doc);
   }
 
@@ -281,6 +355,12 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
+    claimLocation(
+      this.backing,
+      doc.contextSourceId,
+      doc.folderId,
+      doc.extension ? `${doc.name}.${doc.extension}` : doc.name,
+    );
     return this.publicDocument(doc);
   }
 
@@ -329,6 +409,12 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
+    claimLocation(
+      this.backing,
+      doc.contextSourceId,
+      doc.folderId,
+      doc.extension ? `${doc.name}.${doc.extension}` : doc.name,
+    );
     return this.publicDocument(doc);
   }
 
@@ -458,6 +544,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     return {
       folders: new Map([...this.backing.folders].map(([id, row]) => [id, { ...row }] as const)),
       documents: new Map([...this.backing.documents].map(([id, row]) => [id, { ...row }] as const)),
+      previousLocations: new Map(this.backing.previousLocations),
       clock: this.backing.clock.value,
       availabilityGeneration: this.backing.availabilityGeneration.value,
     };
@@ -468,6 +555,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     for (const entry of snapshot.folders) this.backing.folders.set(...entry);
     this.backing.documents.clear();
     for (const entry of snapshot.documents) this.backing.documents.set(...entry);
+    this.backing.previousLocations = snapshot.previousLocations;
     this.backing.clock.value = snapshot.clock;
     this.backing.availabilityGeneration.value = snapshot.availabilityGeneration;
   }
@@ -533,6 +621,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         updatedAt: this.nextTimestamp(),
       };
       this.backing.folders.set(folder.id, folder);
+      claimLocation(this.backing, folder.contextSourceId, folder.parentId, folder.name);
       this.markMutatorWrite();
       parentId = folder.id;
     }
@@ -709,6 +798,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         return Err({ code: "invalid_operation" });
       }
 
+      const previousLocations = memoryFileLocations(this.backing, input.source.sourceId);
       if (input.source.kind === "file") {
         if (targetToken?.kind === "file") await this.runBeforeDestructiveWrite();
         await this.runBeforeDestructiveWrite();
@@ -758,6 +848,12 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         }
         sourceRow.updatedAt = this.nextTimestamp();
         this.markMutatorWrite();
+        recordMemoryMove(
+          this.backing,
+          input.source.sourceId,
+          input.destinationSourceId,
+          previousLocations,
+        );
         return Ok({ movedNodeId: sourceRow.id });
       }
 
@@ -799,6 +895,12 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         doc.updatedAt = this.nextTimestamp();
       }
       this.markMutatorWrite();
+      recordMemoryMove(
+        this.backing,
+        input.source.sourceId,
+        input.destinationSourceId,
+        previousLocations,
+      );
       return Ok({ movedNodeId: movedRoot.id });
     });
   }

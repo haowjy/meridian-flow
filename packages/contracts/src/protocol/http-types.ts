@@ -105,15 +105,6 @@ export type CreateUntitledContextDocumentResult =
   | CreateUntitledContextDocumentResponse
   | { status: "conflict" };
 
-export type RenameContextEntryRequest = {
-  path: string;
-  newName: string;
-};
-
-export type RenameContextEntrySuccess = { status: "renamed" };
-export type RenameContextEntryConflict = { status: "conflict" };
-export type RenameContextEntryResult = RenameContextEntrySuccess | RenameContextEntryConflict;
-
 /** Exact identities committed by one successful context-tree deletion. */
 export type DeleteContextEntryResult = {
   status: "deleted";

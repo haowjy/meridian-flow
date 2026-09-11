@@ -1,4 +1,5 @@
 /** Drizzle ContextTreeMutationStore recursive-delete ownership and rollback proofs. */
+import { randomUUID } from "node:crypto";
 import { conformanceUserValues } from "@meridian/database/__test-support__/db-fixtures";
 import {
   contextAvailabilityHeads,
@@ -6,6 +7,7 @@ import {
   contextCatalogEntries,
   contextCatalogScopeHeads,
   contextSources,
+  documentPreviousLocations,
   documents,
   folders,
   projects,
@@ -17,8 +19,11 @@ import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.
 import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
 import { useRollbackTestDatabase } from "../../../../test-support/rollback-test-database.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
+import { createDocumentAddressResolver } from "../../document-address.js";
 import { createDrizzleContextCatalog } from "../context-catalog.js";
+import { createDrizzleDocumentAddressStore } from "../document-address.js";
 import { createDrizzleProjectContextAvailability } from "../project-context-availability.js";
+import { DrizzleContextDocumentStore } from "./drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./drizzle-tree-mutation-store.js";
 import type { ContextDocumentMembershipObserver } from "./membership-event-dispatcher.js";
 
@@ -76,6 +81,181 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         markdownProjection: name,
       });
     }
+
+    it("records direct identity history and permanently consumes reused file and folder paths", async () => {
+      await insertDocument(DOC_DELETE_ID, "alpha");
+      const tree = new DrizzleContextTreeMutationStore(db);
+      async function move(from: string, to: string) {
+        const source = await tree.inspect(SOURCE_ID, from);
+        if (source?.kind !== "file") throw new Error("missing source");
+        expect(
+          await tree.commitMove({
+            source,
+            destinationSourceId: SOURCE_ID,
+            destinationPath: to,
+            destinationFiletype: "markdown",
+            graduateProvisionalName: false,
+            expectedTarget: { state: "absent" },
+            overwrite: false,
+          }),
+        ).toMatchObject({ ok: true });
+      }
+      await move("alpha.md", "beta.md");
+      await move("beta.md", "gamma.md");
+      const resolver = createDocumentAddressResolver({
+        locations: createDrizzleDocumentAddressStore(db),
+        availability: createDrizzleProjectContextAvailability(db),
+      });
+      const address = {
+        projectId: PROJECT_ID,
+        userId: USER_ID,
+        scheme: "manuscript" as const,
+        workId: null,
+        path: "alpha.md",
+      };
+      expect(await resolver.resolve(address)).toMatchObject({
+        kind: "alias",
+        document: { documentId: DOC_DELETE_ID, entry: { path: ["gamma.md"] } },
+      });
+      expect(
+        await resolver.resolve({ ...address, userId: "00000000-0000-4000-8000-000000000799" }),
+      ).toEqual({ kind: "unavailable" });
+      const history = () =>
+        db
+          .select({
+            path: documentPreviousLocations.path,
+            documentId: documentPreviousLocations.documentId,
+          })
+          .from(documentPreviousLocations)
+          .orderBy(documentPreviousLocations.path);
+      expect(await history()).toEqual([
+        { path: "alpha.md", documentId: DOC_DELETE_ID },
+        { path: "beta.md", documentId: DOC_DELETE_ID },
+      ]);
+      const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
+      const replacement = await store.createDocumentRecordIfAbsent({
+        id: DOC_AMBIENT_DELETE_ID,
+        folderId: null,
+        name: "alpha",
+        extension: "md",
+        filetype: "markdown",
+        markdown: "",
+      });
+      expect(replacement).not.toBeNull();
+      await db
+        .update(documents)
+        .set({ deletedAt: new Date() })
+        .where(eq(documents.id, DOC_AMBIENT_DELETE_ID));
+      await store.createFolder(null, "beta.md");
+      expect(await history()).toEqual([]);
+      expect(await resolver.resolve(address)).toEqual({ kind: "unavailable" });
+      await db
+        .insert(documentPreviousLocations)
+        .values({ contextSourceId: SOURCE_ID, path: "beta.md", documentId: DOC_DELETE_ID });
+      expect(await resolver.resolve({ ...address, path: "beta.md" })).toEqual({
+        kind: "unavailable",
+      });
+      await db
+        .update(documents)
+        .set({ deletedAt: new Date() })
+        .where(eq(documents.id, DOC_DELETE_ID));
+      expect(await resolver.resolve({ ...address, path: "gamma.md" })).toEqual({
+        kind: "unavailable",
+      });
+    });
+
+    it("records descendants of folder moves and rolls history and path claims back together", async () => {
+      const store = new DrizzleContextDocumentStore({ db, contextSourceId: SOURCE_ID });
+      const parent = await store.createFolder(null, "before");
+      const nested = await store.createFolder(parent.id, "nested");
+      await store.createDocumentRecordIfAbsent({
+        id: DOC_DELETE_ID,
+        folderId: nested.id,
+        name: "chapter",
+        extension: "md",
+        filetype: "markdown",
+        markdown: "",
+      });
+      const tree = new DrizzleContextTreeMutationStore(db);
+      const source = await tree.inspect(SOURCE_ID, "before");
+      if (source?.kind !== "directory") throw new Error("missing folder");
+      expect(
+        await tree.commitMove({
+          source,
+          destinationSourceId: SOURCE_ID,
+          destinationPath: "after",
+          expectedTarget: { state: "absent" },
+          overwrite: false,
+        }),
+      ).toMatchObject({ ok: true });
+      expect(
+        await db.select({ path: documentPreviousLocations.path }).from(documentPreviousLocations),
+      ).toEqual([{ path: "before/nested/chapter.md" }]);
+      await expect(
+        runInDrizzleTransaction(db, async () => {
+          const restoredParent = await store.createFolder(null, "before");
+          const restoredNested = await store.createFolder(restoredParent.id, "nested");
+          await store.createDocumentRecordIfAbsent({
+            id: DOC_AMBIENT_DELETE_ID,
+            folderId: restoredNested.id,
+            name: "chapter",
+            extension: "md",
+            filetype: "markdown",
+            markdown: "",
+          });
+          expect(await db.select().from(documentPreviousLocations)).toEqual([]);
+          throw new Error("rollback claim");
+        }),
+      ).rejects.toThrow("rollback claim");
+      expect(
+        await db.select({ path: documentPreviousLocations.path }).from(documentPreviousLocations),
+      ).toEqual([{ path: "before/nested/chapter.md" }]);
+    });
+
+    it("preserves paths longer than a B-tree index tuple", async () => {
+      let parentId: string | null = null;
+      const names: string[] = [];
+      const rows: Array<{
+        id: string;
+        parentId: string | null;
+        contextSourceId: string;
+        name: string;
+      }> = [];
+      for (let i = 0; i < 150; i++) {
+        const name = randomUUID();
+        const id = randomUUID();
+        rows.push({ id, parentId, contextSourceId: SOURCE_ID, name });
+        names.push(name);
+        parentId = id;
+      }
+      await db.insert(folders).values(rows);
+      await db.insert(documents).values({
+        id: DOC_DELETE_ID,
+        contextSourceId: SOURCE_ID,
+        folderId: parentId,
+        name: "chapter",
+        extension: "md",
+        fileType: "markdown",
+      });
+      const path = [...names, "chapter.md"].join("/");
+      const tree = new DrizzleContextTreeMutationStore(db);
+      const source = await tree.inspect(SOURCE_ID, path);
+      if (source?.kind !== "file") throw new Error("missing document");
+      expect(
+        await tree.commitMove({
+          source,
+          destinationSourceId: SOURCE_ID,
+          destinationPath: "short.md",
+          destinationFiletype: "markdown",
+          graduateProvisionalName: false,
+          expectedTarget: { state: "absent" },
+          overwrite: false,
+        }),
+      ).toMatchObject({ ok: true });
+      expect(
+        await db.select({ path: documentPreviousLocations.path }).from(documentPreviousLocations),
+      ).toEqual([{ path }]);
+    });
 
     it("deletes empty and populated folders with exact content identities", async () => {
       const nestedFolderId = "00000000-0000-4000-8000-000000000731";

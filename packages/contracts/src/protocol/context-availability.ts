@@ -111,3 +111,11 @@ export type ProjectContextIdentityLookupResult = {
 };
 
 export const PROJECT_CONTEXT_AVAILABILITY_MAX_IDS = 128;
+
+/** Owner-scoped browser address lookup; aliases never redirect through another alias. */
+export type DocumentAddressResult =
+  | {
+      kind: "current" | "alias";
+      document: Extract<ProjectContextIdentityResolution, { kind: "available" }>;
+    }
+  | { kind: "unavailable" };

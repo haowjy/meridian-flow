@@ -315,3 +315,27 @@ export function contentDocumentKindSql(alias = "documents") {
 }
 
 // folders.parent_id self-FK added in migration SQL
+
+/** Vacated document locations point directly to identity, never another path. */
+export const documentPreviousLocations = pgTable(
+  "document_previous_locations",
+  {
+    contextSourceId: uuid("context_source_id")
+      .$type<ContextSourceId>()
+      .notNull()
+      .references(() => contextSources.id, { onDelete: "cascade" }),
+    path: text("path").notNull(),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    // Full paths can exceed PostgreSQL B-tree tuple limits. Exact equality is
+    // rechecked by the hash index; namespace locks own replacement uniqueness.
+    index("document_previous_locations_path").using("hash", table.path),
+    index("document_previous_locations_source").on(table.contextSourceId),
+    index("document_previous_locations_document").on(table.documentId),
+  ],
+);
