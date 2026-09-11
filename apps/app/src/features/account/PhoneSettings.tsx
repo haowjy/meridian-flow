@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { cn } from "@/lib/utils";
-import type { SettingsSection } from "./SettingsDialog";
+import type { SettingsSection } from "./settings-sections";
 
 export type PhoneSettingsSectionItem = {
   section: SettingsSection;
