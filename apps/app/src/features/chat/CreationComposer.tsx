@@ -1,8 +1,9 @@
-/** Shared persisted creation composer for project Home, New chat, and account New project. */
+/** Shared persisted creation composer for project Home, Chats, and account New project. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useState } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
+import { useProjectAgents } from "@/client/query/useProjectAgents";
 import { useWorks } from "@/client/query/useWorks";
 import { Composer } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -22,22 +23,22 @@ export function CreationComposer({
 }) {
   const creation = useCreationComposer(projectId);
   const works = useWorks(projectId ?? "", { enabled: projectId !== null });
-  const [chosenAgent, setAgentSlug] = useState<string>();
+  const agents = useProjectAgents(projectId);
+  const choices = creation.state.slot?.choices;
   const attempt = creation.state.slot?.attempt;
   const agentSlug = creation.contextLocked
     ? (attempt?.agentSlug ?? DEFAULT_AGENT_SLUG)
-    : (chosenAgent ?? attempt?.agentSlug ?? DEFAULT_AGENT_SLUG);
-  const [chosenWork, setChosenWork] = useState<string | null | undefined>();
+    : (choices?.agentSlug ?? attempt?.agentSlug ?? DEFAULT_AGENT_SLUG);
   const [modePending, setModePending] = useState(false);
   const initialWork = works.works?.find((work) => work.status === "active") ?? null;
   const workId =
     creation.contextLocked && attempt
       ? attempt.workId
-      : chosenWork === undefined
+      : choices?.workId === undefined
         ? attempt
           ? attempt.workId
           : (initialWork?.id ?? null)
-        : chosenWork;
+        : choices.workId;
   const work = works.works?.find((work) => work.id === workId && work.status === "active") ?? null;
   const references = useReferenceBrowserCatalog(
     projectId ?? undefined,
@@ -45,8 +46,24 @@ export function CreationComposer({
     t`Reference a file`,
   );
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
-  const context = { workId: work?.id ?? null, agentSlug };
+  const context = { workId, agentSlug };
+  const unavailableWork =
+    (works.status === "ready" || works.status === "empty") && workId !== null && !work;
+  const unavailableAgent =
+    (agents.status === "ready" || agents.status === "empty") &&
+    agentSlug !== DEFAULT_AGENT_SLUG &&
+    !agents.agents?.some((agent) => agent.slug === agentSlug);
+  const unavailableChoice = !creation.contextLocked && (unavailableWork || unavailableAgent);
+  const unavailableMessage = !unavailableChoice
+    ? null
+    : unavailableWork
+      ? t`Your selected Work is unavailable. Choose another Work or No Work.`
+      : unavailableAgent
+        ? t`Your selected Agent is unavailable. Choose another Agent.`
+        : null;
   const worksReady = projectId === null || works.status === "ready" || works.status === "empty";
+  const agentsReady = projectId === null || agents.status === "ready" || agents.status === "empty";
+  const choicesReady = worksReady && agentsReady && !unavailableChoice;
   const issue =
     creation.state.issue ??
     (attempt?.phase === "refused" || attempt?.phase === "mismatched" ? attempt.phase : null);
@@ -75,7 +92,8 @@ export function CreationComposer({
           variant="hero"
           autoFocus={autoFocus}
           onSubmit={async (envelope) => ({
-            kind: (await creation.submit(envelope, context)) ? "accepted" : "rejected",
+            kind:
+              choicesReady && (await creation.submit(envelope, context)) ? "accepted" : "rejected",
             submissionId: envelope.submissionId,
             acceptedRevision: envelope.acceptedRevision,
           })}
@@ -97,30 +115,37 @@ export function CreationComposer({
               : undefined
           }
           busy={creation.busy}
-          submitDisabled={!worksReady || modePending || creation.submitLocked}
+          submitDisabled={!choicesReady || modePending || creation.submitLocked}
           submitDisabledReason={
-            creation.busy
+            unavailableMessage ??
+            (creation.busy
               ? t`Creating chat`
               : modePending
                 ? t`Finishing write mode change`
                 : !worksReady
                   ? t`Loading Work`
-                  : creation.submitLocked
-                    ? t`Finish the current chat attempt`
-                    : undefined
+                  : !agentsReady
+                    ? agents.isError
+                      ? t`Couldn't load agents.`
+                      : t`Loading agents…`
+                    : creation.submitLocked
+                      ? t`Finish the current chat attempt`
+                      : undefined)
           }
           toolbarLeft={
             projectId ? (
               <NewThreadComposerToolbar
                 projectId={projectId}
                 work={work}
-                selectedWorkId={work?.id ?? null}
+                selectedWorkId={workId}
                 works={works.works ?? []}
                 worksStatus={works.isError ? "error" : worksReady ? "ready" : "loading"}
                 agentSlug={agentSlug}
                 disabled={creation.contextLocked}
-                onAgentChange={setAgentSlug}
-                onWorkChange={(selected) => setChosenWork(selected?.id ?? null)}
+                onAgentChange={(agentSlug) => creation.updateChoices({ agentSlug })}
+                onWorkChange={(selected) =>
+                  creation.updateChoices({ workId: selected?.id ?? null })
+                }
                 onRetryWorks={works.refetch}
                 onModePendingChange={setModePending}
               />
@@ -129,7 +154,7 @@ export function CreationComposer({
                 projectId={null}
                 agentSlug={agentSlug}
                 readonlyAgent={creation.contextLocked}
-                onAgentChange={setAgentSlug}
+                onAgentChange={(agentSlug) => creation.updateChoices({ agentSlug })}
               />
             )
           }
@@ -142,15 +167,24 @@ export function CreationComposer({
       {works.isError ? (
         <InlineErrorRow message={t`Work couldn’t load`} onRetry={works.refetch} />
       ) : null}
+      {unavailableMessage ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {unavailableMessage}
+        </p>
+      ) : null}
       {message ? (
         <InlineErrorRow
           message={message}
           actionLabel={issue === "mismatched" ? t`Start over` : undefined}
-          onRetry={() => {
-            if (issue === "mismatched") void creation.startOver();
-            else if (issue === "storage" || issue === "conflict") void creation.reload();
-            else void creation.retry(context);
-          }}
+          onRetry={
+            issue === "refused" && !choicesReady
+              ? undefined
+              : () => {
+                  if (issue === "mismatched") void creation.startOver();
+                  else if (issue === "storage" || issue === "conflict") void creation.reload();
+                  else void creation.retry(context);
+                }
+          }
         />
       ) : null}
     </>

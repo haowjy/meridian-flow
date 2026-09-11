@@ -5,8 +5,10 @@ import type { ComposerDraftSnapshot, ComposerSubmitEnvelope } from "@/components
 import { nativeLocks, tryAcquireExclusiveLock } from "@/core/cross-context-locks";
 import type {
   CreationAttempt,
+  CreationChoices,
   CreationRefusal,
   CreationSlot,
+  CreationSlotResult,
   FirstSendContinuity,
 } from "./first-send-continuity";
 
@@ -87,14 +89,25 @@ export class CreationController {
     }
   }
   updateDraft(draft: ComposerDraftSnapshot | null): void {
+    this.save((slot) => this.continuity.saveCreationDraft(this.projectId, slot.revision, draft));
+  }
+
+  updateChoices(choices: CreationChoices): void {
+    if (
+      this.state.busy ||
+      (this.state.slot?.attempt && this.state.slot.attempt.phase !== "refused")
+    )
+      return;
+    this.save((slot) =>
+      this.continuity.saveCreationChoices(this.projectId, slot.revision, choices),
+    );
+  }
+
+  private save(write: (slot: CreationSlot) => Promise<CreationSlotResult>): void {
     this.queue = this.queue
       .then(async () => {
         if (!this.alive || !this.state.slot || this.state.issue === "conflict") return;
-        const result = await this.continuity.saveCreationDraft(
-          this.projectId,
-          this.state.slot.revision,
-          draft,
-        );
+        const result = await write(this.state.slot);
         this.change({
           slot: result.slot,
           ...(result.kind === "conflict"
@@ -170,7 +183,7 @@ export class CreationController {
         const revised = await this.continuity.reviseRefusedCreation(
           this.projectId,
           attempt.attemptId,
-          repairChoices,
+          { ...repairChoices, ...persisted.choices },
         );
         this.change({ slot: revised.slot });
         if (revised.kind === "conflict") {
@@ -183,6 +196,7 @@ export class CreationController {
         if (!input) return false;
         const created = await this.continuity.beginCreation(this.projectId, persisted.revision, {
           ...input,
+          ...(input.submission ? persisted.choices : {}),
           attemptId: crypto.randomUUID(),
           projectId: this.projectId ?? crypto.randomUUID(),
           threadId: crypto.randomUUID(),

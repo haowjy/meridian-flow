@@ -21,7 +21,12 @@ any of those concerns in the screen orchestrator. Work detail renders that same
 row component; Work identity inside every list row is display-only.
 
 Project Home and the Chats landing observe one persisted creation slot per account and
-creation context. The account owner, not a mounted Home or destination Chat,
+creation context. Prospective Work and Agent choices live in that same slot,
+not in each mounted Composer. Queued choice writes settle before first-send
+reservation; they never mutate a locked attempt. Missing saved choices remain
+explicitly unavailable until the writer chooses a replacement, rather than
+silently becoming No Work or the default Agent. Immutable uncertain attempts
+still reconcile even if a catalog choice later becomes unavailable. The account owner, not a mounted Home or destination Chat,
 atomically claims, creates, and reconciles project-scoped entities. Only
 definite Work/Agent refusals allow correcting captured choices; uncertain
 attempts retain their IDs and immutable original submission. Ready readable

@@ -1,6 +1,8 @@
 /** Creation UI observes the account owner and may replace only the entry that submitted. */
+
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
+import type { CreationChoices } from "@/client/first-send-continuity";
 import type { ComposerDraftChange, ComposerSubmitEnvelope } from "@/components/app/composer";
 import { isSettingsSection } from "@/features/account/settings-sections";
 import { projectAddressHref } from "@/features/project/routing/project-address";
@@ -57,6 +59,7 @@ export function useCreationComposer(projectId: string | null) {
     contextLocked: state.busy || (!!state.slot?.attempt && state.slot.attempt.phase !== "refused"),
     initialDraft: state.slot?.draft,
     loaded: state.slot !== null,
+    updateChoices: (choices: CreationChoices) => controller.updateChoices(choices),
     updateDraft: (change: ComposerDraftChange) => controller.updateDraft(change.snapshot),
     reload: () => controller.reload(),
     startOver: () => controller.startOver(),
