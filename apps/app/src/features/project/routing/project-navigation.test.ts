@@ -40,6 +40,21 @@ function setup(
 }
 
 describe("project navigation", () => {
+  it("rejects an effect rendered for a different entry, including equal-href history entries", () => {
+    const { history, navigation } = setup("/p/serial/editor");
+    const rendered = { href: history.location.href, key: history.location.state.__TSR_key ?? "" };
+    history.push("/p/serial/works");
+    expect(navigation.captureForEntry(rendered)).toBeNull();
+    history.push(rendered.href);
+    expect(navigation.captureForEntry(rendered)).toBeNull();
+    expect(
+      navigation.captureForEntry({
+        href: history.location.href,
+        key: history.location.state.__TSR_key ?? "",
+      }),
+    ).not.toBeNull();
+    navigation.dispose();
+  });
   it("freezes displayed selections before a main push without waiting for defaults", async () => {
     const { history, navigation, changes } = setup("/p/serial/editor?settings=usage", {
       chatSlug: "fight-scene",

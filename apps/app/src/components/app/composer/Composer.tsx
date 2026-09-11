@@ -96,11 +96,12 @@ export type ComposerHandle = {
   focus: () => void;
   getDraft: () => string;
   snapshot: () => ComposerDraftSnapshot;
-  restoreSnapshot: (snapshot: ComposerDraftSnapshot) => boolean;
+  restoreSnapshot: (snapshot: ComposerDraftSnapshot, expectedRevision?: number) => boolean;
   restoreFailedSubmission: (
     id: string,
     submitted: ComposerDraftSnapshot,
     later?: ComposerDraftSnapshot | null,
+    expectedRevision?: number,
   ) => boolean;
   insertReference: (
     reference: AuthoritativeReference,
@@ -261,7 +262,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     if (editor && initialDraft) restoreComposerSelection(editor, initialDraft.selection);
   }, [editor, initialDraft]);
   const snapshot = useCallback((): ComposerDraftSnapshot => {
-    if (!editor)
+    if (!editor || editor.isDestroyed)
       return {
         revision: revision.current,
         doc: plainComposerDoc(""),
@@ -276,8 +277,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     return envelope.draft;
   }, [editor]);
   const restoreSnapshot = useCallback(
-    (value: ComposerDraftSnapshot) => {
-      if (!editor) return false;
+    (value: ComposerDraftSnapshot, expectedRevision?: number) => {
+      if (
+        !editor ||
+        editor.isDestroyed ||
+        (expectedRevision !== undefined && expectedRevision !== revision.current)
+      )
+        return false;
       suppressDraftChangeRef.current = true;
       editor.commands.setContent(value.doc, { emitUpdate: false });
       restoreComposerSelection(editor, value.selection);
@@ -300,13 +306,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   useImperativeHandle(
     ref,
     () => ({
-      focus: () => editor?.commands.focus(undefined, { scrollIntoView: false }),
-      getDraft: () => (editor ? serializeComposerDraft(editor.getJSON()).text : ""),
+      focus: () => {
+        if (!editor || editor.isDestroyed) return;
+        editor.commands.focus(undefined, { scrollIntoView: false });
+      },
+      getDraft: () =>
+        editor && !editor.isDestroyed ? serializeComposerDraft(editor.getJSON()).text : "",
       snapshot,
       restoreSnapshot,
-      restoreFailedSubmission: (id, submitted, later) => {
+      restoreFailedSubmission: (id, submitted, later, expectedRevision) => {
+        if (expectedRevision !== undefined && expectedRevision !== revision.current) return false;
         if (restored.current.has(id)) return true;
-        if (!editor) return false;
+        if (!editor || editor.isDestroyed) return false;
         restored.current.add(id);
         return restoreSnapshot(
           later && later.revision > submitted.revision
@@ -315,6 +326,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         );
       },
       insertReference: (reference, spelling, imageCapable = false) => {
+        if (!editor || editor.isDestroyed) return;
         editor
           ?.chain()
           .focus()
@@ -353,7 +365,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       if (outcome.kind === "accepted" && revision.current === envelope.acceptedRevision) {
         editor.commands.clearContent(true);
       }
-      if (outcome.kind === "rejected") {
+      if (outcome.kind === "rejected" && revision.current !== envelope.acceptedRevision) {
         const later = snapshot();
         restoreSnapshot(
           later.revision > envelope.draft.revision

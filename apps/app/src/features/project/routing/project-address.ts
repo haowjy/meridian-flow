@@ -136,7 +136,7 @@ export function parseProjectAddress(pathname: string, rawSearch = ""): ParsedPro
         : selection(query.get("chat")),
     work,
     ...(isSettingsSection(settings) ? { settings } : {}),
-    results: editor && query.has("results"),
+    results: (editor || destination.kind === "chat") && query.has("results"),
   };
   return { kind: "valid", address, href: projectAddressHref(address) };
 }
@@ -184,7 +184,7 @@ export function projectAddressHref(address: ProjectAddress): string {
     d.scheme !== null &&
     isWorkScopedProjectContextScheme(d.scheme);
   if (context && !pathOwnsWork) writeSelection(query, "work", address.work);
-  if (context && address.results) query.set("results", "");
+  if ((context || d.kind === "chat") && address.results) query.set("results", "");
   if (address.settings) query.set("settings", address.settings);
   const search = query.toString();
   return `/${parts.map(encodeURIComponent).join("/")}${search ? `?${search}` : ""}`;

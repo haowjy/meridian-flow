@@ -437,3 +437,60 @@ it.each([
     },
   );
 });
+
+it("does not admit an old bound document while its retained controller is inactive", async () => {
+  const locator = { scheme: "manuscript" as const, path: "/a.md", workId: "work-1" };
+  function Harness() {
+    return (
+      <AccountFeatureTestProvider accountId="parked-account">
+        <CaptureCoordinator />
+        <ContextViewerSurfaceController
+          projectId="project"
+          editorWorkId="work-1"
+          activeContextScheme="manuscript"
+          activeContextPath="/a.md"
+          active={false}
+          sidebarToggle={{ open: true, onExpand() {}, label: "Sidebar" }}
+          dockToggle={{ open: true, onExpand() {}, label: "Chat" }}
+          onSelectContextPath={() => {
+            throw new Error("Inactive navigation");
+          }}
+          onOpenContextTarget={() => {
+            throw new Error("Inactive navigation");
+          }}
+        />
+      </AccountFeatureTestProvider>
+    );
+  }
+  await withReactRoot(<Harness />, async () => {
+    if (!coordinator) throw new Error("Coordinator did not mount");
+    const lease = coordinator.createLifetimeLease();
+    lease.resume();
+    const host = coordinator.registerRoutePort(
+      "project",
+      {
+        readSearch: () => ({
+          screen: "context",
+          work: "work-1",
+          scheme: "manuscript",
+          path: "/a.md",
+        }),
+        updateSearch() {},
+      },
+      "work-1",
+    );
+    try {
+      await act(async () => {
+        coordinator?.beginRouteSelection("project", locator);
+        const revision = coordinator?.getProjectSnapshot("project").selection.revision;
+        if (revision === undefined) throw new Error("Selection missing");
+        coordinator?.bindRouteSelection("project", revision, { kind: "server", documentId: "a" });
+      });
+      expect(coordinator.getProjectSnapshot("project").admitted).toBeNull();
+    } finally {
+      host.release();
+      lease.suspend();
+      lease.disposeIfSuspended();
+    }
+  });
+});

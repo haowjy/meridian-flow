@@ -7,11 +7,7 @@ import { getProjectContextRead } from "@/client/api/projects-api";
 import { contextCatalogScope } from "@/client/query/useContextCatalog";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { resolveEditorWorkScope } from "../editor-work-scope";
-import {
-  openContextRouteSearch,
-  parseExplicitWork,
-  resolveRouteWork,
-} from "../routing/project-route";
+import { openContextRouteSearch } from "../routing/project-route";
 import { ContextViewerHost } from "./ContextViewerHost";
 import { contextTabFromFile } from "./context-tab-from-file";
 import { contextTabMatchesRoute } from "./context-tab-identity";
@@ -30,11 +26,8 @@ it("reads an explicit no-Work image without inheriting the selected chat Work", 
     { thread: "thread-a" },
     { scheme: "uploads", path: "/Map.png", workId: null },
   );
-  const scope = resolveEditorWorkScope(
-    resolveRouteWork(parseExplicitWork(search.work), { status: "loading" }),
-    "work-a",
-    { status: "loading" },
-  );
+  expect(search.work).toBe("none");
+  const scope = resolveEditorWorkScope({ status: "none" });
   expect(scope).toEqual({ status: "ready", workId: null, source: "route" });
   if (scope.status !== "ready") throw new Error("expected resolved scope");
   expect(contextCatalogScope("project", "uploads", scope.workId)).toEqual({

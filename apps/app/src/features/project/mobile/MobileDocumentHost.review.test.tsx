@@ -21,7 +21,7 @@ import {
   EditorReviewIntentClaimant,
   useOpenEditorReview,
 } from "../dock/editor-review-handoff";
-import type { OpenContextRoute } from "../routing/ProjectContextRoute";
+import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import { MobileDocumentHost } from "./MobileDocumentHost";
 import { resolveMobileDocumentRoute } from "./mobile-document-route";
 

@@ -75,6 +75,10 @@ export function createProjectNavigation(
 
   return {
     capture,
+    captureForEntry(expected: { key: string; href: string }): ProjectNavigationTicket | null {
+      const ticket = capture();
+      return ticket.key === expected.key && ticket.href === expected.href ? ticket : null;
+    },
     isCurrent,
     async navigate(
       address: ProjectAddress,

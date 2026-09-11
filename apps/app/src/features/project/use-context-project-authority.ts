@@ -40,7 +40,7 @@ export function useContextProjectAuthority({
   const rawBootstrapRef = useRef<Promise<void> | null>(null);
   const rawOperationRef = useRef(0);
   const mountedRef = useRef(true);
-  const editorWorkId = editorScope.status === "empty" ? null : editorScope.workId;
+  const editorWorkId = editorScope.workId;
 
   useEffect(() => {
     mountedRef.current = true;

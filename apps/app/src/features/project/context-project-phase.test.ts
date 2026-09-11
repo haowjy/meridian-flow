@@ -13,7 +13,7 @@ describe("Context project authority", () => {
   it.each([
     "loading",
     "error",
-    "normalizing",
+    "unavailable",
   ] as const)("withholds initial authority while Work is %s", (status) => {
     const next = updateContextProjectReadiness(INITIAL_CONTEXT_PROJECT_AUTHORITY, true, {
       status,
@@ -24,13 +24,6 @@ describe("Context project authority", () => {
       work: { status },
     });
     expect(next.effect).toBeNull();
-  });
-
-  it("withholds initial authority for an empty Work catalog", () => {
-    const next = updateContextProjectReadiness(INITIAL_CONTEXT_PROJECT_AUTHORITY, true, {
-      status: "empty",
-    });
-    expect(contextProjectPhase(next.authority)).toMatchObject({ status: "waiting-for-work" });
   });
 
   it("starts raw validation once and Strict replay adopts it with a fresh attempt", () => {
@@ -69,8 +62,7 @@ describe("Context project authority", () => {
   it.each([
     { status: "loading" as const, workId: "work-1" },
     { status: "error" as const, workId: "work-1" },
-    { status: "normalizing" as const, workId: "work-1" },
-    { status: "empty" as const },
+    { status: "unavailable" as const, workId: "work-1" },
   ])("suspends after live for $status and never restores bootstrap", (work) => {
     const attempt = updateContextProjectReadiness(INITIAL_CONTEXT_PROJECT_AUTHORITY, true, ready);
     const live = settleContextProjectBootstrap(attempt.authority, 1);

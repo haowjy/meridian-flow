@@ -51,7 +51,7 @@ export type ContextViewerProps = {
   resumeDocumentName: string | null;
   /** Replay the remembered route through the normal tree-validated open. */
   onResumeDocument: () => void;
-  onNewDocument: () => void;
+  onNewDocument?: () => void;
   onUntitledBecameNonEmpty: (documentId: string) => void;
   onCommitted: (
     documentId: string,
@@ -266,7 +266,7 @@ function EditorEmptyState({
    * Deliberately NOT the sidebar inline-create: that flow is scheme-targeted
    * and happens off-pane, which reads as a dead button from the empty state.
    */
-  onNewDocument: () => void;
+  onNewDocument?: () => void;
 }) {
   return (
     <div className="grid h-full place-items-center px-6 text-center">
@@ -283,13 +283,18 @@ function EditorEmptyState({
             size="sm"
             variant={resumeDocumentName ? "secondary" : "default"}
             onClick={onNewDocument}
+            disabled={!onNewDocument}
           >
             <FilePlus aria-hidden />
             <Trans>New document</Trans>
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          <Trans>Or pick a file from the tree.</Trans>
+          {onNewDocument ? (
+            <Trans>Or pick a file from the tree.</Trans>
+          ) : (
+            <Trans>Open a Work to create an Untitled document, or pick a file from the tree.</Trans>
+          )}
         </p>
       </div>
     </div>

@@ -128,7 +128,10 @@ describe("WorkDetailScreen resource boundaries", () => {
     const commands = routeCommands();
     await withReactRoot(
       <WorkScreen
-        {...props({ routeCommands: commands, routeWork: { status: "catalog-error" } })}
+        {...props({
+          routeCommands: commands,
+          routeWork: { status: "unresolved", reason: "error", slug: "missing" },
+        })}
       />,
       () => {
         expect(document.querySelector("[role=alert]")?.textContent).toContain("Work couldn’t load");

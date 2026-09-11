@@ -29,7 +29,7 @@
  * the same `documentId`, so subscribe/unsubscribe stay paired.
  */
 import { Trans } from "@lingui/react/macro";
-import { lazy, type ReactNode, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, type ReactNode, Suspense, useEffect, useId, useRef, useState } from "react";
 
 import { type ContextTab, useContextTabsActions } from "@/client/stores";
 import { Button } from "@/components/ui/button";
@@ -45,8 +45,6 @@ import { useLiveDocumentBinding } from "./use-live-document-binding";
 const EditorView = lazy(() =>
   import("@/features/editor/EditorView").then((m) => ({ default: m.EditorView })),
 );
-
-const DESKTOP_LOCAL_EDITOR_OWNER = "desktop-context-editor-mount-host";
 
 type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
 
@@ -64,6 +62,7 @@ export type ContextEditorMountHostProps = {
   activeTabId: string | null;
   /** Whether the context destination is currently visible. */
   active: boolean;
+  readOnly?: boolean;
   onUntitledBecameNonEmpty?: (documentId: string) => void;
 };
 
@@ -96,8 +95,10 @@ export function ContextEditorMountHost({
   activeTabId,
   active,
   onUntitledBecameNonEmpty,
+  readOnly = false,
 }: ContextEditorMountHostProps) {
   const localOwner = useLocalUntitledOwner();
+  const localRetentionOwner = useId();
   const { remintNewTab } = useContextTabsActions();
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
@@ -176,20 +177,20 @@ export function ContextEditorMountHost({
   // are retained by their per-tab boundaries below.
   useEffect(() => {
     localOwner.retain(
-      DESKTOP_LOCAL_EDITOR_OWNER,
+      localRetentionOwner,
       untitledIds.map((documentId) => ({
         accountId: localOwner.accountId,
         projectId,
         documentId,
       })),
     );
-  }, [trackedIdsKey, untitledIdsKey, localOwner, projectId]);
+  }, [trackedIdsKey, untitledIdsKey, localOwner, projectId, localRetentionOwner]);
 
   useEffect(() => {
     return () => {
-      localOwner.release(DESKTOP_LOCAL_EDITOR_OWNER);
+      localOwner.release(localRetentionOwner);
     };
-  }, [localOwner]);
+  }, [localOwner, localRetentionOwner]);
 
   const mounted = pickMountedIds(lruRef.current, trackedIds, activeTabId, MAX_MOUNTED_EDITORS);
 
@@ -291,7 +292,7 @@ export function ContextEditorMountHost({
                   </div>
                 ) : waitingForReviewRoom ? null : (
                   <>
-                    {isActive ? (
+                    {active && isActive ? (
                       <ActiveEditorProjection
                         documentId={tab.documentId}
                         session={session}
@@ -311,7 +312,10 @@ export function ContextEditorMountHost({
                       bindingKey={bindingKey}
                       // A warm editor is hidden, not gone. Its chrome portals to
                       // the body, where `hidden` on an ancestor means nothing.
-                      active={isActive}
+                      active={active && isActive}
+                      editable={!readOnly}
+                      showToolbar={!readOnly}
+                      showCollaborationDecorations={!readOnly}
                       detached={tab.kind === "new"}
                       schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
                       reviewDraftId={reviewDraftId}
@@ -332,6 +336,7 @@ export function ContextEditorMountHost({
               key={tab.documentId}
               projectId={projectId}
               documentId={tab.documentId}
+              active={active && isActive}
             >
               {(session, failed) => renderEditor(session, failed)}
             </ServerTabSessionBoundary>
@@ -347,9 +352,11 @@ export function ServerTabSessionBoundary({
   projectId,
   documentId,
   children,
+  active = true,
 }: {
   projectId: string;
   documentId: string;
+  active?: boolean;
   children: (session: DocumentSession | null, failed: boolean) => ReactNode;
 }) {
   const generation = useRef(++serverHostGeneration);
@@ -358,7 +365,7 @@ export function ServerTabSessionBoundary({
     documentId,
     owner: "desktop-server-tab",
   });
-  useLiveBindingAcknowledgementHost(projectId, documentId, binding);
+  useLiveBindingAcknowledgementHost(projectId, active ? documentId : null, binding);
   usePostApplyHostWake(projectId, documentId, generation.current);
   const state = binding.state;
   return children(state.kind === "opened" ? state.session : null, state.kind === "failed");

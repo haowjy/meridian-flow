@@ -8,6 +8,7 @@ export type FirstSendContinuityKey = Readonly<{
 }>;
 export type FirstSendContinuityRecord = FirstSendContinuityKey &
   Readonly<{
+    creation: { projectId: string | null; attemptId: string; draftRevision: number };
     envelope: ComposerSubmitEnvelope;
     latestDraft: ComposerDraftSnapshot | null;
     optimisticUserTurnId: string;
@@ -18,6 +19,8 @@ export type FirstSendContinuityClaim = Readonly<{
   dispatch: boolean;
 }>;
 
+export type CreationRefusal = "work_unavailable" | "agent_not_found";
+
 export type CreationAttempt = Readonly<{
   attemptId: string;
   projectId: string;
@@ -27,6 +30,7 @@ export type CreationAttempt = Readonly<{
   agentSlug: string;
   submission: ComposerSubmitEnvelope | null;
   phase: "creating" | "ambiguous" | "refused" | "mismatched" | "ready";
+  refusal?: CreationRefusal;
   projectSlug?: string;
   threadSlug?: string;
 }>;
@@ -35,7 +39,7 @@ export type CreationSlot = Readonly<{
   revision: number;
   draftRevision: number;
   draft: ComposerDraftSnapshot | null;
-  attempt: (CreationAttempt & { draftRevision: number }) | null;
+  attempt: (CreationAttempt & { draftRevision: number | null }) | null;
 }>;
 export type CreationSlotResult = { kind: "saved" | "conflict"; slot: CreationSlot };
 const EMPTY_CREATION: CreationSlot = {
@@ -111,9 +115,21 @@ function valid(value: unknown): value is FirstSendContinuityRecord {
   )
     return false;
   return (
+    validCreationLink(row.creation) &&
     validSubmission(row.envelope) &&
     row.envelope.submissionId === row.submissionId &&
     (row.latestDraft === null || validSnapshot(row.latestDraft))
+  );
+}
+function validCreationLink(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const link = value as Record<string, unknown>;
+  return (
+    (link.projectId === null || typeof link.projectId === "string") &&
+    typeof link.attemptId === "string" &&
+    link.attemptId.length > 0 &&
+    Number.isSafeInteger(link.draftRevision) &&
+    Number(link.draftRevision) >= 0
   );
 }
 function validSubmission(value: unknown): value is ComposerSubmitEnvelope {
@@ -140,10 +156,14 @@ function validCreationAttempt(value: unknown): value is CreationSlot["attempt"] 
       attempt.title,
       attempt.agentSlug,
     ].every((field) => typeof field === "string") &&
-    Number.isSafeInteger(attempt.draftRevision) &&
+    (attempt.draftRevision === null ||
+      (Number.isSafeInteger(attempt.draftRevision) && Number(attempt.draftRevision) >= 0)) &&
     (attempt.workId === null || typeof attempt.workId === "string") &&
     (attempt.submission === null || validSubmission(attempt.submission)) &&
     ["creating", "ambiguous", "refused", "mismatched", "ready"].includes(String(attempt.phase)) &&
+    (attempt.refusal === undefined ||
+      attempt.refusal === "work_unavailable" ||
+      attempt.refusal === "agent_not_found") &&
     (attempt.projectSlug === undefined || typeof attempt.projectSlug === "string") &&
     (attempt.threadSlug === undefined || typeof attempt.threadSlug === "string")
   );
@@ -151,6 +171,20 @@ function validCreationAttempt(value: unknown): value is CreationSlot["attempt"] 
 
 export class FirstSendContinuity {
   private database: Promise<IDBDatabase> | null = null;
+  private creationListeners = new Map<string | null, Set<(slot: CreationSlot) => void>>();
+
+  subscribeCreation(projectId: string | null, listener: (slot: CreationSlot) => void): () => void {
+    const listeners = this.creationListeners.get(projectId) ?? new Set();
+    this.creationListeners.set(projectId, listeners);
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+      if (!listeners.size) this.creationListeners.delete(projectId);
+    };
+  }
+  private notifyCreation(projectId: string | null, slot: CreationSlot) {
+    for (const listener of this.creationListeners.get(projectId) ?? []) listener(slot);
+  }
 
   constructor(readonly accountId: string) {}
 
@@ -181,8 +215,43 @@ export class FirstSendContinuity {
     attempt: CreationAttempt,
   ): Promise<CreationSlotResult> {
     return this.changeCreation(projectId, (slot) =>
-      slot.revision === expectedRevision && !slot.attempt
-        ? { ...slot, attempt: { ...attempt, draftRevision: slot.draftRevision } }
+      slot.revision === expectedRevision &&
+      !slot.attempt &&
+      (projectId === null || attempt.projectId === projectId)
+        ? {
+            ...slot,
+            attempt: {
+              ...attempt,
+              draftRevision:
+                attempt.submission &&
+                JSON.stringify(slot.draft) === JSON.stringify(attempt.submission.draft)
+                  ? slot.draftRevision
+                  : null,
+            },
+          }
+        : null,
+    );
+  }
+
+  /** A definite refusal admits corrected creation choices, never an uncertain attempt. */
+  async reviseRefusedCreation(
+    projectId: string | null,
+    attemptId: string,
+    choices: { workId: string | null; agentSlug: string },
+  ): Promise<CreationSlotResult> {
+    return this.changeCreation(projectId, (slot) =>
+      slot.attempt?.attemptId === attemptId && slot.attempt.phase === "refused"
+        ? {
+            ...slot,
+            attempt: {
+              ...slot.attempt,
+              ...choices,
+              attemptId: crypto.randomUUID(),
+              threadId: crypto.randomUUID(),
+              phase: "creating",
+              refusal: undefined,
+            },
+          }
         : null,
     );
   }
@@ -190,7 +259,7 @@ export class FirstSendContinuity {
   async settleCreation(
     projectId: string | null,
     attemptId: string,
-    outcome: Pick<CreationAttempt, "phase" | "projectSlug" | "threadSlug">,
+    outcome: { phase: "ambiguous" | "refused" | "mismatched"; refusal?: CreationRefusal },
   ): Promise<CreationSlotResult> {
     return this.changeCreation(projectId, (slot) =>
       slot.attempt?.attemptId === attemptId
@@ -199,16 +268,139 @@ export class FirstSendContinuity {
     );
   }
 
+  async clearMismatchedCreation(
+    projectId: string | null,
+    attemptId: string,
+  ): Promise<CreationSlotResult> {
+    return this.changeCreation(projectId, (slot) =>
+      slot.attempt?.attemptId === attemptId && slot.attempt.phase === "mismatched"
+        ? { ...slot, attempt: null }
+        : null,
+    );
+  }
+
   async finishCreation(projectId: string | null, attemptId: string): Promise<CreationSlotResult> {
     return this.changeCreation(projectId, (slot) =>
-      slot.attempt?.attemptId === attemptId && slot.attempt.phase === "ready"
+      slot.attempt?.attemptId === attemptId &&
+      slot.attempt.phase === "ready" &&
+      !slot.attempt.submission
         ? {
             ...slot,
-            draft: slot.draftRevision === slot.attempt.draftRevision ? null : slot.draft,
+            draft: slot.draft,
             attempt: null,
           }
         : null,
     );
+  }
+
+  /** Commit the navigation destination and first-send admission as one durable fact. */
+  async publishCreation(
+    projectId: string | null,
+    attemptId: string,
+    destination: { projectSlug: string; threadSlug: string; optimisticUserTurnId?: string },
+  ): Promise<CreationSlotResult> {
+    const db = await this.open();
+    const tx = db.transaction([CREATION_STORE, STORE], "readwrite");
+    const slots = tx.objectStore(CREATION_STORE);
+    const slot = this.creationSlot(await request(slots.get(projectId ?? "")));
+    const attempt = slot.attempt;
+    if (attempt?.attemptId !== attemptId) {
+      await complete(tx);
+      return { kind: "conflict", slot };
+    }
+    if (attempt.submission) {
+      if (!destination.optimisticUserTurnId) {
+        tx.abort();
+        throw new Error("Creation admission requires its optimistic turn");
+      }
+      const admissions = tx.objectStore(STORE);
+      const key = {
+        projectId: attempt.projectId,
+        threadId: attempt.threadId,
+        submissionId: attempt.submission.submissionId,
+      };
+      const existing = await request(admissions.get(id(key)));
+      if (
+        existing !== undefined &&
+        (!valid(existing) ||
+          existing.creation?.projectId !== projectId ||
+          existing.creation?.attemptId !== attemptId ||
+          JSON.stringify(existing.envelope) !== JSON.stringify(attempt.submission))
+      ) {
+        await complete(tx);
+        return { kind: "conflict", slot };
+      }
+      if (existing === undefined)
+        admissions.put(
+          {
+            ...key,
+            envelope: attempt.submission,
+            latestDraft: slot.draftRevision === attempt.draftRevision ? null : slot.draft,
+            optimisticUserTurnId: destination.optimisticUserTurnId,
+            state: "ready",
+            creation: { projectId, attemptId, draftRevision: slot.draftRevision },
+          } satisfies FirstSendContinuityRecord,
+          id(key),
+        );
+    }
+    const next: CreationSlot = {
+      ...slot,
+      revision: slot.revision + 1,
+      attempt: {
+        ...attempt,
+        phase: "ready",
+        projectSlug: destination.projectSlug,
+        threadSlug: destination.threadSlug,
+      },
+    };
+    slots.put(next, projectId ?? "");
+    await complete(tx);
+    this.notifyCreation(projectId, next);
+    return { kind: "saved", slot: next };
+  }
+
+  /** Never retire a newer snapshot than the destination actually restored. */
+  async retire(observed: FirstSendContinuityRecord): Promise<boolean> {
+    const db = await this.open();
+    const tx = db.transaction([CREATION_STORE, STORE], "readwrite");
+    const admissions = tx.objectStore(STORE);
+    const current = await request(admissions.get(id(observed)));
+    if (!valid(current)) {
+      await complete(tx);
+      return true;
+    }
+    if (
+      JSON.stringify(current.latestDraft) !== JSON.stringify(observed.latestDraft) ||
+      current.creation?.draftRevision !== observed.creation?.draftRevision
+    ) {
+      await complete(tx);
+      return false;
+    }
+    let retiredSlot: CreationSlot | undefined;
+    if (current.creation) {
+      const slots = tx.objectStore(CREATION_STORE);
+      const context = current.creation.projectId;
+      const slot = this.creationSlot(await request(slots.get(context ?? "")));
+      if (
+        slot.attempt?.attemptId === current.creation.attemptId &&
+        slot.attempt.projectId === current.projectId &&
+        slot.attempt.threadId === current.threadId &&
+        slot.attempt.submission?.submissionId === current.submissionId
+      ) {
+        retiredSlot = {
+          ...slot,
+          revision: slot.revision + 1,
+          attempt: null,
+          draft: slot.draftRevision === current.creation.draftRevision ? null : slot.draft,
+        };
+        slots.put(retiredSlot, context ?? "");
+      }
+    }
+    admissions.delete(id(observed));
+    await complete(tx);
+    if (retiredSlot && current.creation)
+      this.notifyCreation(current.creation.projectId, retiredSlot);
+    return true;
   }
 
   private creationSlot(value: unknown): CreationSlot {
@@ -230,43 +422,44 @@ export class FirstSendContinuity {
     update: (slot: CreationSlot) => CreationSlot | null,
   ): Promise<CreationSlotResult> {
     const db = await this.open();
-    const tx = db.transaction(CREATION_STORE, "readwrite");
+    const tx = db.transaction([CREATION_STORE, STORE], "readwrite");
     const store = tx.objectStore(CREATION_STORE);
     const slot = this.creationSlot(await request(store.get(projectId ?? "")));
     const changed = update(slot);
     const next = changed ? { ...changed, revision: slot.revision + 1 } : slot;
-    if (changed) store.put(next, projectId ?? "");
+    if (changed) {
+      store.put(next, projectId ?? "");
+      const attempt = next.attempt;
+      if (attempt?.submission && next.draftRevision !== slot.draftRevision) {
+        const admissions = tx.objectStore(STORE);
+        const key = id({
+          projectId: attempt.projectId,
+          threadId: attempt.threadId,
+          submissionId: attempt.submission.submissionId,
+        });
+        const admission = await request(admissions.get(key));
+        if (valid(admission) && admission.creation?.attemptId === attempt.attemptId)
+          admissions.put(
+            {
+              ...admission,
+              latestDraft: next.draft,
+              creation: { ...admission.creation, draftRevision: next.draftRevision },
+            },
+            key,
+          );
+      }
+    }
     await complete(tx);
+    if (changed) this.notifyCreation(projectId, next);
     return { kind: changed ? "saved" : "conflict", slot: next };
   }
 
-  async stage(record: FirstSendContinuityRecord): Promise<void> {
+  async peek(key: FirstSendContinuityKey): Promise<FirstSendContinuityRecord | null> {
     const db = await this.open();
-    const tx = db.transaction(STORE, "readwrite");
-    const store = tx.objectStore(STORE);
-    const key = id(record);
-    const existing = await request(store.get(key));
-    if (existing === undefined) store.put(record, key);
-    else if (
-      valid(existing) &&
-      record.latestDraft &&
-      (!existing.latestDraft || record.latestDraft.revision > existing.latestDraft.revision)
-    )
-      store.put({ ...existing, latestDraft: record.latestDraft }, key);
+    const tx = db.transaction(STORE, "readonly");
+    const value = await request(tx.objectStore(STORE).get(id(key)));
     await complete(tx);
-  }
-
-  async updateLatest(key: FirstSendContinuityKey, snapshot: ComposerDraftSnapshot): Promise<void> {
-    const db = await this.open();
-    const tx = db.transaction(STORE, "readwrite");
-    const store = tx.objectStore(STORE);
-    const current = await request(store.get(id(key)));
-    if (
-      valid(current) &&
-      (!current.latestDraft || snapshot.revision > current.latestDraft.revision)
-    )
-      store.put({ ...current, latestDraft: snapshot }, id(key));
-    await complete(tx);
+    return valid(value) ? value : null;
   }
 
   async claim(key: FirstSendContinuityKey): Promise<FirstSendContinuityClaim | null> {
@@ -313,13 +506,6 @@ export class FirstSendContinuity {
 
   async markAmbiguous(key: FirstSendContinuityKey): Promise<void> {
     await this.updateState(key, "ambiguous");
-  }
-
-  async remove(key: FirstSendContinuityKey): Promise<void> {
-    const db = await this.open();
-    const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).delete(id(key));
-    await complete(tx);
   }
 
   private async updateState(key: FirstSendContinuityKey, state: "ambiguous"): Promise<void> {

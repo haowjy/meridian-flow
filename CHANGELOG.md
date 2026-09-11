@@ -5,6 +5,11 @@
 
 ## [Unreleased]
 
+- Use readable project, chat, Work, document, and folder addresses. Preserve renamed bookmarks and exact Back/Forward selections.
+- Keep desktop chat and editor sessions mounted across project screens and unavailable addresses.
+- Persist one creation draft per account/project context; reconcile uncertain creation without duplicate sends or lost newer text.
+- Preserve local Untitled selection in phone read-only views. Ignore stale Composer focus after navigation.
+
 - Serialize full draft Discard with Apply and preserve accepted documents when a stale Discard finishes later.
 
 - Add revision-checked creation draft storage and lossless Composer initialization for reload continuity.

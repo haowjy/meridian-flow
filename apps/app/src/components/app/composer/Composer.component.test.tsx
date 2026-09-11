@@ -62,6 +62,35 @@ const textSnapshot = (text: string, revision: number) => ({
   ownedUploads: [],
 });
 describe("Composer draft changes", () => {
+  it("declines delayed continuity restoration after the destination draft changes", async () => {
+    const ref = await mount((e) => outcome(e, "accepted"));
+    await act(async () =>
+      ref.current?.restoreSnapshot(textSnapshot("Writer's newer destination text", 7)),
+    );
+    const current = ref.current?.snapshot();
+    await act(async () => {
+      expect(ref.current?.restoreSnapshot(textSnapshot("Old source text", 3), 0)).toBe(false);
+      expect(
+        ref.current?.restoreFailedSubmission(
+          "old-send",
+          textSnapshot("Rejected source", 3),
+          null,
+          0,
+        ),
+      ).toBe(false);
+    });
+    expect(ref.current?.snapshot()).toEqual(current);
+  });
+
+  it("does not manufacture an authoring revision when an unchanged submission is refused", async () => {
+    const initialDraft = textSnapshot("Opening", 4);
+    const onDraftChange = vi.fn();
+    const ref = await mount((e) => outcome(e, "rejected"), { initialDraft, onDraftChange });
+    await send();
+    expect(ref.current?.snapshot()).toEqual(initialDraft);
+    expect(onDraftChange).not.toHaveBeenCalled();
+  });
+
   it("resumes a persisted snapshot without treating hydration as writer input", async () => {
     const initialDraft = textSnapshot("Continue this scene", 13);
     const onDraftChange = vi.fn();
@@ -532,4 +561,14 @@ it("lets a pending suggestion consume Enter before submitting the Composer", asy
     );
   });
   expect(onSubmit).toHaveBeenCalledOnce();
+});
+
+it("ignores stale navigation focus after the Composer editor is destroyed", async () => {
+  const ref = await mount((e) => outcome(e, "accepted"));
+  const handle = ref.current;
+  if (!handle) throw new Error("Composer did not mount");
+  await act(async () => root.render(null));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(() => handle.focus()).not.toThrow();
+  expect(handle.restoreSnapshot(textSnapshot("Stale recovery", 1))).toBe(false);
 });
