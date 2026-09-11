@@ -229,7 +229,11 @@ export type OpenProjectDocument = (
 
 type NavigationAdapterDependencies = {
   opener: Pick<ProjectDocumentLiveOpener, "open">;
-  openTab(projectId: string, tab: ReturnType<typeof contextTabFromFile>): void;
+  openTab(
+    projectId: string,
+    tab: ReturnType<typeof contextTabFromFile>,
+    isCurrent?: () => boolean,
+  ): Promise<void>;
   openRoute: OpenContextRoute | null;
   captureNavigation?: () => () => boolean;
 };
@@ -266,6 +270,8 @@ export class ProjectDocumentNavigationAdapter {
     const abort = () => controller.abort();
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) controller.abort();
+    const isCurrent = () =>
+      token === this.attempt && !controller.signal.aborted && navigationIsCurrent?.() !== false;
     try {
       const result = await this.dependencies.opener.open({
         source: "server",
@@ -289,7 +295,16 @@ export class ProjectDocumentNavigationAdapter {
       if (disposition === "current" && !this.dependencies.openRoute) {
         throw new Error("Opening a project document requires the project route owner");
       }
-      this.dependencies.openTab(projectId, contextTabFromFile(scheme, file, routeWorkId));
+      try {
+        await this.dependencies.openTab(
+          projectId,
+          contextTabFromFile(scheme, file, routeWorkId),
+          isCurrent,
+        );
+      } catch {
+        return isCurrent() ? { kind: "unavailable", reason: "failed" } : { kind: "cancelled" };
+      }
+      if (!isCurrent()) return { kind: "cancelled" };
       // The admission is settled; its own route commit must not cancel its receipt.
       this.current = null;
       if (disposition === "current") {

@@ -572,7 +572,10 @@ export class DeviceContextDeskLedger {
     this.state = persisted;
     return persisted;
   }
-  apply(command: DeviceContextDeskCommand): Promise<DeviceContextDeskCommandResult> {
+  apply(
+    command: DeviceContextDeskCommand,
+    isCurrent?: () => boolean,
+  ): Promise<DeviceContextDeskCommandResult> {
     const execute = async () => {
       const persisted = parseContextDesk(this.storage.getItem(CONTEXT_DESK_STORAGE_KEY));
       if (
@@ -582,7 +585,9 @@ export class DeviceContextDeskLedger {
       )
         return outcome("stale", persisted);
       const current = persisted ?? this.state;
-      const reduced = reduceContextDesk(current, command);
+      // Navigation may be superseded while waiting for the cross-tab lock.
+      const reduced =
+        isCurrent?.() === false ? outcome("stale", current) : reduceContextDesk(current, command);
       if (reduced.kind === "committed") {
         this.storage.setItem(CONTEXT_DESK_STORAGE_KEY, JSON.stringify(reduced.snapshot));
         this.state = reduced.snapshot;

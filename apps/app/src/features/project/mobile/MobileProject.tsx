@@ -92,6 +92,7 @@ export function MobileProject(props: MobileProjectProps) {
       />
       <main className="main-pane flex min-h-0 flex-1 flex-col overflow-hidden">
         <ProjectRouteBoundary
+          retainWhileLoading={props.retainEditorWhileLoading}
           issue={
             props.routeIssues?.main ??
             (props.activeScreen === "chat"

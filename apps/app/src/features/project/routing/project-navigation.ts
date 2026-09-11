@@ -24,6 +24,9 @@ export type DisplayedProjectSelection = {
   /** Existing local ownership pointer, never content or a new draft instance. */
   local?: { accountId: string; projectId: string; threadId?: string; documentId?: string };
 };
+export type ProjectAddressReplacement =
+  | { kind: "replaced" | "superseded" }
+  | { kind: "failed"; ticket: ProjectNavigationTicket };
 export type ProjectNavigationTicket = { revision: number; key: string; href: string };
 
 export function createProjectNavigation(
@@ -111,8 +114,8 @@ export function createProjectNavigation(
     async replaceIfCurrent(
       ticket: ProjectNavigationTicket,
       address: ProjectAddress,
-    ): Promise<boolean> {
-      if (!isCurrent(ticket)) return false;
+    ): Promise<ProjectAddressReplacement> {
+      if (!isCurrent(ticket)) return { kind: "superseded" };
       const entry = port.read();
       const href = projectAddressHref(address);
       const state = projectAddressState(address, entry.state);
@@ -121,10 +124,23 @@ export function createProjectNavigation(
         JSON.stringify(state.meridianProjectEmptySelection) ===
           JSON.stringify(entry.state.meridianProjectEmptySelection)
       )
-        return true;
-      revision += 1;
-      await port.navigate(href, { replace: true, state });
-      return true;
+        return { kind: "replaced" };
+      const replacementRevision = ++revision;
+      try {
+        await port.navigate(href, { replace: true, state });
+        return { kind: "replaced" };
+      } catch {
+        const current = port.read();
+        // The initiating ticket was retired by this replacement, not necessarily by another intent.
+        return revision === replacementRevision &&
+          current.key === entry.key &&
+          current.href === entry.href
+          ? {
+              kind: "failed",
+              ticket: { revision: replacementRevision, key: entry.key, href: entry.href },
+            }
+          : { kind: "superseded" };
+      }
     },
     dispose: unsubscribe,
   };

@@ -17,6 +17,12 @@ The shell reuses the same route-owned `ProjectViewProps`, data hooks, chat,
 context tree, document editor/viewers, results body, and thread drawer content.
 Only the chrome changes: top bar, drawer, and one active view at a time.
 
+Same-Work pending document navigation retains the prior document presentation
+and breadcrumb until address resolution settles. The shared review-scope owner
+supplies that same document identity to both the recovery executor and phone
+host; navigation commands always come from the current route. Errors, Work
+changes, Results, and screen changes do not reuse that pending projection.
+
 ## Contracts
 
 ### Route ownership is the navigation model

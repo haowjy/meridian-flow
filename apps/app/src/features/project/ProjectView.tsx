@@ -314,7 +314,13 @@ export type ReviewScopedProjectProps = ResolvedProjectViewProps & {
   chatReview: DraftReviewContextValue;
   editorReview: DraftReviewContextValue;
   mobileDocumentRoute: MobileDocumentRoute;
+  retainEditorWhileLoading?: boolean;
 };
+
+type MobileEditorPresentation = Pick<
+  ResolvedProjectViewProps,
+  "activeContextScheme" | "activeContextPath" | "activeContextFolder" | "activeLocalDocumentId"
+> & { mobileDocumentRoute: MobileDocumentRoute };
 
 function HydratedReviewProject({
   chatWorkId,
@@ -340,7 +346,7 @@ function HydratedReviewScopes({
   const editorReviewState = useDraftReviewStateOwner();
   const usePhone = usePhoneShell();
   const { tabs } = useContextTabs(props.projectId);
-  const mobileDocumentRoute = useMobileDocumentRoute({
+  const requestedMobileDocumentRoute = useMobileDocumentRoute({
     enabled:
       usePhone === true &&
       props.activeScreen === "context" &&
@@ -350,6 +356,47 @@ function HydratedReviewScopes({
     scheme: props.activeContextScheme,
     path: props.activeContextPath,
     workId: props.editorWorkId,
+  });
+  const priorMobile = useRef<{
+    projectId: string;
+    workId: string | null;
+    presentation: MobileEditorPresentation;
+  } | null>(null);
+  const retainEditorWhileLoading =
+    usePhone === true &&
+    props.activeScreen === "context" &&
+    !props.resultsOpen &&
+    props.editorScope.status === "ready" &&
+    props.routeIssues?.editor === "loading" &&
+    priorMobile.current?.projectId === props.projectId &&
+    priorMobile.current.workId === props.editorWorkId;
+  const retainedPresentation = retainEditorWhileLoading ? priorMobile.current?.presentation : null;
+  const displayedProps = retainedPresentation ? { ...props, ...retainedPresentation } : props;
+  const mobileDocumentRoute =
+    retainedPresentation?.mobileDocumentRoute ?? requestedMobileDocumentRoute;
+  useLayoutEffect(() => {
+    if (
+      usePhone === true &&
+      props.activeScreen === "context" &&
+      !props.resultsOpen &&
+      props.editorScope.status === "ready" &&
+      !props.routeIssues?.editor &&
+      (props.activeContextPath || props.activeLocalDocumentId)
+    ) {
+      priorMobile.current = {
+        projectId: props.projectId,
+        workId: props.editorWorkId,
+        presentation: {
+          activeContextScheme: props.activeContextScheme,
+          activeContextPath: props.activeContextPath,
+          activeContextFolder: props.activeContextFolder,
+          activeLocalDocumentId: props.activeLocalDocumentId,
+          mobileDocumentRoute: requestedMobileDocumentRoute,
+        },
+      };
+    } else if (!retainEditorWhileLoading) {
+      priorMobile.current = null;
+    }
   });
   const workLabels = useMemo(
     () => Object.fromEntries(props.availableWorks.map((work) => [work.id, work.name])),
@@ -382,7 +429,8 @@ function HydratedReviewScopes({
       workLabels={workLabels}
     >
       <HydratedReviewControllers
-        {...props}
+        {...displayedProps}
+        retainEditorWhileLoading={retainEditorWhileLoading}
         chatWorkId={chatWorkId}
         chatThreadId={chatThreadId}
         chatReviewState={chatReviewState}
@@ -409,6 +457,7 @@ function HydratedReviewControllers({
   editorReviewState: DraftReviewStateOwner;
   usePhone: boolean;
   mobileDocumentRoute: MobileDocumentRoute;
+  retainEditorWhileLoading?: boolean;
 }) {
   const chatReview = useDraftReviewScopeValue({
     projectId: props.projectId,
@@ -557,6 +606,9 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
       children: (
         <ProjectRouteBoundary
           issue={props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined}
+          retainWhileLoading={
+            !!priorEditor.current && priorEditor.current.editorWorkId === props.editorWorkId
+          }
           recovery={
             props.editorScope.status !== "ready" ? (
               <EditorWorkRecovery scope={props.editorScope} onRetry={props.retryEditorWork} />
