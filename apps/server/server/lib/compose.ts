@@ -969,6 +969,9 @@ export function createInMemoryAppServices(): AppServices {
       async findById() {
         throw new Error("in-memory project repository is not implemented");
       },
+      async findLiveByOwnerSlug() {
+        throw new Error("in-memory project repository is not implemented");
+      },
       async listByUser() {
         throw new Error("in-memory project repository is not implemented");
       },

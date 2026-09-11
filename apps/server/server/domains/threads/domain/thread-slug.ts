@@ -1,8 +1,8 @@
 /** Stable thread-handle slugification and per-project collision suffixing. */
 const MAX_SLUG_BASE_LENGTH = 80;
 
-export function threadSlugBase(title: string | null | undefined): string | null {
-  if (!title?.trim()) return null;
+export function threadSlugBase(title: string | null | undefined): string {
+  if (!title?.trim()) return "chat";
   const slug = title
     .normalize("NFKD")
     .replace(/\p{Mark}/gu, "")
@@ -17,9 +17,8 @@ export function threadSlugBase(title: string | null | undefined): string | null 
 export function uniqueThreadSlug(
   title: string | null | undefined,
   existingSlugs: Iterable<string>,
-): string | null {
+): string {
   const base = threadSlugBase(title);
-  if (!base) return null;
   const existing = new Set(existingSlugs);
   if (!existing.has(base)) return base;
 

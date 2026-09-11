@@ -109,6 +109,7 @@ describe("branch-push durable projection", () => {
       fileType: "typescript",
     });
     await db.insert(threads).values({
+      slug: `fixture-${threadId}`,
       id: threadId,
       projectId,
       createdByUserId: userId,
@@ -296,6 +297,7 @@ describe("branch-push durable projection", () => {
       fileType: "markdown",
     });
     await db.insert(threads).values({
+      slug: `fixture-${threadId}`,
       id: threadId,
       projectId,
       createdByUserId: userId,
@@ -485,6 +487,7 @@ describe("branch-push durable projection", () => {
       updatedAt: old,
     });
     await db.insert(threads).values({
+      slug: `fixture-${threadId}`,
       id: threadId,
       projectId,
       createdByUserId: userId,

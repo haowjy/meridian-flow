@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Allocate readable project and chat handles; reserve project, Work, and chat handles through soft deletion.
+
 - Let Composer suggestions handle Enter before message submission.
 
 - Copy internal links as Markdown wikilinks with rich reference data, not browser URLs. Preserve display text on paste.

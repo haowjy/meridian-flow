@@ -64,8 +64,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         [THREAD_LOW, "Low"],
       ] as const) {
         await db.execute(sql`
-          INSERT INTO threads (id, project_id, created_by_user_id, title, status, updated_at)
-          VALUES (${threadId}::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid,
+          INSERT INTO threads (slug, id, project_id, created_by_user_id, title, status, updated_at)
+          VALUES (${threadId}, ${threadId}::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid,
             ${title}, 'idle', ${UPDATED_AT}::timestamptz)
         `);
         await db.insert(schema.threadWorks).values([
@@ -140,8 +140,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("keeps 100, 500, and 2,500-association pages and payloads bounded", async () => {
       const db = database.current;
       await db.execute(sql`
-        INSERT INTO threads (id, project_id, created_by_user_id, title, status, updated_at)
-        SELECT md5('work-feed-thread-' || g)::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid,
+        INSERT INTO threads (slug, id, project_id, created_by_user_id, title, status, updated_at)
+        SELECT md5('work-feed-thread-' || g), md5('work-feed-thread-' || g)::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid,
           'Chat ' || g, 'idle', '2026-08-01T00:00:00Z'::timestamptz + g * interval '1 microsecond'
         FROM generate_series(1, 2500) g
       `);

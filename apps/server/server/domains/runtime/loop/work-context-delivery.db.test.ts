@@ -55,6 +55,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "work-context-delivery",
       });
       await db.insert(schema.threads).values({
+        slug: `fixture-${THREAD_ID}`,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -63,6 +64,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         composedSystemPrompt: "Frozen prompt",
       });
       await db.insert(schema.threads).values({
+        slug: `fixture-${OTHER_THREAD_ID}`,
         id: OTHER_THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,

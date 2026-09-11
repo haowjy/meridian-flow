@@ -57,6 +57,7 @@ if (!RUN) {
         .insert(schema.projects)
         .values({ id: PROJECT, userId: USER, name: "Admission", slug: "admission" });
       await firstDb.insert(schema.threads).values({
+        slug: `fixture-${THREAD}`,
         id: THREAD,
         projectId: PROJECT,
         createdByUserId: USER,
@@ -226,6 +227,7 @@ if (!RUN) {
 
     it("persists ordered occurrences, replays their actual sparse cursor, and rolls the whole accepted settlement back together", async () => {
       await firstDb.insert(schema.threads).values({
+        slug: `fixture-${ROLLBACK_THREAD}`,
         id: ROLLBACK_THREAD,
         projectId: PROJECT,
         createdByUserId: USER,
