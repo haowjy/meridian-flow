@@ -79,12 +79,7 @@ function routeWork(resolution: AddressResolution<Work>): RouteWorkResolution {
 function screen(destination: ProjectDestination): ScreenKey {
   if (destination.kind === "home") return "home";
   if (destination.kind === "work" || destination.kind === "works") return "work";
-  if (
-    destination.kind === "chat" ||
-    destination.kind === "chats" ||
-    destination.kind === "new-chat"
-  )
-    return "chat";
+  if (destination.kind === "chat" || destination.kind === "chats") return "chat";
   return "context";
 }
 
@@ -461,7 +456,7 @@ export function ReadableProjectRoute({
     results: address.results ? "" : undefined,
   };
   const selectScreen = (next: ScreenKey) =>
-    next === activeScreen
+    next === activeScreen && !(next === "chat" && destination.kind === "chat")
       ? Promise.resolve()
       : go(
           {
@@ -494,7 +489,7 @@ export function ReadableProjectRoute({
     <ProjectNavigationProvider
       screen={activeScreen}
       openContextRoute={openContext}
-      openNewChat={() => go(toDestination({ kind: "new-chat" }), { replace: false })}
+      openNewChat={() => go(toDestination({ kind: "chats" }), { replace: false })}
       captureNavigation={captureNavigation}
     >
       <ProjectDocumentNavigationProvider
@@ -521,11 +516,7 @@ export function ReadableProjectRoute({
           workingSetSyncEnabled={user.workingSetSyncEnabled === true}
           activeScreen={activeScreen}
           activeThreadId={resolvedThreadId}
-          chatDestination={
-            destination.kind === "chats" || destination.kind === "new-chat"
-              ? destination.kind
-              : undefined
-          }
+          chatDestination={destination.kind === "chats" ? destination.kind : undefined}
           entryHydration={entryHydration}
           addressOwnsDocumentAdmission
           routeWork={routeWork(work)}

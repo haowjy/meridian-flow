@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Show the new-chat composer above previous chats on the Chats page. No extra creation screen or button required.
+
 - Keep empty Chat and Work selections out of URLs; preserve no-selection intent in browser history.
 
 - Use readable project, chat, Work, document, and folder addresses. Preserve renamed bookmarks and exact Back/Forward selections.
