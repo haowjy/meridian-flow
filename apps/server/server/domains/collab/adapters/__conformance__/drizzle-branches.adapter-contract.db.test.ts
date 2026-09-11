@@ -463,7 +463,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         workId: WORK_ID as never,
         liveDoc: live,
       });
-      const coordinator = createBranchCoordinator({ store });
+      const resets: number[] = [];
+      const coordinator = createBranchCoordinator({
+        store,
+        onBranchReset: ({ generation }) => resets.push(generation),
+      });
       const draft = docWithText("draft row before discard");
       await coordinator.commitUpdate({
         branchId: work.branchId,
@@ -478,7 +482,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .then((counts) => counts.get(WORK_ID as never) ?? 0),
       ).resolves.toBe(1);
 
+      const { runInDrizzleTransaction } = await import("../../../../shared/drizzle-transaction.js");
+      const before = await store.getBranch(work.branchId);
+      await expect(
+        runInDrizzleTransaction(db, async () => {
+          await coordinator.resetFromDoc(work.branchId, live);
+          expect(resets).toEqual([]);
+          throw new Error("abort composite discard");
+        }),
+      ).rejects.toThrow("abort composite discard");
+      expect(await store.getBranch(work.branchId)).toEqual(before);
+      expect(resets).toEqual([]);
       await coordinator.resetFromDoc(work.branchId, live);
+      expect(resets).toEqual([work.generation + 1]);
 
       await expect(
         pendingDrafts

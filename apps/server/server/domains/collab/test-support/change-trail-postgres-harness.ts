@@ -11,6 +11,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import { createDrizzleDraftOnlyDocumentDiscard } from "../adapters/drizzle-draft-only-document-discard.js";
 
 const { createDb } = await import("@meridian/database");
 export const schema = await import("@meridian/database/schema");
@@ -594,6 +595,12 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     resolveDocumentUri,
   });
   const drafts = createWorkDraftReviewService({
+    discardDraftOnlyDocument: createDrizzleDraftOnlyDocumentDiscard(
+      db,
+      branchStore,
+      branchCoordinator,
+      branchCriticalSections,
+    ),
     branches: branchStore,
     branchCoordinator,
     branchJournal: durableBranchJournalReadStore,

@@ -149,9 +149,13 @@ interface ProjectVisibilityRepository {
 }
 
 interface WorkProjectionRepository {
-  findById(
-    id: string,
-  ): Promise<{ id: string; name: string; projectId: string; deletedAt: string | null } | null>;
+  findById(id: string): Promise<{
+    id: string;
+    name: string;
+    projectId: string;
+    status: "active" | "archived";
+    deletedAt: string | null;
+  } | null>;
 }
 
 export interface InMemoryRepositoriesOptions {
@@ -425,6 +429,7 @@ export function createInMemoryRepositories(
         if (!work || work.deletedAt || work.id !== workId) {
           throw new WorkLifecycleUnavailableError(workId, !work ? "missing" : "deleted");
         }
+        if (work.status === "archived") throw new WorkLifecycleUnavailableError(workId, "archived");
         if (work.projectId !== thread.projectId) {
           throw new ThreadWorkProjectMismatchError(workId);
         }
@@ -461,6 +466,7 @@ export function createInMemoryRepositories(
         if (!work || work.deletedAt) {
           throw new WorkLifecycleUnavailableError(workId, !work ? "missing" : "deleted");
         }
+        if (work.status === "archived") throw new WorkLifecycleUnavailableError(workId, "archived");
         if (work.projectId !== thread.projectId) throw new ThreadWorkProjectMismatchError(workId);
       }
       const previousWorkId = primaryWorkIdForThread(threadId);

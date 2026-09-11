@@ -2,11 +2,16 @@
  * Drizzle ThreadWorksRepository: SQL for the thread_works join table — thread-to-Work
  * membership and primary Work lookup. Primary upserts demote the previous primary first.
  */
+
 import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { and, eq } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
-import { requireLockedActiveWork } from "../../../../shared/work-lifecycle-lock.js";
+import {
+  lockWorkLifecycle,
+  requireLockedActiveWork,
+} from "../../../../shared/work-lifecycle-lock.js";
+import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import {
   ThreadMembershipUnavailableError,
   ThreadWorkProjectMismatchError,
@@ -51,7 +56,13 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
             ...new Set([targetWorkId, currentWorkId].filter(Boolean) as WorkId[]),
           ].sort();
           for (const workId of workIds) {
-            await requireLockedActiveWork(db, workId);
+            if (workId === targetWorkId) await requireLockedActiveWork(db, workId);
+            else {
+              // Leaving an archived Work is cleanup, not acquisition of its content authority.
+              const state = await lockWorkLifecycle(db, workId);
+              if (state === "missing" || state === "deleted")
+                throw new WorkLifecycleUnavailableError(workId, state);
+            }
           }
 
           const [thread] = await activeDb

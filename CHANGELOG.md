@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Fence archived Work content mutations and draft Apply while retaining management, cleanup, and thread-history access.
+
 - Reject stale rename requests after path reuse, and keep file and folder names exclusive.
 
 - Record document rename and folder-move history atomically. Reused paths consume old bookmarks.

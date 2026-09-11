@@ -423,10 +423,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         name: "Historical",
         slug: "historical",
-        status: "archived",
-        archivedAt: new Date(),
       });
       await repos.threadWorks.addMembership(OTHER_THREAD_ID, HISTORICAL_WORK_ID, true);
+      await db
+        .update(schema.works)
+        .set({ status: "archived", archivedAt: new Date() })
+        .where(eq(schema.works.id, HISTORICAL_WORK_ID));
       await deleteOwnedThreadToTrash(
         {
           repos,

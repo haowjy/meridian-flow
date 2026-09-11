@@ -14,6 +14,10 @@ the opaque authority used for stable serialization and adapter dispatch.
 `thread_works` membership selects the thread's primary Work but never grants
 context access.
 
+Archived Work identity remains resolvable for management and history, but content
+mutations require active Work under its lifecycle row lock. Context commands
+translate lifecycle loss to `context_unavailable`, not a storage error.
+
 Scheme capabilities are declared once in `ports/context-adapter.ts` and enforced
 by the router. F0 owns Uploads authority, provisioning, and resolution; F4 owns
 the actual `UploadIntake` lifecycle. `uploads://` does not allow general clients

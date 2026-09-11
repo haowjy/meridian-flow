@@ -43,6 +43,7 @@ import {
   createDrizzleAuthorityGenerationReader,
   createDrizzleDocumentAuthorityHeads,
 } from "./adapters/drizzle-document-authority-head.js";
+import { createDrizzleDraftOnlyDocumentDiscard } from "./adapters/drizzle-draft-only-document-discard.js";
 import { createDrizzleCollabPersistence } from "./adapters/drizzle-journal.js";
 import { createDrizzleLiveTurnDependencyStore } from "./adapters/drizzle-live-dependencies.js";
 import { createDrizzleOfflineReconciliation } from "./adapters/drizzle-offline-reconciliation.js";
@@ -339,6 +340,12 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     notices: postDurabilityNotices,
   });
   const drafts = createWorkDraftReviewService({
+    discardDraftOnlyDocument: createDrizzleDraftOnlyDocumentDiscard(
+      deps.db,
+      branches,
+      branchCoordinator,
+      criticalSections,
+    ),
     branches,
     branchCoordinator,
     branchJournal,

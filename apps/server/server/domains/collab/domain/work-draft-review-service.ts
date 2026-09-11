@@ -17,12 +17,16 @@ import { BranchCorruptError } from "./branch-resolver.js";
 import type { ReviewableDraft } from "./branch-review.js";
 import { computeDraftReviewHunks } from "./draft-review-hunks.js";
 import type { MarkdownDocumentEngine } from "./markdown-document.js";
-import type { ApplicationBranchStore } from "./ports/application-branch-store.js";
+import type {
+  ApplicationBranchStore,
+  DraftOnlyDocumentDiscard,
+} from "./ports/application-branch-store.js";
 import { documentTitleFromUri } from "./reversal-notices.js";
 import type { WorkDraftPending } from "./work-draft-pending.js";
 
 export function createWorkDraftReviewService(input: {
   branches: ApplicationBranchStore;
+  discardDraftOnlyDocument: DraftOnlyDocumentDiscard;
   branchCoordinator: BranchCoordinator;
   branchJournal: BranchJournalReadStore;
   branchPush: BranchPushService;
@@ -200,22 +204,6 @@ export function createWorkDraftReviewService(input: {
     }
   }
 
-  async function removeNewDocumentFromWorkManifest(command: {
-    projectId: ProjectId;
-    workId: WorkId;
-    documentId: DocumentId;
-  }): Promise<void> {
-    const mutation = await input.branches.recordManifestDocumentDeleted(
-      command.documentId,
-      command,
-    );
-    if (mutation?.workDraftBranchId) {
-      await input.branchPush.pushAutoBranchAfterThreadPeerWrite({
-        workDraftBranchId: mutation.workDraftBranchId,
-      });
-    }
-  }
-
   async function resolveActiveWorkDraft(command: {
     draftId: string;
     documentId: DocumentId;
@@ -276,6 +264,7 @@ export function createWorkDraftReviewService(input: {
     threadId?: string;
     operationIds?: string[];
   }) {
+    const projectId = command.projectId;
     const branch = await resolveActiveWorkDraft(command);
     if (!branch) return { status: "discarded" as const, draftId: command.draftId };
 
@@ -298,22 +287,27 @@ export function createWorkDraftReviewService(input: {
       });
     } else {
       if (
-        command.projectId &&
+        projectId &&
         (await isDraftOnlyManifestDocument({
           projectId: command.projectId,
           workId: command.workId,
           documentId: command.documentId,
         }))
       ) {
-        await removeNewDocumentFromWorkManifest({
-          projectId: command.projectId,
-          workId: command.workId,
-          documentId: command.documentId,
-        });
+        await input.liveCoordinator.withDocument(command.documentId, (liveDoc) =>
+          input.discardDraftOnlyDocument({
+            projectId,
+            workId: command.workId,
+            documentId: command.documentId,
+            contentBranchId: branch.branchId,
+            liveDoc,
+          }),
+        );
+      } else {
+        await input.liveCoordinator.withDocument(command.documentId, async (liveDoc) =>
+          input.branchCoordinator.resetFromDoc(branch.branchId, liveDoc),
+        );
       }
-      await input.liveCoordinator.withDocument(command.documentId, async (liveDoc) =>
-        input.branchCoordinator.resetFromDoc(branch.branchId, liveDoc),
-      );
       await input.agentEdit.invalidateThread(command.documentId, command.threadId ?? "");
     }
     return { status: "discarded" as const, draftId: command.draftId };

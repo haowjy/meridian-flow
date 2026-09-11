@@ -2,6 +2,7 @@
 import type { DocumentId, ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type * as Y from "yjs";
 import type { BranchSnapshot, BranchStore } from "../branch-coordinator.js";
+import type { BranchLockLease } from "../branch-critical-sections.js";
 import type { BranchResolver, BranchState } from "../branch-resolver.js";
 
 export type ManifestMutationResult = {
@@ -11,6 +12,13 @@ export type ManifestMutationResult = {
 
 export type ApplicationBranchStore = BranchStore &
   BranchResolver & {
+    removeWorkManifestEntryForDraftDiscard(input: {
+      lease: BranchLockLease;
+      manifestBranchId: string;
+      manifestDocumentId: DocumentId;
+      workId: WorkId;
+      documentId: DocumentId;
+    }): Promise<void>;
     listActiveWorkDraftBranchIds(documentId: DocumentId): Promise<string[]>;
     ensureWorkDraftBranch(input: {
       documentId: DocumentId;
@@ -54,3 +62,12 @@ export type ApplicationBranchStore = BranchStore &
       view?: { projectId: ProjectId; workId?: WorkId | null; threadId?: ThreadId | null },
     ): Promise<ManifestMutationResult>;
   };
+
+/** Removes one draft-only creation without applying any content to live. */
+export type DraftOnlyDocumentDiscard = (input: {
+  projectId: ProjectId;
+  workId: WorkId;
+  documentId: DocumentId;
+  contentBranchId: string;
+  liveDoc: Y.Doc;
+}) => Promise<void>;

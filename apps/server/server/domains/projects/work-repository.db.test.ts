@@ -86,6 +86,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       throw new Error(`Timed out waiting for ${minimum} PostgreSQL ${waitEvent} lock(s)`);
     }
 
+    it("deletes and restores archived management identity without unarchiving it", async () => {
+      const work = await works.create({ projectId: PROJECT_ID, name: "Archived history" });
+      await works.archive(work.id);
+      await works.softDelete(work.id);
+      expect(await works.findById(work.id)).toMatchObject({
+        status: "archived",
+        deletedAt: expect.any(String),
+      });
+      await works.restore(work.id);
+      expect(await works.findById(work.id)).toMatchObject({ status: "archived", deletedAt: null });
+      await expect(authorities.byId(PROJECT_ID, work.id)).resolves.toMatchObject({
+        workId: work.id,
+      });
+      await works.unarchive(work.id);
+      expect(await works.findById(work.id)).toMatchObject({ status: "active", deletedAt: null });
+    });
+
     it("generates deduplicated handles and keeps them through rename", async () => {
       const first = await works.create({ projectId: PROJECT_ID, name: "Book 2!" });
       const second = await works.create({ projectId: PROJECT_ID, name: "Book 2?" });
