@@ -54,6 +54,7 @@ const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   manuscript: "Manuscript",
   kb: "Knowledge Base",
   user: "User Files",
+  unfiled: "Unfiled",
   scratch: "Scratch",
   uploads: "Uploads",
 };

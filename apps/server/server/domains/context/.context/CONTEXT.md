@@ -274,3 +274,11 @@ implementation. The `results://` scheme does not exist.
 ## Downlinks
 
 - [Collab write codec and schema coherence](../../collab/.context/CONTEXT.md)
+
+## Unfiled namespace
+
+`unfiled://` is project-owned document storage, with the same ContextFS,
+Yjs authority, catalog, availability and identity-preserving move operations as
+Manuscript and KB. Its membership means not yet filed; a name alone does not
+change that membership. It has no Work qualifier and remains accessible to
+normal context tools and reference resolution.

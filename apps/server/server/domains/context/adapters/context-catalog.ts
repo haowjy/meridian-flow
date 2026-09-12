@@ -142,7 +142,7 @@ async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
             )
           : and(
               eq(contextSources.projectId, scope.projectId),
-              inArray(contextSources.slug, ["manuscript", "kb"]),
+              inArray(contextSources.slug, ["manuscript", "kb", "unfiled"]),
               isNull(contextSources.deletedAt),
             );
   return db

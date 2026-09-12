@@ -37,6 +37,7 @@ const CONTEXT_SOURCE_NAMES: Record<ProjectContextFsScheme | WorkScopedContextFsS
   manuscript: "Manuscript",
   kb: "Knowledge Base",
   user: "User Files",
+  unfiled: "Unfiled",
   scratch: "Scratch",
   uploads: "Uploads",
 };
