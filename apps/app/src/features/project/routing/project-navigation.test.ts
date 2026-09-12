@@ -1,5 +1,5 @@
 /** Project history policy exercised with the installed router history implementation. */
-import { createMemoryHistory } from "@tanstack/react-router";
+import { createMemoryHistory, createRootRoute, createRouter } from "@tanstack/react-router";
 import { describe, expect, it } from "vitest";
 import { parseProjectAddress } from "./project-address";
 import { createProjectNavigation, type DisplayedProjectSelection } from "./project-navigation";
@@ -40,19 +40,29 @@ function setup(
 }
 
 describe("project navigation", () => {
+  it("captures a normalized router entry while retaining the native URL in its ticket", () => {
+    const nativeHref = "/p/serial/editor?work=va%6Cid";
+    const { history, navigation } = setup(nativeHref);
+    const router = createRouter({ history, routeTree: createRootRoute() });
+    const rendered = router.state.location;
+    expect(rendered.href).toBe("/p/serial/editor?work=valid");
+    expect(history.location.href).toBe(nativeHref);
+    const ticket = navigation.captureForEntry(rendered.state.__TSR_key ?? "");
+    expect(ticket).not.toBeNull();
+    expect(ticket?.href).toBe(nativeHref);
+    expect(ticket && navigation.isCurrent(ticket)).toBe(true);
+    history.replace(nativeHref);
+    expect(ticket && navigation.isCurrent(ticket)).toBe(false);
+    navigation.dispose();
+  });
   it("rejects an effect rendered for a different entry, including equal-href history entries", () => {
     const { history, navigation } = setup("/p/serial/editor");
     const rendered = { href: history.location.href, key: history.location.state.__TSR_key ?? "" };
     history.push("/p/serial/works");
-    expect(navigation.captureForEntry(rendered)).toBeNull();
+    expect(navigation.captureForEntry(rendered.key)).toBeNull();
     history.push(rendered.href);
-    expect(navigation.captureForEntry(rendered)).toBeNull();
-    expect(
-      navigation.captureForEntry({
-        href: history.location.href,
-        key: history.location.state.__TSR_key ?? "",
-      }),
-    ).not.toBeNull();
+    expect(navigation.captureForEntry(rendered.key)).toBeNull();
+    expect(navigation.captureForEntry(history.location.state.__TSR_key ?? "")).not.toBeNull();
     navigation.dispose();
   });
   it("freezes displayed selections before a main push without waiting for defaults", async () => {
