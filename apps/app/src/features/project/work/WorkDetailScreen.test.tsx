@@ -145,7 +145,11 @@ describe("WorkDetailScreen resource boundaries", () => {
       <WorkScreen
         {...props({
           routeCommands: commands,
-          routeWork: { status: "present", work: fixture({ status: "archived" }) },
+          routeWork: {
+            status: "present",
+            workId: fixtureWorkId(),
+            work: fixture({ status: "archived" }),
+          },
         })}
       />,
       () => {
@@ -180,7 +184,7 @@ describe("WorkDetailScreen resource boundaries", () => {
     });
   });
 
-  it("opens drafts, context resources, and chats through their semantic route boundaries", async () => {
+  it("opens manuscript drafts and chats but not chat resource tabs", async () => {
     resetResources();
     mocks.drafts.groups = [
       {
@@ -200,8 +204,8 @@ describe("WorkDetailScreen resource boundaries", () => {
       />,
       () => {
         click("Chapter One");
-        click("Open Scratch");
-        click("Open Uploads");
+        expect(document.body.textContent).not.toContain("Open Scratch");
+        expect(document.body.textContent).not.toContain("Open Uploads");
         click("Planning");
         expect(commands.openWorkContext).toHaveBeenNthCalledWith(
           1,
@@ -210,24 +214,6 @@ describe("WorkDetailScreen resource boundaries", () => {
             workId: fixture().id,
             scheme: "manuscript",
             path: "/Chapter One.md",
-          },
-          { replace: false },
-        );
-        expect(commands.openWorkContext).toHaveBeenNthCalledWith(
-          2,
-          {
-            kind: "work-context",
-            workId: fixture().id,
-            scheme: "scratch",
-          },
-          { replace: false },
-        );
-        expect(commands.openWorkContext).toHaveBeenNthCalledWith(
-          3,
-          {
-            kind: "work-context",
-            workId: fixture().id,
-            scheme: "uploads",
           },
           { replace: false },
         );
@@ -257,17 +243,22 @@ describe("WorkDetailScreen resource boundaries", () => {
   it("holds internal detail navigation until the writer discards the active draft", async () => {
     resetResources();
     const commands = routeCommands();
+    mocks.chats.threads = [chat("thread-1", "Planning")];
+    const openChat = vi.fn();
     await withReactRoot(
-      <WorkDetailScreen {...props({ routeCommands: commands })} work={fixture()} />,
+      <WorkDetailScreen
+        {...props({ routeCommands: commands, onOpenThread: openChat })}
+        work={fixture()}
+      />,
       async () => {
         click("Add a goal");
         change(textarea(), "Unsaved goal");
-        click("Open Scratch");
-        expect(commands.openWorkContext).not.toHaveBeenCalled();
+        click("Planning");
+        expect(openChat).not.toHaveBeenCalled();
         expect(document.body.textContent).toContain("Save metadata changes?");
         click("Discard changes");
         await tick();
-        expect(commands.openWorkContext).toHaveBeenCalledOnce();
+        expect(openChat).toHaveBeenCalledOnce();
         expect(mocks.metadata.mutateAsync).not.toHaveBeenCalled();
       },
     );
@@ -350,12 +341,16 @@ function chat(id: string, title: string) {
     isFavorite: false,
   };
 }
-function props(overrides: Record<string, unknown> = {}) {
+function fixtureWorkId() {
   const workId = parseRequestId(fixture().id);
   if (!workId) throw new Error("invalid fixture Work ID");
+  return workId;
+}
+
+function props(overrides: Partial<Parameters<typeof WorkScreen>[0]> = {}) {
   return {
     projectId: "project-1",
-    routeWork: { status: "present", workId, work: fixture() } as const,
+    routeWork: { status: "present", workId: fixtureWorkId(), work: fixture() } as const,
     routeCommands: routeCommands(),
     onOpenThread: vi.fn(),
     ...overrides,

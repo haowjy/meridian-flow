@@ -7,9 +7,11 @@ import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { loadProjectRouteData } from "@/client/query/project-route-data";
 import { Button } from "@/components/ui/button";
 import { ReadableProjectRoute } from "@/features/project/routing/ReadableProjectRoute";
+import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
 import { Route as AuthenticatedRoute } from "../../_authenticated";
 
 export const Route = createFileRoute("/_authenticated/p/$projectSlug")({
+  ...PERSISTENT_SHELL_OPTIONS,
   loader: async ({ params }) => {
     const project = await getProjectBySlug(params.projectSlug.toLowerCase(), ssrApiRequestInit());
     return { project, data: await loadProjectRouteData(project.id) };

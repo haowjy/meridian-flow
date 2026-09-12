@@ -37,7 +37,7 @@ import {
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { fileKindIcon } from "../context/context-file-icon";
 import { mobileContextTreeOverflowTriggerClassName } from "../context/context-row-geometry";
-import { schemeIcon, schemeLabel, visibleContextSchemes } from "../context/context-schemes";
+import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useCreateEntryForm } from "../context/use-create-entry-form";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
@@ -99,7 +99,7 @@ export function MobileContextBrowser({
   onCreateDone,
 }: MobileContextBrowserProps) {
   const workId = editorWorkId;
-  const schemes = visibleContextSchemes(workId);
+  const schemes = EDITOR_CONTEXT_SCHEMES;
   const { works } = useWorks(projectId);
 
   if (activeContextScheme) {

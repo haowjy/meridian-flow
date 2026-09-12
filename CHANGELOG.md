@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+- Load basic editor with workspace. Offline New no longer waits for a missing editor chunk.
+
+- Keep Scratch and Uploads out of ordinary Editor tabs; retain their chat/AI access and explain that resource viewing is not available yet.
+- Keep warm local navigation usable offline without rerunning account/project loaders.
+
+- Autosave new documents to project Unfiled without selecting a Work; recover closed local writing from the sidebar and preserve existing unfinished drafts.
+
 - Add project-owned Unfiled document storage and `unfiled://` addresses through the existing context APIs and tools.
 
 - Choose an open document before entering Editor; remove the Resume flash and automatic first-document reopening after closing every tab.

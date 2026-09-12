@@ -21,7 +21,8 @@ flowchart TD
   its current metadata, not its historical path. Navigate directly to it. Before
   desk validation finishes, navigate to empty Editor without mutating persisted
   selection. No later mount effect restores a document or opens the first file.
-- **Bare `/editor`:** explicitly empty on direct entry, reload and Back/Forward.
+- **Bare `/editor` without a local-document history pointer:** explicitly empty
+  on direct entry, reload and Back/Forward.
   Closing every tab and switching screens cannot reopen a closed identity.
 
 - **Readable URL, reload, Back/Forward:** `ReadableProjectRoute` resolves the
@@ -32,11 +33,17 @@ flowchart TD
 - **Stable document ID, such as a wikilink or search result:**
   `ProjectDocumentNavigationAdapter` resolves through the live opener, awaits
   tab publication, then navigates to the resolved address. A background open
-  publishes the tab without navigating. The URL layer still does not repeat
+  publishes the tab without navigating. Scratch/Uploads resources are not Editor
+  tabs: their resolved URLs show the deferred chat-resource viewing notice.
+  The URL layer still does not repeat
   live admission; session binding belongs to the host.
-- **Existing local Untitled:** remains on its local-document route/session
-  path. It is not resolved as a published server document by this lifecycle.
-  Creating or applying a document is a separate publication lifecycle.
+- **New or pending local Unfiled writing:** an exact local identity in `/editor`
+  history state selects the persisted lineage/session. New is available without
+  a Work; the first content change starts project-owned `unfiled://` creation.
+  Closed pending writing can be reopened from Unfiled, independently of tabs.
+  Canonical adoption retains the same document ID and then replaces the address.
+  See [local writing ownership](../context/.context/CONTEXT.md#unfiled-materialization-and-recovery)
+  for remint, queued filing, recovery, and migration constraints.
 
 ## Ordered handoff
 
@@ -83,6 +90,12 @@ gate. Warm navigation can reuse a live session and connection. A new session
 has its own local-replay and transport-startup lifecycle; address admission
 must not be confused with local persistence readiness or server reconciliation.
 See the [editor core contract](../../../core/editor/.context/CONTEXT.md).
+The basic editor module loads with the project hosts, so first local New does
+not require a dynamic import after the loaded workspace goes offline. Persistent
+root/auth/project loaders do not refetch on same-shell navigation; explicit
+invalidation and new entries still acquire authority. Cold offline app boot
+remains unsupported.
+
 Transport remains room-scoped; multiplexing is outside this routing contract.
 
 ## Source and checks

@@ -37,11 +37,11 @@ export function resolveDeskRoute({
       identity: { kind: "server", documentId: server.documentId },
     };
   }
-  if (locator.scheme !== "scratch" || locator.path !== "" || !selectedDocumentId) {
+  if (locator.scheme !== "unfiled" || locator.path !== "" || !selectedDocumentId) {
     return { kind: "unowned" };
   }
   const selected = tabs.find((tab) => tab.documentId === selectedDocumentId);
-  if (selected?.kind === "new" && selected.workId === locator.workId) {
+  if (selected?.kind === "new") {
     return {
       kind: "owner",
       tab: selected,

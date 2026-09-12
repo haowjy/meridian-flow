@@ -190,7 +190,6 @@ describe("device-local bootstrap ownership", () => {
       kind: "new",
       documentId: "local",
       name: "Untitled",
-      workId: "work-a",
     };
     expect(mergeBootstrapDeskTabs([chapter], [local])).toEqual([chapter, local]);
   });
@@ -226,10 +225,9 @@ describe("device-local bootstrap ownership", () => {
     const local: ContextTab = {
       kind: "tracked",
       documentId: "old-id",
-      scheme: "scratch",
+      scheme: "unfiled",
       path: "/Untitled.md",
       name: "Untitled.md",
-      workId: "work-a",
       editable: true,
       filetype: "markdown",
       schemaType: "document",
@@ -245,11 +243,11 @@ describe("device-local bootstrap ownership", () => {
         {
           kind: "file",
           entryId: "replacement-id",
-          parentId: "scratch-source",
+          parentId: "unfiled-source",
           documentId: "replacement-id",
           name: "Untitled.md",
           path: "/Untitled.md",
-          uri: "scratch://@work-a/Untitled.md",
+          uri: "unfiled://Untitled.md",
           editable: true,
           filetype: "markdown",
           schemaType: "document",
@@ -279,10 +277,9 @@ describe("device-local bootstrap ownership", () => {
     const local: ContextTab = {
       kind: "tracked",
       documentId: "same-id",
-      scheme: "scratch",
+      scheme: "unfiled",
       path: "/Untitled.md",
       name: "Untitled.md",
-      workId: "work-a",
       editable: true,
       filetype: "markdown",
       schemaType: "document",
@@ -298,11 +295,11 @@ describe("device-local bootstrap ownership", () => {
         {
           kind: "file",
           entryId: "same-id",
-          parentId: "scratch-source",
+          parentId: "unfiled-source",
           documentId: "same-id",
           name: "Renamed.md",
           path: "/Renamed.md",
-          uri: "scratch://@work-a/Renamed.md",
+          uri: "unfiled://Renamed.md",
           editable: true,
           filetype: "markdown",
           schemaType: "document",

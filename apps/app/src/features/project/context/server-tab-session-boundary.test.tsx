@@ -7,6 +7,8 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ServerTabSessionBoundary } from "./ContextEditorMountHost";
 import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
 
+vi.mock("@/features/editor/EditorView", () => ({ EditorView: () => null }));
+
 describe("ServerTabSessionBoundary", () => {
   it("survives warm-view eviction and releases only when the actual tab closes", async () => {
     const session = {} as DocumentSession;

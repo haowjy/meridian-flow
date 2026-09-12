@@ -31,7 +31,7 @@ class MemoryStorage implements Storage {
 const ref = { accountId: "account", projectId: "project", lineageHandle: "lineage" };
 function lineage(): LocalLineageEnvelope {
   return {
-    version: 3,
+    version: 4,
     kind: "local",
     ref,
     envelopeRevision: 1,
@@ -101,5 +101,65 @@ describe("browser local Untitled lineage ledger", () => {
       JSON.stringify({ version: 2 }),
     );
     expect(new BrowserLocalUntitledLineageLedger(storage, lifetime()).list("account")).toEqual([]);
+  });
+});
+
+it.each([
+  "local",
+  "adopted",
+] as const)("upgrades v3 %s work without losing identities or obligations", (kind) => {
+  const storage = new MemoryStorage();
+  const old = {
+    ...lineage(),
+    version: 3,
+    kind,
+    aliases: { prior: { publicationObligationId: "remint", introducedAtIdentityRevision: 2 } },
+    ...(kind === "adopted"
+      ? {
+          adoptionRevision: 3,
+          canonicalSync: {
+            kind: "canonical-sync",
+            obligationId: "sync",
+            documentId: "A",
+            adoptionRevision: 3,
+          },
+          publication: {
+            kind: "tab-publication",
+            obligationId: "publish",
+            lineageHandle: ref.lineageHandle,
+            documentId: "A",
+            adoptionRevision: 3,
+          },
+        }
+      : {}),
+    work: {
+      ...lineage().work,
+      home: { scheme: "scratch", workId: "archived", folderPath: "/notes" },
+      createSettlement: {
+        kind: "confirmed",
+        result: {
+          status: "created",
+          documentId: "A",
+          scheme: "scratch",
+          path: "/notes/Untitled.md",
+          name: "Untitled.md",
+          workId: "archived",
+        },
+      },
+      desiredIdentity: {
+        name: "Chapter.md",
+        destination: { scheme: "manuscript", folderPath: "/" },
+      },
+    },
+  };
+  storage.setItem(
+    "meridian:local-untitled-lineage:v3:account:project:lineage",
+    JSON.stringify(old),
+  );
+  const ledger = new BrowserLocalUntitledLineageLedger(storage, lifetime());
+  expect(ledger.list("account")[0]).toEqual({
+    ...old,
+    version: 4,
+    work: { ...old.work, home: { scheme: "unfiled" } },
   });
 });

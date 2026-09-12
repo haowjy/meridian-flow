@@ -1,12 +1,6 @@
-/** Browser untitled recovery reads the complete catalog before choosing a Work. */
+/** Browser Untitled recovery uses project-final identity resolution. */
 import { describe, expect, it, vi } from "vitest";
-import { confirmUntitledCreate, resolveUntitledCatalogHome } from "./untitled-reconciler-browser";
-
-describe("resolveUntitledCatalogHome", () => {
-  it("uses explicit no-Work authority without selecting a catalog Work", async () => {
-    await expect(resolveUntitledCatalogHome("project")).resolves.toBeNull();
-  });
-});
+import { confirmUntitledCreate } from "./untitled-reconciler-browser";
 
 describe("confirmUntitledCreate", () => {
   it("uses the existing project-final coordinator and preserves its moved entry", async () => {

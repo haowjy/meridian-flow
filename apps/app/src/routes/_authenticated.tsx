@@ -39,6 +39,7 @@ import {
 import { DraftApplyRecoveryProvider } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { originalBrowserSearch } from "@/router-search";
+import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
 import { loadAccountSettingsWithDeadline } from "./authenticated-account-settings";
 
@@ -80,6 +81,7 @@ const resolveUnauthRedirect = createServerFn({ method: "GET" })
   });
 
 export const Route = createFileRoute("/_authenticated")({
+  ...PERSISTENT_SHELL_OPTIONS,
   // `?settings=` is layout-owned so the settings overlay is URL-addressable from
   // ANY authenticated route — the path stays put, only the param toggles.
   // See `features/account/SettingsDialog`.

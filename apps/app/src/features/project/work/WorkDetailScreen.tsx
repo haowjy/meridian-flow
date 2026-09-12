@@ -143,16 +143,12 @@ export function WorkDetailScreen({
             work={controller.work}
             scheme="scratch"
             icon={NotebookPen}
-            commands={routeCommands}
-            controller={controller}
           />
           <TreeSummary
             projectId={projectId}
             work={controller.work}
             scheme="uploads"
             icon={Upload}
-            commands={routeCommands}
-            controller={controller}
           />
         </div>
         <ResourceSection title={t`Associated chats`}>
@@ -279,20 +275,15 @@ function TreeSummary({
   work,
   scheme,
   icon: Icon,
-  commands,
-  controller,
 }: {
   projectId: string;
   work: Work;
   scheme: "scratch" | "uploads";
   icon: typeof NotebookPen;
-  commands: ProjectRouteCommands;
-  controller: WorkMetadataController;
 }) {
   const query = useContextCatalogView(projectId, scheme, { workId: work.id });
   const count = query.catalog?.files().length ?? 0;
   const label = scheme === "scratch" ? t`Scratch` : t`Uploads`;
-  const workId = parseRequestId(work.id);
   return (
     <ResourceSection title={label}>
       {query.isError ? (
@@ -305,25 +296,10 @@ function TreeSummary({
         <Loading />
       ) : (
         <div className="min-w-0 space-y-2">
-          <button
-            type="button"
-            className="focus-ring flex min-h-16 min-w-0 w-full items-center gap-3 rounded-lg border px-4 text-left"
-            onClick={() =>
-              controller.request({
-                label: t`Open ${label}`,
-                run: () => {
-                  if (workId)
-                    void commands.openWorkContext(
-                      { kind: "work-context", workId, scheme },
-                      { replace: false },
-                    );
-                },
-              })
-            }
-          >
+          <div className="flex min-h-16 min-w-0 w-full items-center gap-3 rounded-lg border px-4">
             <Icon className="size-4 shrink-0" />
             <span className="min-w-0">
-              <span className="block text-sm font-medium">{t`Open ${label}`}</span>
+              <span className="block text-sm font-medium">{label}</span>
               <span className="text-meta text-muted-foreground">
                 {count ? (
                   <Plural value={count} one="# item" other="# items" />
@@ -332,7 +308,10 @@ function TreeSummary({
                 )}
               </span>
             </span>
-          </button>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            <Trans>Viewing chat resources is not available yet.</Trans>
+          </p>
           <CatalogPreview catalog={query.catalog} />
         </div>
       )}

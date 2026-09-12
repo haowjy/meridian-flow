@@ -402,13 +402,12 @@ export class ContextRemovalCoordinator {
       .tabs.find((candidate) => candidate.documentId === documentId);
     if (
       !state.live ||
-      !workId ||
       selection.status === "none" ||
       selection.revision !== selectionRevision ||
-      selection.locator.scheme !== "scratch" ||
+      selection.locator.scheme !== "unfiled" ||
       selection.locator.path !== "" ||
       selection.locator.workId !== workId ||
-      this.desk.read(projectId).selectedTabIdByWork[workId] !== documentId ||
+      this.desk.read(projectId).selectedTabIdByWork[workId ?? ""] !== documentId ||
       tab?.kind !== "tracked" ||
       tab.origin !== "local-untitled" ||
       (isWorkScopedProjectContextScheme(tab.scheme) && tab.workId !== workId) ||
@@ -423,7 +422,7 @@ export class ContextRemovalCoordinator {
       expectedSearch: {
         screen: "context",
         work: search.work,
-        scheme: "scratch",
+        scheme: "unfiled",
         path: "",
       },
       expectedSelection: { kind: "materialized-local", revision: selectionRevision, documentId },
@@ -433,7 +432,7 @@ export class ContextRemovalCoordinator {
       const current = this.project(projectId);
       return current.selection.status !== "none" &&
         current.selection.revision === selectionRevision &&
-        this.desk.read(projectId).selectedTabIdByWork[workId] === documentId
+        this.desk.read(projectId).selectedTabIdByWork[workId ?? ""] === documentId
         ? applyContextRepairIfCurrent(repair, latest)
         : latest;
     });
@@ -851,9 +850,8 @@ export class ContextRemovalCoordinator {
     );
     const recentRoutes = this.workingSet.readRecentRoutes(projectId);
     const remainingTabs = tabs.filter((tab) => !documentIds.includes(tab.documentId));
-    const targetSelection = activeWorkId
-      ? (this.desk.read(projectId).selectedTabIdByWork[activeWorkId] ?? null)
-      : null;
+    const targetSelection =
+      this.desk.read(projectId).selectedTabIdByWork[activeWorkId ?? ""] ?? null;
     const fallback = chooseAdmittedFallback({
       activeWorkId,
       tabs: remainingTabs,
@@ -1063,9 +1061,7 @@ export class ContextRemovalCoordinator {
     const plan = planContextRemoval({
       activeWorkId: state.activeWorkId,
       tabs: slice.tabs,
-      selectedTabId: state.activeWorkId
-        ? (slice.selectedTabIdByWork[state.activeWorkId] ?? null)
-        : null,
+      selectedTabId: slice.selectedTabIdByWork[state.activeWorkId ?? ""] ?? null,
       admitted: state.admitted,
       route: { cleanup, current },
       intent,
@@ -1097,14 +1093,10 @@ export class ContextRemovalCoordinator {
     if (!consumed)
       this.desk.commit(projectId, {
         documentIds: plan.outcome.removed.map((tab) => tab.documentId),
-        ...(this.project(projectId).activeWorkId
-          ? {
-              deskSelection: {
-                workId: this.project(projectId).activeWorkId as string,
-                documentId: plan.nextSelectedTabId,
-              },
-            }
-          : {}),
+        deskSelection: {
+          workId: state.activeWorkId ?? "",
+          documentId: plan.nextSelectedTabId,
+        },
       });
     this.workingSet.reconcileContextRoutes(projectId, {
       ...plan.workingSet,
@@ -1220,9 +1212,7 @@ export class ContextRemovalCoordinator {
       rejected: rejection.locator,
       activeWorkId: state.activeWorkId,
       tabs: slice.tabs,
-      selectedTabId: state.activeWorkId
-        ? (slice.selectedTabIdByWork[state.activeWorkId] ?? null)
-        : null,
+      selectedTabId: slice.selectedTabIdByWork[state.activeWorkId ?? ""] ?? null,
       admitted: state.admitted,
       recentRoutes: this.workingSet.readRecentRoutes(projectId),
     });

@@ -3,7 +3,7 @@ import { type LocalLineageEnvelope, reduceLocalUntitledLineage } from "./local-u
 
 function local(): LocalLineageEnvelope {
   return {
-    version: 3,
+    version: 4,
     kind: "local",
     ref: { accountId: "account", projectId: "project", lineageHandle: "lineage" },
     envelopeRevision: 1,

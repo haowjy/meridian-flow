@@ -51,7 +51,7 @@ function validLineage(value: unknown): value is LocalUntitledLineage {
   const lineage = value as Partial<LocalUntitledLineage>;
   const ref = lineage.ref as Partial<LocalUntitledLineageRef> | undefined;
   if (
-    lineage.version !== 3 ||
+    lineage.version !== 4 ||
     !Number.isSafeInteger(lineage.envelopeRevision) ||
     typeof ref?.accountId !== "string" ||
     typeof ref.projectId !== "string" ||
@@ -87,7 +87,11 @@ function parse(
 ): LocalUntitledLineage | null {
   if (!raw) return null;
   try {
-    const value: unknown = JSON.parse(raw);
+    const value = JSON.parse(raw);
+    if (value?.version === 3) {
+      value.version = 4;
+      if (value.work?.home) value.work.home = { scheme: "unfiled" };
+    }
     return validLineage(value) && (!expected || sameRef(value.ref, expected)) ? value : null;
   } catch {
     return null;

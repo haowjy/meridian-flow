@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ContextTab } from "@/client/stores";
 import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
 
-const tab: ContextTab = { kind: "new", documentId: "draft-a", name: "Untitled", workId: "work" };
+const tab: ContextTab = { kind: "new", documentId: "draft-a", name: "Untitled" };
 const input = {
   accountId: "account",
   projectId: "project",
@@ -20,13 +20,12 @@ describe("local document history", () => {
       documentId: "draft-a",
     });
   });
-  it("keeps absent distinct from stale, foreign, malformed, or wrong-Work pointers", () => {
+  it("keeps absent distinct from stale, foreign, malformed, pointers", () => {
     expect(resolveLocalDocumentSelection({ ...input, pointer: undefined }).kind).toBe("absent");
     for (const change of [
       { tabs: [] },
       { accountId: "other" },
       { projectId: "other" },
-      { workId: "other" },
       { pointer: null },
       { pointer: { ...input.pointer, version: 2 } },
     ])
@@ -73,7 +72,7 @@ describe("Editor screen entry", () => {
       }),
     ).toBeNull();
     expect(
-      selectEditorEntryTab({ ...entry, workId: "other", selectedDocumentId: tab.documentId }),
-    ).toBeNull();
+      selectEditorEntryTab({ ...entry, workId: null, selectedDocumentId: tab.documentId }),
+    ).toBe(tab);
   });
 });

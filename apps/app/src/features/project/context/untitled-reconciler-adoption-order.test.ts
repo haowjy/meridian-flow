@@ -14,11 +14,12 @@ it("reserves non-bindable adoption before create and preserves it on an indeterm
     key: { accountId: "account", projectId: "project", documentId: "doc" },
     ref: { accountId: "account", projectId: "project", lineageHandle: "L" },
     revision: 1,
+    identityRevision: 1,
     workRevision: 1,
     phase: "local" as const,
     work: {
       workRevision: 1,
-      home: { scheme: "scratch" as const, workId: "work" },
+      home: { scheme: "unfiled" as const },
       createSettlement: { kind: "ready" as const },
       pendingSinceMs: 1,
     },
@@ -75,7 +76,6 @@ it("reserves non-bindable adoption before create and preserves it on an indeterm
       phase: () => "local",
     },
     api: {
-      resolveHome: async () => ({ scheme: "scratch", workId: "work" }),
       create: async () => {
         order.push("server-create");
         throw new Error("response lost");
@@ -103,6 +103,7 @@ it("settles independent adopted sync and closed-tab publication obligations", as
     key: { accountId: "account", projectId: "project", documentId: "doc" },
     ref: { accountId: "account", projectId: "project", lineageHandle: "L" },
     revision: 4,
+    identityRevision: 1,
     workRevision: 3,
     phase: "adopted" as const,
     canonicalSync: { obligationId: "sync", documentId: "doc", adoptionRevision: 2 },
@@ -114,13 +115,13 @@ it("settles independent adopted sync and closed-tab publication obligations", as
     },
     work: {
       workRevision: 3,
-      home: { scheme: "scratch" as const, workId: "work" },
+      home: { scheme: "unfiled" as const },
       createSettlement: {
         kind: "confirmed" as const,
         result: {
           status: "created" as const,
           documentId: "doc",
-          scheme: "scratch" as const,
+          scheme: "unfiled" as const,
           path: "/doc.md",
           name: "Untitled",
           workId: "work",
@@ -180,10 +181,21 @@ it("settles independent adopted sync and closed-tab publication obligations", as
       phase: () => "adopted",
     },
     api: {
-      resolveHome: vi.fn(),
       create: vi.fn(),
       materialized: vi.fn(),
-      confirmCreate: vi.fn(),
+      confirmCreate: vi.fn(
+        async () =>
+          ({
+            kind: "available",
+            documentId: "doc",
+            entry: {
+              uri: "unfiled://doc.md",
+              path: ["doc.md"],
+              name: "doc.md",
+              scope: { kind: "project", projectId: "project" },
+            },
+          }) as never,
+      ),
       move: vi.fn(),
       lookupGeneration: vi.fn(),
     },
