@@ -209,14 +209,19 @@ export function projectAddressState(
   address: ProjectAddress,
   state: Record<string, unknown> = {},
 ): Record<string, unknown> {
+  const destination = address.destination.kind;
+  // Non-Editor destinations do not read an Editor Work selection back from history.
+  const noWork =
+    (destination === "editor" || destination === "document" || destination === "browse") &&
+    address.work.kind === "none";
   return {
     ...state,
     meridianProjectEmptySelection:
-      address.chat.kind === "none" || address.work.kind === "none"
+      address.chat.kind === "none" || noWork
         ? {
             href: projectAddressHref({ ...address, settings: undefined, results: false }),
             chat: address.chat.kind === "none",
-            work: address.work.kind === "none",
+            work: noWork,
           }
         : undefined,
   };

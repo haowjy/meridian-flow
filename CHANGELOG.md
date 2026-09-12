@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Fixed screen navigation from Work details being undone by background address normalization.
+
 - Keep the current document visible during Editor navigation; remove redundant route-level session opening.
 
 - Show the new-chat composer above previous chats on the Chats page. No extra creation screen or button required.
