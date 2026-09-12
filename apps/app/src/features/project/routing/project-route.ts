@@ -38,6 +38,7 @@ export type WorkDetailTarget = {
 };
 
 export type ContextRouteTarget = {
+  documentId?: string;
   scheme: ProjectContextTreeScheme;
   path: string;
   workId: string | null;

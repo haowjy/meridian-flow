@@ -16,6 +16,14 @@ flowchart TD
 
 ## Entry paths
 
+- **Editor navigation item:** once project desk validation is live, choose the
+  selected eligible open tab or a remembered identity that is still open. Use
+  its current metadata, not its historical path. Navigate directly to it. Before
+  desk validation finishes, navigate to empty Editor without mutating persisted
+  selection. No later mount effect restores a document or opens the first file.
+- **Bare `/editor`:** explicitly empty on direct entry, reload and Back/Forward.
+  Closing every tab and switching screens cannot reopen a closed identity.
+
 - **Readable URL, reload, Back/Forward:** `ReadableProjectRoute` resolves the
   project and document address. `ProjectAddressDocument` uses the authorized
   result's catalog entry to publish tab metadata. It does not invoke a second

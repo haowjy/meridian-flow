@@ -284,7 +284,8 @@ CAS over the current address projection.
 
 The **Editor** destination retains `ContextPaneController` as its implementation
 name. It owns address-admitted opens, temporary-tab projection, scroll
-restoration, and screen-entry defaults. Project-entry desk seed/validation is
+restoration. Screen entry resolves a still-open identity before navigation;
+bare Editor routes remain empty. Project-entry desk seed/validation is
 hydration-scoped and never re-runs on a Work change. The removal coordinator
 owns close fallback, atomic old/new Work continuity, remembered destination,
 and guarded route repair. A cold address can project loading until the

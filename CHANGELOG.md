@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Choose an open document before entering Editor; remove the Resume flash and automatic first-document reopening after closing every tab.
+
 - Remove obsolete navigation-test mocks; test document admission through the real coordinator.
 
 - Open valid encoded URLs without stalling document navigation.
