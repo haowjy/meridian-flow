@@ -4,7 +4,6 @@
 import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { act, type ReactNode, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DeviceContextDeskLedger } from "@/client/stores/context-tabs-store/context-desk-storage";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import {
   type OpenContextRoute,
@@ -147,70 +146,14 @@ describe("ProjectDocumentNavigationProvider", () => {
       async () => {
         const opening = doors.catalog({ documentId: "a" });
         await act(async () => undefined);
+        const isCurrent = tabs.mock.calls[0][2] as () => boolean;
+        expect(isCurrent()).toBe(true);
         if (superseded) await doors.catalog({ documentId: "b" });
+        expect(isCurrent()).toBe(!superseded);
         reject(new Error("storage unavailable"));
         await expect(opening).resolves.toEqual(
           superseded ? { kind: "cancelled" } : { kind: "unavailable", reason: "failed" },
         );
-      },
-    );
-  });
-
-  it("does not leave a superseded open in the durable desk", async () => {
-    let stored: string | null = null;
-    const waiting: Array<() => Promise<void>> = [];
-    const ledger = new DeviceContextDeskLedger(
-      {
-        getItem: () => stored,
-        setItem: (_key, value) => {
-          stored = value;
-        },
-        removeItem: () => {
-          stored = null;
-        },
-      },
-      "account",
-      {
-        request: <T,>(_name: string, _options: { mode: "exclusive" }, run: () => T | Promise<T>) =>
-          new Promise<T>((resolve) => {
-            waiting.push(async () => {
-              resolve(await run());
-            });
-          }),
-      },
-    );
-    tabs.mockImplementation((projectId, tab, isCurrent) =>
-      ledger
-        .apply(
-          {
-            kind: "open",
-            projectId,
-            tab: { ...tab, tabInstanceId: tab.documentId },
-          },
-          isCurrent,
-        )
-        .then(() => undefined),
-    );
-    const doors: Record<string, OpenProjectDocument> = {};
-    await withReactRoot(
-      <Owner
-        projectId="project-a"
-        opener={{ open: async ({ documentId }) => opened(documentId) }}
-        openRoute={async () => undefined}
-      >
-        <Door name="catalog" projectId="project-a" doors={doors} />
-      </Owner>,
-      async () => {
-        const first = doors.catalog({ documentId: "a" });
-        await act(async () => undefined);
-        const latest = doors.catalog({ documentId: "b" });
-        await act(async () => undefined);
-        for (const run of waiting) await run();
-        await expect(first).resolves.toEqual({ kind: "cancelled" });
-        await expect(latest).resolves.toMatchObject({ kind: "opened" });
-        expect(ledger.snapshot().projects["project-a"]?.tabs.map((tab) => tab.documentId)).toEqual([
-          "b",
-        ]);
       },
     );
   });

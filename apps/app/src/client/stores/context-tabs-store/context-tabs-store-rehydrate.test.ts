@@ -10,6 +10,7 @@ import { rehydrateContextDesks, useContextTabsStore } from "./context-tabs-store
 afterEach(() => localStorage.clear());
 
 it("resets a fresh durable account envelope before projecting the next account", async () => {
+  await rehydrateContextDesks("fresh-account-A");
   localStorage.setItem(
     CONTEXT_DESK_STORAGE_KEY,
     JSON.stringify({
@@ -81,4 +82,52 @@ it("resets a non-null old desk and makes a late old-account command stale", asyn
     projects: {},
   });
   expect(useContextTabsStore.getState().byProject).toEqual({});
+});
+
+it("does not persist or project an open superseded while waiting for the desk lock", async () => {
+  let enter!: () => Promise<void>;
+  let hold = false;
+  const locks = {
+    request: <T>(_name: string, _options: { mode: "exclusive" }, run: () => T | Promise<T>) =>
+      !hold
+        ? Promise.resolve(run())
+        : new Promise<T>((resolve) => {
+            enter = async () => {
+              resolve(await run());
+            };
+          }),
+  };
+  const accountId = "publication-account";
+  await rehydrateContextDesks("publication-before");
+  vi.stubGlobal("navigator", { locks });
+  try {
+    await rehydrateContextDesks(accountId);
+    hold = true;
+    const stored = localStorage.getItem(CONTEXT_DESK_STORAGE_KEY);
+    let current = true;
+    const pending = useContextTabsStore.getState().openTab(
+      "project",
+      {
+        kind: "tracked",
+        tabInstanceId: "obsolete-tab",
+        documentId: "obsolete-document",
+        scheme: "manuscript",
+        path: "/obsolete.md",
+        name: "obsolete.md",
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+      },
+      () => current,
+    );
+    current = false;
+    await enter();
+    await pending;
+    expect(localStorage.getItem(CONTEXT_DESK_STORAGE_KEY)).toBe(stored);
+    expect(useContextTabsStore.getState().byProject.project).toBeUndefined();
+  } finally {
+    hold = false;
+    vi.unstubAllGlobals();
+    await rehydrateContextDesks("publication-after");
+  }
 });
