@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Remove obsolete navigation-test mocks; test document admission through the real coordinator.
+
 - Open valid encoded URLs without stalling document navigation.
 
 - Clear invalid optional Chat and Work links without blocking the document or selecting a different Work.

@@ -1,12 +1,8 @@
 // @vitest-environment jsdom
 import { act } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { withReactRoot } from "@/test-support/react-dom-harness";
-
-const createProjectThread = vi.fn();
-const invalidateProjectThreadData = vi.fn();
-const invalidateWorkThreads = vi.fn();
 
 vi.mock("@lingui/core/macro", () => ({
   msg: (strings: TemplateStringsArray) => ({ id: strings[0] }),
@@ -15,11 +11,6 @@ vi.mock("@lingui/core/macro", () => ({
 }));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-}));
-vi.mock("@/client/api/projects-api", () => ({ createProjectThread }));
-vi.mock("@/client/query/project-invalidation", () => ({
-  invalidateProjectThreadData,
-  invalidateWorkThreads,
 }));
 vi.mock("@/client/stores", () => ({
   useThreadStore: (selector: (state: { now: number }) => unknown) => selector({ now: 0 }),
@@ -40,10 +31,9 @@ function buttonNamed(name: string) {
     (button) => button.textContent === name,
   );
 }
-afterEach(() => vi.clearAllMocks());
 
 describe("thread switcher New chat", () => {
-  it("closes the switcher and opens creation without creating or selecting a thread", async () => {
+  it("closes the switcher and opens the creation surface without selecting a thread", async () => {
     const onNewChat = vi.fn();
     const onSelectThread = vi.fn();
     await withReactRoot(
@@ -63,7 +53,6 @@ describe("thread switcher New chat", () => {
         await act(async () => newChat?.click());
         expect(onNewChat).toHaveBeenCalledTimes(1);
         expect(onSelectThread).not.toHaveBeenCalled();
-        expect(createProjectThread).not.toHaveBeenCalled();
         expect(trigger?.getAttribute("aria-expanded")).toBe("false");
       },
     );

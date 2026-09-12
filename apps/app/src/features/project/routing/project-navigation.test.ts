@@ -1,4 +1,5 @@
-/** Project history policy exercised with the installed router history implementation. */
+/** Coordinator policy under synchronous memory history, plus router URL decoding.
+ * Native browser replace/push coalescing requires separate runtime verification. */
 import { createMemoryHistory, createRootRoute, createRouter } from "@tanstack/react-router";
 import { describe, expect, it } from "vitest";
 import { parseProjectAddress } from "./project-address";
