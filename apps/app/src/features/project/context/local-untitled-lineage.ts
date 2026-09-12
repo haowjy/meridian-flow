@@ -3,6 +3,7 @@ import type {
   AccountId,
   AvailabilityGeneration,
   CreateUntitledContextDocumentResponse,
+  ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { DesiredIdentity } from "./identity-location";
@@ -17,7 +18,7 @@ export type LocalUntitledIdentityFailure =
   | {
       kind: "conflict";
       name: string;
-      scheme: "manuscript" | "kb" | "user" | "scratch" | "uploads";
+      scheme: ProjectContextTreeScheme;
       path: string;
       workId?: string;
     }

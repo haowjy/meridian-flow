@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Add project-owned Unfiled document storage and `unfiled://` addresses through the existing context APIs and tools.
+
 - Choose an open document before entering Editor; remove the Resume flash and automatic first-document reopening after closing every tab.
 
 - Remove obsolete navigation-test mocks; test document admission through the real coordinator.

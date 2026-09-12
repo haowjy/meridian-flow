@@ -1,7 +1,7 @@
 # domains/context
 
-Agent-readable/writable content addressed by context URIs. Five schemes split
-into durable Project content (`manuscript://`, `kb://`), authenticated personal
+Agent-readable/writable content addressed by context URIs. Context schemes split
+into durable Project content (`manuscript://`, `kb://`, `unfiled://`), authenticated personal
 content (`user://`), and Work/no-Work material (`scratch://`, `uploads://`).
 Bare paths default to `manuscript://`.
 

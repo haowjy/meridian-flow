@@ -45,6 +45,8 @@ export function schemeLabel(scheme: ProjectContextTreeScheme): string {
       return t`Knowledge Base`;
     case "user":
       return t`User`;
+    case "unfiled":
+      return t`Unfiled`;
     case "scratch":
       return t`Scratch`;
     case "uploads":
@@ -67,6 +69,7 @@ export function schemeIcon(scheme: ProjectContextTreeScheme): LucideIcon {
       return Library;
     case "user":
       return User;
+    case "unfiled":
     case "scratch":
       return NotebookPen;
     case "uploads":
