@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Address lookup already authorizes metadata; publishing a tab must not reopen its live session. */
+/** Authorized tab publication and alias admission under delayed navigation. */
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { expect, it, vi } from "vitest";
@@ -8,12 +8,10 @@ import { ProjectAddressDocument } from "./ProjectAddressDocument";
 import type { ProjectAddress } from "./project-address";
 import { createProjectNavigation } from "./project-navigation";
 
-const { openTab, openLive } = vi.hoisted(() => ({
+const { openTab } = vi.hoisted(() => ({
   openTab: vi.fn(),
-  openLive: vi.fn(async () => ({ kind: "unavailable" })),
 }));
 vi.mock("@/client/stores", () => ({ useContextTabsActions: () => ({ openTab }) }));
-vi.mock("../context/open-project-document", () => ({ useOpenProjectDocument: () => openLive }));
 
 function documentResult(kind: "current" | "alias"): DocumentAddressResult {
   return {
@@ -55,16 +53,21 @@ it.each([
   const onAdmission = vi.fn();
   let finishReplace!: () => void;
   const href = kind === "alias" ? "/p/project/kb/before" : "/p/project/kb/doc";
-  const navigation = {
-    captureForEntry: () => ({ key: "entry", href, revision: 1 }),
-    isCurrent: () => true,
-    replaceIfCurrent: vi.fn(
-      () =>
-        new Promise<{ kind: "replaced" }>((resolve) => {
-          finishReplace = () => resolve({ kind: "replaced" });
-        }),
-    ),
-  };
+  const navigate = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finishReplace = resolve;
+      }),
+  );
+  const navigation = createProjectNavigation(
+    {
+      read: () => ({ key: "entry", href, state: {} }),
+      subscribe: () => () => undefined,
+      replaceEntry: () => undefined,
+      navigate,
+    },
+    () => ({ chatSlug: null, workSlug: null }),
+  );
   const address: ProjectAddress = {
     projectSlug: "project",
     destination: {
@@ -87,11 +90,10 @@ it.each([
       result={result}
       workId={null}
       workSlug={null}
-      navigation={navigation as never}
+      navigation={navigation}
       onAdmission={onAdmission}
     />,
     async () => {
-      expect(openLive).not.toHaveBeenCalled();
       expect(openTab).toHaveBeenCalledWith(
         "project-id",
         expect.objectContaining({
@@ -109,10 +111,16 @@ it.each([
           issue: kind === "alias" ? "loading" : undefined,
         }),
       );
-      expect(navigation.replaceIfCurrent).toHaveBeenCalledTimes(kind === "alias" ? 1 : 0);
-      if (kind === "alias") await act(async () => finishReplace());
+      if (kind === "alias") {
+        expect(navigate).toHaveBeenCalledWith(
+          "/p/project/kb/doc",
+          expect.objectContaining({ replace: true }),
+        );
+        await act(async () => finishReplace());
+      } else expect(navigate).not.toHaveBeenCalled();
     },
   );
+  navigation.dispose();
 });
 
 it.each([
