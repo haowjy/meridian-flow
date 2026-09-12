@@ -1,4 +1,8 @@
 /** Resolves browser-local Untitled history without turning missing ownership into a default. */
+import {
+  isWorkScopedProjectContextScheme,
+  type WorkingSetRoute,
+} from "@meridian/contracts/protocol";
 import type { ContextTab } from "@/client/stores";
 import { resolveDeskRoute } from "../context/context-route-desk-owner";
 
@@ -36,4 +40,25 @@ export function resolveLocalDocumentSelection(input: {
   return owner.kind === "unowned"
     ? ({ kind: "unavailable" } as const)
     : ({ kind: "resolved", documentId: pointer.documentId, owner } as const);
+}
+
+/** Screen entry may resume an open identity, never reopen a historical path. */
+export function selectEditorEntryTab(input: {
+  tabs: readonly ContextTab[];
+  selectedDocumentId: string | undefined;
+  recentRoutes: readonly WorkingSetRoute[];
+  workId: string | null;
+}): ContextTab | null {
+  const eligible = input.tabs.filter((tab) =>
+    tab.kind === "new"
+      ? tab.workId === input.workId
+      : !isWorkScopedProjectContextScheme(tab.scheme) || (tab.workId ?? null) === input.workId,
+  );
+  const selected = eligible.find((tab) => tab.documentId === input.selectedDocumentId);
+  if (selected) return selected;
+  for (const route of input.recentRoutes) {
+    const tab = eligible.find((tab) => tab.documentId === route.documentId && !tab.draftOnly);
+    if (tab) return tab;
+  }
+  return null;
 }

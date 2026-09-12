@@ -14,9 +14,11 @@ import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
 import { getContextTabs, useContextTabs, useContextTabsStore } from "@/client/stores";
-import { hydrateWorkingSet, setThread } from "@/client/working-set";
+import { hydrateWorkingSet, readRecentRoutes, setThread } from "@/client/working-set";
 import { originalBrowserSearch } from "@/router-search";
 import { useResolvedChatThread } from "../chat/chat-thread-resolution";
+import { useContextRemovalCoordinator } from "../context/account-feature-context";
+import { routeTargetForTab } from "../context/context-removal-planner";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
 import { ProjectView } from "../ProjectView";
 import type { ScreenKey } from "../shell/screens";
@@ -36,7 +38,7 @@ import {
   addressWorkSelection,
   resolveAddressSelection,
 } from "./project-address-resolution";
-import { resolveLocalDocumentSelection } from "./project-local-selection";
+import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
 import { createProjectNavigation, type DisplayedProjectSelection } from "./project-navigation";
 import {
   type ContextRouteTarget,
@@ -93,6 +95,7 @@ export function ReadableProjectRoute({
   user: { userId: string; workingSetSyncEnabled?: boolean | null };
 }) {
   const projectId = project.id;
+  const contextRemoval = useContextRemovalCoordinator();
   const queryClient = useQueryClient();
   useState(() => {
     seedProjectRouteData(queryClient, projectId, data);
@@ -371,7 +374,9 @@ export function ReadableProjectRoute({
       let state: Record<string, unknown> | undefined;
       if (target.path === "") {
         const desk = getContextTabs(projectId);
-        const documentId = target.workId ? desk.selectedTabIdByWork[target.workId] : undefined;
+        const documentId =
+          target.documentId ??
+          (target.workId ? desk.selectedTabIdByWork[target.workId] : undefined);
         const pointer = { version: 1, accountId: user.userId, projectId, documentId };
         const resolved = resolveLocalDocumentSelection({
           pointer,
@@ -441,25 +446,37 @@ export function ReadableProjectRoute({
     folder: destination.kind === "browse" ? `/${destination.path}` : undefined,
     results: address.results ? "" : undefined,
   };
-  const selectScreen = (next: ScreenKey) =>
-    next === activeScreen && !(next === "chat" && destination.kind === "chat")
-      ? Promise.resolve()
-      : go(
-          {
-            ...toDestination({
-              kind:
-                next === "home"
-                  ? "home"
-                  : next === "work"
-                    ? "works"
-                    : next === "context"
-                      ? "editor"
-                      : "chats",
-            }),
-            work: selection(rememberedEditor.current ?? shown.current.workSlug),
-          },
-          { replace: false },
-        );
+  const selectScreen = (next: ScreenKey) => {
+    if (next === activeScreen && !(next === "chat" && destination.kind === "chat"))
+      return Promise.resolve();
+    if (next === "context" && contextRemoval.getProjectSnapshot(projectId).live) {
+      const desk = getContextTabs(projectId);
+      const tab = selectEditorEntryTab({
+        tabs: desk.tabs,
+        selectedDocumentId: workId ? desk.selectedTabIdByWork[workId] : undefined,
+        recentRoutes: readRecentRoutes(projectId),
+        workId,
+      });
+      if (tab)
+        return openContext({ ...routeTargetForTab(tab, workId), documentId: tab.documentId });
+    }
+    return go(
+      {
+        ...toDestination({
+          kind:
+            next === "home"
+              ? "home"
+              : next === "work"
+                ? "works"
+                : next === "context"
+                  ? "editor"
+                  : "chats",
+        }),
+        work: selection(rememberedEditor.current ?? shown.current.workSlug),
+      },
+      { replace: false },
+    );
+  };
   const browse = (scheme: ProjectContextTreeScheme | null, path = "") =>
     go(
       toDestination({
