@@ -304,31 +304,6 @@ export function ReadableProjectRoute({
   useEffect(() => {
     if (resolvedThreadId) setThread(projectId, resolvedThreadId);
   }, [projectId, resolvedThreadId]);
-  useEffect(() => {
-    if (!navigation || parsed.kind !== "valid") return;
-    const ticket = navigation.captureForEntry({
-      href: location.href,
-      key: location.state.__TSR_key ?? "",
-    });
-    if (!ticket) return;
-    let next = address;
-    if (requestedChat.kind === "absent" && !threads.isError && threads.threads !== null)
-      next = { ...next, chat: selection(displayedChat?.slug ?? null) };
-    if (activeScreen === "context" && address.work.kind === "absent" && !issue(editorWork))
-      next = { ...next, work: editorSelection };
-    void navigation.replaceIfCurrent(ticket, next);
-  }, [
-    navigation,
-    location.href,
-    location.state.__TSR_key,
-    parsed.kind,
-    threads.threads,
-    threads.isError,
-    displayedChat?.slug,
-    editorWork.status,
-    editorSelection.kind,
-    activeScreen,
-  ]);
 
   async function go(next: ProjectAddress, options: NavigationOptions) {
     if (!navigation?.captureForEntry({ href: location.href, key: location.state.__TSR_key ?? "" }))
