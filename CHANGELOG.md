@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Remove the background URL rewrite for resolved Chat and Editor Work defaults.
+
 - Fixed screen navigation from Work details being undone by background address normalization.
 
 - Keep the current document visible during Editor navigation; remove redundant route-level session opening.

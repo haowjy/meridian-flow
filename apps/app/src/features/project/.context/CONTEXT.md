@@ -249,6 +249,11 @@ discards, or normalization can race a blocked departure back to its source.
 Actual selections remain readable query parameters.
 A fresh copied URL without these parameters may use local defaults; Back/Forward
 and reload preserve the entry's explicit no-selection intent.
+Resolving those defaults does not itself replace the route. The departure
+snapshot path remains, but the browser history adapter can coalesce its replace
+with the following push: a bare entry is not reliably pinned to its displayed
+defaults. Back/reload may therefore use newer remembered selections. Document
+admission still canonicalizes document paths and scope independently.
 
 A readable address has explicit selections, not defaults: absent, no-Work,
 slug, malformed, and unavailable remain distinct. Only genuinely absent Chat

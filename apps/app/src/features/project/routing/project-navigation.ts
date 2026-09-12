@@ -98,7 +98,7 @@ export function createProjectNavigation(
       address: ProjectAddress,
       options: { replace: boolean; state?: Record<string, unknown> },
     ) {
-      // Invalidate an in-flight default even when a blocker delays the ensuing push.
+      // Invalidate older address repairs even when a blocker delays the ensuing push.
       revision += 1;
       const current = parsedEntry(port.read());
       const next =
