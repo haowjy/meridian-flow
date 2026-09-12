@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Rendered Editor recovery distinguishes loading, error, and authoritative empty catalogs. */
+/** Rendered Editor recovery distinguishes loading, error, and unavailable selections. */
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
@@ -12,11 +12,7 @@ vi.mock("@lingui/react/macro", () => ({
 describe("EditorWorkRecovery", () => {
   it("renders loading only for unresolved scope", async () => {
     await withReactRoot(
-      <EditorWorkRecovery
-        scope={{ status: "loading", workId: "" }}
-        onRetry={vi.fn()}
-        onOpenWork={vi.fn()}
-      />,
+      <EditorWorkRecovery scope={{ status: "loading", workId: "" }} onRetry={vi.fn()} />,
       async () => expect(document.body.textContent).toContain("Loading Work…"),
     );
   });
@@ -24,11 +20,7 @@ describe("EditorWorkRecovery", () => {
   it("renders retry for a failed catalog", async () => {
     const retry = vi.fn();
     await withReactRoot(
-      <EditorWorkRecovery
-        scope={{ status: "error", workId: "" }}
-        onRetry={retry}
-        onOpenWork={vi.fn()}
-      />,
+      <EditorWorkRecovery scope={{ status: "error", workId: "" }} onRetry={retry} />,
       async () => {
         await act(async () => document.querySelector<HTMLButtonElement>("button")?.click());
         expect(retry).toHaveBeenCalledOnce();
@@ -36,15 +28,15 @@ describe("EditorWorkRecovery", () => {
     );
   });
 
-  it("renders a Work action instead of loading for an empty catalog", async () => {
-    const openWork = vi.fn();
+  it("renders retry for an unavailable explicit selection", async () => {
+    const retry = vi.fn();
     await withReactRoot(
-      <EditorWorkRecovery scope={{ status: "empty" }} onRetry={vi.fn()} onOpenWork={openWork} />,
+      <EditorWorkRecovery scope={{ status: "unavailable", workId: "missing" }} onRetry={retry} />,
       async () => {
-        expect(document.body.textContent).toContain("No Work yet.");
+        expect(document.body.textContent).toContain("This Work is unavailable.");
         expect(document.body.textContent).not.toContain("Loading Work");
         await act(async () => document.querySelector<HTMLButtonElement>("button")?.click());
-        expect(openWork).toHaveBeenCalledOnce();
+        expect(retry).toHaveBeenCalledOnce();
       },
     );
   });

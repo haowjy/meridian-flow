@@ -1,5 +1,9 @@
 # features/agents — future work
 
+- Agents management and template management are outside the readable
+  project-route cutover. Define their ownership and navigation model as a
+  separate feature rather than extending the project address grammar by default.
+
 - `ComposerAgentControl.tsx`: when post-start agent
   swapping and per-thread model choice ship, the composer control must still
   identify what the writer is talking to using the bare name alone — the

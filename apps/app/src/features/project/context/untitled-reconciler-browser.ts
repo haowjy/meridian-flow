@@ -1,6 +1,6 @@
 /** Browser adapters and React bindings for the durable untitled reconciler engine. */
 
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { createUntitledContextDocument } from "@/client/api/projects-api";
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import {
@@ -19,7 +19,6 @@ import type {
 import {
   type PendingUntitled,
   type QueuedIdentityFailure,
-  resolveUntitledHome,
   UntitledReconciler,
   type UntitledReconcilerDeps,
 } from "./untitled-reconciler";
@@ -157,17 +156,11 @@ function browserDeps(
         localOwner.phase(localKey(projectId, documentId)),
     },
     api: {
-      resolveHome: resolveUntitledCatalogHome,
       async create(entry) {
-        return createUntitledContextDocument(
-          entry.projectId,
-          entry.home.scheme,
-          {
-            documentId: entry.documentId,
-            ...(entry.home.folderPath ? { folderPath: entry.home.folderPath } : {}),
-          },
-          { workId: entry.home.workId },
-        );
+        return createUntitledContextDocument(entry.projectId, entry.home.scheme, {
+          documentId: entry.documentId,
+          ...(entry.home.folderPath ? { folderPath: entry.home.folderPath } : {}),
+        });
       },
       materialized: (projectId, result) => identityMutations.materialized(projectId, result),
       async confirmCreate(entry) {
@@ -204,10 +197,6 @@ export function confirmUntitledCreate(
   documentId: string,
 ): Promise<ProjectDocumentOpenResolution> {
   return availability.resolveForOpen(projectId, documentId);
-}
-
-export async function resolveUntitledCatalogHome(_projectId: string) {
-  return resolveUntitledHome(null);
 }
 
 let shared: UntitledReconciler | null = null;
@@ -296,4 +285,18 @@ export function clearQueuedIdentityFailure(projectId: string, documentId: string
 
 export function queueUntitledIdentity(entry: PendingUntitled, desired: DesiredIdentity): void {
   getUntitledReconciler().queueIdentity(entry, desired);
+}
+
+/** Closed local drafts remain discoverable until canonical synchronization completes. */
+export function usePendingUnfiledDocuments(projectId: string) {
+  const reconciler = typeof window === "undefined" ? null : getUntitledReconciler();
+  const revision = useSyncExternalStore(
+    reconciler?.subscribe ?? noopSubscribe,
+    () => reconciler?.getRevision() ?? 0,
+    () => 0,
+  );
+  return useMemo(
+    () => reconciler?.pendingDocuments(projectId) ?? [],
+    [reconciler, projectId, revision],
+  );
 }

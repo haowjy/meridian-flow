@@ -30,10 +30,6 @@ vi.mock("@/client/api/projects-api", () => ({
     });
     return { status: "created", path: "/new.md" };
   }),
-  renameContextEntry: vi.fn(async (_projectId, _scheme, _body, options) => {
-    requests.push({ operation: "rename", workId: options?.workId });
-    return { status: "renamed" };
-  }),
   deleteContextEntry: vi.fn(async (_projectId, _scheme, _body, options) => {
     requests.push({ operation: "delete", workId: options?.workId });
     return { status: "deleted" };
@@ -44,7 +40,6 @@ const { useCreateContextEntry } = await import("./useCreateContextEntry");
 const { useDeleteContextEntry } = await import("./useDeleteContextEntry");
 const { useProjectContextRead } = await import("./useProjectContextRead");
 const { useContextCatalogView } = await import("./useContextCatalog");
-const { useRenameContextEntry } = await import("./useRenameContextEntry");
 
 type Commands = ReturnType<typeof useCommands>;
 let commands: Commands | null = null;
@@ -55,7 +50,6 @@ function useCommands(workId: string) {
   useProjectContextRead("project", "scratch", "/file.md", { workId });
   return {
     create: useCreateContextEntry("project"),
-    rename: useRenameContextEntry("project", "scratch"),
     delete: useDeleteContextEntry("project", "scratch"),
   };
 }
@@ -100,11 +94,6 @@ it("sends scratch tree, read, and mutation requests with explicit Editor Work A"
           path: "/new.md",
           workId: "work-a",
         });
-        await commands?.rename.mutateAsync({
-          path: "/old.md",
-          newName: "new.md",
-          workId: "work-a",
-        });
         await commands?.delete.mutateAsync({
           path: "/gone.md",
           workId: "work-a",
@@ -115,9 +104,7 @@ it("sends scratch tree, read, and mutation requests with explicit Editor Work A"
       });
       expect(
         requests
-          .filter(({ operation }) =>
-            ["tree", "read", "create", "rename", "delete"].includes(operation),
-          )
+          .filter(({ operation }) => ["tree", "read", "create", "delete"].includes(operation))
           .every(({ workId }) => workId === "work-a"),
       ).toBe(true);
     },

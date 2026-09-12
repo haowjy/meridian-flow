@@ -127,7 +127,7 @@ it("persists and admits the real New action without an empty working-set route",
   useContextTabsStore.setState({ byProject: {}, _deskHydrated: false });
   await rehydrateContextDesks(`new-action-${crypto.randomUUID()}`);
   let search: ProjectSearch = { screen: "context", work: "work-a" };
-  let releaseScratchRoute: (() => void) | null = null;
+  let releaseLocalRoute: (() => void) | null = null;
 
   function Harness() {
     const [route, setRoute] = useState<{
@@ -137,12 +137,12 @@ it("persists and admits the real New action without an empty working-set route",
       scheme: null,
       path: null,
     });
-    const updateRoute = (path: string, scheme: ProjectContextTreeScheme = "scratch") => {
+    const updateRoute = (path: string, scheme: ProjectContextTreeScheme = "unfiled") => {
       const commit = () => {
         search = { ...search, scheme, path };
         setRoute({ scheme, path });
       };
-      if (scheme === "scratch" && path === "") releaseScratchRoute = commit;
+      if (scheme === "unfiled" && path === "") releaseLocalRoute = commit;
       else commit();
     };
     return (
@@ -159,7 +159,7 @@ it("persists and admits the real New action without an empty working-set route",
             updateSearch: (_projectId, update) => {
               search = update(search);
               setRoute({
-                scheme: search.scheme === "scratch" ? "scratch" : null,
+                scheme: search.scheme === "unfiled" ? "unfiled" : null,
                 path: search.path ?? null,
               });
             },
@@ -187,11 +187,11 @@ it("persists and admits the real New action without an empty working-set route",
       const local = slice?.tabs.find((tab) => tab.kind === "new");
       expect(local).toBeDefined();
       expect(slice?.selectedTabIdByWork["work-a"]).toBe(local?.documentId);
-      await act(async () => releaseScratchRoute?.());
-      expect(search).toMatchObject({ scheme: "scratch", path: "" });
+      await act(async () => releaseLocalRoute?.());
+      expect(search).toMatchObject({ scheme: "unfiled", path: "" });
       expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
         selection: { status: "bound", identity: { kind: "local", documentId: local?.documentId } },
-        admitted: { scheme: "scratch", path: "", workId: "work-a" },
+        admitted: { scheme: "unfiled", path: "", workId: "work-a" },
       });
       const deskWrites = writes
         .filter((write) => write.key === "meridian:context-desk")
@@ -206,7 +206,6 @@ it("persists and admits the real New action without an empty working-set route",
           expect.objectContaining({
             kind: "new",
             documentId: local?.documentId,
-            workId: "work-a",
           }),
         ]),
       );
@@ -229,7 +228,7 @@ it("guarded-redirects a selected materialized local owner before admitting its s
   const materialized: ContextTab = {
     kind: "tracked",
     documentId: "local-a",
-    scheme: "scratch",
+    scheme: "unfiled",
     path: "/Untitled.md",
     name: "Untitled.md",
     workId: "work-a",
@@ -247,7 +246,7 @@ it("guarded-redirects a selected materialized local owner before admitting its s
   let search: ProjectSearch = {
     screen: "context",
     work: "work-a",
-    scheme: "scratch",
+    scheme: "unfiled",
     path: "",
   };
 
@@ -259,7 +258,7 @@ it("guarded-redirects a selected materialized local owner before admitting its s
         <ProjectContextRemovalController
           projectId="project"
           activeScreen="context"
-          activeContextScheme="scratch"
+          activeContextScheme="unfiled"
           activeContextPath={path}
           editorWorkId="work-a"
           route={{
@@ -273,7 +272,7 @@ it("guarded-redirects a selected materialized local owner before admitting its s
         <ContextViewerSurfaceController
           projectId="project"
           editorWorkId="work-a"
-          activeContextScheme="scratch"
+          activeContextScheme="unfiled"
           activeContextPath={path}
           active
           sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
@@ -289,7 +288,7 @@ it("guarded-redirects a selected materialized local owner before admitting its s
     expect(search.path).toBe("/Untitled.md");
     expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
       selection: { status: "bound", identity: { documentId: materialized.documentId } },
-      admitted: { scheme: "scratch", path: "/Untitled.md", workId: "work-a" },
+      admitted: { scheme: "unfiled", path: "/Untitled.md", workId: "work-a" },
     });
   });
 });
@@ -299,7 +298,6 @@ it("restores the exact older local owner across A to B to A through mounted cont
     kind: "new",
     documentId: "untitled-older",
     name: "Untitled",
-    workId: "work-a",
   };
   const newer: ContextTab = { ...older, documentId: "untitled-newer" };
   const chapter = useContextTabsStore.getState().byProject.project?.tabs[0] as ContextTab;
@@ -316,7 +314,7 @@ it("restores the exact older local owner across A to B to A through mounted cont
   let search: ProjectSearch = {
     screen: "context",
     work: "work-a",
-    scheme: "scratch",
+    scheme: "unfiled",
     path: "",
   };
 
@@ -325,7 +323,7 @@ it("restores the exact older local owner across A to B to A through mounted cont
     selectWork = (next) => {
       search =
         next === "work-a"
-          ? { screen: "context", work: next, scheme: "scratch", path: "" }
+          ? { screen: "context", work: next, scheme: "unfiled", path: "" }
           : { screen: "context", work: next, scheme: "manuscript", path: "/a.md" };
       setWorkId(next);
     };
@@ -363,7 +361,7 @@ it("restores the exact older local owner across A to B to A through mounted cont
   await withReactRoot(<Harness />, async () => {
     expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
       selection: { status: "bound", identity: { documentId: older.documentId } },
-      admitted: { scheme: "scratch", path: "", workId: "work-a" },
+      admitted: { scheme: "unfiled", path: "", workId: "work-a" },
     });
     expect(viewerProps?.tabs).toEqual(
       expect.arrayContaining([expect.objectContaining(older), expect.objectContaining(newer)]),
@@ -381,7 +379,7 @@ it("restores the exact older local owner across A to B to A through mounted cont
     await act(async () => selectWork?.("work-a"));
     expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
       selection: { status: "bound", identity: { documentId: older.documentId } },
-      admitted: { scheme: "scratch", path: "", workId: "work-a" },
+      admitted: { scheme: "unfiled", path: "", workId: "work-a" },
     });
     expect(viewerProps?.tabs).toEqual(
       expect.arrayContaining([expect.objectContaining(older), expect.objectContaining(newer)]),
@@ -436,4 +434,61 @@ it.each([
       });
     },
   );
+});
+
+it("does not admit an old bound document while its retained controller is inactive", async () => {
+  const locator = { scheme: "manuscript" as const, path: "/a.md", workId: "work-1" };
+  function Harness() {
+    return (
+      <AccountFeatureTestProvider accountId="parked-account">
+        <CaptureCoordinator />
+        <ContextViewerSurfaceController
+          projectId="project"
+          editorWorkId="work-1"
+          activeContextScheme="manuscript"
+          activeContextPath="/a.md"
+          active={false}
+          sidebarToggle={{ open: true, onExpand() {}, label: "Sidebar" }}
+          dockToggle={{ open: true, onExpand() {}, label: "Chat" }}
+          onSelectContextPath={() => {
+            throw new Error("Inactive navigation");
+          }}
+          onOpenContextTarget={() => {
+            throw new Error("Inactive navigation");
+          }}
+        />
+      </AccountFeatureTestProvider>
+    );
+  }
+  await withReactRoot(<Harness />, async () => {
+    if (!coordinator) throw new Error("Coordinator did not mount");
+    const lease = coordinator.createLifetimeLease();
+    lease.resume();
+    const host = coordinator.registerRoutePort(
+      "project",
+      {
+        readSearch: () => ({
+          screen: "context",
+          work: "work-1",
+          scheme: "manuscript",
+          path: "/a.md",
+        }),
+        updateSearch() {},
+      },
+      "work-1",
+    );
+    try {
+      await act(async () => {
+        coordinator?.beginRouteSelection("project", locator);
+        const revision = coordinator?.getProjectSnapshot("project").selection.revision;
+        if (revision === undefined) throw new Error("Selection missing");
+        coordinator?.bindRouteSelection("project", revision, { kind: "server", documentId: "a" });
+      });
+      expect(coordinator.getProjectSnapshot("project").admitted).toBeNull();
+    } finally {
+      host.release();
+      lease.suspend();
+      lease.disposeIfSuspended();
+    }
+  });
 });

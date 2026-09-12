@@ -1,5 +1,9 @@
 # FUTURE — nice-to-have follow-ups (chat)
 
+- Chat-focused document viewing is outside the readable project-route cutover.
+  When it is designed, give it its own project/Work authority and route contract;
+  do not reuse the Editor's retained-document controller implicitly.
+
 - ThreadSwitcherPopover recomputes filtering/grouping (`filterThreadsByTitle`,
   work-item regrouping) on every render even while the popover is closed.
   Harmless at today's thread counts; if long-task violations appear during

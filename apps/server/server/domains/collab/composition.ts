@@ -53,6 +53,7 @@ import {
 import { createDrizzleTurnDiffQuery } from "./adapters/drizzle-turn-diff-query.js";
 import { createDrizzleTurnLiveLineageStore } from "./adapters/drizzle-turn-live-lineage.js";
 import { createDrizzleTurnReceiptStore } from "./adapters/drizzle-turn-receipt.js";
+import { createDrizzleWorkDraftDiscard } from "./adapters/drizzle-work-draft-discard.js";
 import { createHocuspocusBinding } from "./adapters/hocuspocus-binding.js";
 import { createHocuspocusChangeEventDelivery } from "./adapters/hocuspocus-change-event-delivery.js";
 import { createHocuspocusCoordinator } from "./adapters/hocuspocus-coordinator.js";
@@ -339,6 +340,13 @@ export function createCollabDomain(deps: CollabDomainDeps): CollabDomain {
     notices: postDurabilityNotices,
   });
   const drafts = createWorkDraftReviewService({
+    discardWorkDraft: createDrizzleWorkDraftDiscard(
+      deps.db,
+      branches,
+      branchCoordinator,
+      criticalSections,
+      liveCoordinator,
+    ),
     branches,
     branchCoordinator,
     branchJournal,

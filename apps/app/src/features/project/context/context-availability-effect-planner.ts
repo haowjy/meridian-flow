@@ -15,7 +15,6 @@ import {
   contextRouteMatchesSearch,
   openContextRouteSearch,
   type ProjectSearch,
-  transitionProjectSearch,
 } from "../routing/project-route";
 import type {
   AppliedAvailabilityCommand,
@@ -149,7 +148,7 @@ export function planContextAvailabilityBatch(
           : withoutWork;
       });
       for (const workId of selectedWorks) delete selectedTabIdByWork[workId];
-      if (targetWorkId && selectedWorks.length > 0) selectedTabIdByWork[targetWorkId] = id;
+      if (selectedWorks.length > 0) selectedTabIdByWork[targetWorkId ?? ""] = id;
       if (
         selection.status === "bound" &&
         selection.identity.kind === "server" &&
@@ -195,9 +194,7 @@ export function planContextAvailabilityBatch(
       command.kind === "terminal-remove",
     );
     selection = transition.selection;
-    const selectedTabId = input.project.activeWorkId
-      ? (selectedTabIdByWork[input.project.activeWorkId] ?? null)
-      : null;
+    const selectedTabId = selectedTabIdByWork[input.project.activeWorkId ?? ""] ?? null;
     const removal = planContextRemoval({
       activeWorkId: input.project.activeWorkId,
       tabs,
@@ -213,8 +210,8 @@ export function planContextAvailabilityBatch(
     for (const [workId, selected] of Object.entries(selectedTabIdByWork)) {
       if (selected === id) delete selectedTabIdByWork[workId];
     }
-    if (input.project.activeWorkId && removal.nextSelectedTabId) {
-      selectedTabIdByWork[input.project.activeWorkId] = removal.nextSelectedTabId;
+    if (removal.nextSelectedTabId) {
+      selectedTabIdByWork[input.project.activeWorkId ?? ""] = removal.nextSelectedTabId;
     }
     const exactRecentRoutes = recentRoutes.filter((route) => route.documentId === id);
     const workingSet = {
@@ -303,7 +300,15 @@ export function planContextAvailabilityBatch(
       }
       if (admitted?.workId === activeWorkId) admitted = null;
       if (input.routeSearch?.work === activeWorkId && routeSearch) {
-        routeSearch = transitionProjectSearch(routeSearch, { kind: "work-collection" });
+        routeSearch = {
+          ...routeSearch,
+          screen: "work",
+          work: undefined,
+          scheme: undefined,
+          folder: undefined,
+          path: undefined,
+          results: undefined,
+        };
       }
     }
   }

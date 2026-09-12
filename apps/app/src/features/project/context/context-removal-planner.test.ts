@@ -323,7 +323,6 @@ describe("context removal planner", () => {
       kind: "new",
       documentId: "local",
       name: "Untitled",
-      workId: "work-1",
     };
     const draft = { ...tracked("draft", "/draft.md"), draftOnly: true };
     const plan = planContextRemoval({

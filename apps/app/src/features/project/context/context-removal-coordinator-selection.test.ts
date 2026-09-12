@@ -319,7 +319,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
     ]);
   });
 
-  it("admits local untitled Scratch in memory without a working-set route", () => {
+  it("admits local Untitled in memory without a working-set route", () => {
     setDesk([], null);
     const rig = scenario({ screen: "context", work: "work-1", scheme: "scratch", path: "" });
     rig.coordinator.registerRoutePort(
@@ -327,11 +327,8 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
       { readSearch: rig.search, updateSearch: () => undefined },
       "work-1",
     );
-    setDesk(
-      [{ kind: "new", documentId: "untitled", name: "Untitled", workId: "work-1" }],
-      "untitled",
-    );
-    const locator = { scheme: "scratch" as const, path: "", workId: "work-1" };
+    setDesk([{ kind: "new", documentId: "untitled", name: "Untitled" }], "untitled");
+    const locator = { scheme: "unfiled" as const, path: "", workId: "work-1" };
     const revision = rig.coordinator.beginRouteSelection(projectId, locator);
     rig.coordinator.bindRouteSelection(projectId, revision, {
       kind: "local",

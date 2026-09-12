@@ -103,7 +103,6 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
       kind: "new",
       documentId: "local-new",
       name: "Untitled",
-      workId: "work-1",
     };
     setDesk(
       [tracked("active", "/active.md"), tracked("background", "/background.md"), local],

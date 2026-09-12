@@ -1,4 +1,4 @@
-/** Stable thread slug generation from the first non-empty title. */
+/** Stable creation-time thread slug generation, including untitled chats. */
 import { describe, expect, it } from "vitest";
 import { threadSlugBase, uniqueThreadSlug } from "./thread-slug.js";
 
@@ -7,9 +7,9 @@ describe("thread slugs", () => {
     expect(threadSlugBase("  Éowyn's Last Stand!  ")).toBe("eowyn-s-last-stand");
   });
 
-  it("stays null while untitled", () => {
-    expect(threadSlugBase(null)).toBeNull();
-    expect(threadSlugBase("   ")).toBeNull();
+  it("assigns a chat fallback while untitled", () => {
+    expect(threadSlugBase(null)).toBe("chat");
+    expect(threadSlugBase("   ")).toBe("chat");
   });
 
   it("uses -2 and increasing counters on collision", () => {

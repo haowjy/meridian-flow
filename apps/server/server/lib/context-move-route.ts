@@ -1,6 +1,6 @@
 /** Plain-data orchestration for committing a writer-visible context identity. */
 
-import type { MoveContextEntryResult } from "@meridian/contracts/protocol";
+import type { MoveContextEntryRequest, MoveContextEntryResult } from "@meridian/contracts/protocol";
 import {
   isProjectContextTreeScheme,
   isWorkScopedProjectContextScheme,
@@ -57,6 +57,7 @@ type NoWorkLocator = {
 export type ContextMoveLocator = ProjectLocator | NoWorkLocator | WorkLocator;
 
 export interface ParsedContextMove {
+  expected: MoveContextEntryRequest["expected"];
   source: ContextMoveLocator;
   destination: ContextMoveLocator;
   name?: string;
@@ -65,6 +66,7 @@ export interface ParsedContextMove {
 type ResolvedWorkLocator = Omit<WorkLocator, "workId"> & { authority: ResolvedWorkAuthority };
 export type ResolvedContextMoveLocator = ProjectLocator | NoWorkLocator | ResolvedWorkLocator;
 export type ResolvedContextMove = {
+  expected: MoveContextEntryRequest["expected"];
   source: ResolvedContextMoveLocator;
   destination: ResolvedContextMoveLocator;
   name?: string;
@@ -115,6 +117,15 @@ export function parseContextMove(input: {
     throw createError({ statusCode: 400, message: "Request body must be an object" });
   }
   const body = input.body as Record<string, unknown>;
+  const expected = body.expected as Record<string, unknown> | undefined;
+  if (
+    !expected ||
+    (expected.kind !== "file" && expected.kind !== "folder") ||
+    typeof expected.nodeId !== "string" ||
+    !expected.nodeId.trim()
+  ) {
+    throw createError({ statusCode: 400, message: "Expected source identity is required" });
+  }
   const sourcePath = parseContextMutationPath(body.path, "path");
   const destinationFolderPath = parseContextMutationPath(
     body.destinationFolderPath,
@@ -126,6 +137,7 @@ export function parseContextMove(input: {
     name = parseContextMutationName(body.newName, "newName");
   }
   return {
+    expected: { kind: expected.kind, nodeId: expected.nodeId },
     source: parseLocator({
       scheme: input.sourceScheme,
       path: sourcePath,
@@ -170,7 +182,7 @@ export async function commitContextMove(input: {
   const result = await input.port.commitWriterLocation(
     locatorUri(input.move.source, input.move.source.path),
     locatorUri(input.move.destination, destinationPath),
-    { origin: { type: "human", userId: input.userId } },
+    { origin: { type: "human", userId: input.userId }, expected: input.move.expected },
   );
   if (!result.ok) {
     if (result.error.code === "stale_source" || result.error.code === "stale_target") {
@@ -249,6 +261,7 @@ export async function handleContextMoveRequest(
     return { scope: "work", scheme: locator.scheme, path: locator.path, authority };
   }
   const resolvedMove: ResolvedContextMove = {
+    expected: move.expected,
     source: await resolveLocator(move.source),
     destination: await resolveLocator(move.destination),
     ...(move.name ? { name: move.name } : {}),

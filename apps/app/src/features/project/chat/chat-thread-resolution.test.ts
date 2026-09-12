@@ -10,6 +10,21 @@ function thread(id: string, kind: Thread["kind"] = "primary"): Thread {
 const projectThreads = [thread("first"), thread("remembered"), thread("explicit")];
 
 describe("chat thread resolution", () => {
+  it.each([
+    null,
+    "unavailable",
+  ])("does not restore another chat for an explicit selection %s", (explicitThreadId) => {
+    expect(
+      resolveChatThreadId({
+        explicitThreadId,
+        pendingThreadId: "pending",
+        rememberedThreadId: "remembered",
+        projectThreads,
+        allowDefaults: false,
+      }),
+    ).toBeNull();
+  });
+
   it("prefers a valid explicit thread over every fallback", () => {
     expect(
       resolveChatThreadId({

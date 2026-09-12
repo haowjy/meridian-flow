@@ -13,6 +13,7 @@ import type {
   DeleteContextEntryResult,
   DocumentFileType,
   Filetype,
+  MoveContextEntryRequest,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
 import type { Result } from "../../../shared/result.js";
@@ -202,6 +203,10 @@ export interface ContextWriteOptions {
   deferDocumentSync?: boolean;
 }
 
+export interface ContextLocationOptions extends ContextWriteOptions {
+  expected?: MoveContextEntryRequest["expected"];
+}
+
 export interface ContextMoveOptions extends ContextWriteOptions {
   overwrite?: boolean;
 }
@@ -292,7 +297,7 @@ export interface ContextPort {
   commitWriterLocation(
     sourceUri: string,
     destinationUri: string,
-    options?: ContextWriteOptions,
+    options?: ContextLocationOptions,
   ): Promise<Result<ContextMoveResult, ContextError>>;
 
   /** Delete only the initiating file identity or folder kind at this URI. */

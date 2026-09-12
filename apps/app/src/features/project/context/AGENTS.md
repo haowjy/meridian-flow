@@ -1,7 +1,8 @@
 # features/project/context — Context file tree (desktop + mobile)
 
-Explorer surfaces for project context files (`manuscript://`, `kb://`, `user://`,
-`scratch://`, `uploads://`). `ContextTreePanel` renders the recursive tree in the
+Explorer surfaces for project documents (`manuscript://`, `kb://`, `user://`,
+`unfiled://`). Scratch/Uploads are chat resources, not ordinary Editor tabs;
+reference/tool vocabulary still includes them. `ContextTreePanel` renders the recursive tree in the
 desktop sidebar and phone navigation drawer; the phone Files destination uses
 one-folder-per-screen drill-in (`MobileContextBrowser`).
 

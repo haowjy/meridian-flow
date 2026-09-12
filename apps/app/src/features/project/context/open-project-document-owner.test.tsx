@@ -5,7 +5,10 @@ import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { act, type ReactNode, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { type OpenContextRoute, ProjectContextRouteProvider } from "../routing/ProjectContextRoute";
+import {
+  type OpenContextRoute,
+  ProjectNavigationProvider,
+} from "../routing/ProjectNavigationContext";
 import {
   type OpenProjectDocument,
   type ProjectDocumentLiveOpener,
@@ -67,11 +70,11 @@ function Owner({
 }) {
   return (
     <ProjectDocumentLiveOpenerContext.Provider value={opener as ProjectDocumentLiveOpener}>
-      <ProjectContextRouteProvider openContextRoute={openRoute}>
+      <ProjectNavigationProvider openContextRoute={openRoute}>
         <ProjectDocumentNavigationProvider projectId={projectId}>
           {children}
         </ProjectDocumentNavigationProvider>
-      </ProjectContextRouteProvider>
+      </ProjectNavigationProvider>
     </ProjectDocumentLiveOpenerContext.Provider>
   );
 }
@@ -90,7 +93,70 @@ function Door({
 }
 
 describe("ProjectDocumentNavigationProvider", () => {
-  beforeEach(() => tabs.mockReset());
+  beforeEach(() => {
+    tabs.mockReset();
+  });
+
+  it("waits for durable tab publication before navigating", async () => {
+    const publication = deferred<void>();
+    tabs.mockReturnValue(publication.promise);
+    const openRoute = vi.fn(async () => undefined);
+    const doors: Record<string, OpenProjectDocument> = {};
+    await withReactRoot(
+      <Owner projectId="project-a" opener={{ open: async () => opened("a") }} openRoute={openRoute}>
+        <Door name="catalog" projectId="project-a" doors={doors} />
+      </Owner>,
+      async () => {
+        const opening = doors.catalog({ documentId: "a" });
+        await act(async () => undefined);
+        try {
+          expect(tabs).toHaveBeenCalledOnce();
+          expect(openRoute).not.toHaveBeenCalled();
+        } finally {
+          publication.resolve();
+        }
+        await expect(opening).resolves.toMatchObject({ kind: "opened" });
+        expect(openRoute).toHaveBeenCalledOnce();
+      },
+    );
+  });
+
+  it.each([
+    false,
+    true,
+  ])("returns a typed publication failure (superseded: %s)", async (superseded) => {
+    let reject!: (reason: unknown) => void;
+    tabs
+      .mockReturnValueOnce(
+        new Promise<void>((_resolve, fail) => {
+          reject = fail;
+        }),
+      )
+      .mockResolvedValue(undefined);
+    const openRoute = vi.fn(async () => undefined);
+    const doors: Record<string, OpenProjectDocument> = {};
+    await withReactRoot(
+      <Owner
+        projectId="project-a"
+        opener={{ open: async ({ documentId }) => opened(documentId) }}
+        openRoute={openRoute}
+      >
+        <Door name="catalog" projectId="project-a" doors={doors} />
+      </Owner>,
+      async () => {
+        const opening = doors.catalog({ documentId: "a" });
+        await act(async () => undefined);
+        const isCurrent = tabs.mock.calls[0][2] as () => boolean;
+        expect(isCurrent()).toBe(true);
+        if (superseded) await doors.catalog({ documentId: "b" });
+        expect(isCurrent()).toBe(!superseded);
+        reject(new Error("storage unavailable"));
+        await expect(opening).resolves.toEqual(
+          superseded ? { kind: "cancelled" } : { kind: "unavailable", reason: "failed" },
+        );
+      },
+    );
+  });
 
   it("shares the latest attempt across distinct doors and preserves dispositions", async () => {
     const delayedA = deferred<ProjectDocumentLiveOpenResult>();
@@ -132,7 +198,7 @@ describe("ProjectDocumentNavigationProvider", () => {
   it.each([
     null,
     "work-b",
-  ])("routes a binary reference to its exact viewer scope %s", async (workId) => {
+  ])("routes a chat resource to its explanatory destination without a tab %s", async (workId) => {
     const document: CatalogFileEntry = {
       kind: "file",
       entryId: "image",
@@ -162,10 +228,7 @@ describe("ProjectDocumentNavigationProvider", () => {
       </Owner>,
       async () => {
         await doors.reference({ documentId: "image", workId: "work-a" });
-        expect(tabs).toHaveBeenCalledWith(
-          "project-a",
-          expect.objectContaining({ documentId: "image", kind: "viewer", editable: false }),
-        );
+        expect(tabs).not.toHaveBeenCalled();
         expect(openRoute).toHaveBeenCalledWith({ scheme: "uploads", path: "/Map.png", workId });
       },
     );

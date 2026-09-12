@@ -10,6 +10,14 @@
  */
 import type { DocumentFileType, Filetype } from "@meridian/contracts/protocol";
 
+/** Opposite-kind occupancy is a normal namespace conflict, not a storage failure. */
+export class ContextEntryConflictError extends Error {
+  constructor() {
+    super("Context entry already exists");
+    this.name = "ContextEntryConflictError";
+  }
+}
+
 export interface ContextFolder {
   id: string;
   parentId: string | null;

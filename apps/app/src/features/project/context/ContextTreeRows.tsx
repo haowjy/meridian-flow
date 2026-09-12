@@ -148,6 +148,7 @@ function DirRow({
   if (renaming) {
     return (
       <RenameRow
+        entryId={dir.entryId}
         path={dir.path}
         currentName={dir.name}
         siblingNames={siblingNames}
@@ -225,6 +226,7 @@ function FileRow({
   if (renaming) {
     return (
       <RenameRow
+        entryId={file.documentId}
         path={file.path}
         currentName={file.name}
         siblingNames={siblingNames}
@@ -272,6 +274,7 @@ function FileRow({
 }
 
 function RenameRow({
+  entryId,
   path,
   currentName,
   siblingNames,
@@ -280,6 +283,7 @@ function RenameRow({
   icon,
   onDone,
 }: {
+  entryId: string;
   path: string;
   currentName: string;
   siblingNames: readonly string[];
@@ -293,6 +297,7 @@ function RenameRow({
     projectId: env.projectId,
     workId: env.workId,
     scheme: env.scheme,
+    entryId,
     path,
     currentName,
     siblingNames,

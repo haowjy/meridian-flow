@@ -75,9 +75,10 @@ targets.
 Home is the shared, container-responsive Composer-led entry surface on desktop
 and phone, followed by the server-owned Continue, Favorites, and
 cursor-paginated Recent feed. First send creates and reconciles the canonical
-thread under one stable client-chosen ID before routing. Home derives the first
-active, then first available, catalog Work and submits its `workId` explicitly;
-loading, error, and authoritative empty catalogs remain distinct. The submitted
+thread under one stable client-chosen ID before routing. Home and Chats share
+the saved prospective Work/Agent choices. Without a saved Work choice, creation
+starts with the first active Work or No Work; archived Works are not defaults.
+Loading, error, and authoritative empty catalogs remain distinct. The submitted
 Work ID is an immutable reconciliation fact, along with project and Agent, and
 no cache, handoff, visibility, admission, or route effect may run until the
 canonical thread matches those captured facts.
@@ -107,9 +108,12 @@ rebind an idle existing chat through the canonical durable transition, and the
 model's explicit `work.switch` command uses that same separate authority. Work
 management and navigation never rebind a chat implicitly.
 
-The desktop left rail has one divider below destination navigation. Its
-Manuscript, Knowledge Base, User, Scratch, and Uploads panes are flush siblings
-with transparent headers. Scratch and Uploads resolve from the shell-owned Editor Work, whose real name appears in their header tooltip and accessible control name. An explicit route Work is authoritative even while persistent Chat belongs to another Work; malformed, loading, catalog-error, and confirmed-missing explicit values never fall back to Chat or mount Work-scoped leaves. With no explicit Work, the selected thread's durable Work ID remains authoritative even when catalog display data fails. With neither an explicit Work nor a selected thread, Editor and untitled recovery derive first active, then first available, from the all-Work catalog, including archived-only catalogs; loading, error, and empty remain distinct. Uploads is intake-only and exposes no file or folder creation affordances.
+The desktop rail contains Manuscript, Knowledge Base, User and Unfiled. Chat
+resources have no Editor sections or resource tabs. Editor Work remains a route
+context for draft review, independent of later Chat changes. Null is shared
+scope; loading/error is never converted to null. Invalid optional query selectors
+are cleared without blocking documents; required path identities remain errors.
+Archived Work identity remains manageable but cannot authorize content mutation.
 
 ### Slot paints the material; surfaces must not
 
@@ -222,67 +226,86 @@ Related: the project removal coordinator publishes a revisioned auto-open block.
 `ContextPaneController` consumes that external-store snapshot, so a removal blocks
 same-render and delayed cached-tree resurrection. A registered route host stays
 live while the writer visits another project screen; only host release or Work
-readiness suspension disables activation. Writer close and Work pruning are
-reversible, while acknowledged deletion and draft discard keep exact re-entry
-guards against stale resurrection.
+readiness suspension disables activation. A parked desktop Editor retains its
+private document and review state but is inactive: `ContextPaneController` must
+not admit its retained document or repair the address until its host is active
+again. Writer close and Work pruning are reversible, while acknowledged deletion
+and draft discard keep exact re-entry guards against stale resurrection.
 
-## Screen routing & controllers
+## Readable routing, selection, and controllers
 
-`routes/_authenticated/project/$projectId.tsx` owns **all** workspace URL params
-(`?screen=`, `?thread=`, `?work=`, `?scheme=`, `?folder=`, `?path=`, `?results=`) and is the
-single source of screen/thread ownership. The per-screen controllers
-(`HomePaneController`, `WorkPaneController`, `ChatPaneController`,
-`ContextPaneController`, `SettingsPaneController`) are **controlled** — they
-render into surfaces and call
-the route's handlers; they never set the URL directly. (Full ownership rules:
-[`apps/app/.context/CONTEXT.md` § Project workspace screen routing](../../../../.context/CONTEXT.md).)
+`routes/_authenticated/p/$projectSlug` is the persistent project parent and its
+catch-all child is the only workspace route adapter. It resolves the slug before
+ID-keyed queries, keeps `ProjectView` mounted for same-project child paths, and
+passes resolved address state and typed navigation commands to controlled
+controllers. Controllers never parse or mutate browser URLs themselves.
+`routing/project-address.ts` owns the readable browser grammar;
+`routing/project-navigation.ts` owns guarded push/replace behavior. The legacy
+UUID project routes and `?screen`/`?thread` grammar are gone. `project-route.ts`
+retains stable-ID command types and the context-removal CAS snapshot only; it is
+not a second address grammar.
 
-`routing/project-route.ts` is the pure route grammar: it preserves absent,
-malformed, noncanonical, and canonical explicit Work inputs; resolves valid IDs
-only against a successful all-status catalog; owns the search transition matrix;
-and publishes awaitable typed commands. The route component remains the only
-TanStack Router adapter. Collection/detail leaves receive targets and commands
-rather than parsing or mutating search themselves.
+Empty Chat/Work selections are stored in href-scoped browser history state, not
+serialized as `?chat=&work=`. Only Editor-related destinations carry the empty
+Editor Work marker; other screens must not write state their address parser
+discards, or normalization can race a blocked departure back to its source.
+Actual selections remain readable query parameters.
+A fresh copied URL without these parameters may use local defaults; Back/Forward
+and reload preserve the entry's explicit no-selection intent.
+Resolving those defaults does not itself replace the route. The departure
+snapshot path remains, but the browser history adapter can coalesce its replace
+with the following push: a bare entry is not reliably pinned to its displayed
+defaults. Back/reload may therefore use newer remembered selections. Document
+admission still canonicalizes document paths and scope independently.
 
-A genuinely cold cross-project loader replaces the old project shell immediately
-with the route's inert pending surface. It must not leave the previous project's
-Context publishers mounted while the next project's Work authority is unresolved.
-This is a route-lifetime boundary, not a query-refresh policy: once Work data has
-successfully seeded the mounted project, a background `isFetching` refresh keeps
-that project's Context host and mutation publishers live.
+A readable address has explicit selections, not defaults: absent, no-Work,
+slug, malformed, and unavailable remain distinct. Only genuinely absent Chat
+or Editor selections may use their respective local continuity rules.
+The navigation coordinator matches rendered entries by history key, because
+router and native URLs can spell the same query differently. Async tickets
+still retain and validate the native URL, entry key, and navigation revision.
+The shared query guard clears malformed or confirmed-missing optional Chat/Work
+selectors using synchronous, entry-guarded history replacement, pinning no selection
+without empty URL parameters. This same-destination repair bypasses blockers;
+it never queues a competing navigation behind a pending dirty-edit decision.
+Pending catalog refreshes and catalog errors never prove absence. Valid and omitted selectors are not rewritten. Duplicate query keys,
+invalid percent encoding, and conflicting path/query Work scope remain parser
+errors, not recoverable selector values. Required path identities remain
+unavailable rather than falling back. Editor can seed its initially absent Work
+from the selected Chat once; afterwards Editor Work is independent from Chat Work.
+With no selected Chat it is explicit no-Work. The Work catalog never selects a
+first Work for Editor.
+
+A cold different-project transition replaces the old shell with an inert
+boundary. Same-Work pending Editor navigation retains the usable document and
+its identity chrome; recovery and unavailable/error destinations mask it.
+The route publishes authorized tab metadata, while the document host owns
+live-session binding. See [Editor document lifecycle](editor-document-lifecycle.md)
+for entry paths, publication ordering, retention, and failure behavior.
+The removal coordinator's route repair remains an identity and revision guarded
+CAS over the current address projection.
 
 The **Editor** destination retains `ContextPaneController` as its implementation
-name. It owns route-validated opens, temporary-tab projection, scroll restoration,
-and screen-entry defaults. The platform-neutral project adapter owns revision
-startup and dispatches Work pruning only after Work authority is ready. Project-entry
-desk seed/validation is hydration-scoped and never re-runs on a Work change. The
-removal coordinator owns close fallback, atomic old/new Work continuity,
-remembered destination, and route repair:
-entering with no destination replays the remembered last file
-(`client/working-set/`; replay re-arms every entry because the controller is
-persistent). Replay and the default-open ladder also re-arm when Editor Work
-changes; remembered Scratch and Uploads routes are eligible only for their
-owning Work, while project-scoped routes remain eligible everywhere. A known active route is projected as a loading tab and document
-surface until the context tree validates and materializes its durable tab; a
-resolved missing route drops that projection and returns to the empty state.
-A desk with nothing to restore and no tabs runs the
-default-open ladder. Clearing the desk clears its remembered routes without
-changing the current entry; on the next entry, the default-open ladder runs.
-This cleared state is intentionally ephemeral and has the same behavior on
-every device.
-`ContextViewer` and `ContextTabBar` are controlled views. The tab strip also owns the collapsed
-sidebar/dock expand controls; Editor therefore supplies no separate route pane
-or header band.
+name. It owns address-admitted opens, temporary-tab projection, scroll
+restoration. Screen entry resolves a still-open identity before navigation;
+bare Editor routes remain empty. Project-entry desk seed/validation is
+hydration-scoped and never re-runs on a Work change. The removal coordinator
+owns close fallback, atomic old/new Work continuity, remembered destination,
+and guarded route repair. A cold address can project loading until the
+authoritative address resolver publishes its durable tab. Session binding and
+content startup belong to the document host. An explicitly unavailable address
+stays unavailable rather than selecting a fallback. Context paths are reusable
+locations, never document identity.
 
-Chat switching lives in `features/chat/ThreadSwitcherPopover`: it filters by
-chat title, groups chats by Work when grouping is meaningful, shows recency and
-attention, and supports keyboard switching. Rename is available on the active
-row; new chat remains a footer action. The route owner performs the actual
-thread switch. `ProjectView` calls `chat/useResolvedChatThread` once, derives
-the thread's Work, and passes that pair to context hydration, Draft Review, the
-chat body, and every header that names the thread. Descendants must never
-independently derive either id or their context, title, and conversation can
-diverge.
+The Chat navigation item opens the composer-and-history landing, including from
+a chat detail. An already-open landing is a no-op. The switcher’s New chat
+shortcut targets that same landing; there is no separate `/chats/new` route.
+
+Chat switching lives in `features/chat/ThreadSwitcherPopover`; it filters by
+chat title, groups chats by Work when meaningful, and delegates actual
+navigation to the route owner. `ProjectView` resolves a chat once and passes its
+current Work to context hydration, Draft Review, the chat body, and headers.
+Descendants must not independently derive either value.
 
 ## Don't
 
@@ -291,3 +314,13 @@ diverge.
 - Don't reparent/unmount stateful surfaces on screen change — move the grid-area.
 - Don't gate a mount between hook calls — gate at the parent.
 - Don't add raw hex/rgba or `emerald`/`rose` — use semantic tokens.
+
+Persistent root/account/project loaders acquire shell identity on entry. Child
+navigation and same-href history-state writes do not reload them; explicit router
+invalidation and re-entry still do. This permits warm local editing offline,
+not cold offline app boot or bypassing server authorization.
+
+The basic `EditorView` is a static dependency of the project hosts, not a lazy
+chunk fetched on first New/open. This makes a loaded empty workspace capable of
+starting local writing offline; it deliberately costs earlier editor-code loading
+for Chat-only project visits. It does not provide cold offline application boot.

@@ -9,6 +9,7 @@ import type {
 } from "@meridian/contracts/drafts";
 import type { DocumentId, ProjectId, UserId, WorkId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
+import { WorkLifecycleUnavailableError } from "../domains/projects/domain/work-lifecycle.js";
 import type { AppServices } from "./app.js";
 
 type DraftRouteServices = {
@@ -155,7 +156,10 @@ async function callDraftReview<T>(promise: Promise<T>): Promise<T> {
     if (cause instanceof Error && cause.message.startsWith("read_failed:")) {
       throwReadFailure(cause.message.slice("read_failed:".length));
     }
-    if (cause instanceof Error && cause.message === "draft_not_found") {
+    if (
+      cause instanceof WorkLifecycleUnavailableError ||
+      (cause instanceof Error && cause.message === "draft_not_found")
+    ) {
       throw createError({ statusCode: 404, message: "Draft not found" });
     }
     throw cause;

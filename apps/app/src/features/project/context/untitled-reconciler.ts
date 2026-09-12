@@ -29,11 +29,7 @@ const RETRY_BASE_MS = 1_000;
 const RETRY_MAX_MS = 30_000;
 const MAX_MATERIALIZATION_RECEIPTS = 16;
 
-export type UntitledHome = {
-  scheme: "scratch";
-  workId: string;
-  folderPath?: string;
-};
+export type UntitledHome = import("./local-untitled-lineage").LocalUntitledHome;
 
 export type PendingUntitled = {
   documentId: string;
@@ -44,7 +40,7 @@ export type PendingUntitled = {
 
 export type QueuedIdentityReceipt = MoveContextEntrySuccess & {
   workId?: string;
-  routeWorkId: string;
+  routeWorkId: string | null;
 };
 
 type Candidate = {
@@ -89,7 +85,6 @@ type SchedulerPort = {
 };
 
 type ApiPort = {
-  resolveHome(projectId: string): Promise<UntitledHome | null>;
   create(
     entry: PendingUntitled & { home: UntitledHome },
   ): Promise<CreateUntitledContextDocumentResult>;
@@ -160,10 +155,6 @@ export type UntitledReconcilerDeps = {
   };
 };
 
-export function resolveUntitledHome(activeWorkId: string | null): UntitledHome | null {
-  return activeWorkId ? { scheme: "scratch", workId: activeWorkId } : null;
-}
-
 export type ReconciliationRecord = {
   projectId: string;
   documentId: string;
@@ -181,6 +172,20 @@ export type ReconciliationRecord = {
 };
 
 export class UntitledReconciler {
+  private revision = 0;
+  getRevision = (): number => this.revision;
+
+  pendingDocuments(projectId: string) {
+    return this.deps.localOwner
+      .list()
+      .filter(
+        (record) =>
+          record.key.projectId === projectId &&
+          record.phase === "local" &&
+          this.has(projectId, record.key.documentId),
+      );
+  }
+
   private readonly records = new Map<string, ReconciliationRecord>();
   private readonly candidates = new Map<string, Candidate>();
   private readonly materializationReceipts = new Map<string, MaterializationReceipt>();
@@ -383,8 +388,7 @@ export class UntitledReconciler {
     let record = this.pendingRecord(key);
     if (!record) return;
     const entry = record.materialization.entry;
-    const home = entry.home ?? (await this.deps.api.resolveHome(entry.projectId));
-    if (!home) throw new Error("Untitled home is not available yet");
+    const home: UntitledHome = entry.home ?? { scheme: "unfiled" };
     record = this.pendingRecord(key);
     if (!record) return;
     if (!record.materialization.entry.home) {
@@ -412,6 +416,21 @@ export class UntitledReconciler {
     const key = this.key(projectId, documentId);
     const ownerId = `untitled-reconciler:${key}`;
     const phase = local.phase(projectId, documentId);
+    // A confirmed create receipt may outlive a rename, filing, or data migration.
+    // Refresh identity before publishing it or applying queued placement.
+    const confirmed = this.pendingRecord(key);
+    if (confirmed?.createSettlement.kind === "confirmed") {
+      const current = await this.deps.api.confirmCreate(entry);
+      if (current.kind !== "available") throw new Error(`Confirmed Untitled is ${current.kind}`);
+      const latest = this.pendingRecord(key);
+      if (!latest) return;
+      this.records.set(key, {
+        ...latest,
+        createSettlement: { kind: "confirmed", result: createResultFromAvailability(current) },
+      });
+      this.persistExact(key);
+    }
+
     if (phase === "adopted") {
       const current = this.pendingRecord(key);
       let publicationResult =
@@ -646,7 +665,7 @@ export class UntitledReconciler {
         ...moved,
         path: `/${moved.path}`,
         ...(desired.destination.workId ? { workId: desired.destination.workId } : {}),
-        routeWorkId: desired.destination.workId ?? entry.home.workId,
+        routeWorkId: desired.destination.workId ?? null,
       };
       return {
         revision: finished ? attemptRevision + 1 : attemptRevision,
@@ -808,6 +827,7 @@ export class UntitledReconciler {
   }
 
   private emit(): void {
+    this.revision += 1;
     for (const listener of this.listeners) listener();
   }
 }

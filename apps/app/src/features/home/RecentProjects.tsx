@@ -37,8 +37,8 @@ export function RecentProjects() {
             return (
               <li key={project.id}>
                 <Link
-                  to="/project/$projectId"
-                  params={{ projectId: project.id }}
+                  to="/p/$projectSlug/$"
+                  params={{ projectSlug: project.slug, _splat: "" }}
                   className="focus-ring surface-card block rounded-lg px-4 py-3 transition-colors hover:bg-muted"
                 >
                   <div className="flex items-center gap-2">

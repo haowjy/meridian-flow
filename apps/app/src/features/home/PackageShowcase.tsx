@@ -1,9 +1,8 @@
 import { Trans } from "@lingui/react/macro";
-import { useNavigate } from "@tanstack/react-router";
 
-import { useProjectActions, useProjectStore, useThreadActions } from "@/client/stores";
+import { DEFAULT_AGENT_SLUG } from "@/features/agents";
+import { useCreationComposer } from "@/features/chat/useCreationComposer";
 import { i18n } from "@/lib/i18n";
-import { startProjectFromPackage } from "@/lib/optimistic-project";
 
 import { FIRST_PARTY_PACKAGES } from "./first-party-packages";
 import { PackageCard } from "./PackageCard";
@@ -14,19 +13,9 @@ import type { PackageCardData } from "./package-card-data";
  * click creates a plain project; no actual package install.
  */
 export function PackageShowcase() {
-  const navigate = useNavigate();
-  const projectActions = useProjectActions();
-  const threadActions = useThreadActions();
-  const now = useProjectStore((s) => s.now);
-
+  const creation = useCreationComposer(null);
   function handleSelect(pkg: PackageCardData) {
-    startProjectFromPackage({
-      title: i18n._(pkg.name),
-      projectActions,
-      threadActions,
-      navigate,
-      now,
-    });
+    if (!creation.submitLocked) void creation.createEmpty(i18n._(pkg.name), DEFAULT_AGENT_SLUG);
   }
 
   return (

@@ -47,11 +47,7 @@ export type ContextViewerProps = {
   dockToggle?: PaneHeaderRailToggle;
   /** Whether this persistent surface is currently visible as the active destination. */
   active: boolean;
-  /** Last-opened document label, when the project has a remembered route. */
-  resumeDocumentName: string | null;
-  /** Replay the remembered route through the normal tree-validated open. */
-  onResumeDocument: () => void;
-  onNewDocument: () => void;
+  onNewDocument?: () => void;
   onUntitledBecameNonEmpty: (documentId: string) => void;
   onCommitted: (
     documentId: string,
@@ -63,9 +59,8 @@ export type ContextViewerProps = {
 
 /**
  * Desktop tab-aware host. The store (lifted via the workspace controller) is
- * the source of truth for open tabs and the active id; the URL is reconciled
- * in the controller's store→URL effect so it reflects the currently visible
- * tab.
+ * the source of truth for open tabs; the committed route chooses which one
+ * is visible. Screen-entry commands choose a destination before navigating.
  */
 export function ContextViewer({
   projectId,
@@ -77,8 +72,6 @@ export function ContextViewer({
   sidebarToggle,
   dockToggle,
   active,
-  resumeDocumentName,
-  onResumeDocument,
   onNewDocument,
   onUntitledBecameNonEmpty,
   onCommitted,
@@ -170,11 +163,7 @@ export function ContextViewer({
           <MissingDocumentState destination={paneState.destination} />
         ) : null}
         {paneState.kind === "empty-desk" || paneState.kind === "route-error" ? (
-          <EditorEmptyState
-            resumeDocumentName={resumeDocumentName}
-            onResumeDocument={onResumeDocument}
-            onNewDocument={onNewDocument}
-          />
+          <EditorEmptyState onNewDocument={onNewDocument} />
         ) : null}
       </div>
     </div>
@@ -254,36 +243,20 @@ function railToggleNode(
 }
 
 function EditorEmptyState({
-  resumeDocumentName,
-  onResumeDocument,
   onNewDocument,
 }: {
-  resumeDocumentName: string | null;
-  onResumeDocument: () => void;
   /**
-   * Starts a temporary document — the doc has no context location until the
-   * writer saves, when the destination picker offers every durable scheme.
+   * Starts a local document that autosaves to project Unfiled storage.
    * Deliberately NOT the sidebar inline-create: that flow is scheme-targeted
    * and happens off-pane, which reads as a dead button from the empty state.
    */
-  onNewDocument: () => void;
+  onNewDocument?: () => void;
 }) {
   return (
     <div className="grid h-full place-items-center px-6 text-center">
       <div className="flex max-w-sm flex-col items-center gap-3">
         <div className="flex flex-wrap items-center justify-center gap-2">
-          {resumeDocumentName ? (
-            <Button size="sm" onClick={onResumeDocument}>
-              <span className="max-w-56 truncate">
-                <Trans>Resume {resumeDocumentName}</Trans>
-              </span>
-            </Button>
-          ) : null}
-          <Button
-            size="sm"
-            variant={resumeDocumentName ? "secondary" : "default"}
-            onClick={onNewDocument}
-          >
+          <Button size="sm" onClick={onNewDocument} disabled={!onNewDocument}>
             <FilePlus aria-hidden />
             <Trans>New document</Trans>
           </Button>

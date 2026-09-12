@@ -1,114 +1,46 @@
-/** One shell-level Editor Work precedence contract. */
+/** Readable selection is the only Editor authority; no catalog or Chat fallback. */
 import type { Work } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
+import { testWorkSlug } from "@/test-support/work-slug";
 import { resolveEditorWorkScope } from "./editor-work-scope";
-import {
-  openContextRouteSearch,
-  parseExplicitWork,
-  resolveRouteWork,
-} from "./routing/project-route";
 
-const work = (id: string): Work =>
-  ({ id, projectId: "project", name: id, slug: id, status: "active" }) as Work;
-
-const routeWorkA = parseRequestId("11111111-1111-4111-8111-111111111111");
-if (!routeWorkA) throw new Error("fixture must be a request id");
-
-describe("resolveEditorWorkScope", () => {
-  it("keeps explicit Editor A independent from dock Chat B", () => {
-    const editorA = work(routeWorkA);
-    expect(
-      resolveEditorWorkScope({ status: "present", workId: routeWorkA, work: editorA }, "work-b", {
-        status: "ready",
-        work: work("fallback"),
-      }),
-    ).toEqual({ status: "ready", workId: routeWorkA, source: "route" });
-  });
-
-  it("blocks rather than falling back to Chat while explicit Work loads or errors", () => {
-    const chatB = work("work-b");
-    expect(
-      resolveEditorWorkScope({ status: "loading", workId: routeWorkA }, chatB.id, {
-        status: "ready",
-        work: work("fallback"),
-      }),
-    ).toEqual({
-      status: "loading",
-      workId: routeWorkA,
-    });
-    expect(
-      resolveEditorWorkScope({ status: "catalog-error", workId: routeWorkA }, chatB.id, {
-        status: "ready",
-        work: work("fallback"),
-      }),
-    ).toEqual({ status: "error", workId: routeWorkA });
-  });
-
-  it("uses a selected Chat but never implicitly selects a catalog Work", () => {
-    const chatB = work("work-b");
-    expect(
-      resolveEditorWorkScope({ status: "absent" }, chatB.id, {
-        status: "ready",
-        work: work("fallback"),
-      }),
-    ).toMatchObject({
-      status: "ready",
-      workId: "work-b",
-      source: "chat",
-    });
-    expect(
-      resolveEditorWorkScope({ status: "absent" }, null, {
-        status: "ready",
-        work: work("fallback"),
-      }),
-    ).toEqual({ status: "empty" });
-  });
-
-  it("keeps an authoritative empty catalog distinct from loading", () => {
-    expect(resolveEditorWorkScope({ status: "absent" }, null, { status: "empty" })).toEqual({
-      status: "empty",
-    });
-  });
-
-  it("never mounts malformed or confirmed-missing explicit Work under Chat B", () => {
-    expect(
-      resolveEditorWorkScope({ status: "malformed", value: "bad" }, "work-b", {
-        status: "ready",
-        work: work("fallback"),
-      }),
-    ).toEqual({ status: "normalizing", workId: "bad" });
-    expect(
-      resolveEditorWorkScope({ status: "not-found", workId: routeWorkA }, "work-b", {
-        status: "ready",
-        work: work("fallback"),
-      }),
-    ).toEqual({ status: "normalizing", workId: routeWorkA });
-  });
-
-  it("keeps authoritative Chat identity when display catalog fails", () => {
-    expect(resolveEditorWorkScope({ status: "absent" }, "work-b", { status: "error" })).toEqual({
-      status: "ready",
-      workId: "work-b",
-      source: "chat",
-    });
-    expect(resolveEditorWorkScope({ status: "absent" }, null, { status: "error" })).toEqual({
-      status: "error",
-      workId: "",
-    });
-  });
-});
-
-it("keeps a followed no-Work upload independent from the selected chat", () => {
-  const search = openContextRouteSearch(
-    { screen: "chat", thread: "thread-a" },
-    { scheme: "uploads", path: "/Map.png", workId: null },
-  );
-  const route = resolveRouteWork(parseExplicitWork(search.work), { status: "loading" });
-  expect(search.work).toBe("none");
-  expect(resolveEditorWorkScope(route, "work-a", { status: "loading" })).toEqual({
+const id = parseRequestId("11111111-1111-4111-8111-111111111111");
+if (!id) throw new Error("Invalid fixture");
+it("admits explicit no Work without another selector", () => {
+  expect(resolveEditorWorkScope({ status: "none" })).toEqual({
     status: "ready",
     workId: null,
     source: "route",
   });
+});
+it.each(["loading", "error", "unavailable"] as const)("keeps unresolved %s inert", (reason) => {
+  expect(resolveEditorWorkScope({ status: "unresolved", reason, slug: "requested" })).toEqual({
+    status: reason,
+    workId: "requested",
+  });
+});
+it.each(["active", "archived"] as const)("only admits active Work (%s)", (status) => {
+  const work: Work = {
+    id,
+    status,
+    projectId: "project",
+    createdByUserId: "user",
+    name: "Work",
+    slug: testWorkSlug("work"),
+    goal: null,
+    description: null,
+    archivedAt: null,
+    aiWriteMode: "direct",
+    entityRevision: "1",
+    createdAt: "",
+    updatedAt: "",
+    lastActivityAt: "",
+    deletedAt: null,
+  };
+  expect(resolveEditorWorkScope({ status: "present", workId: id, work })).toEqual(
+    status === "active"
+      ? { status: "ready", workId: id, source: "route" }
+      : { status: "unavailable", workId: id },
+  );
 });

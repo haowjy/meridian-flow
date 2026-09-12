@@ -28,6 +28,7 @@ import type { LocalMaterializationReservation } from "./local-untitled-owner";
 
 import {
   isProjectContextTreeScheme,
+  isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import {
@@ -37,12 +38,13 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
 } from "react";
 
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import { useContextTabsActions } from "@/client/stores";
-import { type OpenContextRoute, useProjectContextRoute } from "../routing/ProjectContextRoute";
+import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { contextTabFromFile } from "./context-tab-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
@@ -228,8 +230,13 @@ export type OpenProjectDocument = (
 
 type NavigationAdapterDependencies = {
   opener: Pick<ProjectDocumentLiveOpener, "open">;
-  openTab(projectId: string, tab: ReturnType<typeof contextTabFromFile>): void;
+  openTab(
+    projectId: string,
+    tab: ReturnType<typeof contextTabFromFile>,
+    isCurrent?: () => boolean,
+  ): Promise<void>;
   openRoute: OpenContextRoute | null;
+  captureNavigation?: () => () => boolean;
 };
 
 /** Latest-attempt navigation: editable files admit sessions; not-editable results open viewers. */
@@ -238,6 +245,13 @@ export class ProjectDocumentNavigationAdapter {
   private current: AbortController | null = null;
 
   constructor(private readonly dependencies: NavigationAdapterDependencies) {}
+
+  cancelPending(): void {
+    if (!this.current) return;
+    this.attempt += 1;
+    this.current.abort();
+    this.current = null;
+  }
 
   dispose(): void {
     this.attempt += 1;
@@ -249,6 +263,7 @@ export class ProjectDocumentNavigationAdapter {
     projectId: string,
     { documentId, workId = null, disposition = "current", signal }: OpenProjectDocumentRequest,
   ): Promise<ProjectDocumentLiveOpenResult> {
+    const navigationIsCurrent = this.dependencies.captureNavigation?.();
     const token = ++this.attempt;
     this.current?.abort();
     const controller = new AbortController();
@@ -256,6 +271,8 @@ export class ProjectDocumentNavigationAdapter {
     const abort = () => controller.abort();
     signal?.addEventListener("abort", abort, { once: true });
     if (signal?.aborted) controller.abort();
+    const isCurrent = () =>
+      token === this.attempt && !controller.signal.aborted && navigationIsCurrent?.() !== false;
     try {
       const result = await this.dependencies.opener.open({
         source: "server",
@@ -263,7 +280,8 @@ export class ProjectDocumentNavigationAdapter {
         documentId,
         signal: controller.signal,
       });
-      if (token !== this.attempt || controller.signal.aborted) return { kind: "cancelled" };
+      if (token !== this.attempt || controller.signal.aborted || navigationIsCurrent?.() === false)
+        return { kind: "cancelled" };
       if (result.kind !== "opened" && result.kind !== "not-editable") return result;
 
       const scheme = schemeForEntry(result.document);
@@ -278,7 +296,19 @@ export class ProjectDocumentNavigationAdapter {
       if (disposition === "current" && !this.dependencies.openRoute) {
         throw new Error("Opening a project document requires the project route owner");
       }
-      this.dependencies.openTab(projectId, contextTabFromFile(scheme, file, routeWorkId));
+      try {
+        if (!isWorkScopedProjectContextScheme(scheme))
+          await this.dependencies.openTab(
+            projectId,
+            contextTabFromFile(scheme, file, routeWorkId),
+            isCurrent,
+          );
+      } catch {
+        return isCurrent() ? { kind: "unavailable", reason: "failed" } : { kind: "cancelled" };
+      }
+      if (!isCurrent()) return { kind: "cancelled" };
+      // The admission is settled; its own route commit must not cancel its receipt.
+      this.current = null;
       if (disposition === "current") {
         await this.dependencies.openRoute?.({
           scheme,
@@ -311,12 +341,16 @@ const ProjectDocumentNavigationContext = createContext<ProjectDocumentNavigation
 export function ProjectDocumentNavigationProvider({
   projectId,
   children,
+  navigationRevision,
+  captureNavigation,
 }: {
   projectId: string;
   children: ReactNode;
+  navigationRevision?: string;
+  captureNavigation?: () => () => boolean;
 }) {
   const opener = useProjectDocumentLiveOpener();
-  const openContextRoute = useProjectContextRoute();
+  const openContextRoute = useOpenContextRoute();
   const { openTab } = useContextTabsActions();
   const owner = useMemo<ProjectDocumentNavigationOwner>(
     () => ({
@@ -325,11 +359,15 @@ export function ProjectDocumentNavigationProvider({
         opener,
         openTab,
         openRoute: openContextRoute,
+        captureNavigation,
       }),
     }),
-    [openContextRoute, openTab, opener, projectId],
+    [openContextRoute, openTab, opener, projectId, captureNavigation],
   );
   useEffect(() => () => owner.adapter.dispose(), [owner]);
+  useLayoutEffect(() => {
+    if (navigationRevision !== undefined) owner.adapter.cancelPending();
+  }, [owner, navigationRevision]);
 
   return createElement(ProjectDocumentNavigationContext.Provider, { value: owner }, children);
 }

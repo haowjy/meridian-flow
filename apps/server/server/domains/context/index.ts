@@ -10,6 +10,7 @@ export {
 } from "./adapters/context-fs/drizzle-store.js";
 export { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 export { InMemoryContextDocumentStore } from "./adapters/context-fs/in-memory-store.js";
+export { createDrizzleDocumentAddressStore } from "./adapters/document-address.js";
 export { InMemoryContextCatalog } from "./adapters/in-memory-context-catalog.js";
 export { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
 export { joinPath, parseFilename, renderFilename, splitPath } from "./context/paths.js";
@@ -35,6 +36,7 @@ export {
   createWorkContextDocumentStore,
 } from "./context-source-provisioning.js";
 export * from "./corpus-import/index.js";
+export { createDocumentAddressResolver } from "./document-address.js";
 export { createDocumentLinkResolver } from "./document-link-resolution.js";
 export * from "./figures/index.js";
 export type {
@@ -82,6 +84,7 @@ export type {
   WorkScopedContextFsScheme,
   WriteProvenance,
 } from "./ports/context-port.js";
+export type { DocumentAddressResolver } from "./ports/document-address.js";
 export type {
   DocumentLinkResolver,
   DocumentLinkTarget,

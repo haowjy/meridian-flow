@@ -2,7 +2,6 @@
 
 import { describe, expect, it } from "vitest";
 import { parseCreateContextEntryBody } from "../routes/api/projects/[projectId]/context/[scheme]/create.post.js";
-import { parseRenameContextEntryBody } from "../routes/api/projects/[projectId]/context/[scheme]/rename.post.js";
 import { parseContextMove } from "./context-move-route.js";
 
 function expectAuthorityReservation(parse: () => unknown) {
@@ -26,16 +25,10 @@ describe("context entry authority-prefix guard", () => {
   });
 
   it.each([
-    ["root entry", { path: "notes.md", newName: "@notes.md" }],
-    ["nested entry", { path: "Drafts/notes.md", newName: "@notes.md" }],
-  ])("rejects rename for a %s", (_label, body) => {
-    expectAuthorityReservation(() => parseRenameContextEntryBody(body));
-  });
-
-  it.each([
     [
       "root destination name",
       {
+        expected: { kind: "file", nodeId: "selected-document" },
         path: "notes.md",
         destinationScheme: "manuscript",
         destinationFolderPath: "",
@@ -45,6 +38,7 @@ describe("context entry authority-prefix guard", () => {
     [
       "nested destination folder",
       {
+        expected: { kind: "file", nodeId: "selected-document" },
         path: "notes.md",
         destinationScheme: "manuscript",
         destinationFolderPath: "Drafts/@Revision",
@@ -58,8 +52,5 @@ describe("context entry authority-prefix guard", () => {
     expect(parseCreateContextEntryBody({ type: "file", path: "Drafts/notes@revision.md" })).toEqual(
       { type: "file", path: "Drafts/notes@revision.md", content: undefined },
     );
-    expect(
-      parseRenameContextEntryBody({ path: "Drafts/notes.md", newName: "notes@revision.md" }),
-    ).toEqual({ path: "Drafts/notes.md", newName: "notes@revision.md" });
   });
 });

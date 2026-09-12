@@ -3,13 +3,13 @@ import type {
   AccountId,
   AvailabilityGeneration,
   CreateUntitledContextDocumentResponse,
+  ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type { DesiredIdentity } from "./identity-location";
 
 export type LocalUntitledHome = {
-  scheme: "scratch";
-  workId: string;
+  scheme: "unfiled";
   folderPath?: string;
 };
 
@@ -17,7 +17,7 @@ export type LocalUntitledIdentityFailure =
   | {
       kind: "conflict";
       name: string;
-      scheme: "manuscript" | "kb" | "user" | "scratch" | "uploads";
+      scheme: ProjectContextTreeScheme;
       path: string;
       workId?: string;
     }
@@ -54,7 +54,7 @@ export type LocalUntitledAlias = Readonly<{
 }>;
 
 type CommonLineage = Readonly<{
-  version: 3;
+  version: 4;
   ref: LocalUntitledLineageRef;
   envelopeRevision: number;
 }>;
@@ -262,7 +262,7 @@ export function reduceLocalUntitledLineage(
       return { kind: current.kind === "local" ? "stale" : "invalid" };
     }
     const next: AdoptedLineageEnvelope = {
-      version: 3,
+      version: 4,
       kind: "adopted",
       ref: current.ref,
       envelopeRevision: current.envelopeRevision + 1,
@@ -337,7 +337,7 @@ export function reduceLocalUntitledLineage(
     return {
       kind: "applied",
       next: {
-        version: 3,
+        version: 4,
         kind: "terminal",
         ref: current.ref,
         envelopeRevision: current.envelopeRevision + 1,

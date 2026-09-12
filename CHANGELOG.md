@@ -5,6 +5,52 @@
 
 ## [Unreleased]
 
+- Load basic editor with workspace. Offline New no longer waits for a missing editor chunk.
+
+- Keep Scratch and Uploads out of ordinary Editor tabs; retain their chat/AI access and explain that resource viewing is not available yet.
+- Keep warm local navigation usable offline without rerunning account/project loaders.
+
+- Autosave new documents to project Unfiled without selecting a Work; recover closed local writing from the sidebar and preserve existing unfinished drafts.
+
+- Add project-owned Unfiled document storage and `unfiled://` addresses through the existing context APIs and tools.
+
+- Choose an open document before entering Editor; remove the Resume flash and automatic first-document reopening after closing every tab.
+
+- Remove obsolete navigation-test mocks; test document admission through the real coordinator.
+
+- Open valid encoded URLs without stalling document navigation.
+
+- Clear invalid optional Chat and Work links without blocking the document or selecting a different Work.
+
+- Remove the background URL rewrite for resolved Chat and Editor Work defaults.
+
+- Fixed screen navigation from Work details being undone by background address normalization.
+
+- Keep the current document visible during Editor navigation; remove redundant route-level session opening.
+
+- Show the new-chat composer above previous chats on the Chats page. No extra creation screen or button required.
+- Preserve a draft’s chosen Work and Agent across Home, Chats, and reload.
+
+- Keep empty Chat and Work selections out of URLs; preserve no-selection intent in browser history.
+
+- Use readable project, chat, Work, document, and folder addresses. Preserve renamed bookmarks and exact Back/Forward selections.
+- Keep desktop chat and editor sessions mounted across project screens and unavailable addresses.
+- Persist one creation draft per account/project context; reconcile uncertain creation without duplicate sends or lost newer text.
+- Preserve local Untitled selection in phone read-only views. Ignore stale Composer focus after navigation.
+
+- Serialize full draft Discard with Apply and preserve accepted documents when a stale Discard finishes later.
+
+- Add revision-checked creation draft storage and lossless Composer initialization for reload continuity.
+
+- Fence archived Work content mutations and draft Apply while retaining management, cleanup, and thread-history access.
+
+- Reject stale rename requests after path reuse, and keep file and folder names exclusive.
+
+- Record document rename and folder-move history atomically. Reused paths consume old bookmarks.
+- Share tree rename and document-location mutation, including collision and retry feedback.
+
+- Allocate readable project and chat handles; reserve project, Work, and chat handles through soft deletion.
+
 - Let Composer suggestions handle Enter before message submission.
 
 - Copy internal links as Markdown wikilinks with rich reference data, not browser URLs. Preserve display text on paste.

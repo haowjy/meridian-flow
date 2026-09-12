@@ -54,6 +54,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         port: input.port,
         userId: input.userId,
         move: {
+          expected: move.expected,
           source: await resolveLocator(move.source),
           destination: await resolveLocator(move.destination),
           ...(move.name ? { name: move.name } : {}),
@@ -183,6 +184,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return row;
     }
 
+    async function sourceFolderId(workId: string) {
+      const [row] = await db
+        .select({ id: schema.folders.id })
+        .from(schema.folders)
+        .innerJoin(
+          schema.contextSources,
+          eq(schema.contextSources.id, schema.folders.contextSourceId),
+        )
+        .where(and(eq(schema.contextSources.workId, workId), eq(schema.folders.name, "Source")));
+      if (!row) throw new Error("fixture folder missing");
+      return row.id;
+    }
+
     async function documentOwner(documentId: string) {
       const [row] = await db
         .select({
@@ -206,6 +220,39 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return row;
     }
 
+    it("revokes archived Work mutations without losing its management identity", async () => {
+      const { projectId, workId, port } = await arrangeUntitled();
+      await db
+        .update(schema.works)
+        .set({ status: "archived", archivedAt: new Date() })
+        .where(eq(schema.works.id, workId));
+      await expect(port.write("scratch://@current-work/new.md", "blocked")).resolves.toMatchObject({
+        ok: false,
+        error: { code: "context_unavailable" },
+      });
+      await expect(
+        port.commitWriterLocation(
+          "scratch://@current-work/Untitled 1.md",
+          "manuscript://moved.md",
+          { expected: { kind: "file", nodeId: DOCUMENT_ID } },
+        ),
+      ).resolves.toMatchObject({ ok: false, error: { code: "context_unavailable" } });
+      const authority = createDrizzleProjectWorkAuthorityResolver(db);
+      await expect(authority.byId(projectId, workId)).resolves.toMatchObject({ workId });
+      expect((await documentOwner(DOCUMENT_ID)).sourceWorkId).toBe(workId);
+      await db
+        .update(schema.works)
+        .set({ status: "active", archivedAt: null })
+        .where(eq(schema.works.id, workId));
+      await expect(
+        port.commitWriterLocation(
+          "scratch://@current-work/Untitled 1.md",
+          "manuscript://moved.md",
+          { expected: { kind: "file", nodeId: DOCUMENT_ID } },
+        ),
+      ).resolves.toMatchObject({ ok: true });
+    });
+
     it("promotes scratch into manuscript, graduating provisional naming without touching Yjs authority", async () => {
       const { projectId, workId, collab, port } = await arrangeUntitled();
       const manifestBefore = await collab.resolveManifestMembership({ projectId });
@@ -218,6 +265,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
           sourceScheme: "scratch",
           body: {
+            expected: { kind: "file", nodeId: DOCUMENT_ID },
             path: "Untitled 1.md",
             sourceWorkId: workId,
             destinationScheme: "manuscript",
@@ -286,6 +334,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
           sourceScheme: "scratch",
           body: {
+            expected: { kind: "file", nodeId: documentId },
             path: "Unassigned.md",
             sourceWorkId: null,
             destinationScheme: "scratch",
@@ -322,6 +371,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
           sourceScheme: "scratch",
           body: {
+            expected: { kind: "file", nodeId: documentId },
             path: "Assigned/Unassigned.md",
             sourceWorkId: workId,
             destinationScheme: "scratch",
@@ -369,6 +419,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
           sourceScheme: "scratch",
           body: {
+            expected: { kind: "file", nodeId: DOCUMENT_ID },
             path: "Untitled 1.md",
             sourceWorkId: workId,
             destinationScheme: "scratch",
@@ -420,6 +471,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
           sourceScheme: "scratch",
           body: {
+            expected: { kind: "file", nodeId: DOCUMENT_ID },
             path: "Untitled 1.md",
             sourceWorkId: workId,
             destinationScheme: "manuscript",
@@ -460,6 +512,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
           sourceScheme: "scratch",
           body: {
+            expected: { kind: "folder", nodeId: await sourceFolderId(workId) },
             path: "Source",
             sourceWorkId: workId,
             destinationScheme: "manuscript",
@@ -498,6 +551,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           userId: USER_ID,
           sourceScheme: "scratch",
           body: {
+            expected: { kind: "folder", nodeId: await sourceFolderId(workId) },
             path: "Source",
             sourceWorkId: workId,
             destinationScheme: "manuscript",

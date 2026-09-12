@@ -19,6 +19,7 @@ import { createInMemoryCollabDomain } from "../collab/index.js";
 import type { EventSink } from "../observability/index.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { ContextFS } from "./adapters/context-fs/context-fs.js";
+import { lockContextNamespaces } from "./adapters/context-fs/document-locations.js";
 import type { ContextDocumentMembershipObserver } from "./adapters/context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
 import { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
@@ -133,7 +134,9 @@ function buildProjectContextFsAdapters(
         mutationStore: storeResolvers.resolveMutationStore(manifestView),
         documentSync,
         documentCreation,
-        commandTransaction,
+        commandTransaction: commandTransaction && {
+          run: (operation) => commandTransaction.run(operation, [{ scheme, workId: null }]),
+        },
         scheme,
         ...(scheme === "manuscript" && manifestView ? { manifestView } : {}),
       }),
@@ -164,7 +167,9 @@ function buildWorkScopedContextFsAdapters(
         mutationStore,
         documentSync,
         documentCreation,
-        commandTransaction,
+        commandTransaction: commandTransaction && {
+          run: (operation) => commandTransaction.run(operation, [{ scheme, workId: workId }]),
+        },
         scheme,
       }),
     );
@@ -191,7 +196,9 @@ function buildUnassignedContextFsAdapters(
         mutationStore,
         documentSync,
         documentCreation,
-        commandTransaction,
+        commandTransaction: commandTransaction && {
+          run: (operation) => commandTransaction.run(operation, [{ scheme, workId: null }]),
+        },
         scheme,
       }),
     );
@@ -420,7 +427,11 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentSync: options.documentSync,
         documentCreation: options.documentSync,
         commandTransaction: {
-          run: (operation) => runInDrizzleTransaction(options.db, operation),
+          run: (operation, scopes = []) =>
+            runInDrizzleTransaction(options.db, async () => {
+              await lockContextNamespaces(options.db, { projectId, userId }, scopes);
+              return operation();
+            }),
         },
       });
     },
@@ -439,7 +450,11 @@ export function createProductionUnifiedContextPortFactory(options: {
         documentSync: options.documentSync,
         documentCreation: options.documentSync,
         commandTransaction: {
-          run: (operation) => runInDrizzleTransaction(options.db, operation),
+          run: (operation, scopes = []) =>
+            runInDrizzleTransaction(options.db, async () => {
+              await lockContextNamespaces(options.db, { projectId, userId }, scopes);
+              return operation();
+            }),
         },
       });
     },

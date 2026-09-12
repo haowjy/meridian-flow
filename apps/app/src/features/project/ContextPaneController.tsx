@@ -10,7 +10,7 @@ import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import {
   getContextTabs,
@@ -24,7 +24,6 @@ import {
 } from "./context/account-feature-context";
 import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState } from "./context/context-pane-state";
-import { routeTargetForTab } from "./context/context-removal-planner";
 import { resolveDeskRoute } from "./context/context-route-desk-owner";
 import { contextTabFromFile } from "./context/context-tab-from-file";
 import { contextTabRouteKey } from "./context/context-tab-identity";
@@ -34,12 +33,15 @@ import { identityCommitMayNavigate } from "./context/use-identity-commit";
 import { useUntitledTabBridge } from "./context/useUntitledTabBridge";
 import { useOptionalPostApplyDisposition } from "./draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useOptionalProjectDraftApplyRecovery } from "./draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
+import { useCaptureProjectNavigation } from "./routing/ProjectNavigationContext";
 import type { ContextRouteTarget } from "./routing/project-route";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ContextViewerSurfaceControllerProps = {
   projectId: string;
   editorWorkId: string | null;
+  localDocumentId?: string;
+  addressOwnsDocumentAdmission?: boolean;
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   onSelectContextPath: (
@@ -58,6 +60,8 @@ export type ContextViewerSurfaceControllerProps = {
 export function ContextViewerSurfaceController({
   projectId,
   editorWorkId,
+  localDocumentId,
+  addressOwnsDocumentAdmission = false,
   activeContextScheme,
   activeContextPath,
   active,
@@ -67,20 +71,20 @@ export function ContextViewerSurfaceController({
   onOpenContextTarget,
 }: ContextViewerSurfaceControllerProps) {
   const routeWorkId = editorWorkId;
+  const captureNavigation = useCaptureProjectNavigation();
   const contextRemoval = useContextRemovalCoordinator();
   const localUntitled = useLocalUntitledOwner();
   const postApply = useOptionalPostApplyDisposition();
   const postApplyCommands = useOptionalProjectDraftApplyRecovery();
 
   const { tabs, selectedTabIdByWork } = useContextTabs(projectId);
-  const selectedDocumentId = routeWorkId ? selectedTabIdByWork[routeWorkId] : undefined;
+  const selectedDocumentId = localDocumentId ?? selectedTabIdByWork[routeWorkId ?? ""];
   const deskHydrated = useContextTabsStore((state) => state._deskHydrated);
   const { openTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const visibleTabs = tabs.filter((tab) => {
-    if (tab.kind === "new") return (tab.workId ?? null) === routeWorkId;
-    return !isWorkScopedProjectContextScheme(tab.scheme) || (tab.workId ?? null) === routeWorkId;
+    if (tab.kind === "new") return true;
+    return !isWorkScopedProjectContextScheme(tab.scheme);
   });
-  const hasEditorWorkTab = visibleTabs.length > 0;
   const locator =
     activeContextScheme !== null && activeContextPath !== null
       ? { scheme: activeContextScheme, path: activeContextPath, workId: routeWorkId }
@@ -89,7 +93,6 @@ export function ContextViewerSurfaceController({
   const activeTab = deskRoute.kind === "unowned" ? null : deskRoute.tab;
   const removalState = useContextRemovalProject(projectId);
   const editorScopeKey = `${projectId}:${routeWorkId ?? "no-work"}`;
-  const lastContextRoute = removalState.admitted;
   const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
   const retainedActiveTabId = selectedDocumentId ?? null;
 
@@ -116,8 +119,8 @@ export function ContextViewerSurfaceController({
     const routed = routeCatalog?.findPath(activeContextPath);
     const routedFile = routed?.kind === "file" ? routed : null;
     if (deskRoute.kind === "owner" && selection.status === "candidate") {
-      if (deskRoute.identity.kind === "server" && routeWorkId) {
-        selectTab(projectId, routeWorkId, deskRoute.tab.documentId);
+      if (deskRoute.identity.kind === "server") {
+        selectTab(projectId, routeWorkId ?? "", deskRoute.tab.documentId);
       }
       contextRemoval.bindRouteSelection(projectId, selection.revision, deskRoute.identity);
     } else if (deskRoute.kind === "materialized-local") {
@@ -139,7 +142,7 @@ export function ContextViewerSurfaceController({
       });
     } else if (
       selection.status === "candidate" &&
-      activeContextScheme === "scratch" &&
+      activeContextScheme === "unfiled" &&
       activeContextPath === "" &&
       deskHydrated
     ) {
@@ -190,6 +193,7 @@ export function ContextViewerSurfaceController({
   // next visit.
   useLayoutEffect(() => {
     if (
+      !active ||
       !activeTab ||
       activeTab.draftOnly ||
       removalState.selection.status !== "bound" ||
@@ -206,66 +210,11 @@ export function ContextViewerSurfaceController({
       identity: removalState.selection.identity,
       owner: { kind: "desk", documentId: deskRoute.tab.documentId },
     });
-  }, [contextRemoval, deskRoute, projectId, removalState]);
+  }, [active, contextRemoval, deskRoute, projectId, removalState]);
 
-  // Restore, once per SCREEN ENTRY (user call 2026-07-16 — "the last opened
-  // thing"): entering Context with no destination replays the remembered
-  // file. A deep link (file or scheme browser) is an explicit destination
-  // and wins. The ref re-arms when the screen deactivates — the controller
-  // is a persistent surface, so a mount-scoped one-shot fired only on the
-  // FIRST visit and left every later return on the orphan empty state.
-  // Closing the last tab can't resurrect it: the deliberate empty desk
-  // already forgets the route, and the ref stays spent while you stay here.
-  const restoreAttemptedRef = useRef(false);
-  const [wantsDefaultOpen, setWantsDefaultOpen] = useState(false);
-  const restoreScopeRef = useRef(editorScopeKey);
   useLayoutEffect(() => {
-    if (restoreScopeRef.current !== editorScopeKey) {
-      restoreScopeRef.current = editorScopeKey;
-      restoreAttemptedRef.current = false;
-      scrollPositionsRef.current.clear();
-      setWantsDefaultOpen(false);
-    }
-    if (!active) {
-      restoreAttemptedRef.current = false;
-      setWantsDefaultOpen(false);
-      return;
-    }
-    if (restoreAttemptedRef.current) return;
-    restoreAttemptedRef.current = true;
-    if (activeContextScheme !== null || activeContextPath !== null) return;
-    const selected = selectedDocumentId
-      ? tabs.find((tab) => tab.documentId === selectedDocumentId)
-      : null;
-    if (selected) {
-      void onOpenContextTarget(routeTargetForTab(selected, routeWorkId), { replace: true });
-      return;
-    }
-    const last = removalState.admitted;
-    if (last) {
-      void onOpenContextTarget(last, { replace: true });
-      return;
-    }
-    // Nothing to restore and an empty desk that was never deliberately
-    // emptied (no tabs): land on words instead of the empty state — arm the
-    // default open, resolved below once the manuscript tree arrives (user
-    // call 2026-07-16: "there should always be documents loaded").
-    if (!hasEditorWorkTab) setWantsDefaultOpen(true);
-  }, [
-    active,
-    activeContextPath,
-    activeContextScheme,
-    activeTab,
-    editorScopeKey,
-    onSelectContextPath,
-    projectId,
-    routeWorkId,
-    hasEditorWorkTab,
-    removalState.admitted,
-    selectedDocumentId,
-    tabs,
-    onOpenContextTarget,
-  ]);
+    scrollPositionsRef.current.clear();
+  }, [editorScopeKey]);
 
   // Untitled tabs are store-owned until materialization gives them a server
   // route. Their activation must not depend on search-param validation.
@@ -292,35 +241,17 @@ export function ContextViewerSurfaceController({
     removalFenced: routeMaterializationFenced,
   });
 
-  const { catalog: defaultOpenCatalog } = useContextCatalogView(projectId, "manuscript", {
-    enabled: wantsDefaultOpen,
-    workId: routeWorkId,
-  });
   useEffect(() => {
-    if (!wantsDefaultOpen || !defaultOpenCatalog) return;
-    setWantsDefaultOpen(false);
-    // The writer (or a late restore) may have opened something while the
-    // tree loaded — an explicit destination always wins over the default.
-    if (activeContextScheme !== null || activeContextPath !== null || hasEditorWorkTab) return;
-    const file = defaultOpenCatalog.files()[0] ?? null;
-    if (file) onSelectContextPath(file.path, "manuscript", { replace: true });
-  }, [
-    activeContextPath,
-    activeContextScheme,
-    defaultOpenCatalog,
-    hasEditorWorkTab,
-    onSelectContextPath,
-    wantsDefaultOpen,
-  ]);
-
-  useEffect(() => {
-    if (!needsRouteTab || routeMaterializationFenced) return;
+    if (!active || addressOwnsDocumentAdmission || !needsRouteTab || routeMaterializationFenced)
+      return;
     if (activeContextScheme === null || activeContextPath === null || !routeCatalog) return;
     const found = routeCatalog.findPath(activeContextPath);
     const file = found?.kind === "file" ? found : null;
     if (!file) return;
     openTab(projectId, contextTabFromFile(activeContextScheme, file, routeWorkId));
   }, [
+    active,
+    addressOwnsDocumentAdmission,
     activeContextPath,
     activeContextScheme,
     needsRouteTab,
@@ -335,10 +266,9 @@ export function ContextViewerSurfaceController({
   function handleSelectTab(documentId: string) {
     const tab = tabs.find((candidate) => candidate.documentId === documentId);
     if (!tab) return;
-    if (tab.kind === "new" && tab.workId !== routeWorkId) return;
-    if (routeWorkId) selectTab(projectId, routeWorkId, documentId);
+    selectTab(projectId, routeWorkId ?? "", documentId);
     if (tab.kind === "new") {
-      onSelectContextPath("", "scratch");
+      onOpenContextTarget({ scheme: "unfiled", path: "", workId: routeWorkId, documentId });
       return;
     }
     onSelectContextPath(tab.path, tab.scheme);
@@ -400,12 +330,6 @@ export function ContextViewerSurfaceController({
       return;
     }
     void contextRemoval.writerClose(projectId, documentId);
-  }
-
-  function handleResumeDocument() {
-    const last = removalState.admitted;
-    if (!last) return;
-    void onOpenContextTarget(last);
   }
 
   useLayoutEffect(() => {
@@ -470,7 +394,7 @@ export function ContextViewerSurfaceController({
       appendPendingUntitled({
         documentId,
         projectId,
-        home: { scheme: "scratch", workId: tab.workId },
+        home: { scheme: "unfiled" },
       });
     },
     [projectId],
@@ -489,10 +413,8 @@ export function ContextViewerSurfaceController({
       sidebarToggle={sidebarToggle}
       dockToggle={dockToggle}
       active={active}
-      resumeDocumentName={lastContextRoute ? contextRouteFileName(lastContextRoute.path) : null}
-      onResumeDocument={handleResumeDocument}
       onNewDocument={async () => {
-        if (!routeWorkId) return;
+        const isCurrent = captureNavigation?.();
         const documentId = crypto.randomUUID();
         const opened = await localUntitled.create({
           accountId: localUntitled.accountId,
@@ -504,12 +426,13 @@ export function ContextViewerSurfaceController({
           kind: "new",
           documentId,
           name: "Untitled",
-          workId: routeWorkId,
           lineageHandle: opened.value.ref.lineageHandle,
           identityRevision: 1,
         });
-        await selectTab(projectId, routeWorkId, documentId);
-        onSelectContextPath("", "scratch");
+        if (isCurrent && !isCurrent()) return;
+        await selectTab(projectId, routeWorkId ?? "", documentId);
+        if (isCurrent && !isCurrent()) return;
+        onOpenContextTarget({ scheme: "unfiled", path: "", workId: routeWorkId, documentId });
       }}
       onUntitledBecameNonEmpty={handleUntitledBecameNonEmpty}
       onCommitted={(documentId, next, ownership) => {

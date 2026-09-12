@@ -1,24 +1,23 @@
-/**
- * Shared project-repository helpers: the default title constant and slug
- * derivation used by both the drizzle and in-memory adapters so naming behavior
- * stays identical across them.
- */
+/** Project-owned readable handle allocation shared by persistence adapters. */
+const MAX_SLUG_BASE_LENGTH = 80;
+
 export const DEFAULT_PROJECT_TITLE = "Untitled Project";
 
-/** Slugify a title into a URL-safe base slug, falling back to `project`. */
-function slugifyTitle(title: string): string {
-  const base = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return base || "project";
-}
-
-/**
- * Derive a per-owner-unique slug. The slug is internal (not surfaced on the
- * Project contract), so a short id suffix guarantees uniqueness without a
- * collision-retry loop.
- */
-export function deriveSlug(title: string, id: string): string {
-  return `${slugifyTitle(title)}-${id.slice(0, 8)}`;
+export function nextProjectSlug(title: string, existingSlugs: Iterable<string>): string {
+  const base =
+    title
+      .normalize("NFKD")
+      .replace(/\p{Mark}/gu, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, MAX_SLUG_BASE_LENGTH)
+      .replace(/-+$/g, "") || "project";
+  const taken = new Set(existingSlugs);
+  if (!taken.has(base)) return base;
+  // With N reserved values, one of the first N + 1 candidates is free.
+  for (let suffix = 2; ; suffix += 1) {
+    const candidate = `${base}-${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
 }

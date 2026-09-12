@@ -154,7 +154,6 @@ describe("context tab identity and removal commits", () => {
       kind: "new",
       documentId: "local",
       name: "Untitled",
-      workId: "a",
       lineageHandle: "lineage-local",
       identityRevision: 1,
     });
@@ -174,7 +173,6 @@ describe("context tab identity and removal commits", () => {
       kind: "new",
       documentId: "local",
       name: "Untitled",
-      workId: "a",
       lineageHandle: "lineage-local",
       identityRevision: 1,
     });
@@ -182,10 +180,9 @@ describe("context tab identity and removal commits", () => {
     store.materializeNewTab("project-1", "local", {
       kind: "tracked",
       documentId: "local",
-      scheme: "scratch",
+      scheme: "unfiled",
       path: "/Untitled.md",
       name: "Untitled.md",
-      workId: "a",
       editable: true,
       filetype: "markdown",
       schemaType: "document",
@@ -195,7 +192,7 @@ describe("context tab identity and removal commits", () => {
       selectedTabIdByWork: { a: "local" },
     });
 
-    store.updateTrackedTab("project-1", "local", { workId: "b" });
+    store.updateTrackedTab("project-1", "local", { scheme: "scratch", workId: "b" });
     expect(useContextTabsStore.getState().byProject["project-1"]?.selectedTabIdByWork).toEqual({});
   });
 

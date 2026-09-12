@@ -56,9 +56,7 @@ export const projects = pgTable(
     deletedAt: softDeleteAt(),
   },
   (table) => [
-    uniqueIndex("projects_user_slug_active")
-      .on(table.userId, table.slug)
-      .where(sql`${table.deletedAt} IS NULL`),
+    uniqueIndex("projects_user_slug").on(table.userId, table.slug),
     index("projects_user_last_activity_active")
       .on(table.userId, table.lastActivityAt.desc())
       .where(sql`${table.deletedAt} IS NULL`),
@@ -102,9 +100,7 @@ export const works = pgTable(
     uniqueIndex("works_project_name_active")
       .on(table.projectId, sql`lower(${table.name})`)
       .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("works_project_slug_active")
-      .on(table.projectId, table.slug)
-      .where(sql`${table.deletedAt} IS NULL`),
+    uniqueIndex("works_project_slug").on(table.projectId, table.slug),
     check("works_name_nonempty", sql`btrim(${table.name}) <> ''`),
     check("works_slug_valid", sql`${table.slug} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`),
     check("works_status_valid", sql`${table.status} IN ('active', 'archived')`),
@@ -319,3 +315,27 @@ export function contentDocumentKindSql(alias = "documents") {
 }
 
 // folders.parent_id self-FK added in migration SQL
+
+/** Vacated document locations point directly to identity, never another path. */
+export const documentPreviousLocations = pgTable(
+  "document_previous_locations",
+  {
+    contextSourceId: uuid("context_source_id")
+      .$type<ContextSourceId>()
+      .notNull()
+      .references(() => contextSources.id, { onDelete: "cascade" }),
+    path: text("path").notNull(),
+    documentId: uuid("document_id")
+      .$type<DocumentId>()
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    // Full paths can exceed PostgreSQL B-tree tuple limits. Exact equality is
+    // rechecked by the hash index; namespace locks own replacement uniqueness.
+    index("document_previous_locations_path").using("hash", table.path),
+    index("document_previous_locations_source").on(table.contextSourceId),
+    index("document_previous_locations_document").on(table.documentId),
+  ],
+);

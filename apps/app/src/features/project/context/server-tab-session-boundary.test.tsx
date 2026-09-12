@@ -7,6 +7,8 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ServerTabSessionBoundary } from "./ContextEditorMountHost";
 import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
 
+vi.mock("@/features/editor/EditorView", () => ({ EditorView: () => null }));
+
 describe("ServerTabSessionBoundary", () => {
   it("survives warm-view eviction and releases only when the actual tab closes", async () => {
     const session = {} as DocumentSession;
@@ -42,7 +44,7 @@ describe("ServerTabSessionBoundary", () => {
       return (
         <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
           {open ? (
-            <ServerTabSessionBoundary projectId="project-a" documentId="document-a">
+            <ServerTabSessionBoundary projectId="project-a" documentId="document-a" active={warm}>
               {(bound) => {
                 if (warm) seen.push(bound);
                 return null;
@@ -60,6 +62,9 @@ describe("ServerTabSessionBoundary", () => {
 
       await act(async () => setWarm(false));
       expect(release).not.toHaveBeenCalled();
+      await act(async () => setWarm(true));
+      expect(bind).toHaveBeenCalledOnce();
+      expect(seen.at(-1)).toBe(session);
 
       await act(async () => setOpen(false));
       expect(release).toHaveBeenCalledOnce();

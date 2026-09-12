@@ -4,16 +4,17 @@ Reference depth. Read the [AGENTS.md](../AGENTS.md) first.
 
 ## Link navigation versus editor admission
 
-Resolved No Work survives routing as `?work=none`. Work-capable tabs without a
+Resolved No Work survives routing in browser-entry state without an empty query parameter. Work-capable tabs without a
 `workId` belong to No Work; viewer reads and route matching must not inherit the
 host Chat Work. Nullable authority is ready for Context bootstrap and removal
 host registration, not a loading/missing-Work state. No-Work server tabs use
-route selection; the per-Work selected-tab map remains keyed by actual Work IDs.
+route selection; the selected-tab map uses the empty-string key for shared project scope.
 
 `ProjectDocumentNavigationAdapter` opens both tracked editors and existing
 read-only Context viewers through the one stable-ID opener. Its lower-level
 `not-editable` result means no live Yjs admission, not a failed navigation:
-binary/custom metadata still opens a viewer tab and route. The resolved file's
+Editor-eligible project binary/custom metadata still opens a viewer tab and route.
+Scratch/Uploads instead route to the deferred-viewing notice without opening a tab. The resolved file's
 Work/no-Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
 
@@ -21,10 +22,13 @@ files retain host Work context. Never add upload-specific navigation in Composer
 
 `local-untitled-locks.ts` owns the project/lineage lifetime and identity-reservation
 names and ports. `AccountFeatureLifetime` composes them with the account runtime's
-epoch signal and the lineage ledger/owner. An acquisition that crosses account
-close releases its lease before rejecting; teardown may still release existing
-leases. Native Web Locks adaptation is shared in `core/cross-context-locks.ts`,
-which knows nothing about projects or lineages.
+epoch `AbortSignal` and the lineage ledger/owner. The signal aborts on account
+close, including the render-before-unmount fence; asynchronous acquisition and
+live-document adoption must observe it rather than completing into the old
+account lifetime. An acquisition that crosses account close releases its lease
+before rejecting; teardown may still release existing leases. Native Web Locks
+adaptation is shared in `core/cross-context-locks.ts`, which knows nothing about
+projects or lineages.
 
 ## Architecture
 
@@ -129,13 +133,12 @@ fabricating a tab. `ContextPaneController`
 remains a view/activation controller and owns no lifecycle-removal policy. Later ready
 Work changes use the coordinator's supersession transition. Draft apply only resolves tab metadata. Context-tree
 cache state is presentation metadata and never authorizes removal. `ContextTab` has three variants: `tracked`,
-`viewer`, and the local `{ kind: "new", documentId, workId }` placeholder. A new tab captures its
-canonical Work owner at creation; projection, activation, fallback, pending materialization, and Work
-pruning read that stored fact rather than the currently selected Work. Empty-path Scratch remains local-only
-and is never a working-set route. A new tab uses an ordinary `DocumentSession` from its first render, created detached so
+`viewer`, and the project-owned local `{ kind: "new", documentId }` placeholder.
+Empty-path Unfiled is a browser-local pointer, never a working-set route.
+A new tab uses an ordinary `DocumentSession` from its first render, created detached so
 Y.Doc + IndexedDB exist without opening an unauthorized server room.
 
-The device Context desk persists one exact `selectedTabIdByWork` entry per Work.
+The device Context desk persists one exact `selectedTabIdByWork` entry per Editor scope (empty key for no Work).
 There is no project-wide active-tab slot. One pure desk-route resolver supplies
 render, bind, activation, and guarded materialization redirect identity; desk
 selection is not admission. Every non-draft local `new` tab is persisted
@@ -159,25 +162,24 @@ sync, then drains the entry. A closed tab is not special: the same entry drives
 a headless attach/flush. A never-materialized empty is the only path that clears
 IndexedDB. A foreign UUID conflict clones the Yjs state into a newly minted
 detached session and replaces the new tab's identity in place before retrying.
-Named/viewed documents never enter this engine. Naming an otherwise-empty new document is itself pending materialization work: the explicit identity keeps the tab reload-safe and is applied immediately after the row is created.
+Ordinary already-filed documents do not enter this engine. Naming an otherwise-empty new document is itself pending materialization work: the explicit identity keeps the tab reload-safe and is applied immediately after the row is created.
 
 After create returns, the placeholder becomes a normal route-owned `tracked`
-tab in place. `provisionalName` comes from the tree DTO and drives the identity
-bar's provisional state; a cached tree refetch refreshes open-tab metadata so a
-cross-device rename eventually dissolves the state without another invalidation
-channel. Desk-restored `new` tabs retain their sessions in explicit detached
+tab in place. Unfiled membership retains the placement affordance even after a
+rename; legacy `provisionalName` flags elsewhere also indicate provisional names.
+Desk-restored `new` tabs retain their sessions in explicit detached
 mode; no transport is created before the server row exists. Successful
 materialization restarts any terminal pre-row session before attaching and
 waiting for durable sync.
 Before materialization, active `new` tabs are projected from the desk store,
 not reconstructed from `scheme`/`path` search params. New-tab navigation still
-uses the canonical Scratch empty route, but a fresh project with no prior scheme
+uses the canonical Unfiled empty route, but a fresh project with no prior scheme
 can activate its local editor immediately.
 
 ## Document identity bar
 
 `DocumentIdentityBar.tsx` is the one identity surface: a fixed-height mono
-breadcrumb band (`Scratch › Untitled 4`) at the top of the active tab's canvas,
+breadcrumb band (`Unfiled › Untitled 4`) at the top of the active tab's canvas,
 on every document — tracked, provisional, viewer. Crumb/field text is `text-sm`
 to match the suggestion-popover rows; `identity-bar-geometry.ts` owns the box
 constants (26px band, 22px child boxes) and the zero-layout-shift contract
@@ -196,26 +198,26 @@ Contracts:
 - **Keystroke path**: at rest the bar renders from tab metadata only. The
   content-suggestion observer (300ms debounce, `writerOwnsName` latch) mounts
   only while the edit field is open on a provisional doc.
-- **Placement grammar** (untitled docs never explicitly renamed or homed:
-  provisional AND still at the default Scratch root): the jade chip opens
+- **Placement grammar** (any Unfiled document or provisional document): the jade chip opens
   an EMPTY field — the content-derived suggestion is ghost placeholder text
   (Tab/→ accepts it; Enter on an empty field accepts it implicitly). The
-  popover opens on the scheme roots (Manuscript / Knowledge Base / Scratch —
+  popover opens on the scheme roots (Manuscript / Knowledge Base / User —
   the roots ARE the context choice); picking drills into folders, building the
   home as read-only spans left of the name. Enter with a home built moves
   (+renames); name-only Enter renames in place — naming isn't homing.
-  Placement happens once: any explicit save graduates the document.
+  Naming stays in Unfiled; filing changes source membership.
 - **Graduated grammar**: the same chip and field handle homed documents. The
   field opens with the current name selected, while the dropdown offers the
-  current folder's siblings and every writable scheme root. Selecting a folder
-  drills deeper and builds the destination prefix, so rename, move, and
+  current folder's siblings and the Manuscript, Knowledge Base and User filing
+  roots. Selecting a folder drills deeper and builds the destination prefix, so rename, move, and
   rename-plus-move remain one gesture without a second popup or name row.
 - **Commit seam**: the field submits one final `{ destination, name }` to
   `use-identity-commit.ts`. That seam derives queue, no-op, or commit; every
   tracked-document commit uses the move transport so canonical collision
-  locators and graduation semantics have one owner. A same-name explicit Save on a provisional
-  document is therefore always a graduation, regardless of which surface
-  submitted it. Conflicts return the canonical locator for Open-existing.
+  locators and provisional-name metadata have one owner. A same-name explicit
+  Save clears provisional-name metadata, regardless of the submitting surface.
+  Saving in place retains Unfiled membership and placement affordances.
+  Conflicts return the canonical locator for Open-existing.
   Every asynchronous commit carries an operation generation. Every successful
   receipt invalidates caches; the latest receipt updates tab metadata even when
   inactive, while stale out-of-order receipts cannot overwrite it. Navigation
@@ -328,3 +330,43 @@ affect presentation.
 - [Server context domain](../../../../../../../apps/server/server/domains/context/AGENTS.md)
 - [Desktop project shell](../../.context/CONTEXT.md)
 - [Mobile project shell](../../mobile/.context/CONTEXT.md)
+
+Tree rename and the identity bar share `context-identity-mutation.ts`, including
+per-entry latest-wins sequencing and catalog invalidation. Inline rename keeps
+the stable file/folder entry ID; it must not bypass this service with a separate
+rename transport. Work selection is attached only to Scratch/Uploads, never
+project-owned Manuscript/KB/User paths.
+
+## Unfiled materialization and recovery
+
+New documents have project ownership before a Work or filename is chosen. Their
+first content edit or explicit filing queues idempotent server creation in
+`unfiled://`; the same detached Yjs session and stable lineage perform adoption.
+Unfiled membership, not `provisionalName`, determines whether a document is filed.
+Filing uses the existing same-ID move operation. Naming in place stays Unfiled.
+
+The sidebar combines catalog documents with pending local lineage work, deduped
+by document ID. Closing a nonempty local tab leaves its ledger work discoverable;
+reopening uses the current reminted identity and exact identity revision. Closing
+an empty unqueued tab still abandons it. Publication never reopens a closed tab.
+
+Lineage envelopes are version 4 under the stable v3 physical storage prefix.
+Reading a v3 envelope converts only its materialization home to Unfiled; the next
+locked ledger write persists the conversion. IDs, IndexedDB names, aliases,
+queued filing and adoption obligations survive. Confirmed create locations are
+refreshed before publication, since filing or a data migration may have moved
+the document. SQL migration 0086 relocates existing provisional Scratch writing,
+including archived Work writing, without changing IDs or Yjs/manifest state.
+Ordinary Scratch resources and deleted Work content are not moved.
+
+## Editor versus chat resources
+
+Editor tree and tabs admit project documents only. Scratch/Uploads remain valid
+storage and reference/tool schemes; direct resource URLs show an explicit
+viewing-not-available state. Persisted resource tab entries are removed without
+deleting resource documents or local lineages. The deferred chat-launched pane
+overlay is recorded in [TODO](TODO.md); it is not a tab or a whole-app modal.
+
+Eligibility is enforced at every durable desk commit, including synchronized
+bootstrap, adoption and availability updates. Hiding a resource row alone is
+insufficient: a hidden tab must not remain eligible for close fallback.

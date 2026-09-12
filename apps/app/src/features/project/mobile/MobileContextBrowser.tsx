@@ -37,7 +37,7 @@ import {
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { fileKindIcon } from "../context/context-file-icon";
 import { mobileContextTreeOverflowTriggerClassName } from "../context/context-row-geometry";
-import { schemeIcon, schemeLabel, visibleContextSchemes } from "../context/context-schemes";
+import { EDITOR_CONTEXT_SCHEMES, schemeIcon, schemeLabel } from "../context/context-schemes";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { useCreateEntryForm } from "../context/use-create-entry-form";
 import { useRenameEntryForm } from "../context/use-rename-entry-form";
@@ -99,7 +99,7 @@ export function MobileContextBrowser({
   onCreateDone,
 }: MobileContextBrowserProps) {
   const workId = editorWorkId;
-  const schemes = visibleContextSchemes(workId);
+  const schemes = EDITOR_CONTEXT_SCHEMES;
   const { works } = useWorks(projectId);
 
   if (activeContextScheme) {
@@ -449,6 +449,7 @@ function MobileFolderRow({
           projectId={projectId}
           editorWorkId={editorWorkId}
           scheme={scheme}
+          entryId={dir.entryId}
           path={dir.path}
           currentName={dir.name}
           siblingNames={siblingNames}
@@ -508,6 +509,7 @@ function MobileFileRow({
           projectId={projectId}
           editorWorkId={editorWorkId}
           scheme={scheme}
+          entryId={file.documentId}
           path={file.path}
           currentName={file.name}
           siblingNames={siblingNames}
@@ -550,6 +552,7 @@ function MobileRenameRow({
   projectId,
   editorWorkId,
   scheme,
+  entryId,
   path,
   currentName,
   siblingNames,
@@ -560,6 +563,7 @@ function MobileRenameRow({
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
+  entryId: string;
   path: string;
   currentName: string;
   siblingNames: readonly string[];
@@ -571,6 +575,7 @@ function MobileRenameRow({
     projectId,
     workId: editorWorkId,
     scheme,
+    entryId,
     path,
     currentName,
     siblingNames,

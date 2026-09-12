@@ -3,10 +3,17 @@
 import type { ResolvedWorkAuthority, WorkSlug } from "./works/index.js";
 import { decodeWorkSlug } from "./works/index.js";
 
-export const CONTEXT_URI_SCHEMES = ["manuscript", "kb", "user", "scratch", "uploads"] as const;
+export const CONTEXT_URI_SCHEMES = [
+  "manuscript",
+  "kb",
+  "user",
+  "unfiled",
+  "scratch",
+  "uploads",
+] as const;
 export type ContextUriScheme = (typeof CONTEXT_URI_SCHEMES)[number];
 
-export const PROJECT_SCOPED_CONTEXT_URI_SCHEMES = ["manuscript", "kb", "user"] as const;
+export const PROJECT_SCOPED_CONTEXT_URI_SCHEMES = ["manuscript", "kb", "user", "unfiled"] as const;
 export type ProjectScopedContextUriScheme = (typeof PROJECT_SCOPED_CONTEXT_URI_SCHEMES)[number];
 
 export const WORK_SCOPED_CONTEXT_URI_SCHEMES = ["scratch", "uploads"] as const;

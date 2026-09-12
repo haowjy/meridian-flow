@@ -42,6 +42,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await db.insert(schema.threads).values([
         {
+          slug: `fixture-${THREAD_ID}`,
           id: THREAD_ID,
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,
@@ -50,6 +51,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           status: "idle",
         },
         {
+          slug: `fixture-${OTHER_THREAD_ID}`,
           id: OTHER_THREAD_ID,
           projectId: PROJECT_ID,
           createdByUserId: USER_ID,

@@ -148,22 +148,10 @@ it("submits the Work captured when delete confirmation was requested", async () 
         tabs: [
           {
             kind: "tracked",
-            documentId: "document-a",
-            scheme: "scratch",
-            path: "/same.md",
-            name: "same.md",
-            workId: "work-a",
-            editable: true,
-            filetype: "markdown",
-            schemaType: "document",
-          },
-          {
-            kind: "tracked",
             documentId: "document-b",
-            scheme: "scratch",
+            scheme: "manuscript",
             path: "/other.md",
             name: "other.md",
-            workId: "work-a",
             editable: true,
             filetype: "markdown",
             schemaType: "document",
@@ -174,13 +162,7 @@ it("submits the Work captured when delete confirmation was requested", async () 
     },
     _deskHydrated: true,
   });
-  const invalidation = vi.spyOn(queryClient, "invalidateQueries").mockImplementation(async () => {
-    expect(
-      useContextTabsStore
-        .getState()
-        .byProject.project?.tabs.some((tab) => tab.documentId === "document-a"),
-    ).toBe(false);
-  });
+  const invalidation = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
   await withReactRoot(
     <QueryClientProvider client={queryClient}>
       <AccountFeatureTestProvider accountId="account-1">

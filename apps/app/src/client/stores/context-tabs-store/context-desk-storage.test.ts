@@ -88,37 +88,6 @@ it("makes an old-account realm stale after the durable account reset", async () 
   });
 });
 
-it("normalizes a tracked Work move in the durable reducer and reloads it", async () => {
-  const storage = new MemoryStorage();
-  const ledger = new DeviceContextDeskLedger(storage, "account", locks);
-  const tab = {
-    kind: "tracked" as const,
-    tabInstanceId: "tab-doc",
-    documentId: "doc",
-    scheme: "scratch" as const,
-    path: "/work/work-1/doc.md",
-    name: "Doc",
-    workId: "work-1",
-    editable: true as const,
-    filetype: "markdown" as const,
-    schemaType: "document" as const,
-  };
-  await ledger.apply({ kind: "open", projectId: "project", tab });
-  await ledger.apply({
-    kind: "select",
-    projectId: "project",
-    workId: "work-1",
-    tabInstanceId: "tab-doc",
-  });
-  await ledger.apply({ kind: "open", projectId: "project", tab: { ...tab, workId: "work-2" } });
-
-  const reloaded = new DeviceContextDeskLedger(storage, "account", locks);
-  expect(reloaded.snapshot().projects.project).toMatchObject({
-    tabs: [{ documentId: "doc", workId: "work-2" }],
-    selectedTabIdByWork: {},
-  });
-});
-
 it("installs an exact settled draft that was never durable", async () => {
   const storage = new MemoryStorage();
   const ledger = new DeviceContextDeskLedger(storage, "account", locks);
@@ -312,26 +281,102 @@ it("leaves the prior authority on a storage failure", async () => {
   expect(ledger.snapshot().projects.project?.tabs).toHaveLength(1);
 });
 
-it("retains a no-Work binary tab and unrelated desk entries across reload", async () => {
+it.each([
+  "scratch",
+  "uploads",
+] as const)("removes stored %s tabs and selections without discarding local writing", (scheme) => {
   const storage = new MemoryStorage();
-  const ledger = new DeviceContextDeskLedger(storage, "account", locks);
-  await ledger.apply({ kind: "open", projectId: "project", tab: localTab("local") });
-  await ledger.apply({
-    kind: "open",
-    projectId: "project",
-    tab: {
-      kind: "viewer",
-      documentId: "image",
-      scheme: "uploads",
-      path: "/Map.png",
-      name: "Map.png",
-      editable: false,
-      fileType: "image",
+  storage.value = JSON.stringify({
+    version: 3,
+    accountId: "account",
+    deskRevision: 4,
+    projects: {
+      project: {
+        tabs: [
+          localTab("local"),
+          {
+            kind: "viewer",
+            tabInstanceId: "resource-tab",
+            documentId: "resource",
+            scheme,
+            path: "/Map.png",
+            name: "Map.png",
+            editable: false,
+            fileType: "image",
+          },
+        ],
+        selectedTabIdByWork: { work: "resource", "": "local" },
+      },
     },
   });
   const reloaded = new DeviceContextDeskLedger(storage, "account", locks);
-  expect(reloaded.snapshot().projects.project?.tabs.map((tab) => tab.documentId)).toEqual([
-    "local",
-    "image",
-  ]);
+  expect(reloaded.snapshot().projects.project).toMatchObject({
+    tabs: [{ documentId: "local" }],
+    selectedTabIdByWork: { "": "local" },
+  });
+});
+
+it.each([
+  "reconcile-bootstrap",
+  "apply-availability",
+] as const)("does not admit resources through %s", async (kind) => {
+  const ledger = new DeviceContextDeskLedger(new MemoryStorage(), "account", locks);
+  const tab = localTab("document");
+  await ledger.apply({ kind: "open", projectId: "project", tab });
+  await ledger.apply({
+    kind: "select",
+    projectId: "project",
+    workId: "",
+    tabInstanceId: tab.tabInstanceId,
+  });
+  const resource = {
+    kind: "tracked" as const,
+    documentId: "document",
+    tabInstanceId: tab.tabInstanceId,
+    scheme: "scratch" as const,
+    path: "/Draft.md",
+    name: "Draft.md",
+    editable: true as const,
+    filetype: "markdown" as const,
+    schemaType: "document" as const,
+  };
+  const result = await ledger.apply(
+    kind === "reconcile-bootstrap"
+      ? {
+          kind,
+          projectId: "project",
+          priorTabs: [tab],
+          nextTabs: [resource],
+        }
+      : {
+          kind,
+          projectId: "project",
+          removals: [],
+          selections: [],
+          updates: [{ prior: tab, next: resource }],
+        },
+  );
+  expect(result.snapshot.projects.project).toEqual({ tabs: [], selectedTabIdByWork: {} });
+});
+
+it("does not publish an open superseded while waiting for the desk lock", async () => {
+  const storage = new MemoryStorage();
+  let enter!: () => Promise<unknown>;
+  const delayedLocks = {
+    request: <T>(_name: string, _options: { mode: "exclusive" }, callback: () => T | Promise<T>) =>
+      new Promise<T>((resolve) => {
+        enter = async () => resolve(await callback());
+      }),
+  };
+  const ledger = new DeviceContextDeskLedger(storage, "account", delayedLocks);
+  let current = true;
+  const pending = ledger.apply(
+    { kind: "open", projectId: "project", tab: localTab("obsolete") },
+    () => current,
+  );
+  current = false;
+  await enter();
+  expect((await pending).kind).toBe("stale");
+  expect(storage.value).toBeNull();
+  expect(ledger.snapshot().projects.project).toBeUndefined();
 });

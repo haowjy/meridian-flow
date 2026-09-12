@@ -103,7 +103,7 @@ export function useIdentityCommit({
         {
           documentId: tab.documentId,
           projectId,
-          ...(editorWorkId ? { home: { scheme: "scratch" as const, workId: editorWorkId } } : {}),
+          home: { scheme: "unfiled" },
         },
         plan.desired,
       );

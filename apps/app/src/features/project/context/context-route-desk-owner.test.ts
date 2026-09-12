@@ -2,11 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { ContextTab } from "@/client/stores";
 import { resolveDeskRoute } from "./context-route-desk-owner";
 
-const local = (id: string, workId: string): ContextTab => ({
+const local = (id: string): ContextTab => ({
   kind: "new",
   documentId: id,
   name: "Untitled",
-  workId,
 });
 const tracked = (
   id: string,
@@ -28,30 +27,30 @@ const tracked = (
 
 describe("resolveDeskRoute", () => {
   it("uses the exact selected ID among multiple empty tabs", () => {
-    const tabs = [local("first", "a"), local("second", "a")];
+    const tabs = [local("first"), local("second")];
     expect(
       resolveDeskRoute({
         tabs,
         selectedDocumentId: "first",
-        locator: { scheme: "scratch", path: "", workId: "a" },
+        locator: { scheme: "unfiled", path: "", workId: "a" },
       }),
     ).toMatchObject({ kind: "owner", tab: { documentId: "first" } });
   });
-  it("does not grant a wrong-Work local tab authority", () => {
+  it("allows a project-owned local tab with no Work", () => {
     expect(
       resolveDeskRoute({
-        tabs: [local("n", "a")],
+        tabs: [local("n")],
         selectedDocumentId: "n",
-        locator: { scheme: "scratch", path: "", workId: "b" },
+        locator: { scheme: "unfiled", path: "", workId: null },
       }),
-    ).toEqual({ kind: "unowned" });
+    ).toMatchObject({ kind: "owner", tab: { documentId: "n" } });
   });
   it("returns a redirect fact for the exact materialized local owner", () => {
     expect(
       resolveDeskRoute({
         tabs: [tracked("n", "/Untitled.md", "a", "local-untitled")],
         selectedDocumentId: "n",
-        locator: { scheme: "scratch", path: "", workId: "a" },
+        locator: { scheme: "unfiled", path: "", workId: "a" },
       }),
     ).toMatchObject({ kind: "materialized-local", target: { path: "/Untitled.md" } });
   });
@@ -66,7 +65,7 @@ describe("resolveDeskRoute", () => {
       resolveDeskRoute({
         tabs: [tab],
         selectedDocumentId: "n",
-        locator: { scheme: "scratch", path: "", workId: "a" },
+        locator: { scheme: "unfiled", path: "", workId: "a" },
       }),
     ).toMatchObject({
       kind: "materialized-local",

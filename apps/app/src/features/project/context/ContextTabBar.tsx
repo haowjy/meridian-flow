@@ -57,7 +57,7 @@ export type ContextTabBarProps = {
   optimisticTab?: OptimisticContextTab | null;
   onSelect: (documentId: string) => void;
   onClose: (documentId: string) => void;
-  onNewDocument: () => void;
+  onNewDocument?: () => void;
   /**
    * Pinned control docked at the strip's far-left edge (e.g. the project
    * sidebar expand toggle when the sidebar is collapsed). When present, the
@@ -114,6 +114,8 @@ export function ContextTabBar({
             <button
               type="button"
               onClick={onNewDocument}
+              disabled={!onNewDocument}
+              title={!onNewDocument ? t`Open a Work to create an Untitled document` : undefined}
               aria-label={t`New tab`}
               className="focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center text-muted-foreground before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-background/50"
             >

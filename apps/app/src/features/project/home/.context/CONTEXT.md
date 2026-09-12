@@ -10,8 +10,9 @@ category projection and moves only the affected Home thread.
 `useHomeChatFeed` owns the Home query plus mounted-caller presentation and orchestration.
 Thread lifecycle projection owns the independent `actionRequired` fact and
 converges it across Project, Home, and matching Work feed caches.
-The Home feature keeps screen composition in `HomeScreen`, stable-ID creation,
-ambiguity reconciliation, and route-only retry in `useHomeFirstSendAttempt`,
+The Home feature keeps screen composition in `HomeScreen` and delegates creation
+to the shared `features/chat/CreationComposer` and account-owned
+`client/first-send-continuity/creation-controller`,
 borderless two-line row semantics in the shared, Home-neutral
 `../chat-list/ProjectChatRow`, list and section layout plus
 cursor-observer lifecycle in `HomeFeed`, date policy in `../chat-list/project-chat-activity-date`,
@@ -19,18 +20,27 @@ and scroll/focus restoration in the favorite-movement hook. Do not duplicate
 any of those concerns in the screen orchestrator. Work detail renders that same
 row component; Work identity inside every list row is display-only.
 
-`HomeFirstSendLifecycle` is the sole Home creation authority: `idle`, `creating`,
-`reconciling`, `refused`, `ambiguous`, `routing`, `route_failed`, and
-`mismatched` are exhaustive. Only the named `work_unavailable` and
-`agent_not_found` server refusals unlock creation-context repair. Ambiguous
-attempts retain their stable ID, text, Work, and Agent until same-ID
-reconciliation succeeds. A mismatch is never staged or opened; **Start over**
-retires it so the next submission allocates a fresh ID. An empty Work catalog
-is valid No Work, and the writer may switch explicitly between No Work and a
-real Work. After a matching canonical thread is prepared, Home stages the
-complete immutable Composer envelope plus the latest full draft snapshot in
-account-scoped IndexedDB before navigation. Destination Chat owns admission
-claim and settlement; the thread store does not model first-send continuity.
+Project Home and the Chats landing observe one persisted creation slot per account and
+creation context. Prospective Work and Agent choices live in that same slot,
+not in each mounted Composer. Queued choice writes settle before first-send
+reservation; they never mutate a locked attempt. Missing saved choices remain
+explicitly unavailable until the writer chooses a replacement, rather than
+silently becoming No Work or the default Agent. Immutable uncertain attempts
+still reconcile even if a catalog choice later becomes unavailable. The account owner, not a mounted Home or destination Chat,
+atomically claims, creates, and reconciles project-scoped entities. Only
+definite Work/Agent refusals allow correcting captured choices; uncertain
+attempts retain their IDs and immutable original submission. Ready readable
+destination handles and first-send admission commit together. Destination Chat
+restores continuity only when its Composer revision still permits it, then
+retires exactly the restored durable revision. A newer destination edit must
+never be overwritten or retired to finish a handoff. Favorite/feed state is
+independent from this creation lifecycle.
+
+The Chats landing (`/p/:project/chats`) always composes the shared creation
+Composer above the existing chat feed, on desktop and phone. No button or
+separate `/chats/new` destination gates drafting. Opening the landing creates
+nothing; first send remains the account-owned creation operation. Home uses the
+same content, with its own pane title.
 
 ## Row layout and feed behavior
 

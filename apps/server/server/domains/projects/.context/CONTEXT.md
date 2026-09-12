@@ -13,6 +13,12 @@ This domain is not the full project CRUD surface; that lives in
 
 ## Contracts
 
+Project handles are owner-scoped, title-derived at creation, and stable across
+renames. Both personal bootstrap and ordinary creation serialize allocation on
+the same owner lock. Project, Work and chat handles remain reserved through soft
+deletion. Exact `findLiveByOwnerSlug` lookup is separate from UUID `findById`;
+missing, foreign-owner and deleted handles resolve unavailable.
+
 | Contract | Purpose |
 |---|---|
 | `ProjectRepository.ensureDefaultBootstrap(userId)` | Returns the converged `DefaultBootstrap` bundle for the authenticated user. |
@@ -58,7 +64,7 @@ This domain is not the full project CRUD surface; that lives in
   contain only the requested catalog Works and never select a Work implicitly.
 - Work slugs are stable project-unique handles assigned at creation. Rename does
   not change a slug; UUID-shaped names keep their valid UUID-shaped slug. Soft
-  deletion releases both active name and slug uniqueness. Lookup direction is
+  deletion releases active name uniqueness but reserves the slug. Lookup direction is
   exact: ID resolution never falls back to slug resolution or vice versa.
 - Work deletion refuses live thread memberships, unreviewed drafts, and live
   files or folders in Work-owned context sources. Empty provisioned sources do
@@ -66,7 +72,7 @@ This domain is not the full project CRUD surface; that lives in
   Work lifecycle row lock; the draft predicate is evaluated inside the deleting
   transaction after that lock. Reviewable branch-journal creation and redo use
   the same lifecycle boundary. Restore refuses rather than clobbering a
-  reclaimed active name or slug.
+  reclaimed active name.
 
 ## Relationship to `domains/projects`
 

@@ -20,6 +20,7 @@ import type {
   ProjectContextTreeScheme,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
+import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
@@ -74,8 +75,6 @@ export type ContextTab =
       kind: "new";
       documentId: string;
       name: string;
-      /** Canonical Work owner captured when the local Scratch document is created. */
-      workId: string;
       lineageHandle?: string;
       identityRevision?: number;
       draftOnly?: boolean;
@@ -98,7 +97,7 @@ type ContextTabsState = {
 };
 
 type ContextTabsActions = {
-  openTab: (projectId: string, tab: ContextTab) => Promise<void>;
+  openTab: (projectId: string, tab: ContextTab, isCurrent?: () => boolean) => Promise<void>;
   remintNewTab: (projectId: string, documentId: string, replacementId: string) => Promise<void>;
   materializeNewTab: (
     projectId: string,
@@ -157,10 +156,9 @@ function emptySlice(): ProjectTabsSlice {
   return EMPTY_SLICE;
 }
 
-export function contextTabMayBeSelectedForWork(tab: ContextTab, workId: string): boolean {
-  return tab.kind === "new" || tab.scheme === "scratch" || tab.scheme === "uploads"
-    ? tab.workId === workId
-    : true;
+/** All desk mutation paths share the same Editor document admission rule. */
+export function isEditorContextTab(tab: ContextTab): boolean {
+  return tab.kind === "new" || !isWorkScopedProjectContextScheme(tab.scheme);
 }
 
 function normalizeSelections(
@@ -169,15 +167,15 @@ function normalizeSelections(
 ): Record<string, string> {
   const byId = new Map(tabs.map((tab) => [tab.documentId, tab]));
   return Object.fromEntries(
-    Object.entries(selections).filter(([workId, documentId]) => {
+    Object.entries(selections).filter(([, documentId]) => {
       const tab = byId.get(documentId);
-      return tab !== undefined && contextTabMayBeSelectedForWork(tab, workId);
+      return tab !== undefined && isEditorContextTab(tab);
     }),
   );
 }
 
 function durableSlice(slice: ProjectTabsSlice): ProjectTabsSlice {
-  const tabs = slice.tabs.filter((tab) => !tab.draftOnly);
+  const tabs = slice.tabs.filter((tab) => !tab.draftOnly && isEditorContextTab(tab));
   return { tabs, selectedTabIdByWork: normalizeSelections(tabs, slice.selectedTabIdByWork) };
 }
 
@@ -226,7 +224,8 @@ function projectSnapshot(snapshot: {
 export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>()(
   devtools(
     (rawSet, get) => {
-      const dispatchResult = async (build: DeskCommandBuilder) => {
+      const dispatchResult = async (build: DeskCommandBuilder, isCurrent?: () => boolean) => {
+        if (isCurrent?.() === false) return null;
         const current = get();
         const command = build(current);
         if (!command) return null;
@@ -244,7 +243,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           return reduced;
         }
         const ledger = deviceDesk;
-        const result = await ledger.apply(command);
+        const result = await ledger.apply(command, isCurrent);
         const mounted = get();
         if (
           deviceDesk === ledger &&
@@ -254,8 +253,8 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           rawSet(projectSnapshot(result.snapshot));
         return result;
       };
-      const dispatch = (build: DeskCommandBuilder): Promise<void> =>
-        dispatchResult(build).then(() => undefined);
+      const dispatch = (build: DeskCommandBuilder, isCurrent?: () => boolean): Promise<void> =>
+        dispatchResult(build, isCurrent).then(() => undefined);
 
       return {
         byProject: {},
@@ -263,7 +262,8 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         _deskHydrated: false,
         _deskRevision: 0,
 
-        openTab: (projectId, input) => {
+        openTab: (projectId, input, isCurrent) => {
+          if (isCurrent?.() === false || !isEditorContextTab(input)) return Promise.resolve();
           const tab = { ...input, tabInstanceId: input.tabInstanceId ?? crypto.randomUUID() };
           if (tab.draftOnly) {
             rawSet((base) => {
@@ -312,6 +312,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                 ...(tab.kind === "new" ? { expectedDeskRevision: base._deskRevision } : {}),
                 tab,
               }) as DeviceContextDeskCommand,
+            isCurrent,
           );
         },
 
@@ -378,9 +379,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           const overlay = get()._reviewOverlayByProject[projectId];
           if (
             documentId !== null &&
-            overlay?.tabs.some(
-              (tab) => tab.documentId === documentId && contextTabMayBeSelectedForWork(tab, workId),
-            )
+            overlay?.tabs.some((tab) => tab.documentId === documentId && isEditorContextTab(tab))
           ) {
             rawSet((base) => ({
               _reviewOverlayByProject: {

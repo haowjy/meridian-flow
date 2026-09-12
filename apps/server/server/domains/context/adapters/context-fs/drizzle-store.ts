@@ -12,14 +12,20 @@ import {
 } from "../../../../shared/drizzle-transaction.js";
 import { renderFilename } from "../../context/paths.js";
 import type { ContextCatalogMutationPort } from "../../ports/context-catalog.js";
-import type {
-  ContextDocument,
-  ContextDocumentStore,
-  ContextFolder,
-  CreateBinaryDocumentInput,
-  UpsertBinaryDocumentInput,
-  UpsertDocumentInput,
+import {
+  type ContextDocument,
+  type ContextDocumentStore,
+  ContextEntryConflictError,
+  type ContextFolder,
+  type CreateBinaryDocumentInput,
+  type UpsertBinaryDocumentInput,
+  type UpsertDocumentInput,
 } from "../../ports/context-document-store.js";
+import {
+  claimDocumentLocation,
+  hasOppositeContextEntry,
+  lockContextSources,
+} from "./document-locations.js";
 import type { ContextDocumentMembershipObserver } from "./membership-event-dispatcher.js";
 
 export type { ContextDocumentMembershipObserver } from "./membership-event-dispatcher.js";
@@ -139,12 +145,16 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
 
   async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {
     return runInDrizzleTransaction(this.deps.db, async () => {
+      await lockContextSources(this.deps.db, [this.sourceId]);
+      if (await hasOppositeContextEntry(this.db, this.sourceId, parentId, name, "folder"))
+        throw new ContextEntryConflictError();
       const [row] = await this.db
         .insert(folders)
         .values({ contextSourceId: this.sourceId, parentId, name })
         .onConflictDoNothing()
         .returning();
       if (row) {
+        await claimDocumentLocation(this.deps.db, this.sourceId, parentId, name);
         await this.deps.catalogMutations?.refreshSources([this.sourceId]);
         return mapFolder(row);
       }
@@ -182,6 +192,17 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
 
   async upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument> {
     return runInDrizzleTransaction(this.deps.db, async () => {
+      await lockContextSources(this.deps.db, [this.sourceId]);
+      if (
+        await hasOppositeContextEntry(
+          this.db,
+          this.sourceId,
+          input.folderId,
+          renderFilename(input.name, input.extension),
+          "file",
+        )
+      )
+        throw new ContextEntryConflictError();
       const existing = await this.findDocument(input.folderId, input.name, input.extension);
       if (existing && existing.fileType !== null) {
         throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
@@ -218,6 +239,12 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         })
         .returning();
       if (!row) throw new Error("Failed to insert document");
+      await claimDocumentLocation(
+        this.deps.db,
+        this.sourceId,
+        input.folderId,
+        renderFilename(input.name, input.extension),
+      );
       await this.deps.catalogMutations?.refreshSources([this.sourceId]);
       await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
       return mapDocument(row);
@@ -226,6 +253,17 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
 
   async createDocumentRecordIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
     return runInDrizzleTransaction(this.deps.db, async () => {
+      await lockContextSources(this.deps.db, [this.sourceId]);
+      if (
+        await hasOppositeContextEntry(
+          this.db,
+          this.sourceId,
+          input.folderId,
+          renderFilename(input.name, input.extension),
+          "file",
+        )
+      )
+        return null;
       const [row] = await this.db
         .insert(documents)
         .values({
@@ -242,6 +280,12 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         .onConflictDoNothing()
         .returning();
       if (!row) return null;
+      await claimDocumentLocation(
+        this.deps.db,
+        this.sourceId,
+        input.folderId,
+        renderFilename(input.name, input.extension),
+      );
       await this.deps.catalogMutations?.refreshSources([this.sourceId]);
       return mapDocument(row);
     });
@@ -282,6 +326,17 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
 
   async upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument> {
     return runInDrizzleTransaction(this.deps.db, async () => {
+      await lockContextSources(this.deps.db, [this.sourceId]);
+      if (
+        await hasOppositeContextEntry(
+          this.db,
+          this.sourceId,
+          input.folderId,
+          renderFilename(input.name, input.extension),
+          "file",
+        )
+      )
+        throw new ContextEntryConflictError();
       const existing = await this.findDocument(input.folderId, input.name, input.extension);
       if (existing) {
         const [row] = await this.db
@@ -305,6 +360,17 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
 
   async createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument> {
     return runInDrizzleTransaction(this.deps.db, async () => {
+      await lockContextSources(this.deps.db, [this.sourceId]);
+      if (
+        await hasOppositeContextEntry(
+          this.db,
+          this.sourceId,
+          input.folderId,
+          renderFilename(input.name, input.extension),
+          "file",
+        )
+      )
+        throw new ContextEntryConflictError();
       const [row] = await this.db
         .insert(documents)
         .values({
@@ -321,6 +387,12 @@ export class DrizzleContextDocumentStore implements ContextDocumentStore {
         })
         .returning();
       if (!row) throw new Error("Failed to create binary document");
+      await claimDocumentLocation(
+        this.deps.db,
+        this.sourceId,
+        input.folderId,
+        renderFilename(input.name, input.extension),
+      );
       await this.deps.catalogMutations?.refreshSources([this.sourceId]);
       await notifyMembershipObserver(this.deps.membershipObserver, "documentCreated", row.id);
       return mapDocument(row);

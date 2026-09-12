@@ -14,11 +14,15 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import type { ContextTab } from "@/client/stores";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { EditorView } from "@/features/editor/EditorView";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
+import { ContextEditorMountHost } from "../context/ContextEditorMountHost";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
+import { resolveDeskRoute } from "../context/context-route-desk-owner";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useLiveDocumentBinding } from "../context/use-live-document-binding";
 import { useLiveBindingAcknowledgementHost } from "../dock/editor-review-handoff";
@@ -27,17 +31,79 @@ import type { MobileDocumentRoute } from "./mobile-document-route";
 
 let mobileHostGeneration = 0;
 
-const EditorView = lazy(() =>
-  import("@/features/editor/EditorView").then((m) => ({ default: m.EditorView })),
-);
-
 export type MobileDocumentHostProps = {
   projectId: string;
   editorWorkId: string | null;
   route: MobileDocumentRoute;
+  localTab?: Extract<ContextTab, { kind: "new" | "tracked" }>;
 };
 
-export function MobileDocumentHost({ projectId, editorWorkId, route }: MobileDocumentHostProps) {
+export function MobileDocumentHost(props: MobileDocumentHostProps) {
+  return props.localTab ? (
+    <MobileLocalDocumentHost
+      projectId={props.projectId}
+      workId={props.editorWorkId}
+      tab={props.localTab}
+    />
+  ) : (
+    <MobileServerDocumentHost {...props} />
+  );
+}
+
+function MobileLocalDocumentHost({
+  projectId,
+  workId,
+  tab,
+}: {
+  projectId: string;
+  workId: string | null;
+  tab: Extract<ContextTab, { kind: "new" | "tracked" }>;
+}) {
+  const removal = useContextRemovalCoordinator();
+  const state = useContextRemovalProject(projectId);
+  useLayoutEffect(() => {
+    const selected = state.selection;
+    if (
+      selected.status === "none" ||
+      selected.locator.scheme !== "unfiled" ||
+      selected.locator.path !== "" ||
+      selected.locator.workId !== workId
+    )
+      return;
+    const desk = resolveDeskRoute({
+      tabs: [tab],
+      selectedDocumentId: tab.documentId,
+      locator: selected.locator,
+    });
+    if (desk.kind === "materialized-local") {
+      removal.redirectMaterializedLocal(projectId, selected.revision, tab.documentId, desk.target);
+    } else if (desk.kind === "owner") {
+      if (selected.status === "candidate")
+        removal.bindRouteSelection(projectId, selected.revision, desk.identity);
+      else if (selected.status === "bound" && selected.identity.documentId === tab.documentId)
+        removal.activate({
+          projectId,
+          selectionRevision: selected.revision,
+          transitionRevision: state.transitionRevision,
+          locator: selected.locator,
+          identity: selected.identity,
+          owner: { kind: "route-only" },
+        });
+    }
+  }, [projectId, workId, tab, removal, state]);
+  return (
+    <ContextEditorMountHost
+      projectId={projectId}
+      workId={workId}
+      trackedTabs={[tab]}
+      activeTabId={tab.documentId}
+      active
+      readOnly
+    />
+  );
+}
+
+function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocumentHostProps) {
   const workId = editorWorkId;
   const projectionOwner = useRef({});
   const hostGeneration = useRef(++mobileHostGeneration);
@@ -202,30 +268,21 @@ export function MobileDocumentHost({ projectId, editorWorkId, route }: MobileDoc
   return (
     <div className="relative h-full min-h-0">
       <PassageNotice documentId={activeTab.documentId} />
-      <Suspense
-        fallback={
-          <DocumentStatus tone="muted">
-            <Loader2 className="size-4 animate-spin" aria-hidden />
-            <Trans>Opening document…</Trans>
-          </DocumentStatus>
-        }
-      >
-        <EditorView
-          projectId={projectId}
-          workId={workId}
-          documentId={activeTab.documentId}
-          session={liveSession}
-          schemaType={activeTab.schemaType}
-          editable={false}
-          showToolbar={false}
-          ariaLabel={t`Read-only live document`}
-          showCollaborationDecorations={false}
-          reviewDraftId={reviewDraftId}
-          reviewRoomName={reviewRoomName}
-          reviewWorkId={reviewDraftId ? controller.workId : null}
-          onReviewSessionUnavailable={controller.exitInlineReview}
-        />
-      </Suspense>
+      <EditorView
+        projectId={projectId}
+        workId={workId}
+        documentId={activeTab.documentId}
+        session={liveSession}
+        schemaType={activeTab.schemaType}
+        editable={false}
+        showToolbar={false}
+        ariaLabel={t`Read-only live document`}
+        showCollaborationDecorations={false}
+        reviewDraftId={reviewDraftId}
+        reviewRoomName={reviewRoomName}
+        reviewWorkId={reviewDraftId ? controller.workId : null}
+        onReviewSessionUnavailable={controller.exitInlineReview}
+      />
     </div>
   );
 }

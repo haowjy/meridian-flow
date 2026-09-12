@@ -10,6 +10,21 @@ import {
 const PROJECT_ID = "project-1";
 
 describe("WorkRepository", () => {
+  it("rejects reuse of a deleted creation ID without replacing its reserved handle", async () => {
+    const repo = createInMemoryWorkRepository();
+    const first = await repo.create({
+      id: "same-work-id",
+      projectId: PROJECT_ID,
+      name: "Book Two",
+    });
+    await repo.softDelete(first.id);
+    const deleted = await repo.findById(first.id);
+    await expect(
+      repo.create({ id: first.id, projectId: PROJECT_ID, name: "Book Two" }),
+    ).rejects.toThrow();
+    expect(await repo.findById(first.id)).toEqual(deleted);
+  });
+
   it("updates metadata and treats archive as an unguarded visibility state", async () => {
     const repo = createInMemoryWorkRepository({
       hasLiveThreads: () => true,
@@ -128,7 +143,7 @@ describe("WorkRepository", () => {
     });
   });
 
-  it("refuses restore when the deleted Work's name or slug was reclaimed", async () => {
+  it("reserves deleted Work handles while allowing names to be reused", async () => {
     const nameRepo = createInMemoryWorkRepository();
     const nameOwner = await nameRepo.create({ projectId: PROJECT_ID, name: "Reclaimed" });
     await nameRepo.softDelete(nameOwner.id);
@@ -140,10 +155,10 @@ describe("WorkRepository", () => {
     const slugRepo = createInMemoryWorkRepository();
     const slugOwner = await slugRepo.create({ projectId: PROJECT_ID, name: "Book 2!" });
     await slugRepo.softDelete(slugOwner.id);
-    await slugRepo.create({ projectId: PROJECT_ID, name: "Book 2?" });
-    await expect(slugRepo.restore(slugOwner.id)).rejects.toEqual(
-      new WorkRestoreConflictError("slug"),
+    expect((await slugRepo.create({ projectId: PROJECT_ID, name: "Book 2?" })).slug).toBe(
+      "book-2-2",
     );
+    await expect(slugRepo.restore(slugOwner.id)).resolves.toMatchObject({ slug: "book-2" });
   });
 });
 

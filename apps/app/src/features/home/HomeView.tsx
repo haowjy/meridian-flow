@@ -1,12 +1,7 @@
-import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { MessageSquarePlus } from "lucide-react";
-import { useState } from "react";
-import { Composer } from "@/components/app/composer";
 import { Button } from "@/components/ui/button";
-import { DEFAULT_AGENT_SLUG } from "@/features/agents";
-import { AgentOnlyComposerToolbar } from "@/features/chat/ChatComposerToolbar";
-import { useComposerNewProject } from "@/features/chat/useComposerNewProject";
+import { CreationComposer } from "@/features/chat/CreationComposer";
 import { useStartIndependentChat } from "@/features/chat/useStartIndependentChat";
 import { HomeColumn } from "@/features/home/HomeColumn";
 import { HomeHero } from "@/features/home/HomeHero";
@@ -15,39 +10,18 @@ import { RecentProjects } from "@/features/home/RecentProjects";
 
 /**
  * Authenticated Home: composer + recent projects + first-party package cards.
- * Submitting the composer creates a project optimistically and navigates to it.
+ * Submitting reserves a durable creation attempt before requesting a project.
  * A secondary action starts an independent (project-less) chat instead.
  */
 export function HomeView() {
-  const handleSubmit = useComposerNewProject({ announceStarted: true });
   const startIndependentChat = useStartIndependentChat();
-  const [selectedAgentSlug, setSelectedAgentSlug] = useState(DEFAULT_AGENT_SLUG);
 
   return (
     <HomeColumn>
       <HomeHero />
 
       <div className="mt-6">
-        <Composer
-          variant="hero"
-          autoFocus
-          placeholder={t`Start writing…`}
-          onSubmit={(envelope) => {
-            handleSubmit(envelope.text, selectedAgentSlug);
-            return {
-              kind: "accepted",
-              submissionId: envelope.submissionId,
-              acceptedRevision: envelope.acceptedRevision,
-            };
-          }}
-          toolbarLeft={
-            <AgentOnlyComposerToolbar
-              projectId={null}
-              agentSlug={selectedAgentSlug}
-              onAgentChange={setSelectedAgentSlug}
-            />
-          }
-        />
+        <CreationComposer projectId={null} autoFocus />
       </div>
 
       <div className="mt-2 flex justify-center">

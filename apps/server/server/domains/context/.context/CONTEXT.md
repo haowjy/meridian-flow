@@ -3,7 +3,7 @@
 Agent-readable/writable project workspace content addressed by context URIs.
 The context-URI cleanse (A0–A3) deleted the legacy dual-port and replaced it
 with a single unified `ContextPort` that resolves durable project schemes
-(`manuscript://`, `kb://`, `user://`) and work-item-scoped schemes
+(`manuscript://`, `kb://`, `user://`, `unfiled://`) and work-item-scoped schemes
 (`scratch://@slug/…`, `uploads://@slug/…`) plus explicit no-Work `@/` authority.
 
 ## What it owns
@@ -31,7 +31,7 @@ with a single unified `ContextPort` that resolves durable project schemes
   schemes. Resolved through `contextPortForThread` (the resolver in
   `context-port-resolution.ts`); callers never use `forProject`/`forWork` directly.
 - **Context URI primitives** — `parseUnifiedContextUri` / `toCanonical`
-  normalize the five registered schemes: `manuscript`, `kb`, `user`, `scratch`,
+  normalize the six registered schemes: `manuscript`, `kb`, `user`, `unfiled`, `scratch`,
   `uploads`. Bare paths default to `manuscript://`. Work-scoped schemes
 (`scratch://`, `uploads://`) carry an `@<work-slug>` wire qualifier that the
 router resolves to exact project-scoped Work authority before dispatch.
@@ -72,7 +72,7 @@ router resolves to exact project-scoped Work authority before dispatch.
   by more than one asset resolves to nothing: the id direction is unique, the
   path direction is not.
 - **Document-link resolver port** (`ports/document-link-resolver.ts`) — one
-  resolution boundary for wikilink titles/aliases, all five canonical Context
+  resolution boundary for wikilink titles/aliases, all six canonical Context
   schemes, and relative paths. The domain reads the existing Context catalog
   and resolves Work qualifiers through project Work authority; it has no separate
   candidate loader or resolution cache. Personal scope comes from authenticated
@@ -90,12 +90,35 @@ router resolves to exact project-scoped Work authority before dispatch.
 
 | Contract | Shape |
 |---|---|
-| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `edit`, `writeBinary`, `move`, `commitWriterLocation`, identity-required `delete`, `list`, `mkdir`, and `search`. No errors cross as throws. |
+| `ContextPort` (`ports/context-port.ts`) | Result-returning filesystem surface: `stat`, `read`, `write`, `createTrackedDocument`, `createUntitledDocument`, `ensureTrackedDocument`, `edit`, `writeBinary`, `move`, `commitWriterLocation`, identity-required `delete`, `list`, `mkdir`, and `search`. `move` preserves filesystem container-target and optional-overwrite semantics; `commitWriterLocation` is the writer exact-target, provisional-name-graduating policy. Both delegate to one location mutation. Domain failures are Results; transaction infrastructure exceptions propagate unchanged. |
 | `ContextSchemeAdapter` | Scheme-local adapter over normalized paths. It never parses URIs; it returns scheme-relative paths and scope-free `AdapterFault`s. Its identity lookup lets the router recover a client-minted document across schemes. |
 | `SchemeCapabilities` | Per-scheme `writable` / `searchable` / `creatable` declaration owned in `ports/context-adapter.ts` and enforced by the server router and adapters. |
 | `ContextDocumentStore` | Primitive folder/document backing store for one context source, including project-wide stable-ID lookup used to classify idempotent creation retries. |
 | `ContextTreeMutationStore` | Tree-aware mutation store with atomic `move`/provisional-graduation/recursive `delete`. Location tokens compare stable node/source/path fields rather than content activity timestamps. Delete results preserve every exact descendant document ID; deleting an empty folder returns none. |
 | `DocumentLinkResolver` | `resolve({ projectId, userId, workId?, target })` returns one canonical Context document or `null`. A target is a discriminated `wikilink`, `scheme`, or `relative` value. |
+
+## Browser document addresses
+
+`document_previous_locations` is direct-to-identity bookmark history, not a
+second wikilink resolver. Moves capture only their file/subtree before DML and
+record each vacated file path. Successful file/folder claims consume the exact
+previous location. Failed inserts and rolled-back commands consume nothing.
+Bootstrap uses the same store; hidden manifest identities are outside this
+namespace. Project/Work restore changes availability, not file locations.
+
+The Context command transaction receives the complete resolved scheme/Work set.
+Personal User scopes first share the personal-project provisioning owner lock.
+Production then acquires sorted Work lifecycle locks and sorted logical namespace
+locks **before** source provisioning, preflight, or catalog publication. Logical
+keys exist before lazy source rows; direct Drizzle stores derive the same keys
+from backing ownership. Do not enter a single-source transaction and then issue
+a multi-source command with a larger lock set.
+
+Full paths can exceed the PostgreSQL B-tree tuple limit. History uses a hash
+index with exact equality rechecks, and namespace-locked replacement owns
+source/path uniqueness. All folder batches commit atomically. Current files or
+folders suppress aliases; an alias is returned only if its stable identity is
+currently available to the request owner in the requested project.
 
 ## URI and router invariants
 
@@ -113,7 +136,7 @@ router resolves to exact project-scoped Work authority before dispatch.
   qualifier. Omitted authority resolves contextually to the thread's real or absent scope; absent scope uses writable project-owned Scratch and Uploads sources. Every
   non-deleted Work in the same project is addressable regardless of thread
   membership; cross-project Works are refused. `manuscript://`,
-  `kb://`, `user://` carry no work authority.
+  `kb://`, `user://`, `unfiled://` carry no Work authority.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.
 - Wikilink title/alias matching is case-insensitive and trims outer whitespace.
   Scheme and relative paths are exact (an omitted final extension may match);
@@ -251,3 +274,11 @@ implementation. The `results://` scheme does not exist.
 ## Downlinks
 
 - [Collab write codec and schema coherence](../../collab/.context/CONTEXT.md)
+
+## Unfiled namespace
+
+`unfiled://` is project-owned document storage, with the same ContextFS,
+Yjs authority, catalog, availability and identity-preserving move operations as
+Manuscript and KB. Its membership means not yet filed; a name alone does not
+change that membership. It has no Work qualifier and remains accessible to
+normal context tools and reference resolution.

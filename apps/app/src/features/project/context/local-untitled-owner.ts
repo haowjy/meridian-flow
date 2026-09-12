@@ -47,6 +47,7 @@ export type LocalUntitledWorkSnapshot = Readonly<{
   key: LocalUntitledKey;
   ref: LocalUntitledLineageRef;
   revision: number;
+  identityRevision: number;
   workRevision: number;
   phase: "local" | "adopted";
   work: LocalUntitledWork;
@@ -112,6 +113,7 @@ function snapshot(lineage: LocalUntitledLineage): LocalUntitledWorkSnapshot | nu
     key,
     ref: lineage.ref,
     revision: lineage.envelopeRevision,
+    identityRevision: lineage.active.identityRevision,
     workRevision: lineage.work.workRevision,
     phase: lineage.kind,
     work: lineage.work,
@@ -545,7 +547,7 @@ export class LocalUntitledOwner {
               throw new Error("Local Untitled identity is already claimed");
             const persistenceId = this.dependencies.newPersistenceId?.() ?? crypto.randomUUID();
             const created: LocalLineageEnvelope = {
-              version: 3,
+              version: 4,
               kind: "local",
               ref,
               envelopeRevision: 1,
