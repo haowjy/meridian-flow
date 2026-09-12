@@ -207,6 +207,31 @@ export function ReadableProjectRoute({
     setNavigation(coordinator);
     return () => coordinator.dispose();
   }, [router]);
+  useEffect(() => {
+    if (!navigation || parsed.kind !== "valid") return;
+    // Router hrefs may normalize query escaping; the entry key identifies this render.
+    const ticket = navigation.capture();
+    if (ticket.key !== (location.state.__TSR_key ?? "")) return;
+    // A cached miss while a catalog refresh is pending is not confirmed unavailability.
+    navigation.repairQuerySelections(ticket, {
+      chat: threads.isError
+        ? { status: "error" }
+        : threads.isFetching || threads.threads === null
+          ? { status: "loading" }
+          : { status: "ready", entries: threads.threads },
+      work: works.isFetching ? { status: "loading" } : workCatalog,
+    });
+  }, [
+    navigation,
+    location,
+    threads.threads,
+    threads.isError,
+    threads.isFetching,
+    works.works,
+    works.status,
+    works.isFetching,
+  ]);
+
   const latest = useRef({ address, location, navigation, works: works.works });
   latest.current = { address, location, navigation, works: works.works };
   const captureNavigation = useCallback(() => {

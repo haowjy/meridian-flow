@@ -41,3 +41,21 @@ export function addressChatSelection(address: ProjectAddress): AddressSelection 
   if (d.kind === "chats") return { kind: "none" };
   return address.chat;
 }
+
+/** Repair optional query selectors only; path identities must never fall back. */
+export function guardProjectQuerySelections(
+  address: ProjectAddress,
+  catalogs: {
+    chat: AddressCatalog<{ slug: string | null }>;
+    work: AddressCatalog<{ slug: string | null }>;
+  },
+): ProjectAddress {
+  let next = address;
+  for (const key of ["chat", "work"] as const) {
+    const resolution = resolveAddressSelection(address[key], catalogs[key]);
+    if (resolution.status === "malformed" || resolution.status === "unavailable") {
+      next = { ...next, [key]: { kind: "none" } };
+    }
+  }
+  return next;
+}

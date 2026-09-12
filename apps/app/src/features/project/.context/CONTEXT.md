@@ -110,7 +110,7 @@ management and navigation never rebind a chat implicitly.
 
 The desktop left rail has one divider below destination navigation. Its
 Manuscript, Knowledge Base, User, Scratch, and Uploads panes are flush siblings
-with transparent headers. Scratch and Uploads resolve from the shell-owned Editor Work, whose real name appears in their header tooltip and accessible control name. An explicit route Work is authoritative even while persistent Chat belongs to another Work; malformed, loading, catalog-error, and confirmed-missing explicit values never fall back to Chat or mount Work-scoped leaves. With no explicit Work, the selected thread's durable Work ID remains authoritative even when catalog display data fails. The Work catalog never implicitly selects the first Work for Editor. A new readable entry may seed an absent Editor Work from the selected Chat once; subsequent Editor selection is independent. With no selected Chat it settles to explicit no Work. Loading and errors never become an empty selector, and archived Work remains manageable but cannot authorize content mutation. Uploads is intake-only and exposes no file or folder creation affordances.
+with transparent headers. Scratch and Uploads resolve from the shell-owned Editor Work, whose real name appears in their header tooltip and accessible control name. An explicit route Work is authoritative even while persistent Chat belongs to another Work; loading and catalog-error values never fall back to Chat or mount Work-scoped leaves. Invalid optional query selectors are cleared to no selection by the route guard; required path identities remain unavailable. With no explicit Work, the selected thread's durable Work ID remains authoritative even when catalog display data fails. The Work catalog never implicitly selects the first Work for Editor. A new readable entry may seed an absent Editor Work from the selected Chat once; subsequent Editor selection is independent. With no selected Chat it settles to explicit no Work. Loading and errors never become an empty selector, and archived Work remains manageable but cannot authorize content mutation. Uploads is intake-only and exposes no file or folder creation affordances.
 
 ### Slot paints the material; surfaces must not
 
@@ -257,10 +257,16 @@ admission still canonicalizes document paths and scope independently.
 
 A readable address has explicit selections, not defaults: absent, no-Work,
 slug, malformed, and unavailable remain distinct. Only genuinely absent Chat
-or Editor selections may use their respective local continuity rules. An
-explicit unavailable selector parks the relevant host and never invokes catalog
-fallback or Work normalization. Editor can seed its initially absent Work from
-the selected Chat once; afterwards Editor Work is independent from Chat Work.
+or Editor selections may use their respective local continuity rules.
+The shared query guard clears malformed or confirmed-missing optional Chat/Work
+selectors using synchronous, entry-guarded history replacement, pinning no selection
+without empty URL parameters. This same-destination repair bypasses blockers;
+it never queues a competing navigation behind a pending dirty-edit decision.
+Pending catalog refreshes and catalog errors never prove absence. Valid and omitted selectors are not rewritten. Duplicate query keys,
+invalid percent encoding, and conflicting path/query Work scope remain parser
+errors, not recoverable selector values. Required path identities remain
+unavailable rather than falling back. Editor can seed its initially absent Work
+from the selected Chat once; afterwards Editor Work is independent from Chat Work.
 With no selected Chat it is explicit no-Work. The Work catalog never selects a
 first Work for Editor.
 
