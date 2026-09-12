@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Open valid encoded URLs without stalling document navigation.
+
 - Clear invalid optional Chat and Work links without blocking the document or selecting a different Work.
 
 - Remove the background URL rewrite for resolved Chat and Editor Work defaults.

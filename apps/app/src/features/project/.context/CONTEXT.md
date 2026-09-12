@@ -258,6 +258,9 @@ admission still canonicalizes document paths and scope independently.
 A readable address has explicit selections, not defaults: absent, no-Work,
 slug, malformed, and unavailable remain distinct. Only genuinely absent Chat
 or Editor selections may use their respective local continuity rules.
+The navigation coordinator matches rendered entries by history key, because
+router and native URLs can spell the same query differently. Async tickets
+still retain and validate the native URL, entry key, and navigation revision.
 The shared query guard clears malformed or confirmed-missing optional Chat/Work
 selectors using synchronous, entry-guarded history replacement, pinning no selection
 without empty URL parameters. This same-destination repair bypasses blockers;

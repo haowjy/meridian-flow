@@ -43,7 +43,7 @@ export function ProjectAddressDocument({
   const { openTab } = useContextTabsActions();
   useEffect(() => {
     if (!navigation || !result || result.kind === "unavailable") return;
-    const ticket = navigation.captureForEntry({ href, key: entryKey });
+    const ticket = navigation.captureForEntry(entryKey);
     if (!ticket) return;
     const identity = { href, key: entryKey, documentId: result.document.documentId };
     const controller = new AbortController();

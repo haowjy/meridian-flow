@@ -209,9 +209,8 @@ export function ReadableProjectRoute({
   }, [router]);
   useEffect(() => {
     if (!navigation || parsed.kind !== "valid") return;
-    // Router hrefs may normalize query escaping; the entry key identifies this render.
-    const ticket = navigation.capture();
-    if (ticket.key !== (location.state.__TSR_key ?? "")) return;
+    const ticket = navigation.captureForEntry(location.state.__TSR_key ?? "");
+    if (!ticket) return;
     // A cached miss while a catalog refresh is pending is not confirmed unavailability.
     navigation.repairQuerySelections(ticket, {
       chat: threads.isError
@@ -237,10 +236,7 @@ export function ReadableProjectRoute({
   const captureNavigation = useCallback(() => {
     const current = latest.current.navigation;
     const location = latest.current.location;
-    const ticket = current?.captureForEntry({
-      href: location.href,
-      key: location.state.__TSR_key ?? "",
-    });
+    const ticket = current?.captureForEntry(location.state.__TSR_key ?? "");
     return () => !!ticket && !!current?.isCurrent(ticket);
   }, []);
   const reportSelection = useCallback(
@@ -331,8 +327,7 @@ export function ReadableProjectRoute({
   }, [projectId, resolvedThreadId]);
 
   async function go(next: ProjectAddress, options: NavigationOptions) {
-    if (!navigation?.captureForEntry({ href: location.href, key: location.state.__TSR_key ?? "" }))
-      return;
+    if (!navigation?.captureForEntry(location.state.__TSR_key ?? "")) return;
     return navigation.navigate(next, options);
   }
   function toDestination(next: ProjectDestination): ProjectAddress {
@@ -348,10 +343,7 @@ export function ReadableProjectRoute({
   }
   async function openChat(threadId: string, options: NavigationOptions, dock = false) {
     if (!threadId && dock) return go({ ...address, chat: NONE }, { replace: true });
-    const ticket = navigation?.captureForEntry({
-      href: location.href,
-      key: location.state.__TSR_key ?? "",
-    });
+    const ticket = navigation?.captureForEntry(location.state.__TSR_key ?? "");
     let thread = threads.threads?.find((thread) => thread.id === threadId);
     if (!thread?.slug) {
       const catalog = await listProjectThreads(projectId);
@@ -370,13 +362,7 @@ export function ReadableProjectRoute({
   const openContext = useCallback(
     async (target: ContextRouteTarget, options?: { replace?: boolean }) => {
       const current = latest.current;
-      if (
-        !current.navigation?.captureForEntry({
-          href: current.location.href,
-          key: current.location.state.__TSR_key ?? "",
-        })
-      )
-        return;
+      if (!current.navigation?.captureForEntry(current.location.state.__TSR_key ?? "")) return;
       const scoped = target.scheme === "scratch" || target.scheme === "uploads";
       const slug = target.workId
         ? current.works?.find((work) => work.id === target.workId)?.slug

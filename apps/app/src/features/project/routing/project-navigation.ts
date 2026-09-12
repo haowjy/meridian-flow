@@ -90,9 +90,10 @@ export function createProjectNavigation(
 
   return {
     capture,
-    captureForEntry(expected: { key: string; href: string }): ProjectNavigationTicket | null {
+    captureForEntry(entryKey: string): ProjectNavigationTicket | null {
       const ticket = capture();
-      return ticket.key === expected.key && ticket.href === expected.href ? ticket : null;
+      // Rendered hrefs normalize query escaping; history keys identify entries.
+      return ticket.key === entryKey ? ticket : null;
     },
     isCurrent,
     async navigate(
