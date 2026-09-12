@@ -256,23 +256,14 @@ the selected Chat once; afterwards Editor Work is independent from Chat Work.
 With no selected Chat it is explicit no-Work. The Work catalog never selects a
 first Work for Editor.
 
-A cold different-project transition immediately replaces the old shell with an
-inert boundary, so stale Context publishers cannot remain active. A same-project
-child error preserves the parent and parks the requested primary or secondary
-host. During same-Work Editor document navigation, the last usable document
-remains visible while the new address resolves; its identity chrome stays with
-its content. A delayed, nonblocking progress indicator handles slow transitions.
-Work recovery and unavailable/error destinations still mask retained content.
-The authorized address response publishes tab metadata directly and awaits desk
-publication; the document host owns live-session binding, not a second
-background open in the URL layer. Cached address metadata cannot repair an
-address until its active refetch settles; aliases stay pending until the
-canonical replacement owns the route. Replacement reports an owned failure
-against its own revision and unchanged source entry, so a rejected alias repair
-settles to an error without resurfacing a superseded request. Navigation-owned desk publication checks
-its current-entry/attempt predicate under the desk lock before persistence. The removal coordinator's route repair is still an identity and
-revision guarded CAS; it operates over the current address projection and must
-not recreate obsolete search grammar.
+A cold different-project transition replaces the old shell with an inert
+boundary. Same-Work pending Editor navigation retains the usable document and
+its identity chrome; recovery and unavailable/error destinations mask it.
+The route publishes authorized tab metadata, while the document host owns
+live-session binding. See [Editor document lifecycle](editor-document-lifecycle.md)
+for entry paths, publication ordering, retention, and failure behavior.
+The removal coordinator's route repair remains an identity and revision guarded
+CAS over the current address projection.
 
 The **Editor** destination retains `ContextPaneController` as its implementation
 name. It owns address-admitted opens, temporary-tab projection, scroll
