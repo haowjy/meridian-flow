@@ -174,3 +174,33 @@ describe("project navigation", () => {
     navigation.dispose();
   });
 });
+
+describe("optional query entry repair", () => {
+  it("replaces only the current entry without invoking destination navigation", () => {
+    const { history, navigation, changes } = setup("/p/serial/editor?work=missing&chat=bad%20chat");
+    navigation.repairQuerySelections(navigation.capture(), {
+      chat: { status: "ready", entries: [] },
+      work: { status: "ready", entries: [] },
+    });
+    expect(changes).toEqual(["freeze:/p/serial/editor"]);
+    expect(history.length).toBe(1);
+    expect(history.location.state).toMatchObject({
+      meridianProjectEmptySelection: { chat: true, work: true },
+    });
+    navigation.dispose();
+  });
+  it("rejects stale validation and never rewrites valid or absent selectors", () => {
+    const { history, navigation, changes } = setup("/p/serial/editor?work=missing");
+    const stale = navigation.capture();
+    history.push("/p/serial/editor?work=valid");
+    const catalogs = {
+      chat: { status: "ready", entries: [] },
+      work: { status: "ready", entries: [{ slug: "valid" }] },
+    } as const;
+    navigation.repairQuerySelections(stale, catalogs);
+    navigation.repairQuerySelections(navigation.capture(), catalogs);
+    expect(changes).toEqual([]);
+    expect(history.location.href).toBe("/p/serial/editor?work=valid");
+    navigation.dispose();
+  });
+});

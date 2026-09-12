@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Clear invalid optional Chat and Work links without blocking the document or selecting a different Work.
+
 - Remove the background URL rewrite for resolved Chat and Editor Work defaults.
 
 - Fixed screen navigation from Work details being undone by background address normalization.

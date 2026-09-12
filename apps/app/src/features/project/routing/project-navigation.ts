@@ -5,12 +5,13 @@ import {
   projectAddressHref,
   projectAddressState,
 } from "./project-address";
+import { type AddressCatalog, guardProjectQuerySelections } from "./project-address-resolution";
 
 export type ProjectHistoryEntry = { href: string; key: string; state: Record<string, unknown> };
 export type ProjectNavigationPort = {
   read(): ProjectHistoryEntry;
   subscribe(listener: () => void): () => void;
-  /** Synchronous departure snapshot; does not invoke a destination blocker. */
+  /** Synchronous same-entry snapshot or query repair; does not invoke a destination blocker. */
   replaceEntry(href: string, state: Record<string, unknown>): void;
   /** The router owns destination blockers and load/error presentation. */
   navigate(
@@ -110,6 +111,24 @@ export function createProjectNavigation(
         ...options,
         state: projectAddressState(next, options.state),
       });
+    },
+    repairQuerySelections(
+      ticket: ProjectNavigationTicket,
+      catalogs: {
+        chat: AddressCatalog<{ slug: string | null }>;
+        work: AddressCatalog<{ slug: string | null }>;
+      },
+    ): void {
+      if (!isCurrent(ticket)) return;
+      const entry = port.read();
+      const parsed = parsedEntry(entry);
+      if (parsed.kind !== "valid") return;
+      const next = guardProjectQuerySelections(parsed.address, catalogs);
+      if (next === parsed.address) return;
+      // Only invalid secondary selections change. Do not queue a destination
+      // blocker that could later compete with the writer's pending navigation.
+      revision += 1;
+      port.replaceEntry(projectAddressHref(next), projectAddressState(next, entry.state));
     },
     async replaceIfCurrent(
       ticket: ProjectNavigationTicket,
