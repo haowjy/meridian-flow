@@ -70,7 +70,7 @@ export function IdentityPlacementField({
     null,
   );
   const provisionalPlacement =
-    location.provisional && location.scheme === "scratch" && location.parentPath === "/";
+    location.provisional && location.scheme === "unfiled" && location.parentPath === "/";
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<FileSuggestionListHandle>(null);
   const suggestionTimer = useRef<number | null>(null);

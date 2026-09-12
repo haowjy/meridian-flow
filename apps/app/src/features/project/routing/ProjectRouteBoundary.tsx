@@ -3,7 +3,7 @@ import { Trans } from "@lingui/react/macro";
 import { Loader2 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 
-export type ProjectRouteIssue = "loading" | "unavailable" | "error";
+export type ProjectRouteIssue = "loading" | "unavailable" | "error" | "resource-viewing";
 
 export function ProjectRouteBoundary({
   issue,
@@ -57,6 +57,11 @@ export function ProjectRouteBoundary({
         >
           {issue === "loading" ? (
             <Trans>Loading destination…</Trans>
+          ) : issue === "resource-viewing" ? (
+            <Trans>
+              Viewing chat resources is not available yet. These files remain available to your
+              chats and AI tools.
+            </Trans>
           ) : issue === "error" ? (
             <Trans>This destination couldn’t load.</Trans>
           ) : (

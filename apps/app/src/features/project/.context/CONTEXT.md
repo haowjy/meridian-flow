@@ -108,9 +108,12 @@ rebind an idle existing chat through the canonical durable transition, and the
 model's explicit `work.switch` command uses that same separate authority. Work
 management and navigation never rebind a chat implicitly.
 
-The desktop left rail has one divider below destination navigation. Its
-Manuscript, Knowledge Base, User, Scratch, and Uploads panes are flush siblings
-with transparent headers. Scratch and Uploads resolve from the shell-owned Editor Work, whose real name appears in their header tooltip and accessible control name. An explicit route Work is authoritative even while persistent Chat belongs to another Work; loading and catalog-error values never fall back to Chat or mount Work-scoped leaves. Invalid optional query selectors are cleared to no selection by the route guard; required path identities remain unavailable. With no explicit Work, the selected thread's durable Work ID remains authoritative even when catalog display data fails. The Work catalog never implicitly selects the first Work for Editor. A new readable entry may seed an absent Editor Work from the selected Chat once; subsequent Editor selection is independent. With no selected Chat it settles to explicit no Work. Loading and errors never become an empty selector, and archived Work remains manageable but cannot authorize content mutation. Uploads is intake-only and exposes no file or folder creation affordances.
+The desktop rail contains Manuscript, Knowledge Base, User and Unfiled. Chat
+resources have no Editor sections or resource tabs. Editor Work remains a route
+context for draft review, independent of later Chat changes. Null is shared
+scope; loading/error is never converted to null. Invalid optional query selectors
+are cleared without blocking documents; required path identities remain errors.
+Archived Work identity remains manageable but cannot authorize content mutation.
 
 ### Slot paints the material; surfaces must not
 
@@ -311,3 +314,13 @@ Descendants must not independently derive either value.
 - Don't reparent/unmount stateful surfaces on screen change — move the grid-area.
 - Don't gate a mount between hook calls — gate at the parent.
 - Don't add raw hex/rgba or `emerald`/`rose` — use semantic tokens.
+
+Persistent root/account/project loaders acquire shell identity on entry. Child
+navigation and same-href history-state writes do not reload them; explicit router
+invalidation and re-entry still do. This permits warm local editing offline,
+not cold offline app boot or bypassing server authorization.
+
+The basic `EditorView` is a static dependency of the project hosts, not a lazy
+chunk fetched on first New/open. This makes a loaded empty workspace capable of
+starting local writing offline; it deliberately costs earlier editor-code loading
+for Chat-only project visits. It does not provide cold offline application boot.

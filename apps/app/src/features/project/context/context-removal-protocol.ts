@@ -285,7 +285,7 @@ function representedTab(
     tabs.find((tab) => {
       if (!contextTabEligibleForRemoval(tab, intent)) return false;
       if (tab.kind === "new") {
-        return selection.locator.scheme === "scratch" && selection.locator.path === "";
+        return selection.locator.scheme === "unfiled" && selection.locator.path === "";
       }
       return contextTabMatchesRoute(
         tab,

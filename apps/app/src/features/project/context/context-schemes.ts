@@ -4,28 +4,21 @@
  * and identity icons.
  */
 import { t } from "@lingui/core/macro";
-import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
+import {
+  CONTEXT_URI_SCHEMES,
+  PROJECT_SCOPED_CONTEXT_URI_SCHEMES,
+} from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
 import { Library, NotebookPen, Upload, User } from "lucide-react";
 
 import { ScrollQuill } from "./scroll-quill-icon";
 
-/**
- * Ordered list of context schemes the UI surfaces, top to bottom. Project-scoped
- * schemes come first, then the work-scoped ones (`scratch`, `uploads`); all are
- * flush top-level panes (no work header row above the work-scoped pair —
- * ruling 2026-08-06; their headers carry the work name in a hover tooltip).
- */
+/** Complete vocabulary for references and tools, including chat resources. */
 export const CONTEXT_SCHEMES: readonly ProjectContextTreeScheme[] = CONTEXT_URI_SCHEMES;
 
-/** Schemes shown in the tree panel for the current work context. */
-export function visibleContextSchemes(workId: string | null): readonly ProjectContextTreeScheme[] {
-  return CONTEXT_SCHEMES.filter(
-    (scheme) => !isWorkScopedProjectContextScheme(scheme) || workId !== null,
-  );
-}
+/** Ordinary Editor surfaces contain only project documents. */
+export const EDITOR_CONTEXT_SCHEMES = PROJECT_SCOPED_CONTEXT_URI_SCHEMES;
 
 /**
  * Whether the writer can create files/folders inside a scheme from a browse

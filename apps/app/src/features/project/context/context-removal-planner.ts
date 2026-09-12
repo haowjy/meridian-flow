@@ -200,7 +200,8 @@ export function routeTargetForTab(
   tab: ContextTab,
   activeWorkId: string | null,
 ): ContextRouteTarget {
-  if (tab.kind === "new") return { scheme: "scratch", path: "", workId: tab.workId };
+  if (tab.kind === "new")
+    return { scheme: "unfiled", path: "", workId: activeWorkId, documentId: tab.documentId };
   return {
     scheme: tab.scheme,
     path: tab.path,

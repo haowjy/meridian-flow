@@ -3,7 +3,7 @@
 Agent-readable/writable project workspace content addressed by context URIs.
 The context-URI cleanse (A0–A3) deleted the legacy dual-port and replaced it
 with a single unified `ContextPort` that resolves durable project schemes
-(`manuscript://`, `kb://`, `user://`) and work-item-scoped schemes
+(`manuscript://`, `kb://`, `user://`, `unfiled://`) and work-item-scoped schemes
 (`scratch://@slug/…`, `uploads://@slug/…`) plus explicit no-Work `@/` authority.
 
 ## What it owns
@@ -31,7 +31,7 @@ with a single unified `ContextPort` that resolves durable project schemes
   schemes. Resolved through `contextPortForThread` (the resolver in
   `context-port-resolution.ts`); callers never use `forProject`/`forWork` directly.
 - **Context URI primitives** — `parseUnifiedContextUri` / `toCanonical`
-  normalize the five registered schemes: `manuscript`, `kb`, `user`, `scratch`,
+  normalize the six registered schemes: `manuscript`, `kb`, `user`, `unfiled`, `scratch`,
   `uploads`. Bare paths default to `manuscript://`. Work-scoped schemes
 (`scratch://`, `uploads://`) carry an `@<work-slug>` wire qualifier that the
 router resolves to exact project-scoped Work authority before dispatch.
@@ -72,7 +72,7 @@ router resolves to exact project-scoped Work authority before dispatch.
   by more than one asset resolves to nothing: the id direction is unique, the
   path direction is not.
 - **Document-link resolver port** (`ports/document-link-resolver.ts`) — one
-  resolution boundary for wikilink titles/aliases, all five canonical Context
+  resolution boundary for wikilink titles/aliases, all six canonical Context
   schemes, and relative paths. The domain reads the existing Context catalog
   and resolves Work qualifiers through project Work authority; it has no separate
   candidate loader or resolution cache. Personal scope comes from authenticated
@@ -136,7 +136,7 @@ currently available to the request owner in the requested project.
   qualifier. Omitted authority resolves contextually to the thread's real or absent scope; absent scope uses writable project-owned Scratch and Uploads sources. Every
   non-deleted Work in the same project is addressable regardless of thread
   membership; cross-project Works are refused. `manuscript://`,
-  `kb://`, `user://` carry no work authority.
+  `kb://`, `user://`, `unfiled://` carry no Work authority.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.
 - Wikilink title/alias matching is case-insensitive and trims outer whitespace.
   Scheme and relative paths are exact (an omitted final extension may match);

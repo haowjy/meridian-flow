@@ -5,11 +5,7 @@ import {
   isProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { sameServerContextTabLocator } from "./context-tab-locator";
-import {
-  type ContextTab,
-  contextTabMayBeSelectedForWork,
-  type ProjectTabsSlice,
-} from "./context-tabs-store";
+import { type ContextTab, isEditorContextTab, type ProjectTabsSlice } from "./context-tabs-store";
 
 export const CONTEXT_DESK_STORAGE_KEY = "meridian:context-desk";
 export type PersistedProjectDesk = ProjectTabsSlice;
@@ -101,13 +97,13 @@ function parseTab(value: unknown): ContextTab | null {
     return null;
   if (tab.kind === "new") {
     if (
-      typeof tab.workId !== "string" ||
       typeof tab.lineageHandle !== "string" ||
       !Number.isSafeInteger(tab.identityRevision) ||
       tab.origin !== undefined
     )
       return null;
-    return value as ContextTab;
+    const { workId: _priorWork, ...local } = tab;
+    return local as ContextTab;
   }
   if (
     (tab.kind !== "tracked" && tab.kind !== "viewer") ||
@@ -153,7 +149,10 @@ function parseProjectDesk(value: unknown): PersistedProjectDesk | null {
     return null;
   const tabs = record.tabs.map(parseTab);
   if (tabs.some((tab) => tab === null)) return null;
-  const parsedTabs = tabs as ContextTab[];
+  const resourceIds = new Set(
+    tabs.filter((tab) => tab && !isEditorContextTab(tab)).map((tab) => tab?.documentId),
+  );
+  const parsedTabs = (tabs as ContextTab[]).filter((tab) => !resourceIds.has(tab.documentId));
   if (parsedTabs.some((tab) => tab.draftOnly)) return null;
   const instanceIds = parsedTabs.map((tab) => tab.tabInstanceId as string);
   if (new Set(instanceIds).size !== instanceIds.length) return null;
@@ -161,8 +160,9 @@ function parseProjectDesk(value: unknown): PersistedProjectDesk | null {
   const byId = new Map(parsedTabs.map((tab) => [tab.documentId, tab]));
   for (const [workId, documentId] of Object.entries(record.selectedTabIdByWork)) {
     if (typeof documentId !== "string") return null;
+    if (resourceIds.has(documentId)) continue;
     const tab = byId.get(documentId);
-    if (!tab || !contextTabMayBeSelectedForWork(tab, workId)) return null;
+    if (!tab || !isEditorContextTab(tab)) return null;
     selections[workId] = documentId;
   }
   return { tabs: parsedTabs, selectedTabIdByWork: selections };
@@ -235,12 +235,13 @@ function sameTabIdentity(left: ContextTab, right: ContextTab): boolean {
 }
 
 function normalizeProject(desk: PersistedProjectDesk): PersistedProjectDesk {
+  const tabs = desk.tabs.filter(isEditorContextTab);
   return {
-    ...desk,
+    tabs,
     selectedTabIdByWork: Object.fromEntries(
-      Object.entries(desk.selectedTabIdByWork).filter(([workId, documentId]) => {
-        const tab = desk.tabs.find((candidate) => candidate.documentId === documentId);
-        return tab && contextTabMayBeSelectedForWork(tab, workId);
+      Object.entries(desk.selectedTabIdByWork).filter(([, documentId]) => {
+        const tab = tabs.find((candidate) => candidate.documentId === documentId);
+        return tab && isEditorContextTab(tab);
       }),
     ),
   };
@@ -292,14 +293,20 @@ function committed(
   current: DeviceContextDeskV3,
   projects: Readonly<Record<string, PersistedProjectDesk>>,
 ): DeviceContextDeskCommandResult {
-  return outcome("committed", { ...current, deskRevision: current.deskRevision + 1, projects });
+  return outcome("committed", {
+    ...current,
+    deskRevision: current.deskRevision + 1,
+    projects: Object.fromEntries(
+      Object.entries(projects).map(([id, desk]) => [id, normalizeProject(desk)]),
+    ),
+  });
 }
 function replaceProject(
   current: DeviceContextDeskV3,
   projectId: string,
   desk: PersistedProjectDesk,
 ): DeviceContextDeskCommandResult {
-  return committed(current, { ...current.projects, [projectId]: normalizeProject(desk) });
+  return committed(current, { ...current.projects, [projectId]: desk });
 }
 
 /** Total reducer for every durable desk writer class. */
@@ -472,8 +479,7 @@ export function reduceContextDesk(
       delete selections[command.workId];
     } else {
       const tab = desk.tabs.find((candidate) => candidate.tabInstanceId === command.tabInstanceId);
-      if (!tab || !contextTabMayBeSelectedForWork(tab, command.workId))
-        return outcome("stale", current);
+      if (!tab || !isEditorContextTab(tab)) return outcome("stale", current);
       if (selections[command.workId] === tab.documentId)
         return outcome("already-committed", current);
       selections[command.workId] = tab.documentId;

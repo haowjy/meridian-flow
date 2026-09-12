@@ -28,6 +28,7 @@ import type { LocalMaterializationReservation } from "./local-untitled-owner";
 
 import {
   isProjectContextTreeScheme,
+  isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import {
@@ -296,11 +297,12 @@ export class ProjectDocumentNavigationAdapter {
         throw new Error("Opening a project document requires the project route owner");
       }
       try {
-        await this.dependencies.openTab(
-          projectId,
-          contextTabFromFile(scheme, file, routeWorkId),
-          isCurrent,
-        );
+        if (!isWorkScopedProjectContextScheme(scheme))
+          await this.dependencies.openTab(
+            projectId,
+            contextTabFromFile(scheme, file, routeWorkId),
+            isCurrent,
+          );
       } catch {
         return isCurrent() ? { kind: "unavailable", reason: "failed" } : { kind: "cancelled" };
       }

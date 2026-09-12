@@ -1035,6 +1035,10 @@ msgstr ""
 msgid "Couldn't open this document."
 msgstr ""
 
+#: src/features/project/context/UnfiledPendingDocuments.tsx
+msgid "Couldn't open this local document. Try again."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't read"
 msgstr ""
@@ -1898,7 +1902,6 @@ msgid "Loading signed image URL…"
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
-#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Loading Work"
 msgstr ""
@@ -2293,8 +2296,8 @@ msgid "Open {0} at this passage. {1}"
 msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "Open {label}"
-msgstr ""
+#~ msgid "Open {label}"
+#~ msgstr ""
 
 #: src/features/chat/DocumentName.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
@@ -2314,8 +2317,8 @@ msgid "Open a Work to create an Untitled document"
 msgstr ""
 
 #: src/features/project/context/ContextViewer.tsx
-msgid "Open a Work to create an Untitled document, or pick a file from the tree."
-msgstr ""
+#~ msgid "Open a Work to create an Untitled document, or pick a file from the tree."
+#~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Open chat"
@@ -2667,8 +2670,8 @@ msgid "Results"
 msgstr ""
 
 #: src/features/project/context/ContextViewer.tsx
-msgid "Resume {resumeDocumentName}"
-msgstr ""
+#~ msgid "Resume {resumeDocumentName}"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Resume where I left off on any device"
@@ -2790,8 +2793,8 @@ msgid "Scratch"
 msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
-msgid "Scratch for Work {workName}"
-msgstr ""
+#~ msgid "Scratch for Work {workName}"
+#~ msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Search chats"
@@ -3364,6 +3367,10 @@ msgstr ""
 msgid "This document is not taking changes right now."
 msgstr ""
 
+#: src/features/project/context/UnfiledPendingDocuments.tsx
+msgid "This document is open in another browser tab."
+msgstr ""
+
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "This document is open in another tab"
 msgstr ""
@@ -3565,10 +3572,15 @@ msgstr ""
 msgid "Undoing…"
 msgstr ""
 
+#: src/features/project/context/context-schemes.ts
+msgid "Unfiled"
+msgstr ""
+
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"
 msgstr ""
 
+#: src/features/project/context/UnfiledPendingDocuments.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Untitled"
 msgstr ""
@@ -3635,8 +3647,8 @@ msgid "Uploads"
 msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
-msgid "Uploads for Work {workName}"
-msgstr ""
+#~ msgid "Uploads for Work {workName}"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 #: src/features/billing/UsageCard.tsx
@@ -3645,6 +3657,14 @@ msgstr ""
 
 #: src/features/project/context/context-schemes.ts
 msgid "User"
+msgstr ""
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Viewing chat resources is not available yet."
+msgstr ""
+
+#: src/features/project/routing/ProjectRouteBoundary.tsx
+msgid "Viewing chat resources is not available yet. These files remain available to your chats and AI tools."
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
@@ -3717,8 +3737,8 @@ msgid "Work unavailable"
 msgstr ""
 
 #: src/features/project/context/ContextTreePanel.tsx
-msgid "Work: \"{workName}\""
-msgstr ""
+#~ msgid "Work: \"{workName}\""
+#~ msgstr ""
 
 #. placeholder {0}: item.work.title
 #: src/features/project/chat-list/ProjectChatRow.tsx

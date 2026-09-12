@@ -198,7 +198,7 @@ describe("ProjectDocumentNavigationProvider", () => {
   it.each([
     null,
     "work-b",
-  ])("routes a binary reference to its exact viewer scope %s", async (workId) => {
+  ])("routes a chat resource to its explanatory destination without a tab %s", async (workId) => {
     const document: CatalogFileEntry = {
       kind: "file",
       entryId: "image",
@@ -228,11 +228,7 @@ describe("ProjectDocumentNavigationProvider", () => {
       </Owner>,
       async () => {
         await doors.reference({ documentId: "image", workId: "work-a" });
-        expect(tabs).toHaveBeenCalledWith(
-          "project-a",
-          expect.objectContaining({ documentId: "image", kind: "viewer", editable: false }),
-          expect.any(Function),
-        );
+        expect(tabs).not.toHaveBeenCalled();
         expect(openRoute).toHaveBeenCalledWith({ scheme: "uploads", path: "/Map.png", workId });
       },
     );

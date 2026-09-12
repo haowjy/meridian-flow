@@ -27,15 +27,14 @@ export function resolveLocalDocumentSelection(input: {
     pointer.projectId !== input.projectId ||
     !("documentId" in pointer) ||
     typeof pointer.documentId !== "string" ||
-    !pointer.documentId ||
-    !input.workId
+    !pointer.documentId
   )
     return { kind: "unavailable" } as const;
   if (!input.hydrated) return { kind: "loading" } as const;
   const owner = resolveDeskRoute({
     tabs: input.tabs,
     selectedDocumentId: pointer.documentId,
-    locator: { scheme: "scratch", path: "", workId: input.workId },
+    locator: { scheme: "unfiled", path: "", workId: input.workId },
   });
   return owner.kind === "unowned"
     ? ({ kind: "unavailable" } as const)
@@ -50,9 +49,7 @@ export function selectEditorEntryTab(input: {
   workId: string | null;
 }): ContextTab | null {
   const eligible = input.tabs.filter((tab) =>
-    tab.kind === "new"
-      ? tab.workId === input.workId
-      : !isWorkScopedProjectContextScheme(tab.scheme) || (tab.workId ?? null) === input.workId,
+    tab.kind === "new" ? true : !isWorkScopedProjectContextScheme(tab.scheme),
   );
   const selected = eligible.find((tab) => tab.documentId === input.selectedDocumentId);
   if (selected) return selected;

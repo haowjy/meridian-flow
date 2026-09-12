@@ -246,8 +246,7 @@ function EditorEmptyState({
   onNewDocument,
 }: {
   /**
-   * Starts a temporary document — the doc has no context location until the
-   * writer saves, when the destination picker offers every durable scheme.
+   * Starts a local document that autosaves to project Unfiled storage.
    * Deliberately NOT the sidebar inline-create: that flow is scheme-targeted
    * and happens off-pane, which reads as a dead button from the empty state.
    */
@@ -263,11 +262,7 @@ function EditorEmptyState({
           </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          {onNewDocument ? (
-            <Trans>Or pick a file from the tree.</Trans>
-          ) : (
-            <Trans>Open a Work to create an Untitled document, or pick a file from the tree.</Trans>
-          )}
+          <Trans>Or pick a file from the tree.</Trans>
         </p>
       </div>
     </div>

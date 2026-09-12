@@ -53,7 +53,9 @@ const NONE: AddressSelection = { kind: "none" };
 function selection(slug: string | null): AddressSelection {
   return slug ? { kind: "slug", slug } : NONE;
 }
-function issue<T>(resolution: AddressResolution<T>): ProjectRouteIssue | undefined {
+function issue<T>(
+  resolution: AddressResolution<T>,
+): Exclude<ProjectRouteIssue, "resource-viewing"> | undefined {
   if (resolution.status === "loading" || resolution.status === "error") return resolution.status;
   if (resolution.status === "unavailable" || resolution.status === "malformed")
     return "unavailable";
@@ -185,8 +187,8 @@ export function ReadableProjectRoute({
     ? { accountId: user.userId, projectId, documentId: localDocumentId }
     : undefined;
   useLayoutEffect(() => {
-    if (localDocumentId && workId)
-      void useContextTabsStore.getState().selectTab(projectId, workId, localDocumentId);
+    if (localDocumentId)
+      void useContextTabsStore.getState().selectTab(projectId, workId ?? "", localDocumentId);
   }, [projectId, workId, localDocumentId]);
   const shown = useRef<DisplayedProjectSelection>({ chatSlug: null, workSlug: null });
   const [navigation, setNavigation] = useState<ReturnType<typeof createProjectNavigation> | null>(
@@ -261,7 +263,11 @@ export function ReadableProjectRoute({
     ],
   );
 
-  const documentDestination = destination.kind === "document" ? destination : null;
+  const resourceDestination =
+    (destination.kind === "document" || destination.kind === "browse") &&
+    (destination.scheme === "scratch" || destination.scheme === "uploads");
+  const documentDestination =
+    destination.kind === "document" && !resourceDestination ? destination : null;
   const sourceWorkId =
     documentDestination?.workSlug && work.status === "resolved" ? work.value.id : null;
   const { catalog: addressCatalog } = useContextCatalogView(
@@ -308,22 +314,23 @@ export function ReadableProjectRoute({
       : destination.kind === "work"
         ? issue(work)
         : undefined;
-  const editorIssue =
-    (localDocument.kind === "loading" || localDocument.kind === "unavailable"
-      ? localDocument.kind
-      : undefined) ??
-    (editorWork.status === "resolved" && editorWork.value.status === "archived"
-      ? "unavailable"
-      : issue(editorWork)) ??
-    documentIssue ??
-    (documentDestination
-      ? admission?.href === location.href &&
-        admission.key === (location.state.__TSR_key ?? "") &&
-        documentLookup.data?.kind !== "unavailable" &&
-        admission.documentId === documentLookup.data?.document.documentId
-        ? admission.issue
-        : "loading"
-      : undefined);
+  const editorIssue = resourceDestination
+    ? "resource-viewing"
+    : ((localDocument.kind === "loading" || localDocument.kind === "unavailable"
+        ? localDocument.kind
+        : undefined) ??
+      (editorWork.status === "resolved" && editorWork.value.status === "archived"
+        ? "unavailable"
+        : issue(editorWork)) ??
+      documentIssue ??
+      (documentDestination
+        ? admission?.href === location.href &&
+          admission.key === (location.state.__TSR_key ?? "") &&
+          documentLookup.data?.kind !== "unavailable" &&
+          admission.documentId === documentLookup.data?.document.documentId
+          ? admission.issue
+          : "loading"
+        : undefined));
 
   useEffect(() => {
     if (resolvedThreadId) setThread(projectId, resolvedThreadId);
@@ -374,9 +381,7 @@ export function ReadableProjectRoute({
       let state: Record<string, unknown> | undefined;
       if (target.path === "") {
         const desk = getContextTabs(projectId);
-        const documentId =
-          target.documentId ??
-          (target.workId ? desk.selectedTabIdByWork[target.workId] : undefined);
+        const documentId = target.documentId ?? desk.selectedTabIdByWork[target.workId ?? ""];
         const pointer = { version: 1, accountId: user.userId, projectId, documentId };
         const resolved = resolveLocalDocumentSelection({
           pointer,
@@ -438,7 +443,7 @@ export function ReadableProjectRoute({
     thread: resolvedThreadId ?? undefined,
     work: workId ?? "none",
     scheme: localDocumentId
-      ? "scratch"
+      ? "unfiled"
       : destination.kind === "document" || destination.kind === "browse"
         ? (destination.scheme ?? undefined)
         : undefined,
@@ -453,7 +458,7 @@ export function ReadableProjectRoute({
       const desk = getContextTabs(projectId);
       const tab = selectEditorEntryTab({
         tabs: desk.tabs,
-        selectedDocumentId: workId ? desk.selectedTabIdByWork[workId] : undefined,
+        selectedDocumentId: desk.selectedTabIdByWork[workId ?? ""],
         recentRoutes: readRecentRoutes(projectId),
         workId,
       });

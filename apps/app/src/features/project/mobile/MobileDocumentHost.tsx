@@ -14,9 +14,10 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { AlertCircle, Loader2 } from "lucide-react";
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
+import { EditorView } from "@/features/editor/EditorView";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { ContextEditorMountHost } from "../context/ContextEditorMountHost";
@@ -29,10 +30,6 @@ import { usePostApplyHostWake } from "../draft-apply-recovery/ProjectDraftApplyR
 import type { MobileDocumentRoute } from "./mobile-document-route";
 
 let mobileHostGeneration = 0;
-
-const EditorView = lazy(() =>
-  import("@/features/editor/EditorView").then((m) => ({ default: m.EditorView })),
-);
 
 export type MobileDocumentHostProps = {
   projectId: string;
@@ -68,7 +65,7 @@ function MobileLocalDocumentHost({
     const selected = state.selection;
     if (
       selected.status === "none" ||
-      selected.locator.scheme !== "scratch" ||
+      selected.locator.scheme !== "unfiled" ||
       selected.locator.path !== "" ||
       selected.locator.workId !== workId
     )
@@ -271,30 +268,21 @@ function MobileServerDocumentHost({ projectId, editorWorkId, route }: MobileDocu
   return (
     <div className="relative h-full min-h-0">
       <PassageNotice documentId={activeTab.documentId} />
-      <Suspense
-        fallback={
-          <DocumentStatus tone="muted">
-            <Loader2 className="size-4 animate-spin" aria-hidden />
-            <Trans>Opening document…</Trans>
-          </DocumentStatus>
-        }
-      >
-        <EditorView
-          projectId={projectId}
-          workId={workId}
-          documentId={activeTab.documentId}
-          session={liveSession}
-          schemaType={activeTab.schemaType}
-          editable={false}
-          showToolbar={false}
-          ariaLabel={t`Read-only live document`}
-          showCollaborationDecorations={false}
-          reviewDraftId={reviewDraftId}
-          reviewRoomName={reviewRoomName}
-          reviewWorkId={reviewDraftId ? controller.workId : null}
-          onReviewSessionUnavailable={controller.exitInlineReview}
-        />
-      </Suspense>
+      <EditorView
+        projectId={projectId}
+        workId={workId}
+        documentId={activeTab.documentId}
+        session={liveSession}
+        schemaType={activeTab.schemaType}
+        editable={false}
+        showToolbar={false}
+        ariaLabel={t`Read-only live document`}
+        showCollaborationDecorations={false}
+        reviewDraftId={reviewDraftId}
+        reviewRoomName={reviewRoomName}
+        reviewWorkId={reviewDraftId ? controller.workId : null}
+        onReviewSessionUnavailable={controller.exitInlineReview}
+      />
     </div>
   );
 }

@@ -1035,6 +1035,10 @@ msgstr "Couldn't open review mode."
 msgid "Couldn't open this document."
 msgstr "Couldn't open this document."
 
+#: src/features/project/context/UnfiledPendingDocuments.tsx
+msgid "Couldn't open this local document. Try again."
+msgstr "Couldn't open this local document. Try again."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't read"
 msgstr "Couldn't read"
@@ -1898,7 +1902,6 @@ msgid "Loading signed image URL…"
 msgstr "Loading signed image URL…"
 
 #: src/features/chat/CreationComposer.tsx
-#: src/features/project/context/ContextTreePanel.tsx
 #: src/features/project/work/WorkScreen.tsx
 msgid "Loading Work"
 msgstr "Loading Work"
@@ -2293,8 +2296,8 @@ msgid "Open {0} at this passage. {1}"
 msgstr "Open {0} at this passage. {1}"
 
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "Open {label}"
-msgstr "Open {label}"
+#~ msgid "Open {label}"
+#~ msgstr "Open {label}"
 
 #: src/features/chat/DocumentName.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
@@ -2314,8 +2317,8 @@ msgid "Open a Work to create an Untitled document"
 msgstr "Open a Work to create an Untitled document"
 
 #: src/features/project/context/ContextViewer.tsx
-msgid "Open a Work to create an Untitled document, or pick a file from the tree."
-msgstr "Open a Work to create an Untitled document, or pick a file from the tree."
+#~ msgid "Open a Work to create an Untitled document, or pick a file from the tree."
+#~ msgstr "Open a Work to create an Untitled document, or pick a file from the tree."
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Open chat"
@@ -2667,8 +2670,8 @@ msgid "Results"
 msgstr "Results"
 
 #: src/features/project/context/ContextViewer.tsx
-msgid "Resume {resumeDocumentName}"
-msgstr "Resume {resumeDocumentName}"
+#~ msgid "Resume {resumeDocumentName}"
+#~ msgstr "Resume {resumeDocumentName}"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Resume where I left off on any device"
@@ -2790,8 +2793,8 @@ msgid "Scratch"
 msgstr "Scratch"
 
 #: src/features/project/context/ContextTreePanel.tsx
-msgid "Scratch for Work {workName}"
-msgstr "Scratch for Work {workName}"
+#~ msgid "Scratch for Work {workName}"
+#~ msgstr "Scratch for Work {workName}"
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Search chats"
@@ -3364,6 +3367,10 @@ msgstr "This document changed elsewhere. Reopen it and try again."
 msgid "This document is not taking changes right now."
 msgstr "This document is not taking changes right now."
 
+#: src/features/project/context/UnfiledPendingDocuments.tsx
+msgid "This document is open in another browser tab."
+msgstr "This document is open in another browser tab."
+
 #: src/features/project/context/ContextEditorMountHost.tsx
 msgid "This document is open in another tab"
 msgstr "This document is open in another tab"
@@ -3565,10 +3572,15 @@ msgstr "Undo is no longer available."
 msgid "Undoing…"
 msgstr "Undoing…"
 
+#: src/features/project/context/context-schemes.ts
+msgid "Unfiled"
+msgstr "Unfiled"
+
 #: src/features/chat/CustomBlockRenderer.tsx
 msgid "Unknown component: {kindLabel}"
 msgstr "Unknown component: {kindLabel}"
 
+#: src/features/project/context/UnfiledPendingDocuments.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Untitled"
 msgstr "Untitled"
@@ -3635,8 +3647,8 @@ msgid "Uploads"
 msgstr "Uploads"
 
 #: src/features/project/context/ContextTreePanel.tsx
-msgid "Uploads for Work {workName}"
-msgstr "Uploads for Work {workName}"
+#~ msgid "Uploads for Work {workName}"
+#~ msgstr "Uploads for Work {workName}"
 
 #: src/features/account/SettingsDialog.tsx
 #: src/features/billing/UsageCard.tsx
@@ -3646,6 +3658,14 @@ msgstr "Usage"
 #: src/features/project/context/context-schemes.ts
 msgid "User"
 msgstr "User"
+
+#: src/features/project/work/WorkDetailScreen.tsx
+msgid "Viewing chat resources is not available yet."
+msgstr "Viewing chat resources is not available yet."
+
+#: src/features/project/routing/ProjectRouteBoundary.tsx
+msgid "Viewing chat resources is not available yet. These files remain available to your chats and AI tools."
+msgstr "Viewing chat resources is not available yet. These files remain available to your chats and AI tools."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
@@ -3717,8 +3737,8 @@ msgid "Work unavailable"
 msgstr "Work unavailable"
 
 #: src/features/project/context/ContextTreePanel.tsx
-msgid "Work: \"{workName}\""
-msgstr "Work: \"{workName}\""
+#~ msgid "Work: \"{workName}\""
+#~ msgstr "Work: \"{workName}\""
 
 #. placeholder {0}: item.work.title
 #: src/features/project/chat-list/ProjectChatRow.tsx
