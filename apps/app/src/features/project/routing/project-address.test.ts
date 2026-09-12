@@ -1,6 +1,6 @@
 /** Browser grammar contracts: explicit scope, exact filenames, and lossless raw query parsing. */
 import { describe, expect, it } from "vitest";
-import { parseProjectAddress, projectAddressHref } from "./project-address";
+import { parseProjectAddress, projectAddressHref, projectAddressState } from "./project-address";
 
 describe("readable project addresses", () => {
   it.each([
@@ -26,6 +26,25 @@ describe("readable project addresses", () => {
     expect(parsed.kind).toBe("valid");
     if (parsed.kind !== "valid") throw new Error(parsed.reason);
     expect(projectAddressHref(parsed.address)).toBe(path);
+  });
+
+  it.each([
+    "/p/serial",
+    "/p/serial/works",
+    "/p/serial/work/revision",
+    "/p/serial/chats",
+    "/p/serial/editor",
+  ])("departure selection state is stable after parsing %s", (href) => {
+    const parsed = parseProjectAddress(href);
+    if (parsed.kind !== "valid") throw new Error(parsed.reason);
+    const state = projectAddressState({
+      ...parsed.address,
+      chat: { kind: "none" },
+      work: { kind: "none" },
+    });
+    const restored = parseProjectAddress(href, "", state);
+    if (restored.kind !== "valid") throw new Error(restored.reason);
+    expect(projectAddressState(restored.address, state)).toEqual(state);
   });
 
   it.each([

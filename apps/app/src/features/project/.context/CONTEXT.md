@@ -243,7 +243,10 @@ retains stable-ID command types and the context-removal CAS snapshot only; it is
 not a second address grammar.
 
 Empty Chat/Work selections are stored in href-scoped browser history state, not
-serialized as `?chat=&work=`. Actual selections remain readable query parameters.
+serialized as `?chat=&work=`. Only Editor-related destinations carry the empty
+Editor Work marker; other screens must not write state their address parser
+discards, or normalization can race a blocked departure back to its source.
+Actual selections remain readable query parameters.
 A fresh copied URL without these parameters may use local defaults; Back/Forward
 and reload preserve the entry's explicit no-selection intent.
 
