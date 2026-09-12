@@ -23,6 +23,8 @@ supplies that same document identity to both the recovery executor and phone
 host; navigation commands always come from the current route. Errors, Work
 changes, Results, and screen changes do not reuse that pending projection.
 
+Deferred implementation work is tracked in [TODO](TODO).
+
 ## Contracts
 
 ### Route ownership is the navigation model
