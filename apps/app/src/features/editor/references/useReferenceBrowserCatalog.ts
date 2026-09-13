@@ -1,6 +1,6 @@
+import type { CatalogCacheView } from "@meridian/resource-replica";
 import { QueryClientContext } from "@tanstack/react-query";
 import { useContext, useEffect, useMemo } from "react";
-import type { CatalogCacheView } from "@/client/query/context-catalog-cache";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { contextCatalogQueryOptions } from "@/client/query/useContextCatalog";
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";

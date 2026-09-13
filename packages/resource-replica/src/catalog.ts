@@ -1,4 +1,4 @@
-/** One normalized, transactional metadata cache shared by every catalog projection. */
+/** Immutable server catalog projection and whole-commit replay policy. */
 import type {
   CatalogChanges,
   CatalogCommit,
@@ -120,7 +120,7 @@ export function catalogViewFromSnapshot(snapshot: CatalogSnapshot): CatalogCache
   });
 }
 
-/** Apply complete commit groups to the immutable React Query cache value. */
+/** Apply complete commit groups without mutating the installed server projection. */
 export function applyCatalogChanges(
   current: CatalogCacheView,
   changes: CatalogChanges,

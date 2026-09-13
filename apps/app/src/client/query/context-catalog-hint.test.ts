@@ -1,8 +1,8 @@
+import { catalogViewFromSnapshot } from "@meridian/resource-replica";
 import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getContextCatalogChanges } from "@/client/api/projects-api";
 import { hintContextCatalog } from "./context-catalog-acquisition";
-import { catalogViewFromSnapshot } from "./context-catalog-cache";
 import { projectQueryKeys } from "./project-query-keys";
 import { pullContextCatalogOnHint } from "./useContextCatalog";
 

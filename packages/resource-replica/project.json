@@ -1,0 +1,26 @@
+{
+  "name": "@meridian/resource-replica",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/resource-replica/src",
+  "projectType": "library",
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/resource-replica",
+        "command": "tsc --noEmit -p tsconfig.json"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "packages/resource-replica",
+        "command": "vitest run --passWithNoTests"
+      },
+      "inputs": ["default", "^default"],
+      "cache": true
+    }
+  }
+}

@@ -5,7 +5,7 @@ import {
   catalogChildren,
   catalogFiles,
   catalogViewFromSnapshot,
-} from "./context-catalog-cache";
+} from "./catalog";
 
 const scope = { kind: "project", projectId: "project-1" } as const satisfies CatalogScope;
 const source: CatalogEntry = {
