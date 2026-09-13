@@ -23,6 +23,20 @@ export function useWorkMetadataController(
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [held, setHeld] = useState<HeldIntent>(null);
+  const heldRef = useRef<HeldIntent>(null);
+  const takeHeld = useCallback(() => {
+    const intent = heldRef.current;
+    heldRef.current = null;
+    setHeld(null);
+    return intent;
+  }, []);
+  useEffect(
+    () => () => {
+      heldRef.current?.cancel?.();
+      heldRef.current = null;
+    },
+    [],
+  );
   const [announcement, setAnnouncement] = useState("");
   const displayRefs = useRef(new Map<MetadataField, HTMLElement>());
   const editorRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
@@ -37,10 +51,8 @@ export function useWorkMetadataController(
   }, [initial]);
   useEffect(() => {
     if (saving || field || !held) return;
-    const intent = held;
-    setHeld(null);
-    intent.run();
-  }, [field, held, saving]);
+    takeHeld()?.run();
+  }, [field, held, saving, takeHeld]);
 
   const focusDisplay = useCallback(
     (target: MetadataField) =>
@@ -52,10 +64,10 @@ export function useWorkMetadataController(
     const target = field;
     setField(null);
     setError(null);
-    setHeld(null);
+    takeHeld()?.cancel?.();
     setAnnouncement(t`${fieldLabel(target)} edit canceled`);
     focusDisplay(target);
-  }, [field, focusDisplay, saving]);
+  }, [field, focusDisplay, saving, takeHeld]);
   const save = useCallback(async (): Promise<boolean> => {
     if (!field) return true;
     if (saving) return false;
@@ -91,13 +103,13 @@ export function useWorkMetadataController(
   }, [dirty, field, focusDisplay, normalizedDraft, saveWork, saving]);
   const request = useCallback(
     (intent: NonNullable<HeldIntent>) => {
-      if (saving || dirty) {
-        setHeld(intent);
-        return;
-      }
-      intent.run();
+      const previous = heldRef.current;
+      heldRef.current = intent;
+      setHeld(intent);
+      previous?.cancel?.();
+      if (!saving && !dirty && heldRef.current === intent) takeHeld()?.run();
     },
-    [dirty, saving],
+    [dirty, saving, takeHeld],
   );
   const activate = useCallback(
     (next: MetadataField) =>
@@ -112,26 +124,20 @@ export function useWorkMetadataController(
     [request, work],
   );
   const saveAndResume = useCallback(async () => {
-    const intent = held;
+    const intent = heldRef.current;
     if (!intent) return;
-    if (await save()) {
-      setHeld(null);
-      intent.run();
-    }
-  }, [held, save]);
+    if ((await save()) && heldRef.current === intent) takeHeld()?.run();
+  }, [save, takeHeld]);
   const discardAndResume = useCallback(() => {
-    const intent = held;
-    if (!intent || saving) return;
+    if (!heldRef.current || saving) return;
     setField(null);
     setError(null);
-    setHeld(null);
-    intent.run();
-  }, [held, saving]);
+    takeHeld()?.run();
+  }, [saving, takeHeld]);
   const keepEditing = useCallback(() => {
-    held?.cancel?.();
-    setHeld(null);
+    takeHeld()?.cancel?.();
     requestAnimationFrame(() => editorRef.current?.focus());
-  }, [held]);
+  }, [takeHeld]);
   return {
     work,
     field,
