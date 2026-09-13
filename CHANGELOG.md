@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Record durable move/delete attempt receipts so retries recover committed operations without repeating mutations. Distinguish namespace collisions from HTTP failures.
+
 - Exchange document edits between same-browser sessions while offline and recover missed peer updates from local persistence without waiting for the server.
 
 - Include unsynchronized local documents in account and storage-upgrade shutdown; retain writing and retry failed provider drains before releasing authority.

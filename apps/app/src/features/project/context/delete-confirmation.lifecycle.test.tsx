@@ -129,7 +129,7 @@ it("settles a populated-folder receipt through one terminal availability batch",
   expect(deleted).toHaveBeenCalledWith(
     "project",
     "manuscript",
-    { path: "/populated", expected: { kind: "folder" } },
+    { operationId: expect.any(String), path: "/populated", expected: { kind: "folder" } },
     undefined,
   );
   expect(routeUpdates).toEqual([{ screen: "context", work: "work-1" }]);
@@ -187,6 +187,7 @@ it("submits the Work captured when delete confirmation was requested", async () 
     "project",
     "scratch",
     {
+      operationId: expect.any(String),
       path: "/same.md",
       expected: { kind: "file", documentId: "document-a" },
     },

@@ -163,6 +163,10 @@ export function apiProjectContextMovePath(
   return `${apiProjectPath(projectId)}/context/${scheme}/move`;
 }
 
+export function apiProjectContextOperationPath(projectId: string, operationId: string): string {
+  return `${apiProjectPath(projectId)}/context/operations/${encodeURIComponent(operationId)}`;
+}
+
 export function apiProjectContextDeletePath(
   projectId: string,
   scheme: ProjectContextTreeScheme,

@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   archiveWork,
+  createUntitledContextDocument,
   deleteWork,
   listWorkThreads,
+  moveContextEntry,
   unarchiveWork,
   updateWork,
 } from "./projects-api";
@@ -96,3 +98,47 @@ function workResponse() {
     deletedAt: null,
   };
 }
+
+it("accepts move collision outcomes but rejects generic HTTP conflicts", async () => {
+  const collision = {
+    status: "conflict",
+    collision: { scheme: "manuscript", path: "Taken.md", authority: { kind: "project" } },
+  };
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json(collision, { status: 409 }))
+    .mockResolvedValueOnce(
+      Response.json({ message: "Operation ID already names a different command" }, { status: 409 }),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  const command = {
+    operationId: "00000000-0000-4000-8000-000000000703",
+    expected: { kind: "file" as const, nodeId: "node-1" },
+    path: "Source.md",
+    destinationScheme: "manuscript" as const,
+    destinationFolderPath: "",
+    newName: "Taken.md",
+  };
+  await expect(moveContextEntry("project-1", "manuscript", command)).resolves.toEqual(collision);
+  await expect(moveContextEntry("project-1", "manuscript", command)).rejects.toMatchObject({
+    name: "HttpResponseError",
+    status: 409,
+    message: "Operation ID already names a different command",
+  });
+});
+
+it("does not interpret generic creation conflicts as permission to remint a document", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ status: "conflict" }, { status: 409 }))
+      .mockResolvedValueOnce(
+        Response.json({ error: true, message: "Unknown conflict" }, { status: 409 }),
+      ),
+  );
+  const request = () =>
+    createUntitledContextDocument("project-1", "unfiled", { documentId: "document-1" });
+  await expect(request()).resolves.toEqual({ status: "conflict" });
+  await expect(request()).rejects.toMatchObject({ status: 409, message: "Unknown conflict" });
+});

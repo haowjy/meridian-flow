@@ -11,6 +11,7 @@ const OTHER_WORK_ID = "00000000-0000-4000-8000-000000000702";
 
 function body(overrides: Record<string, unknown> = {}) {
   return {
+    operationId: "00000000-0000-4000-8000-000000000703",
     expected: { kind: "file", nodeId: "node-1" },
     path: "Source.md",
     destinationScheme: "manuscript",
@@ -103,6 +104,7 @@ describe("parseContextMove", () => {
         }),
       }),
     ).toEqual({
+      operationId: "00000000-0000-4000-8000-000000000703",
       expected: { kind: "file", nodeId: "node-1" },
       source: {
         scope: "work",
@@ -115,6 +117,8 @@ describe("parseContextMove", () => {
   });
 
   it.each([
+    ["missing operation ID", "manuscript", body({ operationId: undefined })],
+    ["malformed operation ID", "manuscript", body({ operationId: "not-an-id" })],
     ["unknown source scheme", "unknown", body()],
     ["missing destination path", "manuscript", { path: "a.md", destinationScheme: "manuscript" }],
     ["reserved destination", "manuscript", body({ destinationFolderPath: ".." })],
@@ -198,7 +202,11 @@ describe("handleContextMoveRequest", () => {
     expect(deps.port.commitWriterLocation).toHaveBeenCalledWith(
       "scratch://@work-1/Source.md",
       "scratch://@work-2/Drafts/Source.md",
-      { origin: { type: "human", userId: "user-1" }, expected: { kind: "file", nodeId: "node-1" } },
+      {
+        operationId: "00000000-0000-4000-8000-000000000703",
+        origin: { type: "human", userId: "user-1" },
+        expected: { kind: "file", nodeId: "node-1" },
+      },
     );
   });
 
@@ -214,7 +222,11 @@ describe("handleContextMoveRequest", () => {
     expect(deps.port.commitWriterLocation).toHaveBeenCalledWith(
       "scratch://@/Source.md",
       "scratch://@/Dest/Source.md",
-      { origin: { type: "human", userId: "user-1" }, expected: { kind: "file", nodeId: "node-1" } },
+      {
+        operationId: "00000000-0000-4000-8000-000000000703",
+        origin: { type: "human", userId: "user-1" },
+        expected: { kind: "file", nodeId: "node-1" },
+      },
     );
   });
 
@@ -309,6 +321,18 @@ describe("handleContextMoveRequest", () => {
         path: "Dest/Source.md",
         authority: { kind: "work", workId: WORK_ID, workSlug: testWorkSlug("work-1") },
       },
+    });
+  });
+
+  it("rejects an operation payload mismatch instead of returning a collision outcome", async () => {
+    const deps = depsFor();
+    deps.port.commitWriterLocation.mockResolvedValue({
+      ok: false,
+      error: { code: "operation_mismatch", uri: "manuscript://Source.md" },
+    });
+    await expect(request(deps)).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Operation ID already names a different command",
     });
   });
 

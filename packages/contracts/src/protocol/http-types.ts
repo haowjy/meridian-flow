@@ -112,11 +112,14 @@ export type DeleteContextEntryResult = {
   availabilityGeneration: string;
 };
 
-export type DeleteContextEntryRequest =
-  | { path: string; expected: { kind: "file"; documentId: string } }
-  | { path: string; expected: { kind: "folder" } };
+export type DeleteContextEntryRequest = {
+  operationId: string;
+  path: string;
+  expected: { kind: "file"; documentId: string } | { kind: "folder" };
+};
 
 export type MoveContextEntryRequest = {
+  operationId: string;
   path: string;
   expected: { kind: "file" | "folder"; nodeId: string };
   destinationScheme: ProjectContextTreeScheme;

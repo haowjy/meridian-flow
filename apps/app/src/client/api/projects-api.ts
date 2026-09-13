@@ -9,7 +9,11 @@
  */
 
 import type { Project } from "@meridian/contracts/projects";
-import type { HomeChatFeedPage, HomeProjectResponse } from "@meridian/contracts/protocol";
+import type {
+  ContextOperationReceipt,
+  HomeChatFeedPage,
+  HomeProjectResponse,
+} from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
   apiProjectAddressPath,
@@ -18,6 +22,7 @@ import {
   apiProjectContextCreateUntitledPath,
   apiProjectContextDeletePath,
   apiProjectContextMovePath,
+  apiProjectContextOperationPath,
   apiProjectContextReadPath,
   apiProjectDocumentAddressPath,
   apiProjectHomeFeedPath,
@@ -39,7 +44,6 @@ import {
   type CreateThreadRequest,
   type CreateThreadResponse,
   type CreateUntitledContextDocumentRequest,
-  type CreateUntitledContextDocumentResponse,
   type CreateUntitledContextDocumentResult,
   type DeleteContextEntryRequest,
   type DeleteContextEntryResult,
@@ -321,6 +325,16 @@ export async function deleteProject(projectId: string): Promise<void> {
   return deleteRequest(apiProjectPath(projectId));
 }
 
+function acceptsContextConflict(status: number, payload: unknown): boolean {
+  return (
+    status === 409 &&
+    payload !== null &&
+    typeof payload === "object" &&
+    "status" in payload &&
+    payload.status === "conflict"
+  );
+}
+
 export async function createContextEntry(
   projectId: string,
   scheme: ProjectContextTreeScheme,
@@ -330,7 +344,7 @@ export async function createContextEntry(
 ): Promise<{ status: "created"; documentId?: string } | { status: "conflict"; uri: string }> {
   return postJson(urlFor(apiProjectContextCreatePath(projectId, scheme, opts), init), body, {
     headers: init?.headers,
-    acceptStatuses: [409],
+    acceptErrorResponse: acceptsContextConflict,
   });
 }
 
@@ -340,12 +354,14 @@ export async function createUntitledContextDocument(
   body: CreateUntitledContextDocumentRequest,
   opts?: ProjectContextRequestOptions,
 ): Promise<CreateUntitledContextDocumentResult> {
-  const response = await postJson<CreateUntitledContextDocumentResponse | { error: true }>(
+  const response = await postJson<CreateUntitledContextDocumentResult>(
     apiProjectContextCreateUntitledPath(projectId, scheme, opts),
     body,
-    { acceptStatuses: [409] },
+    {
+      acceptErrorResponse: acceptsContextConflict,
+    },
   );
-  if ("error" in response) return { status: "conflict" };
+  if (response.status === "conflict") return response;
   return {
     ...response,
     path: response.path.startsWith("/") ? response.path : `/${response.path}`,
@@ -362,8 +378,18 @@ export async function moveContextEntry(
   body: MoveContextEntryRequest,
 ): Promise<MoveContextEntryResult> {
   return postJson(apiProjectContextMovePath(projectId, sourceScheme), body, {
-    acceptStatuses: [409],
+    acceptErrorResponse: acceptsContextConflict,
   });
+}
+
+export async function getContextOperationReceipt(
+  projectId: string,
+  operationId: string,
+): Promise<ContextOperationReceipt | null> {
+  const result = await getJson<{ receipt: ContextOperationReceipt | null }>(
+    apiProjectContextOperationPath(projectId, operationId),
+  );
+  return result.receipt;
 }
 
 export async function deleteContextEntry(

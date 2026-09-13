@@ -30,6 +30,7 @@ import type {
   PreparedContextMove,
 } from "../ports/context-tree-mutation-store.js";
 import { adapterFaultToContextError } from "./adapter-fault.js";
+import type { ContextOperationReceipts } from "./context-operation-receipts.js";
 import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,
@@ -90,7 +91,10 @@ function joinPath(...parts: string[]): string {
 export class ContextTreeMover {
   private readonly commandExecutor: ResultAwareCommandExecutor<ContextError>;
 
-  constructor(transaction: ContextCommandTransaction = directContextCommandTransaction) {
+  constructor(
+    transaction: ContextCommandTransaction = directContextCommandTransaction,
+    private readonly receipts?: ContextOperationReceipts,
+  ) {
     this.commandExecutor = createResultAwareCommandExecutor({
       transaction,
       serializeThroughCallbacks: false,
@@ -112,7 +116,22 @@ export class ContextTreeMover {
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
     expected?: ContextLocationOptions["expected"],
+    operationId?: string,
   ): Promise<Result<ContextMoveResult, ContextError>> {
+    if (operationId) {
+      if (!this.receipts || !expected)
+        return Err({ code: "invalid_operation", uri: source.canonical });
+      return this.receipts.execute(
+        operationId,
+        {
+          kind: "move",
+          sourceUri: source.canonical,
+          destinationUri: destination.canonical,
+          expected,
+        },
+        () => this.commitWriterLocation(source, destination, expected),
+      );
+    }
     return this.changeLocation(source, destination, {
       target: "exact",
       graduateProvisionalName: true,
@@ -205,6 +224,14 @@ export class ContextTreeMover {
     target: ContextTreeDispatch,
     options: ContextDeleteOptions,
   ): Promise<Result<DeleteContextEntryResult, ContextError>> {
+    if (options.operationId) {
+      if (!this.receipts) return Err({ code: "invalid_operation", uri: target.canonical });
+      return this.receipts.execute(
+        options.operationId,
+        { kind: "delete", uri: target.canonical, expected: options.expected },
+        () => this.delete(target, { ...options, operationId: undefined }),
+      );
+    }
     return this.commandExecutor
       .run(
         () => this.deleteCommand(target, options),
