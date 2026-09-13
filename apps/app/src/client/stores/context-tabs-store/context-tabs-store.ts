@@ -1,103 +1,45 @@
-/**
- * Context tabs store — each Project's ordered device-local Context desk.
- *
- * The browser route remains candidate/navigation state. This store owns open
- * tab metadata and one exact selected document ID per Work so local empty
- * documents can retain identity without becoming server working-set routes.
- *
- * Lifecycle:
- *  - `openTab` adds the tab if missing (idempotent — clicking a tree row that
- *    is already open just refreshes its metadata).
- *  - `reorderTabs` moves a tab to a new index.
- *
- * The ordered per-project desk is persisted device-locally. Project entry
- * validates restored routes against current trees before they remain usable.
- */
-
-import type {
-  DocumentFileType,
-  Filetype,
-  ProjectContextTreeScheme,
-  YjsTrackedSchemaType,
-} from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
+/** Browser-context-local Editor membership. Zustand owns live state; sessionStorage restores it. */
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 import {
-  CONTEXT_DESK_STORAGE_KEY,
-  type DeviceContextDeskCommand,
-  DeviceContextDeskLedger,
-  parseContextDesk,
-  reduceContextDesk,
-} from "./context-desk-storage";
-export type ContextTab =
-  | {
-      tabInstanceId?: string;
-      kind: "tracked";
-      documentId: string;
-      scheme: ProjectContextTreeScheme;
-      path: string;
-      name: string;
-      workId?: string;
-      draftOnly?: boolean;
-      /** Transient owner of a draft-synthesized review tab; never persisted. */
-      reviewWorkId?: string;
-      /** Transient exact draft and tab-generation fence for post-Apply settlement. */
-      reviewDraftId?: string;
-      tabInstanceToken?: string;
-      editable: true;
-      filetype: Filetype;
-      schemaType: YjsTrackedSchemaType;
-      provisionalName?: boolean;
-      /** Device provenance retained after a local Untitled materializes. */
-      origin?: "local-untitled";
-    }
-  | {
-      tabInstanceId?: string;
-      kind: "viewer";
-      documentId: string;
-      scheme: ProjectContextTreeScheme;
-      path: string;
-      name: string;
-      workId?: string;
-      draftOnly?: boolean;
-      /** Transient owner of a draft-synthesized review tab; never persisted. */
-      reviewWorkId?: string;
-      reviewDraftId?: string;
-      tabInstanceToken?: string;
-      editable: false;
-      fileType: DocumentFileType;
-      mimeType?: string;
-    }
-  | {
-      tabInstanceId?: string;
-      kind: "new";
-      documentId: string;
-      name: string;
-      lineageHandle?: string;
-      identityRevision?: number;
-      draftOnly?: boolean;
-    };
+  type ContextTab,
+  isEditorContextTab,
+  type ProjectTabsSlice,
+} from "./editor-workspace-model";
+import {
+  EDITOR_WORKSPACE_STORAGE_KEY,
+  type EditorWorkspaceCommand,
+  parseEditorWorkspace,
+  reduceEditorWorkspace,
+} from "./editor-workspace-state";
 
-export type ServerContextTab = Extract<ContextTab, { kind: "tracked" | "viewer" }>;
-
-export type ProjectTabsSlice = {
-  tabs: ContextTab[];
-  selectedTabIdByWork: Record<string, string>;
-};
+export {
+  type ContextTab,
+  isEditorContextTab,
+  type ProjectTabsSlice,
+  type ServerContextTab,
+} from "./editor-workspace-model";
 
 type ContextTabsState = {
-  /** Durable projectId → slice. Replaced only by desk ledger projections. */
+  /** Live project membership, independent of other browser contexts. */
   byProject: Record<string, ProjectTabsSlice>;
   /** Review-only tabs and route intent. Never supplied to a durable desk command. */
   _reviewOverlayByProject: Record<string, ProjectTabsSlice>;
   _deskHydrated: boolean;
-  _deskRevision: number;
+  _layoutPersistenceError: unknown | null;
 };
 
+export type OpenEditorTabResult =
+  | { kind: "opened"; tab: ContextTab }
+  | { kind: "superseded" | "ineligible" | "not-opened" };
+
 type ContextTabsActions = {
-  openTab: (projectId: string, tab: ContextTab, isCurrent?: () => boolean) => Promise<void>;
+  openTab: (
+    projectId: string,
+    tab: ContextTab,
+    isCurrent?: () => boolean,
+  ) => Promise<OpenEditorTabResult>;
   remintNewTab: (projectId: string, documentId: string, replacementId: string) => Promise<void>;
   materializeNewTab: (
     projectId: string,
@@ -156,11 +98,6 @@ function emptySlice(): ProjectTabsSlice {
   return EMPTY_SLICE;
 }
 
-/** All desk mutation paths share the same Editor document admission rule. */
-export function isEditorContextTab(tab: ContextTab): boolean {
-  return tab.kind === "new" || !isWorkScopedProjectContextScheme(tab.scheme);
-}
-
 function normalizeSelections(
   tabs: readonly ContextTab[],
   selections: Record<string, string>,
@@ -208,62 +145,47 @@ function composeProjectSlice(state: ContextTabsState, projectId: string): Projec
 
 type DeskCommandBuilder = (
   state: ContextTabsState & ContextTabsActions,
-) => DeviceContextDeskCommand | null;
-
-function projectSnapshot(snapshot: {
-  projects: Readonly<Record<string, ProjectTabsSlice>>;
-  deskRevision: number;
-}): Pick<ContextTabsState, "byProject" | "_deskHydrated" | "_deskRevision"> {
-  return {
-    byProject: { ...snapshot.projects },
-    _deskHydrated: true,
-    _deskRevision: snapshot.deskRevision,
-  };
-}
+) => EditorWorkspaceCommand | null;
 
 export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>()(
   devtools(
     (rawSet, get) => {
-      const dispatchResult = async (build: DeskCommandBuilder, isCurrent?: () => boolean) => {
+      const dispatchResult = (build: DeskCommandBuilder, isCurrent?: () => boolean) => {
         if (isCurrent?.() === false) return null;
         const current = get();
         const command = build(current);
         if (!command) return null;
-        if (!current._deskHydrated || !deviceDesk) {
-          const reduced = reduceContextDesk(
-            {
-              version: 3,
-              accountId: "unhydrated",
-              deskRevision: current._deskRevision,
-              projects: current.byProject,
-            },
-            command,
-          );
-          if (reduced.kind === "committed") rawSet(projectSnapshot(reduced.snapshot));
-          return reduced;
+        const result = reduceEditorWorkspace(
+          {
+            version: 1,
+            accountId: workspaceAccountId ?? "unhydrated",
+            projects: current.byProject,
+          },
+          command,
+        );
+        if (result.kind === "committed") {
+          rawSet({ byProject: { ...result.snapshot.projects } });
+          persistWorkspace();
         }
-        const ledger = deviceDesk;
-        const result = await ledger.apply(command, isCurrent);
-        const mounted = get();
-        if (
-          deviceDesk === ledger &&
-          result.snapshot.accountId === ledger.accountId &&
-          result.snapshot.deskRevision >= mounted._deskRevision
-        )
-          rawSet(projectSnapshot(result.snapshot));
         return result;
       };
-      const dispatch = (build: DeskCommandBuilder, isCurrent?: () => boolean): Promise<void> =>
-        dispatchResult(build, isCurrent).then(() => undefined);
+      const dispatch = async (
+        build: DeskCommandBuilder,
+        isCurrent?: () => boolean,
+      ): Promise<void> => {
+        const result = dispatchResult(build, isCurrent);
+        if (result?.kind === "stale") throw new Error("Editor workspace command is stale");
+      };
 
       return {
         byProject: {},
         _reviewOverlayByProject: {},
         _deskHydrated: false,
-        _deskRevision: 0,
+        _layoutPersistenceError: null,
 
         openTab: (projectId, input, isCurrent) => {
-          if (isCurrent?.() === false || !isEditorContextTab(input)) return Promise.resolve();
+          if (isCurrent?.() === false) return Promise.resolve({ kind: "superseded" });
+          if (!isEditorContextTab(input)) return Promise.resolve({ kind: "ineligible" });
           const tab = { ...input, tabInstanceId: input.tabInstanceId ?? crypto.randomUUID() };
           if (tab.draftOnly) {
             rawSet((base) => {
@@ -302,17 +224,14 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
                 },
               };
             });
-            return Promise.resolve();
+          } else {
+            dispatchResult(() => ({ kind: "open", projectId, tab }), isCurrent);
           }
-          return dispatch(
-            (base) =>
-              ({
-                kind: tab.kind === "new" ? "install-local" : "open",
-                projectId,
-                ...(tab.kind === "new" ? { expectedDeskRevision: base._deskRevision } : {}),
-                tab,
-              }) as DeviceContextDeskCommand,
-            isCurrent,
+          const installed = composeProjectSlice(get(), projectId).tabs.find(
+            (member) => member.documentId === tab.documentId,
+          );
+          return Promise.resolve(
+            installed ? { kind: "opened", tab: installed } : { kind: "not-opened" },
           );
         },
 
@@ -550,7 +469,7 @@ export function commitContextAvailability(
   prior: ProjectTabsSlice,
   next: ProjectTabsSlice,
 ): Promise<void> | void {
-  const hydrated = useContextTabsStore.getState()._deskHydrated && deviceDesk !== null;
+  const hydrated = useContextTabsStore.getState()._deskHydrated && workspaceAccountId !== null;
   const settlement = useContextTabsStore.getState().applyAvailability(projectId, prior, next);
   return hydrated ? settlement : undefined;
 }
@@ -620,71 +539,45 @@ export function getContextTabs(projectId: string): ProjectTabsSlice {
   return composeProjectSlice(useContextTabsStore.getState(), projectId);
 }
 
-let deviceDesk: DeviceContextDeskLedger | null = null;
-let storageProjectionInstalled = false;
+let workspaceAccountId: string | null = null;
 
-function projectDeskSnapshot(snapshot: ReturnType<DeviceContextDeskLedger["snapshot"]>): void {
-  if (snapshot.deskRevision <= useContextTabsStore.getState()._deskRevision) return;
-  useContextTabsStore.setState({
-    byProject: { ...snapshot.projects },
-    _deskHydrated: true,
-    _deskRevision: snapshot.deskRevision,
-  });
+function persistWorkspace(): void {
+  if (typeof window === "undefined" || !workspaceAccountId) return;
+  try {
+    sessionStorage.setItem(
+      EDITOR_WORKSPACE_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        accountId: workspaceAccountId,
+        projects: useContextTabsStore.getState().byProject,
+      }),
+    );
+    if (useContextTabsStore.getState()._layoutPersistenceError !== null)
+      useContextTabsStore.setState({ _layoutPersistenceError: null });
+  } catch (error) {
+    // Layout failure must not roll back live membership or block document persistence.
+    useContextTabsStore.setState({ _layoutPersistenceError: error });
+  }
 }
 
-/** Establishes the desired account's durable desk before its workspace is revealed. */
+/** Restore this browser context once per account, never project another window's layout. */
 export async function rehydrateContextDesks(userId: string): Promise<void> {
   if (typeof window === "undefined") return;
-  if (!storageProjectionInstalled) {
-    window.addEventListener("storage", (event) => {
-      if (event.key !== CONTEXT_DESK_STORAGE_KEY || !deviceDesk) return;
-      const projected = deviceDesk.project(event.newValue);
-      if (projected) projectDeskSnapshot(projected);
-    });
-    storageProjectionInstalled = true;
+  if (workspaceAccountId === userId && useContextTabsStore.getState()._deskHydrated) return;
+  let snapshot: ReturnType<typeof parseEditorWorkspace> = null;
+  let error: unknown = null;
+  try {
+    snapshot = parseEditorWorkspace(sessionStorage.getItem(EDITOR_WORKSPACE_STORAGE_KEY));
+  } catch (cause) {
+    error = cause;
   }
-  const durable = parseContextDesk(localStorage.getItem(CONTEXT_DESK_STORAGE_KEY));
-  const activeAccountId = deviceDesk?.accountId ?? null;
-  const resetFromAccountId =
-    activeAccountId !== null && activeAccountId !== userId
-      ? activeAccountId
-      : durable && durable.accountId !== userId
-        ? durable.accountId
-        : null;
-  if (resetFromAccountId) {
-    const previous =
-      deviceDesk?.accountId === resetFromAccountId
-        ? deviceDesk
-        : new DeviceContextDeskLedger(localStorage, resetFromAccountId);
-    useContextTabsStore.setState({
-      byProject: {},
-      _reviewOverlayByProject: {},
-      _deskHydrated: false,
-      _deskRevision: 0,
-    });
-    const settled = await previous.apply({
-      kind: "reset-account",
-      expectedAccountId: resetFromAccountId,
-      nextAccountId: userId,
-    });
-    if (
-      (settled.kind !== "committed" && settled.kind !== "already-committed") ||
-      settled.snapshot.accountId !== userId
-    )
-      throw new Error("Context desk account transition is stale");
-    deviceDesk = new DeviceContextDeskLedger(localStorage, userId);
-    useContextTabsStore.setState(projectSnapshot(deviceDesk.snapshot()));
-    return;
-  }
-  if (!deviceDesk || deviceDesk.accountId !== userId)
-    deviceDesk = new DeviceContextDeskLedger(localStorage, userId);
-  const byProject = { ...deviceDesk.snapshot().projects };
+  workspaceAccountId = userId;
   useContextTabsStore.setState({
-    byProject,
+    byProject: snapshot?.accountId === userId ? { ...snapshot.projects } : {},
+    _reviewOverlayByProject: {},
     _deskHydrated: true,
-    _deskRevision: deviceDesk.snapshot().deskRevision,
+    _layoutPersistenceError: error,
   });
-  // Rewrites stale exclusions immediately, including completed untitleds.
 }
 
 async function applyPublication(
@@ -702,16 +595,20 @@ async function applyPublication(
         trackedTab: ContextTab;
       },
 ): Promise<"published" | "not-referenced" | "stale"> {
-  if (!deviceDesk) throw new Error("Context desk is not hydrated");
-  const result = await deviceDesk.apply(command);
+  if (!workspaceAccountId) throw new Error("Editor workspace is not hydrated");
+  const result = reduceEditorWorkspace(
+    {
+      version: 1,
+      accountId: workspaceAccountId,
+      projects: useContextTabsStore.getState().byProject,
+    },
+    command,
+  );
   if (result.kind === "stale") return "stale";
   if (result.kind === "not-referenced") return "not-referenced";
-  if (result.snapshot.deskRevision > useContextTabsStore.getState()._deskRevision) {
-    useContextTabsStore.setState({
-      byProject: { ...result.snapshot.projects },
-      _deskHydrated: true,
-      _deskRevision: result.snapshot.deskRevision,
-    });
+  if (result.kind === "committed") {
+    useContextTabsStore.setState({ byProject: { ...result.snapshot.projects } });
+    persistWorkspace();
   }
   return "published";
 }

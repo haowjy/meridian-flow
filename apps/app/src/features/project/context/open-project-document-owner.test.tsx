@@ -94,11 +94,11 @@ function Door({
 
 describe("ProjectDocumentNavigationProvider", () => {
   beforeEach(() => {
-    tabs.mockReset();
+    tabs.mockReset().mockImplementation(async (_projectId, tab) => ({ kind: "opened", tab }));
   });
 
-  it("waits for durable tab publication before navigating", async () => {
-    const publication = deferred<void>();
+  it("waits for the installed-member receipt before navigating", async () => {
+    const publication = deferred<{ kind: "opened" }>();
     tabs.mockReturnValue(publication.promise);
     const openRoute = vi.fn(async () => undefined);
     const doors: Record<string, OpenProjectDocument> = {};
@@ -113,7 +113,7 @@ describe("ProjectDocumentNavigationProvider", () => {
           expect(tabs).toHaveBeenCalledOnce();
           expect(openRoute).not.toHaveBeenCalled();
         } finally {
-          publication.resolve();
+          publication.resolve({ kind: "opened" });
         }
         await expect(opening).resolves.toMatchObject({ kind: "opened" });
         expect(openRoute).toHaveBeenCalledOnce();
@@ -132,7 +132,7 @@ describe("ProjectDocumentNavigationProvider", () => {
           reject = fail;
         }),
       )
-      .mockResolvedValue(undefined);
+      .mockResolvedValue({ kind: "opened" });
     const openRoute = vi.fn(async () => undefined);
     const doors: Record<string, OpenProjectDocument> = {};
     await withReactRoot(

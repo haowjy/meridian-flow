@@ -80,6 +80,7 @@ export function ContextViewerSurfaceController({
   const { tabs, selectedTabIdByWork } = useContextTabs(projectId);
   const selectedDocumentId = localDocumentId ?? selectedTabIdByWork[routeWorkId ?? ""];
   const deskHydrated = useContextTabsStore((state) => state._deskHydrated);
+  const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const visibleTabs = tabs.filter((tab) => {
     if (tab.kind === "new") return true;
@@ -404,6 +405,7 @@ export function ContextViewerSurfaceController({
 
   return (
     <ContextViewer
+      layoutSaveFailed={layoutSaveFailed}
       projectId={projectId}
       editorWorkId={routeWorkId}
       tabs={visibleTabs}
@@ -422,13 +424,18 @@ export function ContextViewerSurfaceController({
           documentId,
         });
         if (opened.kind !== "opened") return;
-        await openTab(projectId, {
-          kind: "new",
-          documentId,
-          name: "Untitled",
-          lineageHandle: opened.value.ref.lineageHandle,
-          identityRevision: 1,
-        });
+        const installed = await openTab(
+          projectId,
+          {
+            kind: "new",
+            documentId,
+            name: "Untitled",
+            lineageHandle: opened.value.ref.lineageHandle,
+            identityRevision: 1,
+          },
+          isCurrent,
+        );
+        if (installed.kind !== "opened") return;
         if (isCurrent && !isCurrent()) return;
         await selectTab(projectId, routeWorkId ?? "", documentId);
         if (isCurrent && !isCurrent()) return;

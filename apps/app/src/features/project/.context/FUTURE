@@ -32,7 +32,7 @@
   without existence-checking it (chat/chat-thread-resolution.ts); behavior
   for a stale/foreign id is undocumented — decide and document.
 - Bounded live sessions for restored desks (#217 follow-on, research-backed):
-  the persisted desk (context-tabs-store/context-desk-storage.ts) restores
+  the persisted desk (context-tabs-store/editor-workspace-state.ts) restores
   every open tab, and the document-session registry keeps a live
   websocket-subscribed Y.Doc per open tab — a 30-tab desk means 30 live
   sessions on every reload. Editor VIEWS are already bounded

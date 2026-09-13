@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Keep Editor tabs independent per browser tab and restore their layout locally; remove the shared desk ledger that could stall New and Close.
+
 - Preserve the editor, cursor and selection while local writing receives its server filename.
 
 - Load basic editor with workspace. Offline New no longer waits for a missing editor chunk.

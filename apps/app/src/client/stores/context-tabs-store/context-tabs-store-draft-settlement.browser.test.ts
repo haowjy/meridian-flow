@@ -13,7 +13,6 @@ import {
 } from "@/features/project/dock/editor-review-handoff";
 import type { ProjectSearch } from "@/features/project/routing/project-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { DeviceContextDeskLedger, parseContextDesk } from "./context-desk-storage";
 import {
   commitDraftApplyMetadata,
   getContextTabs,
@@ -21,104 +20,16 @@ import {
   useContextTabs,
   useContextTabsStore,
 } from "./context-tabs-store";
-
-class RejectableLocks {
-  rejectNext = false;
-  private blockNext = false;
-  private releaseGate: (() => void) | null = null;
-  entered: Promise<void> = Promise.resolve();
-  private enter: (() => void) | null = null;
-
-  arm() {
-    this.blockNext = true;
-    this.entered = new Promise<void>((resolve) => {
-      this.enter = resolve;
-    });
-  }
-
-  release() {
-    this.releaseGate?.();
-    this.releaseGate = null;
-  }
-
-  request<T>(
-    _name: string,
-    _options: { mode: "exclusive" },
-    callback: () => T | Promise<T>,
-  ): Promise<T> {
-    if (this.rejectNext) {
-      this.rejectNext = false;
-      return Promise.reject(new Error("durable desk rejected"));
-    }
-    return Promise.resolve().then(async () => {
-      if (this.blockNext) {
-        this.blockNext = false;
-        this.enter?.();
-        this.enter = null;
-        await new Promise<void>((resolve) => {
-          this.releaseGate = resolve;
-        });
-      }
-      return callback();
-    });
-  }
-}
-
-const locks = new RejectableLocks();
-Object.defineProperty(navigator, "locks", { configurable: true, value: locks });
+import { EDITOR_WORKSPACE_STORAGE_KEY, parseEditorWorkspace } from "./editor-workspace-state";
 
 beforeEach(() => {
-  localStorage.clear();
-  locks.rejectNext = false;
-  locks.release();
+  sessionStorage.clear();
   useContextTabsStore.setState({
     byProject: {},
     _reviewOverlayByProject: {},
     _deskHydrated: false,
-    _deskRevision: 0,
   });
   routeSlice = null;
-});
-
-it("lets DD-blocked Discard lose exact ownership to Close without second effects", async () => {
-  const accountId = `discard-race-${crypto.randomUUID()}`;
-  const projectId = "discard-race-project";
-  const workId = "work-a";
-  await rehydrateContextDesks(accountId);
-  await useContextTabsStore.getState().openTab(projectId, {
-    kind: "tracked",
-    tabInstanceId: "review-tab",
-    documentId: "document-1",
-    scheme: "manuscript",
-    path: "/chapter.md",
-    name: "chapter.md",
-    editable: true,
-    filetype: "markdown",
-    schemaType: "document",
-    draftOnly: true,
-    reviewWorkId: workId,
-    reviewDraftId: "draft-a",
-    tabInstanceToken: "token-a",
-  });
-  let reconciliations = 0;
-  const coordinator = new ContextRemovalCoordinator(accountId, {
-    workingSet: {
-      readRecentRoutes: () => [],
-      replaceRecentRoutes: (_id, routes) => [...routes],
-      reconcileContextRoutes: () => {
-        reconciliations += 1;
-        return [];
-      },
-    },
-  });
-  locks.arm();
-  const discard = coordinator.discardDraft(projectId, workId, "document-1");
-  await locks.entered;
-  expect(coordinator.writerClose(projectId, "document-1").kind).not.toBe("noop");
-  locks.release();
-  await expect(discard).resolves.toEqual({ kind: "noop" });
-  expect(reconciliations).toBe(1);
-  expect(getContextTabs(projectId).tabs).toEqual([]);
 });
 
 it("lets settled Discard own effects before a later Close", async () => {
@@ -215,10 +126,9 @@ it("durably installs a hydrated draft Apply before acknowledging settlement", as
     "draftOnly",
   );
   expect(
-    parseContextDesk(localStorage.getItem("meridian:context-desk"))?.projects["project-1"],
-  ).toMatchObject({ tabs: [{ documentId: "document-1", tabInstanceId: "draft-tab" }] });
-  expect(
-    new DeviceContextDeskLedger(localStorage, accountId).snapshot().projects["project-1"],
+    parseEditorWorkspace(sessionStorage.getItem(EDITOR_WORKSPACE_STORAGE_KEY))?.projects[
+      "project-1"
+    ],
   ).toMatchObject({ tabs: [{ documentId: "document-1", tabInstanceId: "draft-tab" }] });
 });
 
@@ -247,9 +157,9 @@ it("explicitly closes a review overlay without issuing a durable desk removal", 
   expect(coordinator.writerClose(projectId, "close-document")).not.toEqual({ kind: "noop" });
   expect(getContextTabs(projectId).tabs).toEqual([]);
   expect(useContextTabsStore.getState().byProject[projectId]).toBeUndefined();
-  expect(parseContextDesk(localStorage.getItem("meridian:context-desk"))?.projects[projectId]).toBe(
-    undefined,
-  );
+  expect(
+    parseEditorWorkspace(sessionStorage.getItem(EDITOR_WORKSPACE_STORAGE_KEY))?.projects[projectId],
+  ).toBe(undefined);
   coordinator.dispose();
 });
 
@@ -286,14 +196,7 @@ it.each([
     reviewDraftId: undefined,
     tabInstanceToken: undefined,
   };
-  const external = new DeviceContextDeskLedger(localStorage, accountId);
-  await external.apply({ kind: "open", projectId, tab: durable });
-  window.dispatchEvent(
-    new StorageEvent("storage", {
-      key: "meridian:context-desk",
-      newValue: localStorage.getItem("meridian:context-desk"),
-    }),
-  );
+  await useContextTabsStore.getState().openTab(projectId, durable);
 
   let search: ProjectSearch = {
     screen: "context",
@@ -361,7 +264,7 @@ it.each([
   });
 });
 
-it("keeps the provider-mounted review overlay through route selection and retries rejected Apply", async () => {
+it("keeps the provider-mounted review overlay through route selection and Apply", async () => {
   // Red at eb1e3cad: route selection erased the mounted draft, Apply returned
   // false, and recovery acknowledged the missing obligation as already-absent.
   const accountId = `draft-route-${crypto.randomUUID()}`;
@@ -403,7 +306,9 @@ it("keeps the provider-mounted review overlay through route selection and retrie
       expect(transient.selectedTabIdByWork).toEqual({ "work-route": documentId });
       expect(useContextTabsStore.getState().byProject[projectId]).toBeUndefined();
       expect(
-        parseContextDesk(localStorage.getItem("meridian:context-desk"))?.projects[projectId],
+        parseEditorWorkspace(sessionStorage.getItem(EDITOR_WORKSPACE_STORAGE_KEY))?.projects[
+          projectId
+        ],
       ).toBeUndefined();
 
       const coordinator = new ContextRemovalCoordinator(accountId);
@@ -419,13 +324,6 @@ it("keeps the provider-mounted review overlay through route selection and retrie
           tabInstanceToken: overlayTab.tabInstanceToken,
         },
       };
-      locks.rejectNext = true;
-      await expect(coordinator.settleDraftRecovery(recovery)).rejects.toThrow(
-        "durable desk rejected",
-      );
-      expect(getContextTabs(projectId).tabs[0]).toMatchObject({ draftOnly: true });
-      expect(useContextTabsStore.getState().byProject[projectId]).toBeUndefined();
-
       await expect(coordinator.settleDraftRecovery(recovery)).resolves.toMatchObject({
         kind: "metadata-resolved",
       });
@@ -440,7 +338,9 @@ it("keeps the provider-mounted review overlay through route selection and retrie
       await rehydrateContextDesks(accountId);
       expect(getContextTabs(projectId).tabs).toMatchObject([{ documentId }]);
       expect(
-        parseContextDesk(localStorage.getItem("meridian:context-desk"))?.projects[projectId],
+        parseEditorWorkspace(sessionStorage.getItem(EDITOR_WORKSPACE_STORAGE_KEY))?.projects[
+          projectId
+        ],
       ).toEqual(useContextTabsStore.getState().byProject[projectId]);
       coordinator.dispose();
     },

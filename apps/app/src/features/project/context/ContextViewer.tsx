@@ -47,6 +47,7 @@ export type ContextViewerProps = {
   dockToggle?: PaneHeaderRailToggle;
   /** Whether this persistent surface is currently visible as the active destination. */
   active: boolean;
+  layoutSaveFailed?: boolean;
   onNewDocument?: () => void;
   onUntitledBecameNonEmpty: (documentId: string) => void;
   onCommitted: (
@@ -73,6 +74,7 @@ export function ContextViewer({
   dockToggle,
   active,
   onNewDocument,
+  layoutSaveFailed = false,
   onUntitledBecameNonEmpty,
   onCommitted,
   onOpenExisting,
@@ -99,6 +101,11 @@ export function ContextViewer({
       className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col"
       role={active ? "main" : undefined}
     >
+      {layoutSaveFailed ? (
+        <p role="alert" className="px-4 py-2 text-muted-foreground text-sm">
+          <Trans>Couldn't save the Editor tab layout. Reload may not restore your tabs.</Trans>
+        </p>
+      ) : null}
       <ContextTabBar
         tabs={tabs}
         activeTabId={activeTabId}
@@ -250,6 +257,7 @@ function EditorEmptyState({
    * Deliberately NOT the sidebar inline-create: that flow is scheme-targeted
    * and happens off-pane, which reads as a dead button from the empty state.
    */
+  layoutSaveFailed?: boolean;
   onNewDocument?: () => void;
 }) {
   return (
