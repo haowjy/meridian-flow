@@ -324,3 +324,7 @@ The basic `EditorView` is a static dependency of the project hosts, not a lazy
 chunk fetched on first New/open. This makes a loaded empty workspace capable of
 starting local writing offline; it deliberately costs earlier editor-code loading
 for Chat-only project visits. It does not provide cold offline application boot.
+
+## Document system map
+
+[Current project document architecture](resource-lifecycle-architecture.md) connects browser-local views, local creation, session persistence, catalog acquisition and backend synchronization. It explicitly distinguishes implemented ownership from the unfinished resource-journal cutover.

@@ -6,3 +6,34 @@
   when a tab is explicitly removed from the tab store; a missing node in the
   refreshed tree does not remove it. Applies to viewer, tracked, and provisional
   documents and needs one deletion-to-tab lifecycle contract across tree/store/route.
+
+- PR #531: use progressive destination-loading feedback with a persistent shell
+  (`routing/ProjectRouteBoundary.tsx` and its callers). Initial proposed threshold:
+  500ms elapsed per pending destination, not a prediction of network duration.
+  Keep sidebar, tabs, pane geometry, and navigation usable immediately. For cold
+  content, leave the pane blank for the first 500ms; if still pending, reveal a
+  content-shaped skeleton in that pane. Keep the skeleton for longer waits,
+  including beyond one second. Never switch to a spinner, loading text, or a
+  full-screen loading cover. Show usable content immediately, without an
+  artificial minimum skeleton display duration. For an eligible same-project/Work
+  transition, retain the previous usable document with its actual identity
+  instead of replacing it with a skeleton. Never relabel retained content as the
+  requested document or expose it across an authority boundary. Pending selection
+  must not flash the real empty-state actions/recent-doc list; preserve explicit
+  empty Editor after Close-all. Keep actual errors, recovery, cancellation, and
+  accessibility busy state. Replace the obsolete 200ms spinner timer/presentation
+  with this policy, without layering another loading owner on top. Reset/cancel
+  delayed feedback when the pending destination changes, settles, or unmounts.
+  Verify cold entry, warm switching, Chat-to-Editor, throttled/offline requests,
+  fast A/B/A supersession, failures, and Close-all; include completion before/after
+  500ms and waits beyond one second. Assert stable shell geometry, no fast-load
+  fallback flash, correct identity, no stale timer, and immediate content reveal.
+  This presentation TODO does not complete local-first opening or atomic navigation.
+  The 500ms value is an initial product choice to validate, not a universal UX rule.
+  References: [application shell][quiet-shell], [retain revealed content][quiet-transitions],
+  [pending-component flash][quiet-router], [accessible busy state][quiet-busy].
+
+[quiet-shell]: https://developer.chrome.com/docs/workbox/app-shell-model
+[quiet-transitions]: https://react.dev/reference/react/Suspense#preventing-already-revealed-content-from-hiding
+[quiet-router]: https://tanstack.com/router/latest/docs/guide/data-loading#avoiding-pending-component-flash
+[quiet-busy]: https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Reference/Attributes/aria-busy
