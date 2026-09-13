@@ -370,3 +370,8 @@ overlay is recorded in [TODO](TODO.md); it is not a tab or a whole-app modal.
 Eligibility is enforced at every durable desk commit, including synchronized
 bootstrap, adoption and availability updates. Hiding a resource row alone is
 insufficient: a hidden tab must not remain eligible for close fallback.
+
+`ContextTabSessionBoundary` is the same React ancestor before and after local
+acknowledgement. It retains the local session while remote tab retention attaches;
+changing only the inner editor key cannot preserve an editor under a replaced
+ancestor. Close releases the binding; warm-view eviction does not.
