@@ -19,9 +19,7 @@ export function useDeleteContextEntry(projectId: string, scheme: ProjectContextT
       deleteContextEntry(
         projectId,
         scheme,
-        args.expected.kind === "file"
-          ? { path: args.path, expected: args.expected }
-          : { path: args.path, expected: { kind: "folder" } },
+        { operationId: args.operationId, path: args.path, expected: args.expected },
         contextRequestOptionsForScheme(scheme, args.workId),
       ),
   });

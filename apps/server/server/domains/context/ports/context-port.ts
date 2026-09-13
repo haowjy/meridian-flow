@@ -9,6 +9,9 @@ import type {
   WorkScopedContextUriScheme,
 } from "@meridian/contracts/context-uri";
 import type {
+  ContextError,
+  ContextMoveResult,
+  ContextOperationReceipt,
   DeleteContextEntryRequest,
   DeleteContextEntryResult,
   DocumentFileType,
@@ -24,6 +27,7 @@ import type { Result } from "../../../shared/result.js";
  * Project-scoped: `manuscript`/`kb`/`user` (bare paths default to `manuscript`).
  * Work-scoped: `scratch`/`uploads` (wire qualifiers use `scheme://@<work-slug>/...`).
  */
+export type { ContextError, ContextMoveResult } from "@meridian/contracts/protocol";
 export type ContextScheme = ContextUriScheme;
 
 /** Schemes provisioned at project scope in the unified context port. */
@@ -165,27 +169,6 @@ export interface SearchResult {
   score?: number;
 }
 
-/**
- * Errors surfaced across the ContextPort boundary. Every variant carries the
- * canonical `uri` it concerns so callers can report without re-parsing.
- */
-export type ContextError =
-  | { code: "not_found"; uri: string }
-  | { code: "permission_denied"; uri: string }
-  | { code: "conflict"; uri: string }
-  | { code: "stale_source"; uri: string }
-  | { code: "stale_target"; uri: string }
-  | { code: "invalid_operation"; uri: string; message?: string }
-  | { code: "context_unavailable"; uri: string }
-  | {
-      code: "invalid_uri";
-      uri: string;
-      reason: string;
-      workSlug?: string;
-      validWorkSlugs?: string[];
-    }
-  | { code: "io_error"; uri: string; message: string };
-
 export type WriteProvenance =
   | { type: "agent"; agentSlug: string; threadId: string; turnId: string }
   | { type: "human"; userId: string; threadId?: string }
@@ -204,6 +187,7 @@ export interface ContextWriteOptions {
 }
 
 export interface ContextLocationOptions extends ContextWriteOptions {
+  operationId?: string;
   expected?: MoveContextEntryRequest["expected"];
 }
 
@@ -212,13 +196,8 @@ export interface ContextMoveOptions extends ContextWriteOptions {
 }
 
 export interface ContextDeleteOptions extends ContextWriteOptions {
+  operationId?: string;
   expected: DeleteContextEntryRequest["expected"];
-}
-
-export interface ContextMoveResult {
-  movedNodeId?: string;
-  /** Scheme-relative path durably committed by the tree mutation. */
-  destinationPath: string;
 }
 
 /** Certified context edits are closed semantic commands, never opaque callbacks. */
@@ -240,6 +219,7 @@ export interface ContextWriteBinaryOptions extends ContextWriteOptions {
  * boundary (architecture-constraints #7).
  */
 export interface ContextPort {
+  lookupOperation(operationId: string): Promise<ContextOperationReceipt | null>;
   /** Resolve metadata for one file by URI. `not_found` if it does not exist or names a directory. */
   stat(uri: string): Promise<Result<FileRef, ContextError>>;
 

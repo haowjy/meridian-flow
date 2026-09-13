@@ -85,6 +85,7 @@ export function createContextIdentityMutationService(
         const { destination } = desired;
         const currentName = actualSource.path.slice(actualSource.path.lastIndexOf("/") + 1);
         const result = await move(projectId, actualSource.scheme, {
+          operationId: crypto.randomUUID(),
           expected: { kind, nodeId: documentId },
           path: actualSource.path.replace(/^\/+/, ""),
           ...(actualSource.workId ? { sourceWorkId: actualSource.workId } : {}),

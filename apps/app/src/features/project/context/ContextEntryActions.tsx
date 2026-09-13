@@ -275,7 +275,7 @@ export function useDeleteConfirmation({
   workId: string | null;
   scheme: ProjectContextTreeScheme;
 }) {
-  const [target, setTarget] = useState<DeleteTarget | null>(null);
+  const [target, setTarget] = useState<(DeleteTarget & { operationId: string }) | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const mutation = useDeleteContextEntry(projectId, scheme);
   const availability = useProjectContextAvailabilityCoordinator();
@@ -284,7 +284,7 @@ export function useDeleteConfirmation({
   const requestDelete = useCallback(
     (t: EntryActionTarget) => {
       setError(null);
-      setTarget({ ...t, workId });
+      setTarget({ ...t, workId, operationId: crypto.randomUUID() });
     },
     [workId],
   );
@@ -300,11 +300,17 @@ export function useDeleteConfirmation({
       const result = await mutation.mutateAsync(
         target.kind === "file"
           ? {
+              operationId: target.operationId,
               path: target.path,
               workId: target.workId,
               expected: { kind: "file", documentId: target.documentId },
             }
-          : { path: target.path, workId: target.workId, expected: { kind: "folder" } },
+          : {
+              operationId: target.operationId,
+              path: target.path,
+              workId: target.workId,
+              expected: { kind: "folder" },
+            },
       );
       await availability.acceptCommittedDelete({
         projectId,

@@ -490,6 +490,7 @@ function wiredDeps(input: {
 
 function contextPortFor(documentId: string, filePath: string): ContextPort {
   return {
+    lookupOperation: async () => null,
     stat: async (uri) =>
       uri === filePath
         ? {

@@ -95,6 +95,7 @@ it("sends scratch tree, read, and mutation requests with explicit Editor Work A"
           workId: "work-a",
         });
         await commands?.delete.mutateAsync({
+          operationId: "00000000-0000-4000-8000-000000000703",
           path: "/gone.md",
           workId: "work-a",
           expected: { kind: "file", documentId: "document-gone" },
