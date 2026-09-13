@@ -660,6 +660,7 @@ class Coordination implements DocumentSessionCrossContextCoordination {
     this.lifecycle = "closing";
     this.admissionsFenced = true;
     this.abort.abort(new Error("Document authority closed"));
+    this.local.beginCloseAccountRuntime();
     this.scheduleScan();
     this.wakeup.removeLifecycleListeners();
   }
@@ -730,7 +731,8 @@ class Coordination implements DocumentSessionCrossContextCoordination {
     try {
       await this.readiness;
     } catch (error) {
-      await this.close().catch(() => undefined);
+      // Close drains pending local opens, including the operation reporting this failure.
+      void this.close().catch(() => undefined);
       throw error;
     }
     this.assertOpen();

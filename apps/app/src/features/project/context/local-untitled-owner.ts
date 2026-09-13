@@ -8,8 +8,8 @@ import {
   deleteIndexedDb,
 } from "@/core/editor/document-session";
 import type { LocalAdoptionPendingReceipt } from "@/core/editor/document-session-authority-store";
+import type { LocalLineageTerminalPort } from "@/core/editor/document-session-coordination-contract";
 import type { LocalUntitledDocumentSessionFactory } from "@/core/editor/document-session-registry";
-import type { LocalLineageTerminalPort } from "@/core/editor/document-session-registry-implementation";
 import type {
   LocalDocumentSessionAdoptionPort,
   LocalDocumentSessionHandoff,
@@ -129,6 +129,7 @@ function snapshot(lineage: LocalUntitledLineage): LocalUntitledWorkSnapshot | nu
 export class LocalUntitledOwner {
   readonly accountId: AccountId;
   private readonly owned = new Map<string, Owned>();
+  private readonly openingAccesses = new Set<LocalUntitledLineageAccess>();
   private readonly opening = new Map<string, Promise<LocalUntitledOpenResult>>();
   private readonly retained = new Map<string, Set<string>>();
   private lifecycle: "open" | "closing" | "closed" = "open";
@@ -287,6 +288,7 @@ export class LocalUntitledOwner {
       throw new Error("Replacement local Untitled identity is owned elsewhere");
     }
     try {
+      this.requireOpen();
       if (this.identityClaimed(to.projectId, to.documentId)) {
         prepared.abort();
         throw new Error("Replacement local Untitled identity is owned elsewhere");
@@ -488,17 +490,29 @@ export class LocalUntitledOwner {
     },
   };
 
-  destroyAll(): Promise<void> {
-    if (this.lifecycle === "closed") return Promise.resolve();
-    if (this.closePromise) return this.closePromise;
+  beginClose(): void {
+    if (this.lifecycle !== "open") return;
     this.lifecycle = "closing";
     this.retained.clear();
-    const attempt = Promise.allSettled(
-      [...this.owned.values()].map(async (owned) => {
-        await owned.value.session.destroy();
-        await owned.access.release();
-      }),
-    )
+  }
+
+  destroyAll(): Promise<void> {
+    this.beginClose();
+    if (this.lifecycle === "closed") return Promise.resolve();
+    if (this.closePromise) return this.closePromise;
+    const attempt = Promise.allSettled([...this.opening.values()])
+      .then(() =>
+        Promise.allSettled([
+          ...[...this.owned.values()].map(async (owned) => {
+            await owned.value.session.destroy();
+            await owned.access.release();
+          }),
+          ...[...this.openingAccesses].map(async (access) => {
+            await access.release();
+            this.openingAccesses.delete(access);
+          }),
+        ]),
+      )
       .then((results) => {
         const errors = results.flatMap((result) =>
           result.status === "rejected" ? [result.reason] : [],
@@ -531,7 +545,9 @@ export class LocalUntitledOwner {
       const acquired = await this.dependencies.ledger.acquire(ref);
       if (acquired.kind === "owned-elsewhere") return acquired;
       const access = acquired.access;
+      this.openingAccesses.add(access);
       try {
+        this.requireOpen();
         lineage = access.snapshot();
         if (mode === "create" && !lineage) {
           const reservation = await this.dependencies.identityReservations.tryReserve(
@@ -540,9 +556,11 @@ export class LocalUntitledOwner {
           );
           if (reservation.kind === "unavailable") {
             await access.release();
+            this.openingAccesses.delete(access);
             return { kind: "owned-elsewhere" };
           }
           try {
+            this.requireOpen();
             if (this.identityClaimed(key.projectId, key.documentId))
               throw new Error("Local Untitled identity is already claimed");
             const persistenceId = this.dependencies.newPersistenceId?.() ?? crypto.randomUUID();
@@ -590,6 +608,7 @@ export class LocalUntitledOwner {
           )
             throw new Error("Local Untitled persistence is no longer locally authoring");
         }
+        this.requireOpen();
         const activeKey = this.key(lineage.ref.projectId, lineage.active.documentId);
         const session = this.dependencies.sessions.createDetached({
           ...activeKey,
@@ -597,9 +616,11 @@ export class LocalUntitledOwner {
         });
         const value = Object.freeze({ key: activeKey, ref: lineage.ref, session });
         this.owned.set(lineageHandle, { access, value, transferring: false, reservation: null });
+        this.openingAccesses.delete(access);
         return { kind: "opened", value };
       } catch (error) {
         await access.release();
+        this.openingAccesses.delete(access);
         throw error;
       }
     })();

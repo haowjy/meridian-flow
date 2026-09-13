@@ -31,7 +31,11 @@ paths; recovery reaches the feature owner through the terminal continuation port
 - The account document-session runtime constructs the only production registry
   for one immutable account epoch. Account close fences admission synchronously,
   then drains local providers, lifetime leases, and adopted-session finalizers
-  before the epoch can close. A local-lineage terminal transition has one
+  before the epoch can close. Feature-owned detached resources register their
+  close phases and terminal continuation together through `connectLocalResources`;
+  they participate in the authority database's version-change barrier, not a
+  later feature cleanup. Pending opens may initiate close after an authority
+  failure but must not await the barrier that drains those same opens. A local-lineage terminal transition has one
   lineage-owner continuation: it retains HL, re-enters and revalidates O, then
   publishes, drains, purges exact P, acknowledges lineage, and finishes O.
   Adoption becomes live only when a final O revalidation converges the owner map

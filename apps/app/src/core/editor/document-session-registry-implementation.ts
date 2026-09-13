@@ -23,12 +23,12 @@ import {
 import {
   DocumentSessionCoordinationError,
   type DocumentSessionCrossContextCoordination,
-  type LocalLineageTerminalPort,
+  type LocalResourceLifetimePort,
   type LocalSessionAuthority,
 } from "./document-session-coordination-contract";
 import { createDocumentSessionCrossContextCoordination } from "./document-session-cross-context-coordination";
 
-export type { LocalLineageTerminalPort } from "./document-session-coordination-contract";
+export type { LocalResourceLifetimePort } from "./document-session-coordination-contract";
 
 import type {
   LocalUntitledDocumentSessionFactory,
@@ -120,7 +120,7 @@ export class DocumentSessionRegistry
     string,
     Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
   >();
-  private localLineageTerminal: LocalLineageTerminalPort | null = null;
+  private localResources: LocalResourceLifetimePort | null = null;
 
   constructor(
     private readonly createCoordination: (
@@ -184,12 +184,13 @@ export class DocumentSessionRegistry
     );
   }
 
-  connectLocalLineageTerminal(port: LocalLineageTerminalPort): void {
-    if (this.localLineageTerminal && this.localLineageTerminal !== port)
-      throw new Error("Local lineage terminal owner is already connected");
-    this.localLineageTerminal = port;
+  connectLocalResources(port: LocalResourceLifetimePort): void {
+    this.requireAccountRuntimeOpen();
+    if (this.localResources && this.localResources !== port)
+      throw new Error("Local resource owner is already connected");
+    this.localResources = port;
     void this.configuredCoordination()
-      .then((coordination) => coordination.connectLocalLineageTerminal(port))
+      .then((coordination) => coordination.connectLocalLineageTerminal(port.terminal))
       .catch((error) => {
         this.authorityFailure = error;
       });
@@ -519,6 +520,7 @@ export class DocumentSessionRegistry
   beginCloseAccountRuntime(): void {
     if (this.accountRuntimeState !== "open") return;
     this.accountRuntimeState = "closing";
+    this.localResources?.beginClose();
     this.coordination?.beginClose();
   }
 
@@ -560,6 +562,7 @@ export class DocumentSessionRegistry
   }
 
   invalidateAll(): Promise<void> {
+    this.beginCloseAccountRuntime();
     this.clearRetainedLiveDocuments();
     this.retainedBranchRoomsByOwner.clear();
     this.liveDocCapWarningEmitted = false;
@@ -582,7 +585,9 @@ export class DocumentSessionRegistry
     for (const { roomKey, session } of branchSessions) {
       void this.teardownOwner.retire({ kind: "branch", roomKey }, session).catch(() => undefined);
     }
-    return this.teardownOwner.drain();
+    return Promise.all([this.teardownOwner.drain(), this.localResources?.finishClose()]).then(
+      () => undefined,
+    );
   }
 
   private clearRetainedLiveDocuments(): void {

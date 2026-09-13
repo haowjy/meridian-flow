@@ -20,6 +20,7 @@ import {
 import { LocalUntitledOwner } from "@/features/project/context/local-untitled-owner";
 import type { CrossContextLockManager } from "../cross-context-locks";
 import { createAccountDocumentSessionRuntime } from "./account-document-session-runtime";
+import { DocumentSession } from "./document-session";
 import { DocumentSessionAuthorityStore } from "./document-session-authority-store";
 import type { DocumentSessionCrossContextCoordination } from "./document-session-coordination-contract";
 import { createDocumentSessionCrossContextCoordination } from "./document-session-cross-context-coordination";
@@ -252,7 +253,12 @@ function compose(
     newPersistenceId: () => "P",
     newObligationId: () => "obligation",
   });
-  if (connectOwner) registry.connectLocalLineageTerminal(owner.terminalPort);
+  if (connectOwner)
+    registry.connectLocalResources({
+      terminal: owner.terminalPort,
+      beginClose: () => owner.beginClose(),
+      finishClose: () => owner.destroyAll(),
+    });
   return { coordination, ledger, locks, owner, registry, storage };
 }
 
@@ -272,7 +278,7 @@ function composeAccountRuntime(
       localReservation: composition.registry,
       localAdoption: composition.registry,
       localConstruction: composition.registry,
-      connectLocalLineageTerminal: (port) => composition.registry.connectLocalLineageTerminal(port),
+      connectLocalResources: (port) => composition.registry.connectLocalResources(port),
       beginClose: () => composition.registry.beginCloseAccountRuntime(),
       finishClose: () => composition.registry.closeAccountRuntime(),
     },
@@ -296,7 +302,11 @@ function composeAccountRuntime(
     newPersistenceId: () => "P",
     newObligationId: () => "obligation",
   });
-  runtime.connectLocalLineageTerminal(owner.terminalPort);
+  runtime.connectLocalResources({
+    terminal: owner.terminalPort,
+    beginClose: () => owner.beginClose(),
+    finishClose: () => owner.destroyAll(),
+  });
   return { ...composition, ledger, owner, runtime };
 }
 
@@ -308,6 +318,75 @@ async function prepareTerminalRace(composition: ReturnType<typeof compose>) {
 
 describe("terminal lineage coordination", () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it("fences detached writing and blocks authority upgrade until retryable local teardown settles", async () => {
+    const accountId = `detached-upgrade-${crypto.randomUUID()}`;
+    const composition = composeAccountRuntime(accountId);
+    const opened = await composition.owner.create(composition.owner.key("project", "doc"));
+    if (opened.kind !== "opened") throw new Error("Local owner was unavailable");
+    const session = opened.value.session;
+    await session.whenLocalPersistenceSynced();
+    session.document.getText("probe").insert(0, "unsynchronized writing");
+    const persistence = session.localPersistenceProvider as { destroy(): Promise<void> };
+    const destroy = persistence.destroy.bind(persistence);
+    let rejectDrain!: (reason: Error) => void;
+    const drain = new Promise<void>((_resolve, reject) => {
+      rejectDrain = reject;
+    });
+    vi.spyOn(persistence, "destroy")
+      .mockImplementationOnce(() => drain)
+      .mockImplementation(destroy);
+    const database = (await indexedDB.databases()).find((entry) => entry.name?.includes(accountId));
+    if (!database?.name || !database.version) throw new Error("Authority database missing");
+    const { name, version } = database;
+    let blocked = false;
+    let upgraded = false;
+    const upgrade = new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(name, version + 1);
+      request.onblocked = () => {
+        blocked = true;
+      };
+      request.onupgradeneeded = () => {
+        upgraded = true;
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await vi.waitFor(() => {
+      expect(blocked).toBe(true);
+      expect(session.getSnapshot().status).toBe("destroyed");
+    });
+    expect(composition.runtime.epochSignal.aborted).toBe(true);
+    await expect(
+      composition.owner.create(composition.owner.key("project", "late")),
+    ).rejects.toThrow(/closing/);
+    expect(() =>
+      composition.runtime.localConstruction.createDetached({
+        accountId,
+        projectId: "project",
+        documentId: "late",
+        persistenceKey: "late",
+      }),
+    ).toThrow(/closing/);
+    expect(upgraded).toBe(false);
+    const closing = composition.runtime.finishClose();
+    rejectDrain(new Error("storage drain interrupted"));
+    await expect(closing).rejects.toThrow();
+    expect(upgraded).toBe(false);
+    await composition.runtime.finishClose();
+    (await upgrade).close();
+    expect(session.document.isDestroyed).toBe(true);
+    expect(composition.ledger.list(accountId)).toHaveLength(1);
+    const persistenceName = session.persistenceName;
+    if (!persistenceName) throw new Error("Local persistence missing");
+    const restored = new DocumentSession({
+      roomKey: "doc",
+      persistence: { kind: "indexeddb", key: persistenceName },
+    });
+    await restored.whenLocalPersistenceSynced();
+    expect(restored.document.getText("probe").toString()).toBe("unsynchronized writing");
+    await restored.destroy();
+  });
 
   it("keeps reconciling admitted terminal joins while the revoker account closes", async () => {
     const accountId = `terminal-close-lost-wake-${crypto.randomUUID()}`;
