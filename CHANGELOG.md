@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Preserve the editor, cursor and selection while local writing receives its server filename.
+
 - Load basic editor with workspace. Offline New no longer waits for a missing editor chunk.
 
 - Keep Scratch and Uploads out of ordinary Editor tabs; retain their chat/AI access and explain that resource viewing is not available yet.

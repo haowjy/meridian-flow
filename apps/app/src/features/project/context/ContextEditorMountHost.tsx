@@ -324,46 +324,51 @@ export function ContextEditorMountHost({
             </div>
           );
         };
-        if (tab.kind === "new") {
-          return renderEditor(local?.session ?? null);
-        }
         return (
-          <ServerTabSessionBoundary
-            key={tab.documentId}
+          <ContextTabSessionBoundary
+            key={bindingKey ?? tab.documentId}
             projectId={projectId}
             documentId={tab.documentId}
+            detached={tab.kind === "new"}
+            localSession={local?.session}
             active={active && isActive}
           >
             {(session, failed) => renderEditor(session, failed)}
-          </ServerTabSessionBoundary>
+          </ContextTabSessionBoundary>
         );
       })}
     </div>
   );
 }
 
-/** One binding whose lifetime is exactly one actual open server tab. */
-export function ServerTabSessionBoundary({
+/** One stable host across local adoption; server retention lasts until the tab closes. */
+export function ContextTabSessionBoundary({
   projectId,
   documentId,
   children,
   active = true,
+  detached = false,
+  localSession = null,
 }: {
   projectId: string;
   documentId: string;
   active?: boolean;
+  detached?: boolean;
+  localSession?: DocumentSession | null;
   children: (session: DocumentSession | null, failed: boolean) => ReactNode;
 }) {
   const generation = useRef(++serverHostGeneration);
+  const serverDocumentId = detached ? null : documentId;
   const binding = useLiveDocumentBinding({
     projectId,
-    documentId,
+    documentId: serverDocumentId,
     owner: "desktop-server-tab",
   });
-  useLiveBindingAcknowledgementHost(projectId, active ? documentId : null, binding);
-  usePostApplyHostWake(projectId, documentId, generation.current);
+  useLiveBindingAcknowledgementHost(projectId, active ? serverDocumentId : null, binding);
+  usePostApplyHostWake(projectId, serverDocumentId, generation.current);
   const state = binding.state;
-  return children(state.kind === "opened" ? state.session : null, state.kind === "failed");
+  // Adoption transfers this same session. Keep its editor while the server-tab binding attaches.
+  return children(state.kind === "opened" ? state.session : localSession, state.kind === "failed");
 }
 
 let serverHostGeneration = 0;
