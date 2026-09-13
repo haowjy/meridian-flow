@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Cancel superseded Work metadata decisions and resume only the current navigation intent after saving.
+
 - Document remaining local-first lifecycle failures, their evidence, coordinated fixes, migration risks and verification gates.
 
 - Keep destination shells quiet during short waits; replace route loading text and spinners with a delayed skeleton without remounting retained editors.

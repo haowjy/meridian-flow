@@ -233,6 +233,36 @@ describe("WorkMetadata", () => {
     );
   });
 
+  it("cancels a superseded intent and never resumes it after an in-flight save", async () => {
+    const pending = deferred<Work>();
+    const first = { label: "First destination", run: vi.fn(), cancel: vi.fn() };
+    const second = { label: "Second destination", run: vi.fn(), cancel: vi.fn() };
+    let controller!: ReturnType<typeof useWorkMetadataController>;
+    function ControllerHarness() {
+      controller = useWorkMetadataController(fixture(), () => pending.promise);
+      return null;
+    }
+    await withReactRoot(<ControllerHarness />, async () => {
+      act(() => controller.activate("goal"));
+      act(() => controller.setDraft("New goal"));
+      act(() => controller.request(first));
+      let saving!: Promise<void>;
+      act(() => {
+        saving = controller.saveAndResume();
+      });
+      act(() => controller.request(second));
+      await act(async () => {
+        pending.resolve(fixture({ goal: "New goal" }));
+        await saving;
+      });
+      expect(first.cancel).toHaveBeenCalledOnce();
+      expect(first.run).not.toHaveBeenCalled();
+      expect(second.run).toHaveBeenCalledOnce();
+      expect(second.cancel).not.toHaveBeenCalled();
+      expect(controller.held).toBeNull();
+    });
+  });
+
   it("holds navigation during a save and runs the exact held intent once after success", async () => {
     const pending = deferred<Work>();
     const resumed = vi.fn();
