@@ -118,12 +118,14 @@ it("persists and admits the real New action without an empty working-set route",
   localStorage.clear();
   const writes: Array<{ key: string; value: string }> = [];
   const originalSetItem = Storage.prototype.setItem;
-  const setItem = vi
-    .spyOn(Storage.prototype, "setItem")
-    .mockImplementation((key: string, value: string) => {
-      writes.push({ key, value });
-      return originalSetItem.call(localStorage, key, value);
-    });
+  const setItem = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+    this: Storage,
+    key: string,
+    value: string,
+  ) {
+    writes.push({ key, value });
+    return originalSetItem.call(this, key, value);
+  });
   useContextTabsStore.setState({ byProject: {}, _deskHydrated: false });
   await rehydrateContextDesks(`new-action-${crypto.randomUUID()}`);
   let search: ProjectSearch = { screen: "context", work: "work-a" };
@@ -194,10 +196,10 @@ it("persists and admits the real New action without an empty working-set route",
         admitted: { scheme: "unfiled", path: "", workId: "work-a" },
       });
       const deskWrites = writes
-        .filter((write) => write.key === "meridian:context-desk")
+        .filter((write) => write.key === "meridian:editor-workspace:v1")
         .map((write) => JSON.parse(write.value));
       expect(deskWrites.length).toBeGreaterThan(0);
-      expect(deskWrites.every((desk) => desk.version === 3)).toBe(true);
+      expect(deskWrites.every((desk) => desk.version === 1)).toBe(true);
       expect(deskWrites.at(-1)?.projects.project).toMatchObject({
         selectedTabIdByWork: { "work-a": local?.documentId },
       });

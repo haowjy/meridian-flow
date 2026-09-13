@@ -367,7 +367,7 @@ viewing-not-available state. Persisted resource tab entries are removed without
 deleting resource documents or local lineages. The deferred chat-launched pane
 overlay is recorded in [TODO](TODO.md); it is not a tab or a whole-app modal.
 
-Eligibility is enforced at every durable desk commit, including synchronized
+Eligibility is enforced at every live workspace transition, including
 bootstrap, adoption and availability updates. Hiding a resource row alone is
 insufficient: a hidden tab must not remain eligible for close fallback.
 
@@ -375,3 +375,11 @@ insufficient: a hidden tab must not remain eligible for close fallback.
 acknowledgement. It retains the local session while remote tab retention attaches;
 changing only the inner editor key cannot preserve an editor under a replaced
 ancestor. Close releases the binding; warm-view eviction does not.
+
+## Browser-local Editor workspace
+
+Zustand owns live membership. Restore snapshots use sessionStorage under
+`meridian:editor-workspace:v1`, isolated per browser tab/window and never
+projected from storage events. Layout persistence failure is reported without
+rejecting New/select/Close. Old shared desk keys are not read or written;
+local document lineages and content persistence remain separate.

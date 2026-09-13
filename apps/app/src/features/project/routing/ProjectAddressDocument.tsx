@@ -63,8 +63,12 @@ export function ProjectAddressDocument({
       contextTabFromFile(uri.value.scheme, projectCatalogFile(document), routeWorkId),
       isCurrent,
     )
-      .then(async () => {
+      .then(async (installed) => {
         if (controller.signal.aborted || !navigation.isCurrent(ticket)) return;
+        if (installed.kind !== "opened") {
+          onAdmission({ ...identity, issue: "unavailable" });
+          return;
+        }
         const next: ProjectAddress = {
           ...address,
           destination: {

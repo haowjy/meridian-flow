@@ -46,8 +46,8 @@ it.each([
 ] as const)("publishes %s metadata without revealing an unresolved alias", async (kind) => {
   let publish!: () => void;
   openTab.mockReturnValue(
-    new Promise<void>((resolve) => {
-      publish = resolve;
+    new Promise<{ kind: "opened" }>((resolve) => {
+      publish = () => resolve({ kind: "opened" });
     }),
   );
   const onAdmission = vi.fn();
@@ -128,7 +128,7 @@ it.each([
   "before-failure",
   "after-failure",
 ] as const)("settles a rejected alias replace only while it owns the entry (superseded: %s)", async (superseded) => {
-  openTab.mockResolvedValue(undefined);
+  openTab.mockResolvedValue({ kind: "opened" });
   let reject!: (error: unknown) => void;
   const pending = new Promise<void>((_resolve, fail) => {
     reject = fail;

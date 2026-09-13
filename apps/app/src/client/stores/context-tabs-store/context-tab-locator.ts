@@ -2,7 +2,7 @@
 
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 
-import type { ServerContextTab } from "./context-tabs-store";
+import type { ServerContextTab } from "./editor-workspace-model";
 
 export function serverContextTabLocatorKey(
   tab: Pick<ServerContextTab, "scheme" | "path" | "workId">,

@@ -234,7 +234,7 @@ type NavigationAdapterDependencies = {
     projectId: string,
     tab: ReturnType<typeof contextTabFromFile>,
     isCurrent?: () => boolean,
-  ): Promise<void>;
+  ): Promise<import("@/client/stores").OpenEditorTabResult>;
   openRoute: OpenContextRoute | null;
   captureNavigation?: () => () => boolean;
 };
@@ -297,12 +297,17 @@ export class ProjectDocumentNavigationAdapter {
         throw new Error("Opening a project document requires the project route owner");
       }
       try {
-        if (!isWorkScopedProjectContextScheme(scheme))
-          await this.dependencies.openTab(
+        if (!isWorkScopedProjectContextScheme(scheme)) {
+          const installed = await this.dependencies.openTab(
             projectId,
             contextTabFromFile(scheme, file, routeWorkId),
             isCurrent,
           );
+          if (installed.kind !== "opened")
+            return installed.kind === "superseded"
+              ? { kind: "cancelled" }
+              : { kind: "unavailable", reason: "failed" };
+        }
       } catch {
         return isCurrent() ? { kind: "unavailable", reason: "failed" } : { kind: "cancelled" };
       }

@@ -1,24 +1,25 @@
-/** Closed, Web-Lock serialized commands for the device Context desk. */
+/** Pure Editor workspace transitions and browser-local restoration codec. */
 import {
   classifyFiletype,
   type DocumentFileType,
   isProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { sameServerContextTabLocator } from "./context-tab-locator";
-import { type ContextTab, isEditorContextTab, type ProjectTabsSlice } from "./context-tabs-store";
+import {
+  type ContextTab,
+  isEditorContextTab,
+  type ProjectTabsSlice,
+} from "./editor-workspace-model";
 
-export const CONTEXT_DESK_STORAGE_KEY = "meridian:context-desk";
+export const EDITOR_WORKSPACE_STORAGE_KEY = "meridian:editor-workspace:v1";
 export type PersistedProjectDesk = ProjectTabsSlice;
-export type DeviceContextDeskV3 = Readonly<{
-  version: 3;
+export type EditorWorkspaceSnapshot = Readonly<{
+  version: 1;
   accountId: string;
-  deskRevision: number;
   projects: Readonly<Record<string, PersistedProjectDesk>>;
 }>;
-export type ContextDeskStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-export type DeviceContextDeskCommand =
-  | { kind: "install-local"; projectId: string; expectedDeskRevision: number; tab: ContextTab }
+export type EditorWorkspaceCommand =
   | { kind: "open"; projectId: string; tab: ContextTab }
   | { kind: "close"; projectId: string; tabInstanceId: string }
   | { kind: "select"; projectId: string; workId: string; tabInstanceId: string | null }
@@ -62,20 +63,12 @@ export type DeviceContextDeskCommand =
       lineageHandle: string;
       adoptionRevision: number;
       trackedTab: ContextTab;
-    }
-  | { kind: "reset-account"; expectedAccountId: string; nextAccountId: string };
+    };
 
-export type DeviceContextDeskCommandResult =
-  | { kind: "committed" | "already-committed"; deskRevision: number; snapshot: DeviceContextDeskV3 }
-  | { kind: "stale" | "not-referenced"; deskRevision: number; snapshot: DeviceContextDeskV3 };
+export type EditorWorkspaceCommandResult =
+  | { kind: "committed" | "already-committed"; snapshot: EditorWorkspaceSnapshot }
+  | { kind: "stale" | "not-referenced"; snapshot: EditorWorkspaceSnapshot };
 
-type LockManager = {
-  request<T>(
-    name: string,
-    options: { mode: "exclusive" },
-    callback: () => T | Promise<T>,
-  ): Promise<T>;
-};
 const DOCUMENT_FILE_TYPES = {
   docx: true,
   image: true,
@@ -168,16 +161,15 @@ function parseProjectDesk(value: unknown): PersistedProjectDesk | null {
   return { tabs: parsedTabs, selectedTabIdByWork: selections };
 }
 
-export function parseContextDesk(raw: string | null): DeviceContextDeskV3 | null {
+export function parseEditorWorkspace(raw: string | null): EditorWorkspaceSnapshot | null {
   if (!raw) return null;
   try {
     const value: unknown = JSON.parse(raw);
     if (!value || typeof value !== "object") return null;
     const record = value as Record<string, unknown>;
     if (
-      record.version !== 3 ||
+      record.version !== 1 ||
       typeof record.accountId !== "string" ||
-      !Number.isSafeInteger(record.deskRevision) ||
       !record.projects ||
       typeof record.projects !== "object" ||
       Array.isArray(record.projects)
@@ -190,9 +182,8 @@ export function parseContextDesk(raw: string | null): DeviceContextDeskV3 | null
       projects[projectId] = parsed;
     }
     return {
-      version: 3,
+      version: 1,
       accountId: record.accountId,
-      deskRevision: record.deskRevision as number,
       projects,
     };
   } catch {
@@ -284,46 +275,35 @@ function canonicalizeTabs(tabs: readonly ContextTab[]): ContextTab[] {
   return canonical;
 }
 function outcome(
-  kind: DeviceContextDeskCommandResult["kind"],
-  snapshot: DeviceContextDeskV3,
-): DeviceContextDeskCommandResult {
-  return { kind, deskRevision: snapshot.deskRevision, snapshot };
+  kind: EditorWorkspaceCommandResult["kind"],
+  snapshot: EditorWorkspaceSnapshot,
+): EditorWorkspaceCommandResult {
+  return { kind, snapshot };
 }
 function committed(
-  current: DeviceContextDeskV3,
+  current: EditorWorkspaceSnapshot,
   projects: Readonly<Record<string, PersistedProjectDesk>>,
-): DeviceContextDeskCommandResult {
+): EditorWorkspaceCommandResult {
   return outcome("committed", {
     ...current,
-    deskRevision: current.deskRevision + 1,
     projects: Object.fromEntries(
       Object.entries(projects).map(([id, desk]) => [id, normalizeProject(desk)]),
     ),
   });
 }
 function replaceProject(
-  current: DeviceContextDeskV3,
+  current: EditorWorkspaceSnapshot,
   projectId: string,
   desk: PersistedProjectDesk,
-): DeviceContextDeskCommandResult {
+): EditorWorkspaceCommandResult {
   return committed(current, { ...current.projects, [projectId]: desk });
 }
 
 /** Total reducer for every durable desk writer class. */
-export function reduceContextDesk(
-  current: DeviceContextDeskV3,
-  command: DeviceContextDeskCommand,
-): DeviceContextDeskCommandResult {
-  if (command.kind === "reset-account") {
-    if (current.accountId === command.nextAccountId) return outcome("already-committed", current);
-    if (current.accountId !== command.expectedAccountId) return outcome("stale", current);
-    return outcome("committed", {
-      version: 3,
-      accountId: command.nextAccountId,
-      deskRevision: current.deskRevision + 1,
-      projects: {},
-    });
-  }
+export function reduceEditorWorkspace(
+  current: EditorWorkspaceSnapshot,
+  command: EditorWorkspaceCommand,
+): EditorWorkspaceCommandResult {
   if (command.kind === "reconcile-bootstrap") {
     const desk = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
     const retained = desk.tabs.filter(
@@ -401,9 +381,7 @@ export function reduceContextDesk(
       return outcome("already-committed", current);
     return replaceProject(current, command.projectId, normalizeProject({ ...desk, tabs }));
   }
-  if (command.kind === "install-local" || command.kind === "open") {
-    if (command.kind === "install-local" && current.deskRevision < command.expectedDeskRevision)
-      return outcome("stale", current);
+  if (command.kind === "open") {
     const desk = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
     if (command.tab.draftOnly) return outcome("already-committed", current);
     const tab = durableTab(command.tab);
@@ -544,80 +522,4 @@ export function reduceContextDesk(
   if (!referenced) return outcome("not-referenced", current);
   if (!changed) return outcome("already-committed", current);
   return committed(current, projects);
-}
-
-function nativeLocks(): LockManager | null {
-  return typeof navigator !== "undefined" && navigator.locks
-    ? (navigator.locks as unknown as LockManager)
-    : null;
-}
-export class DeviceContextDeskLedger {
-  private state: DeviceContextDeskV3;
-  private serial = Promise.resolve();
-  constructor(
-    private readonly storage: ContextDeskStorage,
-    readonly accountId: string,
-    private readonly locks: LockManager | null = nativeLocks(),
-  ) {
-    const persisted = parseContextDesk(storage.getItem(CONTEXT_DESK_STORAGE_KEY));
-    this.state =
-      persisted?.accountId === accountId
-        ? persisted
-        : { version: 3, accountId, deskRevision: 0, projects: {} };
-  }
-  snapshot(): DeviceContextDeskV3 {
-    return this.state;
-  }
-  project(raw: string | null): DeviceContextDeskV3 | null {
-    const persisted = parseContextDesk(raw);
-    if (
-      persisted?.accountId !== this.accountId ||
-      persisted.deskRevision <= this.state.deskRevision
-    )
-      return null;
-    this.state = persisted;
-    return persisted;
-  }
-  apply(
-    command: DeviceContextDeskCommand,
-    isCurrent?: () => boolean,
-  ): Promise<DeviceContextDeskCommandResult> {
-    const execute = async () => {
-      const persisted = parseContextDesk(this.storage.getItem(CONTEXT_DESK_STORAGE_KEY));
-      if (
-        command.kind !== "reset-account" &&
-        persisted !== null &&
-        persisted.accountId !== this.accountId
-      )
-        return outcome("stale", persisted);
-      const current = persisted ?? this.state;
-      // Navigation may be superseded while waiting for the cross-tab lock.
-      const reduced =
-        isCurrent?.() === false ? outcome("stale", current) : reduceContextDesk(current, command);
-      if (reduced.kind === "committed") {
-        this.storage.setItem(CONTEXT_DESK_STORAGE_KEY, JSON.stringify(reduced.snapshot));
-        this.state = reduced.snapshot;
-        return reduced;
-      } else if (
-        reduced.snapshot.accountId === this.accountId &&
-        reduced.deskRevision > this.state.deskRevision
-      )
-        this.state = reduced.snapshot;
-      return reduced;
-    };
-    const lockAccount =
-      command.kind === "reset-account" ? command.expectedAccountId : this.accountId;
-    if (this.locks)
-      return this.locks.request(
-        `meridian:f1j:v2:context-desk/${encodeURIComponent(lockAccount)}`,
-        { mode: "exclusive" },
-        execute,
-      );
-    const applied = this.serial.then(execute, execute);
-    this.serial = applied.then(
-      () => undefined,
-      () => undefined,
-    );
-    return applied;
-  }
 }

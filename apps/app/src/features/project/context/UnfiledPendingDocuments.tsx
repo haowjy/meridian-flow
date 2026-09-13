@@ -48,7 +48,7 @@ export function UnfiledPendingDocuments({
         await openDocument({ documentId: key.documentId, workId: editorWorkId });
         return;
       }
-      await openTab(
+      const installed = await openTab(
         projectId,
         {
           kind: "new",
@@ -59,7 +59,7 @@ export function UnfiledPendingDocuments({
         },
         isCurrent,
       );
-      if (isCurrent?.() === false) return;
+      if (installed.kind !== "opened" || isCurrent?.() === false) return;
       await selectTab(projectId, editorWorkId ?? "", key.documentId);
       if (isCurrent?.() === false) return;
       await openRoute?.({

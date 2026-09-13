@@ -1055,6 +1055,10 @@ msgstr "Couldn't rename this document. Try another name."
 msgid "Couldn't run that skill"
 msgstr "Couldn't run that skill"
 
+#: src/features/project/context/ContextViewer.tsx
+msgid "Couldn't save the Editor tab layout. Reload may not restore your tabs."
+msgstr "Couldn't save the Editor tab layout. Reload may not restore your tabs."
+
 #: src/features/project/context/use-identity-commit.ts
 msgid "Couldn't save this document's home. Try again."
 msgstr "Couldn't save this document's home. Try again."

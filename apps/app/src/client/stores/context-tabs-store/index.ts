@@ -8,6 +8,7 @@ export {
   type DraftDeskSettlementReceipt,
   getContextTabs,
   isEditorContextTab,
+  type OpenEditorTabResult,
   type ProjectTabsSlice,
   publishLocalUntitledAdoption,
   publishLocalUntitledRemint,

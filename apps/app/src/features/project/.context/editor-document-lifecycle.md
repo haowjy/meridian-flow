@@ -50,9 +50,10 @@ flowchart TD
 1. Capture the navigation's ownership ticket or latest-attempt predicate.
 2. Resolve the requested document and its scope. A path is a reusable address;
    the returned document ID is identity.
-3. Await `openTab`. `DeviceContextDeskLedger` checks the ownership predicate
-   inside its serialized operation/lock, immediately before reducing and
-   persisting the desk change. A superseded request must not leave a stale tab.
+3. `openTab` checks current navigation ownership and synchronously installs
+   the member in the browser-local workspace. Its receipt identifies the actual
+   member or reports supersession/ineligibility. SessionStorage restoration writes
+   follow the live transition; storage failure cannot undo it.
 4. Recheck ownership before completing admission or navigation. The tab must
    exist before the route attempts to select it.
 5. If the resolved path is canonical already, settle admission. If it is an
@@ -105,4 +106,4 @@ Transport remains room-scoped; multiplexing is outside this routing contract.
 - [Stable-ID navigation](../context/open-project-document.ts).
 - [Loading boundary](../routing/ProjectRouteBoundary.tsx) and its sibling tests.
 - [Shell and phone retention](../ProjectView.tsx), tested in `ProjectView.retention.test.tsx`.
-- [Durable desk publication](../../../client/stores/context-tabs-store/context-desk-storage.ts).
+- [Workspace transitions and restoration codec](../../../client/stores/context-tabs-store/editor-workspace-state.ts).
