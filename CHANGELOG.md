@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Document current project document architecture and track shell-first loading feedback separately from the remaining resource lifecycle cutover.
+
 - Centralize catalog replay in the resource domain package; remove the old app-owned reducer module without a compatibility re-export.
 
 - Record durable move/delete attempt receipts so retries recover committed operations without repeating mutations. Distinguish namespace collisions from HTTP failures.
