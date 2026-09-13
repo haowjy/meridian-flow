@@ -36,7 +36,7 @@ import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import type * as Y from "yjs";
 
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
-
+import { LocalDocumentPeers } from "./local-document-peers";
 import {
   createLocalPresence,
   type LocalPresence,
@@ -166,6 +166,7 @@ export class DocumentSession {
   readonly markerStore: SessionMarkerStore;
 
   private persistence: IndexeddbPersistence | null;
+  private localPeers: LocalDocumentPeers | null = null;
   private transportProvider: DocumentSessionTransportProvider | null = null;
   private transportAttachmentPending = false;
   private readonly listeners = new Set<Listener>();
@@ -268,6 +269,7 @@ export class DocumentSession {
     this.unsubscribeTransportStatus =
       this.transportProvider.subscribeStatus?.((state) => {
         this.transportState = state;
+        if (state.kind === "unauthorized" || state.kind === "reset") this.localPeers?.stop();
         if (state.kind === "reset" && state.reason === WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason) {
           if (!attemptClientSchemaReload(this.roomKey)) {
             this.raiseSchemaFence({ reason: "client-superseded" });
@@ -303,7 +305,10 @@ export class DocumentSession {
     this.transportDurableSyncComplete = false;
     this.status = "detached";
     await previous?.destroy();
+    await this.localPeers?.drain();
+    this.localPeers = null;
     this.attachTransport(transportFactory);
+    this.startLocalPeers();
   }
 
   private waitForLocalPersistenceTransportGate(): Promise<void> {
@@ -344,6 +349,7 @@ export class DocumentSession {
   raiseSchemaFence(fence: SchemaFence): void {
     if (this.destroyed || this.schemaFence) return;
     this.schemaFence = fence;
+    this.localPeers?.stop();
     this.persistSchemaFence?.(fence);
     this.suspendPresence();
     this.emit();
@@ -499,6 +505,7 @@ export class DocumentSession {
     if (this.destroyPromise) return this.destroyPromise;
     if (!this.destroyStages) {
       this.destroyed = true;
+      this.localPeers?.stop();
       this.resolveTransportAttached();
       this.resolveLifecycleCompleted();
       this.status = "destroyed";
@@ -518,6 +525,7 @@ export class DocumentSession {
         { settled: false, run: () => this.unsubscribeTransportStatus?.() },
         { settled: false, run: () => this.unsubscribeChangeEvents?.() },
         { settled: false, run: () => this.transportProvider?.destroy() },
+        { settled: false, run: () => this.localPeers?.drain() },
         {
           settled: false,
           run: () =>
@@ -554,7 +562,28 @@ export class DocumentSession {
     await this.persistence?.whenSynced;
     if (this.destroyed) return;
     this.localPersistenceSynced = true;
+    this.startLocalPeers();
     this.recomputeStatus();
+  }
+
+  private startLocalPeers(): void {
+    if (
+      this.localPersistenceSynced &&
+      !this.destroyed &&
+      !this.localPeers &&
+      this.persistence &&
+      !this.schemaFence &&
+      this.transportState?.kind !== "unauthorized" &&
+      this.transportState?.kind !== "reset" &&
+      typeof window !== "undefined" &&
+      typeof BroadcastChannel === "function"
+    )
+      try {
+        this.localPeers = new LocalDocumentPeers(this.document, this.persistence);
+      } catch (error) {
+        // A denied peer channel must not make successfully loaded writing unavailable.
+        reportError(error);
+      }
   }
 
   private async watchTransportSync(provider: DocumentSessionTransportProvider): Promise<void> {
