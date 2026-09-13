@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Document remaining local-first lifecycle failures, their evidence, coordinated fixes, migration risks and verification gates.
+
 - Keep destination shells quiet during short waits; replace route loading text and spinners with a delayed skeleton without remounting retained editors.
 
 - Document current project document architecture and track shell-first loading feedback separately from the remaining resource lifecycle cutover.

@@ -16,3 +16,5 @@
   Verify cold replay, missing content cache, offline acquisition, A/B/A supersession,
   explicit empty Editor and wrong-content masking. Route-boundary feedback alone
   does not fix the remote-gated opener or close/reload navigation race.
+
+- Complete the local-first ownership cutover using the [remaining-issue dossier](../../../../../../docs/pr-evidence/local-first-remaining-issues.md): accepted navigation, proven content readiness, durable resource/intent ownership, concurrent admission and non-destructive migration. Preserve the existing session/backend foundations; remove displaced writers at activation.
