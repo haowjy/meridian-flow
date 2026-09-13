@@ -1,12 +1,12 @@
 /** Per-QueryClient catalog drain coordinator: one request stream per normalized scope key. */
 import type { CatalogScope } from "@meridian/contracts/protocol";
-import type { QueryClient, QueryKey } from "@tanstack/react-query";
-import { getContextCatalogChanges, getContextCatalogSnapshot } from "@/client/api/projects-api";
 import {
   applyCatalogChanges,
   type CatalogCacheView,
   catalogViewFromSnapshot,
-} from "./context-catalog-cache";
+} from "@meridian/resource-replica";
+import type { QueryClient, QueryKey } from "@tanstack/react-query";
+import { getContextCatalogChanges, getContextCatalogSnapshot } from "@/client/api/projects-api";
 
 type State = {
   hintedHighWater: bigint;

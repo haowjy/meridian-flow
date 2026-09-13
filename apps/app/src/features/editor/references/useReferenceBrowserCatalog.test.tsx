@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 /** Cache events drive an open browser without a new editor frame. */
+
+import { emptyCatalogView } from "@meridian/resource-replica";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { emptyCatalogView } from "@/client/query/context-catalog-cache";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { createReferenceBrowserController } from "@/core/completion";
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";

@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Centralize catalog replay in the resource domain package; remove the old app-owned reducer module without a compatibility re-export.
+
 - Record durable move/delete attempt receipts so retries recover committed operations without repeating mutations. Distinguish namespace collisions from HTTP failures.
 
 - Exchange document edits between same-browser sessions while offline and recover missed peer updates from local persistence without waiting for the server.

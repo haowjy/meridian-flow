@@ -5,7 +5,7 @@ import type {
   ProjectContextTreeScheme,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
-import type { CatalogCacheView } from "./context-catalog-cache";
+import type { CatalogCacheView } from "@meridian/resource-replica";
 
 type CatalogFileBase = {
   kind: "file";

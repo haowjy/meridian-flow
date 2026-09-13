@@ -1,6 +1,6 @@
 import type { CatalogEntry, CatalogScope } from "@meridian/contracts/protocol";
+import { catalogViewFromSnapshot } from "@meridian/resource-replica";
 import { describe, expect, it } from "vitest";
-import { catalogViewFromSnapshot } from "@/client/query/context-catalog-cache";
 import { projectCatalogView } from "@/client/query/useContextCatalog";
 import { catalogFileSuggestions } from "./file-suggestions";
 

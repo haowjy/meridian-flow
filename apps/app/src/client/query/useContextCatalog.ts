@@ -4,6 +4,7 @@ import type {
   CatalogWakeHint,
   ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
+import type { CatalogCacheView, catalogChildren } from "@meridian/resource-replica";
 import { type QueryClient, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { getContextCatalogLookup } from "@/client/api/projects-api";
@@ -15,7 +16,6 @@ import type {
   CatalogNode,
 } from "@/client/query/context-catalog-projection";
 import { acquireContextCatalog, hintContextCatalog } from "./context-catalog-acquisition";
-import type { CatalogCacheView, catalogChildren } from "./context-catalog-cache";
 import { projectQueryKeys } from "./project-query-keys";
 
 export function contextCatalogScope(
