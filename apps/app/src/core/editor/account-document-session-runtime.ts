@@ -6,7 +6,7 @@ import type {
 } from "./document-session-registry";
 import {
   DocumentSessionRegistry,
-  type LocalLineageTerminalPort,
+  type LocalResourceLifetimePort,
 } from "./document-session-registry-implementation";
 import type {
   LocalDocumentSessionAdoptionPort,
@@ -20,7 +20,7 @@ export interface AccountDocumentSessionRuntime {
   readonly localReservation: LocalDocumentSessionReservationPort;
   readonly localAdoption: LocalDocumentSessionAdoptionPort;
   readonly localConstruction: LocalUntitledDocumentSessionFactory;
-  connectLocalLineageTerminal(port: LocalLineageTerminalPort): void;
+  connectLocalResources(port: LocalResourceLifetimePort): void;
   beginClose(): void;
   finishClose(): Promise<void>;
 }
@@ -32,7 +32,7 @@ export interface AccountDocumentSessionCore {
   readonly localReservation: LocalDocumentSessionReservationPort;
   readonly localAdoption: LocalDocumentSessionAdoptionPort;
   readonly localConstruction: LocalUntitledDocumentSessionFactory;
-  connectLocalLineageTerminal?(port: LocalLineageTerminalPort): void;
+  connectLocalResources(port: LocalResourceLifetimePort): void;
   beginClose(): void;
   finishClose(): Promise<void>;
 }
@@ -50,8 +50,8 @@ function createCore(accountId: AccountId): AccountDocumentSessionCore {
     localReservation: registry,
     localAdoption: registry,
     localConstruction: registry,
-    connectLocalLineageTerminal: (port: LocalLineageTerminalPort) =>
-      registry.connectLocalLineageTerminal(port),
+    connectLocalResources: (port: LocalResourceLifetimePort) =>
+      registry.connectLocalResources(port),
     beginClose: () => registry.beginCloseAccountRuntime(),
     finishClose: () => registry.closeAccountRuntime(),
   });
@@ -145,8 +145,17 @@ export function createAccountDocumentSessionRuntime(
     localReservation,
     localAdoption,
     localConstruction,
-    connectLocalLineageTerminal: (port: LocalLineageTerminalPort) =>
-      core.connectLocalLineageTerminal?.(port),
+    connectLocalResources: (port: LocalResourceLifetimePort) => {
+      requireOpen();
+      core.connectLocalResources({
+        terminal: port.terminal,
+        beginClose() {
+          beginClose();
+          port.beginClose();
+        },
+        finishClose: () => port.finishClose(),
+      });
+    },
     beginClose,
     finishClose() {
       if (finishPromise) return finishPromise;

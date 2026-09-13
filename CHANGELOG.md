@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Include unsynchronized local documents in account and storage-upgrade shutdown; retain writing and retry failed provider drains before releasing authority.
+
 - Keep Editor tabs independent per browser tab and restore their layout locally; remove the shared desk ledger that could stall New and Close.
 
 - Preserve the editor, cursor and selection while local writing receives its server filename.

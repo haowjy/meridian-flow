@@ -22,7 +22,6 @@ export class AccountFeatureLifetime {
   readonly opener;
   private readonly featureLease;
   private closeAttempt: Promise<void> | null = null;
-  private localSettled = false;
   private featureOwnersSettled = false;
   state: "open" | "closing" | "closed" = "open";
 
@@ -86,7 +85,11 @@ export class AccountFeatureLifetime {
       reservations: this.runtime.localReservation,
       adoption: this.runtime.localAdoption,
     });
-    this.runtime.connectLocalLineageTerminal(this.localOwner.terminalPort);
+    this.runtime.connectLocalResources({
+      terminal: this.localOwner.terminalPort,
+      beginClose: () => this.localOwner.beginClose(),
+      finishClose: () => this.localOwner.destroyAll(),
+    });
     this.opener = new ProjectDocumentLiveOpener({
       availability: this.availability,
       registry: this.registry,
@@ -121,19 +124,7 @@ export class AccountFeatureLifetime {
         this.postApplyOwner.dispose();
         this.featureOwnersSettled = true;
       }
-      try {
-        await this.runtime.finishClose();
-      } catch (cause) {
-        throw new AccountFeatureLifetimeCloseError("account-runtime", cause);
-      }
-      if (!this.localSettled) {
-        try {
-          await this.localOwner.destroyAll();
-          this.localSettled = true;
-        } catch (cause) {
-          throw new AccountFeatureLifetimeCloseError("local-untitled", cause);
-        }
-      }
+      await this.runtime.finishClose();
       this.state = "closed";
     })();
     this.closeAttempt = attempt;
@@ -143,14 +134,5 @@ export class AccountFeatureLifetime {
       })
       .catch(() => undefined);
     return attempt;
-  }
-}
-
-class AccountFeatureLifetimeCloseError extends Error {
-  constructor(
-    readonly stage: "local-untitled" | "account-runtime",
-    readonly cause: unknown,
-  ) {
-    super(`Account feature close failed during ${stage}`, { cause });
   }
 }

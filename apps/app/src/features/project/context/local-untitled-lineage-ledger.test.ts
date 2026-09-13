@@ -52,6 +52,23 @@ function lifetime(): LocalUntitledCrossContextLeasePort {
 }
 
 describe("browser local Untitled lineage ledger", () => {
+  it("fences released access while preserving a failed lease release for retry", async () => {
+    const release = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error("release interrupted"))
+      .mockResolvedValue(undefined);
+    const ledger = new BrowserLocalUntitledLineageLedger(new MemoryStorage(), {
+      tryAcquire: async () => ({ release }),
+    });
+    const acquired = await ledger.acquire(ref);
+    if (acquired.kind !== "acquired") throw new Error("not acquired");
+    await expect(acquired.access.release()).rejects.toThrow("release interrupted");
+    expect(() => acquired.access.snapshot()).toThrow("released");
+    await expect(acquired.access.release()).resolves.toBeUndefined();
+    await expect(acquired.access.release()).resolves.toBeUndefined();
+    expect(release).toHaveBeenCalledTimes(2);
+  });
+
   it("performs one storage write for a remint old/new commit", async () => {
     const storage = new MemoryStorage();
     const set = vi.spyOn(storage, "setItem");

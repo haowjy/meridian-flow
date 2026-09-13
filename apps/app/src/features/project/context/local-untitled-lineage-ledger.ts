@@ -113,6 +113,7 @@ export class BrowserLocalUntitledLineageLedger implements LocalUntitledLineageLe
     const lease = await this.lifetime.tryAcquire(ref.projectId, ref.lineageHandle);
     if (!lease) return { kind: "owned-elsewhere" };
     let live = true;
+    let releaseAttempt: Promise<void> | null = null;
     const access: LocalUntitledLineageAccess = {
       snapshot: () => {
         if (!live) throw new Error("Local Untitled lineage access was released");
@@ -129,10 +130,15 @@ export class BrowserLocalUntitledLineageLedger implements LocalUntitledLineageLe
         else if (result.kind === "removed") this.storage.removeItem(storageKey(ref));
         return result;
       },
-      release: async () => {
-        if (!live) return;
+      release: () => {
         live = false;
-        await lease.release();
+        if (!releaseAttempt) {
+          releaseAttempt = lease.release().catch((error: unknown) => {
+            releaseAttempt = null;
+            throw error;
+          });
+        }
+        return releaseAttempt;
       },
     };
     return { kind: "acquired", access };
