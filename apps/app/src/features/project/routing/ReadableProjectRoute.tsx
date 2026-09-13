@@ -530,6 +530,7 @@ export function ReadableProjectRoute({
           addressOwnsDocumentAdmission
           routeWork={routeWork(work)}
           editorRouteWork={routeWork(editorWork)}
+          routeLocationKey={location.state.__TSR_key ?? location.href}
           routeIssues={{ main: mainIssue, chat: issue(chat), editor: editorIssue }}
           onDisplayedSelection={reportSelection}
           routeCommands={routeCommands}

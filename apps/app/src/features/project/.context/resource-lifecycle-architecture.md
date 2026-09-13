@@ -81,4 +81,4 @@ The foundation preserves editor continuity, independent layout, drain safety, pe
 
 Still unfinished: a durable general resource owner/journal, proven cached-content readiness, concurrent local admission, one catalog/tree projection, frontend durable namespace replay, accepted workspace/history settlement and migration/deletion of old owners.
 
-Loading presentation is also unchanged: the current boundary can display cold loading text and a delayed 200ms warm progress indicator. [The tracked TODO](TODO) replaces those with an immediate shell and approximately 500ms delayed skeleton, with no spinners or loading copy. This is planned behavior, not a claim about this checkout.
+Address-loading presentation keeps the shell immediately, retains eligible prior content, and otherwise shows a blank pane followed by a skeleton after approximately 500ms. Only the fallback resets with destination changes; the editor stays mounted. There is no spinner, loading copy or minimum fallback duration. Content-session startup remains a separate wait whose presentation still needs the same policy; see [tracked follow-ups](TODO).

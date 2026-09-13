@@ -66,10 +66,9 @@ flowchart TD
 ## What stays visible
 
 For a same-project, same-Work Editor transition with prior usable content,
-`ProjectRouteBoundary` leaves that content visible and non-inert. After 200 ms
-it shows a small, pointer-transparent progress indicator. Fast transitions
-therefore show no loading cover or spinner flash. Desktop surfaces remain
-mounted; returning to a warm document can reuse its editor and session.
+`ProjectRouteBoundary` leaves that content visible and non-inert, without a
+spinner or loading label. Desktop surfaces remain mounted; returning to a warm
+document can reuse its editor and session.
 
 Phone retention keeps the old document's path, identity, and breadcrumb
 presentation together. `HydratedReviewScopes` supplies that same identity to
@@ -78,7 +77,11 @@ so clicking the retained Files breadcrumb can supersede the pending open.
 Retention does not change the phone viewer's existing read-only behavior.
 
 Retention ends when the new address is admitted or the transition is no longer
-eligible. Cold entry has no old editor to show and can still display loading.
+eligible. Cold address entry keeps the shell and pane geometry, with hidden/inert pending
+content. The pane stays blank for approximately 500ms, then shows a skeleton if
+still pending. Only that fallback is keyed by the destination; the editor is
+never keyed or remounted for loading. Settlement removes feedback immediately,
+with no minimum display duration. Busy state is exposed without loading copy.
 Different-project entry, Work recovery, unavailable destinations, and errors do
 not expose retained content as if it were the requested destination. A cold
 content host may also need its own startup UI after address resolution.

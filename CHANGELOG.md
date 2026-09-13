@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Keep destination shells quiet during short waits; replace route loading text and spinners with a delayed skeleton without remounting retained editors.
+
 - Document current project document architecture and track shell-first loading feedback separately from the remaining resource lifecycle cutover.
 
 - Centralize catalog replay in the resource domain package; remove the old app-owned reducer module without a compatibility re-export.

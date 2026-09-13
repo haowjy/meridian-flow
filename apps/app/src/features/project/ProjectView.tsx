@@ -125,6 +125,7 @@ export type ProjectViewProps = {
   activeLocalDocumentId?: string;
   entryHydration: WorkingSetHydrationPlan;
   addressOwnsDocumentAdmission?: boolean;
+  routeLocationKey?: string;
   routeIssues?: { main?: ProjectRouteIssue; chat?: ProjectRouteIssue; editor?: ProjectRouteIssue };
   onDisplayedSelection?: (selection: {
     threadId: string | null;
@@ -605,6 +606,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
       id: "context-viewer",
       children: (
         <ProjectRouteBoundary
+          destinationKey={props.routeLocationKey}
           issue={props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined}
           retainWhileLoading={
             !!priorEditor.current && priorEditor.current.editorWorkId === props.editorWorkId
@@ -645,7 +647,10 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     {
       id: "chat",
       children: (
-        <ProjectRouteBoundary issue={props.routeIssues?.chat}>
+        <ProjectRouteBoundary
+          issue={props.routeIssues?.chat}
+          destinationKey={props.routeLocationKey}
+        >
           <div
             className="flex min-h-0 flex-1 flex-col"
             role={chatPlacement === "center" && !props.chatDestination ? "main" : undefined}
@@ -727,7 +732,10 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         bounds={SURFACE_WIDTH_BOUNDS}
         mainMinWidth={MAIN_MIN_WIDTH}
       >
-        <ProjectRouteBoundary issue={props.routeIssues?.main}>
+        <ProjectRouteBoundary
+          issue={props.routeIssues?.main}
+          destinationKey={props.routeLocationKey}
+        >
           {renderDesktopPane(props, surfaceToggle)}
         </ProjectRouteBoundary>
       </ProjectShell>
