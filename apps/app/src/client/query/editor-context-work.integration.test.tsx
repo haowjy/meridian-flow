@@ -35,6 +35,28 @@ vi.mock("@/client/api/projects-api", () => ({
     return { status: "deleted" };
   }),
 }));
+vi.mock("@/features/project/context/account-feature-context", () => ({
+  useAccountResourceReplica: () => ({
+    acquireCatalog: async (_projectId: string, scope: { kind: string; workId?: string }) => {
+      requests.push({
+        operation: "tree",
+        workId: scope.kind === "work" ? scope.workId : undefined,
+      });
+      return {
+        scope,
+        generation: "generation-1",
+        headRevision: "0",
+        appliedRevision: "0",
+        cursor: "cursor-0",
+        entries: new Map(),
+        childIdsByParentId: new Map(),
+        sourceIdsByScheme: new Map(),
+        invalidatedEntryIds: new Set(),
+      };
+    },
+  }),
+  useAccountResourceProjection: () => ({ records: [], snapshot: null, error: null }),
+}));
 
 const { useCreateContextEntry } = await import("./useCreateContextEntry");
 const { useDeleteContextEntry } = await import("./useDeleteContextEntry");

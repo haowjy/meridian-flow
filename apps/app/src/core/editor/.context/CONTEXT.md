@@ -24,11 +24,12 @@ reads before destroying persistence. Local convergence never means server ack.
 The readonly replay adapter knows y-indexeddb's `updates` store but does not touch
 its private compaction cursor or write a second content journal.
 
-Project-local Untitled lifetime and identity reservations belong to
-`features/project/context/local-untitled-locks.ts`, composed by
-`AccountFeatureLifetime`. The account runtime supplies its epoch signal, not
-feature-specific lock factories. Keep lineage acquisition outside operation-held
-paths; recovery reaches the feature owner through the terminal continuation port.
+Browser-local document reservations, stable resource handles, exact persistence,
+and namespace intentions belong to the account-global `AccountResourceReplica`,
+composed by `AccountFeatureLifetime`. The document-session runtime supplies its
+account epoch and adopts acknowledged resource sessions without replacing their
+Y.Doc or persistence database. Editor tabs retain only browser-member identity;
+they do not own resource or namespace lifetime.
 
 ## Contracts
 

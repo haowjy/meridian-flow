@@ -129,11 +129,9 @@ describe("context tab identity and removal commits", () => {
 
   it("commits an exact multi-id removal and final selection once", () => {
     const store = useContextTabsStore.getState();
-    store.reconcileBootstrap(
-      "project-1",
-      [],
-      [trackedAt("a", "/a.md"), trackedAt("b", "/b.md"), trackedAt("c", "/c.md")],
-    );
+    store.openTab("project-1", trackedAt("a", "/a.md"));
+    store.openTab("project-1", trackedAt("b", "/b.md"));
+    store.openTab("project-1", trackedAt("c", "/c.md"));
     store.selectTab("project-1", "work-1", "b");
 
     const removed = commitPlannedContextRemoval("project-1", {

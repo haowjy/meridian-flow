@@ -17,6 +17,18 @@ const local: ContextTab = {
 const empty: EditorWorkspaceSnapshot = { version: 1, accountId: "account", projects: {} };
 const opened = () =>
   reduceEditorWorkspace(empty, { kind: "open", projectId: "project", tab: local }).snapshot;
+const refreshed = (documentId = "B", path = "/Untitled.md"): ContextTab => ({
+  kind: "tracked",
+  documentId,
+  scheme: "unfiled",
+  path,
+  name: path.slice(1),
+  editable: true,
+  filetype: "markdown",
+  schemaType: "document",
+  resourceHandle: "resource-a",
+  origin: "local-resource",
+});
 
 it("preserves resource identity, selection and idempotency through remint restoration", () => {
   const selected = reduceEditorWorkspace(opened(), {
@@ -42,28 +54,87 @@ it("preserves resource identity, selection and idempotency through remint restor
 
 it("keeps the browser-tab member identity while bootstrap refreshes resource metadata", () => {
   const current = opened();
-  const refreshed: ContextTab = {
-    kind: "tracked",
-    documentId: "B",
-    scheme: "unfiled",
-    path: "/Untitled.md",
-    name: "Untitled.md",
-    editable: true,
-    filetype: "markdown",
-    schemaType: "document",
-    resourceHandle: "resource-a",
-    origin: "local-resource",
-  };
+  const next = refreshed();
 
   const result = reduceEditorWorkspace(current, {
     kind: "reconcile-bootstrap",
     projectId: "project",
-    priorTabs: [local],
-    nextTabs: [refreshed],
+    changes: [{ prior: local, next }],
+  });
+
+  expect(result.snapshot.projects.project?.tabs).toEqual([{ ...next, tabInstanceId: "member-a" }]);
+});
+
+it("does not restore a member closed while bootstrap validation is pending", () => {
+  const closed = reduceEditorWorkspace(opened(), {
+    kind: "close",
+    projectId: "project",
+    tabInstanceId: "member-a",
+  }).snapshot;
+
+  const result = reduceEditorWorkspace(closed, {
+    kind: "reconcile-bootstrap",
+    projectId: "project",
+    changes: [{ prior: local, next: refreshed() }],
+  });
+
+  expect(result.kind).toBe("already-committed");
+  expect(result.snapshot.projects.project?.tabs).toEqual([]);
+});
+
+it("updates a reopened resource without restoring its obsolete member identity", () => {
+  const close = { kind: "close" as const, projectId: "project", tabInstanceId: "member-a" };
+  const closed = reduceEditorWorkspace(opened(), close).snapshot;
+  const reopened = reduceEditorWorkspace(closed, {
+    kind: "open",
+    projectId: "project",
+    tab: { ...local, tabInstanceId: "member-b" },
+  }).snapshot;
+
+  const result = reduceEditorWorkspace(reopened, {
+    kind: "reconcile-bootstrap",
+    projectId: "project",
+    changes: [{ prior: local, next: refreshed() }],
   });
 
   expect(result.snapshot.projects.project?.tabs).toEqual([
-    { ...refreshed, tabInstanceId: "member-a" },
+    { ...refreshed(), tabInstanceId: "member-b" },
+  ]);
+  expect(reduceEditorWorkspace(result.snapshot, close).kind).toBe("stale");
+});
+
+it("rewrites the active selection when bootstrap observes a remint", () => {
+  const selected = reduceEditorWorkspace(opened(), {
+    kind: "select",
+    projectId: "project",
+    workId: "work-1",
+    tabInstanceId: "member-a",
+  }).snapshot;
+
+  const result = reduceEditorWorkspace(selected, {
+    kind: "reconcile-bootstrap",
+    projectId: "project",
+    changes: [{ prior: local, next: refreshed() }],
+  });
+
+  expect(result.snapshot.projects.project?.selectedTabIdByWork).toEqual({ "work-1": "B" });
+});
+
+it("keeps a newer locator occupant when delayed bootstrap metadata conflicts", () => {
+  const withReplacement = reduceEditorWorkspace(opened(), {
+    kind: "open",
+    projectId: "project",
+    tab: { ...refreshed("C"), resourceHandle: "resource-c", tabInstanceId: "member-c" },
+  }).snapshot;
+
+  const result = reduceEditorWorkspace(withReplacement, {
+    kind: "reconcile-bootstrap",
+    projectId: "project",
+    changes: [{ prior: local, next: refreshed() }],
+  });
+
+  expect(result.snapshot.projects.project?.tabs).toEqual([
+    { ...refreshed("C"), resourceHandle: "resource-c", tabInstanceId: "member-c" },
   ]);
 });
 

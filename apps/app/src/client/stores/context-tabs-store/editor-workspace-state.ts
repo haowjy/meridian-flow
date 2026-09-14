@@ -38,8 +38,7 @@ export type EditorWorkspaceCommand =
   | {
       kind: "reconcile-bootstrap";
       projectId: string;
-      priorTabs: readonly ContextTab[];
-      nextTabs: readonly ContextTab[];
+      changes: readonly { prior: ContextTab; next: ContextTab | null }[];
     }
   | {
       kind: "apply-availability";
@@ -226,18 +225,6 @@ function sameTabIdentity(left: ContextTab, right: ContextTab): boolean {
   );
 }
 
-function priorBootstrapMember(
-  priorTabs: readonly ContextTab[],
-  incoming: ContextTab,
-): ContextTab | undefined {
-  return priorTabs.find(
-    (prior) =>
-      prior.tabInstanceId === incoming.tabInstanceId ||
-      (prior.resourceHandle !== undefined && prior.resourceHandle === incoming.resourceHandle) ||
-      prior.documentId === incoming.documentId,
-  );
-}
-
 function normalizeProject(desk: PersistedProjectDesk): PersistedProjectDesk {
   const tabs = desk.tabs.filter(isEditorContextTab);
   return {
@@ -319,23 +306,53 @@ export function reduceEditorWorkspace(
 ): EditorWorkspaceCommandResult {
   if (command.kind === "reconcile-bootstrap") {
     const desk = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
-    const retained = desk.tabs.filter(
-      (tab) => !command.priorTabs.some((prior) => sameTabIdentity(tab, prior)),
-    );
-    const tabs = [...retained];
-    for (const candidate of command.nextTabs.filter((tab) => !tab.draftOnly)) {
-      const prior = priorBootstrapMember(command.priorTabs, candidate);
-      const incoming = durableTab(
-        prior ? ({ ...candidate, tabInstanceId: prior.tabInstanceId } as ContextTab) : candidate,
+    const tabs = [...desk.tabs];
+    let selections = { ...desk.selectedTabIdByWork };
+    const consumedMembers = new Set<string>();
+    for (const change of command.changes) {
+      const exactIndex = tabs.findIndex((tab) => sameTabIdentity(tab, change.prior));
+      const reopenedIndex =
+        exactIndex < 0 && change.prior.resourceHandle
+          ? tabs.findIndex(
+              (tab) =>
+                tab.resourceHandle === change.prior.resourceHandle &&
+                !consumedMembers.has(tab.tabInstanceId as string),
+            )
+          : -1;
+      const index = exactIndex >= 0 ? exactIndex : reopenedIndex;
+      const live = index >= 0 ? tabs[index] : undefined;
+      if (!live || consumedMembers.has(live.tabInstanceId as string)) continue;
+      consumedMembers.add(live.tabInstanceId as string);
+      if (!change.next || change.next.draftOnly) {
+        tabs.splice(index, 1);
+        selections = Object.fromEntries(
+          Object.entries(selections).filter(([, documentId]) => documentId !== live.documentId),
+        );
+        continue;
+      }
+      const incoming = durableTab({
+        ...change.next,
+        tabInstanceId: live.tabInstanceId,
+      } as ContextTab);
+      const conflictIndex = tabs.findIndex(
+        (tab, candidateIndex) =>
+          candidateIndex !== index &&
+          (tab.documentId === incoming.documentId ||
+            (tab.resourceHandle !== undefined && tab.resourceHandle === incoming.resourceHandle) ||
+            (tab.kind !== "new" &&
+              incoming.kind !== "new" &&
+              sameServerContextTabLocator(tab, incoming))),
       );
-      const index = tabs.findIndex(
-        (tab) =>
-          tab.tabInstanceId === incoming.tabInstanceId || tab.documentId === incoming.documentId,
-      );
-      if (index < 0) tabs.push(incoming);
-      else tabs[index] = { ...tabs[index], ...incoming } as ContextTab;
+      if (conflictIndex >= 0) {
+        const winner = tabs[conflictIndex] as ContextTab;
+        tabs.splice(index, 1);
+        selections = rewriteSelections(selections, live.documentId, winner.documentId);
+        continue;
+      }
+      tabs[index] = incoming;
+      selections = rewriteSelections(selections, live.documentId, incoming.documentId);
     }
-    const next = normalizeProject({ tabs, selectedTabIdByWork: desk.selectedTabIdByWork });
+    const next = normalizeProject({ tabs, selectedTabIdByWork: selections });
     if (JSON.stringify(next) === JSON.stringify(desk)) return outcome("already-committed", current);
     return replaceProject(current, command.projectId, next);
   }

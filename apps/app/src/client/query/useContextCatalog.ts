@@ -19,7 +19,7 @@ import {
 } from "@meridian/resource-replica";
 import { type QueryClient, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
-import { getContextCatalogLookup, getContextCatalogSnapshot } from "@/client/api/projects-api";
+import { getContextCatalogLookup } from "@/client/api/projects-api";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
 import type {
   CatalogContextView,
@@ -30,6 +30,7 @@ import type {
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import {
   useAccountResourceProjection,
+  useAccountResourceReplica,
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
 import { projectQueryKeys } from "./project-query-keys";
@@ -60,11 +61,6 @@ export function contextCatalogQueryOptions(
     refetchOnMount: "always",
   });
 }
-
-const serverCatalogAcquisition: Pick<AccountResourceReplica, "acquireCatalog"> = {
-  acquireCatalog: async (projectId, scope) =>
-    catalogViewFromSnapshot(await getContextCatalogSnapshot(projectId, scope)),
-};
 
 const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   manuscript: "Manuscript",
@@ -260,6 +256,7 @@ export function projectCatalogView(
   const fileFromEntry = (
     entry: Extract<ReturnType<typeof catalogChildren>[number], { kind: "file" }>,
   ): CatalogFile | null => {
+    if (entry.sourceId !== sourceId) return null;
     const record = resourcesByDocument.get(entry.entryId);
     const effective = record ? projectResourceLocation(projectId, record) : null;
     if (
@@ -299,7 +296,8 @@ export function projectCatalogView(
     const entry = view.entries.get(entryId);
     if (!entry || view.invalidatedEntryIds.has(entryId)) return null;
     if (entry.kind === "file") return fileFromEntry(entry);
-    if (entry.kind === "folder") return projectCatalogDirectory(entry);
+    if (entry.kind === "folder" && entry.sourceId === sourceId)
+      return projectCatalogDirectory(entry);
     return null;
   };
   const files = () =>
@@ -325,7 +323,10 @@ export function projectCatalogView(
     findPath: (path) =>
       files().find((file) => file.path === path) ??
       [...view.entries.values()].flatMap((entry) =>
-        entry.kind === "folder" && `/${entry.path.join("/")}` === path
+        entry.kind === "folder" &&
+        entry.sourceId === sourceId &&
+        !view.invalidatedEntryIds.has(entry.entryId) &&
+        `/${entry.path.join("/")}` === path
           ? [projectCatalogDirectory(entry)]
           : [],
       )[0] ??
@@ -336,25 +337,6 @@ export function projectCatalogView(
     },
   };
   return base;
-}
-
-export async function fetchContextCatalogView(
-  queryClient: QueryClient,
-  acquisition: Pick<AccountResourceReplica, "acquireCatalog"> &
-    Partial<Pick<AccountResourceReplica, "readProjection">>,
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  workId: string | null,
-): Promise<CatalogContextView> {
-  const scope = contextCatalogScope(projectId, scheme, workId);
-  const view = await queryClient.fetchQuery(
-    contextCatalogQueryOptions(acquisition, projectId, scope),
-  );
-  const records = acquisition.readProjection
-    ? (await acquisition.readProjection(projectId)).records
-    : [];
-  const projected = projectResourceCatalogView(projectId, scope, view, records);
-  return projectCatalogView(projectId, scheme, projected, records);
 }
 
 export async function lookupContextCatalogFile(
@@ -382,10 +364,10 @@ export function useContextCatalogView(
     () => contextCatalogScope(projectId, scheme, options.workId),
     [options.workId, projectId, scheme],
   );
-  const resources = useOptionalAccountResourceReplica();
+  const resources = useAccountResourceReplica();
   const resourceProjection = useAccountResourceProjection(projectId);
   const query = useQuery({
-    ...contextCatalogQueryOptions(resources ?? serverCatalogAcquisition, projectId, scope),
+    ...contextCatalogQueryOptions(resources, projectId, scope),
     enabled: options.enabled ?? true,
   });
   const response = useMemo(() => {
@@ -393,21 +375,19 @@ export function useContextCatalogView(
       (candidate) =>
         candidate.projectId === projectId && sameCatalogProjectionScope(candidate.scope, scope),
     );
-    const view = resources
-      ? checkpoint
-        ? catalogViewFromCheckpoint(checkpoint)
-        : query.data
-          ? query.data
-          : resourceProjection.records.length > 0
-            ? catalogViewFromSnapshot({
-                scope,
-                generation: "local",
-                headRevision: "0",
-                cursor: "",
-                entries: [],
-              })
-            : null
-      : query.data;
+    const view = checkpoint
+      ? catalogViewFromCheckpoint(checkpoint)
+      : query.data
+        ? query.data
+        : resourceProjection.records.length > 0
+          ? catalogViewFromSnapshot({
+              scope,
+              generation: "local",
+              headRevision: "0",
+              cursor: "",
+              entries: [],
+            })
+          : null;
     return {
       catalog: view
         ? projectCatalogView(
@@ -417,7 +397,7 @@ export function useContextCatalogView(
             resourceProjection.records,
           )
         : null,
-      complete: resources ? Boolean(checkpoint) : Boolean(query.data),
+      complete: Boolean(checkpoint),
     };
   }, [
     projectId,
@@ -456,10 +436,10 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
           : { kind: scopeKind, projectId: scopeProjectId as string },
     [scopeKind, scopeProjectId, scopeUserId, scopeWorkId],
   );
-  const resources = useOptionalAccountResourceReplica();
+  const resources = useAccountResourceReplica();
   const projection = useAccountResourceProjection(projectId);
   const query = useQuery({
-    ...contextCatalogQueryOptions(resources ?? serverCatalogAcquisition, projectId, stableScope),
+    ...contextCatalogQueryOptions(resources, projectId, stableScope),
     enabled,
   });
   const data = useMemo(() => {
