@@ -13,6 +13,7 @@ import {
   type OpenProjectDocument,
   type ProjectDocumentLiveOpener,
   type ProjectDocumentLiveOpenResult,
+  ProjectDocumentNavigationAdapter,
   ProjectDocumentNavigationProvider,
   useOpenProjectDocument,
 } from "./open-project-document";
@@ -94,13 +95,16 @@ function Door({
 
 describe("ProjectDocumentNavigationProvider", () => {
   beforeEach(() => {
-    tabs.mockReset().mockImplementation(async (_projectId, tab) => ({ kind: "opened", tab }));
+    tabs.mockReset().mockImplementation((_projectId, tab) => ({ kind: "opened", tab }));
   });
 
-  it("waits for the installed-member receipt before navigating", async () => {
-    const publication = deferred<{ kind: "opened" }>();
-    tabs.mockReturnValue(publication.promise);
-    const openRoute = vi.fn(async () => undefined);
+  it.each([
+    "applied",
+    "cancelled",
+    "superseded",
+  ] as const)("publishes through the route owner and reports %s", async (kind) => {
+    const decision = deferred<Awaited<ReturnType<OpenContextRoute>>>();
+    const openRoute = vi.fn(() => decision.promise);
     const doors: Record<string, OpenProjectDocument> = {};
     await withReactRoot(
       <Owner projectId="project-a" opener={{ open: async () => opened("a") }} openRoute={openRoute}>
@@ -109,51 +113,70 @@ describe("ProjectDocumentNavigationProvider", () => {
       async () => {
         const opening = doors.catalog({ documentId: "a" });
         await act(async () => undefined);
-        try {
-          expect(tabs).toHaveBeenCalledOnce();
-          expect(openRoute).not.toHaveBeenCalled();
-        } finally {
-          publication.resolve({ kind: "opened" });
-        }
-        await expect(opening).resolves.toMatchObject({ kind: "opened" });
-        expect(openRoute).toHaveBeenCalledOnce();
+        expect(tabs).not.toHaveBeenCalled();
+        expect(openRoute).toHaveBeenCalledWith(
+          expect.objectContaining({ documentId: "a" }),
+          expect.objectContaining({ tab: expect.objectContaining({ documentId: "a" }) }),
+        );
+        decision.resolve({ kind });
+        await expect(opening).resolves.toMatchObject({
+          kind: kind === "applied" ? "opened" : "cancelled",
+        });
       },
     );
   });
 
   it.each([
-    false,
-    true,
-  ])("returns a typed publication failure (superseded: %s)", async (superseded) => {
-    let reject!: (reason: unknown) => void;
-    tabs
-      .mockReturnValueOnce(
-        new Promise<void>((_resolve, fail) => {
-          reject = fail;
-        }),
-      )
-      .mockResolvedValue({ kind: "opened" });
-    const openRoute = vi.fn(async () => undefined);
+    "caller abort",
+    "owner disposal",
+  ])("does not commit a held route after %s", async (reason) => {
+    const permission = deferred<void>();
+    const route = vi.fn<OpenContextRoute>(async (_target, options) => {
+      await permission.promise;
+      return { kind: options?.canCommit?.() ? "applied" : "superseded" };
+    });
+    const adapter = new ProjectDocumentNavigationAdapter({
+      opener: { open: async () => opened("a") },
+      openTab: tabs,
+      openRoute: route,
+    });
+    const controller = new AbortController();
+    const opening = adapter.open("project-a", { documentId: "a", signal: controller.signal });
+    await Promise.resolve();
+    expect(route).toHaveBeenCalledOnce();
+    if (reason === "caller abort") controller.abort();
+    else adapter.dispose();
+    permission.resolve();
+    await expect(opening).resolves.toEqual({ kind: "cancelled" });
+    expect(tabs).not.toHaveBeenCalled();
+    adapter.dispose();
+  });
+
+  it("opens in the background without cancelling a pending foreground destination", async () => {
+    const delayed = deferred<ProjectDocumentLiveOpenResult>();
+    const openRoute = vi.fn(async () => ({ kind: "applied" as const }));
     const doors: Record<string, OpenProjectDocument> = {};
     await withReactRoot(
       <Owner
         projectId="project-a"
-        opener={{ open: async ({ documentId }) => opened(documentId) }}
+        opener={{
+          open: async ({ documentId }) =>
+            documentId === "a" ? delayed.promise : opened(documentId),
+        }}
         openRoute={openRoute}
       >
         <Door name="catalog" projectId="project-a" doors={doors} />
       </Owner>,
       async () => {
-        const opening = doors.catalog({ documentId: "a" });
-        await act(async () => undefined);
-        const isCurrent = tabs.mock.calls[0][2] as () => boolean;
-        expect(isCurrent()).toBe(true);
-        if (superseded) await doors.catalog({ documentId: "b" });
-        expect(isCurrent()).toBe(!superseded);
-        reject(new Error("storage unavailable"));
-        await expect(opening).resolves.toEqual(
-          superseded ? { kind: "cancelled" } : { kind: "unavailable", reason: "failed" },
-        );
+        const foreground = doors.catalog({ documentId: "a" });
+        await expect(
+          doors.catalog({ documentId: "b", disposition: "background" }),
+        ).resolves.toMatchObject({ kind: "opened" });
+        expect(openRoute).not.toHaveBeenCalled();
+        delayed.resolve(opened("a"));
+        await expect(foreground).resolves.toMatchObject({ kind: "opened" });
+        expect(openRoute).toHaveBeenCalledOnce();
+        expect(tabs).toHaveBeenCalledOnce();
       },
     );
   });
@@ -163,7 +186,7 @@ describe("ProjectDocumentNavigationProvider", () => {
     const open = vi.fn(({ documentId }: { documentId: string }) =>
       documentId === "a" ? delayedA.promise : Promise.resolve(opened(documentId)),
     );
-    const openRoute = vi.fn(async () => undefined);
+    const openRoute = vi.fn(async () => ({ kind: "applied" as const }));
     const doors: Record<string, OpenProjectDocument> = {};
 
     await withReactRoot(
@@ -177,19 +200,22 @@ describe("ProjectDocumentNavigationProvider", () => {
         delayedA.resolve(opened("a"));
         await expect(stale).resolves.toEqual({ kind: "cancelled" });
 
-        expect(tabs).toHaveBeenCalledTimes(1);
-        expect(tabs.mock.calls[0]?.[1]).toMatchObject({ documentId: "b" });
+        expect(tabs).not.toHaveBeenCalled();
         expect(openRoute).toHaveBeenCalledOnce();
-        expect(openRoute).toHaveBeenCalledWith({
-          scheme: "manuscript",
-          path: "/b.md",
-          workId: null,
-        });
+        expect(openRoute).toHaveBeenCalledWith(
+          {
+            scheme: "manuscript",
+            path: "/b.md",
+            workId: null,
+            documentId: "b",
+          },
+          expect.objectContaining({ tab: expect.objectContaining({ documentId: "b" }) }),
+        );
 
         await expect(
           doors.catalog({ documentId: "background", disposition: "background" }),
         ).resolves.toMatchObject({ kind: "opened" });
-        expect(tabs).toHaveBeenCalledTimes(2);
+        expect(tabs).toHaveBeenCalledOnce();
         expect(openRoute).toHaveBeenCalledOnce();
       },
     );
@@ -220,7 +246,7 @@ describe("ProjectDocumentNavigationProvider", () => {
     const open = vi.fn(
       async (): Promise<ProjectDocumentLiveOpenResult> => ({ kind: "not-editable", document }),
     );
-    const openRoute = vi.fn(async () => undefined);
+    const openRoute = vi.fn(async () => ({ kind: "applied" as const }));
     const doors: Record<string, OpenProjectDocument> = {};
     await withReactRoot(
       <Owner projectId="project-a" opener={{ open }} openRoute={openRoute}>
@@ -229,7 +255,10 @@ describe("ProjectDocumentNavigationProvider", () => {
       async () => {
         await doors.reference({ documentId: "image", workId: "work-a" });
         expect(tabs).not.toHaveBeenCalled();
-        expect(openRoute).toHaveBeenCalledWith({ scheme: "uploads", path: "/Map.png", workId });
+        expect(openRoute).toHaveBeenCalledWith(
+          { scheme: "uploads", path: "/Map.png", workId, documentId: "image" },
+          expect.objectContaining({ tab: undefined }),
+        );
       },
     );
   });
@@ -242,7 +271,7 @@ describe("ProjectDocumentNavigationProvider", () => {
       return delayed.promise;
     });
     const doors: Record<string, OpenProjectDocument> = {};
-    const openRoute = vi.fn(async () => undefined);
+    const openRoute = vi.fn(async () => ({ kind: "applied" as const }));
     let leave!: () => void;
 
     function Harness() {
@@ -273,10 +302,18 @@ describe("ProjectDocumentNavigationProvider", () => {
 
     await withReactRoot(
       <>
-        <Owner projectId="project-a" opener={{ open }} openRoute={vi.fn(async () => undefined)}>
+        <Owner
+          projectId="project-a"
+          opener={{ open }}
+          openRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+        >
           <Door name="a" projectId="project-a" doors={doors} />
         </Owner>
-        <Owner projectId="project-b" opener={{ open }} openRoute={vi.fn(async () => undefined)}>
+        <Owner
+          projectId="project-b"
+          opener={{ open }}
+          openRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+        >
           <Door name="b" projectId="project-b" doors={doors} />
         </Owner>
       </>,
@@ -285,7 +322,7 @@ describe("ProjectDocumentNavigationProvider", () => {
         await expect(doors.b({ documentId: "b" })).resolves.toMatchObject({ kind: "opened" });
         delayedA.resolve(opened("a"));
         await expect(first).resolves.toMatchObject({ kind: "opened" });
-        expect(tabs).toHaveBeenCalledTimes(2);
+        expect(tabs).not.toHaveBeenCalled();
       },
     );
   });

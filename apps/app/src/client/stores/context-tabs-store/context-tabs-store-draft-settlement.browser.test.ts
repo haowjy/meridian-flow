@@ -12,6 +12,7 @@ import {
   useOpenEditorReview,
 } from "@/features/project/dock/editor-review-handoff";
 import type { ProjectSearch } from "@/features/project/routing/project-route";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import {
   commitDraftApplyMetadata,
@@ -208,6 +209,7 @@ it.each([
     { documentId: review.documentId, scheme: "manuscript", path: "/chapter.md" },
   ];
   const route = {
+    transition: acceptContextTransition,
     readSearch: () => search,
     updateSearch: (_id: string, update: (latest: ProjectSearch) => ProjectSearch) => {
       search = update(search);
@@ -276,8 +278,10 @@ it("keeps the provider-mounted review overlay through route selection and Apply"
   await withReactRoot(
     createElement(EditorReviewHandoffProvider, {
       projectId,
-      openContextRoute: async () => {
+      openContextRoute: async (_target, options) => {
+        if (options?.tab) useContextTabsStore.getState().openTab(projectId, options.tab);
         await useContextTabsStore.getState().selectTab(projectId, "work-route", documentId);
+        return { kind: "applied" as const };
       },
       children: createElement(
         Fragment,

@@ -38,6 +38,10 @@ function composed(settleDesk: () => Promise<void>) {
       }),
       commit: () => [],
       settleDraft: async () => ({ kind: "not-settled" as const }),
+      previewReviewTab: () => ({
+        kind: "not-consumed",
+        current: { tabs: [], selectedTabIdByWork: {} },
+      }),
       closeReviewTab: () => ({
         kind: "not-consumed" as const,
         current: { tabs: [], selectedTabIdByWork: {} },

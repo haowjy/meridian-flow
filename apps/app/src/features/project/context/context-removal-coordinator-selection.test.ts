@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { type ContextTab, useContextTabsStore } from "@/client/stores";
 import type { ReconcileContextRoutesInput } from "@/client/working-set";
 import { reconcileSnapshotContextRoutes } from "@/client/working-set/store";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import type { ProjectSearch } from "../routing/project-route";
 import {
   ContextRemovalCoordinator,
@@ -64,6 +65,7 @@ function scenario(initialSearch: ProjectSearch = { screen: "context" }) {
   let search = initialSearch;
   let routes: WorkingSetRoute[] = [];
   const route: ContextRemovalRoutePort = {
+    transition: acceptContextTransition,
     readSearch: () => search,
     updateSearch: (_projectId, update) => {
       search = update(search);
@@ -112,6 +114,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
         },
       },
       route: {
+        transition: acceptContextTransition,
         readSearch: () => ({
           screen: "context",
           work: "work-1",
@@ -179,6 +182,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
     coordinator.registerRoutePort(
       projectId,
       {
+        transition: acceptContextTransition,
         readSearch: () => search,
         updateSearch: (_projectId, update) => {
           delayedRepair.current = update;
@@ -285,6 +289,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
     rig.coordinator.registerRoutePort(
       projectId,
       {
+        transition: acceptContextTransition,
         readSearch: rig.search,
         updateSearch: (_projectId, update) => update(rig.search()),
       },
@@ -324,7 +329,11 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
     const rig = scenario({ screen: "context", work: "work-1", scheme: "scratch", path: "" });
     rig.coordinator.registerRoutePort(
       projectId,
-      { readSearch: rig.search, updateSearch: () => undefined },
+      {
+        transition: acceptContextTransition,
+        readSearch: rig.search,
+        updateSearch: () => undefined,
+      },
       "work-1",
     );
     setDesk([{ kind: "new", documentId: "untitled", name: "Untitled" }], "untitled");

@@ -30,6 +30,8 @@ export function ProjectContextRemovalController({
   latestRouteRef.current = route;
   const stableRoute = useMemo<ContextRemovalRoutePort>(
     () => ({
+      transition: (projectId, target, prepared) =>
+        latestRouteRef.current.transition(projectId, target, prepared),
       readSearch: (registeredProjectId) => latestRouteRef.current.readSearch(registeredProjectId),
       updateSearch: (registeredProjectId, update) =>
         latestRouteRef.current.updateSearch(registeredProjectId, update),

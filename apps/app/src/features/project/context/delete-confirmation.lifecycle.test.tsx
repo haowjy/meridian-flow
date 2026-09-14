@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -6,6 +7,7 @@ import { MeridianApiError } from "@/client/api/http-client";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextTabsStore } from "@/client/stores";
 import { AccountFeatureTestProvider } from "@/test-support/account-feature-provider";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { ProjectSearch } from "../routing/project-route";
 
@@ -89,6 +91,7 @@ it("settles a populated-folder receipt through one terminal availability batch",
   };
   const routeUpdates: ProjectSearch[] = [];
   const route = {
+    transition: acceptContextTransition,
     readSearch: () => search,
     updateSearch: (_projectId: string, update: (current: ProjectSearch) => ProjectSearch) => {
       search = update(search);

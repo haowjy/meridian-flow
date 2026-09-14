@@ -11,9 +11,11 @@ export type ProjectHistoryEntry = { href: string; key: string; state: Record<str
 export type ProjectNavigationPort = {
   read(): ProjectHistoryEntry;
   subscribe(listener: () => void): () => void;
+  flush(): void;
+  settlePendingTraversal(): undefined | Promise<boolean>;
   /** Synchronous same-entry snapshot or query repair; does not invoke a destination blocker. */
   replaceEntry(href: string, state: Record<string, unknown>): void;
-  /** The router owns destination blockers and load/error presentation. */
+  /** Dispatch after the shared leave decision; the adapter bypasses duplicate blockers. */
   navigate(
     href: string,
     options: { replace: boolean; state?: Record<string, unknown> },
@@ -30,14 +32,80 @@ export type ProjectAddressReplacement =
   | { kind: "failed"; ticket: ProjectNavigationTicket };
 export type ProjectNavigationTicket = { revision: number; key: string; href: string };
 
+export type NavigationSettlement =
+  | { kind: "applied" | "cancelled" | "superseded" }
+  | { kind: "failed"; error: unknown; ticket: ProjectNavigationTicket };
+export type PreparedWorkspaceNavigation = {
+  isCurrent(): boolean;
+  commit(): void;
+};
+export type ProjectLeaveGuard = {
+  request(intent: { run(): void; cancel(): void }): void;
+  dirty(): boolean;
+  cancel(): void;
+};
+
 export function createProjectNavigation(
   port: ProjectNavigationPort,
   displayed: () => DisplayedProjectSelection,
 ) {
   let revision = 0;
+  let guard: ProjectLeaveGuard | null = null;
+  let cancelDecision: (() => void) | null = null;
+  let departureWrite = false;
+  let pending: {
+    id: string;
+    commit?: () => void;
+    finish(result: NavigationSettlement): void;
+  } | null = null;
   const unsubscribe = port.subscribe(() => {
     revision += 1;
+    if (departureWrite) return;
+    cancelDecision?.();
+    const operation = pending;
+    if (!operation) return;
+    if (port.read().state.meridianNavigationOperation !== operation.id) {
+      operation.finish({ kind: "superseded" });
+      return;
+    }
+    // Native history must agree with the workspace snapshot before either can be reloaded.
+    try {
+      port.flush();
+      operation.commit?.();
+      operation.finish({ kind: "applied" });
+    } catch (error) {
+      operation.finish({ kind: "failed", error, ticket: capture() });
+    }
   });
+  function claimIntent(restoreNative: boolean) {
+    revision += 1;
+    // Retire the old POP before cancelling its decision: its asynchronous
+    // blocker callback must not cancel the replacement writer intent.
+    const restoration = restoreNative ? port.settlePendingTraversal() : undefined;
+    cancelDecision?.();
+    pending?.finish({ kind: "superseded" });
+    return { ticket: capture(), restoration };
+  }
+  function beginIntent(): ProjectNavigationTicket {
+    return claimIntent(true).ticket;
+  }
+  function requestLeave(run: () => void, cancel: () => void): void {
+    let active = true;
+    const settle = (callback: () => void) => {
+      if (!active) return;
+      active = false;
+      cancelDecision = null;
+      callback();
+    };
+    const owner = guard;
+    cancelDecision = () =>
+      settle(() => {
+        owner?.cancel();
+        cancel();
+      });
+    if (guard) guard.request({ run: () => settle(run), cancel: () => settle(cancel) });
+    else settle(run);
+  }
   const capture = (): ProjectNavigationTicket => {
     const entry = port.read();
     return { revision, key: entry.key, href: entry.href };
@@ -88,11 +156,101 @@ export function createProjectNavigation(
     );
   }
 
+  function transition(
+    address: ProjectAddress,
+    options: { replace: boolean; state?: Record<string, unknown> },
+    prepared?: PreparedWorkspaceNavigation,
+  ): Promise<NavigationSettlement> {
+    const { ticket, restoration } = claimIntent(true);
+    const requestedRevision = ticket.revision;
+    return new Promise((resolve) => {
+      const dispatch = () => {
+        if (revision !== requestedRevision || prepared?.isCurrent() === false) {
+          resolve({ kind: "superseded" });
+          return;
+        }
+        const current = parsedEntry(port.read());
+        const next =
+          current.kind === "valid" && !address.settings
+            ? { ...address, settings: current.address.settings }
+            : address;
+        try {
+          if (!options.replace) {
+            departureWrite = true;
+            try {
+              freezeDeparture();
+              port.flush();
+            } finally {
+              departureWrite = false;
+            }
+          }
+          const id = crypto.randomUUID();
+          const operation = {
+            id,
+            commit: prepared?.commit,
+            finish(result: NavigationSettlement) {
+              if (pending !== operation) return;
+              pending = null;
+              resolve(result);
+            },
+          };
+          pending = operation;
+          void port
+            .navigate(projectAddressHref(next), {
+              ...options,
+              state: {
+                ...projectAddressState(next, options.state),
+                meridianNavigationOperation: id,
+              },
+            })
+            .catch((error) => operation.finish({ kind: "failed", error, ticket: capture() }));
+        } catch (error) {
+          pending?.finish({ kind: "failed", error, ticket: capture() });
+          resolve({ kind: "failed", error, ticket: capture() });
+        }
+      };
+      requestLeave(
+        () => {
+          try {
+            if (restoration) {
+              void restoration.then(
+                (restored) => (restored ? dispatch() : resolve({ kind: "superseded" })),
+                (error) => resolve({ kind: "failed", error, ticket: capture() }),
+              );
+            } else dispatch();
+          } catch (error) {
+            resolve({ kind: "failed", error, ticket: capture() });
+          }
+        },
+        () => resolve({ kind: revision === requestedRevision ? "cancelled" : "superseded" }),
+      );
+    });
+  }
+
   return {
     capture,
+    beginIntent,
+    transition,
+    registerGuard(next: ProjectLeaveGuard) {
+      guard = next;
+      return () => {
+        if (guard !== next) return;
+        guard = null;
+        cancelDecision?.();
+      };
+    },
+    hasUnsavedChanges: () => guard?.dirty() ?? false,
+    allowDeparture(): Promise<boolean> {
+      claimIntent(false);
+      return new Promise((resolve) =>
+        requestLeave(
+          () => resolve(true),
+          () => resolve(false),
+        ),
+      );
+    },
     captureForEntry(entryKey: string): ProjectNavigationTicket | null {
       const ticket = capture();
-      // Rendered hrefs normalize query escaping; history keys identify entries.
       return ticket.key === entryKey ? ticket : null;
     },
     isCurrent,
@@ -100,18 +258,8 @@ export function createProjectNavigation(
       address: ProjectAddress,
       options: { replace: boolean; state?: Record<string, unknown> },
     ) {
-      // Invalidate older address repairs even when a blocker delays the ensuing push.
-      revision += 1;
-      const current = parsedEntry(port.read());
-      const next =
-        current.kind === "valid" && !address.settings
-          ? { ...address, settings: current.address.settings }
-          : address;
-      if (!options.replace) freezeDeparture();
-      return port.navigate(projectAddressHref(next), {
-        ...options,
-        state: projectAddressState(next, options.state),
-      });
+      const result = await transition(address, options);
+      if (result.kind === "failed") throw result.error;
     },
     repairQuerySelections(
       ticket: ProjectNavigationTicket,
@@ -145,23 +293,15 @@ export function createProjectNavigation(
           JSON.stringify(entry.state.meridianProjectEmptySelection)
       )
         return { kind: "replaced" };
-      const replacementRevision = ++revision;
-      try {
-        await port.navigate(href, { replace: true, state });
-        return { kind: "replaced" };
-      } catch {
-        const current = port.read();
-        // The initiating ticket was retired by this replacement, not necessarily by another intent.
-        return revision === replacementRevision &&
-          current.key === entry.key &&
-          current.href === entry.href
-          ? {
-              kind: "failed",
-              ticket: { revision: replacementRevision, key: entry.key, href: entry.href },
-            }
-          : { kind: "superseded" };
-      }
+      const result = await transition(address, { replace: true, state });
+      if (result.kind === "applied") return { kind: "replaced" };
+      if (result.kind === "failed") return { kind: "failed", ticket: result.ticket };
+      return { kind: "superseded" };
     },
-    dispose: unsubscribe,
+    dispose() {
+      claimIntent(false);
+      guard = null;
+      unsubscribe();
+    },
   };
 }

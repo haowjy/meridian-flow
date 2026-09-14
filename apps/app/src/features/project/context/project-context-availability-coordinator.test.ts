@@ -21,6 +21,38 @@ function result(
 }
 
 describe("ProjectContextAvailabilityCoordinator", () => {
+  it("joins concurrent explicit opens of the same identity without invalidating either caller", async () => {
+    let finish!: (response: ProjectContextIdentityLookupResult) => void;
+    const lookup = vi.fn(
+      () =>
+        new Promise<ProjectContextIdentityLookupResult>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const coordinator = new ProjectContextAvailabilityCoordinator({
+      lookup,
+      repairProjectCatalog: async () => undefined,
+      apply: async () => undefined,
+    });
+    const foreground = coordinator.resolveForOpen("project-1", id(1));
+    const background = coordinator.resolveForOpen("project-1", id(1));
+    expect(background).toBe(foreground);
+    finish(
+      result("project-1", [
+        {
+          kind: "available",
+          documentId: id(1),
+          generation: "1",
+          authority: { kind: "project", projectId: "project-1" },
+          entry: { entryId: id(1) } as never,
+        },
+      ]),
+    );
+    await expect(foreground).resolves.toMatchObject({ kind: "available" });
+    await expect(background).resolves.toMatchObject({ kind: "available" });
+    expect(lookup).toHaveBeenCalledOnce();
+  });
+
   it("keeps an explicit open alive when the closing tab releases its last watch", async () => {
     let finish!: (response: ProjectContextIdentityLookupResult) => void;
     const coordinator = new ProjectContextAvailabilityCoordinator({

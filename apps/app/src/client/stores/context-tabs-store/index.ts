@@ -10,6 +10,7 @@ export {
   isEditorContextTab,
   type OpenEditorTabResult,
   type ProjectTabsSlice,
+  previewReviewOverlayClose,
   publishLocalUntitledAdoption,
   publishLocalUntitledRemint,
   type ReviewOverlayConsumeReceipt,

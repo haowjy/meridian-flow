@@ -27,14 +27,16 @@ import { deriveContextPaneState } from "./context/context-pane-state";
 import { resolveDeskRoute } from "./context/context-route-desk-owner";
 import { contextTabFromFile } from "./context/context-tab-from-file";
 import { contextTabRouteKey } from "./context/context-tab-identity";
-import { appendPendingUntitled, isUntitledPending } from "./context/untitled-reconciler-browser";
+import { appendPendingUntitled } from "./context/untitled-reconciler-browser";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
 import { identityCommitMayNavigate } from "./context/use-identity-commit";
 import { useUntitledTabBridge } from "./context/useUntitledTabBridge";
 import { useOptionalPostApplyDisposition } from "./draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useOptionalProjectDraftApplyRecovery } from "./draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
-import { useCaptureProjectNavigation } from "./routing/ProjectNavigationContext";
-import type { ContextRouteTarget } from "./routing/project-route";
+import {
+  type OpenContextRoute,
+  useCaptureProjectNavigation,
+} from "./routing/ProjectNavigationContext";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ContextViewerSurfaceControllerProps = {
@@ -49,7 +51,7 @@ export type ContextViewerSurfaceControllerProps = {
     scheme?: ProjectContextTreeScheme,
     options?: { replace?: boolean },
   ) => void;
-  onOpenContextTarget: (target: ContextRouteTarget, options?: { replace?: boolean }) => void;
+  onOpenContextTarget: OpenContextRoute;
   active: boolean;
   /** Project left-sidebar expand toggle, surfaced via the tab strip. */
   sidebarToggle: PaneHeaderRailToggle;
@@ -267,7 +269,6 @@ export function ContextViewerSurfaceController({
   function handleSelectTab(documentId: string) {
     const tab = tabs.find((candidate) => candidate.documentId === documentId);
     if (!tab) return;
-    selectTab(projectId, routeWorkId ?? "", documentId);
     if (tab.kind === "new") {
       onOpenContextTarget({ scheme: "unfiled", path: "", workId: routeWorkId, documentId });
       return;
@@ -310,25 +311,6 @@ export function ContextViewerSurfaceController({
         }) === "apply-reservation-pending"
       )
         return;
-    }
-    if (tab?.kind === "new" && !isUntitledPending(projectId, documentId)) {
-      const key = {
-        accountId: localUntitled.accountId,
-        projectId,
-        documentId,
-      };
-      const revision = localUntitled.recordRevision(key);
-      contextRemoval.writerClose(projectId, documentId);
-      void (async () => {
-        if (revision === null) return;
-        await new Promise((resolve) => setTimeout(resolve, 0));
-        await localUntitled.abandon({
-          key,
-          expectedRevision: revision,
-          evidence: "writer-empty-close",
-        });
-      })();
-      return;
     }
     void contextRemoval.writerClose(projectId, documentId);
   }
@@ -424,22 +406,21 @@ export function ContextViewerSurfaceController({
           documentId,
         });
         if (opened.kind !== "opened") return;
-        const installed = await openTab(
-          projectId,
+        if (isCurrent?.() === false) return;
+        const result = await onOpenContextTarget(
+          { scheme: "unfiled", path: "", workId: routeWorkId, documentId },
           {
-            kind: "new",
-            documentId,
-            name: "Untitled",
-            lineageHandle: opened.value.ref.lineageHandle,
-            identityRevision: 1,
+            isCurrent,
+            tab: {
+              kind: "new",
+              documentId,
+              name: "Untitled",
+              lineageHandle: opened.value.ref.lineageHandle,
+              identityRevision: 1,
+            },
           },
-          isCurrent,
         );
-        if (installed.kind !== "opened") return;
-        if (isCurrent && !isCurrent()) return;
-        await selectTab(projectId, routeWorkId ?? "", documentId);
-        if (isCurrent && !isCurrent()) return;
-        onOpenContextTarget({ scheme: "unfiled", path: "", workId: routeWorkId, documentId });
+        if (result.kind === "failed") throw result.error;
       }}
       onUntitledBecameNonEmpty={handleUntitledBecameNonEmpty}
       onCommitted={(documentId, next, ownership) => {

@@ -150,7 +150,6 @@ export type UntitledReconcilerDeps = {
       reservation?: LocalMaterializationReservation;
     }): Promise<ProjectDocumentLiveOpenResult>;
     remint(projectId: string, from: string, to: string): Promise<ReconcilerSession>;
-    abandon(projectId: string, documentId: string, revision: number): Promise<void>;
     phase(projectId: string, documentId: string): "local" | "adopted" | null;
   };
 };
@@ -486,36 +485,12 @@ export class UntitledReconciler {
       await session.whenLocalPersistenceSynced();
       let record = this.pendingRecord(key);
       if (!record) return;
-      const empty = untitledDocumentIsEmpty(session.document.getXmlFragment(session.fragmentName));
-      let confirmedResult: CreateUntitledContextDocumentResponse | undefined;
-      if (
-        record.createSettlement.kind === "ready" &&
-        empty &&
-        !record.desiredIdentity &&
-        !this.candidates.has(key)
-      ) {
-        const checkedRevision = record.revision;
-        const confirmation = await this.deps.api.confirmCreate(entry);
-        if (confirmation.kind === "not-visible") {
-          local.release(ownerId);
-          await local.abandon(projectId, documentId, local.revision(projectId, documentId) ?? -1);
-          this.drain(key, checkedRevision);
-          return;
-        }
-        if (confirmation.kind !== "available") {
-          throw new Error(`Untitled create confirmation is ${confirmation.kind}`);
-        }
-        confirmedResult = createResultFromAvailability(confirmation);
-      }
-
       const ownerRevision = local.revision(projectId, documentId);
       if (ownerRevision === null) throw new Error("Local Untitled owner record disappeared");
       const reservation = await local.prepare(projectId, documentId, ownerRevision);
       let result: CreateUntitledContextDocumentResult;
       if (record.createSettlement.kind === "confirmed") {
         result = record.createSettlement.result;
-      } else if (confirmedResult) {
-        result = confirmedResult;
       } else if (record.createSettlement.kind === "confirmation-required") {
         const confirmation = await this.deps.api.confirmCreate(entry);
         if (confirmation.kind === "not-visible") {

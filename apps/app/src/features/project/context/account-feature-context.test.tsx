@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, StrictMode, useCallback, useLayoutEffect, useState } from "react";
 import { renderToString } from "react-dom/server";
@@ -8,6 +9,7 @@ import {
   AccountFeatureTestProvider,
   useContextRemovalCoordinator,
 } from "@/test-support/account-feature-provider";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 
@@ -125,7 +127,11 @@ describe("AccountFeatureTestProvider", () => {
         entrySnapshots.push(coordinator.getProjectSnapshot("project-1"));
         coordinator.registerRoutePort(
           "project-1",
-          { readSearch: () => ({ screen: "context" }), updateSearch: () => undefined },
+          {
+            transition: acceptContextTransition,
+            readSearch: () => ({ screen: "context" }),
+            updateSearch: () => undefined,
+          },
           "work-1",
         );
         const revision = coordinator.beginRouteSelection("project-1", {

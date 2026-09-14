@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+
 import { QueryClient } from "@tanstack/react-query";
 import { act, StrictMode, useLayoutEffect, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -14,6 +15,7 @@ import {
   AccountFeatureTestProvider,
   useContextRemovalCoordinator,
 } from "@/test-support/account-feature-provider";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { ContextRemovalCoordinator } from "./context/context-removal-coordinator";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
@@ -209,6 +211,7 @@ it("keeps a fulfilled bootstrap removal authoritative when the explicit live rou
           activeContextPath="/deleted.md"
           editorWorkId="work-1"
           route={{
+            transition: acceptContextTransition,
             readSearch: () => search,
             updateSearch: (_projectId, update) => {
               search = update(search);

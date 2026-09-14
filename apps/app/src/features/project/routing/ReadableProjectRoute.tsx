@@ -5,7 +5,7 @@ import type { ProjectContextTreeScheme, Work } from "@meridian/contracts/protoco
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { WorksSnapshot } from "@meridian/contracts/works";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter, useRouterState } from "@tanstack/react-router";
+import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { getProjectDocumentAddress, listProjectThreads } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
@@ -13,7 +13,12 @@ import { type ProjectRouteData, seedProjectRouteData } from "@/client/query/proj
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks } from "@/client/query/useWorks";
-import { getContextTabs, useContextTabs, useContextTabsStore } from "@/client/stores";
+import {
+  type ContextTab,
+  getContextTabs,
+  useContextTabs,
+  useContextTabsStore,
+} from "@/client/stores";
 import { hydrateWorkingSet, readRecentRoutes, setThread } from "@/client/working-set";
 import { originalBrowserSearch } from "@/router-search";
 import { useResolvedChatThread } from "../chat/chat-thread-resolution";
@@ -23,7 +28,7 @@ import { ProjectDocumentNavigationProvider } from "../context/open-project-docum
 import { ProjectView } from "../ProjectView";
 import type { ScreenKey } from "../shell/screens";
 import { type AddressAdmission, ProjectAddressDocument } from "./ProjectAddressDocument";
-import { ProjectNavigationProvider } from "./ProjectNavigationContext";
+import { type OpenContextOptions, ProjectNavigationProvider } from "./ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import {
   type AddressSelection,
@@ -39,7 +44,12 @@ import {
   resolveAddressSelection,
 } from "./project-address-resolution";
 import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
-import { createProjectNavigation, type DisplayedProjectSelection } from "./project-navigation";
+import {
+  createProjectNavigation,
+  type DisplayedProjectSelection,
+  type NavigationSettlement,
+  type PreparedWorkspaceNavigation,
+} from "./project-navigation";
 import {
   type ContextRouteTarget,
   type NavigationOptions,
@@ -194,6 +204,10 @@ export function ReadableProjectRoute({
   const [navigation, setNavigation] = useState<ReturnType<typeof createProjectNavigation> | null>(
     null,
   );
+  useBlocker({
+    shouldBlockFn: async () => (navigation ? !(await navigation.allowDeparture()) : false),
+    enableBeforeUnload: () => navigation?.hasUnsavedChanges() ?? false,
+  });
   useLayoutEffect(() => {
     const coordinator = createProjectNavigation(
       {
@@ -203,9 +217,16 @@ export function ReadableProjectRoute({
           state: { ...router.history.location.state },
         }),
         subscribe: (listener) => router.history.subscribe(listener),
+        flush: () => router.history.flush(),
+        settlePendingTraversal: () => router.history.settlePendingTraversal(),
         replaceEntry: (href, state) => router.history.replace(href, state, { ignoreBlocker: true }),
         navigate: (href, options) =>
-          router.navigate({ href, replace: options.replace, state: options.state }),
+          router.navigate({
+            href,
+            replace: options.replace,
+            state: options.state,
+            ignoreBlocker: true,
+          }),
       },
       () => shown.current,
     );
@@ -240,8 +261,7 @@ export function ReadableProjectRoute({
   latest.current = { address, location, navigation, works: works.works };
   const captureNavigation = useCallback(() => {
     const current = latest.current.navigation;
-    const location = latest.current.location;
-    const ticket = current?.captureForEntry(location.state.__TSR_key ?? "");
+    const ticket = current?.beginIntent();
     return () => !!ticket && !!current?.isCurrent(ticket);
   }, []);
   const reportSelection = useCallback(
@@ -337,7 +357,7 @@ export function ReadableProjectRoute({
   }, [projectId, resolvedThreadId]);
 
   async function go(next: ProjectAddress, options: NavigationOptions) {
-    if (!navigation?.captureForEntry(location.state.__TSR_key ?? "")) return;
+    if (!navigation) return;
     return navigation.navigate(next, options);
   }
   function toDestination(next: ProjectDestination): ProjectAddress {
@@ -369,10 +389,9 @@ export function ReadableProjectRoute({
       { replace: dock || options.replace },
     );
   }
-  const openContext = useCallback(
-    async (target: ContextRouteTarget, options?: { replace?: boolean }) => {
+  const contextDestination = useCallback(
+    (target: ContextRouteTarget, preparedTab?: ContextTab) => {
       const current = latest.current;
-      if (!current.navigation?.captureForEntry(current.location.state.__TSR_key ?? "")) return;
       const scoped = target.scheme === "scratch" || target.scheme === "uploads";
       const slug = target.workId
         ? current.works?.find((work) => work.id === target.workId)?.slug
@@ -389,13 +408,15 @@ export function ReadableProjectRoute({
           projectId,
           workId: target.workId,
           hydrated: true,
-          tabs: desk.tabs,
+          tabs: preparedTab
+            ? [...desk.tabs.filter((tab) => tab.documentId !== preparedTab.documentId), preparedTab]
+            : desk.tabs,
         });
         if (resolved.kind !== "resolved") throw new Error("Local document is unavailable");
         state = { meridianProjectSelection: pointer };
       }
-      return current.navigation.navigate(
-        {
+      return {
+        address: {
           ...current.address,
           destination: target.path
             ? {
@@ -407,12 +428,77 @@ export function ReadableProjectRoute({
             : { kind: "editor" },
           work: selection(slug ?? null),
           results: false,
-        },
-        { replace: options?.replace ?? false, state },
-      );
+        } as ProjectAddress,
+        state,
+      };
     },
     [projectId, user.userId],
   );
+  const openContext = useCallback(
+    async (
+      target: ContextRouteTarget,
+      options?: OpenContextOptions,
+    ): Promise<NavigationSettlement> => {
+      const current = latest.current;
+      if (!current.navigation || options?.isCurrent?.() === false) return { kind: "superseded" };
+      const next = contextDestination(target, options?.tab);
+      const desk = getContextTabs(projectId);
+      const tab = target.documentId
+        ? desk.tabs.find((tab) => tab.documentId === target.documentId)
+        : desk.tabs.find(
+            (tab) => tab.kind !== "new" && tab.scheme === target.scheme && tab.path === target.path,
+          );
+      const result = await current.navigation.transition(
+        next.address,
+        { replace: options?.replace ?? false, state: next.state },
+        {
+          isCurrent: () =>
+            options?.canCommit?.() !== false &&
+            (!tab ||
+              getContextTabs(projectId).tabs.some(
+                (member) => member.tabInstanceId === tab.tabInstanceId,
+              )),
+          commit: () => {
+            if (options?.tab) {
+              const installed = useContextTabsStore.getState().openTab(projectId, options.tab);
+              if (installed.kind !== "opened") throw new Error("Editor tab could not be opened");
+            }
+            const selected = options?.tab ?? tab;
+            if (selected)
+              void useContextTabsStore
+                .getState()
+                .selectTab(projectId, target.workId ?? "", selected.documentId);
+          },
+        },
+      );
+      return result;
+    },
+    [contextDestination, projectId],
+  );
+  const closeDestination = useCallback(
+    (target: ContextRouteTarget | { kind: "clear" }, prepared: PreparedWorkspaceNavigation) => {
+      const current = latest.current;
+      if (!current.navigation) return Promise.resolve({ kind: "superseded" as const });
+      const next =
+        "kind" in target
+          ? {
+              address: {
+                ...current.address,
+                destination: { kind: "editor" as const },
+                results: false,
+              },
+              state: undefined,
+            }
+          : contextDestination(target);
+      return current.navigation.transition(
+        next.address,
+        { replace: true, state: next.state },
+        prepared,
+      );
+    },
+    [contextDestination],
+  );
+
   const routeCommands: ProjectRouteCommands = {
     openHome: (options) => go(toDestination({ kind: "home" }), options),
     openChat: (id, options) => openChat(id, options),
@@ -424,7 +510,12 @@ export function ReadableProjectRoute({
     closeWork: (options) => go(toDestination({ kind: "works" }), options),
     openWorkContext: (target, options) =>
       target.path !== undefined
-        ? openContext({ scheme: target.scheme, path: target.path, workId: target.workId }, options)
+        ? openContext(
+            { scheme: target.scheme, path: target.path, workId: target.workId },
+            options,
+          ).then((result) => {
+            if (result.kind === "failed") throw result.error;
+          })
         : go(
             toDestination({
               kind: "browse",
@@ -463,7 +554,11 @@ export function ReadableProjectRoute({
         workId,
       });
       if (tab)
-        return openContext({ ...routeTargetForTab(tab, workId), documentId: tab.documentId });
+        return openContext({ ...routeTargetForTab(tab, workId), documentId: tab.documentId }).then(
+          (result) => {
+            if (result.kind === "failed") throw result.error;
+          },
+        );
     }
     return go(
       {
@@ -499,10 +594,10 @@ export function ReadableProjectRoute({
       openContextRoute={openContext}
       openNewChat={() => go(toDestination({ kind: "chats" }), { replace: false })}
       captureNavigation={captureNavigation}
+      registerLeaveGuard={navigation?.registerGuard}
     >
       <ProjectDocumentNavigationProvider
         projectId={projectId}
-        navigationRevision={location.state.__TSR_key}
         captureNavigation={captureNavigation}
       >
         {documentDestination ? (
@@ -535,6 +630,7 @@ export function ReadableProjectRoute({
           onDisplayedSelection={reportSelection}
           routeCommands={routeCommands}
           contextRemovalRoute={{
+            transition: (_id, target, prepared) => closeDestination(target, prepared),
             readSearch: () => search,
             updateSearch: (_id, update) => {
               const next = update(search);

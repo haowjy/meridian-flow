@@ -58,48 +58,47 @@ export function ProjectAddressDocument({
     const scope = document.scope;
     const routeWorkId =
       scope.kind === "work" ? scope.workId : scope.kind === "none" ? null : workId;
-    void openTab(
-      projectId,
-      contextTabFromFile(uri.value.scheme, projectCatalogFile(document), routeWorkId),
-      isCurrent,
-    )
-      .then(async (installed) => {
-        if (controller.signal.aborted || !navigation.isCurrent(ticket)) return;
-        if (installed.kind !== "opened") {
-          onAdmission({ ...identity, issue: "unavailable" });
-          return;
-        }
-        const next: ProjectAddress = {
-          ...address,
-          destination: {
-            kind: "document",
-            scheme: uri.value.scheme,
-            path: document.path.join("/"),
-            workSlug: uri.value.authority.kind === "work" ? uri.value.authority.workSlug : null,
-          },
-          work:
-            scope.kind === "work" || scope.kind === "none"
-              ? { kind: "absent" }
-              : workSlug
-                ? { kind: "slug", slug: workSlug }
-                : { kind: "none" },
-        };
-        if (projectAddressHref(next) !== href) {
-          const replacement = await navigation.replaceIfCurrent(ticket, next);
-          if (
-            replacement.kind === "failed" &&
-            !controller.signal.aborted &&
-            navigation.isCurrent(replacement.ticket)
-          )
-            onAdmission({ ...identity, issue: "error" });
-        } else {
-          onAdmission({ ...identity, issue: undefined });
-        }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted && navigation.isCurrent(ticket))
+    void (async () => {
+      const installed = openTab(
+        projectId,
+        contextTabFromFile(uri.value.scheme, projectCatalogFile(document), routeWorkId),
+        isCurrent,
+      );
+      if (controller.signal.aborted || !navigation.isCurrent(ticket)) return;
+      if (installed.kind !== "opened") {
+        onAdmission({ ...identity, issue: "unavailable" });
+        return;
+      }
+      const next: ProjectAddress = {
+        ...address,
+        destination: {
+          kind: "document",
+          scheme: uri.value.scheme,
+          path: document.path.join("/"),
+          workSlug: uri.value.authority.kind === "work" ? uri.value.authority.workSlug : null,
+        },
+        work:
+          scope.kind === "work" || scope.kind === "none"
+            ? { kind: "absent" }
+            : workSlug
+              ? { kind: "slug", slug: workSlug }
+              : { kind: "none" },
+      };
+      if (projectAddressHref(next) !== href) {
+        const replacement = await navigation.replaceIfCurrent(ticket, next);
+        if (
+          replacement.kind === "failed" &&
+          !controller.signal.aborted &&
+          navigation.isCurrent(replacement.ticket)
+        )
           onAdmission({ ...identity, issue: "error" });
-      });
+      } else {
+        onAdmission({ ...identity, issue: undefined });
+      }
+    })().catch(() => {
+      if (!controller.signal.aborted && navigation.isCurrent(ticket))
+        onAdmission({ ...identity, issue: "error" });
+    });
     return () => controller.abort();
   }, [projectId, href, entryKey, result, workId, workSlug, navigation, openTab, onAdmission]);
   return null;

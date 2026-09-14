@@ -1,8 +1,9 @@
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
 import { beforeEach, describe, expect, it } from "vitest";
-import { type ContextTab, useContextTabsStore } from "@/client/stores";
+import { type ContextTab, getContextTabs, useContextTabsStore } from "@/client/stores";
 import type { ReconcileContextRoutesInput } from "@/client/working-set";
 import { DeviceWorkingSetStore, reconcileSnapshotContextRoutes } from "@/client/working-set/store";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import type { ProjectSearch } from "../routing/project-route";
 import {
   ContextRemovalCoordinator,
@@ -64,6 +65,7 @@ function scenario(initialSearch: ProjectSearch = { screen: "context" }) {
   let search = initialSearch;
   let routes: WorkingSetRoute[] = [];
   const route: ContextRemovalRoutePort = {
+    transition: acceptContextTransition,
     readSearch: () => search,
     updateSearch: (_projectId, update) => {
       search = update(search);
@@ -196,7 +198,11 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
     const rig = scenario();
     rig.coordinator.registerRoutePort(
       projectId,
-      { readSearch: rig.search, updateSearch: () => undefined },
+      {
+        transition: acceptContextTransition,
+        readSearch: rig.search,
+        updateSearch: () => undefined,
+      },
       "work-1",
     );
     const first = rig.coordinator.beginRouteSelection(projectId, {
@@ -342,7 +348,11 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
     ]);
     const registration = rig.coordinator.registerRoutePort(
       projectId,
-      { readSearch: rig.search, updateSearch: () => undefined },
+      {
+        transition: acceptContextTransition,
+        readSearch: rig.search,
+        updateSearch: () => undefined,
+      },
       "work-new",
     );
     rig.coordinator.clearRouteSelection(projectId);
@@ -356,10 +366,64 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
     registration.release();
     rig.coordinator.registerRoutePort(
       projectId,
-      { readSearch: rig.search, updateSearch: () => undefined },
+      {
+        transition: acceptContextTransition,
+        readSearch: rig.search,
+        updateSearch: () => undefined,
+      },
       "work-new",
     );
     expect(rig.coordinator.getProjectSnapshot(projectId).admitted?.path).toBe("/keep.md");
+  });
+
+  it.each([
+    false,
+    true,
+  ])("closes one review overlay without invalidating its sibling (durable underneath: %s)", async (durable) => {
+    setDesk(
+      [
+        ...(durable ? [{ ...tracked("a", "/a.md"), tabInstanceId: "durable-a" }] : []),
+        { ...tracked("a", "/a.md"), draftOnly: true, reviewWorkId: "work-1" },
+        { ...tracked("b", "/b.md"), draftOnly: true, reviewWorkId: "work-1" },
+      ],
+      "a",
+    );
+    const rig = scenario({
+      screen: "context",
+      scheme: "manuscript",
+      path: "/a.md",
+      work: "work-1",
+    });
+    rig.coordinator.changeWorkSelection(projectId, "work-1", {
+      scheme: "manuscript",
+      path: "/a.md",
+      workId: "work-1",
+    });
+    const revision = rig.coordinator.beginRouteSelection(projectId, {
+      scheme: "manuscript",
+      path: "/a.md",
+      workId: "work-1",
+    });
+    rig.coordinator.bindRouteSelection(projectId, revision, identityFor("a"));
+    const before = getContextTabs(projectId);
+    const accept = rig.route.transition;
+    let resume!: () => Promise<unknown>;
+    rig.route.transition = (id, target, prepared) =>
+      new Promise((resolve) => {
+        resume = async () => resolve(await accept.call(rig.route, id, target, prepared));
+      });
+    const closing = rig.coordinator.writerClose(projectId, "a");
+    if (!durable) {
+      expect(getContextTabs(projectId)).toBe(before);
+      await resume();
+      await expect(closing).resolves.toEqual({ kind: "applied" });
+    }
+    const after = getContextTabs(projectId);
+    expect(after.tabs).toHaveLength(durable ? 2 : 1);
+    expect(after.tabs.find((tab) => tab.documentId === "a")?.tabInstanceId).toBe(
+      durable ? "durable-a" : undefined,
+    );
+    expect(after.tabs.find((tab) => tab.documentId === "b")?.draftOnly).toBe(true);
   });
 
   it("allows writer-closed identity to reopen but keeps discarded drafts terminal", async () => {

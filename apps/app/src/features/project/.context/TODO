@@ -1,12 +1,5 @@
 # TODO — must-do follow-ups (project shell)
 
-- Repair an open context tab and route immediately when its backing entry is
-  deleted. This predates the untitled client-flow branch: `origin/main` already
-  invalidates the tree after deletion but `ContextPaneController` only reacts
-  when a tab is explicitly removed from the tab store; a missing node in the
-  refreshed tree does not remove it. Applies to viewer, tracked, and provisional
-  documents and needs one deletion-to-tab lifecycle contract across tree/store/route.
-
 - PR #531: finish shell-first feedback for document-session startup and pre-route
   live-opener waits. `routing/ProjectRouteBoundary.tsx` now implements the address
   wait policy: persistent shell, eligible retained content, otherwise blank for
@@ -15,6 +8,6 @@
   session-readiness feedback belongs; do not add another competing loading owner.
   Verify cold replay, missing content cache, offline acquisition, A/B/A supersession,
   explicit empty Editor and wrong-content masking. Route-boundary feedback alone
-  does not fix the remote-gated opener or close/reload navigation race.
+  does not fix the remote-gated opener. Accepted navigation owns close/reload ordering.
 
-- Complete the local-first ownership cutover using the [remaining-issue dossier](../../../../../../docs/pr-evidence/local-first-remaining-issues.md): accepted navigation, proven content readiness, durable resource/intent ownership, concurrent admission and non-destructive migration. Preserve the existing session/backend foundations; remove displaced writers at activation.
+- Complete the local-first ownership cutover tracked in [PR #531](https://github.com/haowjy/meridian-flow/pull/531): proven content readiness, durable resource/intent ownership, concurrent admission and non-destructive migration. [Current architecture](resource-lifecycle-architecture.md) separates implemented navigation from those pending owners. Preserve the existing session/backend foundations; remove displaced writers at activation.

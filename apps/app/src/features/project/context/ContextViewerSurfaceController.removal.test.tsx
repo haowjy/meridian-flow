@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /** Production desktop route materialization under a pending removal repair. */
 
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import "fake-indexeddb/auto";
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -64,7 +65,6 @@ const untitledMocks = vi.hoisted(() => ({ append: vi.fn(), isPending: vi.fn(() =
 vi.mock("./untitled-reconciler-browser", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./untitled-reconciler-browser")>()),
   appendPendingUntitled: untitledMocks.append,
-  isUntitledPending: untitledMocks.isPending,
 }));
 
 let coordinator: ContextRemovalCoordinator | null = null;
@@ -157,6 +157,7 @@ it("persists and admits the real New action without an empty working-set route",
           activeContextPath={route.path}
           editorWorkId="work-a"
           route={{
+            transition: acceptContextTransition,
             readSearch: () => search,
             updateSearch: (_projectId, update) => {
               search = update(search);
@@ -176,7 +177,21 @@ it("persists and admits the real New action without an empty working-set route",
           sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
           dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
           onSelectContextPath={updateRoute}
-          onOpenContextTarget={(target) => updateRoute(target.path, target.scheme)}
+          onOpenContextTarget={(target, options) =>
+            new Promise((resolve) => {
+              releaseLocalRoute = () => {
+                if (options?.tab) {
+                  useContextTabsStore.getState().openTab("project", options.tab);
+                  void useContextTabsStore
+                    .getState()
+                    .selectTab("project", "work-a", options.tab.documentId);
+                }
+                search = { ...search, scheme: target.scheme, path: target.path };
+                setRoute({ scheme: target.scheme, path: target.path });
+                resolve({ kind: "applied" });
+              };
+            })
+          }
         />
       </AccountFeatureTestProvider>
     );
@@ -184,12 +199,19 @@ it("persists and admits the real New action without an empty working-set route",
 
   try {
     await withReactRoot(<Harness />, async () => {
-      await act(async () => viewerProps?.onNewDocument());
+      let opening: Promise<void> | undefined;
+      await act(async () => {
+        opening = Promise.resolve(viewerProps?.onNewDocument());
+      });
+      expect(useContextTabsStore.getState().byProject.project?.tabs ?? []).toEqual([]);
+      await act(async () => {
+        releaseLocalRoute?.();
+        await opening;
+      });
       const slice = useContextTabsStore.getState().byProject.project;
       const local = slice?.tabs.find((tab) => tab.kind === "new");
       expect(local).toBeDefined();
       expect(slice?.selectedTabIdByWork["work-a"]).toBe(local?.documentId);
-      await act(async () => releaseLocalRoute?.());
       expect(search).toMatchObject({ scheme: "unfiled", path: "" });
       expect(coordinator?.getProjectSnapshot("project")).toMatchObject({
         selection: { status: "bound", identity: { kind: "local", documentId: local?.documentId } },
@@ -264,6 +286,7 @@ it("guarded-redirects a selected materialized local owner before admitting its s
           activeContextPath={path}
           editorWorkId="work-a"
           route={{
+            transition: acceptContextTransition,
             readSearch: () => search,
             updateSearch: (_projectId, update) => {
               search = update(search);
@@ -339,6 +362,7 @@ it("restores the exact older local owner across A to B to A through mounted cont
           activeContextPath={search.path ?? null}
           editorWorkId={workId}
           route={{
+            transition: acceptContextTransition,
             readSearch: () => search,
             updateSearch: (_projectId, update) => {
               search = update(search);
@@ -396,6 +420,7 @@ it.each([
   queryState.isError = isError;
   queryState.isFetching = isFetching;
   const route: ContextRemovalRoutePort = {
+    transition: acceptContextTransition,
     readSearch: () => ({
       screen: "context",
       work: "work-1",
@@ -469,6 +494,7 @@ it("does not admit an old bound document while its retained controller is inacti
     const host = coordinator.registerRoutePort(
       "project",
       {
+        transition: acceptContextTransition,
         readSearch: () => ({
           screen: "context",
           work: "work-1",

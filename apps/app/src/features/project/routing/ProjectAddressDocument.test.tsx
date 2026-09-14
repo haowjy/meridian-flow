@@ -44,12 +44,7 @@ it.each([
   "current",
   "alias",
 ] as const)("publishes %s metadata without revealing an unresolved alias", async (kind) => {
-  let publish!: () => void;
-  openTab.mockReturnValue(
-    new Promise<{ kind: "opened" }>((resolve) => {
-      publish = () => resolve({ kind: "opened" });
-    }),
-  );
+  openTab.mockReturnValue({ kind: "opened" });
   const onAdmission = vi.fn();
   let finishReplace!: () => void;
   const href = kind === "alias" ? "/p/project/kb/before" : "/p/project/kb/doc";
@@ -63,6 +58,8 @@ it.each([
     {
       read: () => ({ key: "entry", href, state: {} }),
       subscribe: () => () => undefined,
+      flush: () => undefined,
+      settlePendingTraversal: () => undefined,
       replaceEntry: () => undefined,
       navigate,
     },
@@ -103,8 +100,6 @@ it.each([
         }),
         expect.any(Function),
       );
-      expect(onAdmission).toHaveBeenLastCalledWith(expect.objectContaining({ issue: "loading" }));
-      await act(async () => publish());
       expect(onAdmission).toHaveBeenLastCalledWith(
         expect.objectContaining({
           documentId: "doc-id",
@@ -128,7 +123,7 @@ it.each([
   "before-failure",
   "after-failure",
 ] as const)("settles a rejected alias replace only while it owns the entry (superseded: %s)", async (superseded) => {
-  openTab.mockResolvedValue({ kind: "opened" });
+  openTab.mockReturnValue({ kind: "opened" });
   let reject!: (error: unknown) => void;
   const pending = new Promise<void>((_resolve, fail) => {
     reject = fail;
@@ -138,6 +133,8 @@ it.each([
     {
       read: () => ({ key: "entry", href, state: {} }),
       subscribe: () => () => undefined,
+      flush: () => undefined,
+      settlePendingTraversal: () => undefined,
       replaceEntry: () => undefined,
       navigate: vi.fn().mockReturnValueOnce(pending).mockResolvedValue(undefined),
     },
@@ -154,7 +151,7 @@ it.each([
   void pending.catch(() => {
     if (superseded === "after-failure")
       queueMicrotask(() => {
-        void navigation.navigate({ ...address, destination: { kind: "chats" } }, { replace: true });
+        navigation.beginIntent();
       });
   });
   try {
@@ -172,11 +169,7 @@ it.each([
       />,
       async () => {
         expect(onAdmission).toHaveBeenLastCalledWith(expect.objectContaining({ issue: "loading" }));
-        if (superseded === "before-failure")
-          await navigation.navigate(
-            { ...address, destination: { kind: "chats" } },
-            { replace: true },
-          );
+        if (superseded === "before-failure") navigation.beginIntent();
         await act(async () => reject(new Error("router rejected replacement")));
         expect(onAdmission).toHaveBeenLastCalledWith(
           expect.objectContaining({

@@ -1,4 +1,5 @@
 /** Existing-owner integration for project-final availability command batches. */
+
 import type {
   CatalogFileEntry,
   LiveDocumentSessionAuthority,
@@ -6,6 +7,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import type { ProjectSearch } from "../routing/project-route";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { resolveDeskRoute } from "./context-route-desk-owner";
@@ -90,6 +92,7 @@ describe("ContextRemovalCoordinator availability batches", () => {
     let nextLatestSearch: ProjectSearch | null = null;
     let routeUpdates = 0;
     const route = {
+      transition: acceptContextTransition,
       readSearch: () => search,
       updateSearch: (_projectId: string, update: (value: ProjectSearch) => ProjectSearch) => {
         routeUpdates += 1;
@@ -332,6 +335,7 @@ describe("availability owner batch publication and settlement", () => {
       { documentId: adjacentId, scheme: "manuscript" as const, path: "Adjacent.md" },
     ];
     const route = {
+      transition: acceptContextTransition,
       readSearch: () => search,
       updateSearch: (_projectId: string, update: (value: ProjectSearch) => ProjectSearch) => {
         search = update(search);
@@ -419,6 +423,7 @@ describe("availability owner batch publication and settlement", () => {
       work: "work-1",
     };
     const route = {
+      transition: acceptContextTransition,
       readSearch: () => search,
       updateSearch: (_projectId: string, update: (value: ProjectSearch) => ProjectSearch) => {
         search = update(search);
@@ -465,6 +470,7 @@ describe("availability owner batch publication and settlement", () => {
       work: "work-1",
     };
     const route = {
+      transition: acceptContextTransition,
       readSearch: () => search,
       updateSearch: (_projectId: string, update: (value: ProjectSearch) => ProjectSearch) => {
         search = update(search);
@@ -636,6 +642,7 @@ describe("availability Work authority and retry", () => {
       _deskHydrated: false,
     });
     const route = {
+      transition: acceptContextTransition,
       readSearch: () => search,
       updateSearch: (_projectId: string, update: (latest: ProjectSearch) => ProjectSearch) => {
         search = update(search);

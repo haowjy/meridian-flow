@@ -12,6 +12,7 @@ import {
   AccountFeatureTestProvider,
   useContextRemovalCoordinator,
 } from "@/test-support/account-feature-provider";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ProjectContextRemovalController } from "../context/ProjectContextRemovalController";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
@@ -79,6 +80,7 @@ vi.mock("@/client/stores", () => ({
   commitPlannedContextRemoval: vi.fn(),
   commitReviewOverlayClose: vi.fn(),
   getContextTabs: () => mocks.desk.byProject["project-1"] ?? { tabs: [], selectedTabIdByWork: {} },
+  previewReviewOverlayClose: vi.fn(),
   useContextTabsActions: () => ({ openTab: mocks.openTab }),
   useContextTabsStore: Object.assign(() => null, { getState: () => mocks.desk }),
 }));
@@ -190,10 +192,13 @@ function PhoneRouteHarness({ navigate }: { navigate: OpenContextRoute }) {
     [activeDocumentId, enterInlineReview, inlineReview],
   );
   const openContextRoute = useCallback<OpenContextRoute>(
-    async (next) => {
-      await navigate(next);
+    async (next, options) => {
+      const result = await navigate(next, options);
+      if (result.kind !== "applied") return result;
+      if (options?.tab) mocks.openTab("project-1", options.tab);
       if (!next.workId) throw new Error("Review route requires Work identity");
       setRoute({ ...target, workId: next.workId, contextPath: next.path });
+      return { kind: "applied" };
     },
     [navigate],
   );
@@ -209,7 +214,11 @@ function PhoneRouteHarness({ navigate }: { navigate: OpenContextRoute }) {
             activeContextScheme="manuscript"
             activeContextPath={route.contextPath}
             editorWorkId={route.workId}
-            route={{ readSearch: () => ({ screen: "context" }), updateSearch: () => undefined }}
+            route={{
+              transition: acceptContextTransition,
+              readSearch: () => ({ screen: "context" }),
+              updateSearch: () => undefined,
+            }}
           />
           <EditorReviewIntentClaimant
             editorWorkId={route.workId}
@@ -292,7 +301,7 @@ describe("MobileDocumentHost review binding", () => {
   });
 
   it("claims a committed Chat-to-Editor handoff and renders its review room", async () => {
-    const navigate = vi.fn().mockResolvedValue(undefined);
+    const navigate = vi.fn().mockResolvedValue({ kind: "applied" });
     await withReactRoot(
       <StrictMode>
         <AccountFeatureTestProvider accountId="account-1">

@@ -160,8 +160,7 @@ revision is still current, so the last explicit writer identity wins. Events
 only schedule the same deferred, idempotent sweep. The sweep creates through
 `create-untitled`, attaches the existing Y.Doc, waits for confirmed provider
 sync, then drains the entry. A closed tab is not special: the same entry drives
-a headless attach/flush. A never-materialized empty is the only path that clears
-IndexedDB. A foreign UUID conflict clones the Yjs state into a newly minted
+a headless attach/flush. A foreign UUID conflict clones the Yjs state into a newly minted
 detached session and replaces the new tab's identity in place before retrying.
 Ordinary already-filed documents do not enter this engine. Naming an otherwise-empty new document is itself pending materialization work: the explicit identity keeps the tab reload-safe and is applied immediately after the row is created.
 
@@ -349,7 +348,8 @@ Filing uses the existing same-ID move operation. Naming in place stays Unfiled.
 The sidebar combines catalog documents with pending local lineage work, deduped
 by document ID. Closing a nonempty local tab leaves its ledger work discoverable;
 reopening uses the current reminted identity and exact identity revision. Closing
-an empty unqueued tab still abandons it. Publication never reopens a closed tab.
+an empty tab also preserves local ownership; tab lifetime never deletes content
+or cancels an uncertain create. Publication never reopens a closed tab.
 
 Lineage envelopes are version 4 under the stable v3 physical storage prefix.
 Reading a v3 envelope converts only its materialization home to Unfiled; the next
