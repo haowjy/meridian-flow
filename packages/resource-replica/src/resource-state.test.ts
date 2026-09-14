@@ -1,8 +1,14 @@
 import { expect, it } from "vitest";
-import { prepareNamespaceAttempt, recordNamespaceOutcome } from "./resource-namespace";
+import {
+  prepareNamespaceAttempt,
+  recordNamespaceOutcome,
+  settleNamespaceOutcome,
+} from "./resource-namespace";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
 import {
+  acknowledgeSessionAdoption,
   planResourceLocation,
+  planSessionAdoptionGeneration,
   remintCreateConflict,
   reserveResourceDocument,
 } from "./resource-state";
@@ -94,4 +100,34 @@ it("remints a received create conflict while retaining exact content and attempt
     { intentId: "create-a", state: "settled", attempts: [{ outcome: { kind: "create" } }] },
     { intentId: "create-b", state: "pending", identityRevision: 2, attempts: [] },
   ]);
+});
+
+it("pins and acknowledges one immutable session-adoption generation", () => {
+  const record = reserved();
+  if (record.resource.content.kind === "exact") delete record.resource.content.initialization;
+  const attempt = prepareNamespaceAttempt(record, { attemptId: "attempt", operationId: "unused" });
+  if (!attempt) throw new Error("Expected create attempt");
+  const received = recordNamespaceOutcome(attempt.next, "create-a", "attempt", {
+    kind: "create",
+    result: {
+      status: "created",
+      documentId: "document-a",
+      scheme: "unfiled",
+      path: "/Untitled.md",
+      name: "Untitled.md",
+    },
+  });
+  const adopted = received && settleNamespaceOutcome(received.next);
+  if (!adopted) throw new Error("Expected adoption obligation");
+  const pinned = planSessionAdoptionGeneration(adopted.next, "7");
+  if (!pinned) throw new Error("Expected generation pin");
+  validateResourceRecordUpdate(adopted.next, pinned.next);
+  expect(() => planSessionAdoptionGeneration(pinned.next, "8")).toThrow("immutable");
+  const acknowledged = acknowledgeSessionAdoption(pinned.next);
+  if (!acknowledged) throw new Error("Expected adoption acknowledgement");
+  validateResourceRecordUpdate(pinned.next, acknowledged.next);
+  expect(acknowledged.next.resource).toMatchObject({
+    lifecycle: { kind: "acknowledged", availabilityGeneration: "7" },
+    obligations: {},
+  });
 });

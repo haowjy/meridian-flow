@@ -144,3 +144,49 @@ export function remintCreateConflict(input: {
     },
   };
 }
+
+export function planSessionAdoptionGeneration(
+  record: ResourceRecord,
+  generation: string,
+): ResourceWrite | null {
+  const adoption = record.resource.obligations.sessionAdoption;
+  if (!adoption) return null;
+  if (adoption.generation === generation) return null;
+  if (adoption.generation !== null) throw new Error("Session adoption generation is immutable");
+  return {
+    expectedRevision: record.resource.revision,
+    next: {
+      resource: {
+        ...record.resource,
+        revision: record.resource.revision + 1,
+        obligations: {
+          ...record.resource.obligations,
+          sessionAdoption: { ...adoption, generation },
+        },
+      },
+      intents: record.intents,
+    },
+  };
+}
+
+export function acknowledgeSessionAdoption(record: ResourceRecord): ResourceWrite | null {
+  const adoption = record.resource.obligations.sessionAdoption;
+  if (!adoption?.generation) return null;
+  if (record.resource.lifecycle.kind !== "acknowledged") return null;
+  const { sessionAdoption: _completed, ...obligations } = record.resource.obligations;
+  return {
+    expectedRevision: record.resource.revision,
+    next: {
+      resource: {
+        ...record.resource,
+        revision: record.resource.revision + 1,
+        lifecycle: {
+          kind: "acknowledged",
+          availabilityGeneration: adoption.generation,
+        },
+        obligations,
+      },
+      intents: record.intents,
+    },
+  };
+}

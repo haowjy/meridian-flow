@@ -41,6 +41,32 @@ export function validateResourceRecordUpdate(
     resource.obligations.canonicalRefresh.identityRevision !== resource.identity.revision
   )
     throw new Error("Canonical refresh belongs to another resource identity");
+  const adoption = resource.obligations.sessionAdoption;
+  if (
+    adoption &&
+    (resource.content.kind !== "exact" ||
+      resource.content.initialization === "reserved" ||
+      adoption.documentId !== resource.identity.documentId ||
+      adoption.identityRevision !== resource.identity.revision ||
+      adoption.exactDatabaseName !== resource.content.databaseName ||
+      resource.lifecycle.kind !== "acknowledged")
+  )
+    throw new Error("Session adoption witness does not match the resource");
+  if (adoption && !previous?.resource.obligations.sessionAdoption) {
+    const source = next.intents.find(
+      (intent) =>
+        intent.projectId === adoption.projectId &&
+        intent.identityRevision === adoption.identityRevision &&
+        intent.attempts.some(
+          (attempt) =>
+            attempt.attemptId === adoption.transitionId &&
+            attempt.request.kind === "create" &&
+            attempt.outcome?.kind === "create" &&
+            attempt.outcome.result.status !== "conflict",
+        ),
+    );
+    if (!source) throw new Error("Session adoption requires a successful create outcome");
+  }
   if (resource.obligations.canonicalRefresh) {
     const operationId = resource.obligations.canonicalRefresh.operationId;
     const source = next.intents.some((intent) =>
@@ -202,4 +228,23 @@ export function validateResourceRecordUpdate(
   const nextRefresh = resource.obligations.canonicalRefresh;
   if (oldRefresh && nextRefresh && JSON.stringify(oldRefresh) !== JSON.stringify(nextRefresh))
     throw new Error("Canonical refresh obligation cannot be replaced");
+  const oldAdoption = previous?.resource.obligations.sessionAdoption;
+  if (oldAdoption && adoption) {
+    const { generation: _oldGeneration, ...oldWitness } = oldAdoption;
+    const { generation: _nextGeneration, ...nextWitness } = adoption;
+    if (
+      JSON.stringify(oldWitness) !== JSON.stringify(nextWitness) ||
+      (oldAdoption.generation !== null && adoption.generation !== oldAdoption.generation)
+    )
+      throw new Error("Session adoption obligation cannot be replaced");
+  }
+  if (
+    oldAdoption &&
+    !adoption &&
+    resource.lifecycle.kind !== "terminal" &&
+    (oldAdoption.generation === null ||
+      resource.lifecycle.kind !== "acknowledged" ||
+      resource.lifecycle.availabilityGeneration !== oldAdoption.generation)
+  )
+    throw new Error("Session adoption can clear only after exact admission");
 }

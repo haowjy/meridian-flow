@@ -50,6 +50,14 @@ export type ResourceDescriptor = ResourceKey & {
       identityRevision: number;
     };
     publication?: { obligationId: string; documentId: string; adoptionRevision: number };
+    sessionAdoption?: {
+      transitionId: string;
+      projectId: string;
+      documentId: string;
+      identityRevision: number;
+      exactDatabaseName: string;
+      generation: string | null;
+    };
     cleanup?: { obligationId: string; exactDatabaseName: string };
   };
 };

@@ -150,8 +150,20 @@ describe("namespace record transitions", () => {
         workId: null,
       },
       lifecycle: { kind: "acknowledged", availabilityGeneration: null },
+      obligations: {
+        sessionAdoption: {
+          transitionId: "attempt",
+          projectId: "project",
+          documentId: "document",
+          identityRevision: 1,
+          exactDatabaseName: "content",
+          generation: null,
+        },
+      },
     });
     expect(settled?.next.intents[0]?.state).toBe("settled");
+    if (settled)
+      expect(() => validateResourceRecordUpdate(received.next, settled.next)).not.toThrow();
   });
 
   it("turns an exact delete receipt into terminal authority without purging local content", () => {
