@@ -33,9 +33,18 @@ location remains unknown, and historical settlements never become fabricated
 submitted attempts. Unresolved settlements, authority transitions and malformed
 bytes remain recovery evidence. Capture completes locally even with unresolved
 records; `recovery-required` describes per-resource work, not an account boot
-gate. Valid unresolved envelopes appear as inert recovery resources in project
-observations. Terminal envelopes remain terminal, preserving no-revival. Malformed
-bytes remain account-level evidence because their resource identity is unknown.
-Resolution checks the placeholder source and revision before replacing it; raw
-cache names remain evidence until authority resolves. The sole replacement owner retries resolution independently. Activation
-still requires recovery UI and the authoritative settlement/terminal resolver and exclusive old-writer shutdown.
+gate. Recovery evidence is attached to the resource independently of content:
+consistent local authority retains the exact cache even when create settlement
+is uncertain. Conflicting authority leaves content unacquired. Neither state
+proves initialization or grants transport admission. Legacy intentions are captured
+before new writer intentions and stay unsubmitted until uncertainty resolves.
+Terminal envelopes remain terminal; malformed bytes remain account-level evidence.
+Resolution preserves current intentions, canonical location, aliases and exact
+content proof, declining incompatible identity/content changes. Source/revision
+checks prevent concurrent replacement. The legacy resolver installs authority
+obligations only while lifecycle remains unresolved (or the original terminal
+transition remains unchanged). That installation and recovery clearance are one
+transaction; another owner that advances authority must finalize its own recovery.
+The sole replacement owner must retry
+resolution; activation still requires the authoritative settlement/terminal
+resolver, recovery UI and exclusive old-writer shutdown.

@@ -16,15 +16,16 @@ export function validateResourceRecordUpdate(
     throw new Error("Resource identity mismatch");
   if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind !== "terminal")
     throw new Error("Terminal resources cannot be revived");
-  if (resource.lifecycle.kind === "recovering" && resource.content.kind !== "recovery")
+  if (resource.lifecycle.kind === "recovering" && !resource.recovery)
     throw new Error("Recovering resources require recovery evidence");
+  if (resource.recovery && next.intents.some((intent) => intent.attempts.length > 0))
+    throw new Error("Legacy uncertainty must resolve before namespace submission");
   if (
-    resource.content.kind === "recovery" &&
-    (resource.canonical !== null ||
-      next.intents.length > 0 ||
-      Object.keys(resource.obligations).length > 0)
+    resource.recovery &&
+    (resource.lifecycle.kind === "recovering" || resource.lifecycle.kind === "terminal") &&
+    Object.keys(resource.obligations).length > 0
   )
-    throw new Error("Recovery resources cannot carry actionable namespace or cleanup work");
+    throw new Error("Unresolved authority cannot carry execution obligations");
   const previousMax = Math.max(0, ...(previous?.intents.map((intent) => intent.sequence) ?? []));
   const previousIds = new Set(previous?.intents.map((intent) => intent.intentId));
   const ids = new Set<string>();

@@ -16,12 +16,13 @@ must settle before another submission; settled intentions cannot restart.
 Operation outcomes must match the submitted operation and expected identity.
 Historical receipts do not establish the current canonical location.
 
-Recovery descriptors expose known identity without granting content access or
-namespace execution. They carry source evidence, no canonical location, no
-intentions and no actionable obligations. Nonterminal placeholders are recovering;
-terminal placeholders remain terminal so resolution cannot revive them. Resolution
-replaces only the matching source and expected resource revision. Local capture
-completion is distinct from per-resource recovery completion.
+Recovery evidence is independent of content identity and lifecycle. An unresolved
+server result may coexist with an exact local database reference; that reference
+still requires content initialization and authority checks before access. Pending
+writer intentions can accumulate, but legacy uncertainty must resolve before
+namespace submission. Terminal resources cannot revive. Resolution preserves
+independent progress and uses source identity plus revision CAS; capture completion
+is distinct from per-resource recovery completion.
 
 The storage foundation is not the active resource owner. Import, reconciliation,
 content access and caller cutover must replace the old lineage/reconciler together;
