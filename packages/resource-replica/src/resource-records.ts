@@ -115,6 +115,8 @@ export type ResourceCatalogCheckpoint = Pick<
   CatalogCacheView,
   "scope" | "generation" | "appliedRevision" | "observedHeadRevision" | "cursor"
 > & {
+  /** Project whose resource projection was installed with this catalog checkpoint. */
+  projectId: string;
   revision: number;
   entries: readonly CatalogEntry[];
   invalidatedEntryIds: readonly string[];
@@ -147,8 +149,9 @@ export type ProjectResourceSnapshot = {
 export interface ResourceMetadataStore {
   readonly accountId: string;
   readResource(key: ResourceKey): Promise<ResourceRecord | null>;
+  readProject(projectId: string): Promise<ProjectResourceSnapshot>;
   commitResource(write: ResourceWrite): Promise<MetadataCommitResult>;
-  readCatalog(scope: CatalogScope): Promise<ResourceCatalogCheckpoint | null>;
+  readCatalog(projectId: string, scope: CatalogScope): Promise<ResourceCatalogCheckpoint | null>;
   commitCatalog(input: {
     expectedRevision: number | null;
     next: ResourceCatalogCheckpoint;
