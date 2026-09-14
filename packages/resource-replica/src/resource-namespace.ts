@@ -351,6 +351,8 @@ export function settleNamespaceOutcome(record: ResourceRecord): ResourceWrite | 
   } else if (outcome.kind === "create") {
     if (outcome.result.status === "conflict" || !identityStillMatches) repair = true;
     else {
+      if (resource.content.kind !== "exact" || resource.content.initialization === "reserved")
+        throw new Error("Created resource content is not initialized");
       resource = {
         ...resource,
         canonical: resource.canonical ?? createLocation(outcome.result),
@@ -358,6 +360,17 @@ export function settleNamespaceOutcome(record: ResourceRecord): ResourceWrite | 
           resource.lifecycle.kind === "local"
             ? { kind: "acknowledged", availabilityGeneration: null }
             : resource.lifecycle,
+        obligations: {
+          ...resource.obligations,
+          sessionAdoption: {
+            transitionId: attempt.attemptId,
+            projectId: intent.projectId,
+            documentId: resource.identity.documentId,
+            identityRevision: resource.identity.revision,
+            exactDatabaseName: resource.content.databaseName,
+            generation: null,
+          },
+        },
       };
     }
   } else if (attemptIs(attempt, "move")) {
@@ -389,9 +402,11 @@ export function settleNamespaceOutcome(record: ResourceRecord): ResourceWrite | 
       )
         repair = true;
       else {
+        const { sessionAdoption: _superseded, ...obligations } = resource.obligations;
         resource = {
           ...resource,
           canonical: null,
+          obligations,
           lifecycle: {
             kind: "terminal",
             generation: result.value.availabilityGeneration,
