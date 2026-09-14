@@ -10,25 +10,14 @@ import type {
   ResourceRecord,
   ResourceWrite,
 } from "@meridian/resource-replica";
-import { validateResourceRecordUpdate } from "@meridian/resource-replica";
+import {
+  catalogProjectionKey,
+  catalogScopeBelongsToProject,
+  validateResourceRecordUpdate,
+} from "@meridian/resource-replica";
 import Dexie, { liveQuery, type Table } from "dexie";
 
 type StoredCatalog = ResourceCatalogCheckpoint & { key: string };
-
-function scopeKey(projectId: string, scope: CatalogScope): string {
-  switch (scope.kind) {
-    case "user":
-      return JSON.stringify([projectId, scope.kind]);
-    case "work":
-      return JSON.stringify([projectId, scope.kind, scope.projectId, scope.workId]);
-    default:
-      return JSON.stringify([projectId, scope.kind, scope.projectId]);
-  }
-}
-
-function scopeBelongsToProject(projectId: string, scope: CatalogScope): boolean {
-  return scope.kind === "user" || scope.projectId === projectId;
-}
 
 /** Expected revisions belong to the caller's immutable snapshot; stale writes never partly apply. */
 export class IndexedDbResourceMetadata implements ResourceMetadataStore {
@@ -44,7 +33,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
     readonly accountId: string,
     onVersionChange: () => void,
   ) {
-    this.database = new Dexie(`meridian:resource-metadata:v1:${encodeURIComponent(accountId)}`);
+    this.database = new Dexie(`meridian:resource-metadata:v2:${encodeURIComponent(accountId)}`);
     this.database.version(1).stores({
       resources: "handle",
       intents: "intentId,handle,projectId",
@@ -119,6 +108,15 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
         intentKeys.add(key);
       }
     }
+    const projected = new Map(
+      (await this.resources.toArray()).map((resource) => [resource.handle, resource] as const),
+    );
+    for (const { next } of writes) projected.set(next.resource.handle, next.resource);
+    const documentIds = new Set<string>();
+    for (const resource of projected.values()) {
+      if (documentIds.has(resource.identity.documentId)) return false;
+      documentIds.add(resource.identity.documentId);
+    }
     return true;
   }
 
@@ -141,7 +139,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
   }
 
   readCatalog(projectId: string, scope: CatalogScope): Promise<ResourceCatalogCheckpoint | null> {
-    const key = scopeKey(projectId, scope);
+    const key = catalogProjectionKey(projectId, scope);
     return this.run(async () => {
       const stored = await this.catalogs.get(key);
       if (!stored) return null;
@@ -154,9 +152,9 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
     const input = structuredClone(command);
     return this.run(() =>
       this.database.transaction("rw", this.catalogs, this.resources, this.intents, async () => {
-        if (!scopeBelongsToProject(input.next.projectId, input.next.scope))
+        if (!catalogScopeBelongsToProject(input.next.projectId, input.next.scope))
           throw new Error("Catalog scope belongs to another project");
-        const key = scopeKey(input.next.projectId, input.next.scope);
+        const key = catalogProjectionKey(input.next.projectId, input.next.scope);
         const current = await this.catalogs.get(key);
         if (
           (current?.revision ?? null) !== input.expectedRevision ||
