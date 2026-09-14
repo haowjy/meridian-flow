@@ -115,6 +115,7 @@ export class DocumentSessionRegistry
   private readonly retainedBranchRoomsByOwner = new Map<string, Set<string>>();
   private readonly admissionReservations = new Map<DocumentId, number>();
   private readonly localTransferReservations = new Map<string, LocalTransferReservation>();
+  private readonly settledLocalTransfers = new WeakSet<object>();
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private liveDocCapWarningEmitted = false;
   private readonly sessionObservers = new Map<
@@ -357,6 +358,8 @@ export class DocumentSessionRegistry
       }
       throw new Error("A different local transfer already reserves this document");
     }
+    if ((this.admissionReservations.get(transfer.documentId) ?? 0) > 0)
+      throw new Error("Live admission already reserves this document");
     let settle!: () => void;
     const settled = new Promise<void>((resolve) => {
       settle = resolve;
@@ -404,10 +407,12 @@ export class DocumentSessionRegistry
     for (const [key, reservation] of this.localTransferReservations) {
       if (reservation.handoff !== input) continue;
       this.localTransferReservations.delete(key);
+      this.settledLocalTransfers.add(input);
       reservation.settle();
       return;
     }
-    throw new Error("Local document handoff is not reserved");
+    if (!this.settledLocalTransfers.has(input))
+      throw new Error("Local document handoff is not reserved");
   }
 
   async inspect(input: {
@@ -496,7 +501,7 @@ export class DocumentSessionRegistry
             state.persistenceGeneration = input.generation;
             state.exactDatabaseName = input.pending.exactDatabaseName;
             const ownerId = `local-transfer:${input.pending.transitionId}`;
-            this.retain(ownerId, [lease]);
+            this.retain(ownerId, [lease], { detachedDocumentIds: [input.documentId] });
             let released = false;
             const ownership: TransferredDocumentSessionOwnership = Object.freeze({
               lease,
@@ -508,8 +513,15 @@ export class DocumentSessionRegistry
                 this.release(ownerId);
               },
             });
-            await reservation.transfer.completeCommit(ownership);
+            try {
+              await reservation.transfer.completeCommit(ownership);
+            } catch (error) {
+              ownership.release();
+              if (state.session === session) state.session = null;
+              throw error;
+            }
             this.localTransferReservations.delete(reservationKey);
+            this.settledLocalTransfers.add(reservation.handoff);
             reservation.settle();
           },
         }),
@@ -521,6 +533,7 @@ export class DocumentSessionRegistry
         this.localTransferReservations.get(reservationKey) === reservation
       ) {
         this.localTransferReservations.delete(reservationKey);
+        this.settledLocalTransfers.add(reservation.handoff);
         reservation.settle();
       }
       throw error;
@@ -552,7 +565,10 @@ export class DocumentSessionRegistry
       const coordination = this.coordination;
       await (coordination?.close() ?? this.invalidateAll());
       if (this.coordination === coordination) this.coordination = null;
-      for (const reservation of this.localTransferReservations.values()) reservation.settle();
+      for (const reservation of this.localTransferReservations.values()) {
+        this.settledLocalTransfers.add(reservation.handoff);
+        reservation.settle();
+      }
       this.localTransferReservations.clear();
       this.accountRuntimeState = "closed";
     });

@@ -290,10 +290,45 @@ it("retires an uncommitted transfer only after its reservation is aborted", asyn
 
   opened.handle.release();
   expect(opened.handle.session.getSnapshot().status).toBe("detached");
-  access.abortTransfer(key, handoff, reservations);
+  access.abortTransfer(key, handoff);
 
   expect(reservations.abort).toHaveBeenCalledWith(handoff);
   await vi.waitFor(() => expect(opened.handle.session.getSnapshot().status).toBe("destroyed"));
+});
+
+it("destroys an unsettled transfer once during account close", async () => {
+  const metadata = openMetadata();
+  const record = resource("close-transfer");
+  await initialize(record);
+  const key = await install(metadata, record);
+  const { access } = openAccess(metadata);
+  const opened = await access.open("project", key, "editor-tab");
+  if (opened.kind !== "opened") throw new Error("Expected local content");
+  const session = opened.handle.session;
+  const destroy = vi.spyOn(session, "destroy");
+  const handoff = Object.freeze({}) as LocalDocumentSessionHandoff;
+  const reservations: LocalDocumentSessionReservationPort = {
+    reserve: vi.fn(() => handoff),
+    abort: vi.fn(),
+  };
+  await access.reserveTransfer(
+    {
+      projectId: "project",
+      key,
+      transitionId: "transition",
+      documentId: record.resource.identity.documentId,
+      identityRevision: record.resource.identity.revision,
+      databaseName:
+        record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
+    },
+    reservations,
+  );
+
+  await access.finishClose();
+
+  expect(reservations.abort).toHaveBeenCalledWith(handoff);
+  expect(destroy).toHaveBeenCalledOnce();
+  expect(session.getSnapshot().status).toBe("destroyed");
 });
 
 it("does not expose an account resource outside the requesting project's projection", async () => {

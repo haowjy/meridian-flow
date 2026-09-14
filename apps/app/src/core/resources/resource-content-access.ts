@@ -56,6 +56,11 @@ type ContentEntry = {
     | { kind: "registry"; ownership: TransferredDocumentSessionOwnership };
 };
 
+type ContentRetirement = {
+  session: DocumentSession;
+  attempt: Promise<void> | null;
+};
+
 export type ResourceContentTransfer = Readonly<{
   projectId: string;
   key: ResourceKey;
@@ -107,7 +112,7 @@ function sameIdentity(left: ContentIdentity, record: ResourceRecord): boolean {
 export class ResourceContentAccess {
   private readonly entries = new Map<string, ContentEntry>();
   private readonly openings = new Map<string, Promise<ContentEntry | ResourceContentOpenResult>>();
-  private readonly retirements = new Map<string, DocumentSession>();
+  private readonly retirements = new Map<string, ContentRetirement>();
   private readonly operations = new Set<Promise<unknown>>();
   private state: "open" | "closing" | "closed" = "open";
 
@@ -228,16 +233,12 @@ export class ResourceContentAccess {
     return { kind: "reserved", handoff };
   }
 
-  abortTransfer(
-    key: ResourceKey,
-    handoff: LocalDocumentSessionHandoff,
-    reservations: LocalDocumentSessionReservationPort,
-  ): void {
+  abortTransfer(key: ResourceKey, handoff: LocalDocumentSessionHandoff): void {
     const id = resourceKey(key);
     const entry = this.entries.get(id);
-    if (!entry || entry.ownership.kind !== "transferring" || entry.ownership.handoff !== handoff)
+    if (entry?.ownership.kind !== "transferring" || entry.ownership.handoff !== handoff)
       throw new Error("Resource content handoff is not reserved");
-    reservations.abort(handoff);
+    entry.ownership.reservations.abort(handoff);
     entry.ownership = { kind: "local" };
     if (entry.leases.size === 0) {
       this.entries.delete(id);
@@ -407,20 +408,34 @@ export class ResourceContentAccess {
 
   private retire(id: string, session: DocumentSession): void {
     const existing = this.retirements.get(id);
-    if (existing && existing !== session)
+    if (existing && existing.session !== session)
       throw new Error("A different resource content session is still retiring");
-    this.retirements.set(id, session);
+    if (!existing) this.retirements.set(id, { session, attempt: null });
     void this.destroy(id, session).catch(() => undefined);
   }
 
   private async finishRetirement(id: string): Promise<void> {
-    const session = this.retirements.get(id);
-    if (session) await this.destroy(id, session);
+    const retirement = this.retirements.get(id);
+    if (retirement) await this.destroy(id, retirement.session);
   }
 
-  private async destroy(id: string, session: DocumentSession): Promise<void> {
-    await session.destroy();
-    if (this.retirements.get(id) === session) this.retirements.delete(id);
+  private destroy(id: string, session: DocumentSession): Promise<void> {
+    const retirement = this.retirements.get(id);
+    if (!retirement || retirement.session !== session)
+      return Promise.reject(new Error("Resource content retirement identity changed"));
+    if (retirement.attempt) return retirement.attempt;
+    const attempt = session.destroy().then(
+      () => {
+        if (this.retirements.get(id) === retirement) this.retirements.delete(id);
+      },
+      (error: unknown) => {
+        if (this.retirements.get(id) === retirement && retirement.attempt === attempt)
+          retirement.attempt = null;
+        throw error;
+      },
+    );
+    retirement.attempt = attempt;
+    return attempt;
   }
 
   private track<T>(operation: Promise<T>): Promise<T> {
@@ -458,7 +473,7 @@ export class ResourceContentAccess {
       }
     }
     const results = await Promise.allSettled(
-      [...this.retirements].map(([id, session]) => this.destroy(id, session)),
+      [...this.retirements].map(([id, retirement]) => this.destroy(id, retirement.session)),
     );
     const errors = results.flatMap((result) =>
       result.status === "rejected" ? [result.reason] : [],

@@ -53,6 +53,13 @@ export function validateResourceRecordUpdate(
   )
     throw new Error("Session adoption witness does not match the resource");
   if (adoption && !previous?.resource.obligations.sessionAdoption) {
+    if (
+      adoption.generation !== null ||
+      (previous?.resource.lifecycle.kind === "acknowledged" &&
+        previous.resource.lifecycle.availabilityGeneration !== null)
+    ) {
+      throw new Error("Session adoption can only begin before its first authority generation");
+    }
     const source = next.intents.find(
       (intent) =>
         intent.projectId === adoption.projectId &&
