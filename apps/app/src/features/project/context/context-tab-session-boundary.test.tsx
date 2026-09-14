@@ -124,15 +124,19 @@ describe("ContextTabSessionBoundary", () => {
       })),
     };
     let show!: (documentId: string) => void;
-    const seen: Array<{ documentId: string; session: DocumentSession | null }> = [];
+    const seen: Array<{
+      documentId: string;
+      session: DocumentSession | null;
+      localContentReady: boolean;
+    }> = [];
     function Harness() {
       const [documentId, setDocumentId] = useState("document-a");
       show = setDocumentId;
       return (
         <ProjectDocumentLiveOpenerContext.Provider value={opener as never}>
           <ContextTabSessionBoundary projectId="project-a" documentId={documentId}>
-            {(session) => {
-              seen.push({ documentId, session });
+            {(session, _failed, localContentReady) => {
+              seen.push({ documentId, session, localContentReady });
               return null;
             }}
           </ContextTabSessionBoundary>
@@ -142,6 +146,7 @@ describe("ContextTabSessionBoundary", () => {
 
     await withReactRoot(<Harness />, async () => {
       await vi.waitFor(() => expect(seen.at(-1)?.session).toBe(sessionA));
+      expect(seen.at(-1)?.localContentReady).toBe(true);
 
       await act(async () => show("document-b"));
       await vi.waitFor(() => expect(seen.at(-1)?.session).toBe(sessionB));

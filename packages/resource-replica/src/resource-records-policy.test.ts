@@ -15,6 +15,7 @@ function reserved(): ResourceRecord {
         schema: null,
         initialization: "reserved",
       },
+      classification: { editable: true, filetype: "markdown", schemaType: "document" },
       canonical: null,
       lifecycle: { kind: "local" },
       aliases: {},

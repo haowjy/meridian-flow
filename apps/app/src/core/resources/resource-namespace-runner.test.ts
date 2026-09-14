@@ -22,7 +22,7 @@ function open(accountId: string) {
 afterEach(async () => {
   await Promise.all(stores.splice(0).map((store) => store.finishClose()));
   for (const account of accounts)
-    await Dexie.delete(`meridian:resource-metadata:v2:${encodeURIComponent(account)}`);
+    await Dexie.delete(`meridian:resource-metadata:v3:${encodeURIComponent(account)}`);
   accounts.clear();
 });
 
@@ -33,6 +33,7 @@ function local(): ResourceRecord {
       revision: 1,
       identity: { documentId: "document", revision: 1 },
       content: { kind: "exact", databaseName: "content", schema: null },
+      classification: { editable: true, filetype: "markdown", schemaType: "document" },
       canonical: null,
       lifecycle: { kind: "local" },
       aliases: {},

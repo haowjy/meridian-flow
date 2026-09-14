@@ -5,10 +5,10 @@ APIs, Web Locks and exact local document sessions. `AccountResourceReplica` is
 the production account-scoped owner. The authenticated feature lifetime creates
 one instance and closes the whole document runtime if its storage is invalidated.
 
-`IndexedDbResourceMetadata` owns one `v2` physical database per account; the
-incompatible inactive `v1` schema is deliberately ignored rather than migrated.
-Resource descriptors
-are account-global by stable handle. Namespace intentions carry the project used
+`IndexedDbResourceMetadata` owns one `v3` physical database per account; the
+incompatible inactive predecessor schemas are deliberately ignored rather than
+migrated. Resource descriptors are account-global by stable handle and retain
+catalog-defined file classification. Namespace intentions carry the project used
 for their command. Catalog checkpoints carry both server scope and consuming
 project, so the same account-owned User catalog can project into several projects
 without duplicating the resource or suppressing another project's checkpoint.

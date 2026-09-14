@@ -240,6 +240,27 @@ describe("editor lifetime", () => {
     });
   });
 
+  it("binds verified local content without waiting for an offline server sync", async () => {
+    const documentId = "local-horizon-controlled";
+    let resolvePersistence!: () => void;
+    sessionHorizons.set(documentId, {
+      localPersistence: new Promise((resolve) => {
+        resolvePersistence = resolve;
+      }),
+      firstServerSync: new Promise(() => undefined),
+    });
+
+    await withReactRoot(<ExactLiveEditor documentId={documentId} localContentReady />, async () => {
+      expect(document.querySelector(".ProseMirror")).toBeNull();
+      await act(async () => {
+        resolvePersistence();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mountedEditor()).toBeDefined();
+    });
+  });
+
   it.each([
     ["live", { documentId: "clean-live", projectId: "project-1" }],
     ["live detached", { documentId: "clean-detached", projectId: "project-1", detached: true }],

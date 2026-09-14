@@ -1,6 +1,6 @@
 /** Atomic installation policy from a server catalog view into durable local resources. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import type { CatalogFileEntry } from "@meridian/contracts/protocol";
+import type { CatalogFileClassification, CatalogFileEntry } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { type CatalogCacheView, catalogFiles, indexCatalogView } from "./catalog";
 import { catalogScopeBelongsToProject, sameCatalogScope } from "./catalog-scope";
@@ -15,7 +15,14 @@ import type {
 
 export type CatalogObservationFence = Readonly<{
   /** Exact resource state captured before HTTP distinguishes local location changes from unrelated CAS. */
-  resources?: ReadonlyMap<string, { revision: number; canonical: ResourceLocation | null }>;
+  resources?: ReadonlyMap<
+    string,
+    {
+      revision: number;
+      canonical: ResourceLocation | null;
+      classification: CatalogFileClassification;
+    }
+  >;
 }>;
 
 export type CatalogInstallationPlan = Readonly<{
@@ -88,6 +95,32 @@ function sameLocation(left: ResourceLocation | null, right: ResourceLocation | n
   );
 }
 
+function classificationFor(entry: CatalogFileEntry): CatalogFileClassification {
+  if (entry.editable)
+    return { editable: true, filetype: entry.filetype, schemaType: entry.schemaType };
+  if (entry.disposition === "custom")
+    return {
+      editable: false,
+      disposition: "custom",
+      fileType: entry.fileType,
+      mimeType: entry.mimeType,
+      filetype: entry.filetype,
+    };
+  return {
+    editable: false,
+    disposition: "binary",
+    fileType: entry.fileType,
+    mimeType: entry.mimeType,
+  };
+}
+
+function sameClassification(
+  left: CatalogFileClassification,
+  right: CatalogFileClassification,
+): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function indexRecords(records: readonly ResourceRecord[]): {
   current: Map<string, ResourceRecord>;
   handles: Map<string, ResourceRecord>;
@@ -108,16 +141,18 @@ function indexRecords(records: readonly ResourceRecord[]): {
 function observedResourceWrite(input: {
   record: ResourceRecord;
   location: ResourceLocation;
+  classification: CatalogFileClassification;
   fence: CatalogObservationFence;
 }): ResourceWrite | null {
-  const { record, location, fence } = input;
+  const { record, location, classification, fence } = input;
   const current = record.resource;
   if (current.lifecycle.kind !== "acknowledged") return null;
   const observed = fence.resources?.get(current.handle);
   if (!observed) return null;
   if (
     observed.revision !== current.revision &&
-    !sameLocation(observed.canonical, current.canonical)
+    (!sameLocation(observed.canonical, current.canonical) ||
+      !sameClassification(observed.classification, current.classification))
   )
     return null;
 
@@ -125,13 +160,17 @@ function observedResourceWrite(input: {
   const refreshed = refresh
     ? installCanonicalRefresh({ record, operationId: refresh.operationId, location })
     : null;
-  const changed = refreshed !== null || !sameLocation(current.canonical, location);
+  const changed =
+    refreshed !== null ||
+    !sameLocation(current.canonical, location) ||
+    !sameClassification(current.classification, classification);
   const base = refreshed?.next.resource ?? current;
   const obligations = { ...base.obligations };
   if (!changed) return null;
   const next: ResourceDescriptor = {
     ...base,
     revision: current.revision + 1,
+    classification,
     canonical: location,
     obligations,
   };
@@ -145,6 +184,7 @@ function discoveredResource(entry: CatalogFileEntry, location: ResourceLocation)
     revision: 1,
     identity: { documentId: entry.entryId, revision: 1 },
     content: { kind: "unacquired" },
+    classification: classificationFor(entry),
     canonical: location,
     lifecycle: { kind: "acknowledged", availabilityGeneration: null },
     aliases: {},
@@ -176,7 +216,12 @@ export function planCatalogInstallation(input: {
     const location = locationFor(input.view, entry);
     const current = index.current.get(entry.entryId);
     if (current) {
-      const write = observedResourceWrite({ record: current, location, fence });
+      const write = observedResourceWrite({
+        record: current,
+        location,
+        classification: classificationFor(entry),
+        fence,
+      });
       if (write) resources.push(write);
       continue;
     }

@@ -1,6 +1,7 @@
 /** React Query acquisition and flat selectors over one normalized ID cache. */
 import { canonicalContextUri } from "@meridian/contracts/context-uri";
 import {
+  type CatalogFileEntry,
   type CatalogScope,
   type CatalogWakeHint,
   isWorkScopedProjectContextScheme,
@@ -11,13 +12,20 @@ import {
   type catalogChildren,
   catalogViewFromCheckpoint,
   catalogViewFromSnapshot,
+  emptyCatalogView,
   indexCatalogView,
   projectResourceLocation,
   projectResourceNeedsRepair,
   type ResourceRecord,
   sameCatalogProjectionScope,
 } from "@meridian/resource-replica";
-import { type QueryClient, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  queryOptions,
+  skipToken,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { getContextCatalogLookup } from "@/client/api/projects-api";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
@@ -30,7 +38,6 @@ import type {
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import {
   useAccountResourceProjection,
-  useAccountResourceReplica,
   useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
 import { projectQueryKeys } from "./project-query-keys";
@@ -48,13 +55,13 @@ export function contextCatalogScope(
 }
 
 export function contextCatalogQueryOptions(
-  acquisition: Pick<AccountResourceReplica, "acquireCatalog">,
+  acquisition: Pick<AccountResourceReplica, "acquireCatalog"> | null,
   projectId: string,
   scope: CatalogScope,
 ) {
   return queryOptions({
     queryKey: projectQueryKeys.contextCatalog(projectId, scope),
-    queryFn: () => acquisition.acquireCatalog(projectId, scope),
+    queryFn: acquisition ? () => acquisition.acquireCatalog(projectId, scope) : skipToken,
     staleTime: 5_000,
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
@@ -93,11 +100,12 @@ function catalogUri(scheme: ProjectContextTreeScheme, path: string, scope: Catal
 }
 
 /** One normalized catalog read model: durable local intentions overlay the server checkpoint. */
-export function projectResourceCatalogView(
+function overlayResourceCatalogView(
   projectId: string,
   scope: CatalogScope,
   view: CatalogCacheView,
   records: readonly ResourceRecord[],
+  isKnownVisible: (record: ResourceRecord) => boolean,
 ): CatalogCacheView {
   const entries = new Map(view.entries);
   const invalidatedEntryIds = new Set(view.invalidatedEntryIds);
@@ -105,6 +113,7 @@ export function projectResourceCatalogView(
     const documentId = record.resource.identity.documentId;
     const location = projectResourceLocation(projectId, record);
     const visible =
+      isKnownVisible(record) ||
       record.intents.some(
         (intent) => intent.projectId === projectId && intent.state !== "cancelled",
       ) ||
@@ -179,13 +188,36 @@ export function projectResourceCatalogView(
       path,
       uri,
       provisionalName: location.provisional,
-      editable: true,
-      filetype: "markdown",
-      schemaType: "document",
-    });
+      ...record.resource.classification,
+    } satisfies CatalogFileEntry);
     invalidatedEntryIds.delete(documentId);
   }
   return indexCatalogView({ ...view, entries, invalidatedEntryIds });
+}
+
+/** Overlay recoverable resource state without treating unrelated account records as project files. */
+export function projectResourceCatalogView(
+  projectId: string,
+  scope: CatalogScope,
+  view: CatalogCacheView,
+  records: readonly ResourceRecord[],
+): CatalogCacheView {
+  return overlayResourceCatalogView(projectId, scope, view, records, () => false);
+}
+
+/** Project one record whose replica lookup already proved this project's access. */
+export function accessibleResourceCatalogView(
+  projectId: string,
+  scope: CatalogScope,
+  record: ResourceRecord,
+): CatalogCacheView {
+  return overlayResourceCatalogView(
+    projectId,
+    scope,
+    emptyCatalogView(scope),
+    [record],
+    () => true,
+  );
 }
 
 export function projectCatalogFile(
@@ -364,7 +396,7 @@ export function useContextCatalogView(
     () => contextCatalogScope(projectId, scheme, options.workId),
     [options.workId, projectId, scheme],
   );
-  const resources = useAccountResourceReplica();
+  const resources = useOptionalAccountResourceReplica();
   const resourceProjection = useAccountResourceProjection(projectId);
   const query = useQuery({
     ...contextCatalogQueryOptions(resources, projectId, scope),
@@ -375,19 +407,21 @@ export function useContextCatalogView(
       (candidate) =>
         candidate.projectId === projectId && sameCatalogProjectionScope(candidate.scope, scope),
     );
-    const view = checkpoint
-      ? catalogViewFromCheckpoint(checkpoint)
-      : query.data
-        ? query.data
-        : resourceProjection.records.length > 0
-          ? catalogViewFromSnapshot({
-              scope,
-              generation: "local",
-              headRevision: "0",
-              cursor: "",
-              entries: [],
-            })
-          : null;
+    const view = resources
+      ? checkpoint
+        ? catalogViewFromCheckpoint(checkpoint)
+        : query.data
+          ? query.data
+          : resourceProjection.records.length > 0
+            ? catalogViewFromSnapshot({
+                scope,
+                generation: "local",
+                headRevision: "0",
+                cursor: "",
+                entries: [],
+              })
+            : null
+      : query.data;
     return {
       catalog: view
         ? projectCatalogView(
@@ -397,7 +431,7 @@ export function useContextCatalogView(
             resourceProjection.records,
           )
         : null,
-      complete: Boolean(checkpoint),
+      complete: resources ? Boolean(checkpoint) : Boolean(query.data),
     };
   }, [
     projectId,
@@ -436,7 +470,7 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
           : { kind: scopeKind, projectId: scopeProjectId as string },
     [scopeKind, scopeProjectId, scopeUserId, scopeWorkId],
   );
-  const resources = useAccountResourceReplica();
+  const resources = useOptionalAccountResourceReplica();
   const projection = useAccountResourceProjection(projectId);
   const query = useQuery({
     ...contextCatalogQueryOptions(resources, projectId, stableScope),

@@ -69,6 +69,7 @@ export function contextTabFromResource(
   const location = projectResourceLocation(projectId, record);
   if (!location) return null;
   const { resource } = record;
+  if (!resource.classification.editable) return null;
   const locallyCreated = record.intents.some((intent) => intent.desired.kind === "create");
   if (resource.lifecycle.kind === "local" && location.provisional) {
     return {
@@ -86,8 +87,8 @@ export function contextTabFromResource(
     name: location.name,
     ...(location.workId ? { workId: location.workId } : {}),
     editable: true,
-    filetype: "markdown",
-    schemaType: "document",
+    filetype: resource.classification.filetype,
+    schemaType: resource.classification.schemaType,
     provisionalName: location.provisional,
     ...(resource.content.kind === "exact"
       ? {
@@ -118,9 +119,10 @@ export function projectResourceTab(
   tab: ContextTab,
   records: readonly ResourceRecord[],
 ): ResourceTabProjection {
-  const record = tab.resourceHandle
-    ? records.find(({ resource }) => resource.handle === tab.resourceHandle)
-    : resourceForDocumentIdentity(records, tab.documentId);
+  const record =
+    (tab.resourceHandle
+      ? records.find(({ resource }) => resource.handle === tab.resourceHandle)
+      : undefined) ?? resourceForDocumentIdentity(records, tab.documentId);
   if (!record) return { kind: "none" };
   if (record.resource.lifecycle.kind === "terminal")
     return {

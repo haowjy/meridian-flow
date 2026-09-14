@@ -138,7 +138,11 @@ export function ContextEditorMountHost({
           : null;
         const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
         const waitingForReviewRoom = Boolean(selectedReviewDraftId && !reviewRoomName);
-        const renderEditor = (session: DocumentSession | null, failed = false): ReactNode => {
+        const renderEditor = (
+          session: DocumentSession | null,
+          failed = false,
+          localContentReady = false,
+        ): ReactNode => {
           if (!isMounted) return null;
           let bindingKey: string | undefined;
           if (session) {
@@ -238,6 +242,7 @@ export function ContextEditorMountHost({
                     showToolbar={!readOnly}
                     showCollaborationDecorations={!readOnly}
                     detached={tab.kind === "new"}
+                    localContentReady={localContentReady}
                     schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
                     reviewDraftId={reviewDraftId}
                     reviewRoomName={reviewRoomName}
@@ -257,7 +262,7 @@ export function ContextEditorMountHost({
             resourceHandle={resourceHandle}
             active={active && isActive}
           >
-            {(session, failed) => renderEditor(session, failed)}
+            {renderEditor}
           </ContextTabSessionBoundary>
         );
       })}
@@ -277,7 +282,11 @@ export function ContextTabSessionBoundary({
   documentId: string;
   resourceHandle?: string;
   active?: boolean;
-  children: (session: DocumentSession | null, failed: boolean) => ReactNode;
+  children: (
+    session: DocumentSession | null,
+    failed: boolean,
+    localContentReady: boolean,
+  ) => ReactNode;
 }) {
   const resources = useAccountResourceReplica();
   const generation = useRef(++serverHostGeneration);
@@ -383,10 +392,12 @@ export function ContextTabSessionBoundary({
       .captureServerSession(projectId, documentId, state.generation, state.session)
       .catch(() => undefined);
   }, [documentId, projectId, resources, state]);
+  const localSession = currentLocal.handle?.session ?? null;
   return children(
-    currentLocal.handle?.session ??
+    localSession ??
       (state.kind === "opened" && state.documentId === documentId ? state.session : null),
     currentLocal.phase === "failed" || (state.kind === "failed" && state.documentId === documentId),
+    localSession !== null,
   );
 }
 

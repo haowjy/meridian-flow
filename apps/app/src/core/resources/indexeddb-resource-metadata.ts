@@ -47,7 +47,7 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
     readonly accountId: string,
     onVersionChange: () => void,
   ) {
-    this.database = new Dexie(`meridian:resource-metadata:v2:${encodeURIComponent(accountId)}`);
+    this.database = new Dexie(`meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`);
     this.database.version(1).stores({
       resources: "handle",
       intents: "intentId,handle,projectId",

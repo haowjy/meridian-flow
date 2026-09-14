@@ -5,11 +5,7 @@ import type {
   ProjectContextIdentityResolution,
 } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
-import {
-  emptyCatalogView,
-  projectResourceLocation,
-  type ResourceRecord,
-} from "@meridian/resource-replica";
+import { projectResourceLocation, type ResourceRecord } from "@meridian/resource-replica";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { LiveDocumentSessionRegistry } from "@/core/editor/document-session-registry";
 /**
@@ -45,10 +41,10 @@ import {
 } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import {
+  accessibleResourceCatalogView,
   contextCatalogScope,
   projectCatalogFile,
   projectCatalogView,
-  projectResourceCatalogView,
 } from "@/client/query/useContextCatalog";
 import { useContextTabsActions } from "@/client/stores";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
@@ -243,7 +239,7 @@ function localFileForRecord(
   const location = projectResourceLocation(projectId, record);
   if (!location) return null;
   const scope = contextCatalogScope(projectId, location.scheme, location.workId);
-  const projected = projectResourceCatalogView(projectId, scope, emptyCatalogView(scope), [record]);
+  const projected = accessibleResourceCatalogView(projectId, scope, record);
   const file = projectCatalogView(projectId, location.scheme, projected, [record]).findDocument(
     record.resource.identity.documentId,
   );

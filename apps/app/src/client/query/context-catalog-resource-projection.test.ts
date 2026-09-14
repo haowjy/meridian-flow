@@ -495,6 +495,7 @@ it("keeps an unacquired catalog resource on the server session path", () => {
       revision: 1,
       identity: { documentId: "server-document", revision: 1 },
       content: { kind: "unacquired" },
+      classification: { editable: true, filetype: "markdown", schemaType: "document" },
       canonical: {
         scheme: "manuscript",
         path: "/Server.md",

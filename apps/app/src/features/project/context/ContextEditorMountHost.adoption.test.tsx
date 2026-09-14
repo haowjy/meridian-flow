@@ -3,6 +3,7 @@
 import { act, useState } from "react";
 import { expect, it, vi } from "vitest";
 import type { ContextTab } from "@/client/stores";
+import type { EditorViewProps } from "@/features/editor/EditorView";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
@@ -31,7 +32,13 @@ const review = vi.hoisted(() => ({
 }));
 vi.mock("@/features/chat/DraftReviewProvider", () => ({ useDraftReview: () => review }));
 vi.mock("@/features/editor/EditorView", () => ({
-  EditorView: () => <textarea aria-label="Editor" defaultValue="keep writing" />,
+  EditorView: ({ localContentReady }: EditorViewProps) => (
+    <textarea
+      aria-label="Editor"
+      data-local-content-ready={localContentReady ? "true" : "false"}
+      defaultValue="keep writing"
+    />
+  ),
 }));
 
 it("keeps the editor and caret when a local resource gains server metadata", async () => {
@@ -78,6 +85,7 @@ it("keeps the editor and caret when a local resource gains server metadata", asy
   await withReactRoot(<Harness />, async () => {
     const editor = document.querySelector("textarea");
     if (!editor) throw new Error("Local editor did not mount");
+    expect(editor.dataset.localContentReady).toBe("true");
     editor.focus();
     editor.setSelectionRange(4, 4);
     expect(opener.open).not.toHaveBeenCalled();

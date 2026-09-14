@@ -19,8 +19,9 @@ local identities after remint, not catalog identity aliases.
 namespace intentions. Submitted attempt payloads and outcomes are immutable.
 Metadata mutations use revision CAS, and a successful storage result means the
 outer transaction committed. Metadata never owns Editor tabs, Y.Doc instances or
-backend admission. Exact persistence names survive identity changes; descriptors
-alone cannot authorize upload or prove content initialization.
+backend admission. Exact persistence names and catalog-defined file classification
+survive identity and location changes; descriptors alone cannot authorize upload
+or prove content initialization.
 
 A new local descriptor may reserve initialization of one exact content database.
 The reservation can survive unrelated metadata progress, but cannot change

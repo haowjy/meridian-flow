@@ -16,7 +16,7 @@ import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 import { ResourceContentAccess } from "./resource-content-access";
 
 const accountId = "content-access-account";
-const metadataDatabase = `meridian:resource-metadata:v2:${encodeURIComponent(accountId)}`;
+const metadataDatabase = `meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`;
 const databases = new Set<string>();
 const stores: IndexedDbResourceMetadata[] = [];
 const accesses: ResourceContentAccess[] = [];
@@ -84,6 +84,7 @@ function resource(
         schema: options.schema ?? collabSchemaKeyTag(),
         initialization: options.initialization,
       },
+      classification: { editable: true, filetype: "markdown", schemaType: "document" },
       canonical: null,
       lifecycle: { kind: "local" },
       aliases: {},

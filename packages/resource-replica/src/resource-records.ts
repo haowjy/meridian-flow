@@ -1,6 +1,7 @@
 /** Durable resource identity and namespace work; independent of storage and content transport. */
 import type {
   CatalogEntry,
+  CatalogFileClassification,
   CatalogScope,
   ContextOperationReceipt,
   CreateUntitledContextDocumentRequest,
@@ -34,6 +35,8 @@ export type ResourceDescriptor = ResourceKey & {
         initialization?: "reserved";
       }
     | { kind: "unacquired" };
+  /** Stable editor/viewer classification retained when no catalog checkpoint is available. */
+  classification: CatalogFileClassification;
   canonical: ResourceLocation | null;
   lifecycle:
     | { kind: "local" }

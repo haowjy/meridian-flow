@@ -239,6 +239,79 @@ describe("ProjectDocumentNavigationProvider", () => {
     adapter.dispose();
   });
 
+  it("opens an accessible acknowledged cache without asking server admission", async () => {
+    const session = {} as import("@/core/editor/document-session").DocumentSession;
+    const record = {
+      resource: {
+        handle: "catalog:server-a",
+        revision: 2,
+        identity: { documentId: "server-a", revision: 1 },
+        content: { kind: "exact" as const, databaseName: "exact", schema: "v0.5" },
+        canonical: {
+          scheme: "manuscript" as const,
+          path: "/server-a.py",
+          name: "server-a.py",
+          workId: null,
+        },
+        classification: {
+          editable: true as const,
+          filetype: "python" as const,
+          schemaType: "code" as const,
+        },
+        lifecycle: { kind: "acknowledged" as const, availabilityGeneration: "2" },
+        aliases: {},
+        obligations: {},
+      },
+      intents: [],
+    };
+    const opener = { open: vi.fn() };
+    const openRoute = vi.fn(async () => ({ kind: "applied" as const }));
+    const adapter = new ProjectDocumentNavigationAdapter({
+      opener,
+      openTab: tabs,
+      openRoute,
+      resources: {
+        accountId: "account",
+        openKnownDocument: vi.fn(async () => ({
+          kind: "opened" as const,
+          key: { handle: "catalog:server-a" },
+          record,
+          handle: { documentId: "server-a", session, release: vi.fn() },
+        })),
+        openDocument: vi.fn(async () => ({
+          kind: "opened" as const,
+          handle: { documentId: "server-a", session, release: vi.fn() },
+        })),
+      } as never,
+    });
+
+    await expect(adapter.open("project-a", { documentId: "server-a" })).resolves.toMatchObject({
+      kind: "opened",
+      document: {
+        entryId: "server-a",
+        filetype: "python",
+        schemaType: "code",
+      },
+    });
+    expect(opener.open).not.toHaveBeenCalled();
+    expect(openRoute).toHaveBeenCalledWith(
+      {
+        scheme: "manuscript",
+        path: "/server-a.py",
+        workId: null,
+        documentId: "server-a",
+      },
+      expect.objectContaining({
+        tab: expect.objectContaining({
+          resourceHandle: "catalog:server-a",
+          filetype: "python",
+          schemaType: "code",
+        }),
+      }),
+    );
+    adapter.dispose();
+  });
+
   it("falls through to server admission for metadata-only catalog resources", async () => {
     const serverResult = opened("server-a");
     const opener = { open: vi.fn(async () => serverResult) };

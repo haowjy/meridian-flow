@@ -38,7 +38,8 @@ and closes metadata last.
 The replica uses short account/resource Web Locks for namespace and terminal
 coordination. Typing and ordinary local content access do not hold those locks.
 A stable resource handle survives document-ID remint; the exact persistence name
-and mounted Y.Doc do not change.
+and mounted Y.Doc do not change. The resource descriptor also retains the
+catalog-defined file classification so cached code never reopens as rich text.
 
 ## Architecture
 

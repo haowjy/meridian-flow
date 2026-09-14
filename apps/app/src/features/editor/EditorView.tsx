@@ -68,6 +68,8 @@ export type EditorViewProps = {
   bindingKey?: string;
   /** Keep a not-yet-materialized live document off server transport. */
   detached?: boolean;
+  /** The host already opened and verified exact local content for this session. */
+  localContentReady?: boolean;
   projectId?: string;
   schemaType?: YjsTrackedSchemaType;
   className?: string;
@@ -201,7 +203,10 @@ type SessionEditorViewProps = EditorViewProps & {
 function SessionEditorView(props: SessionEditorViewProps) {
   const [snapshot, setSnapshot] = useState(() => props.session.getSnapshot());
   const [bindHorizon, setBindHorizon] = useState<EditorBindHorizonResult | null>(null);
-  const requiresFirstServerSync = !(props.identity.surface === "live" && props.identity.detached);
+  const requiresFirstServerSync = !(
+    props.identity.surface === "live" &&
+    (props.identity.detached || props.localContentReady)
+  );
 
   useEffect(() => props.session.subscribe(setSnapshot), [props.session]);
   useEffect(() => {

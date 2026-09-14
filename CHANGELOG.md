@@ -9,7 +9,7 @@
 
 - Remove unused legacy resource migration compatibility code; no production data requires translation.
 
-- Open proven local document content without waiting for remote admission.
+- Open proven local document content without waiting for remote admission or first server sync, while preserving its catalog-defined editor type.
 
 - Persist namespace requests before dispatch and recover recorded outcomes after restart.
 

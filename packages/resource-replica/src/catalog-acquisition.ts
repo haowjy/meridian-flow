@@ -51,12 +51,17 @@ function checkpointFor(
 function observationFence(snapshot: ResourceProjectionSnapshot): CatalogObservationFence {
   const resources = new Map<
     string,
-    { revision: number; canonical: ResourceRecord["resource"]["canonical"] }
+    {
+      revision: number;
+      canonical: ResourceRecord["resource"]["canonical"];
+      classification: ResourceRecord["resource"]["classification"];
+    }
   >();
   for (const { resource } of snapshot.records) {
     resources.set(resource.handle, {
       revision: resource.revision,
       canonical: structuredClone(resource.canonical),
+      classification: structuredClone(resource.classification),
     });
   }
   return { resources };

@@ -9,6 +9,7 @@ function record(intent?: Pick<NamespaceIntent, "state" | "desired">): ResourceRe
       revision: 1,
       identity: { documentId: "document", revision: 1 },
       content: { kind: "unacquired" },
+      classification: { editable: true, filetype: "markdown", schemaType: "document" },
       canonical: null,
       lifecycle: { kind: "local" },
       aliases: {},
