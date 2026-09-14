@@ -6,37 +6,38 @@ import type {
   ResourceMetadataStore,
   ResourceRecord,
 } from "@meridian/resource-replica";
-import type { RoomOrderRecord } from "../editor/document-session-authority-store";
+import type { ResourceAuthorityInspection } from "../editor/account-document-session-runtime";
+import type { ResourceAuthoritySnapshot } from "../editor/document-session-authority-store";
 import {
   decodeLegacyResource,
   type LegacyResourceBytes,
   type LegacyResourceRecord,
 } from "./legacy-resource-record";
 
-/** Supplied by the existing account authority owner; never constructs another authority store. */
-export interface LegacyResourceAuthority {
-  readonly accountId: string;
-  readRoom(documentId: string): Promise<RoomOrderRecord>;
-}
-
 function importedRecord(
   record: LegacyResourceRecord,
-  room: RoomOrderRecord | null,
+  snapshot: ResourceAuthoritySnapshot | null,
   sourceKey: string,
 ): ResourceRecord | null {
+  const room = snapshot?.room;
+  const purge = snapshot?.pendingPurge;
   const key = { projectId: record.ref.projectId, handle: record.ref.lineageHandle };
   if (record.kind === "terminal") {
     const authority = room?.persistence;
-    if (
-      !authority ||
-      room?.pendingDrain ||
-      authority.phase !== "terminal-local" ||
-      authority.transitionId !== record.transitionId ||
-      authority.lineageHandle !== record.ref.lineageHandle ||
-      authority.exactDatabaseName !== record.exactDatabaseName ||
-      authority.terminalGeneration !== record.terminalGeneration
-    )
-      return null;
+    const cleared = !authority && !room?.pendingDrain && !purge;
+    const pending =
+      !room?.pendingDrain &&
+      authority?.phase === "terminal-local" &&
+      authority.transitionId === record.transitionId &&
+      authority.lineageHandle === record.ref.lineageHandle &&
+      authority.exactDatabaseName === record.exactDatabaseName &&
+      authority.terminalGeneration === record.terminalGeneration &&
+      purge?.accountId === record.ref.accountId &&
+      purge.documentId === record.documentId &&
+      purge.transitionId === record.transitionId &&
+      purge.exactDatabaseName === record.exactDatabaseName &&
+      purge.revokedThrough === record.terminalGeneration;
+    if (!cleared && !pending) return null;
     return {
       resource: {
         ...key,
@@ -50,17 +51,20 @@ function importedRecord(
           transitionId: record.transitionId,
         },
         aliases: {},
-        obligations: {
-          cleanup: {
-            obligationId: record.cleanupObligationId,
-            exactDatabaseName: record.exactDatabaseName,
-          },
-        },
+        obligations: pending
+          ? {
+              cleanup: {
+                obligationId: record.cleanupObligationId,
+                exactDatabaseName: record.exactDatabaseName,
+              },
+            }
+          : {},
       },
       intents: [],
     };
   }
   if (
+    purge ||
     room?.pendingDrain ||
     room?.persistence?.phase === "terminal-local" ||
     room?.persistence?.phase === "adopting-local"
@@ -195,7 +199,7 @@ function recoveryRecord(record: LegacyResourceRecord, sourceKey: string): Resour
 export async function importLegacyResources(input: {
   accountId: string;
   source: readonly LegacyResourceBytes[];
-  authority: LegacyResourceAuthority;
+  authority: ResourceAuthorityInspection;
   metadata: ResourceMetadataStore;
 }): Promise<"complete" | "recovery-required"> {
   if (input.accountId !== input.authority.accountId || input.accountId !== input.metadata.accountId)
@@ -214,8 +218,8 @@ export async function importLegacyResources(input: {
     }
     const legacy = decodeLegacyResource(input.accountId, source);
     const documentId = legacy?.kind === "terminal" ? legacy.documentId : legacy?.active.documentId;
-    const room = documentId ? await input.authority.readRoom(documentId) : null;
-    const imported = legacy ? importedRecord(legacy, room, source.sourceKey) : null;
+    const snapshot = documentId ? await input.authority.readSnapshot(documentId) : null;
+    const imported = legacy ? importedRecord(legacy, snapshot, source.sourceKey) : null;
     const evidence: MigrationEvidence = {
       ...source,
       status: imported && !imported.resource.recovery ? "imported" : "recovery",
@@ -254,7 +258,7 @@ export async function importLegacyResources(input: {
 /** Resolve captured records independently; unresolved resources do not reopen the capture checkpoint. */
 export async function resolveLegacyResources(input: {
   accountId: string;
-  authority: LegacyResourceAuthority;
+  authority: ResourceAuthorityInspection;
   metadata: ResourceMetadataStore;
 }): Promise<void> {
   if (input.accountId !== input.authority.accountId || input.accountId !== input.metadata.accountId)
@@ -281,7 +285,7 @@ export async function resolveLegacyResources(input: {
       continue;
     const imported = importedRecord(
       legacy,
-      await input.authority.readRoom(documentId),
+      await input.authority.readSnapshot(documentId),
       evidence.sourceKey,
     );
     if (!imported || imported.resource.recovery) continue;

@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Recover legacy terminal state from atomic room and purge evidence.
+
 - Preserve local cache identity and pending writer intentions during legacy recovery.
 
 - Expose account-fenced resource recovery snapshots without opening another authority owner.
