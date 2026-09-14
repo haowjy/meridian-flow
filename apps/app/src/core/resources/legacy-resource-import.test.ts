@@ -2,7 +2,11 @@
 import "fake-indexeddb/auto";
 import Dexie from "dexie";
 import { afterEach, expect, it, vi } from "vitest";
-import type { RoomOrderRecord } from "../editor/document-session-authority-store";
+import type { ResourceAuthorityInspection } from "../editor/account-document-session-runtime";
+import type {
+  ResourceAuthoritySnapshot,
+  RoomOrderRecord,
+} from "../editor/document-session-authority-store";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 import { importLegacyResources, resolveLegacyResources } from "./legacy-resource-import";
 import { type LegacyResourceRecord, snapshotLegacyResources } from "./legacy-resource-record";
@@ -14,9 +18,16 @@ function open() {
   stores.push(store);
   return store;
 }
-const authority = {
-  accountId,
-  readRoom: vi.fn(
+function inspection(
+  readRoom: (documentId: string) => Promise<RoomOrderRecord>,
+): ResourceAuthorityInspection {
+  return {
+    accountId,
+    readSnapshot: async (documentId) => ({ room: await readRoom(documentId), pendingPurge: null }),
+  };
+}
+const authority = inspection(
+  vi.fn(
     async (documentId: string): Promise<RoomOrderRecord> => ({
       documentId,
       persistence: null,
@@ -24,7 +35,7 @@ const authority = {
       pendingDrain: null,
     }),
   ),
-};
+);
 afterEach(async () => {
   await Promise.all(stores.splice(0).map((store) => store.finishClose()));
   await Dexie.delete(`meridian:resource-metadata:v1:${encodeURIComponent(accountId)}`);
@@ -132,7 +143,7 @@ it("recovers adopted persistence only from matching committed authority", async 
   await importLegacyResources({
     accountId,
     source: [bytes(adopted)],
-    authority: { accountId, readRoom },
+    authority: inspection(readRoom),
     metadata,
   });
   const record = await metadata.readResource({ projectId: "project", handle: "lineage" });
@@ -200,9 +211,8 @@ it("revisits recovery evidence when authority becomes bindable without replacing
   const source = [bytes(adopted)];
   await importLegacyResources({ accountId, source, authority, metadata });
   expect((await metadata.readMigration()).checkpoint?.state).toBe("complete");
-  const ready = {
-    accountId,
-    readRoom: async (documentId: string): Promise<RoomOrderRecord> => ({
+  const ready = inspection(
+    async (documentId: string): Promise<RoomOrderRecord> => ({
       documentId,
       persistence: {
         phase: "bindable",
@@ -213,7 +223,7 @@ it("revisits recovery evidence when authority becomes bindable without replacing
       documentAdmittedThrough: "1",
       pendingDrain: null,
     }),
-  };
+  );
   const captured = await metadata.readResource({ projectId: "project", handle: "lineage" });
   if (!captured) throw new Error("fixture missing");
   const intention = {
@@ -291,7 +301,7 @@ it("snapshots all raw keys for one account including undecodable values", () => 
   ]);
 });
 
-it("does not infer terminal cleanup completion from missing or conflicting room authority", async () => {
+it("requires matching terminal purge evidence and preserves conflicting authority", async () => {
   const metadata = open();
   const terminal: LegacyResourceRecord = {
     version: 4,
@@ -305,18 +315,30 @@ it("does not infer terminal cleanup completion from missing or conflicting room 
     cleanupObligationId: "cleanup",
   };
   const source = [bytes(terminal)];
-  expect(await importLegacyResources({ accountId, source, authority, metadata })).toBe(
-    "recovery-required",
-  );
-  const conflicting = {
-    accountId,
-    readRoom: async (documentId: string): Promise<RoomOrderRecord> => ({
+  const pendingAuthority = inspection(async (documentId) => ({
+    documentId,
+    persistence: {
+      phase: "terminal-local",
+      terminalGeneration: "2",
+      transitionId: "transition",
+      lineageHandle: "terminal",
+      exactDatabaseName: "original",
+      commandId: "command",
+    },
+    documentAdmittedThrough: "2",
+    pendingDrain: null,
+  }));
+  expect(
+    await importLegacyResources({ accountId, source, authority: pendingAuthority, metadata }),
+  ).toBe("recovery-required");
+  const conflicting = inspection(
+    async (documentId: string): Promise<RoomOrderRecord> => ({
       documentId,
       persistence: { phase: "bindable", generation: "3", exactDatabaseName: "new-incarnation" },
       documentAdmittedThrough: "3",
       pendingDrain: null,
     }),
-  };
+  );
   await resolveLegacyResources({ accountId, authority: conflicting, metadata });
   expect(
     (await metadata.readResource({ projectId: "project", handle: "terminal" }))?.resource,
@@ -337,20 +359,31 @@ it("does not infer terminal cleanup completion from missing or conflicting room 
       },
     }),
   ).rejects.toThrow("Terminal resources cannot be revived");
-  const matching = {
+  const matchingRoom = async (documentId: string): Promise<RoomOrderRecord> => ({
+    documentId,
+    persistence: {
+      phase: "terminal-local",
+      terminalGeneration: "2",
+      transitionId: "transition",
+      lineageHandle: "terminal",
+      exactDatabaseName: "original",
+      commandId: "command",
+    },
+    documentAdmittedThrough: "2",
+    pendingDrain: null,
+  });
+  const matching: ResourceAuthorityInspection = {
     accountId,
-    readRoom: async (documentId: string): Promise<RoomOrderRecord> => ({
-      documentId,
-      persistence: {
-        phase: "terminal-local",
-        terminalGeneration: "2",
-        transitionId: "transition",
-        lineageHandle: "terminal",
+    readSnapshot: async (documentId) => ({
+      room: await matchingRoom(documentId),
+      pendingPurge: {
+        key: "purge",
+        accountId,
+        documentId,
+        revokedThrough: "2",
         exactDatabaseName: "original",
-        commandId: "command",
+        transitionId: "transition",
       },
-      documentAdmittedThrough: "2",
-      pendingDrain: null,
     }),
   };
   await resolveLegacyResources({ accountId, authority: matching, metadata });
@@ -420,7 +453,7 @@ it("publishes recovery placeholders and preserves them when resolution loses a r
         pendingDrain: null,
       };
     };
-    await resolveLegacyResources({ accountId, authority: { accountId, readRoom }, metadata });
+    await resolveLegacyResources({ accountId, authority: inspection(readRoom), metadata });
     expect((await metadata.readResource(key))?.resource).toMatchObject({
       revision: 2,
       lifecycle: { kind: "recovering" },
@@ -442,7 +475,7 @@ it("publishes recovery placeholders and preserves them when resolution loses a r
     const untouchedAuthority = vi.fn(readRoom);
     await resolveLegacyResources({
       accountId,
-      authority: { accountId, readRoom: untouchedAuthority },
+      authority: inspection(untouchedAuthority),
       metadata,
     });
     expect(untouchedAuthority).not.toHaveBeenCalled();
@@ -450,4 +483,101 @@ it("publishes recovery placeholders and preserves them when resolution loses a r
   } finally {
     stop();
   }
+});
+
+it.each([
+  ["cleared", "complete", false],
+  ["matching", "complete", true],
+  ["purge-only", "recovery-required", false],
+  ["wrong-generation", "recovery-required", false],
+  ["wrong-account", "recovery-required", false],
+  ["wrong-database", "recovery-required", false],
+  ["draining", "recovery-required", false],
+] as const)("classifies terminal snapshot %s without inventing cleanup", async (state, expected, cleanup) => {
+  const metadata = open();
+  const terminal: LegacyResourceRecord = {
+    version: 4,
+    kind: "terminal",
+    envelopeRevision: 5,
+    ref: { accountId, projectId: "project", lineageHandle: "terminal" },
+    documentId: "doc",
+    exactDatabaseName: "original",
+    terminalGeneration: "2",
+    transitionId: "transition",
+    cleanupObligationId: "cleanup",
+  };
+  const snapshot: ResourceAuthoritySnapshot = {
+    room: {
+      documentId: "doc",
+      persistence: {
+        phase: "terminal-local",
+        terminalGeneration: "2",
+        transitionId: "transition",
+        lineageHandle: "terminal",
+        exactDatabaseName: "original",
+        commandId: "command",
+      },
+      documentAdmittedThrough: "2",
+      pendingDrain: null,
+    },
+    pendingPurge: {
+      key: "purge",
+      accountId,
+      documentId: "doc",
+      revokedThrough: "2",
+      exactDatabaseName: "original",
+      transitionId: "transition",
+    },
+  };
+  if (state === "cleared" || state === "purge-only") snapshot.room.persistence = null;
+  if (state === "cleared") snapshot.pendingPurge = null;
+  if (snapshot.pendingPurge) {
+    if (state === "wrong-generation") snapshot.pendingPurge.revokedThrough = "3";
+    if (state === "wrong-account") snapshot.pendingPurge.accountId = "other";
+    if (state === "wrong-database") snapshot.pendingPurge.exactDatabaseName = "other";
+  }
+  if (state === "draining")
+    snapshot.room.pendingDrain = {
+      kind: "document",
+      commandId: "command",
+      generation: "2",
+      incarnation: null,
+    };
+  expect(
+    await importLegacyResources({
+      accountId,
+      source: [bytes(terminal)],
+      metadata,
+      authority: { accountId, readSnapshot: async () => snapshot },
+    }),
+  ).toBe(expected);
+  const result = await metadata.readResource({ projectId: "project", handle: "terminal" });
+  expect(result?.resource.lifecycle.kind).toBe("terminal");
+  expect(Boolean(result?.resource.obligations.cleanup)).toBe(cleanup);
+  expect(Boolean(result?.resource.recovery)).toBe(expected === "recovery-required");
+});
+
+it("keeps a local cache unacquired while its authority snapshot contains a purge", async () => {
+  const metadata = open();
+  await importLegacyResources({
+    accountId,
+    source: [bytes(local())],
+    metadata,
+    authority: {
+      accountId,
+      readSnapshot: async (documentId) => ({
+        room: { documentId, persistence: null, documentAdmittedThrough: null, pendingDrain: null },
+        pendingPurge: {
+          key: "purge",
+          accountId,
+          documentId,
+          revokedThrough: "2",
+          exactDatabaseName: "original-cache:lineage",
+        },
+      }),
+    },
+  });
+  const result = await metadata.readResource({ projectId: "project", handle: "lineage" });
+  expect(result?.resource.content.kind).toBe("unacquired");
+  expect(result?.resource.recovery).toBeDefined();
 });

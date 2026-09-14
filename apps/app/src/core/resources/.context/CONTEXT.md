@@ -26,7 +26,13 @@ resource and marks its evidence imported without replacing raw bytes or reopenin
 capture. Malformed input is evidence, not permission to fabricate empty content.
 
 The inactive legacy importer reads strict v4 envelopes from account-qualified raw
-keys. Its destination and authority ports must expose the same account identity.
+keys. Its destination and existing runtime `resourceInspection` facet must expose
+the same account identity. The facet reads room and purge evidence atomically;
+room-only reads cannot establish terminal completion. Matching terminal room and
+purge with no drain retains cleanup work. No persistence authority, pending drain or pending purge leaves no
+pending local cleanup, but does not prove historical bytes were deleted. Conflicting
+or incomplete authority remains recovery evidence. Effects still revalidate under
+the existing coordination owner; a snapshot never grants destructive permission.
 Exact persistence is imported without a schema guess (`schema: null`); only the
 content database's initialization marker can establish readiness. Canonical
 location remains unknown, and historical settlements never become fabricated
