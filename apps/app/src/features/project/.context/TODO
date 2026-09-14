@@ -4,7 +4,7 @@
   live-opener waits. `routing/ProjectRouteBoundary.tsx` now implements the address
   wait policy: persistent shell, eligible retained content, otherwise blank for
   approximately 500ms then skeleton, no spinner/loading text/minimum duration.
-  Complete local-first acquisition and accepted navigation before deciding where
+  Accepted navigation is complete. Finish local-first acquisition before deciding where
   session-readiness feedback belongs; do not add another competing loading owner.
   Verify cold replay, missing content cache, offline acquisition, A/B/A supersession,
   explicit empty Editor and wrong-content masking. Route-boundary feedback alone
