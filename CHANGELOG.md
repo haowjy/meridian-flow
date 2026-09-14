@@ -20,6 +20,7 @@
 - Keep New documents, tabs, readable links, and catalog rows on one durable local resource lifecycle through acknowledgement, rename, remint, close, and reload.
 - Replace the Untitled lineage, reconciler, pending-sidebar union, and QueryClient catalog installer with one account resource owner.
 - Keep unapplied document deletion retryable while account removal is unavailable.
+- Keep readable document admission idempotent across projection renders and preserve a tab's browser-local identity through bootstrap refresh.
 
 - Keep file-viewer chrome visible while loading. Show quiet pending panes before delayed skeletons; remove viewer spinners and immediate optimistic skeletons.
 

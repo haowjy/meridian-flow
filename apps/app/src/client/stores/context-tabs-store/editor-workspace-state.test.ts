@@ -40,6 +40,33 @@ it("preserves resource identity, selection and idempotency through remint restor
   expect(parseEditorWorkspace(JSON.stringify(result.snapshot))).toEqual(result.snapshot);
 });
 
+it("keeps the browser-tab member identity while bootstrap refreshes resource metadata", () => {
+  const current = opened();
+  const refreshed: ContextTab = {
+    kind: "tracked",
+    documentId: "B",
+    scheme: "unfiled",
+    path: "/Untitled.md",
+    name: "Untitled.md",
+    editable: true,
+    filetype: "markdown",
+    schemaType: "document",
+    resourceHandle: "resource-a",
+    origin: "local-resource",
+  };
+
+  const result = reduceEditorWorkspace(current, {
+    kind: "reconcile-bootstrap",
+    projectId: "project",
+    priorTabs: [local],
+    nextTabs: [refreshed],
+  });
+
+  expect(result.snapshot.projects.project?.tabs).toEqual([
+    { ...refreshed, tabInstanceId: "member-a" },
+  ]);
+});
+
 it("projects a resource rename onto an open server tab without claiming local content", () => {
   const serverTab: ContextTab = {
     kind: "tracked",
