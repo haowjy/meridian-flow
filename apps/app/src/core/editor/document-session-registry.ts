@@ -38,7 +38,7 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
   releaseBranchRooms(ownerId: string): void;
 }
 
-export interface LocalUntitledDocumentSessionFactory {
+export interface LocalDocumentSessionFactory {
   whenAuthorityReady(): Promise<void>;
   createDetached(input: {
     accountId: AccountId;

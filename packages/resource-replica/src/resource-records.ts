@@ -24,7 +24,15 @@ export type ResourceLocation = Readonly<{
 export type ResourceDescriptor = ResourceKey & {
   revision: number;
   identity: { documentId: string; revision: number };
-  content: { kind: "exact"; databaseName: string; schema: string | null } | { kind: "unacquired" };
+  content:
+    | {
+        kind: "exact";
+        databaseName: string;
+        schema: string | null;
+        /** One new reservation may establish its initialization marker before first exposure. */
+        initialization?: "reserved";
+      }
+    | { kind: "unacquired" };
   recovery?: { sourceKey: string };
   canonical: ResourceLocation | null;
   lifecycle:
