@@ -57,7 +57,7 @@ export type NamespaceAttempt = {
     attemptId: string;
     request: Extract<NamespaceRequest, { kind: Kind }>;
     outcome?: Kind extends "create"
-      ? { kind: "create"; result: CreateUntitledContextDocumentResult }
+      ? Extract<NamespaceOutcome, { kind: "create" }>
       : {
           kind: "operation";
           receipt: Extract<ContextOperationReceipt, { command: { kind: Kind } }>;
@@ -148,4 +148,16 @@ export interface ResourceMetadataStore {
   ): () => void;
   beginClose(): void;
   finishClose(): Promise<void>;
+}
+
+/** Transport evidence is matched to its recorded attempt by journal policy before installation. */
+export type NamespaceOutcome =
+  | { kind: "create"; result: CreateUntitledContextDocumentResult }
+  | { kind: "operation"; receipt: ContextOperationReceipt };
+
+/** The caller persists the immutable attempt before submit and retains uncertainty on failure. */
+export interface ResourceNamespaceTransport {
+  readonly accountId: string;
+  readOutcome(projectId: string, request: NamespaceRequest): Promise<NamespaceOutcome | null>;
+  submit(projectId: string, request: NamespaceRequest): Promise<NamespaceOutcome | null>;
 }

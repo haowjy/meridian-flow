@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Add account-fenced document namespace transport for durable receipt replay.
+
 - Retain local writing when deleting never-submitted resources; cancel queued work without a fabricated server tombstone.
 
 - Recover legacy terminal state from atomic room and purge evidence.
