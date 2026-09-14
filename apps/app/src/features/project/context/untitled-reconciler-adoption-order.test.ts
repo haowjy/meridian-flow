@@ -72,7 +72,6 @@ it("reserves non-bindable adoption before create and preserves it on an indeterm
       abort,
       open: vi.fn(),
       remint: vi.fn(),
-      abandon: vi.fn(),
       phase: () => "local",
     },
     api: {
@@ -177,7 +176,6 @@ it("settles independent adopted sync and closed-tab publication obligations", as
           }) as never,
       ),
       remint: vi.fn(),
-      abandon: vi.fn(),
       phase: () => "adopted",
     },
     api: {

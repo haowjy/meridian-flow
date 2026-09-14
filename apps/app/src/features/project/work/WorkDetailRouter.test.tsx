@@ -9,11 +9,15 @@ import {
   createRouter,
   Outlet,
   RouterProvider,
+  useBlocker,
+  useRouter,
 } from "@tanstack/react-router";
-import { act } from "react";
+import { act, useEffect, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { testWorkSlug } from "@/test-support/work-slug";
+import { ProjectNavigationProvider } from "../routing/ProjectNavigationContext";
+import { createProjectNavigation } from "../routing/project-navigation";
 
 const save = vi.hoisted(() => vi.fn());
 (
@@ -56,12 +60,89 @@ vi.mock("@/client/query/useWorks", () => ({
 
 const { WorkDetailScreen } = await import("./WorkDetailScreen");
 
+function GuardedOutlet() {
+  const router = useRouter();
+  const navigation = useMemo(
+    () =>
+      createProjectNavigation(
+        {
+          read: () => ({
+            href: router.history.location.href,
+            key: router.history.location.state.__TSR_key ?? "",
+            state: { ...router.history.location.state },
+          }),
+          subscribe: (listener) => router.history.subscribe(listener),
+          flush: () => router.history.flush(),
+          settlePendingTraversal: () => router.history.settlePendingTraversal(),
+          replaceEntry: (href, state) =>
+            router.history.replace(href, state, { ignoreBlocker: true }),
+          navigate: (href, options) => router.navigate({ href, ...options, ignoreBlocker: true }),
+        },
+        () => ({ chatSlug: null, workSlug: null }),
+      ),
+    [router],
+  );
+  useEffect(() => () => navigation.dispose(), [navigation]);
+  useBlocker({ shouldBlockFn: async () => !(await navigation.allowDeparture()) });
+  return (
+    <ProjectNavigationProvider
+      registerLeaveGuard={navigation.registerGuard}
+      openContextRoute={async () => ({ kind: "cancelled" })}
+    >
+      <Outlet />
+    </ProjectNavigationProvider>
+  );
+}
+
 describe("Work detail mounted router blocking", () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it("cancels an outstanding Back when Forward returns to the displayed Work", async () => {
+    const history = browserHistory("/collection", "/detail");
+    const root = createRootRoute({ component: GuardedOutlet });
+    const collection = createRoute({
+      getParentRoute: () => root,
+      path: "/collection",
+      component: () => <h1>Collection</h1>,
+    });
+    const detail = createRoute({
+      getParentRoute: () => root,
+      path: "/detail",
+      component: () => <WorkDetailScreen {...props()} work={fixture()} />,
+    });
+    const router = createRouter({ routeTree: root.addChildren([collection, detail]), history });
+    const go = vi.spyOn(window.history, "go");
+    try {
+      await mounted(<RouterProvider router={router} />, async () => {
+        await tick();
+        click("Add a goal");
+        change(textarea(), "Keep this unsaved goal");
+        await tick();
+        await act(async () => history.back());
+        await tick();
+        expect(document.body.textContent).toContain("Save metadata changes?");
+        await act(async () => history.forward());
+        await tick();
+        expect(go.mock.calls.some(([delta]) => delta === 0)).toBe(false);
+        expect(window.location.pathname).toBe("/detail");
+        expect(router.state.location.pathname).toBe("/detail");
+        expect(textarea().value).toBe("Keep this unsaved goal");
+        expect(document.body.textContent).not.toContain("Save metadata changes?");
+        await act(async () => history.back());
+        await tick();
+        click("Discard changes");
+        await tick();
+        expect(router.state.location.pathname).toBe("/collection");
+      });
+    } finally {
+      go.mockRestore();
+      history.destroy();
+    }
+  });
+
   it("holds browser Back and resumes that exact history intent after Discard", async () => {
     const history = browserHistory("/collection", "/detail");
-    const root = createRootRoute({ component: Outlet });
+    const root = createRootRoute({ component: GuardedOutlet });
     const collection = createRoute({
       getParentRoute: () => root,
       path: "/collection",
@@ -96,7 +177,7 @@ describe("Work detail mounted router blocking", () => {
     save.mockImplementation(async (data) => ({ ...fixture(), ...data }));
     const history = browserHistory("/detail", "/collection");
     await goBack(history);
-    const root = createRootRoute({ component: Outlet });
+    const root = createRootRoute({ component: GuardedOutlet });
     const collection = createRoute({
       getParentRoute: () => root,
       path: "/collection",

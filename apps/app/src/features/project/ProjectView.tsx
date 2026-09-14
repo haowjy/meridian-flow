@@ -78,12 +78,9 @@ import {
   mobileEditableDocumentId,
   useMobileDocumentRoute,
 } from "./mobile/mobile-document-route";
+import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { ProjectRouteBoundary, type ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
-import type {
-  ContextRouteTarget,
-  ProjectRouteCommands,
-  RouteWorkResolution,
-} from "./routing/project-route";
+import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
 import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
@@ -152,10 +149,7 @@ export type ProjectViewProps = {
   /**
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
-  onOpenContextTarget: (
-    target: ContextRouteTarget,
-    options?: { replace?: boolean },
-  ) => Promise<void>;
+  onOpenContextTarget: OpenContextRoute;
   onOpenResults: () => void;
   onCloseResults: () => void;
 };

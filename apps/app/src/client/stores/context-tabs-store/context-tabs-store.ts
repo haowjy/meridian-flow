@@ -35,11 +35,7 @@ export type OpenEditorTabResult =
   | { kind: "superseded" | "ineligible" | "not-opened" };
 
 type ContextTabsActions = {
-  openTab: (
-    projectId: string,
-    tab: ContextTab,
-    isCurrent?: () => boolean,
-  ) => Promise<OpenEditorTabResult>;
+  openTab: (projectId: string, tab: ContextTab, isCurrent?: () => boolean) => OpenEditorTabResult;
   remintNewTab: (projectId: string, documentId: string, replacementId: string) => Promise<void>;
   materializeNewTab: (
     projectId: string,
@@ -131,16 +127,21 @@ function composeProjectSlice(state: ContextTabsState, projectId: string): Projec
   if (!overlay) return durable;
   const cached = composedSliceCache.get(projectId);
   if (cached?.durable === durable && cached.overlay === overlay) return cached.composed;
+  const composed = composeSlices(durable, overlay);
+  composedSliceCache.set(projectId, { durable, overlay, composed });
+  return composed;
+}
+
+function composeSlices(durable: ProjectTabsSlice, overlay?: ProjectTabsSlice): ProjectTabsSlice {
+  if (!overlay) return durable;
   const overlayIds = new Set(overlay.tabs.map((tab) => tab.documentId));
-  const composed = {
+  return {
     tabs: [...durable.tabs.filter((tab) => !overlayIds.has(tab.documentId)), ...overlay.tabs],
     selectedTabIdByWork: {
       ...durable.selectedTabIdByWork,
       ...overlay.selectedTabIdByWork,
     },
   };
-  composedSliceCache.set(projectId, { durable, overlay, composed });
-  return composed;
 }
 
 type DeskCommandBuilder = (
@@ -184,8 +185,8 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         _layoutPersistenceError: null,
 
         openTab: (projectId, input, isCurrent) => {
-          if (isCurrent?.() === false) return Promise.resolve({ kind: "superseded" });
-          if (!isEditorContextTab(input)) return Promise.resolve({ kind: "ineligible" });
+          if (isCurrent?.() === false) return { kind: "superseded" };
+          if (!isEditorContextTab(input)) return { kind: "ineligible" };
           const tab = { ...input, tabInstanceId: input.tabInstanceId ?? crypto.randomUUID() };
           if (tab.draftOnly) {
             rawSet((base) => {
@@ -230,9 +231,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           const installed = composeProjectSlice(get(), projectId).tabs.find(
             (member) => member.documentId === tab.documentId,
           );
-          return Promise.resolve(
-            installed ? { kind: "opened", tab: installed } : { kind: "not-opened" },
-          );
+          return installed ? { kind: "opened", tab: installed } : { kind: "not-opened" };
         },
 
         remintNewTab: (projectId, documentId, replacementId) =>
@@ -403,58 +402,69 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         },
 
         consumeReviewTab: (projectId, identity) => {
-          let consumed = false;
-          let current: ProjectTabsSlice | null = null;
-          rawSet((base) => {
-            const overlay = base._reviewOverlayByProject[projectId];
-            if (!overlay) {
-              current = composeProjectSlice(base, projectId);
-              return {};
-            }
-            const tabs = overlay.tabs.filter((candidate) => {
-              const matches =
-                candidate.kind !== "new" &&
-                candidate.draftOnly &&
-                candidate.documentId === identity.documentId &&
-                candidate.tabInstanceId === identity.tabInstanceId &&
-                candidate.reviewWorkId === identity.reviewWorkId &&
-                candidate.reviewDraftId === identity.reviewDraftId &&
-                candidate.tabInstanceToken === identity.tabInstanceToken;
-              if (matches) consumed = true;
-              return !matches;
-            });
-            if (!consumed) {
-              current = composeProjectSlice(base, projectId);
-              return {};
-            }
-            const durableTabs = sliceFor(base, projectId).tabs;
-            const selectedTabIdByWork = normalizeSelections(
-              [
-                ...durableTabs.filter(
-                  (durable) => !tabs.some((tab) => tab.documentId === durable.documentId),
-                ),
-                ...tabs,
-              ],
-              overlay.selectedTabIdByWork,
-            );
-            const next = { ...base._reviewOverlayByProject };
-            if (tabs.length === 0 && Object.keys(selectedTabIdByWork).length === 0)
-              delete next[projectId];
-            else next[projectId] = { tabs, selectedTabIdByWork };
-            const update = { _reviewOverlayByProject: next };
-            current = composeProjectSlice({ ...base, ...update }, projectId);
-            return update;
-          });
-          const authoritative = current ?? composeProjectSlice(get(), projectId);
-          return consumed
-            ? { kind: "consumed", current: authoritative }
-            : { kind: "not-consumed", current: authoritative };
+          const result = planReviewOverlayClose(get(), projectId, identity);
+          rawSet(result.update);
+          return { kind: result.consumed ? "consumed" : "not-consumed", current: result.current };
         },
       };
     },
     { name: "context-tabs-store", enabled: import.meta.env.DEV },
   ),
 );
+
+function planReviewOverlayClose(
+  base: ContextTabsState,
+  projectId: string,
+  identity: ReviewOverlayTabIdentity,
+) {
+  let consumed = false;
+  let current: ProjectTabsSlice;
+  const overlay = base._reviewOverlayByProject[projectId];
+  if (!overlay) {
+    current = composeProjectSlice(base, projectId);
+    return { update: {}, current, consumed };
+  }
+  const tabs = overlay.tabs.filter((candidate) => {
+    const matches =
+      candidate.kind !== "new" &&
+      candidate.draftOnly &&
+      candidate.documentId === identity.documentId &&
+      candidate.tabInstanceId === identity.tabInstanceId &&
+      candidate.reviewWorkId === identity.reviewWorkId &&
+      candidate.reviewDraftId === identity.reviewDraftId &&
+      candidate.tabInstanceToken === identity.tabInstanceToken;
+    if (matches) consumed = true;
+    return !matches;
+  });
+  if (!consumed) {
+    current = composeProjectSlice(base, projectId);
+    return { update: {}, current, consumed };
+  }
+  const durableTabs = sliceFor(base, projectId).tabs;
+  const selectedTabIdByWork = normalizeSelections(
+    [
+      ...durableTabs.filter(
+        (durable) => !tabs.some((tab) => tab.documentId === durable.documentId),
+      ),
+      ...tabs,
+    ],
+    overlay.selectedTabIdByWork,
+  );
+  const next = { ...base._reviewOverlayByProject };
+  if (tabs.length === 0 && Object.keys(selectedTabIdByWork).length === 0) delete next[projectId];
+  else next[projectId] = { tabs, selectedTabIdByWork };
+  const update = { _reviewOverlayByProject: next };
+  current = composeSlices(sliceFor(base, projectId), next[projectId]);
+  return { update, current, consumed };
+}
+
+export function previewReviewOverlayClose(
+  projectId: string,
+  identity: ReviewOverlayTabIdentity,
+): ReviewOverlayConsumeReceipt {
+  const result = planReviewOverlayClose(useContextTabsStore.getState(), projectId, identity);
+  return { kind: result.consumed ? "consumed" : "not-consumed", current: result.current };
+}
 
 export function reconcileContextDeskBootstrap(
   projectId: string,

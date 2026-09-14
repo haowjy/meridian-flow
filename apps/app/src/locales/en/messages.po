@@ -2321,8 +2321,8 @@ msgstr "Open a Work to create an Untitled document"
 #~ msgstr "Open a Work to create an Untitled document, or pick a file from the tree."
 
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "Open chat"
-msgstr "Open chat"
+#~ msgid "Open chat"
+#~ msgstr "Open chat"
 
 #: src/features/project/context/ContextTabBar.tsx
 msgid "Open context files"
@@ -2347,8 +2347,8 @@ msgid "Open link"
 msgstr "Open link"
 
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "Open manuscript draft"
-msgstr "Open manuscript draft"
+#~ msgid "Open manuscript draft"
+#~ msgstr "Open manuscript draft"
 
 #: src/features/project/mobile/MobileTopBar.tsx
 msgid "Open navigation"

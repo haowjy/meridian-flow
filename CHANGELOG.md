@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+- Settle Editor opens and closes with accepted URLs. Cancelled opens leave tabs unchanged; close and immediate reload stay empty.
+- Preserve unsaved Work edits through overlapping Back/Forward and newer navigation decisions.
+- Keep local writing after closing empty tabs. Remove tab-driven abandonment and share concurrent document lookups.
+
 - Keep explicit document opens alive while a closing Editor view releases its availability watch.
 
 - Cancel superseded Work metadata decisions and resume only the current navigation intent after saving.

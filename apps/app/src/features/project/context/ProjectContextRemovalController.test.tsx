@@ -5,6 +5,7 @@ import {
   AccountFeatureTestProvider,
   useContextRemovalCoordinator,
 } from "@/test-support/account-feature-provider";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectContextRemovalController } from "./ProjectContextRemovalController";
@@ -36,6 +37,7 @@ function SettlingHost({ projectId }: { projectId: string }) {
 }
 
 const route = {
+  transition: acceptContextTransition,
   readSearch: () => ({
     screen: "context" as const,
     work: "work-1",

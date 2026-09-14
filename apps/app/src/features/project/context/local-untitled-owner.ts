@@ -2,11 +2,7 @@
 import type { AccountId } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
-import {
-  type DocumentSession,
-  type DocumentSessionSnapshot,
-  deleteIndexedDb,
-} from "@/core/editor/document-session";
+import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import type { LocalAdoptionPendingReceipt } from "@/core/editor/document-session-authority-store";
 import type { LocalLineageTerminalPort } from "@/core/editor/document-session-coordination-contract";
 import type { LocalUntitledDocumentSessionFactory } from "@/core/editor/document-session-registry";
@@ -86,7 +82,6 @@ export type LocalUntitledOwnerDependencies = {
   newLineageHandle?: () => string;
   newPersistenceId?: () => string;
   newObligationId?: () => string;
-  deletePersistence?: (name: string) => Promise<void>;
 };
 
 export function localUntitledPersistenceName(input: {
@@ -405,36 +400,6 @@ export class LocalUntitledOwner {
     owned.transferring = false;
   }
 
-  async abandon(input: {
-    key: LocalUntitledKey;
-    expectedRevision: number;
-    evidence: "writer-empty-close" | "server-row-absent";
-  }): Promise<"abandoned" | "stale" | "busy"> {
-    const lineage = this.resolveLineage(input.key);
-    const owned = lineage && this.owned.get(lineage.ref.lineageHandle);
-    const current = owned?.access.snapshot();
-    if (!owned || current?.kind !== "local" || current.envelopeRevision !== input.expectedRevision)
-      return "stale";
-    if (owned.transferring || this.isRetained(current.ref.lineageHandle)) return "busy";
-    if (
-      input.evidence === "writer-empty-close" &&
-      owned.value.session.document.getXmlFragment(owned.value.session.fragmentName).length > 0
-    )
-      return "busy";
-    await owned.value.session.destroy();
-    await (this.dependencies.deletePersistence ?? deleteIndexedDb)(
-      current.persistence.exactDatabaseName,
-    );
-    const result = owned.access.apply({
-      kind: "abandon-local",
-      expectedIdentityRevision: current.active.identityRevision,
-    });
-    if (result.kind !== "removed") return "stale";
-    await owned.access.release();
-    this.owned.delete(current.ref.lineageHandle);
-    return "abandoned";
-  }
-
   readonly terminalPort: LocalLineageTerminalPort = {
     continueTerminal: async (input, run) => {
       const known = this.dependencies.ledger
@@ -685,10 +650,5 @@ export class LocalUntitledOwner {
 
   private requireOpen(): void {
     if (this.lifecycle !== "open") throw new Error("Local Untitled owner is closing");
-  }
-
-  private isRetained(lineageHandle: string): boolean {
-    for (const handles of this.retained.values()) if (handles.has(lineageHandle)) return true;
-    return false;
   }
 }

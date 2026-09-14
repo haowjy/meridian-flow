@@ -59,7 +59,7 @@ Editor entry chooses an eligible open document. Explicit empty entry and settled
 
 Closing a tab changes a browser-local view, not server document existence. Live workspace transitions are synchronous; sessionStorage snapshots restore the browser tab's layout. Failed layout persistence is reported without reverting the live transition or freezing commands. Another browser tab's layout is independent even when document content is shared.
 
-Navigation and workspace settlement are not yet one atomic accepted operation. Closing the final tab and reloading in the same turn can retain an old address and reopen it. The remaining plan must resolve native history ordering, cancellation and supersession rather than adding another restoration fallback.
+Application navigation prepares membership and asks the shared leave guard before publication. Pending native traversal restores through the history owner; matching accepted history is flushed before the workspace commits its successor or empty selection. Closing the final tab then reloading stays empty. See [Editor document lifecycle](editor-document-lifecycle.md) for ownership, cancellation and the dependency patch.
 
 ## Content synchronization and shutdown
 

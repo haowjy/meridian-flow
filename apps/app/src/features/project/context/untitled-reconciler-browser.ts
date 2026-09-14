@@ -144,14 +144,6 @@ function browserDeps(
         }
         return committed.value.session;
       },
-      async abandon(projectId: string, documentId: string, revision: number) {
-        const result = await localOwner.abandon({
-          key: localKey(projectId, documentId),
-          expectedRevision: revision,
-          evidence: "server-row-absent",
-        });
-        if (result !== "abandoned") throw new Error(`Local abandon was ${result}`);
-      },
       phase: (projectId: string, documentId: string) =>
         localOwner.phase(localKey(projectId, documentId)),
     },

@@ -14,6 +14,7 @@ import {
   type DraftDeskSettlementReceipt,
   getContextTabs,
   type ProjectTabsSlice,
+  previewReviewOverlayClose,
   type ReviewOverlayConsumeReceipt,
   type ReviewOverlayTabIdentity,
   type ServerContextTab,
@@ -25,6 +26,10 @@ import {
   replaceRecentRoutes,
   workingSetRouteEquals,
 } from "@/client/working-set";
+import type {
+  NavigationSettlement,
+  PreparedWorkspaceNavigation,
+} from "../routing/project-navigation";
 import {
   applyContextRepairIfCurrent,
   type ContextRouteRepair,
@@ -38,7 +43,6 @@ import {
   planContextAvailabilityBatch,
 } from "./context-availability-effect-planner";
 import {
-  type ContextRemovalIntent,
   type ContextRemovalOutcome,
   type ContextRouteIdentity,
   chooseAdmittedFallback,
@@ -84,6 +88,11 @@ export interface DraftTabMutationFencePort {
 export type ContextRemovalRoutePort = {
   readSearch(projectId: string): ProjectSearch;
   updateSearch(projectId: string, update: (latest: ProjectSearch) => ProjectSearch): void;
+  transition(
+    projectId: string,
+    target: ContextRouteTarget | { kind: "clear" },
+    prepared: PreparedWorkspaceNavigation,
+  ): Promise<NavigationSettlement>;
 };
 
 type DeskPort = {
@@ -100,6 +109,10 @@ type DeskPort = {
     identity: ReviewOverlayTabIdentity,
     disposition?: "applied" | "discarded",
   ): Promise<DraftDeskSettlementReceipt>;
+  previewReviewTab(
+    projectId: string,
+    identity: ReviewOverlayTabIdentity,
+  ): ReviewOverlayConsumeReceipt;
   closeReviewTab(
     projectId: string,
     identity: ReviewOverlayTabIdentity,
@@ -229,6 +242,7 @@ const productionDesk: DeskPort = {
   commit: commitPlannedContextRemoval,
   settleDraft: commitDraftApplyMetadata,
   closeReviewTab: commitReviewOverlayClose,
+  previewReviewTab: previewReviewOverlayClose,
   applyAvailability: commitContextAvailability,
 };
 
@@ -781,6 +795,90 @@ export class ContextRemovalCoordinator {
   writerClose(
     projectId: string,
     documentId: string,
+  ): ContextRemovalOutcome | { kind: "apply-disposition-pending" } | Promise<NavigationSettlement> {
+    if (this.unavailable()) return { kind: "noop" };
+    const state = this.project(projectId);
+    const slice = this.desk.read(projectId);
+    const tab = slice.tabs.find((candidate) => candidate.documentId === documentId);
+    if (!tab) return { kind: "noop" };
+    const route = this.routePorts.get(projectId)?.port ?? this.fallbackRoute;
+    const transition = reduceRepresentedRemoval(state.selection, slice.tabs, {
+      cause: "writer-close",
+      documentIds: [documentId],
+    });
+    let consumed: { removed: ContextTab[]; survivors: readonly ContextTab[] } | undefined;
+    if (tab.kind !== "new" && tab.draftOnly) {
+      if (!tab.tabInstanceId || !tab.reviewWorkId || !tab.reviewDraftId || !tab.tabInstanceToken)
+        return { kind: "noop" };
+      const preview = this.desk.previewReviewTab(projectId, {
+        documentId,
+        tabInstanceId: tab.tabInstanceId,
+        reviewWorkId: tab.reviewWorkId,
+        reviewDraftId: tab.reviewDraftId,
+        tabInstanceToken: tab.tabInstanceToken,
+      });
+      if (preview.kind === "consumed")
+        consumed = { removed: [tab], survivors: preview.current.tabs };
+    }
+    const plan = planContextRemoval({
+      activeWorkId: state.activeWorkId,
+      tabs: slice.tabs,
+      selectedTabId: slice.selectedTabIdByWork[state.activeWorkId ?? ""] ?? null,
+      admitted: state.admitted,
+      route: { cleanup: transition.planning.cleanup, current: transition.planning.current },
+      intent: transition.planning.intent,
+      consumed,
+    });
+    const target =
+      plan.routeRepairTarget ??
+      (plan.outcome.kind === "active-fallback"
+        ? routeTargetForTab(plan.outcome.fallback, state.activeWorkId)
+        : plan.outcome.kind === "empty-desk"
+          ? { kind: "clear" as const }
+          : null);
+    if (!target || !route || route.readSearch(projectId).screen !== "context")
+      return this.commitWriterClose(projectId, documentId);
+    const capturedSelection = state.selection;
+    const capturedWork = state.activeWorkId;
+    return route.transition(projectId, target, {
+      isCurrent: () => {
+        const current = this.desk.read(projectId);
+        const member = current.tabs.find((candidate) => candidate.documentId === documentId);
+        if (
+          this.unavailable() ||
+          member?.tabInstanceId !== tab.tabInstanceId ||
+          state.selection !== capturedSelection ||
+          state.activeWorkId !== capturedWork ||
+          current !== slice
+        )
+          return false;
+        return !(
+          tab.kind !== "new" &&
+          tab.draftOnly &&
+          this.accountId &&
+          tab.reviewWorkId &&
+          tab.reviewDraftId &&
+          tab.tabInstanceToken &&
+          this.draftTabFence?.currentFence({
+            accountId: this.accountId,
+            projectId,
+            workId: tab.reviewWorkId,
+            documentId,
+            draftId: tab.reviewDraftId,
+            tabInstanceToken: tab.tabInstanceToken,
+          }) === "apply-reservation-pending"
+        );
+      },
+      commit: () => {
+        this.commitWriterClose(projectId, documentId, "never");
+      },
+    });
+  }
+
+  private commitWriterClose(
+    projectId: string,
+    documentId: string,
+    repair: "allow" | "never" = "allow",
   ): ContextRemovalOutcome | { kind: "apply-disposition-pending" } {
     if (this.unavailable()) return { kind: "noop" };
     const slice = this.desk.read(projectId);
@@ -816,17 +914,22 @@ export class ContextRemovalCoordinator {
         { cause: "writer-close", documentIds: [documentId] },
       );
       state.selection = transition.selection;
-      const outcome = this.executePlanning(projectId, transition.planning, [], {
+      const outcome = this.executePlanning(projectId, { ...transition.planning, repair }, [], {
         removed: [tab],
         current: consumed.current,
       });
       this.publish(state);
       return outcome;
     }
-    return this.executeRepresented(projectId, {
+    const state = this.project(projectId);
+    const transition = reduceRepresentedRemoval(state.selection, slice.tabs, {
       cause: "writer-close",
       documentIds: [documentId],
     });
+    state.selection = transition.selection;
+    const outcome = this.executePlanning(projectId, { ...transition.planning, repair });
+    this.publish(state);
+    return outcome;
   }
 
   /** Owns the synchronous old-Work prune and next-Work route transition. */
@@ -973,36 +1076,6 @@ export class ContextRemovalCoordinator {
     state?.listeners.clear();
     this.projects.delete(projectId);
     this.routePorts.delete(projectId);
-  }
-
-  private executeRepresented(
-    projectId: string,
-    intent: ContextRemovalIntent,
-    additionalRemovedLocators: readonly WorkingSetRoute[] = [],
-  ): ContextRemovalOutcome {
-    const state = this.project(projectId);
-    if (intent.documentIds.length === 0) {
-      if (additionalRemovedLocators.length > 0) {
-        this.workingSet.reconcileContextRoutes(projectId, {
-          removedLocators: additionalRemovedLocators,
-          survivingOwnedLocators: this.desk
-            .read(projectId)
-            .tabs.flatMap((tab) => workingSetRouteForTab(tab) ?? []),
-          promote: null,
-          clearAll: false,
-        });
-      }
-      return { kind: "noop" };
-    }
-    const transition = reduceRepresentedRemoval(
-      state.selection,
-      this.desk.read(projectId).tabs,
-      intent,
-    );
-    state.selection = transition.selection;
-    const outcome = this.executePlanning(projectId, transition.planning, additionalRemovedLocators);
-    this.publish(state);
-    return outcome;
   }
 
   private readWorkPruneEvidence(

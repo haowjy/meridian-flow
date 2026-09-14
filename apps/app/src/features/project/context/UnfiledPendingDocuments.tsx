@@ -2,7 +2,6 @@
 import { t } from "@lingui/core/macro";
 import { FileText } from "lucide-react";
 import { useState } from "react";
-import { useContextTabsActions } from "@/client/stores";
 import { Button } from "@/components/ui/button";
 import {
   useCaptureProjectNavigation,
@@ -22,7 +21,6 @@ export function UnfiledPendingDocuments({
   documents: readonly LocalUntitledWorkSnapshot[];
 }) {
   const owner = useLocalUntitledOwner();
-  const { openTab, selectTab } = useContextTabsActions();
   const capture = useCaptureProjectNavigation();
   const openRoute = useOpenContextRoute();
   const openDocument = useOpenProjectDocument(projectId);
@@ -48,26 +46,21 @@ export function UnfiledPendingDocuments({
         await openDocument({ documentId: key.documentId, workId: editorWorkId });
         return;
       }
-      const installed = await openTab(
-        projectId,
+      if (!openRoute) throw new Error("Project route owner is unavailable");
+      const result = await openRoute(
+        { scheme: "unfiled", path: "", workId: editorWorkId, documentId: key.documentId },
         {
-          kind: "new",
-          documentId: key.documentId,
-          name: current.work.desiredIdentity?.name ?? t`Untitled`,
-          lineageHandle: ref.lineageHandle,
-          identityRevision: current.identityRevision,
+          isCurrent,
+          tab: {
+            kind: "new",
+            documentId: key.documentId,
+            name: current.work.desiredIdentity?.name ?? t`Untitled`,
+            lineageHandle: ref.lineageHandle,
+            identityRevision: current.identityRevision,
+          },
         },
-        isCurrent,
       );
-      if (installed.kind !== "opened" || isCurrent?.() === false) return;
-      await selectTab(projectId, editorWorkId ?? "", key.documentId);
-      if (isCurrent?.() === false) return;
-      await openRoute?.({
-        scheme: "unfiled",
-        path: "",
-        workId: editorWorkId,
-        documentId: key.documentId,
-      });
+      if (result.kind === "failed") setError(t`Couldn't open this local document. Try again.`);
     } catch {
       if (isCurrent?.() !== false) setError(t`Couldn't open this local document. Try again.`);
     }

@@ -2321,8 +2321,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "Open chat"
-msgstr ""
+#~ msgid "Open chat"
+#~ msgstr ""
 
 #: src/features/project/context/ContextTabBar.tsx
 msgid "Open context files"
@@ -2347,8 +2347,8 @@ msgid "Open link"
 msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
-msgid "Open manuscript draft"
-msgstr ""
+#~ msgid "Open manuscript draft"
+#~ msgstr ""
 
 #: src/features/project/mobile/MobileTopBar.tsx
 msgid "Open navigation"

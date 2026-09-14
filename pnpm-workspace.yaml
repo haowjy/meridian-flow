@@ -22,3 +22,9 @@ catalog:
   typescript: ^6.0.3
   vite: ^8.1.0
   vitest: ^4.1.9
+
+# Use the upstream traversal-delta fix plus the scoped stale-POP/go(0) patch below.
+overrides:
+  "@tanstack/history": 1.162.3
+patchedDependencies:
+  '@tanstack/history@1.162.3': patches/@tanstack__history@1.162.3.patch

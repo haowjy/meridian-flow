@@ -7,8 +7,8 @@ is presentation continuity, not authorization for the requested document.
 ```mermaid
 flowchart TD
   A[Document navigation] --> B[Resolve destination identity and authority]
-  B --> C[Publish tab while navigation is still current]
-  C --> D[Route admits target document]
+  B --> C[Prepare tab and request shared leave decision]
+  C --> D[Accept URL then commit workspace]
   D --> E[Document host binds existing or new session]
   E --> F[Render target content]
   B -. during same-Work pending navigation .-> G[Keep prior document and matching chrome visible]
@@ -31,9 +31,10 @@ flowchart TD
   live opener. While a lookup is refetching, cached metadata cannot publish
   an admission or repair the URL.
 - **Stable document ID, such as a wikilink or search result:**
-  `ProjectDocumentNavigationAdapter` resolves through the live opener, awaits
-  tab publication, then navigates to the resolved address. A background open
-  publishes the tab without navigating. Scratch/Uploads resources are not Editor
+  `ProjectDocumentNavigationAdapter` resolves through the live opener and passes
+  prepared tab metadata to the route owner. Accepted history commits the tab and
+  selection; a cancelled decision publishes neither. A background open publishes
+  the tab without navigating or cancelling a foreground attempt. Scratch/Uploads resources are not Editor
   tabs: their resolved URLs show the deferred chat-resource viewing notice.
   The URL layer still does not repeat
   live admission; session binding belongs to the host.
@@ -50,18 +51,40 @@ flowchart TD
 1. Capture the navigation's ownership ticket or latest-attempt predicate.
 2. Resolve the requested document and its scope. A path is a reusable address;
    the returned document ID is identity.
-3. `openTab` checks current navigation ownership and synchronously installs
-   the member in the browser-local workspace. Its receipt identifies the actual
-   member or reports supersession/ineligibility. SessionStorage restoration writes
-   follow the live transition; storage failure cannot undo it.
-4. Recheck ownership before completing admission or navigation. The tab must
-   exist before the route attempts to select it.
-5. If the resolved path is canonical already, settle admission. If it is an
-   alias, keep admission pending through canonical URL replacement. A rejected
-   replacement carries its own ticket; only a still-current failure may show
-   an error. A newer click must not inherit the previous click's error.
-6. The document host owns content startup and session binding. Finishing
-   address admission is not a promise that a cold document's content is ready.
+3. Claim the application navigation intent before cancelling any older decision.
+   The history-owned restoration barrier retires pending native traversals and
+   returns the browser to its accepted entry. Its settled fast path is synchronous.
+4. Ask the shared Work metadata guard. After permission and any restoration,
+   revalidate the operation, caller lifetime and existing member instance.
+   Snapshot the displayed departure and dispatch the destination as one ordered
+   operation. Do not await route loaders as proof that navigation was accepted.
+5. On the matching history notification, flush the native URL, then synchronously
+   install/select the prepared tab or commit Close's successor/empty workspace.
+   Snapshot persistence failure is observable; it does not roll back the live
+   workspace. Delayed Close cannot remove a reopened member instance.
+6. A cold readable address is already accepted before `ProjectAddressDocument`
+   publishes its authorized metadata. Alias replacement remains pending until
+   canonical navigation settles; only a current failure may expose an error.
+7. The document host owns content startup and session binding. Finishing
+   address admission does not prove that a cold document's content is ready.
+
+The availability coordinator joins simultaneous explicit opens of one identity.
+Each lookup holds its own document watch until settlement, independently of
+a departing view's watch. Neither tab cleanup nor another identical opener can
+invalidate that caller merely by replacing its request generation.
+
+## Native history ownership
+
+The scoped `@tanstack/history` patch owns traversal epochs and restoration.
+Returning to the accepted key/index retires stale decisions without `go(0)`.
+A cancelled traversal and a superseding application intent share one restoration;
+unexpected native movement or destruction resolves it as superseded. Application
+navigation waits for restoration before writing its departure snapshot and
+destination. It never repairs the browser with a second URL normalizer.
+
+The route's shared guard owns Save/Discard/Keep editing. Retiring a decision
+dismisses the dialog without clearing the draft. Native Back/Forward uses the
+same decision owner; Settings remains its existing routed overlay.
 
 ## What stays visible
 
