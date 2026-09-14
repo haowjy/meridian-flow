@@ -26,9 +26,17 @@ publish another metadata revision.
 `ResourceContentAccess` proves an exact database, schema and initialization marker
 before returning a detached local session. The caller supplies the current access
 project, while same-account opens share one session by global resource handle.
-Remote admission is a separate capability. Separate browser contexts converge
-through local Yjs peers. Failed destruction quarantines the handle until retry;
-abort and account close fence delivery after every await.
+That opened handle is the verified-local readiness signal consumed by the Editor;
+it does not wait for or imply first server sync. Remote admission proceeds in the
+background against the same Y.Doc. Separate browser contexts converge through
+local Yjs peers. Failed destruction quarantines the handle until retry; abort and
+account close fence delivery after every await.
+
+`AccountResourceReplica.start()` schedules recoverable namespace, adoption and
+cleanup work from metadata revisions, browser focus, online events and a bounded
+30-second retry interval. Commands return after their durable local plan commits;
+the runner records server attempts and outcomes later. Shutdown removes retry
+sources, fences new delivery and drains active runners before metadata closes.
 
 The namespace transport uses existing create/move/delete and receipt APIs. The
 Web Lock adapter serializes only short account/resource reconciliation sections;

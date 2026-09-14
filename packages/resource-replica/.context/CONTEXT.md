@@ -23,6 +23,12 @@ backend admission. Exact persistence names and catalog-defined file classificati
 survive identity and location changes; descriptors alone cannot authorize upload
 or prove content initialization.
 
+Catalog installation records editable schema/filetype or viewer disposition as
+part of the descriptor and refreshes it atomically with canonical location.
+Locally reserved documents begin with the explicit Markdown/document
+classification. Projections consume this stored classification; they never infer
+editor type from a path or fill an absent checkpoint with a generic file type.
+
 A new local descriptor may reserve initialization of one exact content database.
 The reservation can survive unrelated metadata progress, but cannot change
 identity, gain remote authority or restart after acknowledgement. Namespace
@@ -46,4 +52,6 @@ inventing success.
 Production composes one account resource owner across catalog acquisition,
 namespace reconciliation and content access. React Query may trigger acquisition
 and cache projections, but it does not install independent resource truth. Two
-live metadata writers are forbidden.
+live metadata writers are forbidden. Durable local command acceptance is not
+server settlement: background reconciliation records immutable attempts and
+outcomes, and unresolved or rejected work remains projected for retry.
