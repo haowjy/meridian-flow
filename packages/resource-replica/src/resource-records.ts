@@ -23,7 +23,7 @@ export type ResourceDescriptor = ResourceKey & {
   revision: number;
   identity: { documentId: string; revision: number };
   content:
-    | { kind: "exact"; databaseName: string; schema: string }
+    | { kind: "exact"; databaseName: string; schema: string | null }
     | { kind: "unacquired" }
     | { kind: "recovery"; sourceKey: string };
   canonical: ResourceLocation | null;
@@ -118,6 +118,7 @@ export type ProjectResourceSnapshot = {
 
 /** All mutation results mean outer commit. Network, locks and Yjs work stay outside these calls. */
 export interface ResourceMetadataStore {
+  readonly accountId: string;
   readResource(key: ResourceKey): Promise<ResourceRecord | null>;
   commitResource(write: ResourceWrite): Promise<MetadataCommitResult>;
   readCatalog(scope: CatalogScope): Promise<ResourceCatalogCheckpoint | null>;
