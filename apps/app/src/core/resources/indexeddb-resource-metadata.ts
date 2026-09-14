@@ -41,7 +41,10 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
   private readonly subscriptions = new Set<() => void>();
   private closing = false;
 
-  constructor(accountId: string, onVersionChange: () => void) {
+  constructor(
+    readonly accountId: string,
+    onVersionChange: () => void,
+  ) {
     this.database = new Dexie(`meridian:resource-metadata:v1:${encodeURIComponent(accountId)}`);
     this.database.version(1).stores({
       resources: "[projectId+handle],projectId",
