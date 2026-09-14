@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Reuse fresh catalog acquisitions when switching back to a retained Editor tab.
+
 - Avoid catalog reconstruction on unchanged renders and duplicate reads after catalog acquisition.
 
 - Remove unused catalog API and migration dependency; align Editor workspace and catalog ownership guidance.

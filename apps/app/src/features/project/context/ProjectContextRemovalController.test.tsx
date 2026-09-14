@@ -29,7 +29,7 @@ function SettlingHost({ projectId }: { projectId: string }) {
         transitionRevision: snapshot.transitionRevision,
         locator: snapshot.selection.locator,
         identity: snapshot.selection.identity,
-        owner: { kind: "desk", documentId: "document-1" },
+        owner: { kind: "workspace", documentId: "document-1" },
       });
     }
   }, [coordinator, projectId, snapshot]);

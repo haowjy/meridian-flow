@@ -1,4 +1,4 @@
-/** Canonical server-tab locator identity shared by desk mutations and routes. */
+/** Canonical server-tab locator identity shared by workspace mutations and routes. */
 
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 

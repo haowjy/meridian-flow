@@ -46,7 +46,7 @@ catalog-defined file classification so cached code never reopens as rich text.
 ```text
 ContextTreePanel (desktop)          MobileContextBrowser (mobile)
        │                                     │
-       ├─ useContextCatalogView (projection) ┤
+       ├─ useContextCatalogViews (batched projection) ┤
        ├─ useCreateEntryForm ────────────────┤
        ├─ useRenameEntryForm ────────────────┤
        ├─ useDeleteConfirmation ─────────────┤

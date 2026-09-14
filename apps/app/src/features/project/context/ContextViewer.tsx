@@ -176,7 +176,7 @@ export function ContextViewer({
         {paneState.kind === "dead-route" ? (
           <MissingDocumentState destination={paneState.destination} />
         ) : null}
-        {paneState.kind === "empty-desk" || paneState.kind === "route-error" ? (
+        {paneState.kind === "empty-workspace" || paneState.kind === "route-error" ? (
           <EditorEmptyState onNewDocument={onNewDocument} />
         ) : null}
       </div>
@@ -190,7 +190,7 @@ export function ContextViewer({
  * The timeline deliberately doesn't pre-check existence: that would make the
  * same row clickable or not depending on cache warmth. This pane is the other
  * half of that decision, so it has to be worth landing on. The generic empty
- * desk read as "nothing here" and offered to start a new document, which is
+ * workspace read as "nothing here" and offered to start a new document, which is
  * both untrue and the wrong thing to hand someone who was following a
  * reference.
  *

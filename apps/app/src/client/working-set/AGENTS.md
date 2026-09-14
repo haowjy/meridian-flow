@@ -1,16 +1,15 @@
 # client/working-set
 
-Device-local working-set state and its server sync: which documents and
-thread a writer had open, kept as a small per-user·project continuity
-record so another device can resume where they left off. This module is
-NOT the tab desk (that's `../stores/context-tabs-store/`) and NOT document
-content (that's Yjs).
+Device-local recent document routes and remembered thread, with optional server
+sync for cross-device continuity. Recency can rank already-open Editor tabs; it
+never creates workspace membership. Browser-local Editor tabs belong to
+`../stores/context-tabs-store/`, and document content belongs to Yjs.
 
 Mental model: a deliberately narrow offline-first reconciler. Local
 canonical store (localStorage, userId-stamped, wholesale-discard on user
 mismatch); pending-record-existence means unsynced; debounced
 whole-snapshot PUTs with revision-checked acks. The server row is the
-≤3-route cross-device subset — never the full desk.
+≤3-route cross-device subset — never the full Editor workspace.
 
 Key rules:
 
@@ -29,6 +28,4 @@ Key rules:
   design. If a new state kind needs syncing, give it its own tier and
   policy instead of widening this record.
 
-Depth: [.context/CONTEXT.md](.context/CONTEXT.md) (contracts, protocol),
-[.context/DECISIONS.md](.context/DECISIONS.md) (rulings and rejected
-alternatives).
+Depth: [.context/CONTEXT.md](.context/CONTEXT.md) (contracts and protocol).

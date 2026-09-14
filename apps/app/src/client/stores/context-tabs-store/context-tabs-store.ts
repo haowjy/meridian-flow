@@ -459,7 +459,7 @@ export function commitPlannedContextRemoval(
   projectId: string,
   input: {
     documentIds: readonly string[];
-    deskSelection?: { workId: string; documentId: string | null };
+    workspaceSelection?: { workId: string; documentId: string | null };
   },
 ): ContextTab[] {
   const documentIds = new Set(input.documentIds);
@@ -467,8 +467,8 @@ export function commitPlannedContextRemoval(
   const removed = slice.tabs.filter((tab) => documentIds.has(tab.documentId));
   const tabs = slice.tabs.filter((tab) => !documentIds.has(tab.documentId));
   const selectedTabIdByWork = { ...slice.selectedTabIdByWork };
-  if (input.deskSelection) {
-    const { workId, documentId } = input.deskSelection;
+  if (input.workspaceSelection) {
+    const { workId, documentId } = input.workspaceSelection;
     if (documentId === null) delete selectedTabIdByWork[workId];
     else selectedTabIdByWork[workId] = documentId;
   }

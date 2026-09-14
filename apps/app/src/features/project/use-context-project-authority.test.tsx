@@ -77,7 +77,7 @@ it("withholds live hosts through one held raw bootstrap and never restores raw a
     setWork = updateWork;
     const phase = useContextProjectAuthority({
       projectId: "project",
-      deskHydrated: true,
+      workspaceHydrated: true,
       editorScope: work,
     });
     return <div data-phase={phase.status}>{phase.status === "live" ? "host" : "withheld"}</div>;
@@ -186,7 +186,7 @@ it("keeps a fulfilled bootstrap removal authoritative when the explicit live rou
     coordinator = useContextRemovalCoordinator();
     const phase = useContextProjectAuthority({
       projectId: "project",
-      deskHydrated: true,
+      workspaceHydrated: true,
       editorScope: { status: "ready", workId: "work-1", source: "route" },
     });
     if (phase.status !== "live") return <div data-phase={phase.status}>withheld</div>;

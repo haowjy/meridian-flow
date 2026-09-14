@@ -178,8 +178,8 @@ export function ReadableProjectRoute({
     ? { status: works.status === "error" || threads.isError ? "error" : "loading", slug: "" }
     : resolveAddressSelection(editorSelection, workCatalog);
   const workId = editorWork.status === "resolved" ? editorWork.value.id : null;
-  const { tabs: deskTabs } = useContextTabs(projectId);
-  const deskHydrated = useContextTabsStore((state) => state._workspaceHydrated);
+  const { tabs: workspaceTabs } = useContextTabs(projectId);
+  const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const localDocument = resolveLocalDocumentSelection({
     pointer:
       destination.kind === "editor"
@@ -190,8 +190,8 @@ export function ReadableProjectRoute({
     accountId: user.userId,
     projectId,
     workId,
-    hydrated: deskHydrated,
-    tabs: deskTabs,
+    hydrated: workspaceHydrated,
+    tabs: workspaceTabs,
   });
   const localDocumentId = localDocument.kind === "resolved" ? localDocument.documentId : undefined;
   const localResourceHandle =
@@ -415,11 +415,14 @@ export function ReadableProjectRoute({
       if (target.workId && !slug) throw new Error("Work address is unavailable");
       let state: Record<string, unknown> | undefined;
       if (target.path === "") {
-        const desk = getContextTabs(projectId);
-        const documentId = target.documentId ?? desk.selectedTabIdByWork[target.workId ?? ""];
+        const workspace = getContextTabs(projectId);
+        const documentId = target.documentId ?? workspace.selectedTabIdByWork[target.workId ?? ""];
         const tabs = preparedTab
-          ? [...desk.tabs.filter((tab) => tab.documentId !== preparedTab.documentId), preparedTab]
-          : desk.tabs;
+          ? [
+              ...workspace.tabs.filter((tab) => tab.documentId !== preparedTab.documentId),
+              preparedTab,
+            ]
+          : workspace.tabs;
         const selected = tabs.find((tab) => tab.documentId === documentId);
         if (!selected?.resourceHandle) throw new Error("Local document is unavailable");
         const pointer = {
@@ -466,10 +469,10 @@ export function ReadableProjectRoute({
       const current = latest.current;
       if (!current.navigation || options?.isCurrent?.() === false) return { kind: "superseded" };
       const next = contextDestination(target, options?.tab);
-      const desk = getContextTabs(projectId);
+      const workspace = getContextTabs(projectId);
       const tab = target.documentId
-        ? desk.tabs.find((tab) => tab.documentId === target.documentId)
-        : desk.tabs.find(
+        ? workspace.tabs.find((tab) => tab.documentId === target.documentId)
+        : workspace.tabs.find(
             (tab) => tab.kind !== "new" && tab.scheme === target.scheme && tab.path === target.path,
           );
       const result = await current.navigation.transition(
@@ -570,10 +573,10 @@ export function ReadableProjectRoute({
     if (next === activeScreen && !(next === "chat" && destination.kind === "chat"))
       return Promise.resolve();
     if (next === "context" && contextRemoval.getProjectSnapshot(projectId).live) {
-      const desk = getContextTabs(projectId);
+      const workspace = getContextTabs(projectId);
       const tab = selectEditorEntryTab({
-        tabs: desk.tabs,
-        selectedDocumentId: desk.selectedTabIdByWork[workId ?? ""],
+        tabs: workspace.tabs,
+        selectedDocumentId: workspace.selectedTabIdByWork[workId ?? ""],
         recentRoutes: readRecentRoutes(projectId),
       });
       if (tab)

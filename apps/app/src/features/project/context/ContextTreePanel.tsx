@@ -184,11 +184,7 @@ function SchemeSection({
     }));
   }, []);
 
-  // The query is unconditionally enabled: it prefetches at rail mount so the
-  // first expand paints from cache (work-scoped schemes still wait for their
-  // workId inside the hook). `pendingOpenPath` waits on the same always-live
-  // query so a just-created file can resolve and open; its onSelectFile then
-  // lands a new selection here, which re-expands via the effect above.
+  // Catalogs stay warm while collapsed so a newly created row can resolve and open.
   useEffect(() => {
     if (!pendingOpenPath || !catalog) return;
     const entry = catalog.findPath(pendingOpenPath);

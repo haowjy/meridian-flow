@@ -66,7 +66,6 @@ export function contextCatalogQueryOptions(
     staleTime: 5_000,
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
-    refetchOnMount: "always",
   });
 }
 

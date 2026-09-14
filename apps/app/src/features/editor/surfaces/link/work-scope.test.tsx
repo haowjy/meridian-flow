@@ -65,10 +65,13 @@ vi.mock("@/client/query/useContextCatalog", () => ({
                     scheme === "scratch" || scheme === "uploads" ? options?.workId : null,
                   ),
                 ) ?? null),
+          isComplete: false,
           isError: false,
           isFetching: false,
           refetch: () => {},
-        },
+        } satisfies ReturnType<
+          typeof import("@/client/query/useContextCatalog").useContextCatalogView
+        >,
       ]),
     ),
 }));

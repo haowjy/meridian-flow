@@ -218,10 +218,10 @@ export function ProjectView(props: ProjectViewProps) {
   useLayoutEffect(() => {
     props.onDisplayedSelection?.({ threadId: resolvedThreadId, editorWorkId });
   }, [props.onDisplayedSelection, resolvedThreadId, editorWorkId]);
-  const deskHydrated = useContextTabsStore((s) => s._workspaceHydrated);
+  const workspaceHydrated = useContextTabsStore((s) => s._workspaceHydrated);
   const contextPhase = useContextProjectAuthority({
     projectId: props.projectId,
-    deskHydrated,
+    workspaceHydrated,
     editorScope,
   });
   useEffect(() => {
@@ -242,7 +242,7 @@ export function ProjectView(props: ProjectViewProps) {
   // (localStorage), so this is at most one frame — no visible flash. Gating here
   // (not inside DesktopProject) avoids a conditional-hook ordering violation.
   const prefsHydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
-  const hydrated = prefsHydrated && deskHydrated;
+  const hydrated = prefsHydrated && workspaceHydrated;
   const onSelectEditorContextPath = useCallback(
     (path: string, scheme?: ProjectContextTreeScheme, options?: { replace?: boolean }) => {
       if (editorScope.status !== "ready" || !scheme) return;
