@@ -4,7 +4,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 import type { ResourceAuthoritySnapshot } from "./document-session-authority-store";
 import type {
   LiveDocumentSessionRegistry,
-  LocalUntitledDocumentSessionFactory,
+  LocalDocumentSessionFactory,
 } from "./document-session-registry";
 import {
   DocumentSessionRegistry,
@@ -27,7 +27,7 @@ export interface AccountDocumentSessionRuntime {
   readonly registry: LiveDocumentSessionRegistry;
   readonly localReservation: LocalDocumentSessionReservationPort;
   readonly localAdoption: LocalDocumentSessionAdoptionPort;
-  readonly localConstruction: LocalUntitledDocumentSessionFactory;
+  readonly localConstruction: LocalDocumentSessionFactory;
   connectLocalResources(port: LocalResourceLifetimePort): void;
   beginClose(): void;
   finishClose(): Promise<void>;
@@ -40,7 +40,7 @@ export interface AccountDocumentSessionCore {
   readonly registry: LiveDocumentSessionRegistry;
   readonly localReservation: LocalDocumentSessionReservationPort;
   readonly localAdoption: LocalDocumentSessionAdoptionPort;
-  readonly localConstruction: LocalUntitledDocumentSessionFactory;
+  readonly localConstruction: LocalDocumentSessionFactory;
   connectLocalResources(port: LocalResourceLifetimePort): void;
   beginClose(): void;
   finishClose(): Promise<void>;
@@ -145,7 +145,7 @@ export function createAccountDocumentSessionRuntime(
       }
     },
   };
-  const localConstruction: LocalUntitledDocumentSessionFactory = {
+  const localConstruction: LocalDocumentSessionFactory = {
     async whenAuthorityReady() {
       requireOpen();
       await core.localConstruction.whenAuthorityReady();
