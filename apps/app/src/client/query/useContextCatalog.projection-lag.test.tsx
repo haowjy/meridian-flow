@@ -56,7 +56,7 @@ vi.mock("@/features/project/context/account-feature-context", () => ({
   useOptionalAccountResourceReplica: () => resources,
   useAccountResourceProjection: () => projection,
 }));
-const { useContextCatalogView } = await import("./useContextCatalog");
+const { useContextCatalogView, useContextCatalogViews } = await import("./useContextCatalog");
 
 it("uses the acquired query result before the durable projection emits its checkpoint", async () => {
   let observed: { complete: boolean; name: string | null } | null = null;
@@ -106,4 +106,40 @@ it("retains the catalog projection across an unrelated component rerender", asyn
       expect(catalog).toBe(first);
     },
   );
+});
+
+it("shares one query observer per authority scope across scheme views", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const schemes = ["manuscript", "kb", "unfiled", "user", "scratch", "uploads"] as const;
+  let observed: ReturnType<typeof useContextCatalogViews<(typeof schemes)[number]>> | undefined;
+  function Probe() {
+    observed = useContextCatalogViews("project", schemes, { workId: null });
+    return null;
+  }
+  try {
+    await withReactRoot(
+      <QueryClientProvider client={client}>
+        <Probe />
+      </QueryClientProvider>,
+      async () => {
+        await vi.waitFor(() =>
+          expect(observed?.manuscript.catalog?.findDocument("server-document")?.name).toBe(
+            "Chapter.md",
+          ),
+        );
+        expect(
+          client
+            .getQueryCache()
+            .getAll()
+            .map((query) => query.getObserversCount()),
+        ).toEqual([1, 1, 1]);
+        expect(observed?.unfiled.catalog?.findDocument("local-document")).toMatchObject({
+          resourceHandle: "local-resource",
+        });
+        expect(observed?.unfiled.isComplete).toBe(false);
+      },
+    );
+  } finally {
+    client.clear();
+  }
 });

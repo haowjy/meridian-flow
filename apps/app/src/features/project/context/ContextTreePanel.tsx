@@ -5,7 +5,7 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import { useContextCatalogView } from "@/client/query/useContextCatalog";
+import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
@@ -66,12 +66,14 @@ export function ContextTreePanel({
     throw new Error("ContextTreePanel requires creation controls");
   }
   const schemes = EDITOR_CONTEXT_SCHEMES;
-  const renderScheme = (scheme: ProjectContextTreeScheme) => (
+  const catalogs = useContextCatalogViews(projectId, schemes, { workId: editorWorkId });
+  const renderScheme = (scheme: (typeof EDITOR_CONTEXT_SCHEMES)[number]) => (
     <SchemeSection
       key={scheme}
       projectId={projectId}
       editorWorkId={editorWorkId}
       scheme={scheme}
+      catalogState={catalogs[scheme]}
       activeScheme={activeScheme}
       activePath={activePath}
       defaultExpanded={scheme === schemes[0]}
@@ -100,6 +102,7 @@ export function ContextTreePanel({
 }
 
 function SchemeSection({
+  catalogState,
   projectId,
   editorWorkId,
   scheme,
@@ -111,6 +114,7 @@ function SchemeSection({
   onRequestCreate,
   onCreateDone,
 }: {
+  catalogState: ReturnType<typeof useContextCatalogViews>[ProjectContextTreeScheme];
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
@@ -131,9 +135,7 @@ function SchemeSection({
   const [expandedEntryIds, setExpandedEntryIds] = useState<Record<string, boolean>>({});
   const activeLocationPath = activeScheme === scheme ? activePath : null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
-  const { catalog, isError, refetch } = useContextCatalogView(projectId, scheme, {
-    workId: editorWorkId,
-  });
+  const { catalog, isError, refetch } = catalogState;
 
   const revealPath = useCallback(
     (path: string) => {

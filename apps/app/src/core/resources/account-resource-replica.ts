@@ -135,6 +135,7 @@ export class AccountResourceReplica {
   private readonly locationOperations = new ResourceLocationOperationQueue();
   private retryTimer: number | null = null;
   private started = false;
+  private stopReconciliation: (() => void) | null = null;
   private readonly retryAll = () => {
     void this.metadata
       .readProjection("")
@@ -281,7 +282,14 @@ export class AccountResourceReplica {
     window.addEventListener("focus", this.retryAll);
     window.addEventListener("online", this.retryAll);
     this.retryTimer = window.setInterval(this.retryAll, 30_000);
-    this.scheduleProjection("");
+    // Reconciliation belongs to the account lifetime, not mounted catalog consumers.
+    this.stopReconciliation = this.metadata.observeProjection(
+      "",
+      ({ records }) => {
+        if (!this.closing) this.reconcileProjectionRecords(records);
+      },
+      () => undefined,
+    );
   }
 
   async markCreateEligible(key: ResourceKey): Promise<void> {
@@ -460,7 +468,6 @@ export class AccountResourceReplica {
         projectId,
         (snapshot) => {
           created.snapshot = snapshot;
-          this.reconcileProjectionRecords(snapshot.records);
           for (const subscriber of created.listeners.keys()) subscriber(snapshot);
         },
         (error) => {
@@ -486,16 +493,12 @@ export class AccountResourceReplica {
     };
   }
 
-  async acquireCatalog(projectId: string, scope: CatalogScope) {
-    const view = await this.catalogs.acquire(projectId, scope);
-    this.scheduleProjection(projectId);
-    return view;
+  acquireCatalog(projectId: string, scope: CatalogScope) {
+    return this.catalogs.acquire(projectId, scope);
   }
 
-  async hintCatalog(projectId: string, scope: CatalogScope, headRevision: string) {
-    const view = await this.catalogs.hint(projectId, scope, headRevision);
-    this.scheduleProjection(projectId);
-    return view;
+  hintCatalog(projectId: string, scope: CatalogScope, headRevision: string) {
+    return this.catalogs.hint(projectId, scope, headRevision);
   }
 
   async setLocation(
@@ -555,16 +558,6 @@ export class AccountResourceReplica {
     }
   }
 
-  private scheduleProjection(projectId: string): void {
-    void this.metadata
-      .readProjection(projectId)
-      .then((snapshot) => {
-        this.reconcileProjectionRecords(snapshot.records);
-      })
-      .catch(() => undefined);
-  }
-
-  /** One account revision schedules once even when several project projections observe it. */
   private reconcileProjectionRecords(records: readonly ResourceRecord[]): void {
     for (const record of records) {
       const { handle, revision } = record.resource;
@@ -717,6 +710,8 @@ export class AccountResourceReplica {
       if (this.retryTimer !== null) window.clearInterval(this.retryTimer);
       this.retryTimer = null;
     }
+    this.stopReconciliation?.();
+    this.stopReconciliation = null;
     this.adoption.beginClose();
     this.catalogs.beginClose();
     this.content.beginClose();
