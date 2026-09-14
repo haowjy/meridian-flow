@@ -79,6 +79,34 @@ export function validateResourceRecordUpdate(
           throw new Error("Create outcome does not match submitted identity");
       }
     }
+    const previousIntent = previous?.intents.find((item) => item.intentId === intent.intentId);
+    if (
+      intent.state === "cancelled" &&
+      (intent.attempts.length > 0 ||
+        intent.desired.kind === "delete" ||
+        !next.intents.some(
+          (later) => later.desired.kind === "delete" && later.sequence > intent.sequence,
+        ))
+    )
+      throw new Error("Only unsubmitted work superseded by deletion can be cancelled");
+    if (intent.state === "settled-locally") {
+      if (
+        next.intents.some(
+          (other) => other.intentId !== intent.intentId && other.state !== "cancelled",
+        )
+      )
+        throw new Error("Locally deleted resources cannot retain executable namespace work");
+      if (intent.desired.kind !== "delete" || intent.attempts.length > 0)
+        throw new Error("Local settlement requires retained deletion without an HTTP attempt");
+      if (
+        previousIntent?.state !== "settled-locally" &&
+        (resource.lifecycle.kind !== "local" ||
+          resource.canonical !== null ||
+          resource.recovery ||
+          next.intents.some((item) => item.attempts.length > 0))
+      )
+        throw new Error("Local deletion requires proven never-submitted identity");
+    }
     const lastAttempt = intent.attempts.at(-1);
     if (intent.state === "submitted" && (!lastAttempt || lastAttempt.outcome))
       throw new Error("Submitted intention requires an unresolved attempt");
@@ -98,6 +126,11 @@ export function validateResourceRecordUpdate(
       JSON.stringify(intent.desired) !== JSON.stringify(oldIntent.desired)
     )
       throw new Error("Recorded namespace intention cannot be replaced");
+    if (
+      (oldIntent.state === "cancelled" || oldIntent.state === "settled-locally") &&
+      (intent.state !== oldIntent.state || intent.attempts.length > 0)
+    )
+      throw new Error("Locally completed namespace work cannot restart");
     if (
       oldIntent.state === "settled" &&
       (intent.state !== "settled" || intent.attempts.length !== oldIntent.attempts.length)

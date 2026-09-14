@@ -41,7 +41,10 @@ bytes remain recovery evidence. Capture completes locally even with unresolved
 records; `recovery-required` describes per-resource work, not an account boot
 gate. Recovery evidence is attached to the resource independently of content:
 consistent local authority retains the exact cache even when create settlement
-is uncertain. Conflicting authority leaves content unacquired. Neither state
+is uncertain. A local envelope with matching bindable authority still retains
+recovery uncertainty: the live owner no longer considers it locally authoring, so
+it cannot prove never-submitted creation. Conflicting authority leaves content
+unacquired. Neither state
 proves initialization or grants transport admission. Legacy intentions are captured
 before new writer intentions and stay unsubmitted until uncertainty resolves.
 Terminal envelopes remain terminal; malformed bytes remain account-level evidence.

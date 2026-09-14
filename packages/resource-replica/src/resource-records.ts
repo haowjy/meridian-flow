@@ -74,7 +74,7 @@ export type NamespaceIntent = ResourceKey & {
     | { kind: "set-location"; destination: Omit<ResourceLocation, "path"> & { folderPath: string } }
     | { kind: "delete" };
   attempts: readonly NamespaceAttempt[];
-  state: "pending" | "submitted" | "settled" | "needs-repair";
+  state: "pending" | "submitted" | "settled" | "needs-repair" | "cancelled" | "settled-locally";
 };
 
 export type ResourceRecord = {
