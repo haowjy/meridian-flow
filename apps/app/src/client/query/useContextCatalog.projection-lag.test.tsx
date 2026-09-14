@@ -53,7 +53,7 @@ const projection = {
 };
 
 vi.mock("@/features/project/context/account-feature-context", () => ({
-  useAccountResourceReplica: () => resources,
+  useOptionalAccountResourceReplica: () => resources,
   useAccountResourceProjection: () => projection,
 }));
 const { useContextCatalogView } = await import("./useContextCatalog");

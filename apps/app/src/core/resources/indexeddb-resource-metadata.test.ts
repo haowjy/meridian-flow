@@ -21,6 +21,7 @@ afterEach(async () => {
     await Promise.all([
       Dexie.delete(`meridian:resource-metadata:v1:${encodeURIComponent(account)}`),
       Dexie.delete(`meridian:resource-metadata:v2:${encodeURIComponent(account)}`),
+      Dexie.delete(`meridian:resource-metadata:v3:${encodeURIComponent(account)}`),
     ]);
   }
   accounts.clear();
@@ -33,6 +34,7 @@ function resource(handle = "doc", revision = 1): ResourceRecord {
       revision,
       identity: { documentId: handle, revision: 1 },
       content: { kind: "exact", databaseName: `exact:${handle}`, schema: "0.5" },
+      classification: { editable: true, filetype: "markdown", schemaType: "document" },
       canonical: null,
       lifecycle: { kind: "local" },
       aliases: {},
@@ -66,7 +68,7 @@ it("preserves a committed reservation across shutdown and isolates identical han
 it("uses a fresh physical database instead of opening the incompatible dormant schema", async () => {
   const account = crypto.randomUUID();
   accounts.add(account);
-  const legacy = new Dexie(`meridian:resource-metadata:v1:${encodeURIComponent(account)}`);
+  const legacy = new Dexie(`meridian:resource-metadata:v2:${encodeURIComponent(account)}`);
   legacy.version(1).stores({
     resources: "[projectId+handle],projectId",
     intents: "[projectId+intentId],[projectId+handle]",
@@ -341,7 +343,7 @@ it("closes the account lifetime when another connection upgrades the database", 
   const store = open(account, versionChanged);
   await store.readProjection("project");
 
-  const upgrader = new Dexie(`meridian:resource-metadata:v2:${encodeURIComponent(account)}`);
+  const upgrader = new Dexie(`meridian:resource-metadata:v3:${encodeURIComponent(account)}`);
   upgrader.version(1).stores({
     resources: "handle",
     intents: "intentId,handle,projectId",

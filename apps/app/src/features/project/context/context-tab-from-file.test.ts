@@ -22,6 +22,7 @@ function record(): ResourceRecord {
       revision: 2,
       identity: { documentId: "document", revision: 1 },
       content: { kind: "unacquired" },
+      classification: { editable: true, filetype: "markdown", schemaType: "document" },
       canonical: { scheme: "manuscript", path: "/New.md", name: "New.md", workId: null },
       lifecycle: { kind: "acknowledged", availabilityGeneration: "8" },
       aliases: {},
@@ -36,6 +37,33 @@ it("projects a server-backed rename without claiming a local resource session", 
     kind: "projected",
     resourceHandle: "catalog:document",
     tab: { ...serverTab, path: "/New.md", name: "New.md", provisionalName: false },
+  });
+});
+
+it("reconciles a member whose recorded handle no longer owns its current document identity", () => {
+  const staleMember: ContextTab = {
+    ...serverTab,
+    tabInstanceId: "member",
+    resourceHandle: "superseded-resource",
+    origin: "local-resource",
+  };
+  const current = record();
+  current.resource.content = {
+    kind: "exact",
+    databaseName: "current-content",
+    schema: "v0.5",
+  };
+
+  expect(projectResourceTab("project", staleMember, [current])).toEqual({
+    kind: "projected",
+    resourceHandle: "catalog:document",
+    tab: {
+      ...serverTab,
+      path: "/New.md",
+      name: "New.md",
+      provisionalName: false,
+      resourceHandle: "catalog:document",
+    },
   });
 });
 

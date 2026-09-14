@@ -55,6 +55,7 @@ function resource(path: string, revision: number, refresh = false): ResourceReco
       revision,
       identity: { documentId: "document", revision: 1 },
       content: { kind: "exact", databaseName: "exact", schema: "0.5" },
+      classification: { editable: true, filetype: "markdown", schemaType: "document" },
       canonical: { scheme: "manuscript", path: `/${path}`, name: path, workId: null },
       lifecycle: { kind: "acknowledged", availabilityGeneration: "generation" },
       aliases: {},

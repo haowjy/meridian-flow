@@ -72,6 +72,7 @@ function record(
       revision: 1,
       identity: { documentId, revision: 2 },
       content: { kind: "exact", databaseName: `content-${handle}`, schema: "schema" },
+      classification: { editable: true, filetype: "markdown", schemaType: "document" },
       canonical: { scheme: "unfiled", path: `/${documentId}`, name: documentId, workId: null },
       lifecycle: { kind: "acknowledged", availabilityGeneration: "1" },
       aliases: Object.fromEntries(

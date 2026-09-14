@@ -33,6 +33,7 @@ export function reserveResourceDocument(input: {
       schema: input.schema,
       initialization: "reserved",
     },
+    classification: { editable: true, filetype: "markdown", schemaType: "document" },
     canonical: null,
     lifecycle: { kind: "local" },
     aliases: {},

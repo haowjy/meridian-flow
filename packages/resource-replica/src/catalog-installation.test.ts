@@ -86,6 +86,11 @@ function record(overrides: Partial<ResourceRecord["resource"]> = {}): ResourceRe
       aliases: {},
       obligations: {},
       ...overrides,
+      classification: overrides.classification ?? {
+        editable: true,
+        filetype: "markdown",
+        schemaType: "document",
+      },
     },
     intents: [],
   };
@@ -94,7 +99,14 @@ function record(overrides: Partial<ResourceRecord["resource"]> = {}): ResourceRe
 function observed(record: ResourceRecord, revision = record.resource.revision) {
   return {
     resources: new Map([
-      [record.resource.handle, { revision, canonical: structuredClone(record.resource.canonical) }],
+      [
+        record.resource.handle,
+        {
+          revision,
+          canonical: structuredClone(record.resource.canonical),
+          classification: structuredClone(record.resource.classification),
+        },
+      ],
     ]),
   };
 }
@@ -116,6 +128,11 @@ describe("planCatalogInstallation", () => {
             handle: "catalog:document",
             identity: { documentId: "document", revision: 1 },
             content: { kind: "unacquired" },
+            classification: {
+              editable: true,
+              filetype: "markdown",
+              schemaType: "document",
+            },
             canonical: {
               scheme: "manuscript",
               path: "/chapter.md",
@@ -195,6 +212,7 @@ describe("planCatalogInstallation", () => {
                   name: "older.md",
                   workId: null,
                 },
+                classification: current.resource.classification,
               },
             ],
           ]),

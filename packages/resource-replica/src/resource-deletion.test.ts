@@ -12,6 +12,7 @@ function local(): ResourceRecord {
       revision: 1,
       identity: { documentId: "document", revision: 1 },
       content: { kind: "exact", databaseName: "original", schema: null },
+      classification: { editable: true, filetype: "markdown", schemaType: "document" },
       canonical: null,
       lifecycle: { kind: "local" },
       aliases: {},
