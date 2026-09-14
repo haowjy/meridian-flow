@@ -226,6 +226,18 @@ function sameTabIdentity(left: ContextTab, right: ContextTab): boolean {
   );
 }
 
+function priorBootstrapMember(
+  priorTabs: readonly ContextTab[],
+  incoming: ContextTab,
+): ContextTab | undefined {
+  return priorTabs.find(
+    (prior) =>
+      prior.tabInstanceId === incoming.tabInstanceId ||
+      (prior.resourceHandle !== undefined && prior.resourceHandle === incoming.resourceHandle) ||
+      prior.documentId === incoming.documentId,
+  );
+}
+
 function normalizeProject(desk: PersistedProjectDesk): PersistedProjectDesk {
   const tabs = desk.tabs.filter(isEditorContextTab);
   return {
@@ -311,7 +323,11 @@ export function reduceEditorWorkspace(
       (tab) => !command.priorTabs.some((prior) => sameTabIdentity(tab, prior)),
     );
     const tabs = [...retained];
-    for (const incoming of command.nextTabs.filter((tab) => !tab.draftOnly).map(durableTab)) {
+    for (const candidate of command.nextTabs.filter((tab) => !tab.draftOnly)) {
+      const prior = priorBootstrapMember(command.priorTabs, candidate);
+      const incoming = durableTab(
+        prior ? ({ ...candidate, tabInstanceId: prior.tabInstanceId } as ContextTab) : candidate,
+      );
       const index = tabs.findIndex(
         (tab) =>
           tab.tabInstanceId === incoming.tabInstanceId || tab.documentId === incoming.documentId,

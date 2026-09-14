@@ -4,7 +4,7 @@ import {
   type DocumentAddressResult,
   isProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import { type Dispatch, type SetStateAction, useEffect } from "react";
+import { type Dispatch, type SetStateAction, useEffect, useRef } from "react";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import { useContextTabsActions } from "@/client/stores";
@@ -45,18 +45,25 @@ export function ProjectAddressDocument({
   onAdmission: Dispatch<SetStateAction<AddressAdmission | null>>;
 }) {
   const { openTab } = useContextTabsActions();
+  const admissionInput = useRef({ address, result, localFile });
+  admissionInput.current = { address, result, localFile };
+  // Address/catalog projections are rebuilt from JSON snapshots. Their object
+  // identity is not an admission event; only their serialized meaning is.
+  const admissionFingerprint = JSON.stringify({ result, localFile });
   useEffect(() => {
+    const { address, result, localFile } = admissionInput.current;
     if (!navigation || !result || result.kind === "unavailable") return;
     const ticket = navigation.captureForEntry(entryKey);
     if (!ticket) return;
     const identity = { href, key: entryKey, documentId: result.document.documentId };
     const controller = new AbortController();
     const isCurrent = () => !controller.signal.aborted && navigation.isCurrent(ticket);
-    onAdmission({ ...identity, issue: "loading" });
+    const publish = (issue: ProjectRouteIssue | undefined) => onAdmission({ ...identity, issue });
+    publish("loading");
     const document = result.document.entry;
     const uri = parseUnifiedContextUri(document.uri);
     if (!uri.ok || !isProjectContextTreeScheme(uri.value.scheme)) {
-      onAdmission({ ...identity, issue: "unavailable" });
+      publish("unavailable");
       return;
     }
     const scope = document.scope;
@@ -74,7 +81,7 @@ export function ProjectAddressDocument({
       );
       if (controller.signal.aborted || !navigation.isCurrent(ticket)) return;
       if (installed.kind !== "opened") {
-        onAdmission({ ...identity, issue: "unavailable" });
+        publish("unavailable");
         return;
       }
       const next: ProjectAddress = {
@@ -99,21 +106,19 @@ export function ProjectAddressDocument({
           !controller.signal.aborted &&
           navigation.isCurrent(replacement.ticket)
         )
-          onAdmission({ ...identity, issue: "error" });
+          publish("error");
       } else {
-        onAdmission({ ...identity, issue: undefined });
+        publish(undefined);
       }
     })().catch(() => {
-      if (!controller.signal.aborted && navigation.isCurrent(ticket))
-        onAdmission({ ...identity, issue: "error" });
+      if (!controller.signal.aborted && navigation.isCurrent(ticket)) publish("error");
     });
     return () => controller.abort();
   }, [
     projectId,
     href,
     entryKey,
-    result,
-    localFile,
+    admissionFingerprint,
     workId,
     workSlug,
     navigation,

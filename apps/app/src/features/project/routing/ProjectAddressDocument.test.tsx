@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 /** Authorized tab publication and alias admission under delayed navigation. */
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
-import { act } from "react";
+import { act, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { withReactRoot } from "@/test-support/react-dom-harness";
-import { ProjectAddressDocument } from "./ProjectAddressDocument";
+import { type AddressAdmission, ProjectAddressDocument } from "./ProjectAddressDocument";
 import type { ProjectAddress } from "./project-address";
 import { createProjectNavigation } from "./project-navigation";
 
@@ -191,6 +191,55 @@ it("preserves a proven local resource handle during readable-route admission", a
     },
   );
   navigation.dispose();
+});
+
+it("admits one semantic address when parent state rebuilds equivalent lookup objects", async () => {
+  openTab.mockReturnValue({ kind: "opened" });
+  const href = "/p/project/kb/doc";
+  const navigation = createProjectNavigation(
+    {
+      read: () => ({ key: "entry", href, state: {} }),
+      subscribe: () => () => undefined,
+      flush: () => undefined,
+      settlePendingTraversal: () => undefined,
+      replaceEntry: () => undefined,
+      navigate: vi.fn(),
+    },
+    () => ({ chatSlug: null, workSlug: null }),
+  );
+  function Harness() {
+    const [admission, setAdmission] = useState<AddressAdmission | null>(null);
+    return (
+      <>
+        <output>{admission?.issue ?? "settled"}</output>
+        <ProjectAddressDocument
+          projectId="project-id"
+          href={href}
+          entryKey="entry"
+          address={{
+            projectSlug: "project",
+            destination: { kind: "document", scheme: "kb", path: "doc", workSlug: null },
+            chat: { kind: "none" },
+            work: { kind: "none" },
+            results: false,
+          }}
+          result={documentResult("current")}
+          workId={null}
+          workSlug={null}
+          navigation={navigation}
+          onAdmission={setAdmission}
+        />
+      </>
+    );
+  }
+  try {
+    await withReactRoot(<Harness />, async () => {
+      expect(document.querySelector("output")?.textContent).toBe("settled");
+      expect(openTab).toHaveBeenCalledOnce();
+    });
+  } finally {
+    navigation.dispose();
+  }
 });
 
 it.each([
