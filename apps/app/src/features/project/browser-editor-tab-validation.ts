@@ -156,5 +156,8 @@ export async function validateContextDeskTabs({
     promote: null,
     clearAll: false,
   });
-  await reconcileContextDeskBootstrap(projectId, restored, survivingTabs);
+  await reconcileContextDeskBootstrap(
+    projectId,
+    tabs.map(({ tab }, index) => ({ prior: restored[index] as ContextTab, next: tab })),
+  );
 }

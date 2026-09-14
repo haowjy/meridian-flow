@@ -50,8 +50,7 @@ type ContextTabsActions = {
   selectTab: (projectId: string, workId: string, documentId: string | null) => Promise<void>;
   reconcileBootstrap: (
     projectId: string,
-    priorTabs: readonly ContextTab[],
-    nextTabs: readonly ContextTab[],
+    changes: readonly { prior: ContextTab; next: ContextTab | null }[],
   ) => Promise<void>;
   applyAvailability: (
     projectId: string,
@@ -313,14 +312,12 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           });
         },
 
-        reconcileBootstrap: async (projectId, priorTabs, nextTabs) => {
+        reconcileBootstrap: async (projectId, changes) => {
           await dispatch(() => ({
             kind: "reconcile-bootstrap",
             projectId,
-            priorTabs: priorTabs.filter((tab) => !tab.draftOnly),
-            nextTabs: nextTabs.filter((tab) => !tab.draftOnly),
+            changes: changes.filter(({ prior }) => !prior.draftOnly),
           }));
-          for (const tab of nextTabs) if (tab.draftOnly) await get().openTab(projectId, tab);
         },
 
         applyAvailability: (projectId, prior, next) =>
@@ -442,10 +439,9 @@ export function previewReviewOverlayClose(
 
 export function reconcileContextDeskBootstrap(
   projectId: string,
-  priorTabs: readonly ContextTab[],
-  nextTabs: readonly ContextTab[],
+  changes: readonly { prior: ContextTab; next: ContextTab | null }[],
 ): Promise<void> {
-  return useContextTabsStore.getState().reconcileBootstrap(projectId, priorTabs, nextTabs);
+  return useContextTabsStore.getState().reconcileBootstrap(projectId, changes);
 }
 
 export function commitContextAvailability(

@@ -267,9 +267,73 @@ it("keeps optimistic ancestors navigable when the server invalidated an old fold
   const normalized = projectResourceCatalogView("project-b", scope, base, [placed.next]);
   const catalog = projectCatalogView("project-b", "manuscript", normalized, [placed.next]);
   const file = catalog.findDocument("document-b");
+  const folder = catalog.findPath("/drafts");
 
   expect(file).toMatchObject({ path: "/drafts/Chapter.md" });
-  expect(catalog.findPath("/drafts")).toMatchObject({ kind: "dir", name: "drafts" });
+  expect(folder).toMatchObject({
+    kind: "dir",
+    entryId: expect.stringContaining("local-folder:"),
+    name: "drafts",
+  });
+  if (folder?.kind !== "dir") throw new Error("Expected optimistic folder");
+  expect(catalog.children(folder.entryId)).toEqual([
+    expect.objectContaining({ documentId: "document-b" }),
+  ]);
+});
+
+it("keeps path lookup inside the selected scheme", () => {
+  const checkpoint = catalogViewFromSnapshot({
+    scope,
+    generation: "generation",
+    headRevision: "1",
+    cursor: "cursor",
+    entries: [
+      {
+        kind: "source",
+        entryId: "source-kb",
+        scope,
+        scheme: "kb",
+        name: "Knowledge Base",
+        uri: "kb://",
+      },
+      {
+        kind: "folder",
+        entryId: "kb-drafts",
+        scope,
+        sourceId: "source-kb",
+        parentId: "source-kb",
+        name: "drafts",
+        path: ["drafts"],
+        uri: "kb://drafts",
+        hasChildren: false,
+      },
+      {
+        kind: "source",
+        entryId: "source-manuscript",
+        scope,
+        scheme: "manuscript",
+        name: "Manuscript",
+        uri: "manuscript://",
+      },
+      {
+        kind: "folder",
+        entryId: "manuscript-drafts",
+        scope,
+        sourceId: "source-manuscript",
+        parentId: "source-manuscript",
+        name: "drafts",
+        path: ["drafts"],
+        uri: "manuscript://drafts",
+        hasChildren: false,
+      },
+    ],
+  });
+
+  expect(
+    projectCatalogView("project-b", "manuscript", checkpoint).findPath("/drafts"),
+  ).toMatchObject({
+    entryId: "manuscript-drafts",
+  });
 });
 
 it("restores a failed delete with a retry marker", () => {
