@@ -109,6 +109,19 @@ function transport(input: {
 }
 
 describe("namespace record transitions", () => {
+  it("does not dispatch creation before exact local content is initialized", () => {
+    const record = local();
+    if (record.resource.content.kind !== "exact") throw new Error("Expected exact content");
+    record.resource.content.initialization = "reserved";
+
+    expect(
+      prepareNamespaceAttempt(record, {
+        attemptId: "attempt",
+        operationId: "unused-create-operation",
+      }),
+    ).toBeNull();
+  });
+
   it("persists immutable create request bytes before an outcome can be recorded", () => {
     const before = local();
     const submitted = prepareNamespaceAttempt(before, {

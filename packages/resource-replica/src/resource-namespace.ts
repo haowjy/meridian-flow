@@ -76,7 +76,12 @@ function requestFor(
   const { resource } = record;
   if (resource.obligations.canonicalRefresh) return null;
   if (intent.desired.kind === "create") {
-    if (resource.lifecycle.kind !== "local" || resource.canonical) return null;
+    if (
+      resource.lifecycle.kind !== "local" ||
+      resource.canonical ||
+      (resource.content.kind === "exact" && resource.content.initialization === "reserved")
+    )
+      return null;
     return {
       kind: "create",
       body: {
