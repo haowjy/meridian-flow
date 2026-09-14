@@ -128,7 +128,7 @@ export type ResourceWrite = {
 };
 
 export type MetadataCommitResult = "committed" | "stale";
-export type ProjectResourceSnapshot = {
+export type ResourceProjectionSnapshot = {
   records: readonly ResourceRecord[];
   catalogs: readonly ResourceCatalogCheckpoint[];
 };
@@ -137,7 +137,9 @@ export type ProjectResourceSnapshot = {
 export interface ResourceMetadataStore {
   readonly accountId: string;
   readResource(key: ResourceKey): Promise<ResourceRecord | null>;
-  readProject(projectId: string): Promise<ProjectResourceSnapshot>;
+  /** Reads one resource only when this project's intents or catalog expose it. */
+  readAccessibleResource(projectId: string, key: ResourceKey): Promise<ResourceRecord | null>;
+  readProjection(projectId: string): Promise<ResourceProjectionSnapshot>;
   commitResource(write: ResourceWrite): Promise<MetadataCommitResult>;
   readCatalog(projectId: string, scope: CatalogScope): Promise<ResourceCatalogCheckpoint | null>;
   commitCatalog(input: {
@@ -145,9 +147,9 @@ export interface ResourceMetadataStore {
     next: ResourceCatalogCheckpoint;
     resources: readonly ResourceWrite[];
   }): Promise<MetadataCommitResult>;
-  observeProject(
+  observeProjection(
     projectId: string,
-    listener: (snapshot: ProjectResourceSnapshot) => void,
+    listener: (snapshot: ResourceProjectionSnapshot) => void,
     onError: (error: unknown) => void,
   ): () => void;
   beginClose(): void;

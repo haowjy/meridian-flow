@@ -5,5 +5,6 @@ export * from "./catalog-installation";
 export * from "./catalog-scope";
 export * from "./resource-deletion";
 export * from "./resource-namespace";
+export * from "./resource-projection";
 export * from "./resource-records";
 export * from "./resource-records-policy";

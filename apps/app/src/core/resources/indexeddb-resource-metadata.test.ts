@@ -82,7 +82,7 @@ it("uses a fresh physical database instead of opening the incompatible dormant s
   expect(
     await store.commitResource({ expectedRevision: null, next: resource("new-resource") }),
   ).toBe("committed");
-  expect((await store.readProject("project")).records).toEqual([resource("new-resource")]);
+  expect((await store.readProjection("project")).records).toEqual([resource("new-resource")]);
 });
 
 it("serializes competing revisions without losing or partially publishing the loser", async () => {
@@ -132,7 +132,7 @@ it("keeps catalog entries and cursor unchanged when a resource revision is stale
     }),
   ).toBe("stale");
   expect(await store.readCatalog("project", scope)).toEqual(checkpoint);
-  expect(await store.readProject("project")).toEqual({
+  expect(await store.readProjection("project")).toEqual({
     records: [resource()],
     catalogs: [checkpoint],
   });
@@ -221,8 +221,17 @@ it("shares one account resource while qualifying the User catalog per consuming 
   const requestScope = { kind: "user" as const, userId: "self" };
   expect(await store.readCatalog("project-a", requestScope)).toEqual(first);
   expect(await store.readCatalog("project-b", requestScope)).toEqual(second);
-  expect((await store.readProject("project-a")).records).toEqual([resource()]);
-  expect((await store.readProject("project-b")).records).toEqual([resource()]);
+  expect((await store.readProjection("project-a")).records).toEqual([resource()]);
+  expect((await store.readProjection("project-b")).records).toEqual([resource()]);
+});
+
+it("keeps account-global descriptors out of unrelated project projections", async () => {
+  const store = open();
+  const next = resource();
+  expect(await store.commitResource({ expectedRevision: null, next })).toBe("committed");
+
+  expect(await store.readAccessibleResource("project", { handle: "doc" })).toEqual(next);
+  expect(await store.readAccessibleResource("other-project", { handle: "doc" })).toBeNull();
 });
 
 it("retains submitted request bytes and rejects replacement by a later intention", async () => {
@@ -271,7 +280,7 @@ it("observes committed records across instances and stops admission before drain
   const right = open(account);
   const observed: readonly ResourceRecord[][] = [];
   const errors = vi.fn();
-  const stop = right.observeProject(
+  const stop = right.observeProjection(
     "project",
     ({ records }) => (observed as ResourceRecord[][]).push([...records]),
     errors,
@@ -351,7 +360,7 @@ it("notifies project observers after a catalog-only commit", async () => {
   const store = open();
   const observed: string[] = [];
   const onError = vi.fn();
-  store.observeProject(
+  store.observeProjection(
     "project",
     ({ catalogs }) => {
       for (const catalog of catalogs) observed.push(catalog.cursor);

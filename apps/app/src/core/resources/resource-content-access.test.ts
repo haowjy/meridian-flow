@@ -185,8 +185,8 @@ it("keeps independent leases on one same-browser session", async () => {
   const { access } = openAccess(metadata, createFactory(created));
 
   const [first, second] = await Promise.all([
-    access.open("project-a", key, "editor-tab"),
-    access.open("project-b", key, "editor-tab"),
+    access.open("project", key, "editor-tab-a"),
+    access.open("project", key, "editor-tab-b"),
   ]);
 
   if (first.kind !== "opened" || second.kind !== "opened") throw new Error("Expected both leases");
@@ -196,6 +196,86 @@ it("keeps independent leases on one same-browser session", async () => {
   expect(second.handle.session.getSnapshot().status).toBe("detached");
   second.handle.release();
   expect(second.handle.session.getSnapshot().status).toBe("destroyed");
+});
+
+it("does not expose an account resource outside the requesting project's projection", async () => {
+  const metadata = openMetadata();
+  const record = resource("private");
+  await initialize(record);
+  const key = await install(metadata, record);
+  const { access } = openAccess(metadata);
+
+  await expect(access.open("other-project", key, "editor-tab")).resolves.toEqual({
+    kind: "unavailable",
+    reason: "missing",
+  });
+});
+
+it("shares one User-catalog session across the projects that expose it", async () => {
+  const metadata = openMetadata();
+  const record = resource("user-shared");
+  record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: null };
+  record.intents = [];
+  await initialize(record);
+  const key = await install(metadata, record);
+  const scope = { kind: "user" as const, userId: accountId };
+  const entries = [
+    {
+      kind: "source" as const,
+      entryId: "user-source",
+      scope,
+      scheme: "user" as const,
+      name: "User",
+      uri: "user://",
+    },
+    {
+      kind: "file" as const,
+      entryId: record.resource.identity.documentId,
+      scope,
+      sourceId: "user-source",
+      parentId: "user-source",
+      name: "shared.md",
+      aliases: [],
+      path: ["shared.md"],
+      uri: "user://shared.md" as const,
+      provisionalName: false,
+      editable: true,
+      filetype: "markdown" as const,
+      schemaType: "document" as const,
+    },
+  ] as const;
+  for (const [index, projectId] of ["project-a", "project-b"].entries()) {
+    expect(
+      await metadata.commitCatalog({
+        expectedRevision: null,
+        next: {
+          projectId,
+          scope,
+          revision: 1,
+          generation: "generation",
+          appliedRevision: "1",
+          observedHeadRevision: "1",
+          cursor: `cursor-${index}`,
+          entries,
+          invalidatedEntryIds: [],
+        },
+        resources: [],
+      }),
+    ).toBe("committed");
+  }
+  const created: DocumentSession[] = [];
+  const { access } = openAccess(metadata, createFactory(created));
+
+  const [first, second] = await Promise.all([
+    access.open("project-a", key, "tab-a"),
+    access.open("project-b", key, "tab-b"),
+  ]);
+
+  if (first.kind !== "opened" || second.kind !== "opened") throw new Error("Expected content");
+  expect(first.handle.session).toBe(second.handle.session);
+  expect(created).toHaveLength(1);
+  first.handle.release();
+  second.handle.release();
 });
 
 it("shares persisted changes between independent account content owners", async () => {
@@ -348,15 +428,15 @@ it.each([
   const participant = new AbortController();
   const epoch = new AbortController();
   const { access } = openAccess(metadata, createFactory(), epoch);
-  const native = metadata.readResource.bind(metadata);
+  const native = metadata.readAccessibleResource.bind(metadata);
   let reads = 0;
   let completeValidation!: () => void;
   const validation = new Promise<void>((resolve) => {
     completeValidation = resolve;
   });
-  vi.spyOn(metadata, "readResource").mockImplementation(async (input) => {
+  vi.spyOn(metadata, "readAccessibleResource").mockImplementation(async (projectId, input) => {
     reads++;
-    const result = await native(input);
+    const result = await native(projectId, input);
     if (reads === 2) await validation;
     return result;
   });
@@ -377,12 +457,12 @@ it("releases its lease when final metadata validation fails", async () => {
   const key = await install(metadata, record);
   const created: DocumentSession[] = [];
   const { access } = openAccess(metadata, createFactory(created));
-  const native = metadata.readResource.bind(metadata);
+  const native = metadata.readAccessibleResource.bind(metadata);
   let reads = 0;
-  vi.spyOn(metadata, "readResource").mockImplementation(async (input) => {
+  vi.spyOn(metadata, "readAccessibleResource").mockImplementation(async (projectId, input) => {
     reads++;
     if (reads === 2) throw new Error("validation unavailable");
-    return native(input);
+    return native(projectId, input);
   });
 
   await expect(access.open("project", key, "editor-tab")).rejects.toThrow("validation unavailable");
