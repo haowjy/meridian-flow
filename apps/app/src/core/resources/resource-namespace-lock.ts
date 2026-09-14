@@ -2,10 +2,8 @@
 import type { ResourceNamespaceLock } from "@meridian/resource-replica";
 import { type CrossContextLockManager, nativeLocks } from "@/core/cross-context-locks";
 
-function lockName(accountId: string, projectId: string, handle: string): string {
-  return `meridian:resource:v1:namespace/${[accountId, projectId, handle]
-    .map(encodeURIComponent)
-    .join("/")}`;
+function lockName(accountId: string, handle: string): string {
+  return `meridian:resource:v1:namespace/${[accountId, handle].map(encodeURIComponent).join("/")}`;
 }
 
 export function createResourceNamespaceLock(input: {
@@ -19,11 +17,11 @@ export function createResourceNamespaceLock(input: {
   };
   return Object.freeze({
     accountId: input.accountId,
-    async run<T>(key: { projectId: string; handle: string }, task: () => Promise<T>) {
+    async run<T>(key: { handle: string }, task: () => Promise<T>) {
       requireOpen();
       if (!locks) return { kind: "busy" as const };
       return locks.request(
-        lockName(input.accountId, key.projectId, key.handle),
+        lockName(input.accountId, key.handle),
         { mode: "exclusive", ifAvailable: true },
         async (lock) => {
           if (!lock) return { kind: "busy" as const };

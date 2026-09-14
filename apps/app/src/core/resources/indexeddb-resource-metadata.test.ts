@@ -17,15 +17,18 @@ function open(account = crypto.randomUUID(), versionChanged = vi.fn()) {
 afterEach(async () => {
   vi.restoreAllMocks();
   await Promise.all(stores.splice(0).map((store) => store.finishClose()));
-  for (const account of accounts)
-    await Dexie.delete(`meridian:resource-metadata:v1:${encodeURIComponent(account)}`);
+  for (const account of accounts) {
+    await Promise.all([
+      Dexie.delete(`meridian:resource-metadata:v1:${encodeURIComponent(account)}`),
+      Dexie.delete(`meridian:resource-metadata:v2:${encodeURIComponent(account)}`),
+    ]);
+  }
   accounts.clear();
 });
 
 function resource(handle = "doc", revision = 1): ResourceRecord {
   return {
     resource: {
-      projectId: "project",
       handle,
       revision,
       identity: { documentId: handle, revision: 1 },
@@ -60,6 +63,28 @@ it("preserves a committed reservation across shutdown and isolates identical han
   expect(await open().readResource(next.resource)).toBeNull();
 });
 
+it("uses a fresh physical database instead of opening the incompatible dormant schema", async () => {
+  const account = crypto.randomUUID();
+  accounts.add(account);
+  const legacy = new Dexie(`meridian:resource-metadata:v1:${encodeURIComponent(account)}`);
+  legacy.version(1).stores({
+    resources: "[projectId+handle],projectId",
+    intents: "[projectId+intentId],[projectId+handle]",
+    catalogs: "key,projectId",
+    evidence: "sourceKey",
+    checkpoints: "key",
+  });
+  await legacy.open();
+  await legacy.table("resources").put({ ...resource().resource, projectId: "project" });
+  legacy.close();
+
+  const store = open(account);
+  expect(
+    await store.commitResource({ expectedRevision: null, next: resource("new-resource") }),
+  ).toBe("committed");
+  expect((await store.readProject("project")).records).toEqual([resource("new-resource")]);
+});
+
 it("serializes competing revisions without losing or partially publishing the loser", async () => {
   const account = crypto.randomUUID();
   const left = open(account);
@@ -78,39 +103,11 @@ it("serializes competing revisions without losing or partially publishing the lo
   expect((await left.readResource(a.resource))?.resource.revision).toBe(2);
 });
 
-it("rolls back resource, intent, raw evidence and migration checkpoint on outer abort", async () => {
-  const store = open();
-  const native = Dexie.prototype.transaction;
-  vi.spyOn(Dexie.prototype, "transaction").mockImplementation(function (
-    this: Dexie,
-    ...args: Parameters<typeof native>
-  ) {
-    const callback = args.pop() as () => Promise<unknown>;
-    return Reflect.apply(native, this, [
-      ...args,
-      async () => {
-        await callback();
-        throw new Error("injected outer abort");
-      },
-    ]);
-  });
-  await expect(
-    store.commitMigration({
-      expectedRevision: null,
-      next: { revision: 1, state: "importing" },
-      resources: [{ expectedRevision: null, next: resource() }],
-      evidence: [{ sourceKey: "legacy", raw: "unparseable bytes", status: "recovery" }],
-    }),
-  ).rejects.toThrow("injected outer abort");
-  vi.restoreAllMocks();
-  expect(await store.readResource({ projectId: "project", handle: "doc" })).toBeNull();
-  expect(await store.readMigration()).toEqual({ checkpoint: null, evidence: [] });
-});
-
 it("keeps catalog entries and cursor unchanged when a resource revision is stale", async () => {
   const store = open();
   const scope = { kind: "project" as const, projectId: "project" };
   const checkpoint = {
+    projectId: "project",
     scope,
     revision: 1,
     generation: "generation",
@@ -134,7 +131,98 @@ it("keeps catalog entries and cursor unchanged when a resource revision is stale
       resources: [{ expectedRevision: null, next: resource("doc", 2) }],
     }),
   ).toBe("stale");
-  expect(await store.readCatalog(scope)).toEqual(checkpoint);
+  expect(await store.readCatalog("project", scope)).toEqual(checkpoint);
+  expect(await store.readProject("project")).toEqual({
+    records: [resource()],
+    catalogs: [checkpoint],
+  });
+});
+
+it("rejects duplicate current document identities atomically", async () => {
+  const store = open();
+  expect(await store.commitResource({ expectedRevision: null, next: resource("first") })).toBe(
+    "committed",
+  );
+  const duplicate = resource("second");
+  duplicate.resource.identity = { documentId: "first", revision: 1 };
+
+  expect(await store.commitResource({ expectedRevision: null, next: duplicate })).toBe("stale");
+  expect(await store.readResource({ handle: "second" })).toBeNull();
+});
+
+it("rolls back resource, intent, and checkpoint writes when the outer transaction aborts", async () => {
+  const store = open();
+  const native = Dexie.prototype.transaction;
+  vi.spyOn(Dexie.prototype, "transaction").mockImplementationOnce(function (
+    this: Dexie,
+    ...args: Parameters<typeof native>
+  ) {
+    const callback = args.pop() as () => Promise<unknown>;
+    return Reflect.apply(native, this, [
+      ...args,
+      async () => {
+        await callback();
+        throw new Error("injected outer abort");
+      },
+    ]);
+  });
+  const scope = { kind: "project" as const, projectId: "project" };
+
+  await expect(
+    store.commitCatalog({
+      expectedRevision: null,
+      next: {
+        projectId: "project",
+        scope,
+        revision: 1,
+        generation: "generation",
+        appliedRevision: "1",
+        observedHeadRevision: "1",
+        cursor: "cursor",
+        entries: [],
+        invalidatedEntryIds: [],
+      },
+      resources: [{ expectedRevision: null, next: resource() }],
+    }),
+  ).rejects.toThrow("injected outer abort");
+  vi.restoreAllMocks();
+  expect(await store.readResource({ handle: "doc" })).toBeNull();
+  expect(await store.readCatalog("project", scope)).toBeNull();
+  const internals = store as unknown as { intents: { toArray(): Promise<unknown[]> } };
+  expect(await internals.intents.toArray()).toEqual([]);
+});
+
+it("shares one account resource while qualifying the User catalog per consuming project", async () => {
+  const store = open();
+  const responseScope = { kind: "user" as const, userId: "account-user" };
+  const first = {
+    projectId: "project-a",
+    scope: responseScope,
+    revision: 1,
+    generation: "generation",
+    appliedRevision: "1",
+    observedHeadRevision: "1",
+    cursor: "cursor-a",
+    entries: [],
+    invalidatedEntryIds: [],
+  };
+  expect(
+    await store.commitCatalog({
+      expectedRevision: null,
+      next: first,
+      resources: [{ expectedRevision: null, next: resource() }],
+    }),
+  ).toBe("committed");
+  const second = { ...first, projectId: "project-b", cursor: "cursor-b" };
+  expect(await store.commitCatalog({ expectedRevision: null, next: second, resources: [] })).toBe(
+    "committed",
+  );
+
+  const requestScope = { kind: "user" as const, userId: "self" };
+  expect(await store.readCatalog("project-a", requestScope)).toEqual(first);
+  expect(await store.readCatalog("project-b", requestScope)).toEqual(second);
+  expect((await store.readProject("project-a")).records).toEqual([resource()]);
+  expect((await store.readProject("project-b")).records).toEqual([resource()]);
 });
 
 it("retains submitted request bytes and rejects replacement by a later intention", async () => {
@@ -163,26 +251,18 @@ it("retains submitted request bytes and rejects replacement by a later intention
   expect(await store.readResource(next.resource)).toEqual(next);
 });
 
-it("commits migration evidence and resumes from the stored checkpoint", async () => {
-  const account = crypto.randomUUID();
-  const store = open(account);
-  const batch = {
-    expectedRevision: null,
-    next: { revision: 1, state: "importing" as const },
-    evidence: [{ sourceKey: "broken-record", raw: "{not-json", status: "recovery" as const }],
-    resources: [{ expectedRevision: null, next: resource() }],
-  };
-  await store.commitMigration(batch);
-  await store.finishClose();
-  const restored = open(account);
-  expect(await restored.readMigration()).toEqual({
-    checkpoint: batch.next,
-    evidence: batch.evidence,
-  });
-  expect(await restored.commitMigration(batch)).toBe("stale");
-  expect(await restored.readResource(batch.resources[0].next.resource)).toEqual(
-    batch.resources[0].next,
+it("rejects rewriting the project authority of recorded namespace work", async () => {
+  const store = open();
+  const next = resource();
+  expect(await store.commitResource({ expectedRevision: null, next })).toBe("committed");
+  const replacement = structuredClone(next);
+  replacement.resource.revision = 2;
+  replacement.intents[0].projectId = "other-project";
+
+  await expect(store.commitResource({ expectedRevision: 1, next: replacement })).rejects.toThrow(
+    "cannot be replaced",
   );
+  expect(await store.readResource(next.resource)).toEqual(next);
 });
 
 it("observes committed records across instances and stops admission before draining", async () => {
@@ -267,43 +347,6 @@ it("rejects retroactive intention order and settled-work replay", async () => {
   );
 });
 
-it("preserves raw migration evidence and never restarts a completed import", async () => {
-  const store = open();
-  const evidence = [{ sourceKey: "legacy", raw: "ORIGINAL", status: "recovery" as const }];
-  await store.commitMigration({
-    expectedRevision: null,
-    next: { revision: 1, state: "importing" },
-    resources: [],
-    evidence,
-  });
-  await expect(
-    store.commitMigration({
-      expectedRevision: 1,
-      next: { revision: 2, state: "importing" },
-      resources: [],
-      evidence: [{ ...evidence[0], raw: "REPLACED" }],
-    }),
-  ).rejects.toThrow("cannot be replaced");
-  await store.commitMigration({
-    expectedRevision: 1,
-    next: { revision: 2, state: "complete" },
-    resources: [],
-    evidence: [],
-  });
-  await expect(
-    store.commitMigration({
-      expectedRevision: 2,
-      next: { revision: 3, state: "importing" },
-      resources: [],
-      evidence: [],
-    }),
-  ).rejects.toThrow("cannot restart");
-  expect(await store.readMigration()).toEqual({
-    checkpoint: { revision: 2, state: "complete" },
-    evidence,
-  });
-});
-
 it("notifies project observers after a catalog-only commit", async () => {
   const store = open();
   const observed: string[] = [];
@@ -318,6 +361,7 @@ it("notifies project observers after a catalog-only commit", async () => {
   await store.commitCatalog({
     expectedRevision: null,
     next: {
+      projectId: "project",
       scope: { kind: "project", projectId: "project" },
       revision: 1,
       generation: "g",
@@ -331,53 +375,4 @@ it("notifies project observers after a catalog-only commit", async () => {
   });
   await vi.waitFor(() => expect(observed).toContain("new-catalog"));
   expect(onError).not.toHaveBeenCalled();
-});
-
-it("resolves captured recovery atomically without reopening capture or replacing evidence", async () => {
-  const store = open();
-  const raw = "preserved legacy bytes";
-  await store.commitMigration({
-    expectedRevision: null,
-    next: { revision: 1, state: "complete" },
-    resources: [],
-    evidence: [{ sourceKey: "legacy", raw, status: "recovery" }],
-  });
-  const command = {
-    sourceKey: "legacy",
-    expectedRaw: raw,
-    resource: { expectedRevision: null, next: resource() },
-  };
-  expect(await store.resolveMigrationEvidence({ ...command, expectedRaw: "different" })).toBe(
-    "stale",
-  );
-  expect(await store.readResource(command.resource.next.resource)).toBeNull();
-  const native = Dexie.prototype.transaction;
-  vi.spyOn(Dexie.prototype, "transaction").mockImplementationOnce(function (
-    this: Dexie,
-    ...args: Parameters<typeof native>
-  ) {
-    const callback = args.pop() as () => Promise<unknown>;
-    return Reflect.apply(native, this, [
-      ...args,
-      async () => {
-        await callback();
-        throw new Error("resolution abort");
-      },
-    ]);
-  });
-  await expect(store.resolveMigrationEvidence(command)).rejects.toThrow("resolution abort");
-  expect(await store.readResource(command.resource.next.resource)).toBeNull();
-  expect((await store.readMigration()).evidence[0]?.status).toBe("recovery");
-  expect(
-    (
-      await Promise.all([
-        store.resolveMigrationEvidence(command),
-        store.resolveMigrationEvidence(command),
-      ])
-    ).sort(),
-  ).toEqual(["committed", "stale"]);
-  expect(await store.readMigration()).toEqual({
-    checkpoint: { revision: 1, state: "complete" },
-    evidence: [{ sourceKey: "legacy", raw, status: "imported" }],
-  });
 });

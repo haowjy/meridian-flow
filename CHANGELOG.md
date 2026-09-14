@@ -5,6 +5,10 @@
 
 ## [Unreleased]
 
+- Unify resource identity across projects, persist project-qualified catalog projections, and serialize atomic catalog acquisition (not activated).
+
+- Remove unused legacy resource migration compatibility code; no production data requires translation.
+
 - Prove exact local document content before exposing it, while keeping remote admission off the local-open path (not activated).
 
 - Persist namespace requests before dispatch and recover recorded outcomes after restart (not activated).
@@ -12,18 +16,6 @@
 - Add account-fenced document namespace transport for durable receipt replay.
 
 - Retain local writing when deleting never-submitted resources; cancel queued work without a fabricated server tombstone.
-
-- Recover legacy terminal state from atomic room and purge evidence.
-
-- Preserve local cache identity and pending writer intentions during legacy recovery.
-
-- Expose account-fenced resource recovery snapshots without opening another authority owner.
-
-- Keep unresolved legacy resources visible to project observers without granting content or namespace authority (not activated).
-
-- Separate local legacy capture from per-resource recovery (not activated).
-
-- Preserve legacy resource bytes and exact cache identity through restartable import (not activated).
 
 - Add transactional resource-journal storage foundation (not activated).
 - Keep unapplied document deletion retryable while account removal is unavailable.

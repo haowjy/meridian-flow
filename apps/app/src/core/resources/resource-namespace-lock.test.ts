@@ -30,13 +30,13 @@ it("allows only one concurrent resource dispatch", async () => {
     locks: new FaithfulLocks(),
   });
   const release = deferred<void>();
-  const first = lock.run({ projectId: "project", handle: "resource" }, async () => {
+  const first = lock.run({ handle: "resource" }, async () => {
     await release.promise;
     return "done";
   });
-  await expect(
-    lock.run({ projectId: "project", handle: "resource" }, async () => "duplicate"),
-  ).resolves.toEqual({ kind: "busy" });
+  await expect(lock.run({ handle: "resource" }, async () => "duplicate")).resolves.toEqual({
+    kind: "busy",
+  });
   release.resolve();
   await expect(first).resolves.toEqual({ kind: "acquired", value: "done" });
 });
@@ -49,12 +49,8 @@ it("blocks unavailable native locks and account-close admission", async () => {
     locks: null,
   });
   const task = vi.fn(async () => "unsafe");
-  await expect(
-    unavailable.run({ projectId: "project", handle: "resource" }, task),
-  ).resolves.toEqual({ kind: "busy" });
+  await expect(unavailable.run({ handle: "resource" }, task)).resolves.toEqual({ kind: "busy" });
   expect(task).not.toHaveBeenCalled();
   epoch.abort();
-  await expect(unavailable.run({ projectId: "project", handle: "resource" }, task)).rejects.toThrow(
-    "closing",
-  );
+  await expect(unavailable.run({ handle: "resource" }, task)).rejects.toThrow("closing");
 });

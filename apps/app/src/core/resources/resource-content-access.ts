@@ -13,7 +13,6 @@ export type ResourceContentUnavailableReason =
   | "unacquired"
   | "uninitialized"
   | "schema-mismatch"
-  | "recovering"
   | "terminal"
   | "deleted"
   | "changed";
@@ -43,15 +42,13 @@ type ContentEntry = {
 };
 
 function resourceKey(key: ResourceKey): string {
-  return [key.projectId, key.handle].map(encodeURIComponent).join(":");
+  return encodeURIComponent(key.handle);
 }
 
 function localDisposition(record: ResourceRecord | null): ResourceContentUnavailableReason | null {
   if (!record) return "missing";
   if (record.intents.some((intent) => intent.state === "settled-locally")) return "deleted";
   if (record.resource.lifecycle.kind === "terminal") return "terminal";
-  if (record.resource.lifecycle.kind === "recovering" || record.resource.recovery)
-    return "recovering";
   if (record.resource.content.kind === "unacquired") return "unacquired";
   if (
     record.resource.content.schema !== null &&
@@ -96,15 +93,17 @@ export class ResourceContentAccess {
   }
 
   open(
+    projectId: string,
     key: ResourceKey,
     participantId: string,
     signal?: AbortSignal,
   ): Promise<ResourceContentOpenResult> {
     if (participantId.length === 0) throw new Error("Resource content participant is required");
-    return this.track(this.openTracked(key, participantId, signal));
+    return this.track(this.openTracked(projectId, key, participantId, signal));
   }
 
   private async openTracked(
+    projectId: string,
     key: ResourceKey,
     participantId: string,
     signal?: AbortSignal,
@@ -116,7 +115,7 @@ export class ResourceContentAccess {
     if (!entry) {
       let opening = this.openings.get(id);
       if (!opening) {
-        opening = this.createEntry(key);
+        opening = this.createEntry(projectId, key);
         this.openings.set(id, opening);
         void opening.finally(() => this.openings.delete(id)).catch(() => undefined);
       }
@@ -174,7 +173,10 @@ export class ResourceContentAccess {
     };
   }
 
-  private async createEntry(key: ResourceKey): Promise<ContentEntry | ResourceContentOpenResult> {
+  private async createEntry(
+    projectId: string,
+    key: ResourceKey,
+  ): Promise<ContentEntry | ResourceContentOpenResult> {
     const id = resourceKey(key);
     await this.sessions.whenAuthorityReady();
     if (this.state !== "open" || this.epoch.aborted) return { kind: "cancelled" };
@@ -187,7 +189,7 @@ export class ResourceContentAccess {
     if (content.kind !== "exact") return { kind: "unavailable", reason: "unacquired" };
     const session = this.sessions.createDetached({
       accountId: this.accountId,
-      projectId: record.resource.projectId,
+      projectId,
       documentId: record.resource.identity.documentId,
       persistenceKey: content.databaseName,
       fresh: content.initialization === "reserved",
