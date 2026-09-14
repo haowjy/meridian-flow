@@ -1,6 +1,6 @@
 # Current project document architecture
 
-This describes the implemented project document system on this branch, including its remaining split ownership. It covers Editor navigation, browser persistence and backend synchronization, not unrelated billing or inference internals. The resource-replica package currently owns a pure catalog reducer, not a durable resource journal. Do not implement against the target redesign as though it already exists.
+This describes the implemented project document system on this branch, including its remaining split ownership. It covers Editor navigation, browser persistence and backend synchronization, not unrelated billing or inference internals. The resource-replica package owns catalog policy and an inactive durable resource-journal contract. The Dexie adapter/importer is not yet constructed by the production account owner; existing lineage/reconciler ownership remains live. Do not implement against the target redesign as though it already exists.
 
 ## Ownership map
 

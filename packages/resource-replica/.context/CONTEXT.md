@@ -16,6 +16,13 @@ must settle before another submission; settled intentions cannot restart.
 Operation outcomes must match the submitted operation and expected identity.
 Historical receipts do not establish the current canonical location.
 
+Recovery descriptors expose known identity without granting content access or
+namespace execution. They carry source evidence, no canonical location, no
+intentions and no actionable obligations. Nonterminal placeholders are recovering;
+terminal placeholders remain terminal so resolution cannot revive them. Resolution
+replaces only the matching source and expected resource revision. Local capture
+completion is distinct from per-resource recovery completion.
+
 The storage foundation is not the active resource owner. Import, reconciliation,
 content access and caller cutover must replace the old lineage/reconciler together;
 there must never be two production metadata writers.

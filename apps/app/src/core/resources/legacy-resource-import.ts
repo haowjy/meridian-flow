@@ -149,6 +149,34 @@ function importedRecord(
   return { resource, intents };
 }
 
+/** Preserve discoverability without granting content, namespace or cleanup authority. */
+function recoveryRecord(record: LegacyResourceRecord, sourceKey: string): ResourceRecord {
+  return {
+    resource: {
+      projectId: record.ref.projectId,
+      handle: record.ref.lineageHandle,
+      revision: 1,
+      identity:
+        record.kind === "terminal"
+          ? { documentId: record.documentId, revision: 1 }
+          : { documentId: record.active.documentId, revision: record.active.identityRevision },
+      content: { kind: "recovery", sourceKey },
+      canonical: null,
+      lifecycle:
+        record.kind === "terminal"
+          ? {
+              kind: "terminal",
+              generation: record.terminalGeneration,
+              transitionId: record.transitionId,
+            }
+          : { kind: "recovering" },
+      aliases: {},
+      obligations: {},
+    },
+    intents: [],
+  };
+}
+
 /** Handoff stays held by the caller across the snapshot, this import and new-owner activation. */
 export async function importLegacyResources(input: {
   accountId: string;
@@ -185,12 +213,13 @@ export async function importLegacyResources(input: {
               : "Unsupported or malformed legacy record",
           }),
     };
+    const resource = imported ?? (legacy ? recoveryRecord(legacy, source.sourceKey) : null);
     const expectedRevision = progress.checkpoint?.revision ?? null;
     const result = await input.metadata.commitMigration({
       expectedRevision,
       next: { revision: (expectedRevision ?? 0) + 1, state: "importing" },
       evidence: [evidence],
-      resources: imported ? [{ expectedRevision: null, next: imported }] : [],
+      resources: resource ? [{ expectedRevision: null, next: resource }] : [],
     });
     if (result === "stale") throw new Error("Legacy migration ownership changed");
     progress = await input.metadata.readMigration();
@@ -223,13 +252,25 @@ export async function resolveLegacyResources(input: {
     const legacy = decodeLegacyResource(input.accountId, evidence);
     if (!legacy) continue;
     const documentId = legacy.kind === "terminal" ? legacy.documentId : legacy.active.documentId;
+    const current = await input.metadata.readResource({
+      projectId: legacy.ref.projectId,
+      handle: legacy.ref.lineageHandle,
+    });
+    if (
+      current?.resource.content.kind !== "recovery" ||
+      current.resource.content.sourceKey !== evidence.sourceKey ||
+      (current.resource.lifecycle.kind !== "recovering" &&
+        current.resource.lifecycle.kind !== "terminal")
+    )
+      continue;
     const imported = importedRecord(legacy, await input.authority.readRoom(documentId));
     if (!imported) continue;
-    // A concurrent resolver may already have committed this exact source.
+    imported.resource.revision = current.resource.revision + 1;
+    // A competing command may have changed this resource after the authority lookup.
     await input.metadata.resolveMigrationEvidence({
       sourceKey: evidence.sourceKey,
       expectedRaw: evidence.raw,
-      resource: { expectedRevision: null, next: imported },
+      resource: { expectedRevision: current.resource.revision, next: imported },
     });
   }
 }

@@ -149,7 +149,12 @@ it("preserves legacy settlements for resolution without fabricating attempt or c
   if (record.kind !== "local") throw new Error("fixture");
   record.work.createSettlement = { kind: "confirmation-required" };
   await importLegacyResources({ accountId, source: [bytes(record)], authority, metadata });
-  expect(await metadata.readResource({ projectId: "project", handle: "lineage" })).toBeNull();
+  expect(
+    (await metadata.readResource({ projectId: "project", handle: "lineage" }))?.resource,
+  ).toMatchObject({
+    content: { kind: "recovery", sourceKey: bytes(record).sourceKey },
+    lifecycle: { kind: "recovering" },
+  });
   expect((await metadata.readMigration()).checkpoint?.state).toBe("complete");
   expect((await metadata.readMigration()).evidence[0]).toMatchObject({
     raw: bytes(record).raw,
@@ -181,6 +186,9 @@ it("revisits recovery evidence when authority becomes bindable without replacing
     }),
   };
   await resolveLegacyResources({ accountId, authority: ready, metadata });
+  expect(
+    (await metadata.readResource({ projectId: "project", handle: "lineage" }))?.resource.revision,
+  ).toBe(2);
   expect((await metadata.readMigration()).checkpoint?.state).toBe("complete");
   expect((await metadata.readMigration()).evidence).toEqual([{ ...source[0], status: "imported" }]);
 });
@@ -227,7 +235,24 @@ it("does not infer terminal cleanup completion from missing or conflicting room 
     }),
   };
   await resolveLegacyResources({ accountId, authority: conflicting, metadata });
-  expect(await metadata.readResource({ projectId: "project", handle: "terminal" })).toBeNull();
+  expect(
+    (await metadata.readResource({ projectId: "project", handle: "terminal" }))?.resource,
+  ).toMatchObject({
+    lifecycle: { kind: "terminal", generation: "2" },
+    content: { kind: "recovery" },
+    obligations: {},
+  });
+  const placeholder = await metadata.readResource({ projectId: "project", handle: "terminal" });
+  if (!placeholder) throw new Error("fixture missing");
+  await expect(
+    metadata.commitResource({
+      expectedRevision: 1,
+      next: {
+        ...placeholder,
+        resource: { ...placeholder.resource, revision: 2, lifecycle: { kind: "recovering" } },
+      },
+    }),
+  ).rejects.toThrow("Terminal resources cannot be revived");
   const matching = {
     accountId,
     readRoom: async (documentId: string): Promise<RoomOrderRecord> => ({
@@ -263,4 +288,82 @@ it("rejects a different destination account before reading or writing migration 
     }),
   ).rejects.toThrow("Legacy import account mismatch");
   expect(read).not.toHaveBeenCalled();
+});
+
+it("publishes recovery placeholders and preserves them when resolution loses a revision race", async () => {
+  const metadata = open();
+  const original = local();
+  if (original.kind !== "local") throw new Error("fixture");
+  const { persistence: _persistence, ...base } = original;
+  const adopted: LegacyResourceRecord = { ...base, kind: "adopted", adoptionRevision: 2 };
+  const observed = vi.fn();
+  const stop = metadata.observeProject("project", observed, (error) => {
+    throw error;
+  });
+  try {
+    await importLegacyResources({ accountId, source: [bytes(adopted)], authority, metadata });
+    await vi.waitFor(() =>
+      expect(observed).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          records: [
+            expect.objectContaining({
+              resource: expect.objectContaining({ lifecycle: { kind: "recovering" } }),
+            }),
+          ],
+        }),
+      ),
+    );
+    const key = { projectId: "project", handle: "lineage" };
+    const readRoom = async (documentId: string): Promise<RoomOrderRecord> => {
+      const current = await metadata.readResource(key);
+      if (!current) throw new Error("fixture missing");
+      await metadata.commitResource({
+        expectedRevision: current.resource.revision,
+        next: {
+          ...current,
+          resource: { ...current.resource, revision: current.resource.revision + 1 },
+        },
+      });
+      return {
+        documentId,
+        persistence: {
+          phase: "bindable",
+          generation: "1",
+          exactDatabaseName: "original",
+          originLineageHandle: "lineage",
+        },
+        documentAdmittedThrough: "1",
+        pendingDrain: null,
+      };
+    };
+    await resolveLegacyResources({ accountId, authority: { accountId, readRoom }, metadata });
+    expect((await metadata.readResource(key))?.resource).toMatchObject({
+      revision: 2,
+      lifecycle: { kind: "recovering" },
+    });
+    expect((await metadata.readMigration()).evidence[0]?.status).toBe("recovery");
+    const current = await metadata.readResource(key);
+    if (!current) throw new Error("fixture missing");
+    await metadata.commitResource({
+      expectedRevision: 2,
+      next: {
+        ...current,
+        resource: {
+          ...current.resource,
+          revision: 3,
+          content: { kind: "recovery", sourceKey: "different-source" },
+        },
+      },
+    });
+    const untouchedAuthority = vi.fn(readRoom);
+    await resolveLegacyResources({
+      accountId,
+      authority: { accountId, readRoom: untouchedAuthority },
+      metadata,
+    });
+    expect(untouchedAuthority).not.toHaveBeenCalled();
+    expect((await metadata.readMigration()).evidence[0]?.status).toBe("recovery");
+  } finally {
+    stop();
+  }
 });
