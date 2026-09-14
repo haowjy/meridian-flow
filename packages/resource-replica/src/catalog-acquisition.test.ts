@@ -2,6 +2,7 @@
 import type { CatalogChanges, CatalogScope, CatalogSnapshot } from "@meridian/contracts/protocol";
 import { expect, it, vi } from "vitest";
 import { ResourceCatalogAcquisition, type ResourceCatalogTransport } from "./catalog-acquisition";
+import { catalogProjectionKey } from "./catalog-scope";
 import type {
   ProjectResourceSnapshot,
   ResourceCatalogCheckpoint,
@@ -66,7 +67,7 @@ function resource(path: string, revision: number, refresh = false): ResourceReco
 }
 
 function catalogKey(project: string, catalogScope: CatalogScope): string {
-  return JSON.stringify([project, catalogScope.kind]);
+  return catalogProjectionKey(project, catalogScope);
 }
 
 class MemoryMetadata implements ResourceMetadataStore {
@@ -109,6 +110,11 @@ class MemoryMetadata implements ResourceMetadataStore {
       const record = this.records.get(write.next.resource.handle);
       if ((record?.resource.revision ?? null) !== write.expectedRevision) return "stale" as const;
     }
+    const projected = new Map(this.records);
+    for (const write of input.resources)
+      projected.set(write.next.resource.handle, structuredClone(write.next));
+    const identities = [...projected.values()].map(({ resource }) => resource.identity.documentId);
+    if (new Set(identities).size !== identities.length) return "stale" as const;
     for (const write of input.resources)
       this.records.set(write.next.resource.handle, structuredClone(write.next));
     this.catalogs.set(key, structuredClone(input.next));
@@ -179,4 +185,95 @@ it("reuses a captured response after resource CAS loss without regressing newer 
   expect(metadata.records.get("resource")?.resource.canonical?.path).toBe("/newer.md");
   expect(catalogTransport.snapshot).toHaveBeenCalledTimes(1);
   expect(metadata.catalogCommits).toBe(1);
+});
+
+it("rejects a User catalog response for another account", async () => {
+  const metadata = new MemoryMetadata();
+  const userScope = { kind: "user", userId: "self" } as const;
+  const acquisition = new ResourceCatalogAcquisition(
+    "account",
+    metadata,
+    transport({
+      snapshot: vi.fn(async () => ({
+        scope: { kind: "user" as const, userId: "intruder" },
+        generation: "generation",
+        headRevision: "0",
+        cursor: "cursor",
+        entries: [],
+      })),
+    }),
+  );
+
+  await expect(acquisition.acquire(projectId, userScope)).rejects.toThrow("scope mismatch");
+  expect(metadata.catalogCommits).toBe(0);
+});
+
+it.each([
+  [{ kind: "project", projectId: "other" } as const],
+  [{ kind: "none", projectId: "other" } as const],
+  [{ kind: "work", projectId, workId: "other" } as const],
+])("rejects an initial snapshot for a different requested scope", async (responseScope) => {
+  const metadata = new MemoryMetadata();
+  const requested = { kind: "work", projectId, workId: "requested" } as const;
+  const acquisition = new ResourceCatalogAcquisition(
+    "account",
+    metadata,
+    transport({
+      snapshot: vi.fn(async () => ({
+        scope: responseScope,
+        generation: "generation",
+        headRevision: "0",
+        cursor: "cursor",
+        entries: [],
+      })),
+    }),
+  );
+
+  await expect(acquisition.acquire(projectId, requested)).rejects.toThrow("scope mismatch");
+  expect(metadata.catalogCommits).toBe(0);
+});
+
+it("rejects a malformed request before dispatch", async () => {
+  const catalogTransport = transport();
+  const acquisition = new ResourceCatalogAcquisition(
+    "account",
+    new MemoryMetadata(),
+    catalogTransport,
+  );
+
+  await expect(
+    acquisition.acquire(projectId, { kind: "project", projectId: "other" }),
+  ).rejects.toThrow("request scope mismatch");
+  await expect(acquisition.acquire(projectId, { kind: "user", userId: "account" })).rejects.toThrow(
+    "request scope mismatch",
+  );
+  expect(catalogTransport.snapshot).not.toHaveBeenCalled();
+});
+
+it("re-reads account resources after HTTP before discovering document identity", async () => {
+  const metadata = new MemoryMetadata();
+  let resolveSnapshot: (value: CatalogSnapshot) => void = () => undefined;
+  const catalogTransport = transport({
+    snapshot: vi.fn(
+      () =>
+        new Promise<CatalogSnapshot>((resolve) => {
+          resolveSnapshot = resolve;
+        }),
+    ),
+  });
+  const acquisition = new ResourceCatalogAcquisition("account", metadata, catalogTransport);
+
+  const pending = acquisition.acquire(projectId, scope);
+  await vi.waitFor(() => expect(catalogTransport.snapshot).toHaveBeenCalledOnce());
+  metadata.records.set("created-during-request", {
+    ...resource("local.md", 1),
+    resource: { ...resource("local.md", 1).resource, handle: "created-during-request" },
+  });
+  resolveSnapshot(snapshot());
+  await pending;
+
+  expect(metadata.records.has("catalog:document")).toBe(false);
+  expect(metadata.records.get("created-during-request")?.resource.identity.documentId).toBe(
+    "document",
+  );
 });

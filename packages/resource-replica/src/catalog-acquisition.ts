@@ -6,6 +6,12 @@ import {
   catalogViewFromCheckpoint,
   planCatalogInstallation,
 } from "./catalog-installation";
+import {
+  catalogProjectionKey,
+  catalogRequestBelongsToProject,
+  catalogResponseMatchesRequest,
+  sameCatalogProjectionScope,
+} from "./catalog-scope";
 import type {
   ProjectResourceSnapshot,
   ResourceCatalogCheckpoint,
@@ -23,27 +29,6 @@ type AcquisitionState = {
   inFlight: Promise<CatalogCacheView> | null;
 };
 
-function requestKey(projectId: string, scope: CatalogScope): string {
-  switch (scope.kind) {
-    case "user":
-      return JSON.stringify([projectId, scope.kind]);
-    case "work":
-      return JSON.stringify([projectId, scope.kind, scope.projectId, scope.workId]);
-    default:
-      return JSON.stringify([projectId, scope.kind, scope.projectId]);
-  }
-}
-
-function sameRequestedScope(left: CatalogScope, right: CatalogScope): boolean {
-  if (left.kind !== right.kind) return false;
-  if (left.kind === "user") return true;
-  if (left.kind === "work")
-    return (
-      right.kind === "work" && left.projectId === right.projectId && left.workId === right.workId
-    );
-  return right.kind === left.kind && left.projectId === right.projectId;
-}
-
 function checkpointFor(
   projectId: string,
   scope: CatalogScope,
@@ -52,7 +37,7 @@ function checkpointFor(
   return (
     snapshot.catalogs.find(
       (checkpoint) =>
-        checkpoint.projectId === projectId && sameRequestedScope(checkpoint.scope, scope),
+        checkpoint.projectId === projectId && sameCatalogProjectionScope(checkpoint.scope, scope),
     ) ?? null
   );
 }
@@ -78,14 +63,18 @@ function checkpointMatchesView(
   checkpoint: ResourceCatalogCheckpoint | null,
   view: CatalogCacheView,
 ): boolean {
+  const entries = [...view.entries.values()].sort((left, right) =>
+    left.entryId.localeCompare(right.entryId),
+  );
+  const invalidatedEntryIds = [...view.invalidatedEntryIds].sort();
   return (
     checkpoint !== null &&
     checkpoint.generation === view.generation &&
     checkpoint.appliedRevision === view.appliedRevision &&
     checkpoint.observedHeadRevision === view.observedHeadRevision &&
     checkpoint.cursor === view.cursor &&
-    JSON.stringify(checkpoint.entries) === JSON.stringify([...view.entries.values()]) &&
-    JSON.stringify(checkpoint.invalidatedEntryIds) === JSON.stringify([...view.invalidatedEntryIds])
+    JSON.stringify(checkpoint.entries) === JSON.stringify(entries) &&
+    JSON.stringify(checkpoint.invalidatedEntryIds) === JSON.stringify(invalidatedEntryIds)
   );
 }
 
@@ -106,7 +95,7 @@ export class ResourceCatalogAcquisition {
   }
 
   private state(projectId: string, scope: CatalogScope): AcquisitionState {
-    const key = requestKey(projectId, scope);
+    const key = catalogProjectionKey(projectId, scope);
     let state = this.states.get(key);
     if (!state) {
       state = { hintedHighWater: 0n, inFlight: null };
@@ -117,6 +106,11 @@ export class ResourceCatalogAcquisition {
 
   private assertCurrent(epoch: number): void {
     if (this.closing || epoch !== this.epoch) throw new Error("Resource catalog is closing");
+  }
+
+  private assertResponseScope(requested: CatalogScope, received: CatalogScope): void {
+    if (!catalogResponseMatchesRequest(this.accountId, requested, received))
+      throw new Error("Resource catalog response scope mismatch");
   }
 
   private async install(
@@ -157,18 +151,22 @@ export class ResourceCatalogAcquisition {
     projectId: string,
     scope: CatalogScope,
     epoch: number,
+    observedBefore?: ProjectResourceSnapshot,
   ): Promise<{ view: CatalogCacheView; committed: boolean }> {
-    const before = await this.metadata.readProject(projectId);
+    const before = observedBefore ?? (await this.metadata.readProject(projectId));
     this.assertCurrent(epoch);
     const previous = checkpointFor(projectId, scope, before);
     const fence = observationFence(before);
     const response = await this.transport.snapshot(projectId, scope);
     this.assertCurrent(epoch);
+    this.assertResponseScope(scope, response.scope);
     const view = catalogViewFromSnapshot(response);
+    const current = await this.metadata.readProject(projectId);
+    this.assertCurrent(epoch);
     return {
       view,
       committed:
-        (await this.install(projectId, before, previous, view, fence, epoch)) === "committed",
+        (await this.install(projectId, current, previous, view, fence, epoch)) === "committed",
     };
   }
 
@@ -183,7 +181,7 @@ export class ResourceCatalogAcquisition {
       this.assertCurrent(epoch);
       const previous = checkpointFor(projectId, scope, before);
       if (!previous) {
-        const installed = await this.requestSnapshot(projectId, scope, epoch);
+        const installed = await this.requestSnapshot(projectId, scope, epoch, before);
         if (!installed.committed) continue;
         if ((revision(installed.view.appliedRevision) ?? 0n) >= state.hintedHighWater)
           return installed.view;
@@ -194,8 +192,9 @@ export class ResourceCatalogAcquisition {
       const fence = observationFence(before);
       const changes = await this.transport.changes(projectId, scope, current.cursor);
       this.assertCurrent(epoch);
+      this.assertResponseScope(scope, changes.scope);
       if (changes.kind === "reset-required") {
-        const installed = await this.requestSnapshot(projectId, scope, epoch);
+        const installed = await this.requestSnapshot(projectId, scope, epoch, before);
         if (!installed.committed) continue;
         if ((revision(installed.view.appliedRevision) ?? 0n) >= state.hintedHighWater)
           return installed.view;
@@ -203,7 +202,7 @@ export class ResourceCatalogAcquisition {
       }
       const next = applyCatalogChanges(current, changes);
       if (!next) {
-        const installed = await this.requestSnapshot(projectId, scope, epoch);
+        const installed = await this.requestSnapshot(projectId, scope, epoch, before);
         if (!installed.committed) continue;
         if ((revision(installed.view.appliedRevision) ?? 0n) >= state.hintedHighWater)
           return installed.view;
@@ -221,6 +220,8 @@ export class ResourceCatalogAcquisition {
 
   acquire(projectId: string, scope: CatalogScope): Promise<CatalogCacheView> {
     if (this.closing) return Promise.reject(new Error("Resource catalog is closing"));
+    if (!catalogRequestBelongsToProject(projectId, scope))
+      return Promise.reject(new Error("Resource catalog request scope mismatch"));
     const state = this.state(projectId, scope);
     if (state.inFlight) return state.inFlight;
     const epoch = this.epoch;

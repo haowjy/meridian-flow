@@ -17,8 +17,12 @@ function open(account = crypto.randomUUID(), versionChanged = vi.fn()) {
 afterEach(async () => {
   vi.restoreAllMocks();
   await Promise.all(stores.splice(0).map((store) => store.finishClose()));
-  for (const account of accounts)
-    await Dexie.delete(`meridian:resource-metadata:v1:${encodeURIComponent(account)}`);
+  for (const account of accounts) {
+    await Promise.all([
+      Dexie.delete(`meridian:resource-metadata:v1:${encodeURIComponent(account)}`),
+      Dexie.delete(`meridian:resource-metadata:v2:${encodeURIComponent(account)}`),
+    ]);
+  }
   accounts.clear();
 });
 
@@ -57,6 +61,28 @@ it("preserves a committed reservation across shutdown and isolates identical han
   await first.finishClose();
   expect(await open(account).readResource(next.resource)).toEqual(next);
   expect(await open().readResource(next.resource)).toBeNull();
+});
+
+it("uses a fresh physical database instead of opening the incompatible dormant schema", async () => {
+  const account = crypto.randomUUID();
+  accounts.add(account);
+  const legacy = new Dexie(`meridian:resource-metadata:v1:${encodeURIComponent(account)}`);
+  legacy.version(1).stores({
+    resources: "[projectId+handle],projectId",
+    intents: "[projectId+intentId],[projectId+handle]",
+    catalogs: "key,projectId",
+    evidence: "sourceKey",
+    checkpoints: "key",
+  });
+  await legacy.open();
+  await legacy.table("resources").put({ ...resource().resource, projectId: "project" });
+  legacy.close();
+
+  const store = open(account);
+  expect(
+    await store.commitResource({ expectedRevision: null, next: resource("new-resource") }),
+  ).toBe("committed");
+  expect((await store.readProject("project")).records).toEqual([resource("new-resource")]);
 });
 
 it("serializes competing revisions without losing or partially publishing the loser", async () => {
@@ -110,6 +136,47 @@ it("keeps catalog entries and cursor unchanged when a resource revision is stale
     records: [resource()],
     catalogs: [checkpoint],
   });
+});
+
+it("rejects duplicate current document identities atomically", async () => {
+  const store = open();
+  expect(await store.commitResource({ expectedRevision: null, next: resource("first") })).toBe(
+    "committed",
+  );
+  const duplicate = resource("second");
+  duplicate.resource.identity = { documentId: "first", revision: 1 };
+
+  expect(await store.commitResource({ expectedRevision: null, next: duplicate })).toBe("stale");
+  expect(await store.readResource({ handle: "second" })).toBeNull();
+});
+
+it("rolls back resource, intent, and checkpoint writes when the outer transaction aborts", async () => {
+  const store = open();
+  const internals = store as unknown as {
+    intents: { bulkPut(records: readonly unknown[]): Promise<unknown> };
+  };
+  vi.spyOn(internals.intents, "bulkPut").mockRejectedValueOnce(new Error("injected abort"));
+  const scope = { kind: "project" as const, projectId: "project" };
+
+  await expect(
+    store.commitCatalog({
+      expectedRevision: null,
+      next: {
+        projectId: "project",
+        scope,
+        revision: 1,
+        generation: "generation",
+        appliedRevision: "1",
+        observedHeadRevision: "1",
+        cursor: "cursor",
+        entries: [],
+        invalidatedEntryIds: [],
+      },
+      resources: [{ expectedRevision: null, next: resource() }],
+    }),
+  ).rejects.toThrow("injected abort");
+  expect(await store.readResource({ handle: "doc" })).toBeNull();
+  expect(await store.readCatalog("project", scope)).toBeNull();
 });
 
 it("shares one account resource while qualifying the User catalog per consuming project", async () => {
@@ -167,6 +234,20 @@ it("retains submitted request bytes and rejects replacement by a later intention
   replacement.intents[0].attempts[0].request = { kind: "create", body: { documentId: "other" } };
   await expect(store.commitResource({ expectedRevision: 1, next: replacement })).rejects.toThrow(
     "Submitted namespace request cannot be replaced",
+  );
+  expect(await store.readResource(next.resource)).toEqual(next);
+});
+
+it("rejects rewriting the project authority of recorded namespace work", async () => {
+  const store = open();
+  const next = resource();
+  expect(await store.commitResource({ expectedRevision: null, next })).toBe("committed");
+  const replacement = structuredClone(next);
+  replacement.resource.revision = 2;
+  replacement.intents[0].projectId = "other-project";
+
+  await expect(store.commitResource({ expectedRevision: 1, next: replacement })).rejects.toThrow(
+    "cannot be replaced",
   );
   expect(await store.readResource(next.resource)).toEqual(next);
 });

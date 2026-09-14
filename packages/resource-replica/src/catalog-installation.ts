@@ -1,8 +1,9 @@
 /** Atomic installation policy from a server catalog view into durable local resources. */
 import { parseContextUri } from "@meridian/contracts/context-uri";
-import type { CatalogFileEntry, CatalogScope } from "@meridian/contracts/protocol";
+import type { CatalogFileEntry } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { type CatalogCacheView, catalogFiles, indexCatalogView } from "./catalog";
+import { catalogScopeBelongsToProject, sameCatalogScope } from "./catalog-scope";
 import { installCanonicalRefresh } from "./resource-namespace";
 import type {
   ResourceCatalogCheckpoint,
@@ -22,24 +23,6 @@ export type CatalogInstallationPlan = Readonly<{
   resources: readonly ResourceWrite[];
 }>;
 
-function sameScope(left: CatalogScope, right: CatalogScope): boolean {
-  if (left.kind !== right.kind) return false;
-  switch (left.kind) {
-    case "user":
-      return right.kind === "user" && left.userId === right.userId;
-    case "work":
-      return (
-        right.kind === "work" && left.projectId === right.projectId && left.workId === right.workId
-      );
-    default:
-      return right.kind === left.kind && left.projectId === right.projectId;
-  }
-}
-
-function scopeBelongsToProject(projectId: string, scope: CatalogScope): boolean {
-  return scope.kind === "user" || scope.projectId === projectId;
-}
-
 function resourceHandle(documentId: string): string {
   return `catalog:${documentId}`;
 }
@@ -49,12 +32,12 @@ function displayedPath(path: string): string {
 }
 
 function locationFor(view: CatalogCacheView, entry: CatalogFileEntry): ResourceLocation {
-  if (!sameScope(entry.scope, view.scope)) throw new Error("Catalog file scope mismatch");
+  if (!sameCatalogScope(entry.scope, view.scope)) throw new Error("Catalog file scope mismatch");
   const source = view.entries.get(entry.sourceId);
   if (
     source?.kind !== "source" ||
     view.invalidatedEntryIds.has(source.entryId) ||
-    !sameScope(source.scope, view.scope)
+    !sameCatalogScope(source.scope, view.scope)
   )
     throw new Error("Catalog file source is unavailable");
   const parsed = parseContextUri(entry.uri);
@@ -176,12 +159,12 @@ export function planCatalogInstallation(input: {
   previous?: ResourceCatalogCheckpoint | null;
   observedAfter?: CatalogObservationFence;
 }): CatalogInstallationPlan {
-  if (!scopeBelongsToProject(input.projectId, input.view.scope))
+  if (!catalogScopeBelongsToProject(input.projectId, input.view.scope))
     throw new Error("Catalog scope belongs to another project");
   if (
     input.previous &&
     (input.previous.projectId !== input.projectId ||
-      !sameScope(input.previous.scope, input.view.scope))
+      !sameCatalogScope(input.previous.scope, input.view.scope))
   )
     throw new Error("Catalog checkpoint identity mismatch");
   const index = indexRecords(input.records);
@@ -214,8 +197,10 @@ export function planCatalogInstallation(input: {
       appliedRevision: input.view.appliedRevision,
       observedHeadRevision: input.view.observedHeadRevision,
       cursor: input.view.cursor,
-      entries: [...input.view.entries.values()],
-      invalidatedEntryIds: [...input.view.invalidatedEntryIds],
+      entries: [...input.view.entries.values()].sort((left, right) =>
+        left.entryId.localeCompare(right.entryId),
+      ),
+      invalidatedEntryIds: [...input.view.invalidatedEntryIds].sort(),
     },
     resources,
   };

@@ -1,7 +1,5 @@
 /** Immutable account epoch and narrowed facets over one private session core. */
 import type { AccountId } from "@meridian/contracts/protocol";
-import type { DocumentId } from "@meridian/contracts/runtime";
-import type { ResourceAuthoritySnapshot } from "./document-session-authority-store";
 import type {
   LiveDocumentSessionRegistry,
   LocalDocumentSessionFactory,
@@ -15,15 +13,9 @@ import type {
   LocalDocumentSessionReservationPort,
 } from "./local-document-session-adoption";
 
-export interface ResourceAuthorityInspection {
-  readonly accountId: AccountId;
-  readSnapshot(documentId: DocumentId): Promise<ResourceAuthoritySnapshot>;
-}
-
 export interface AccountDocumentSessionRuntime {
   readonly accountId: AccountId;
   readonly epochSignal: AbortSignal;
-  readonly resourceInspection: ResourceAuthorityInspection;
   readonly registry: LiveDocumentSessionRegistry;
   readonly localReservation: LocalDocumentSessionReservationPort;
   readonly localAdoption: LocalDocumentSessionAdoptionPort;
@@ -35,7 +27,6 @@ export interface AccountDocumentSessionRuntime {
 
 /** Test substitution is cohesive: every facet and both lifecycle phases travel together. */
 export interface AccountDocumentSessionCore {
-  readResourceSnapshot(documentId: DocumentId): Promise<ResourceAuthoritySnapshot>;
   readonly accountId: AccountId;
   readonly registry: LiveDocumentSessionRegistry;
   readonly localReservation: LocalDocumentSessionReservationPort;
@@ -56,7 +47,6 @@ function createCore(accountId: AccountId): AccountDocumentSessionCore {
   return Object.freeze({
     accountId,
     registry,
-    readResourceSnapshot: (documentId: DocumentId) => registry.readResourceSnapshot(documentId),
     localReservation: registry,
     localAdoption: registry,
     localConstruction: registry,
@@ -97,15 +87,6 @@ export function createAccountDocumentSessionRuntime(
         requireOpen();
         return Reflect.apply(value, target, args);
       };
-    },
-  });
-  const resourceInspection: ResourceAuthorityInspection = Object.freeze({
-    accountId: input.accountId,
-    async readSnapshot(documentId: DocumentId) {
-      requireOpen();
-      const snapshot = await core.readResourceSnapshot(documentId);
-      requireOpen();
-      return snapshot;
     },
   });
   const localReservation: LocalDocumentSessionReservationPort = {
@@ -165,7 +146,6 @@ export function createAccountDocumentSessionRuntime(
   return Object.freeze({
     accountId: input.accountId,
     epochSignal: epoch.signal,
-    resourceInspection,
     registry,
     localReservation,
     localAdoption,

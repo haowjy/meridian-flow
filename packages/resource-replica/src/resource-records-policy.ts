@@ -159,6 +159,7 @@ export function validateResourceRecordUpdate(
     const intent = next.intents.find((item) => item.intentId === oldIntent.intentId);
     if (
       !intent ||
+      intent.projectId !== oldIntent.projectId ||
       intent.sequence !== oldIntent.sequence ||
       intent.identityRevision !== oldIntent.identityRevision ||
       JSON.stringify(intent.desired) !== JSON.stringify(oldIntent.desired)
