@@ -69,7 +69,6 @@ function resource(
   databases.add(databaseName);
   return {
     resource: {
-      projectId: "project",
       handle,
       revision: 1,
       identity: { documentId: `document-${handle}`, revision: 1 },
@@ -108,7 +107,7 @@ async function initialize(record: ResourceRecord, words = "") {
   if (record.resource.content.kind !== "exact") throw new Error("Expected exact content");
   const session = createFactory().createDetached({
     accountId,
-    projectId: record.resource.projectId,
+    projectId: "project",
     documentId: record.resource.identity.documentId,
     persistenceKey: record.resource.content.databaseName,
     fresh: true,
@@ -137,7 +136,7 @@ it("opens verified local words without waiting for remote admission", async () =
   const key = await install(metadata, record);
   const { access } = openAccess(metadata);
 
-  const opened = await access.open(key, "editor-tab");
+  const opened = await access.open("project", key, "editor-tab");
 
   expect(opened.kind).toBe("opened");
   if (opened.kind !== "opened") throw new Error("Expected local content");
@@ -152,7 +151,7 @@ it("never exposes a blank database without initialization proof", async () => {
   const created: DocumentSession[] = [];
   const { access } = openAccess(metadata, createFactory(created));
 
-  await expect(access.open(key, "editor-tab")).resolves.toEqual({
+  await expect(access.open("project", key, "editor-tab")).resolves.toEqual({
     kind: "unavailable",
     reason: "uninitialized",
   });
@@ -166,7 +165,7 @@ it("establishes and acknowledges one new exact reservation before exposure", asy
   const key = await install(metadata, record);
   const { access } = openAccess(metadata);
 
-  const opened = await access.open(key, "editor-tab");
+  const opened = await access.open("project", key, "editor-tab");
 
   expect(opened.kind).toBe("opened");
   expect((await metadata.readResource(key))?.resource.content).toEqual({
@@ -186,8 +185,8 @@ it("keeps independent leases on one same-browser session", async () => {
   const { access } = openAccess(metadata, createFactory(created));
 
   const [first, second] = await Promise.all([
-    access.open(key, "editor-tab"),
-    access.open(key, "editor-tab"),
+    access.open("project-a", key, "editor-tab"),
+    access.open("project-b", key, "editor-tab"),
   ]);
 
   if (first.kind !== "opened" || second.kind !== "opened") throw new Error("Expected both leases");
@@ -206,8 +205,8 @@ it("shares persisted changes between independent account content owners", async 
   const key = await install(metadata, record);
   const first = openAccess(metadata).access;
   const second = openAccess(metadata).access;
-  const left = await first.open(key, "left-tab");
-  const right = await second.open(key, "right-tab");
+  const left = await first.open("project", key, "left-tab");
+  const right = await second.open("project", key, "right-tab");
   if (left.kind !== "opened" || right.kind !== "opened") throw new Error("Expected content");
 
   left.handle.session.document.getText("probe").insert(0, "shared");
@@ -226,13 +225,6 @@ it.each([
     },
   ],
   [
-    "recovering",
-    (record: ResourceRecord) => {
-      record.resource.lifecycle = { kind: "recovering" };
-      record.resource.recovery = { sourceKey: "legacy" };
-    },
-  ],
-  [
     "terminal",
     (record: ResourceRecord) => {
       record.resource.lifecycle = { kind: "terminal", generation: "1", transitionId: "delete" };
@@ -246,7 +238,7 @@ it.each([
   const created: DocumentSession[] = [];
   const { access } = openAccess(metadata, createFactory(created));
 
-  await expect(access.open(key, "editor-tab")).resolves.toEqual({
+  await expect(access.open("project", key, "editor-tab")).resolves.toEqual({
     kind: "unavailable",
     reason,
   });
@@ -271,7 +263,7 @@ it("preserves a concurrent metadata update while acknowledging initialization", 
   });
   const { access } = openAccess(metadata);
 
-  const opened = await access.open(key, "editor-tab");
+  const opened = await access.open("project", key, "editor-tab");
 
   expect(opened.kind).toBe("opened");
   expect((await metadata.readResource(key))?.resource.aliases).toHaveProperty("/old");
@@ -285,7 +277,7 @@ it("fences new opens on epoch shutdown and retries retained teardown failures", 
   const key = await install(metadata, record);
   const created: DocumentSession[] = [];
   const { access, epoch } = openAccess(metadata, createFactory(created));
-  const opened = await access.open(key, "editor-tab");
+  const opened = await access.open("project", key, "editor-tab");
   if (opened.kind !== "opened") throw new Error("Expected content");
   const session = opened.handle.session;
   const native = session.destroy.bind(session);
@@ -295,7 +287,7 @@ it("fences new opens on epoch shutdown and retries retained teardown failures", 
     .mockImplementation(native);
 
   epoch.abort();
-  await expect(access.open(key, "late-tab")).resolves.toEqual({ kind: "cancelled" });
+  await expect(access.open("project", key, "late-tab")).resolves.toEqual({ kind: "cancelled" });
   await expect(access.finishClose()).rejects.toThrow("blocked close");
   await expect(access.finishClose()).resolves.toBeUndefined();
   expect(session.getSnapshot().status).toBe("destroyed");
@@ -315,7 +307,7 @@ it("waits for local authority readiness before constructing exact persistence", 
   factory.whenAuthorityReady = () => ready;
   const { access, epoch } = openAccess(metadata, factory);
 
-  const opening = access.open(key, "editor-tab");
+  const opening = access.open("project", key, "editor-tab");
   await Promise.resolve();
   expect(created).toHaveLength(0);
   epoch.abort();
@@ -339,7 +331,7 @@ it("rejects a durable session schema fence before exposing content", async () =>
   };
   const { access } = openAccess(metadata, factory);
 
-  await expect(access.open(key, "editor-tab")).resolves.toEqual({
+  await expect(access.open("project", key, "editor-tab")).resolves.toEqual({
     kind: "unavailable",
     reason: "schema-mismatch",
   });
@@ -369,7 +361,7 @@ it.each([
     return result;
   });
 
-  const opening = access.open(key, "editor-tab", participant.signal);
+  const opening = access.open("project", key, "editor-tab", participant.signal);
   await vi.waitFor(() => expect(reads).toBe(2));
   if (abortKind === "participant") participant.abort();
   else epoch.abort();
@@ -393,7 +385,7 @@ it("releases its lease when final metadata validation fails", async () => {
     return native(input);
   });
 
-  await expect(access.open(key, "editor-tab")).rejects.toThrow("validation unavailable");
+  await expect(access.open("project", key, "editor-tab")).rejects.toThrow("validation unavailable");
   expect(created[0]?.getSnapshot().status).toBe("destroyed");
 });
 
@@ -404,7 +396,7 @@ it("quarantines an exact database until failed teardown completes", async () => 
   const key = await install(metadata, record);
   const created: DocumentSession[] = [];
   const { access } = openAccess(metadata, createFactory(created));
-  const first = await access.open(key, "first-tab");
+  const first = await access.open("project", key, "first-tab");
   if (first.kind !== "opened") throw new Error("Expected content");
   const session = first.handle.session;
   const native = session.destroy.bind(session);
@@ -414,9 +406,9 @@ it("quarantines an exact database until failed teardown completes", async () => 
     .mockImplementation(native);
   first.handle.release();
 
-  await expect(access.open(key, "second-tab")).rejects.toThrow("blocked close");
+  await expect(access.open("project", key, "second-tab")).rejects.toThrow("blocked close");
   expect(created).toHaveLength(1);
-  const reopened = await access.open(key, "second-tab");
+  const reopened = await access.open("project", key, "second-tab");
   expect(reopened.kind).toBe("opened");
   expect(created).toHaveLength(2);
   if (reopened.kind === "opened") reopened.handle.release();

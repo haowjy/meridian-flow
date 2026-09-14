@@ -29,7 +29,6 @@ afterEach(async () => {
 function local(): ResourceRecord {
   return {
     resource: {
-      projectId: "project",
       handle: "resource",
       revision: 1,
       identity: { documentId: "document", revision: 1 },

@@ -8,16 +8,10 @@ export function validateResourceRecordUpdate(
   const resource = next.resource;
   if (resource.revision !== (previous?.resource.revision ?? 0) + 1)
     throw new Error("Invalid resource revision");
-  if (
-    previous &&
-    (previous.resource.projectId !== resource.projectId ||
-      previous.resource.handle !== resource.handle)
-  )
+  if (previous && previous.resource.handle !== resource.handle)
     throw new Error("Resource identity mismatch");
   if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind !== "terminal")
     throw new Error("Terminal resources cannot be revived");
-  if (resource.lifecycle.kind === "recovering" && !resource.recovery)
-    throw new Error("Recovering resources require recovery evidence");
   const nextInitializationReserved =
     resource.content.kind === "exact" && resource.content.initialization === "reserved";
   const previousInitializationReserved =
@@ -29,7 +23,6 @@ export function validateResourceRecordUpdate(
     if (
       resource.lifecycle.kind !== "local" ||
       resource.canonical !== null ||
-      resource.recovery ||
       next.intents.some((intent) => intent.attempts.length > 0)
     )
       throw new Error("Content initialization may only be reserved with a new local resource");
@@ -43,14 +36,6 @@ export function validateResourceRecordUpdate(
     )
       throw new Error("Reserved content identity cannot change before initialization");
   }
-  if (resource.recovery && next.intents.some((intent) => intent.attempts.length > 0))
-    throw new Error("Legacy uncertainty must resolve before namespace submission");
-  if (
-    resource.recovery &&
-    (resource.lifecycle.kind === "recovering" || resource.lifecycle.kind === "terminal") &&
-    Object.keys(resource.obligations).length > 0
-  )
-    throw new Error("Unresolved authority cannot carry execution obligations");
   if (
     resource.obligations.canonicalRefresh &&
     resource.obligations.canonicalRefresh.identityRevision !== resource.identity.revision
@@ -74,8 +59,7 @@ export function validateResourceRecordUpdate(
   const ids = new Set<string>();
   const sequences = new Set<number>();
   for (const intent of next.intents) {
-    if (intent.projectId !== resource.projectId || intent.handle !== resource.handle)
-      throw new Error("Resource intent identity mismatch");
+    if (intent.handle !== resource.handle) throw new Error("Resource intent identity mismatch");
     if (
       ids.has(intent.intentId) ||
       sequences.has(intent.sequence) ||
@@ -155,7 +139,6 @@ export function validateResourceRecordUpdate(
         previousIntent?.state !== "settled-locally" &&
         (resource.lifecycle.kind !== "local" ||
           resource.canonical !== null ||
-          resource.recovery ||
           next.intents.some((item) => item.attempts.length > 0))
       )
         throw new Error("Local deletion requires proven never-submitted identity");

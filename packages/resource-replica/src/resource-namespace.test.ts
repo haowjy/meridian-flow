@@ -20,7 +20,6 @@ import { validateResourceRecordUpdate } from "./resource-records-policy";
 function local(): ResourceRecord {
   return {
     resource: {
-      projectId: "project",
       handle: "resource",
       revision: 1,
       identity: { documentId: "document", revision: 1 },
@@ -518,24 +517,6 @@ describe("namespace reconciliation", () => {
     ).resolves.toBe("uncertain");
     expect(submit).not.toHaveBeenCalled();
     expect(store.record.intents[0]?.state).toBe("submitted");
-  });
-
-  it("leaves writer intent pending while legacy authority recovery is unresolved", async () => {
-    const store = new MemoryStore();
-    store.record.resource.recovery = { sourceKey: "legacy" };
-    store.record.resource.lifecycle = { kind: "recovering" };
-    const submit = vi.fn(async () => createOutcome());
-    await expect(
-      reconcileResourceNamespace({
-        key: store.record.resource,
-        metadata: asMetadata(store),
-        lock: immediateLock,
-        transport: transport({ submit }),
-        newAttemptIds: () => ({ attemptId: "attempt", operationId: "operation" }),
-      }),
-    ).resolves.toBe("blocked");
-    expect(submit).not.toHaveBeenCalled();
-    expect(store.record.intents[0]?.state).toBe("pending");
   });
 
   it("revalidates identity after receipt lookup before dispatch", async () => {
