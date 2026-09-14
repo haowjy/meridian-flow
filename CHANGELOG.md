@@ -8,6 +8,7 @@
 - Preserve legacy resource bytes and exact cache identity through restartable import (not activated).
 
 - Add transactional resource-journal storage foundation (not activated).
+- Wait for local account storage before reserving new documents.
 
 - Record initialized document caches without treating missing storage as an empty document.
 

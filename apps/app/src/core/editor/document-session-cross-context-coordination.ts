@@ -727,7 +727,7 @@ class Coordination implements DocumentSessionCrossContextCoordination {
     throw new Error("Document authority teardown did not reach its terminal state");
   }
 
-  private async requireReady(): Promise<void> {
+  async requireReady(): Promise<void> {
     try {
       await this.readiness;
     } catch (error) {

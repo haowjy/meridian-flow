@@ -318,6 +318,13 @@ export class DocumentSessionRegistry
     return this;
   }
 
+  async whenAuthorityReady(): Promise<void> {
+    this.requireAccountRuntimeOpen();
+    const coordination = await this.configuredCoordination();
+    await this.translateCoordination(() => coordination.requireReady());
+    this.requireAccountRuntimeOpen();
+  }
+
   createDetached(input: {
     accountId: AccountId;
     projectId: ProjectId;
