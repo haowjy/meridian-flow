@@ -14,6 +14,13 @@ or authority store. `document-session-locks.ts` implements document lock naming
 and callback lifetimes; `document-session-wakeup.ts` only requests reconciliation
 through advisory broadcasts, browser lifecycle events and timed scans.
 
+The account runtime's `resourceInspection` facet reads a committed room/pending-
+purge pair through that existing owner. Unlike the purge worker's `snapshotPurge`,
+it does not hide older purge evidence while a newer drain runs. Reads wait for
+local authority readiness and reject delivery across account close or authority
+version change. A snapshot is historical evidence, not a live lease or permission
+to upload/delete; subsequent actions must revalidate through coordination.
+
 `local-document-peers.ts` is separate content transport, owned by each persisted
 DocumentSession. Its channel is scoped to the exact persistence incarnation and
 current schema, never a path or an unqualified document ID. Symmetric Yjs sync

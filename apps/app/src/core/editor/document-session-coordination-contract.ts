@@ -7,6 +7,7 @@ import type {
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import type {
   LocalAdoptionPendingReceipt,
+  ResourceAuthoritySnapshot,
   TerminalLineageReceipt,
 } from "./document-session-authority-store";
 
@@ -77,6 +78,7 @@ export class DocumentSessionCoordinationError extends Error {
 }
 
 export interface DocumentSessionCrossContextCoordination {
+  readResourceSnapshot(documentId: DocumentId): Promise<ResourceAuthoritySnapshot>;
   requireReady(): Promise<void>;
   admit(
     projectId: ProjectId,
