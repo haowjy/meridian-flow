@@ -1,9 +1,9 @@
 # Resource adapters
 
 This directory adapts the resource package to IndexedDB, existing project HTTP
-APIs, Web Locks and exact local document sessions. The adapters are not yet
-constructed by the production account runtime; the old lineage/reconciler and
-QueryClient catalog acquisition remain live until the complete caller cutover.
+APIs, Web Locks and exact local document sessions. `AccountResourceReplica` is
+the production account-scoped owner. The authenticated feature lifetime creates
+one instance and closes the whole document runtime if its storage is invalidated.
 
 `IndexedDbResourceMetadata` owns one `v2` physical database per account; the
 incompatible inactive `v1` schema is deliberately ignored rather than migrated.
@@ -15,7 +15,7 @@ without duplicating the resource or suppressing another project's checkpoint.
 Reads return committed snapshots, inputs are captured before async work, and CAS
 checks every resource before an outer transaction writes anything.
 
-`ResourceCatalogAcquisition` is the sole planned cursor/request owner. The HTTP
+`ResourceCatalogAcquisition` is the sole cursor/request owner. The HTTP
 adapter only transports snapshots and deltas. Before each request, acquisition
 captures exact resource revisions. The received page and derived resource updates
 commit together; a resource that changed meanwhile is not overwritten. CAS retry

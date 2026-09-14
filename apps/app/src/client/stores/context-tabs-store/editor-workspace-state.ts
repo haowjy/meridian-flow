@@ -24,6 +24,12 @@ export type EditorWorkspaceCommand =
   | { kind: "close"; projectId: string; tabInstanceId: string }
   | { kind: "select"; projectId: string; workId: string; tabInstanceId: string | null }
   | {
+      kind: "reconcile-resource";
+      projectId: string;
+      resourceHandle: string;
+      tab: ContextTab;
+    }
+  | {
       kind: "reorder";
       projectId: string;
       expectedTabInstanceIds: readonly string[];
@@ -51,18 +57,6 @@ export type EditorWorkspaceCommand =
       projectId: string;
       tab: ContextTab;
       disposition: "applied" | "discarded";
-    }
-  | {
-      kind: "publish-remint";
-      lineageHandle: string;
-      minimumIdentityRevision: number;
-      documentId: string;
-    }
-  | {
-      kind: "publish-adoption";
-      lineageHandle: string;
-      adoptionRevision: number;
-      trackedTab: ContextTab;
     };
 
 export type EditorWorkspaceCommandResult =
@@ -89,12 +83,7 @@ function parseTab(value: unknown): ContextTab | null {
   )
     return null;
   if (tab.kind === "new") {
-    if (
-      typeof tab.lineageHandle !== "string" ||
-      !Number.isSafeInteger(tab.identityRevision) ||
-      tab.origin !== undefined
-    )
-      return null;
+    if (typeof tab.resourceHandle !== "string" || tab.resourceHandle.length === 0) return null;
     const { workId: _priorWork, ...local } = tab;
     return local as ContextTab;
   }
@@ -112,8 +101,9 @@ function parseTab(value: unknown): ContextTab | null {
     if (
       classification.kind !== "tracked" ||
       classification.schemaType !== tab.schemaType ||
+      !optionalString(tab.resourceHandle) ||
       (tab.provisionalName !== undefined && typeof tab.provisionalName !== "boolean") ||
-      (tab.origin !== undefined && tab.origin !== "local-untitled")
+      (tab.origin !== undefined && tab.origin !== "local-resource")
     )
       return null;
     return value as ContextTab;
@@ -124,10 +114,23 @@ function parseTab(value: unknown): ContextTab | null {
     tab.editable === false &&
     typeof tab.fileType === "string" &&
     tab.fileType in DOCUMENT_FILE_TYPES &&
-    optionalString(tab.mimeType)
+    optionalString(tab.mimeType) &&
+    optionalString(tab.resourceHandle)
   )
     return value as ContextTab;
   return null;
+}
+
+function withoutResourceOwnership(tab: ContextTab): ContextTab {
+  if (tab.kind === "tracked") {
+    const { resourceHandle: _resourceHandle, origin: _origin, ...rest } = tab;
+    return rest;
+  }
+  if (tab.kind === "viewer") {
+    const { resourceHandle: _resourceHandle, ...rest } = tab;
+    return rest;
+  }
+  return tab;
 }
 
 function parseProjectDesk(value: unknown): PersistedProjectDesk | null {
@@ -212,9 +215,7 @@ function sameTabIdentity(left: ContextTab, right: ContextTab): boolean {
     left.documentId === right.documentId &&
     left.kind === right.kind &&
     (left.kind !== "new" ||
-      (right.kind === "new" &&
-        left.lineageHandle === right.lineageHandle &&
-        left.identityRevision === right.identityRevision)) &&
+      (right.kind === "new" && left.resourceHandle === right.resourceHandle)) &&
     (left.kind === "new" ||
       (right.kind !== "new" &&
         left.scheme === right.scheme &&
@@ -381,6 +382,40 @@ export function reduceEditorWorkspace(
       return outcome("already-committed", current);
     return replaceProject(current, command.projectId, normalizeProject({ ...desk, tabs }));
   }
+  if (command.kind === "reconcile-resource") {
+    const desk = current.projects[command.projectId];
+    const index = desk?.tabs.findIndex(
+      (tab) =>
+        tab.resourceHandle === command.resourceHandle || tab.documentId === command.tab.documentId,
+    );
+    if (!desk || index === undefined || index < 0) return outcome("not-referenced", current);
+    if (
+      command.tab.resourceHandle !== undefined &&
+      command.tab.resourceHandle !== command.resourceHandle
+    )
+      return outcome("stale", current);
+    const prior = desk.tabs[index] as ContextTab;
+    const conflict = desk.tabs.some(
+      (tab, candidateIndex) =>
+        candidateIndex !== index &&
+        (tab.documentId === command.tab.documentId ||
+          (tab.kind !== "new" &&
+            command.tab.kind !== "new" &&
+            sameServerContextTabLocator(tab, command.tab))),
+    );
+    if (conflict) return outcome("stale", current);
+    const next = durableTab({ ...command.tab, tabInstanceId: prior.tabInstanceId } as ContextTab);
+    if (JSON.stringify(next) === JSON.stringify(prior))
+      return outcome("already-committed", current);
+    return replaceProject(current, command.projectId, {
+      tabs: desk.tabs.map((tab, candidateIndex) => (candidateIndex === index ? next : tab)),
+      selectedTabIdByWork: rewriteSelections(
+        desk.selectedTabIdByWork,
+        prior.documentId,
+        next.documentId,
+      ),
+    });
+  }
   if (command.kind === "open") {
     const desk = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
     if (command.tab.draftOnly) return outcome("already-committed", current);
@@ -400,9 +435,12 @@ export function reduceEditorWorkspace(
           );
     const index = sameDocumentIndex >= 0 ? sameDocumentIndex : occupiedLocatorIndex;
     const existing = index >= 0 ? desk.tabs[index] : undefined;
+    const existingWithoutResourceOwnership = existing
+      ? withoutResourceOwnership(existing)
+      : undefined;
     const merged = existing
       ? ({
-          ...existing,
+          ...existingWithoutResourceOwnership,
           ...tab,
           tabInstanceId: existing.tabInstanceId,
           ...(existing.kind !== "new" && existing.draftOnly
@@ -483,43 +521,5 @@ export function reduceEditorWorkspace(
       tabs: command.nextTabInstanceIds.map((id) => byInstance.get(id) as ContextTab),
     });
   }
-
-  let referenced = false;
-  let changed = false;
-  const projects = Object.fromEntries(
-    Object.entries(current.projects).map(([projectId, desk]) => {
-      const replacements = new Map<string, string>();
-      const tabs = desk.tabs.map((tab) => {
-        if (tab.kind !== "new" || tab.lineageHandle !== command.lineageHandle) return tab;
-        referenced = true;
-        if (command.kind === "publish-remint") {
-          if (
-            (tab.identityRevision ?? 0) >= command.minimumIdentityRevision &&
-            tab.documentId === command.documentId
-          )
-            return tab;
-          changed = true;
-          replacements.set(tab.documentId, command.documentId);
-          return {
-            ...tab,
-            documentId: command.documentId,
-            identityRevision: command.minimumIdentityRevision,
-          };
-        }
-        changed = true;
-        replacements.set(tab.documentId, command.trackedTab.documentId);
-        return { ...durableTab(command.trackedTab), tabInstanceId: tab.tabInstanceId };
-      });
-      const selectedTabIdByWork = Object.fromEntries(
-        Object.entries(desk.selectedTabIdByWork).map(([workId, documentId]) => [
-          workId,
-          replacements.get(documentId) ?? documentId,
-        ]),
-      );
-      return [projectId, replacements.size ? { tabs, selectedTabIdByWork } : desk];
-    }),
-  );
-  if (!referenced) return outcome("not-referenced", current);
-  if (!changed) return outcome("already-committed", current);
-  return committed(current, projects);
+  return outcome("stale", current);
 }

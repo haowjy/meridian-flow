@@ -39,7 +39,10 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { cn } from "@/lib/utils";
-import { useProjectContextAvailabilityCoordinator } from "./account-feature-context";
+import {
+  useAccountResourceReplica,
+  useProjectContextAvailabilityCoordinator,
+} from "./account-feature-context";
 import { contextTreeOverflowTriggerClassName } from "./context-row-geometry";
 
 // ─── Action types ────────────────────────────────────────────────────────────
@@ -278,6 +281,8 @@ export function useDeleteConfirmation({
   const [target, setTarget] = useState<(DeleteTarget & { operationId: string }) | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const mutation = useDeleteContextEntry(projectId, scheme);
+  const resources = useAccountResourceReplica();
+  const [localPending, setLocalPending] = useState(false);
   const availability = useProjectContextAvailabilityCoordinator();
   const queryClient = useQueryClient();
 
@@ -297,21 +302,23 @@ export function useDeleteConfirmation({
     if (!target) return;
     setError(null);
     try {
-      const result = await mutation.mutateAsync(
-        target.kind === "file"
-          ? {
-              operationId: target.operationId,
-              path: target.path,
-              workId: target.workId,
-              expected: { kind: "file", documentId: target.documentId },
-            }
-          : {
-              operationId: target.operationId,
-              path: target.path,
-              workId: target.workId,
-              expected: { kind: "folder" },
-            },
-      );
+      if (target.kind === "file" && !isWorkScopedProjectContextScheme(scheme)) {
+        setLocalPending(true);
+        const key = await resources.keyForDocument(projectId, target.documentId);
+        if (!key) throw new Error("Document resource is unavailable");
+        await resources.deleteDocument(projectId, key);
+        setTarget(null);
+        return;
+      }
+      const result = await mutation.mutateAsync({
+        operationId: target.operationId,
+        path: target.path,
+        workId: target.workId,
+        expected:
+          target.kind === "dir"
+            ? { kind: "folder" }
+            : { kind: "file", documentId: target.documentId },
+      });
       await availability.acceptCommittedDelete({
         projectId,
         deletedDocumentIds: result.deletedDocumentIds,
@@ -328,12 +335,14 @@ export function useDeleteConfirmation({
     } catch (cause) {
       // Keep the target visible so the writer can refresh and retry.
       setError(cause instanceof Error ? cause : new Error("Context deletion failed"));
+    } finally {
+      setLocalPending(false);
     }
-  }, [availability, projectId, queryClient, scheme, target, mutation]);
+  }, [availability, projectId, queryClient, resources, scheme, target, mutation]);
 
   return {
     target,
-    isPending: mutation.isPending,
+    isPending: mutation.isPending || localPending,
     error,
     requestDelete,
     cancel,

@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 
-import { QueryClient } from "@tanstack/react-query";
 import { act, StrictMode, useLayoutEffect, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
@@ -57,8 +56,6 @@ const restored = {
   filetype: "markdown" as const,
   schemaType: "document" as const,
 };
-const disabledHydration = { status: "disabled" as const };
-
 beforeEach(() => {
   useContextTabsStore.setState({
     byProject: { project: { tabs: [restored], selectedTabIdByWork: { "work-1": "restored" } } },
@@ -69,9 +66,6 @@ beforeEach(() => {
 it("withholds live hosts through one held raw bootstrap and never restores raw authority", async () => {
   const read = deferred<unknown>();
   mocks.availability.mockImplementation(() => read.promise);
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
-  });
   let setWork: ((work: EditorWorkScope) => void) | null = null;
 
   function Harness() {
@@ -85,16 +79,16 @@ it("withholds live hosts through one held raw bootstrap and never restores raw a
       projectId: "project",
       deskHydrated: true,
       editorScope: work,
-      workingSetHydration: disabledHydration,
-      queryClient,
     });
     return <div data-phase={phase.status}>{phase.status === "live" ? "host" : "withheld"}</div>;
   }
 
   await withReactRoot(
-    <StrictMode>
-      <Harness />
-    </StrictMode>,
+    <AccountFeatureTestProvider accountId="project-authority-bootstrap">
+      <StrictMode>
+        <Harness />
+      </StrictMode>
+    </AccountFeatureTestProvider>,
     async () => {
       expect(document.querySelector("[data-phase]")?.textContent).toBe("withheld");
       expect(mocks.availability).toHaveBeenCalledOnce();
@@ -138,9 +132,6 @@ it("keeps a fulfilled bootstrap removal authoritative when the explicit live rou
   });
   const read = deferred<unknown>();
   mocks.availability.mockImplementation(() => read.promise);
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: Infinity } },
-  });
   let coordinator: ContextRemovalCoordinator | null = null;
   let search: ProjectSearch = {
     screen: "context" as const,
@@ -197,8 +188,6 @@ it("keeps a fulfilled bootstrap removal authoritative when the explicit live rou
       projectId: "project",
       deskHydrated: true,
       editorScope: { status: "ready", workId: "work-1", source: "route" },
-      workingSetHydration: disabledHydration,
-      queryClient,
     });
     if (phase.status !== "live") return <div data-phase={phase.status}>withheld</div>;
     return (

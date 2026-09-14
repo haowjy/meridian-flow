@@ -6,7 +6,7 @@ import { parseRequestId } from "@meridian/contracts/request-id";
 import type { WorksSnapshot } from "@meridian/contracts/works";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getProjectDocumentAddress, listProjectThreads } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type ProjectRouteData, seedProjectRouteData } from "@/client/query/project-route-data";
@@ -27,6 +27,7 @@ import { routeTargetForTab } from "../context/context-removal-planner";
 import { ProjectDocumentNavigationProvider } from "../context/open-project-document";
 import { ProjectView } from "../ProjectView";
 import type { ScreenKey } from "../shell/screens";
+import { reconcileDocumentAddress, resolveLocalDocumentAddress } from "./local-document-address";
 import { type AddressAdmission, ProjectAddressDocument } from "./ProjectAddressDocument";
 import { type OpenContextOptions, ProjectNavigationProvider } from "./ProjectNavigationContext";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
@@ -193,9 +194,12 @@ export function ReadableProjectRoute({
     tabs: deskTabs,
   });
   const localDocumentId = localDocument.kind === "resolved" ? localDocument.documentId : undefined;
-  const localPointer = localDocumentId
-    ? { accountId: user.userId, projectId, documentId: localDocumentId }
-    : undefined;
+  const localResourceHandle =
+    localDocument.kind === "resolved" ? localDocument.owner.tab.resourceHandle : undefined;
+  const localPointer =
+    localDocumentId && localResourceHandle
+      ? { accountId: user.userId, projectId, resourceHandle: localResourceHandle }
+      : undefined;
   useLayoutEffect(() => {
     if (localDocumentId)
       void useContextTabsStore.getState().selectTab(projectId, workId ?? "", localDocumentId);
@@ -318,14 +322,26 @@ export function ReadableProjectRoute({
     staleTime: 0,
     retry: false,
   });
+  const localDocumentAddress = useMemo(
+    () =>
+      documentDestination
+        ? resolveLocalDocumentAddress(projectId, documentDestination, addressCatalog)
+        : undefined,
+    [addressCatalog, documentDestination, projectId],
+  );
+  const reconciledDocumentAddress = reconcileDocumentAddress(
+    localDocumentAddress,
+    documentLookup.data,
+  );
+  const documentResult = reconciledDocumentAddress.result;
   const documentIssue: ProjectRouteIssue | undefined = !documentDestination
     ? undefined
     : (issue(work) ??
-      (documentLookup.isError
+      (!documentResult && documentLookup.isError
         ? "error"
-        : !documentLookup.data
+        : !documentResult
           ? "loading"
-          : documentLookup.data.kind === "unavailable"
+          : documentResult.kind === "unavailable"
             ? "unavailable"
             : undefined));
   const mainIssue =
@@ -346,8 +362,8 @@ export function ReadableProjectRoute({
       (documentDestination
         ? admission?.href === location.href &&
           admission.key === (location.state.__TSR_key ?? "") &&
-          documentLookup.data?.kind !== "unavailable" &&
-          admission.documentId === documentLookup.data?.document.documentId
+          documentResult?.kind !== "unavailable" &&
+          admission.documentId === documentResult?.document.documentId
           ? admission.issue
           : "loading"
         : undefined));
@@ -401,16 +417,24 @@ export function ReadableProjectRoute({
       if (target.path === "") {
         const desk = getContextTabs(projectId);
         const documentId = target.documentId ?? desk.selectedTabIdByWork[target.workId ?? ""];
-        const pointer = { version: 1, accountId: user.userId, projectId, documentId };
+        const tabs = preparedTab
+          ? [...desk.tabs.filter((tab) => tab.documentId !== preparedTab.documentId), preparedTab]
+          : desk.tabs;
+        const selected = tabs.find((tab) => tab.documentId === documentId);
+        if (!selected?.resourceHandle) throw new Error("Local document is unavailable");
+        const pointer = {
+          version: 2,
+          accountId: user.userId,
+          projectId,
+          resourceHandle: selected.resourceHandle,
+        };
         const resolved = resolveLocalDocumentSelection({
           pointer,
           accountId: user.userId,
           projectId,
           workId: target.workId,
           hydrated: true,
-          tabs: preparedTab
-            ? [...desk.tabs.filter((tab) => tab.documentId !== preparedTab.documentId), preparedTab]
-            : desk.tabs,
+          tabs,
         });
         if (resolved.kind !== "resolved") throw new Error("Local document is unavailable");
         state = { meridianProjectSelection: pointer };
@@ -551,7 +575,6 @@ export function ReadableProjectRoute({
         tabs: desk.tabs,
         selectedDocumentId: desk.selectedTabIdByWork[workId ?? ""],
         recentRoutes: readRecentRoutes(projectId),
-        workId,
       });
       if (tab)
         return openContext({ ...routeTargetForTab(tab, workId), documentId: tab.documentId }).then(
@@ -607,7 +630,8 @@ export function ReadableProjectRoute({
             entryKey={location.state.__TSR_key ?? ""}
             address={address}
             // Cached paths can have been renamed or reused; only a settled lookup may repair the URL.
-            result={documentLookup.isFetching ? undefined : documentLookup.data}
+            result={documentResult}
+            localFile={reconciledDocumentAddress.localFile}
             workId={workId}
             workSlug={editorWork.status === "resolved" ? editorWork.value.slug : null}
             navigation={navigation}

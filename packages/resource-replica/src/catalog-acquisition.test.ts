@@ -191,6 +191,36 @@ it("reuses a captured response after resource CAS loss without regressing newer 
   expect(metadata.catalogCommits).toBe(1);
 });
 
+it("installs an external rename across an unrelated resource revision race", async () => {
+  const metadata = new MemoryMetadata();
+  metadata.records.set("resource", resource("before.md", 1));
+  let resolveSnapshot: (value: CatalogSnapshot) => void = () => undefined;
+  const catalogTransport = transport({
+    snapshot: vi.fn(
+      () =>
+        new Promise<CatalogSnapshot>((resolve) => {
+          resolveSnapshot = resolve;
+        }),
+    ),
+  });
+  const acquisition = new ResourceCatalogAcquisition("account", metadata, catalogTransport);
+
+  const pending = acquisition.acquire(projectId, scope);
+  await vi.waitFor(() => expect(catalogTransport.snapshot).toHaveBeenCalledOnce());
+  const unrelated = resource("before.md", 2);
+  unrelated.resource.content = { kind: "exact", databaseName: "new-cache", schema: "0.5" };
+  metadata.records.set("resource", unrelated);
+  resolveSnapshot(snapshot("external.md"));
+  await pending;
+
+  expect(metadata.records.get("resource")?.resource).toMatchObject({
+    revision: 3,
+    content: { databaseName: "new-cache" },
+    canonical: { path: "/external.md" },
+  });
+  expect(metadata.catalogCommits).toBe(1);
+});
+
 it("rejects a User catalog response for another account", async () => {
   const metadata = new MemoryMetadata();
   const userScope = { kind: "user", userId: "self" } as const;
@@ -280,4 +310,102 @@ it("re-reads account resources after HTTP before discovering document identity",
   expect(metadata.records.get("created-during-request")?.resource.identity.documentId).toBe(
     "document",
   );
+});
+
+it("serializes wake hints and drains to the highest revision observed in flight", async () => {
+  const metadata = new MemoryMetadata();
+  const cursors: string[] = [];
+  let active = 0;
+  let maxActive = 0;
+  const pending: Array<(value: CatalogChanges) => void> = [];
+  const catalogTransport = transport({
+    snapshot: vi.fn(async () => snapshot("chapter.md", "0")),
+    changes: vi.fn(
+      async (_project, _scope, cursor) =>
+        new Promise<CatalogChanges>((resolve) => {
+          cursors.push(cursor);
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          pending.push((value) => {
+            active -= 1;
+            resolve(value);
+          });
+        }),
+    ),
+  });
+  const acquisition = new ResourceCatalogAcquisition("account", metadata, catalogTransport);
+  await acquisition.acquire(projectId, scope);
+
+  const first = acquisition.hint(projectId, scope, "1");
+  await vi.waitFor(() => expect(pending).toHaveLength(1));
+  const duplicate = acquisition.hint(projectId, scope, "1");
+  const highWater = acquisition.hint(projectId, scope, "2");
+  expect(duplicate).toBe(first);
+  expect(highWater).toBe(first);
+  pending.shift()?.({
+    kind: "delta",
+    scope,
+    commits: [
+      {
+        eventId: "event-1",
+        commitId: "commit-1",
+        firstRevision: "1",
+        lastRevision: "1",
+        changes: [],
+      },
+    ],
+    nextCursor: "cursor-1",
+    headRevision: "1",
+    hasMore: false,
+  });
+  await vi.waitFor(() => expect(pending).toHaveLength(1));
+  pending.shift()?.({
+    kind: "delta",
+    scope,
+    commits: [
+      {
+        eventId: "event-2",
+        commitId: "commit-2",
+        firstRevision: "2",
+        lastRevision: "2",
+        changes: [],
+      },
+    ],
+    nextCursor: "cursor-2",
+    headRevision: "2",
+    hasMore: false,
+  });
+
+  await expect(first).resolves.toMatchObject({ cursor: "cursor-2", appliedRevision: "2" });
+  expect(cursors).toEqual(["cursor-0", "cursor-1"]);
+  expect(maxActive).toBe(1);
+});
+
+it("aborts an in-flight request and installs no late checkpoint after close", async () => {
+  const metadata = new MemoryMetadata();
+  let requestSignal: AbortSignal | undefined;
+  const acquisition = new ResourceCatalogAcquisition(
+    "account",
+    metadata,
+    transport({
+      snapshot: vi.fn(
+        async (_project, _scope, signal) =>
+          new Promise<CatalogSnapshot>((resolve, reject) => {
+            requestSignal = signal;
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+            void resolve;
+          }),
+      ),
+    }),
+  );
+
+  const acquiring = acquisition.acquire(projectId, scope);
+  await vi.waitFor(() => expect(requestSignal).toBeDefined());
+  acquisition.beginClose();
+
+  await expect(acquiring).rejects.toThrow("closing");
+  await expect(acquisition.finishClose()).resolves.toBeUndefined();
+  expect(requestSignal?.aborted).toBe(true);
+  expect(metadata.catalogs.size).toBe(0);
+  expect(metadata.catalogCommits).toBe(0);
 });

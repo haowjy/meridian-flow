@@ -3,14 +3,24 @@ import { describe, expect, it } from "vitest";
 import type { ContextTab } from "@/client/stores";
 import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
 
-const tab: ContextTab = { kind: "new", documentId: "draft-a", name: "Untitled" };
+const tab: ContextTab = {
+  kind: "new",
+  documentId: "draft-a",
+  name: "Untitled",
+  resourceHandle: "resource-draft-a",
+};
 const input = {
   accountId: "account",
   projectId: "project",
   workId: "work",
   hydrated: true,
   tabs: [tab],
-  pointer: { version: 1, accountId: "account", projectId: "project", documentId: "draft-a" },
+  pointer: {
+    version: 2,
+    accountId: "account",
+    projectId: "project",
+    resourceHandle: "resource-draft-a",
+  },
 };
 describe("local document history", () => {
   it("waits for hydration and then selects exactly the recorded draft", () => {
@@ -27,9 +37,17 @@ describe("local document history", () => {
       { accountId: "other" },
       { projectId: "other" },
       { pointer: null },
-      { pointer: { ...input.pointer, version: 2 } },
+      { pointer: { ...input.pointer, version: 1 } },
     ])
       expect(resolveLocalDocumentSelection({ ...input, ...change }).kind).toBe("unavailable");
+  });
+  it("follows a reminted document through its stable resource handle", () => {
+    const reminted = { ...tab, documentId: "draft-b" };
+    expect(resolveLocalDocumentSelection({ ...input, tabs: [reminted] })).toMatchObject({
+      kind: "resolved",
+      documentId: "draft-b",
+      owner: { tab: reminted },
+    });
   });
 });
 
@@ -46,7 +64,6 @@ describe("Editor screen entry", () => {
   };
   const entry = {
     tabs: [tab, document],
-    workId: "work",
     selectedDocumentId: undefined,
     recentRoutes: [],
   };
@@ -71,8 +88,5 @@ describe("Editor screen entry", () => {
         recentRoutes: [{ documentId: "doc", scheme: "manuscript", path: "/Old.md" }],
       }),
     ).toBeNull();
-    expect(
-      selectEditorEntryTab({ ...entry, workId: null, selectedDocumentId: tab.documentId }),
-    ).toBe(tab);
   });
 });

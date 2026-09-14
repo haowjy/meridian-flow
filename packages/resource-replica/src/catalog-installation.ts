@@ -14,8 +14,8 @@ import type {
 } from "./resource-records";
 
 export type CatalogObservationFence = Readonly<{
-  /** Exact resource revisions captured before the HTTP request began. */
-  resourceRevisions?: ReadonlyMap<string, number>;
+  /** Exact resource state captured before HTTP distinguishes local location changes from unrelated CAS. */
+  resources?: ReadonlyMap<string, { revision: number; canonical: ResourceLocation | null }>;
 }>;
 
 export type CatalogInstallationPlan = Readonly<{
@@ -77,9 +77,10 @@ function locationFor(view: CatalogCacheView, entry: CatalogFileEntry): ResourceL
   };
 }
 
-function sameLocation(left: ResourceLocation | null, right: ResourceLocation): boolean {
+function sameLocation(left: ResourceLocation | null, right: ResourceLocation | null): boolean {
+  if (!left || !right) return left === right;
   return (
-    left?.scheme === right.scheme &&
+    left.scheme === right.scheme &&
     left.path === right.path &&
     left.name === right.name &&
     left.workId === right.workId &&
@@ -112,20 +113,21 @@ function observedResourceWrite(input: {
   const { record, location, fence } = input;
   const current = record.resource;
   if (current.lifecycle.kind !== "acknowledged") return null;
-  if (fence.resourceRevisions?.get(current.handle) !== current.revision) return null;
+  const observed = fence.resources?.get(current.handle);
+  if (!observed) return null;
+  if (
+    observed.revision !== current.revision &&
+    !sameLocation(observed.canonical, current.canonical)
+  )
+    return null;
 
   const refresh = current.obligations.canonicalRefresh;
-  const sync = current.obligations.canonicalSync;
   const refreshed = refresh
     ? installCanonicalRefresh({ record, operationId: refresh.operationId, location })
     : null;
-  let changed = refreshed !== null || !sameLocation(current.canonical, location);
+  const changed = refreshed !== null || !sameLocation(current.canonical, location);
   const base = refreshed?.next.resource ?? current;
   const obligations = { ...base.obligations };
-  if (sync) {
-    delete obligations.canonicalSync;
-    changed = true;
-  }
   if (!changed) return null;
   const next: ResourceDescriptor = {
     ...base,

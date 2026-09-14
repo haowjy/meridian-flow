@@ -91,6 +91,14 @@ function record(overrides: Partial<ResourceRecord["resource"]> = {}): ResourceRe
   };
 }
 
+function observed(record: ResourceRecord, revision = record.resource.revision) {
+  return {
+    resources: new Map([
+      [record.resource.handle, { revision, canonical: structuredClone(record.resource.canonical) }],
+    ]),
+  };
+}
+
 describe("planCatalogInstallation", () => {
   it("creates an unacquired acknowledged resource for a server-created file", () => {
     const result = planCatalogInstallation({ projectId, records: [], view: view() });
@@ -122,13 +130,9 @@ describe("planCatalogInstallation", () => {
     ]);
   });
 
-  it("preserves exact content and clears only obligations proven older than acquisition", () => {
+  it("preserves exact content while installing an observed canonical location", () => {
     const current = record({
       lifecycle: { kind: "acknowledged", availabilityGeneration: null },
-      obligations: {
-        canonicalSync: { obligationId: "sync", documentId: "document", adoptionRevision: 2 },
-        publication: { obligationId: "publish", documentId: "document", adoptionRevision: 2 },
-      },
     });
     const stale = planCatalogInstallation({ projectId, records: [current], view: view() });
     expect(stale.resources).toEqual([]);
@@ -137,15 +141,13 @@ describe("planCatalogInstallation", () => {
       projectId,
       records: [current],
       view: view(),
-      observedAfter: {
-        resourceRevisions: new Map([[current.resource.handle, current.resource.revision]]),
-      },
+      observedAfter: observed(current),
     });
     expect(fresh.resources[0]?.next.resource).toMatchObject({
       content: current.resource.content,
       canonical: { scheme: "manuscript", path: "/chapter.md" },
       lifecycle: current.resource.lifecycle,
-      obligations: { publication: current.resource.obligations.publication },
+      obligations: {},
     });
   });
 
@@ -162,9 +164,7 @@ describe("planCatalogInstallation", () => {
       projectId,
       records: [current],
       view: view(),
-      observedAfter: {
-        resourceRevisions: new Map([[current.resource.handle, current.resource.revision]]),
-      },
+      observedAfter: observed(current),
     });
     expect(fresh.resources[0]?.next.resource).toMatchObject({
       canonical: { path: "/chapter.md" },
@@ -183,7 +183,22 @@ describe("planCatalogInstallation", () => {
         projectId,
         records: [current],
         view: view(),
-        observedAfter: { resourceRevisions: new Map([[current.resource.handle, 1]]) },
+        observedAfter: {
+          resources: new Map([
+            [
+              current.resource.handle,
+              {
+                revision: 1,
+                canonical: {
+                  scheme: "manuscript",
+                  path: "/older.md",
+                  name: "older.md",
+                  workId: null,
+                },
+              },
+            ],
+          ]),
+        },
       }).resources,
     ).toEqual([]);
   });
@@ -202,9 +217,7 @@ describe("planCatalogInstallation", () => {
         projectId,
         records: [current],
         view: view(),
-        observedAfter: {
-          resourceRevisions: new Map([[current.resource.handle, current.resource.revision]]),
-        },
+        observedAfter: observed(current),
       }).resources,
     ).toEqual([]);
   });
@@ -235,7 +248,7 @@ describe("planCatalogInstallation", () => {
     const current = record({
       identity: { documentId: "new-document", revision: 2 },
       aliases: {
-        document: { publicationObligationId: "publish-old", introducedAtIdentityRevision: 2 },
+        document: { introducedAtIdentityRevision: 2 },
       },
     });
     expect(

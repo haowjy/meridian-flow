@@ -1,13 +1,25 @@
 /** React Query acquisition and flat selectors over one normalized ID cache. */
-import type {
-  CatalogScope,
-  CatalogWakeHint,
-  ProjectContextTreeScheme,
+import { canonicalContextUri } from "@meridian/contracts/context-uri";
+import {
+  type CatalogScope,
+  type CatalogWakeHint,
+  isWorkScopedProjectContextScheme,
+  type ProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
-import type { CatalogCacheView, catalogChildren } from "@meridian/resource-replica";
+import {
+  type CatalogCacheView,
+  type catalogChildren,
+  catalogViewFromCheckpoint,
+  catalogViewFromSnapshot,
+  indexCatalogView,
+  projectResourceLocation,
+  projectResourceNeedsRepair,
+  type ResourceRecord,
+  sameCatalogProjectionScope,
+} from "@meridian/resource-replica";
 import { type QueryClient, queryOptions, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
-import { getContextCatalogLookup } from "@/client/api/projects-api";
+import { getContextCatalogLookup, getContextCatalogSnapshot } from "@/client/api/projects-api";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
 import type {
   CatalogContextView,
@@ -15,7 +27,11 @@ import type {
   CatalogFile,
   CatalogNode,
 } from "@/client/query/context-catalog-projection";
-import { acquireContextCatalog, hintContextCatalog } from "./context-catalog-acquisition";
+import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
+import {
+  useAccountResourceProjection,
+  useOptionalAccountResourceReplica,
+} from "@/features/project/context/account-feature-context";
 import { projectQueryKeys } from "./project-query-keys";
 
 export function contextCatalogScope(
@@ -31,24 +47,24 @@ export function contextCatalogScope(
 }
 
 export function contextCatalogQueryOptions(
-  queryClient: QueryClient,
+  acquisition: Pick<AccountResourceReplica, "acquireCatalog">,
   projectId: string,
   scope: CatalogScope,
 ) {
   return queryOptions({
     queryKey: projectQueryKeys.contextCatalog(projectId, scope),
-    queryFn: () =>
-      acquireContextCatalog(
-        queryClient,
-        projectQueryKeys.contextCatalog(projectId, scope),
-        projectId,
-        scope,
-      ),
+    queryFn: () => acquisition.acquireCatalog(projectId, scope),
     staleTime: 5_000,
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
+    refetchOnMount: "always",
   });
 }
+
+const serverCatalogAcquisition: Pick<AccountResourceReplica, "acquireCatalog"> = {
+  acquireCatalog: async (projectId, scope) =>
+    catalogViewFromSnapshot(await getContextCatalogSnapshot(projectId, scope)),
+};
 
 const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   manuscript: "Manuscript",
@@ -59,6 +75,123 @@ const ROOT_NAMES: Record<ProjectContextTreeScheme, string> = {
   uploads: "Uploads",
 };
 
+function locationBelongsToScope(
+  location: ReturnType<typeof projectResourceLocation> & {},
+  scope: CatalogScope,
+): boolean {
+  if (scope.kind === "project")
+    return !isWorkScopedProjectContextScheme(location.scheme) && location.scheme !== "user";
+  if (scope.kind === "user") return location.scheme === "user";
+  if (!isWorkScopedProjectContextScheme(location.scheme)) return false;
+  return scope.kind === "work" ? location.workId === scope.workId : location.workId === null;
+}
+
+function catalogUri(scheme: ProjectContextTreeScheme, path: string, scope: CatalogScope): string {
+  return isWorkScopedProjectContextScheme(scheme)
+    ? canonicalContextUri(
+        scheme,
+        path,
+        scope.kind === "none" ? { kind: "none" } : { kind: "contextual" },
+      )
+    : canonicalContextUri(scheme, path);
+}
+
+/** One normalized catalog read model: durable local intentions overlay the server checkpoint. */
+export function projectResourceCatalogView(
+  projectId: string,
+  scope: CatalogScope,
+  view: CatalogCacheView,
+  records: readonly ResourceRecord[],
+): CatalogCacheView {
+  const entries = new Map(view.entries);
+  const invalidatedEntryIds = new Set(view.invalidatedEntryIds);
+  for (const record of records) {
+    const documentId = record.resource.identity.documentId;
+    const location = projectResourceLocation(projectId, record);
+    const visible =
+      record.intents.some(
+        (intent) => intent.projectId === projectId && intent.state !== "cancelled",
+      ) ||
+      location?.scheme === "user" ||
+      (entries.has(documentId) && !invalidatedEntryIds.has(documentId));
+    if (!visible) continue;
+    const installed = entries.get(documentId);
+    const installedMatches =
+      installed?.kind === "file" &&
+      installed.uri.startsWith(`${location?.scheme}://`) &&
+      `/${installed.path.join("/")}` === location?.path;
+    if (installed && !installedMatches) entries.delete(documentId);
+    if (!location || !locationBelongsToScope(location, scope) || installedMatches) continue;
+
+    const sourceId =
+      [...entries.values()].find(
+        (entry) =>
+          entry.kind === "source" &&
+          entry.scheme === location.scheme &&
+          !invalidatedEntryIds.has(entry.entryId),
+      )?.entryId ?? `local-source:${location.scheme}:${JSON.stringify(scope)}`;
+    if (!entries.has(sourceId)) {
+      entries.set(sourceId, {
+        kind: "source",
+        entryId: sourceId,
+        scope,
+        scheme: location.scheme,
+        name: ROOT_NAMES[location.scheme],
+        uri: catalogUri(location.scheme, "", scope),
+      });
+    }
+    invalidatedEntryIds.delete(sourceId);
+    const path = location.path.split("/").filter(Boolean);
+    let parentId = sourceId;
+    for (let depth = 1; depth < path.length; depth += 1) {
+      const folderPath = path.slice(0, depth);
+      const existing = [...entries.values()].find(
+        (entry) =>
+          entry.kind === "folder" &&
+          entry.sourceId === sourceId &&
+          entry.path.join("/") === folderPath.join("/") &&
+          !invalidatedEntryIds.has(entry.entryId),
+      );
+      if (existing?.kind === "folder") {
+        parentId = existing.entryId;
+        continue;
+      }
+      const folderId = `local-folder:${sourceId}:${folderPath.join("/")}`;
+      entries.set(folderId, {
+        kind: "folder",
+        entryId: folderId,
+        scope,
+        sourceId,
+        parentId,
+        name: folderPath.at(-1) ?? "",
+        path: folderPath,
+        uri: catalogUri(location.scheme, folderPath.join("/"), scope),
+        hasChildren: true,
+      });
+      invalidatedEntryIds.delete(folderId);
+      parentId = folderId;
+    }
+    const uri = catalogUri(location.scheme, path.join("/"), scope);
+    entries.set(documentId, {
+      kind: "file",
+      entryId: documentId,
+      scope,
+      sourceId,
+      parentId,
+      aliases: [],
+      name: location.name,
+      path,
+      uri,
+      provisionalName: location.provisional,
+      editable: true,
+      filetype: "markdown",
+      schemaType: "document",
+    });
+    invalidatedEntryIds.delete(documentId);
+  }
+  return indexCatalogView({ ...view, entries, invalidatedEntryIds });
+}
+
 export function projectCatalogFile(
   entry: Extract<ReturnType<typeof catalogChildren>[number], { kind: "file" }>,
 ): CatalogFile {
@@ -68,6 +201,7 @@ export function projectCatalogFile(
     parentId: entry.parentId,
     documentId: entry.entryId,
     name: entry.name,
+    aliases: entry.aliases,
     path: `/${entry.path.join("/")}`,
     uri: entry.uri,
     provisionalName: entry.provisionalName,
@@ -107,6 +241,7 @@ export function projectCatalogView(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   view: CatalogCacheView,
+  records: readonly ResourceRecord[] = [],
 ): CatalogContextView {
   const sourceId = view.sourceIdsByScheme.get(scheme);
   const source = sourceId ? view.entries.get(sourceId) : undefined;
@@ -119,20 +254,64 @@ export function projectCatalogView(
     path: "/",
     uri: rootUri,
   };
+  const resourcesByDocument = new Map(
+    records.map((record) => [record.resource.identity.documentId, record]),
+  );
+  const fileFromEntry = (
+    entry: Extract<ReturnType<typeof catalogChildren>[number], { kind: "file" }>,
+  ): CatalogFile | null => {
+    const record = resourcesByDocument.get(entry.entryId);
+    const effective = record ? projectResourceLocation(projectId, record) : null;
+    if (
+      record &&
+      (!effective || effective.scheme !== scheme || effective.path !== `/${entry.path.join("/")}`)
+    )
+      return null;
+    const file = projectCatalogFile(entry);
+    const repair = record ? projectResourceNeedsRepair(projectId, record) : null;
+    return record
+      ? {
+          ...file,
+          ...(record.resource.content.kind === "exact"
+            ? {
+                resourceHandle: record.resource.handle,
+                resourceState:
+                  record.resource.lifecycle.kind === "local"
+                    ? ("local" as const)
+                    : ("acknowledged" as const),
+                ...(record.resource.content.initialization === "reserved"
+                  ? {}
+                  : { localContent: true as const }),
+                ...(record.intents.some((intent) => intent.desired.kind === "create")
+                  ? { resourceOrigin: "local" as const }
+                  : {}),
+              }
+            : {}),
+          ...(repair?.kind === "delete"
+            ? { namespaceFailure: "delete" as const }
+            : repair?.kind === "set-location"
+              ? { namespaceFailure: "set-location" as const, namespaceRepairName: repair.name }
+              : {}),
+        }
+      : file;
+  };
   const node = (entryId: string): CatalogNode | null => {
     const entry = view.entries.get(entryId);
     if (!entry || view.invalidatedEntryIds.has(entryId)) return null;
-    if (entry.kind === "file") return projectCatalogFile(entry);
+    if (entry.kind === "file") return fileFromEntry(entry);
     if (entry.kind === "folder") return projectCatalogDirectory(entry);
     return null;
   };
   const files = () =>
     [...view.entries.values()].flatMap((entry) =>
       entry.kind === "file" && !view.invalidatedEntryIds.has(entry.entryId)
-        ? [projectCatalogFile(entry)]
+        ? (() => {
+            const file = fileFromEntry(entry);
+            return file ? [file] : [];
+          })()
         : [],
     );
-  return {
+  const base: CatalogContextView = {
     projectId,
     scheme,
     normalized: view,
@@ -156,19 +335,26 @@ export function projectCatalogView(
       return found?.kind === "file" ? found : null;
     },
   };
+  return base;
 }
 
 export async function fetchContextCatalogView(
   queryClient: QueryClient,
+  acquisition: Pick<AccountResourceReplica, "acquireCatalog"> &
+    Partial<Pick<AccountResourceReplica, "readProjection">>,
   projectId: string,
   scheme: ProjectContextTreeScheme,
   workId: string | null,
 ): Promise<CatalogContextView> {
   const scope = contextCatalogScope(projectId, scheme, workId);
   const view = await queryClient.fetchQuery(
-    contextCatalogQueryOptions(queryClient, projectId, scope),
+    contextCatalogQueryOptions(acquisition, projectId, scope),
   );
-  return projectCatalogView(projectId, scheme, view);
+  const records = acquisition.readProjection
+    ? (await acquisition.readProjection(projectId)).records
+    : [];
+  const projected = projectResourceCatalogView(projectId, scope, view, records);
+  return projectCatalogView(projectId, scheme, projected, records);
 }
 
 export async function lookupContextCatalogFile(
@@ -192,27 +378,107 @@ export function useContextCatalogView(
   scheme: ProjectContextTreeScheme,
   options: { enabled?: boolean; workId: string | null },
 ) {
-  const scope = contextCatalogScope(projectId, scheme, options.workId);
-  const queryClient = useQueryClient();
+  const scope = useMemo(
+    () => contextCatalogScope(projectId, scheme, options.workId),
+    [options.workId, projectId, scheme],
+  );
+  const resources = useOptionalAccountResourceReplica();
+  const resourceProjection = useAccountResourceProjection(projectId);
   const query = useQuery({
-    ...contextCatalogQueryOptions(queryClient, projectId, scope),
+    ...contextCatalogQueryOptions(resources ?? serverCatalogAcquisition, projectId, scope),
     enabled: options.enabled ?? true,
   });
-  const response = useMemo(
-    () => (query.data ? projectCatalogView(projectId, scheme, query.data) : null),
-    [projectId, query.data, scheme],
-  );
+  const response = useMemo(() => {
+    const checkpoint = resourceProjection.snapshot?.catalogs.find(
+      (candidate) =>
+        candidate.projectId === projectId && sameCatalogProjectionScope(candidate.scope, scope),
+    );
+    const view = resources
+      ? checkpoint
+        ? catalogViewFromCheckpoint(checkpoint)
+        : query.data
+          ? query.data
+          : resourceProjection.records.length > 0
+            ? catalogViewFromSnapshot({
+                scope,
+                generation: "local",
+                headRevision: "0",
+                cursor: "",
+                entries: [],
+              })
+            : null
+      : query.data;
+    return {
+      catalog: view
+        ? projectCatalogView(
+            projectId,
+            scheme,
+            projectResourceCatalogView(projectId, scope, view, resourceProjection.records),
+            resourceProjection.records,
+          )
+        : null,
+      complete: resources ? Boolean(checkpoint) : Boolean(query.data),
+    };
+  }, [
+    projectId,
+    query.data,
+    resourceProjection.records,
+    resourceProjection.snapshot,
+    resources,
+    scheme,
+    scope,
+  ]);
   return {
-    catalog: response,
-    isError: query.isError,
+    catalog: response.catalog,
+    /** A durable/server catalog exists; optimistic rows alone cannot prove absence or uniqueness. */
+    isComplete: response.complete,
+    isError: query.isError || resourceProjection.error !== null,
     isFetching: query.isFetching,
     refetch: () => void query.refetch(),
   };
 }
 
 export function useContextCatalogScope(projectId: string, scope: CatalogScope, enabled = true) {
-  const queryClient = useQueryClient();
-  return useQuery({ ...contextCatalogQueryOptions(queryClient, projectId, scope), enabled });
+  const scopeKind = scope.kind;
+  const scopeProjectId = scope.kind === "user" ? undefined : scope.projectId;
+  const scopeUserId = scope.kind === "user" ? scope.userId : undefined;
+  const scopeWorkId = scope.kind === "work" ? scope.workId : undefined;
+  const stableScope = useMemo<CatalogScope>(
+    () =>
+      scopeKind === "user"
+        ? { kind: "user", userId: scopeUserId as string }
+        : scopeKind === "work"
+          ? {
+              kind: "work",
+              projectId: scopeProjectId as string,
+              workId: scopeWorkId as string,
+            }
+          : { kind: scopeKind, projectId: scopeProjectId as string },
+    [scopeKind, scopeProjectId, scopeUserId, scopeWorkId],
+  );
+  const resources = useOptionalAccountResourceReplica();
+  const projection = useAccountResourceProjection(projectId);
+  const query = useQuery({
+    ...contextCatalogQueryOptions(resources ?? serverCatalogAcquisition, projectId, stableScope),
+    enabled,
+  });
+  const data = useMemo(() => {
+    const checkpoint = projection.snapshot?.catalogs.find(
+      (candidate) =>
+        candidate.projectId === projectId &&
+        sameCatalogProjectionScope(candidate.scope, stableScope),
+    );
+    const view = checkpoint ? catalogViewFromCheckpoint(checkpoint) : query.data;
+    return view
+      ? projectResourceCatalogView(projectId, stableScope, view, projection.records)
+      : undefined;
+  }, [projectId, projection.records, projection.snapshot, query.data, stableScope]);
+  return {
+    ...query,
+    data,
+    error: projection.error ?? query.error,
+    isError: query.isError || projection.error !== null,
+  };
 }
 
 /** Own the project's single live wake subscription above every catalog consumer. */
@@ -221,6 +487,7 @@ export function useContextCatalogWake(
   onColdWorkHint?: (workId: string) => void,
 ): void {
   const queryClient = useQueryClient();
+  const resources = useOptionalAccountResourceReplica();
   const transport = useOptionalThreadTransport();
   useEffect(
     () =>
@@ -228,38 +495,37 @@ export function useContextCatalogWake(
         ? transport?.subscribeCatalog(projectId, (hint) => {
             const requestedScope: CatalogScope =
               hint.scope.kind === "user" ? { kind: "user", userId: "self" } : hint.scope;
-            const installed = queryClient.getQueryData(
-              projectQueryKeys.contextCatalog(projectId, requestedScope),
-            );
-            if (!installed && requestedScope.kind === "work") {
+            const mounted =
+              queryClient
+                .getQueryCache()
+                .find({
+                  queryKey: projectQueryKeys.contextCatalog(projectId, requestedScope),
+                  exact: true,
+                })
+                ?.getObserversCount() ?? 0;
+            if (mounted === 0 && requestedScope.kind === "work") {
               onColdWorkHint?.(requestedScope.workId);
-              return;
             }
-            pullContextCatalogOnHint(queryClient, projectId, hint);
+            if (resources) pullContextCatalogOnHint(queryClient, resources, projectId, hint);
           })
         : undefined,
-    [onColdWorkHint, projectId, queryClient, transport],
+    [onColdWorkHint, projectId, queryClient, resources, transport],
   );
 }
 
 /** Duplicate-tolerant wake hint handler; the hint never mutates cache state itself. */
 export function pullContextCatalogOnHint(
   queryClient: QueryClient,
+  resources: Pick<AccountResourceReplica, "hintCatalog">,
   projectId: string,
   hint: CatalogWakeHint,
 ): void {
   const requestedScope: CatalogScope =
     hint.scope.kind === "user" ? { kind: "user", userId: "self" } : hint.scope;
-  const view = queryClient.getQueryData<CatalogCacheView>(
-    projectQueryKeys.contextCatalog(projectId, requestedScope),
-  );
-  if (!view && requestedScope.kind !== "project") return;
-  if (view?.appliedRevision === hint.headRevision) return;
-  void hintContextCatalog(
-    queryClient,
-    projectQueryKeys.contextCatalog(projectId, requestedScope),
-    projectId,
-    requestedScope,
-    hint.headRevision,
-  );
+  void resources
+    .hintCatalog(projectId, requestedScope, hint.headRevision)
+    .then((next) =>
+      queryClient.setQueryData(projectQueryKeys.contextCatalog(projectId, requestedScope), next),
+    )
+    .catch(() => undefined);
 }

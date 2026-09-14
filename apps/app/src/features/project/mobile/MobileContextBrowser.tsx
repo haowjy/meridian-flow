@@ -17,7 +17,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import { AlertCircle, ChevronRight, Folder, Loader2 } from "lucide-react";
+import { AlertCircle, ChevronRight, Folder } from "lucide-react";
 import { Fragment, useState } from "react";
 import type {
   CatalogContextView,
@@ -262,7 +262,7 @@ function FolderListingBody({
   onRequestDelete: (target: EntryActionTarget) => void;
 }) {
   const openDocument = useOpenProjectDocument(projectId);
-  if (isError) {
+  if (isError && !catalog) {
     return (
       <ListingStatus tone="error">
         <AlertCircle className="size-4" aria-hidden />
@@ -271,16 +271,10 @@ function FolderListingBody({
     );
   }
   if (!catalog) {
+    if (isFetching) return <div className="min-h-24" aria-busy />;
     return (
       <ListingStatus tone="muted">
-        {isFetching ? (
-          <>
-            <Loader2 className="size-4 animate-spin" aria-hidden />
-            <Trans>Loading files…</Trans>
-          </>
-        ) : (
-          <Trans>No context files yet.</Trans>
-        )}
+        <Trans>No context files yet.</Trans>
       </ListingStatus>
     );
   }

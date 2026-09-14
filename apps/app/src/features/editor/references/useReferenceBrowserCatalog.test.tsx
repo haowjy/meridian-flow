@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 /** Cache events drive an open browser without a new editor frame. */
 
-import { emptyCatalogView } from "@meridian/resource-replica";
+import {
+  emptyCatalogView,
+  type ResourceProjectionSnapshot,
+  type ResourceRecord,
+  reserveResourceDocument,
+} from "@meridian/resource-replica";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -11,7 +16,23 @@ import { createReferenceBrowserController } from "@/core/completion";
 import type { AtReferenceCatalog } from "@/core/editor/extensions/at-reference";
 import { useReferenceBrowserCatalog } from "./useReferenceBrowserCatalog";
 
-vi.mock("@/client/query/useContextCatalog", () => ({
+let resourceProjection: {
+  snapshot: ResourceProjectionSnapshot | null;
+  records: readonly ResourceRecord[];
+  error: unknown | null;
+} = projection();
+const resourceReplicaMock = vi.hoisted(() => ({
+  acquireCatalog: vi.fn(),
+  observeProjection: () => () => {},
+  readProjection: vi.fn(),
+}));
+
+function projection() {
+  return { snapshot: null, records: [], error: null };
+}
+
+vi.mock("@/client/query/useContextCatalog", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/client/query/useContextCatalog")>()),
   contextCatalogQueryOptions: (
     _client: unknown,
     projectId: string,
@@ -21,6 +42,10 @@ vi.mock("@/client/query/useContextCatalog", () => ({
     queryFn: () =>
       scope.kind === "work" ? Promise.reject(new Error("offline")) : new Promise(() => {}),
   }),
+}));
+vi.mock("@/features/project/context/account-feature-context", () => ({
+  useOptionalAccountResourceReplica: () => resourceReplicaMock,
+  useAccountResourceProjection: () => resourceProjection,
 }));
 
 it("publishes settlement, failure and removal from the production cache subscription", async () => {
@@ -75,7 +100,8 @@ it("publishes settlement, failure and removal from the production cache subscrip
       })
       .catch(() => {});
   });
-  expect(browser.menu.snapshot().meta?.loadFailed).toBe(true);
+  // A failed refresh does not replace an already usable durable/cache projection.
+  expect(browser.menu.snapshot().meta?.loadFailed).toBe(false);
   act(() => client.removeQueries({ queryKey: key }));
   expect(browser.menu.snapshot().meta).toMatchObject({ incomplete: true, loadFailed: false });
   const coldScope = { kind: "work" as const, projectId: "project", workId: "cold" };
@@ -93,4 +119,49 @@ it("publishes settlement, failure and removal from the production cache subscrip
   browser.exit();
   await act(async () => root.unmount());
   client.clear();
+});
+
+it("offers a locally reserved document before server acknowledgement", async () => {
+  const record = reserveResourceDocument({
+    projectId: "project",
+    handle: "resource-local",
+    documentId: "document-local",
+    databaseName: "content-local",
+    schema: "schema",
+    intentId: "create-local",
+    provisionalName: "Untitled 1",
+  }).next;
+  resourceProjection = {
+    snapshot: { records: [record], catalogs: [] },
+    records: [record],
+    error: null,
+  };
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const scope = { kind: "project" as const, projectId: "project" };
+  client.setQueryData(projectQueryKeys.contextCatalog("project", scope), emptyCatalogView(scope));
+  let catalog: AtReferenceCatalog | null = null;
+  function Harness() {
+    catalog = useReferenceBrowserCatalog("project", null, "References");
+    return null;
+  }
+  const root = createRoot(document.createElement("div"));
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <Harness />
+      </QueryClientProvider>,
+    ),
+  );
+
+  const installed = catalog as AtReferenceCatalog | null;
+  if (!installed) throw new Error("catalog not installed");
+  expect(installed.port.read(scope)?.entries.get("document-local")).toMatchObject({
+    kind: "file",
+    name: "Untitled 1",
+    uri: "unfiled://Untitled 1",
+  });
+
+  await act(async () => root.unmount());
+  client.clear();
+  resourceProjection = projection();
 });

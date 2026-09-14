@@ -1,14 +1,9 @@
 /** One authenticated account's feature owners and retryable staged teardown. */
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
 import { createAccountDocumentSessionRuntime } from "@/core/editor/account-document-session-runtime";
+import { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import { AccountPostApplyDispositionOwner } from "../draft-apply-recovery/draft-apply-recovery-owner";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
-import { BrowserLocalUntitledLineageLedger } from "./local-untitled-lineage-ledger";
-import {
-  createLocalIdentityReservationPort,
-  createLocalUntitledCrossContextLeasePort,
-} from "./local-untitled-locks";
-import { LocalUntitledOwner } from "./local-untitled-owner";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
 
@@ -18,7 +13,7 @@ export class AccountFeatureLifetime {
   readonly postApplyOwner;
   readonly removal;
   readonly availability;
-  readonly localOwner;
+  readonly resources;
   readonly opener;
   private readonly featureLease;
   private closeAttempt: Promise<void> | null = null;
@@ -28,6 +23,7 @@ export class AccountFeatureLifetime {
   constructor(
     readonly accountId: string,
     repairProjectCatalog: (projectId: string) => Promise<void>,
+    onInvalidated: (error: Error) => void = () => undefined,
   ) {
     this.runtime = createAccountDocumentSessionRuntime({ accountId });
     this.registry = this.runtime.registry;
@@ -60,40 +56,17 @@ export class AccountFeatureLifetime {
       },
       repairProjectCatalog,
     });
-    const storage =
+    this.resources =
       typeof window === "undefined"
-        ? ({
-            length: 0,
-            getItem: () => null,
-            setItem: () => undefined,
-            removeItem: () => undefined,
-            clear: () => undefined,
-            key: () => null,
-          } as Storage)
-        : window.localStorage;
-    this.localOwner = new LocalUntitledOwner({
-      accountId,
-      ledger: new BrowserLocalUntitledLineageLedger(
-        storage,
-        createLocalUntitledCrossContextLeasePort({
-          accountId,
-          epochSignal: this.runtime.epochSignal,
-        }),
-      ),
-      identityReservations: createLocalIdentityReservationPort({ accountId }),
-      sessions: this.runtime.localConstruction,
-      reservations: this.runtime.localReservation,
-      adoption: this.runtime.localAdoption,
-    });
-    this.runtime.connectLocalResources({
-      terminal: this.localOwner.terminalPort,
-      beginClose: () => this.localOwner.beginClose(),
-      finishClose: () => this.localOwner.destroyAll(),
-    });
+        ? null
+        : new AccountResourceReplica(accountId, this.runtime, (error) => {
+            this.beginClose();
+            onInvalidated(error);
+          });
+    if (this.resources) this.runtime.connectLocalResources(this.resources);
     this.opener = new ProjectDocumentLiveOpener({
       availability: this.availability,
       registry: this.registry,
-      adoption: this.runtime.localAdoption,
       epochSignal: this.runtime.epochSignal,
     });
     this.featureLease = this.removal.createLifetimeLease();
@@ -110,6 +83,7 @@ export class AccountFeatureLifetime {
   beginClose(): void {
     if (this.state !== "open") return;
     this.state = "closing";
+    this.resources?.beginClose();
     this.runtime.beginClose();
     this.featureLease.suspend();
   }

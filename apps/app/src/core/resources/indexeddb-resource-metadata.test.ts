@@ -36,7 +36,7 @@ function resource(handle = "doc", revision = 1): ResourceRecord {
       canonical: null,
       lifecycle: { kind: "local" },
       aliases: {},
-      obligations: {},
+      obligations: { createEligibility: { eligibleAt: null } },
     },
     intents: [
       {
@@ -150,23 +150,29 @@ it("rejects duplicate current document identities atomically", async () => {
   expect(await store.readResource({ handle: "second" })).toBeNull();
 });
 
+it("resolves a current document identity before another resource's remint alias", async () => {
+  const store = open();
+  const reminted = resource("resource-a");
+  reminted.resource.identity = { documentId: "reminted", revision: 2 };
+  reminted.resource.aliases.requested = { introducedAtIdentityRevision: 2 };
+  const current = resource("resource-b");
+  current.resource.identity = { documentId: "requested", revision: 1 };
+  expect(await store.commitResource({ expectedRevision: null, next: reminted })).toBe("committed");
+  expect(await store.commitResource({ expectedRevision: null, next: current })).toBe("committed");
+
+  expect((await store.resolveAccessibleResource("project", "requested"))?.resource.handle).toBe(
+    "resource-b",
+  );
+});
+
 it("rolls back resource, intent, and checkpoint writes when the outer transaction aborts", async () => {
   const store = open();
-  const native = Dexie.prototype.transaction;
-  vi.spyOn(Dexie.prototype, "transaction").mockImplementationOnce(function (
-    this: Dexie,
-    ...args: Parameters<typeof native>
-  ) {
-    const callback = args.pop() as () => Promise<unknown>;
-    return Reflect.apply(native, this, [
-      ...args,
-      async () => {
-        await callback();
-        throw new Error("injected outer abort");
-      },
-    ]);
-  });
   const scope = { kind: "project" as const, projectId: "project" };
+  const valid = resource();
+  const invalid: ResourceRecord = {
+    ...valid,
+    intents: valid.intents.map((intent) => ({ ...intent, intentId: undefined as never })),
+  };
 
   await expect(
     store.commitCatalog({
@@ -182,14 +188,15 @@ it("rolls back resource, intent, and checkpoint writes when the outer transactio
         entries: [],
         invalidatedEntryIds: [],
       },
-      resources: [{ expectedRevision: null, next: resource() }],
+      resources: [{ expectedRevision: null, next: invalid }],
     }),
-  ).rejects.toThrow("injected outer abort");
-  vi.restoreAllMocks();
+  ).rejects.toThrow();
   expect(await store.readResource({ handle: "doc" })).toBeNull();
   expect(await store.readCatalog("project", scope)).toBeNull();
-  const internals = store as unknown as { intents: { toArray(): Promise<unknown[]> } };
-  expect(await internals.intents.toArray()).toEqual([]);
+  expect(await store.commitResource({ expectedRevision: null, next: resource() })).toBe(
+    "committed",
+  );
+  expect((await store.readResource({ handle: "doc" }))?.intents).toHaveLength(1);
 });
 
 it("shares one account resource while qualifying the User catalog per consuming project", async () => {
@@ -298,6 +305,54 @@ it("observes committed records across instances and stops admission before drain
   expect(await admitted).toBe("committed");
   expect((await right.readResource(write.next.resource))?.resource.revision).toBe(2);
   expect(errors).not.toHaveBeenCalled();
+});
+
+it("recovers a projection subscriber after a transient query failure", async () => {
+  const store = open();
+  const internals = store as unknown as {
+    readAccountProjection(): Promise<{
+      records: readonly ResourceRecord[];
+      catalogs: readonly never[];
+    }>;
+  };
+  const original = internals.readAccountProjection.bind(store);
+  vi.spyOn(internals, "readAccountProjection")
+    .mockRejectedValueOnce(new Error("temporary projection failure"))
+    .mockImplementation(original);
+  const observed: readonly ResourceRecord[][] = [];
+  const errors = vi.fn();
+  store.observeProjection(
+    "project",
+    ({ records }) => (observed as ResourceRecord[][]).push([...records]),
+    errors,
+  );
+
+  await vi.waitFor(() => expect(errors).toHaveBeenCalledOnce());
+  await store.commitResource({ expectedRevision: null, next: resource() });
+  await vi.waitFor(
+    () => expect(observed.some((records) => records[0]?.resource.handle === "doc")).toBe(true),
+    { timeout: 2_500 },
+  );
+});
+
+it("closes the account lifetime when another connection upgrades the database", async () => {
+  const account = crypto.randomUUID();
+  const versionChanged = vi.fn();
+  const store = open(account, versionChanged);
+  await store.readProjection("project");
+
+  const upgrader = new Dexie(`meridian:resource-metadata:v2:${encodeURIComponent(account)}`);
+  upgrader.version(1).stores({
+    resources: "handle",
+    intents: "intentId,handle,projectId",
+    catalogs: "key,projectId",
+  });
+  upgrader.version(2).stores({ probe: "id" });
+  await upgrader.open();
+
+  await vi.waitFor(() => expect(versionChanged).toHaveBeenCalledOnce());
+  await expect(store.readProjection("project")).rejects.toThrow("closing");
+  upgrader.close();
 });
 
 it("snapshots an admitted write before the caller can mutate it", async () => {

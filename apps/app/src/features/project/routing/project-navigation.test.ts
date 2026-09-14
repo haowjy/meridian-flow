@@ -193,7 +193,7 @@ describe("project navigation", () => {
     navigation.dispose();
   });
   it("retains a scoped local pointer without putting its UUID in the public URL", async () => {
-    const local = { accountId: "account", projectId: "project-id", threadId: "pending-thread" };
+    const local = { accountId: "account", projectId: "project-id", resourceHandle: "resource" };
     const { history, navigation } = setup("/p/serial/editor", {
       chatSlug: null,
       workSlug: null,
@@ -206,7 +206,7 @@ describe("project navigation", () => {
       meridianProjectEmptySelection: { href: "/p/serial/editor", chat: true, work: true },
     });
     expect(history.location.state).toMatchObject({
-      meridianProjectSelection: { version: 1, ...local },
+      meridianProjectSelection: { version: 2, ...local },
     });
     navigation.dispose();
   });

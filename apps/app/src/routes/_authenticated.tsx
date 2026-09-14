@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
-import { lazy, Suspense, useCallback, useEffect, useMemo } from "react";
+import { lazy, Suspense, useCallback, useEffect } from "react";
 import { getAccountSettings } from "@/client/api/account-api";
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
@@ -27,15 +27,8 @@ import { CreationProvider } from "@/features/chat/CreationProvider";
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
 import {
   AccountFeatureComposition,
-  useLocalUntitledOwner,
-  useProjectContextAvailabilityCoordinator,
-  useProjectDocumentLiveOpener,
+  useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
-import { createContextIdentityMutationService } from "@/features/project/context/context-identity-mutation";
-import {
-  getUntitledReconciler,
-  syncUntitledReceiptOwners,
-} from "@/features/project/context/untitled-reconciler-browser";
 import { DraftApplyRecoveryProvider } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
 import { originalBrowserSearch } from "@/router-search";
@@ -186,36 +179,17 @@ function AuthenticatedProviderTree({
   now: number;
   user: { userId: string; workingSetSyncEnabled: boolean | null };
 }) {
-  const queryClient = useQueryClient();
-  const localUntitled = useLocalUntitledOwner();
-  const liveOpener = useProjectDocumentLiveOpener();
-  const availability = useProjectContextAvailabilityCoordinator();
-  const untitledReconciler = useMemo(
-    () =>
-      typeof window === "undefined"
-        ? null
-        : getUntitledReconciler(
-            createContextIdentityMutationService(queryClient),
-            localUntitled,
-            liveOpener,
-            availability,
-          ),
-    [queryClient, localUntitled, liveOpener, availability],
-  );
+  const resources = useOptionalAccountResourceReplica();
 
   // Browser persistence is initialized only after the Query composition root
   // exists. Constructing these services during SSR crashes the authenticated shell.
   useEffect(() => {
-    if (!untitledReconciler) return;
-    untitledReconciler.rehydrate();
-    untitledReconciler.start();
+    resources?.start();
     void rehydrateContextDesks(user.userId);
-    syncUntitledReceiptOwners();
     void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();
     useProjectSurfacePrefsStore.getState().setHydrated();
-    return () => untitledReconciler.dispose();
-  }, [untitledReconciler, user.userId]);
+  }, [resources, user.userId]);
 
   return (
     <ProjectStoreProvider now={now}>

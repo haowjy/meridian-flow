@@ -223,8 +223,6 @@ export function ProjectView(props: ProjectViewProps) {
     projectId: props.projectId,
     deskHydrated,
     editorScope,
-    workingSetHydration,
-    queryClient,
   });
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;

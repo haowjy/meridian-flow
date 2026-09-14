@@ -1,9 +1,11 @@
 /** Authenticated-account scope for the project feature lifetime. */
-import { createContext, useContext, useInsertionEffect, useRef, useState } from "react";
+import type { ResourceProjectionSnapshot, ResourceRecord } from "@meridian/resource-replica";
+import { resourceVisibleInProject } from "@meridian/resource-replica";
+import { createContext, useContext, useEffect, useInsertionEffect, useRef, useState } from "react";
+import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import type { PostApplyDispositionOwner } from "../draft-apply-recovery/draft-apply-recovery-owner";
 import { AccountFeatureLifetime } from "./account-feature-lifetime";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
-import type { LocalUntitledOwner } from "./local-untitled-owner";
 import type { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
 import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
 
@@ -12,7 +14,7 @@ const AccountEpochContext = createContext<AbortSignal | null>(null);
 const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
 const ProjectAvailabilityAccountContext =
   createContext<ProjectContextAvailabilityCoordinator | null>(null);
-const LocalUntitledAccountContext = createContext<LocalUntitledOwner | null>(null);
+const ResourceReplicaAccountContext = createContext<AccountResourceReplica | null>(null);
 const LiveDocumentRegistryAccountContext = createContext<AccountFeatureLifetime["registry"] | null>(
   null,
 );
@@ -29,10 +31,15 @@ export function AccountFeatureComposition({
 }) {
   const desired = useRef({ accountId, repairProjectCatalog });
   desired.current = { accountId, repairProjectCatalog };
+  const invalidationHandler = useRef<(error: Error) => void>(() => undefined);
   const [lifetime, setLifetime] = useState(
-    () => new AccountFeatureLifetime(accountId, repairProjectCatalog),
+    () =>
+      new AccountFeatureLifetime(accountId, repairProjectCatalog, (error) =>
+        invalidationHandler.current(error),
+      ),
   );
   const [teardownError, setTeardownError] = useState<unknown>(null);
+  invalidationHandler.current = setTeardownError;
   const transition = useRef<Promise<void> | null>(null);
 
   if (teardownError) throw teardownError;
@@ -47,7 +54,11 @@ export function AccountFeatureComposition({
       .finishClose()
       .then(() => {
         const next = desired.current;
-        setLifetime(new AccountFeatureLifetime(next.accountId, next.repairProjectCatalog));
+        setLifetime(
+          new AccountFeatureLifetime(next.accountId, next.repairProjectCatalog, (error) =>
+            invalidationHandler.current(error),
+          ),
+        );
       })
       .catch((error: unknown) => setTeardownError(error))
       .finally(() => {
@@ -126,7 +137,7 @@ function AccountFeatureProviders({
     <AccountEpochContext.Provider value={lifetime.runtime.epochSignal}>
       <ContextRemovalAccountContext.Provider value={lifetime.removal}>
         <ProjectAvailabilityAccountContext.Provider value={lifetime.availability}>
-          <LocalUntitledAccountContext.Provider value={lifetime.localOwner}>
+          <ResourceReplicaAccountContext.Provider value={lifetime.resources}>
             <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
               <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
                 <PostApplyOwnerAccountContext.Provider value={lifetime.postApplyOwner}>
@@ -134,17 +145,64 @@ function AccountFeatureProviders({
                 </PostApplyOwnerAccountContext.Provider>
               </ProjectDocumentLiveOpenerContext.Provider>
             </LiveDocumentRegistryAccountContext.Provider>
-          </LocalUntitledAccountContext.Provider>
+          </ResourceReplicaAccountContext.Provider>
         </ProjectAvailabilityAccountContext.Provider>
       </ContextRemovalAccountContext.Provider>
     </AccountEpochContext.Provider>
   );
 }
 
-export function useLocalUntitledOwner(): LocalUntitledOwner {
-  const owner = useContext(LocalUntitledAccountContext);
-  if (!owner) throw new Error("AccountFeatureComposition is required");
-  return owner;
+export function useAccountResourceReplica(): AccountResourceReplica {
+  const replica = useContext(ResourceReplicaAccountContext);
+  if (!replica) throw new Error("Browser AccountFeatureComposition is required");
+  return replica;
+}
+
+export function useOptionalAccountResourceReplica(): AccountResourceReplica | null {
+  return useContext(ResourceReplicaAccountContext);
+}
+
+export function useAccountResourceProjection(projectId: string): {
+  records: readonly ResourceRecord[];
+  snapshot: ResourceProjectionSnapshot | null;
+  error: unknown;
+} {
+  const replica = useOptionalAccountResourceReplica();
+  return useObservedResourceProjection(replica, projectId);
+}
+
+/** React projection state over the replica's recoverable observation port. */
+export function useObservedResourceProjection(
+  replica: Pick<AccountResourceReplica, "observeProjection"> | null,
+  projectId: string,
+): {
+  records: readonly ResourceRecord[];
+  snapshot: ResourceProjectionSnapshot | null;
+  error: unknown;
+} {
+  const [snapshot, setSnapshot] = useState<ResourceProjectionSnapshot | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  useEffect(() => {
+    setSnapshot(null);
+    setError(null);
+    if (!replica || !projectId) return;
+    return replica.observeProjection(
+      projectId,
+      (next) => {
+        setSnapshot(next);
+        setError(null);
+      },
+      setError,
+    );
+  }, [projectId, replica]);
+  return {
+    records:
+      snapshot?.records.filter((record) =>
+        resourceVisibleInProject(projectId, record, snapshot.catalogs),
+      ) ?? [],
+    snapshot,
+    error,
+  };
 }
 
 export { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";

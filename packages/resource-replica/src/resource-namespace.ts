@@ -79,6 +79,7 @@ function requestFor(
     if (
       resource.lifecycle.kind !== "local" ||
       resource.canonical ||
+      resource.obligations.createEligibility?.eligibleAt == null ||
       (resource.content.kind === "exact" && resource.content.initialization === "reserved")
     )
       return null;
@@ -353,6 +354,7 @@ export function settleNamespaceOutcome(record: ResourceRecord): ResourceWrite | 
     else {
       if (resource.content.kind !== "exact" || resource.content.initialization === "reserved")
         throw new Error("Created resource content is not initialized");
+      const { createEligibility: _eligible, ...obligations } = resource.obligations;
       resource = {
         ...resource,
         canonical: resource.canonical ?? createLocation(outcome.result),
@@ -361,7 +363,7 @@ export function settleNamespaceOutcome(record: ResourceRecord): ResourceWrite | 
             ? { kind: "acknowledged", availabilityGeneration: null }
             : resource.lifecycle,
         obligations: {
-          ...resource.obligations,
+          ...obligations,
           sessionAdoption: {
             transitionId: attempt.attemptId,
             projectId: intent.projectId,

@@ -334,7 +334,7 @@ export class DocumentSessionRegistry
     if (input.accountId !== this.accountId) {
       throw new DocumentSessionAuthorityError(
         "account-mismatch",
-        "Local Untitled construction belongs to a different account epoch",
+        "Local document construction belongs to a different account epoch",
       );
     }
     return this.constructSession(input.documentId, {

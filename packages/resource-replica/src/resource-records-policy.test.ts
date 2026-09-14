@@ -18,7 +18,7 @@ function reserved(): ResourceRecord {
       canonical: null,
       lifecycle: { kind: "local" },
       aliases: {},
-      obligations: {},
+      obligations: { createEligibility: { eligibleAt: null } },
     },
     intents: [
       {
@@ -45,12 +45,27 @@ it("allows a new local reservation and its one-way initialization acknowledgemen
   expect(() => validateResourceRecordUpdate(first, initialized)).not.toThrow();
 });
 
+it("requires explicit monotonic eligibility for executable local creation", () => {
+  const missing = reserved();
+  missing.resource.obligations = {};
+  expect(() => validateResourceRecordUpdate(null, missing)).toThrow(
+    "requires an explicit eligibility witness",
+  );
+
+  const eligible = reserved();
+  eligible.resource.obligations.createEligibility = { eligibleAt: 1 };
+  const reset = structuredClone(eligible);
+  reset.resource.revision = 2;
+  reset.resource.obligations.createEligibility = { eligibleAt: 2 };
+  expect(() => validateResourceRecordUpdate(eligible, reset)).toThrow("cannot be reset");
+});
+
 it("preserves a reservation through local metadata progress but blocks unsafe authority", () => {
   const existing = reserved();
   const continued = structuredClone(existing);
   continued.resource.revision = 2;
   continued.resource.aliases = {
-    "/old": { publicationObligationId: "alias", introducedAtIdentityRevision: 1 },
+    "/old": { introducedAtIdentityRevision: 1 },
   };
   expect(() => validateResourceRecordUpdate(existing, continued)).not.toThrow();
   for (const mutate of [

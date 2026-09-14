@@ -39,7 +39,7 @@ describe("context removal planner", () => {
         editable: true,
         filetype: "markdown",
         schemaType: "document",
-        origin: "local-untitled",
+        origin: "local-resource",
       }),
     ).toBeNull();
   });
@@ -69,7 +69,7 @@ describe("context removal planner", () => {
       ...tracked("local", "/Untitled.md"),
       scheme: "scratch" as const,
       workId: "work-a",
-      origin: "local-untitled" as const,
+      origin: "local-resource" as const,
     };
     const input = {
       activeWorkId: "work-b",
@@ -323,6 +323,7 @@ describe("context removal planner", () => {
       kind: "new",
       documentId: "local",
       name: "Untitled",
+      resourceHandle: "resource-local",
     };
     const draft = { ...tracked("draft", "/draft.md"), draftOnly: true };
     const plan = planContextRemoval({

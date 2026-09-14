@@ -49,7 +49,7 @@ export type ContextViewerProps = {
   active: boolean;
   layoutSaveFailed?: boolean;
   onNewDocument?: () => void;
-  onUntitledBecameNonEmpty: (documentId: string) => void;
+  onUntitledBecameNonEmpty: (documentId: string) => Promise<void>;
   onCommitted: (
     documentId: string,
     next: IdentityCommitted,

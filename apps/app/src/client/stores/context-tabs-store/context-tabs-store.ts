@@ -36,11 +36,10 @@ export type OpenEditorTabResult =
 
 type ContextTabsActions = {
   openTab: (projectId: string, tab: ContextTab, isCurrent?: () => boolean) => OpenEditorTabResult;
-  remintNewTab: (projectId: string, documentId: string, replacementId: string) => Promise<void>;
-  materializeNewTab: (
+  reconcileResourceTab: (
     projectId: string,
-    documentId: string,
-    tab: Extract<ContextTab, { kind: "tracked" }>,
+    resourceHandle: string,
+    tab: ContextTab,
   ) => Promise<void>;
   updateTrackedTab: (
     projectId: string,
@@ -234,33 +233,8 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
           return installed ? { kind: "opened", tab: installed } : { kind: "not-opened" };
         },
 
-        remintNewTab: (projectId, documentId, replacementId) =>
-          dispatch((base) => {
-            const tab = sliceFor(base, projectId).tabs.find(
-              (candidate) => candidate.kind === "new" && candidate.documentId === documentId,
-            );
-            if (tab?.kind !== "new" || !tab.lineageHandle) return null;
-            return {
-              kind: "publish-remint",
-              lineageHandle: tab.lineageHandle,
-              minimumIdentityRevision: (tab.identityRevision ?? 0) + 1,
-              documentId: replacementId,
-            };
-          }),
-
-        materializeNewTab: (projectId, documentId, tab) =>
-          dispatch((base) => {
-            const local = sliceFor(base, projectId).tabs.find(
-              (candidate) => candidate.kind === "new" && candidate.documentId === documentId,
-            );
-            if (local?.kind !== "new" || !local.lineageHandle) return null;
-            return {
-              kind: "publish-adoption",
-              lineageHandle: local.lineageHandle,
-              adoptionRevision: (local.identityRevision ?? 1) + 1,
-              trackedTab: { ...tab, origin: "local-untitled" },
-            };
-          }),
+        reconcileResourceTab: (projectId, resourceHandle, tab) =>
+          dispatch(() => ({ kind: "reconcile-resource", projectId, resourceHandle, tab })),
 
         updateTrackedTab: (projectId, documentId, metadata) =>
           dispatch((base) => {
@@ -590,71 +564,16 @@ export async function rehydrateContextDesks(userId: string): Promise<void> {
   });
 }
 
-async function applyPublication(
-  command:
-    | {
-        kind: "publish-remint";
-        lineageHandle: string;
-        minimumIdentityRevision: number;
-        documentId: string;
-      }
-    | {
-        kind: "publish-adoption";
-        lineageHandle: string;
-        adoptionRevision: number;
-        trackedTab: ContextTab;
-      },
-): Promise<"published" | "not-referenced" | "stale"> {
-  if (!workspaceAccountId) throw new Error("Editor workspace is not hydrated");
-  const result = reduceEditorWorkspace(
-    {
-      version: 1,
-      accountId: workspaceAccountId,
-      projects: useContextTabsStore.getState().byProject,
-    },
-    command,
-  );
-  if (result.kind === "stale") return "stale";
-  if (result.kind === "not-referenced") return "not-referenced";
-  if (result.kind === "committed") {
-    useContextTabsStore.setState({ byProject: { ...result.snapshot.projects } });
-    persistWorkspace();
-  }
-  return "published";
-}
-
-export function publishLocalUntitledRemint(input: {
-  lineageHandle: string;
-  minimumIdentityRevision: number;
-  documentId: string;
-}): Promise<"published" | "not-referenced" | "stale"> {
-  return applyPublication({ kind: "publish-remint", ...input });
-}
-
-export function publishLocalUntitledAdoption(input: {
-  lineageHandle: string;
-  adoptionRevision: number;
-  trackedTab: ContextTab;
-}): Promise<"published" | "not-referenced" | "stale"> {
-  return applyPublication({ kind: "publish-adoption", ...input });
-}
-
 type PublicContextTabsActions = Pick<
   ContextTabsActions,
-  | "openTab"
-  | "remintNewTab"
-  | "materializeNewTab"
-  | "updateTrackedTab"
-  | "reorderTabs"
-  | "selectTab"
+  "openTab" | "reconcileResourceTab" | "updateTrackedTab" | "reorderTabs" | "selectTab"
 >;
 
 export function useContextTabsActions(): PublicContextTabsActions {
   return useContextTabsStore(
     useShallow((s) => ({
       openTab: s.openTab,
-      remintNewTab: s.remintNewTab,
-      materializeNewTab: s.materializeNewTab,
+      reconcileResourceTab: s.reconcileResourceTab,
       updateTrackedTab: s.updateTrackedTab,
       reorderTabs: s.reorderTabs,
       selectTab: s.selectTab,

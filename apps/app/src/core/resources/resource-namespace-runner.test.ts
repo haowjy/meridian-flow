@@ -36,7 +36,7 @@ function local(): ResourceRecord {
       canonical: null,
       lifecycle: { kind: "local" },
       aliases: {},
-      obligations: {},
+      obligations: { createEligibility: { eligibleAt: 1 } },
     },
     intents: [
       {

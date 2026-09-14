@@ -6,12 +6,13 @@ const local = (id: string): ContextTab => ({
   kind: "new",
   documentId: id,
   name: "Untitled",
+  resourceHandle: `resource-${id}`,
 });
 const tracked = (
   id: string,
   path: string,
   workId: string,
-  origin?: "local-untitled",
+  origin?: "local-resource",
 ): Extract<ContextTab, { kind: "tracked" }> => ({
   kind: "tracked",
   documentId: id,
@@ -48,7 +49,7 @@ describe("resolveDeskRoute", () => {
   it("returns a redirect fact for the exact materialized local owner", () => {
     expect(
       resolveDeskRoute({
-        tabs: [tracked("n", "/Untitled.md", "a", "local-untitled")],
+        tabs: [tracked("n", "/Untitled.md", "a", "local-resource")],
         selectedDocumentId: "n",
         locator: { scheme: "unfiled", path: "", workId: "a" },
       }),
@@ -57,7 +58,7 @@ describe("resolveDeskRoute", () => {
 
   it("contextualizes a project-scoped materialized owner with the selected Work", () => {
     const tab: ContextTab = {
-      ...tracked("n", "/Opening.md", "a", "local-untitled"),
+      ...tracked("n", "/Opening.md", "a", "local-resource"),
       scheme: "manuscript",
       workId: undefined,
     };

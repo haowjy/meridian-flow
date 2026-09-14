@@ -1,4 +1,4 @@
-/** Account-qualified metadata transactions. Not composed until the resource-owner cutover. */
+/** Account-qualified metadata transactions and one shared reactive projection stream. */
 import type { CatalogScope } from "@meridian/contracts/protocol";
 import type {
   NamespaceIntent,
@@ -13,12 +13,22 @@ import type {
 import {
   catalogProjectionKey,
   catalogScopeBelongsToProject,
+  resourceForDocumentIdentity,
   resourceVisibleInProject,
   validateResourceRecordUpdate,
 } from "@meridian/resource-replica";
 import Dexie, { liveQuery, type Table } from "dexie";
 
 type StoredCatalog = ResourceCatalogCheckpoint & { key: string };
+type AccountProjectionSnapshot = {
+  records: readonly ResourceRecord[];
+  catalogs: readonly ResourceCatalogCheckpoint[];
+};
+type ProjectionListener = {
+  projectId: string;
+  listener(snapshot: ResourceProjectionSnapshot): void;
+  onError(error: unknown): void;
+};
 
 /** Expected revisions belong to the caller's immutable snapshot; stale writes never partly apply. */
 export class IndexedDbResourceMetadata implements ResourceMetadataStore {
@@ -27,7 +37,10 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
   private readonly intents: Table<NamespaceIntent, string>;
   private readonly catalogs: Table<StoredCatalog, string>;
   private readonly operations = new Set<Promise<unknown>>();
-  private readonly subscriptions = new Set<() => void>();
+  private readonly projectionListeners = new Map<symbol, ProjectionListener>();
+  private projectionStop: (() => void) | null = null;
+  private projectionRetry: ReturnType<typeof setTimeout> | null = null;
+  private projectionSnapshot: AccountProjectionSnapshot | null = null;
   private closing = false;
 
   constructor(
@@ -68,6 +81,46 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
     return { resource, intents };
   }
 
+  private records(
+    resources: readonly ResourceDescriptor[],
+    intents: readonly NamespaceIntent[],
+  ): ResourceRecord[] {
+    const byHandle = new Map<string, NamespaceIntent[]>();
+    for (const intent of intents) {
+      const members = byHandle.get(intent.handle) ?? [];
+      members.push(intent);
+      byHandle.set(intent.handle, members);
+    }
+    return resources.map((resource) => ({
+      resource,
+      intents: (byHandle.get(resource.handle) ?? []).sort((a, b) => a.sequence - b.sequence),
+    }));
+  }
+
+  private readAccountProjection(): Promise<AccountProjectionSnapshot> {
+    return this.database.transaction("r", this.resources, this.intents, this.catalogs, async () => {
+      const [resources, intents, catalogs] = await Promise.all([
+        this.resources.toArray(),
+        this.intents.toArray(),
+        this.catalogs.toArray(),
+      ]);
+      return {
+        records: this.records(resources, intents),
+        catalogs: catalogs.map(({ key: _key, ...checkpoint }) => checkpoint),
+      };
+    });
+  }
+
+  private projectSnapshot(
+    snapshot: AccountProjectionSnapshot,
+    projectId: string,
+  ): ResourceProjectionSnapshot {
+    return {
+      records: snapshot.records,
+      catalogs: snapshot.catalogs.filter((catalog) => catalog.projectId === projectId),
+    };
+  }
+
   readResource(key: ResourceKey): Promise<ResourceRecord | null> {
     return this.run(() =>
       this.database.transaction("r", this.resources, this.intents, async () => {
@@ -92,16 +145,27 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
     );
   }
 
-  readProjection(projectId: string): Promise<ResourceProjectionSnapshot> {
+  /** Resolve current identity before aliases inside one metadata snapshot. */
+  resolveAccessibleResource(projectId: string, documentId: string): Promise<ResourceRecord | null> {
     return this.run(() =>
       this.database.transaction("r", this.resources, this.intents, this.catalogs, async () => {
-        const resources = await this.resources.toArray();
-        const catalogs = await this.catalogs.where("projectId").equals(projectId).toArray();
-        return {
-          records: await Promise.all(resources.map((resource) => this.record(resource))),
-          catalogs: catalogs.map(({ key: _key, ...checkpoint }) => checkpoint),
-        };
+        const [resources, intents, catalogs] = await Promise.all([
+          this.resources.toArray(),
+          this.intents.toArray(),
+          this.catalogs.where("projectId").equals(projectId).toArray(),
+        ]);
+        const checkpoints = catalogs.map(({ key: _key, ...checkpoint }) => checkpoint);
+        const visible = this.records(resources, intents).filter((record) =>
+          resourceVisibleInProject(projectId, record, checkpoints),
+        );
+        return resourceForDocumentIdentity(visible, documentId);
       }),
+    );
+  }
+
+  readProjection(projectId: string): Promise<ResourceProjectionSnapshot> {
+    return this.run(async () =>
+      this.projectSnapshot(await this.readAccountProjection(), projectId),
     );
   }
 
@@ -195,29 +259,56 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
     onError: (error: unknown) => void,
   ): () => void {
     if (this.closing) throw new Error("Resource metadata is closing");
-    const subscription = liveQuery(() =>
-      this.run(() =>
-        this.database.transaction("r", this.resources, this.intents, this.catalogs, async () => {
-          const resources = await this.resources.toArray();
-          const catalogs = await this.catalogs.where("projectId").equals(projectId).toArray();
-          return {
-            records: await Promise.all(resources.map((resource) => this.record(resource))),
-            catalogs: catalogs.map(({ key: _key, ...checkpoint }) => checkpoint),
-          };
-        }),
-      ),
-    ).subscribe({ next: listener, error: onError });
+    const token = Symbol(projectId);
+    this.projectionListeners.set(token, { projectId, listener, onError });
+    if (this.projectionSnapshot) {
+      const current = this.projectSnapshot(this.projectionSnapshot, projectId);
+      queueMicrotask(() => {
+        if (this.projectionListeners.has(token)) listener(current);
+      });
+    }
+    this.startProjection();
     const stop = () => {
-      subscription.unsubscribe();
-      this.subscriptions.delete(stop);
+      this.projectionListeners.delete(token);
+      if (this.projectionListeners.size > 0) return;
+      this.projectionStop?.();
+      if (this.projectionRetry) clearTimeout(this.projectionRetry);
+      this.projectionRetry = null;
     };
-    this.subscriptions.add(stop);
     return stop;
+  }
+
+  private startProjection(): void {
+    if (this.closing || this.projectionStop || this.projectionListeners.size === 0) return;
+    const subscription = liveQuery(() => this.run(() => this.readAccountProjection())).subscribe({
+      next: (snapshot) => {
+        this.projectionSnapshot = snapshot;
+        for (const subscriber of this.projectionListeners.values())
+          subscriber.listener(this.projectSnapshot(snapshot, subscriber.projectId));
+      },
+      error: (error) => {
+        for (const subscriber of this.projectionListeners.values()) subscriber.onError(error);
+        this.projectionStop?.();
+        if (this.closing || this.projectionListeners.size === 0 || this.projectionRetry) return;
+        this.projectionRetry = setTimeout(() => {
+          this.projectionRetry = null;
+          this.startProjection();
+        }, 1_000);
+      },
+    });
+    this.projectionStop = () => {
+      subscription.unsubscribe();
+      this.projectionStop = null;
+      this.projectionSnapshot = null;
+    };
   }
 
   beginClose(): void {
     this.closing = true;
-    for (const stop of this.subscriptions) stop();
+    this.projectionListeners.clear();
+    this.projectionStop?.();
+    if (this.projectionRetry) clearTimeout(this.projectionRetry);
+    this.projectionRetry = null;
   }
 
   async finishClose(): Promise<void> {

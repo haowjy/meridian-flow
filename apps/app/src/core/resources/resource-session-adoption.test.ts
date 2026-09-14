@@ -7,6 +7,7 @@ import type {
   ResourceRecord,
 } from "@meridian/resource-replica";
 import {
+  markResourceCreateEligible,
   prepareNamespaceAttempt,
   recordNamespaceOutcome,
   reserveResourceDocument,
@@ -44,7 +45,9 @@ function record(): ResourceRecord {
     intentId: "create",
   }).next;
   if (reserved.resource.content.kind === "exact") delete reserved.resource.content.initialization;
-  const submitted = prepareNamespaceAttempt(reserved, {
+  const eligible = markResourceCreateEligible(reserved, 1);
+  if (!eligible) throw new Error("Expected create eligibility");
+  const submitted = prepareNamespaceAttempt(eligible.next, {
     attemptId: "transition",
     operationId: "unused",
   });

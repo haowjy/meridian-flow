@@ -16,12 +16,18 @@ import type {
   ResourceCatalogCheckpoint,
   ResourceMetadataStore,
   ResourceProjectionSnapshot,
+  ResourceRecord,
 } from "./resource-records";
 
 export interface ResourceCatalogTransport {
   readonly accountId: string;
-  snapshot(projectId: string, scope: CatalogScope): Promise<CatalogSnapshot>;
-  changes(projectId: string, scope: CatalogScope, cursor: string): Promise<CatalogChanges>;
+  snapshot(projectId: string, scope: CatalogScope, signal: AbortSignal): Promise<CatalogSnapshot>;
+  changes(
+    projectId: string,
+    scope: CatalogScope,
+    cursor: string,
+    signal: AbortSignal,
+  ): Promise<CatalogChanges>;
 }
 
 type AcquisitionState = {
@@ -43,11 +49,17 @@ function checkpointFor(
 }
 
 function observationFence(snapshot: ResourceProjectionSnapshot): CatalogObservationFence {
-  const resourceRevisions = new Map<string, number>();
+  const resources = new Map<
+    string,
+    { revision: number; canonical: ResourceRecord["resource"]["canonical"] }
+  >();
   for (const { resource } of snapshot.records) {
-    resourceRevisions.set(resource.handle, resource.revision);
+    resources.set(resource.handle, {
+      revision: resource.revision,
+      canonical: structuredClone(resource.canonical),
+    });
   }
-  return { resourceRevisions };
+  return { resources };
 }
 
 function revision(value: string): bigint | null {
@@ -84,6 +96,7 @@ export class ResourceCatalogAcquisition {
   private readonly operations = new Set<Promise<unknown>>();
   private closing = false;
   private epoch = 0;
+  private readonly close = new AbortController();
 
   constructor(
     readonly accountId: string,
@@ -157,7 +170,7 @@ export class ResourceCatalogAcquisition {
     this.assertCurrent(epoch);
     const previous = checkpointFor(projectId, scope, before);
     const fence = observationFence(before);
-    const response = await this.transport.snapshot(projectId, scope);
+    const response = await this.transport.snapshot(projectId, scope, this.close.signal);
     this.assertCurrent(epoch);
     this.assertResponseScope(scope, response.scope);
     const view = catalogViewFromSnapshot(response);
@@ -190,7 +203,12 @@ export class ResourceCatalogAcquisition {
 
       const current = catalogViewFromCheckpoint(previous);
       const fence = observationFence(before);
-      const changes = await this.transport.changes(projectId, scope, current.cursor);
+      const changes = await this.transport.changes(
+        projectId,
+        scope,
+        current.cursor,
+        this.close.signal,
+      );
       this.assertCurrent(epoch);
       this.assertResponseScope(scope, changes.scope);
       if (changes.kind === "reset-required") {
@@ -246,6 +264,7 @@ export class ResourceCatalogAcquisition {
     if (this.closing) return;
     this.closing = true;
     this.epoch += 1;
+    this.close.abort(new Error("Resource catalog is closing"));
   }
 
   async finishClose(): Promise<void> {

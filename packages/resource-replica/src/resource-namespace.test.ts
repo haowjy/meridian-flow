@@ -27,7 +27,7 @@ function local(): ResourceRecord {
       canonical: null,
       lifecycle: { kind: "local" },
       aliases: {},
-      obligations: {},
+      obligations: { createEligibility: { eligibleAt: 1 } },
     },
     intents: [
       {
@@ -109,6 +109,21 @@ function transport(input: {
 }
 
 describe("namespace record transitions", () => {
+  it.each([
+    {},
+    { createEligibility: { eligibleAt: null } },
+  ])("keeps an ineligible local reservation off the network", (obligations) => {
+    const record = local();
+    record.resource.obligations = obligations;
+
+    expect(
+      prepareNamespaceAttempt(record, {
+        attemptId: "attempt",
+        operationId: "unused-create-operation",
+      }),
+    ).toBeNull();
+  });
+
   it("does not dispatch creation before exact local content is initialized", () => {
     const record = local();
     if (record.resource.content.kind !== "exact") throw new Error("Expected exact content");

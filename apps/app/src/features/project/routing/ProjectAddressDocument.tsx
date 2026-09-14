@@ -5,9 +5,11 @@ import {
   isProjectContextTreeScheme,
 } from "@meridian/contracts/protocol";
 import { type Dispatch, type SetStateAction, useEffect } from "react";
+import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import { useContextTabsActions } from "@/client/stores";
 import { contextTabFromFile } from "../context/context-tab-from-file";
+import { mergeLocalResourceState } from "./local-document-address";
 import type { ProjectRouteIssue } from "./ProjectRouteBoundary";
 import { type ProjectAddress, projectAddressHref } from "./project-address";
 import type { createProjectNavigation } from "./project-navigation";
@@ -25,6 +27,7 @@ export function ProjectAddressDocument({
   entryKey,
   address,
   result,
+  localFile,
   workId,
   workSlug,
   navigation,
@@ -35,6 +38,7 @@ export function ProjectAddressDocument({
   entryKey: string;
   address: ProjectAddress;
   result: DocumentAddressResult | undefined;
+  localFile?: CatalogFile;
   workId: string | null;
   workSlug: string | null;
   navigation: ReturnType<typeof createProjectNavigation> | null;
@@ -61,7 +65,11 @@ export function ProjectAddressDocument({
     void (async () => {
       const installed = openTab(
         projectId,
-        contextTabFromFile(uri.value.scheme, projectCatalogFile(document), routeWorkId),
+        contextTabFromFile(
+          uri.value.scheme,
+          mergeLocalResourceState(projectCatalogFile(document), localFile),
+          routeWorkId,
+        ),
         isCurrent,
       );
       if (controller.signal.aborted || !navigation.isCurrent(ticket)) return;
@@ -100,6 +108,17 @@ export function ProjectAddressDocument({
         onAdmission({ ...identity, issue: "error" });
     });
     return () => controller.abort();
-  }, [projectId, href, entryKey, result, workId, workSlug, navigation, openTab, onAdmission]);
+  }, [
+    projectId,
+    href,
+    entryKey,
+    result,
+    localFile,
+    workId,
+    workSlug,
+    navigation,
+    openTab,
+    onAdmission,
+  ]);
   return null;
 }

@@ -6,9 +6,9 @@ import { getContextCatalogChanges, getContextCatalogSnapshot } from "@/client/ap
 export function createResourceCatalogTransport(accountId: string): ResourceCatalogTransport {
   return {
     accountId,
-    snapshot: (projectId: string, scope: CatalogScope) =>
-      getContextCatalogSnapshot(projectId, scope),
-    changes: (projectId: string, scope: CatalogScope, cursor: string) =>
-      getContextCatalogChanges(projectId, scope, cursor),
+    snapshot: (projectId: string, scope: CatalogScope, signal: AbortSignal) =>
+      getContextCatalogSnapshot(projectId, scope, signal),
+    changes: (projectId: string, scope: CatalogScope, cursor: string, signal: AbortSignal) =>
+      getContextCatalogChanges(projectId, scope, cursor, signal),
   };
 }

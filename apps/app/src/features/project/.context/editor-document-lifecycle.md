@@ -39,12 +39,12 @@ flowchart TD
   The URL layer still does not repeat
   live admission; session binding belongs to the host.
 - **New or pending local Unfiled writing:** an exact local identity in `/editor`
-  history state selects the persisted lineage/session. New is available without
+  history state selects the durable resource/session. New is available without
   a Work; the first content change starts project-owned `unfiled://` creation.
   Closed pending writing can be reopened from Unfiled, independently of tabs.
-  Canonical adoption retains the same document ID and then replaces the address.
+  Acknowledgement or remint preserves the resource handle and editor session while the address adopts the current Document ID.
   See [local writing ownership](../context/.context/CONTEXT.md#unfiled-materialization-and-recovery)
-  for remint, queued filing, recovery, and migration constraints.
+  for remint, queued filing, and recovery constraints.
 
 ## Ordered handoff
 

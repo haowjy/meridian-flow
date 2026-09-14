@@ -1,4 +1,0 @@
-# Resource-owner cutover
-
-- PR #531 / issue #270: compose the sole resource owner, content/session transfer, catalog projection and namespace runner; cut every application caller over together; then delete the displaced lineage ledger/owner/reconciler and QueryClient catalog installer.
-- Prove actual browser storage exhaustion and eviction behavior before activation. Injected `QuotaExceededError` rollback is covered, but Chromium quota override did not establish real eviction behavior.

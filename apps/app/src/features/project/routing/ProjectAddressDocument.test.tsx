@@ -2,7 +2,8 @@
 /** Authorized tab publication and alias admission under delayed navigation. */
 import type { DocumentAddressResult } from "@meridian/contracts/protocol";
 import { act } from "react";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
+import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ProjectAddressDocument } from "./ProjectAddressDocument";
 import type { ProjectAddress } from "./project-address";
@@ -11,7 +12,12 @@ import { createProjectNavigation } from "./project-navigation";
 const { openTab } = vi.hoisted(() => ({
   openTab: vi.fn(),
 }));
-vi.mock("@/client/stores", () => ({ useContextTabsActions: () => ({ openTab }) }));
+vi.mock("@/client/stores", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/client/stores")>()),
+  useContextTabsActions: () => ({ openTab }),
+}));
+
+beforeEach(() => openTab.mockReset());
 
 function documentResult(kind: "current" | "alias"): DocumentAddressResult {
   return {
@@ -91,7 +97,7 @@ it.each([
       onAdmission={onAdmission}
     />,
     async () => {
-      expect(openTab).toHaveBeenCalledWith(
+      expect(openTab).toHaveBeenLastCalledWith(
         "project-id",
         expect.objectContaining({
           documentId: "doc-id",
@@ -113,6 +119,75 @@ it.each([
         );
         await act(async () => finishReplace());
       } else expect(navigate).not.toHaveBeenCalled();
+    },
+  );
+  navigation.dispose();
+});
+
+it("preserves a proven local resource handle during readable-route admission", async () => {
+  openTab.mockReturnValue({ kind: "opened" });
+  const href = "/p/project/kb/doc";
+  const navigation = createProjectNavigation(
+    {
+      read: () => ({ key: "entry", href, state: {} }),
+      subscribe: () => () => undefined,
+      flush: () => undefined,
+      settlePendingTraversal: () => undefined,
+      replaceEntry: () => undefined,
+      navigate: vi.fn(),
+    },
+    () => ({ chatSlug: null, workSlug: null }),
+  );
+  const localFile: CatalogFile = {
+    kind: "file",
+    entryId: "doc-id",
+    parentId: "source",
+    documentId: "doc-id",
+    name: "old.md",
+    aliases: [],
+    path: "/old.md",
+    uri: "kb://project/old.md",
+    provisionalName: false,
+    editable: true,
+    filetype: "markdown",
+    schemaType: "document",
+    resourceHandle: "resource-id",
+    resourceState: "acknowledged",
+    resourceOrigin: "local",
+    localContent: true,
+  };
+
+  await withReactRoot(
+    <ProjectAddressDocument
+      projectId="project-id"
+      href={href}
+      entryKey="entry"
+      address={{
+        projectSlug: "project",
+        destination: { kind: "document", scheme: "kb", path: "doc", workSlug: null },
+        chat: { kind: "none" },
+        work: { kind: "none" },
+        results: false,
+      }}
+      result={documentResult("current")}
+      localFile={localFile}
+      workId={null}
+      workSlug={null}
+      navigation={navigation}
+      onAdmission={vi.fn()}
+    />,
+    async () => {
+      expect(openTab).toHaveBeenLastCalledWith(
+        "project-id",
+        expect.objectContaining({
+          documentId: "doc-id",
+          name: "doc",
+          path: "/doc",
+          resourceHandle: "resource-id",
+          origin: "local-resource",
+        }),
+        expect.any(Function),
+      );
     },
   );
   navigation.dispose();

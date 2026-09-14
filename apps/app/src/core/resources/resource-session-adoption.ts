@@ -89,6 +89,10 @@ export class ResourceSessionAdoptionCoordinator {
     return operation;
   }
 
+  cancel(key: ResourceKey): void {
+    this.abortActiveTransfer(encodeURIComponent(key.handle));
+  }
+
   private async reconcileTracked(key: ResourceKey): Promise<ResourceSessionAdoptionResult> {
     const initial = await this.metadata.readResource(key);
     const witness = exactAdoption(initial);
