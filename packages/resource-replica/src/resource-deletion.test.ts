@@ -7,7 +7,6 @@ import { validateResourceRecordUpdate } from "./resource-records-policy";
 function local(): ResourceRecord {
   return {
     resource: {
-      projectId: "project",
       handle: "lineage",
       revision: 1,
       identity: { documentId: "document", revision: 1 },
@@ -36,14 +35,14 @@ it("retains never-submitted writing with a local deletion fence and cancelled na
   const before = local();
   const create = before.intents[0];
   if (!create) throw new Error("fixture missing create");
-  const write = planResourceDeletion(before, "delete");
+  const write = planResourceDeletion(before, "project", "delete");
   expect(write).not.toBeNull();
   if (!write) throw new Error("missing plan");
   expect(write.expectedRevision).toBe(1);
   expect(write.next.resource).toEqual({ ...before.resource, revision: 2 });
   expect(write.next.intents.map(({ state }) => state)).toEqual(["cancelled", "settled-locally"]);
   expect(() => validateResourceRecordUpdate(before, write.next)).not.toThrow();
-  expect(planResourceDeletion(write.next, "another-delete")).toBeNull();
+  expect(planResourceDeletion(write.next, "project", "another-delete")).toBeNull();
   const revived = structuredClone(write.next);
   revived.resource.revision++;
   revived.intents = [...revived.intents, { ...create, intentId: "new-create", sequence: 3 }];
@@ -72,7 +71,7 @@ it("preserves submitted create uncertainty rather than pretending deletion cance
       ],
     },
   ];
-  const write = planResourceDeletion(before, "delete");
+  const write = planResourceDeletion(before, "project", "delete");
   if (!write) throw new Error("missing plan");
   expect(write.next.intents[0]).toEqual(before.intents[0]);
   expect(write.next.intents[1]?.state).toBe("pending");
@@ -85,12 +84,10 @@ it("preserves submitted create uncertainty rather than pretending deletion cance
 });
 
 it.each([
-  "recovery",
   "acknowledged",
   "canonical",
 ] as const)("keeps %s deletion pending without a remote outcome", (evidence) => {
   const before = local();
-  if (evidence === "recovery") before.resource.recovery = { sourceKey: "legacy" };
   if (evidence === "acknowledged")
     before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
   if (evidence === "canonical")
@@ -100,7 +97,7 @@ it.each([
       name: "Untitled.md",
       workId: null,
     };
-  const write = planResourceDeletion(before, "delete");
+  const write = planResourceDeletion(before, "project", "delete");
   if (!write) throw new Error("missing plan");
   expect(write.next.intents.at(-1)?.state).toBe("pending");
   expect(() => validateResourceRecordUpdate(before, write.next)).not.toThrow();

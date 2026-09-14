@@ -25,7 +25,6 @@ afterEach(async () => {
 function resource(handle = "doc", revision = 1): ResourceRecord {
   return {
     resource: {
-      projectId: "project",
       handle,
       revision,
       identity: { documentId: handle, revision: 1 },
@@ -78,35 +77,6 @@ it("serializes competing revisions without losing or partially publishing the lo
   expect((await left.readResource(a.resource))?.resource.revision).toBe(2);
 });
 
-it("rolls back resource, intent, raw evidence and migration checkpoint on outer abort", async () => {
-  const store = open();
-  const native = Dexie.prototype.transaction;
-  vi.spyOn(Dexie.prototype, "transaction").mockImplementation(function (
-    this: Dexie,
-    ...args: Parameters<typeof native>
-  ) {
-    const callback = args.pop() as () => Promise<unknown>;
-    return Reflect.apply(native, this, [
-      ...args,
-      async () => {
-        await callback();
-        throw new Error("injected outer abort");
-      },
-    ]);
-  });
-  await expect(
-    store.commitMigration({
-      expectedRevision: null,
-      next: { revision: 1, state: "importing" },
-      resources: [{ expectedRevision: null, next: resource() }],
-      evidence: [{ sourceKey: "legacy", raw: "unparseable bytes", status: "recovery" }],
-    }),
-  ).rejects.toThrow("injected outer abort");
-  vi.restoreAllMocks();
-  expect(await store.readResource({ projectId: "project", handle: "doc" })).toBeNull();
-  expect(await store.readMigration()).toEqual({ checkpoint: null, evidence: [] });
-});
-
 it("keeps catalog entries and cursor unchanged when a resource revision is stale", async () => {
   const store = open();
   const scope = { kind: "project" as const, projectId: "project" };
@@ -142,6 +112,39 @@ it("keeps catalog entries and cursor unchanged when a resource revision is stale
   });
 });
 
+it("shares one account resource while qualifying the User catalog per consuming project", async () => {
+  const store = open();
+  const responseScope = { kind: "user" as const, userId: "account-user" };
+  const first = {
+    projectId: "project-a",
+    scope: responseScope,
+    revision: 1,
+    generation: "generation",
+    appliedRevision: "1",
+    observedHeadRevision: "1",
+    cursor: "cursor-a",
+    entries: [],
+    invalidatedEntryIds: [],
+  };
+  expect(
+    await store.commitCatalog({
+      expectedRevision: null,
+      next: first,
+      resources: [{ expectedRevision: null, next: resource() }],
+    }),
+  ).toBe("committed");
+  const second = { ...first, projectId: "project-b", cursor: "cursor-b" };
+  expect(await store.commitCatalog({ expectedRevision: null, next: second, resources: [] })).toBe(
+    "committed",
+  );
+
+  const requestScope = { kind: "user" as const, userId: "self" };
+  expect(await store.readCatalog("project-a", requestScope)).toEqual(first);
+  expect(await store.readCatalog("project-b", requestScope)).toEqual(second);
+  expect((await store.readProject("project-a")).records).toEqual([resource()]);
+  expect((await store.readProject("project-b")).records).toEqual([resource()]);
+});
+
 it("retains submitted request bytes and rejects replacement by a later intention", async () => {
   const store = open();
   const next = resource();
@@ -166,28 +169,6 @@ it("retains submitted request bytes and rejects replacement by a later intention
     "Submitted namespace request cannot be replaced",
   );
   expect(await store.readResource(next.resource)).toEqual(next);
-});
-
-it("commits migration evidence and resumes from the stored checkpoint", async () => {
-  const account = crypto.randomUUID();
-  const store = open(account);
-  const batch = {
-    expectedRevision: null,
-    next: { revision: 1, state: "importing" as const },
-    evidence: [{ sourceKey: "broken-record", raw: "{not-json", status: "recovery" as const }],
-    resources: [{ expectedRevision: null, next: resource() }],
-  };
-  await store.commitMigration(batch);
-  await store.finishClose();
-  const restored = open(account);
-  expect(await restored.readMigration()).toEqual({
-    checkpoint: batch.next,
-    evidence: batch.evidence,
-  });
-  expect(await restored.commitMigration(batch)).toBe("stale");
-  expect(await restored.readResource(batch.resources[0].next.resource)).toEqual(
-    batch.resources[0].next,
-  );
 });
 
 it("observes committed records across instances and stops admission before draining", async () => {
@@ -272,43 +253,6 @@ it("rejects retroactive intention order and settled-work replay", async () => {
   );
 });
 
-it("preserves raw migration evidence and never restarts a completed import", async () => {
-  const store = open();
-  const evidence = [{ sourceKey: "legacy", raw: "ORIGINAL", status: "recovery" as const }];
-  await store.commitMigration({
-    expectedRevision: null,
-    next: { revision: 1, state: "importing" },
-    resources: [],
-    evidence,
-  });
-  await expect(
-    store.commitMigration({
-      expectedRevision: 1,
-      next: { revision: 2, state: "importing" },
-      resources: [],
-      evidence: [{ ...evidence[0], raw: "REPLACED" }],
-    }),
-  ).rejects.toThrow("cannot be replaced");
-  await store.commitMigration({
-    expectedRevision: 1,
-    next: { revision: 2, state: "complete" },
-    resources: [],
-    evidence: [],
-  });
-  await expect(
-    store.commitMigration({
-      expectedRevision: 2,
-      next: { revision: 3, state: "importing" },
-      resources: [],
-      evidence: [],
-    }),
-  ).rejects.toThrow("cannot restart");
-  expect(await store.readMigration()).toEqual({
-    checkpoint: { revision: 2, state: "complete" },
-    evidence,
-  });
-});
-
 it("notifies project observers after a catalog-only commit", async () => {
   const store = open();
   const observed: string[] = [];
@@ -337,53 +281,4 @@ it("notifies project observers after a catalog-only commit", async () => {
   });
   await vi.waitFor(() => expect(observed).toContain("new-catalog"));
   expect(onError).not.toHaveBeenCalled();
-});
-
-it("resolves captured recovery atomically without reopening capture or replacing evidence", async () => {
-  const store = open();
-  const raw = "preserved legacy bytes";
-  await store.commitMigration({
-    expectedRevision: null,
-    next: { revision: 1, state: "complete" },
-    resources: [],
-    evidence: [{ sourceKey: "legacy", raw, status: "recovery" }],
-  });
-  const command = {
-    sourceKey: "legacy",
-    expectedRaw: raw,
-    resource: { expectedRevision: null, next: resource() },
-  };
-  expect(await store.resolveMigrationEvidence({ ...command, expectedRaw: "different" })).toBe(
-    "stale",
-  );
-  expect(await store.readResource(command.resource.next.resource)).toBeNull();
-  const native = Dexie.prototype.transaction;
-  vi.spyOn(Dexie.prototype, "transaction").mockImplementationOnce(function (
-    this: Dexie,
-    ...args: Parameters<typeof native>
-  ) {
-    const callback = args.pop() as () => Promise<unknown>;
-    return Reflect.apply(native, this, [
-      ...args,
-      async () => {
-        await callback();
-        throw new Error("resolution abort");
-      },
-    ]);
-  });
-  await expect(store.resolveMigrationEvidence(command)).rejects.toThrow("resolution abort");
-  expect(await store.readResource(command.resource.next.resource)).toBeNull();
-  expect((await store.readMigration()).evidence[0]?.status).toBe("recovery");
-  expect(
-    (
-      await Promise.all([
-        store.resolveMigrationEvidence(command),
-        store.resolveMigrationEvidence(command),
-      ])
-    ).sort(),
-  ).toEqual(["committed", "stale"]);
-  expect(await store.readMigration()).toEqual({
-    checkpoint: { revision: 1, state: "complete" },
-    evidence: [{ sourceKey: "legacy", raw, status: "imported" }],
-  });
 });

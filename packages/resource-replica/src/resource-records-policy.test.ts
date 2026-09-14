@@ -6,7 +6,6 @@ import { validateResourceRecordUpdate } from "./resource-records-policy";
 function reserved(): ResourceRecord {
   return {
     resource: {
-      projectId: "project",
       handle: "resource",
       revision: 1,
       identity: { documentId: "document", revision: 1 },
@@ -57,9 +56,6 @@ it("preserves a reservation through local metadata progress but blocks unsafe au
   for (const mutate of [
     (record: ResourceRecord) => {
       record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: null };
-    },
-    (record: ResourceRecord) => {
-      record.resource.recovery = { sourceKey: "legacy" };
     },
     (record: ResourceRecord) => {
       const intent = record.intents[0];

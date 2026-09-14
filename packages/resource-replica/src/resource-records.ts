@@ -11,7 +11,8 @@ import type {
 } from "@meridian/contracts/protocol";
 import type { CatalogCacheView } from "./catalog";
 
-export type ResourceKey = Readonly<{ projectId: string; handle: string }>;
+/** Account-global identity. Project access belongs to catalogs and namespace intentions. */
+export type ResourceKey = Readonly<{ handle: string }>;
 export type ResourceLocation = Readonly<{
   scheme: ProjectContextTreeScheme;
   path: string;
@@ -33,10 +34,8 @@ export type ResourceDescriptor = ResourceKey & {
         initialization?: "reserved";
       }
     | { kind: "unacquired" };
-  recovery?: { sourceKey: string };
   canonical: ResourceLocation | null;
   lifecycle:
-    | { kind: "recovering" }
     | { kind: "local" }
     | { kind: "acknowledged"; availabilityGeneration: string | null }
     | { kind: "terminal"; generation: string; transitionId: string };
@@ -87,6 +86,7 @@ export type NamespaceAttempt = {
 }[NamespaceRequest["kind"]];
 
 export type NamespaceIntent = ResourceKey & {
+  projectId: string;
   intentId: string;
   sequence: number;
   identityRevision: number;
@@ -122,18 +122,6 @@ export type ResourceCatalogCheckpoint = Pick<
   invalidatedEntryIds: readonly string[];
 };
 
-export type MigrationEvidence = {
-  sourceKey: string;
-  raw: string;
-  status: "imported" | "recovery";
-  reason?: string;
-};
-
-export type ResourceMigrationCheckpoint = {
-  revision: number;
-  state: "importing" | "complete";
-};
-
 export type ResourceWrite = {
   expectedRevision: number | null;
   next: ResourceRecord;
@@ -156,21 +144,6 @@ export interface ResourceMetadataStore {
     expectedRevision: number | null;
     next: ResourceCatalogCheckpoint;
     resources: readonly ResourceWrite[];
-  }): Promise<MetadataCommitResult>;
-  readMigration(): Promise<{
-    checkpoint: ResourceMigrationCheckpoint | null;
-    evidence: readonly MigrationEvidence[];
-  }>;
-  commitMigration(input: {
-    expectedRevision: number | null;
-    next: ResourceMigrationCheckpoint;
-    evidence: readonly MigrationEvidence[];
-    resources: readonly ResourceWrite[];
-  }): Promise<MetadataCommitResult>;
-  resolveMigrationEvidence(input: {
-    sourceKey: string;
-    expectedRaw: string;
-    resource: ResourceWrite;
   }): Promise<MetadataCommitResult>;
   observeProject(
     projectId: string,
