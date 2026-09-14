@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Wait for local account storage before reserving new documents.
+
 - Record initialized document caches without treating missing storage as an empty document.
 
 - Settle Editor opens and closes with accepted URLs. Cancelled opens leave tabs unchanged; close and immediate reload stay empty.
