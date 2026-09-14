@@ -24,6 +24,14 @@ namespace submission. Terminal resources cannot revive. Resolution preserves
 independent progress and uses source identity plus revision CAS; capture completion
 is distinct from per-resource recovery completion.
 
+`planResourceDeletion` records writer deletion without fabricating remote authority.
+For a local identity with no canonical/recovery evidence or submitted history, it
+cancels earlier unsubmitted intentions and settles deletion locally. Exact content
+and lifecycle are retained; this is a projection/admission fence for the future
+owner, not permission to purge. Submitted or uncertain creation must settle before
+remote deletion. Cancelled/local-settled intentions cannot restart; locally settled
+deletion permits no executable namespace work in the resulting snapshot.
+
 The storage foundation is not the active resource owner. Import, reconciliation,
 content access and caller cutover must replace the old lineage/reconciler together;
 there must never be two production metadata writers.

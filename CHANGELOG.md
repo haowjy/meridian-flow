@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Retain local writing when deleting never-submitted resources; cancel queued work without a fabricated server tombstone.
+
 - Recover legacy terminal state from atomic room and purge evidence.
 
 - Preserve local cache identity and pending writer intentions during legacy recovery.

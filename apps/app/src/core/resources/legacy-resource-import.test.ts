@@ -1,5 +1,6 @@
 /** Legacy handoff preserves exact content identity and uncertainty across interrupted imports. */
 import "fake-indexeddb/auto";
+import { planResourceDeletion } from "@meridian/resource-replica";
 import Dexie from "dexie";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ResourceAuthorityInspection } from "../editor/account-document-session-runtime";
@@ -580,4 +581,32 @@ it("keeps a local cache unacquired while its authority snapshot contains a purge
   const result = await metadata.readResource({ projectId: "project", handle: "lineage" });
   expect(result?.resource.content.kind).toBe("unacquired");
   expect(result?.resource.recovery).toBeDefined();
+});
+
+it("retains contradictory local/bindable authority as recovery rather than proving never-submitted creation", async () => {
+  const metadata = open();
+  await importLegacyResources({
+    accountId,
+    source: [bytes(local())],
+    metadata,
+    authority: inspection(async (documentId) => ({
+      documentId,
+      persistence: {
+        phase: "bindable",
+        generation: "1",
+        exactDatabaseName: "original-cache:lineage",
+        originLineageHandle: "lineage",
+      },
+      pendingDrain: null,
+      documentAdmittedThrough: "1",
+    })),
+  });
+  const record = await metadata.readResource({ projectId: "project", handle: "lineage" });
+  if (!record) throw new Error("missing imported resource");
+  expect(record.resource.content).toMatchObject({
+    kind: "exact",
+    databaseName: "original-cache:lineage",
+  });
+  expect(record.resource.recovery).toBeDefined();
+  expect(planResourceDeletion(record, "delete")?.next.intents.at(-1)?.state).toBe("pending");
 });

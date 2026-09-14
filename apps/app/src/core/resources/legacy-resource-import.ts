@@ -88,7 +88,9 @@ function importedRecord(
   if (!databaseName) return null;
   // Legacy settlements do not retain submitted request bytes or current canonical authority.
   // Keep them recoverable until the handoff resolver can establish their outcome.
-  const uncertain = record.work.createSettlement.kind !== "ready";
+  const uncertain =
+    record.work.createSettlement.kind !== "ready" ||
+    (record.kind === "local" && authority?.phase === "bindable");
   if (
     record.kind === "adopted" &&
     ((record.canonicalSync &&
