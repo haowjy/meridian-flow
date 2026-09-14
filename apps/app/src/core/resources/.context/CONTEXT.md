@@ -5,7 +5,9 @@ APIs, Web Locks and exact local document sessions. The adapters are not yet
 constructed by the production account runtime; the old lineage/reconciler and
 QueryClient catalog acquisition remain live until the complete caller cutover.
 
-`IndexedDbResourceMetadata` owns one database per account. Resource descriptors
+`IndexedDbResourceMetadata` owns one `v2` physical database per account; the
+incompatible inactive `v1` schema is deliberately ignored rather than migrated.
+Resource descriptors
 are account-global by stable handle. Namespace intentions carry the project used
 for their command. Catalog checkpoints carry both server scope and consuming
 project, so the same account-owned User catalog can project into several projects
