@@ -50,7 +50,7 @@ const mocks = vi.hoisted(() => ({
         selectedTabIdByWork: {},
       },
     },
-    _deskHydrated: true,
+    _workspaceHydrated: true,
   },
 }));
 

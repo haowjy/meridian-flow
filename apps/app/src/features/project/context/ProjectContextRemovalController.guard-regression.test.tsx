@@ -77,7 +77,7 @@ it("never restamps a Work-scoped route candidate during a production Work transi
         selectedTabIdByWork: { "work-1": "work-2-document" },
       },
     },
-    _deskHydrated: true,
+    _workspaceHydrated: true,
   });
   let coordinator: ContextRemovalCoordinator | null = null;
   let switchWork: (() => void) | null = null;

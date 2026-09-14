@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  type ContextDeskValidationScope,
-  validateContextDeskTabs,
+  type EditorTabValidationScope,
+  validateEditorWorkspaceTabs,
 } from "./browser-editor-tab-validation";
 import { useOptionalAccountResourceReplica } from "./context/account-feature-context";
 import {
@@ -60,13 +60,13 @@ export function useContextProjectAuthority({
     if (raw === "start") {
       const operation = rawOperationRef.current + 1;
       rawOperationRef.current = operation;
-      const scope: ContextDeskValidationScope = {
+      const scope: EditorTabValidationScope = {
         projectId,
         generation: operation,
       };
-      const isLiveScope = (candidate: ContextDeskValidationScope) =>
+      const isLiveScope = (candidate: EditorTabValidationScope) =>
         mountedRef.current && rawOperationRef.current === candidate.generation;
-      const bootstrap = validateContextDeskTabs({ resources, scope, isLiveScope });
+      const bootstrap = validateEditorWorkspaceTabs({ resources, scope, isLiveScope });
       rawBootstrapRef.current = bootstrap.then(
         () => undefined,
         () => undefined,

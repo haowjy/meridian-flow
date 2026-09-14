@@ -167,7 +167,7 @@ describe("AccountFeatureTestProvider", () => {
       byProject: {
         "project-1": { tabs: [tracked("a", "/a.md")], selectedTabIdByWork: { "work-1": "a" } },
       },
-      _deskHydrated: true,
+      _workspaceHydrated: true,
     });
     const instances: ContextRemovalCoordinator[] = [];
     const entrySnapshots: ReturnType<ContextRemovalCoordinator["getProjectSnapshot"]>[] = [];

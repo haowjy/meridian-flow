@@ -59,8 +59,6 @@ function catalog(localContent: boolean): CatalogContextView {
     ...(localContent ? { localContent: true as const } : {}),
   };
   return {
-    projectId: "project-id",
-    scheme: "kb",
     normalized,
     root: {
       kind: "dir",

@@ -4,7 +4,7 @@ import {
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
 import type { ContextTab } from "@/client/stores";
-import { resolveDeskRoute } from "../context/context-route-desk-owner";
+import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 
 export function resolveLocalDocumentSelection(input: {
   pointer: unknown;
@@ -33,7 +33,7 @@ export function resolveLocalDocumentSelection(input: {
   if (!input.hydrated) return { kind: "loading" } as const;
   const tab = input.tabs.find((candidate) => candidate.resourceHandle === pointer.resourceHandle);
   if (!tab) return { kind: "unavailable" } as const;
-  const owner = resolveDeskRoute({
+  const owner = resolveWorkspaceRoute({
     tabs: input.tabs,
     selectedDocumentId: tab.documentId,
     locator: { scheme: "unfiled", path: "", workId: input.workId },

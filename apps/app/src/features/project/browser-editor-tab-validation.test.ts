@@ -1,7 +1,7 @@
 import type { ResourceProjectionSnapshot, ResourceRecord } from "@meridian/resource-replica";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type ContextTab, useContextTabsStore } from "@/client/stores";
-import { validateContextDeskTabs } from "./browser-editor-tab-validation";
+import { validateEditorWorkspaceTabs } from "./browser-editor-tab-validation";
 
 const mocks = vi.hoisted(() => ({ availability: vi.fn() }));
 const resources = {
@@ -17,11 +17,11 @@ vi.mock("@/client/query/project-context-availability", () => ({
 beforeEach(() => {
   mocks.availability.mockReset();
   resources.readProjection.mockReset().mockResolvedValue({ records: [], catalogs: [] });
-  useContextTabsStore.setState({ byProject: {}, _deskHydrated: true });
+  useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: true });
 });
 
 function validate() {
-  return validateContextDeskTabs({
+  return validateEditorWorkspaceTabs({
     resources,
     scope: { projectId: "project", generation: 1 },
     isLiveScope: () => true,

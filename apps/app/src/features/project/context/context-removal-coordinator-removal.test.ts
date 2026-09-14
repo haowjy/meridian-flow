@@ -57,7 +57,7 @@ function setDesk(tabs: ContextTab[], selectedTabId: string | null) {
               selectedTabIdByWork: selectedTabId ? { "work-1": selectedTabId } : {},
             },
           },
-    _deskHydrated: false,
+    _workspaceHydrated: false,
   });
 }
 

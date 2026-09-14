@@ -80,7 +80,7 @@ it("settles a populated-folder receipt through one terminal availability batch",
         selectedTabIdByWork: { "work-1": "child-document" },
       },
     },
-    _deskHydrated: true,
+    _workspaceHydrated: true,
   });
   let search: ProjectSearch = {
     screen: "context" as const,
@@ -163,7 +163,7 @@ it("submits the Work captured when delete confirmation was requested", async () 
         selectedTabIdByWork: { "work-1": "document-b" },
       },
     },
-    _deskHydrated: true,
+    _workspaceHydrated: true,
   });
   const invalidation = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
   await withReactRoot(

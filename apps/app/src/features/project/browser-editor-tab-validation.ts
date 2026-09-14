@@ -11,7 +11,7 @@ import { lookupProjectContextAvailability } from "@/client/query/project-context
 import { projectCatalogFile } from "@/client/query/useContextCatalog";
 import {
   type ContextTab,
-  reconcileContextDeskBootstrap,
+  reconcileEditorWorkspaceBootstrap,
   useContextTabsStore,
 } from "@/client/stores";
 import { reconcileContextRoutes } from "@/client/working-set";
@@ -19,12 +19,12 @@ import type { AccountResourceReplica } from "@/core/resources/account-resource-r
 import { workingSetRouteForTab } from "./context/context-removal-planner";
 import { contextTabFromFile, contextTabFromResource } from "./context/context-tab-from-file";
 
-export type ContextDeskValidationScope = {
+export type EditorTabValidationScope = {
   projectId: string;
   generation: number;
 };
 
-type ContextDeskValidationGuard = (scope: ContextDeskValidationScope) => boolean;
+type EditorTabValidationGuard = (scope: EditorTabValidationScope) => boolean;
 
 type ValidatedRoute = { tab: ContextTab | null; removedRoute: WorkingSetRoute | null };
 
@@ -86,14 +86,14 @@ async function validateServerRoute(
 }
 
 /** Refreshes restored tab metadata and drops routes that no longer exist. */
-export async function validateContextDeskTabs({
+export async function validateEditorWorkspaceTabs({
   resources,
   scope,
   isLiveScope,
 }: {
   resources: Pick<AccountResourceReplica, "readProjection">;
-  scope: ContextDeskValidationScope;
-  isLiveScope: ContextDeskValidationGuard;
+  scope: EditorTabValidationScope;
+  isLiveScope: EditorTabValidationGuard;
 }): Promise<void> {
   const { projectId } = scope;
   const restored = useContextTabsStore.getState().byProject[projectId]?.tabs ?? [];
@@ -156,7 +156,7 @@ export async function validateContextDeskTabs({
     promote: null,
     clearAll: false,
   });
-  await reconcileContextDeskBootstrap(
+  await reconcileEditorWorkspaceBootstrap(
     projectId,
     tabs.map(({ tab }, index) => ({ prior: restored[index] as ContextTab, next: tab })),
   );

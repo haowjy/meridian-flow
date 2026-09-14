@@ -1,4 +1,4 @@
-/** Private facets for transferring one local Untitled session into admitted live ownership. */
+/** Private facets for transferring one local resource session into admitted live ownership. */
 import type {
   AvailabilityGeneration,
   LiveDocumentSessionLease,

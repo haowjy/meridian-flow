@@ -13,7 +13,7 @@ import { AppQueryProvider } from "@/client/query/AppQueryProvider";
 import {
   loadProjectList,
   ProjectStoreProvider,
-  rehydrateContextDesks,
+  rehydrateEditorWorkspace,
   ThreadStoreProvider,
   useIndependentProjectsStore,
 } from "@/client/stores";
@@ -185,7 +185,7 @@ function AuthenticatedProviderTree({
   // exists. Constructing these services during SSR crashes the authenticated shell.
   useEffect(() => {
     resources?.start();
-    void rehydrateContextDesks(user.userId);
+    void rehydrateEditorWorkspace(user.userId);
     void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();
     useProjectSurfacePrefsStore.getState().setHydrated();

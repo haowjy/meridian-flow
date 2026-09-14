@@ -17,7 +17,7 @@ import { withReactRoot } from "@/test-support/react-dom-harness";
 import {
   commitDraftApplyMetadata,
   getContextTabs,
-  rehydrateContextDesks,
+  rehydrateEditorWorkspace,
   useContextTabs,
   useContextTabsStore,
 } from "./context-tabs-store";
@@ -28,7 +28,7 @@ beforeEach(() => {
   useContextTabsStore.setState({
     byProject: {},
     _reviewOverlayByProject: {},
-    _deskHydrated: false,
+    _workspaceHydrated: false,
   });
   routeSlice = null;
 });
@@ -36,7 +36,7 @@ beforeEach(() => {
 it("lets settled Discard own effects before a later Close", async () => {
   const accountId = `discard-wins-${crypto.randomUUID()}`;
   const projectId = "discard-wins-project";
-  await rehydrateContextDesks(accountId);
+  await rehydrateEditorWorkspace(accountId);
   await useContextTabsStore.getState().openTab(projectId, {
     kind: "tracked",
     tabInstanceId: "review-tab",
@@ -93,7 +93,7 @@ function ReviewRouteConsumer({ projectId }: { projectId: string }) {
 
 it("durably installs a hydrated draft Apply before acknowledging settlement", async () => {
   const accountId = `draft-apply-${crypto.randomUUID()}`;
-  await rehydrateContextDesks(accountId);
+  await rehydrateEditorWorkspace(accountId);
   await useContextTabsStore.getState().openTab("project-1", {
     kind: "tracked",
     tabInstanceId: "draft-tab",
@@ -136,7 +136,7 @@ it("durably installs a hydrated draft Apply before acknowledging settlement", as
 it("explicitly closes a review overlay without issuing a durable desk removal", async () => {
   const accountId = `draft-close-${crypto.randomUUID()}`;
   const projectId = "project-close";
-  await rehydrateContextDesks(accountId);
+  await rehydrateEditorWorkspace(accountId);
   await useContextTabsStore.getState().openTab(projectId, {
     kind: "tracked",
     tabInstanceId: "close-tab",
@@ -171,7 +171,7 @@ it.each([
   const accountId = `same-document-${instanceCase}-${crypto.randomUUID()}`;
   const projectId = `project-${instanceCase}`;
   const workId = "work-a";
-  await rehydrateContextDesks(accountId);
+  await rehydrateEditorWorkspace(accountId);
   const review = {
     kind: "tracked" as const,
     tabInstanceId: "review-tab",
@@ -273,7 +273,7 @@ it("keeps the provider-mounted review overlay through route selection and Apply"
   const projectId = "project-route";
   const documentId = "document-route";
   const draftId = "draft-route";
-  await rehydrateContextDesks(accountId);
+  await rehydrateEditorWorkspace(accountId);
 
   await withReactRoot(
     createElement(EditorReviewHandoffProvider, {
@@ -339,7 +339,7 @@ it("keeps the provider-mounted review overlay through route selection and Apply"
         "draftOnly",
       );
 
-      await rehydrateContextDesks(accountId);
+      await rehydrateEditorWorkspace(accountId);
       expect(getContextTabs(projectId).tabs).toMatchObject([{ documentId }]);
       expect(
         parseEditorWorkspace(sessionStorage.getItem(EDITOR_WORKSPACE_STORAGE_KEY))?.projects[

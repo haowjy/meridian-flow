@@ -10,7 +10,7 @@ import { useContextTabsStore } from "@/client/stores";
 import { acceptContextTransition } from "@/test-support/context-removal-route";
 import type { ProjectSearch } from "../routing/project-route";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
-import { resolveDeskRoute } from "./context-route-desk-owner";
+import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
 
 const projectId = "project-1";
 const documentId = "00000000-0000-4000-8000-000000000001";
@@ -64,7 +64,7 @@ describe("ContextRemovalCoordinator availability batches", () => {
         },
       },
       _reviewOverlayByProject: {},
-      _deskHydrated: false,
+      _workspaceHydrated: false,
     });
   });
 
@@ -185,7 +185,7 @@ describe("ContextRemovalCoordinator availability batches", () => {
     });
     expect(routes).toEqual([{ documentId, scheme: "manuscript", path: "/new.md" }]);
     expect(
-      resolveDeskRoute({
+      resolveWorkspaceRoute({
         tabs: useContextTabsStore.getState().byProject[projectId]?.tabs ?? [],
         selectedDocumentId:
           useContextTabsStore.getState().byProject[projectId]?.selectedTabIdByWork["work-1"],
@@ -322,7 +322,7 @@ describe("availability owner batch publication and settlement", () => {
           selectedTabIdByWork: { "work-1": documentId },
         },
       },
-      _deskHydrated: true,
+      _workspaceHydrated: true,
     });
     let search: ProjectSearch = {
       screen: "context",
@@ -413,7 +413,7 @@ describe("availability owner batch publication and settlement", () => {
           selectedTabIdByWork: { "work-1": documentId },
         },
       },
-      _deskHydrated: true,
+      _workspaceHydrated: true,
     });
     let search: ProjectSearch = {
       screen: "context",
@@ -532,7 +532,7 @@ describe("availability owner batch publication and settlement", () => {
           selectedTabIdByWork: { "work-1": documentId },
         },
       },
-      _deskHydrated: true,
+      _workspaceHydrated: true,
     });
     const publications: string[][] = [];
     const stop = useContextTabsStore.subscribe((state) => {
@@ -639,7 +639,7 @@ describe("availability Work authority and retry", () => {
         },
       },
       _reviewOverlayByProject: {},
-      _deskHydrated: false,
+      _workspaceHydrated: false,
     });
     const route = {
       transition: acceptContextTransition,
