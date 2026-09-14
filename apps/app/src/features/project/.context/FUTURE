@@ -41,3 +41,7 @@
   LRU shape as the view warm set), keeping only active/recent tabs live.
   Prior art: Yjs FAQ warns against hydrating many Y.Docs; research brief
   work/writer-ux/research/wss-localfirst-research-brief.md §4 (docs repo).
+- Multi-pane Editor layout: the current workspace deliberately owns one selected
+  document view per browser tab. A split-view design must first define focus,
+  history, tab membership, and session-retention semantics; do not stretch the
+  single-selection workspace reducer into two implicit selections.

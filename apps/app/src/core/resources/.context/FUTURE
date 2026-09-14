@@ -3,3 +3,11 @@
 - Characterize Chromium storage exhaustion and eviction with a real-browser probe
   before promising recovery behavior. Transaction rollback for an injected
   `QuotaExceededError` is covered; quota override did not establish real eviction.
+- Cold offline application boot remains separate from the loaded-app guarantees in
+  `features/project/.context/resource-lifecycle-architecture.md`. It requires an
+  authenticated-shell bootstrap policy for cached account/project authority; do not
+  infer authorization from locally retained resource metadata.
+- Folder create, rename, move, and delete still use the direct context API. If offline
+  folder commands become a product requirement, design their namespace identity and
+  conflict policy before extending the document intention journal; folders do not
+  have document resource handles or Yjs content sessions.

@@ -83,3 +83,5 @@ The repository has no production users or legacy data. The old Untitled lineage,
 ## Deliberate limits
 
 Cold offline application boot, generalized durable folder commands, Scratch/Uploads Editor viewers, socket multiplexing, and multi-pane Editor layout are outside this lifecycle. Scratch and Uploads remain valid chat/reference/tool resources. See [tracked follow-ups](../context/.context/TODO.md) for separate product work.
+
+Cold boot and folder commands are tracked with the [resource adapter follow-ups](../../../core/resources/.context/FUTURE), multi-pane layout with the [project shell follow-ups](FUTURE), and socket multiplexing with the [transport follow-ups](../../../core/transport/.context/FUTURE).
