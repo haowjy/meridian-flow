@@ -18,6 +18,12 @@ Scratch/Uploads instead route to the deferred-viewing notice without opening a t
 Work/no-Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
 
+Availability command admission rejects while removal is suspended or disposed;
+an empty successful receipt would let the availability owner falsely acknowledge
+unapplied authority. Local settlement still differs from session-effect completion:
+failed session effects remain pending for retry. This is not durable namespace
+receipt recovery across account/authority shutdown.
+
 ## Local Untitled ownership
 
 `local-untitled-locks.ts` owns the project/lineage lifetime and identity-reservation

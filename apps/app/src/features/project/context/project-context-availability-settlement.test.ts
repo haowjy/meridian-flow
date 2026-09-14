@@ -107,4 +107,23 @@ describe("project availability durable-local settlement", () => {
       removedDocumentIds: [documentId],
     });
   });
+  it("does not acknowledge a delete while removal is suspended and retries it after resume", async () => {
+    const settleDesk = vi.fn(async () => undefined);
+    const { availability, removal } = composed(settleDesk);
+    const lifetime = removal.createLifetimeLease();
+    const deletion = { projectId, deletedDocumentIds: [documentId], generation: "9" };
+    lifetime.suspend();
+    await expect(availability.acceptCommittedDelete(deletion)).rejects.toThrow("unavailable");
+    expect(settleDesk).not.toHaveBeenCalled();
+    lifetime.resume();
+    await expect(availability.acceptCommittedDelete(deletion)).resolves.toBeUndefined();
+    expect(settleDesk).toHaveBeenCalledOnce();
+    await availability.acceptCommittedDelete(deletion);
+    expect(settleDesk).toHaveBeenCalledOnce();
+    lifetime.suspend();
+    lifetime.disposeIfSuspended();
+    await expect(
+      availability.acceptCommittedDelete({ ...deletion, generation: "10" }),
+    ).rejects.toThrow("unavailable");
+  });
 });
