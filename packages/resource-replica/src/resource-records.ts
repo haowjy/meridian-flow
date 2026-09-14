@@ -28,6 +28,7 @@ export type ResourceDescriptor = ResourceKey & {
     | { kind: "recovery"; sourceKey: string };
   canonical: ResourceLocation | null;
   lifecycle:
+    | { kind: "recovering" }
     | { kind: "local" }
     | { kind: "acknowledged"; availabilityGeneration: string | null }
     | { kind: "terminal"; generation: string; transitionId: string };

@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Keep unresolved legacy resources visible to project observers without granting content or namespace authority (not activated).
+
 - Separate local legacy capture from per-resource recovery (not activated).
 
 - Preserve legacy resource bytes and exact cache identity through restartable import (not activated).

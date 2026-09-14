@@ -33,6 +33,9 @@ location remains unknown, and historical settlements never become fabricated
 submitted attempts. Unresolved settlements, authority transitions and malformed
 bytes remain recovery evidence. Capture completes locally even with unresolved
 records; `recovery-required` describes per-resource work, not an account boot
-gate. The sole replacement owner retries resolution independently. Activation
-still requires discoverable recovery resources, the authoritative settlement/
-terminal resolver and exclusive old-writer shutdown.
+gate. Valid unresolved envelopes appear as inert recovery resources in project
+observations. Terminal envelopes remain terminal, preserving no-revival. Malformed
+bytes remain account-level evidence because their resource identity is unknown.
+Resolution checks the placeholder source and revision before replacing it; raw
+cache names remain evidence until authority resolves. The sole replacement owner retries resolution independently. Activation
+still requires recovery UI and the authoritative settlement/terminal resolver and exclusive old-writer shutdown.

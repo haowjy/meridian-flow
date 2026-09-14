@@ -16,6 +16,15 @@ export function validateResourceRecordUpdate(
     throw new Error("Resource identity mismatch");
   if (previous?.resource.lifecycle.kind === "terminal" && resource.lifecycle.kind !== "terminal")
     throw new Error("Terminal resources cannot be revived");
+  if (resource.lifecycle.kind === "recovering" && resource.content.kind !== "recovery")
+    throw new Error("Recovering resources require recovery evidence");
+  if (
+    resource.content.kind === "recovery" &&
+    (resource.canonical !== null ||
+      next.intents.length > 0 ||
+      Object.keys(resource.obligations).length > 0)
+  )
+    throw new Error("Recovery resources cannot carry actionable namespace or cleanup work");
   const previousMax = Math.max(0, ...(previous?.intents.map((intent) => intent.sequence) ?? []));
   const previousIds = new Set(previous?.intents.map((intent) => intent.intentId));
   const ids = new Set<string>();
