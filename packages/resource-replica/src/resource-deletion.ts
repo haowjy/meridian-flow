@@ -3,6 +3,7 @@ import type { NamespaceIntent, ResourceRecord, ResourceWrite } from "./resource-
 
 export function planResourceDeletion(
   record: ResourceRecord,
+  projectId: string,
   intentId: string,
 ): ResourceWrite | null {
   if (
@@ -13,10 +14,9 @@ export function planResourceDeletion(
   const neverSubmitted =
     record.resource.lifecycle.kind === "local" &&
     record.resource.canonical === null &&
-    !record.resource.recovery &&
     record.intents.every((intent) => intent.attempts.length === 0);
   const deletion: NamespaceIntent = {
-    projectId: record.resource.projectId,
+    projectId,
     handle: record.resource.handle,
     intentId,
     sequence: Math.max(0, ...record.intents.map((intent) => intent.sequence)) + 1,

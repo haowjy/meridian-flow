@@ -3,6 +3,7 @@ import type {
   CatalogChanges,
   CatalogCommit,
   CatalogEntry,
+  CatalogFileEntry,
   CatalogScope,
   CatalogSnapshot,
 } from "@meridian/contracts/protocol";
@@ -84,7 +85,7 @@ function revision(value: string): bigint | null {
   }
 }
 
-function withIndexes(
+export function indexCatalogView(
   view: Omit<CatalogCacheView, "childIdsByParentId" | "sourceIdsByScheme">,
 ): CatalogCacheView {
   const childIdsByParentId = new Map<string, string[]>();
@@ -109,7 +110,7 @@ function withIndexes(
 }
 
 export function catalogViewFromSnapshot(snapshot: CatalogSnapshot): CatalogCacheView {
-  return withIndexes({
+  return indexCatalogView({
     scope: snapshot.scope,
     generation: snapshot.generation,
     appliedRevision: snapshot.headRevision,
@@ -156,7 +157,7 @@ export function applyCatalogChanges(
   ) {
     return null;
   }
-  return withIndexes({
+  return indexCatalogView({
     scope: next.scope,
     generation: next.generation,
     cursor: changes.nextCursor,
@@ -174,8 +175,9 @@ export function catalogChildren(view: CatalogCacheView, parentId: string): Catal
   });
 }
 
-export function catalogFiles(view: CatalogCacheView): CatalogEntry[] {
+export function catalogFiles(view: CatalogCacheView): CatalogFileEntry[] {
   return [...view.entries.values()].filter(
-    (entry) => entry.kind === "file" && !view.invalidatedEntryIds.has(entry.entryId),
+    (entry): entry is CatalogFileEntry =>
+      entry.kind === "file" && !view.invalidatedEntryIds.has(entry.entryId),
   );
 }

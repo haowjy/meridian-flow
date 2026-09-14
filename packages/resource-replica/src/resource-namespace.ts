@@ -150,12 +150,7 @@ export function prepareNamespaceAttempt(
 ): ResourceWrite | null {
   const intent = activeIntent(record);
   if (intent?.state !== "pending") return null;
-  if (
-    record.resource.recovery ||
-    record.resource.lifecycle.kind === "recovering" ||
-    record.resource.lifecycle.kind === "terminal"
-  )
-    return null;
+  if (record.resource.lifecycle.kind === "terminal") return null;
   if (intent.identityRevision !== record.resource.identity.revision) {
     return {
       expectedRevision: record.resource.revision,
@@ -448,7 +443,6 @@ function replayEligible(
   attempt: NamespaceAttempt,
 ) {
   if (
-    record.resource.recovery ||
     record.resource.lifecycle.kind === "terminal" ||
     intent.identityRevision !== record.resource.identity.revision
   )
@@ -460,7 +454,7 @@ function replayEligible(
 
 /** Reconcile one resource through at most one network dispatch; CAS retries never redispatch. */
 export async function reconcileResourceNamespace(input: {
-  key: { projectId: string; handle: string };
+  key: { handle: string };
   metadata: ResourceMetadataStore;
   transport: ResourceNamespaceTransport;
   lock: ResourceNamespaceLock;
@@ -503,10 +497,7 @@ export async function reconcileResourceNamespace(input: {
     if (!attempt) throw new Error("Submitted intention has no attempt");
     if (!captured) {
       const locked = await input.lock.run(input.key, async () => {
-        const observed = await input.transport.readOutcome(
-          record.resource.projectId,
-          attempt.request,
-        );
+        const observed = await input.transport.readOutcome(intent.projectId, attempt.request);
         if (observed) return observed;
         // Identity and terminal transitions use this same lock. Re-read after
         // lookup so a transition cannot make the captured snapshot authorize dispatch.
@@ -521,7 +512,7 @@ export async function reconcileResourceNamespace(input: {
           !replayEligible(current, currentIntent, currentAttempt)
         )
           return null;
-        return input.transport.submit(current.resource.projectId, currentAttempt.request);
+        return input.transport.submit(currentIntent.projectId, currentAttempt.request);
       });
       if (locked.kind === "busy") return "blocked";
       const outcome = locked.value;
