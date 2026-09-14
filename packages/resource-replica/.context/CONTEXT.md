@@ -10,6 +10,11 @@ owns Editor tabs, Y.Doc instances or backend admission. Exact persistence names
 are preserved through identity changes; descriptors alone cannot authorize
 upload or prove content initialization.
 
+A catalog checkpoint is qualified by both its server scope and the project whose
+resource projection it updated. This matters for the account-wide User scope:
+the same server cursor can be projected into multiple independent project
+resource sets without one project suppressing another's installation.
+
 An exact descriptor may introduce `initialization: "reserved"` only with a new,
 local, never-submitted resource. The reservation may survive unrelated local
 metadata progress, but cannot move to another content identity, gain remote

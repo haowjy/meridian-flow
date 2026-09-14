@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Qualify persisted catalog checkpoints by the project projection they update (not activated).
+
 - Prove exact local document content before exposing it, while keeping remote admission off the local-open path (not activated).
 
 - Persist namespace requests before dispatch and recover recorded outcomes after restart (not activated).

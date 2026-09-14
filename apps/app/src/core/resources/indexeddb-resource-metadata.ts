@@ -15,18 +15,22 @@ import type {
 import { validateResourceRecordUpdate } from "@meridian/resource-replica";
 import Dexie, { liveQuery, type Table } from "dexie";
 
-type StoredCatalog = ResourceCatalogCheckpoint & { key: string; projectId: string };
+type StoredCatalog = ResourceCatalogCheckpoint & { key: string };
 type StoredCheckpoint = ResourceMigrationCheckpoint & { key: "migration" };
 
-function scopeKey(scope: CatalogScope): string {
+function scopeKey(projectId: string, scope: CatalogScope): string {
   switch (scope.kind) {
     case "user":
-      return JSON.stringify([scope.kind, scope.userId]);
+      return JSON.stringify([projectId, scope.kind, scope.userId]);
     case "work":
-      return JSON.stringify([scope.kind, scope.projectId, scope.workId]);
+      return JSON.stringify([projectId, scope.kind, scope.projectId, scope.workId]);
     default:
-      return JSON.stringify([scope.kind, scope.projectId]);
+      return JSON.stringify([projectId, scope.kind, scope.projectId]);
   }
+}
+
+function scopeBelongsToProject(projectId: string, scope: CatalogScope): boolean {
+  return scope.kind === "user" || scope.projectId === projectId;
 }
 
 /** Expected revisions belong to the caller's immutable snapshot; stale writes never partly apply. */
@@ -96,6 +100,19 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
     );
   }
 
+  readProject(projectId: string): Promise<ProjectResourceSnapshot> {
+    return this.run(() =>
+      this.database.transaction("r", this.resources, this.intents, this.catalogs, async () => {
+        const resources = await this.resources.where("projectId").equals(projectId).toArray();
+        const catalogs = await this.catalogs.where("projectId").equals(projectId).toArray();
+        return {
+          records: await Promise.all(resources.map((resource) => this.record(resource))),
+          catalogs: catalogs.map(({ key: _key, ...checkpoint }) => checkpoint),
+        };
+      }),
+    );
+  }
+
   private async isCurrent(writes: readonly ResourceWrite[]): Promise<boolean> {
     const keys = new Set<string>();
     const intentKeys = new Set<string>();
@@ -136,12 +153,12 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
     );
   }
 
-  readCatalog(scope: CatalogScope): Promise<ResourceCatalogCheckpoint | null> {
-    const key = scopeKey(scope);
+  readCatalog(projectId: string, scope: CatalogScope): Promise<ResourceCatalogCheckpoint | null> {
+    const key = scopeKey(projectId, scope);
     return this.run(async () => {
       const stored = await this.catalogs.get(key);
       if (!stored) return null;
-      const { key: _key, projectId: _projectId, ...checkpoint } = stored;
+      const { key: _key, ...checkpoint } = stored;
       return checkpoint;
     });
   }
@@ -150,7 +167,11 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
     const input = structuredClone(command);
     return this.run(() =>
       this.database.transaction("rw", this.catalogs, this.resources, this.intents, async () => {
-        const key = scopeKey(input.next.scope);
+        if (!scopeBelongsToProject(input.next.projectId, input.next.scope))
+          throw new Error("Catalog scope belongs to another project");
+        if (input.resources.some(({ next }) => next.resource.projectId !== input.next.projectId))
+          throw new Error("Catalog resource belongs to another project");
+        const key = scopeKey(input.next.projectId, input.next.scope);
         const current = await this.catalogs.get(key);
         if (
           (current?.revision ?? null) !== input.expectedRevision ||
@@ -163,7 +184,6 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
         await this.catalogs.put({
           ...input.next,
           key,
-          projectId: input.next.scope.kind === "user" ? "" : input.next.scope.projectId,
         });
         return "committed" as const;
       }),
@@ -263,12 +283,10 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
       this.run(() =>
         this.database.transaction("r", this.resources, this.intents, this.catalogs, async () => {
           const resources = await this.resources.where("projectId").equals(projectId).toArray();
-          const catalogs = await this.catalogs.where("projectId").anyOf(projectId, "").toArray();
+          const catalogs = await this.catalogs.where("projectId").equals(projectId).toArray();
           return {
             records: await Promise.all(resources.map((resource) => this.record(resource))),
-            catalogs: catalogs.map(
-              ({ key: _key, projectId: _projectId, ...checkpoint }) => checkpoint,
-            ),
+            catalogs: catalogs.map(({ key: _key, ...checkpoint }) => checkpoint),
           };
         }),
       ),

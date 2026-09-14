@@ -111,6 +111,7 @@ it("keeps catalog entries and cursor unchanged when a resource revision is stale
   const store = open();
   const scope = { kind: "project" as const, projectId: "project" };
   const checkpoint = {
+    projectId: "project",
     scope,
     revision: 1,
     generation: "generation",
@@ -134,7 +135,11 @@ it("keeps catalog entries and cursor unchanged when a resource revision is stale
       resources: [{ expectedRevision: null, next: resource("doc", 2) }],
     }),
   ).toBe("stale");
-  expect(await store.readCatalog(scope)).toEqual(checkpoint);
+  expect(await store.readCatalog("project", scope)).toEqual(checkpoint);
+  expect(await store.readProject("project")).toEqual({
+    records: [resource()],
+    catalogs: [checkpoint],
+  });
 });
 
 it("retains submitted request bytes and rejects replacement by a later intention", async () => {
@@ -318,6 +323,7 @@ it("notifies project observers after a catalog-only commit", async () => {
   await store.commitCatalog({
     expectedRevision: null,
     next: {
+      projectId: "project",
       scope: { kind: "project", projectId: "project" },
       revision: 1,
       generation: "g",
