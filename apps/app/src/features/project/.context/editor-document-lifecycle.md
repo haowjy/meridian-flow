@@ -43,7 +43,7 @@ flowchart TD
   a Work; the first content change starts project-owned `unfiled://` creation.
   Closed pending writing can be reopened from Unfiled, independently of tabs.
   Acknowledgement or remint preserves the resource handle and editor session while the address adopts the current Document ID.
-  See [local writing ownership](../context/.context/CONTEXT.md#unfiled-materialization-and-recovery)
+  See [local writing ownership](../context/.context/resource-catalog-and-editor-lifecycle.md#unfiled-materialization-and-recovery)
   for remint, queued filing, and recovery constraints.
 
 ## Ordered handoff
