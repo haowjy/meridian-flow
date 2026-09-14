@@ -232,6 +232,8 @@ export class ProjectContextAvailabilityCoordinator {
     documentId: string,
   ): Promise<ProjectDocumentOpenResolution> {
     const lease = this.attachProject(projectId);
+    // The departing view may release its watch while this explicit open is awaiting authority.
+    lease.watch("open", [{ documentId }]);
     const state = this.project(projectId);
     const requestGeneration = (state.requestGeneration.get(documentId) ?? 0) + 1;
     state.requestGeneration.set(documentId, requestGeneration);

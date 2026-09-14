@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Keep explicit document opens alive while a closing Editor view releases its availability watch.
+
 - Cancel superseded Work metadata decisions and resume only the current navigation intent after saving.
 
 - Document remaining local-first lifecycle failures, their evidence, coordinated fixes, migration risks and verification gates.
