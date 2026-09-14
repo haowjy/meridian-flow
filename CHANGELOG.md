@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Keep file-viewer chrome visible while loading. Show quiet pending panes before delayed skeletons; remove viewer spinners and immediate optimistic skeletons.
+
 - Wait for local account storage before reserving new documents.
 
 - Record initialized document caches without treating missing storage as an empty document.
