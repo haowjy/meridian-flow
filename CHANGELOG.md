@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Add transactional resource-journal storage foundation (not activated).
+
 - Record initialized document caches without treating missing storage as an empty document.
 
 - Settle Editor opens and closes with accepted URLs. Cancelled opens leave tabs unchanged; close and immediate reload stay empty.

@@ -1,0 +1,5 @@
+# Resource-owner cutover
+
+- PR #531 / issue #480: implement restartable legacy import in this directory, preserving raw account-qualified records and recovering adopted exact persistence through the existing authority port. Fence/drain old admissions and namespace calls before import; checkpoint ownership before activating this adapter.
+- PR #531 / issue #270: wire the sole resource reconciliation runner, content/session adapter, catalog projection and application callers together, then delete the displaced lineage ledger/owner/reconciler and QueryClient catalog installer. Do not construct this metadata adapter in production before that cutover.
+- Verify actual storage exhaustion and storage-denial behavior before activation. Real Chromium quota override did not enforce exhaustion in the probe; injected native QuotaExceededError rollback passes. This does not establish browser eviction behavior.
