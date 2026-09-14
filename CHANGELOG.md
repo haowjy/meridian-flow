@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Persist namespace requests before dispatch and recover recorded outcomes after restart (not activated).
+
 - Add account-fenced document namespace transport for durable receipt replay.
 
 - Retain local writing when deleting never-submitted resources; cancel queued work without a fabricated server tombstone.
