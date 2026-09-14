@@ -152,10 +152,20 @@ it("rejects duplicate current document identities atomically", async () => {
 
 it("rolls back resource, intent, and checkpoint writes when the outer transaction aborts", async () => {
   const store = open();
-  const internals = store as unknown as {
-    intents: { bulkPut(records: readonly unknown[]): Promise<unknown> };
-  };
-  vi.spyOn(internals.intents, "bulkPut").mockRejectedValueOnce(new Error("injected abort"));
+  const native = Dexie.prototype.transaction;
+  vi.spyOn(Dexie.prototype, "transaction").mockImplementationOnce(function (
+    this: Dexie,
+    ...args: Parameters<typeof native>
+  ) {
+    const callback = args.pop() as () => Promise<unknown>;
+    return Reflect.apply(native, this, [
+      ...args,
+      async () => {
+        await callback();
+        throw new Error("injected outer abort");
+      },
+    ]);
+  });
   const scope = { kind: "project" as const, projectId: "project" };
 
   await expect(
@@ -174,9 +184,12 @@ it("rolls back resource, intent, and checkpoint writes when the outer transactio
       },
       resources: [{ expectedRevision: null, next: resource() }],
     }),
-  ).rejects.toThrow("injected abort");
+  ).rejects.toThrow("injected outer abort");
+  vi.restoreAllMocks();
   expect(await store.readResource({ handle: "doc" })).toBeNull();
   expect(await store.readCatalog("project", scope)).toBeNull();
+  const internals = store as unknown as { intents: { toArray(): Promise<unknown[]> } };
+  expect(await internals.intents.toArray()).toEqual([]);
 });
 
 it("shares one account resource while qualifying the User catalog per consuming project", async () => {
