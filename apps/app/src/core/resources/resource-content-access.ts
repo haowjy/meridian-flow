@@ -131,7 +131,7 @@ export class ResourceContentAccess {
     }
     let current: ResourceRecord | null;
     try {
-      current = await this.metadata.readResource(key);
+      current = await this.metadata.readAccessibleResource(projectId, key);
     } catch (error) {
       this.releaseLease(id, entry, lease);
       throw error;
@@ -182,7 +182,7 @@ export class ResourceContentAccess {
     if (this.state !== "open" || this.epoch.aborted) return { kind: "cancelled" };
     await this.finishRetirement(id);
     if (this.state !== "open" || this.epoch.aborted) return { kind: "cancelled" };
-    const record = await this.metadata.readResource(key);
+    const record = await this.metadata.readAccessibleResource(projectId, key);
     const unavailable = localDisposition(record);
     if (unavailable || !record) return { kind: "unavailable", reason: unavailable ?? "missing" };
     const content = record.resource.content;

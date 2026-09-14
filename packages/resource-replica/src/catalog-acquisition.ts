@@ -13,9 +13,9 @@ import {
   sameCatalogProjectionScope,
 } from "./catalog-scope";
 import type {
-  ProjectResourceSnapshot,
   ResourceCatalogCheckpoint,
   ResourceMetadataStore,
+  ResourceProjectionSnapshot,
 } from "./resource-records";
 
 export interface ResourceCatalogTransport {
@@ -32,7 +32,7 @@ type AcquisitionState = {
 function checkpointFor(
   projectId: string,
   scope: CatalogScope,
-  snapshot: ProjectResourceSnapshot,
+  snapshot: ResourceProjectionSnapshot,
 ): ResourceCatalogCheckpoint | null {
   return (
     snapshot.catalogs.find(
@@ -42,7 +42,7 @@ function checkpointFor(
   );
 }
 
-function observationFence(snapshot: ProjectResourceSnapshot): CatalogObservationFence {
+function observationFence(snapshot: ResourceProjectionSnapshot): CatalogObservationFence {
   const resourceRevisions = new Map<string, number>();
   for (const { resource } of snapshot.records) {
     resourceRevisions.set(resource.handle, resource.revision);
@@ -115,7 +115,7 @@ export class ResourceCatalogAcquisition {
 
   private async install(
     projectId: string,
-    before: ProjectResourceSnapshot,
+    before: ResourceProjectionSnapshot,
     previous: ResourceCatalogCheckpoint | null,
     view: CatalogCacheView,
     fence: CatalogObservationFence,
@@ -139,7 +139,7 @@ export class ResourceCatalogAcquisition {
       });
       this.assertCurrent(epoch);
       if (result === "committed") return result;
-      snapshot = await this.metadata.readProject(projectId);
+      snapshot = await this.metadata.readProjection(projectId);
       this.assertCurrent(epoch);
       const current = checkpointFor(projectId, view.scope, snapshot);
       if ((current?.revision ?? null) !== (previous?.revision ?? null)) return "stale";
@@ -151,9 +151,9 @@ export class ResourceCatalogAcquisition {
     projectId: string,
     scope: CatalogScope,
     epoch: number,
-    observedBefore?: ProjectResourceSnapshot,
+    observedBefore?: ResourceProjectionSnapshot,
   ): Promise<{ view: CatalogCacheView; committed: boolean }> {
-    const before = observedBefore ?? (await this.metadata.readProject(projectId));
+    const before = observedBefore ?? (await this.metadata.readProjection(projectId));
     this.assertCurrent(epoch);
     const previous = checkpointFor(projectId, scope, before);
     const fence = observationFence(before);
@@ -161,7 +161,7 @@ export class ResourceCatalogAcquisition {
     this.assertCurrent(epoch);
     this.assertResponseScope(scope, response.scope);
     const view = catalogViewFromSnapshot(response);
-    const current = await this.metadata.readProject(projectId);
+    const current = await this.metadata.readProjection(projectId);
     this.assertCurrent(epoch);
     return {
       view,
@@ -177,7 +177,7 @@ export class ResourceCatalogAcquisition {
     epoch: number,
   ): Promise<CatalogCacheView> {
     for (let page = 0; page < 100; page += 1) {
-      const before = await this.metadata.readProject(projectId);
+      const before = await this.metadata.readProjection(projectId);
       this.assertCurrent(epoch);
       const previous = checkpointFor(projectId, scope, before);
       if (!previous) {

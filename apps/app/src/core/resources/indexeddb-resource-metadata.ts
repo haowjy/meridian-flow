@@ -2,17 +2,18 @@
 import type { CatalogScope } from "@meridian/contracts/protocol";
 import type {
   NamespaceIntent,
-  ProjectResourceSnapshot,
   ResourceCatalogCheckpoint,
   ResourceDescriptor,
   ResourceKey,
   ResourceMetadataStore,
+  ResourceProjectionSnapshot,
   ResourceRecord,
   ResourceWrite,
 } from "@meridian/resource-replica";
 import {
   catalogProjectionKey,
   catalogScopeBelongsToProject,
+  resourceVisibleInProject,
   validateResourceRecordUpdate,
 } from "@meridian/resource-replica";
 import Dexie, { liveQuery, type Table } from "dexie";
@@ -76,7 +77,22 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
     );
   }
 
-  readProject(projectId: string): Promise<ProjectResourceSnapshot> {
+  readAccessibleResource(projectId: string, key: ResourceKey): Promise<ResourceRecord | null> {
+    return this.run(() =>
+      this.database.transaction("r", this.resources, this.intents, this.catalogs, async () => {
+        const resource = await this.resources.get(key.handle);
+        if (!resource) return null;
+        const [record, catalogs] = await Promise.all([
+          this.record(resource),
+          this.catalogs.where("projectId").equals(projectId).toArray(),
+        ]);
+        const checkpoints = catalogs.map(({ key: _key, ...checkpoint }) => checkpoint);
+        return resourceVisibleInProject(projectId, record, checkpoints) ? record : null;
+      }),
+    );
+  }
+
+  readProjection(projectId: string): Promise<ResourceProjectionSnapshot> {
     return this.run(() =>
       this.database.transaction("r", this.resources, this.intents, this.catalogs, async () => {
         const resources = await this.resources.toArray();
@@ -173,9 +189,9 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
     );
   }
 
-  observeProject(
+  observeProjection(
     projectId: string,
-    listener: (snapshot: ProjectResourceSnapshot) => void,
+    listener: (snapshot: ResourceProjectionSnapshot) => void,
     onError: (error: unknown) => void,
   ): () => void {
     if (this.closing) throw new Error("Resource metadata is closing");

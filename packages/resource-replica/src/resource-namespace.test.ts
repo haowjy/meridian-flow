@@ -70,6 +70,10 @@ class MemoryStore {
     return structuredClone(this.record);
   }
 
+  async readAccessibleResource() {
+    return this.readResource();
+  }
+
   async commitResource(write: ResourceWrite) {
     if (this.staleAtRevision === write.expectedRevision) {
       this.staleAtRevision = null;

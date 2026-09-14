@@ -4,9 +4,9 @@ import { expect, it, vi } from "vitest";
 import { ResourceCatalogAcquisition, type ResourceCatalogTransport } from "./catalog-acquisition";
 import { catalogProjectionKey } from "./catalog-scope";
 import type {
-  ProjectResourceSnapshot,
   ResourceCatalogCheckpoint,
   ResourceMetadataStore,
+  ResourceProjectionSnapshot,
   ResourceRecord,
   ResourceWrite,
 } from "./resource-records";
@@ -80,7 +80,11 @@ class MemoryMetadata implements ResourceMetadataStore {
     return structuredClone(this.records.get(key.handle) ?? null);
   }
 
-  async readProject(project: string): Promise<ProjectResourceSnapshot> {
+  async readAccessibleResource(_projectId: string, key: { handle: string }) {
+    return this.readResource(key);
+  }
+
+  async readProjection(project: string): Promise<ResourceProjectionSnapshot> {
     return structuredClone({
       records: [...this.records.values()],
       catalogs: [...this.catalogs.values()].filter((catalog) => catalog.projectId === project),
@@ -122,7 +126,7 @@ class MemoryMetadata implements ResourceMetadataStore {
     return "committed" as const;
   }
 
-  observeProject() {
+  observeProjection() {
     return () => undefined;
   }
   beginClose() {}
