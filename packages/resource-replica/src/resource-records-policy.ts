@@ -26,6 +26,24 @@ export function validateResourceRecordUpdate(
     Object.keys(resource.obligations).length > 0
   )
     throw new Error("Unresolved authority cannot carry execution obligations");
+  if (
+    resource.obligations.canonicalRefresh &&
+    resource.obligations.canonicalRefresh.identityRevision !== resource.identity.revision
+  )
+    throw new Error("Canonical refresh belongs to another resource identity");
+  if (resource.obligations.canonicalRefresh) {
+    const operationId = resource.obligations.canonicalRefresh.operationId;
+    const source = next.intents.some((intent) =>
+      intent.attempts.some(
+        (attempt) =>
+          attempt.request.kind === "move" &&
+          attempt.outcome?.kind === "operation" &&
+          attempt.outcome.receipt.operationId === operationId &&
+          attempt.outcome.receipt.result.ok,
+      ),
+    );
+    if (!source) throw new Error("Canonical refresh requires a successful move receipt");
+  }
   const previousMax = Math.max(0, ...(previous?.intents.map((intent) => intent.sequence) ?? []));
   const previousIds = new Set(previous?.intents.map((intent) => intent.intentId));
   const ids = new Set<string>();
@@ -48,6 +66,16 @@ export function validateResourceRecordUpdate(
     for (const attempt of intent.attempts) {
       if (attempts.has(attempt.attemptId)) throw new Error("Duplicate namespace attempt");
       attempts.add(attempt.attemptId);
+      if (
+        (attempt.request.kind === "move" &&
+          ((attempt.request.body.sourceWorkId != null) !==
+            (attempt.request.sourceWorkSlug != null) ||
+            (attempt.request.body.destinationWorkId != null) !==
+              (attempt.request.destinationWorkSlug != null))) ||
+        (attempt.request.kind === "delete" &&
+          (attempt.request.workId != null) !== (attempt.request.workSlug != null))
+      )
+        throw new Error("Namespace request Work authority is incomplete");
       if (attempt.outcome?.kind === "operation") {
         const receipt = attempt.outcome.receipt;
         if (
@@ -110,6 +138,8 @@ export function validateResourceRecordUpdate(
     const lastAttempt = intent.attempts.at(-1);
     if (intent.state === "submitted" && (!lastAttempt || lastAttempt.outcome))
       throw new Error("Submitted intention requires an unresolved attempt");
+    if (intent.state === "received" && !lastAttempt?.outcome)
+      throw new Error("Received intention requires a durable outcome");
     if (intent.state === "settled" && !lastAttempt?.outcome)
       throw new Error("Settled intention requires an outcome");
     if (intent.state === "pending" && intent.attempts.length > 0)
@@ -136,6 +166,14 @@ export function validateResourceRecordUpdate(
       (intent.state !== "settled" || intent.attempts.length !== oldIntent.attempts.length)
     )
       throw new Error("Settled intentions cannot restart");
+    if (
+      oldIntent.state === "received" &&
+      (intent.state === "pending" ||
+        intent.state === "submitted" ||
+        intent.attempts.length !== oldIntent.attempts.length ||
+        !intent.attempts.at(-1)?.outcome)
+    )
+      throw new Error("Received outcomes cannot return to submission");
     for (const [index, oldAttempt] of oldIntent.attempts.entries()) {
       const attempt = intent.attempts[index];
       if (
@@ -151,4 +189,8 @@ export function validateResourceRecordUpdate(
         throw new Error("Recorded namespace outcome cannot be replaced");
     }
   }
+  const oldRefresh = previous?.resource.obligations.canonicalRefresh;
+  const nextRefresh = resource.obligations.canonicalRefresh;
+  if (oldRefresh && nextRefresh && JSON.stringify(oldRefresh) !== JSON.stringify(nextRefresh))
+    throw new Error("Canonical refresh obligation cannot be replaced");
 }

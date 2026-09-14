@@ -17,6 +17,8 @@ export type ResourceLocation = Readonly<{
   path: string;
   name: string;
   workId: string | null;
+  /** Required with a Work ID before a durable command can validate canonical URI authority. */
+  workSlug?: string;
 }>;
 
 export type ResourceDescriptor = ResourceKey & {
@@ -36,6 +38,10 @@ export type ResourceDescriptor = ResourceKey & {
   >;
   obligations: {
     canonicalSync?: { obligationId: string; documentId: string; adoptionRevision: number };
+    canonicalRefresh?: {
+      operationId: string;
+      identityRevision: number;
+    };
     publication?: { obligationId: string; documentId: string; adoptionRevision: number };
     cleanup?: { obligationId: string; exactDatabaseName: string };
   };
@@ -44,11 +50,18 @@ export type ResourceDescriptor = ResourceKey & {
 /** The endpoint's authority is part of the submitted request, not inferred from current UI state. */
 export type NamespaceRequest =
   | { kind: "create"; body: CreateUntitledContextDocumentRequest }
-  | { kind: "move"; scheme: ProjectContextTreeScheme; body: MoveContextEntryRequest }
+  | {
+      kind: "move";
+      scheme: ProjectContextTreeScheme;
+      sourceWorkSlug: string | null;
+      destinationWorkSlug: string | null;
+      body: MoveContextEntryRequest;
+    }
   | {
       kind: "delete";
       scheme: ProjectContextTreeScheme;
       workId: string | null;
+      workSlug: string | null;
       body: DeleteContextEntryRequest;
     };
 
@@ -74,7 +87,14 @@ export type NamespaceIntent = ResourceKey & {
     | { kind: "set-location"; destination: Omit<ResourceLocation, "path"> & { folderPath: string } }
     | { kind: "delete" };
   attempts: readonly NamespaceAttempt[];
-  state: "pending" | "submitted" | "settled" | "needs-repair" | "cancelled" | "settled-locally";
+  state:
+    | "pending"
+    | "submitted"
+    | "received"
+    | "settled"
+    | "needs-repair"
+    | "cancelled"
+    | "settled-locally";
 };
 
 export type ResourceRecord = {
@@ -160,4 +180,12 @@ export interface ResourceNamespaceTransport {
   readonly accountId: string;
   readOutcome(projectId: string, request: NamespaceRequest): Promise<NamespaceOutcome | null>;
   submit(projectId: string, request: NamespaceRequest): Promise<NamespaceOutcome | null>;
+}
+
+export type ResourceNamespaceLockResult<T> = { kind: "acquired"; value: T } | { kind: "busy" };
+
+/** Every identity/terminal transition shares this short resource lock with namespace dispatch. */
+export interface ResourceNamespaceLock {
+  readonly accountId: string;
+  run<T>(key: ResourceKey, task: () => Promise<T>): Promise<ResourceNamespaceLockResult<T>>;
 }
