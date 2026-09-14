@@ -16,10 +16,10 @@ flowchart TD
 
 ## Entry paths
 
-- **Editor navigation item:** once project desk validation is live, choose the
+- **Editor navigation item:** once project workspace validation is live, choose the
   selected eligible open tab or a remembered identity that is still open. Use
   its current metadata, not its historical path. Navigate directly to it. Before
-  desk validation finishes, navigate to empty Editor without mutating persisted
+  workspace validation finishes, navigate to empty Editor without mutating persisted
   selection. No later mount effect restores a document or opens the first file.
 - **Bare `/editor` without a local-document history pointer:** explicitly empty
   on direct entry, reload and Back/Forward.

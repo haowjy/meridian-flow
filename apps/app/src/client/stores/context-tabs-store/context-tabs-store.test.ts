@@ -119,7 +119,7 @@ describe("context tab identity and removal commits", () => {
     expect(
       commitPlannedContextRemoval("project-1", {
         documentIds: ["old"],
-        deskSelection: { workId: "work-1", documentId: "replacement" },
+        workspaceSelection: { workId: "work-1", documentId: "replacement" },
       }),
     ).toEqual([]);
     expect(useContextTabsStore.getState().byProject["project-1"]?.tabs[0]?.documentId).toBe(
@@ -136,7 +136,7 @@ describe("context tab identity and removal commits", () => {
 
     const removed = commitPlannedContextRemoval("project-1", {
       documentIds: ["a", "b"],
-      deskSelection: { workId: "work-1", documentId: "c" },
+      workspaceSelection: { workId: "work-1", documentId: "c" },
     });
 
     expect(removed.map((tab) => tab.documentId)).toEqual(["a", "b"]);

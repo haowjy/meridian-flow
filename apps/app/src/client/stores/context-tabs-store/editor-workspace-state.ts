@@ -131,7 +131,7 @@ function withoutResourceOwnership(tab: ContextTab): ContextTab {
   return tab;
 }
 
-function parseProjectDesk(value: unknown): ProjectTabsSlice | null {
+function parseProjectWorkspace(value: unknown): ProjectTabsSlice | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   if (
@@ -177,8 +177,8 @@ export function parseEditorWorkspace(raw: string | null): EditorWorkspaceSnapsho
     )
       return null;
     const projects: Record<string, ProjectTabsSlice> = {};
-    for (const [projectId, desk] of Object.entries(record.projects)) {
-      const parsed = parseProjectDesk(desk);
+    for (const [projectId, workspace] of Object.entries(record.projects)) {
+      const parsed = parseProjectWorkspace(workspace);
       if (!parsed) return null;
       projects[projectId] = parsed;
     }
@@ -224,12 +224,12 @@ function sameTabIdentity(left: ContextTab, right: ContextTab): boolean {
   );
 }
 
-function normalizeProject(desk: ProjectTabsSlice): ProjectTabsSlice {
-  const tabs = desk.tabs.filter(isEditorContextTab);
+function normalizeProject(workspace: ProjectTabsSlice): ProjectTabsSlice {
+  const tabs = workspace.tabs.filter(isEditorContextTab);
   return {
     tabs,
     selectedTabIdByWork: Object.fromEntries(
-      Object.entries(desk.selectedTabIdByWork).filter(([, documentId]) => {
+      Object.entries(workspace.selectedTabIdByWork).filter(([, documentId]) => {
         const tab = tabs.find((candidate) => candidate.documentId === documentId);
         return tab && isEditorContextTab(tab);
       }),
@@ -286,27 +286,27 @@ function committed(
   return outcome("committed", {
     ...current,
     projects: Object.fromEntries(
-      Object.entries(projects).map(([id, desk]) => [id, normalizeProject(desk)]),
+      Object.entries(projects).map(([id, workspace]) => [id, normalizeProject(workspace)]),
     ),
   });
 }
 function replaceProject(
   current: EditorWorkspaceSnapshot,
   projectId: string,
-  desk: ProjectTabsSlice,
+  workspace: ProjectTabsSlice,
 ): EditorWorkspaceCommandResult {
-  return committed(current, { ...current.projects, [projectId]: desk });
+  return committed(current, { ...current.projects, [projectId]: workspace });
 }
 
-/** Total reducer for every durable desk writer class. */
+/** Total reducer for every durable workspace writer class. */
 export function reduceEditorWorkspace(
   current: EditorWorkspaceSnapshot,
   command: EditorWorkspaceCommand,
 ): EditorWorkspaceCommandResult {
   if (command.kind === "reconcile-bootstrap") {
-    const desk = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
-    const tabs = [...desk.tabs];
-    let selections = { ...desk.selectedTabIdByWork };
+    const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
+    const tabs = [...workspace.tabs];
+    let selections = { ...workspace.selectedTabIdByWork };
     const consumedMembers = new Set<string>();
     for (const change of command.changes) {
       const exactIndex = tabs.findIndex((tab) => sameTabIdentity(tab, change.prior));
@@ -352,15 +352,16 @@ export function reduceEditorWorkspace(
       selections = rewriteSelections(selections, live.documentId, incoming.documentId);
     }
     const next = normalizeProject({ tabs, selectedTabIdByWork: selections });
-    if (JSON.stringify(next) === JSON.stringify(desk)) return outcome("already-committed", current);
+    if (JSON.stringify(next) === JSON.stringify(workspace))
+      return outcome("already-committed", current);
     return replaceProject(current, command.projectId, next);
   }
   if (command.kind === "apply-availability") {
-    const desk = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
-    const tabs = desk.tabs.filter(
+    const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
+    const tabs = workspace.tabs.filter(
       (tab) => !command.removals.some((prior) => sameTabIdentity(tab, prior)),
     );
-    let selections = { ...desk.selectedTabIdByWork };
+    let selections = { ...workspace.selectedTabIdByWork };
     for (const update of command.updates) {
       const index = tabs.findIndex((tab) => sameTabIdentity(tab, update.prior));
       if (index < 0) continue;
@@ -379,26 +380,27 @@ export function reduceEditorWorkspace(
       tabs: canonicalizeTabs(tabs),
       selectedTabIdByWork: selections,
     });
-    if (JSON.stringify(next) === JSON.stringify(desk)) return outcome("already-committed", current);
+    if (JSON.stringify(next) === JSON.stringify(workspace))
+      return outcome("already-committed", current);
     return replaceProject(current, command.projectId, next);
   }
   if (command.kind === "settle-draft") {
-    const desk = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
-    const index = desk?.tabs.findIndex((tab) => sameTabIdentity(tab, command.tab)) ?? -1;
+    const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
+    const index = workspace?.tabs.findIndex((tab) => sameTabIdentity(tab, command.tab)) ?? -1;
     if (command.disposition === "discarded") {
       if (index < 0) return outcome("already-committed", current);
       return replaceProject(
         current,
         command.projectId,
         normalizeProject({
-          tabs: desk.tabs.filter((_tab, candidateIndex) => candidateIndex !== index),
-          selectedTabIdByWork: desk.selectedTabIdByWork,
+          tabs: workspace.tabs.filter((_tab, candidateIndex) => candidateIndex !== index),
+          selectedTabIdByWork: workspace.selectedTabIdByWork,
         }),
       );
     }
     if (command.tab.kind === "new") return outcome("stale", current);
     const settled = durableTab(command.tab);
-    const conflicting = desk.tabs.find(
+    const conflicting = workspace.tabs.find(
       (tab) =>
         tab.documentId === command.tab.documentId &&
         tab.tabInstanceId !== command.tab.tabInstanceId,
@@ -406,28 +408,28 @@ export function reduceEditorWorkspace(
     if (index < 0 && conflicting) return outcome("stale", current);
     const tabs =
       index < 0
-        ? canonicalizeTabs([...desk.tabs, settled])
-        : desk.tabs.map((candidate, candidateIndex) =>
+        ? canonicalizeTabs([...workspace.tabs, settled])
+        : workspace.tabs.map((candidate, candidateIndex) =>
             candidateIndex === index ? settled : candidate,
           );
-    if (JSON.stringify(tabs) === JSON.stringify(desk.tabs))
+    if (JSON.stringify(tabs) === JSON.stringify(workspace.tabs))
       return outcome("already-committed", current);
-    return replaceProject(current, command.projectId, normalizeProject({ ...desk, tabs }));
+    return replaceProject(current, command.projectId, normalizeProject({ ...workspace, tabs }));
   }
   if (command.kind === "reconcile-resource") {
-    const desk = current.projects[command.projectId];
-    const index = desk?.tabs.findIndex(
+    const workspace = current.projects[command.projectId];
+    const index = workspace?.tabs.findIndex(
       (tab) =>
         tab.resourceHandle === command.resourceHandle || tab.documentId === command.tab.documentId,
     );
-    if (!desk || index === undefined || index < 0) return outcome("not-referenced", current);
+    if (!workspace || index === undefined || index < 0) return outcome("not-referenced", current);
     if (
       command.tab.resourceHandle !== undefined &&
       command.tab.resourceHandle !== command.resourceHandle
     )
       return outcome("stale", current);
-    const prior = desk.tabs[index] as ContextTab;
-    const conflict = desk.tabs.some(
+    const prior = workspace.tabs[index] as ContextTab;
+    const conflict = workspace.tabs.some(
       (tab, candidateIndex) =>
         candidateIndex !== index &&
         (tab.documentId === command.tab.documentId ||
@@ -440,33 +442,33 @@ export function reduceEditorWorkspace(
     if (JSON.stringify(next) === JSON.stringify(prior))
       return outcome("already-committed", current);
     return replaceProject(current, command.projectId, {
-      tabs: desk.tabs.map((tab, candidateIndex) => (candidateIndex === index ? next : tab)),
+      tabs: workspace.tabs.map((tab, candidateIndex) => (candidateIndex === index ? next : tab)),
       selectedTabIdByWork: rewriteSelections(
-        desk.selectedTabIdByWork,
+        workspace.selectedTabIdByWork,
         prior.documentId,
         next.documentId,
       ),
     });
   }
   if (command.kind === "open") {
-    const desk = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
+    const workspace = current.projects[command.projectId] ?? { tabs: [], selectedTabIdByWork: {} };
     if (command.tab.draftOnly) return outcome("already-committed", current);
     const tab = durableTab(command.tab);
-    const sameDocumentIndex = desk.tabs.findIndex(
+    const sameDocumentIndex = workspace.tabs.findIndex(
       (candidate) =>
         candidate.tabInstanceId === tab.tabInstanceId || candidate.documentId === tab.documentId,
     );
     const occupiedLocatorIndex =
       tab.kind === "new"
         ? -1
-        : desk.tabs.findIndex(
+        : workspace.tabs.findIndex(
             (candidate) =>
               candidate.kind !== "new" &&
               candidate.documentId !== tab.documentId &&
               sameServerContextTabLocator(candidate, tab),
           );
     const index = sameDocumentIndex >= 0 ? sameDocumentIndex : occupiedLocatorIndex;
-    const existing = index >= 0 ? desk.tabs[index] : undefined;
+    const existing = index >= 0 ? workspace.tabs[index] : undefined;
     const existingWithoutResourceOwnership = existing
       ? withoutResourceOwnership(existing)
       : undefined;
@@ -487,56 +489,61 @@ export function reduceEditorWorkspace(
       : tab;
     const tabs =
       index < 0
-        ? [...desk.tabs, tab]
-        : desk.tabs.map((candidate, candidateIndex) =>
+        ? [...workspace.tabs, tab]
+        : workspace.tabs.map((candidate, candidateIndex) =>
             candidateIndex === index ? merged : candidate,
           );
-    if (index >= 0 && JSON.stringify(tabs[index]) === JSON.stringify(desk.tabs[index]))
+    if (index >= 0 && JSON.stringify(tabs[index]) === JSON.stringify(workspace.tabs[index]))
       return outcome("already-committed", current);
     return replaceProject(
       current,
       command.projectId,
       normalizeProject({
-        ...desk,
+        ...workspace,
         tabs,
         selectedTabIdByWork: rewriteSelections(
-          desk.selectedTabIdByWork,
-          occupiedLocatorIndex >= 0 ? desk.tabs[occupiedLocatorIndex]?.documentId : undefined,
+          workspace.selectedTabIdByWork,
+          occupiedLocatorIndex >= 0 ? workspace.tabs[occupiedLocatorIndex]?.documentId : undefined,
           tab.documentId,
         ),
       }),
     );
   }
   if (command.kind === "close") {
-    const desk = current.projects[command.projectId];
-    const closed = desk?.tabs.find((tab) => tab.tabInstanceId === command.tabInstanceId);
-    if (!desk || !closed) return outcome("stale", current);
+    const workspace = current.projects[command.projectId];
+    const closed = workspace?.tabs.find((tab) => tab.tabInstanceId === command.tabInstanceId);
+    if (!workspace || !closed) return outcome("stale", current);
     return replaceProject(current, command.projectId, {
-      tabs: desk.tabs.filter((tab) => tab.tabInstanceId !== command.tabInstanceId),
+      tabs: workspace.tabs.filter((tab) => tab.tabInstanceId !== command.tabInstanceId),
       selectedTabIdByWork: Object.fromEntries(
-        Object.entries(desk.selectedTabIdByWork).filter(([, id]) => id !== closed.documentId),
+        Object.entries(workspace.selectedTabIdByWork).filter(([, id]) => id !== closed.documentId),
       ),
     });
   }
   if (command.kind === "select") {
-    const desk = current.projects[command.projectId];
-    if (!desk) return outcome("stale", current);
-    const selections = { ...desk.selectedTabIdByWork };
+    const workspace = current.projects[command.projectId];
+    if (!workspace) return outcome("stale", current);
+    const selections = { ...workspace.selectedTabIdByWork };
     if (command.tabInstanceId === null) {
       if (!(command.workId in selections)) return outcome("already-committed", current);
       delete selections[command.workId];
     } else {
-      const tab = desk.tabs.find((candidate) => candidate.tabInstanceId === command.tabInstanceId);
+      const tab = workspace.tabs.find(
+        (candidate) => candidate.tabInstanceId === command.tabInstanceId,
+      );
       if (!tab || !isEditorContextTab(tab)) return outcome("stale", current);
       if (selections[command.workId] === tab.documentId)
         return outcome("already-committed", current);
       selections[command.workId] = tab.documentId;
     }
-    return replaceProject(current, command.projectId, { ...desk, selectedTabIdByWork: selections });
+    return replaceProject(current, command.projectId, {
+      ...workspace,
+      selectedTabIdByWork: selections,
+    });
   }
   if (command.kind === "reorder") {
-    const desk = current.projects[command.projectId];
-    const prior = desk?.tabs.map((tab) => tab.tabInstanceId as string) ?? [];
+    const workspace = current.projects[command.projectId];
+    const prior = workspace?.tabs.map((tab) => tab.tabInstanceId as string) ?? [];
     if (
       prior.length !== command.expectedTabInstanceIds.length ||
       prior.some((id, index) => id !== command.expectedTabInstanceIds[index]) ||
@@ -547,9 +554,9 @@ export function reduceEditorWorkspace(
       return outcome("stale", current);
     if (prior.every((id, index) => id === command.nextTabInstanceIds[index]))
       return outcome("already-committed", current);
-    const byInstance = new Map(desk?.tabs.map((tab) => [tab.tabInstanceId, tab]));
+    const byInstance = new Map(workspace?.tabs.map((tab) => [tab.tabInstanceId, tab]));
     return replaceProject(current, command.projectId, {
-      ...desk,
+      ...workspace,
       tabs: command.nextTabInstanceIds.map((id) => byInstance.get(id) as ContextTab),
     });
   }

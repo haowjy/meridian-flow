@@ -1,4 +1,4 @@
-/** Publish an authorized address into the desk; the document host owns live-session binding. */
+/** Publish an authorized address into the workspace; the document host owns live-session binding. */
 import { parseUnifiedContextUri } from "@meridian/contracts/context-uri";
 import {
   type DocumentAddressResult,

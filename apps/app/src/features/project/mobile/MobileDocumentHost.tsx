@@ -70,16 +70,21 @@ function MobileLocalDocumentHost({
       selected.locator.workId !== workId
     )
       return;
-    const desk = resolveWorkspaceRoute({
+    const workspace = resolveWorkspaceRoute({
       tabs: [tab],
       selectedDocumentId: tab.documentId,
       locator: selected.locator,
     });
-    if (desk.kind === "materialized-local") {
-      removal.redirectMaterializedLocal(projectId, selected.revision, tab.documentId, desk.target);
-    } else if (desk.kind === "owner") {
+    if (workspace.kind === "materialized-local") {
+      removal.redirectMaterializedLocal(
+        projectId,
+        selected.revision,
+        tab.documentId,
+        workspace.target,
+      );
+    } else if (workspace.kind === "owner") {
       if (selected.status === "candidate")
-        removal.bindRouteSelection(projectId, selected.revision, desk.identity);
+        removal.bindRouteSelection(projectId, selected.revision, workspace.identity);
       else if (selected.status === "bound" && selected.identity.documentId === tab.documentId)
         removal.activate({
           projectId,

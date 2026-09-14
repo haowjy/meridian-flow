@@ -133,7 +133,7 @@ it("durably installs a hydrated draft Apply before acknowledging settlement", as
   ).toMatchObject({ tabs: [{ documentId: "document-1", tabInstanceId: "draft-tab" }] });
 });
 
-it("explicitly closes a review overlay without issuing a durable desk removal", async () => {
+it("explicitly closes a review overlay without issuing a durable workspace removal", async () => {
   const accountId = `draft-close-${crypto.randomUUID()}`;
   const projectId = "project-close";
   await rehydrateEditorWorkspace(accountId);

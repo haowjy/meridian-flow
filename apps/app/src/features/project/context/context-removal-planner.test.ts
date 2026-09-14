@@ -87,7 +87,7 @@ describe("context removal planner", () => {
         .outcome.kind,
     ).not.toBe("noop");
   });
-  it("plans candidate rejection from the desk-active admitted fallback atomically", () => {
+  it("plans candidate rejection from the workspace-active admitted fallback atomically", () => {
     const knowledge = { ...tracked("knowledge", "/knowledge.md"), scheme: "kb" as const };
     const rejected = { scheme: "scratch" as const, path: "/wrong.md", workId: "work-1" };
     const plan = planCandidateRejection({
@@ -107,7 +107,7 @@ describe("context removal planner", () => {
     expect(plan).toMatchObject({
       expected: { revision: 4, locator: rejected },
       fallback: { scheme: "kb", path: "/knowledge.md", workId: "work-1" },
-      deskSelection: { kind: "preserve" },
+      workspaceSelection: { kind: "preserve" },
       workingSet: {
         removedLocators: [{ scheme: "scratch", path: "/wrong.md", workId: "work-1" }],
         promote: { scheme: "kb", path: "/knowledge.md" },
@@ -157,7 +157,7 @@ describe("context removal planner", () => {
       "/recent.md",
     ],
     [
-      "surviving desk",
+      "surviving workspace",
       [{ ...tracked("survivor", "/survivor.md"), scheme: "kb" as const }],
       null,
       null,
@@ -252,7 +252,7 @@ describe("context removal planner", () => {
       intent: { cause: "catalog-unavailable", documentIds: ["desktop"] },
     });
 
-    expect(plan.outcome.kind).toBe("empty-desk");
+    expect(plan.outcome.kind).toBe("empty-workspace");
     expect(plan.workingSet).toMatchObject({
       clearAll: false,
       promote: null,
@@ -370,7 +370,7 @@ describe("context removal planner", () => {
     });
   });
 
-  it("keeps current C desk-active when delayed exact A is removed", () => {
+  it("keeps current C workspace-active when delayed exact A is removed", () => {
     const tabs = [tracked("a", "/a.md"), tracked("d", "/d.md"), tracked("c", "/c.md")];
     const current = {
       kind: "bound" as const,

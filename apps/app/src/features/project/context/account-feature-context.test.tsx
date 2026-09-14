@@ -44,7 +44,7 @@ describe("AccountFeatureTestProvider", () => {
     function ProjectAuthorityConsumer() {
       useContextProjectAuthority({
         projectId: "project-1",
-        deskHydrated: false,
+        workspaceHydrated: false,
         editorScope: { status: "ready", workId: null, source: "route" },
       });
       return <p>Project shell</p>;
@@ -228,7 +228,7 @@ describe("AccountFeatureTestProvider", () => {
           transitionRevision: coordinator.getProjectSnapshot("project-1").transitionRevision,
           locator: { scheme: "manuscript", path: "/a.md", workId: "work-1" },
           identity: { kind: "server", documentId: "a" },
-          owner: { kind: "desk", documentId: "a" },
+          owner: { kind: "workspace", documentId: "a" },
         });
       }, [coordinator]);
       return null;

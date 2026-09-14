@@ -135,12 +135,12 @@ describe("ContextRemovalCoordinator availability batches", () => {
         transitionRevision: beforeAdmission.transitionRevision,
         locator: { scheme: "unfiled", path: "/old.md", workId: "work-1" },
         identity: { kind: "server", documentId },
-        owner: { kind: "desk", documentId },
+        owner: { kind: "workspace", documentId },
       }),
     ).toBe(true);
-    const deskPublications: string[][] = [];
-    const stopDesk = useContextTabsStore.subscribe((state) => {
-      deskPublications.push(
+    const workspacePublications: string[][] = [];
+    const stopWorkspace = useContextTabsStore.subscribe((state) => {
+      workspacePublications.push(
         state.byProject[projectId]?.tabs.map((tab) => ("path" in tab ? tab.path : "")) ?? [],
       );
     });
@@ -159,9 +159,9 @@ describe("ContextRemovalCoordinator availability batches", () => {
         generation: "7",
       },
     ]);
-    stopDesk();
+    stopWorkspace();
 
-    expect(deskPublications).toEqual([["/new.md"]]);
+    expect(workspacePublications).toEqual([["/new.md"]]);
     expect(routeUpdates).toBe(1);
     expect(useContextTabsStore.getState().byProject[projectId]?.tabs).toEqual([
       expect.objectContaining({
@@ -503,7 +503,7 @@ describe("availability owner batch publication and settlement", () => {
     });
   });
 
-  it("publishes one final Zustand desk state for two commands", async () => {
+  it("publishes one final Zustand workspace state for two commands", async () => {
     const secondId = "00000000-0000-4000-8000-000000000002";
     useContextTabsStore.setState({
       byProject: {

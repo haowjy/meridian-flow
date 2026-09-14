@@ -43,7 +43,7 @@ const mocks = vi.hoisted(() => ({
     revokeDocument: vi.fn(),
     revokeAccess: vi.fn(),
   },
-  desk: {
+  workspace: {
     byProject: {
       "project-1": {
         tabs: [],
@@ -79,10 +79,11 @@ vi.mock("@/client/stores", () => ({
   commitDraftApplyMetadata: vi.fn(),
   commitPlannedContextRemoval: vi.fn(),
   commitReviewOverlayClose: vi.fn(),
-  getContextTabs: () => mocks.desk.byProject["project-1"] ?? { tabs: [], selectedTabIdByWork: {} },
+  getContextTabs: () =>
+    mocks.workspace.byProject["project-1"] ?? { tabs: [], selectedTabIdByWork: {} },
   previewReviewOverlayClose: vi.fn(),
   useContextTabsActions: () => ({ openTab: mocks.openTab }),
-  useContextTabsStore: Object.assign(() => null, { getState: () => mocks.desk }),
+  useContextTabsStore: Object.assign(() => null, { getState: () => mocks.workspace }),
 }));
 vi.mock("@/features/editor/EditorView", () => ({
   EditorView: (props: Record<string, unknown>) => {

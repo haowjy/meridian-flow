@@ -164,7 +164,7 @@ never stored. Local disposition events and remote membership reconciliation
 both route through narrow coordinator commands. Apply calls
 `applyDraftMetadata(projectId, reviewWorkId, documentId)`; discard calls
 `discardDraft(projectId, reviewWorkId, documentId)`. The coordinator checks the
-owning Work before changing the desk.
+owning Work before changing the workspace.
 The synthesized tab carries that transient `reviewWorkId`; it is not document
 location identity and is never persisted. A different Work reviewing the same
 project document therefore cannot resolve this Work's draft-only tab.

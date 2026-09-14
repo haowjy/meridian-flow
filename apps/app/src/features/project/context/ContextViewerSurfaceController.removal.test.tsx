@@ -219,15 +219,15 @@ it("persists and admits the real New action without an empty working-set route",
         selection: { status: "bound", identity: { kind: "local", documentId: local?.documentId } },
         admitted: { scheme: "unfiled", path: "", workId: "work-a" },
       });
-      const deskWrites = writes
+      const workspaceWrites = writes
         .filter((write) => write.key === "meridian:editor-workspace:v1")
         .map((write) => JSON.parse(write.value));
-      expect(deskWrites.length).toBeGreaterThan(0);
-      expect(deskWrites.every((desk) => desk.version === 1)).toBe(true);
-      expect(deskWrites.at(-1)?.projects.project).toMatchObject({
+      expect(workspaceWrites.length).toBeGreaterThan(0);
+      expect(workspaceWrites.every((workspace) => workspace.version === 1)).toBe(true);
+      expect(workspaceWrites.at(-1)?.projects.project).toMatchObject({
         selectedTabIdByWork: { "work-a": local?.documentId },
       });
-      expect(deskWrites.at(-1)?.projects.project.tabs).toEqual(
+      expect(workspaceWrites.at(-1)?.projects.project.tabs).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             kind: "new",

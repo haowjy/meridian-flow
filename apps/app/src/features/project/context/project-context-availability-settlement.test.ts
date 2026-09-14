@@ -16,9 +16,9 @@ function unavailable(generation = "8") {
   };
 }
 
-function composed(settleDesk: () => Promise<void>) {
+function composed(settleWorkspace: () => Promise<void>) {
   const removal = new ContextRemovalCoordinator("account", {
-    desk: {
+    workspace: {
       read: () => ({
         tabs: [
           {
@@ -46,7 +46,7 @@ function composed(settleDesk: () => Promise<void>) {
         kind: "not-consumed" as const,
         current: { tabs: [], selectedTabIdByWork: {} },
       }),
-      applyAvailability: settleDesk,
+      applyAvailability: settleWorkspace,
     },
   });
   const availability = new ProjectContextAvailabilityCoordinator({
@@ -64,12 +64,12 @@ function composed(settleDesk: () => Promise<void>) {
 }
 
 describe("project availability durable-local settlement", () => {
-  it("defers open resolution and authorization publication until the desk receipt", async () => {
-    let resolveDesk!: () => void;
-    const deskSettlement = new Promise<void>((resolve) => {
-      resolveDesk = resolve;
+  it("defers open resolution and authorization publication until the workspace receipt", async () => {
+    let resolveWorkspace!: () => void;
+    const workspaceSettlement = new Promise<void>((resolve) => {
+      resolveWorkspace = resolve;
     });
-    const { availability, removal } = composed(() => deskSettlement);
+    const { availability, removal } = composed(() => workspaceSettlement);
     const losses: string[] = [];
     const lease = availability.attachProject(projectId);
     lease.observeAuthorizationLoss("observer", [{ documentId }], (loss) =>
@@ -79,7 +79,7 @@ describe("project availability durable-local settlement", () => {
     await vi.waitFor(() => expect(removal.getProjectSnapshot(projectId).removalFence).toBeNull());
     expect(losses).toEqual([]);
 
-    resolveDesk();
+    resolveWorkspace();
     await vi.waitFor(() => expect(losses).toEqual(["8"]));
     expect(removal.getProjectSnapshot(projectId).removalFence).toMatchObject({
       removedDocumentIds: [documentId],
@@ -87,14 +87,14 @@ describe("project availability durable-local settlement", () => {
     lease.release();
   });
 
-  it("does not publish or fence a rejected desk receipt", async () => {
+  it("does not publish or fence a rejected workspace receipt", async () => {
     let reject = true;
     const { availability, removal } = composed(async () => {
-      if (reject) throw new Error("durable desk rejected");
+      if (reject) throw new Error("durable workspace rejected");
     });
 
     await expect(availability.resolveForOpen(projectId, documentId)).rejects.toThrow(
-      "durable desk rejected",
+      "durable workspace rejected",
     );
     expect(removal.getProjectSnapshot(projectId).removalFence).toBeNull();
 
@@ -108,18 +108,18 @@ describe("project availability durable-local settlement", () => {
     });
   });
   it("does not acknowledge a delete while removal is suspended and retries it after resume", async () => {
-    const settleDesk = vi.fn(async () => undefined);
-    const { availability, removal } = composed(settleDesk);
+    const settleWorkspace = vi.fn(async () => undefined);
+    const { availability, removal } = composed(settleWorkspace);
     const lifetime = removal.createLifetimeLease();
     const deletion = { projectId, deletedDocumentIds: [documentId], generation: "9" };
     lifetime.suspend();
     await expect(availability.acceptCommittedDelete(deletion)).rejects.toThrow("unavailable");
-    expect(settleDesk).not.toHaveBeenCalled();
+    expect(settleWorkspace).not.toHaveBeenCalled();
     lifetime.resume();
     await expect(availability.acceptCommittedDelete(deletion)).resolves.toBeUndefined();
-    expect(settleDesk).toHaveBeenCalledOnce();
+    expect(settleWorkspace).toHaveBeenCalledOnce();
     await availability.acceptCommittedDelete(deletion);
-    expect(settleDesk).toHaveBeenCalledOnce();
+    expect(settleWorkspace).toHaveBeenCalledOnce();
     lifetime.suspend();
     lifetime.disposeIfSuspended();
     await expect(

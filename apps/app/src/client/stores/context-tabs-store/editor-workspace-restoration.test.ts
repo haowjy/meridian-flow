@@ -39,7 +39,7 @@ it("restores selected and explicitly empty layouts without touching shared local
   });
   commitPlannedContextRemoval("project", {
     documentIds: ["A"],
-    deskSelection: { workId: "", documentId: null },
+    workspaceSelection: { workId: "", documentId: null },
   });
   expect(useContextTabsStore.getState().byProject.project?.tabs).toEqual([]);
   useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: false });
@@ -76,7 +76,7 @@ it("keeps New and Close coherent when snapshot persistence fails", async () => {
   expect(useContextTabsStore.getState().byProject.project?.tabs).toHaveLength(1);
   commitPlannedContextRemoval("project", {
     documentIds: ["A"],
-    deskSelection: { workId: "", documentId: null },
+    workspaceSelection: { workId: "", documentId: null },
   });
   expect(useContextTabsStore.getState().byProject.project).toEqual({
     tabs: [],

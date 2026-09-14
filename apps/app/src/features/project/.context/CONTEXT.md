@@ -288,7 +288,7 @@ remains an identity and revision guarded CAS over the current address projection
 The **Editor** destination retains `ContextPaneController` as its implementation
 name. It owns address-admitted opens, temporary-tab projection, scroll
 restoration. Screen entry resolves a still-open identity before navigation;
-bare Editor routes remain empty. Project-entry desk validation checks only
+bare Editor routes remain empty. Project-entry workspace validation checks only
 persisted browser-local members and never seeds them from server recents. It is
 hydration-scoped and never re-runs on a Work change. The removal coordinator
 owns close fallback, atomic old/new Work continuity, remembered destination,

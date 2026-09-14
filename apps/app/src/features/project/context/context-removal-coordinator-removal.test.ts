@@ -25,7 +25,7 @@ function tracked(documentId: string, path: string): Extract<ContextTab, { kind: 
   };
 }
 
-function setDesk(tabs: ContextTab[], selectedTabId: string | null) {
+function setWorkspace(tabs: ContextTab[], selectedTabId: string | null) {
   const normalized = tabs.map((tab) =>
     tab.kind !== "new" && tab.draftOnly
       ? {
@@ -98,7 +98,7 @@ function scenario(initialSearch: ProjectSearch = { screen: "context" }) {
 }
 
 describe("ContextRemovalCoordinator exact removal and lifetime", () => {
-  beforeEach(() => setDesk([], null));
+  beforeEach(() => setWorkspace([], null));
 
   it("terminal availability evicts server tabs while preserving local-new state", () => {
     const local: ContextTab = {
@@ -107,7 +107,7 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
       name: "Untitled",
       resourceHandle: "resource-local-new",
     };
-    setDesk(
+    setWorkspace(
       [tracked("active", "/active.md"), tracked("background", "/background.md"), local],
       "active",
     );
@@ -159,7 +159,7 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
       ...(cause === "work-prune" ? { scheme: "scratch" as const, workId: "work-1" } : {}),
       ...(cause === "draft-discard" ? { draftOnly: true, reviewWorkId: "work-1" } : {}),
     };
-    setDesk([tab], "a");
+    setWorkspace([tab], "a");
     const scheme = cause === "work-prune" ? "scratch" : "manuscript";
     const rig = scenario({ screen: "context", scheme, path: "/a.md", work: "work-1" });
     rig.setRoutes([
@@ -195,7 +195,7 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
     "chat",
     "work",
   ])("keeps a registered host live through %s selection leave and retires a fence on return", () => {
-    setDesk([tracked("a", "/a.md"), tracked("b", "/b.md")], "a");
+    setWorkspace([tracked("a", "/a.md"), tracked("b", "/b.md")], "a");
     const rig = scenario();
     rig.coordinator.registerRoutePort(
       projectId,
@@ -231,14 +231,14 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
         transitionRevision: snapshot.transitionRevision,
         locator: { scheme: "manuscript", path: "/b.md", workId: "work-1" },
         identity: identityFor("b"),
-        owner: { kind: "desk", documentId: "b" },
+        owner: { kind: "workspace", documentId: "b" },
       }),
     ).toBe(true);
     expect(rig.coordinator.getProjectSnapshot(projectId).removalFence).toBeNull();
   });
 
   it("prunes phone-only old-Work continuity without admitting the new candidate", () => {
-    setDesk([], null);
+    setWorkspace([], null);
     const rig = scenario();
     rig.setRoutes([{ documentId: "old", scheme: "scratch", path: "/old.md", workId: "work-old" }]);
     const oldRevision = rig.coordinator.beginRouteSelection(projectId, {
@@ -272,7 +272,7 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
     ["none", "none", "/old.md"],
     ["none", "none", "/new.md"],
   ])("keeps a new Work candidate out of durability from %s phone continuity", (_case, settlement, nextPath) => {
-    setDesk([], null);
+    setWorkspace([], null);
     const values = new Map<string, string>();
     const storage = {
       getItem: (key: string) => values.get(key) ?? null,
@@ -332,7 +332,7 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
       ...(cause === "work-prune" ? { scheme: "scratch" as const, workId: "work-old" } : {}),
       ...(cause === "draft-discard" ? { draftOnly: true, reviewWorkId: "work-old" } : {}),
     };
-    setDesk([tab], null);
+    setWorkspace([tab], null);
     const rig = scenario();
     rig.setRoutes([
       { documentId: "keep", scheme: "kb", path: "/keep.md" },
@@ -381,7 +381,7 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
     false,
     true,
   ])("closes one review overlay without invalidating its sibling (durable underneath: %s)", async (durable) => {
-    setDesk(
+    setWorkspace(
       [
         ...(durable ? [{ ...tracked("a", "/a.md"), tabInstanceId: "durable-a" }] : []),
         { ...tracked("a", "/a.md"), draftOnly: true, reviewWorkId: "work-1" },
@@ -428,7 +428,7 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
   });
 
   it("allows writer-closed identity to reopen but keeps discarded drafts terminal", async () => {
-    setDesk([tracked("a", "/a.md")], "a");
+    setWorkspace([tracked("a", "/a.md")], "a");
     const writerRig = scenario();
     const writerRevision = writerRig.coordinator.beginRouteSelection(projectId, {
       scheme: "manuscript",
@@ -437,7 +437,7 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
     });
     writerRig.coordinator.bindRouteSelection(projectId, writerRevision, identityFor("a"));
     writerRig.coordinator.writerClose(projectId, "a");
-    setDesk([tracked("a", "/a.md")], "a");
+    setWorkspace([tracked("a", "/a.md")], "a");
     const reopened = writerRig.coordinator.beginRouteSelection(projectId, {
       scheme: "manuscript",
       path: "/a.md",
@@ -446,7 +446,7 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
     writerRig.coordinator.bindRouteSelection(projectId, reopened, identityFor("a"));
     expect(useContextTabsStore.getState().byProject[projectId]?.tabs).toHaveLength(1);
 
-    setDesk(
+    setWorkspace(
       [{ ...tracked("draft", "/draft.md"), draftOnly: true, reviewWorkId: "work-1" }],
       "draft",
     );
@@ -458,7 +458,7 @@ describe("ContextRemovalCoordinator exact removal and lifetime", () => {
     });
     draftRig.coordinator.bindRouteSelection(projectId, draftRevision, identityFor("draft"));
     await draftRig.coordinator.discardDraft(projectId, "work-1", "draft");
-    setDesk(
+    setWorkspace(
       [{ ...tracked("draft", "/draft.md"), draftOnly: true, reviewWorkId: "work-1" }],
       "draft",
     );

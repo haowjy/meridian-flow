@@ -83,7 +83,7 @@ export function ContextViewerSurfaceController({
 
   const { tabs, selectedTabIdByWork } = useContextTabs(projectId);
   const selectedDocumentId = localDocumentId ?? selectedTabIdByWork[routeWorkId ?? ""];
-  const deskHydrated = useContextTabsStore((state) => state._workspaceHydrated);
+  const workspaceHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const visibleTabs = tabs.filter((tab) => {
@@ -94,8 +94,8 @@ export function ContextViewerSurfaceController({
     activeContextScheme !== null && activeContextPath !== null
       ? { scheme: activeContextScheme, path: activeContextPath, workId: routeWorkId }
       : null;
-  const deskRoute = resolveWorkspaceRoute({ tabs, selectedDocumentId, locator });
-  const activeTab = deskRoute.kind === "unowned" ? null : deskRoute.tab;
+  const workspaceRoute = resolveWorkspaceRoute({ tabs, selectedDocumentId, locator });
+  const activeTab = workspaceRoute.kind === "unowned" ? null : workspaceRoute.tab;
   const removalState = useContextRemovalProject(projectId);
   const editorScopeKey = `${projectId}:${routeWorkId ?? "no-work"}`;
   const scrollPositionsRef = useRef(new Map<string, { top: number; left: number }>());
@@ -123,17 +123,17 @@ export function ContextViewerSurfaceController({
       return;
     const routed = routeCatalog?.findPath(activeContextPath);
     const routedFile = routed?.kind === "file" ? routed : null;
-    if (deskRoute.kind === "owner" && selection.status === "candidate") {
-      if (deskRoute.identity.kind === "server") {
-        selectTab(projectId, routeWorkId ?? "", deskRoute.tab.documentId);
+    if (workspaceRoute.kind === "owner" && selection.status === "candidate") {
+      if (workspaceRoute.identity.kind === "server") {
+        selectTab(projectId, routeWorkId ?? "", workspaceRoute.tab.documentId);
       }
-      contextRemoval.bindRouteSelection(projectId, selection.revision, deskRoute.identity);
-    } else if (deskRoute.kind === "materialized-local") {
+      contextRemoval.bindRouteSelection(projectId, selection.revision, workspaceRoute.identity);
+    } else if (workspaceRoute.kind === "materialized-local") {
       contextRemoval.redirectMaterializedLocal(
         projectId,
         selection.revision,
-        deskRoute.tab.documentId,
-        deskRoute.target,
+        workspaceRoute.tab.documentId,
+        workspaceRoute.target,
       );
     } else if (
       selection.status === "candidate" &&
@@ -149,7 +149,7 @@ export function ContextViewerSurfaceController({
       selection.status === "candidate" &&
       activeContextScheme === "unfiled" &&
       activeContextPath === "" &&
-      deskHydrated
+      workspaceHydrated
     ) {
       contextRemoval.rejectRouteCandidate(projectId, selection.revision, "missing-local-owner");
     } else if (
@@ -165,9 +165,9 @@ export function ContextViewerSurfaceController({
     activeContextPath,
     activeContextScheme,
     contextRemoval,
-    deskHydrated,
+    workspaceHydrated,
     activeTab,
-    deskRoute,
+    workspaceRoute,
     projectId,
     routeCatalog,
     routeTreeIsFetching,
@@ -202,9 +202,9 @@ export function ContextViewerSurfaceController({
       !activeTab ||
       activeTab.draftOnly ||
       removalState.selection.status !== "bound" ||
-      deskRoute.kind !== "owner" ||
-      deskRoute.tab.draftOnly ||
-      deskRoute.tab.documentId !== removalState.selection.identity.documentId
+      workspaceRoute.kind !== "owner" ||
+      workspaceRoute.tab.draftOnly ||
+      workspaceRoute.tab.documentId !== removalState.selection.identity.documentId
     )
       return;
     contextRemoval.activate({
@@ -213,9 +213,9 @@ export function ContextViewerSurfaceController({
       transitionRevision: removalState.transitionRevision,
       locator: removalState.selection.locator,
       identity: removalState.selection.identity,
-      owner: { kind: "desk", documentId: deskRoute.tab.documentId },
+      owner: { kind: "workspace", documentId: workspaceRoute.tab.documentId },
     });
-  }, [active, contextRemoval, deskRoute, projectId, removalState]);
+  }, [active, contextRemoval, workspaceRoute, projectId, removalState]);
 
   useLayoutEffect(() => {
     scrollPositionsRef.current.clear();

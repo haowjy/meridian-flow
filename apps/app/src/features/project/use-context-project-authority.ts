@@ -19,11 +19,11 @@ import type { EditorWorkScope } from "./editor-work-scope";
 
 export function useContextProjectAuthority({
   projectId,
-  deskHydrated,
+  workspaceHydrated,
   editorScope,
 }: {
   projectId: string;
-  deskHydrated: boolean;
+  workspaceHydrated: boolean;
   editorScope: EditorWorkScope;
 }): ContextProjectPhase {
   const [authority, setAuthority] = useState<ContextProjectAuthority>(
@@ -51,7 +51,7 @@ export function useContextProjectAuthority({
     };
     const transition = updateContextProjectReadiness(
       authorityRef.current,
-      deskHydrated,
+      workspaceHydrated,
       editorScope,
     );
     updateAuthority(transition.authority);
@@ -81,7 +81,7 @@ export function useContextProjectAuthority({
     return () => {
       updateAuthority(cancelContextProjectAttempt(authorityRef.current, attempt.token));
     };
-  }, [deskHydrated, editorScope.status, editorWorkId, projectId, resources]);
+  }, [workspaceHydrated, editorScope.status, editorWorkId, projectId, resources]);
 
   return contextProjectPhase(authority);
 }

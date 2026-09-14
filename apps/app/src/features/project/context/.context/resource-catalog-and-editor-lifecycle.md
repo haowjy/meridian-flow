@@ -130,9 +130,8 @@ registry transport retained for the open tab set.
 Zustand owns live membership. Restore snapshots use sessionStorage under
 `meridian:editor-workspace:v1`, isolated per browser tab/window and never
 projected from storage events. Layout persistence failure is reported without
-rejecting New/select/Close. Old shared desk keys are not read or written. Resource
-metadata and content persistence remain separate from browser-tab workspace membership.
-
+rejecting New/select/Close. Resource metadata and content persistence remain
+separate from browser-tab workspace membership.
 
 ## Catalog observation
 
@@ -142,8 +141,14 @@ IndexedDB live query; acquisition does not reread the whole account afterward.
 
 Composite UI consumers use `useContextCatalogViews` once for their scheme set.
 The hook observes one resource projection and one React Query result per distinct
-authority scope, then derives scheme views. The Editor sidebar has Project and
-User scopes; link suggestions also include the current Work/no-Work scope.
+authority scope, then derives scheme views. The Editor sidebar derives four
+schemes from Project and User scopes; link suggestions derive six, including the
+current Work/no-Work scope.
 Collapsed sidebar sections stay warm. Local-only rows are visible but cannot prove
 catalog completeness. Unchanged projection records retain their array identity
 through unrelated React renders.
+
+Mounting a catalog consumer respects the five-second query freshness window;
+reactivating a retained editor does not force a fresh request. Stale mounts,
+explicit refetch, wake hints, reconnect/focus, and interval polling still refresh
+catalogs through the same replica owner.
