@@ -21,6 +21,34 @@ function result(
 }
 
 describe("ProjectContextAvailabilityCoordinator", () => {
+  it("keeps an explicit open alive when the closing tab releases its last watch", async () => {
+    let finish!: (response: ProjectContextIdentityLookupResult) => void;
+    const coordinator = new ProjectContextAvailabilityCoordinator({
+      lookup: () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      repairProjectCatalog: async () => undefined,
+      apply: async () => undefined,
+    });
+    const lease = coordinator.attachProject("project-1");
+    lease.watch("tabs", [{ documentId: id(1) }]);
+    const opening = coordinator.resolveForOpen("project-1", id(1));
+    lease.release();
+    finish(
+      result("project-1", [
+        {
+          kind: "available",
+          documentId: id(1),
+          generation: "1",
+          authority: { kind: "project", projectId: "project-1" },
+          entry: { entryId: id(1) } as never,
+        },
+      ]),
+    );
+    await expect(opening).resolves.toMatchObject({ kind: "available", documentId: id(1) });
+  });
+
   it("accepts one normalized generation-fenced committed-delete batch", async () => {
     const batches: ProjectDocumentAvailabilityCommand[][] = [];
     let deletedAccepted = false;
