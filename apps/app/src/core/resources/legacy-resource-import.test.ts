@@ -152,9 +152,38 @@ it("preserves legacy settlements for resolution without fabricating attempt or c
   expect(
     (await metadata.readResource({ projectId: "project", handle: "lineage" }))?.resource,
   ).toMatchObject({
-    content: { kind: "recovery", sourceKey: bytes(record).sourceKey },
-    lifecycle: { kind: "recovering" },
+    content: { kind: "exact", databaseName: "original-cache:lineage", schema: null },
+    recovery: { sourceKey: bytes(record).sourceKey },
+    lifecycle: { kind: "local" },
   });
+  const current = await metadata.readResource({ projectId: "project", handle: "lineage" });
+  if (!current) throw new Error("fixture missing");
+  const next = {
+    resource: { ...current.resource, revision: 2 },
+    intents: [
+      {
+        projectId: "project",
+        handle: "lineage",
+        intentId: "writer-placement",
+        sequence: 1,
+        identityRevision: 2,
+        desired: {
+          kind: "set-location" as const,
+          destination: {
+            scheme: "manuscript" as const,
+            folderPath: "",
+            name: "New title",
+            workId: null,
+          },
+        },
+        attempts: [],
+        state: "pending" as const,
+      },
+    ],
+  };
+  expect(await metadata.commitResource({ expectedRevision: 1, next })).toBe("committed");
+  await resolveLegacyResources({ accountId, authority, metadata });
+  expect(await metadata.readResource({ projectId: "project", handle: "lineage" })).toEqual(next);
   expect((await metadata.readMigration()).checkpoint?.state).toBe("complete");
   expect((await metadata.readMigration()).evidence[0]).toMatchObject({
     raw: bytes(record).raw,
@@ -185,10 +214,64 @@ it("revisits recovery evidence when authority becomes bindable without replacing
       pendingDrain: null,
     }),
   };
+  const captured = await metadata.readResource({ projectId: "project", handle: "lineage" });
+  if (!captured) throw new Error("fixture missing");
+  const intention = {
+    projectId: "project",
+    handle: "lineage",
+    intentId: "new-placement",
+    sequence: 1,
+    identityRevision: 2,
+    desired: {
+      kind: "set-location" as const,
+      destination: {
+        scheme: "manuscript" as const,
+        folderPath: "",
+        name: "Writer title",
+        workId: null,
+      },
+    },
+    attempts: [],
+    state: "pending" as const,
+  };
+  await metadata.commitResource({
+    expectedRevision: 1,
+    next: {
+      resource: {
+        ...captured.resource,
+        canonical: { scheme: "manuscript", path: "new", name: "new", workId: null },
+        aliases: {
+          previous: { publicationObligationId: "publish", introducedAtIdentityRevision: 1 },
+        },
+        revision: 2,
+        content: {
+          kind: "exact",
+          databaseName: "original",
+          schema: "verified-schema",
+        },
+      },
+      intents: [intention],
+    },
+  });
   await resolveLegacyResources({ accountId, authority: ready, metadata });
+  const resolved = await metadata.readResource({ projectId: "project", handle: "lineage" });
+  expect(resolved?.intents).toEqual([intention]);
+  expect(resolved?.resource.content).toEqual({
+    kind: "exact",
+    databaseName: "original",
+    schema: "verified-schema",
+  });
+  expect(resolved?.resource.recovery).toBeUndefined();
+  expect(resolved?.resource.canonical?.path).toBe("new");
+  expect(resolved?.resource.aliases).toEqual({
+    previous: {
+      publicationObligationId: "publish",
+      introducedAtIdentityRevision: 1,
+    },
+  });
   expect(
     (await metadata.readResource({ projectId: "project", handle: "lineage" }))?.resource.revision,
-  ).toBe(2);
+  ).toBe(3);
   expect((await metadata.readMigration()).checkpoint?.state).toBe("complete");
   expect((await metadata.readMigration()).evidence).toEqual([{ ...source[0], status: "imported" }]);
 });
@@ -239,7 +322,8 @@ it("does not infer terminal cleanup completion from missing or conflicting room 
     (await metadata.readResource({ projectId: "project", handle: "terminal" }))?.resource,
   ).toMatchObject({
     lifecycle: { kind: "terminal", generation: "2" },
-    content: { kind: "recovery" },
+    content: { kind: "unacquired" },
+    recovery: { sourceKey: source[0].sourceKey },
     obligations: {},
   });
   const placeholder = await metadata.readResource({ projectId: "project", handle: "terminal" });
@@ -351,7 +435,7 @@ it("publishes recovery placeholders and preserves them when resolution loses a r
         resource: {
           ...current.resource,
           revision: 3,
-          content: { kind: "recovery", sourceKey: "different-source" },
+          recovery: { sourceKey: "different-source" },
         },
       },
     });

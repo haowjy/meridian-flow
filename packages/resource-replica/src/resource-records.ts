@@ -22,10 +22,8 @@ export type ResourceLocation = Readonly<{
 export type ResourceDescriptor = ResourceKey & {
   revision: number;
   identity: { documentId: string; revision: number };
-  content:
-    | { kind: "exact"; databaseName: string; schema: string | null }
-    | { kind: "unacquired" }
-    | { kind: "recovery"; sourceKey: string };
+  content: { kind: "exact"; databaseName: string; schema: string | null } | { kind: "unacquired" };
+  recovery?: { sourceKey: string };
   canonical: ResourceLocation | null;
   lifecycle:
     | { kind: "recovering" }

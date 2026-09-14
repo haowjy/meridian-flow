@@ -22,6 +22,7 @@ export interface LegacyResourceAuthority {
 function importedRecord(
   record: LegacyResourceRecord,
   room: RoomOrderRecord | null,
+  sourceKey: string,
 ): ResourceRecord | null {
   const key = { projectId: record.ref.projectId, handle: record.ref.lineageHandle };
   if (record.kind === "terminal") {
@@ -83,7 +84,7 @@ function importedRecord(
   if (!databaseName) return null;
   // Legacy settlements do not retain submitted request bytes or current canonical authority.
   // Keep them recoverable until the handoff resolver can establish their outcome.
-  if (record.work.createSettlement.kind !== "ready") return null;
+  const uncertain = record.work.createSettlement.kind !== "ready";
   if (
     record.kind === "adopted" &&
     ((record.canonicalSync &&
@@ -108,14 +109,26 @@ function importedRecord(
             availabilityGeneration: authority?.phase === "bindable" ? authority.generation : null,
           }
         : { kind: "local" },
+    ...(uncertain ? { recovery: { sourceKey } } : {}),
     aliases: record.aliases,
     obligations:
       record.kind === "adopted"
         ? { canonicalSync: record.canonicalSync, publication: record.publication }
         : {},
   };
+  return { resource, intents: importedIntentions(record) };
+}
+
+function importedIntentions(
+  record: Exclude<LegacyResourceRecord, { kind: "terminal" }>,
+): NamespaceIntent[] {
+  const key = { projectId: record.ref.projectId, handle: record.ref.lineageHandle };
   const intents: NamespaceIntent[] = [];
-  if (record.kind === "local" && (record.work.home || record.work.desiredIdentity)) {
+  if (
+    record.kind === "local" &&
+    record.work.createSettlement.kind === "ready" &&
+    (record.work.home || record.work.desiredIdentity)
+  ) {
     intents.push({
       ...key,
       intentId: `${key.handle}:import-create`,
@@ -146,7 +159,7 @@ function importedRecord(
       state: record.work.failure ? "needs-repair" : "pending",
     });
   }
-  return { resource, intents };
+  return intents;
 }
 
 /** Preserve discoverability without granting content, namespace or cleanup authority. */
@@ -160,7 +173,8 @@ function recoveryRecord(record: LegacyResourceRecord, sourceKey: string): Resour
         record.kind === "terminal"
           ? { documentId: record.documentId, revision: 1 }
           : { documentId: record.active.documentId, revision: record.active.identityRevision },
-      content: { kind: "recovery", sourceKey },
+      content: { kind: "unacquired" },
+      recovery: { sourceKey },
       canonical: null,
       lifecycle:
         record.kind === "terminal"
@@ -170,10 +184,10 @@ function recoveryRecord(record: LegacyResourceRecord, sourceKey: string): Resour
               transitionId: record.transitionId,
             }
           : { kind: "recovering" },
-      aliases: {},
+      aliases: record.kind === "terminal" ? {} : record.aliases,
       obligations: {},
     },
-    intents: [],
+    intents: record.kind === "terminal" ? [] : importedIntentions(record),
   };
 }
 
@@ -201,11 +215,11 @@ export async function importLegacyResources(input: {
     const legacy = decodeLegacyResource(input.accountId, source);
     const documentId = legacy?.kind === "terminal" ? legacy.documentId : legacy?.active.documentId;
     const room = documentId ? await input.authority.readRoom(documentId) : null;
-    const imported = legacy ? importedRecord(legacy, room) : null;
+    const imported = legacy ? importedRecord(legacy, room, source.sourceKey) : null;
     const evidence: MigrationEvidence = {
       ...source,
-      status: imported ? "imported" : "recovery",
-      ...(imported
+      status: imported && !imported.resource.recovery ? "imported" : "recovery",
+      ...(imported && !imported.resource.recovery
         ? {}
         : {
             reason: legacy
@@ -257,15 +271,35 @@ export async function resolveLegacyResources(input: {
       handle: legacy.ref.lineageHandle,
     });
     if (
-      current?.resource.content.kind !== "recovery" ||
-      current.resource.content.sourceKey !== evidence.sourceKey ||
-      (current.resource.lifecycle.kind !== "recovering" &&
-        current.resource.lifecycle.kind !== "terminal")
+      current?.resource.recovery?.sourceKey !== evidence.sourceKey ||
+      (legacy.kind === "terminal"
+        ? current.resource.lifecycle.kind !== "terminal" ||
+          current.resource.lifecycle.generation !== legacy.terminalGeneration ||
+          current.resource.lifecycle.transitionId !== legacy.transitionId
+        : current.resource.lifecycle.kind !== "recovering")
     )
       continue;
-    const imported = importedRecord(legacy, await input.authority.readRoom(documentId));
-    if (!imported) continue;
+    const imported = importedRecord(
+      legacy,
+      await input.authority.readRoom(documentId),
+      evidence.sourceKey,
+    );
+    if (!imported || imported.resource.recovery) continue;
+    if (
+      current.resource.identity.documentId !== imported.resource.identity.documentId ||
+      current.resource.identity.revision !== imported.resource.identity.revision ||
+      (current.resource.content.kind === "exact" &&
+        (imported.resource.content.kind !== "exact" ||
+          current.resource.content.databaseName !== imported.resource.content.databaseName))
+    )
+      continue;
+    // The capture installed legacy intentions before new writer intentions. Preserve their history.
+    imported.intents = current.intents;
     imported.resource.revision = current.resource.revision + 1;
+    imported.resource.canonical = current.resource.canonical;
+    imported.resource.aliases = current.resource.aliases;
+    if (current.resource.content.kind === "exact")
+      imported.resource.content = current.resource.content;
     // A competing command may have changed this resource after the authority lookup.
     await input.metadata.resolveMigrationEvidence({
       sourceKey: evidence.sourceKey,
