@@ -32,6 +32,13 @@ owner, not permission to purge. Submitted or uncertain creation must settle befo
 remote deletion. Cancelled/local-settled intentions cannot restart; locally settled
 deletion permits no executable namespace work in the resulting snapshot.
 
+`ResourceNamespaceTransport` is account-bound but owns no journal or scheduler.
+The sole runner must commit an immutable attempt before submit; network failure,
+closed-epoch delivery or absent receipt leaves that attempt unresolved. Receipt
+outcomes and current canonical observations are separate facts. Create replay is
+restricted to the stored Unfiled document ID/request; it has no historical
+operation-receipt lookup.
+
 The storage foundation is not the active resource owner. Import, reconciliation,
 content access and caller cutover must replace the old lineage/reconciler together;
 there must never be two production metadata writers.

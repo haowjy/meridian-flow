@@ -57,3 +57,12 @@ transaction; another owner that advances authority must finalize its own recover
 The sole replacement owner must retry
 resolution; activation still requires the authoritative settlement/terminal
 resolver, recovery UI and exclusive old-writer shutdown.
+
+The inactive namespace adapter consumes existing document APIs and immutable
+operation receipts. Its account epoch fences dispatch and late delivery; it does
+not own metadata, cache invalidation or retry scheduling. The future sole runner
+must persist the exact attempt before calling submit and retain uncertainty if
+transport or delivery fails. Move/delete outcomes come from receipt lookup even
+when the original source path has disappeared. Create replays the recorded
+Unfiled document ID/request; current availability is not a historical create
+receipt. A missing receipt is not proof that an in-flight operation cannot commit.
