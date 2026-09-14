@@ -40,6 +40,7 @@ it("owner remint uses one lineage commit and preserves the exact live session/pr
       tryReserve: async () => ({ kind: "reserved" as const, release: async () => undefined }),
     },
     sessions: {
+      whenAuthorityReady: async () => undefined,
       createDetached: ({
         documentId,
         persistenceKey,
@@ -101,4 +102,34 @@ it("owner remint uses one lineage commit and preserves the exact live session/pr
   if (restored.kind !== "opened") throw new Error("not restored");
   expect(await restored.value.session.hasInitializedLocalContent()).toBe(false);
   await restoredOwner.destroyAll();
+});
+
+it("does not reserve a lineage before account authority is ready, or after closure wins", async () => {
+  let ready!: () => void;
+  const whenReady = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  const acquire = vi.fn(async () => ({ kind: "owned-elsewhere" as const }));
+  const owner = new LocalUntitledOwner({
+    accountId: "account",
+    ledger: { acquire, list: () => [] },
+    identityReservations: { tryReserve: vi.fn() },
+    sessions: { whenAuthorityReady: () => whenReady, createDetached: vi.fn() },
+    reservations: { reserve: vi.fn(), abort: vi.fn() },
+    adoption: {
+      begin: vi.fn(),
+      abort: vi.fn(),
+      inspect: vi.fn(),
+      recover: vi.fn(),
+      bindAndAdopt: vi.fn(),
+    },
+  });
+  const opening = owner.create(owner.key("project", "pending"));
+  await Promise.resolve();
+  expect(acquire).not.toHaveBeenCalled();
+  owner.beginClose();
+  ready();
+  await expect(opening).rejects.toThrow("closing");
+  await owner.destroyAll();
+  expect(acquire).not.toHaveBeenCalled();
 });

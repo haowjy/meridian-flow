@@ -39,6 +39,7 @@ export interface LiveDocumentSessionRegistry extends LiveDocumentSessionAuthorit
 }
 
 export interface LocalUntitledDocumentSessionFactory {
+  whenAuthorityReady(): Promise<void>;
   createDetached(input: {
     accountId: AccountId;
     projectId: ProjectId;

@@ -508,6 +508,8 @@ export class LocalUntitledOwner {
     const opening = this.opening.get(lineageHandle);
     if (opening) return opening;
     const attempt = (async (): Promise<LocalUntitledOpenResult> => {
+      await this.dependencies.sessions.whenAuthorityReady();
+      this.requireOpen();
       const acquired = await this.dependencies.ledger.acquire(ref);
       if (acquired.kind === "owned-elsewhere") return acquired;
       const access = acquired.access;
