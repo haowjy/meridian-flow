@@ -28,7 +28,7 @@ import type { CatalogContextView } from "@/client/query/context-catalog-projecti
 
 import { useMemo, useRef } from "react";
 
-import { useContextCatalogView } from "@/client/query/useContextCatalog";
+import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import type { WikilinkDocument } from "@/core/completion";
 import { schemeLabel } from "@/features/project/context/context-schemes";
 
@@ -58,56 +58,21 @@ export type LinkableDocumentIndex = {
   readonly complete: boolean;
 };
 
+const LINKABLE_SCHEMES = ["manuscript", "kb", "unfiled", "user", "scratch", "uploads"] as const;
+
 export function useLinkableDocuments({ projectId, workId }: EditorScope): LinkableDocumentIndex {
   const prior = useRef<LinkableDocumentIndex | null>(null);
-  const { catalog: manuscript, isComplete: manuscriptComplete } = useContextCatalogView(
-    projectId ?? "",
-    "manuscript",
-    {
-      enabled: Boolean(projectId),
-      workId: null,
-    },
-  );
-  const { catalog: knowledgeBase, isComplete: knowledgeBaseComplete } = useContextCatalogView(
-    projectId ?? "",
-    "kb",
-    {
-      enabled: Boolean(projectId),
-      workId: null,
-    },
-  );
-  const { catalog: unfiled, isComplete: unfiledComplete } = useContextCatalogView(
-    projectId ?? "",
-    "unfiled",
-    {
-      enabled: Boolean(projectId && !workId),
-      workId: null,
-    },
-  );
-  const { catalog: user, isComplete: userComplete } = useContextCatalogView(
-    projectId ?? "",
-    "user",
-    {
-      enabled: Boolean(projectId),
-      workId: null,
-    },
-  );
-  const { catalog: scratch, isComplete: scratchComplete } = useContextCatalogView(
-    projectId ?? "",
-    "scratch",
-    {
-      enabled: Boolean(projectId),
-      workId,
-    },
-  );
-  const { catalog: uploads, isComplete: uploadsComplete } = useContextCatalogView(
-    projectId ?? "",
-    "uploads",
-    {
-      enabled: Boolean(projectId),
-      workId,
-    },
-  );
+  const {
+    manuscript: { catalog: manuscript, isComplete: manuscriptComplete },
+    kb: { catalog: knowledgeBase, isComplete: knowledgeBaseComplete },
+    unfiled: { catalog: unfiled, isComplete: unfiledComplete },
+    user: { catalog: user, isComplete: userComplete },
+    scratch: { catalog: scratch, isComplete: scratchComplete },
+    uploads: { catalog: uploads, isComplete: uploadsComplete },
+  } = useContextCatalogViews(projectId ?? "", LINKABLE_SCHEMES, {
+    enabled: Boolean(projectId),
+    workId,
+  });
 
   return useMemo(() => {
     const documents = [

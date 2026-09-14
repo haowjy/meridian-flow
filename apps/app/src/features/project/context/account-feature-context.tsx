@@ -1,7 +1,15 @@
 /** Authenticated-account scope for the project feature lifetime. */
 import type { ResourceProjectionSnapshot, ResourceRecord } from "@meridian/resource-replica";
 import { resourceVisibleInProject } from "@meridian/resource-replica";
-import { createContext, useContext, useEffect, useInsertionEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useInsertionEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { AccountResourceReplica } from "@/core/resources/account-resource-replica";
 import type { PostApplyDispositionOwner } from "../draft-apply-recovery/draft-apply-recovery-owner";
 import { AccountFeatureLifetime } from "./account-feature-lifetime";
@@ -195,14 +203,14 @@ export function useObservedResourceProjection(
       setError,
     );
   }, [projectId, replica]);
-  return {
-    records:
+  const records = useMemo(
+    () =>
       snapshot?.records.filter((record) =>
         resourceVisibleInProject(projectId, record, snapshot.catalogs),
       ) ?? [],
-    snapshot,
-    error,
-  };
+    [projectId, snapshot],
+  );
+  return { records, snapshot, error };
 }
 
 export { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";

@@ -132,3 +132,18 @@ Zustand owns live membership. Restore snapshots use sessionStorage under
 projected from storage events. Layout persistence failure is reported without
 rejecting New/select/Close. Old shared desk keys are not read or written. Resource
 metadata and content persistence remain separate from browser-tab workspace membership.
+
+
+## Catalog observation
+
+The account replica reconciles metadata revisions for its entire lifetime, even
+without a mounted catalog consumer. Acquisition commits feed the existing shared
+IndexedDB live query; acquisition does not reread the whole account afterward.
+
+Composite UI consumers use `useContextCatalogViews` once for their scheme set.
+The hook observes one resource projection and one React Query result per distinct
+authority scope, then derives scheme views. The Editor sidebar has Project and
+User scopes; link suggestions also include the current Work/no-Work scope.
+Collapsed sidebar sections stay warm. Local-only rows are visible but cannot prove
+catalog completeness. Unchanged projection records retain their array identity
+through unrelated React renders.

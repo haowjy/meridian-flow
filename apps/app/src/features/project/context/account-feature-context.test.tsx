@@ -131,6 +131,33 @@ describe("AccountFeatureTestProvider", () => {
     });
   });
 
+  it("keeps visible records stable until the resource projection changes", async () => {
+    let publish: ((snapshot: ResourceProjectionSnapshot) => void) | undefined;
+    const replica = {
+      observeProjection(_projectId: string, onSnapshot: typeof publish) {
+        publish = onSnapshot;
+        return () => undefined;
+      },
+    };
+    let rerender = () => {};
+    let records: readonly unknown[] = [];
+    function Child() {
+      const [, setRevision] = useState(0);
+      rerender = () => setRevision((value) => value + 1);
+      records = useObservedResourceProjection(replica, "project-1").records;
+      return null;
+    }
+    await withReactRoot(<Child />, async () => {
+      const pending = records;
+      await act(async () => rerender());
+      expect(records).toBe(pending);
+      await act(async () => publish?.({ records: [], catalogs: [] }));
+      const loaded = records;
+      await act(async () => rerender());
+      expect(records).toBe(loaded);
+    });
+  });
+
   it("reuses one coordinator through Strict effect replay", async () => {
     const instances: ContextRemovalCoordinator[] = [];
     function Child() {

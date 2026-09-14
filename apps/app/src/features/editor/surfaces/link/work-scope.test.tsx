@@ -47,17 +47,30 @@ vi.mock("@/client/api/document-links-api", () => ({
     resolveDocumentLink(projectId, body),
 }));
 vi.mock("@/client/query/useContextCatalog", () => ({
-  useContextCatalogView: (
+  useContextCatalogViews: (
     _projectId: string,
-    scheme: string,
+    schemes: readonly string[],
     options?: { enabled?: boolean; workId?: string | null },
-  ) => ({
-    catalog:
-      options?.enabled === false ? null : (trees.get(treeKey(scheme, options?.workId)) ?? null),
-    isError: false,
-    isFetching: false,
-    refetch: () => {},
-  }),
+  ) =>
+    Object.fromEntries(
+      schemes.map((scheme) => [
+        scheme,
+        {
+          catalog:
+            options?.enabled === false
+              ? null
+              : (trees.get(
+                  treeKey(
+                    scheme,
+                    scheme === "scratch" || scheme === "uploads" ? options?.workId : null,
+                  ),
+                ) ?? null),
+          isError: false,
+          isFetching: false,
+          refetch: () => {},
+        },
+      ]),
+    ),
 }));
 vi.mock("@/features/project/context/open-project-document", () => ({
   useOpenProjectDocument: () => async () => true,

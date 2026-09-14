@@ -32,9 +32,10 @@ background against the same Y.Doc. Separate browser contexts converge through
 local Yjs peers. Failed destruction quarantines the handle until retry; abort and
 account close fence delivery after every await.
 
-`AccountResourceReplica.start()` schedules recoverable namespace, adoption and
-cleanup work from metadata revisions, browser focus, online events and a bounded
-30-second retry interval. Commands return after their durable local plan commits;
+`AccountResourceReplica.start()` observes the shared account metadata stream to
+schedule recoverable namespace, adoption and cleanup work, independently of mounted
+UI consumers. Catalog commits reach that stream without an extra projection read.
+Browser focus, online events and a bounded 30-second interval retry pending work. Commands return after their durable local plan commits;
 the runner records server attempts and outcomes later. Shutdown removes retry
 sources, fences new delivery and drains active runners before metadata closes.
 

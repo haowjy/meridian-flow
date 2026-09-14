@@ -11,7 +11,6 @@ import {
   type CatalogCacheView,
   type catalogChildren,
   catalogViewFromCheckpoint,
-  catalogViewFromSnapshot,
   emptyCatalogView,
   indexCatalogView,
   projectResourceLocation,
@@ -23,10 +22,12 @@ import {
   type QueryClient,
   queryOptions,
   skipToken,
+  type UseQueryResult,
+  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { getContextCatalogLookup } from "@/client/api/projects-api";
 import { useOptionalThreadTransport } from "@/client/providers/TransportProvider";
 import type {
@@ -390,64 +391,79 @@ export function useContextCatalogView(
   scheme: ProjectContextTreeScheme,
   options: { enabled?: boolean; workId: string | null },
 ) {
-  const scope = useMemo(
-    () => contextCatalogScope(projectId, scheme, options.workId),
-    [options.workId, projectId, scheme],
-  );
+  const schemes = useMemo(() => [scheme], [scheme]);
+  return useContextCatalogViews(projectId, schemes, options)[scheme];
+}
+
+type CatalogViewResult = {
+  catalog: CatalogContextView | null;
+  /** Optimistic rows alone cannot prove absence or uniqueness. */
+  isComplete: boolean;
+  isError: boolean;
+  isFetching: boolean;
+  refetch: () => void;
+};
+
+/** Composite consumers share one observation and one query per distinct authority scope. */
+export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
+  projectId: string,
+  schemes: readonly S[],
+  options: { enabled?: boolean; workId: string | null },
+): Record<S, CatalogViewResult> {
+  const scopes = useMemo(() => {
+    const result: CatalogScope[] = [];
+    for (const scheme of schemes) {
+      const scope = contextCatalogScope(projectId, scheme, options.workId);
+      if (!result.some((existing) => sameCatalogProjectionScope(existing, scope)))
+        result.push(scope);
+    }
+    return result;
+  }, [projectId, schemes, options.workId]);
   const resources = useOptionalAccountResourceReplica();
-  const resourceProjection = useAccountResourceProjection(projectId);
-  const query = useQuery({
-    ...contextCatalogQueryOptions(resources, projectId, scope),
-    enabled: options.enabled ?? true,
-  });
-  const response = useMemo(() => {
-    const checkpoint = resourceProjection.snapshot?.catalogs.find(
-      (candidate) =>
-        candidate.projectId === projectId && sameCatalogProjectionScope(candidate.scope, scope),
-    );
-    const view = resources
-      ? checkpoint
-        ? catalogViewFromCheckpoint(checkpoint)
-        : query.data
-          ? query.data
-          : resourceProjection.records.length > 0
-            ? catalogViewFromSnapshot({
-                scope,
-                generation: "local",
-                headRevision: "0",
-                cursor: "",
-                entries: [],
-              })
-            : null
-      : query.data;
-    return {
-      catalog: view
-        ? projectCatalogView(
-            projectId,
-            scheme,
-            projectResourceCatalogView(projectId, scope, view, resourceProjection.records),
-            resourceProjection.records,
+  const { records, snapshot, error } = useAccountResourceProjection(projectId);
+  const combine = useCallback(
+    (queries: UseQueryResult<CatalogCacheView>[]) => {
+      const results = {} as Record<S, CatalogViewResult>;
+      scopes.forEach((scope, index) => {
+        const query = queries[index];
+        const checkpoint = snapshot?.catalogs.find(
+          (candidate) =>
+            candidate.projectId === projectId && sameCatalogProjectionScope(candidate.scope, scope),
+        );
+        const view = resources
+          ? checkpoint
+            ? catalogViewFromCheckpoint(checkpoint)
+            : (query.data ?? (records.length > 0 ? emptyCatalogView(scope) : null))
+          : query.data;
+        const projected = view ? projectResourceCatalogView(projectId, scope, view, records) : null;
+        for (const scheme of schemes) {
+          if (
+            !sameCatalogProjectionScope(
+              contextCatalogScope(projectId, scheme, options.workId),
+              scope,
+            )
           )
-        : null,
-      complete: resources ? Boolean(checkpoint) : Boolean(query.data),
-    };
-  }, [
-    projectId,
-    query.data,
-    resourceProjection.records,
-    resourceProjection.snapshot,
-    resources,
-    scheme,
-    scope,
-  ]);
-  return {
-    catalog: response.catalog,
-    /** A durable/server catalog exists; optimistic rows alone cannot prove absence or uniqueness. */
-    isComplete: response.complete,
-    isError: query.isError || resourceProjection.error !== null,
-    isFetching: query.isFetching,
-    refetch: () => void query.refetch(),
-  };
+            continue;
+          results[scheme] = {
+            catalog: projected ? projectCatalogView(projectId, scheme, projected, records) : null,
+            isComplete: resources ? Boolean(checkpoint) : Boolean(query.data),
+            isError: query.isError || error !== null,
+            isFetching: query.isFetching,
+            refetch: query.refetch,
+          };
+        }
+      });
+      return results;
+    },
+    [projectId, schemes, options.workId, scopes, resources, records, snapshot, error],
+  );
+  return useQueries({
+    queries: scopes.map((scope) => ({
+      ...contextCatalogQueryOptions(resources, projectId, scope),
+      enabled: options.enabled ?? true,
+    })),
+    combine,
+  });
 }
 
 export function useContextCatalogScope(projectId: string, scope: CatalogScope, enabled = true) {

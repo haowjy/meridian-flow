@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Avoid catalog reconstruction on unchanged renders and duplicate reads after catalog acquisition.
+
 - Remove unused catalog API and migration dependency; align Editor workspace and catalog ownership guidance.
 
 - Unify resource identity across projects, persist project-qualified catalog projections, and serialize atomic catalog acquisition.
