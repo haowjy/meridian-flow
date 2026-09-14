@@ -5,6 +5,12 @@ import type { ResourceKey, ResourceRecord } from "@meridian/resource-replica";
 import Dexie from "dexie";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { LocalDocumentSessionFactory } from "@/core/editor/document-session-registry";
+import type {
+  LocalDocumentSessionHandoff,
+  LocalDocumentSessionReservationPort,
+  LocalDocumentSessionTransfer,
+  TransferredDocumentSessionOwnership,
+} from "@/core/editor/local-document-session-adoption";
 import { DocumentSession, deleteIndexedDb } from "../editor/document-session";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 import { ResourceContentAccess } from "./resource-content-access";
@@ -196,6 +202,98 @@ it("keeps independent leases on one same-browser session", async () => {
   expect(second.handle.session.getSnapshot().status).toBe("detached");
   second.handle.release();
   expect(second.handle.session.getSnapshot().status).toBe("destroyed");
+});
+
+it("hands the exact open session to registry ownership without destroying it", async () => {
+  const metadata = openMetadata();
+  const record = resource("transfer");
+  await initialize(record, "words during adoption");
+  const key = await install(metadata, record);
+  const { access } = openAccess(metadata);
+  const opened = await access.open("project", key, "editor-tab");
+  if (opened.kind !== "opened") throw new Error("Expected local content");
+  const session = opened.handle.session;
+  let transfer: LocalDocumentSessionTransfer | undefined;
+  const handoff = Object.freeze({}) as LocalDocumentSessionHandoff;
+  const reservations: LocalDocumentSessionReservationPort = {
+    reserve: vi.fn((candidate) => {
+      transfer = candidate;
+      return handoff;
+    }),
+    abort: vi.fn(),
+  };
+
+  await expect(
+    access.reserveTransfer(
+      {
+        projectId: "project",
+        key,
+        transitionId: "transition",
+        documentId: record.resource.identity.documentId,
+        identityRevision: record.resource.identity.revision,
+        databaseName:
+          record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
+      },
+      reservations,
+    ),
+  ).resolves.toEqual({ kind: "reserved", handoff });
+  expect(transfer?.session).toBe(session);
+  opened.handle.release();
+  expect(session.getSnapshot().status).toBe("detached");
+
+  const release = vi.fn();
+  const ownership: TransferredDocumentSessionOwnership = {
+    lease: {
+      accountId,
+      projectId: "project",
+      documentId: record.resource.identity.documentId,
+      generation: "7",
+    },
+    persistenceGeneration: "7",
+    exactDatabaseName: "content:transfer",
+    release,
+  };
+  transfer?.prepareCommit();
+  await transfer?.completeCommit(ownership);
+
+  expect(release).toHaveBeenCalledOnce();
+  expect(session.document.getText("probe").toString()).toBe("words during adoption");
+  expect(session.getSnapshot().status).toBe("detached");
+});
+
+it("retires an uncommitted transfer only after its reservation is aborted", async () => {
+  const metadata = openMetadata();
+  const record = resource("abort-transfer");
+  await initialize(record);
+  const key = await install(metadata, record);
+  const { access } = openAccess(metadata);
+  const opened = await access.open("project", key, "editor-tab");
+  if (opened.kind !== "opened") throw new Error("Expected local content");
+  const handoff = Object.freeze({}) as LocalDocumentSessionHandoff;
+  const reservations: LocalDocumentSessionReservationPort = {
+    reserve: vi.fn(() => handoff),
+    abort: vi.fn(),
+  };
+  const identity = record.resource.identity;
+  await access.reserveTransfer(
+    {
+      projectId: "project",
+      key,
+      transitionId: "transition",
+      documentId: identity.documentId,
+      identityRevision: identity.revision,
+      databaseName:
+        record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
+    },
+    reservations,
+  );
+
+  opened.handle.release();
+  expect(opened.handle.session.getSnapshot().status).toBe("detached");
+  access.abortTransfer(key, handoff, reservations);
+
+  expect(reservations.abort).toHaveBeenCalledWith(handoff);
+  await vi.waitFor(() => expect(opened.handle.session.getSnapshot().status).toBe("destroyed"));
 });
 
 it("does not expose an account resource outside the requesting project's projection", async () => {

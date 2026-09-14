@@ -10,6 +10,13 @@ import type { LocalAdoptionPendingReceipt } from "./document-session-authority-s
 
 declare const handoffBrand: unique symbol;
 
+export type TransferredDocumentSessionOwnership = Readonly<{
+  lease: LiveDocumentSessionLease;
+  persistenceGeneration: AvailabilityGeneration;
+  exactDatabaseName: string;
+  release(): void;
+}>;
+
 export type LocalDocumentSessionTransfer = Readonly<{
   projectId: ProjectId;
   documentId: DocumentId;
@@ -20,7 +27,7 @@ export type LocalDocumentSessionTransfer = Readonly<{
   /** Throws before the durable ownership transition if the owner record moved. */
   prepareCommit(): void;
   /** Converges owner memory and releases HL while final O revalidation is retained. */
-  completeCommit(): Promise<void>;
+  completeCommit(ownership: TransferredDocumentSessionOwnership): void | Promise<void>;
 }>;
 
 export type LocalDocumentSessionHandoff = Readonly<{

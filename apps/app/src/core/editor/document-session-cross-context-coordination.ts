@@ -381,7 +381,12 @@ class Coordination implements DocumentSessionCrossContextCoordination {
           exactDatabaseName: string;
         },
       ): void;
-      completeCommit(): Promise<void>;
+      completeCommit(
+        admitted: LiveDocumentSessionLease & {
+          persistenceGeneration: AvailabilityGeneration;
+          exactDatabaseName: string;
+        },
+      ): Promise<void>;
     }>,
   ): Promise<
     LiveDocumentSessionLease & {
@@ -409,10 +414,6 @@ class Coordination implements DocumentSessionCrossContextCoordination {
       });
       let finalized = false;
       try {
-        const bound = await this.store.bindLocalAdoptionGeneration({
-          ...pending,
-          targetGeneration: generation,
-        });
         const lease = {
           accountId: this.accountId,
           projectId,
@@ -421,11 +422,23 @@ class Coordination implements DocumentSessionCrossContextCoordination {
           persistenceGeneration: generation,
           exactDatabaseName: pending.exactDatabaseName,
         };
-        transfer.prepareCommit(lease);
-        await this.store.finalizeLocalAdoption({
-          ...bound,
-          targetGeneration: generation,
-        });
+        const authority = (await this.store.readRoom(pending.documentId)).persistence;
+        const alreadyBindable =
+          authority?.phase === "bindable" &&
+          authority.generation === generation &&
+          authority.exactDatabaseName === pending.exactDatabaseName &&
+          authority.originLineageHandle === pending.lineageHandle;
+        if (!alreadyBindable) {
+          const bound = await this.store.bindLocalAdoptionGeneration({
+            ...pending,
+            targetGeneration: generation,
+          });
+          transfer.prepareCommit(lease);
+          await this.store.finalizeLocalAdoption({
+            ...bound,
+            targetGeneration: generation,
+          });
+        }
         finalized = true;
         admitted = lease;
       } finally {
@@ -464,7 +477,14 @@ class Coordination implements DocumentSessionCrossContextCoordination {
           exactDatabaseName: pending.exactDatabaseName,
         });
         this.localAdoptions.delete(pending.documentId);
-        await transfer.completeCommit();
+        await transfer.completeCommit({
+          accountId: this.accountId,
+          projectId,
+          documentId: pending.documentId,
+          generation,
+          persistenceGeneration: generation,
+          exactDatabaseName: pending.exactDatabaseName,
+        });
         return;
       }
       terminal = authority?.phase === "terminal-local" || authority === null;

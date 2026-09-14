@@ -40,6 +40,7 @@ import type {
   LocalDocumentSessionHandoff,
   LocalDocumentSessionReservationPort,
   LocalDocumentSessionTransfer,
+  TransferredDocumentSessionOwnership,
 } from "./local-document-session-adoption";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
 
@@ -62,8 +63,8 @@ type LocalTransferReservation = {
   settle(): void;
 };
 
-function localTransferKey(projectId: ProjectId, documentId: DocumentId): string {
-  return `${encodeURIComponent(projectId)}:${encodeURIComponent(documentId)}`;
+function localTransferKey(documentId: DocumentId): string {
+  return encodeURIComponent(documentId);
 }
 
 export class DocumentSessionAuthorityError extends Error {
@@ -154,7 +155,7 @@ export class DocumentSessionRegistry
     compareAvailabilityGeneration(generation, generation);
     this.reserveAdmission(documentId);
     try {
-      await this.localTransferReservations.get(localTransferKey(projectId, documentId))?.settled;
+      await this.localTransferReservations.get(localTransferKey(documentId))?.settled;
       this.requireAccountRuntimeOpen();
       const coordination = await this.configuredCoordination();
       const admitted = await this.translateCoordination(() =>
@@ -344,7 +345,7 @@ export class DocumentSessionRegistry
 
   reserve(transfer: LocalDocumentSessionTransfer): LocalDocumentSessionHandoff {
     this.requireAccountRuntimeOpen();
-    const key = localTransferKey(transfer.projectId, transfer.documentId);
+    const key = localTransferKey(transfer.documentId);
     const existing = this.localTransferReservations.get(key);
     if (existing) {
       if (
@@ -457,7 +458,7 @@ export class DocumentSessionRegistry
   }): Promise<{ lease: LiveDocumentSessionLease; session: DocumentSession }> {
     this.requireAccountRuntimeOpen();
     compareAvailabilityGeneration(input.generation, input.generation);
-    const reservationKey = localTransferKey(input.projectId, input.documentId);
+    const reservationKey = localTransferKey(input.documentId);
     const reservation = this.localTransferReservations.get(reservationKey);
     if (
       !reservation ||
@@ -486,14 +487,28 @@ export class DocumentSessionRegistry
               throw new Error("Local adoption persistence authority does not match the lineage");
             reservation.transfer.prepareCommit();
           },
-          completeCommit: async () => {
+          completeCommit: async (lease) => {
             const session = reservation.transfer.session;
             const state = this.liveRooms.get(input.documentId);
-            if (!state || state.session) throw new Error("A different live session won adoption");
-            await reservation.transfer.completeCommit();
+            if (!state || (state.session && state.session !== session))
+              throw new Error("A different live session won adoption");
             state.session = session;
             state.persistenceGeneration = input.generation;
             state.exactDatabaseName = input.pending.exactDatabaseName;
+            const ownerId = `local-transfer:${input.pending.transitionId}`;
+            this.retain(ownerId, [lease]);
+            let released = false;
+            const ownership: TransferredDocumentSessionOwnership = Object.freeze({
+              lease,
+              persistenceGeneration: input.generation,
+              exactDatabaseName: input.pending.exactDatabaseName,
+              release: () => {
+                if (released) return;
+                released = true;
+                this.release(ownerId);
+              },
+            });
+            await reservation.transfer.completeCommit(ownership);
             this.localTransferReservations.delete(reservationKey);
             reservation.settle();
           },
