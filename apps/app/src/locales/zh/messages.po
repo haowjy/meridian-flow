@@ -1843,10 +1843,6 @@ msgstr ""
 msgid "Loading {0}"
 msgstr ""
 
-#: src/features/project/context/ContextViewer.tsx
-msgid "Loading {name}"
-msgstr ""
-
 #: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Loading agents…"
@@ -1858,10 +1854,6 @@ msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
 msgid "Loading draft…"
-msgstr ""
-
-#: src/features/project/context/ContextViewerHost.tsx
-msgid "Loading file…"
 msgstr ""
 
 #: src/features/project/mobile/MobileContextBrowser.tsx

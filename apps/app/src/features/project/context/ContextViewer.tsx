@@ -7,8 +7,8 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ContextTab } from "@/client/stores";
+import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { PassageNotice } from "@/features/editor/PassageNotice";
@@ -165,7 +165,14 @@ export function ContextViewer({
             <ContextViewerHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
           </div>
         ) : null}
-        {optimisticTab ? <OptimisticDocumentLoading name={optimisticTab.name} /> : null}
+        {optimisticTab ? (
+          <div className="relative min-h-0 flex-1" aria-busy>
+            <DelayedContentSkeleton
+              key={JSON.stringify([projectId, optimisticTab.id])}
+              className="absolute inset-0"
+            />
+          </div>
+        ) : null}
         {paneState.kind === "dead-route" ? (
           <MissingDocumentState destination={paneState.destination} />
         ) : null}
@@ -207,28 +214,6 @@ function MissingDocumentState({ destination }: { destination: MissingDestination
             renamed, deleted, or never finished being created.
           </Trans>
         </p>
-      </div>
-    </div>
-  );
-}
-
-function OptimisticDocumentLoading({ name }: { name: string }) {
-  return (
-    <div className="flex min-h-0 flex-1 justify-center overflow-hidden px-8 py-12" role="status">
-      <span className="sr-only">
-        <Trans>Loading {name}</Trans>
-      </span>
-      <div aria-hidden className="w-full max-w-2xl space-y-5">
-        <Skeleton className="h-7 w-2/5" />
-        <div className="space-y-3 pt-3">
-          <Skeleton className="h-3 w-full" />
-          <Skeleton className="h-3 w-11/12" />
-          <Skeleton className="h-3 w-4/5" />
-        </div>
-        <div className="space-y-3 pt-2">
-          <Skeleton className="h-3 w-full" />
-          <Skeleton className="h-3 w-5/6" />
-        </div>
       </div>
     </div>
   );

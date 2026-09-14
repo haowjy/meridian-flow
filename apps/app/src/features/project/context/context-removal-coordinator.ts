@@ -589,9 +589,9 @@ export class ContextRemovalCoordinator {
   reconcileDocumentAvailability(
     commands: readonly ProjectDocumentAvailabilityCommand[],
   ): ContextAvailabilityEffectReceipt {
-    if (this.unavailable()) return this.emptyAvailabilityReceipt();
     const normalized = this.normalizeAvailabilityCommands(commands);
     if (normalized.length === 0) return this.emptyAvailabilityReceipt();
+    if (this.unavailable()) throw new Error("Context removal authority is unavailable");
 
     const committed: ProjectDocumentAvailabilityCommand[] = [];
     const replayed: ProjectDocumentAvailabilityCommand[] = [];

@@ -73,12 +73,24 @@ Account/authority shutdown fences new work and drains attached and detached loca
 
 The backend remains authoritative for permissions, canonical names/paths, namespace transactions and terminal document state. Move/delete attempts carry an operation ID and immutable payload. Matching retries recover a stored outcome; the same ID with another payload rejects. Receipt lookup does not depend on a source path that a successful move/delete already removed. Infrastructure failures are not recorded as terminal business outcomes.
 
-These receipts make safe frontend replay possible. They do not provide the missing browser-durable intent queue. A path disappearing from a scoped catalog is also not sufficient evidence to delete local content.
+These receipts make safe frontend replay possible. The inactive resource journal
+stores immutable intentions/attempts and recovery evidence; the production callers
+have not switched to its sole runner yet. A path disappearing from a scoped catalog is also not sufficient evidence to delete local content.
 
 ## Current limits and planned work
 
 The foundation preserves editor continuity, independent layout, drain safety, peer exchange and operation outcomes. User testing reports many original symptoms gone; that is useful feedback, not proof of every crash/recovery case.
 
-Still unfinished: a durable general resource owner/journal, proven cached-content readiness, concurrent local admission, one catalog/tree projection, frontend durable namespace replay, accepted workspace/history settlement and migration/deletion of old owners.
+Accepted workspace/history settlement and exact-cache initialization evidence are
+implemented and probed. The inactive journal also supports restartable legacy
+capture, atomic authority inspection, independent local-content recovery and
+retained local deletion. These storage/policy prerequisites do not activate a
+second live owner.
 
-Address-loading presentation keeps the shell immediately, retains eligible prior content, and otherwise shows a blank pane followed by a skeleton after approximately 500ms. Only the fallback resets with destination changes; the editor stays mounted. There is no spinner, loading copy or minimum fallback duration. Content-session startup remains a separate wait whose presentation still needs the same policy; see [tracked follow-ups](TODO).
+Still unfinished: the sole resource runner and namespace replay, generic local
+content access before remote admission, concurrent local participants, one
+catalog/tree projection, supported migration handoff and deletion of displaced
+owners. Local deletion intent retains writing; it is not server terminal authority
+or permission to purge.
+
+Address-loading presentation keeps the shell immediately, retains eligible prior content, and otherwise shows a blank pane followed by a skeleton after approximately 500ms. Read-only file and optimistic document waits reuse the same delayed fallback from `components/app/DelayedContentSkeleton.tsx`. Read-only filename chrome remains mounted during the read; headerless hosts remain headerless. Only the fallback resets with destination changes; the editor stays mounted. There is no spinner, loading copy or minimum fallback duration. Content-session startup remains a separate wait whose presentation still needs the same policy; see [tracked follow-ups](TODO).

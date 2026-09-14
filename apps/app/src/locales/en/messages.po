@@ -1843,10 +1843,6 @@ msgstr "Load more chats"
 msgid "Loading {0}"
 msgstr "Loading {0}"
 
-#: src/features/project/context/ContextViewer.tsx
-msgid "Loading {name}"
-msgstr "Loading {name}"
-
 #: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Loading agents…"
@@ -1859,10 +1855,6 @@ msgstr "Loading chats"
 #: src/features/chat/CreationComposer.tsx
 msgid "Loading draft…"
 msgstr "Loading draft…"
-
-#: src/features/project/context/ContextViewerHost.tsx
-msgid "Loading file…"
-msgstr "Loading file…"
 
 #: src/features/project/mobile/MobileContextBrowser.tsx
 msgid "Loading files…"

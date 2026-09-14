@@ -1,30 +1,10 @@
 /** Retain usable content during document navigation; mask unavailable destinations. */
 import { Trans } from "@lingui/react/macro";
-import { type ReactNode, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 
-import { Skeleton } from "@/components/ui/skeleton";
+import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 
 export type ProjectRouteIssue = "loading" | "unavailable" | "error" | "resource-viewing";
-
-/** Only this fallback remounts when a pending destination changes, never the editor. */
-function DelayedDestinationSkeleton() {
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    const timer = setTimeout(() => setVisible(true), 500);
-    return () => clearTimeout(timer);
-  }, []);
-  if (!visible) return null;
-  return (
-    <div className="pointer-events-none absolute inset-0 px-6 py-8" aria-hidden>
-      <div className="mx-auto flex max-w-3xl flex-col gap-4">
-        <Skeleton className="h-7 w-1/3 motion-reduce:animate-none" />
-        <Skeleton className="mt-4 h-4 w-full motion-reduce:animate-none" />
-        <Skeleton className="h-4 w-full motion-reduce:animate-none" />
-        <Skeleton className="h-4 w-4/5 motion-reduce:animate-none" />
-      </div>
-    </div>
-  );
-}
 
 export function ProjectRouteBoundary({
   issue,
@@ -57,7 +37,9 @@ export function ProjectRouteBoundary({
       {recovery ? (
         <div className="absolute inset-0 bg-background">{recovery}</div>
       ) : issue === "loading" ? (
-        !retainedPending && <DelayedDestinationSkeleton key={destinationKey} />
+        !retainedPending && (
+          <DelayedContentSkeleton key={destinationKey} className="absolute inset-0" />
+        )
       ) : issue ? (
         <div
           className="absolute inset-0 grid place-items-center bg-background px-6 text-center text-sm text-muted-foreground"
