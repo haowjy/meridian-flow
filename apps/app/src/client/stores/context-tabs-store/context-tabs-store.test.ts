@@ -12,7 +12,7 @@ describe("context tabs draft-only lifecycle", () => {
     useContextTabsStore.setState({
       byProject: {},
       _reviewOverlayByProject: {},
-      _deskHydrated: false,
+      _workspaceHydrated: false,
     });
   });
 
@@ -101,7 +101,7 @@ describe("context tabs draft-only lifecycle", () => {
 
 describe("context tab identity and removal commits", () => {
   beforeEach(() => {
-    useContextTabsStore.setState({ byProject: {}, _deskHydrated: false });
+    useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: false });
   });
 
   it("replaces a server identity at an occupied canonical locator in place", () => {

@@ -59,7 +59,7 @@ const restored = {
 beforeEach(() => {
   useContextTabsStore.setState({
     byProject: { project: { tabs: [restored], selectedTabIdByWork: { "work-1": "restored" } } },
-    _deskHydrated: true,
+    _workspaceHydrated: true,
   });
 });
 
@@ -128,7 +128,7 @@ it("keeps a fulfilled bootstrap removal authoritative when the explicit live rou
     byProject: {
       project: { tabs: [deleted, knowledge], selectedTabIdByWork: { "work-1": "deleted" } },
     },
-    _deskHydrated: true,
+    _workspaceHydrated: true,
   });
   const read = deferred<unknown>();
   mocks.availability.mockImplementation(() => read.promise);

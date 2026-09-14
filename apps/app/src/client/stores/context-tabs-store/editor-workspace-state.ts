@@ -12,11 +12,10 @@ import {
 } from "./editor-workspace-model";
 
 export const EDITOR_WORKSPACE_STORAGE_KEY = "meridian:editor-workspace:v1";
-export type PersistedProjectDesk = ProjectTabsSlice;
 export type EditorWorkspaceSnapshot = Readonly<{
   version: 1;
   accountId: string;
-  projects: Readonly<Record<string, PersistedProjectDesk>>;
+  projects: Readonly<Record<string, ProjectTabsSlice>>;
 }>;
 
 export type EditorWorkspaceCommand =
@@ -132,7 +131,7 @@ function withoutResourceOwnership(tab: ContextTab): ContextTab {
   return tab;
 }
 
-function parseProjectDesk(value: unknown): PersistedProjectDesk | null {
+function parseProjectDesk(value: unknown): ProjectTabsSlice | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
   if (
@@ -177,7 +176,7 @@ export function parseEditorWorkspace(raw: string | null): EditorWorkspaceSnapsho
       Array.isArray(record.projects)
     )
       return null;
-    const projects: Record<string, PersistedProjectDesk> = {};
+    const projects: Record<string, ProjectTabsSlice> = {};
     for (const [projectId, desk] of Object.entries(record.projects)) {
       const parsed = parseProjectDesk(desk);
       if (!parsed) return null;
@@ -225,7 +224,7 @@ function sameTabIdentity(left: ContextTab, right: ContextTab): boolean {
   );
 }
 
-function normalizeProject(desk: PersistedProjectDesk): PersistedProjectDesk {
+function normalizeProject(desk: ProjectTabsSlice): ProjectTabsSlice {
   const tabs = desk.tabs.filter(isEditorContextTab);
   return {
     tabs,
@@ -282,7 +281,7 @@ function outcome(
 }
 function committed(
   current: EditorWorkspaceSnapshot,
-  projects: Readonly<Record<string, PersistedProjectDesk>>,
+  projects: Readonly<Record<string, ProjectTabsSlice>>,
 ): EditorWorkspaceCommandResult {
   return outcome("committed", {
     ...current,
@@ -294,7 +293,7 @@ function committed(
 function replaceProject(
   current: EditorWorkspaceSnapshot,
   projectId: string,
-  desk: PersistedProjectDesk,
+  desk: ProjectTabsSlice,
 ): EditorWorkspaceCommandResult {
   return committed(current, { ...current.projects, [projectId]: desk });
 }

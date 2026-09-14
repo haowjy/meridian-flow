@@ -22,7 +22,7 @@ import { PassageNotice } from "@/features/editor/PassageNotice";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { ContextEditorMountHost } from "../context/ContextEditorMountHost";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
-import { resolveDeskRoute } from "../context/context-route-desk-owner";
+import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useLiveDocumentBinding } from "../context/use-live-document-binding";
 import { useLiveBindingAcknowledgementHost } from "../dock/editor-review-handoff";
@@ -70,7 +70,7 @@ function MobileLocalDocumentHost({
       selected.locator.workId !== workId
     )
       return;
-    const desk = resolveDeskRoute({
+    const desk = resolveWorkspaceRoute({
       tabs: [tab],
       selectedDocumentId: tab.documentId,
       locator: selected.locator,

@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   commitPlannedContextRemoval,
-  rehydrateContextDesks,
+  rehydrateEditorWorkspace,
   useContextTabsStore,
 } from "./context-tabs-store";
 import { EDITOR_WORKSPACE_STORAGE_KEY, parseEditorWorkspace } from "./editor-workspace-state";
@@ -20,20 +20,20 @@ beforeEach(() => {
   useContextTabsStore.setState({
     byProject: {},
     _reviewOverlayByProject: {},
-    _deskHydrated: false,
+    _workspaceHydrated: false,
     _layoutPersistenceError: null,
   });
 });
 afterEach(() => vi.restoreAllMocks());
 
 it("restores selected and explicitly empty layouts without touching shared localStorage", async () => {
-  await rehydrateContextDesks("account");
+  await rehydrateEditorWorkspace("account");
   const store = useContextTabsStore.getState();
   await store.openTab("project", local);
   await store.selectTab("project", "", "A");
   const sharedWrite = vi.spyOn(Storage.prototype, "setItem");
-  useContextTabsStore.setState({ byProject: {}, _deskHydrated: false });
-  await rehydrateContextDesks("account");
+  useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: false });
+  await rehydrateEditorWorkspace("account");
   expect(useContextTabsStore.getState().byProject.project?.selectedTabIdByWork).toEqual({
     "": "A",
   });
@@ -42,8 +42,8 @@ it("restores selected and explicitly empty layouts without touching shared local
     deskSelection: { workId: "", documentId: null },
   });
   expect(useContextTabsStore.getState().byProject.project?.tabs).toEqual([]);
-  useContextTabsStore.setState({ byProject: {}, _deskHydrated: false });
-  await rehydrateContextDesks("account");
+  useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: false });
+  await rehydrateEditorWorkspace("account");
   expect(useContextTabsStore.getState().byProject.project).toEqual({
     tabs: [],
     selectedTabIdByWork: {},
@@ -52,7 +52,7 @@ it("restores selected and explicitly empty layouts without touching shared local
 });
 
 it("ignores external layout storage events and same-account rehydration", async () => {
-  await rehydrateContextDesks("account");
+  await rehydrateEditorWorkspace("account");
   await useContextTabsStore.getState().openTab("project", local);
   const before = useContextTabsStore.getState().byProject;
   const external = JSON.stringify({ version: 1, accountId: "account", projects: {} });
@@ -62,12 +62,12 @@ it("ignores external layout storage events and same-account rehydration", async 
   window.dispatchEvent(
     new StorageEvent("storage", { key: EDITOR_WORKSPACE_STORAGE_KEY, newValue: external }),
   );
-  await rehydrateContextDesks("account");
+  await rehydrateEditorWorkspace("account");
   expect(useContextTabsStore.getState().byProject).toBe(before);
 });
 
 it("keeps New and Close coherent when snapshot persistence fails", async () => {
-  await rehydrateContextDesks("account");
+  await rehydrateEditorWorkspace("account");
   const writes = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
     throw new Error("quota");
   });
@@ -93,8 +93,8 @@ it("keeps New and Close coherent when snapshot persistence fails", async () => {
 });
 
 it("does not display another account's layout", async () => {
-  await rehydrateContextDesks("account-a");
+  await rehydrateEditorWorkspace("account-a");
   await useContextTabsStore.getState().openTab("project", local);
-  await rehydrateContextDesks("account-b");
+  await rehydrateEditorWorkspace("account-b");
   expect(useContextTabsStore.getState().byProject).toEqual({});
 });

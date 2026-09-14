@@ -103,7 +103,7 @@ describe("ProjectContextRemovalController", () => {
           selectedTabIdByWork: { "work-1": "scratch-1" },
         },
       },
-      _deskHydrated: true,
+      _workspaceHydrated: true,
     });
     await withReactRoot(
       <AccountFeatureTestProvider accountId="account-1">
@@ -156,7 +156,7 @@ describe("ProjectContextRemovalController", () => {
           selectedTabIdByWork: { "work-1": "document-1" },
         },
       },
-      _deskHydrated: true,
+      _workspaceHydrated: true,
     });
     let coordinator: ContextRemovalCoordinator | null = null;
     let setScreen: ((screen: "context" | typeof offScreen) => void) | null = null;

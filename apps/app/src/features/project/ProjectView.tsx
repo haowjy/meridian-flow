@@ -218,7 +218,7 @@ export function ProjectView(props: ProjectViewProps) {
   useLayoutEffect(() => {
     props.onDisplayedSelection?.({ threadId: resolvedThreadId, editorWorkId });
   }, [props.onDisplayedSelection, resolvedThreadId, editorWorkId]);
-  const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
+  const deskHydrated = useContextTabsStore((s) => s._workspaceHydrated);
   const contextPhase = useContextProjectAuthority({
     projectId: props.projectId,
     deskHydrated,

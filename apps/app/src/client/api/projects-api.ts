@@ -34,7 +34,6 @@ import {
   apiProjectWorkWriteModePath,
   apiWorkThreadsPath,
   type CatalogChanges,
-  type CatalogChildrenResult,
   type CatalogLookupResult,
   type CatalogScope,
   type CatalogSnapshot,
@@ -275,16 +274,6 @@ export async function getContextCatalogChanges(
   return getJson(
     `${apiProjectContextCatalogPath(projectId, "changes")}?${catalogQuery(scope, { cursor })}`,
     { signal },
-  );
-}
-
-export async function getContextCatalogChildren(
-  projectId: string,
-  scope: CatalogScope,
-  parentId: string,
-): Promise<CatalogChildrenResult> {
-  return getJson(
-    `${apiProjectContextCatalogPath(projectId, "children")}?${catalogQuery(scope, { parentId })}`,
   );
 }
 

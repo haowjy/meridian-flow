@@ -26,7 +26,7 @@ import {
 } from "./context/account-feature-context";
 import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState } from "./context/context-pane-state";
-import { resolveDeskRoute } from "./context/context-route-desk-owner";
+import { resolveWorkspaceRoute } from "./context/context-route-workspace-owner";
 import { contextTabFromFile, projectResourceTab } from "./context/context-tab-from-file";
 import { contextTabRouteKey } from "./context/context-tab-identity";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
@@ -83,7 +83,7 @@ export function ContextViewerSurfaceController({
 
   const { tabs, selectedTabIdByWork } = useContextTabs(projectId);
   const selectedDocumentId = localDocumentId ?? selectedTabIdByWork[routeWorkId ?? ""];
-  const deskHydrated = useContextTabsStore((state) => state._deskHydrated);
+  const deskHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
   const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const visibleTabs = tabs.filter((tab) => {
@@ -94,7 +94,7 @@ export function ContextViewerSurfaceController({
     activeContextScheme !== null && activeContextPath !== null
       ? { scheme: activeContextScheme, path: activeContextPath, workId: routeWorkId }
       : null;
-  const deskRoute = resolveDeskRoute({ tabs, selectedDocumentId, locator });
+  const deskRoute = resolveWorkspaceRoute({ tabs, selectedDocumentId, locator });
   const activeTab = deskRoute.kind === "unowned" ? null : deskRoute.tab;
   const removalState = useContextRemovalProject(projectId);
   const editorScopeKey = `${projectId}:${routeWorkId ?? "no-work"}`;

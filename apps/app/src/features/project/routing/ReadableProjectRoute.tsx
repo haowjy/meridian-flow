@@ -179,7 +179,7 @@ export function ReadableProjectRoute({
     : resolveAddressSelection(editorSelection, workCatalog);
   const workId = editorWork.status === "resolved" ? editorWork.value.id : null;
   const { tabs: deskTabs } = useContextTabs(projectId);
-  const deskHydrated = useContextTabsStore((state) => state._deskHydrated);
+  const deskHydrated = useContextTabsStore((state) => state._workspaceHydrated);
   const localDocument = resolveLocalDocumentSelection({
     pointer:
       destination.kind === "editor"

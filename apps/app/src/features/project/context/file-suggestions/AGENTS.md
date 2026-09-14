@@ -1,8 +1,9 @@
 # context/file-suggestions — client-side file finding
 
 Reusable file suggestions over the normalized context catalog. This module
-ranks locally; React Query owns catalog acquisition and it must not introduce a
-server-search path or suggestion-specific cache.
+ranks locally; the account resource replica owns catalog acquisition and durable
+checkpoints. React Query triggers acquisition and delivers results. Do not introduce
+a server-search path or suggestion-specific cache.
 
 ## Mental model
 

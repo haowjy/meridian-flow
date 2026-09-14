@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ContextTab } from "@/client/stores";
-import { resolveDeskRoute } from "./context-route-desk-owner";
+import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
 
 const local = (id: string): ContextTab => ({
   kind: "new",
@@ -26,11 +26,11 @@ const tracked = (
   ...(origin ? { origin } : {}),
 });
 
-describe("resolveDeskRoute", () => {
+describe("resolveWorkspaceRoute", () => {
   it("uses the exact selected ID among multiple empty tabs", () => {
     const tabs = [local("first"), local("second")];
     expect(
-      resolveDeskRoute({
+      resolveWorkspaceRoute({
         tabs,
         selectedDocumentId: "first",
         locator: { scheme: "unfiled", path: "", workId: "a" },
@@ -39,7 +39,7 @@ describe("resolveDeskRoute", () => {
   });
   it("allows a project-owned local tab with no Work", () => {
     expect(
-      resolveDeskRoute({
+      resolveWorkspaceRoute({
         tabs: [local("n")],
         selectedDocumentId: "n",
         locator: { scheme: "unfiled", path: "", workId: null },
@@ -48,7 +48,7 @@ describe("resolveDeskRoute", () => {
   });
   it("returns a redirect fact for the exact materialized local owner", () => {
     expect(
-      resolveDeskRoute({
+      resolveWorkspaceRoute({
         tabs: [tracked("n", "/Untitled.md", "a", "local-resource")],
         selectedDocumentId: "n",
         locator: { scheme: "unfiled", path: "", workId: "a" },
@@ -63,7 +63,7 @@ describe("resolveDeskRoute", () => {
       workId: undefined,
     };
     expect(
-      resolveDeskRoute({
+      resolveWorkspaceRoute({
         tabs: [tab],
         selectedDocumentId: "n",
         locator: { scheme: "unfiled", path: "", workId: "a" },
@@ -75,7 +75,7 @@ describe("resolveDeskRoute", () => {
   });
   it("matches exact server scheme, path, and Work", () => {
     expect(
-      resolveDeskRoute({
+      resolveWorkspaceRoute({
         tabs: [tracked("a", "/same.md", "a"), tracked("b", "/same.md", "b")],
         selectedDocumentId: "a",
         locator: { scheme: "scratch", path: "/same.md", workId: "b" },

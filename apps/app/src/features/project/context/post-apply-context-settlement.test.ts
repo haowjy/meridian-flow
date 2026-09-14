@@ -55,7 +55,7 @@ describe("post-Apply context settlement", () => {
     useContextTabsStore.setState({
       byProject: {},
       _reviewOverlayByProject: {},
-      _deskHydrated: false,
+      _workspaceHydrated: false,
     });
     useContextTabsStore.getState().openTab("project-a", draftTab());
   });

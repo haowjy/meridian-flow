@@ -24,9 +24,9 @@ export {
 type ContextTabsState = {
   /** Live project membership, independent of other browser contexts. */
   byProject: Record<string, ProjectTabsSlice>;
-  /** Review-only tabs and route intent. Never supplied to a durable desk command. */
+  /** Review-only tabs and route intent. Never supplied to a browser-local workspace command. */
   _reviewOverlayByProject: Record<string, ProjectTabsSlice>;
-  _deskHydrated: boolean;
+  _workspaceHydrated: boolean;
   _layoutPersistenceError: unknown | null;
 };
 
@@ -61,14 +61,14 @@ type ContextTabsActions = {
     projectId: string,
     tab: ContextTab,
     disposition: "applied" | "discarded",
-  ) => Promise<DraftDeskSettlementReceipt>;
+  ) => Promise<DraftWorkspaceSettlementReceipt>;
   consumeReviewTab: (
     projectId: string,
     identity: ReviewOverlayTabIdentity,
   ) => ReviewOverlayConsumeReceipt;
 };
 
-export type DraftDeskSettlementReceipt = { kind: "settled" } | { kind: "not-settled" };
+export type DraftWorkspaceSettlementReceipt = { kind: "settled" } | { kind: "not-settled" };
 
 export type ReviewOverlayConsumeReceipt =
   | { kind: "consumed"; current: ProjectTabsSlice }
@@ -142,14 +142,14 @@ function composeSlices(durable: ProjectTabsSlice, overlay?: ProjectTabsSlice): P
   };
 }
 
-type DeskCommandBuilder = (
+type WorkspaceCommandBuilder = (
   state: ContextTabsState & ContextTabsActions,
 ) => EditorWorkspaceCommand | null;
 
 export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>()(
   devtools(
     (rawSet, get) => {
-      const dispatchResult = (build: DeskCommandBuilder, isCurrent?: () => boolean) => {
+      const dispatchResult = (build: WorkspaceCommandBuilder, isCurrent?: () => boolean) => {
         if (isCurrent?.() === false) return null;
         const current = get();
         const command = build(current);
@@ -169,7 +169,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
         return result;
       };
       const dispatch = async (
-        build: DeskCommandBuilder,
+        build: WorkspaceCommandBuilder,
         isCurrent?: () => boolean,
       ): Promise<void> => {
         const result = dispatchResult(build, isCurrent);
@@ -179,7 +179,7 @@ export const useContextTabsStore = create<ContextTabsState & ContextTabsActions>
       return {
         byProject: {},
         _reviewOverlayByProject: {},
-        _deskHydrated: false,
+        _workspaceHydrated: false,
         _layoutPersistenceError: null,
 
         openTab: (projectId, input, isCurrent) => {
@@ -437,7 +437,7 @@ export function previewReviewOverlayClose(
   return { kind: result.consumed ? "consumed" : "not-consumed", current: result.current };
 }
 
-export function reconcileContextDeskBootstrap(
+export function reconcileEditorWorkspaceBootstrap(
   projectId: string,
   changes: readonly { prior: ContextTab; next: ContextTab | null }[],
 ): Promise<void> {
@@ -449,7 +449,7 @@ export function commitContextAvailability(
   prior: ProjectTabsSlice,
   next: ProjectTabsSlice,
 ): Promise<void> | void {
-  const hydrated = useContextTabsStore.getState()._deskHydrated && workspaceAccountId !== null;
+  const hydrated = useContextTabsStore.getState()._workspaceHydrated && workspaceAccountId !== null;
   const settlement = useContextTabsStore.getState().applyAvailability(projectId, prior, next);
   return hydrated ? settlement : undefined;
 }
@@ -484,7 +484,7 @@ export function commitDraftApplyMetadata(
   projectId: string,
   identity: ReviewOverlayTabIdentity,
   disposition: "applied" | "discarded" = "applied",
-): Promise<DraftDeskSettlementReceipt> {
+): Promise<DraftWorkspaceSettlementReceipt> {
   const tab = useContextTabsStore
     .getState()
     ._reviewOverlayByProject[projectId]?.tabs.find(
@@ -501,7 +501,7 @@ export function commitDraftApplyMetadata(
   return useContextTabsStore.getState().settleDraft(projectId, tab, disposition);
 }
 
-/** Explicit-close-only exact review overlay consumption. Never dispatches to the durable desk. */
+/** Explicit-close-only exact review overlay consumption. Never dispatches to the browser-local workspace. */
 export function commitReviewOverlayClose(
   projectId: string,
   identity: ReviewOverlayTabIdentity,
@@ -541,9 +541,9 @@ function persistWorkspace(): void {
 }
 
 /** Restore this browser context once per account, never project another window's layout. */
-export async function rehydrateContextDesks(userId: string): Promise<void> {
+export async function rehydrateEditorWorkspace(userId: string): Promise<void> {
   if (typeof window === "undefined") return;
-  if (workspaceAccountId === userId && useContextTabsStore.getState()._deskHydrated) return;
+  if (workspaceAccountId === userId && useContextTabsStore.getState()._workspaceHydrated) return;
   let snapshot: ReturnType<typeof parseEditorWorkspace> = null;
   let error: unknown = null;
   try {
@@ -555,7 +555,7 @@ export async function rehydrateContextDesks(userId: string): Promise<void> {
   useContextTabsStore.setState({
     byProject: snapshot?.accountId === userId ? { ...snapshot.projects } : {},
     _reviewOverlayByProject: {},
-    _deskHydrated: true,
+    _workspaceHydrated: true,
     _layoutPersistenceError: error,
   });
 }

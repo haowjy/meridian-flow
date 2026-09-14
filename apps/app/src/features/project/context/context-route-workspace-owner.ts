@@ -1,4 +1,4 @@
-/** Exact, heuristic-free resolution of the Context desk owner for one committed route. */
+/** Exact, heuristic-free resolution of the Editor workspace owner for one committed route. */
 
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import type { ContextTab } from "@/client/stores";
@@ -6,7 +6,7 @@ import type { ContextRouteTarget } from "../routing/project-route";
 import type { ContextRouteIdentity } from "./context-removal-planner";
 import { contextTabMatchesRoute } from "./context-tab-identity";
 
-export type DeskRouteResolution =
+export type WorkspaceRouteResolution =
   | { kind: "owner"; tab: ContextTab; identity: ContextRouteIdentity }
   | {
       kind: "materialized-local";
@@ -15,7 +15,7 @@ export type DeskRouteResolution =
     }
   | { kind: "unowned" };
 
-export function resolveDeskRoute({
+export function resolveWorkspaceRoute({
   tabs,
   selectedDocumentId,
   locator,
@@ -23,7 +23,7 @@ export function resolveDeskRoute({
   tabs: readonly ContextTab[];
   selectedDocumentId: string | undefined;
   locator: ContextRouteTarget | null;
-}): DeskRouteResolution {
+}): WorkspaceRouteResolution {
   if (!locator) return { kind: "unowned" };
   const server = tabs.find(
     (tab) =>

@@ -7,7 +7,7 @@ import "fake-indexeddb/auto";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { act, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
-import { type ContextTab, rehydrateContextDesks, useContextTabsStore } from "@/client/stores";
+import { type ContextTab, rehydrateEditorWorkspace, useContextTabsStore } from "@/client/stores";
 import {
   AccountFeatureTestProvider,
   useAccountResourceReplica,
@@ -95,7 +95,7 @@ beforeEach(() => {
         selectedTabIdByWork: { "work-1": "a" },
       },
     },
-    _deskHydrated: false,
+    _workspaceHydrated: false,
   });
 });
 
@@ -125,8 +125,8 @@ it("persists and admits the real New action without an empty working-set route",
     writes.push({ key, value });
     return originalSetItem.call(this, key, value);
   });
-  useContextTabsStore.setState({ byProject: {}, _deskHydrated: false });
-  await rehydrateContextDesks(`new-action-${crypto.randomUUID()}`);
+  useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: false });
+  await rehydrateEditorWorkspace(`new-action-${crypto.randomUUID()}`);
   let search: ProjectSearch = { screen: "context", work: "work-a" };
   let releaseLocalRoute: (() => void) | null = null;
 
@@ -244,7 +244,7 @@ it("persists and admits the real New action without an empty working-set route",
   } finally {
     await resources?.finishClose();
     localStorage.clear();
-    await rehydrateContextDesks(`cleanup-${crypto.randomUUID()}`);
+    await rehydrateEditorWorkspace(`cleanup-${crypto.randomUUID()}`);
     setItem.mockRestore();
     Object.defineProperty(navigator, "locks", { configurable: true, value: originalLocks });
     vi.unstubAllGlobals();
@@ -269,7 +269,7 @@ it("guarded-redirects a selected materialized local owner before admitting its s
     byProject: {
       project: { tabs: [materialized], selectedTabIdByWork: { "work-a": materialized.documentId } },
     },
-    _deskHydrated: true,
+    _workspaceHydrated: true,
   });
   let search: ProjectSearch = {
     screen: "context",
@@ -342,7 +342,7 @@ it("restores the exact older local owner across A to B to A through mounted cont
         selectedTabIdByWork: { "work-a": older.documentId, "work-b": chapter.documentId },
       },
     },
-    _deskHydrated: false,
+    _workspaceHydrated: false,
   });
   let selectWork: ((workId: string) => void) | null = null;
   let search: ProjectSearch = {

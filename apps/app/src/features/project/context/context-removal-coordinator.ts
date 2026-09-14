@@ -11,7 +11,7 @@ import {
   commitDraftApplyMetadata,
   commitPlannedContextRemoval,
   commitReviewOverlayClose,
-  type DraftDeskSettlementReceipt,
+  type DraftWorkspaceSettlementReceipt,
   getContextTabs,
   type ProjectTabsSlice,
   previewReviewOverlayClose,
@@ -95,7 +95,7 @@ export type ContextRemovalRoutePort = {
   ): Promise<NavigationSettlement>;
 };
 
-type DeskPort = {
+type EditorWorkspacePort = {
   read(projectId: string): ProjectTabsSlice;
   commit(
     projectId: string,
@@ -108,7 +108,7 @@ type DeskPort = {
     projectId: string,
     identity: ReviewOverlayTabIdentity,
     disposition?: "applied" | "discarded",
-  ): Promise<DraftDeskSettlementReceipt>;
+  ): Promise<DraftWorkspaceSettlementReceipt>;
   previewReviewTab(
     projectId: string,
     identity: ReviewOverlayTabIdentity,
@@ -237,7 +237,7 @@ const EMPTY_PROJECT_SNAPSHOT: ContextRemovalProjectSnapshot = {
   live: false,
 };
 
-const productionDesk: DeskPort = {
+const productionWorkspace: EditorWorkspacePort = {
   read: getContextTabs,
   commit: commitPlannedContextRemoval,
   settleDraft: commitDraftApplyMetadata,
@@ -256,7 +256,7 @@ export class ContextRemovalCoordinator {
   private readonly projects = new Map<string, CoordinatorProjectState>();
   private readonly routePorts = new Map<string, { token: symbol; port: ContextRemovalRoutePort }>();
   private readonly fallbackRoute: ContextRemovalRoutePort | null;
-  private readonly desk: DeskPort;
+  private readonly desk: EditorWorkspacePort;
   private readonly workingSet: ContextRemovalWorkingSetPort;
   private readonly sessions: LiveDocumentSessionAuthority | null;
   private readonly draftTabFence: DraftTabMutationFencePort | null;
@@ -275,7 +275,7 @@ export class ContextRemovalCoordinator {
     accountOrDependencies:
       | string
       | {
-          desk?: DeskPort;
+          desk?: EditorWorkspacePort;
           workingSet?: ContextRemovalWorkingSetPort;
           route?: ContextRemovalRoutePort;
           sessions?: LiveDocumentSessionAuthority;
@@ -283,7 +283,7 @@ export class ContextRemovalCoordinator {
         }
       | null = null,
     explicitDependencies: {
-      desk?: DeskPort;
+      desk?: EditorWorkspacePort;
       workingSet?: ContextRemovalWorkingSetPort;
       route?: ContextRemovalRoutePort;
       sessions?: LiveDocumentSessionAuthority;
@@ -295,7 +295,7 @@ export class ContextRemovalCoordinator {
         ? accountOrDependencies
         : explicitDependencies;
     this.accountId = typeof accountOrDependencies === "string" ? accountOrDependencies : null;
-    this.desk = dependencies.desk ?? productionDesk;
+    this.desk = dependencies.desk ?? productionWorkspace;
     this.workingSet = dependencies.workingSet ?? productionWorkingSet;
     this.fallbackRoute = dependencies.route ?? null;
     this.sessions = dependencies.sessions ?? null;

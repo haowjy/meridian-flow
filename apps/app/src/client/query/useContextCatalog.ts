@@ -342,8 +342,6 @@ export function projectCatalogView(
         : [],
     );
   const base: CatalogContextView = {
-    projectId,
-    scheme,
     normalized: view,
     root,
     children: (parentId) =>
