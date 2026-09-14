@@ -39,17 +39,14 @@ export type ResourceDescriptor = ResourceKey & {
     | { kind: "local" }
     | { kind: "acknowledged"; availabilityGeneration: string | null }
     | { kind: "terminal"; generation: string; transitionId: string };
-  aliases: Record<
-    string,
-    { publicationObligationId: string; introducedAtIdentityRevision: number }
-  >;
+  aliases: Record<string, { introducedAtIdentityRevision: number }>;
   obligations: {
-    canonicalSync?: { obligationId: string; documentId: string; adoptionRevision: number };
+    /** A new local document cannot dispatch Create until content exists or the writer files it. */
+    createEligibility?: { eligibleAt: number | null };
     canonicalRefresh?: {
       operationId: string;
       identityRevision: number;
     };
-    publication?: { obligationId: string; documentId: string; adoptionRevision: number };
     sessionAdoption?: {
       transitionId: string;
       projectId: string;
@@ -99,7 +96,7 @@ export type NamespaceIntent = ResourceKey & {
   sequence: number;
   identityRevision: number;
   desired:
-    | { kind: "create"; folderPath: string }
+    | { kind: "create"; folderPath: string; provisionalName?: string }
     | { kind: "set-location"; destination: Omit<ResourceLocation, "path"> & { folderPath: string } }
     | { kind: "delete" };
   attempts: readonly NamespaceAttempt[];

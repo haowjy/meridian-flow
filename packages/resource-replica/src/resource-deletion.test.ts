@@ -1,6 +1,7 @@
-/** Local deletion retains content and never converts uncertain HTTP work into fake settlement. */
+/** Local deletion queues exact cleanup and never converts uncertain HTTP work into fake settlement. */
 import { expect, it } from "vitest";
 import { planResourceDeletion } from "./resource-deletion";
+import { prepareNamespaceAttempt } from "./resource-namespace";
 import type { ResourceRecord } from "./resource-records";
 import { validateResourceRecordUpdate } from "./resource-records-policy";
 
@@ -14,7 +15,7 @@ function local(): ResourceRecord {
       canonical: null,
       lifecycle: { kind: "local" },
       aliases: {},
-      obligations: {},
+      obligations: { createEligibility: { eligibleAt: 1 } },
     },
     intents: [
       {
@@ -31,7 +32,7 @@ function local(): ResourceRecord {
   };
 }
 
-it("retains never-submitted writing with a local deletion fence and cancelled namespace work", () => {
+it("queues cleanup for never-submitted writing and cancels namespace work", () => {
   const before = local();
   const create = before.intents[0];
   if (!create) throw new Error("fixture missing create");
@@ -39,18 +40,26 @@ it("retains never-submitted writing with a local deletion fence and cancelled na
   expect(write).not.toBeNull();
   if (!write) throw new Error("missing plan");
   expect(write.expectedRevision).toBe(1);
-  expect(write.next.resource).toEqual({ ...before.resource, revision: 2 });
+  expect(write.next.resource).toEqual({
+    ...before.resource,
+    revision: 2,
+    obligations: {
+      cleanup: { obligationId: "delete", exactDatabaseName: "original" },
+    },
+  });
   expect(write.next.intents.map(({ state }) => state)).toEqual(["cancelled", "settled-locally"]);
   expect(() => validateResourceRecordUpdate(before, write.next)).not.toThrow();
   expect(planResourceDeletion(write.next, "project", "another-delete")).toBeNull();
   const revived = structuredClone(write.next);
   revived.resource.revision++;
+  revived.resource.obligations.createEligibility = { eligibleAt: 2 };
   revived.intents = [...revived.intents, { ...create, intentId: "new-create", sequence: 3 }];
   expect(() => validateResourceRecordUpdate(write.next, revived)).toThrow(
     "cannot retain executable namespace work",
   );
   expect(before.intents[0]?.state).toBe("pending");
   const forged = structuredClone(write.next);
+  forged.resource.obligations.createEligibility = { eligibleAt: 1 };
   forged.intents = [{ ...create, state: "pending" }, ...forged.intents.slice(1)];
   expect(() => validateResourceRecordUpdate(before, forged)).toThrow("executable namespace work");
 });
@@ -101,4 +110,53 @@ it.each([
   if (!write) throw new Error("missing plan");
   expect(write.next.intents.at(-1)?.state).toBe("pending");
   expect(() => validateResourceRecordUpdate(before, write.next)).not.toThrow();
+});
+
+it("lets delete supersede a failed location and dispatch next", () => {
+  const before = local();
+  before.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: "1" };
+  before.resource.canonical = {
+    scheme: "manuscript",
+    path: "/Chapter.md",
+    name: "Chapter.md",
+    workId: null,
+  };
+  before.resource.obligations = {};
+  const create = before.intents[0];
+  if (!create) throw new Error("Expected create");
+  before.intents = [
+    { ...create, state: "settled" },
+    {
+      projectId: "project",
+      handle: "lineage",
+      intentId: "failed-move",
+      sequence: 2,
+      identityRevision: 1,
+      desired: {
+        kind: "set-location",
+        destination: {
+          scheme: "manuscript",
+          folderPath: "",
+          name: "Renamed.md",
+          workId: null,
+        },
+      },
+      attempts: [],
+      state: "needs-repair",
+    },
+  ];
+
+  const deletion = planResourceDeletion(before, "project", "delete");
+  if (!deletion) throw new Error("Expected deletion");
+  expect(deletion.next.intents.map(({ state }) => state)).toEqual([
+    "settled",
+    "settled",
+    "pending",
+  ]);
+  expect(
+    prepareNamespaceAttempt(deletion.next, {
+      attemptId: "delete",
+      operationId: "operation",
+    })?.next.intents.at(-1)?.state,
+  ).toBe("submitted");
 });

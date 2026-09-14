@@ -1,4 +1,6 @@
-/** Retained local deletion is writer intent, not a server tombstone or permission to purge. */
+/** Local deletion records cleanup work; server-backed deletion still needs terminal authority. */
+
+import { supersedeRepairableNamespaceWork } from "./resource-intent-policy";
 import type { NamespaceIntent, ResourceRecord, ResourceWrite } from "./resource-records";
 
 export function planResourceDeletion(
@@ -8,13 +10,16 @@ export function planResourceDeletion(
 ): ResourceWrite | null {
   if (
     record.resource.lifecycle.kind === "terminal" ||
-    record.intents.some((intent) => intent.desired.kind === "delete")
+    record.intents.some(
+      (intent) => intent.desired.kind === "delete" && intent.state !== "needs-repair",
+    )
   )
     return null;
   const neverSubmitted =
     record.resource.lifecycle.kind === "local" &&
     record.resource.canonical === null &&
     record.intents.every((intent) => intent.attempts.length === 0);
+  const superseded = supersedeRepairableNamespaceWork(record, projectId);
   const deletion: NamespaceIntent = {
     projectId,
     handle: record.resource.handle,
@@ -28,10 +33,23 @@ export function planResourceDeletion(
   return {
     expectedRevision: record.resource.revision,
     next: {
-      resource: { ...record.resource, revision: record.resource.revision + 1 },
+      resource: {
+        ...record.resource,
+        revision: record.resource.revision + 1,
+        ...(neverSubmitted && record.resource.content.kind === "exact"
+          ? {
+              obligations: {
+                cleanup: {
+                  obligationId: intentId,
+                  exactDatabaseName: record.resource.content.databaseName,
+                },
+              },
+            }
+          : {}),
+      },
       intents: [
-        ...record.intents.map((intent) =>
-          intent.attempts.length === 0 && intent.state !== "cancelled"
+        ...superseded.intents.map((intent) =>
+          !superseded.repaired && intent.attempts.length === 0 && intent.state !== "cancelled"
             ? { ...intent, state: "cancelled" as const }
             : intent,
         ),

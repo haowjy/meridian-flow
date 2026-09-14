@@ -1,0 +1,5 @@
+# Resource storage follow-up
+
+- Characterize Chromium storage exhaustion and eviction with a real-browser probe
+  before promising recovery behavior. Transaction rollback for an injected
+  `QuotaExceededError` is covered; quota override did not establish real eviction.

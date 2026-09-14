@@ -29,10 +29,10 @@ dispatch waits until the content adapter establishes the exact database marker a
 clears the reservation.
 
 `planResourceDeletion` records writer intent without fabricating remote authority.
-A never-submitted local resource settles deletion locally and cancels only
-unsubmitted work. Submitted or acknowledged resources retain pending deletion
-until a real outcome arrives. Exact content remains until a separate authorized
-cleanup transition.
+A never-submitted local resource settles deletion locally, cancels unsubmitted
+work, and records exact local-content cleanup. Submitted or acknowledged resources
+retain pending deletion until a real outcome arrives. Their exact content remains
+until an authorized terminal cleanup transition.
 
 `reconcileResourceNamespace` persists an immutable attempt before dispatch,
 records received evidence separately, and applies it through metadata CAS.
@@ -42,7 +42,7 @@ refresh obligation; only a later catalog request may update and clear it. Missin
 receipts, canonical authority or matching identity block replay instead of
 inventing success.
 
-These modules are an inactive foundation. Production must cut over one account
-resource owner, every caller and the catalog projection together, then delete the
-old lineage/reconciler and QueryClient catalog owners. Two live metadata writers
-are forbidden.
+Production composes one account resource owner across catalog acquisition,
+namespace reconciliation and content access. React Query may trigger acquisition
+and cache projections, but it does not install independent resource truth. Two
+live metadata writers are forbidden.

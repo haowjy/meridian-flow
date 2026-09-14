@@ -87,7 +87,7 @@ function resource(
       canonical: null,
       lifecycle: { kind: "local" },
       aliases: {},
-      obligations: {},
+      obligations: { createEligibility: { eligibleAt: 1 } },
     },
     intents: [
       {
@@ -149,6 +149,37 @@ it("opens verified local words without waiting for remote admission", async () =
   expect(opened.handle.session.document.getText("probe").toString()).toBe("local words");
   expect(opened.handle.session.getSnapshot().status).toBe("detached");
   opened.handle.release();
+});
+
+it("permanently clears exact local content even while an editor lease is open", async () => {
+  const metadata = openMetadata();
+  const record = resource("delete-local");
+  await initialize(record, "words to delete");
+  const key = await install(metadata, record);
+  const { access } = openAccess(metadata);
+  const opened = await access.open("project", key, "editor-tab");
+  if (opened.kind !== "opened") throw new Error("Expected local content");
+
+  await access.clearExactContent({
+    projectId: "project",
+    key,
+    documentId: record.resource.identity.documentId,
+    databaseName:
+      record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
+  });
+  opened.handle.release();
+
+  const recreated = createFactory().createDetached({
+    accountId,
+    projectId: "project",
+    documentId: record.resource.identity.documentId,
+    persistenceKey:
+      record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
+  });
+  await recreated.whenLocalPersistenceSynced();
+  expect(await recreated.hasInitializedLocalContent()).toBe(false);
+  expect(recreated.document.getText("probe").toString()).toBe("");
+  await recreated.destroy();
 });
 
 it("never exposes a blank database without initialization proof", async () => {
@@ -411,6 +442,202 @@ it("shares one User-catalog session across the projects that expose it", async (
   second.handle.release();
 });
 
+it("releases every project registry ownership after the final shared-content lease", async () => {
+  const metadata = openMetadata();
+  const record = resource("registry-shared");
+  record.resource.lifecycle = { kind: "acknowledged", availabilityGeneration: null };
+  record.intents = [];
+  await initialize(record);
+  const key = await install(metadata, record);
+  const scope = { kind: "user" as const, userId: accountId };
+  const entries = [
+    {
+      kind: "source" as const,
+      entryId: "user-source",
+      scope,
+      scheme: "user" as const,
+      name: "User",
+      uri: "user://",
+    },
+    {
+      kind: "file" as const,
+      entryId: record.resource.identity.documentId,
+      scope,
+      sourceId: "user-source",
+      parentId: "user-source",
+      name: "shared.md",
+      aliases: [],
+      path: ["shared.md"],
+      uri: "user://shared.md" as const,
+      provisionalName: false,
+      editable: true,
+      filetype: "markdown" as const,
+      schemaType: "document" as const,
+    },
+  ] as const;
+  for (const projectId of ["project-a", "project-b"]) {
+    expect(
+      await metadata.commitCatalog({
+        expectedRevision: null,
+        next: {
+          projectId,
+          scope,
+          revision: 1,
+          generation: "generation",
+          appliedRevision: "1",
+          observedHeadRevision: "1",
+          cursor: `cursor-${projectId}`,
+          entries,
+          invalidatedEntryIds: [],
+        },
+        resources: [],
+      }),
+    ).toBe("committed");
+  }
+  const { access } = openAccess(metadata);
+  const first = await access.open("project-a", key, "tab-a");
+  const second = await access.open("project-b", key, "tab-b");
+  if (first.kind !== "opened" || second.kind !== "opened") throw new Error("Expected content");
+  const session = first.handle.session;
+  let transfer: LocalDocumentSessionTransfer | undefined;
+  const handoff = Object.freeze({}) as LocalDocumentSessionHandoff;
+  await access.reserveTransfer(
+    {
+      projectId: "project-a",
+      key,
+      transitionId: "transition",
+      documentId: record.resource.identity.documentId,
+      identityRevision: record.resource.identity.revision,
+      databaseName: session.persistenceName ?? "",
+    },
+    {
+      reserve(candidate) {
+        transfer = candidate;
+        return handoff;
+      },
+      abort() {},
+    },
+  );
+  const releaseA = vi.fn();
+  const releaseB = vi.fn();
+  const ownershipA: TransferredDocumentSessionOwnership = {
+    lease: {
+      accountId,
+      projectId: "project-a",
+      documentId: record.resource.identity.documentId,
+      generation: "1",
+    },
+    persistenceGeneration: "1",
+    exactDatabaseName: session.persistenceName ?? "",
+    release: releaseA,
+  };
+  transfer?.prepareCommit();
+  await transfer?.completeCommit(ownershipA);
+  await access.adoptRegistrySession("project-b", key, session, {
+    lease: {
+      accountId,
+      projectId: "project-b",
+      documentId: record.resource.identity.documentId,
+      generation: "2",
+    },
+    persistenceGeneration: "2",
+    exactDatabaseName: session.persistenceName ?? "",
+    release: releaseB,
+  });
+
+  first.handle.release();
+  expect(releaseA).not.toHaveBeenCalled();
+  expect(releaseB).not.toHaveBeenCalled();
+  second.handle.release();
+  expect(releaseA).toHaveBeenCalledOnce();
+  expect(releaseB).toHaveBeenCalledOnce();
+});
+
+it("applies a remint observed by another content owner without replacing either Y.Doc", async () => {
+  const metadata = openMetadata();
+  const record = resource("remint");
+  await initialize(record, "same words");
+  const key = await install(metadata, record);
+  const firstAccess = openAccess(metadata).access;
+  const secondAccess = openAccess(metadata).access;
+  const first = await firstAccess.open("project", key, "first");
+  const second = await secondAccess.open("project", key, "second");
+  if (first.kind !== "opened" || second.kind !== "opened") throw new Error("Expected content");
+  const firstDocument = first.handle.session.document;
+  const secondDocument = second.handle.session.document;
+  const createIntent = record.intents[0];
+  if (!createIntent) throw new Error("Expected create intent");
+  const oldDocumentId = record.resource.identity.documentId;
+  const nextDocumentId = "document-reminted";
+  const prepared = firstAccess.prepareReidentity(key, oldDocumentId, nextDocumentId, 2);
+  const reminted: ResourceRecord = {
+    resource: {
+      ...record.resource,
+      revision: 2,
+      identity: { documentId: nextDocumentId, revision: 2 },
+      aliases: {
+        [oldDocumentId]: {
+          introducedAtIdentityRevision: 2,
+        },
+      },
+    },
+    intents: [
+      { ...createIntent, state: "cancelled" },
+      {
+        ...createIntent,
+        intentId: "retry",
+        sequence: 2,
+        identityRevision: 2,
+      },
+    ],
+  };
+  expect(
+    await metadata.commitResource({ expectedRevision: record.resource.revision, next: reminted }),
+  ).toBe("committed");
+  prepared?.commit();
+  secondAccess.reconcileMetadata(reminted);
+
+  expect(first.handle.session.documentId).toBe(nextDocumentId);
+  expect(second.handle.session.documentId).toBe(nextDocumentId);
+  expect(first.handle.session.document).toBe(firstDocument);
+  expect(second.handle.session.document).toBe(secondDocument);
+  expect(second.handle.session.document.getText("probe").toString()).toBe("same words");
+  first.handle.release();
+  second.handle.release();
+});
+
+it("converges to a competing remint observed while its own reidentity is prepared", async () => {
+  const metadata = openMetadata();
+  const record = resource("competing-remint");
+  await initialize(record, "same words");
+  const key = await install(metadata, record);
+  const { access } = openAccess(metadata);
+  const opened = await access.open("project", key, "editor");
+  if (opened.kind !== "opened") throw new Error("Expected content");
+  const document = opened.handle.session.document;
+  const createIntent = record.intents[0];
+  if (!createIntent) throw new Error("Expected create intent");
+  const oldDocumentId = record.resource.identity.documentId;
+  const prepared = access.prepareReidentity(key, oldDocumentId, "losing-document", 2);
+  const winner: ResourceRecord = {
+    resource: {
+      ...record.resource,
+      revision: 2,
+      identity: { documentId: "winning-document", revision: 2 },
+      aliases: { [oldDocumentId]: { introducedAtIdentityRevision: 2 } },
+    },
+    intents: [{ ...createIntent, identityRevision: 2 }],
+  };
+
+  access.reconcileMetadata(winner);
+  prepared?.abort();
+
+  expect(opened.handle.session.documentId).toBe("winning-document");
+  expect(opened.handle.session.document).toBe(document);
+  expect(opened.handle.session.document.getText("probe").toString()).toBe("same words");
+  opened.handle.release();
+});
+
 it("shares persisted changes between independent account content owners", async () => {
   const metadata = openMetadata();
   const record = resource("owners");
@@ -469,7 +696,7 @@ it("preserves a concurrent metadata update while acknowledging initialization", 
     intercept = false;
     const concurrent = structuredClone(write.next);
     concurrent.resource.aliases = {
-      "/old": { publicationObligationId: "alias", introducedAtIdentityRevision: 1 },
+      "/old": { introducedAtIdentityRevision: 1 },
     };
     expect(await native({ expectedRevision: 1, next: concurrent })).toBe("committed");
     return "stale";

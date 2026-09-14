@@ -7,7 +7,7 @@ import { useProjectDocumentLiveOpener } from "./project-document-live-opener-con
 export type LiveDocumentBindingState =
   | { kind: "absent" }
   | { kind: "opening"; documentId: string }
-  | { kind: "opened"; documentId: string; session: DocumentSession }
+  | { kind: "opened"; documentId: string; generation: string; session: DocumentSession }
   | { kind: "failed"; documentId: string };
 
 export type LiveDocumentAcknowledgement =
@@ -123,7 +123,12 @@ export function useLiveDocumentBinding({
         const previous = currentRef.current;
         currentRef.current = { binding: candidate, attempt };
         installed = true;
-        setState({ kind: "opened", documentId: admission.documentId, session: candidate.session });
+        setState({
+          kind: "opened",
+          documentId: admission.documentId,
+          generation: admission.generation,
+          session: candidate.session,
+        });
         previous?.binding.release();
         return {
           kind: "acknowledged",

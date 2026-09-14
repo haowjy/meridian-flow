@@ -19,18 +19,18 @@ import {
   useContextTabsStore,
 } from "@/client/stores";
 import {
+  useAccountResourceProjection,
+  useAccountResourceReplica,
   useContextRemovalCoordinator,
-  useLocalUntitledOwner,
+  useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import { ContextViewer } from "./context/ContextViewer";
 import { deriveContextPaneState } from "./context/context-pane-state";
 import { resolveDeskRoute } from "./context/context-route-desk-owner";
-import { contextTabFromFile } from "./context/context-tab-from-file";
+import { contextTabFromFile, projectResourceTab } from "./context/context-tab-from-file";
 import { contextTabRouteKey } from "./context/context-tab-identity";
-import { appendPendingUntitled } from "./context/untitled-reconciler-browser";
 import { useContextRemovalProject } from "./context/use-context-removal-project";
 import { identityCommitMayNavigate } from "./context/use-identity-commit";
-import { useUntitledTabBridge } from "./context/useUntitledTabBridge";
 import { useOptionalPostApplyDisposition } from "./draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useOptionalProjectDraftApplyRecovery } from "./draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
 import {
@@ -75,7 +75,9 @@ export function ContextViewerSurfaceController({
   const routeWorkId = editorWorkId;
   const captureNavigation = useCaptureProjectNavigation();
   const contextRemoval = useContextRemovalCoordinator();
-  const localUntitled = useLocalUntitledOwner();
+  const availability = useProjectContextAvailabilityCoordinator();
+  const resources = useAccountResourceReplica();
+  const resourceProjection = useAccountResourceProjection(projectId);
   const postApply = useOptionalPostApplyDisposition();
   const postApplyCommands = useOptionalProjectDraftApplyRecovery();
 
@@ -83,7 +85,7 @@ export function ContextViewerSurfaceController({
   const selectedDocumentId = localDocumentId ?? selectedTabIdByWork[routeWorkId ?? ""];
   const deskHydrated = useContextTabsStore((state) => state._deskHydrated);
   const layoutSaveFailed = useContextTabsStore((state) => state._layoutPersistenceError != null);
-  const { openTab, updateTrackedTab, selectTab } = useContextTabsActions();
+  const { openTab, reconcileResourceTab, updateTrackedTab, selectTab } = useContextTabsActions();
   const visibleTabs = tabs.filter((tab) => {
     if (tab.kind === "new") return true;
     return !isWorkScopedProjectContextScheme(tab.scheme);
@@ -301,7 +303,7 @@ export function ContextViewerSurfaceController({
       if (
         postApply?.owner.draftTabMutationFence({
           identity: {
-            accountId: localUntitled.accountId,
+            accountId: resources.accountId,
             projectId,
             workId: tab.reviewWorkId,
             documentId,
@@ -312,7 +314,7 @@ export function ContextViewerSurfaceController({
       )
         return;
     }
-    void contextRemoval.writerClose(projectId, documentId);
+    settleWriterClose(contextRemoval.writerClose(projectId, documentId));
   }
 
   useLayoutEffect(() => {
@@ -369,21 +371,77 @@ export function ContextViewerSurfaceController({
   }, [active, retainedActiveTabId]);
 
   const handleUntitledBecameNonEmpty = useCallback(
-    (documentId: string) => {
+    async (documentId: string) => {
       const tab = getContextTabs(projectId).tabs.find(
         (candidate) => candidate.documentId === documentId,
       );
       if (tab?.kind !== "new") return;
-      appendPendingUntitled({
-        documentId,
-        projectId,
-        home: { scheme: "unfiled" },
-      });
+      await resources.markCreateEligible({ handle: tab.resourceHandle });
     },
-    [projectId],
+    [projectId, resources],
   );
 
-  useUntitledTabBridge({ projectId, tabs });
+  useEffect(() => {
+    for (const tab of tabs) {
+      const projection = projectResourceTab(projectId, tab, resourceProjection.records);
+      if (projection.kind === "none") continue;
+      if (projection.kind === "terminal") {
+        void availability
+          .acceptCommittedDelete({
+            projectId,
+            deletedDocumentIds: projection.documentIds,
+            generation: projection.generation,
+          })
+          .catch((error: unknown) => reportError(error));
+        continue;
+      }
+      if (projection.kind === "removed") {
+        settleWriterClose(contextRemoval.writerClose(projectId, tab.documentId));
+        continue;
+      }
+      const routeFollowsTab =
+        active &&
+        tab.kind !== "new" &&
+        projection.tab.kind !== "new" &&
+        selectedDocumentId === tab.documentId &&
+        activeContextScheme === tab.scheme &&
+        activeContextPath === tab.path &&
+        (projection.tab.scheme !== tab.scheme ||
+          projection.tab.path !== tab.path ||
+          projection.tab.workId !== tab.workId);
+      void reconcileResourceTab(projectId, projection.resourceHandle, projection.tab).catch(
+        (error: unknown) => reportError(error),
+      );
+      if (routeFollowsTab && projection.tab.kind !== "new")
+        void onOpenContextTarget(
+          {
+            scheme: projection.tab.scheme,
+            path: projection.tab.path,
+            workId: projection.tab.workId ?? routeWorkId,
+            documentId: projection.tab.documentId,
+          },
+          { replace: true, tab: projection.tab },
+        ).then(
+          (settlement) => {
+            if (settlement.kind === "failed") reportError(settlement.error);
+          },
+          (error: unknown) => reportError(error),
+        );
+    }
+  }, [
+    active,
+    activeContextPath,
+    activeContextScheme,
+    availability,
+    contextRemoval,
+    onOpenContextTarget,
+    projectId,
+    reconcileResourceTab,
+    resourceProjection.records,
+    routeWorkId,
+    selectedDocumentId,
+    tabs,
+  ]);
 
   return (
     <ContextViewer
@@ -399,28 +457,27 @@ export function ContextViewerSurfaceController({
       active={active}
       onNewDocument={async () => {
         const isCurrent = captureNavigation?.();
-        const documentId = crypto.randomUUID();
-        const opened = await localUntitled.create({
-          accountId: localUntitled.accountId,
-          projectId,
-          documentId,
-        });
-        if (opened.kind !== "opened") return;
-        if (isCurrent?.() === false) return;
-        const result = await onOpenContextTarget(
-          { scheme: "unfiled", path: "", workId: routeWorkId, documentId },
-          {
-            isCurrent,
-            tab: {
-              kind: "new",
-              documentId,
-              name: "Untitled",
-              lineageHandle: opened.value.ref.lineageHandle,
-              identityRevision: 1,
+        const reservation = await resources.reserveDocument(projectId);
+        if (reservation.content.kind !== "opened") throw new Error("Local document is unavailable");
+        try {
+          if (isCurrent?.() === false) return;
+          const documentId = reservation.content.handle.documentId;
+          const result = await onOpenContextTarget(
+            { scheme: "unfiled", path: "", workId: routeWorkId, documentId },
+            {
+              isCurrent,
+              tab: {
+                kind: "new",
+                documentId,
+                name: reservation.name,
+                resourceHandle: reservation.key.handle,
+              },
             },
-          },
-        );
-        if (result.kind === "failed") throw result.error;
+          );
+          if (result.kind === "failed") throw result.error;
+        } finally {
+          reservation.content.handle.release();
+        }
       }}
       onUntitledBecameNonEmpty={handleUntitledBecameNonEmpty}
       onCommitted={(documentId, next, ownership) => {
@@ -451,7 +508,7 @@ export function ContextViewerSurfaceController({
         if (
           identityCommitMayNavigate(
             ownership,
-            routeWorkId ? getContextTabs(projectId).selectedTabIdByWork[routeWorkId] : undefined,
+            getContextTabs(projectId).selectedTabIdByWork[routeWorkId ?? ""],
             documentId,
           )
         ) {
@@ -464,6 +521,18 @@ export function ContextViewerSurfaceController({
       }}
       onOpenExisting={(scheme, path) => onSelectContextPath(path, scheme)}
     />
+  );
+}
+
+function settleWriterClose(
+  result: ReturnType<ReturnType<typeof useContextRemovalCoordinator>["writerClose"]>,
+): void {
+  if (!(result instanceof Promise)) return;
+  void result.then(
+    (settlement) => {
+      if (settlement.kind === "failed") reportError(settlement.error);
+    },
+    (error: unknown) => reportError(error),
   );
 }
 

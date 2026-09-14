@@ -175,10 +175,9 @@ it("submits the Work captured when delete confirmation was requested", async () 
     async () => {
       act(() =>
         confirmation?.requestDelete({
-          name: "same.md",
-          path: "/same.md",
-          kind: "file",
-          documentId: "document-a",
+          name: "same",
+          path: "/same",
+          kind: "dir",
         }),
       );
       await act(async () => changeWork?.("work-b"));
@@ -191,8 +190,8 @@ it("submits the Work captured when delete confirmation was requested", async () 
     "scratch",
     {
       operationId: expect.any(String),
-      path: "/same.md",
-      expected: { kind: "file", documentId: "document-a" },
+      path: "/same",
+      expected: { kind: "folder" },
     },
     { workId: "work-a" },
   );
@@ -225,14 +224,13 @@ it("keeps a stale-target confirmation open with a retry error", async () => {
     async () => {
       act(() =>
         confirmation?.requestDelete({
-          name: "changed.md",
-          path: "/changed.md",
-          kind: "file",
-          documentId: "old-document",
+          name: "changed",
+          path: "/changed",
+          kind: "dir",
         }),
       );
       await act(async () => confirmation?.confirm());
-      expect(confirmation?.target).toMatchObject({ documentId: "old-document" });
+      expect(confirmation?.target).toMatchObject({ path: "/changed", kind: "dir" });
       await vi.waitFor(() => expect(confirmation?.error).toBe(staleTarget));
     },
   );

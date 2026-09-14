@@ -21,9 +21,13 @@ import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener
 
 const tabs = vi.hoisted(() => vi.fn());
 
-vi.mock("@/client/stores", () => ({
-  useContextTabsActions: () => ({ openTab: tabs }),
-}));
+vi.mock("@/client/stores", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/client/stores")>();
+  return {
+    ...actual,
+    useContextTabsActions: () => ({ openTab: tabs }),
+  };
+});
 
 const admission = { bind: vi.fn() } as never;
 
@@ -149,6 +153,230 @@ describe("ProjectDocumentNavigationProvider", () => {
     permission.resolve();
     await expect(opening).resolves.toEqual({ kind: "cancelled" });
     expect(tabs).not.toHaveBeenCalled();
+    adapter.dispose();
+  });
+
+  it("opens exact local content without waiting for server availability", async () => {
+    const session = {} as import("@/core/editor/document-session").DocumentSession;
+    const releaseEditor = vi.fn();
+    const releasePrepared = vi.fn();
+    const record = {
+      resource: {
+        handle: "resource-a",
+        revision: 1,
+        identity: { documentId: "local-a", revision: 1 },
+        content: { kind: "exact", databaseName: "exact", schema: null },
+        canonical: null,
+        lifecycle: { kind: "local" },
+        aliases: {},
+        obligations: { createEligibility: { eligibleAt: 1 } },
+      },
+      intents: [
+        {
+          projectId: "project-a",
+          handle: "resource-a",
+          intentId: "create",
+          sequence: 1,
+          identityRevision: 1,
+          desired: { kind: "create", folderPath: "", provisionalName: "Untitled" },
+          attempts: [],
+          state: "pending",
+        },
+      ],
+    } as const;
+    const openKnownDocument = vi.fn(async () => ({
+      kind: "opened" as const,
+      key: { handle: "resource-a" },
+      record,
+      handle: {
+        key: { handle: "resource-a" },
+        documentId: "local-a",
+        session,
+        release: releasePrepared,
+      },
+    }));
+    const openDocument = vi.fn(async () => ({
+      kind: "opened" as const,
+      handle: {
+        key: { handle: "resource-a" },
+        documentId: "local-a",
+        session,
+        release: releaseEditor,
+      },
+    }));
+    const opener = { open: vi.fn() };
+    const openRoute = vi.fn(async () => ({ kind: "applied" as const }));
+    const adapter = new ProjectDocumentNavigationAdapter({
+      opener,
+      openTab: tabs,
+      openRoute,
+      resources: { accountId: "account", openKnownDocument, openDocument } as never,
+    });
+
+    const result = await adapter.open("project-a", { documentId: "local-a" });
+
+    expect(result).toMatchObject({
+      kind: "opened",
+      document: { entryId: "local-a", scope: { kind: "project", projectId: "project-a" } },
+    });
+    expect(opener.open).not.toHaveBeenCalled();
+    expect(openRoute).toHaveBeenCalledWith(
+      { scheme: "unfiled", path: "/Untitled", workId: null, documentId: "local-a" },
+      expect.any(Object),
+    );
+    if (result.kind !== "opened") throw new Error("Expected local document");
+    const binding = await result.admission.bind("editor-owner");
+    expect(binding.session).toBe(session);
+    expect(binding.local).toBe(true);
+    expect(releasePrepared).toHaveBeenCalledOnce();
+    expect(openDocument).toHaveBeenLastCalledWith(
+      "project-a",
+      { handle: "resource-a" },
+      "editor-owner",
+    );
+    binding.release();
+    expect(releaseEditor).toHaveBeenCalledOnce();
+    adapter.dispose();
+  });
+
+  it("falls through to server admission for metadata-only catalog resources", async () => {
+    const serverResult = opened("server-a");
+    const opener = { open: vi.fn(async () => serverResult) };
+    const openRoute = vi.fn(async () => ({ kind: "applied" as const }));
+    const adapter = new ProjectDocumentNavigationAdapter({
+      opener,
+      openTab: tabs,
+      openRoute,
+      resources: {
+        accountId: "account",
+        openKnownDocument: vi.fn(async () => ({
+          kind: "unavailable" as const,
+          reason: "unacquired" as const,
+          key: { handle: "catalog:server-a" },
+          record: {
+            resource: {
+              handle: "catalog:server-a",
+              revision: 1,
+              identity: { documentId: "server-a", revision: 1 },
+              content: { kind: "unacquired" },
+              canonical: {
+                scheme: "manuscript",
+                path: "/server-a.md",
+                name: "server-a.md",
+                workId: null,
+              },
+              lifecycle: { kind: "acknowledged", availabilityGeneration: null },
+              aliases: {},
+              obligations: {},
+            },
+            intents: [],
+          },
+        })),
+        openDocument: vi.fn(),
+      } as never,
+    });
+
+    await expect(adapter.open("project-a", { documentId: "server-a" })).resolves.toBe(serverResult);
+    expect(opener.open).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "server", documentId: "server-a" }),
+    );
+    expect(openRoute).toHaveBeenCalledOnce();
+    adapter.dispose();
+  });
+
+  it("falls through to server admission when an acknowledged exact cache is unusable", async () => {
+    const serverResult = opened("server-a");
+    const opener = { open: vi.fn(async () => serverResult) };
+    const record = {
+      resource: {
+        handle: "resource-a",
+        revision: 1,
+        identity: { documentId: "server-a", revision: 1 },
+        content: { kind: "exact" as const, databaseName: "stale", schema: "old-schema" },
+        canonical: {
+          scheme: "manuscript" as const,
+          path: "/server-a.md",
+          name: "server-a.md",
+          workId: null,
+        },
+        lifecycle: { kind: "acknowledged" as const, availabilityGeneration: "1" },
+        aliases: {},
+        obligations: {},
+      },
+      intents: [],
+    };
+    const adapter = new ProjectDocumentNavigationAdapter({
+      opener,
+      openTab: tabs,
+      openRoute: vi.fn(async () => ({ kind: "applied" as const })),
+      resources: {
+        accountId: "account",
+        openKnownDocument: vi.fn(async () => ({
+          kind: "unavailable" as const,
+          reason: "schema-mismatch" as const,
+          key: { handle: "resource-a" },
+          record,
+        })),
+        openDocument: vi.fn(),
+      } as never,
+    });
+
+    await expect(adapter.open("project-a", { documentId: "server-a" })).resolves.toBe(serverResult);
+    expect(opener.open).toHaveBeenCalledOnce();
+    adapter.dispose();
+  });
+
+  it("does not fall through to server authority for a locally pending delete", async () => {
+    const opener = { open: vi.fn() };
+    const adapter = new ProjectDocumentNavigationAdapter({
+      opener,
+      openTab: tabs,
+      openRoute: vi.fn(async () => ({ kind: "applied" as const })),
+      resources: {
+        accountId: "account",
+        openKnownDocument: vi.fn(async () => ({
+          kind: "unavailable" as const,
+          reason: "deleted" as const,
+          key: { handle: "resource-a" },
+          record: {
+            resource: {
+              handle: "resource-a",
+              revision: 2,
+              identity: { documentId: "local-a", revision: 1 },
+              content: { kind: "exact", databaseName: "exact", schema: null },
+              canonical: {
+                scheme: "manuscript",
+                path: "/Chapter.md",
+                name: "Chapter.md",
+                workId: null,
+              },
+              lifecycle: { kind: "acknowledged", availabilityGeneration: "1" },
+              aliases: {},
+              obligations: {},
+            },
+            intents: [
+              {
+                projectId: "project-a",
+                handle: "resource-a",
+                intentId: "delete",
+                sequence: 1,
+                identityRevision: 1,
+                desired: { kind: "delete" },
+                attempts: [],
+                state: "pending",
+              },
+            ],
+          },
+        })),
+        openDocument: vi.fn(),
+      } as never,
+    });
+
+    await expect(adapter.open("project-a", { documentId: "local-a" })).resolves.toEqual({
+      kind: "unavailable",
+      reason: "deleted",
+    });
+    expect(opener.open).not.toHaveBeenCalled();
     adapter.dispose();
   });
 

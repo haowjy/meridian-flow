@@ -1,8 +1,11 @@
 /** React effect shell for the project-entry bootstrap authority. */
 
-import type { QueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import type { WorkingSetHydrationPlan } from "@/client/working-set";
+import {
+  type ContextDeskValidationScope,
+  validateContextDeskTabs,
+} from "./browser-editor-tab-validation";
+import { useOptionalAccountResourceReplica } from "./context/account-feature-context";
 import {
   type ContextProjectAuthority,
   type ContextProjectPhase,
@@ -13,29 +16,20 @@ import {
   updateContextProjectReadiness,
 } from "./context-project-phase";
 import type { EditorWorkScope } from "./editor-work-scope";
-import {
-  type ContextDeskReconciliationScope,
-  contextDeskReconciliation,
-  seedWorkingSetTabs,
-  validateContextDeskTabs,
-} from "./working-set-tab-seeding";
 
 export function useContextProjectAuthority({
   projectId,
   deskHydrated,
   editorScope,
-  workingSetHydration,
-  queryClient,
 }: {
   projectId: string;
   deskHydrated: boolean;
   editorScope: EditorWorkScope;
-  workingSetHydration: WorkingSetHydrationPlan;
-  queryClient: QueryClient;
 }): ContextProjectPhase {
   const [authority, setAuthority] = useState<ContextProjectAuthority>(
     INITIAL_CONTEXT_PROJECT_AUTHORITY,
   );
+  const resources = useOptionalAccountResourceReplica();
   const authorityRef = useRef(authority);
   const rawBootstrapRef = useRef<Promise<void> | null>(null);
   const rawOperationRef = useRef(0);
@@ -50,6 +44,7 @@ export function useContextProjectAuthority({
   }, []);
 
   useEffect(() => {
+    if (!resources) return;
     const updateAuthority = (next: ContextProjectAuthority) => {
       authorityRef.current = next;
       if (mountedRef.current) setAuthority(next);
@@ -65,23 +60,13 @@ export function useContextProjectAuthority({
     if (raw === "start") {
       const operation = rawOperationRef.current + 1;
       rawOperationRef.current = operation;
-      const scope: ContextDeskReconciliationScope = {
+      const scope: ContextDeskValidationScope = {
         projectId,
-        editorWorkId: attempt.workId,
         generation: operation,
       };
-      const isLiveScope = (candidate: ContextDeskReconciliationScope) =>
+      const isLiveScope = (candidate: ContextDeskValidationScope) =>
         mountedRef.current && rawOperationRef.current === candidate.generation;
-      const reconciliation = contextDeskReconciliation(workingSetHydration);
-      const bootstrap =
-        reconciliation === "server-replace" && workingSetHydration.status === "server"
-          ? seedWorkingSetTabs({
-              queryClient,
-              routes: workingSetHydration.row.recentRoutes,
-              scope,
-              isLiveScope,
-            })
-          : validateContextDeskTabs({ queryClient, scope, isLiveScope });
+      const bootstrap = validateContextDeskTabs({ resources, scope, isLiveScope });
       rawBootstrapRef.current = bootstrap.then(
         () => undefined,
         () => undefined,
@@ -96,7 +81,7 @@ export function useContextProjectAuthority({
     return () => {
       updateAuthority(cancelContextProjectAttempt(authorityRef.current, attempt.token));
     };
-  }, [deskHydrated, editorScope.status, editorWorkId, projectId, queryClient, workingSetHydration]);
+  }, [deskHydrated, editorScope.status, editorWorkId, projectId, resources]);
 
   return contextProjectPhase(authority);
 }

@@ -25,8 +25,10 @@ export type ContextTab =
       filetype: Filetype;
       schemaType: YjsTrackedSchemaType;
       provisionalName?: boolean;
-      /** Device provenance retained after a local Untitled materializes. */
-      origin?: "local-untitled";
+      /** Stable resource identity retained when a local document gains a server location. */
+      resourceHandle?: string;
+      /** Device provenance retained after a local document materializes. */
+      origin?: "local-resource";
     }
   | {
       tabInstanceId?: string;
@@ -44,14 +46,15 @@ export type ContextTab =
       editable: false;
       fileType: DocumentFileType;
       mimeType?: string;
+      /** Stable resource identity for namespace operations and local cache lookup. */
+      resourceHandle?: string;
     }
   | {
       tabInstanceId?: string;
       kind: "new";
       documentId: string;
       name: string;
-      lineageHandle?: string;
-      identityRevision?: number;
+      resourceHandle: string;
       draftOnly?: boolean;
     };
 

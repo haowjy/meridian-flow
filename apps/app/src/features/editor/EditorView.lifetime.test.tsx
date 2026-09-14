@@ -147,12 +147,15 @@ vi.mock("@/features/chat/DraftReviewProvider", () => ({
 }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useLiveDocumentSessionRegistry: () => registry,
+  useOptionalAccountResourceReplica: () => null,
+  useAccountResourceProjection: () => ({ snapshot: null, records: [], error: null }),
 }));
 vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
 vi.mock("./surfaces/link", () => ({
   ProjectLinkRuntime: () => null,
-  useLinkableDocuments: () => ({ documents: [] }),
+  ProjectLinkRuntimeWithIndex: () => null,
+  useLinkableDocuments: () => ({ documents: [], revision: "", complete: false }),
 }));
 // Lifetime is about which editor exists, not what hangs off it. An empty
 // registry keeps every lane's own dependencies out of this suite.

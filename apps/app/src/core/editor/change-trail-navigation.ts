@@ -34,14 +34,16 @@ export async function navigateToTrailChange(input: {
     binding = await opened.admission.bind(owner);
     if (cancelled()) return { kind: "could_not_open" };
     const session = binding.session;
-    await Promise.race([
-      session.waitForCurrentSync(input.timeoutMs ?? 10_000),
-      new Promise<void>((resolve) =>
-        input.signal?.addEventListener("abort", () => resolve(), { once: true }),
-      ),
-    ]);
+    if (!binding.local)
+      await Promise.race([
+        session.waitForCurrentSync(input.timeoutMs ?? 10_000),
+        new Promise<void>((resolve) =>
+          input.signal?.addEventListener("abort", () => resolve(), { once: true }),
+        ),
+      ]);
     if (cancelled()) return { kind: "could_not_open" };
-    if (session.getSnapshot().status !== "synced") return { kind: "could_not_open" };
+    if (!binding.local && session.getSnapshot().status !== "synced")
+      return { kind: "could_not_open" };
 
     const sessionMarker = session.markerStore
       ?.getSnapshot()

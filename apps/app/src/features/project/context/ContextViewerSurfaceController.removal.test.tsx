@@ -10,8 +10,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { type ContextTab, rehydrateContextDesks, useContextTabsStore } from "@/client/stores";
 import {
   AccountFeatureTestProvider,
+  useAccountResourceReplica,
   useContextRemovalCoordinator,
-  useLocalUntitledOwner,
 } from "@/test-support/account-feature-provider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ContextViewerSurfaceController } from "../ContextPaneController";
@@ -61,27 +61,19 @@ vi.mock("./ContextViewer", () => ({
     return null;
   },
 }));
-vi.mock("./useUntitledTabBridge", () => ({ useUntitledTabBridge: () => undefined }));
-const untitledMocks = vi.hoisted(() => ({ append: vi.fn(), isPending: vi.fn(() => false) }));
-vi.mock("./untitled-reconciler-browser", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./untitled-reconciler-browser")>()),
-  appendPendingUntitled: untitledMocks.append,
-}));
-
 let coordinator: ContextRemovalCoordinator | null = null;
-let localOwner: ReturnType<typeof useLocalUntitledOwner> | null = null;
+let resources: ReturnType<typeof useAccountResourceReplica> | null = null;
 
 function CaptureCoordinator() {
   coordinator = useContextRemovalCoordinator();
-  localOwner = useLocalUntitledOwner();
+  resources = useAccountResourceReplica();
   return null;
 }
 
 beforeEach(() => {
   coordinator = null;
-  localOwner = null;
+  resources = null;
   viewerProps = null;
-  untitledMocks.append.mockClear();
   queryState.tree = tree;
   queryState.isError = false;
   queryState.isFetching = false;
@@ -250,7 +242,7 @@ it("persists and admits the real New action without an empty working-set route",
       ).toBe(false);
     });
   } finally {
-    await localOwner?.destroyAll();
+    await resources?.finishClose();
     localStorage.clear();
     await rehydrateContextDesks(`cleanup-${crypto.randomUUID()}`);
     setItem.mockRestore();
@@ -271,7 +263,7 @@ it("guarded-redirects a selected materialized local owner before admitting its s
     editable: true,
     filetype: "markdown",
     schemaType: "document",
-    origin: "local-untitled",
+    origin: "local-resource",
   };
   useContextTabsStore.setState({
     byProject: {
@@ -335,8 +327,13 @@ it("restores the exact older local owner across A to B to A through mounted cont
     kind: "new",
     documentId: "untitled-older",
     name: "Untitled",
+    resourceHandle: "resource-untitled-older",
   };
-  const newer: ContextTab = { ...older, documentId: "untitled-newer" };
+  const newer: ContextTab = {
+    ...older,
+    documentId: "untitled-newer",
+    resourceHandle: "resource-untitled-newer",
+  };
   const chapter = useContextTabsStore.getState().byProject.project?.tabs[0] as ContextTab;
   useContextTabsStore.setState({
     byProject: {

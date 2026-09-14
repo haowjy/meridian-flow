@@ -29,6 +29,7 @@ import type { DocumentSession } from "@/core/editor/document-session";
 import {
   useContextRemovalCoordinator,
   useLiveDocumentSessionRegistry,
+  useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
 import {
   usePostApplyAccountId,
@@ -117,6 +118,7 @@ function useDraftReviewScopeOwner(
   stateOwner?: DraftReviewStateOwner,
 ): DraftReviewContextValue {
   const queryClient = useQueryClient();
+  const resources = useOptionalAccountResourceReplica();
   const contextRemoval = useContextRemovalCoordinator();
   const dispositionOwner = usePostApplyDispositionOwner();
   const dispositionSnapshot = usePostApplySnapshot();
@@ -322,6 +324,7 @@ function useDraftReviewScopeOwner(
   ]);
 
   useEffect(() => {
+    if (!resources) return;
     if (drafts.status !== "ready" && drafts.status !== "empty") return;
     if (controller.isDisposing) return;
     if (!projectId || !workId) {
@@ -359,7 +362,7 @@ function useDraftReviewScopeOwner(
     // returned scope classifies its exact absent draft-created rows rather than
     // tying recovery to whichever row happens to be selected inline.
     const treeQuery = contextCatalogQueryOptions(
-      queryClient,
+      resources,
       projectId,
       contextCatalogScope(projectId, "manuscript", null),
     );
@@ -436,6 +439,7 @@ function useDraftReviewScopeOwner(
   }, [
     contextRemoval,
     dispositionOwner,
+    resources,
     dispositionSnapshot.remoteDraftWitnesses,
     controller.exitReview,
     controller.inlineReview,

@@ -25,7 +25,7 @@ export type DisplayedProjectSelection = {
   chatSlug: string | null;
   workSlug: string | null;
   /** Existing local ownership pointer, never content or a new draft instance. */
-  local?: { accountId: string; projectId: string; threadId?: string; documentId?: string };
+  local?: { accountId: string; projectId: string; resourceHandle: string };
 };
 export type ProjectAddressReplacement =
   | { kind: "replaced" | "superseded" }
@@ -151,7 +151,7 @@ export function createProjectNavigation(
       href,
       projectAddressState(frozen, {
         ...entry.state,
-        meridianProjectSelection: shown.local ? { version: 1, ...shown.local } : undefined,
+        meridianProjectSelection: shown.local ? { version: 2, ...shown.local } : undefined,
       }),
     );
   }

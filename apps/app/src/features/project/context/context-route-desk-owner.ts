@@ -50,7 +50,7 @@ export function resolveDeskRoute({
   }
   if (
     selected?.kind === "tracked" &&
-    selected.origin === "local-untitled" &&
+    selected.origin === "local-resource" &&
     (!isWorkScopedProjectContextScheme(selected.scheme) || selected.workId === locator.workId)
   ) {
     return {

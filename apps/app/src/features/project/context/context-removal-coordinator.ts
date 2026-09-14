@@ -423,7 +423,7 @@ export class ContextRemovalCoordinator {
       selection.locator.workId !== workId ||
       this.desk.read(projectId).selectedTabIdByWork[workId ?? ""] !== documentId ||
       tab?.kind !== "tracked" ||
-      tab.origin !== "local-untitled" ||
+      tab.origin !== "local-resource" ||
       (isWorkScopedProjectContextScheme(tab.scheme) && tab.workId !== workId) ||
       !sameLocator(routeTargetForTab(tab, workId), target)
     ) {
@@ -1088,7 +1088,7 @@ export class ContextRemovalCoordinator {
       .tabs.filter(
         (tab): tab is ServerContextTab =>
           tab.kind !== "new" &&
-          (tab.kind !== "tracked" || tab.origin !== "local-untitled") &&
+          (tab.kind !== "tracked" || tab.origin !== "local-resource") &&
           isWorkScopedProjectContextScheme(tab.scheme) &&
           (tab.workId ?? null) !== activeWorkId,
       )
@@ -1103,7 +1103,7 @@ export class ContextRemovalCoordinator {
         .tabs.some(
           (tab) =>
             tab.kind === "tracked" &&
-            tab.origin === "local-untitled" &&
+            tab.origin === "local-resource" &&
             tab.documentId === selection.identity.documentId,
         ) &&
       !documentIds.includes(selection.identity.documentId)

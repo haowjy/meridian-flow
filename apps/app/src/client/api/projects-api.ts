@@ -72,6 +72,7 @@ type RequestInitOptions = {
   origin?: string;
   headers?: HeadersInit;
   keepalive?: boolean;
+  signal?: AbortSignal;
 };
 
 type ListWorkThreadsOptions = RequestInitOptions & {
@@ -258,17 +259,22 @@ function catalogQuery(scope: CatalogScope, extra?: Record<string, string>): stri
 export async function getContextCatalogSnapshot(
   projectId: string,
   scope: CatalogScope,
+  signal?: AbortSignal,
 ): Promise<CatalogSnapshot> {
-  return getJson(`${apiProjectContextCatalogPath(projectId, "snapshot")}?${catalogQuery(scope)}`);
+  return getJson(`${apiProjectContextCatalogPath(projectId, "snapshot")}?${catalogQuery(scope)}`, {
+    signal,
+  });
 }
 
 export async function getContextCatalogChanges(
   projectId: string,
   scope: CatalogScope,
   cursor: string,
+  signal?: AbortSignal,
 ): Promise<CatalogChanges> {
   return getJson(
     `${apiProjectContextCatalogPath(projectId, "changes")}?${catalogQuery(scope, { cursor })}`,
+    { signal },
   );
 }
 
@@ -295,10 +301,12 @@ export async function getContextCatalogLookup(
 export async function getProjectContextAvailability(
   projectId: string,
   documentIds: readonly string[],
+  signal?: AbortSignal,
 ): Promise<ProjectContextIdentityLookupResult> {
   return postJson<ProjectContextIdentityLookupResult>(
     `/api/projects/${encodeURIComponent(projectId)}/context/availability`,
     { projectId, documentIds },
+    { signal },
   );
 }
 
@@ -353,12 +361,15 @@ export async function createUntitledContextDocument(
   scheme: ProjectContextTreeScheme,
   body: CreateUntitledContextDocumentRequest,
   opts?: ProjectContextRequestOptions,
+  init?: RequestInitOptions,
 ): Promise<CreateUntitledContextDocumentResult> {
   const response = await postJson<CreateUntitledContextDocumentResult>(
-    apiProjectContextCreateUntitledPath(projectId, scheme, opts),
+    urlFor(apiProjectContextCreateUntitledPath(projectId, scheme, opts), init),
     body,
     {
       acceptErrorResponse: acceptsContextConflict,
+      headers: init?.headers,
+      signal: init?.signal,
     },
   );
   if (response.status === "conflict") return response;
@@ -376,18 +387,23 @@ export async function moveContextEntry(
   projectId: string,
   sourceScheme: ProjectContextTreeScheme,
   body: MoveContextEntryRequest,
+  init?: RequestInitOptions,
 ): Promise<MoveContextEntryResult> {
-  return postJson(apiProjectContextMovePath(projectId, sourceScheme), body, {
+  return postJson(urlFor(apiProjectContextMovePath(projectId, sourceScheme), init), body, {
     acceptErrorResponse: acceptsContextConflict,
+    headers: init?.headers,
+    signal: init?.signal,
   });
 }
 
 export async function getContextOperationReceipt(
   projectId: string,
   operationId: string,
+  init?: RequestInitOptions,
 ): Promise<ContextOperationReceipt | null> {
   const result = await getJson<{ receipt: ContextOperationReceipt | null }>(
-    apiProjectContextOperationPath(projectId, operationId),
+    urlFor(apiProjectContextOperationPath(projectId, operationId), init),
+    { headers: init?.headers, signal: init?.signal },
   );
   return result.receipt;
 }
@@ -404,6 +420,7 @@ export async function deleteContextEntry(
     body,
     {
       headers: init?.headers,
+      signal: init?.signal,
     },
   );
 }

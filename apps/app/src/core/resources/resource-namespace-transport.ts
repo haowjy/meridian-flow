@@ -20,7 +20,9 @@ export function createResourceNamespaceTransport(
     // Create has no operation receipt. Replay uses the recorded document ID/request,
     // while current availability is a separate observation, not a historical outcome.
     if (request.kind === "create") return null;
-    const receipt = await getContextOperationReceipt(projectId, request.body.operationId);
+    const receipt = await getContextOperationReceipt(projectId, request.body.operationId, {
+      signal: epoch,
+    });
     requireOpen();
     return receipt ? { kind: "operation", receipt } : null;
   };
@@ -30,18 +32,25 @@ export function createResourceNamespaceTransport(
     async submit(projectId: string, request: NamespaceRequest) {
       requireOpen();
       if (request.kind === "create") {
-        const result = await createUntitledContextDocument(projectId, "unfiled", request.body);
+        const result = await createUntitledContextDocument(
+          projectId,
+          "unfiled",
+          request.body,
+          undefined,
+          { signal: epoch },
+        );
         requireOpen();
         return { kind: "create" as const, result };
       }
       if (request.kind === "move") {
-        await moveContextEntry(projectId, request.scheme, request.body);
+        await moveContextEntry(projectId, request.scheme, request.body, { signal: epoch });
       } else {
         await deleteContextEntry(
           projectId,
           request.scheme,
           request.body,
           contextRequestOptionsForScheme(request.scheme, request.workId),
+          { signal: epoch },
         );
       }
       // A missing receipt remains uncertainty; never synthesize one from UI metadata.

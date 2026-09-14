@@ -336,7 +336,17 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
       },
       "work-1",
     );
-    setDesk([{ kind: "new", documentId: "untitled", name: "Untitled" }], "untitled");
+    setDesk(
+      [
+        {
+          kind: "new",
+          documentId: "untitled",
+          name: "Untitled",
+          resourceHandle: "resource-untitled",
+        },
+      ],
+      "untitled",
+    );
     const locator = { scheme: "unfiled" as const, path: "", workId: "work-1" };
     const revision = rig.coordinator.beginRouteSelection(projectId, locator);
     rig.coordinator.bindRouteSelection(projectId, revision, {

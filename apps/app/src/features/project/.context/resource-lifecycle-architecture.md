@@ -1,96 +1,85 @@
-# Current project document architecture
+# Project document resource lifecycle
 
-This describes the implemented project document system on this branch, including its remaining split ownership. It covers Editor navigation, browser persistence and backend synchronization, not unrelated billing or inference internals. The resource-replica package owns catalog policy and an inactive durable resource-journal contract. The Dexie adapter/importer is not yet constructed by the production account owner; existing lineage/reconciler ownership remains live. Do not implement against the target redesign as though it already exists.
+Project documents are local-first resources synchronized with the existing backend. One account-scoped owner coordinates durable metadata, namespace work, exact Yjs content, and server catalog checkpoints. Editor tabs remain browser-tab-local views; neither a tab nor a URL owns document durability.
 
 ## Ownership map
 
 ```mermaid
 flowchart TD
-  UI[Project shell and document commands] --> NAV[Readable routes and navigation tickets]
+  UI[Tree, links, and document commands] --> VIEW[Replica-backed catalog projection]
+  UI --> NAV[Readable routes and navigation settlement]
   UI --> WS[Browser-local Editor workspace]
-  NAV --> OPEN[Live opener and availability]
-  OPEN --> SESSION[Account document session runtime]
-  UI --> LOCAL[Local Untitled owner and lineage ledger]
-  LOCAL --> SESSION
-  LOCAL --> REC[Untitled reconciliation]
-  REC --> API[Backend namespace transactions]
-  API --> QUERY[QueryClient catalog acquisition]
-  QUERY --> RED[Resource package catalog reducer]
-  RED --> TREE[Tree and route metadata]
-  WS --> HOST[Stable document host]
-  SESSION --> HOST
+  VIEW --> REPLICA[AccountResourceReplica]
+  NAV --> REPLICA
+  REPLICA --> META[IndexedDB resource metadata]
+  REPLICA --> NS[Durable namespace runner]
+  REPLICA --> CONTENT[Exact local content access]
+  REPLICA --> CATALOG[Catalog acquisition]
+  NS <--> API[Backend namespace and receipts]
+  CATALOG <--> API
+  CONTENT --> SESSION[Account document session runtime]
   SESSION --> IDB[Yjs IndexedDB persistence]
   SESSION <--> PEER[Same-browser Yjs peers]
-  SESSION <--> SERVER[Room-scoped backend collaboration]
+  SESSION <--> SERVER[Room-scoped collaboration]
+  WS --> HOST[Stable editor host]
+  SESSION --> HOST
 ```
 
-There are three different facts: a resource exists, a view is open, and the server has acknowledged an operation. The current system separates some of these boundaries but still has separate local-Untitled and server-catalog owners.
+Three facts must stay separate:
 
-| Owner | Current responsibility |
+1. A durable resource exists locally.
+2. A browser tab has an Editor view open.
+3. The backend has acknowledged namespace metadata and admitted synchronization.
+
+| Owner | Responsibility |
 | --- | --- |
-| [AccountFeatureLifetime](../context/account-feature-lifetime.ts) | Composes availability, removal, the Untitled owner, live opener and account document runtime; participates in retryable shutdown. |
-| [Editor workspace reducer](../../../client/stores/context-tabs-store/editor-workspace-state.ts) | Synchronous tab membership, selection and order; account-scoped sessionStorage restoration is independent per browser tab. Layout persistence is not content persistence. |
-| [LocalUntitledOwner](../context/local-untitled-owner.ts) and [lineage ledger](../context/local-untitled-lineage-ledger.ts) | Local document identity, creation/adoption lineage and recoverable pending writing. This owner still has exclusive local access constraints. |
-| [Live opener](../context/open-project-document.ts) | Resolves server identity/availability and obtains admission through the existing registry/adoption boundary. Cached acknowledged opening still depends on remote admission. |
-| [Editor runtime](../../../core/editor/.context/CONTEXT.md) | Owns live Y.Doc sessions, exact persistence incarnations, authority fences, adoption and transport lifecycle. |
-| [Local peers](../../../core/editor/local-document-peers.ts) | Exchanges state vectors/updates between matching local content incarnations; persisted catch-up repairs missed local broadcasts. This is not backend acknowledgement. |
-| [Catalog query](../../../client/query/useContextCatalog.ts) and [resource reducer](../../../../../../packages/resource-replica/src/catalog.ts) | Query layer acquires/installs server catalog state; package applies catalog projection decisions. No persistent general resource owner yet. |
-| [Backend operation receipts](../../../../../server/server/domains/context/context/context-operation-receipts.ts) | Wrap namespace operations with immutable move/delete outcomes. Frontend durable retry ownership is still unfinished. |
+| [AccountFeatureLifetime](../context/account-feature-lifetime.ts) | Creates one account document runtime, resource replica, availability coordinator, removal coordinator, and opener. Storage invalidation closes the complete account lifetime. |
+| [AccountResourceReplica](../../../core/resources/account-resource-replica.ts) | Owns reservation, exact local opening, catalog acquisition, durable namespace replay, remint, terminal transitions, and projection subscriptions. |
+| [Resource replica package](../../../../../../packages/resource-replica/src/index.ts) | Pure resource, catalog, intent, deletion, adoption, and projection policy. It imports no React, browser storage, HTTP, or Yjs session objects. |
+| [IndexedDB metadata adapter](../../../core/resources/indexeddb-resource-metadata.ts) | Stores account-global resource descriptors, project-qualified intentions, and project-qualified catalog checkpoints with revision CAS. One account-wide reactive read feeds project projections. |
+| [Editor workspace reducer](../../../client/stores/context-tabs-store/editor-workspace-state.ts) | Owns synchronous tab membership, selection, order, stable member identity, and account-scoped `sessionStorage` restoration. |
+| [Document session runtime](../../../core/editor/.context/CONTEXT.md) | Owns Y.Doc instances, exact persistence incarnations, local replay, peer exchange, registry adoption, transport, and shutdown fences. |
+| [Backend receipts](../../../../../server/server/domains/context/context/context-operation-receipts.ts) | Make move and delete retryable by immutable operation ID and request bytes. |
 
-## New, write, acknowledge
+## New, write, and acknowledge
 
-1. New reserves local Untitled identity through the existing local owner. A local history pointer at `/editor` identifies the local document; this URL alone is not an error.
-2. The document host binds local content through the session runtime and existing Yjs persistence.
-3. First content starts project-owned Unfiled creation. Reconciliation coordinates acknowledgement, aliases and queued location changes.
-4. Same-ID acknowledgement updates metadata and the canonical address without changing the editor's component ancestry. The tested path retains the mounted editor, focus and caret. Undo continuity still needs its explicit end-to-end QA check.
-5. Closed pending writing can appear in the Unfiled sidebar independently of open tabs. The pending-local tree integration is still separate from the server catalog and must eventually be replaced by one resource projection.
+1. New atomically reserves an account-global resource handle, Document ID, exact content database, provisional Unfiled location, and ineligible create intention.
+2. Content initialization completes before the editor receives the handle. The workspace opens the resource synchronously and the stable session boundary binds its Y.Doc.
+3. First content marks creation eligible. Explicit filing also marks an empty resource eligible and appends the desired location.
+4. The namespace runner persists immutable request bytes before HTTP, records the outcome, then applies it through metadata CAS. Reload, response loss, and another browser context resume the same recorded work.
+5. Acknowledgement adopts the same Y.Doc into authorized registry transport. Metadata, tab labels, the sidebar row, and the readable URL reconcile without replacing the editor ancestry.
+6. If creation collides with a foreign server Document ID, remint changes the resource's current Document ID while retaining its handle, persistence database, Y.Doc, view member, and obsolete-ID alias.
 
-A successful local edit does not mean a server create or Yjs synchronization completed. The lineage/session contract retains recovery obligations across those stages. See [local writing ownership](../context/.context/CONTEXT.md).
+Closing the view never abandons the resource or cancels synchronization. Explicit Delete is the writer command that changes resource lifecycle.
 
-## Open and switch
+## Catalogs, addresses, and opening
 
-Readable URLs resolve address/authority before publishing admitted metadata. Stable-ID entry points use the live opener and navigation adapter. The host binds the content session; resolving an address is not proof that local content replay finished.
+`ResourceCatalogAcquisition` is the only catalog cursor and installation owner. React Query triggers acquisition and may cache the returned view, but the durable checkpoint and resource overlay remain authoritative. A received catalog commit and its derived resource observations commit atomically; resource revision fences prevent a late response from overwriting newer local intent.
 
-Eligible same-project/Work transitions retain the previous usable editor and its actual identity. Acknowledgement does not replace the host. Warm navigation can reuse sessions; cold acknowledged-document opening is not fully local-first yet. No second content cache has been introduced.
+Trees, reference browsing, wikilink resolution, restored tabs, readable addresses, and stable-ID navigation consume the same projection. A readable path is a locator; Document ID and stable resource handle are identity. Current identity wins over an obsolete remint alias when both appear in the catalog.
 
-Editor entry chooses an eligible open document. Explicit empty entry and settled Close-all do not invoke the old first-file/default-open ladder. The exact entry branches are documented in [Editor document lifecycle](editor-document-lifecycle.md).
+Known exact content opens locally before remote admission. The returned admission binds another lease to the same local session after route and workspace settlement. Remote ownership reconciliation proceeds separately. An unacquired catalog resource uses the server opener, and a successful synchronized session can then establish exact local content for later opens. Missing or uninitialized IndexedDB is never treated as an editable blank cache.
 
-## Close and restore
+## Rename, move, and delete
 
-Closing a tab changes a browser-local view, not server document existence. Live workspace transitions are synchronous; sessionStorage snapshots restore the browser tab's layout. Failed layout persistence is reported without reverting the live transition or freezing commands. Another browser tab's layout is independent even when document content is shared.
+File rename, filing, and the identity bar issue one durable resource-location command. The desired projection replaces the old server row immediately; an eventual receipt or catalog refresh converges canonical metadata without remounting content. Folder operations remain on the direct context API because they have no document resource identity.
 
-Application navigation prepares membership and asks the shared leave guard before publication. Pending native traversal restores through the history owner; matching accepted history is flushed before the workspace commits its successor or empty selection. Closing the final tab then reloading stays empty. See [Editor document lifecycle](editor-document-lifecycle.md) for ownership, cancellation and the dependency patch.
+Delete appends durable intent and hides the exact resource optimistically. A rejected attempt restores it with repair state. A terminal server generation closes matching tabs and session access through the existing availability/removal coordinator. Path reuse resolves the new Document ID rather than resurrecting stale content. Exact storage cleanup requires an authorized terminal transition; catalog disappearance alone is not deletion evidence.
 
-## Content synchronization and shutdown
+## Tabs, history, and loading
 
-Yjs content lives in the session's Y.Doc and its exact IndexedDB persistence incarnation. Same-browser peer transport exchanges updates without server transport and catches up from persisted updates on wake. It does not make all local Untitled resources concurrently admissible: the feature owner still needs replacement.
+Editor membership is isolated per browser tab/window in `sessionStorage`; content and resource metadata are shared at account scope. Open, selection, close, Back/Forward, and URL changes settle through the accepted navigation operation. Closing the last tab stays empty across screen changes and reload. A late acknowledgement cannot reopen a closed member.
 
-Server transport remains room-scoped. This work does not multiplex sockets or replace Yjs merge semantics. Metadata namespace transactions and Yjs content synchronization have separate acknowledgements.
+The application shell and pane geometry render immediately. Eligible warm transitions retain the prior usable editor. Cold waits keep a blank pane for about 500 ms and then show a content-shaped skeleton, with no spinner, loading text, or artificial minimum duration. Pending address state never keys or remounts the editor.
 
-Account/authority shutdown fences new work and drains attached and detached local resources through the same runtime. Failed cleanup retains the required holds and is retryable. This prevents premature release; full legacy-to-resource-journal migration is still a separate unverified obligation.
+## Synchronization and shutdown
 
-## Backend namespace and receipts
+Local Yjs persistence and same-browser peers make exact cached content usable independently of backend latency. Backend authorization and room transport remain separate capabilities; local data does not grant permission to upload or overwrite server state. Metadata acknowledgement also does not prove Yjs synchronization.
 
-The backend remains authoritative for permissions, canonical names/paths, namespace transactions and terminal document state. Move/delete attempts carry an operation ID and immutable payload. Matching retries recover a stored outcome; the same ID with another payload rejects. Receipt lookup does not depend on a source path that a successful move/delete already removed. Infrastructure failures are not recorded as terminal business outcomes.
+Account shutdown fences new work, drains namespace/catalog operations, content participants, registry sessions, local peers, and persistence providers, then closes metadata. IndexedDB `versionchange` invalidates the entire account feature lifetime rather than leaving mixed-version session owners alive.
 
-These receipts make safe frontend replay possible. The inactive resource journal
-stores immutable intentions/attempts and recovery evidence; the production callers
-have not switched to its sole runner yet. A path disappearing from a scoped catalog is also not sufficient evidence to delete local content.
+The repository has no production users or legacy data. The old Untitled lineage, reconciler, pending-tree union, and incompatible dormant metadata schema are deleted rather than migrated or kept as compatibility writers.
 
-## Current limits and planned work
+## Deliberate limits
 
-The foundation preserves editor continuity, independent layout, drain safety, peer exchange and operation outcomes. User testing reports many original symptoms gone; that is useful feedback, not proof of every crash/recovery case.
-
-Accepted workspace/history settlement and exact-cache initialization evidence are
-implemented and probed. The inactive journal also supports restartable legacy
-capture, atomic authority inspection, independent local-content recovery and
-retained local deletion. These storage/policy prerequisites do not activate a
-second live owner.
-
-Still unfinished: the sole resource runner and namespace replay, generic local
-content access before remote admission, concurrent local participants, one
-catalog/tree projection, supported migration handoff and deletion of displaced
-owners. Local deletion intent retains writing; it is not server terminal authority
-or permission to purge.
-
-Address-loading presentation keeps the shell immediately, retains eligible prior content, and otherwise shows a blank pane followed by a skeleton after approximately 500ms. Read-only file and optimistic document waits reuse the same delayed fallback from `components/app/DelayedContentSkeleton.tsx`. Read-only filename chrome remains mounted during the read; headerless hosts remain headerless. Only the fallback resets with destination changes; the editor stays mounted. There is no spinner, loading copy or minimum fallback duration. Content-session startup remains a separate wait whose presentation still needs the same policy; see [tracked follow-ups](TODO).
+Cold offline application boot, generalized durable folder commands, Scratch/Uploads Editor viewers, socket multiplexing, and multi-pane Editor layout are outside this lifecycle. Scratch and Uploads remain valid chat/reference/tool resources. See [tracked follow-ups](../context/.context/TODO.md) for separate product work.

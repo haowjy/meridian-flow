@@ -13,8 +13,7 @@ const local = {
   tabInstanceId: "member-a",
   documentId: "A",
   name: "Untitled",
-  lineageHandle: "lineage-a",
-  identityRevision: 1,
+  resourceHandle: "resource-a",
 };
 beforeEach(() => {
   sessionStorage.clear();

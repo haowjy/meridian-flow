@@ -177,7 +177,7 @@ export function contextTabEligibleForRemoval(
     case "work-prune":
       return (
         tab.kind !== "new" &&
-        (tab.kind !== "tracked" || tab.origin !== "local-untitled") &&
+        (tab.kind !== "tracked" || tab.origin !== "local-resource") &&
         isWorkScopedProjectContextScheme(tab.scheme)
       );
     case "draft-discard":

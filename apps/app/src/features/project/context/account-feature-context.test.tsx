@@ -1,16 +1,20 @@
 // @vitest-environment jsdom
 
+import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, StrictMode, useCallback, useLayoutEffect, useState } from "react";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
 import {
+  AccountFeatureComposition,
   AccountFeatureTestProvider,
   useContextRemovalCoordinator,
 } from "@/test-support/account-feature-provider";
 import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { useContextProjectAuthority } from "../use-context-project-authority";
+import { useObservedResourceProjection } from "./account-feature-context";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 
 const providerQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -36,6 +40,25 @@ function tracked(documentId: string, path: string) {
 }
 
 describe("AccountFeatureTestProvider", () => {
+  it("server-renders project authority without constructing browser resources", () => {
+    function ProjectAuthorityConsumer() {
+      useContextProjectAuthority({
+        projectId: "project-1",
+        deskHydrated: false,
+        editorScope: { status: "ready", workId: null, source: "route" },
+      });
+      return <p>Project shell</p>;
+    }
+    const html = renderToString(
+      <QueryClientProvider client={providerQueryClient}>
+        <AccountFeatureComposition accountId="account-a" repairProjectCatalog={async () => {}}>
+          <ProjectAuthorityConsumer />
+        </AccountFeatureComposition>
+      </QueryClientProvider>,
+    );
+    expect(html).toContain("Project shell");
+  });
+
   it("renders a new account's children immediately without a preparation projection", () => {
     const html = renderToString(
       <TestAccountProvider accountId="account-a">
@@ -76,6 +99,35 @@ describe("AccountFeatureTestProvider", () => {
       const first = instances.at(-1);
       await act(async () => rerender?.());
       expect(instances.at(-1)).toBe(first);
+    });
+  });
+
+  it("clears a transient projection error when the projection recovers", async () => {
+    let publish: ((snapshot: ResourceProjectionSnapshot) => void) | null = null;
+    let fail: ((error: unknown) => void) | null = null;
+    const replica = {
+      observeProjection(
+        _projectId: string,
+        onSnapshot: (snapshot: ResourceProjectionSnapshot) => void,
+        onError: (error: unknown) => void,
+      ) {
+        publish = onSnapshot;
+        fail = onError;
+        return () => undefined;
+      },
+    };
+    const observed: Array<ReturnType<typeof useObservedResourceProjection>> = [];
+    function Child() {
+      observed.push(useObservedResourceProjection(replica, "project-1"));
+      return null;
+    }
+
+    await withReactRoot(<Child />, async () => {
+      await act(async () => fail?.(new Error("temporary projection failure")));
+      expect(observed.at(-1)?.error).toBeInstanceOf(Error);
+
+      await act(async () => publish?.({ records: [], catalogs: [] }));
+      expect(observed.at(-1)).toMatchObject({ error: null, records: [] });
     });
   });
 

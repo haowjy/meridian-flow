@@ -44,6 +44,13 @@ type ContentEntry = {
   identity: ContentIdentity;
   session: DocumentSession;
   leases: Set<symbol>;
+  reidentity?: {
+    target: ContentIdentity;
+    /** A competing durable remint observed while this local CAS is unresolved. */
+    observed?: ResourceRecord;
+    commit(): void;
+    abort(): void;
+  };
   ownership:
     | { kind: "local" }
     | {
@@ -53,7 +60,10 @@ type ContentEntry = {
         handoff: LocalDocumentSessionHandoff;
         reservations: LocalDocumentSessionReservationPort;
       }
-    | { kind: "registry"; ownership: TransferredDocumentSessionOwnership };
+    | {
+        kind: "registry";
+        ownershipByProject: Map<string, TransferredDocumentSessionOwnership>;
+      };
 };
 
 type ContentRetirement = {
@@ -73,6 +83,11 @@ export type ResourceContentTransfer = Readonly<{
 export type ResourceContentTransferResult =
   | Readonly<{ kind: "reserved"; handoff: LocalDocumentSessionHandoff }>
   | Readonly<{ kind: "adopted"; ownership: TransferredDocumentSessionOwnership }>;
+
+export type ResourceContentReidentity = Readonly<{
+  commit(): void;
+  abort(): void;
+}>;
 
 function resourceKey(key: ResourceKey): string {
   return encodeURIComponent(key.handle);
@@ -135,11 +150,142 @@ export class ResourceContentAccess {
     return this.track(this.openTracked(projectId, key, participantId, signal));
   }
 
+  clearExactContent(input: {
+    projectId: string;
+    key: ResourceKey;
+    documentId: string;
+    databaseName: string;
+  }): Promise<void> {
+    return this.track(this.clearExactContentTracked(input));
+  }
+
   reserveTransfer(
     input: ResourceContentTransfer,
     reservations: LocalDocumentSessionReservationPort,
   ): Promise<ResourceContentTransferResult> {
     return this.track(this.reserveTransferTracked(input, reservations));
+  }
+
+  /** Install a session already retained by registry authority after metadata acquisition commits. */
+  async adoptRegistrySession(
+    projectId: string,
+    key: ResourceKey,
+    session: DocumentSession,
+    ownership: TransferredDocumentSessionOwnership,
+  ): Promise<void> {
+    const id = resourceKey(key);
+    const current = await this.metadata.readAccessibleResource(projectId, key);
+    if (!current || localDisposition(current) || current.resource.content.kind !== "exact") {
+      ownership.release();
+      throw new Error("Acquired resource content is unavailable");
+    }
+    const identity = identityOf(current);
+    if (
+      session.documentId !== identity.documentId ||
+      session.persistenceName !== identity.databaseName ||
+      ownership.exactDatabaseName !== identity.databaseName
+    ) {
+      ownership.release();
+      throw new Error("Acquired registry session does not match resource content");
+    }
+    const existing = this.entries.get(id);
+    if (existing) {
+      if (existing.session !== session) {
+        ownership.release();
+        throw new Error("Resource already owns another session");
+      }
+      if (existing.ownership.kind !== "registry") {
+        ownership.release();
+        throw new Error("Resource session has not transferred to registry ownership");
+      }
+      const prior = existing.ownership.ownershipByProject.get(projectId);
+      if (prior) ownership.release();
+      else existing.ownership.ownershipByProject.set(projectId, ownership);
+      return;
+    }
+    this.entries.set(id, {
+      identity,
+      session,
+      leases: new Set(),
+      ownership: { kind: "registry", ownershipByProject: new Map([[projectId, ownership]]) },
+    });
+  }
+
+  ownershipFor(
+    key: ResourceKey,
+    projectId: string,
+  ): "local" | "transferring" | "registry" | "registry-other" | null {
+    const ownership = this.entries.get(resourceKey(key))?.ownership;
+    if (!ownership) return null;
+    if (ownership.kind !== "registry") return ownership.kind;
+    return ownership.ownershipByProject.has(projectId) ? "registry" : "registry-other";
+  }
+
+  /** Prepare an exact detached-session remint around the caller's metadata CAS. */
+  prepareReidentity(
+    key: ResourceKey,
+    currentDocumentId: string,
+    nextDocumentId: string,
+    nextIdentityRevision: number,
+  ): ResourceContentReidentity | null {
+    const entry = this.entries.get(resourceKey(key));
+    if (!entry) return null;
+    if (
+      entry.identity.documentId !== currentDocumentId ||
+      entry.identity.identityRevision + 1 !== nextIdentityRevision ||
+      entry.ownership.kind !== "local"
+    ) {
+      throw new Error("Resource content cannot be reminted from its current identity");
+    }
+    if (entry.reidentity) throw new Error("Resource content remint is already prepared");
+    const session = entry.session.prepareDetachedReidentity(nextDocumentId);
+    let settled = false;
+    const pending: NonNullable<ContentEntry["reidentity"]> = {
+      target: {
+        ...entry.identity,
+        documentId: nextDocumentId,
+        identityRevision: nextIdentityRevision,
+      },
+      commit: () => {
+        if (settled) return;
+        settled = true;
+        entry.identity = pending.target;
+        session.commit();
+        if (entry.reidentity === pending) delete entry.reidentity;
+      },
+      abort: () => {
+        if (settled) return;
+        settled = true;
+        session.abort();
+        if (entry.reidentity === pending) delete entry.reidentity;
+        if (pending.observed) this.reconcileMetadata(pending.observed);
+      },
+    };
+    entry.reidentity = pending;
+    return pending;
+  }
+
+  /** Apply a durable remint observed from another browser context without replacing its Y.Doc. */
+  reconcileMetadata(record: ResourceRecord): void {
+    const entry = this.entries.get(resourceKey(record.resource));
+    if (!entry || sameIdentity(entry.identity, record)) return;
+    if (entry.reidentity) {
+      if (sameIdentity(entry.reidentity.target, record)) entry.reidentity.commit();
+      else if (record.resource.identity.revision > entry.identity.identityRevision)
+        entry.reidentity.observed = record;
+      return;
+    }
+    if (
+      entry.ownership.kind !== "local" ||
+      record.resource.content.kind !== "exact" ||
+      entry.identity.databaseName !== record.resource.content.databaseName ||
+      record.resource.identity.revision <= entry.identity.identityRevision ||
+      !record.resource.aliases[entry.identity.documentId]
+    )
+      return;
+    const session = entry.session.prepareDetachedReidentity(record.resource.identity.documentId);
+    entry.identity = identityOf(record);
+    session.commit();
   }
 
   private async reserveTransferTracked(
@@ -167,15 +313,16 @@ export class ResourceContentAccess {
       throw new Error("Resource content identity changed before session adoption");
     }
     if (entry.ownership.kind === "registry") {
-      const { lease } = entry.ownership.ownership;
+      const ownership = entry.ownership.ownershipByProject.get(input.projectId);
+      if (!ownership) throw new Error("Resource content needs authority for this project");
+      const { lease } = ownership;
       if (
-        lease.projectId !== input.projectId ||
         lease.documentId !== input.documentId ||
-        entry.ownership.ownership.exactDatabaseName !== input.databaseName
+        ownership.exactDatabaseName !== input.databaseName
       ) {
         throw new Error("Resource content is adopted by different authority");
       }
-      return { kind: "adopted", ownership: entry.ownership.ownership };
+      return { kind: "adopted", ownership };
     }
     if (entry.ownership.kind === "transferring") {
       if (
@@ -216,7 +363,10 @@ export class ResourceContentAccess {
         ) {
           throw new Error("Session adoption returned different authority");
         }
-        entry.ownership = { kind: "registry", ownership: admitted };
+        entry.ownership = {
+          kind: "registry",
+          ownershipByProject: new Map([[admitted.lease.projectId, admitted]]),
+        };
         if (entry.leases.size === 0) {
           this.entries.delete(id);
           admitted.release();
@@ -281,6 +431,7 @@ export class ResourceContentAccess {
       throw error;
     }
     const unavailable = localDisposition(current);
+    if (current) this.reconcileMetadata(current);
     if (this.state !== "open" || this.epoch.aborted || signal?.aborted) {
       this.releaseLease(id, entry, lease);
       return { kind: "cancelled" };
@@ -397,13 +548,52 @@ export class ResourceContentAccess {
     }
   }
 
+  private async clearExactContentTracked(input: {
+    projectId: string;
+    key: ResourceKey;
+    documentId: string;
+    databaseName: string;
+  }): Promise<void> {
+    if (this.state !== "open") throw new Error("Resource content is closing");
+    const id = resourceKey(input.key);
+    await this.finishRetirement(id);
+    const entry = this.entries.get(id);
+    if (entry) {
+      if (
+        entry.identity.documentId !== input.documentId ||
+        entry.identity.databaseName !== input.databaseName ||
+        entry.ownership.kind !== "local"
+      )
+        throw new Error("Local cleanup does not match resource content");
+      this.entries.delete(id);
+      await entry.session.destroy({ clearPersistence: true });
+      return;
+    }
+    await this.sessions.whenAuthorityReady();
+    if (this.state !== "open") throw new Error("Resource content is closing");
+    const session = this.sessions.createDetached({
+      accountId: this.accountId,
+      projectId: input.projectId,
+      documentId: input.documentId,
+      persistenceKey: input.databaseName,
+    });
+    await session.destroy({ clearPersistence: true });
+  }
+
   private releaseLease(id: string, entry: ContentEntry, lease: symbol): void {
     entry.leases.delete(lease);
     if (entry.leases.size > 0 || this.entries.get(id) !== entry) return;
     if (entry.ownership.kind === "transferring") return;
     this.entries.delete(id);
-    if (entry.ownership.kind === "registry") entry.ownership.ownership.release();
+    if (entry.ownership.kind === "registry") this.releaseRegistryOwnership(entry.ownership);
     else this.retire(id, entry.session);
+  }
+
+  private releaseRegistryOwnership(
+    ownership: Extract<ContentEntry["ownership"], { kind: "registry" }>,
+  ): void {
+    for (const retained of ownership.ownershipByProject.values()) retained.release();
+    ownership.ownershipByProject.clear();
   }
 
   private retire(id: string, session: DocumentSession): void {
@@ -450,7 +640,7 @@ export class ResourceContentAccess {
     for (const [id, entry] of this.entries) {
       if (entry.ownership.kind === "transferring") continue;
       this.entries.delete(id);
-      if (entry.ownership.kind === "registry") entry.ownership.ownership.release();
+      if (entry.ownership.kind === "registry") this.releaseRegistryOwnership(entry.ownership);
       else this.retire(id, entry.session);
     }
   }
@@ -460,7 +650,7 @@ export class ResourceContentAccess {
     await Promise.allSettled([...this.operations]);
     for (const [id, entry] of this.entries) {
       this.entries.delete(id);
-      if (entry.ownership.kind === "registry") entry.ownership.ownership.release();
+      if (entry.ownership.kind === "registry") this.releaseRegistryOwnership(entry.ownership);
       else {
         if (entry.ownership.kind === "transferring") {
           try {

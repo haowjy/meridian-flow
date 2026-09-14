@@ -24,18 +24,21 @@ unapplied authority. Local settlement still differs from session-effect completi
 failed session effects remain pending for retry. This is not durable namespace
 receipt recovery across account/authority shutdown.
 
-## Local Untitled ownership
+## Account resource ownership
 
-`local-untitled-locks.ts` owns the project/lineage lifetime and identity-reservation
-names and ports. `AccountFeatureLifetime` composes them with the account runtime's
-epoch `AbortSignal` and the lineage ledger/owner. The owner registers both
-terminal recovery and its close phases with that runtime. The signal aborts on
-account close or authority database version change, including the render-before-unmount fence; asynchronous acquisition and
-live-document adoption must observe it rather than completing into the old
-account lifetime. An acquisition that crosses account close releases its lease
-before rejecting; teardown may still release existing leases. Native Web Locks
-adaptation is shared in `core/cross-context-locks.ts`, which knows nothing about
-projects or lineages.
+`AccountResourceReplica` is the sole browser owner for editable document
+resources. It composes the account-qualified metadata database, serialized
+catalog acquisition, namespace journal runner, exact local content access, and
+same-session server adoption. `AccountFeatureLifetime` installs it before
+project descendants and connects its two-phase close to the document-session
+runtime. Account close fences new commands immediately, aborts transport work,
+drains adoption/catalog/namespace operations, releases every retained session,
+and closes metadata last.
+
+The replica uses short account/resource Web Locks for namespace and terminal
+coordination. Typing and ordinary local content access do not hold those locks.
+A stable resource handle survives document-ID remint; the exact persistence name
+and mounted Y.Doc do not change.
 
 ## Architecture
 
@@ -59,22 +62,23 @@ ContextPaneController
               ├─ ContextTabBar (reviewing tab surfaces dock tone)
               ├─ DraftReviewHeader (review strip, above the identity bar)
               ├─ DocumentIdentityBar (breadcrumb + chips, incl. DraftReviewChip)
-              ├─ ContextEditorMountHost (warm tracked + untitled Yjs editors)
+              ├─ ContextEditorMountHost (warm tracked + local-resource Yjs editors)
               └─ ContextViewerHost (active binary viewer)
 ```
 
-React Query acquires compact catalog snapshots and whole-commit deltas into one
-normalized stable-ID cache. One QueryClient-scoped high-water coordinator makes
-focus, polling, reconnect, hints, and multiple consumers join the same cursor
-drain. Applied revision advances only through contiguous whole commits; observed
-head can lead it while a bounded replay has more pages. Tree and picker are
-projections over those same entry objects.
-Mutations invalidate the affected catalog scope on success. Delete admits its
-exact evidence to live removal authority first; cache absence never supplies
-deletion evidence. Foreground identity saves and
-background untitled create/move reconciliation share
-`context-identity-mutation.ts`; every successful receipt invalidates its
-materialized tree or both move endpoints, even when no tab is open.
+`AccountResourceReplica` serializes compact catalog snapshots and whole-commit
+deltas into durable checkpoints. React Query triggers acquisition and delivers
+results, while every tree, picker, restored local tab, and reference browser
+projects from the same replica state. Applied revision advances only through
+contiguous whole commits; observed head may lead while a bounded replay has more
+pages. Local resource locations overlay server checkpoints by stable resource
+identity and remain visible across offline reloads.
+
+Editable-file create, rename, move, and delete commands write ordered durable
+resource intentions before transport. Folder commands retain the direct context
+mutation adapter. A failed file delete restores the row with a retry marker; a
+failed placement reopens the identity field. Cache absence never supplies
+removal evidence.
 
 The project availability coordinator watches server-backed tabs, bound route
 selection, retained sessions, and capped recent routes by stable file ID. Exact
@@ -95,92 +99,37 @@ Desktop scheme/query orchestration lives in `ContextTreePanel`; `ContextTreeRows
 selects each expanded row's direct children by stable parent ID through one
 scheme-scoped environment. Mobile renders one level at a time via route params.
 
-## Editor tabs and untitled documents
+## Editor tabs and local documents
 
-The writer-facing destination is **Editor**. One account-scoped,
-framework-independent `ContextRemovalCoordinator` owns every live removal
-transition: explicit close, generation-bearing terminal availability, Work pruning,
-and draft discard. Account construction precedes authenticated descendants; device
-desk hydration starts afterward and never gates the visible shell. A project becomes
-live after its desk state reconciles, concrete Editor Work readiness, and one raw
-bootstrap/validation operation. Strict replay and pre-live Work interruption adopt
-that operation with fresh attempt tokens; after first completion, Work interruption
-only suspends the live host and can never restore raw bootstrap authority.
-The leaf route host registers first, then the rendered desktop or phone document host
-settles revisioned route identity in layout phase.
+The writer-facing destination is **Editor**. `ContextRemovalCoordinator` owns
+workspace removal, route continuity, Work pruning, and generation-bearing
+availability effects. `AccountResourceReplica` independently owns resource and
+content durability. Neither owns the other's state.
 
-Committed delete receipts carry the server-confirmed exact ID batch and availability
-generation directly into the project availability coordinator before tree invalidation.
-That generation-fenced coordinator normalizes the IDs and emits one deterministic
-`terminal-remove` batch; it is the sole server-deletion authority. Candidate identity
-remains a pure typed selection/obligation protocol for represented local transitions:
-browser locators own only their revision while admitted continuity independently owns
-memory and persistence. Receipt cardinality supplies no identity, and late or
-superseded settlement cannot repair a newer route. The protocol emits exact planning
-or one typed candidate rejection, never a generic promotion.
-The pure `context-removal-planner.ts` keeps eligibility and desk/route continuity
-policy separate from browser lifecycle and effects. Bound selection anchors visible
-identity and exact removal; only revision-checked desk or route-only activation admits
-ordinary continuity. Work change chooses a compatible admitted fallback independently
-from its new route candidate. Same-Work screen leave discards selection while retaining
-admitted continuity. Fulfilled absence runs one coordinator-owned rejection plan that
-atomically selects a desk fallback, reconciles the working set, updates admitted memory,
-publishes, and then issues guarded replace-navigation. Project-host release drops only
-the detachable route adapter and mounted selection. Account-owned revision, terminal
-exact removal, admitted memory, and fence authority survive re-entry; a matching
-terminal removal blocks stale identity re-entry until exact rejection or a different
-identity is proven. Account disposal destroys it.
-The account provider owns one reversible coordinator lifetime lease. Cleanup
-suspends command authority synchronously; Strict effect replay resumes that same
-coordinator before child layout work, while a deferred step only finalizes a lease
-that remained suspended.
-Activation uses selection and transition revision tickets in layout phase. Desktop
-validates live desk membership; phone validates the exact registered route without
-fabricating a tab. `ContextPaneController`
-remains a view/activation controller and owns no lifecycle-removal policy. Later ready
-Work changes use the coordinator's supersession transition. Draft apply only resolves tab metadata. Context-tree
-cache state is presentation metadata and never authorizes removal. `ContextTab` has three variants: `tracked`,
-`viewer`, and the project-owned local `{ kind: "new", documentId }` placeholder.
-Empty-path Unfiled is a browser-local pointer, never a working-set route.
-A new tab uses an ordinary `DocumentSession` from its first render, created detached so
-Y.Doc + IndexedDB exist without opening an unauthorized server room.
+New creates one initialized local resource and opens its exact Y.Doc before any
+server request. The tab stores the resource handle immediately. Empty reserved
+documents remain local and recoverable; first meaningful content or explicit
+filing records the immutable create-eligibility witness and schedules the durable
+namespace runner. A successful create transfers the same session into authorized
+registry ownership. A create conflict remints the document ID while preserving
+the resource handle, persistence database, Y.Doc, editor ancestry, tab instance,
+cursor, and undo history.
 
-The device Context desk persists one exact `selectedTabIdByWork` entry per Editor scope (empty key for no Work).
-There is no project-wide active-tab slot. One pure desk-route resolver supplies
-render, bind, activation, and guarded materialization redirect identity; desk
-selection is not admission. Every non-draft local `new` tab is persisted
-immediately. Materialization retains `origin: "local-untitled"` across reload and
-Work navigation, while explicit close/deletion and fulfilled bootstrap absence
-still remove it. Server working-set bootstrap merges validated device-owned
-`new` and local-origin tabs by document ID without promoting them into recency.
+`contextTabFromResource` is the single optimistic tab projection. An unnamed
+local resource is `new`; an explicitly filed local resource immediately becomes
+a route-owning `tracked` tab even while offline; acknowledgement keeps it tracked
+and preserves whether its name is still provisional. Projection reconciliation
+targets the resource handle, so a delayed old document ID cannot replace a
+reopened member. Closing a tab removes only browser-local membership. It never
+deletes the durable resource.
 
-`untitled-reconciler.ts` is the browser-independent materialization executor;
-`untitled-reconciler-browser.ts` binds APIs, the account-local owner, and React
-hooks. The account/project/document-qualified `LocalUntitledOwner` record is
-the sole durable pre-authority work source, including its monotonic work
-revision, materialization phase and result, desired identity, failure receipt,
-home, and pending timestamp. Explicit writer actions and recovery receipts are
-therefore crash-safe. Reconciliation re-reads the live revision after every
-await; an attempt may clear identity work or drain a record only when that exact
-revision is still current, so the last explicit writer identity wins. Events
-only schedule the same deferred, idempotent sweep. The sweep creates through
-`create-untitled`, attaches the existing Y.Doc, waits for confirmed provider
-sync, then drains the entry. A closed tab is not special: the same entry drives
-a headless attach/flush. A foreign UUID conflict clones the Yjs state into a newly minted
-detached session and replaces the new tab's identity in place before retrying.
-Ordinary already-filed documents do not enter this engine. Naming an otherwise-empty new document is itself pending materialization work: the explicit identity keeps the tab reload-safe and is applied immediately after the row is created.
-
-After create returns, the placeholder becomes a normal route-owned `tracked`
-tab in place. Unfiled membership retains the placement affordance even after a
-rename; legacy `provisionalName` flags elsewhere also indicate provisional names.
-Desk-restored `new` tabs retain their sessions in explicit detached
-mode; no transport is created before the server row exists. Successful
-materialization restarts any terminal pre-row session before attaching and
-waiting for durable sync.
-Before materialization, active `new` tabs are projected from the desk store,
-not reconstructed from `scheme`/`path` search params. New-tab navigation still
-uses the canonical Unfiled empty route, but a fresh project with no prior scheme
-can activate its local editor immediately.
+The device Context desk persists membership, order, tab-instance IDs, and one
+selection per Editor scope in sessionStorage. Each browser tab/window has an
+independent desk. Project bootstrap keeps durable local members from the replica
+without remote availability admission; ordinary server members still use exact
+availability. Accepted navigation commits browser history and workspace state in
+one prepared operation. Returning to an empty Editor does not restore a closed
+document.
 
 ## Document identity bar
 
@@ -218,24 +167,16 @@ Contracts:
   roots. Selecting a folder drills deeper and builds the destination prefix, so rename, move, and
   rename-plus-move remain one gesture without a second popup or name row.
 - **Commit seam**: the field submits one final `{ destination, name }` to
-  `use-identity-commit.ts`. That seam derives queue, no-op, or commit; every
-  tracked-document commit uses the move transport so canonical collision
-  locators and provisional-name metadata have one owner. A same-name explicit
-  Save clears provisional-name metadata, regardless of the submitting surface.
-  Saving in place retains Unfiled membership and placement affordances.
-  Conflicts return the canonical locator for Open-existing.
-  Every asynchronous commit carries an operation generation. Every successful
-  receipt invalidates caches; the latest receipt updates tab metadata even when
-  inactive, while stale out-of-order receipts cannot overwrite it. Navigation
-  additionally requires that the committed document is still the active tab.
+  `use-identity-commit.ts`. The hook resolves the stable resource handle and
+  writes one durable location intent. The optimistic resource projection updates
+  the tab and route immediately; the namespace runner later settles the exact
+  server receipt. A same-name explicit Save clears provisional presentation.
+  Navigation additionally requires that the committed document is still active.
   The field does not blur-dismiss while a save is pending.
-- **Queued receipts**: a `new` tab's desired identity applies when the document
-  materializes; its outcome is reconciler *state*
-  (`queuedIdentityFailure(documentId)`), never a promise — the edit session is
-  over when the intent is queued. A failed receipt reopens the field with the
-  writer's name restored and the conflict/error recovery note; the receipt
-  clears when the writer edits or leaves the field. Failures must never drop
-  silently.
+- **Repair receipts**: a failed placement remains `needs-repair` in the journal.
+  The identity field reopens with the writer's name and recovery note; retry
+  settles the failed attempt and appends a new immutable intention. Failures are
+  never inferred from catalog absence.
 - **Field buttons**: the open field renders ✓/× icon buttons after it —
   additive mirrors of Enter/Esc (pointerdown is prevented so the blur-revert
   contract can't fire before the click lands). Keyboard behavior unchanged.
@@ -248,9 +189,8 @@ Contracts:
   `TriangleAlert`) appears *beside* the action — quiet on its left, never in
   its place: placement commits queue durably offline, so device-only is
   exactly when the writer may want to file the document. It claims its spot
-  after unsynced words persist for a 2s sustained grace — the clock is the
-  reconciler's per-document `pendingSince`, so remounting chrome (tab
-  switches) cannot restart the window. While the field is open only the
+  only when local content is usable without current server authority. While the
+  field is open only the
   action chip yields (the field is the action); the status stays.
 - **Destination keyboard path**: ArrowDown/ArrowUp enters the suggestion list
   through its typed focus handle. Rows retain arrow wrapping and Enter select;
@@ -325,11 +265,12 @@ replaces a pending one; Escape/blur semantics are the shared
 
 ## Tree query invalidation
 
-Deleting a file in `manuscript://` only refetches that scheme's tree for
-presentation metadata. Tree absence never proves document removal. The exact
-successful mutation result is the deletion evidence that the removal coordinator
-receives through the project availability coordinator before tree invalidation can
-affect presentation.
+Deleting an editable file queues a resource deletion intent and hides the row
+optimistically. A terminal receipt carries exact identity and generation into
+session/removal authority. A transport or conflict failure restores the row with
+a retry marker. Folder deletion still sends the direct context command and admits
+its exact result to the availability coordinator. Tree absence never proves
+document removal.
 
 ## Downlinks
 
@@ -337,56 +278,54 @@ affect presentation.
 - [Desktop project shell](../../.context/CONTEXT.md)
 - [Mobile project shell](../../mobile/.context/CONTEXT.md)
 
-Tree rename and the identity bar share `context-identity-mutation.ts`, including
-per-entry latest-wins sequencing and catalog invalidation. Inline rename keeps
-the stable file/folder entry ID; it must not bypass this service with a separate
-rename transport. Work selection is attached only to Scratch/Uploads, never
-project-owned Manuscript/KB/User paths.
+File rename and the identity bar share the durable resource-location command.
+Folder rename alone retains `context-identity-mutation.ts`. Inline operations
+keep stable entry identity. Work selection is attached only to Scratch/Uploads,
+never project-owned Manuscript/KB/User paths.
 
 ## Unfiled materialization and recovery
 
-New documents have project ownership before a Work or filename is chosen. Their
-first content edit or explicit filing queues idempotent server creation in
-`unfiled://`; the same detached Yjs session and stable lineage perform adoption.
-Unfiled membership, not `provisionalName`, determines whether a document is filed.
-Filing uses the existing same-ID move operation. Naming in place stays Unfiled.
+A new document is an account resource exposed to its creating project before it
+has a server row. Reservation atomically records a stable handle, document ID,
+exact persistence name, provisional Unfiled location, and a create intent whose
+eligibility is initially null. Local persistence initialization completes before
+the editor receives the handle.
 
-The sidebar combines catalog documents with pending local lineage work, deduped
-by document ID. Closing a nonempty local tab leaves its ledger work discoverable;
-reopening uses the current reminted identity and exact identity revision. Closing
-an empty tab also preserves local ownership; tab lifetime never deletes content
-or cancels an uncertain create. Publication never reopens a closed tab.
+First content marks eligibility once. Explicit filing both marks eligibility and
+appends a location intent. The runner persists immutable request bytes before
+HTTP, records outcomes before applying them, and resumes after response loss or
+reload. Creation acknowledgement records canonical metadata and transfers the
+same Y.Doc into registry transport. Closing every tab leaves the resource in the
+sidebar; explicit Delete is the only writer command that removes it.
 
-Lineage envelopes are version 4 under the stable v3 physical storage prefix.
-Reading a v3 envelope converts only its materialization home to Unfiled; the next
-locked ledger write persists the conversion. IDs, IndexedDB names, aliases,
-queued filing and adoption obligations survive. Confirmed create locations are
-refreshed before publication, since filing or a data migration may have moved
-the document. SQL migration 0086 relocates existing provisional Scratch writing,
-including archived Work writing, without changing IDs or Yjs/manifest state.
-Ordinary Scratch resources and deleted Work content are not moved.
+A foreign-ID create conflict remints under the resource lock, cancels the old
+unsubmitted dependents, and appends a retry plus rebased intentions for the new
+identity. Aliases let every browser context update its existing detached session
+without replacing its Y.Doc. Unknown or uninitialized local databases are never
+opened as blank documents.
 
 ## Editor versus chat resources
 
 Editor tree and tabs admit project documents only. Scratch/Uploads remain valid
 storage and reference/tool schemes; direct resource URLs show an explicit
 viewing-not-available state. Persisted resource tab entries are removed without
-deleting resource documents or local lineages. The deferred chat-launched pane
+deleting resource documents or durable local content. The deferred chat-launched pane
 overlay is recorded in [TODO](TODO.md); it is not a tab or a whole-app modal.
 
 Eligibility is enforced at every live workspace transition, including
 bootstrap, adoption and availability updates. Hiding a resource row alone is
 insufficient: a hidden tab must not remain eligible for close fallback.
 
-`ContextTabSessionBoundary` is the same React ancestor before and after local
-acknowledgement. It retains the local session while remote tab retention attaches;
-changing only the inner editor key cannot preserve an editor under a replaced
-ancestor. Close releases the binding; warm-view eviction does not.
+Every editable tab keeps `ContextTabSessionBoundary` as the same React ancestor.
+Resource-backed tabs resolve through their stable resource handle before and after
+acknowledgement, placement, and remint, so metadata changes do not remount the
+editor. Close releases the content lease; warm-view eviction does not close
+registry transport retained for the open tab set.
 
 ## Browser-local Editor workspace
 
 Zustand owns live membership. Restore snapshots use sessionStorage under
 `meridian:editor-workspace:v1`, isolated per browser tab/window and never
 projected from storage events. Layout persistence failure is reported without
-rejecting New/select/Close. Old shared desk keys are not read or written;
-local document lineages and content persistence remain separate.
+rejecting New/select/Close. Old shared desk keys are not read or written. Resource
+metadata and content persistence remain separate from browser-tab workspace membership.

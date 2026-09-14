@@ -16,6 +16,7 @@ const queryClientMock = {
   getQueryData: getQueryDataMock,
   invalidateQueries: invalidateQueriesMock,
 };
+const resourceReplicaMock = { acquireCatalog: vi.fn() };
 const applyDraftMetadataMock = vi.fn();
 const discardDraftMock = vi.fn(async () => ({ kind: "noop" as const }));
 const acknowledgeServerAppliedMock = vi.fn(
@@ -95,6 +96,8 @@ vi.mock("@/client/stores", () => ({
   },
 }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
+  useAccountResourceReplica: () => resourceReplicaMock,
+  useOptionalAccountResourceReplica: () => resourceReplicaMock,
   useContextRemovalCoordinator: () => ({
     applyDraftMetadata: applyDraftMetadataMock,
     discardDraft: discardDraftMock,

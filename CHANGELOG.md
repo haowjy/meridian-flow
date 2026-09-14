@@ -5,19 +5,20 @@
 
 ## [Unreleased]
 
-- Unify resource identity across projects, persist project-qualified catalog projections, and serialize atomic catalog acquisition (not activated).
+- Unify resource identity across projects, persist project-qualified catalog projections, and serialize atomic catalog acquisition.
 
 - Remove unused legacy resource migration compatibility code; no production data requires translation.
 
-- Prove exact local document content before exposing it, while keeping remote admission off the local-open path (not activated).
+- Open proven local document content without waiting for remote admission.
 
-- Persist namespace requests before dispatch and recover recorded outcomes after restart (not activated).
+- Persist namespace requests before dispatch and recover recorded outcomes after restart.
 
 - Add account-fenced document namespace transport for durable receipt replay.
 
 - Retain local writing when deleting never-submitted resources; cancel queued work without a fabricated server tombstone.
 
-- Add transactional resource-journal storage foundation (not activated).
+- Keep New documents, tabs, readable links, and catalog rows on one durable local resource lifecycle through acknowledgement, rename, remint, close, and reload.
+- Replace the Untitled lineage, reconciler, pending-sidebar union, and QueryClient catalog installer with one account resource owner.
 - Keep unapplied document deletion retryable while account removal is unavailable.
 
 - Keep file-viewer chrome visible while loading. Show quiet pending panes before delayed skeletons; remove viewer spinners and immediate optimistic skeletons.

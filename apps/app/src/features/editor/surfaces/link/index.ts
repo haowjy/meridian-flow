@@ -11,7 +11,7 @@
 export { AtReferenceMenu } from "./AtReferenceMenu";
 export { FollowOutcomeDialog } from "./FollowOutcomeDialog";
 export { LinkSurfaces } from "./LinkSurfaces";
-export { ProjectLinkRuntime } from "./ProjectLinkRuntime";
+export { ProjectLinkRuntime, ProjectLinkRuntimeWithIndex } from "./ProjectLinkRuntime";
 export { type LinkableDocumentIndex, useLinkableDocuments } from "./useLinkableDocuments";
 export { useLinkResolution } from "./useLinkResolution";
 export { useLinkSurface, useLinkSurfaceState } from "./useLinkSurface";

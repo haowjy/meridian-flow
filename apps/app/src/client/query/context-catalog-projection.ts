@@ -13,9 +13,19 @@ type CatalogFileBase = {
   parentId: string;
   documentId: string;
   name: string;
+  aliases?: readonly string[];
   path: string;
   uri: string;
   provisionalName: boolean;
+  /** Present only for a locally owned resource not yet represented by server authority. */
+  resourceHandle?: string;
+  resourceState?: "local" | "acknowledged";
+  resourceOrigin?: "local";
+  /** Exact device content can open without a fresh server read. */
+  localContent?: true;
+  /** Durable namespace work that needs the writer to retry. */
+  namespaceFailure?: "delete" | "set-location";
+  namespaceRepairName?: string;
 };
 
 export type CatalogFile =

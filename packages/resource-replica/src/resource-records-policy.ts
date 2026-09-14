@@ -36,6 +36,35 @@ export function validateResourceRecordUpdate(
     )
       throw new Error("Reserved content identity cannot change before initialization");
   }
+  const eligibility = resource.obligations.createEligibility;
+  if (
+    eligibility &&
+    eligibility.eligibleAt !== null &&
+    (!Number.isFinite(eligibility.eligibleAt) || eligibility.eligibleAt < 0)
+  )
+    throw new Error("Resource create eligibility is invalid");
+  const executableCreate = next.intents.some(
+    (intent) =>
+      intent.desired.kind === "create" &&
+      intent.state !== "cancelled" &&
+      intent.state !== "settled" &&
+      intent.state !== "settled-locally",
+  );
+  if (
+    executableCreate &&
+    resource.lifecycle.kind === "local" &&
+    resource.canonical === null &&
+    !eligibility
+  )
+    throw new Error("Local creation requires an explicit eligibility witness");
+  const previousEligibility = previous?.resource.obligations.createEligibility;
+  if (
+    previousEligibility &&
+    previousEligibility.eligibleAt !== null &&
+    eligibility &&
+    eligibility.eligibleAt !== previousEligibility?.eligibleAt
+  )
+    throw new Error("Resource create eligibility cannot be reset");
   if (
     resource.obligations.canonicalRefresh &&
     resource.obligations.canonicalRefresh.identityRevision !== resource.identity.revision
@@ -52,14 +81,7 @@ export function validateResourceRecordUpdate(
       resource.lifecycle.kind !== "acknowledged")
   )
     throw new Error("Session adoption witness does not match the resource");
-  if (adoption && !previous?.resource.obligations.sessionAdoption) {
-    if (
-      adoption.generation !== null ||
-      (previous?.resource.lifecycle.kind === "acknowledged" &&
-        previous.resource.lifecycle.availabilityGeneration !== null)
-    ) {
-      throw new Error("Session adoption can only begin before its first authority generation");
-    }
+  if (adoption && previous && !previous.resource.obligations.sessionAdoption) {
     const source = next.intents.find(
       (intent) =>
         intent.projectId === adoption.projectId &&
@@ -72,7 +94,31 @@ export function validateResourceRecordUpdate(
             attempt.outcome.result.status !== "conflict",
         ),
     );
-    if (!source) throw new Error("Session adoption requires a successful create outcome");
+    const previousContent = previous?.resource.content;
+    const sameAcknowledgedCache =
+      previous?.resource.lifecycle.kind === "acknowledged" &&
+      previous.resource.identity.documentId === adoption.documentId &&
+      previous.resource.identity.revision === adoption.identityRevision &&
+      previousContent?.kind === "exact" &&
+      previousContent.initialization !== "reserved" &&
+      previousContent.databaseName === adoption.exactDatabaseName &&
+      !previous.intents.some((intent) =>
+        intent.attempts.some((attempt) => attempt.attemptId === adoption.transitionId),
+      );
+    const acquiredServerCache =
+      previous?.resource.lifecycle.kind === "acknowledged" &&
+      adoption.generation !== null &&
+      resource.lifecycle.kind === "acknowledged" &&
+      resource.lifecycle.availabilityGeneration === adoption.generation &&
+      previous.resource.identity.documentId === adoption.documentId &&
+      previous.resource.identity.revision === adoption.identityRevision &&
+      (previousContent.kind === "unacquired" ||
+        (previousContent.initialization !== "reserved" &&
+          previousContent.databaseName === adoption.exactDatabaseName));
+    const createdLocalContent =
+      previous?.resource.lifecycle.kind === "local" && source && adoption.generation === null;
+    if (!createdLocalContent && !sameAcknowledgedCache && !acquiredServerCache)
+      throw new Error("Session adoption requires created or acquired exact content");
   }
   if (resource.obligations.canonicalRefresh) {
     const operationId = resource.obligations.canonicalRefresh.operationId;
@@ -154,11 +200,17 @@ export function validateResourceRecordUpdate(
       intent.state === "cancelled" &&
       (intent.attempts.length > 0 ||
         intent.desired.kind === "delete" ||
-        !next.intents.some(
+        (!next.intents.some(
           (later) => later.desired.kind === "delete" && later.sequence > intent.sequence,
-        ))
+        ) &&
+          !next.intents.some(
+            (later) =>
+              later.sequence > intent.sequence &&
+              later.identityRevision === resource.identity.revision &&
+              JSON.stringify(later.desired) === JSON.stringify(intent.desired),
+          )))
     )
-      throw new Error("Only unsubmitted work superseded by deletion can be cancelled");
+      throw new Error("Only superseded unsubmitted work can be cancelled");
     if (intent.state === "settled-locally") {
       if (
         next.intents.some(
