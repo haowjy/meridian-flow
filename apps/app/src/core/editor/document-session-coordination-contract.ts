@@ -118,7 +118,12 @@ export interface DocumentSessionCrossContextCoordination {
           exactDatabaseName: string;
         },
       ): void;
-      completeCommit(): Promise<void>;
+      completeCommit(
+        admitted: LiveDocumentSessionLease & {
+          persistenceGeneration: AvailabilityGeneration;
+          exactDatabaseName: string;
+        },
+      ): Promise<void>;
     }>,
   ): Promise<
     LiveDocumentSessionLease & {

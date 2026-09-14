@@ -7,6 +7,11 @@ import type {
 } from "@meridian/resource-replica";
 import type { DocumentSession } from "@/core/editor/document-session";
 import type { LocalDocumentSessionFactory } from "@/core/editor/document-session-registry";
+import type {
+  LocalDocumentSessionHandoff,
+  LocalDocumentSessionReservationPort,
+  TransferredDocumentSessionOwnership,
+} from "@/core/editor/local-document-session-adoption";
 
 export type ResourceContentUnavailableReason =
   | "missing"
@@ -39,7 +44,30 @@ type ContentEntry = {
   identity: ContentIdentity;
   session: DocumentSession;
   leases: Set<symbol>;
+  ownership:
+    | { kind: "local" }
+    | {
+        kind: "transferring";
+        projectId: string;
+        transitionId: string;
+        handoff: LocalDocumentSessionHandoff;
+        reservations: LocalDocumentSessionReservationPort;
+      }
+    | { kind: "registry"; ownership: TransferredDocumentSessionOwnership };
 };
+
+export type ResourceContentTransfer = Readonly<{
+  projectId: string;
+  key: ResourceKey;
+  transitionId: string;
+  documentId: string;
+  identityRevision: number;
+  databaseName: string;
+}>;
+
+export type ResourceContentTransferResult =
+  | Readonly<{ kind: "reserved"; handoff: LocalDocumentSessionHandoff }>
+  | Readonly<{ kind: "adopted"; ownership: TransferredDocumentSessionOwnership }>;
 
 function resourceKey(key: ResourceKey): string {
   return encodeURIComponent(key.handle);
@@ -100,6 +128,121 @@ export class ResourceContentAccess {
   ): Promise<ResourceContentOpenResult> {
     if (participantId.length === 0) throw new Error("Resource content participant is required");
     return this.track(this.openTracked(projectId, key, participantId, signal));
+  }
+
+  reserveTransfer(
+    input: ResourceContentTransfer,
+    reservations: LocalDocumentSessionReservationPort,
+  ): Promise<ResourceContentTransferResult> {
+    return this.track(this.reserveTransferTracked(input, reservations));
+  }
+
+  private async reserveTransferTracked(
+    input: ResourceContentTransfer,
+    reservations: LocalDocumentSessionReservationPort,
+  ): Promise<ResourceContentTransferResult> {
+    if (this.state !== "open" || this.epoch.aborted)
+      throw new Error("Resource content access is closing");
+    const id = resourceKey(input.key);
+    const entry = this.entries.get(id);
+    if (!entry) throw new Error("Resource content must be open before session adoption");
+    const current = await this.metadata.readAccessibleResource(input.projectId, input.key);
+    if (
+      this.state !== "open" ||
+      this.epoch.aborted ||
+      !current ||
+      localDisposition(current) ||
+      !sameIdentity(entry.identity, current) ||
+      current.resource.identity.documentId !== input.documentId ||
+      current.resource.identity.revision !== input.identityRevision ||
+      current.resource.content.kind !== "exact" ||
+      current.resource.content.databaseName !== input.databaseName ||
+      this.entries.get(id) !== entry
+    ) {
+      throw new Error("Resource content identity changed before session adoption");
+    }
+    if (entry.ownership.kind === "registry") {
+      const { lease } = entry.ownership.ownership;
+      if (
+        lease.projectId !== input.projectId ||
+        lease.documentId !== input.documentId ||
+        entry.ownership.ownership.exactDatabaseName !== input.databaseName
+      ) {
+        throw new Error("Resource content is adopted by different authority");
+      }
+      return { kind: "adopted", ownership: entry.ownership.ownership };
+    }
+    if (entry.ownership.kind === "transferring") {
+      if (
+        entry.ownership.projectId !== input.projectId ||
+        entry.ownership.transitionId !== input.transitionId
+      ) {
+        throw new Error("A different session adoption already owns this resource");
+      }
+      return { kind: "reserved", handoff: entry.ownership.handoff };
+    }
+
+    const handoff = reservations.reserve({
+      projectId: input.projectId,
+      documentId: input.documentId,
+      session: entry.session,
+      ownerRevision: input.identityRevision,
+      lineageHandle: input.key.handle,
+      exactDatabaseName: input.databaseName,
+      prepareCommit: () => {
+        if (
+          this.entries.get(id) !== entry ||
+          entry.identity.documentId !== input.documentId ||
+          entry.identity.identityRevision !== input.identityRevision ||
+          entry.identity.databaseName !== input.databaseName ||
+          entry.ownership.kind !== "transferring" ||
+          entry.ownership.transitionId !== input.transitionId
+        ) {
+          throw new Error("Resource content ownership changed during session adoption");
+        }
+      },
+      completeCommit: (admitted) => {
+        if (this.entries.get(id) !== entry)
+          throw new Error("Resource content disappeared during session adoption");
+        if (
+          admitted.lease.projectId !== input.projectId ||
+          admitted.lease.documentId !== input.documentId ||
+          admitted.exactDatabaseName !== input.databaseName
+        ) {
+          throw new Error("Session adoption returned different authority");
+        }
+        entry.ownership = { kind: "registry", ownership: admitted };
+        if (entry.leases.size === 0) {
+          this.entries.delete(id);
+          admitted.release();
+        }
+      },
+    });
+    entry.ownership = {
+      kind: "transferring",
+      projectId: input.projectId,
+      transitionId: input.transitionId,
+      handoff,
+      reservations,
+    };
+    return { kind: "reserved", handoff };
+  }
+
+  abortTransfer(
+    key: ResourceKey,
+    handoff: LocalDocumentSessionHandoff,
+    reservations: LocalDocumentSessionReservationPort,
+  ): void {
+    const id = resourceKey(key);
+    const entry = this.entries.get(id);
+    if (!entry || entry.ownership.kind !== "transferring" || entry.ownership.handoff !== handoff)
+      throw new Error("Resource content handoff is not reserved");
+    reservations.abort(handoff);
+    entry.ownership = { kind: "local" };
+    if (entry.leases.size === 0) {
+      this.entries.delete(id);
+      this.retire(id, entry.session);
+    }
   }
 
   private async openTracked(
@@ -218,6 +361,7 @@ export class ResourceContentAccess {
         identity: identityOf(record),
         session,
         leases: new Set<symbol>(),
+        ownership: { kind: "local" as const },
       };
       this.entries.set(id, entry);
       return entry;
@@ -255,8 +399,10 @@ export class ResourceContentAccess {
   private releaseLease(id: string, entry: ContentEntry, lease: symbol): void {
     entry.leases.delete(lease);
     if (entry.leases.size > 0 || this.entries.get(id) !== entry) return;
+    if (entry.ownership.kind === "transferring") return;
     this.entries.delete(id);
-    this.retire(id, entry.session);
+    if (entry.ownership.kind === "registry") entry.ownership.ownership.release();
+    else this.retire(id, entry.session);
   }
 
   private retire(id: string, session: DocumentSession): void {
@@ -286,13 +432,31 @@ export class ResourceContentAccess {
   beginClose(): void {
     if (this.state !== "open") return;
     this.state = "closing";
-    for (const [id, entry] of this.entries) this.retire(id, entry.session);
-    this.entries.clear();
+    for (const [id, entry] of this.entries) {
+      if (entry.ownership.kind === "transferring") continue;
+      this.entries.delete(id);
+      if (entry.ownership.kind === "registry") entry.ownership.ownership.release();
+      else this.retire(id, entry.session);
+    }
   }
 
   async finishClose(): Promise<void> {
     this.beginClose();
     await Promise.allSettled([...this.operations]);
+    for (const [id, entry] of this.entries) {
+      this.entries.delete(id);
+      if (entry.ownership.kind === "registry") entry.ownership.ownership.release();
+      else {
+        if (entry.ownership.kind === "transferring") {
+          try {
+            entry.ownership.reservations.abort(entry.ownership.handoff);
+          } catch {
+            // The registry may already have settled the in-memory reservation during account close.
+          }
+        }
+        this.retire(id, entry.session);
+      }
+    }
     const results = await Promise.allSettled(
       [...this.retirements].map(([id, session]) => this.destroy(id, session)),
     );
