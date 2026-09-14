@@ -160,12 +160,15 @@ export async function importLegacyResources(input: {
     throw new Error("Legacy import account mismatch");
   const sources = input.source.map((source) => ({ ...source }));
   let progress = await input.metadata.readMigration();
-  if (progress.checkpoint?.state === "complete") return "complete";
+  if (progress.checkpoint?.state === "complete")
+    return progress.evidence.some((item) => item.status === "recovery")
+      ? "recovery-required"
+      : "complete";
   for (const source of sources) {
     const previous = progress.evidence.find((item) => item.sourceKey === source.sourceKey);
     if (previous) {
       if (previous.raw !== source.raw) throw new Error("Legacy source changed after handoff");
-      if (previous.status === "imported") continue;
+      continue;
     }
     const legacy = decodeLegacyResource(input.accountId, source);
     const documentId = legacy?.kind === "terminal" ? legacy.documentId : legacy?.active.documentId;
@@ -192,7 +195,6 @@ export async function importLegacyResources(input: {
     if (result === "stale") throw new Error("Legacy migration ownership changed");
     progress = await input.metadata.readMigration();
   }
-  if (progress.evidence.some((item) => item.status === "recovery")) return "recovery-required";
   const expectedRevision = progress.checkpoint?.revision ?? null;
   const result = await input.metadata.commitMigration({
     expectedRevision,
@@ -201,5 +203,33 @@ export async function importLegacyResources(input: {
     resources: [],
   });
   if (result === "stale") throw new Error("Legacy migration ownership changed");
-  return "complete";
+  return progress.evidence.some((item) => item.status === "recovery")
+    ? "recovery-required"
+    : "complete";
+}
+
+/** Resolve captured records independently; unresolved resources do not reopen the capture checkpoint. */
+export async function resolveLegacyResources(input: {
+  accountId: string;
+  authority: LegacyResourceAuthority;
+  metadata: ResourceMetadataStore;
+}): Promise<void> {
+  if (input.accountId !== input.authority.accountId || input.accountId !== input.metadata.accountId)
+    throw new Error("Legacy import account mismatch");
+  const progress = await input.metadata.readMigration();
+  if (progress.checkpoint?.state !== "complete") throw new Error("Legacy capture is incomplete");
+  for (const evidence of progress.evidence) {
+    if (evidence.status !== "recovery") continue;
+    const legacy = decodeLegacyResource(input.accountId, evidence);
+    if (!legacy) continue;
+    const documentId = legacy.kind === "terminal" ? legacy.documentId : legacy.active.documentId;
+    const imported = importedRecord(legacy, await input.authority.readRoom(documentId));
+    if (!imported) continue;
+    // A concurrent resolver may already have committed this exact source.
+    await input.metadata.resolveMigrationEvidence({
+      sourceKey: evidence.sourceKey,
+      expectedRaw: evidence.raw,
+      resource: { expectedRevision: null, next: imported },
+    });
+  }
 }

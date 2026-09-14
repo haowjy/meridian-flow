@@ -220,6 +220,39 @@ export class IndexedDbResourceMetadata implements ResourceMetadataStore {
     );
   }
 
+  async resolveMigrationEvidence(
+    command: Parameters<ResourceMetadataStore["resolveMigrationEvidence"]>[0],
+  ) {
+    const input = structuredClone(command);
+    return this.run(() =>
+      this.database.transaction(
+        "rw",
+        this.checkpoints,
+        this.evidence,
+        this.resources,
+        this.intents,
+        async () => {
+          const checkpoint = await this.checkpoints.get("migration");
+          if (checkpoint?.state !== "complete") throw new Error("Legacy capture is incomplete");
+          const evidence = await this.evidence.get(input.sourceKey);
+          if (
+            evidence?.status !== "recovery" ||
+            evidence.raw !== input.expectedRaw ||
+            !(await this.isCurrent([input.resource]))
+          )
+            return "stale" as const;
+          await this.putResources([input.resource]);
+          await this.evidence.put({
+            sourceKey: evidence.sourceKey,
+            raw: evidence.raw,
+            status: "imported",
+          });
+          return "committed" as const;
+        },
+      ),
+    );
+  }
+
   observeProject(
     projectId: string,
     listener: (snapshot: ProjectResourceSnapshot) => void,

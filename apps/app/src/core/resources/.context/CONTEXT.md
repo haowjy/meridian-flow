@@ -20,9 +20,10 @@ notify the composition owner, which must join the existing account shutdown
 barrier when this adapter is activated.
 
 Initialization proof lives with exact Yjs content, not these descriptors.
-Migration preserves raw source bytes immutably. Its checkpoint cannot restart
-once complete. A recovery record may become imported without replacing those
-bytes. Malformed input is evidence, not permission to fabricate empty content.
+Migration preserves raw source bytes immutably. Its capture checkpoint cannot
+restart once complete. The separate recovery transaction atomically installs a
+resource and marks its evidence imported without replacing raw bytes or reopening
+capture. Malformed input is evidence, not permission to fabricate empty content.
 
 The inactive legacy importer reads strict v4 envelopes from account-qualified raw
 keys. Its destination and authority ports must expose the same account identity.
@@ -30,6 +31,8 @@ Exact persistence is imported without a schema guess (`schema: null`); only the
 content database's initialization marker can establish readiness. Canonical
 location remains unknown, and historical settlements never become fabricated
 submitted attempts. Unresolved settlements, authority transitions and malformed
-bytes remain recovery evidence. `recovery-required` prevents completion; retry
-revisits the same immutable bytes. Activation still requires the authoritative
-settlement/terminal resolver and exclusive old-writer shutdown.
+bytes remain recovery evidence. Capture completes locally even with unresolved
+records; `recovery-required` describes per-resource work, not an account boot
+gate. The sole replacement owner retries resolution independently. Activation
+still requires discoverable recovery resources, the authoritative settlement/
+terminal resolver and exclusive old-writer shutdown.
