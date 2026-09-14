@@ -275,6 +275,7 @@ function composeAccountRuntime(
     core: {
       accountId,
       registry: composition.registry,
+      readResourceSnapshot: (documentId) => composition.registry.readResourceSnapshot(documentId),
       localReservation: composition.registry,
       localAdoption: composition.registry,
       localConstruction: composition.registry,
@@ -761,4 +762,47 @@ describe("terminal lineage coordination", () => {
     await revoker.registry.closeAccountRuntime();
     await first.registry.closeAccountRuntime();
   });
+});
+
+it("fences read-only inspection across account close without opening another authority", async () => {
+  const { runtime, registry } = composeAccountRuntime("snapshot-runtime-close");
+  let release = () => {};
+  try {
+    await runtime.localConstruction.whenAuthorityReady();
+    const open = vi.spyOn(indexedDB, "open");
+    const detached = vi.spyOn(registry, "createDetached");
+    expect(runtime.resourceInspection.accountId).toBe("snapshot-runtime-close");
+    expect((await runtime.resourceInspection.readSnapshot("doc")).room.persistence).toBeNull();
+    expect(open).not.toHaveBeenCalled();
+    expect(detached).not.toHaveBeenCalled();
+    let entered!: () => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const original = DocumentSessionAuthorityStore.prototype.readResourceSnapshot;
+    vi.spyOn(
+      DocumentSessionAuthorityStore.prototype,
+      "readResourceSnapshot",
+    ).mockImplementationOnce(async function (this: DocumentSessionAuthorityStore, documentId) {
+      const snapshot = await original.call(this, documentId);
+      entered();
+      await gate;
+      return snapshot;
+    });
+    const pending = runtime.resourceInspection.readSnapshot("doc");
+    const rejected = expect(pending).rejects.toThrow();
+    await started;
+    runtime.beginClose();
+    await expect(runtime.resourceInspection.readSnapshot("doc")).rejects.toThrow("closing");
+    release();
+    await rejected;
+    expect(open).not.toHaveBeenCalled();
+  } finally {
+    release();
+    await runtime.finishClose();
+    vi.restoreAllMocks();
+  }
 });

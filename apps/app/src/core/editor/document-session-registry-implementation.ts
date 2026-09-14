@@ -318,6 +318,16 @@ export class DocumentSessionRegistry
     return this;
   }
 
+  async readResourceSnapshot(documentId: DocumentId) {
+    this.requireAccountRuntimeOpen();
+    const coordination = await this.configuredCoordination();
+    const snapshot = await this.translateCoordination(() =>
+      coordination.readResourceSnapshot(documentId),
+    );
+    this.requireAccountRuntimeOpen();
+    return snapshot;
+  }
+
   async whenAuthorityReady(): Promise<void> {
     this.requireAccountRuntimeOpen();
     const coordination = await this.configuredCoordination();

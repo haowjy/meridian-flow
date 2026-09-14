@@ -136,6 +136,13 @@ class Coordination implements DocumentSessionCrossContextCoordination {
     );
   }
 
+  async readResourceSnapshot(documentId: DocumentId) {
+    await this.requireReady();
+    const snapshot = await this.store.readResourceSnapshot(documentId);
+    this.assertOpen();
+    return snapshot;
+  }
+
   async admit(
     projectId: ProjectId,
     documentId: DocumentId,

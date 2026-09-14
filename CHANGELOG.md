@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Expose account-fenced resource recovery snapshots without opening another authority owner.
+
 - Keep unresolved legacy resources visible to project observers without granting content or namespace authority (not activated).
 
 - Separate local legacy capture from per-resource recovery (not activated).
