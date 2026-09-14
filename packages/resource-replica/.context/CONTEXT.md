@@ -33,11 +33,19 @@ remote deletion. Cancelled/local-settled intentions cannot restart; locally sett
 deletion permits no executable namespace work in the resulting snapshot.
 
 `ResourceNamespaceTransport` is account-bound but owns no journal or scheduler.
-The sole runner must commit an immutable attempt before submit; network failure,
-closed-epoch delivery or absent receipt leaves that attempt unresolved. Receipt
-outcomes and current canonical observations are separate facts. Create replay is
+`reconcileResourceNamespace` commits an immutable attempt before submit and
+records transport evidence in a distinct `received` phase before applying it.
+CAS retries reuse a captured outcome rather than redispatching. Network failure,
+closed-epoch delivery or absent receipt leaves that attempt unresolved. Recovery,
+missing canonical authority, terminal state and reminted identity block replay;
+they do not reconstruct a request. Historical receipts never overwrite canonical
+observation; successful moves wait for catalog projection to advance it.
+Work-scoped requests retain the stable Work slug as receipt-correlation evidence.
+Lookup and dispatch run inside a short account/resource lock shared with identity
+and terminal transitions, then re-read metadata before dispatch. Create replay is
 restricted to the stored Unfiled document ID/request; it has no historical
-operation-receipt lookup.
+operation-receipt lookup. This reconciler is an inactive resource action, not a
+production scheduler or owner.
 
 The storage foundation is not the active resource owner. Import, reconciliation,
 content access and caller cutover must replace the old lineage/reconciler together;
