@@ -70,3 +70,16 @@ reconciler is composed into the account runtime yet. `resource-namespace-lock.ts
 adapts native Web Locks for short account/resource dispatch sections. Missing lock
 support blocks dispatch rather than opening an unsafe in-memory fallback. The
 future owner must use the same lock for remint and terminal transitions.
+
+`ResourceContentAccess` is the inactive account-owned adapter for exact local
+content. It awaits local authority readiness, then proves the descriptor's exact
+database, current schema and initialization marker before returning an editable
+detached session. Remote admission is deliberately not part of that access
+decision. A new descriptor may carry one initialization reservation; the adapter
+atomically establishes the marker and clears that reservation before exposure.
+Missing evidence never becomes an editable blank database. Same-owner callers
+share one session through independent leases; separate browser contexts converge
+through local Yjs peers. Failed destruction quarantines that resource identity
+until retry succeeds. Account close and caller aborts fence delivery after every
+await. This adapter is not composed into production until the replacement owner,
+transport handoff and caller cutover activate together.

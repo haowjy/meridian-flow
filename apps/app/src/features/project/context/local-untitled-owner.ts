@@ -5,7 +5,7 @@ import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import type { DocumentSession, DocumentSessionSnapshot } from "@/core/editor/document-session";
 import type { LocalAdoptionPendingReceipt } from "@/core/editor/document-session-authority-store";
 import type { LocalLineageTerminalPort } from "@/core/editor/document-session-coordination-contract";
-import type { LocalUntitledDocumentSessionFactory } from "@/core/editor/document-session-registry";
+import type { LocalDocumentSessionFactory } from "@/core/editor/document-session-registry";
 import type {
   LocalDocumentSessionAdoptionPort,
   LocalDocumentSessionHandoff,
@@ -76,7 +76,7 @@ export type LocalUntitledOwnerDependencies = {
   accountId: AccountId;
   ledger: LocalUntitledLineageLedger;
   identityReservations: LocalIdentityReservationPort;
-  sessions: LocalUntitledDocumentSessionFactory;
+  sessions: LocalDocumentSessionFactory;
   reservations: LocalDocumentSessionReservationPort;
   adoption: LocalDocumentSessionAdoptionPort;
   newLineageHandle?: () => string;
