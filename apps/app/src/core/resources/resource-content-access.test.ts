@@ -10,7 +10,7 @@ import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 import { ResourceContentAccess } from "./resource-content-access";
 
 const accountId = "content-access-account";
-const metadataDatabase = `meridian:resource-metadata:v1:${encodeURIComponent(accountId)}`;
+const metadataDatabase = `meridian:resource-metadata:v2:${encodeURIComponent(accountId)}`;
 const databases = new Set<string>();
 const stores: IndexedDbResourceMetadata[] = [];
 const accesses: ResourceContentAccess[] = [];
