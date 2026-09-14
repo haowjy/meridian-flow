@@ -1,4 +1,5 @@
 /** Pure resource creation, placement, and conflict-remint decisions. */
+import { assertAvailabilityGeneration } from "@meridian/contracts/protocol";
 import type {
   NamespaceIntent,
   ResourceDescriptor,
@@ -149,6 +150,7 @@ export function planSessionAdoptionGeneration(
   record: ResourceRecord,
   generation: string,
 ): ResourceWrite | null {
+  assertAvailabilityGeneration(generation);
   const adoption = record.resource.obligations.sessionAdoption;
   if (!adoption) return null;
   if (adoption.generation === generation) return null;
@@ -171,7 +173,7 @@ export function planSessionAdoptionGeneration(
 
 export function acknowledgeSessionAdoption(record: ResourceRecord): ResourceWrite | null {
   const adoption = record.resource.obligations.sessionAdoption;
-  if (!adoption?.generation) return null;
+  if (!adoption || adoption.generation === null) return null;
   if (record.resource.lifecycle.kind !== "acknowledged") return null;
   const { sessionAdoption: _completed, ...obligations } = record.resource.obligations;
   return {

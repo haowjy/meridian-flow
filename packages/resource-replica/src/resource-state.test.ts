@@ -130,4 +130,18 @@ it("pins and acknowledges one immutable session-adoption generation", () => {
     lifecycle: { kind: "acknowledged", availabilityGeneration: "7" },
     obligations: {},
   });
+  const replayed = structuredClone(acknowledged.next);
+  replayed.resource.revision += 1;
+  replayed.resource.obligations.sessionAdoption = {
+    ...(pinned.next.resource.obligations.sessionAdoption as NonNullable<
+      typeof pinned.next.resource.obligations.sessionAdoption
+    >),
+    generation: null,
+  };
+  expect(() => validateResourceRecordUpdate(acknowledged.next, replayed)).toThrow(
+    "before its first authority generation",
+  );
+  expect(() => planSessionAdoptionGeneration(adopted.next, "")).toThrow(
+    "Invalid availability generation",
+  );
 });
