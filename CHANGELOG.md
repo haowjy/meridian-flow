@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Separate local legacy capture from per-resource recovery (not activated).
+
 - Preserve legacy resource bytes and exact cache identity through restartable import (not activated).
 
 - Add transactional resource-journal storage foundation (not activated).

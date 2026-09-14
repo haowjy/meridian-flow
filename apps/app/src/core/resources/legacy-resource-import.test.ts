@@ -4,7 +4,7 @@ import Dexie from "dexie";
 import { afterEach, expect, it, vi } from "vitest";
 import type { RoomOrderRecord } from "../editor/document-session-authority-store";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
-import { importLegacyResources } from "./legacy-resource-import";
+import { importLegacyResources, resolveLegacyResources } from "./legacy-resource-import";
 import { type LegacyResourceRecord, snapshotLegacyResources } from "./legacy-resource-record";
 
 const accountId = "import/account";
@@ -150,7 +150,7 @@ it("preserves legacy settlements for resolution without fabricating attempt or c
   record.work.createSettlement = { kind: "confirmation-required" };
   await importLegacyResources({ accountId, source: [bytes(record)], authority, metadata });
   expect(await metadata.readResource({ projectId: "project", handle: "lineage" })).toBeNull();
-  expect((await metadata.readMigration()).checkpoint?.state).toBe("importing");
+  expect((await metadata.readMigration()).checkpoint?.state).toBe("complete");
   expect((await metadata.readMigration()).evidence[0]).toMatchObject({
     raw: bytes(record).raw,
     status: "recovery",
@@ -165,7 +165,7 @@ it("revisits recovery evidence when authority becomes bindable without replacing
   const adopted: LegacyResourceRecord = { ...base, kind: "adopted", adoptionRevision: 2 };
   const source = [bytes(adopted)];
   await importLegacyResources({ accountId, source, authority, metadata });
-  expect((await metadata.readMigration()).checkpoint?.state).toBe("importing");
+  expect((await metadata.readMigration()).checkpoint?.state).toBe("complete");
   const ready = {
     accountId,
     readRoom: async (documentId: string): Promise<RoomOrderRecord> => ({
@@ -180,7 +180,7 @@ it("revisits recovery evidence when authority becomes bindable without replacing
       pendingDrain: null,
     }),
   };
-  await importLegacyResources({ accountId, source, authority: ready, metadata });
+  await resolveLegacyResources({ accountId, authority: ready, metadata });
   expect((await metadata.readMigration()).checkpoint?.state).toBe("complete");
   expect((await metadata.readMigration()).evidence).toEqual([{ ...source[0], status: "imported" }]);
 });
@@ -226,9 +226,7 @@ it("does not infer terminal cleanup completion from missing or conflicting room 
       pendingDrain: null,
     }),
   };
-  expect(await importLegacyResources({ accountId, source, authority: conflicting, metadata })).toBe(
-    "recovery-required",
-  );
+  await resolveLegacyResources({ accountId, authority: conflicting, metadata });
   expect(await metadata.readResource({ projectId: "project", handle: "terminal" })).toBeNull();
   const matching = {
     accountId,
@@ -246,9 +244,7 @@ it("does not infer terminal cleanup completion from missing or conflicting room 
       pendingDrain: null,
     }),
   };
-  expect(await importLegacyResources({ accountId, source, authority: matching, metadata })).toBe(
-    "complete",
-  );
+  await resolveLegacyResources({ accountId, authority: matching, metadata });
   expect(
     (await metadata.readResource({ projectId: "project", handle: "terminal" }))?.resource
       .obligations.cleanup,

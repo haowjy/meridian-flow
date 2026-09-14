@@ -137,6 +137,11 @@ export interface ResourceMetadataStore {
     evidence: readonly MigrationEvidence[];
     resources: readonly ResourceWrite[];
   }): Promise<MetadataCommitResult>;
+  resolveMigrationEvidence(input: {
+    sourceKey: string;
+    expectedRaw: string;
+    resource: ResourceWrite;
+  }): Promise<MetadataCommitResult>;
   observeProject(
     projectId: string,
     listener: (snapshot: ProjectResourceSnapshot) => void,

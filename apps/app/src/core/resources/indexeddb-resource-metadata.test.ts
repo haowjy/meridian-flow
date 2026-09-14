@@ -332,3 +332,52 @@ it("notifies project observers after a catalog-only commit", async () => {
   await vi.waitFor(() => expect(observed).toContain("new-catalog"));
   expect(onError).not.toHaveBeenCalled();
 });
+
+it("resolves captured recovery atomically without reopening capture or replacing evidence", async () => {
+  const store = open();
+  const raw = "preserved legacy bytes";
+  await store.commitMigration({
+    expectedRevision: null,
+    next: { revision: 1, state: "complete" },
+    resources: [],
+    evidence: [{ sourceKey: "legacy", raw, status: "recovery" }],
+  });
+  const command = {
+    sourceKey: "legacy",
+    expectedRaw: raw,
+    resource: { expectedRevision: null, next: resource() },
+  };
+  expect(await store.resolveMigrationEvidence({ ...command, expectedRaw: "different" })).toBe(
+    "stale",
+  );
+  expect(await store.readResource(command.resource.next.resource)).toBeNull();
+  const native = Dexie.prototype.transaction;
+  vi.spyOn(Dexie.prototype, "transaction").mockImplementationOnce(function (
+    this: Dexie,
+    ...args: Parameters<typeof native>
+  ) {
+    const callback = args.pop() as () => Promise<unknown>;
+    return Reflect.apply(native, this, [
+      ...args,
+      async () => {
+        await callback();
+        throw new Error("resolution abort");
+      },
+    ]);
+  });
+  await expect(store.resolveMigrationEvidence(command)).rejects.toThrow("resolution abort");
+  expect(await store.readResource(command.resource.next.resource)).toBeNull();
+  expect((await store.readMigration()).evidence[0]?.status).toBe("recovery");
+  expect(
+    (
+      await Promise.all([
+        store.resolveMigrationEvidence(command),
+        store.resolveMigrationEvidence(command),
+      ])
+    ).sort(),
+  ).toEqual(["committed", "stale"]);
+  expect(await store.readMigration()).toEqual({
+    checkpoint: { revision: 1, state: "complete" },
+    evidence: [{ sourceKey: "legacy", raw, status: "imported" }],
+  });
+});
