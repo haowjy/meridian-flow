@@ -78,8 +78,16 @@ detached session. Remote admission is deliberately not part of that access
 decision. A new descriptor may carry one initialization reservation; the adapter
 atomically establishes the marker and clears that reservation before exposure.
 Missing evidence never becomes an editable blank database. Same-owner callers
-share one session through independent leases; separate browser contexts converge
-through local Yjs peers. Failed destruction quarantines that resource identity
-until retry succeeds. Account close and caller aborts fence delivery after every
-await. This adapter is not composed into production until the replacement owner,
-transport handoff and caller cutover activate together.
+share this adapter's in-memory session through independent leases; separate
+browser contexts own separate sessions that converge through local Yjs peers.
+Failed destruction keeps a process-local retirement for that identity, so a later
+open waits for teardown retry rather than constructing a replacement. Account
+close and caller aborts fence delivery after every await.
+
+The adapter does not adopt its detached session into the live registry, attach
+authorized transport, coordinate remint, or install a catalog. Production
+activation still requires a same-Y.Doc authorized-transport handoff, remint and
+destructive-transition coordination across every participant, one resource owner
+and catalog projection, complete caller cutover, and deletion of the displaced
+lineage owner and reconciler. Those changes must activate together; the current
+production owner remains unchanged.

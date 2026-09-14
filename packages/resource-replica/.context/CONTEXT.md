@@ -54,6 +54,9 @@ restricted to the stored Unfiled document ID/request; it has no historical
 operation-receipt lookup. This reconciler is an inactive resource action, not a
 production scheduler or owner.
 
-The storage foundation is not the active resource owner. Import, reconciliation,
-content access and caller cutover must replace the old lineage/reconciler together;
-there must never be two production metadata writers.
+The storage foundation is not the active resource owner. Import, namespace
+reconciliation and exact content access exist as inactive foundations, but no
+package owner installs the catalog or schedules them in production. Authorized
+same-Y.Doc handoff, remint/terminal coordination, sole-owner composition and
+caller cutover must replace the old lineage/reconciler together; there must never
+be two production metadata writers.
