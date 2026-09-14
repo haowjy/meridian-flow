@@ -13,7 +13,7 @@ import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
-import type { DocumentSessionTransportFactory } from "./document-session";
+import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
 import { DocumentSession, type DocumentSessionSnapshot } from "./document-session";
 import {
   compareAvailabilityGeneration,
@@ -323,6 +323,7 @@ export class DocumentSessionRegistry
     projectId: ProjectId;
     documentId: DocumentId;
     persistenceKey: string;
+    fresh?: boolean;
   }): DocumentSession {
     this.requireAccountRuntimeOpen();
     if (input.accountId !== this.accountId) {
@@ -334,6 +335,7 @@ export class DocumentSessionRegistry
     return this.constructSession(input.documentId, {
       kind: "indexeddb",
       key: input.persistenceKey,
+      fresh: input.fresh,
     });
   }
 
@@ -794,7 +796,7 @@ export class DocumentSessionRegistry
 
   private createSession(
     roomKey: string,
-    persistence: { kind: "indexeddb"; key: string } | { kind: "none" },
+    persistence: DocumentSessionOptions["persistence"],
   ): DocumentSession {
     const session = this.constructSession(roomKey, persistence);
     this.publishSession(roomKey, session);
@@ -803,7 +805,7 @@ export class DocumentSessionRegistry
 
   private constructSession(
     roomKey: string,
-    persistence: { kind: "indexeddb"; key: string } | { kind: "none" },
+    persistence: DocumentSessionOptions["persistence"],
   ): DocumentSession {
     let session!: DocumentSession;
     session = new DocumentSession({

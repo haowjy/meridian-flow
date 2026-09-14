@@ -44,5 +44,6 @@ export interface LocalUntitledDocumentSessionFactory {
     projectId: ProjectId;
     documentId: DocumentId;
     persistenceKey: string;
+    fresh?: boolean;
   }): DocumentSession;
 }

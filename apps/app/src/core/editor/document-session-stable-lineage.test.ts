@@ -6,9 +6,10 @@ import { DocumentSession } from "./document-session";
 it("remints identity while preserving Y.Doc, awareness, provider, exact P, and words", async () => {
   const session = new DocumentSession({
     roomKey: "A",
-    persistence: { kind: "indexeddb", key: "opaque-lineage-p" },
+    persistence: { kind: "indexeddb", key: "opaque-lineage-p", fresh: true },
   });
   await session.whenLocalPersistenceSynced();
+  expect(await session.hasInitializedLocalContent()).toBe(true);
   const paragraph = new Y.XmlElement("paragraph");
   paragraph.insert(0, [new Y.XmlText("the words stay")]);
   session.document.getXmlFragment(session.fragmentName).insert(0, [paragraph]);
@@ -23,6 +24,7 @@ it("remints identity while preserving Y.Doc, awareness, provider, exact P, and w
   prepared.commit();
 
   expect(session.documentId).toBe("B");
+  expect(await session.hasInitializedLocalContent()).toBe(true);
   expect(session.document).toBe(before.document);
   expect(session.awareness).toBe(before.awareness);
   expect(session.localPersistenceProvider).toBe(before.provider);

@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 import { expect, it, vi } from "vitest";
-import { DocumentSession } from "@/core/editor/document-session";
+import { DocumentSession, deleteIndexedDb } from "@/core/editor/document-session";
 import { BrowserLocalUntitledLineageLedger } from "./local-untitled-lineage-ledger";
 import { LocalUntitledOwner } from "./local-untitled-owner";
 
@@ -33,17 +33,25 @@ function leasePort() {
 it("owner remint uses one lineage commit and preserves the exact live session/provider", async () => {
   const storage = new MemoryStorage();
   const lifetime = leasePort();
-  const owner = new LocalUntitledOwner({
+  const dependencies = {
     accountId: "account",
     ledger: new BrowserLocalUntitledLineageLedger(storage, lifetime),
     identityReservations: {
-      tryReserve: async () => ({ kind: "reserved", release: async () => undefined }),
+      tryReserve: async () => ({ kind: "reserved" as const, release: async () => undefined }),
     },
     sessions: {
-      createDetached: ({ documentId, persistenceKey }) =>
+      createDetached: ({
+        documentId,
+        persistenceKey,
+        fresh,
+      }: {
+        documentId: string;
+        persistenceKey: string;
+        fresh?: boolean;
+      }) =>
         new DocumentSession({
           roomKey: documentId,
-          persistence: { kind: "indexeddb", key: persistenceKey },
+          persistence: { kind: "indexeddb", key: persistenceKey, fresh },
         }),
     },
     reservations: { reserve: vi.fn(() => Object.freeze({}) as never), abort: vi.fn() },
@@ -57,11 +65,13 @@ it("owner remint uses one lineage commit and preserves the exact live session/pr
     newLineageHandle: () => "L",
     newPersistenceId: () => "P",
     newObligationId: () => "obligation-A",
-  });
+  };
+  const owner = new LocalUntitledOwner(dependencies);
   const a = owner.key("project", "A");
   const opened = await owner.create(a);
   if (opened.kind !== "opened") throw new Error("not opened");
   await opened.value.session.whenLocalPersistenceSynced();
+  expect(await opened.value.session.hasInitializedLocalContent()).toBe(true);
   const before = {
     doc: opened.value.session.document,
     awareness: opened.value.session.awareness,
@@ -84,4 +94,11 @@ it("owner remint uses one lineage commit and preserves the exact live session/pr
     aliases: { A: { publicationObligationId: "obligation-A" } },
   });
   await owner.destroyAll();
+  if (!before.name) throw new Error("Expected exact persistence identity");
+  await deleteIndexedDb(before.name);
+  const restoredOwner = new LocalUntitledOwner(dependencies);
+  const restored = await restoredOwner.restore(restoredOwner.key("project", "B"));
+  if (restored.kind !== "opened") throw new Error("not restored");
+  expect(await restored.value.session.hasInitializedLocalContent()).toBe(false);
+  await restoredOwner.destroyAll();
 });

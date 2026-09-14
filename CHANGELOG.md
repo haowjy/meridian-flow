@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Record initialized document caches without treating missing storage as an empty document.
+
 - Settle Editor opens and closes with accepted URLs. Cancelled opens leave tabs unchanged; close and immediate reload stay empty.
 - Preserve unsaved Work edits through overlapping Back/Forward and newer navigation decisions.
 - Keep local writing after closing empty tabs. Remove tab-driven abandonment and share concurrent document lookups.
