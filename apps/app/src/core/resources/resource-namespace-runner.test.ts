@@ -22,7 +22,7 @@ function open(accountId: string) {
 afterEach(async () => {
   await Promise.all(stores.splice(0).map((store) => store.finishClose()));
   for (const account of accounts)
-    await Dexie.delete(`meridian:resource-metadata:v1:${encodeURIComponent(account)}`);
+    await Dexie.delete(`meridian:resource-metadata:v2:${encodeURIComponent(account)}`);
   accounts.clear();
 });
 
