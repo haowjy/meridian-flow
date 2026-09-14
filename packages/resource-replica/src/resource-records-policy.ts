@@ -18,6 +18,31 @@ export function validateResourceRecordUpdate(
     throw new Error("Terminal resources cannot be revived");
   if (resource.lifecycle.kind === "recovering" && !resource.recovery)
     throw new Error("Recovering resources require recovery evidence");
+  const nextInitializationReserved =
+    resource.content.kind === "exact" && resource.content.initialization === "reserved";
+  const previousInitializationReserved =
+    previous?.resource.content.kind === "exact" &&
+    previous.resource.content.initialization === "reserved";
+  if (previous && nextInitializationReserved && !previousInitializationReserved)
+    throw new Error("Content initialization reservation cannot restart");
+  if (nextInitializationReserved) {
+    if (
+      resource.lifecycle.kind !== "local" ||
+      resource.canonical !== null ||
+      resource.recovery ||
+      next.intents.some((intent) => intent.attempts.length > 0)
+    )
+      throw new Error("Content initialization may only be reserved with a new local resource");
+  }
+  if (previousInitializationReserved && previous?.resource.content.kind === "exact") {
+    if (
+      resource.content.kind !== "exact" ||
+      resource.content.databaseName !== previous.resource.content.databaseName ||
+      resource.identity.documentId !== previous.resource.identity.documentId ||
+      resource.identity.revision !== previous.resource.identity.revision
+    )
+      throw new Error("Reserved content identity cannot change before initialization");
+  }
   if (resource.recovery && next.intents.some((intent) => intent.attempts.length > 0))
     throw new Error("Legacy uncertainty must resolve before namespace submission");
   if (

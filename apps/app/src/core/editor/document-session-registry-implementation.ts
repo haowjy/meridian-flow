@@ -31,7 +31,7 @@ import { createDocumentSessionCrossContextCoordination } from "./document-sessio
 export type { LocalResourceLifetimePort } from "./document-session-coordination-contract";
 
 import type {
-  LocalUntitledDocumentSessionFactory,
+  LocalDocumentSessionFactory,
   RetainedLiveDocumentReference,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
@@ -89,7 +89,7 @@ export class DocumentSessionRegistry
   implements
     LiveDocumentSessionAuthority,
     LocalSessionAuthority,
-    LocalUntitledDocumentSessionFactory,
+    LocalDocumentSessionFactory,
     LocalDocumentSessionReservationPort,
     LocalDocumentSessionAdoptionPort
 {
@@ -312,10 +312,6 @@ export class DocumentSessionRegistry
     });
     this.branchRooms.set(roomKey, session);
     return session;
-  }
-
-  localUntitledDocumentSessionFactory(): LocalUntitledDocumentSessionFactory {
-    return this;
   }
 
   async readResourceSnapshot(documentId: DocumentId) {

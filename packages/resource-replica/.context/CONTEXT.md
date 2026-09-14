@@ -10,6 +10,13 @@ owns Editor tabs, Y.Doc instances or backend admission. Exact persistence names
 are preserved through identity changes; descriptors alone cannot authorize
 upload or prove content initialization.
 
+An exact descriptor may introduce `initialization: "reserved"` only with a new,
+local, never-submitted resource. The reservation may survive unrelated local
+metadata progress, but cannot move to another content identity, gain remote
+authority or restart after its one-way acknowledgement. The content adapter
+clears it only after the exact database marker commits. Namespace dispatch cannot
+begin while the reservation remains.
+
 `resource-records-policy.ts` prevents replacing recorded intentions, requests or
 outcomes. New intentions advance the sequence frontier. An uncertain attempt
 must settle before another submission; settled intentions cannot restart.
