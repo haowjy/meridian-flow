@@ -206,6 +206,10 @@ paths; recovery reaches the feature owner through the terminal continuation port
   suspension. `suspend`/`resume`/`release` belong to the session alone. The
   negative-space guard fails the build on a `setLocalState`/`setLocalStateField`
   anywhere in `apps/app/src` outside `local-presence.ts`.
+- Local lineage allocation first awaits the existing account authority readiness
+  contract and rechecks its epoch before acquiring a lineage lease. Storage
+  rejection or an incompatible authority version cannot leave a new local record
+  behind. This wait is tracked by owner shutdown and does not contact the backend.
 - Before a server row exists, one local lineage envelope owns one opaque exact
   IndexedDB name and one detached session under its stable lineage lifetime.
   Remint changes only session identity. Same-bucket adoption reserves the

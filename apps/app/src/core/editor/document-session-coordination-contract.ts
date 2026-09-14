@@ -77,6 +77,7 @@ export class DocumentSessionCoordinationError extends Error {
 }
 
 export interface DocumentSessionCrossContextCoordination {
+  requireReady(): Promise<void>;
   admit(
     projectId: ProjectId,
     documentId: DocumentId,

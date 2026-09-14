@@ -11,6 +11,7 @@ import { type ContextTab, rehydrateContextDesks, useContextTabsStore } from "@/c
 import {
   AccountFeatureTestProvider,
   useContextRemovalCoordinator,
+  useLocalUntitledOwner,
 } from "@/test-support/account-feature-provider";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { ContextViewerSurfaceController } from "../ContextPaneController";
@@ -68,14 +69,17 @@ vi.mock("./untitled-reconciler-browser", async (importOriginal) => ({
 }));
 
 let coordinator: ContextRemovalCoordinator | null = null;
+let localOwner: ReturnType<typeof useLocalUntitledOwner> | null = null;
 
 function CaptureCoordinator() {
   coordinator = useContextRemovalCoordinator();
+  localOwner = useLocalUntitledOwner();
   return null;
 }
 
 beforeEach(() => {
   coordinator = null;
+  localOwner = null;
   viewerProps = null;
   untitledMocks.append.mockClear();
   queryState.tree = tree;
@@ -104,6 +108,9 @@ beforeEach(() => {
 });
 
 it("persists and admits the real New action without an empty working-set route", async () => {
+  vi.stubGlobal("isSecureContext", true);
+  const reportedErrors: unknown[] = [];
+  vi.stubGlobal("reportError", (error: unknown) => reportedErrors.push(error));
   const originalLocks = navigator.locks;
   Object.defineProperty(navigator, "locks", {
     configurable: true,
@@ -203,6 +210,9 @@ it("persists and admits the real New action without an empty working-set route",
       await act(async () => {
         opening = Promise.resolve(viewerProps?.onNewDocument());
       });
+      await act(async () => {
+        await vi.waitFor(() => expect(releaseLocalRoute).toBeTypeOf("function"));
+      });
       expect(useContextTabsStore.getState().byProject.project?.tabs ?? []).toEqual([]);
       await act(async () => {
         releaseLocalRoute?.();
@@ -240,11 +250,13 @@ it("persists and admits the real New action without an empty working-set route",
       ).toBe(false);
     });
   } finally {
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await localOwner?.destroyAll();
     localStorage.clear();
     await rehydrateContextDesks(`cleanup-${crypto.randomUUID()}`);
     setItem.mockRestore();
     Object.defineProperty(navigator, "locks", { configurable: true, value: originalLocks });
+    vi.unstubAllGlobals();
+    expect(reportedErrors).toEqual([]);
   }
 });
 

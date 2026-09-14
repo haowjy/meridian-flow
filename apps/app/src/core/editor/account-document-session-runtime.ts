@@ -127,6 +127,11 @@ export function createAccountDocumentSessionRuntime(
     },
   };
   const localConstruction: LocalUntitledDocumentSessionFactory = {
+    async whenAuthorityReady() {
+      requireOpen();
+      await core.localConstruction.whenAuthorityReady();
+      requireOpen();
+    },
     createDetached(request) {
       requireOpen();
       return core.localConstruction.createDetached(request);
