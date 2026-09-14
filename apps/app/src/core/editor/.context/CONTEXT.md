@@ -98,6 +98,18 @@ paths; recovery reaches the feature owner through the terminal continuation port
 - Live sessions may use versioned IndexedDB persistence. Review sessions do not:
   the branch room is server-persisted and generation-fenced, and a local cache
   risks recovering state into the wrong review generation.
+- `local-content-initialization.ts` records exact-cache initialization in the
+  existing y-indexeddb `custom` store. Its marker names the database and schema;
+  the snapshot and marker append in one `updates` + `custom` transaction whose
+  completion is the durability boundary. Update count, nonempty text and
+  `whenSynced` are not proof: a recreated empty database also replays successfully.
+  `DocumentSession.hasInitializedLocalContent()` reads this evidence separately
+  from replay readiness. Only a newly allocated local lineage or an actual
+  completed server reconciliation establishes it. Remint/adoption keep the same
+  persistence identity and proof. Destruction drains admitted commits; a failed
+  attempt is reported, not retained as the truth of later evidence reads.
+  Unmarked legacy content remains recoverable and usable under existing admission:
+  this evidence does not yet activate offline acquisition or a new rejection gate.
 - Before binding, `EditorView` waits for local persistence and, for attached
   rooms, first server sync under one five-second overall timeout. Detached live
   rooms wait only for local persistence. Expiry always permits binding and

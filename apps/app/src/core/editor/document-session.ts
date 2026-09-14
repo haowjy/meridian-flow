@@ -36,6 +36,10 @@ import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import type * as Y from "yjs";
 
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
+import {
+  commitContentInitialization,
+  readContentInitialization,
+} from "./local-content-initialization";
 import { LocalDocumentPeers } from "./local-document-peers";
 import {
   createLocalPresence,
@@ -144,8 +148,8 @@ export type DocumentSessionTransportFactory = (opts: {
 export type DocumentSessionOptions = {
   /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`, branch review rooms use `branch:<branchId>:gen:<generation>`. */
   roomKey: string;
-  /** Persistence identity is always explicit; a room name never silently becomes a database key. */
-  persistence: { kind: "indexeddb"; key: string } | { kind: "none" };
+  /** Exact cache identity. Only the owner that just reserved it may declare it fresh. */
+  persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };
   /** Plugs the server document-sync provider into the session-owned Y.Doc. */
   transportFactory?: DocumentSessionTransportFactory;
   /** Registry-owned persistence hook for the first fence transition. */
@@ -167,6 +171,7 @@ export class DocumentSession {
 
   private persistence: IndexeddbPersistence | null;
   private localPeers: LocalDocumentPeers | null = null;
+  private initialization: Promise<void> | null = null;
   private transportProvider: DocumentSessionTransportProvider | null = null;
   private transportAttachmentPending = false;
   private readonly listeners = new Set<Listener>();
@@ -225,6 +230,8 @@ export class DocumentSession {
       this.resolveLifecycleCompleted = resolve;
     });
     this.localPersistenceSyncedPromise = this.watchLocalPersistence();
+    if (persistence.kind === "indexeddb" && persistence.fresh)
+      this.establishContentInitialization();
     if (transportFactory) this.attachTransport(transportFactory);
     this.emit();
   }
@@ -464,6 +471,30 @@ export class DocumentSession {
     return this.persistence?.name ?? null;
   }
 
+  /** Separate from replay readiness; absent evidence never authorizes empty initialization. */
+  async hasInitializedLocalContent(): Promise<boolean> {
+    await Promise.race([this.localPersistenceSyncedPromise, this.lifecycleCompletedPromise]);
+    await this.initialization?.catch(() => undefined);
+    if (this.destroyed || !this.persistence?.db) return false;
+    return readContentInitialization(this.persistence.db);
+  }
+
+  private establishContentInitialization(): void {
+    if (!this.persistence || this.initialization) return;
+    const attempt = (async () => {
+      await Promise.race([this.localPersistenceSyncedPromise, this.lifecycleCompletedPromise]);
+      if (this.destroyed || this.schemaFence || !this.persistence?.db) return;
+      const database = this.persistence.db;
+      if (await readContentInitialization(database)) return;
+      if (this.destroyed || this.schemaFence) return;
+      await commitContentInitialization(database, this.document);
+    })().finally(() => {
+      if (this.initialization === attempt) this.initialization = null;
+    });
+    this.initialization = attempt;
+    void attempt.catch((error) => reportError(error));
+  }
+
   /** Opaque identity observation for authority transfer; callers cannot mutate the provider. */
   get localPersistenceProvider(): object | null {
     return this.persistence;
@@ -528,6 +559,12 @@ export class DocumentSession {
         { settled: false, run: () => this.localPeers?.drain() },
         {
           settled: false,
+          run: async () => {
+            await this.initialization?.catch(() => undefined);
+          },
+        },
+        {
+          settled: false,
           run: () =>
             options.clearPersistence ? this.persistence?.clearData() : this.persistence?.destroy(),
         },
@@ -590,6 +627,7 @@ export class DocumentSession {
     await provider.whenSynced;
     if (this.destroyed || provider !== this.transportProvider) return;
     this.transportInitialSyncComplete = true;
+    if (provider.whenSynced) this.establishContentInitialization();
     clearClientSchemaReloadGuard(this.roomKey);
     this.recomputeStatus();
   }

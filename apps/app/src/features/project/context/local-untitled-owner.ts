@@ -500,6 +500,7 @@ export class LocalUntitledOwner {
     this.requireQualified(key);
     this.requireOpen();
     let lineage = mode === "restore" ? this.resolveLineage(key) : null;
+    let fresh = false;
     const lineageHandle = lineage?.ref.lineageHandle ?? this.newLineageHandle();
     const ref = { accountId: this.accountId, projectId: key.projectId, lineageHandle };
     const existing = this.owned.get(lineageHandle);
@@ -554,6 +555,7 @@ export class LocalUntitledOwner {
             const result = access.apply({ kind: "create-lineage", lineage: created });
             if (result.kind !== "applied") throw new Error("Local Untitled lineage claim is stale");
             lineage = result.next;
+            fresh = true;
           } finally {
             await reservation.release();
           }
@@ -578,6 +580,7 @@ export class LocalUntitledOwner {
         const session = this.dependencies.sessions.createDetached({
           ...activeKey,
           persistenceKey: lineage.persistence.exactDatabaseName,
+          fresh,
         });
         const value = Object.freeze({ key: activeKey, ref: lineage.ref, session });
         this.owned.set(lineageHandle, { access, value, transferring: false, reservation: null });
