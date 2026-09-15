@@ -149,6 +149,11 @@ contract shapes.
 
 ## Invariants
 
+- **Child creation starts unfrozen.** `SubagentThreadFactory` initializes prompt,
+  skill-freeze state, and prompt hash to null. The coordinator commits the retained
+  Agent binding and Work membership with creation; shared runtime preparation
+  owns the first bake.
+
 - **Read-model projection before journal append.** The persistence helper
   (`runtime/loop/persistence.ts`) runs `projectReadModelEvent` before
   `eventWriter.appendEvent` so that `event_journal.turn_id` FK can reference

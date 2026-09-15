@@ -117,6 +117,26 @@ describe("in-memory Agent revisions", () => {
     expect((await store.readThreadBinding("thread"))?.id).toBe(valid.id);
   });
 
+  it("rejects user-invocation denial in both catalog listing and exact primary selection", async () => {
+    const store = fixture();
+    const catalog = createBoundAgentCatalog({ store, unavailableReasons: () => [] });
+    await catalog.installSystemSource({
+      coordinate: "denied",
+      files: {
+        "agents/denied.md": "---\nmodel: available-model\nuser-invocable: false\n---\nPersona",
+      },
+    });
+    const page = await catalog.list("owner", { limit: 100 });
+    const item = page.agents[0];
+    expect(item.unavailableReasons).toContain(
+      "This Agent is unavailable for primary conversations",
+    );
+    expect(await catalog.resolvePrimary("owner", item.selection)).toMatchObject({
+      ok: false,
+      reason: "unavailable",
+    });
+  });
+
   it("serializes concurrent deduplication and whole-source publications", async () => {
     const store = fixture();
     const installs = await Promise.all(

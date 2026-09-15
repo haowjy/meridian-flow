@@ -193,7 +193,7 @@ export function createDrizzleThreadRepository(
           title: thread.title ?? "",
           composedSystemPrompt: thread.composedSystemPrompt,
           bakedSkillSlugs: thread.bakedSkillSlugs,
-          systemPromptHash: "baked",
+          systemPromptHash: null,
           currentAgentId: thread.currentAgent,
           parentThreadId: thread.parentThreadId,
           originTurnId: input.originTurnId ?? thread.id,

@@ -666,13 +666,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       );
     },
     eventWriter: threadEventHub,
-    packageRepository: ports.packageRepository,
+    agentRevisions: ports.agentRevisions,
     childRunRegistry: runner.childRunRegistry,
     helperResultDelivery,
     workContextDelivery: workContextDelivery,
     runOwnership: ports.runOwnership,
     billingSpendReader: ports.billingSpendReader,
-    workContext,
   });
   const orchestrator = createOrchestrator({
     gateway: ports.gateway,
@@ -680,7 +679,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolExecutor,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
-    packageRepository: ports.packageRepository,
+    agentRevisions: ports.agentRevisions,
     toolRegistry,
     projectPreferences: ports.preferences,
     workWriteMode: {

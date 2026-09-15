@@ -67,6 +67,10 @@ async function setupOrchestrator(
   gateway: Gateway = textGateway(),
   referenceReader?: Parameters<typeof createOrchestrator>[0]["referenceReader"],
 ) {
+  const boundThreadIds: string[] = [];
+  const bindAgent = (threadId: string) => {
+    boundThreadIds.push(threadId);
+  };
   const projectRepo = createInMemoryProjectRepository();
   const repos = createInMemoryRepositories({ projects: projectRepo });
   const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
@@ -81,6 +85,7 @@ async function setupOrchestrator(
   });
   const orchestrator = createOrchestrator(
     createTestOrchestratorDeps({
+      boundThreads: () => boundThreadIds,
       gateway,
       ...(referenceReader ? { referenceReader } : {}),
       toolExecutor: toolExecutor ?? {
@@ -92,7 +97,7 @@ async function setupOrchestrator(
       creditLedger,
     }),
   );
-  return { repos, eventWriter, orchestrator, projectId: project.id };
+  return { bindAgent, repos, eventWriter, orchestrator, projectId: project.id };
 }
 
 function runnableCoreRegistrations() {
@@ -163,6 +168,7 @@ describe("runtime orchestrator behavior", () => {
       },
     };
     const crashingDeps = createTestOrchestratorDeps({
+      boundThreads: () => [thread.id],
       ...base,
       gateway: firstGateway,
       responseWrites: {
@@ -210,7 +216,11 @@ describe("runtime orchestrator behavior", () => {
     };
     await collectEvents(
       await createOrchestrator(
-        createTestOrchestratorDeps({ ...base, gateway: resumedGateway }),
+        createTestOrchestratorDeps({
+          boundThreads: () => [thread.id],
+          ...base,
+          gateway: resumedGateway,
+        }),
       ).runTurn({ threadId: thread.id, userText: "continue" }),
     );
     expect(JSON.stringify(resumedRequests[0]?.messages)).toContain('"status":"success"');
@@ -254,6 +264,7 @@ describe("runtime orchestrator behavior", () => {
     await collectEvents(
       await createOrchestrator(
         createTestOrchestratorDeps({
+          boundThreads: () => [thread.id],
           ...base,
           gateway: gatewayFromResults([
             {
@@ -288,7 +299,11 @@ describe("runtime orchestrator behavior", () => {
     };
     await collectEvents(
       await createOrchestrator(
-        createTestOrchestratorDeps({ ...base, gateway: resumedGateway }),
+        createTestOrchestratorDeps({
+          boundThreads: () => [thread.id],
+          ...base,
+          gateway: resumedGateway,
+        }),
       ).runTurn({ threadId: thread.id, userText: "continue" }),
     );
     const resumedContext = JSON.stringify(resumedRequests[0]?.messages);
@@ -315,6 +330,7 @@ describe("runtime orchestrator behavior", () => {
     });
     const orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
+        boundThreads: () => [thread.id],
         gateway: textGateway(),
         toolExecutor: {
           executeTool: async (call) => ({ toolCallId: call.id, output: { ok: true } }),
@@ -364,8 +380,12 @@ describe("runtime orchestrator behavior", () => {
     const toolExecutor = createToolExecutor(
       createToolRegistry({ registrations: runnableCoreRegistrations() }),
     );
-    const { repos, orchestrator, projectId } = await setupOrchestrator(toolExecutor, gateway);
+    const { bindAgent, repos, orchestrator, projectId } = await setupOrchestrator(
+      toolExecutor,
+      gateway,
+    );
     const thread = await repos.threads.create({ userId: "user-1", projectId });
+    bindAgent(thread.id);
 
     await collectEvents(await orchestrator.runTurn({ threadId: thread.id, userText: "hello" }));
 
@@ -417,6 +437,7 @@ describe("runtime orchestrator behavior", () => {
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
     const committed: string[] = [];
     const deps = createTestOrchestratorDeps({
+      boundThreads: () => [thread.id],
       gateway,
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
@@ -501,6 +522,7 @@ describe("runtime orchestrator behavior", () => {
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
     const deps = createTestOrchestratorDeps({
+      boundThreads: () => [thread.id],
       gateway,
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
@@ -636,6 +658,7 @@ describe("runtime orchestrator behavior", () => {
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
     const deps = createTestOrchestratorDeps({
+      boundThreads: () => [thread.id],
       gateway,
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
@@ -799,6 +822,7 @@ describe("runtime orchestrator behavior", () => {
     };
     let commitCount = 0;
     const deps = createTestOrchestratorDeps({
+      boundThreads: () => [thread.id],
       gateway,
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
@@ -910,6 +934,7 @@ describe("runtime orchestrator behavior", () => {
     const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
     let drainCount = 0;
     const deps = createTestOrchestratorDeps({
+      boundThreads: () => [thread.id],
       gateway: textGateway(),
       repos,
       eventWriter: createInMemoryEventJournalWriter(),
@@ -986,6 +1011,7 @@ describe("runtime orchestrator behavior", () => {
     let executeCalled = false;
     const orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
+        boundThreads: () => [thread.id],
         gateway,
         toolExecutor: {
           executeTool: async (call) => {
@@ -1066,11 +1092,12 @@ describe("runtime orchestrator behavior", () => {
       },
     });
     const controller = new AbortController();
-    const { repos, orchestrator, projectId } = await setupOrchestrator(
+    const { bindAgent, repos, orchestrator, projectId } = await setupOrchestrator(
       createToolExecutor(registry),
       gateway,
     );
     const thread = await repos.threads.create({ userId: "user-1", projectId });
+    bindAgent(thread.id);
 
     const handle = await orchestrator.runTurn({
       threadId: thread.id,
@@ -1115,6 +1142,7 @@ describe("runtime orchestrator behavior", () => {
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
     const committed: string[] = [];
     const deps = createTestOrchestratorDeps({
+      boundThreads: () => [thread.id],
       gateway,
       toolExecutor: {
         executeTool: async (call) => ({ toolCallId: call.id, output: "staged write" }),
@@ -1169,6 +1197,7 @@ describe("runtime orchestrator behavior", () => {
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
     const deps = createTestOrchestratorDeps({
+      boundThreads: () => [thread.id],
       gateway,
       toolExecutor: {
         executeTool: async (_call, ctx) => {
@@ -1249,6 +1278,7 @@ describe("runtime orchestrator behavior", () => {
     const repos = createInMemoryRepositories({ projects: projectRepo });
     const project = await projectRepo.create({ userId: "user-1", title: "Test Project" });
     const deps = createTestOrchestratorDeps({
+      boundThreads: () => [thread.id],
       gateway,
       toolExecutor: {
         executeTool: async (_call, ctx) => {
@@ -1330,6 +1360,7 @@ describe("automatic reference context", () => {
       { read },
     );
     const thread = await rig.repos.threads.create({ userId: "user-1", projectId: rig.projectId });
+    rig.bindAgent(thread.id);
     const reference = {
       type: "reference" as const,
       documentId: "00000000-0000-4000-8000-000000000001",
@@ -1397,6 +1428,7 @@ it("persists and replays a failed reference read while retaining transcript navi
     { read },
   );
   const thread = await rig.repos.threads.create({ userId: "user-1", projectId: rig.projectId });
+  rig.bindAgent(thread.id);
   const reference = {
     type: "reference" as const,
     documentId: "00000000-0000-4000-8000-000000000061",

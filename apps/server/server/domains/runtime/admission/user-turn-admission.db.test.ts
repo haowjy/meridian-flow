@@ -121,6 +121,7 @@ if (!RUN) {
         eventSink: createNoopEventSink(),
       });
       const deps = createTestOrchestratorDeps({
+        boundThreads: () => [input.threadId],
         repos,
         eventWriter: hub,
         creditLedger,

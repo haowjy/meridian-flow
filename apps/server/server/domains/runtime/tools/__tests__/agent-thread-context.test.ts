@@ -2,22 +2,14 @@
  * Agent-bound thread context tests: system prompt baking, gateway params, tool ads.
  */
 import { describe, expect, it } from "vitest";
-import type {
-  AgentDefinitionRecord,
-  AgentSkillLinkRecord,
-  SkillRecord,
-} from "../../../packages/domain/types.js";
-import { createInMemoryPackageStore } from "../../../packages/index.js";
+import type { SkillRecord } from "../../../packages/domain/types.js";
+import { createInMemoryAgentRevisionStore } from "../../../packages/index.js";
 import { buildContext } from "../../loop/context-builder.js";
 import {
   agentGatewayMetaToGenerateParams,
   resolveAgentThreadTurnContext,
 } from "../agent-thread-context.js";
-import {
-  createCoreToolRegistrations,
-  createInvokeToolRegistration,
-  createToolRegistry,
-} from "../index.js";
+import { createCoreToolRegistrations, createToolRegistry } from "../index.js";
 import { renderSkillsSystemPromptSection } from "../skill-tools.js";
 
 const coreHandler = async () => ({ ok: true });
@@ -28,27 +20,6 @@ const coreRegistrations = createCoreToolRegistrations({
   search: coreHandler,
   ask_user: coreHandler,
 });
-
-function seedAgentPackage(agentBody: string, skill: SkillRecord) {
-  const agent: AgentDefinitionRecord = {
-    id: "agent-1",
-    projectId: "project-1",
-    slug: "agent-one",
-    body: agentBody,
-    meta: { model: "claude-sonnet-4-20250514", effort: "high" },
-    config: {},
-    packageInstallId: "pkg-1",
-    originalContentChecksum: null,
-    sourceType: "package",
-    enabled: true,
-  };
-  const link: AgentSkillLinkRecord = {
-    agentDefinitionId: agent.id,
-    skillId: skill.id,
-    modelInvocable: true,
-  };
-  return createInMemoryPackageStore({ agents: [agent], skills: [skill], agentSkills: [link] });
-}
 
 function threadFixture(overrides: Record<string, unknown> = {}) {
   return {
@@ -97,18 +68,6 @@ function skill(overrides: Partial<SkillRecord> = {}): SkillRecord {
   };
 }
 
-function toolRegistry(packageRepository: ReturnType<typeof createInMemoryPackageStore>) {
-  return createToolRegistry({
-    registrations: [
-      ...coreRegistrations,
-      createInvokeToolRegistration({
-        packageRepository,
-        findThreadById: async () => null,
-      }),
-    ],
-  });
-}
-
 describe("agentGatewayMetaToGenerateParams", () => {
   it("maps effort levels to reasoning objects", () => {
     expect(agentGatewayMetaToGenerateParams({ effort: "high" })).toEqual({
@@ -127,81 +86,80 @@ describe("agentGatewayMetaToGenerateParams", () => {
 });
 
 describe("resolveAgentThreadTurnContext", () => {
-  it("returns gateway model/effort for agent-bound threads", async () => {
-    const packageRepository = seedAgentPackage("Agent body prompt.", skill({ meta: {} }));
-    const registry = toolRegistry(packageRepository);
-
-    const context = await resolveAgentThreadTurnContext({
-      thread: threadFixture(),
-      packageRepository,
-      toolRegistry: registry,
-      baseTools: registry.getDefinitions(),
+  async function binding() {
+    const agentRevisions = createInMemoryAgentRevisionStore({
+      threadExists: async (id) => id === "thread-1",
     });
-
-    expect(context.gatewayParams).toEqual({
-      model: "claude-sonnet-4-20250514",
-      reasoning: { effort: "high" },
-    });
-    expect(
-      context.tools?.map((tool) => (tool.type === "function" ? tool.name : tool.kind)),
-    ).not.toContain("skill-one");
-  });
-
-  it("does not advertise invoke or skills section when agent has no model-invocable skills", async () => {
-    const packageSkill = skill({ meta: { description: "Hidden skill" } });
-    const agent: AgentDefinitionRecord = {
-      id: "agent-1",
-      projectId: "project-1",
-      slug: "agent-one",
-      body: "Agent body.",
-      meta: {},
-      config: {},
-      packageInstallId: "pkg-1",
-      originalContentChecksum: null,
-      sourceType: "package",
-      enabled: true,
+    const source = {
+      coordinate: "fixture/agents",
+      files: {
+        "agents/agent-one.md":
+          "---\nname: Writer\nmodel: retained-model\neffort: xhigh\n---\nOriginal prompt.",
+      },
     };
-    const packageRepository = createInMemoryPackageStore({
-      agents: [agent],
-      skills: [packageSkill],
-      agentSkills: [
-        { agentDefinitionId: agent.id, skillId: packageSkill.id, modelInvocable: false },
-      ],
-    });
-    const registry = toolRegistry(packageRepository);
+    const revision = (await agentRevisions.installSource(source)).definitions[0];
+    await agentRevisions.bindThread("thread-1", revision.id);
+    const toolRegistry = createToolRegistry({ registrations: coreRegistrations });
+    return { agentRevisions, source, revision, toolRegistry };
+  }
 
+  it("uses the retained model/body despite catalog advancement and an unrelated display slug", async () => {
+    const fixture = await binding();
+    await fixture.agentRevisions.selectRevision({
+      ownerUserId: "user-1",
+      logicalKey: "writer",
+      revisionId: fixture.revision.id,
+    });
+    const next = (
+      await fixture.agentRevisions.installSource({
+        ...fixture.source,
+        files: {
+          "agents/agent-one.md":
+            "---\nname: Writer\nmodel: replacement-model\n---\nReplacement prompt.",
+        },
+      })
+    ).definitions[0];
+    await fixture.agentRevisions.selectRevision({
+      ownerUserId: "user-1",
+      logicalKey: "writer",
+      revisionId: next.id,
+      expectedRevisionId: fixture.revision.id,
+    });
     const context = await resolveAgentThreadTurnContext({
-      thread: threadFixture(),
-      packageRepository,
-      toolRegistry: registry,
-      baseTools: registry.getDefinitions(),
+      ...fixture,
+      thread: threadFixture({ currentAgent: "other-slug" }),
+      baseTools: fixture.toolRegistry.getDefinitions(),
     });
-
-    expect(context.skillsSystemPromptSection).toBeUndefined();
-    expect(
-      context.tools?.map((tool) => (tool.type === "function" ? tool.name : tool.kind)),
-    ).not.toContain("invoke");
+    expect(context.gatewayParams).toEqual({
+      model: "retained-model",
+      reasoning: { effort: "max" },
+    });
+    expect(context.agentBody).toBe("Original prompt.");
+    expect(context.agentSlug).toBe("agent-one");
   });
 
-  it("advertises invoke and renders skills section for model-invocable skills", async () => {
-    const packageRepository = seedAgentPackage("Agent body.", skill());
-    const registry = toolRegistry(packageRepository);
+  it("refuses an unbound conversation instead of silently selecting the gateway default", async () => {
+    const fixture = await binding();
+    await expect(
+      resolveAgentThreadTurnContext({
+        ...fixture,
+        thread: threadFixture({ id: "unbound" }),
+        baseTools: undefined,
+      }),
+    ).rejects.toThrow("no retained Agent binding");
+  });
 
+  it("uses the same retained configuration preparation for a child", async () => {
+    const fixture = await binding();
     const context = await resolveAgentThreadTurnContext({
-      thread: threadFixture(),
-      packageRepository,
-      toolRegistry: registry,
-      baseTools: registry.getDefinitions(),
+      ...fixture,
+      thread: threadFixture({ kind: "subagent" }),
+      baseTools: undefined,
     });
-
-    expect(
-      context.tools?.map((tool) => (tool.type === "function" ? tool.name : tool.kind)),
-    ).toContain("invoke");
-    expect(context.skillsSystemPromptSection).toBe(
-      renderSkillsSystemPromptSection(context.resolvedSkills),
+    expect(context.agentBody).toBe(
+      "Original prompt.\n\nYou are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.",
     );
-    expect(context.skillsSystemPromptSection).toContain("skill-one");
-    expect(context.skillsSystemPromptSection).not.toContain("inputSchema");
+    expect(context.gatewayParams.model).toBe("retained-model");
   });
 });
 

@@ -134,6 +134,7 @@ export class RuntimeTestRig {
     });
     const orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
+        boundThreads: () => [thread.id],
         gateway,
         toolExecutor: createToolExecutor(createToolRegistry()),
         repos,

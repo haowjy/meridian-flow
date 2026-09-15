@@ -7,15 +7,15 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { JsonValue, OrchestratorEvent } from "@meridian/contracts/threads";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { testWorkSlug } from "../../../../test-support/work-slug.js";
+import { resolveWorkMembership } from "../../../../lib/work-attachment.js";
+import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
-import type {
-  AgentDefinitionRecord,
-  PackageInstallRecord,
-} from "../../../packages/domain/types.js";
-import { createInMemoryPackageStore } from "../../../packages/index.js";
-import { createInMemoryProjectRepository } from "../../../projects/index.js";
+import { createInMemoryAgentRevisionStore } from "../../../packages/index.js";
+import {
+  createInMemoryProjectRepository,
+  createInMemoryWorkRepository,
+} from "../../../projects/index.js";
 import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
@@ -56,44 +56,6 @@ describe("nested spawn runtime (P2b gate)", () => {
     await mock.close();
   });
 
-  function seedOrchestratorPackage(projectId: string) {
-    const pkg: PackageInstallRecord = {
-      id: "pkg-1",
-      projectId,
-      packageName: "pilot",
-      sourcePath: "/pilot",
-      visibility: "private",
-    };
-    const orchestrator: AgentDefinitionRecord = {
-      id: "agent-orchestrator",
-      projectId,
-      slug: "orchestrator",
-      body: "You orchestrate workers.",
-      meta: { subagents: ["worker"] },
-      config: {},
-      packageInstallId: pkg.id,
-      originalContentChecksum: null,
-      sourceType: "package",
-      enabled: true,
-    };
-    const worker: AgentDefinitionRecord = {
-      id: "agent-worker",
-      projectId,
-      slug: "worker",
-      body: "You are a worker.",
-      meta: { subagents: [] },
-      config: {},
-      packageInstallId: pkg.id,
-      originalContentChecksum: null,
-      sourceType: "package",
-      enabled: true,
-    };
-    return createInMemoryPackageStore({
-      packages: [pkg],
-      agents: [orchestrator, worker],
-    });
-  }
-
   function registerMockInterrupt(registry: ReturnType<typeof createToolRegistry>) {
     registry.register({
       source: "core",
@@ -131,10 +93,23 @@ describe("nested spawn runtime (P2b gate)", () => {
         flushOwned(threadId: ThreadId): Promise<void>;
       };
       runOwnership?: ThreadRunOwnership;
+      withWork?: boolean;
     } = {},
   ) {
     const projectRepo = createInMemoryProjectRepository();
-    const repos = createInMemoryRepositories({ projects: projectRepo });
+    const workRepo = createInMemoryWorkRepository();
+    const transactionOwner = new InMemoryTransactionOwner();
+    const repos = createInMemoryRepositories({
+      projects: projectRepo,
+      works: workRepo,
+      transactionOwner,
+      boundAgent: (id) => agentRevisions.boundAgent(id),
+    });
+    const agentRevisions = createInMemoryAgentRevisionStore({
+      transactionOwner,
+      threadExists: async (id) =>
+        Boolean(await repos.threads.findProjectIdByIdIncludingDeleted(id)),
+    });
     const project = await projectRepo.create({ userId: "user-1", title: "WB" });
     const eventWriter = createInMemoryEventJournalWriter();
     const interruptRegistry = createInterruptRegistry();
@@ -143,7 +118,19 @@ describe("nested spawn runtime (P2b gate)", () => {
       journalReader: eventWriter,
       eventSink: createInMemoryEventSink(),
     });
-    const packageRepository = seedOrchestratorPackage(project.id);
+    const source = {
+      coordinate: "fixture/nested",
+      files: {
+        "agents/orchestrator.md":
+          "---\nmodel: stub-model\nmode: primary\nsubagents: [worker]\n---\nYou orchestrate workers.",
+        "agents/worker.md": "---\nmodel: stub-model\nmode: subagent\n---\nYou are a worker.",
+      },
+    };
+    const installed = await agentRevisions.installSource(source);
+    const parentRevision = installed.definitions.find(
+      (revision) => revision.slug === "orchestrator",
+    );
+    if (!parentRevision) throw new Error("Missing parent fixture definition");
     const toolRegistry = createToolRegistry();
     registerMockInterrupt(toolRegistry);
     const toolExecutor = createToolExecutor(toolRegistry);
@@ -181,12 +168,10 @@ describe("nested spawn runtime (P2b gate)", () => {
         transaction: repos.transaction,
         threadWorks: repos.threadWorks,
       },
-      resolveWorkMembership: async ({ parentThreadId }) => {
-        const primary = parentThreadId ? await repos.threadWorks.findPrimary(parentThreadId) : null;
-        return primary?.workId ?? "work-1";
-      },
+      resolveWorkMembership: (input) =>
+        resolveWorkMembership({ workRepo, threadWorks: repos.threadWorks }, input),
       eventWriter,
-      packageRepository,
+      agentRevisions,
       childRunRegistry: runner.childRunRegistry,
       helperResultDelivery: createHelperResultDelivery({
         repos,
@@ -196,25 +181,6 @@ describe("nested spawn runtime (P2b gate)", () => {
       workContextDelivery: options.workContextDelivery ?? { flushOwned: flushWorkContext },
       runOwnership: options.runOwnership,
       billingSpendReader: creditLedger,
-      workContext: {
-        async renderForThread() {
-          return {
-            text: "<work_context>\ntest\n</work_context>",
-            current: {
-              projectId: "00000000-0000-0000-0000-000000000001",
-              execution: {
-                scope: {
-                  kind: "work",
-                  workId: "00000000-0000-0000-0000-000000000002",
-                  workSlug: testWorkSlug("test-work"),
-                },
-                aiWriteMode: "direct",
-                draftOwner: null,
-              },
-            },
-          };
-        },
-      },
     });
 
     for (const registration of createSpawnToolRegistrations()) {
@@ -223,11 +189,11 @@ describe("nested spawn runtime (P2b gate)", () => {
 
     orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
+        agentRevisions,
         gateway,
         toolExecutor,
         repos,
         eventWriter: hub,
-        packageRepository,
         toolRegistry,
         childRunCoordinator: coordinator,
         interruptRegistry,
@@ -242,9 +208,17 @@ describe("nested spawn runtime (P2b gate)", () => {
       currentAgent: "orchestrator",
       systemPrompt: "You orchestrate workers.",
     });
+    await agentRevisions.bindThread(thread.id, parentRevision.id);
+    if (options.withWork !== false) {
+      const work = await workRepo.create({ projectId: project.id, name: "Nested Work" });
+      await repos.threadWorks.addMembership(thread.id, work.id, true);
+    }
 
     return {
       repos,
+      agentRevisions,
+      source,
+      parentRevision,
       eventWriter,
       orchestrator,
       thread,
@@ -356,6 +330,178 @@ describe("nested spawn runtime (P2b gate)", () => {
     };
   }
 
+  it("binds the child from the parent's retained package after catalog advancement", async () => {
+    const requests: GenerateRequest[] = [];
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream(request) {
+        requests.push(request);
+        yield {
+          type: "end",
+          result: toolUseResult("report", "return_result", { summary: "done" }),
+        };
+      },
+      async generate() {
+        throw new Error("unused");
+      },
+    };
+    const { coordinator, thread, repos, agentRevisions, source, parentRevision } =
+      await setupNestedRuntime(gateway);
+    await agentRevisions.selectRevision({
+      ownerUserId: "user-1",
+      logicalKey: "nested",
+      revisionId: parentRevision.id,
+    });
+    const advanced = await agentRevisions.installSource({
+      ...source,
+      files: {
+        ...source.files,
+        "agents/worker.md": "---\nmodel: different-model\nmode: subagent\n---\nChanged worker.",
+      },
+    });
+    const advancedParent = advanced.definitions.find((item) => item.slug === "orchestrator");
+    if (!advancedParent) throw new Error("Missing advanced parent");
+    await agentRevisions.selectRevision({
+      ownerUserId: "user-1",
+      logicalKey: "nested",
+      revisionId: advancedParent.id,
+      expectedRevisionId: parentRevision.id,
+    });
+    const result = await coordinator.spawnChild({
+      parentThread: thread,
+      parentTurnId: "parent-turn",
+      agentSlug: "worker",
+      prompt: "finish",
+      budget: createDefaultTreeBudget(),
+    });
+    expect(result.status).toBe("completed");
+    const child = (await repos.threads.listByUser("user-1")).find(
+      (item) => item.kind === "subagent",
+    );
+    if (!child) throw new Error("Missing child");
+    const binding = await agentRevisions.readThreadBinding(child.id);
+    expect(binding?.packageRevisionId).toBe(parentRevision.packageRevisionId);
+    expect(binding?.slug).toBe("worker");
+    expect(child.agentDefinitionRevisionId).toBe(binding?.id);
+    expect((await repos.threadWorks.findPrimary(child.id))?.workId).toBe(
+      (await repos.threadWorks.findPrimary(thread.id))?.workId,
+    );
+    expect(requests[0]?.model).toBe("stub-model");
+    const system = JSON.stringify(requests[0]?.messages[0]);
+    expect(system).toContain("You are a worker.");
+    expect(system).toContain("Finish by calling return_result");
+    expect(system).not.toContain("Changed worker.");
+  });
+
+  it("preserves absent Work membership for a child", async () => {
+    const gateway: Gateway = {
+      ...gatewayStubDefaults,
+      async *stream() {
+        yield {
+          type: "end",
+          result: toolUseResult("report", "return_result", { summary: "done" }),
+        };
+      },
+      async generate() {
+        throw new Error("unused");
+      },
+    };
+    const { coordinator, thread, repos } = await setupNestedRuntime(
+      gateway,
+      createDefaultTreeBudget(),
+      { withWork: false },
+    );
+    await coordinator.spawnChild({
+      parentThread: thread,
+      parentTurnId: "parent-turn",
+      agentSlug: "worker",
+      prompt: "finish",
+      budget: createDefaultTreeBudget(),
+    });
+    const child = (await repos.threads.listByUser(thread.userId)).find(
+      (item) => item.kind === "subagent",
+    );
+    if (!child) throw new Error("Missing child");
+    expect(child.workId).toBeNull();
+    expect(await repos.threadWorks.findPrimary(child.id)).toBeNull();
+  });
+
+  it.each([
+    {
+      name: "undeclared target",
+      parent: "subagents: []",
+      worker: "mode: subagent",
+      code: "spawn_agent_not_allowed",
+    },
+    {
+      name: "primary-only target",
+      parent: "subagents: [worker]",
+      worker: "mode: primary",
+      code: "spawn_agent_not_found",
+    },
+    {
+      name: "non-model-invocable target",
+      parent: "subagents: [worker]",
+      worker: "model-invocable: false",
+      code: "spawn_agent_not_found",
+    },
+  ])("rejects $name before child creation", async ({ parent, worker, code }) => {
+    const { coordinator, thread, repos, agentRevisions, source } = await setupNestedRuntime(
+      nestedRunGateway(),
+    );
+    const installed = await agentRevisions.installSource({
+      ...source,
+      files: {
+        "agents/orchestrator.md": `---\nmodel: stub-model\n${parent}\n---\nParent`,
+        "agents/worker.md": `---\nmodel: stub-model\n${worker}\n---\nWorker`,
+      },
+    });
+    const revision = installed.definitions.find((item) => item.slug === "orchestrator");
+    if (!revision) throw new Error("Missing fixture parent");
+    const deniedParent = await repos.threads.create({
+      userId: thread.userId,
+      projectId: thread.projectId,
+    });
+    await agentRevisions.bindThread(deniedParent.id, revision.id);
+    const result = await coordinator.spawnChild({
+      parentThread: deniedParent,
+      parentTurnId: "parent-turn",
+      agentSlug: "worker",
+      prompt: "finish",
+      budget: createDefaultTreeBudget(),
+    });
+    expect(result).toMatchObject({ status: "error", error: { code } });
+    expect(
+      (await repos.threads.listByUser(thread.userId)).filter((item) => item.kind === "subagent"),
+    ).toEqual([]);
+  });
+
+  it("rolls back child, binding, and Work membership after the membership write", async () => {
+    const { coordinator, thread, repos, agentRevisions } = await setupNestedRuntime(
+      nestedRunGateway(),
+    );
+    const add = repos.threadWorks.addMembership.bind(repos.threadWorks);
+    let childId = "";
+    const fault = new Error("binding transaction failure");
+    vi.spyOn(repos.threadWorks, "addMembership").mockImplementation(async (id, workId, primary) => {
+      childId = id;
+      await add(id, workId, primary);
+      throw fault;
+    });
+    await expect(
+      coordinator.spawnChild({
+        parentThread: thread,
+        parentTurnId: "parent-turn",
+        agentSlug: "worker",
+        prompt: "finish",
+        budget: createDefaultTreeBudget(),
+      }),
+    ).rejects.toBe(fault);
+    expect(await repos.threads.findById(childId)).toBeNull();
+    expect(await agentRevisions.readThreadBinding(childId)).toBeUndefined();
+    expect(await repos.threadWorks.findPrimary(childId)).toBeNull();
+  });
+
   it("parent spawns child, interrupt resumes same root turn, re-spawns to completion", async () => {
     const gateway = nestedRunGateway();
     const { repos, eventWriter, orchestrator, thread, interruptRegistry, flushWorkContext } =
@@ -402,9 +548,11 @@ describe("nested spawn runtime (P2b gate)", () => {
   });
 
   it("unregisters a completed child and releases ownership when its update flush fails", async () => {
+    const requestedThreads: string[] = [];
     const gateway: Gateway = {
       ...gatewayStubDefaults,
-      async *stream(): AsyncGenerator<StreamEvent> {
+      async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
+        if (request.correlation?.threadId) requestedThreads.push(request.correlation.threadId);
         yield {
           type: "end",
           result: toolUseResult("call-return", "return_result", { summary: "done" }),
@@ -456,6 +604,8 @@ describe("nested spawn runtime (P2b gate)", () => {
       (candidate) => candidate.kind === "subagent",
     );
     expect(child).toBeDefined();
+    expect(requestedThreads).toEqual([child?.id]);
+    expect(child?.spawnResult).toMatchObject({ status: "completed", report: { summary: "done" } });
     expect(runner.isThreadRunning(child?.id as ThreadId)).toBe(false);
     expect(owned).toHaveLength(0);
     expect(releaseCalls).toBe(1);
@@ -540,7 +690,8 @@ describe("nested spawn runtime (P2b gate)", () => {
         throw new Error("not used");
       },
     };
-    const { orchestrator, thread, repos } = await setupNestedRuntime(gateway as Gateway);
+    const { orchestrator, thread, repos, agentRevisions, parentRevision } =
+      await setupNestedRuntime(gateway as Gateway);
     const depth2Thread = await repos.threads.createSubagent({
       userId: "user-1",
       projectId: thread.projectId,
@@ -549,10 +700,9 @@ describe("nested spawn runtime (P2b gate)", () => {
       originTurnId: "turn-origin",
       spawnDepth: 2,
       currentAgent: "orchestrator",
-      composedSystemPrompt: "deep",
-      bakedSkillSlugs: [],
       spawnStatus: "running",
     });
+    await agentRevisions.bindThread(depth2Thread.id, parentRevision.id);
 
     const events = await collectEvents(
       await orchestrator.runTurn({
@@ -714,7 +864,7 @@ describe("nested spawn runtime (P2b gate)", () => {
   });
 
   it("propagates parent cancel to an in-flight child run", async () => {
-    let childStarted = false;
+    let childStarted: string | undefined;
     let releaseChild: (() => void) | undefined;
     const childGate = new Promise<void>((resolve) => {
       releaseChild = resolve;
@@ -723,7 +873,7 @@ describe("nested spawn runtime (P2b gate)", () => {
     let call = 0;
     const gateway = {
       ...gatewayStubDefaults,
-      async *stream(): AsyncGenerator<StreamEvent> {
+      async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
         call += 1;
         if (call === 1) {
           yield {
@@ -732,8 +882,8 @@ describe("nested spawn runtime (P2b gate)", () => {
           };
           return;
         }
-        if (call === 2) {
-          childStarted = true;
+        if (request.correlation?.agentSlug === "worker") {
+          childStarted = request.correlation.threadId;
           await childGate;
           yield {
             type: "end",
@@ -758,7 +908,9 @@ describe("nested spawn runtime (P2b gate)", () => {
       },
     };
 
-    const { orchestrator, thread } = await setupNestedRuntime(gateway as Gateway);
+    const { orchestrator, thread, repos, eventWriter } = await setupNestedRuntime(
+      gateway as Gateway,
+    );
     const controller = new AbortController();
     const handle = await orchestrator.runTurn({
       threadId: thread.id,
@@ -767,10 +919,17 @@ describe("nested spawn runtime (P2b gate)", () => {
     });
     const eventsPromise = collectEvents(handle);
 
-    await waitUntil(() => childStarted);
-    controller.abort();
-    releaseChild?.();
+    try {
+      await waitUntil(() => childStarted !== undefined);
+    } finally {
+      controller.abort();
+      releaseChild?.();
+    }
     const events = await eventsPromise;
+    await waitForEvent(eventWriter, thread.id, "agent.spawn_completed");
+    expect(childStarted).not.toBe(thread.id);
+    const child = await repos.threads.findById(childStarted as string);
+    expect(child?.spawnStatus).toBe("cancelled");
     expect(events.some((event) => event.type === "turn.cancelled")).toBe(true);
   });
 });

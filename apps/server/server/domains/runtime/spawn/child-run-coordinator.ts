@@ -13,7 +13,7 @@ import type {
 } from "@meridian/contracts/spawn";
 import { blockPlainText, type Thread } from "@meridian/contracts/threads";
 import type { BillingSpendReader } from "../../billing/index.js";
-import type { PackageRepository } from "../../packages/index.js";
+import type { AgentRevisionStore } from "../../packages/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import type {
   BlockRepository,
@@ -23,7 +23,6 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
-import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
 import {
   createInMemoryThreadRunOwnership,
@@ -31,8 +30,6 @@ import {
   type ThreadRunOwnership,
 } from "../loop/thread-run-ownership.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
-import type { WorkContextReader } from "../loop/work-context.js";
-import { modelInvocableSkillSlugs, renderSkillsSystemPromptSection } from "../tools/skill-tools.js";
 import type { HelperResultDelivery } from "./helper-result-delivery.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
 
@@ -62,25 +59,21 @@ export interface ChildRunCoordinatorDeps {
     parentThreadId?: string | null;
   }): Promise<string | null>;
   eventWriter: EventJournalWriter;
-  packageRepository: PackageRepository;
+  agentRevisions: Pick<
+    AgentRevisionStore,
+    "readThreadBinding" | "readPackageDefinitions" | "bindThread"
+  >;
   childRunRegistry: ChildRunRegistry;
   helperResultDelivery: HelperResultDelivery;
   workContextDelivery: Pick<WorkContextDelivery, "flushOwned">;
   runOwnership?: ThreadRunOwnership;
   billingSpendReader: BillingSpendReader;
-  workContext: WorkContextReader;
 }
 
 export interface ChildRunCoordinator {
   spawnChild(input: SpawnChildInput): Promise<SpawnResult>;
   spawnChildBackground(input: SpawnChildInput): Promise<SpawnResult>;
   createReturnResultCompleter(childThreadId: ThreadId): ReturnResultCompleter;
-}
-
-function subagentsFromMeta(meta: Record<string, unknown>): string[] {
-  const raw = meta.subagents;
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((entry): entry is string => typeof entry === "string");
 }
 
 type ChildTerminal =
@@ -152,14 +145,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     const turnError = assertTurnBudget(input.budget);
     if (turnError) return { status: "error", error: turnError };
 
-    const packageContext = await deps.packageRepository.getAgentWithLinkedSkills(
-      input.parentThread.projectId,
-      input.parentThread.userId,
-      input.parentThread.currentAgent ?? "",
-    );
-    const callerSubagents = packageContext.agent
-      ? subagentsFromMeta(packageContext.agent.meta as Record<string, unknown>)
-      : [];
+    const parentAgent = await deps.agentRevisions.readThreadBinding(input.parentThread.id);
+    const callerSubagents = parentAgent?.definition.metadata.subagents ?? [];
     if (!callerSubagents.includes(input.agentSlug)) {
       return {
         status: "error",
@@ -170,24 +157,25 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       };
     }
 
-    const childAgentContext = await deps.packageRepository.getAgentWithLinkedSkills(
-      input.parentThread.projectId,
-      input.parentThread.userId,
-      input.agentSlug,
-    );
-    if (!childAgentContext.agent) {
+    const childAgent =
+      parentAgent &&
+      (await deps.agentRevisions.readPackageDefinitions(parentAgent.packageRevisionId)).find(
+        (revision) => revision.slug === input.agentSlug,
+      );
+    if (
+      !childAgent ||
+      childAgent.definition.metadata.mode === "primary" ||
+      childAgent.definition.metadata["model-invocable"] === false
+    ) {
       return {
         status: "error",
         error: meridianErrorFromSystem(
           "spawn_agent_not_found",
-          `Agent "${input.agentSlug}" not found`,
+          `Agent "${input.agentSlug}" is unavailable in the caller's retained package`,
         ),
       };
     }
-    const childAgent = childAgentContext.agent;
 
-    const workContext = (await deps.workContext.renderForThread(input.parentThread.id as ThreadId))
-      .text;
     const child = await deps.repos.transaction(async () => {
       const created = await deps.repos.subagentThreads.createSubagent({
         userId: input.parentThread.userId,
@@ -197,15 +185,12 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         originTurnId: input.parentTurnId,
         spawnDepth: input.parentThread.spawnDepth + 1,
         currentAgent: input.agentSlug,
-        composedSystemPrompt: assembleComposedSystemPrompt({
-          basePrompt: childAgent.body,
-          skillsSystemPromptSection: renderSkillsSystemPromptSection(childAgentContext.skills),
-          workContext,
-        }),
-        bakedSkillSlugs: modelInvocableSkillSlugs(childAgentContext.skills),
         title: input.description ?? `${input.agentSlug} subagent`,
         spawnStatus: "running",
       });
+      if (!(await deps.agentRevisions.bindThread(created.id, childAgent.id))) {
+        throw new Error("Failed to bind child Agent revision");
+      }
       const workId = await deps.resolveWorkMembership({
         threadId: created.id as ThreadId,
         projectId: input.parentThread.projectId,
@@ -337,37 +322,40 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       const message = error instanceof Error ? error.message : String(error);
       spawnResult = { status: "error", error: meridianErrorFromSystem("spawn_failed", message) };
     } finally {
-      deps.childRunRegistry.abortChildrenOf(prepared.child.id as ThreadId, {
-        includeBackground: true,
-      });
       try {
-        await deps.helperResultDelivery.markIdleAndFlush(prepared.child.id as ThreadId);
+        await deps.repos.threads.updateSpawnLifecycle(prepared.child.id as ThreadId, {
+          spawnStatus: terminalStatus,
+          spawnResult,
+        });
+        await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
+          type: "agent.spawn_completed",
+          parentThreadId: input.parentThread.id,
+          parentTurnId: input.parentTurnId as string,
+          childThreadId: prepared.child.id,
+          result: spawnResult,
+        });
       } finally {
+        deps.childRunRegistry.abortChildrenOf(prepared.child.id as ThreadId, {
+          includeBackground: true,
+        });
         try {
-          if (prepared.childRegistered) {
-            try {
-              await deps.workContextDelivery.flushOwned(prepared.child.id as ThreadId);
-            } finally {
-              deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
-            }
-          }
+          await deps.helperResultDelivery.markIdleAndFlush(prepared.child.id as ThreadId);
         } finally {
-          await prepared.runClaim.release();
+          try {
+            if (prepared.childRegistered) {
+              try {
+                await deps.workContextDelivery.flushOwned(prepared.child.id as ThreadId);
+              } finally {
+                deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
+              }
+            }
+          } finally {
+            await prepared.runClaim.release();
+          }
         }
       }
     }
 
-    await deps.repos.threads.updateSpawnLifecycle(prepared.child.id as ThreadId, {
-      spawnStatus: terminalStatus,
-      spawnResult,
-    });
-    await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-      type: "agent.spawn_completed",
-      parentThreadId: input.parentThread.id,
-      parentTurnId: input.parentTurnId as string,
-      childThreadId: prepared.child.id,
-      result: spawnResult,
-    });
     return spawnResult;
   }
 

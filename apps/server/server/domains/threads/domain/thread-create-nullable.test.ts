@@ -22,8 +22,6 @@ describe("nullable derived thread creation", () => {
         ...base,
         rootThreadId: "root",
         spawnDepth: 1,
-        composedSystemPrompt: "prompt",
-        bakedSkillSlugs: [],
       }),
     ).toMatchObject({ workId: null });
   });
