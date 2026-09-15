@@ -658,8 +658,20 @@ msgstr ""
 msgid "Check again"
 msgstr ""
 
+#: src/features/chat/ChatView.tsx
+msgid "Check status"
+msgstr ""
+
 #: src/components/app/composer/Composer.tsx
 msgid "Check submission status"
+msgstr ""
+
+#: src/features/chat/ChatView.tsx
+msgid "Check the saved first message before sending another."
+msgstr ""
+
+#: src/features/chat/ChatView.tsx
+msgid "Check this message before sending another. You can keep drafting below."
 msgstr ""
 
 #: src/features/project/home/HomeFeed.tsx
@@ -2720,6 +2732,10 @@ msgstr ""
 msgid "Save name and location"
 msgstr ""
 
+#: src/features/chat/ChatView.tsx
+msgid "Saved first message"
+msgstr ""
+
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally (offline)"
 msgstr ""
@@ -2884,6 +2900,7 @@ msgid "Start a quick chat without a project"
 msgstr ""
 
 #: src/components/app/composer/Composer.tsx
+#: src/features/chat/ChatView.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Start over"
 msgstr ""
@@ -3587,6 +3604,10 @@ msgstr ""
 
 #: src/features/project/context/context-schemes.ts
 msgid "User"
+msgstr ""
+
+#: src/features/chat/ChatView.tsx
+msgid "View saved message"
 msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
