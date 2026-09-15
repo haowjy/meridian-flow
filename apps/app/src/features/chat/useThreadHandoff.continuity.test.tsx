@@ -82,7 +82,11 @@ async function stageCreation() {
     threadId: key.threadId,
     title: "Opening",
     workId: null,
-    agentSlug: "writer",
+    agent: {
+      slug: "writer",
+      name: "writer",
+      selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-revision" },
+    },
     submission: envelope,
     phase: "creating",
   });

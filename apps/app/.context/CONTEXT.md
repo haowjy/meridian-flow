@@ -178,13 +178,14 @@ optimistic flow: client-generated UUID → navigate immediately → API call →
 reconcile on response. It is deliberately separate from project-address
 creation, whose destination must not own an unresolved project/thread create.
 
-Home first send deliberately orders the boundary differently: stable client ID
+Home first send reserves stable client IDs and the exact Agent catalog-entry/definition-revision pair
 → canonical create or same-ID ambiguity reconciliation → optimistic turn and
 durable continuity stage → route → destination claim. A definite stale Work or Agent refusal, whether
 returned by the initial create or its guarded same-ID retry after absence
 reconciliation, is identified only by the named `work_unavailable` or
 `agent_not_found` code, refreshes the relevant catalog, and unlocks prospective
-context repair while retaining the stable ID and immutable first text. Every
+context repair while retaining the immutable first text. Correcting a definite refusal
+allocates fresh attempt/thread IDs; an ambiguous attempt retains its original IDs. Every
 other uncertain create remains locked to that original envelope while same-ID
 reconciliation continues. A canonical mismatch is never handed off; Start over
 retires it before a later submission allocates a fresh ID.

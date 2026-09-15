@@ -1,5 +1,7 @@
 # Changelog
 
+- Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
+
 - Added route-addressed Work collection and detail management, with real card links, archived disclosure, inline metadata editing, pending drafts, Scratch, Uploads, and associated chat navigation.
 - Corrected Work-detail optional clears, live authoritative refresh reconciliation, route focus continuity, and compact Scratch/Uploads discovery previews.
 

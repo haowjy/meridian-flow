@@ -65,6 +65,8 @@ function threadFixture(overrides: Record<string, unknown> = {}) {
     systemPrompt: null,
     workingState: null,
     currentAgent: "agent-one",
+    agentDefinitionRevisionId: null,
+    agentName: null,
     activeLeafTurnId: null,
     parentThreadId: null,
     rootThreadId: "thread-1",

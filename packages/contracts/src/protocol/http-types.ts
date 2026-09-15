@@ -4,6 +4,7 @@
  * MULTIPLE PURPOSES: thread/project/work DTOs, context-tree DTOs, and figure asset DTOs.
  */
 
+import type { AgentSelection } from "../agents/index.js";
 import {
   CONTEXT_URI_SCHEMES,
   type ContextUriScheme,
@@ -347,9 +348,7 @@ export type CreateThreadRequest = {
   id?: string;
   projectId: string;
   title?: string;
-  systemPrompt?: string;
-  /** Mars agent slug — when set, agent body becomes the thread system prompt. */
-  currentAgent?: string;
+  agentSelection: AgentSelection;
   /** Omission and explicit null both create an executable no-Work root thread. */
   workId?: WorkId | null;
 };

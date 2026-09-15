@@ -146,7 +146,11 @@ export interface Thread {
   bakedSkillSlugs?: string[] | null;
   systemPrompt?: string | null;
   workingState?: WorkingState | null;
+  /** Display slug; execution uses the retained definition binding. */
   currentAgent: string | null;
+  agentDefinitionRevisionId: string | null;
+  /** Display name from the retained Agent definition. */
+  agentName: string | null;
   nextSeq?: string;
   /** Canonical logical head of the active conversation branch. */
   activeLeafTurnId: string | null;

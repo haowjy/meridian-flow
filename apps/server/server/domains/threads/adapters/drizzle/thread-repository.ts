@@ -25,6 +25,24 @@ import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./reposi
 import { visibleConversationalHeadLateral } from "./visible-conversation-sql.js";
 import { workAssociationCandidatesSql } from "./work-association-candidates-sql.js";
 
+// RETURNING strips table qualifiers from Column chunks; preserve the outer reference
+// when the binding subquery joins another table with its own id.
+const agentDefinitionRevisionId = sql<string | null>`(
+  SELECT ${schema.threadAgentBindings.definitionRevisionId}
+  FROM ${schema.threadAgentBindings}
+  WHERE ${schema.threadAgentBindings.threadId} = ${schema.threads}.${sql.identifier("id")}
+)`;
+
+const agentName = sql<string | null>`(
+  SELECT COALESCE(${schema.agentDefinitionRevisions.definition}->'metadata'->>'name', ${schema.agentDefinitionRevisions.slug})
+  FROM ${schema.threadAgentBindings}
+  JOIN ${schema.agentDefinitionRevisions}
+    ON ${schema.agentDefinitionRevisions.id} = ${schema.threadAgentBindings.definitionRevisionId}
+  WHERE ${schema.threadAgentBindings.threadId} = ${schema.threads}.${sql.identifier("id")}
+)`;
+
+const threadColumns = { ...getTableColumns(schema.threads), agentDefinitionRevisionId, agentName };
+
 const runningTurnId = sql<string | null>`(
   SELECT ${schema.turns.id}
   FROM ${schema.turns}
@@ -55,7 +73,7 @@ function mapThreadListRow(row: ThreadListRow) {
 
 function threadListSelect() {
   return {
-    ...getTableColumns(schema.threads),
+    ...threadColumns,
     workId: schema.threadWorks.workId,
     workTitle: schema.works.name,
     lastTurnRole: sql<TurnRole | null>`conversational_head.role`,
@@ -130,7 +148,7 @@ async function insertThreadWithStableSlug(
     const [created] = await activeDb
       .insert(schema.threads)
       .values({ ...values, slug })
-      .returning();
+      .returning(threadColumns);
     return created;
   });
 }
@@ -221,7 +239,7 @@ export function createDrizzleThreadRepository(
           updatedAt: new Date(),
         })
         .where(eq(schema.threads.id, id))
-        .returning();
+        .returning(threadColumns);
       if (!row) throw new Error(`Thread not found: ${id}`);
       const primary = await currentDrizzleDb(db)
         .select({ workId: schema.threadWorks.workId })
@@ -232,7 +250,10 @@ export function createDrizzleThreadRepository(
     },
     async findById(id: ThreadId) {
       const [row] = await currentDrizzleDb(db)
-        .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
+        .select({
+          ...threadColumns,
+          workId: schema.threadWorks.workId,
+        })
         .from(schema.threads)
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
@@ -247,7 +268,10 @@ export function createDrizzleThreadRepository(
     },
     async findLiveByProjectSlug(projectId: ProjectId, slug: string) {
       const [row] = await currentDrizzleDb(db)
-        .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
+        .select({
+          ...threadColumns,
+          workId: schema.threadWorks.workId,
+        })
         .from(schema.threads)
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
@@ -271,7 +295,10 @@ export function createDrizzleThreadRepository(
     },
     async lockByIdIncludingDeleted(id: ThreadId) {
       const [row] = await currentDrizzleDb(db)
-        .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
+        .select({
+          ...threadColumns,
+          workId: schema.threadWorks.workId,
+        })
         .from(schema.threads)
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .where(eq(schema.threads.id, id))
@@ -281,7 +308,10 @@ export function createDrizzleThreadRepository(
     },
     async listByUser(userId: UserId) {
       const rows = await currentDrizzleDb(db)
-        .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
+        .select({
+          ...threadColumns,
+          workId: schema.threadWorks.workId,
+        })
         .from(schema.threads)
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
@@ -353,7 +383,7 @@ export function createDrizzleThreadRepository(
           updatedAt: new Date(),
         })
         .where(eq(schema.threads.id, id))
-        .returning();
+        .returning(threadColumns);
       if (!row) throw new Error(`Thread not found: ${id}`);
       const primary = await currentDrizzleDb(db)
         .select({ workId: schema.threadWorks.workId })
@@ -376,7 +406,7 @@ export function createDrizzleThreadRepository(
             eq(schema.threads.turnCount, 0),
           ),
         )
-        .returning();
+        .returning(threadColumns);
       if (!row) return null;
       const primary = await currentDrizzleDb(db)
         .select({ workId: schema.threadWorks.workId })
@@ -405,7 +435,7 @@ export function createDrizzleThreadRepository(
                 : eq(schema.threads.currentAgentId, input.expectedCurrentAgent),
           ),
         )
-        .returning();
+        .returning(threadColumns);
       if (row) {
         const primary = await currentDrizzleDb(db)
           .select({ workId: schema.threadWorks.workId })
@@ -437,7 +467,7 @@ export function createDrizzleThreadRepository(
               : isNotNull(schema.threads.deletedAt),
           ),
         )
-        .returning();
+        .returning(threadColumns);
       if (!row) throw new Error(`Thread trash transition requires a changed locked row: ${id}`);
       const primary = await currentDrizzleDb(db)
         .select({ workId: schema.threadWorks.workId })

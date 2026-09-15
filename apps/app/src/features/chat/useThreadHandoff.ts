@@ -24,7 +24,6 @@ import {
   plainComposerDoc,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
-import { threadCreateAgentField } from "@/features/agents/constants";
 
 type Controller = ThreadRunController;
 
@@ -180,7 +179,7 @@ export function useThreadHandoff(
       handoffStartedRef.current = true;
 
       if (pendingStream.independentCreation) {
-        const { projectId, title, text, optimisticUserTurnId, currentAgent } =
+        const { projectId, title, text, optimisticUserTurnId, agentSelection } =
           pendingStream.independentCreation;
         void (async () => {
           try {
@@ -190,7 +189,7 @@ export function useThreadHandoff(
                 id: threadId,
                 projectId,
                 title,
-                ...threadCreateAgentField(currentAgent),
+                agentSelection,
               },
             });
             actions.ensureThread(thread);

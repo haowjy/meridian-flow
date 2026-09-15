@@ -6,6 +6,7 @@ import type { PackageCardData } from "./package-card-data";
 
 export type PackageCardProps = {
   pkg: PackageCardData;
+  disabled?: boolean;
   onSelect: (pkg: PackageCardData) => void;
 };
 
@@ -13,7 +14,7 @@ export type PackageCardProps = {
  * Compact horizontal card for the Home "Agent Packages" row.
  * Click → optimistic project create (handled by the parent).
  */
-export function PackageCard({ pkg, onSelect }: PackageCardProps) {
+export function PackageCard({ pkg, onSelect, disabled }: PackageCardProps) {
   const Icon = pkg.icon;
   const name = i18n._(pkg.name);
   const description = i18n._(pkg.description);
@@ -26,6 +27,7 @@ export function PackageCard({ pkg, onSelect }: PackageCardProps) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={handleClick}
       aria-label={name}
       className="surface-card focus-ring flex min-w-[200px] max-w-[280px] flex-col gap-2 rounded-lg px-4 py-3 text-left transition-colors hover:bg-muted"

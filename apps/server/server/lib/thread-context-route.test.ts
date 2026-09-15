@@ -24,6 +24,8 @@ function thread(): Thread {
     title: "Stable context identity",
     slug: null,
     currentAgent: null,
+    agentDefinitionRevisionId: null,
+    agentName: null,
     activeLeafTurnId: null,
     parentThreadId: null,
     rootThreadId: THREAD_ID,
