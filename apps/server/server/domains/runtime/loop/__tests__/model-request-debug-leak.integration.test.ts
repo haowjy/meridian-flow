@@ -106,7 +106,7 @@ describe("model-request debug prompt leak guard", () => {
         modelRequestDebug,
         projectPreferences: {
           async read() {
-            return { threadGroupBy: "work", pinnedThreadIds: [], defaultAgentSlug: null };
+            return { threadGroupBy: "work", pinnedThreadIds: [] };
           },
         },
       }),

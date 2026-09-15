@@ -116,7 +116,7 @@ describe("runtime loop integration", () => {
           createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
         projectPreferences: projectPreferences ?? {
           async read() {
-            return { threadGroupBy: "work", pinnedThreadIds: [], defaultAgentSlug: null };
+            return { threadGroupBy: "work", pinnedThreadIds: [] };
           },
         },
         ...(workWriteMode ? { workWriteMode } : {}),

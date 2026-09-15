@@ -10,11 +10,15 @@ import {
 } from "../domain/agent-source-revision.js";
 import type {
   AgentCatalogEntry,
+  AgentPackageHistoryEntry,
+  AgentPackageInstallation,
   AgentRevision,
   AgentRevisionStore,
 } from "../ports/agent-revision-store.js";
 
 type State = {
+  installations: Map<string, AgentPackageInstallation>;
+  installationHistory: Map<string, AgentPackageHistoryEntry[]>;
   sources: Map<string, { digest: string; source: AgentSourceSnapshot }>;
   revisions: Map<string, AgentRevision>;
   catalog: Map<string, AgentCatalogEntry>;
@@ -32,6 +36,8 @@ export function createInMemoryAgentRevisionStore(input: {
 }): InMemoryAgentRevisionStore {
   const transactionOwner = input.transactionOwner ?? new InMemoryTransactionOwner();
   const current: State = {
+    installations: transactionOwner.map(),
+    installationHistory: transactionOwner.map(),
     sources: transactionOwner.map(),
     revisions: transactionOwner.map(),
     catalog: transactionOwner.map(),
@@ -46,6 +52,45 @@ export function createInMemoryAgentRevisionStore(input: {
     );
 
   const store: InMemoryAgentRevisionStore = {
+    async listInstallations(owner) {
+      return copy(
+        [...state().installations.values()]
+          .filter((item) => item.ownerUserId === owner)
+          .sort((a, b) => a.coordinate.localeCompare(b.coordinate)),
+      );
+    },
+    async readInstallationHistory(owner, id) {
+      return state().installations.get(id)?.ownerUserId === owner
+        ? copy(state().installationHistory.get(id) ?? [])
+        : [];
+    },
+    async advanceInstallation(input) {
+      return store.transaction(async () => {
+        const { expectedRevisionId, ...values } = input;
+        const existing = [...state().installations.values()].find(
+          (item) => item.ownerUserId === input.ownerUserId && item.coordinate === input.coordinate,
+        );
+        if (
+          existing
+            ? existing.currentRevisionId !== expectedRevisionId
+            : expectedRevisionId !== undefined
+        )
+          return undefined;
+        for (const id of [input.currentRevisionId, input.upstreamRevisionId]) {
+          if (!state().sources.has(id))
+            throw new Error("Installation references a missing source revision");
+        }
+        const row = { ...values, id: existing?.id ?? randomUUID() };
+        state().installations.set(row.id, copy(row));
+        const history = copy(state().installationHistory.get(row.id) ?? []);
+        for (const packageRevisionId of [input.currentRevisionId, input.upstreamRevisionId]) {
+          if (!history.some((item) => item.packageRevisionId === packageRevisionId))
+            history.push({ packageRevisionId, createdAt: new Date().toISOString() });
+        }
+        state().installationHistory.set(row.id, history);
+        return copy(row);
+      });
+    },
     boundAgent(id) {
       const revisionId = state().bindings.get(id)?.revisionId;
       const revision = revisionId ? state().revisions.get(revisionId) : undefined;

@@ -10,6 +10,7 @@ export interface ProjectResultRecord {
   sizeBytes: number;
   provenance: ResultProvenance;
   createdAt: string;
+  agentName?: string;
 }
 
 export interface CreateProjectResultInput {

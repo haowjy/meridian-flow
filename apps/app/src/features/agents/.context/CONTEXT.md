@@ -38,4 +38,4 @@ rows and loading/error presentation.
 - `constants.ts`: canonical General slug and display label.
 - `client/first-send-continuity`: durable creation choices, attempts, and
   destination admission.
-- `resolve-agent.ts`: legacy project-catalog provenance display for results.
+- Results attribution is projected from the producing conversation’s retained definition; it never queries a mutable slug catalog.

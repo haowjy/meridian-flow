@@ -8,16 +8,16 @@ import type {
 } from "@meridian/contracts/agents";
 
 import {
+  type AgentRevisionStore,
   applyPackageUpdate,
   checkPackageUpdate,
   type MarsPackageFetcher,
-  type PackageRepository,
 } from "../domains/packages/index.js";
 import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
 
 export interface ProjectPackageUpdateRouteDeps {
   projectRepo: ProjectRepository;
-  packageRepository: PackageRepository;
+  agentRevisions: AgentRevisionStore;
   marsPackageFetcher: MarsPackageFetcher;
 }
 
@@ -33,9 +33,9 @@ export async function handleCheckPackageUpdateRequest(
 ): Promise<PackageUpdateCheckResponse> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   return checkPackageUpdate({
-    projectId: input.projectId,
+    userId: input.userId,
     installId: input.installId,
-    repository: deps.packageRepository,
+    store: deps.agentRevisions,
     fetcher: deps.marsPackageFetcher,
   });
 }
@@ -46,9 +46,9 @@ export async function handleApplyPackageUpdateRequest(
 ): Promise<PackageUpdateApplyResponse> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   return applyPackageUpdate({
-    projectId: input.projectId,
+    userId: input.userId,
     installId: input.installId,
-    repository: deps.packageRepository,
+    store: deps.agentRevisions,
     fetcher: deps.marsPackageFetcher,
   });
 }

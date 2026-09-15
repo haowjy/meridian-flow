@@ -23,11 +23,6 @@ export interface ProjectPreferences {
   threadGroupBy: ThreadGroupBy;
   /** Ids of threads in this project the user has pinned to the top of the list. */
   pinnedThreadIds: string[];
-  /**
-   * Agent slug pre-selected in the composer for new threads in this project.
-   * Null means no explicit default (client falls back to builtin "general").
-   */
-  defaultAgentSlug: string | null;
   /** Same-turn interrupt timeout policy. Defaults keep runs moving if the user walks away. */
   autoResume?: {
     enabled: boolean;
@@ -39,7 +34,6 @@ export interface ProjectPreferences {
 export const DEFAULT_PROJECT_PREFERENCES: ProjectPreferences = {
   threadGroupBy: "work",
   pinnedThreadIds: [],
-  defaultAgentSlug: null,
   autoResume: {
     enabled: true,
     timeoutMs: 270_000,

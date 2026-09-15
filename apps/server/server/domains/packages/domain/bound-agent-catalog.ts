@@ -13,6 +13,7 @@ import type {
 import { AgentConfigurationError, resolveAgentConfiguration } from "./agent-configuration.js";
 import type { CompiledAgentDefinition } from "./agent-definition-compiler.js";
 import type { AgentSourceSnapshot } from "./agent-source-revision.js";
+import { AgentPublicationConflictError, publishAgentSource } from "./source-publication.js";
 
 export type {
   AgentCatalogItem as BoundAgentCatalogItem,
@@ -25,7 +26,7 @@ export class AgentSelectionError extends Error {
   }
 }
 
-export class AgentPublicationConflictError extends Error {}
+export { AgentPublicationConflictError } from "./source-publication.js";
 
 export interface BoundAgentCatalog {
   /** Import or revise one personal standalone Agent without a mutable intermediate record. */
@@ -103,24 +104,38 @@ export function createBoundAgentCatalog(input: {
             );
           }
         }
-        const installed = await store.installSource({
-          coordinate,
-          files: { [`agents/${source.slug}.md`]: source.content },
-        });
-        const revision = installed.definitions[0];
-        // Resolve source references even when runtime support intentionally keeps an Agent unavailable.
-        await resolveAgentConfiguration({ revision, store, defaultModel: input.defaultModel() });
-        const selected = await store.selectRevision({
-          ownerUserId: userId,
-          logicalKey: source.slug,
-          revisionId: revision.id,
-          ...(source.expectedRevisionId ? { expectedRevisionId: source.expectedRevisionId } : {}),
-        });
-        if (!selected.ok)
+        if (
+          existing &&
+          source.expectedRevisionId !== undefined &&
+          source.expectedRevisionId !== existing.selectedRevisionId
+        ) {
           throw new AgentPublicationConflictError(
             "Agent changed since it was read; reload before saving.",
           );
-        return summarize(selected.entry);
+        }
+        const head = (await store.listInstallations(userId)).find(
+          (item) => item.coordinate === coordinate,
+        );
+        const candidate = { coordinate, files: { [`agents/${source.slug}.md`]: source.content } };
+        const installed = await store.installSource(candidate);
+        if (
+          existing &&
+          source.expectedRevisionId === undefined &&
+          existing.selectedRevisionId !== installed.definitions[0].id
+        ) {
+          throw new AgentPublicationConflictError(
+            "Agent changed since it was read; reload before saving.",
+          );
+        }
+        await publishAgentSource({
+          store,
+          ownerUserId: userId,
+          source: candidate,
+          expectedRevisionId: head?.currentRevisionId,
+        });
+        const selected = await store.readCatalogEntry(userId, source.slug);
+        if (!selected) throw new Error("Published Agent missing from catalog");
+        return summarize(selected);
       });
     },
     async installSystemSource(source) {
@@ -162,28 +177,16 @@ export async function installSystemAgentSource(
   source: AgentSourceSnapshot,
 ): Promise<void> {
   return store.withCatalogTransaction(null, async () => {
+    const existing = (await store.listInstallations(null)).find(
+      (item) => item.coordinate === source.coordinate,
+    );
     const installed = await store.installSource(source);
-    for (const revision of installed.definitions) {
-      const existing = await store.readCatalogEntry(null, revision.slug);
-      if (existing) {
-        const previous = await store.readRevision(existing.selectedRevisionId);
-        const previousSource = previous && (await store.readSource(previous.packageRevisionId));
-        if (previousSource?.coordinate !== source.coordinate) {
-          throw new Error(`System Agent source collision: ${revision.slug}`);
-        }
-      }
-      if (existing?.selectedRevisionId === revision.id || existing?.removed) continue;
-      const selected = await store.selectRevision({
-        ownerUserId: null,
-        logicalKey: revision.slug,
-        revisionId: revision.id,
-        ...(existing ? { expectedRevisionId: existing.selectedRevisionId } : {}),
-      });
-      if (!selected.ok) {
-        const current = await store.readCatalogEntry(null, revision.slug);
-        if (current?.selectedRevisionId !== revision.id)
-          throw new Error(`System Agent selection conflict: ${revision.slug}`);
-      }
-    }
+    await publishAgentSource({
+      store,
+      ownerUserId: null,
+      source,
+      expectedRevisionId: existing?.currentRevisionId,
+      upstreamRevisionId: installed.packageRevisionId,
+    });
   });
 }

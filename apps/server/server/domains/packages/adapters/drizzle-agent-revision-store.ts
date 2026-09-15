@@ -6,6 +6,8 @@ import {
   agentCatalogRevisions,
   agentDefinitionRevisions,
   agentPackageDependencies,
+  agentPackageInstallationHistory,
+  agentPackageInstallations,
   agentPackageRevisions,
   threadAgentBindings,
 } from "@meridian/database/schema";
@@ -30,7 +32,68 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
     definitionDigest: row.definitionDigest,
   });
 
+  const installationOwner = (owner: string | null) =>
+    owner === null
+      ? isNull(agentPackageInstallations.ownerUserId)
+      : eq(agentPackageInstallations.ownerUserId, owner);
   const store: AgentRevisionStore = {
+    async listInstallations(owner) {
+      return db()
+        .select()
+        .from(agentPackageInstallations)
+        .where(installationOwner(owner))
+        .orderBy(asc(agentPackageInstallations.coordinate));
+    },
+    async readInstallationHistory(owner, installationId) {
+      const rows = await db()
+        .select({
+          packageRevisionId: agentPackageInstallationHistory.packageRevisionId,
+          createdAt: agentPackageInstallationHistory.createdAt,
+        })
+        .from(agentPackageInstallationHistory)
+        .innerJoin(
+          agentPackageInstallations,
+          eq(agentPackageInstallations.id, agentPackageInstallationHistory.installationId),
+        )
+        .where(and(installationOwner(owner), eq(agentPackageInstallations.id, installationId)))
+        .orderBy(
+          asc(agentPackageInstallationHistory.createdAt),
+          asc(agentPackageInstallationHistory.packageRevisionId),
+        );
+      return rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
+    },
+    async advanceInstallation(input) {
+      return store.withCatalogTransaction(input.ownerUserId, async () => {
+        const { expectedRevisionId, ...values } = input;
+        const identity = and(
+          installationOwner(input.ownerUserId),
+          eq(agentPackageInstallations.coordinate, input.coordinate),
+        );
+        const [existing] = await db().select().from(agentPackageInstallations).where(identity);
+        if (
+          existing
+            ? existing.currentRevisionId !== expectedRevisionId
+            : expectedRevisionId !== undefined
+        )
+          return undefined;
+        const [row] = existing
+          ? await db()
+              .update(agentPackageInstallations)
+              .set({ ...values, updatedAt: new Date() })
+              .where(eq(agentPackageInstallations.id, existing.id))
+              .returning()
+          : await db().insert(agentPackageInstallations).values(values).returning();
+        await db()
+          .insert(agentPackageInstallationHistory)
+          .values(
+            [...new Set([input.currentRevisionId, input.upstreamRevisionId])].map(
+              (packageRevisionId) => ({ installationId: row.id, packageRevisionId }),
+            ),
+          )
+          .onConflictDoNothing();
+        return row;
+      });
+    },
     async withCatalogTransaction(ownerUserId, operation) {
       return runInDrizzleTransaction(database, async () => {
         // System logical keys span sources, including pointers an idempotent publication skips.

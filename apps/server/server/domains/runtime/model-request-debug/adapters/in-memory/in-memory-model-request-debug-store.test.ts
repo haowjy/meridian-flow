@@ -12,7 +12,7 @@ function input(iteration: number, text: string): ModelRequestDebugCaptureInput {
     iteration,
     agentSlug: "writer",
     request: { messages: [{ role: "user", content: [{ type: "text", text }] }] },
-    resolvedSkills: [],
+
     toolRegistry: createToolRegistry(),
   };
 }

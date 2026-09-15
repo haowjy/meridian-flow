@@ -17,7 +17,6 @@ export function goldenAssistantTurn(
     role: "assistant",
     writeMode: null,
     status,
-    agentDefinitionId: "agent_golden",
     finishReason: null,
     inputTokens: 0,
     outputTokens: 0,

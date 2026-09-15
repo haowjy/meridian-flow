@@ -1,5 +1,4 @@
 export type {
-  AgentDefinitionId,
   ContextSourceId,
   CreditLotId,
   CreditTransactionId,
@@ -15,7 +14,6 @@ export type {
   TurnDocumentTouchId,
   TurnId,
   UserId,
-  UserInstalledSkillId,
   UserSubscriptionId,
   WorkId,
 } from "../ids.js";

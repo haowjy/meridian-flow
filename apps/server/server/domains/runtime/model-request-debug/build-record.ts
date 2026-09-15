@@ -4,7 +4,6 @@ import type {
   ModelRequestDebugRecord,
   ModelRequestDebugRequest,
 } from "@meridian/contracts/threads";
-import type { ResolvedSkill } from "../../packages/index.js";
 import type { FunctionTool, GenerateRequest, Tool } from "../gateway/index.js";
 import type { ToolRegistry } from "../tools/index.js";
 
@@ -32,13 +31,6 @@ function advertisedToolsMetadata(
     });
 }
 
-function skillsMetadata(resolvedSkills: ResolvedSkill[]): ModelRequestDebugRecord["skills"] {
-  return resolvedSkills.map((resolved) => ({
-    slug: resolved.skill.slug,
-    layer: resolved.layer,
-  }));
-}
-
 export type ModelRequestDebugCaptureInput = {
   gatewayCallId: string;
   threadId: string;
@@ -46,7 +38,6 @@ export type ModelRequestDebugCaptureInput = {
   iteration: number;
   agentSlug: string | null;
   request: GenerateRequest;
-  resolvedSkills: ResolvedSkill[];
   toolRegistry: ToolRegistry;
 };
 
@@ -76,7 +67,7 @@ export function buildModelRequestDebugRecord(
         ? { status: "omitted", reason: "request_too_large", maxRequestBytes }
         : { status: "complete" },
     request,
-    skills: skillsMetadata(input.resolvedSkills),
+    skills: [],
     toolRegistrations: advertisedToolsMetadata(input.toolRegistry, input.request.tools),
   };
 }

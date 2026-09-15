@@ -1,5 +1,4 @@
 import type {
-  AgentDefinitionId,
   DocumentId,
   EventJournalId,
   ModelResponseId,
@@ -30,7 +29,6 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
-import { agentDefinitions } from "./agent-packages";
 import { documents, projects, works } from "./content";
 import { users } from "./users";
 
@@ -188,11 +186,6 @@ export const turns = pgTable(
       .notNull()
       .references(() => threads.id, { onDelete: "restrict" }),
     parentTurnId: uuid("parent_turn_id").$type<TurnId>(),
-    agentDefinitionId: uuid("agent_definition_id")
-      .$type<AgentDefinitionId>()
-      .references(() => agentDefinitions.id, {
-        onDelete: "set null",
-      }),
     compactionModel: text("compaction_model"),
     role: text("role").notNull(),
     aiWriteMode: text("ai_write_mode"),

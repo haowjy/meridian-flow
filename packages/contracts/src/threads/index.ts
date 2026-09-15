@@ -197,7 +197,6 @@ export interface Turn {
   /** Write policy frozen when this turn began; null identifies pre-contract turns. */
   writeMode: AiWriteMode | null;
   status: TurnStatus;
-  agentDefinitionId?: string | null;
   finishReason: FinishReason | null;
   model?: string | null;
   provider?: string | null;

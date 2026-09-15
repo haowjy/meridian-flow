@@ -1,23 +1,15 @@
 /** Next-turn Agent configuration comes exclusively from the retained thread binding. */
 import type { Thread } from "@meridian/contracts/threads";
-import type {
-  AgentRevisionStore,
-  CompiledAgentDefinition,
-  ResolvedSkill,
-} from "../../packages/index.js";
+import type { AgentRevisionStore, CompiledAgentDefinition } from "../../packages/index.js";
 import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";
-import type { FunctionTool, GenerateRequest, Tool } from "../gateway/index.js";
-import { bakedSkillSetAdvertisesInvoke } from "../loop/composed-system-prompt.js";
-import { INVOKE_TOOL_NAME } from "./skill-tools.js";
+import type { GenerateRequest, Tool } from "../gateway/index.js";
 import type { ToolRegistry } from "./types.js";
 
 export interface AgentThreadTurnContext {
   agentSlug: string;
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   tools: Tool[] | undefined;
-  resolvedSkills: ResolvedSkill[];
   agentBody: string;
-  skillsSystemPromptSection: string | undefined;
 }
 
 export interface ResolveAgentThreadTurnContextInput {
@@ -62,42 +54,13 @@ export async function resolveAgentThreadTurnContext(
       model: revision.configuration.model,
     }),
     tools,
-    resolvedSkills: [],
     agentBody:
       input.thread.kind === "subagent"
         ? `${revision.definition.systemPrompt}\n\nYou are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.`
         : revision.definition.systemPrompt,
-    skillsSystemPromptSection: undefined,
   };
-}
-
-function resolveInvokeTool(registry: ToolRegistry): FunctionTool | undefined {
-  const registration = registry.getRegistration(INVOKE_TOOL_NAME);
-  return registration?.definition;
 }
 
 function toolName(tool: Tool): string {
   return tool.type === "function" ? tool.name : tool.kind;
-}
-
-/** Apply invoke advertisement from the persisted baked skill slug set. */
-export function applyBakedInvokeAdvertisement(input: {
-  tools: Tool[] | undefined;
-  bakedSkillSlugs: string[] | null | undefined;
-  toolRegistry: ToolRegistry;
-}): Tool[] | undefined {
-  const advertiseInvoke = bakedSkillSetAdvertisesInvoke(input.bakedSkillSlugs);
-  const withoutInvoke =
-    input.tools?.filter((tool) => toolName(tool) !== INVOKE_TOOL_NAME) ?? input.tools;
-  if (!advertiseInvoke) {
-    return withoutInvoke?.length ? withoutInvoke : undefined;
-  }
-  const invokeTool = resolveInvokeTool(input.toolRegistry);
-  if (!invokeTool) {
-    return withoutInvoke?.length ? withoutInvoke : undefined;
-  }
-  if (input.tools?.some((tool) => toolName(tool) === INVOKE_TOOL_NAME)) {
-    return input.tools;
-  }
-  return [...(withoutInvoke ?? []), invokeTool];
 }

@@ -12,7 +12,6 @@ export default defineEventHandler(async (event) => {
     {
       projectRepo: app.projectRepo,
       preferences: app.preferences,
-      packageRepository: app.packageRepository,
     },
     { projectId, userId: user.userId },
   );

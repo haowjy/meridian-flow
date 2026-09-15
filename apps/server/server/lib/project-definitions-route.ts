@@ -24,12 +24,17 @@ import {
   saveAgentDefinition,
   saveSkillDefinition,
 } from "../domains/packages/domain/definition-editing.js";
-import type { PackageRepository } from "../domains/packages/index.js";
+import {
+  AgentConfigurationError,
+  AgentPublicationConflictError,
+  type AgentRevisionStore,
+  AgentSourceError,
+} from "../domains/packages/index.js";
 import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
 
 export interface ProjectDefinitionsRouteDeps {
   projectRepo: ProjectRepository;
-  packageRepository: PackageRepository;
+  agentRevisions: AgentRevisionStore;
 }
 
 export interface ProjectDefinitionRouteInput {
@@ -91,6 +96,10 @@ async function withOwner<T>(
     if (error instanceof DefinitionEditError) {
       throw createError({ statusCode: 404, message: error.message });
     }
+    if (error instanceof AgentPublicationConflictError)
+      throw createError({ statusCode: 409, message: error.message });
+    if (error instanceof AgentSourceError || error instanceof AgentConfigurationError)
+      throw createError({ statusCode: 422, message: error.message });
     throw error;
   }
 }
@@ -100,9 +109,7 @@ export async function handlePutAgentDefinitionRequest(
   input: ProjectDefinitionRouteInput & { body: UpdateAgentDefinitionRequest },
 ): Promise<AgentDefinitionResponse> {
   return withOwner(deps, input, () =>
-    deps.packageRepository.transaction((tx) =>
-      saveAgentDefinition(tx, input.projectId, input.slug, input.body),
-    ),
+    saveAgentDefinition(deps.agentRevisions, input.userId, input.slug, input.body),
   );
 }
 
@@ -111,9 +118,7 @@ export async function handlePutSkillDefinitionRequest(
   input: ProjectDefinitionRouteInput & { body: UpdateSkillDefinitionRequest },
 ): Promise<SkillDefinitionResponse> {
   return withOwner(deps, input, () =>
-    deps.packageRepository.transaction((tx) =>
-      saveSkillDefinition(tx, input.projectId, input.slug, input.body),
-    ),
+    saveSkillDefinition(deps.agentRevisions, input.userId, input.slug, input.body),
   );
 }
 
@@ -122,9 +127,7 @@ export async function handleListAgentDefinitionRevisionsRequest(
   input: ProjectDefinitionRouteInput,
 ): Promise<DefinitionRevisionListResponse> {
   return withOwner(deps, input, () =>
-    deps.packageRepository.transaction((tx) =>
-      listAgentDefinitionRevisions(tx, input.projectId, input.slug),
-    ),
+    listAgentDefinitionRevisions(deps.agentRevisions, input.userId, input.slug),
   );
 }
 
@@ -133,9 +136,7 @@ export async function handleListSkillDefinitionRevisionsRequest(
   input: ProjectDefinitionRouteInput,
 ): Promise<DefinitionRevisionListResponse> {
   return withOwner(deps, input, () =>
-    deps.packageRepository.transaction((tx) =>
-      listSkillDefinitionRevisions(tx, input.projectId, input.slug),
-    ),
+    listSkillDefinitionRevisions(deps.agentRevisions, input.userId, input.slug),
   );
 }
 
@@ -144,9 +145,7 @@ export async function handleRestoreAgentDefinitionRevisionRequest(
   input: ProjectDefinitionRouteInput & { revisionId: string },
 ): Promise<AgentDefinitionResponse> {
   return withOwner(deps, input, () =>
-    deps.packageRepository.transaction((tx) =>
-      restoreAgentDefinitionRevision(tx, input.projectId, input.slug, input.revisionId),
-    ),
+    restoreAgentDefinitionRevision(deps.agentRevisions, input.userId, input.slug, input.revisionId),
   );
 }
 
@@ -155,9 +154,7 @@ export async function handleRestoreSkillDefinitionRevisionRequest(
   input: ProjectDefinitionRouteInput & { revisionId: string },
 ): Promise<SkillDefinitionResponse> {
   return withOwner(deps, input, () =>
-    deps.packageRepository.transaction((tx) =>
-      restoreSkillDefinitionRevision(tx, input.projectId, input.slug, input.revisionId),
-    ),
+    restoreSkillDefinitionRevision(deps.agentRevisions, input.userId, input.slug, input.revisionId),
   );
 }
 
@@ -166,9 +163,7 @@ export async function handleRestoreAgentDefinitionOriginalRequest(
   input: ProjectDefinitionRouteInput,
 ): Promise<AgentDefinitionResponse> {
   return withOwner(deps, input, () =>
-    deps.packageRepository.transaction((tx) =>
-      restoreAgentDefinitionOriginal(tx, input.projectId, input.slug),
-    ),
+    restoreAgentDefinitionOriginal(deps.agentRevisions, input.userId, input.slug),
   );
 }
 
@@ -177,9 +172,7 @@ export async function handlePatchAgentSkillLinkRequest(
   input: ProjectDefinitionRouteInput & { skillSlug: string; body: PatchAgentSkillLinkRequest },
 ): Promise<AgentDefinitionDetail> {
   return withOwner(deps, input, () =>
-    deps.packageRepository.transaction((tx) =>
-      patchAgentSkillLink(tx, input.projectId, input.slug, input.skillSlug, input.body),
-    ),
+    patchAgentSkillLink(deps.agentRevisions, input.userId, input.slug, input.skillSlug, input.body),
   );
 }
 
@@ -188,8 +181,6 @@ export async function handleRestoreSkillDefinitionOriginalRequest(
   input: ProjectDefinitionRouteInput,
 ): Promise<SkillDefinitionResponse> {
   return withOwner(deps, input, () =>
-    deps.packageRepository.transaction((tx) =>
-      restoreSkillDefinitionOriginal(tx, input.projectId, input.slug),
-    ),
+    restoreSkillDefinitionOriginal(deps.agentRevisions, input.userId, input.slug),
   );
 }

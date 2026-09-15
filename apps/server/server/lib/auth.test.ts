@@ -119,7 +119,6 @@ function createTestProjectBootstrap(): {
       projectId: personalProjectId,
       documentId: randomUUID() as never,
       manuscriptSourceId: randomUUID() as never,
-      agentDefinitionId: randomUUID() as never,
       uri: "manuscript://chapter-1.md" as never,
     };
   }

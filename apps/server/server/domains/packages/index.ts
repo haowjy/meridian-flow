@@ -1,7 +1,6 @@
 // Public package parsing, compilation, catalog, and persistence surface.
 
 export { createDrizzleAgentRevisionStore } from "./adapters/drizzle-agent-revision-store.js";
-export { createDrizzlePackageStore } from "./adapters/drizzle-package-store.js";
 export {
   createGitHubMarsPackageFetcher,
   type GitHubMarsPackageFetcherDeps,
@@ -11,15 +10,6 @@ export {
   createInMemoryAgentRevisionStore,
   type InMemoryAgentRevisionStore,
 } from "./adapters/in-memory-agent-revision-store.js";
-export type {
-  InMemoryPackageStore,
-  InMemoryPackageStoreSeed,
-} from "./adapters/in-memory-package-store.js";
-export { createInMemoryPackageStore } from "./adapters/in-memory-package-store.js";
-export {
-  listBuiltinCatalogAgents,
-  listProjectCatalogAgents,
-} from "./domain/agent-catalog.js";
 export {
   AgentConfigurationError,
   resolveAgentConfiguration,
@@ -34,8 +24,6 @@ export {
 export {
   type AgentEffort,
   type AgentEffortLevel,
-  type AgentGatewayMeta,
-  extractAgentGatewayMeta,
   normalizeAgentEffort,
   normalizeAgentMetaFields,
 } from "./domain/agent-gateway-meta.js";
@@ -53,11 +41,9 @@ export {
   createBoundAgentCatalog,
 } from "./domain/bound-agent-catalog.js";
 export {
-  createDefaultPackageSeeder,
   type DefaultPackageSeedConfig,
-  type DefaultPackageSeeder,
-  type DefaultPackageSeedResult,
   defaultPackageSeedConfigFromEnv,
+  seedDefaultAgentPackages,
   seedGeneralAgent,
 } from "./domain/default-package-seeding.js";
 export {
@@ -71,8 +57,6 @@ export {
   restoreSkillDefinitionRevision,
   saveAgentDefinition,
   saveSkillDefinition,
-  seedInitialAgentRevision,
-  seedInitialSkillRevision,
 } from "./domain/definition-editing.js";
 export {
   FIRST_PARTY_CATALOG,
@@ -108,19 +92,7 @@ export {
   previewPackageInstall,
   resolvePackageInstallSource,
 } from "./domain/package-install-ops.js";
-export type { ImportMarsPackageInput } from "./domain/package-sync.js";
-export {
-  importLocalMarsPackage,
-  previewLocalMarsPackageImport,
-  previewLocalMarsPackageUpdate,
-  updateLocalMarsPackage,
-} from "./domain/package-sync.js";
 export { buildMarsPackageZip } from "./domain/package-zip.js";
-export { resolveAgentSkills } from "./domain/resolution.js";
-export {
-  type SkillExecutionDescriptor,
-  skillExecutionDescriptorFromResolvedSkill,
-} from "./domain/skill-execution-descriptor.js";
 export {
   bufferToSkillFileEntry,
   normalizeSkillFilesForChecksum,
@@ -131,24 +103,15 @@ export {
 } from "./domain/skill-files.js";
 export type {
   AgentConfigOverlay,
-  AgentDefinitionRecord,
-  AgentSkillLinkRecord,
   ExportedMarsDirectory,
   JsonObject,
   MarsDependency,
   MarsPackageMetadata,
-  PackageImportResult,
-  PackageInstallRecord,
-  PackageUpdateResult,
   PackageVisibility,
   ParsedAgentDefinition,
   ParsedMarsPackageSource,
   ParsedMarsToml,
   ParsedSkillDefinition,
-  ResolvedPackageContext,
-  ResolvedSkill,
-  SkillRecord,
-  UserInstalledSkillRecord,
 } from "./domain/types.js";
 export type {
   AgentCatalogEntry,
@@ -162,4 +125,3 @@ export type {
   MarsPackageFetcher,
 } from "./ports/mars-package-fetcher.js";
 export { fetchedMarsSourceFromDirectory } from "./ports/mars-package-fetcher.js";
-export type { PackageRepository, PackageWriteTransaction } from "./ports/package-store.js";

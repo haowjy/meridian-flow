@@ -2326,7 +2326,11 @@ msgstr ""
 
 #. placeholder {0}: agent.name
 #: src/features/project/shell/ResultsRailSection.tsx
-msgid "Open producing turn in {0}"
+#~ msgid "Open producing turn in {0}"
+#~ msgstr ""
+
+#: src/features/project/shell/ResultsRailSection.tsx
+msgid "Open producing turn in {agentName}"
 msgstr ""
 
 #: src/features/project/shell/ResultsRailSection.tsx
@@ -3096,8 +3100,8 @@ msgid "That rename couldn't be completed. Choose another name or try again."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That skill isn't available in this chat."
-msgstr ""
+#~ msgid "That skill isn't available in this chat."
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
@@ -3105,12 +3109,12 @@ msgid "That Work is no longer available. Choose another Work."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The {skillName} skill is no longer available in this chat — start a new chat to use the current version."
-msgstr ""
+#~ msgid "The {skillName} skill is no longer available in this chat — start a new chat to use the current version."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The {skillName} skill isn't available in this chat."
-msgstr ""
+#~ msgid "The {skillName} skill isn't available in this chat."
+#~ msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
@@ -3410,8 +3414,8 @@ msgid "This selection holds blocks that keep their own block type."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This skill is no longer available in this chat — start a new chat to use the current version."
-msgstr ""
+#~ msgid "This skill is no longer available in this chat — start a new chat to use the current version."
+#~ msgstr ""
 
 #: src/core/editor/asset-image-render-state.ts
 msgid "This stored figure needs a project before it can be rendered."
