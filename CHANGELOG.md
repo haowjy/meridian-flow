@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Preserve structured Agent skill declarations and omitted configuration fields through source normalization and revision checksums.
+
 - Reuse fresh catalog acquisitions when switching back to a retained Editor tab.
 
 - Avoid catalog reconstruction on unchanged renders and duplicate reads after catalog acquisition.
