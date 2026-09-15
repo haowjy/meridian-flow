@@ -114,7 +114,7 @@ Meridian Flow's Postgres schema. Key column mappings:
 |---|---|---|
 | `threads.projectId` | `threads.projectId` | Foreign key into Meridian `projects` |
 | `threads.createdBy` | `threads.createdByUserId` | Explicit user-ID column name |
-| `threads.currentAgent` | `threads.currentAgentId` | Agent ID column |
+| `threads.currentAgent` | `threads.currentAgentId` | Legacy-named display slug column; never definition or execution identity |
 | `threads.rootThreadId` | `threads.rootThreadId` | Persisted spawn-tree root; primary threads use their own ID |
 | `threads.totalCostUsd` | `threads.totalCostUsd` | Persisted aggregate maintained by repository/projector recompute |
 | `threads.bakedSkillSlugs` | `threads.bakedSkillSlugs` | `null` means not baked; array means first-attempt bake won |
