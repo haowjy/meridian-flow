@@ -182,6 +182,12 @@ facet.
   commits. Destructive effects are echoed to the model and writer-lineage
   overlap may elevate receiving-writer-specific session marks. Trail evidence
   stays lifecycle-neutral and read-only.
+- **Expired writer admissions** — lookup, replay, and retirement reconcile expired
+  pending reservations through `UserTurnAdmission`. Recovery takes the runner's
+  shared cross-process claim before the row-locking transaction and holds it
+  through commit. Unexpired reservations do not contend for that claim. The
+  ledger rechecks expiry and committed-turn evidence; an orphan settles to
+  `recovery_no_committed_turn` without starting a model call or document effects.
 - **One running turn per thread** — writer callers enter through
   `UserTurnAdmission`, whose replay lookup precedes the busy fence. An unseen
   identity is durably reserved before token and run-claim settlement; definite

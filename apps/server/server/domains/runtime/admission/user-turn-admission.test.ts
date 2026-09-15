@@ -3,6 +3,7 @@
 import type { UserTurnAdmissionInput } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import type { ProjectContextAvailabilityPort } from "../../context/index.js";
+import { createInMemoryThreadRunOwnership } from "../loop/thread-run-ownership.js";
 import type { AdmissionRecord, AdmissionTurnStarter } from "./user-turn-admission.js";
 import {
   AdmissionConflictError,
@@ -96,9 +97,12 @@ function harness(
     })),
   } as ProjectContextAvailabilityPort;
   const threadProject = vi.fn(async () => projectId);
+  const runOwnership = createInMemoryThreadRunOwnership();
   const service = createUserTurnAdmission({
+    runOwnership,
     records: {
       lookup,
+      recoverExpiredPending: vi.fn(async () => existing),
       reserve: vi.fn(async (request) => {
         reservedFingerprint = request.fingerprint;
         return existing
@@ -121,10 +125,34 @@ function harness(
     verifyDraftUpload: vi.fn(async () => draftUploadMatches),
     starter: { start: starter },
   });
-  return { service, lookup, starter, availability, threadProject, captured: () => capturedStart };
+  return {
+    service,
+    lookup,
+    starter,
+    availability,
+    threadProject,
+    runOwnership,
+    captured: () => capturedStart,
+  };
 }
 
 describe("UserTurnAdmission", () => {
+  it("leaves unexpired reservations outside the run-claim race", async () => {
+    const { service, runOwnership } = harness({
+      state: "pending",
+      fingerprint: canonicalAdmissionFingerprint({
+        ...input(),
+        blocks: parseUserMessageBlocks(input().blocks, input().text),
+        references: parseSubmittedReferences(input().references),
+      }),
+      claimExpiresAt: new Date("2999-01-01T00:00:00Z"),
+    });
+    const acquire = vi.spyOn(runOwnership, "tryAcquire");
+    await expect(service.lookup(input())).resolves.toMatchObject({ kind: "pending" });
+    await expect(service.admit(input())).resolves.toMatchObject({ kind: "pending" });
+    expect(acquire).not.toHaveBeenCalled();
+  });
+
   it("parses exact ordered occurrences and proves text equivalence", () => {
     const parsed = parseUserMessageBlocks(input().blocks, input().text);
     expect(parsed.map((block) => block.type)).toEqual([

@@ -623,6 +623,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
   });
   const userTurnAdmission = createUserTurnAdmission({
+    runOwnership: ports.runOwnership,
     records: admissionRecords,
     availability: ports.projectContextAvailability,
     async threadProject(threadId) {
