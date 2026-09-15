@@ -102,7 +102,7 @@ export function useThreadHandoff(
           ? await controller.submit(threadId, record.envelope, {
               optimisticUserTurnId: record.optimisticUserTurnId,
             })
-          : await controller.lookup(threadId, record.envelope, {
+          : await controller.recoverFirstSend(threadId, record.envelope, {
               optimisticUserTurnId: record.optimisticUserTurnId,
             });
         if (outcome.kind === "ambiguous") {

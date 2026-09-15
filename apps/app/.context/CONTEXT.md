@@ -55,7 +55,8 @@ Two interfaces are the only paths between the visual layer and the substrate:
   account-scoped IndexedDB owner, not Zustand. Home stages the immutable
   Composer envelope before navigation; destination Chat atomically claims
   `ready` as `dispatching`, while a remounted `dispatching` or `ambiguous`
-  record performs ledger lookup only. `ThreadRunController` joins append,
+  record enters server-checked recovery (see Client-led creation patterns).
+  `ThreadRunController` joins append,
   lookup, and explicit retirement to a typed settlement boundary. Definite rejection remains durable until
   the matching shared Composer acknowledges an idempotent restoration; when a
   newer draft exists, the failed first send is prepended with a blank-line
@@ -189,6 +190,14 @@ allocates fresh attempt/thread IDs; an ambiguous attempt retains its original ID
 other uncertain create remains locked to that original envelope while same-ID
 reconciliation continues. A canonical mismatch is never handed off; Start over
 retires it before a later submission allocates a fresh ID.
+
+The destination reconciles retained first-message admissions through
+`ThreadRunController.recoverFirstSend`. A server `not-seen` result permits one
+replay of the exact saved submission ID and envelope. Pending or failed lookups
+remain unresolved; an uncertain replay performs status lookup only. Ordinary
+status checks stay read-only. Authoritative replay rejection stays rejected.
+Controller teardown invalidates the whole admission operation, including token
+waits, POST completion, and follow-up lookup, before store or subscription effects.
 
 Future optimistic surfaces (rename, soft-delete, undo) follow the same
 shape: optimistic store update first, API call second (`threads-api.ts`),

@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Recover interrupted first-message admission after reload with a server-checked retry of the saved submission identity.
+
 - Prepare Agent model calls and previews from retained definitions, preserving the selected model and persona across catalog changes and conversation reloads. Bind named children from retained package revisions and prepare their prompts through the same runtime.
 
 - Expose Agent revisions through app services and include hermetic bindings in thread transactions.
