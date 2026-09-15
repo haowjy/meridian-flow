@@ -46,7 +46,10 @@ combine system and owned entries with a bounded name/keyset order.
 
 The store is an internal persistence port. Callers authorize source/Project/thread
 access and runtime support before selecting or binding. Null catalog ownership
-is reserved for trusted system seeding. The live creation/runtime path still
+is reserved for trusted system seeding. App services expose the revision port as
+`agentRevisions`. The hermetic adapter and thread repositories share one snapshot transaction
+owner in app composition. Either entry point commits or rolls back both stores;
+completed transaction frames reject escaped writes. The live creation/runtime path still
 consumes `PackageRepository` below; integration belongs to the milestone work.
 
 `domain/bound-agent-catalog.ts` resolves exact primary selections and builds

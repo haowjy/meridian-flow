@@ -3,6 +3,7 @@
  * runtime service graph. App startup supplies process-level resources; this file
  * chooses concrete server adapters and assembles domain services behind ports.
  */
+
 import type { Database } from "@meridian/database";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
@@ -63,10 +64,12 @@ import {
 } from "../domains/observability/index.js";
 import { createInMemoryPackageStore } from "../domains/packages/adapters/in-memory-package-store.js";
 import {
+  type AgentRevisionStore,
   createDefaultPackageSeeder,
   createDrizzleAgentRevisionStore,
   createDrizzlePackageStore,
   createGitHubMarsPackageFetcher,
+  createInMemoryAgentRevisionStore,
   type DefaultPackageSeeder,
   defaultPackageSeedConfigFromEnv,
   type MarsPackageFetcher,
@@ -159,6 +162,7 @@ import {
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
 import { runAfterDrizzleCommit } from "../shared/drizzle-transaction.js";
+import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { resolveObsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
@@ -168,8 +172,6 @@ import {
   createReferenceReader,
   createWiredCoreToolRegistrations,
 } from "./wired-core-tools.js";
-
-type AgentPackageStore = { readonly phase: "skeleton" };
 
 export type AppServices = {
   gateway: Gateway;
@@ -198,7 +200,7 @@ export type AppServices = {
   workContext: WorkContextReader;
   workContextDelivery: WorkContextDelivery;
   billing: BillingService;
-  agents: AgentPackageStore;
+  agentRevisions: AgentRevisionStore;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   eventQuery?: EventQuery;
@@ -255,7 +257,7 @@ export type ProductionAppPorts = {
   billing: BillingService;
   billingUsage: BillingUsagePolicy;
   billingSpendReader: BillingSpendReader;
-  agents: AgentPackageStore;
+  agentRevisions: AgentRevisionStore;
   packageRepository: PackageRepository;
   marsPackageFetcher: MarsPackageFetcher;
   defaultPackageSeeder: DefaultPackageSeeder;
@@ -489,7 +491,7 @@ export async function createProductionAppPorts(input: {
     billing: billingDomain.service,
     billingUsage: billingDomain.usagePolicy,
     billingSpendReader: billingDomain.spendReader,
-    agents: { phase: "skeleton" },
+    agentRevisions,
     packageRepository,
     marsPackageFetcher,
     defaultPackageSeeder,
@@ -730,7 +732,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workContext,
     workContextDelivery,
     billing: ports.billing,
-    agents: ports.agents,
+    agentRevisions: ports.agentRevisions,
     interruptRegistry,
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
@@ -763,7 +765,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
 }
 
 export function createInMemoryAppServices(): AppServices {
-  const threadRepos = createInMemoryRepositories();
+  const transactionOwner = new InMemoryTransactionOwner();
+  const threadRepos = createInMemoryRepositories({ transactionOwner });
+  const agentRevisions = createInMemoryAgentRevisionStore({
+    transactionOwner,
+    threadExists: async (id) =>
+      Boolean(await threadRepos.threads.findProjectIdByIdIncludingDeleted(id)),
+  });
   const packageRepository = createInMemoryPackageStore();
   const preferences = createInMemoryProjectPreferencesRepository();
   const workingSet = createInMemoryWorkingSetRepository();
@@ -1069,7 +1077,7 @@ export function createInMemoryAppServices(): AppServices {
     workContext: unavailableWorkContext,
     workContextDelivery: noopWorkContextDelivery,
     billing: billingDomain.service,
-    agents: { phase: "skeleton" },
+    agentRevisions,
     interruptRegistry: createInterruptRegistry(),
     eventSink: createNoopEventSink(),
     packageRepository,

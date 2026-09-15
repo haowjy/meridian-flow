@@ -4,10 +4,10 @@
  * aggregate). For tests/local dev; shares creation semantics via thread-create.
  */
 
-import { AsyncLocalStorage } from "node:async_hooks";
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
+import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { toIsoString } from "../../domain/contract-serialization.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
@@ -159,6 +159,7 @@ interface WorkProjectionRepository {
 }
 
 export interface InMemoryRepositoriesOptions {
+  transactionOwner?: InMemoryTransactionOwner;
   projects?: ProjectVisibilityRepository;
   works?: WorkProjectionRepository;
 }
@@ -166,17 +167,19 @@ export interface InMemoryRepositoriesOptions {
 export function createInMemoryRepositories(
   options: InMemoryRepositoriesOptions = {},
 ): InternalThreadRepositories {
-  const threads = new Map<string, Thread>();
-  const turns = new Map<string, Turn>();
-  const blocks = new Map<string, Block>();
-  const modelResponses = new Map<string, ModelResponse>();
-  const threadDocuments = new Map<string, ThreadDocument>();
-  const documentTouches = new Map<string, TurnDocumentTouch>();
-  const threadWorks = new Map<string, { threadId: ThreadId; workId: WorkId; isPrimary: boolean }>();
-  const workContextDeliveries = new Set<string>();
-  const userStateByThreadUser = new Map<string, { isFavorite: boolean }>();
-  const transactionContext = new AsyncLocalStorage<boolean>();
-  let transactionTail: Promise<void> = Promise.resolve();
+  const transactionOwner = options.transactionOwner ?? new InMemoryTransactionOwner();
+  const threads = transactionOwner.map<string, Thread>();
+  const turns = transactionOwner.map<string, Turn>();
+  const blocks = transactionOwner.map<string, Block>();
+  const modelResponses = transactionOwner.map<string, ModelResponse>();
+  const threadDocuments = transactionOwner.map<string, ThreadDocument>();
+  const documentTouches = transactionOwner.map<string, TurnDocumentTouch>();
+  const threadWorks = transactionOwner.map<
+    string,
+    { threadId: ThreadId; workId: WorkId; isPrimary: boolean }
+  >();
+  const workContextDeliveries = transactionOwner.set<string>();
+  const userStateByThreadUser = transactionOwner.map<string, { isFavorite: boolean }>();
 
   async function receivesWorkContextUpdate(thread: Thread | undefined): Promise<boolean> {
     return (
@@ -844,60 +847,7 @@ export function createInMemoryRepositories(
         workContextDeliveries.delete(threadId);
       },
     },
-    async transaction(operation) {
-      if (transactionContext.getStore()) return operation();
-
-      const previous = transactionTail;
-      let release!: () => void;
-      const gate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      transactionTail = previous.then(
-        () => gate,
-        () => gate,
-      );
-      await previous.catch(() => undefined);
-      try {
-        return await transactionContext.run(true, async () => {
-          const threadsSnapshot = new Map(threads);
-          const turnsSnapshot = new Map(turns);
-          const blocksSnapshot = new Map(blocks);
-          const modelResponsesSnapshot = new Map(modelResponses);
-          const threadDocumentsSnapshot = new Map(threadDocuments);
-          const documentTouchesSnapshot = new Map(documentTouches);
-          const threadWorksSnapshot = new Map(threadWorks);
-          const userStateSnapshot = new Map(userStateByThreadUser);
-          const workContextDeliveriesSnapshot = new Set(workContextDeliveries);
-          try {
-            return await operation();
-          } catch (error) {
-            threads.clear();
-            for (const entry of threadsSnapshot) threads.set(...entry);
-            turns.clear();
-            for (const entry of turnsSnapshot) turns.set(...entry);
-            blocks.clear();
-            for (const entry of blocksSnapshot) blocks.set(...entry);
-            modelResponses.clear();
-            for (const entry of modelResponsesSnapshot) modelResponses.set(...entry);
-            threadDocuments.clear();
-            for (const entry of threadDocumentsSnapshot) threadDocuments.set(...entry);
-            documentTouches.clear();
-            for (const entry of documentTouchesSnapshot) documentTouches.set(...entry);
-            threadWorks.clear();
-            for (const entry of threadWorksSnapshot) threadWorks.set(...entry);
-            userStateByThreadUser.clear();
-            for (const entry of userStateSnapshot) userStateByThreadUser.set(...entry);
-            workContextDeliveries.clear();
-            for (const threadId of workContextDeliveriesSnapshot) {
-              workContextDeliveries.add(threadId);
-            }
-            throw error;
-          }
-        });
-      } finally {
-        release();
-      }
-    },
+    transaction: (operation) => transactionOwner.run(operation),
     async runTurnStartTransition(threadId, expectedActiveLeafTurnId, operation) {
       return this.transaction(async () => {
         if (threads.get(threadId)?.activeLeafTurnId !== expectedActiveLeafTurnId) {

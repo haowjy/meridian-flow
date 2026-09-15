@@ -63,7 +63,7 @@ represented as a fully-typed slot:
 | `projects` | projects | Drizzle project repository |
 | `works` | projects | Drizzle work repository |
 | `creditLedger` | billing | Drizzle credit lot/transaction ledger |
-| `agents` | agents | Package store (skeleton) |
+| `agentRevisions` | packages | Immutable Agent source/definition revisions, catalog membership, and thread bindings |
 | `interruptRegistry` | runtime | In-memory interrupt registry |
 | `eventSink` | observability | Process-scoped deferred sink bound to env-selected local/no-op adapter |
 | `eventQuery` | observability | Optional recent-event query port, present only for local dev/test composition |
