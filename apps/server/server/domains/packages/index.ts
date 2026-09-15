@@ -1,4 +1,6 @@
-// Package domain public surface: exports only the active repository-backed Mars package runtime.
+// Public package parsing, compilation, catalog, and persistence surface.
+
+export { createDrizzleAgentRevisionStore } from "./adapters/drizzle-agent-revision-store.js";
 export { createDrizzlePackageStore } from "./adapters/drizzle-package-store.js";
 export {
   createGitHubMarsPackageFetcher,
@@ -29,6 +31,10 @@ export {
   normalizeAgentEffort,
   normalizeAgentMetaFields,
 } from "./domain/agent-gateway-meta.js";
+export {
+  type AgentSourceSnapshot,
+  prepareAgentSourceRevision,
+} from "./domain/agent-source-revision.js";
 export {
   createDefaultPackageSeeder,
   type DefaultPackageSeedConfig,
@@ -126,6 +132,12 @@ export type {
   SkillRecord,
   UserInstalledSkillRecord,
 } from "./domain/types.js";
+export type {
+  AgentCatalogEntry,
+  AgentCatalogSelectionResult,
+  AgentRevision,
+  AgentRevisionStore,
+} from "./ports/agent-revision-store.js";
 export type {
   FetchedMarsSource,
   MarsPackageFetcher,

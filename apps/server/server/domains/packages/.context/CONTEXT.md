@@ -24,7 +24,29 @@ and skill directories with `SKILL.md` and supporting files.
   compiled digests identify normalized definition content. Both sort object keys
   recursively and retain list order.
 
-## Repository and editing
+## Retained definition storage
+
+`domain/agent-source-revision.ts` derives compiled definitions from the retained
+file snapshot and TOML overlays. Source identity includes supporting files;
+compiled identity describes the Agent configuration. Binary/NUL-containing
+supporting files use base64 for JSONB storage.
+
+`ports/agent-revision-store.ts` owns immutable source/definition records,
+account/system catalog pointers, and fixed thread bindings.
+`adapters/drizzle-agent-revision-store.ts` persists them in the four
+`agent-definition-revisions.ts` schema tables and joins the app's ambient
+transaction. Source installs deduplicate by coordinate/digest. Catalog creation
+is idempotent for the same revision; advancement requires an expected revision.
+Removal hides selection while bound revisions remain readable. An explicit
+owner restore requires the retained revision; ordinary saves leave removed entries hidden. Catalog pages
+combine system and owned entries with a bounded name/keyset order.
+
+The store is an internal persistence port. Callers authorize source/Project/thread
+access and runtime support before selecting or binding. Null catalog ownership
+is reserved for trusted system seeding. The live creation/runtime path still
+consumes `PackageRepository` below; integration belongs to the milestone work.
+
+## Package repository and editing
 
 `ports/package-store.ts` defines `PackageRepository` and its transaction port.
 Mutable records live in `domain/types.ts`: package installs, Agent definitions,

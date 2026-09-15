@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Add durable Agent source/definition revisions, account/system catalog selection, and fixed thread-binding storage with transactional rollback and explicit catalog restore.
+
 - Add presence-sensitive Mars Agent compilation with canonical tool names, overlay validation, explicit diagnostics, and versioned definition digests.
 - Preserve Agent body whitespace and reject malformed definition containers instead of silently discarding configuration.
 

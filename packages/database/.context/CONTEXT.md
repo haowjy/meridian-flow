@@ -135,3 +135,17 @@ independent, non-nested scope.
 The schema stays ordinary Postgres with no provider-specific auth coupling
 (identity is app-owned `public.users` keyed by WorkOS `external_id`). The Date
 vs string `mode` split is a known inconsistency, not a pattern to extend.
+
+### Retained Agent definitions
+
+`agent_package_revisions` retains complete source snapshots. Its coordinate/digest
+key deduplicates installs. `agent_definition_revisions` retains one compiled Agent
+per package revision and local slug. Catalog pointers and thread bindings use
+revision FKs with restricted deletion; hiding a catalog entry preserves bound
+content. Account deletion cascades catalog entries and threads, not source rows.
+
+`agent_catalog_entries` has account-owned and system-owned logical-key indexes.
+`thread_agent_bindings` has one row per thread. The server's Agent revision store
+owns insert-only content, catalog compare-and-set selection, and idempotent fixed
+binding. It joins the existing ambient transaction owner so thread admission can
+include source, catalog, and binding writes atomically.
