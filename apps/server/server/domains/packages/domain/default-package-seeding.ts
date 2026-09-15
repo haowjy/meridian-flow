@@ -10,8 +10,11 @@ import { access, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { AgentRevisionStore } from "../ports/agent-revision-store.js";
 import type { MarsPackageFetcher } from "../ports/mars-package-fetcher.js";
 import type { PackageRepository } from "../ports/package-store.js";
+import { installSystemAgentSource } from "./bound-agent-catalog.js";
+import { serializeMarkdownDefinition } from "./mars-source.js";
 import { importLocalMarsPackage, updateLocalMarsPackage } from "./package-sync.js";
 import type { PackageImportResult, PackageUpdateResult } from "./types.js";
 
@@ -149,4 +152,23 @@ async function materializeLaunchAgentPackageFromNitroAssets(): Promise<string> {
     await writeFile(target, await serverAssets.assets.getItem(key), "utf8");
   }
   return packageDir;
+}
+
+/** General adds no persona to the shared host prompt and pins the configured default model. */
+export async function seedGeneralAgent(store: AgentRevisionStore, model: string): Promise<void> {
+  await installSystemAgentSource(store, {
+    coordinate: "meridian/general",
+    files: {
+      "mars.toml": '[package]\nname = "meridian-general"\n',
+      "agents/general.md": serializeMarkdownDefinition(
+        {
+          name: "General",
+          description: "General-purpose assistant.",
+          mode: "primary",
+          model,
+        },
+        "",
+      ),
+    },
+  });
 }

@@ -47,6 +47,7 @@ export {
   type DefaultPackageSeeder,
   type DefaultPackageSeedResult,
   defaultPackageSeedConfigFromEnv,
+  seedGeneralAgent,
 } from "./domain/default-package-seeding.js";
 export {
   DefinitionEditError,
