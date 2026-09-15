@@ -37,7 +37,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       sourceScheme: string;
       body: unknown;
     }) => {
-      const move = parseContextMove({ sourceScheme: input.sourceScheme, body: input.body });
+      const move = parseContextMove({
+        sourceScheme: input.sourceScheme,
+        body: { operationId: crypto.randomUUID(), ...(input.body as Record<string, unknown>) },
+      });
       const resolver = createDrizzleProjectWorkAuthorityResolver(db);
       const resolveLocator = async (locator: typeof move.source) => {
         if (locator.scope !== "work") return locator;
@@ -54,6 +57,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         port: input.port,
         userId: input.userId,
         move: {
+          operationId: move.operationId,
           expected: move.expected,
           source: await resolveLocator(move.source),
           destination: await resolveLocator(move.destination),
@@ -219,6 +223,177 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .where(eq(schema.documents.id, documentId));
       return row;
     }
+
+    it("replays the immutable move result before obsolete-source inspection and rejects ID reuse", async () => {
+      const { port } = await arrangeUntitled();
+      const operationId = crypto.randomUUID();
+      const options = { operationId, expected: { kind: "file" as const, nodeId: DOCUMENT_ID } };
+      const source = "scratch://@current-work/Untitled 1.md";
+      const first = await port.commitWriterLocation(source, "manuscript://first.md", options);
+      expect(first.ok).toBe(true);
+      await expect(
+        port.commitWriterLocation("manuscript://first.md", "manuscript://second.md", {
+          operationId: crypto.randomUUID(),
+          expected: options.expected,
+        }),
+      ).resolves.toMatchObject({ ok: true });
+      const commits = await db.select().from(schema.contextCatalogCommits);
+      await expect(
+        port.commitWriterLocation(source, "manuscript://first.md", options),
+      ).resolves.toEqual(first);
+      await expect(port.lookupOperation(operationId)).resolves.toMatchObject({
+        operationId,
+        result: first,
+      });
+      expect(await db.select().from(schema.contextCatalogCommits)).toEqual(commits);
+      await expect(
+        port.commitWriterLocation(source, "manuscript://other.md", options),
+      ).resolves.toMatchObject({
+        ok: false,
+        error: { code: "operation_mismatch" },
+      });
+      await expect(port.stat("manuscript://second.md")).resolves.toMatchObject({
+        ok: true,
+        value: { documentId: DOCUMENT_ID },
+      });
+    });
+
+    it.each([
+      "project",
+      "account",
+    ] as const)("retains receipts on soft deletion and cascades hard %s deletion", async (owner) => {
+      const userId = crypto.randomUUID();
+      const projectId = crypto.randomUUID();
+      const operationId = crypto.randomUUID();
+      await db.insert(schema.users).values(conformanceUserValues(userId, `receipt-${owner}`));
+      await db
+        .insert(schema.projects)
+        .values({ id: projectId, userId, name: "Receipt retention", slug: "receipt-retention" });
+      await db.insert(schema.contextOperationReceipts).values({
+        userId,
+        projectId,
+        operationId,
+        receipt: {
+          operationId,
+          command: { kind: "delete", uri: "manuscript://missing", expected: { kind: "folder" } },
+          result: { ok: false, error: { code: "not_found", uri: "manuscript://missing" } },
+        },
+      });
+      const readReceipt = () =>
+        db
+          .select()
+          .from(schema.contextOperationReceipts)
+          .where(eq(schema.contextOperationReceipts.operationId, operationId));
+      await db
+        .update(schema.projects)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.projects.id, projectId));
+      expect(await readReceipt()).toHaveLength(1);
+      if (owner === "project")
+        await db.delete(schema.projects).where(eq(schema.projects.id, projectId));
+      else await db.delete(schema.users).where(eq(schema.users.id, userId));
+      expect(await readReceipt()).toEqual([]);
+    });
+
+    it("keeps a delete receipt when its old path is claimed by a different document", async () => {
+      const { projectId, port } = await arrangeUntitled();
+      const uri = "scratch://@current-work/Untitled 1.md";
+      const operationId = crypto.randomUUID();
+      const options = { operationId, expected: { kind: "file" as const, documentId: DOCUMENT_ID } };
+      const deleted = await port.delete(uri, options);
+      expect(deleted).toMatchObject({ ok: true, value: { deletedDocumentIds: [DOCUMENT_ID] } });
+      const replacement = await port.write(uri, "replacement writing");
+      expect(replacement.ok).toBe(true);
+      await expect(port.delete(uri, options)).resolves.toEqual(deleted);
+      await expect(port.read(uri)).resolves.toMatchObject({
+        ok: true,
+        value: { content: "replacement writing\n" },
+      });
+      const { createDrizzleContextOperationReceipts } = await import(
+        "../../domains/context/adapters/context-operation-receipts.js"
+      );
+      await expect(
+        createDrizzleContextOperationReceipts(db, {
+          projectId,
+          userId: crypto.randomUUID(),
+        }).lookup(operationId),
+      ).resolves.toBeNull();
+      await expect(
+        createDrizzleContextOperationReceipts(db, {
+          projectId: crypto.randomUUID(),
+          userId: USER_ID,
+        }).lookup(operationId),
+      ).resolves.toBeNull();
+    });
+
+    it("rolls back failed namespace/catalog work before saving rejection, but never saves infrastructure failure", async () => {
+      const { projectId, port } = await arrangeUntitled();
+      const { ContextOperationReceipts } = await import(
+        "../../domains/context/context/context-operation-receipts.js"
+      );
+      const { createDrizzleContextOperationReceipts } = await import(
+        "../../domains/context/adapters/context-operation-receipts.js"
+      );
+      const receipts = new ContextOperationReceipts(
+        createDrizzleContextOperationReceipts(db, { projectId, userId: USER_ID }),
+      );
+      const command = {
+        kind: "move" as const,
+        sourceUri: "manuscript://source.md",
+        destinationUri: "manuscript://rolled-back/new.md",
+        expected: { kind: "file" as const, nodeId: DOCUMENT_ID },
+      };
+      for (const code of ["conflict", "io_error"] as const) {
+        const operationId = crypto.randomUUID();
+        const before = await db.select().from(schema.contextCatalogCommits);
+        const result = await receipts.execute(operationId, command, async () => {
+          await port.mkdir("manuscript://rolled-back");
+          return {
+            ok: false,
+            error: { code, uri: command.destinationUri, message: "injected failure" },
+          };
+        });
+        expect(result.ok).toBe(false);
+        await expect(port.stat("manuscript://rolled-back")).resolves.toMatchObject({ ok: false });
+        expect(await db.select().from(schema.contextCatalogCommits)).toEqual(before);
+        const receipt = await receipts.lookup(operationId);
+        if (code === "conflict") expect(receipt).toMatchObject({ result });
+        else expect(receipt).toBeNull();
+      }
+    });
+
+    it("does not record a thrown infrastructure failure and rolls its namespace work back", async () => {
+      const { projectId, port } = await arrangeUntitled();
+      const { ContextOperationReceipts } = await import(
+        "../../domains/context/context/context-operation-receipts.js"
+      );
+      const { createDrizzleContextOperationReceipts } = await import(
+        "../../domains/context/adapters/context-operation-receipts.js"
+      );
+      const receipts = new ContextOperationReceipts(
+        createDrizzleContextOperationReceipts(db, { projectId, userId: USER_ID }),
+      );
+      const operationId = crypto.randomUUID();
+      const failure = new Error("injected infrastructure failure");
+      const before = await db.select().from(schema.contextCatalogCommits);
+      await expect(
+        receipts.execute(
+          operationId,
+          {
+            kind: "delete",
+            uri: "manuscript://rolled-back",
+            expected: { kind: "folder" },
+          },
+          async () => {
+            await port.mkdir("manuscript://rolled-back");
+            throw failure;
+          },
+        ),
+      ).rejects.toBe(failure);
+      await expect(receipts.lookup(operationId)).resolves.toBeNull();
+      await expect(port.stat("manuscript://rolled-back")).resolves.toMatchObject({ ok: false });
+      expect(await db.select().from(schema.contextCatalogCommits)).toEqual(before);
+    });
 
     it("revokes archived Work mutations without losing its management identity", async () => {
       const { projectId, workId, port } = await arrangeUntitled();

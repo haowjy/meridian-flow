@@ -13,6 +13,7 @@ import {
 } from "@meridian/contracts/protocol";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
+import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
 import { parentContextEntryPath } from "./context-entry-name";
 import { createContextIdentityMutationService } from "./context-identity-mutation";
@@ -27,6 +28,8 @@ export type UseRenameEntryFormOptions = {
   path: string;
   /** Current basename of the entry (pre-populates the input). */
   currentName: string;
+  /** Failed durable destination restored after asynchronous namespace repair. */
+  repairName?: string;
   /** Sibling names for collision detection (should include all siblings). */
   siblingNames: readonly string[];
   kind: ContextCreateKind;
@@ -43,14 +46,27 @@ export function useRenameEntryForm({
   scheme,
   path,
   currentName,
+  repairName,
   siblingNames,
   kind,
   onDone,
 }: UseRenameEntryFormOptions): RenameEntryForm {
   const queryClient = useQueryClient();
+  const resources = useAccountResourceReplica();
   const ownedWorkId = isWorkScopedProjectContextScheme(scheme) ? workId : null;
   const mutation = useMutation({
     mutationFn: async (name: string) => {
+      if (kind === "file" && !isWorkScopedProjectContextScheme(scheme)) {
+        const key = await resources.keyForDocument(projectId, entryId);
+        if (!key) throw new Error(t`This file is unavailable. Refresh and try again.`);
+        await resources.setLocation(projectId, key, {
+          scheme,
+          folderPath: parentContextEntryPath(path),
+          name,
+          workId: ownedWorkId,
+        });
+        return;
+      }
       const result = await createContextIdentityMutationService(queryClient).move(
         entryId,
         projectId,
@@ -87,14 +103,18 @@ export function useRenameEntryForm({
   // Select the name sans extension on focus (e.g. "chapter-1" in "chapter-1.md").
   const afterFocus = useCallback(
     (input: HTMLInputElement) => {
-      const dotIndex = currentName.lastIndexOf(".");
-      input.setSelectionRange(0, dotIndex > 0 ? dotIndex : currentName.length);
+      const initialName = repairName ?? currentName;
+      const dotIndex = initialName.lastIndexOf(".");
+      input.setSelectionRange(0, dotIndex > 0 ? dotIndex : initialName.length);
     },
-    [currentName],
+    [currentName, repairName],
   );
 
   return useInlineNameForm({
-    initialName: currentName,
+    initialName: repairName ?? currentName,
+    initialError: repairName
+      ? t`That rename couldn't be completed. Choose another name or try again.`
+      : undefined,
     siblingNames: filteredSiblings,
     kind,
     isPending: mutation.isPending,

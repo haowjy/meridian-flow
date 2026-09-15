@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, useState } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -6,6 +7,7 @@ import { MeridianApiError } from "@/client/api/http-client";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useContextTabsStore } from "@/client/stores";
 import { AccountFeatureTestProvider } from "@/test-support/account-feature-provider";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { ProjectSearch } from "../routing/project-route";
 
@@ -78,7 +80,7 @@ it("settles a populated-folder receipt through one terminal availability batch",
         selectedTabIdByWork: { "work-1": "child-document" },
       },
     },
-    _deskHydrated: true,
+    _workspaceHydrated: true,
   });
   let search: ProjectSearch = {
     screen: "context" as const,
@@ -89,6 +91,7 @@ it("settles a populated-folder receipt through one terminal availability batch",
   };
   const routeUpdates: ProjectSearch[] = [];
   const route = {
+    transition: acceptContextTransition,
     readSearch: () => search,
     updateSearch: (_projectId: string, update: (current: ProjectSearch) => ProjectSearch) => {
       search = update(search);
@@ -129,7 +132,7 @@ it("settles a populated-folder receipt through one terminal availability batch",
   expect(deleted).toHaveBeenCalledWith(
     "project",
     "manuscript",
-    { path: "/populated", expected: { kind: "folder" } },
+    { operationId: expect.any(String), path: "/populated", expected: { kind: "folder" } },
     undefined,
   );
   expect(routeUpdates).toEqual([{ screen: "context", work: "work-1" }]);
@@ -160,7 +163,7 @@ it("submits the Work captured when delete confirmation was requested", async () 
         selectedTabIdByWork: { "work-1": "document-b" },
       },
     },
-    _deskHydrated: true,
+    _workspaceHydrated: true,
   });
   const invalidation = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
   await withReactRoot(
@@ -172,10 +175,9 @@ it("submits the Work captured when delete confirmation was requested", async () 
     async () => {
       act(() =>
         confirmation?.requestDelete({
-          name: "same.md",
-          path: "/same.md",
-          kind: "file",
-          documentId: "document-a",
+          name: "same",
+          path: "/same",
+          kind: "dir",
         }),
       );
       await act(async () => changeWork?.("work-b"));
@@ -187,8 +189,9 @@ it("submits the Work captured when delete confirmation was requested", async () 
     "project",
     "scratch",
     {
-      path: "/same.md",
-      expected: { kind: "file", documentId: "document-a" },
+      operationId: expect.any(String),
+      path: "/same",
+      expected: { kind: "folder" },
     },
     { workId: "work-a" },
   );
@@ -221,14 +224,13 @@ it("keeps a stale-target confirmation open with a retry error", async () => {
     async () => {
       act(() =>
         confirmation?.requestDelete({
-          name: "changed.md",
-          path: "/changed.md",
-          kind: "file",
-          documentId: "old-document",
+          name: "changed",
+          path: "/changed",
+          kind: "dir",
         }),
       );
       await act(async () => confirmation?.confirm());
-      expect(confirmation?.target).toMatchObject({ documentId: "old-document" });
+      expect(confirmation?.target).toMatchObject({ path: "/changed", kind: "dir" });
       await vi.waitFor(() => expect(confirmation?.error).toBe(staleTarget));
     },
   );

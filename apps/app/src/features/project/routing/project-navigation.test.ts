@@ -14,6 +14,7 @@ function address(href: string) {
 function setup(
   initial: string,
   displayed: DisplayedProjectSelection = { chatSlug: null, workSlug: null },
+  restore?: () => undefined | Promise<boolean>,
 ) {
   const history = createMemoryHistory({ initialEntries: [initial] });
   const changes: string[] = [];
@@ -25,6 +26,8 @@ function setup(
         state: { ...history.location.state },
       }),
       subscribe: (listener) => history.subscribe(listener),
+      flush: () => history.flush(),
+      settlePendingTraversal: restore ?? (() => history.settlePendingTraversal()),
       replaceEntry(href, state) {
         changes.push(`freeze:${href}`);
         history.replace(href, state);
@@ -41,6 +44,29 @@ function setup(
 }
 
 describe("project navigation", () => {
+  it.each([
+    true,
+    false,
+  ])("revalidates competing intents after native restoration (restored: %s)", async (restored) => {
+    let finish!: (restored: boolean) => void;
+    const restoration = new Promise<boolean>((resolve) => {
+      finish = resolve;
+    });
+    const { navigation, changes, history } = setup(
+      "/p/serial/editor",
+      undefined,
+      () => restoration,
+    );
+    const first = navigation.transition(address("/p/serial/chats"), { replace: false });
+    const second = navigation.transition(address("/p/serial/works"), { replace: false });
+    expect(changes).toEqual([]);
+    finish(restored);
+    await expect(first).resolves.toEqual({ kind: "superseded" });
+    await expect(second).resolves.toEqual({ kind: restored ? "applied" : "superseded" });
+    expect(history.location.pathname).toBe(restored ? "/p/serial/works" : "/p/serial/editor");
+    navigation.dispose();
+  });
+
   it("captures a normalized router entry while retaining the native URL in its ticket", () => {
     const nativeHref = "/p/serial/editor?work=va%6Cid";
     const { history, navigation } = setup(nativeHref);
@@ -167,7 +193,7 @@ describe("project navigation", () => {
     navigation.dispose();
   });
   it("retains a scoped local pointer without putting its UUID in the public URL", async () => {
-    const local = { accountId: "account", projectId: "project-id", threadId: "pending-thread" };
+    const local = { accountId: "account", projectId: "project-id", resourceHandle: "resource" };
     const { history, navigation } = setup("/p/serial/editor", {
       chatSlug: null,
       workSlug: null,
@@ -180,7 +206,7 @@ describe("project navigation", () => {
       meridianProjectEmptySelection: { href: "/p/serial/editor", chat: true, work: true },
     });
     expect(history.location.state).toMatchObject({
-      meridianProjectSelection: { version: 1, ...local },
+      meridianProjectSelection: { version: 2, ...local },
     });
     navigation.dispose();
   });
@@ -214,4 +240,74 @@ describe("optional query entry repair", () => {
     expect(history.location.href).toBe("/p/serial/editor?work=valid");
     navigation.dispose();
   });
+});
+
+it("commits prepared workspace changes only inside accepted history, never on cancel or supersession", async () => {
+  const { history, navigation } = setup("/p/serial/manuscript/a");
+  let decision!: { run(): void; cancel(): void };
+  navigation.registerGuard({
+    request: (intent) => {
+      decision = intent;
+    },
+    dirty: () => true,
+    cancel: () => undefined,
+  });
+  let closes = 0;
+  const prepared = {
+    isCurrent: () => true,
+    commit: () => {
+      expect(history.location.href).toBe("/p/serial/editor");
+      closes += 1;
+    },
+  };
+  const cancelled = navigation.transition(address("/p/serial/editor"), { replace: true }, prepared);
+  expect(history.location.href).toBe("/p/serial/manuscript/a");
+  expect(closes).toBe(0);
+  decision.cancel();
+  expect(await cancelled).toEqual({ kind: "cancelled" });
+  const superseded = navigation.transition(
+    address("/p/serial/editor"),
+    { replace: true },
+    prepared,
+  );
+  const staleDecision = decision;
+  navigation.beginIntent();
+  staleDecision.run();
+  expect(await superseded).toEqual({ kind: "superseded" });
+  expect(closes).toBe(0);
+  const accepted = navigation.transition(address("/p/serial/editor"), { replace: true }, prepared);
+  decision.run();
+  expect(closes).toBe(1);
+  expect(await accepted).toEqual({ kind: "applied" });
+  navigation.dispose();
+});
+
+it("revalidates the member before dispatching a held navigation", async () => {
+  const { history, navigation } = setup("/p/serial/manuscript/a");
+  let accept!: () => void;
+  navigation.registerGuard({
+    request: (intent) => {
+      accept = intent.run;
+    },
+    dirty: () => true,
+    cancel: () => undefined,
+  });
+  let currentMember = "first";
+  let committed = false;
+  const pending = navigation.transition(
+    address("/p/serial/editor"),
+    { replace: true },
+    {
+      isCurrent: () => currentMember === "first",
+      commit: () => {
+        committed = true;
+      },
+    },
+  );
+  currentMember = "reopened";
+  accept();
+  expect(await pending).toEqual({ kind: "superseded" });
+  expect(committed).toBe(false);
+  expect(history.location.href).toBe("/p/serial/manuscript/a");
+  navigation.dispose();
 });

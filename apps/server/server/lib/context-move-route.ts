@@ -27,6 +27,7 @@ import {
   parseContextMutationName,
   parseContextMutationPath,
 } from "./context-mutation-validation.js";
+import { requireRequestId } from "./request-id.js";
 
 export interface ContextMoveRouteDeps {
   projectRepo: ProjectRepository;
@@ -57,6 +58,7 @@ type NoWorkLocator = {
 export type ContextMoveLocator = ProjectLocator | NoWorkLocator | WorkLocator;
 
 export interface ParsedContextMove {
+  operationId: string;
   expected: MoveContextEntryRequest["expected"];
   source: ContextMoveLocator;
   destination: ContextMoveLocator;
@@ -66,6 +68,7 @@ export interface ParsedContextMove {
 type ResolvedWorkLocator = Omit<WorkLocator, "workId"> & { authority: ResolvedWorkAuthority };
 export type ResolvedContextMoveLocator = ProjectLocator | NoWorkLocator | ResolvedWorkLocator;
 export type ResolvedContextMove = {
+  operationId: string;
   expected: MoveContextEntryRequest["expected"];
   source: ResolvedContextMoveLocator;
   destination: ResolvedContextMoveLocator;
@@ -137,6 +140,7 @@ export function parseContextMove(input: {
     name = parseContextMutationName(body.newName, "newName");
   }
   return {
+    operationId: requireRequestId(body.operationId, "operationId"),
     expected: { kind: expected.kind, nodeId: expected.nodeId },
     source: parseLocator({
       scheme: input.sourceScheme,
@@ -182,7 +186,11 @@ export async function commitContextMove(input: {
   const result = await input.port.commitWriterLocation(
     locatorUri(input.move.source, input.move.source.path),
     locatorUri(input.move.destination, destinationPath),
-    { origin: { type: "human", userId: input.userId }, expected: input.move.expected },
+    {
+      origin: { type: "human", userId: input.userId },
+      expected: input.move.expected,
+      operationId: input.move.operationId,
+    },
   );
   if (!result.ok) {
     if (result.error.code === "stale_source" || result.error.code === "stale_target") {
@@ -261,6 +269,7 @@ export async function handleContextMoveRequest(
     return { scope: "work", scheme: locator.scheme, path: locator.path, authority };
   }
   const resolvedMove: ResolvedContextMove = {
+    operationId: move.operationId,
     expected: move.expected,
     source: await resolveLocator(move.source),
     destination: await resolveLocator(move.destination),

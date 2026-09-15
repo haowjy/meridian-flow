@@ -11,6 +11,7 @@ import type {
 } from "./document-session-authority-store";
 
 export interface LocalSessionAuthority {
+  beginCloseAccountRuntime(): void;
   validateAdmission(input: {
     documentId: DocumentId;
     projectId: ProjectId;
@@ -37,6 +38,13 @@ export interface LocalSessionAuthority {
     exactDatabaseName?: string | null;
   }): Promise<"other-local-project-remains" | "locally-empty">;
   invalidateAll(): Promise<void>;
+}
+
+/** The feature-owned local resources participate in the authority close barrier. */
+export interface LocalResourceLifetimePort {
+  readonly terminal: LocalLineageTerminalPort;
+  beginClose(): void;
+  finishClose(): Promise<void>;
 }
 
 export interface LocalLineageTerminalPort {
@@ -69,6 +77,7 @@ export class DocumentSessionCoordinationError extends Error {
 }
 
 export interface DocumentSessionCrossContextCoordination {
+  requireReady(): Promise<void>;
   admit(
     projectId: ProjectId,
     documentId: DocumentId,
@@ -109,7 +118,12 @@ export interface DocumentSessionCrossContextCoordination {
           exactDatabaseName: string;
         },
       ): void;
-      completeCommit(): Promise<void>;
+      completeCommit(
+        admitted: LiveDocumentSessionLease & {
+          persistenceGeneration: AvailabilityGeneration;
+          exactDatabaseName: string;
+        },
+      ): Promise<void>;
     }>,
   ): Promise<
     LiveDocumentSessionLease & {

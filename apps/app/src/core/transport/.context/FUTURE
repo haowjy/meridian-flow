@@ -1,0 +1,6 @@
+# Client transport follow-up
+
+- Document-socket multiplexing is intentionally deferred. The current room-scoped
+  socket contract isolates schema close codes and unhealthy rooms. Revisit only with
+  measured browser/socket pressure and a protocol that can reject one room without
+  physically closing healthy rooms on the shared connection.

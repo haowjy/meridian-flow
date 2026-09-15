@@ -83,8 +83,8 @@ export async function getJson<T>(
 export type PostJsonOptions = {
   /** Extra headers to merge with the default Content-Type. */
   headers?: HeadersInit;
-  /** Treat selected non-2xx HTTP statuses as successful domain responses. */
-  acceptStatuses?: number[];
+  /** Accept only recognized domain outcomes carried by non-2xx responses. */
+  acceptErrorResponse?: (status: number, payload: unknown) => boolean;
   /** Allow lifecycle flushes to outlive the page that initiated them. */
   keepalive?: boolean;
   /** Drop the request when the caller that wanted it is gone. */
@@ -104,7 +104,8 @@ export async function postJson<T>(
   });
 
   const payload = await readResponsePayload(response);
-  const accepted = response.ok || (options?.acceptStatuses?.includes(response.status) ?? false);
+  const accepted =
+    response.ok || (options?.acceptErrorResponse?.(response.status, payload) ?? false);
 
   if (!accepted) {
     throw errorFromResponse(payload, response.status);
@@ -126,7 +127,8 @@ export async function putJson<T>(
   });
 
   const payload = await readResponsePayload(response);
-  const accepted = response.ok || (options?.acceptStatuses?.includes(response.status) ?? false);
+  const accepted =
+    response.ok || (options?.acceptErrorResponse?.(response.status, payload) ?? false);
 
   if (!accepted) {
     throw errorFromResponse(payload, response.status);
@@ -147,7 +149,8 @@ export async function patchJson<T>(
   });
 
   const payload = await readResponsePayload(response);
-  const accepted = response.ok || (options?.acceptStatuses?.includes(response.status) ?? false);
+  const accepted =
+    response.ok || (options?.acceptErrorResponse?.(response.status, payload) ?? false);
 
   if (!accepted) {
     throw errorFromResponse(payload, response.status);

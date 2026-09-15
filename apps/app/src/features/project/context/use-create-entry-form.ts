@@ -7,12 +7,17 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import {
+  classifyFiletype,
+  filetypeForPath,
+  isWorkScopedProjectContextScheme,
+} from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
 import { Folder } from "lucide-react";
 import { useCallback } from "react";
 
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
-
+import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
 import { joinContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
@@ -39,6 +44,12 @@ export type CreateEntryForm = InlineNameForm & {
   placeholder: string;
 };
 
+/** The durable local reservation protocol currently owns document-schema files only. */
+export function usesResourceDocumentCreate(path: string): boolean {
+  const classification = classifyFiletype(filetypeForPath(path));
+  return classification.kind === "tracked" && classification.schemaType === "document";
+}
+
 export function useCreateEntryForm({
   projectId,
   workId,
@@ -50,14 +61,34 @@ export function useCreateEntryForm({
   onCreated,
 }: UseCreateEntryFormOptions): CreateEntryForm {
   const mutation = useCreateContextEntry(projectId);
+  const resources = useAccountResourceReplica();
 
   const handleSubmit = useCallback(
     async (trimmed: string) => {
       const path = joinContextEntryPath(parent, trimmed);
-      await mutation.mutateAsync({ scheme, type: kind, path, workId });
+      if (
+        kind === "file" &&
+        !isWorkScopedProjectContextScheme(scheme) &&
+        usesResourceDocumentCreate(path)
+      ) {
+        const reservation = await resources.reserveDocument(projectId, parent);
+        if (reservation.content.kind !== "opened") throw new Error(t`Couldn't create this file.`);
+        try {
+          await resources.setLocation(projectId, reservation.key, {
+            scheme,
+            folderPath: parent,
+            name: trimmed,
+            workId: null,
+          });
+        } finally {
+          reservation.content.handle.release();
+        }
+      } else {
+        await mutation.mutateAsync({ scheme, type: kind, path, workId });
+      }
       onCreated?.(path);
     },
-    [mutation, scheme, kind, parent, onCreated, workId],
+    [mutation, scheme, kind, parent, onCreated, resources, workId],
   );
 
   const form = useInlineNameForm({

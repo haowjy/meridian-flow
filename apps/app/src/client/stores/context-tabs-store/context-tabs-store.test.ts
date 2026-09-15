@@ -12,7 +12,7 @@ describe("context tabs draft-only lifecycle", () => {
     useContextTabsStore.setState({
       byProject: {},
       _reviewOverlayByProject: {},
-      _deskHydrated: false,
+      _workspaceHydrated: false,
     });
   });
 
@@ -101,7 +101,7 @@ describe("context tabs draft-only lifecycle", () => {
 
 describe("context tab identity and removal commits", () => {
   beforeEach(() => {
-    useContextTabsStore.setState({ byProject: {}, _deskHydrated: false });
+    useContextTabsStore.setState({ byProject: {}, _workspaceHydrated: false });
   });
 
   it("replaces a server identity at an occupied canonical locator in place", () => {
@@ -119,7 +119,7 @@ describe("context tab identity and removal commits", () => {
     expect(
       commitPlannedContextRemoval("project-1", {
         documentIds: ["old"],
-        deskSelection: { workId: "work-1", documentId: "replacement" },
+        workspaceSelection: { workId: "work-1", documentId: "replacement" },
       }),
     ).toEqual([]);
     expect(useContextTabsStore.getState().byProject["project-1"]?.tabs[0]?.documentId).toBe(
@@ -129,16 +129,14 @@ describe("context tab identity and removal commits", () => {
 
   it("commits an exact multi-id removal and final selection once", () => {
     const store = useContextTabsStore.getState();
-    store.reconcileBootstrap(
-      "project-1",
-      [],
-      [trackedAt("a", "/a.md"), trackedAt("b", "/b.md"), trackedAt("c", "/c.md")],
-    );
+    store.openTab("project-1", trackedAt("a", "/a.md"));
+    store.openTab("project-1", trackedAt("b", "/b.md"));
+    store.openTab("project-1", trackedAt("c", "/c.md"));
     store.selectTab("project-1", "work-1", "b");
 
     const removed = commitPlannedContextRemoval("project-1", {
       documentIds: ["a", "b"],
-      deskSelection: { workId: "work-1", documentId: "c" },
+      workspaceSelection: { workId: "work-1", documentId: "c" },
     });
 
     expect(removed.map((tab) => tab.documentId)).toEqual(["a", "b"]);
@@ -154,13 +152,17 @@ describe("context tab identity and removal commits", () => {
       kind: "new",
       documentId: "local",
       name: "Untitled",
-      lineageHandle: "lineage-local",
-      identityRevision: 1,
+      resourceHandle: "resource-local",
     });
     store.openTab("project-1", trackedAt("chapter", "/chapter.md"));
     store.selectTab("project-1", "a", "local");
     store.selectTab("project-1", "b", "chapter");
-    store.remintNewTab("project-1", "local", "reminted");
+    store.reconcileResourceTab("project-1", "resource-local", {
+      kind: "new",
+      documentId: "reminted",
+      name: "Untitled",
+      resourceHandle: "resource-local",
+    });
     expect(useContextTabsStore.getState().byProject["project-1"]?.selectedTabIdByWork).toEqual({
       a: "reminted",
       b: "chapter",
@@ -173,11 +175,10 @@ describe("context tab identity and removal commits", () => {
       kind: "new",
       documentId: "local",
       name: "Untitled",
-      lineageHandle: "lineage-local",
-      identityRevision: 1,
+      resourceHandle: "resource-local",
     });
     store.selectTab("project-1", "a", "local");
-    store.materializeNewTab("project-1", "local", {
+    store.reconcileResourceTab("project-1", "resource-local", {
       kind: "tracked",
       documentId: "local",
       scheme: "unfiled",
@@ -186,11 +187,29 @@ describe("context tab identity and removal commits", () => {
       editable: true,
       filetype: "markdown",
       schemaType: "document",
+      resourceHandle: "resource-local",
+      origin: "local-resource",
     });
     expect(useContextTabsStore.getState().byProject["project-1"]).toMatchObject({
-      tabs: [{ documentId: "local", origin: "local-untitled" }],
+      tabs: [{ documentId: "local", origin: "local-resource" }],
       selectedTabIdByWork: { a: "local" },
     });
+
+    store.reconcileResourceTab("project-1", "resource-local", {
+      kind: "tracked",
+      documentId: "local",
+      scheme: "manuscript",
+      path: "/opening.md",
+      name: "opening.md",
+      editable: true,
+      filetype: "markdown",
+      schemaType: "document",
+      resourceHandle: "resource-local",
+      origin: "local-resource",
+    });
+    expect(useContextTabsStore.getState().byProject["project-1"]?.tabs).toMatchObject([
+      { scheme: "manuscript", path: "/opening.md", name: "opening.md" },
+    ]);
 
     store.updateTrackedTab("project-1", "local", { scheme: "scratch", workId: "b" });
     expect(useContextTabsStore.getState().byProject["project-1"]?.selectedTabIdByWork).toEqual({});

@@ -7,6 +7,7 @@ export * from "./agent-threads";
 export * from "./billing";
 export * from "./content";
 export * from "./context-catalog";
+export * from "./context-operation-receipts";
 export * from "./preferences";
 export * from "./provenance";
 export * from "./results";

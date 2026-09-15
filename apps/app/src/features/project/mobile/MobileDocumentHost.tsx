@@ -22,7 +22,7 @@ import { PassageNotice } from "@/features/editor/PassageNotice";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
 import { ContextEditorMountHost } from "../context/ContextEditorMountHost";
 import { ContextViewerBareHost } from "../context/ContextViewerHost";
-import { resolveDeskRoute } from "../context/context-route-desk-owner";
+import { resolveWorkspaceRoute } from "../context/context-route-workspace-owner";
 import { useContextRemovalProject } from "../context/use-context-removal-project";
 import { useLiveDocumentBinding } from "../context/use-live-document-binding";
 import { useLiveBindingAcknowledgementHost } from "../dock/editor-review-handoff";
@@ -70,16 +70,21 @@ function MobileLocalDocumentHost({
       selected.locator.workId !== workId
     )
       return;
-    const desk = resolveDeskRoute({
+    const workspace = resolveWorkspaceRoute({
       tabs: [tab],
       selectedDocumentId: tab.documentId,
       locator: selected.locator,
     });
-    if (desk.kind === "materialized-local") {
-      removal.redirectMaterializedLocal(projectId, selected.revision, tab.documentId, desk.target);
-    } else if (desk.kind === "owner") {
+    if (workspace.kind === "materialized-local") {
+      removal.redirectMaterializedLocal(
+        projectId,
+        selected.revision,
+        tab.documentId,
+        workspace.target,
+      );
+    } else if (workspace.kind === "owner") {
       if (selected.status === "candidate")
-        removal.bindRouteSelection(projectId, selected.revision, desk.identity);
+        removal.bindRouteSelection(projectId, selected.revision, workspace.identity);
       else if (selected.status === "bound" && selected.identity.documentId === tab.documentId)
         removal.activate({
           projectId,

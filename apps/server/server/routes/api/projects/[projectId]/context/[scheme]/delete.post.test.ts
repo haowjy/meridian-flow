@@ -34,6 +34,7 @@ describe("POST context delete", () => {
       req: new Request("https://server.local/delete", {
         method: "POST",
         body: JSON.stringify({
+          operationId: "00000000-0000-4000-8000-000000000703",
           path: "chapter.md",
           expected: { kind: "file", documentId: DOCUMENT_ID },
         }),
@@ -72,6 +73,7 @@ describe("POST context delete", () => {
       req: new Request("https://server.local/delete", {
         method: "POST",
         body: JSON.stringify({
+          operationId: "00000000-0000-4000-8000-000000000703",
           path: "chapters",
           expected: { kind: "folder" },
         }),
@@ -98,6 +100,7 @@ describe("POST context delete", () => {
       req: new Request("https://server.local/delete", {
         method: "POST",
         body: JSON.stringify({
+          operationId: "00000000-0000-4000-8000-000000000703",
           path: "chapter.md",
           expected: { kind: "file", documentId: DOCUMENT_ID },
         }),
@@ -133,6 +136,7 @@ describe("POST context delete", () => {
       req: new Request("https://server.local/delete", {
         method: "POST",
         body: JSON.stringify({
+          operationId: "00000000-0000-4000-8000-000000000703",
           path: "chapter.md",
           expected: { kind: "file", documentId: "not-a-uuid" },
         }),

@@ -62,32 +62,32 @@ type CatalogFileEntryBase = {
 };
 
 /** Persisted viewer/storage classification. It is never reconstructed from a filename. */
-export type CatalogFileEntry = CatalogFileEntryBase &
-  (
-    | {
-        editable: true;
-        filetype: Filetype;
-        schemaType: YjsTrackedSchemaType;
-        fileType?: never;
-        mimeType?: never;
-      }
-    | {
-        editable: false;
-        disposition: "binary";
-        fileType: DocumentFileType;
-        mimeType: string | null;
-        filetype?: never;
-        schemaType?: never;
-      }
-    | {
-        editable: false;
-        disposition: "custom";
-        fileType: DocumentFileType;
-        mimeType: string | null;
-        filetype: Filetype;
-        schemaType?: never;
-      }
-  );
+export type CatalogFileClassification =
+  | {
+      editable: true;
+      filetype: Filetype;
+      schemaType: YjsTrackedSchemaType;
+      fileType?: never;
+      mimeType?: never;
+    }
+  | {
+      editable: false;
+      disposition: "binary";
+      fileType: DocumentFileType;
+      mimeType: string | null;
+      filetype?: never;
+      schemaType?: never;
+    }
+  | {
+      editable: false;
+      disposition: "custom";
+      fileType: DocumentFileType;
+      mimeType: string | null;
+      filetype: Filetype;
+      schemaType?: never;
+    };
+
+export type CatalogFileEntry = CatalogFileEntryBase & CatalogFileClassification;
 
 export type CatalogEntry =
   | CatalogAuthorityEntry

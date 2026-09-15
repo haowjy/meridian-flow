@@ -16,7 +16,7 @@ import type { ContextTab } from "@/client/stores";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { useLocalUntitledOwner } from "./account-feature-context";
+import { useAccountResourceReplica } from "./account-feature-context";
 import { invalidContextEntryNameReason } from "./context-entry-name";
 import { schemeLabel } from "./context-schemes";
 import {
@@ -31,17 +31,14 @@ import { IDENTITY_BAR_BOX_CLASS } from "./identity-bar-geometry";
 import { WRITABLE_IDENTITY_DESTINATIONS } from "./identity-destinations";
 import { identityDestination, type TabLocation } from "./identity-location";
 import { suggestedNameFromFragment } from "./untitled-document-name";
-import type { QueuedIdentityFailure } from "./untitled-reconciler";
-import { clearQueuedIdentityFailure } from "./untitled-reconciler-browser";
 import type { IdentityCommitOutcome, IdentityCommitTarget } from "./use-identity-commit";
 import { ValidationNote } from "./validation-note";
 
 type ExitReason = "escape" | "blur" | "commit";
-type ConflictLocator = { scheme: ProjectContextTreeScheme; path: string; workId?: string };
 type LocalCollision = AnnotatedFileSuggestion | null;
+export type QueuedIdentityFailure = { kind: "error"; name: string };
 
 type IdentityNote =
-  | { kind: "conflict"; locator: ConflictLocator; name: string }
   | { kind: "local-collision"; collision: AnnotatedFileSuggestion; name: string }
   | { kind: "error"; message: string }
   | null;
@@ -65,7 +62,7 @@ export function IdentityPlacementField({
   onExit: (reason: ExitReason) => void;
   onOpenExisting: (scheme: ProjectContextTreeScheme, path: string) => void;
 }) {
-  const localUntitled = useLocalUntitledOwner();
+  const resources = useAccountResourceReplica();
   const localSessionRef = useRef<import("@/core/editor/document-session").DocumentSession | null>(
     null,
   );
@@ -83,13 +80,8 @@ export function IdentityPlacementField({
   );
   const [ghost, setGhost] = useState("");
   const [noteValue, setNoteValue] = useState(value);
-  const [conflict, setConflict] = useState<ConflictLocator | null>(() =>
-    failure?.kind === "conflict"
-      ? { scheme: failure.scheme, path: failure.path, workId: failure.workId }
-      : null,
-  );
   const [requestError, setRequestError] = useState<string | null>(() =>
-    failure?.kind === "error" ? t`Couldn't rename this document. Try another name.` : null,
+    failure ? t`Couldn't rename this document. Try another name.` : null,
   );
   const [commitReason, setCommitReason] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -106,32 +98,41 @@ export function IdentityPlacementField({
   }, []);
 
   useEffect(() => {
-    if (!provisionalPlacement) return;
-    const local = localUntitled.getDetached({
-      accountId: localUntitled.accountId,
-      projectId,
-      documentId: tab.documentId,
-    });
-    if (local) localSessionRef.current = local.session;
-    const session = local?.session ?? localSessionRef.current;
-    if (!session) {
-      setGhost("");
-      return;
-    }
-    const fragment = session.document.getXmlFragment(session.fragmentName);
-    const refresh = () => {
-      if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
-      suggestionTimer.current = window.setTimeout(() => {
-        suggestionTimer.current = null;
-        setGhost(suggestionForSession(tab, session));
-      }, 300);
-    };
-    fragment.observeDeep(refresh);
+    if (!provisionalPlacement || tab.kind !== "new") return;
+    const abort = new AbortController();
+    let release: (() => void) | null = null;
+    let unobserve: (() => void) | null = null;
+    void resources
+      .openDocument(
+        projectId,
+        { handle: tab.resourceHandle },
+        `identity-field:${tab.tabInstanceId ?? tab.resourceHandle}`,
+        abort.signal,
+      )
+      .then((result) => {
+        if (result.kind !== "opened" || abort.signal.aborted) return;
+        release = result.handle.release;
+        const session = result.handle.session;
+        localSessionRef.current = session;
+        const fragment = session.document.getXmlFragment(session.fragmentName);
+        const refresh = () => {
+          if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
+          suggestionTimer.current = window.setTimeout(() => {
+            suggestionTimer.current = null;
+            setGhost(suggestionForSession(tab, session));
+          }, 300);
+        };
+        fragment.observeDeep(refresh);
+        unobserve = () => fragment.unobserveDeep(refresh);
+        refresh();
+      });
     return () => {
-      fragment.unobserveDeep(refresh);
+      abort.abort();
+      unobserve?.();
+      release?.();
       if (suggestionTimer.current !== null) window.clearTimeout(suggestionTimer.current);
     };
-  }, [localUntitled, projectId, provisionalPlacement, tab]);
+  }, [projectId, provisionalPlacement, resources, tab]);
 
   const suggestionOptions = useMemo(
     () => ({
@@ -181,33 +182,13 @@ export function IdentityPlacementField({
     [allEntries, destination, location, noteValue],
   );
   const identityNote = deriveIdentityNote({
-    conflict,
     localCollision,
     name: noteValue.trim(),
     validationReason: commitReason ?? liveReason,
     requestError,
   });
   const note =
-    identityNote?.kind === "conflict" ? (
-      <ValidationNote
-        severity={{
-          level: "error",
-          message: t`A file named ${identityNote.name} already exists in this location.`,
-        }}
-        action={
-          <button
-            data-file-suggestion
-            type="button"
-            tabIndex={-1}
-            className="focus-ring ml-1.5 font-medium underline underline-offset-2"
-            onClick={() => onOpenExisting(identityNote.locator.scheme, identityNote.locator.path)}
-          >
-            <Trans>Open existing</Trans>
-          </button>
-        }
-        className="m-1 mb-0"
-      />
-    ) : identityNote?.kind === "local-collision" ? (
+    identityNote?.kind === "local-collision" ? (
       <ValidationNote
         severity={{
           level: "error",
@@ -277,11 +258,6 @@ export function IdentityPlacementField({
     setRequestError(null);
     try {
       const outcome = await commit(target);
-      if (outcome.status === "conflict") {
-        setConflict(outcome.locator);
-        inputRef.current?.select();
-        return;
-      }
       if (outcome.status === "error") {
         setRequestError(outcome.message);
         return;
@@ -293,10 +269,8 @@ export function IdentityPlacementField({
   }
 
   const clearFeedback = () => {
-    setConflict(null);
     setRequestError(null);
     setCommitReason(null);
-    clearQueuedIdentityFailure(projectId, tab.documentId);
   };
 
   return (
@@ -436,25 +410,16 @@ function findCollision(
 }
 
 function deriveIdentityNote({
-  conflict,
   localCollision,
   name,
   validationReason,
   requestError,
 }: {
-  conflict: ConflictLocator | null;
   localCollision: LocalCollision;
   name: string;
   validationReason: string | null;
   requestError: string | null;
 }): IdentityNote {
-  if (conflict) {
-    return {
-      kind: "conflict",
-      locator: conflict,
-      name: conflict.path.slice(conflict.path.lastIndexOf("/") + 1),
-    };
-  }
   if (localCollision) return { kind: "local-collision", collision: localCollision, name };
   if (validationReason) return { kind: "error", message: validationReason };
   if (requestError) return { kind: "error", message: requestError };

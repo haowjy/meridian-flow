@@ -19,7 +19,7 @@ export type MissingDestination = { name: string; scheme: ProjectContextTreeSchem
 export type ContextPaneState =
   | { kind: "document"; tab: ContextTab }
   | { kind: "optimistic-loading"; tab: OptimisticContextTab }
-  | { kind: "empty-desk" }
+  | { kind: "empty-workspace" }
   | { kind: "dead-route"; destination: MissingDestination }
   | { kind: "route-error" };
 
@@ -43,7 +43,7 @@ export function deriveContextPaneState({
   removalFenced: boolean;
 }): ContextPaneState {
   if (activeTab) return { kind: "document", tab: activeTab };
-  if (!destination || removalFenced) return { kind: "empty-desk" };
+  if (!destination || removalFenced) return { kind: "empty-workspace" };
 
   const routeExists = catalog?.findPath(destination.path)?.kind === "file";
   if (routeExists || isFetching || (!catalog && !isError)) {

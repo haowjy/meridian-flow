@@ -1,14 +1,20 @@
 // @vitest-environment jsdom
+
+import type { ResourceProjectionSnapshot } from "@meridian/resource-replica";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, StrictMode, useCallback, useLayoutEffect, useState } from "react";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
 import {
+  AccountFeatureComposition,
   AccountFeatureTestProvider,
   useContextRemovalCoordinator,
 } from "@/test-support/account-feature-provider";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
+import { useContextProjectAuthority } from "../use-context-project-authority";
+import { useObservedResourceProjection } from "./account-feature-context";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 
 const providerQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -34,6 +40,25 @@ function tracked(documentId: string, path: string) {
 }
 
 describe("AccountFeatureTestProvider", () => {
+  it("server-renders project authority without constructing browser resources", () => {
+    function ProjectAuthorityConsumer() {
+      useContextProjectAuthority({
+        projectId: "project-1",
+        workspaceHydrated: false,
+        editorScope: { status: "ready", workId: null, source: "route" },
+      });
+      return <p>Project shell</p>;
+    }
+    const html = renderToString(
+      <QueryClientProvider client={providerQueryClient}>
+        <AccountFeatureComposition accountId="account-a" repairProjectCatalog={async () => {}}>
+          <ProjectAuthorityConsumer />
+        </AccountFeatureComposition>
+      </QueryClientProvider>,
+    );
+    expect(html).toContain("Project shell");
+  });
+
   it("renders a new account's children immediately without a preparation projection", () => {
     const html = renderToString(
       <TestAccountProvider accountId="account-a">
@@ -77,6 +102,62 @@ describe("AccountFeatureTestProvider", () => {
     });
   });
 
+  it("clears a transient projection error when the projection recovers", async () => {
+    let publish: ((snapshot: ResourceProjectionSnapshot) => void) | null = null;
+    let fail: ((error: unknown) => void) | null = null;
+    const replica = {
+      observeProjection(
+        _projectId: string,
+        onSnapshot: (snapshot: ResourceProjectionSnapshot) => void,
+        onError: (error: unknown) => void,
+      ) {
+        publish = onSnapshot;
+        fail = onError;
+        return () => undefined;
+      },
+    };
+    const observed: Array<ReturnType<typeof useObservedResourceProjection>> = [];
+    function Child() {
+      observed.push(useObservedResourceProjection(replica, "project-1"));
+      return null;
+    }
+
+    await withReactRoot(<Child />, async () => {
+      await act(async () => fail?.(new Error("temporary projection failure")));
+      expect(observed.at(-1)?.error).toBeInstanceOf(Error);
+
+      await act(async () => publish?.({ records: [], catalogs: [] }));
+      expect(observed.at(-1)).toMatchObject({ error: null, records: [] });
+    });
+  });
+
+  it("keeps visible records stable until the resource projection changes", async () => {
+    let publish: ((snapshot: ResourceProjectionSnapshot) => void) | undefined;
+    const replica = {
+      observeProjection(_projectId: string, onSnapshot: typeof publish) {
+        publish = onSnapshot;
+        return () => undefined;
+      },
+    };
+    let rerender = () => {};
+    let records: readonly unknown[] = [];
+    function Child() {
+      const [, setRevision] = useState(0);
+      rerender = () => setRevision((value) => value + 1);
+      records = useObservedResourceProjection(replica, "project-1").records;
+      return null;
+    }
+    await withReactRoot(<Child />, async () => {
+      const pending = records;
+      await act(async () => rerender());
+      expect(records).toBe(pending);
+      await act(async () => publish?.({ records: [], catalogs: [] }));
+      const loaded = records;
+      await act(async () => rerender());
+      expect(records).toBe(loaded);
+    });
+  });
+
   it("reuses one coordinator through Strict effect replay", async () => {
     const instances: ContextRemovalCoordinator[] = [];
     function Child() {
@@ -113,7 +194,7 @@ describe("AccountFeatureTestProvider", () => {
       byProject: {
         "project-1": { tabs: [tracked("a", "/a.md")], selectedTabIdByWork: { "work-1": "a" } },
       },
-      _deskHydrated: true,
+      _workspaceHydrated: true,
     });
     const instances: ContextRemovalCoordinator[] = [];
     const entrySnapshots: ReturnType<ContextRemovalCoordinator["getProjectSnapshot"]>[] = [];
@@ -125,7 +206,11 @@ describe("AccountFeatureTestProvider", () => {
         entrySnapshots.push(coordinator.getProjectSnapshot("project-1"));
         coordinator.registerRoutePort(
           "project-1",
-          { readSearch: () => ({ screen: "context" }), updateSearch: () => undefined },
+          {
+            transition: acceptContextTransition,
+            readSearch: () => ({ screen: "context" }),
+            updateSearch: () => undefined,
+          },
           "work-1",
         );
         const revision = coordinator.beginRouteSelection("project-1", {
@@ -143,7 +228,7 @@ describe("AccountFeatureTestProvider", () => {
           transitionRevision: coordinator.getProjectSnapshot("project-1").transitionRevision,
           locator: { scheme: "manuscript", path: "/a.md", workId: "work-1" },
           identity: { kind: "server", documentId: "a" },
-          owner: { kind: "desk", documentId: "a" },
+          owner: { kind: "workspace", documentId: "a" },
         });
       }, [coordinator]);
       return null;

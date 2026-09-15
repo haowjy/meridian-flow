@@ -5,7 +5,7 @@ import type { EditorWorkScope } from "./editor-work-scope";
 export type BootstrapAttempt = { token: number; workId: string | null };
 
 export type ContextProjectReadiness =
-  | { status: "waiting-for-desk" }
+  | { status: "waiting-for-workspace" }
   | { status: "waiting-for-work"; work: Exclude<EditorWorkScope, { status: "ready" }> }
   | { status: "ready"; workId: string | null };
 
@@ -19,7 +19,7 @@ export type ContextProjectAuthority = {
 };
 
 export type ContextProjectPhase =
-  | { status: "waiting-for-desk" }
+  | { status: "waiting-for-workspace" }
   | { status: "waiting-for-work"; work: Exclude<EditorWorkScope, { status: "ready" }> }
   | { status: "bootstrapping"; attempt: BootstrapAttempt }
   | { status: "suspended"; work: Exclude<EditorWorkScope, { status: "ready" }> }
@@ -35,13 +35,13 @@ export const INITIAL_CONTEXT_PROJECT_AUTHORITY: ContextProjectAuthority = {
   activeBootstrapAttempt: null,
   rawValidation: "not-started",
   nextToken: 1,
-  readiness: { status: "waiting-for-desk" },
+  readiness: { status: "waiting-for-workspace" },
   liveWorkId: null,
 };
 
 export function contextProjectPhase(authority: ContextProjectAuthority): ContextProjectPhase {
   const readiness = authority.readiness;
-  if (readiness.status === "waiting-for-desk") return readiness;
+  if (readiness.status === "waiting-for-workspace") return readiness;
   if (readiness.status === "waiting-for-work") {
     return authority.hasCompletedBootstrap
       ? { status: "suspended", work: readiness.work }
@@ -56,11 +56,11 @@ export function contextProjectPhase(authority: ContextProjectAuthority): Context
 
 export function updateContextProjectReadiness(
   authority: ContextProjectAuthority,
-  deskHydrated: boolean,
+  workspaceHydrated: boolean,
   work: EditorWorkScope,
 ): { authority: ContextProjectAuthority; effect: BootstrapAttemptEffect | null } {
-  const readiness: ContextProjectReadiness = !deskHydrated
-    ? { status: "waiting-for-desk" }
+  const readiness: ContextProjectReadiness = !workspaceHydrated
+    ? { status: "waiting-for-workspace" }
     : work.status === "ready"
       ? { status: "ready", workId: work.workId }
       : { status: "waiting-for-work", work };

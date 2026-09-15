@@ -7,7 +7,7 @@ import type {
   CatalogScope,
 } from "@meridian/contracts/protocol";
 import { catalogScopeKey } from "@meridian/contracts/protocol";
-import { type CatalogCacheView, catalogChildren } from "@/client/query/context-catalog-cache";
+import { type CatalogCacheView, catalogChildren } from "@meridian/resource-replica";
 import {
   authoritativeReferenceForFile,
   canonicalReferenceUri,

@@ -29,18 +29,20 @@
  * the same `documentId`, so subscribe/unsubscribe stay paired.
  */
 import { Trans } from "@lingui/react/macro";
-import { type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
-import { type ContextTab, useContextTabsActions } from "@/client/stores";
+import type { ContextTab } from "@/client/stores";
+import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { Button } from "@/components/ui/button";
 import type { DocumentSession } from "@/core/editor/document-session";
+import type { ResourceContentHandle } from "@/core/resources/resource-content-access";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { EditorView } from "@/features/editor/EditorView";
 import { cn } from "@/lib/utils";
 import { useLiveBindingAcknowledgementHost } from "../dock/editor-review-handoff";
 import { usePostApplyHostWake } from "../draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
-import { useLocalUntitledOwner } from "./account-feature-context";
-import { untitledDocumentIsEmpty } from "./untitled-reconciler";
+import { useAccountResourceReplica } from "./account-feature-context";
+import { resourceDocumentIsEmpty } from "./resource-document-eligibility";
 import { useLiveDocumentBinding } from "./use-live-document-binding";
 
 type EditableContextTab = Extract<ContextTab, { kind: "tracked" | "new" }>;
@@ -60,7 +62,7 @@ export type ContextEditorMountHostProps = {
   /** Whether the context destination is currently visible. */
   active: boolean;
   readOnly?: boolean;
-  onUntitledBecameNonEmpty?: (documentId: string) => void;
+  onUntitledBecameNonEmpty?: (documentId: string) => Promise<void>;
 };
 
 /**
@@ -94,32 +96,12 @@ export function ContextEditorMountHost({
   onUntitledBecameNonEmpty,
   readOnly = false,
 }: ContextEditorMountHostProps) {
-  const localOwner = useLocalUntitledOwner();
-  const localRetentionOwner = useId();
-  const { remintNewTab } = useContextTabsActions();
   const { controller, reviewRoomNameForDraft, setActiveEditorDocumentId } = useDraftReview();
   // LRU stack of documentIds: head = most recent. Maintained in an effect so
   // we never mutate state during render. The eviction policy reads from this
   // every render to pick which tabs stay mounted.
   const lruRef = useRef<string[]>([]);
-  const localSessionsRef = useRef(new Map<string, ReturnType<typeof localOwner.getDetached>>());
   const bindingKeysRef = useRef(new WeakMap<object, string>());
-  const [, rerenderAfterRestore] = useState(0);
-  const [ownedElsewhere, setOwnedElsewhere] = useState<Set<string>>(() => new Set());
-  for (const tab of trackedTabs) {
-    if (tab.kind !== "new") continue;
-    const key = {
-      accountId: localOwner.accountId,
-      projectId,
-      documentId: tab.documentId,
-    };
-    const local = localOwner.getDetached(key);
-    if (local) localSessionsRef.current.set(tab.documentId, local);
-  }
-  const knownIds = new Set(trackedTabs.map((tab) => tab.documentId));
-  for (const id of localSessionsRef.current.keys()) {
-    if (!knownIds.has(id)) localSessionsRef.current.delete(id);
-  }
 
   // Bring the active tab to the front of the LRU stack whenever it changes.
   useEffect(() => {
@@ -133,67 +115,18 @@ export function ContextEditorMountHost({
   // list so we re-run when the membership actually changes, not on every
   // parent render (the array identity is fresh each time).
   const trackedIds = trackedTabs.map((t) => t.documentId);
-  const untitledIds = trackedTabs.filter((tab) => tab.kind === "new").map((tab) => tab.documentId);
   const trackedIdsKey = trackedIds.join("|");
-  const untitledIdsKey = untitledIds.join("|");
-  useEffect(() => {
-    let active = true;
-    for (const documentId of untitledIds) {
-      if (localSessionsRef.current.has(documentId)) continue;
-      void localOwner
-        .restore({
-          accountId: localOwner.accountId,
-          projectId,
-          documentId,
-        })
-        .then((result) => {
-          if (!active) return;
-          if (result.kind === "opened") {
-            if (result.value.key.documentId !== documentId) {
-              remintNewTab(projectId, documentId, result.value.key.documentId);
-              return;
-            }
-            localSessionsRef.current.set(documentId, result.value);
-            rerenderAfterRestore((value) => value + 1);
-            return;
-          }
-          setOwnedElsewhere((current) => new Set(current).add(documentId));
-        })
-        .catch(() => undefined);
-    }
-    return () => {
-      active = false;
-    };
-  }, [localOwner, projectId, remintNewTab, untitledIdsKey]);
   useEffect(() => {
     const known = new Set(trackedIds);
     lruRef.current = lruRef.current.filter((id) => known.has(id));
   }, [trackedIdsKey]);
-
-  // Local pre-authority sessions still belong to the local owner. Server tabs
-  // are retained by their per-tab boundaries below.
-  useEffect(() => {
-    localOwner.retain(
-      localRetentionOwner,
-      untitledIds.map((documentId) => ({
-        accountId: localOwner.accountId,
-        projectId,
-        documentId,
-      })),
-    );
-  }, [trackedIdsKey, untitledIdsKey, localOwner, projectId, localRetentionOwner]);
-
-  useEffect(() => {
-    return () => {
-      localOwner.release(localRetentionOwner);
-    };
-  }, [localOwner, localRetentionOwner]);
 
   const mounted = pickMountedIds(lruRef.current, trackedIds, activeTabId, MAX_MOUNTED_EDITORS);
 
   return (
     <div className="relative min-h-0 flex-1">
       {trackedTabs.map((tab) => {
+        const resourceHandle = tab.resourceHandle;
         const isMounted = mounted.has(tab.documentId);
         const isActive = tab.documentId === activeTabId;
         const selectedReviewDraftId =
@@ -205,20 +138,22 @@ export function ContextEditorMountHost({
           : null;
         const reviewDraftId = reviewRoomName ? selectedReviewDraftId : null;
         const waitingForReviewRoom = Boolean(selectedReviewDraftId && !reviewRoomName);
-        const local = localSessionsRef.current.get(tab.documentId);
-        let bindingKey: string | undefined;
-        if (local) {
-          bindingKey = bindingKeysRef.current.get(local.session);
-          if (!bindingKey) {
-            bindingKey = `local-editor:${crypto.randomUUID()}`;
-            bindingKeysRef.current.set(local.session, bindingKey);
-          }
-        }
-        const renderEditor = (session: DocumentSession | null, failed = false): ReactNode => {
+        const renderEditor = (
+          session: DocumentSession | null,
+          failed = false,
+          localContentReady = false,
+        ): ReactNode => {
           if (!isMounted) return null;
+          let bindingKey: string | undefined;
+          if (session) {
+            bindingKey = bindingKeysRef.current.get(session);
+            if (!bindingKey) {
+              bindingKey = `resource-editor:${crypto.randomUUID()}`;
+              bindingKeysRef.current.set(session, bindingKey);
+            }
+          }
           return (
             <div
-              key={bindingKey ?? tab.documentId}
               data-context-editor-document-id={tab.documentId}
               className={cn(
                 // Each editor fills the host's frame; only the active one is
@@ -228,30 +163,24 @@ export function ContextEditorMountHost({
               )}
               // Defensive: aria-hidden hides background editors from AT.
               aria-hidden={!isActive}
+              aria-busy={!failed && !session}
             >
-              {ownedElsewhere.has(tab.documentId) ? (
-                <div className="grid h-full place-items-center text-muted-foreground text-sm">
-                  <Trans>This document is open in another tab</Trans>
-                </div>
-              ) : null}
               {failed ? (
                 <div className="grid h-full place-items-center text-destructive text-sm">
                   <Trans>Couldn't open this document.</Trans>
                 </div>
               ) : null}
-              {tab.kind === "new" && local && onUntitledBecameNonEmpty ? (
+              {!failed && !session ? <DelayedContentSkeleton className="absolute inset-0" /> : null}
+              {tab.kind === "new" && session && onUntitledBecameNonEmpty ? (
                 <UntitledInputObserver
                   documentId={tab.documentId}
-                  session={local.session}
+                  session={session}
                   onBecameNonEmpty={onUntitledBecameNonEmpty}
                 />
               ) : null}
               {/* Filename chrome is host-owned: the context tab strip names the
                   active file, so EditorView renders no redundant header bar. */}
-              {failed ||
-              ownedElsewhere.has(tab.documentId) ||
-              (tab.kind === "new" && !local) ||
-              !session ? null : waitingForReviewRoom && controller.reviewRoomError ? (
+              {failed || !session ? null : waitingForReviewRoom && controller.reviewRoomError ? (
                 <div className="flex min-h-0 flex-1 items-center justify-center p-6">
                   <div className="surface-card max-w-sm space-y-3 rounded-lg border border-border-subtle p-4 text-center shadow-sm">
                     <p className="font-medium text-foreground text-sm">
@@ -313,6 +242,7 @@ export function ContextEditorMountHost({
                     showToolbar={!readOnly}
                     showCollaborationDecorations={!readOnly}
                     detached={tab.kind === "new"}
+                    localContentReady={localContentReady}
                     schemaType={tab.kind === "tracked" ? tab.schemaType : "document"}
                     reviewDraftId={reviewDraftId}
                     reviewRoomName={reviewRoomName}
@@ -324,46 +254,151 @@ export function ContextEditorMountHost({
             </div>
           );
         };
-        if (tab.kind === "new") {
-          return renderEditor(local?.session ?? null);
-        }
         return (
-          <ServerTabSessionBoundary
-            key={tab.documentId}
+          <ContextTabSessionBoundary
+            key={tab.tabInstanceId ?? tab.documentId}
             projectId={projectId}
             documentId={tab.documentId}
+            resourceHandle={resourceHandle}
             active={active && isActive}
           >
-            {(session, failed) => renderEditor(session, failed)}
-          </ServerTabSessionBoundary>
+            {renderEditor}
+          </ContextTabSessionBoundary>
         );
       })}
     </div>
   );
 }
 
-/** One binding whose lifetime is exactly one actual open server tab. */
-export function ServerTabSessionBoundary({
+/** One stable host across local adoption; server retention lasts until the tab closes. */
+export function ContextTabSessionBoundary({
   projectId,
   documentId,
+  resourceHandle,
   children,
   active = true,
 }: {
   projectId: string;
   documentId: string;
+  resourceHandle?: string;
   active?: boolean;
-  children: (session: DocumentSession | null, failed: boolean) => ReactNode;
+  children: (
+    session: DocumentSession | null,
+    failed: boolean,
+    localContentReady: boolean,
+  ) => ReactNode;
 }) {
+  const resources = useAccountResourceReplica();
   const generation = useRef(++serverHostGeneration);
+  const participant = useRef(`cached-server-tab:${crypto.randomUUID()}`);
+  const currentDocumentId = useRef(documentId);
+  currentDocumentId.current = documentId;
+  const resourceIdentity = resourceHandle ?? documentId;
+  const resourceLookup = useMemo(
+    () =>
+      resourceHandle
+        ? ({ kind: "handle", handle: resourceHandle } as const)
+        : ({ kind: "document", documentId } as const),
+    [resourceIdentity],
+  );
+  const [local, setLocal] = useState<{
+    identity: string;
+    documentId: string;
+    handle: ResourceContentHandle | null;
+    phase: "probing" | "cached" | "server" | "failed";
+  }>({ identity: resourceIdentity, documentId, handle: null, phase: "probing" });
+  const currentLocal =
+    local.identity === resourceIdentity
+      ? local
+      : {
+          identity: resourceIdentity,
+          documentId,
+          handle: null,
+          phase:
+            local.documentId === documentId && local.phase === "server"
+              ? ("server" as const)
+              : ("probing" as const),
+        };
+  useEffect(() => {
+    const abort = new AbortController();
+    let retained: ResourceContentHandle | null = null;
+    setLocal((prior) => ({
+      identity: resourceIdentity,
+      documentId,
+      handle: null,
+      phase: prior.documentId === documentId && prior.phase === "server" ? "server" : "probing",
+    }));
+    void (async () => {
+      const requestedDocumentId = currentDocumentId.current;
+      const settleUnavailable = async () => {
+        try {
+          const remote = await resources.canAcquireRemoteDocument(projectId, requestedDocumentId);
+          if (!abort.signal.aborted)
+            setLocal({
+              identity: resourceIdentity,
+              documentId,
+              handle: null,
+              phase: remote ? "server" : "failed",
+            });
+        } catch {
+          if (!abort.signal.aborted)
+            setLocal({ identity: resourceIdentity, documentId, handle: null, phase: "failed" });
+        }
+      };
+      try {
+        const key =
+          resourceLookup.kind === "handle"
+            ? { handle: resourceLookup.handle }
+            : await resources.keyForDocument(projectId, resourceLookup.documentId);
+        if (abort.signal.aborted) return;
+        if (!key) {
+          setLocal({ identity: resourceIdentity, documentId, handle: null, phase: "server" });
+          return;
+        }
+        const result = await resources.openDocument(
+          projectId,
+          key,
+          participant.current,
+          abort.signal,
+        );
+        if (abort.signal.aborted) return;
+        if (result.kind !== "opened") {
+          await settleUnavailable();
+          return;
+        }
+        retained = result.handle;
+        setLocal({ identity: resourceIdentity, documentId, handle: retained, phase: "cached" });
+      } catch {
+        await settleUnavailable();
+      }
+    })();
+    return () => {
+      abort.abort();
+      retained?.release();
+    };
+  }, [projectId, resourceIdentity, resourceLookup, resources]);
+  const serverDocumentId = currentLocal.phase === "server" ? documentId : null;
   const binding = useLiveDocumentBinding({
     projectId,
-    documentId,
+    documentId: serverDocumentId,
     owner: "desktop-server-tab",
   });
-  useLiveBindingAcknowledgementHost(projectId, active ? documentId : null, binding);
-  usePostApplyHostWake(projectId, documentId, generation.current);
+  useLiveBindingAcknowledgementHost(projectId, active ? serverDocumentId : null, binding);
+  usePostApplyHostWake(projectId, serverDocumentId, generation.current);
   const state = binding.state;
-  return children(state.kind === "opened" ? state.session : null, state.kind === "failed");
+  useEffect(() => {
+    if (state.kind !== "opened" || state.documentId !== documentId) return;
+    void resources
+      .captureServerSession(projectId, documentId, state.generation, state.session)
+      .catch(() => undefined);
+  }, [documentId, projectId, resources, state]);
+  const localSession = currentLocal.handle?.session ?? null;
+  return children(
+    localSession ??
+      (state.kind === "opened" && state.documentId === documentId ? state.session : null),
+    currentLocal.phase === "failed" || (state.kind === "failed" && state.documentId === documentId),
+    localSession !== null,
+  );
 }
 
 let serverHostGeneration = 0;
@@ -408,24 +443,36 @@ function UntitledInputObserver({
 }: {
   documentId: string;
   session: import("@/core/editor/document-session").DocumentSession;
-  onBecameNonEmpty: (documentId: string) => void;
+  onBecameNonEmpty: (documentId: string) => Promise<void>;
 }) {
   useEffect(() => {
     const fragment = session.document.getXmlFragment(session.fragmentName);
     let armed = true;
     let observing = true;
+    let pending = false;
+    let retryTimer: number | null = null;
     const observe = () => {
-      if (!armed || untitledDocumentIsEmpty(fragment)) return;
-      onBecameNonEmpty(documentId);
-      armed = false;
-      fragment.unobserveDeep(observe);
-      observing = false;
+      if (!armed || pending || resourceDocumentIsEmpty(fragment)) return;
+      pending = true;
+      void onBecameNonEmpty(documentId).then(
+        () => {
+          if (!armed) return;
+          armed = false;
+          fragment.unobserveDeep(observe);
+          observing = false;
+        },
+        () => {
+          pending = false;
+          if (armed) retryTimer = window.setTimeout(observe, 1_000);
+        },
+      );
     };
     fragment.observeDeep(observe);
     // IndexedDB may already contain words if React remounted this tab.
     void session.whenLocalPersistenceSynced().then(observe);
     return () => {
       armed = false;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
       if (observing) fragment.unobserveDeep(observe);
     };
   }, [documentId, onBecameNonEmpty, session]);

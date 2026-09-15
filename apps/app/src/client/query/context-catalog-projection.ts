@@ -1,11 +1,10 @@
-/** Flat UI projection types over the React Query-owned normalized catalog. */
+/** Flat UI projection types over the replica-owned normalized catalog. */
 import type {
   DocumentFileType,
   Filetype,
-  ProjectContextTreeScheme,
   YjsTrackedSchemaType,
 } from "@meridian/contracts/protocol";
-import type { CatalogCacheView } from "./context-catalog-cache";
+import type { CatalogCacheView } from "@meridian/resource-replica";
 
 type CatalogFileBase = {
   kind: "file";
@@ -13,9 +12,19 @@ type CatalogFileBase = {
   parentId: string;
   documentId: string;
   name: string;
+  aliases?: readonly string[];
   path: string;
   uri: string;
   provisionalName: boolean;
+  /** Present only for a locally owned resource not yet represented by server authority. */
+  resourceHandle?: string;
+  resourceState?: "local" | "acknowledged";
+  resourceOrigin?: "local";
+  /** Exact device content can open without a fresh server read. */
+  localContent?: true;
+  /** Durable namespace work that needs the writer to retry. */
+  namespaceFailure?: "delete" | "set-location";
+  namespaceRepairName?: string;
 };
 
 export type CatalogFile =
@@ -45,8 +54,6 @@ export type CatalogNode = CatalogDirectory | CatalogFile;
 
 /** No nested children are stored: every read selects direct children by stable parent ID. */
 export type CatalogContextView = {
-  projectId: string;
-  scheme: ProjectContextTreeScheme;
   normalized: CatalogCacheView;
   root: CatalogDirectory;
   children(parentId: string): readonly CatalogNode[];

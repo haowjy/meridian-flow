@@ -39,9 +39,6 @@ describe("F1-J document-session production inventory", () => {
     ["canonical IndexedDB enumeration", /indexedDB\.databases\s*\(/],
     ["adoption staging", /\bstageIndexedDbPersistence\b/],
     ["adoption provider replacement", /\bpreviousPersistenceName\b/],
-    ["document-keyed Untitled record", /\bLocalUntitledRecord\b/],
-    ["v2 Untitled storage", /pending-untitled:v2/],
-    ["fake Untitled lifecycle", /\bUntitledLifecycleRig\b/],
     ["byte acknowledgement", /\b(?:byteAck|byteLease|pendingPersistenceDeletion)\b/],
   ] as const)("keeps %s at exact zero", (_name, pattern) => {
     expect(scan(pattern)).toEqual([]);

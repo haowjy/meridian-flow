@@ -40,11 +40,12 @@ export function resolveMobileDocumentRoute(input: {
   }
   const found = input.catalog?.findPath(input.path);
   const file = found?.kind === "file" ? found : null;
+  const resolved = file ? contextTabFromFile(input.scheme, file, input.workId) : null;
   return {
     requested: true,
     scheme: input.scheme,
     path: input.path,
-    tab: file ? contextTabFromFile(input.scheme, file, input.workId) : null,
+    tab: resolved?.kind === "new" ? null : resolved,
     catalogResolved: input.catalog !== null,
     isError: input.isError,
     isFetching: input.isFetching,

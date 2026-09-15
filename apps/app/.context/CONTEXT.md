@@ -233,7 +233,7 @@ feature lifetime synchronously, so its providers and descendants render on the
 first pass. An actual A-to-B account replacement synchronously fences the old
 lifetime and finishes its staged teardown before constructing B; only that
 replacement interval withholds descendants. The authenticated browser effect
-rehydrates the device Context desk after the shell is visible. Local persistence
+rehydrates the browser-local Editor workspace after the shell is visible. Local persistence
 reconciliation never projects an account-preparation screen or gates initial
 rendering.
 

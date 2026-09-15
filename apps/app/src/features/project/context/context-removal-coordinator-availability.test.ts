@@ -1,4 +1,5 @@
 /** Existing-owner integration for project-final availability command batches. */
+
 import type {
   CatalogFileEntry,
   LiveDocumentSessionAuthority,
@@ -6,9 +7,10 @@ import type {
 } from "@meridian/contracts/protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useContextTabsStore } from "@/client/stores";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import type { ProjectSearch } from "../routing/project-route";
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
-import { resolveDeskRoute } from "./context-route-desk-owner";
+import { resolveWorkspaceRoute } from "./context-route-workspace-owner";
 
 const projectId = "project-1";
 const documentId = "00000000-0000-4000-8000-000000000001";
@@ -62,7 +64,7 @@ describe("ContextRemovalCoordinator availability batches", () => {
         },
       },
       _reviewOverlayByProject: {},
-      _deskHydrated: false,
+      _workspaceHydrated: false,
     });
   });
 
@@ -90,6 +92,7 @@ describe("ContextRemovalCoordinator availability batches", () => {
     let nextLatestSearch: ProjectSearch | null = null;
     let routeUpdates = 0;
     const route = {
+      transition: acceptContextTransition,
       readSearch: () => search,
       updateSearch: (_projectId: string, update: (value: ProjectSearch) => ProjectSearch) => {
         routeUpdates += 1;
@@ -132,12 +135,12 @@ describe("ContextRemovalCoordinator availability batches", () => {
         transitionRevision: beforeAdmission.transitionRevision,
         locator: { scheme: "unfiled", path: "/old.md", workId: "work-1" },
         identity: { kind: "server", documentId },
-        owner: { kind: "desk", documentId },
+        owner: { kind: "workspace", documentId },
       }),
     ).toBe(true);
-    const deskPublications: string[][] = [];
-    const stopDesk = useContextTabsStore.subscribe((state) => {
-      deskPublications.push(
+    const workspacePublications: string[][] = [];
+    const stopWorkspace = useContextTabsStore.subscribe((state) => {
+      workspacePublications.push(
         state.byProject[projectId]?.tabs.map((tab) => ("path" in tab ? tab.path : "")) ?? [],
       );
     });
@@ -156,9 +159,9 @@ describe("ContextRemovalCoordinator availability batches", () => {
         generation: "7",
       },
     ]);
-    stopDesk();
+    stopWorkspace();
 
-    expect(deskPublications).toEqual([["/new.md"]]);
+    expect(workspacePublications).toEqual([["/new.md"]]);
     expect(routeUpdates).toBe(1);
     expect(useContextTabsStore.getState().byProject[projectId]?.tabs).toEqual([
       expect.objectContaining({
@@ -182,7 +185,7 @@ describe("ContextRemovalCoordinator availability batches", () => {
     });
     expect(routes).toEqual([{ documentId, scheme: "manuscript", path: "/new.md" }]);
     expect(
-      resolveDeskRoute({
+      resolveWorkspaceRoute({
         tabs: useContextTabsStore.getState().byProject[projectId]?.tabs ?? [],
         selectedDocumentId:
           useContextTabsStore.getState().byProject[projectId]?.selectedTabIdByWork["work-1"],
@@ -319,7 +322,7 @@ describe("availability owner batch publication and settlement", () => {
           selectedTabIdByWork: { "work-1": documentId },
         },
       },
-      _deskHydrated: true,
+      _workspaceHydrated: true,
     });
     let search: ProjectSearch = {
       screen: "context",
@@ -332,6 +335,7 @@ describe("availability owner batch publication and settlement", () => {
       { documentId: adjacentId, scheme: "manuscript" as const, path: "Adjacent.md" },
     ];
     const route = {
+      transition: acceptContextTransition,
       readSearch: () => search,
       updateSearch: (_projectId: string, update: (value: ProjectSearch) => ProjectSearch) => {
         search = update(search);
@@ -409,7 +413,7 @@ describe("availability owner batch publication and settlement", () => {
           selectedTabIdByWork: { "work-1": documentId },
         },
       },
-      _deskHydrated: true,
+      _workspaceHydrated: true,
     });
     let search: ProjectSearch = {
       screen: "context",
@@ -419,6 +423,7 @@ describe("availability owner batch publication and settlement", () => {
       work: "work-1",
     };
     const route = {
+      transition: acceptContextTransition,
       readSearch: () => search,
       updateSearch: (_projectId: string, update: (value: ProjectSearch) => ProjectSearch) => {
         search = update(search);
@@ -465,6 +470,7 @@ describe("availability owner batch publication and settlement", () => {
       work: "work-1",
     };
     const route = {
+      transition: acceptContextTransition,
       readSearch: () => search,
       updateSearch: (_projectId: string, update: (value: ProjectSearch) => ProjectSearch) => {
         search = update(search);
@@ -497,7 +503,7 @@ describe("availability owner batch publication and settlement", () => {
     });
   });
 
-  it("publishes one final Zustand desk state for two commands", async () => {
+  it("publishes one final Zustand workspace state for two commands", async () => {
     const secondId = "00000000-0000-4000-8000-000000000002";
     useContextTabsStore.setState({
       byProject: {
@@ -526,7 +532,7 @@ describe("availability owner batch publication and settlement", () => {
           selectedTabIdByWork: { "work-1": documentId },
         },
       },
-      _deskHydrated: true,
+      _workspaceHydrated: true,
     });
     const publications: string[][] = [];
     const stop = useContextTabsStore.subscribe((state) => {
@@ -633,9 +639,10 @@ describe("availability Work authority and retry", () => {
         },
       },
       _reviewOverlayByProject: {},
-      _deskHydrated: false,
+      _workspaceHydrated: false,
     });
     const route = {
+      transition: acceptContextTransition,
       readSearch: () => search,
       updateSearch: (_projectId: string, update: (latest: ProjectSearch) => ProjectSearch) => {
         search = update(search);

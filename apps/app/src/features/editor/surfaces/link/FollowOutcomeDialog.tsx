@@ -21,10 +21,10 @@ import { validateContextEntryName } from "@meridian/contracts/context-entry-vali
 import type { Editor } from "@tiptap/core";
 import { useState } from "react";
 
-import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { Button } from "@/components/ui/button";
 import { DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { type LinkFollowOutcome, linkTargetHref } from "@/core/editor/links";
+import { useAccountResourceReplica } from "@/features/project/context/account-feature-context";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 
 import { EditorDialog } from "../../chrome";
@@ -66,9 +66,10 @@ function FollowOutcome({
   onRetry: () => void;
 }) {
   const { projectId, workId } = useEditorScope();
-  const createEntry = useCreateContextEntry(projectId ?? "");
+  const resources = useAccountResourceReplica();
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
   const [failedToCreate, setFailedToCreate] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const { target } = outcome;
   const name = target.kind === "wikilink" ? target.name : null;
@@ -136,18 +137,33 @@ function FollowOutcome({
           <Button
             type="button"
             size="sm"
-            disabled={createEntry.isPending}
+            disabled={creating}
             onClick={async () => {
+              if (!projectId || creating) return;
               setFailedToCreate(false);
-              const result = await createEntry
-                .mutateAsync({
-                  scheme: "manuscript",
-                  type: "file",
-                  path: `/${name}.md`,
-                  workId: null,
-                })
-                .catch(() => null);
-              if (result?.status !== "created" || !result.documentId) {
+              setCreating(true);
+              let documentId: string | null = null;
+              try {
+                const reservation = await resources.reserveDocument(projectId);
+                if (reservation.content.kind !== "opened")
+                  throw new Error("Local document content is unavailable");
+                documentId = reservation.content.handle.documentId;
+                try {
+                  await resources.setLocation(projectId, reservation.key, {
+                    scheme: "manuscript",
+                    folderPath: "",
+                    name: `${name}.md`,
+                    workId: null,
+                  });
+                } finally {
+                  reservation.content.handle.release();
+                }
+              } catch {
+                documentId = null;
+              } finally {
+                setCreating(false);
+              }
+              if (!documentId) {
                 setFailedToCreate(true);
                 return;
               }
@@ -156,10 +172,10 @@ function FollowOutcome({
               // to be right, and nothing here has to say so: the project holds a
               // document it did not, which is a new document catalog, and the
               // resolution scope is registered against catalogs.
-              await openDocument({ documentId: result.documentId, workId });
+              await openDocument({ documentId, workId });
             }}
           >
-            {createEntry.isPending ? t`Creating…` : t`Create the document`}
+            {creating ? t`Creating…` : t`Create the document`}
           </Button>
         ) : null}
       </DialogFooter>

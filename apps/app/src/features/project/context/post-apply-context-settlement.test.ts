@@ -55,7 +55,7 @@ describe("post-Apply context settlement", () => {
     useContextTabsStore.setState({
       byProject: {},
       _reviewOverlayByProject: {},
-      _deskHydrated: false,
+      _workspaceHydrated: false,
     });
     useContextTabsStore.getState().openTab("project-a", draftTab());
   });
@@ -106,10 +106,7 @@ describe("post-Apply context settlement", () => {
       "draftOnly",
     );
 
-    const prior = getContextTabs("project-a").tabs;
-    await useContextTabsStore
-      .getState()
-      .reconcileBootstrap("project-a", prior, [draftTab("replacement")]);
+    useContextTabsStore.getState().openTab("project-a", draftTab("replacement"));
     const before = structuredClone(getContextTabs("project-a"));
     await expect(
       coordinator.settleDraftRecovery({ ...base, disposition: "writer-abandoned" }),

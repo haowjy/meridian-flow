@@ -13,7 +13,7 @@ import { parseYjsRoomName } from "@meridian/contracts/protocol";
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 
 import { createHocuspocusDocumentTransport } from "@/core/transport/hocuspocus-document-transport";
-import type { DocumentSessionTransportFactory } from "./document-session";
+import type { DocumentSessionOptions, DocumentSessionTransportFactory } from "./document-session";
 import { DocumentSession, type DocumentSessionSnapshot } from "./document-session";
 import {
   compareAvailabilityGeneration,
@@ -23,15 +23,15 @@ import {
 import {
   DocumentSessionCoordinationError,
   type DocumentSessionCrossContextCoordination,
-  type LocalLineageTerminalPort,
+  type LocalResourceLifetimePort,
   type LocalSessionAuthority,
 } from "./document-session-coordination-contract";
 import { createDocumentSessionCrossContextCoordination } from "./document-session-cross-context-coordination";
 
-export type { LocalLineageTerminalPort } from "./document-session-coordination-contract";
+export type { LocalResourceLifetimePort } from "./document-session-coordination-contract";
 
 import type {
-  LocalUntitledDocumentSessionFactory,
+  LocalDocumentSessionFactory,
   RetainedLiveDocumentReference,
 } from "./document-session-registry";
 import { DocumentSessionTeardownOwner } from "./document-session-teardown-owner";
@@ -40,6 +40,7 @@ import type {
   LocalDocumentSessionHandoff,
   LocalDocumentSessionReservationPort,
   LocalDocumentSessionTransfer,
+  TransferredDocumentSessionOwnership,
 } from "./local-document-session-adoption";
 import { readSchemaFenceQuarantine, writeSchemaFenceQuarantine } from "./schema-fence";
 
@@ -62,8 +63,8 @@ type LocalTransferReservation = {
   settle(): void;
 };
 
-function localTransferKey(projectId: ProjectId, documentId: DocumentId): string {
-  return `${encodeURIComponent(projectId)}:${encodeURIComponent(documentId)}`;
+function localTransferKey(documentId: DocumentId): string {
+  return encodeURIComponent(documentId);
 }
 
 export class DocumentSessionAuthorityError extends Error {
@@ -89,7 +90,7 @@ export class DocumentSessionRegistry
   implements
     LiveDocumentSessionAuthority,
     LocalSessionAuthority,
-    LocalUntitledDocumentSessionFactory,
+    LocalDocumentSessionFactory,
     LocalDocumentSessionReservationPort,
     LocalDocumentSessionAdoptionPort
 {
@@ -114,13 +115,14 @@ export class DocumentSessionRegistry
   private readonly retainedBranchRoomsByOwner = new Map<string, Set<string>>();
   private readonly admissionReservations = new Map<DocumentId, number>();
   private readonly localTransferReservations = new Map<string, LocalTransferReservation>();
+  private readonly settledLocalTransfers = new WeakSet<object>();
   private readonly pendingTeardownTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private liveDocCapWarningEmitted = false;
   private readonly sessionObservers = new Map<
     string,
     Map<(snapshot: DocumentSessionSnapshot) => void, (() => void) | undefined>
   >();
-  private localLineageTerminal: LocalLineageTerminalPort | null = null;
+  private localResources: LocalResourceLifetimePort | null = null;
 
   constructor(
     private readonly createCoordination: (
@@ -154,7 +156,7 @@ export class DocumentSessionRegistry
     compareAvailabilityGeneration(generation, generation);
     this.reserveAdmission(documentId);
     try {
-      await this.localTransferReservations.get(localTransferKey(projectId, documentId))?.settled;
+      await this.localTransferReservations.get(localTransferKey(documentId))?.settled;
       this.requireAccountRuntimeOpen();
       const coordination = await this.configuredCoordination();
       const admitted = await this.translateCoordination(() =>
@@ -184,12 +186,13 @@ export class DocumentSessionRegistry
     );
   }
 
-  connectLocalLineageTerminal(port: LocalLineageTerminalPort): void {
-    if (this.localLineageTerminal && this.localLineageTerminal !== port)
-      throw new Error("Local lineage terminal owner is already connected");
-    this.localLineageTerminal = port;
+  connectLocalResources(port: LocalResourceLifetimePort): void {
+    this.requireAccountRuntimeOpen();
+    if (this.localResources && this.localResources !== port)
+      throw new Error("Local resource owner is already connected");
+    this.localResources = port;
     void this.configuredCoordination()
-      .then((coordination) => coordination.connectLocalLineageTerminal(port))
+      .then((coordination) => coordination.connectLocalLineageTerminal(port.terminal))
       .catch((error) => {
         this.authorityFailure = error;
       });
@@ -313,8 +316,11 @@ export class DocumentSessionRegistry
     return session;
   }
 
-  localUntitledDocumentSessionFactory(): LocalUntitledDocumentSessionFactory {
-    return this;
+  async whenAuthorityReady(): Promise<void> {
+    this.requireAccountRuntimeOpen();
+    const coordination = await this.configuredCoordination();
+    await this.translateCoordination(() => coordination.requireReady());
+    this.requireAccountRuntimeOpen();
   }
 
   createDetached(input: {
@@ -322,23 +328,25 @@ export class DocumentSessionRegistry
     projectId: ProjectId;
     documentId: DocumentId;
     persistenceKey: string;
+    fresh?: boolean;
   }): DocumentSession {
     this.requireAccountRuntimeOpen();
     if (input.accountId !== this.accountId) {
       throw new DocumentSessionAuthorityError(
         "account-mismatch",
-        "Local Untitled construction belongs to a different account epoch",
+        "Local document construction belongs to a different account epoch",
       );
     }
     return this.constructSession(input.documentId, {
       kind: "indexeddb",
       key: input.persistenceKey,
+      fresh: input.fresh,
     });
   }
 
   reserve(transfer: LocalDocumentSessionTransfer): LocalDocumentSessionHandoff {
     this.requireAccountRuntimeOpen();
-    const key = localTransferKey(transfer.projectId, transfer.documentId);
+    const key = localTransferKey(transfer.documentId);
     const existing = this.localTransferReservations.get(key);
     if (existing) {
       if (
@@ -350,6 +358,8 @@ export class DocumentSessionRegistry
       }
       throw new Error("A different local transfer already reserves this document");
     }
+    if ((this.admissionReservations.get(transfer.documentId) ?? 0) > 0)
+      throw new Error("Live admission already reserves this document");
     let settle!: () => void;
     const settled = new Promise<void>((resolve) => {
       settle = resolve;
@@ -397,10 +407,12 @@ export class DocumentSessionRegistry
     for (const [key, reservation] of this.localTransferReservations) {
       if (reservation.handoff !== input) continue;
       this.localTransferReservations.delete(key);
+      this.settledLocalTransfers.add(input);
       reservation.settle();
       return;
     }
-    throw new Error("Local document handoff is not reserved");
+    if (!this.settledLocalTransfers.has(input))
+      throw new Error("Local document handoff is not reserved");
   }
 
   async inspect(input: {
@@ -451,7 +463,7 @@ export class DocumentSessionRegistry
   }): Promise<{ lease: LiveDocumentSessionLease; session: DocumentSession }> {
     this.requireAccountRuntimeOpen();
     compareAvailabilityGeneration(input.generation, input.generation);
-    const reservationKey = localTransferKey(input.projectId, input.documentId);
+    const reservationKey = localTransferKey(input.documentId);
     const reservation = this.localTransferReservations.get(reservationKey);
     if (
       !reservation ||
@@ -480,15 +492,36 @@ export class DocumentSessionRegistry
               throw new Error("Local adoption persistence authority does not match the lineage");
             reservation.transfer.prepareCommit();
           },
-          completeCommit: async () => {
+          completeCommit: async (lease) => {
             const session = reservation.transfer.session;
             const state = this.liveRooms.get(input.documentId);
-            if (!state || state.session) throw new Error("A different live session won adoption");
-            await reservation.transfer.completeCommit();
+            if (!state || (state.session && state.session !== session))
+              throw new Error("A different live session won adoption");
             state.session = session;
             state.persistenceGeneration = input.generation;
             state.exactDatabaseName = input.pending.exactDatabaseName;
+            const ownerId = `local-transfer:${input.pending.transitionId}`;
+            this.retain(ownerId, [lease], { detachedDocumentIds: [input.documentId] });
+            let released = false;
+            const ownership: TransferredDocumentSessionOwnership = Object.freeze({
+              lease,
+              persistenceGeneration: input.generation,
+              exactDatabaseName: input.pending.exactDatabaseName,
+              release: () => {
+                if (released) return;
+                released = true;
+                this.release(ownerId);
+              },
+            });
+            try {
+              await reservation.transfer.completeCommit(ownership);
+            } catch (error) {
+              ownership.release();
+              if (state.session === session) state.session = null;
+              throw error;
+            }
             this.localTransferReservations.delete(reservationKey);
+            this.settledLocalTransfers.add(reservation.handoff);
             reservation.settle();
           },
         }),
@@ -500,6 +533,7 @@ export class DocumentSessionRegistry
         this.localTransferReservations.get(reservationKey) === reservation
       ) {
         this.localTransferReservations.delete(reservationKey);
+        this.settledLocalTransfers.add(reservation.handoff);
         reservation.settle();
       }
       throw error;
@@ -519,6 +553,7 @@ export class DocumentSessionRegistry
   beginCloseAccountRuntime(): void {
     if (this.accountRuntimeState !== "open") return;
     this.accountRuntimeState = "closing";
+    this.localResources?.beginClose();
     this.coordination?.beginClose();
   }
 
@@ -530,7 +565,10 @@ export class DocumentSessionRegistry
       const coordination = this.coordination;
       await (coordination?.close() ?? this.invalidateAll());
       if (this.coordination === coordination) this.coordination = null;
-      for (const reservation of this.localTransferReservations.values()) reservation.settle();
+      for (const reservation of this.localTransferReservations.values()) {
+        this.settledLocalTransfers.add(reservation.handoff);
+        reservation.settle();
+      }
       this.localTransferReservations.clear();
       this.accountRuntimeState = "closed";
     });
@@ -560,6 +598,7 @@ export class DocumentSessionRegistry
   }
 
   invalidateAll(): Promise<void> {
+    this.beginCloseAccountRuntime();
     this.clearRetainedLiveDocuments();
     this.retainedBranchRoomsByOwner.clear();
     this.liveDocCapWarningEmitted = false;
@@ -582,7 +621,9 @@ export class DocumentSessionRegistry
     for (const { roomKey, session } of branchSessions) {
       void this.teardownOwner.retire({ kind: "branch", roomKey }, session).catch(() => undefined);
     }
-    return this.teardownOwner.drain();
+    return Promise.all([this.teardownOwner.drain(), this.localResources?.finishClose()]).then(
+      () => undefined,
+    );
   }
 
   private clearRetainedLiveDocuments(): void {
@@ -789,7 +830,7 @@ export class DocumentSessionRegistry
 
   private createSession(
     roomKey: string,
-    persistence: { kind: "indexeddb"; key: string } | { kind: "none" },
+    persistence: DocumentSessionOptions["persistence"],
   ): DocumentSession {
     const session = this.constructSession(roomKey, persistence);
     this.publishSession(roomKey, session);
@@ -798,7 +839,7 @@ export class DocumentSessionRegistry
 
   private constructSession(
     roomKey: string,
-    persistence: { kind: "indexeddb"; key: string } | { kind: "none" },
+    persistence: DocumentSessionOptions["persistence"],
   ): DocumentSession {
     let session!: DocumentSession;
     session = new DocumentSession({

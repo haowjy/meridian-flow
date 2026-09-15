@@ -2,25 +2,14 @@
 
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
-import { type ContextTab, useContextTabsStore } from "@/client/stores";
-import {
-  type ContextIdentityMutationService,
-  createContextIdentityMutationService,
-} from "./context-identity-mutation";
+import type { ContextTab } from "@/client/stores";
+import { useAccountResourceReplica } from "./account-feature-context";
 import { type DesiredIdentity, identityDestination, tabLocation } from "./identity-location";
-import { queueUntitledIdentity } from "./untitled-reconciler-browser";
 
 export type IdentityCommitTarget = DesiredIdentity;
 export type { DesiredIdentity, IdentityDestination } from "./identity-location";
 
-export type IdentityCommitOutcome =
-  | { status: "committed" }
-  | {
-      status: "conflict";
-      locator: { scheme: ProjectContextTreeScheme; path: string; workId?: string };
-    }
-  | { status: "error"; message: string };
+export type IdentityCommitOutcome = { status: "committed" } | { status: "error"; message: string };
 
 /** Every commit through this seam is an explicit writer save, so provisional naming ends. */
 export type IdentityCommitted = {
@@ -80,7 +69,6 @@ export function useIdentityCommit({
   tab,
   editorWorkId,
   onCommitted,
-  identityMutations: suppliedIdentityMutations,
 }: {
   projectId: string;
   tab: ContextTab;
@@ -90,98 +78,35 @@ export function useIdentityCommit({
     next: IdentityCommitted,
     ownership: IdentityCommitOwnership,
   ) => void;
-  /** Optional composition seam; app callers share the QueryClient-owned service. */
-  identityMutations?: ContextIdentityMutationService;
 }): (target: DesiredIdentity) => Promise<IdentityCommitOutcome> {
-  const queryClient = useQueryClient();
-  const identityMutations =
-    suppliedIdentityMutations ?? createContextIdentityMutationService(queryClient);
+  const resources = useAccountResourceReplica();
   return async (target) => {
     const plan = deriveIdentityCommitPlan(tab, target, editorWorkId);
-    if (plan.kind === "queue") {
-      queueUntitledIdentity(
-        {
-          documentId: tab.documentId,
-          projectId,
-          home: { scheme: "unfiled" },
-        },
-        plan.desired,
-      );
-      return { status: "committed" };
-    }
     if (plan.kind === "no-op") return { status: "committed" };
-    if (tab.kind === "new") return { status: "committed" };
 
     try {
-      let activeDesired = plan.desired;
-      let destination = activeDesired.destination;
-      let moveReceipt = await identityMutations.move(
-        tab.documentId,
-        projectId,
-        { scheme: tab.scheme, path: tab.path, ...(tab.workId ? { workId: tab.workId } : {}) },
-        activeDesired,
-      );
-      let moved = moveReceipt.result;
-      if (moved.status === "retry") {
-        const freshTab = useContextTabsStore
-          .getState()
-          .byProject[projectId]?.tabs.find((candidate) => candidate.documentId === tab.documentId);
-        if (!freshTab) {
-          return {
-            status: "error",
-            message: t`This document changed elsewhere. Reopen it and try again.`,
-          };
-        }
-        const freshPlan = deriveIdentityCommitPlan(freshTab, target, editorWorkId);
-        if (freshPlan.kind === "no-op") return { status: "committed" };
-        if (freshPlan.kind !== "commit" || freshTab.kind === "new") {
-          return {
-            status: "error",
-            message: t`This document changed elsewhere. Reopen it and try again.`,
-          };
-        }
-        activeDesired = freshPlan.desired;
-        destination = activeDesired.destination;
-        moveReceipt = await identityMutations.move(
-          tab.documentId,
-          projectId,
-          {
-            scheme: freshTab.scheme,
-            path: freshTab.path,
-            ...(freshTab.workId ? { workId: freshTab.workId } : {}),
-          },
-          activeDesired,
-        );
-        moved = moveReceipt.result;
-        if (moved.status === "retry") {
-          return {
-            status: "error",
-            message: t`This document keeps changing elsewhere. Reopen it and try again.`,
-          };
-        }
-      }
-      if (moved.status === "conflict") {
-        return {
-          status: "conflict",
-          locator: {
-            scheme: moved.collision.scheme,
-            path: `/${moved.collision.path}`,
-            ...(moved.collision.authority.kind === "work"
-              ? { workId: moved.collision.authority.workId }
-              : {}),
-          },
-        };
-      }
+      const key = tab.resourceHandle
+        ? { handle: tab.resourceHandle }
+        : await resources.keyForDocument(projectId, tab.documentId);
+      if (!key) throw new Error("Document resource is unavailable");
+      const destination = plan.desired.destination;
+      const ownership = await resources.setLocation(projectId, key, {
+        scheme: destination.scheme,
+        folderPath: destination.folderPath,
+        name: plan.desired.name,
+        workId: destination.workId ?? null,
+      });
+      const folder = destination.folderPath.split("/").filter(Boolean).join("/");
       onCommitted(
         tab.documentId,
         {
-          scheme: moved.scheme,
-          path: `/${moved.path}`,
-          name: moved.name,
+          scheme: destination.scheme,
+          path: `/${[folder, plan.desired.name].filter(Boolean).join("/")}`,
+          name: plan.desired.name,
           ...(destination.workId ? { workId: destination.workId } : {}),
           routeWorkId: destination.workId ?? editorWorkId,
         },
-        { isLatest: moveReceipt.isLatest },
+        ownership,
       );
       return { status: "committed" };
     } catch {
