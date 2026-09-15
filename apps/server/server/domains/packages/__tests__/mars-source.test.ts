@@ -2,12 +2,36 @@
 import { describe, expect, it } from "vitest";
 import {
   agentDefinitionContentChecksum,
+  canonicalizeJsonObject,
   normalizeAgentMeta,
   parseMarkdownDefinition,
+  parseMarsToml,
   serializeMarkdownDefinition,
 } from "../domain/mars-source.js";
 
 describe("Agent source fidelity", () => {
+  it("canonicalizes prototype-shaped source keys as own data", () => {
+    const meta = JSON.parse('{"extension":{"__proto__":{"role":"admin"}}}');
+    const canonical = canonicalizeJsonObject(meta);
+    expect(JSON.stringify(canonical)).toBe(JSON.stringify(meta));
+    expect(Object.getPrototypeOf(canonical.extension)).toBe(Object.prototype);
+  });
+
+  it("preserves authored leading newlines through serialization", () => {
+    const body = "\nReview.\n";
+    expect(parseMarkdownDefinition(serializeMarkdownDefinition({}, body)).body).toBe(body);
+  });
+  it.each([
+    "agents = 5",
+    "[agents]\nx = false",
+  ])("rejects malformed Agent overlay tables %s", (toml) => {
+    expect(() => parseMarsToml(toml, { packageNameFallback: "pkg" })).toThrow("table");
+  });
+
+  it.each(["false", "123", "agent", "- writer"])("rejects non-mapping frontmatter %s", (yaml) => {
+    expect(() => parseMarkdownDefinition(`---\n${yaml}\n---\nPrompt`)).toThrow("mapping");
+  });
+
   it("retains omission separately from explicit empty configuration", () => {
     expect(normalizeAgentMeta({ name: "generic" })).toEqual({ name: "generic" });
     const empty = { tools: [], subagents: [], skills: {}, mode: "subagent" };

@@ -15,6 +15,13 @@ export {
   listProjectCatalogAgents,
 } from "./domain/agent-catalog.js";
 export {
+  type AgentCompilationDiagnostic,
+  type AgentCompilationResult,
+  type CompiledAgentDefinition,
+  compileAgentDefinition,
+  type NormalizedAgentMetadata,
+} from "./domain/agent-definition-compiler.js";
+export {
   type AgentEffort,
   type AgentEffortLevel,
   type AgentGatewayMeta,
