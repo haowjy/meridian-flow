@@ -63,31 +63,7 @@ export function createBoundAgentCatalog(input: {
   };
   return {
     async installSystemSource(source) {
-      return store.withSystemCatalogTransaction(async () => {
-        const installed = await store.installSource(source);
-        for (const revision of installed.definitions) {
-          const existing = await store.readCatalogEntry(null, revision.slug);
-          if (existing) {
-            const previous = await store.readRevision(existing.selectedRevisionId);
-            const previousSource = previous && (await store.readSource(previous.packageRevisionId));
-            if (previousSource?.coordinate !== source.coordinate) {
-              throw new Error(`System Agent source collision: ${revision.slug}`);
-            }
-          }
-          if (existing?.selectedRevisionId === revision.id || existing?.removed) continue;
-          const selected = await store.selectRevision({
-            ownerUserId: null,
-            logicalKey: revision.slug,
-            revisionId: revision.id,
-            ...(existing ? { expectedRevisionId: existing.selectedRevisionId } : {}),
-          });
-          if (!selected.ok) {
-            const current = await store.readCatalogEntry(null, revision.slug);
-            if (current?.selectedRevisionId !== revision.id)
-              throw new Error(`System Agent selection conflict: ${revision.slug}`);
-          }
-        }
-      });
+      return installSystemAgentSource(store, source);
     },
     async list(userId, page) {
       const entries = await store.listCatalog({ userId, limit: page.limit, after: page.after });
@@ -116,4 +92,36 @@ export function createBoundAgentCatalog(input: {
       };
     },
   };
+}
+
+/** Atomically publish trusted system definitions into the shared catalog. */
+export async function installSystemAgentSource(
+  store: AgentRevisionStore,
+  source: AgentSourceSnapshot,
+): Promise<void> {
+  return store.withSystemCatalogTransaction(async () => {
+    const installed = await store.installSource(source);
+    for (const revision of installed.definitions) {
+      const existing = await store.readCatalogEntry(null, revision.slug);
+      if (existing) {
+        const previous = await store.readRevision(existing.selectedRevisionId);
+        const previousSource = previous && (await store.readSource(previous.packageRevisionId));
+        if (previousSource?.coordinate !== source.coordinate) {
+          throw new Error(`System Agent source collision: ${revision.slug}`);
+        }
+      }
+      if (existing?.selectedRevisionId === revision.id || existing?.removed) continue;
+      const selected = await store.selectRevision({
+        ownerUserId: null,
+        logicalKey: revision.slug,
+        revisionId: revision.id,
+        ...(existing ? { expectedRevisionId: existing.selectedRevisionId } : {}),
+      });
+      if (!selected.ok) {
+        const current = await store.readCatalogEntry(null, revision.slug);
+        if (current?.selectedRevisionId !== revision.id)
+          throw new Error(`System Agent selection conflict: ${revision.slug}`);
+      }
+    }
+  });
 }

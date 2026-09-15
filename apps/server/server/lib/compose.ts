@@ -64,12 +64,14 @@ import {
 import { createInMemoryPackageStore } from "../domains/packages/adapters/in-memory-package-store.js";
 import {
   createDefaultPackageSeeder,
+  createDrizzleAgentRevisionStore,
   createDrizzlePackageStore,
   createGitHubMarsPackageFetcher,
   type DefaultPackageSeeder,
   defaultPackageSeedConfigFromEnv,
   type MarsPackageFetcher,
   type PackageRepository,
+  seedGeneralAgent,
 } from "../domains/packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/adapters/in-memory/project-preferences-repository.js";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
@@ -304,7 +306,7 @@ export async function createProductionAppPorts(input: {
 }): Promise<ProductionAppPorts> {
   const environment = input.environment ?? process.env;
   const eventSink = input.eventSink;
-  const { gateway: rawGateway } = await createGatewayFromEnv(environment, {
+  const { gateway: rawGateway, defaultModel } = await createGatewayFromEnv(environment, {
     onInfo: (info) => {
       emitEvent(eventSink, {
         level: "info",
@@ -421,6 +423,8 @@ export async function createProductionAppPorts(input: {
     eventSink,
     assetPaths: assetPathResolver,
   });
+  const agentRevisions = createDrizzleAgentRevisionStore(db);
+  await seedGeneralAgent(agentRevisions, defaultModel);
   const packageRepository = createDrizzlePackageStore({ db });
   const marsPackageFetcher = createGitHubMarsPackageFetcher({
     githubToken: environment.GITHUB_TOKEN,

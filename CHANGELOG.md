@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Seed a durable General system Agent with the configured default model during server startup.
+
 - Retain authorized historical Agent selections across catalog updates and add shared catalog availability and exact-revision resolution.
 
 - Add durable Agent source/definition revisions, account/system catalog selection, and fixed thread-binding storage with transactional rollback and explicit catalog restore.

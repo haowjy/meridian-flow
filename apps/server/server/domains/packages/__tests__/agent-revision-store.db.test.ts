@@ -11,6 +11,7 @@ import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js"
 import { truncateDrizzleTables } from "../../../test-support/drizzle-reset.js";
 import { createDrizzleAgentRevisionStore } from "../adapters/drizzle-agent-revision-store.js";
 import { createBoundAgentCatalog } from "../domain/bound-agent-catalog.js";
+import { seedGeneralAgent } from "../domain/default-package-seeding.js";
 
 const USER = "00000000-0000-4000-8000-000000000871";
 const OTHER = "00000000-0000-4000-8000-000000000872";
@@ -49,6 +50,29 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         .values({ id: THREAD, projectId: PROJECT, createdByUserId: USER, slug: "agent-test" });
     });
     afterAll(() => db.close());
+
+    it("seeds General idempotently and retains its configured model across updates", async () => {
+      await seedGeneralAgent(store, "first-model");
+      const first = await store.readCatalogEntry(null, "general");
+      if (!first) throw new Error("General was not seeded");
+      const revision = await store.readRevision(first.selectedRevisionId);
+      expect(revision?.definition).toMatchObject({
+        systemPrompt: "",
+        metadata: { name: "General", mode: "primary", model: "first-model" },
+      });
+      await seedGeneralAgent(store, "first-model");
+      expect(await store.readCatalogEntry(null, "general")).toEqual(first);
+      await seedGeneralAgent(store, "next-model");
+      const next = await store.readCatalogEntry(null, "general");
+      if (!next) throw new Error("General disappeared after reseeding");
+      expect(next.selectedRevisionId).not.toBe(first.selectedRevisionId);
+      expect((await store.readRevision(first.selectedRevisionId))?.definition.metadata.model).toBe(
+        "first-model",
+      );
+      expect((await store.readRevision(next.selectedRevisionId))?.definition.metadata.model).toBe(
+        "next-model",
+      );
+    });
 
     it("retains exact source bytes and definitions across independent connections", async () => {
       const original = source();

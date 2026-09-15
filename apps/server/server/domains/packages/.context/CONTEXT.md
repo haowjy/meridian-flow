@@ -53,7 +53,10 @@ consumes `PackageRepository` below; integration belongs to the milestone work.
 catalog pages from immutable revisions. Listing and resolution share the supplied
 host-support predicate. System-source publication uses one transaction-scoped
 serialization boundary across the system catalog and rejects
-cross-source logical-key collisions.
+cross-source logical-key collisions. Production startup seeds General through this
+boundary with an empty Agent-specific body (the shared host prompt remains
+authoritative) and a concrete configured default model. Changing that configured
+model publishes a new revision and retains the former one.
 
 ## Package repository and editing
 
