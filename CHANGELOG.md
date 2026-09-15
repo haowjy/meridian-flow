@@ -5,6 +5,9 @@
 
 ## [Unreleased]
 
+- Add presence-sensitive Mars Agent compilation with canonical tool names, overlay validation, explicit diagnostics, and versioned definition digests.
+- Preserve Agent body whitespace and reject malformed definition containers instead of silently discarding configuration.
+
 - Preserve structured Agent skill declarations and omitted configuration fields through source normalization and revision checksums.
 
 - Reuse fresh catalog acquisitions when switching back to a retained Editor tab.

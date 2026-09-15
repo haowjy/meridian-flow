@@ -114,6 +114,9 @@ export function parseMarkdownDefinition(raw: string): { meta: JsonObject; body: 
     throw new Error("Markdown definition is missing YAML frontmatter");
   }
   const document = YAML.parse(match[1]);
+  if (document !== null && (typeof document !== "object" || Array.isArray(document))) {
+    throw new Error("Markdown definition frontmatter must be a YAML mapping");
+  }
   const meta = objectAt(document);
   const body = raw.slice(match[0].length).replace(/^\r?\n/, "");
   return { meta, body };
@@ -121,11 +124,11 @@ export function parseMarkdownDefinition(raw: string): { meta: JsonObject; body: 
 
 /** Canonical JSON object for checksum stability — keys sorted recursively. */
 export function canonicalizeJsonObject(value: JsonObject): JsonObject {
-  const sorted: JsonObject = {};
-  for (const key of Object.keys(value).sort()) {
-    sorted[key] = canonicalizeJsonValue(value[key]);
-  }
-  return sorted;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, canonicalizeJsonValue(value[key])]),
+  );
 }
 
 /**
@@ -187,17 +190,10 @@ export function definitionContentChecksum(definition: {
   );
 }
 
-/**
- * Serialize a markdown definition back to its on-disk format.
- *
- * Trims a single leading newline from the body (the frontmatter regex
- * leaves one extra newline between the `---` separator and the body text).
- * Rounds-tripping parse → serialize → parse must produce identical results
- * for checksum consistency.
- */
+/** Serialize with one separator newline; parsing removes the separator, preserving the body. */
 export function serializeMarkdownDefinition(meta: JsonObject, body: string): string {
   const yaml = YAML.stringify(meta).trimEnd();
-  return `---\n${yaml}\n---\n\n${body.replace(/^\n/, "")}`;
+  return `---\n${yaml}\n---\n\n${body}`;
 }
 
 async function readSkillFiles(skillDir: string): Promise<ParsedSkillDefinition["files"]> {
@@ -289,9 +285,25 @@ function readDependencies(value: unknown, local: boolean): MarsDependency[] {
 }
 
 function readAgentOverlays(value: unknown): Record<string, AgentConfigOverlay> {
+  if (value === undefined) return {};
   return Object.fromEntries(
-    Object.entries(objectAt(value)).map(([slug, raw]) => [slug, objectAt(raw)]),
+    Object.entries(requireTomlTable(value, "agents")).map(([slug, raw]) => [
+      slug,
+      requireTomlTable(raw, `agents.${slug}`),
+    ]),
   );
+}
+
+function requireTomlTable(value: unknown, field: string): JsonObject {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    (Object.getPrototypeOf(value) !== null && Object.getPrototypeOf(value) !== Object.prototype)
+  ) {
+    throw new Error(`mars.toml ${field} must be a table`);
+  }
+  return value as JsonObject;
 }
 
 /**

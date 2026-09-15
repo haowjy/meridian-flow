@@ -31,13 +31,12 @@ export function normalizeAgentEffort(value: unknown): AgentEffort | undefined {
   return EFFORT_VALUES.has(normalized as AgentEffort) ? (normalized as AgentEffort) : undefined;
 }
 
-/** Type-extract model/effort while preserving other frontmatter fields. */
+/** Preserve invalid source values so compilation can diagnose them without silent fallback. */
 export function normalizeAgentMetaFields(meta: JsonObject): JsonObject {
   const model = stringAt(meta.model);
   const effort = normalizeAgentEffort(meta.effort);
-  const { effort: _ignoredEffort, model: _ignoredModel, ...rest } = meta;
   return {
-    ...rest,
+    ...meta,
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
   };
