@@ -31,8 +31,9 @@ flowchart TD
   live opener. While a lookup is refetching, cached metadata cannot publish
   an admission or repair the URL.
 - **Stable document ID, such as a wikilink or search result:**
-  `ProjectDocumentNavigationAdapter` resolves through the live opener and passes
-  prepared tab metadata to the route owner. Accepted history commits the tab and
+  `ProjectDocumentNavigationAdapter` opens known exact initialized content through
+  the resource owner; unacquired content uses the live opener. It passes prepared
+  tab metadata to the route owner. Accepted history commits the tab and
   selection; a cancelled decision publishes neither. A background open publishes
   the tab without navigating or cancelling a foreground attempt. Scratch/Uploads resources are not Editor
   tabs: their resolved URLs show the deferred chat-resource viewing notice.
