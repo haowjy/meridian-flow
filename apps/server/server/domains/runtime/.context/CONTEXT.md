@@ -69,8 +69,9 @@ model, effort, and diagnostic Agent identity. Missing bindings fail before a
 gateway call. Catalog removal or advancement leaves continued execution on its
 retained revision. `turn-context-assembly.ts` supplies that persona to the initial
 host-prompt bake and reuses the frozen prompt on later turns; preview shares this
-assembly without persisting. The current supported execution subset requires an
-explicit model and empty skill declarations. Primary catalog selection currently
+assembly without persisting. The first-bake CAS returns one authoritative prompt
+and skill set; a losing preparation uses that winner directly. Display slugs do
+not guard prompt freezing. The model comes from conversation-owned resolved configuration, including a frozen default when source omits it. The current supported execution subset requires empty skill declarations. Primary catalog selection currently
 keeps nonempty delegation rosters unavailable while delegation support is completed.
 
 ## tools — registry, executor, and handlers

@@ -7,6 +7,12 @@
 
 ## [Unreleased]
 
+- Agent conversations retain resolved model defaults and exact package dependencies. Root, child, handoff and fork creation share atomic binding, with derived initialization and spawn provenance committed together.
+- Preserve nested spawn-root identity in PostgreSQL and reject unsupported children before creation.
+- Standalone Agent publication writes directly to the durable personal catalog. Stale saves refuse overwrite.
+
+- Freeze bound Agent prompts independently of legacy display slugs and remove the obsolete thread Agent-rebinding endpoint.
+
 - Show saved first-message recovery controls, preserve newer draft text, and prevent another Send while the original submission is unresolved.
 
 - Recover expired pending message admissions after server interruption while preserving live requests and their submission identity.

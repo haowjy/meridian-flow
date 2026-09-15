@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { createInMemoryAppServices } from "../../../../lib/compose.js";
 import { testWorkSlug } from "../../../../test-support/work-slug.js";
+import { resolveAgentConfiguration } from "../../../packages/index.js";
 import { DOCUMENT_DIALECT_CORE_INSTRUCTION } from "../system-instructions/document-dialect.js";
 import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "../system-instructions/runtime-uris.js";
 import { assembleNextTurnContext } from "../turn-context-assembly.js";
@@ -21,7 +22,15 @@ async function fixture() {
     currentAgent: "writer",
     systemPrompt: "Legacy override must not win.",
   });
-  await app.agentRevisions.bindThread(created.id, revision.id);
+  await app.agentRevisions.bindThread(
+    created.id,
+    revision.id,
+    await resolveAgentConfiguration({
+      store: app.agentRevisions,
+      revision: revision,
+      defaultModel: "test-model",
+    }),
+  );
   const thread = await app.repos.threads.findById(created.id);
   if (!thread) throw new Error("Missing fixture thread");
   const input = {
@@ -68,6 +77,27 @@ describe("assembleNextTurnContext", () => {
     expect((await app.repos.threads.findById(input.thread.id))?.bakedSkillSlugs).toBeNull();
   });
 
+  it("uses the atomic freeze winner with the retained Agent despite a stale display slug", async () => {
+    const { app, input } = await fixture();
+    const winnerPrompt = "Already frozen by another preparation.";
+    const winner = await app.repos.threads.bakeComposedSystemPrompt(input.thread.id, {
+      composedSystemPrompt: winnerPrompt,
+      bakedSkillSlugs: [],
+    });
+    const assembled = await assembleNextTurnContext({
+      ...input,
+      thread: { ...input.thread, currentAgent: "stale-display-slug" },
+      persistBake: true,
+    });
+    expect(assembled.thread.composedSystemPrompt).toBe(winner.composedSystemPrompt);
+    expect(assembled.systemPrompt).toBe(winnerPrompt);
+    expect(assembled.generateRequest.messages[0]?.content).toEqual([
+      { type: "text", text: winnerPrompt },
+    ]);
+    expect(assembled.generateRequest.model).toBe("original-model");
+    expect(assembled.agentSlug).toBe("writer");
+  });
+
   it("freezes once and retains model, body, and host prefix after catalog advancement", async () => {
     const { app, input, source, revision } = await fixture();
     await app.agentRevisions.selectRevision({
@@ -75,7 +105,13 @@ describe("assembleNextTurnContext", () => {
       logicalKey: "writer",
       revisionId: revision.id,
     });
-    const first = await assembleNextTurnContext({ ...input, persistBake: true });
+    const first = await assembleNextTurnContext({
+      ...input,
+      thread: { ...input.thread, currentAgent: "stale-display-name" },
+      persistBake: true,
+    });
+    expect(first.systemPrompt).toContain("Retained persona.");
+    expect(first.agentSlug).toBe("writer");
     const next = (
       await app.agentRevisions.installSource({
         ...source,

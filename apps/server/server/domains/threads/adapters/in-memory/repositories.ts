@@ -351,30 +351,10 @@ export function createInMemoryRepositories(
       threads.set(id, updated);
       return projectThread(updated);
     },
-    async updateCurrentAgent(id, currentAgent) {
-      const thread = threads.get(id);
-      if (!thread) throw new Error(`Thread not found: ${id}`);
-      if (
-        thread.composedSystemPrompt !== null ||
-        thread.bakedSkillSlugs !== null ||
-        thread.turnCount > 0
-      ) {
-        return null;
-      }
-      const updated = { ...thread, currentAgent, updatedAt: toIsoString(new Date()) };
-      threads.set(id, updated);
-      return projectThread(updated);
-    },
     async bakeComposedSystemPrompt(id, input) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);
       if (thread.bakedSkillSlugs !== null) {
-        return projectThread(thread);
-      }
-      if (
-        input.expectedCurrentAgent !== undefined &&
-        thread.currentAgent !== input.expectedCurrentAgent
-      ) {
         return projectThread(thread);
       }
       const updated = {

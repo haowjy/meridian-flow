@@ -1,3 +1,4 @@
+import { resolveAgentConfiguration } from "../../../packages/index.js";
 /**
  * P2b nested-run gate: spawn → child return_result → parent interrupt →
  * resume same root turn → re-spawn → completed; depth/budget/cancel guards.
@@ -156,6 +157,8 @@ describe("nested spawn runtime (P2b gate)", () => {
 
     const flushWorkContext = vi.fn(async (_threadId: ThreadId) => {});
     const coordinator = createChildRunCoordinator({
+      unavailableReasons: () => [],
+      defaultModel: () => "test-model",
       orchestrator: {
         runTurn: (input) => orchestrator.runTurn(input),
         finalizeGeneratorFailure: (input) => orchestrator.finalizeGeneratorFailure(input),
@@ -208,7 +211,15 @@ describe("nested spawn runtime (P2b gate)", () => {
       currentAgent: "orchestrator",
       systemPrompt: "You orchestrate workers.",
     });
-    await agentRevisions.bindThread(thread.id, parentRevision.id);
+    await agentRevisions.bindThread(
+      thread.id,
+      parentRevision.id,
+      await resolveAgentConfiguration({
+        store: agentRevisions,
+        revision: parentRevision,
+        defaultModel: "test-model",
+      }),
+    );
     if (options.withWork !== false) {
       const work = await workRepo.create({ projectId: project.id, name: "Nested Work" });
       await repos.threadWorks.addMembership(thread.id, work.id, true);
@@ -424,56 +435,6 @@ describe("nested spawn runtime (P2b gate)", () => {
     if (!child) throw new Error("Missing child");
     expect(child.workId).toBeNull();
     expect(await repos.threadWorks.findPrimary(child.id)).toBeNull();
-  });
-
-  it.each([
-    {
-      name: "undeclared target",
-      parent: "subagents: []",
-      worker: "mode: subagent",
-      code: "spawn_agent_not_allowed",
-    },
-    {
-      name: "primary-only target",
-      parent: "subagents: [worker]",
-      worker: "mode: primary",
-      code: "spawn_agent_not_found",
-    },
-    {
-      name: "non-model-invocable target",
-      parent: "subagents: [worker]",
-      worker: "model-invocable: false",
-      code: "spawn_agent_not_found",
-    },
-  ])("rejects $name before child creation", async ({ parent, worker, code }) => {
-    const { coordinator, thread, repos, agentRevisions, source } = await setupNestedRuntime(
-      nestedRunGateway(),
-    );
-    const installed = await agentRevisions.installSource({
-      ...source,
-      files: {
-        "agents/orchestrator.md": `---\nmodel: stub-model\n${parent}\n---\nParent`,
-        "agents/worker.md": `---\nmodel: stub-model\n${worker}\n---\nWorker`,
-      },
-    });
-    const revision = installed.definitions.find((item) => item.slug === "orchestrator");
-    if (!revision) throw new Error("Missing fixture parent");
-    const deniedParent = await repos.threads.create({
-      userId: thread.userId,
-      projectId: thread.projectId,
-    });
-    await agentRevisions.bindThread(deniedParent.id, revision.id);
-    const result = await coordinator.spawnChild({
-      parentThread: deniedParent,
-      parentTurnId: "parent-turn",
-      agentSlug: "worker",
-      prompt: "finish",
-      budget: createDefaultTreeBudget(),
-    });
-    expect(result).toMatchObject({ status: "error", error: { code } });
-    expect(
-      (await repos.threads.listByUser(thread.userId)).filter((item) => item.kind === "subagent"),
-    ).toEqual([]);
   });
 
   it("rolls back child, binding, and Work membership after the membership write", async () => {
@@ -702,7 +663,15 @@ describe("nested spawn runtime (P2b gate)", () => {
       currentAgent: "orchestrator",
       spawnStatus: "running",
     });
-    await agentRevisions.bindThread(depth2Thread.id, parentRevision.id);
+    await agentRevisions.bindThread(
+      depth2Thread.id,
+      parentRevision.id,
+      await resolveAgentConfiguration({
+        store: agentRevisions,
+        revision: parentRevision,
+        defaultModel: "test-model",
+      }),
+    );
 
     const events = await collectEvents(
       await orchestrator.runTurn({

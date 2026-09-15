@@ -36,8 +36,8 @@ describe("in-memory Agent revisions", () => {
     );
     expect(await store.readSelection("other", selected.entry.id, first.id)).toBeUndefined();
     expect(await store.readSelection("owner", selected.entry.id, secret.id)).toBeUndefined();
-    expect(await store.bindThread("thread", first.id)).toBe(true);
-    expect(await store.bindThread("thread", next.id)).toBe(false);
+    expect(await store.bindThread("thread", first.id, bindingConfiguration)).toBe(true);
+    expect(await store.bindThread("thread", next.id, bindingConfiguration)).toBe(false);
     expect(await store.removeOwnedEntry("other", selected.entry.id)).toBe(false);
     expect(await store.removeOwnedEntry("owner", selected.entry.id)).toBe(true);
     expect(await store.readSelection("owner", selected.entry.id, first.id)).toBeUndefined();
@@ -55,7 +55,7 @@ describe("in-memory Agent revisions", () => {
         await seedGeneralAgent(store, "model");
         const entry = await store.readCatalogEntry(null, "general");
         if (!entry) throw new Error("Missing General");
-        await store.bindThread("thread", entry.selectedRevisionId);
+        await store.bindThread("thread", entry.selectedRevisionId, bindingConfiguration);
         throw new Error("rollback");
       }),
     ).rejects.toThrow("rollback");
@@ -63,9 +63,13 @@ describe("in-memory Agent revisions", () => {
     expect(await store.readThreadBinding("thread")).toBeUndefined();
     await seedGeneralAgent(store, "model");
     expect(await store.readCatalogEntry(null, "general")).toBeDefined();
-    await expect(store.bindThread("missing", "missing")).rejects.toThrow(
-      "missing thread or revision",
-    );
+    await expect(
+      store.bindThread("missing", "missing", {
+        model: "test-model",
+        skills: { load: [], available: [] },
+        namedTargets: [],
+      }),
+    ).rejects.toThrow("missing thread or revision");
   });
 
   it("starts a fresh transaction for deferred work after its originating transaction ends", async () => {
@@ -106,20 +110,26 @@ describe("in-memory Agent revisions", () => {
     await expect(
       store.transaction(async () => {
         const first = (await store.installSource(source("rolled back"))).definitions[0];
-        escaped = store.bindThread("thread", first.id).catch((error) => error.message);
+        escaped = store
+          .bindThread("thread", first.id, bindingConfiguration)
+          .catch((error) => error.message);
         throw new Error("rollback");
       }),
     ).rejects.toThrow("rollback");
     release();
     expect(await escaped).toBe("In-memory transaction already completed");
     const valid = (await store.installSource(source("valid"))).definitions[0];
-    expect(await store.bindThread("thread", valid.id)).toBe(true);
+    expect(await store.bindThread("thread", valid.id, bindingConfiguration)).toBe(true);
     expect((await store.readThreadBinding("thread"))?.id).toBe(valid.id);
   });
 
   it("rejects user-invocation denial in both catalog listing and exact primary selection", async () => {
     const store = fixture();
-    const catalog = createBoundAgentCatalog({ store, unavailableReasons: () => [] });
+    const catalog = createBoundAgentCatalog({
+      defaultModel: () => "test-model",
+      store,
+      unavailableReasons: () => [],
+    });
     await catalog.installSystemSource({
       coordinate: "denied",
       files: {
@@ -143,7 +153,11 @@ describe("in-memory Agent revisions", () => {
       Array.from({ length: 8 }, () => store.installSource(source("same"))),
     );
     expect(new Set(installs.map((item) => item.packageRevisionId)).size).toBe(1);
-    const catalog = createBoundAgentCatalog({ store, unavailableReasons: () => [] });
+    const catalog = createBoundAgentCatalog({
+      defaultModel: () => "test-model",
+      store,
+      unavailableReasons: () => [],
+    });
     await Promise.all(
       Array.from({ length: 8 }, (_, i) =>
         catalog.installSystemSource({
@@ -165,3 +179,9 @@ describe("in-memory Agent revisions", () => {
     expect([...firstPage, ...secondPage]).toEqual(entries);
   });
 });
+
+const bindingConfiguration = {
+  model: "test-model",
+  skills: { load: [], available: [] },
+  namedTargets: [],
+};

@@ -10,24 +10,22 @@ import {
   emitEvent,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
-import type { AgentRevisionStore, BoundAgentCatalog } from "../domains/packages/index.js";
+import {
+  type AgentRevisionStore,
+  AgentSelectionError,
+  type BoundAgentCatalog,
+} from "../domains/packages/index.js";
 import {
   type ProjectRepository,
   requireProjectOwner,
   WorkLifecycleUnavailableError,
   type WorkRepository,
 } from "../domains/projects/index.js";
+import { createBoundConversation } from "../domains/threads/index.js";
 import type { ThreadRepositories } from "./compose.js";
 import { InvalidWorkAttachmentError, resolveWorkMembership } from "./work-attachment.js";
 
 export { InvalidWorkAttachmentError } from "./work-attachment.js";
-
-export class AgentBindingNotFoundError extends Error {
-  constructor(public readonly agentRef: string) {
-    super(`Agent not found: ${agentRef}`);
-    this.name = "AgentBindingNotFoundError";
-  }
-}
 
 export class ThreadCreationConflictError extends Error {
   constructor() {
@@ -93,41 +91,30 @@ export async function createThreadForProject(
   let thread: Thread;
   try {
     const resolved = await deps.agentCatalog.resolvePrimary(args.userId, args.agentSelection);
-    if (!resolved.ok) throw new AgentBindingNotFoundError(args.agentSelection.definitionRevisionId);
-    const revision = await deps.agentRevisions.readRevision(
-      args.agentSelection.definitionRevisionId,
-    );
-    if (!revision) throw new AgentBindingNotFoundError(args.agentSelection.definitionRevisionId);
+    if (!resolved.ok) throw new AgentSelectionError(args.agentSelection.definitionRevisionId);
+    const { revision, configuration } = resolved;
 
-    thread = await deps.transaction(async () => {
-      const created = await deps.threads.create({
-        id: args.id ? args.id : undefined,
-        userId: args.userId,
-        projectId: args.projectId,
-        title: args.title ?? null,
-        systemPrompt: null,
-        currentAgent: revision.slug,
-      });
-      resolvedWorkId = await resolveWorkMembership(
-        {
-          workRepo: deps.workRepo,
-          threadWorks: deps.threadWorks,
-        },
-        {
-          threadId: created.id,
+    thread = await createBoundConversation({
+      transaction: deps.transaction,
+      agentRevisions: deps.agentRevisions,
+      revision,
+      configuration,
+      createThread: () =>
+        deps.threads.create({
+          id: args.id,
+          userId: args.userId,
           projectId: args.projectId,
-          workId: args.workId,
-        },
-      );
-      if (!(await deps.agentRevisions.bindThread(created.id, revision.id))) {
-        throw new Error("Thread Agent binding conflict");
-      }
-      return {
-        ...created,
-        workId: resolvedWorkId,
-        agentDefinitionRevisionId: revision.id,
-        agentName: revision.definition.metadata.name ?? revision.slug,
-      };
+          title: args.title ?? null,
+          systemPrompt: null,
+          currentAgent: revision.slug,
+        }),
+      resolveWork: async (created) => {
+        resolvedWorkId = await resolveWorkMembership(
+          { workRepo: deps.workRepo, threadWorks: deps.threadWorks },
+          { threadId: created.id, projectId: args.projectId, workId: args.workId },
+        );
+        return resolvedWorkId;
+      },
     });
   } catch (error) {
     const committed = await recoverCommitted();

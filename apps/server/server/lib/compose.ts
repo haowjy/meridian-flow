@@ -94,7 +94,10 @@ import {
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
 } from "../domains/projects/index.js";
-import { agentDefinitionUnavailableReasons } from "../domains/runtime/agent-definition-support.js";
+import {
+  agentDefinitionUnavailableReasons,
+  agentExecutionUnavailableReasons,
+} from "../domains/runtime/agent-definition-support.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
   computeEffectivePermissions,
@@ -647,6 +650,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     getRunningTurnId: (threadId) => runner.getRunningTurnId(threadId),
   });
   const childRunCoordinator = createChildRunCoordinator({
+    unavailableReasons: (definition, model) =>
+      agentExecutionUnavailableReasons(definition, ports.gateway, model),
+    defaultModel: () => ports.gateway.getDefaultModel(),
     orchestrator: runTurnProxy,
     repos: {
       threads: ports.threadRepos.threads,
@@ -666,7 +672,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         input,
       );
     },
-    eventWriter: threadEventHub,
+    eventWriter: ports.journalWriter,
     agentRevisions: ports.agentRevisions,
     childRunRegistry: runner.childRunRegistry,
     helperResultDelivery,
@@ -739,8 +745,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     agentRevisions: ports.agentRevisions,
     agentCatalog: createBoundAgentCatalog({
       store: ports.agentRevisions,
-      unavailableReasons: (definition) =>
-        agentDefinitionUnavailableReasons(definition, ports.gateway),
+      defaultModel: () => ports.gateway.getDefaultModel(),
+      unavailableReasons: (definition, model) =>
+        agentDefinitionUnavailableReasons(definition, ports.gateway, model),
     }),
     interruptRegistry,
     eventSink: ports.eventSink,
@@ -1092,7 +1099,9 @@ export function createInMemoryAppServices(): AppServices {
     agentRevisions,
     agentCatalog: createBoundAgentCatalog({
       store: agentRevisions,
-      unavailableReasons: (definition) => agentDefinitionUnavailableReasons(definition, {}),
+      defaultModel: () => "mock-model",
+      unavailableReasons: (definition, model) =>
+        agentDefinitionUnavailableReasons(definition, {}, model),
     }),
     interruptRegistry: createInterruptRegistry(),
     eventSink: createNoopEventSink(),

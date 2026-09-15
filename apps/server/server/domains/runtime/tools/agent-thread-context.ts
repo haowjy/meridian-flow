@@ -47,7 +47,6 @@ export async function resolveAgentThreadTurnContext(
   if (!revision) throw new Error("Conversation has no retained Agent binding");
   const reasons = agentDefinitionUnsupportedReasons(revision.definition);
   if (reasons.length) throw new Error(reasons.join(" "));
-  if (!revision.definition.metadata.model) throw new Error("Bound Agent has no resolved model");
 
   let tools = input.baseTools;
   const report =
@@ -58,7 +57,10 @@ export async function resolveAgentThreadTurnContext(
     tools = [...(tools ?? []), report];
   return {
     agentSlug: revision.slug,
-    gatewayParams: agentGatewayMetaToGenerateParams(revision.definition.metadata),
+    gatewayParams: agentGatewayMetaToGenerateParams({
+      ...revision.definition.metadata,
+      model: revision.configuration.model,
+    }),
     tools,
     resolvedSkills: [],
     agentBody:

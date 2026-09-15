@@ -1,4 +1,5 @@
 /** Immutable Agent content and future-chat catalog selection. Callers own resource authorization. */
+import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import type { CompiledAgentDefinition } from "../domain/agent-definition-compiler.js";
 import type { AgentSourceSnapshot } from "../domain/agent-source-revision.js";
 
@@ -8,6 +9,9 @@ export interface AgentRevision {
   slug: string;
   definition: CompiledAgentDefinition;
   definitionDigest: string;
+}
+export interface BoundAgentRevision extends AgentRevision {
+  configuration: ResolvedAgentConfiguration;
 }
 export interface AgentCatalogEntry {
   id: string;
@@ -23,8 +27,8 @@ export type AgentCatalogSelectionResult =
   | { ok: false; reason: "conflict" | "not-found" };
 
 export interface AgentRevisionStore {
-  /** Serialize complete system-catalog publications in one ambient transaction. */
-  withSystemCatalogTransaction<T>(operation: () => Promise<T>): Promise<T>;
+  /** Serialize complete owner-scoped catalog publications in one ambient transaction. */
+  withCatalogTransaction<T>(ownerUserId: string | null, operation: () => Promise<T>): Promise<T>;
   installSource(
     source: AgentSourceSnapshot,
   ): Promise<{ packageRevisionId: string; definitions: AgentRevision[] }>;
@@ -54,6 +58,10 @@ export interface AgentRevisionStore {
   }): Promise<AgentCatalogEntry[]>;
   removeOwnedEntry(userId: string, entryId: string): Promise<boolean>;
   restoreOwnedEntry(userId: string, entryId: string, expectedRevisionId: string): Promise<boolean>;
-  bindThread(threadId: string, revisionId: string): Promise<boolean>;
-  readThreadBinding(threadId: string): Promise<AgentRevision | undefined>;
+  bindThread(
+    threadId: string,
+    revisionId: string,
+    configuration: ResolvedAgentConfiguration,
+  ): Promise<boolean>;
+  readThreadBinding(threadId: string): Promise<BoundAgentRevision | undefined>;
 }

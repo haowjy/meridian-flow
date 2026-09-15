@@ -83,14 +83,41 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         "name: Retained Name",
       );
       const first = (await store.installSource(original)).definitions[0];
-      await store.bindThread(THREAD, first.id);
+      await store.bindThread(THREAD, first.id, bindingConfiguration);
       expect((await threads.findById(THREAD))?.agentDefinitionRevisionId).toBe(first.id);
       expect((await threads.listByUser(USER))[0]?.agentDefinitionRevisionId).toBe(first.id);
-      const updated = await threads.updateCurrentAgent(THREAD, "display-slug");
+      const updated = await threads.updateStatus(THREAD, "active");
       expect(updated?.agentDefinitionRevisionId).toBe(first.id);
       expect(updated?.agentName).toBe("Retained Name");
       expect((await threads.findById(THREAD))?.agentName).toBe("Retained Name");
       expect((await threads.listByUser(USER))[0]?.agentName).toBe("Retained Name");
+    });
+
+    it("chooses one complete prompt-freeze winner across independent connections", async () => {
+      const otherDb = createDb(url, { max: 2 });
+      try {
+        const firstThreads = createDrizzleThreadRepository(db);
+        const otherThreads = createDrizzleThreadRepository(otherDb);
+        const candidates = [
+          { composedSystemPrompt: "First retained prompt", bakedSkillSlugs: ["first-skill"] },
+          { composedSystemPrompt: "Second retained prompt", bakedSkillSlugs: ["second-skill"] },
+        ];
+        const winners = await Promise.all([
+          firstThreads.bakeComposedSystemPrompt(THREAD, candidates[0]),
+          otherThreads.bakeComposedSystemPrompt(THREAD, candidates[1]),
+        ]);
+        expect(winners[0].composedSystemPrompt).toBe(winners[1].composedSystemPrompt);
+        expect(winners[0].bakedSkillSlugs).toEqual(winners[1].bakedSkillSlugs);
+        expect(candidates).toContainEqual({
+          composedSystemPrompt: winners[0].composedSystemPrompt,
+          bakedSkillSlugs: winners[0].bakedSkillSlugs,
+        });
+        const reloaded = await otherThreads.findById(THREAD);
+        expect(reloaded?.composedSystemPrompt).toBe(winners[0].composedSystemPrompt);
+        expect(reloaded?.bakedSkillSlugs).toEqual(winners[0].bakedSkillSlugs);
+      } finally {
+        await otherDb.close();
+      }
     });
 
     it("retains exact source bytes and definitions across independent connections", async () => {
@@ -99,7 +126,10 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       const reopenedDb = createDb(url, { max: 1 });
       try {
         const reopened = createDrizzleAgentRevisionStore(reopenedDb);
-        expect(await reopened.readSource(installed.packageRevisionId)).toEqual(original);
+        expect(await reopened.readSource(installed.packageRevisionId)).toEqual({
+          ...original,
+          dependencies: {},
+        });
         expect(await reopened.readRevision(installed.definitions[0].id)).toEqual(
           installed.definitions[0],
         );
@@ -137,9 +167,9 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         revisionId: first.id,
       });
       expect(entry.ok).toBe(true);
-      expect(await store.bindThread(THREAD, first.id)).toBe(true);
-      expect(await store.bindThread(THREAD, first.id)).toBe(true);
-      expect(await store.bindThread(THREAD, second.id)).toBe(false);
+      expect(await store.bindThread(THREAD, first.id, bindingConfiguration)).toBe(true);
+      expect(await store.bindThread(THREAD, first.id, bindingConfiguration)).toBe(true);
+      expect(await store.bindThread(THREAD, second.id, bindingConfiguration)).toBe(false);
       expect(
         await store.selectRevision({
           ownerUserId: USER,
@@ -161,7 +191,11 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(await store.removeOwnedEntry(OTHER, entry.entry.id)).toBe(false);
       expect(await store.removeOwnedEntry(USER, entry.entry.id)).toBe(true);
       expect(await store.listCatalog({ userId: USER, limit: 100 })).toEqual([]);
-      expect(await store.readThreadBinding(THREAD)).toEqual(first);
+      const configuration = bindingConfiguration;
+      expect(await store.readThreadBinding(THREAD)).toEqual({ ...first, configuration });
+      expect(
+        await store.bindThread(THREAD, first.id, { ...configuration, model: "replacement-model" }),
+      ).toBe(false);
       await expect(
         db
           .delete(schema.agentDefinitionRevisions)
@@ -231,6 +265,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
 
     it("lists and resolves exact catalog revisions with one host support check", async () => {
       const catalog = createBoundAgentCatalog({
+        defaultModel: () => "test-model",
         store,
         unavailableReasons: (definition) =>
           definition.metadata.model === "fixture-model" ? [] : ["Model unavailable"],
@@ -244,7 +279,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       const resolved = await catalog.resolvePrimary(USER, reserved);
       expect(resolved).toMatchObject({
         ok: true,
-        definition: { systemPrompt: "Original prompt." },
+        revision: { definition: { systemPrompt: "Original prompt." } },
       });
       const before = await store.listCatalog({ userId: USER, limit: 100 });
       await expect(
@@ -254,7 +289,11 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
     });
 
     it("publishes complete system sources under concurrent updates", async () => {
-      const catalog = createBoundAgentCatalog({ store, unavailableReasons: () => [] });
+      const catalog = createBoundAgentCatalog({
+        defaultModel: () => "test-model",
+        store,
+        unavailableReasons: () => [],
+      });
       const publication = (version: number) => ({
         coordinate: "concurrent-system",
         files: Object.fromEntries(
@@ -280,6 +319,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
 
     it("rejects child-only and unsupported revisions consistently in listing and resolution", async () => {
       const catalog = createBoundAgentCatalog({
+        defaultModel: () => "test-model",
         store,
         unavailableReasons: () => ["Tools unsupported"],
       });
@@ -326,7 +366,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
             logicalKey: "general",
             revisionId: installed.definitions[0].id,
           });
-          await store.bindThread(THREAD, installed.definitions[0].id);
+          await store.bindThread(THREAD, installed.definitions[0].id, bindingConfiguration);
           throw new Error("Injected admission failure");
         }),
       ).rejects.toThrow("Injected admission failure");
@@ -336,3 +376,9 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
     });
   });
 }
+
+const bindingConfiguration = {
+  model: "fixture-model",
+  skills: { load: [], available: [] },
+  namedTargets: [],
+};

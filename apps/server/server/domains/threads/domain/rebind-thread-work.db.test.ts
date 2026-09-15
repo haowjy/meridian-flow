@@ -139,7 +139,7 @@ else
             currentAgent: "worker",
           });
           childId = child.id;
-          await revisions.bindThread(child.id, installed.definitions[0].id);
+          await revisions.bindThread(child.id, installed.definitions[0].id, bindingConfiguration);
           await repos.threadWorks.addMembership(child.id, ids.targetWorkId, true);
           throw new Error("after Work membership");
         }),
@@ -239,3 +239,9 @@ else
       await expect(repos.threadWorks.findPrimary(ids.threadId)).resolves.toBeNull();
     });
   });
+
+const bindingConfiguration = {
+  model: "mock-model",
+  skills: { load: [], available: [] },
+  namedTargets: [],
+};

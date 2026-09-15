@@ -196,6 +196,7 @@ export function createDrizzleThreadRepository(
           systemPromptHash: null,
           currentAgentId: thread.currentAgent,
           parentThreadId: thread.parentThreadId,
+          rootThreadId: thread.kind === "subagent" ? thread.rootThreadId : null,
           originTurnId: input.originTurnId ?? thread.id,
           originType: "spawn",
           spawnStatus: thread.spawnStatus,
@@ -392,29 +393,6 @@ export function createDrizzleThreadRepository(
         .limit(1);
       return mapThread({ ...row, workId: primary[0]?.workId ?? null });
     },
-    async updateCurrentAgent(id, currentAgent) {
-      const [row] = await currentDrizzleDb(db)
-        .update(schema.threads)
-        .set({
-          currentAgentId: currentAgent,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(schema.threads.id, id),
-            isNull(schema.threads.bakedSkillSlugs),
-            eq(schema.threads.turnCount, 0),
-          ),
-        )
-        .returning(threadColumns);
-      if (!row) return null;
-      const primary = await currentDrizzleDb(db)
-        .select({ workId: schema.threadWorks.workId })
-        .from(schema.threadWorks)
-        .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
-        .limit(1);
-      return mapThread({ ...row, workId: primary[0]?.workId ?? null });
-    },
     async bakeComposedSystemPrompt(id, input) {
       const [row] = await currentDrizzleDb(db)
         .update(schema.threads)
@@ -424,17 +402,7 @@ export function createDrizzleThreadRepository(
           systemPromptHash: "baked",
           updatedAt: new Date(),
         })
-        .where(
-          and(
-            eq(schema.threads.id, id),
-            isNull(schema.threads.bakedSkillSlugs),
-            input.expectedCurrentAgent === null
-              ? isNull(schema.threads.currentAgentId)
-              : input.expectedCurrentAgent === undefined
-                ? undefined
-                : eq(schema.threads.currentAgentId, input.expectedCurrentAgent),
-          ),
-        )
+        .where(and(eq(schema.threads.id, id), isNull(schema.threads.bakedSkillSlugs)))
         .returning(threadColumns);
       if (row) {
         const primary = await currentDrizzleDb(db)
