@@ -11,7 +11,7 @@ import { parse as parseToml } from "smol-toml";
 import YAML from "yaml";
 
 import { normalizeAgentMetaFields } from "./agent-gateway-meta.js";
-import { booleanAt, isNodeError, objectAt, sha256, stringAt, stringsAt } from "./helpers.js";
+import { booleanAt, isNodeError, objectAt, sha256, stringAt } from "./helpers.js";
 import { normalizeSkillFilesForChecksum, readSkillFileFromDisk } from "./skill-files.js";
 import type {
   AgentConfigOverlay,
@@ -232,12 +232,8 @@ function packageVisibilityAt(value: unknown): PackageVisibility | undefined {
 }
 
 export function normalizeAgentMeta(meta: JsonObject): JsonObject {
-  return normalizeAgentMetaFields({
-    ...meta,
-    skills: stringsAt(meta.skills),
-    subagents: stringsAt(meta.subagents),
-    mode: agentModeFromMeta(meta),
-  });
+  // Presence carries inheritance intent; defaults belong in execution resolution.
+  return normalizeAgentMetaFields(meta);
 }
 
 /** Canonical agent mode derived from normalized meta — also persisted to `agent_definitions.mode`. */

@@ -70,6 +70,8 @@ non-skill tools are blocked by the runtime registry policy and recorded as a
 
 ## Invariants
 
+- **Source presence survives normalization.** Omitted skills, subagents, and mode stay omitted. Structured skill channels remain separate in source metadata. Runtime defaults are resolved by consumers; source preservation alone does not implement structured skill loading.
+
 - **Agents declare their own resources.** An agent definition carries an explicit
   skill list (via `agent_skills` links) and subagent references. If installed
   independently into a fresh project, it gets exactly the skills and subagents
