@@ -2,7 +2,7 @@ import type { Work } from "@meridian/contracts/works";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
-import { parseExplicitWork, resolveRouteWork } from "@/features/project/routing/project-route";
+import { resolveAddressSelection } from "@/features/project/routing/project-address-resolution";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
 const api = vi.hoisted(() => ({
@@ -179,11 +179,14 @@ describe("Work client queries", () => {
         }>(projectQueryKeys.works("project-1"));
         expect(catalog?.works).toEqual([{ ...created, unpushedChangeCount: 0 }]);
         expect(
-          resolveRouteWork(parseExplicitWork(created.id), {
-            status: "success",
-            works: catalog?.works ?? [],
-          }).status,
-        ).toBe("present");
+          resolveAddressSelection(
+            { kind: "slug", slug: created.slug },
+            {
+              status: "ready",
+              entries: catalog?.works ?? [],
+            },
+          ).status,
+        ).toBe("resolved");
       },
     );
     client.clear();

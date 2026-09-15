@@ -22,6 +22,7 @@ import type {
   SyncError,
 } from "../../../collab/index.js";
 import { createDocumentCreationAggregate } from "../../../collab/index.js";
+import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
 import { editCollabMarkdown, writeCollabMarkdown } from "../../context/collab-document-sync.js";
 import { joinPath, parseFilename, renderFilename, splitPath } from "../../context/paths.js";
 import {
@@ -153,12 +154,9 @@ function moveFiletypeTransition(
  * store, but read/write content flows through the collab domain. The store's
  * markdown is only a search/listing projection cache.
  *
- * v1 semantics are last-write-wins:
- * `ensureFolderId` find-then-create and the store's find-then-upsert are not
- * atomic, so two concurrent writers to the same new path can race into a
- * unique-constraint violation. The router converts that rejection into an
- * `io_error` rather than crashing. Concurrency-safe upsert (ON CONFLICT) is
- * deferred to the Yjs-merge work in Phase 2.
+ * Production commands lock the complete logical namespace before preflight.
+ * Stores join that transaction; successful claims and tree changes publish
+ * catalog metadata only after their location history has been reconciled.
  */
 export class ContextFS implements ContextSchemeAdapter {
   readonly name: string;
@@ -194,6 +192,10 @@ export class ContextFS implements ContextSchemeAdapter {
         run: (operation) => deps.store.transaction(operation),
       },
       serializeThroughCallbacks: true,
+      mapThrownError: (error) =>
+        error instanceof WorkLifecycleUnavailableError
+          ? { code: "context_unavailable" }
+          : undefined,
     });
     this.manifestView = deps.manifestView;
     this.name = deps.scheme;

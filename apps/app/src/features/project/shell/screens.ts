@@ -11,7 +11,7 @@ import { t } from "@lingui/core/macro";
 import type { LucideIcon } from "lucide-react";
 import { FolderTree, Home, Layers, MessageSquare } from "lucide-react";
 
-/** Built-in workspace screens — every route-valid `?screen=` value. */
+/** Built-in workspace screens — normalized layout keys, independent of browser address grammar. */
 export type ScreenKey = "home" | "work" | "chat" | "context";
 
 export type ScreenMeta = {

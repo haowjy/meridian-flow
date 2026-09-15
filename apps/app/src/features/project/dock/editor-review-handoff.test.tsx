@@ -11,7 +11,7 @@ import {
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { AdmittedLiveDocument } from "../context/open-project-document";
 import type { LiveDocumentHostBinding } from "../context/use-live-document-binding";
-import type { OpenContextRoute } from "../routing/ProjectContextRoute";
+import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 import type { AiDraftLaunchTarget } from "./editor-review-handoff";
 import {
   EditorReviewHandoffProvider,
@@ -142,7 +142,7 @@ async function withHarness(
     enterB: ReturnType<typeof vi.fn>;
     navigate: ReturnType<typeof vi.fn>;
   }) => Promise<void>,
-  navigate = vi.fn().mockResolvedValue(undefined),
+  navigate = vi.fn().mockResolvedValue({ kind: "applied" }),
 ) {
   const enterA = vi.fn();
   const enterB = vi.fn();
@@ -160,8 +160,8 @@ async function withHarness(
 function deferred() {
   let resolve!: () => void;
   let reject!: (error: Error) => void;
-  const promise = new Promise<void>((onResolve, onReject) => {
-    resolve = onResolve;
+  const promise = new Promise<{ kind: "applied" }>((onResolve, onReject) => {
+    resolve = () => onResolve({ kind: "applied" });
     reject = onReject;
   });
   return { promise, resolve, reject };
@@ -198,7 +198,7 @@ describe("Editor review handoff", () => {
     await withReactRoot(
       <EditorReviewHandoffProvider
         projectId="project-1"
-        openContextRoute={vi.fn(async () => undefined)}
+        openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
       >
         <BindingCommandCapture />
         <BindingHost documentId="document-1" host={host} />
@@ -232,7 +232,7 @@ describe("Editor review handoff", () => {
       await withReactRoot(
         <EditorReviewHandoffProvider
           projectId="project-1"
-          openContextRoute={vi.fn(async () => undefined)}
+          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
         >
           <BindingCommandCapture />
         </EditorReviewHandoffProvider>,
@@ -271,7 +271,7 @@ describe("Editor review handoff", () => {
       return (
         <EditorReviewHandoffProvider
           projectId="project-1"
-          openContextRoute={vi.fn(async () => undefined)}
+          openContextRoute={vi.fn(async () => ({ kind: "applied" as const }))}
         >
           <BindingCommandCapture />
           {shown ? <BindingHost documentId="document-1" host={host} /> : null}

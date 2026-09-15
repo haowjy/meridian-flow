@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { type ContextTab, useContextTabsStore } from "@/client/stores";
 import type { ReconcileContextRoutesInput } from "@/client/working-set";
 import { reconcileSnapshotContextRoutes } from "@/client/working-set/store";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import type { ProjectSearch } from "../routing/project-route";
 import {
   ContextRemovalCoordinator,
@@ -24,7 +25,7 @@ function tracked(documentId: string, path: string): Extract<ContextTab, { kind: 
   };
 }
 
-function setDesk(tabs: ContextTab[], selectedTabId: string | null) {
+function setWorkspace(tabs: ContextTab[], selectedTabId: string | null) {
   const normalized = tabs.map((tab) =>
     tab.kind !== "new" && tab.draftOnly
       ? {
@@ -56,7 +57,7 @@ function setDesk(tabs: ContextTab[], selectedTabId: string | null) {
               selectedTabIdByWork: selectedTabId ? { "work-1": selectedTabId } : {},
             },
           },
-    _deskHydrated: false,
+    _workspaceHydrated: false,
   });
 }
 
@@ -64,6 +65,7 @@ function scenario(initialSearch: ProjectSearch = { screen: "context" }) {
   let search = initialSearch;
   let routes: WorkingSetRoute[] = [];
   const route: ContextRemovalRoutePort = {
+    transition: acceptContextTransition,
     readSearch: () => search,
     updateSearch: (_projectId, update) => {
       search = update(search);
@@ -93,7 +95,7 @@ function scenario(initialSearch: ProjectSearch = { screen: "context" }) {
 }
 
 describe("ContextRemovalCoordinator exact evidence protocol", () => {
-  beforeEach(() => setDesk([], null));
+  beforeEach(() => setWorkspace([], null));
 
   it("never publishes candidate persistence across begin, supersede, leave, or rejection", () => {
     const reports: WorkingSetRoute[][] = [];
@@ -112,6 +114,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
         },
       },
       route: {
+        transition: acceptContextTransition,
         readSearch: () => ({
           screen: "context",
           work: "work-1",
@@ -150,7 +153,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
   });
 
   it("lets a same-path replacement defeat a delayed candidate-rejection repair", () => {
-    setDesk([tracked("knowledge", "/knowledge.md")], "knowledge");
+    setWorkspace([tracked("knowledge", "/knowledge.md")], "knowledge");
     let routes: WorkingSetRoute[] = [
       { documentId: "knowledge", scheme: "kb", path: "/knowledge.md" },
     ];
@@ -179,6 +182,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
     coordinator.registerRoutePort(
       projectId,
       {
+        transition: acceptContextTransition,
         readSearch: () => search,
         updateSearch: (_projectId, update) => {
           delayedRepair.current = update;
@@ -191,7 +195,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
     coordinator.rejectRouteCandidate(projectId, rejectedRevision);
     expect(delayedRepair.current).not.toBeNull();
 
-    setDesk([tracked("replacement", "/same.md")], "replacement");
+    setWorkspace([tracked("replacement", "/same.md")], "replacement");
     const replacementRevision = coordinator.beginRouteSelection(projectId, locator);
     coordinator.bindRouteSelection(projectId, replacementRevision, identityFor("replacement"));
     const snapshot = coordinator.getProjectSnapshot(projectId);
@@ -201,7 +205,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
       transitionRevision: snapshot.transitionRevision,
       locator,
       identity: identityFor("replacement"),
-      owner: { kind: "desk", documentId: "replacement" },
+      owner: { kind: "workspace", documentId: "replacement" },
     });
 
     if (!delayedRepair.current) throw new Error("expected delayed candidate repair");
@@ -227,7 +231,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
       ...(cause === "work-prune" ? { scheme: "scratch" as const, workId: "work-1" } : {}),
       ...(cause === "draft-discard" ? { draftOnly: true, reviewWorkId: "work-1" } : {}),
     };
-    setDesk([tab], "a");
+    setWorkspace([tab], "a");
     const scheme = cause === "work-prune" ? "scratch" : "manuscript";
     const rig = scenario({
       screen: "context",
@@ -275,7 +279,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
     });
   });
 
-  it("admits a bound phone route through route-only ownership without a desk tab", () => {
+  it("admits a bound phone route through route-only ownership without a workspace tab", () => {
     const rig = scenario({
       screen: "context",
       work: "work-1",
@@ -285,6 +289,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
     rig.coordinator.registerRoutePort(
       projectId,
       {
+        transition: acceptContextTransition,
         readSearch: rig.search,
         updateSearch: (_projectId, update) => update(rig.search()),
       },
@@ -319,19 +324,30 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
     ]);
   });
 
-  it("admits local untitled Scratch in memory without a working-set route", () => {
-    setDesk([], null);
+  it("admits local Untitled in memory without a working-set route", () => {
+    setWorkspace([], null);
     const rig = scenario({ screen: "context", work: "work-1", scheme: "scratch", path: "" });
     rig.coordinator.registerRoutePort(
       projectId,
-      { readSearch: rig.search, updateSearch: () => undefined },
+      {
+        transition: acceptContextTransition,
+        readSearch: rig.search,
+        updateSearch: () => undefined,
+      },
       "work-1",
     );
-    setDesk(
-      [{ kind: "new", documentId: "untitled", name: "Untitled", workId: "work-1" }],
+    setWorkspace(
+      [
+        {
+          kind: "new",
+          documentId: "untitled",
+          name: "Untitled",
+          resourceHandle: "resource-untitled",
+        },
+      ],
       "untitled",
     );
-    const locator = { scheme: "scratch" as const, path: "", workId: "work-1" };
+    const locator = { scheme: "unfiled" as const, path: "", workId: "work-1" };
     const revision = rig.coordinator.beginRouteSelection(projectId, locator);
     rig.coordinator.bindRouteSelection(projectId, revision, {
       kind: "local",
@@ -346,7 +362,7 @@ describe("ContextRemovalCoordinator exact evidence protocol", () => {
         transitionRevision: snapshot.transitionRevision,
         locator,
         identity: { kind: "local", documentId: "untitled" },
-        owner: { kind: "desk", documentId: "untitled" },
+        owner: { kind: "workspace", documentId: "untitled" },
       }),
     ).toBe(true);
     expect(rig.coordinator.getProjectSnapshot(projectId).admitted).toEqual(locator);
@@ -371,7 +387,7 @@ it.each([
   rawWork,
   workId,
 }) => {
-  setDesk([], null);
+  setWorkspace([], null);
   const rig = scenario({
     screen: "context",
     work: rawWork,

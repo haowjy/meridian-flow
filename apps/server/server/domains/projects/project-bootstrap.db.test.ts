@@ -71,6 +71,12 @@ else
       const first = await repository.ensureDefaultBootstrap(USER_ID as never);
       const second = await repository.ensureDefaultBootstrap(USER_ID as never);
       expect(second).toEqual(first);
+      expect(
+        await db
+          .select({ slug: schema.projects.slug })
+          .from(schema.projects)
+          .where(eq(schema.projects.id, first.projectId)),
+      ).toEqual([{ slug: "my-serial" }]);
       expect(Object.keys(first).sort()).toEqual([
         "agentDefinitionId",
         "documentId",

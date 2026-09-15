@@ -19,7 +19,7 @@ import {
 import { mdxCodec, unresolvedAssetPathResolver } from "@meridian/markup";
 import { buildDocumentSchema, createCollabYDoc } from "@meridian/prosemirror-schema";
 import { desc, eq } from "drizzle-orm";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import {
   createDrizzleBranchJournalReadStore,
@@ -109,6 +109,7 @@ describe("branch-push durable projection", () => {
       fileType: "typescript",
     });
     await db.insert(threads).values({
+      slug: `fixture-${threadId}`,
       id: threadId,
       projectId,
       createdByUserId: userId,
@@ -171,6 +172,7 @@ describe("branch-push durable projection", () => {
       stagePendingSettlementWithinTx,
       changeTrails,
     );
+    const commitSpy = vi.spyOn(commitStore, "commitPush");
     const workPushPolicyStore = createDrizzleWorkPushPolicyStore(db);
     const branchPush = createBranchPushService({
       changeEventDelivery: { deliver() {} },
@@ -192,9 +194,28 @@ describe("branch-push durable projection", () => {
       codec,
     });
 
+    await db
+      .update(works)
+      .set({ status: "archived", archivedAt: new Date() })
+      .where(eq(works.id, workId));
+    await expect(branchPush.pushToLive({ branchId: branch.branchId })).rejects.toThrow(
+      `Work not found: ${workId}`,
+    );
+    await db.update(works).set({ status: "active", archivedAt: null }).where(eq(works.id, workId));
     await expect(branchPush.pushToLive({ branchId: branch.branchId })).resolves.toMatchObject({
       status: "pushed",
     });
+    const prepared = commitSpy.mock.calls.at(-1)?.[0];
+    if (!prepared) throw new Error("Expected a prepared push");
+    await db
+      .update(works)
+      .set({ status: "archived", archivedAt: new Date() })
+      .where(eq(works.id, workId));
+    await expect(commitStore.commitPush(prepared)).resolves.toMatchObject({ status: "conflict" });
+    await expect(commitStore.commitPushBatch({ pushes: [prepared] })).rejects.toThrow(
+      "changed before its push could commit",
+    );
+    await db.update(works).set({ status: "active", archivedAt: null }).where(eq(works.id, workId));
     const [persisted] = await db
       .select({ markdownProjection: documents.markdownProjection })
       .from(documents)
@@ -296,6 +317,7 @@ describe("branch-push durable projection", () => {
       fileType: "markdown",
     });
     await db.insert(threads).values({
+      slug: `fixture-${threadId}`,
       id: threadId,
       projectId,
       createdByUserId: userId,
@@ -485,6 +507,7 @@ describe("branch-push durable projection", () => {
       updatedAt: old,
     });
     await db.insert(threads).values({
+      slug: `fixture-${threadId}`,
       id: threadId,
       projectId,
       createdByUserId: userId,

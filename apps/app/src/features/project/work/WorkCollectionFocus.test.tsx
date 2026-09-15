@@ -70,7 +70,7 @@ describe("Work collection lifecycle focus", () => {
 function props(): WorkScreenProps {
   return {
     projectId: "project-1",
-    routeWork: { status: "absent" } as const,
+    routeWork: { status: "none" } as const,
     routeCommands: { openWork: vi.fn(), workHref: vi.fn(() => "?screen=work") },
     onOpenThread: vi.fn(),
   } as unknown as WorkScreenProps;

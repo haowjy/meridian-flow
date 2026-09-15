@@ -1,7 +1,8 @@
 # features/project/context — Context file tree (desktop + mobile)
 
-Explorer surfaces for project context files (`manuscript://`, `kb://`, `user://`,
-`scratch://`, `uploads://`). `ContextTreePanel` renders the recursive tree in the
+Explorer surfaces for project documents (`manuscript://`, `kb://`, `user://`,
+`unfiled://`). Scratch/Uploads are chat resources, not ordinary Editor tabs;
+reference/tool vocabulary still includes them. `ContextTreePanel` renders the recursive tree in the
 desktop sidebar and phone navigation drawer; the phone Files destination uses
 one-folder-per-screen drill-in (`MobileContextBrowser`).
 
@@ -9,9 +10,11 @@ one-folder-per-screen drill-in (`MobileContextBrowser`).
 
 ## Mental model
 
-A **browse surface** over the server's context port. Reads come from React Query.
-Ordinary writes invalidate on success; delete is the exception because its exact
-evidence must enter the account-scoped removal coordinator before invalidation.
+A **browse surface** over the account resource replica. The replica owns durable
+resource descriptors, catalog checkpoints, local content access, and file namespace
+work. React Query delivers acquisition results to consumers; it is not a second
+catalog owner. Folder commands and excluded chat resources still use the direct
+context API.
 
 `ContextTreePanel` and `ContextTreeRows` project direct children by stable parent
 ID from the normalized catalog. `MobileContextBrowser` renders the phone Files
@@ -57,13 +60,12 @@ Shared across both shells:
 - **Viewing/editing**: `ContextViewer.tsx`, `ContextViewerHost.tsx`,
   `ContextEditorMountHost.tsx`, `DocumentIdentityBar.tsx` + `IdentityPlacementField.tsx`
   (the universal breadcrumb band — placement, rename, and move share one inline
-  field, committed through `use-identity-commit.ts`). New untitled
-  tabs use the same Yjs-first editor as tracked documents; the detached
-  session is materialized by the `untitled-reconciler.ts` engine;
-  `untitled-reconciler-browser.ts` owns browser/API/React bindings.
+  field, committed through `use-identity-commit.ts`). Resource-backed tabs retain
+  one stable handle and editor ancestry through create, acknowledgement, rename,
+  remint, and catalog refresh.
 - **Creation coordination**: `TreeCreationProvider.tsx` owns the shared tree and
   Editor-empty-state create request
-- **Data**: `client/query/useContextCatalog.ts` (React Query acquisition,
-  invalidation, and flat projections), `context-schemes.ts`, `context-file-icon.ts`,
-  `context-create-kind.ts`
+- **Data**: `client/query/useContextCatalog.ts` (replica acquisition plus flat UI
+  projection), `core/resources/account-resource-replica.ts` (account owner),
+  `context-schemes.ts`, `context-file-icon.ts`, `context-create-kind.ts`
 - **Suggestions**: `file-suggestions/` (pure matcher, data hook, presentational list)

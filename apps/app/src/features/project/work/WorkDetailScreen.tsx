@@ -4,7 +4,6 @@ import { Plural, Trans } from "@lingui/react/macro";
 import type {} from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { Work } from "@meridian/contracts/works";
-import { useBlocker } from "@tanstack/react-router";
 import {
   Archive,
   ArchiveRestore,
@@ -14,7 +13,7 @@ import {
   NotebookPen,
   Upload,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { CatalogContextView } from "@/client/query/context-catalog-projection";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
 import { activeWorkDraftGroups, useWorkDrafts } from "@/client/query/useWorkDrafts";
@@ -30,6 +29,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { usePostApplyDraftGroupProjections } from "../draft-apply-recovery/DraftApplyRecoveryProvider";
+import { useProjectLeaveGuard } from "../routing/ProjectNavigationContext";
 import type { ProjectRouteCommands } from "../routing/project-route";
 import { WorkAssociatedChats } from "./WorkAssociatedChats";
 import { WorkDialog, type WorkDialogAction } from "./WorkDialog";
@@ -63,19 +63,11 @@ export function WorkDetailScreen({
   const [activeCommand, setActiveCommand] = useState<WorkDialogAction["type"] | null>(null);
   const manageButton = useRef<HTMLButtonElement>(null);
   const scrollOwner = useRef<HTMLDivElement>(null);
-  const blocker = useBlocker({
-    shouldBlockFn: () => controller.dirty || controller.saving,
-    enableBeforeUnload: () => controller.dirty,
-    withResolver: true,
+  useProjectLeaveGuard({
+    request: (intent) => controller.request({ ...intent, label: t`Continue navigation` }),
+    dirty: () => controller.dirty,
+    cancel: controller.keepEditing,
   });
-  useEffect(() => {
-    if (blocker.status === "blocked" && !controller.held)
-      controller.request({
-        label: t`Continue navigation`,
-        run: blocker.proceed,
-        cancel: blocker.reset,
-      });
-  }, [blocker, controller]);
   return (
     <div ref={scrollOwner} className="app-scroll">
       <article className="project-screen-column min-w-0 gap-10 pb-12">
@@ -131,28 +123,19 @@ export function WorkDetailScreen({
             </div>
           }
         />
-        <Drafts
-          projectId={projectId}
-          work={controller.work}
-          commands={routeCommands}
-          controller={controller}
-        />
+        <Drafts projectId={projectId} work={controller.work} commands={routeCommands} />
         <div className="grid min-w-0 gap-6 @2xl/project-home:grid-cols-2">
           <TreeSummary
             projectId={projectId}
             work={controller.work}
             scheme="scratch"
             icon={NotebookPen}
-            commands={routeCommands}
-            controller={controller}
           />
           <TreeSummary
             projectId={projectId}
             work={controller.work}
             scheme="uploads"
             icon={Upload}
-            commands={routeCommands}
-            controller={controller}
           />
         </div>
         <ResourceSection title={t`Associated chats`}>
@@ -160,9 +143,7 @@ export function WorkDetailScreen({
             projectId={projectId}
             work={controller.work}
             scrollOwner={scrollOwner}
-            requestOpen={(item) =>
-              controller.request({ label: t`Open chat`, run: () => onOpenThread(item.id) })
-            }
+            requestOpen={(item) => onOpenThread(item.id)}
           />
         </ResourceSection>
         {manage ? (
@@ -204,12 +185,10 @@ function Drafts({
   projectId,
   work,
   commands,
-  controller,
 }: {
   projectId: string;
   work: Work;
   commands: ProjectRouteCommands;
-  controller: WorkMetadataController;
 }) {
   const query = useWorkDrafts(projectId, work.id);
   const groups = activeWorkDraftGroups(
@@ -234,23 +213,18 @@ function Drafts({
                 type="button"
                 className="focus-ring flex min-h-11 min-w-0 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm"
                 disabled={!group.contextPath || !workId}
-                onClick={() =>
-                  controller.request({
-                    label: t`Open manuscript draft`,
-                    run: () => {
-                      if (group.contextPath && workId)
-                        void commands.openWorkContext(
-                          {
-                            kind: "work-context",
-                            workId,
-                            scheme: "manuscript",
-                            path: group.contextPath,
-                          },
-                          { replace: false },
-                        );
-                    },
-                  })
-                }
+                onClick={() => {
+                  if (group.contextPath && workId)
+                    void commands.openWorkContext(
+                      {
+                        kind: "work-context",
+                        workId,
+                        scheme: "manuscript",
+                        path: group.contextPath,
+                      },
+                      { replace: false },
+                    );
+                }}
               >
                 <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
                   {group.documentName || group.contextPath || t`Untitled manuscript`}
@@ -279,20 +253,15 @@ function TreeSummary({
   work,
   scheme,
   icon: Icon,
-  commands,
-  controller,
 }: {
   projectId: string;
   work: Work;
   scheme: "scratch" | "uploads";
   icon: typeof NotebookPen;
-  commands: ProjectRouteCommands;
-  controller: WorkMetadataController;
 }) {
   const query = useContextCatalogView(projectId, scheme, { workId: work.id });
   const count = query.catalog?.files().length ?? 0;
   const label = scheme === "scratch" ? t`Scratch` : t`Uploads`;
-  const workId = parseRequestId(work.id);
   return (
     <ResourceSection title={label}>
       {query.isError ? (
@@ -305,25 +274,10 @@ function TreeSummary({
         <Loading />
       ) : (
         <div className="min-w-0 space-y-2">
-          <button
-            type="button"
-            className="focus-ring flex min-h-16 min-w-0 w-full items-center gap-3 rounded-lg border px-4 text-left"
-            onClick={() =>
-              controller.request({
-                label: t`Open ${label}`,
-                run: () => {
-                  if (workId)
-                    void commands.openWorkContext(
-                      { kind: "work-context", workId, scheme },
-                      { replace: false },
-                    );
-                },
-              })
-            }
-          >
+          <div className="flex min-h-16 min-w-0 w-full items-center gap-3 rounded-lg border px-4">
             <Icon className="size-4 shrink-0" />
             <span className="min-w-0">
-              <span className="block text-sm font-medium">{t`Open ${label}`}</span>
+              <span className="block text-sm font-medium">{label}</span>
               <span className="text-meta text-muted-foreground">
                 {count ? (
                   <Plural value={count} one="# item" other="# items" />
@@ -332,7 +286,10 @@ function TreeSummary({
                 )}
               </span>
             </span>
-          </button>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            <Trans>Viewing chat resources is not available yet.</Trans>
+          </p>
           <CatalogPreview catalog={query.catalog} />
         </div>
       )}

@@ -36,7 +36,11 @@ import { Awareness, removeAwarenessStates } from "y-protocols/awareness";
 import type * as Y from "yjs";
 
 import type { ConnectionState } from "@/core/transport/ThreadTransport";
-
+import {
+  commitContentInitialization,
+  readContentInitialization,
+} from "./local-content-initialization";
+import { LocalDocumentPeers } from "./local-document-peers";
 import {
   createLocalPresence,
   type LocalPresence,
@@ -144,8 +148,8 @@ export type DocumentSessionTransportFactory = (opts: {
 export type DocumentSessionOptions = {
   /** Hocuspocus room key: live documents use the bare document id, drafts use `draft:<draftId>`, branch review rooms use `branch:<branchId>:gen:<generation>`. */
   roomKey: string;
-  /** Persistence identity is always explicit; a room name never silently becomes a database key. */
-  persistence: { kind: "indexeddb"; key: string } | { kind: "none" };
+  /** Exact cache identity. Only the owner that just reserved it may declare it fresh. */
+  persistence: { kind: "indexeddb"; key: string; fresh?: boolean } | { kind: "none" };
   /** Plugs the server document-sync provider into the session-owned Y.Doc. */
   transportFactory?: DocumentSessionTransportFactory;
   /** Registry-owned persistence hook for the first fence transition. */
@@ -166,6 +170,8 @@ export class DocumentSession {
   readonly markerStore: SessionMarkerStore;
 
   private persistence: IndexeddbPersistence | null;
+  private localPeers: LocalDocumentPeers | null = null;
+  private initialization: Promise<void> | null = null;
   private transportProvider: DocumentSessionTransportProvider | null = null;
   private transportAttachmentPending = false;
   private readonly listeners = new Set<Listener>();
@@ -224,6 +230,8 @@ export class DocumentSession {
       this.resolveLifecycleCompleted = resolve;
     });
     this.localPersistenceSyncedPromise = this.watchLocalPersistence();
+    if (persistence.kind === "indexeddb" && persistence.fresh)
+      this.establishContentInitialization();
     if (transportFactory) this.attachTransport(transportFactory);
     this.emit();
   }
@@ -268,6 +276,7 @@ export class DocumentSession {
     this.unsubscribeTransportStatus =
       this.transportProvider.subscribeStatus?.((state) => {
         this.transportState = state;
+        if (state.kind === "unauthorized" || state.kind === "reset") this.localPeers?.stop();
         if (state.kind === "reset" && state.reason === WS_CLOSE.CLIENT_SCHEMA_SUPERSEDED.reason) {
           if (!attemptClientSchemaReload(this.roomKey)) {
             this.raiseSchemaFence({ reason: "client-superseded" });
@@ -303,7 +312,10 @@ export class DocumentSession {
     this.transportDurableSyncComplete = false;
     this.status = "detached";
     await previous?.destroy();
+    await this.localPeers?.drain();
+    this.localPeers = null;
     this.attachTransport(transportFactory);
+    this.startLocalPeers();
   }
 
   private waitForLocalPersistenceTransportGate(): Promise<void> {
@@ -344,6 +356,7 @@ export class DocumentSession {
   raiseSchemaFence(fence: SchemaFence): void {
     if (this.destroyed || this.schemaFence) return;
     this.schemaFence = fence;
+    this.localPeers?.stop();
     this.persistSchemaFence?.(fence);
     this.suspendPresence();
     this.emit();
@@ -458,6 +471,30 @@ export class DocumentSession {
     return this.persistence?.name ?? null;
   }
 
+  /** Separate from replay readiness; absent evidence never authorizes empty initialization. */
+  async hasInitializedLocalContent(): Promise<boolean> {
+    await Promise.race([this.localPersistenceSyncedPromise, this.lifecycleCompletedPromise]);
+    await this.initialization?.catch(() => undefined);
+    if (this.destroyed || !this.persistence?.db) return false;
+    return readContentInitialization(this.persistence.db);
+  }
+
+  private establishContentInitialization(): void {
+    if (!this.persistence || this.initialization) return;
+    const attempt = (async () => {
+      await Promise.race([this.localPersistenceSyncedPromise, this.lifecycleCompletedPromise]);
+      if (this.destroyed || this.schemaFence || !this.persistence?.db) return;
+      const database = this.persistence.db;
+      if (await readContentInitialization(database)) return;
+      if (this.destroyed || this.schemaFence) return;
+      await commitContentInitialization(database, this.document);
+    })().finally(() => {
+      if (this.initialization === attempt) this.initialization = null;
+    });
+    this.initialization = attempt;
+    void attempt.catch((error) => reportError(error));
+  }
+
   /** Opaque identity observation for authority transfer; callers cannot mutate the provider. */
   get localPersistenceProvider(): object | null {
     return this.persistence;
@@ -499,6 +536,7 @@ export class DocumentSession {
     if (this.destroyPromise) return this.destroyPromise;
     if (!this.destroyStages) {
       this.destroyed = true;
+      this.localPeers?.stop();
       this.resolveTransportAttached();
       this.resolveLifecycleCompleted();
       this.status = "destroyed";
@@ -518,6 +556,13 @@ export class DocumentSession {
         { settled: false, run: () => this.unsubscribeTransportStatus?.() },
         { settled: false, run: () => this.unsubscribeChangeEvents?.() },
         { settled: false, run: () => this.transportProvider?.destroy() },
+        { settled: false, run: () => this.localPeers?.drain() },
+        {
+          settled: false,
+          run: async () => {
+            await this.initialization?.catch(() => undefined);
+          },
+        },
         {
           settled: false,
           run: () =>
@@ -554,13 +599,35 @@ export class DocumentSession {
     await this.persistence?.whenSynced;
     if (this.destroyed) return;
     this.localPersistenceSynced = true;
+    this.startLocalPeers();
     this.recomputeStatus();
+  }
+
+  private startLocalPeers(): void {
+    if (
+      this.localPersistenceSynced &&
+      !this.destroyed &&
+      !this.localPeers &&
+      this.persistence &&
+      !this.schemaFence &&
+      this.transportState?.kind !== "unauthorized" &&
+      this.transportState?.kind !== "reset" &&
+      typeof window !== "undefined" &&
+      typeof BroadcastChannel === "function"
+    )
+      try {
+        this.localPeers = new LocalDocumentPeers(this.document, this.persistence);
+      } catch (error) {
+        // A denied peer channel must not make successfully loaded writing unavailable.
+        reportError(error);
+      }
   }
 
   private async watchTransportSync(provider: DocumentSessionTransportProvider): Promise<void> {
     await provider.whenSynced;
     if (this.destroyed || provider !== this.transportProvider) return;
     this.transportInitialSyncComplete = true;
+    if (provider.whenSynced) this.establishContentInitialization();
     clearClientSchemaReloadGuard(this.roomKey);
     this.recomputeStatus();
   }

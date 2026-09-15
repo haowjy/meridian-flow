@@ -1,0 +1,476 @@
+diff --git a/dist/cjs/index.cjs b/dist/cjs/index.cjs
+index 9d71c74a25b01c1f06ea5bdace6118a6e4186c58..7d3614ba367a1160ea1b620f2009b662ded128fc 100644
+--- a/dist/cjs/index.cjs
++++ b/dist/cjs/index.cjs
+@@ -142,6 +142,7 @@ function createHistory(opts) {
+ 			};
+ 		},
+ 		flush: () => opts.flush?.(),
++		settlePendingTraversal: () => opts.settlePendingTraversal?.(),
+ 		destroy: () => opts.destroy?.(),
+ 		notify,
+ 		_getBlockers: () => opts.getBlockers?.() ?? []
+@@ -193,7 +194,14 @@ function createBrowserHistory(opts) {
+ 	let currentLocation = parseLocation();
+ 	let rollbackLocation;
+ 	let nextPopIsGo = false;
+-	let ignoreNextPop = false;
++	let popEpoch = 0;
++	const sameEntry = (a, b) => a.state[stateIndexKey] === b.state[stateIndexKey] && a.state.__TSR_key === b.state.__TSR_key;
++	let restoration;
++	const retireRestoration = (restored) => {
++		const pending = restoration;
++		restoration = void 0;
++		pending?.finish(restored);
++	};
+ 	let skipBlockerNextPop = false;
+ 	let ignoreNextBeforeUnload = false;
+ 	const getLocation = () => currentLocation;
+@@ -206,8 +214,24 @@ function createBrowserHistory(opts) {
+ 		next = void 0;
+ 		rollbackLocation = void 0;
+ 	};
++	const settlePendingTraversal = () => {
++		popEpoch += 1;
++		flush();
++		if (restoration) return restoration.promise;
++		const actual = parseLocation();
++		if (sameEntry(actual, currentLocation)) return;
++		const delta = currentLocation.state[stateIndexKey] - actual.state[stateIndexKey];
++		if (delta === 0) return Promise.resolve(false);
++		let finish;
++		const promise = new Promise((resolve) => { finish = resolve; });
++		restoration = { source: currentLocation, promise, finish };
++		win.history.go(delta);
++		return promise;
++	};
+ 	const queueHistoryAction = (isPush, destHref, state) => {
+ 		const href = opts?.createHref ? createHref(destHref) : void 0;
++		popEpoch += 1;
++		retireRestoration(false);
+ 		const hasPendingAction = !!next;
+ 		if (!hasPendingAction) rollbackLocation = currentLocation;
+ 		currentLocation = parseHref(destHref, state);
+@@ -219,17 +243,32 @@ function createBrowserHistory(opts) {
+ 		if (!hasPendingAction) queueMicrotask(() => flush());
+ 	};
+ 	const onPushPop = (type) => {
++		popEpoch += 1;
++		retireRestoration(false);
+ 		currentLocation = parseLocation();
+ 		history.notify({ type });
+ 	};
+ 	const onPushPopEvent = async () => {
+ 		ignoreNextBeforeUnload = false;
+-		if (ignoreNextPop) {
+-			ignoreNextPop = false;
++		const epoch = ++popEpoch;
++		const nextLocation = parseLocation();
++		const sourceLocation = currentLocation;
++		if (restoration) {
++			const restored = sameEntry(nextLocation, restoration.source);
++			retireRestoration(restored);
++			if (restored) {
++				nextPopIsGo = false;
++				skipBlockerNextPop = false;
++				return;
++			}
++		}
++		const delta = nextLocation.state[stateIndexKey] - sourceLocation.state[stateIndexKey];
++		if (sameEntry(nextLocation, sourceLocation)) {
++			nextPopIsGo = false;
++			skipBlockerNextPop = false;
++			history.notify({ type: "GO", index: 0 });
+ 			return;
+ 		}
+-		const nextLocation = parseLocation();
+-		const delta = nextLocation.state[stateIndexKey] - currentLocation.state[stateIndexKey];
+ 		const isForward = delta === 1;
+ 		const isBack = delta === -1;
+ 		const isGo = !isForward && !isBack || nextPopIsGo;
+@@ -243,19 +282,23 @@ function createBrowserHistory(opts) {
+ 		else {
+ 			const blockers = _getBlockers();
+ 			if (typeof document !== "undefined" && blockers.length) {
+-				for (const blocker of blockers) if (await blocker.blockerFn({
+-					currentLocation,
+-					nextLocation,
+-					action
+-				})) {
+-					ignoreNextPop = true;
+-					win.history.go(-delta);
+-					history.notify(notify);
+-					return;
++				for (const blocker of blockers) {
++					const isBlocked = await blocker.blockerFn({
++						currentLocation: sourceLocation,
++						nextLocation,
++						action
++					});
++					if (epoch !== popEpoch || !sameEntry(parseLocation(), nextLocation)) return;
++					if (isBlocked) {
++						void settlePendingTraversal();
++						history.notify(notify);
++						return;
++					}
+ 				}
+ 			}
+ 		}
+-		currentLocation = parseLocation();
++		if (epoch !== popEpoch) return;
++		currentLocation = nextLocation;
+ 		history.notify(notify);
+ 	};
+ 	const onBeforeUnload = (e) => {
+@@ -310,7 +353,10 @@ function createBrowserHistory(opts) {
+ 		},
+ 		createHref: (href) => createHref(href),
+ 		flush,
++		settlePendingTraversal,
+ 		destroy: () => {
++			popEpoch += 1;
++			retireRestoration(false);
+ 			win.history.pushState = originalPushState;
+ 			win.history.replaceState = originalReplaceState;
+ 			win.removeEventListener(beforeUnloadEvent, onBeforeUnload, { capture: true });
+diff --git a/dist/cjs/index.d.cts b/dist/cjs/index.d.cts
+index a4ea04442bdc4a09bd8cc8066d679ee71356c12b..24031067526a00a51061e06b77075ecde4b1b467 100644
+--- a/dist/cjs/index.d.cts
++++ b/dist/cjs/index.d.cts
+@@ -25,6 +25,7 @@ export interface RouterHistory {
+     createHref: (href: string) => string;
+     block: (blocker: NavigationBlocker) => () => void;
+     flush: () => void;
++    settlePendingTraversal: () => undefined | Promise<boolean>;
+     destroy: () => void;
+     notify: (action: SubscriberHistoryAction) => void;
+     _getBlockers: () => Array<NavigationBlocker>;
+@@ -70,6 +71,7 @@ export declare function createHistory(opts: {
+     forward: (ignoreBlocker: boolean) => void;
+     createHref: (path: string) => string;
+     flush?: () => void;
++    settlePendingTraversal?: () => undefined | Promise<boolean>;
+     destroy?: () => void;
+     onBlocked?: () => void;
+     getBlockers?: () => Array<NavigationBlocker>;
+diff --git a/dist/esm/index.d.ts b/dist/esm/index.d.ts
+index a4ea04442bdc4a09bd8cc8066d679ee71356c12b..24031067526a00a51061e06b77075ecde4b1b467 100644
+--- a/dist/esm/index.d.ts
++++ b/dist/esm/index.d.ts
+@@ -25,6 +25,7 @@ export interface RouterHistory {
+     createHref: (href: string) => string;
+     block: (blocker: NavigationBlocker) => () => void;
+     flush: () => void;
++    settlePendingTraversal: () => undefined | Promise<boolean>;
+     destroy: () => void;
+     notify: (action: SubscriberHistoryAction) => void;
+     _getBlockers: () => Array<NavigationBlocker>;
+@@ -70,6 +71,7 @@ export declare function createHistory(opts: {
+     forward: (ignoreBlocker: boolean) => void;
+     createHref: (path: string) => string;
+     flush?: () => void;
++    settlePendingTraversal?: () => undefined | Promise<boolean>;
+     destroy?: () => void;
+     onBlocked?: () => void;
+     getBlockers?: () => Array<NavigationBlocker>;
+diff --git a/dist/esm/index.js b/dist/esm/index.js
+index ceb9369ce6e6f604f737ac4bb1c69c91938e3e6e..707010067bf1c753a29370f87cc0b04cba6aa443 100644
+--- a/dist/esm/index.js
++++ b/dist/esm/index.js
+@@ -141,6 +141,7 @@ function createHistory(opts) {
+ 			};
+ 		},
+ 		flush: () => opts.flush?.(),
++		settlePendingTraversal: () => opts.settlePendingTraversal?.(),
+ 		destroy: () => opts.destroy?.(),
+ 		notify,
+ 		_getBlockers: () => opts.getBlockers?.() ?? []
+@@ -192,7 +193,14 @@ function createBrowserHistory(opts) {
+ 	let currentLocation = parseLocation();
+ 	let rollbackLocation;
+ 	let nextPopIsGo = false;
+-	let ignoreNextPop = false;
++	let popEpoch = 0;
++	const sameEntry = (a, b) => a.state[stateIndexKey] === b.state[stateIndexKey] && a.state.__TSR_key === b.state.__TSR_key;
++	let restoration;
++	const retireRestoration = (restored) => {
++		const pending = restoration;
++		restoration = void 0;
++		pending?.finish(restored);
++	};
+ 	let skipBlockerNextPop = false;
+ 	let ignoreNextBeforeUnload = false;
+ 	const getLocation = () => currentLocation;
+@@ -205,8 +213,24 @@ function createBrowserHistory(opts) {
+ 		next = void 0;
+ 		rollbackLocation = void 0;
+ 	};
++	const settlePendingTraversal = () => {
++		popEpoch += 1;
++		flush();
++		if (restoration) return restoration.promise;
++		const actual = parseLocation();
++		if (sameEntry(actual, currentLocation)) return;
++		const delta = currentLocation.state[stateIndexKey] - actual.state[stateIndexKey];
++		if (delta === 0) return Promise.resolve(false);
++		let finish;
++		const promise = new Promise((resolve) => { finish = resolve; });
++		restoration = { source: currentLocation, promise, finish };
++		win.history.go(delta);
++		return promise;
++	};
+ 	const queueHistoryAction = (isPush, destHref, state) => {
+ 		const href = opts?.createHref ? createHref(destHref) : void 0;
++		popEpoch += 1;
++		retireRestoration(false);
+ 		const hasPendingAction = !!next;
+ 		if (!hasPendingAction) rollbackLocation = currentLocation;
+ 		currentLocation = parseHref(destHref, state);
+@@ -218,17 +242,32 @@ function createBrowserHistory(opts) {
+ 		if (!hasPendingAction) queueMicrotask(() => flush());
+ 	};
+ 	const onPushPop = (type) => {
++		popEpoch += 1;
++		retireRestoration(false);
+ 		currentLocation = parseLocation();
+ 		history.notify({ type });
+ 	};
+ 	const onPushPopEvent = async () => {
+ 		ignoreNextBeforeUnload = false;
+-		if (ignoreNextPop) {
+-			ignoreNextPop = false;
++		const epoch = ++popEpoch;
++		const nextLocation = parseLocation();
++		const sourceLocation = currentLocation;
++		if (restoration) {
++			const restored = sameEntry(nextLocation, restoration.source);
++			retireRestoration(restored);
++			if (restored) {
++				nextPopIsGo = false;
++				skipBlockerNextPop = false;
++				return;
++			}
++		}
++		const delta = nextLocation.state[stateIndexKey] - sourceLocation.state[stateIndexKey];
++		if (sameEntry(nextLocation, sourceLocation)) {
++			nextPopIsGo = false;
++			skipBlockerNextPop = false;
++			history.notify({ type: "GO", index: 0 });
+ 			return;
+ 		}
+-		const nextLocation = parseLocation();
+-		const delta = nextLocation.state[stateIndexKey] - currentLocation.state[stateIndexKey];
+ 		const isForward = delta === 1;
+ 		const isBack = delta === -1;
+ 		const isGo = !isForward && !isBack || nextPopIsGo;
+@@ -242,19 +281,23 @@ function createBrowserHistory(opts) {
+ 		else {
+ 			const blockers = _getBlockers();
+ 			if (typeof document !== "undefined" && blockers.length) {
+-				for (const blocker of blockers) if (await blocker.blockerFn({
+-					currentLocation,
+-					nextLocation,
+-					action
+-				})) {
+-					ignoreNextPop = true;
+-					win.history.go(-delta);
+-					history.notify(notify);
+-					return;
++				for (const blocker of blockers) {
++					const isBlocked = await blocker.blockerFn({
++						currentLocation: sourceLocation,
++						nextLocation,
++						action
++					});
++					if (epoch !== popEpoch || !sameEntry(parseLocation(), nextLocation)) return;
++					if (isBlocked) {
++						void settlePendingTraversal();
++						history.notify(notify);
++						return;
++					}
+ 				}
+ 			}
+ 		}
+-		currentLocation = parseLocation();
++		if (epoch !== popEpoch) return;
++		currentLocation = nextLocation;
+ 		history.notify(notify);
+ 	};
+ 	const onBeforeUnload = (e) => {
+@@ -309,7 +352,10 @@ function createBrowserHistory(opts) {
+ 		},
+ 		createHref: (href) => createHref(href),
+ 		flush,
++		settlePendingTraversal,
+ 		destroy: () => {
++			popEpoch += 1;
++			retireRestoration(false);
+ 			win.history.pushState = originalPushState;
+ 			win.history.replaceState = originalReplaceState;
+ 			win.removeEventListener(beforeUnloadEvent, onBeforeUnload, { capture: true });
+diff --git a/src/index.ts b/src/index.ts
+index b0e006c80da6c5bd0acd493fdc882de6a6fff473..329c517de6e3024b76e1c36300a55fafd1bc0491 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -34,6 +34,8 @@ export interface RouterHistory {
+   createHref: (href: string) => string
+   block: (blocker: NavigationBlocker) => () => void
+   flush: () => void
++  /** Restore a pending native traversal before a grouped application navigation. */
++  settlePendingTraversal: () => undefined | Promise<boolean>
+   destroy: () => void
+   notify: (action: SubscriberHistoryAction) => void
+   _getBlockers: () => Array<NavigationBlocker>
+@@ -136,6 +138,7 @@ export function createHistory(opts: {
+   forward: (ignoreBlocker: boolean) => void
+   createHref: (path: string) => string
+   flush?: () => void
++  settlePendingTraversal?: () => undefined | Promise<boolean>
+   destroy?: () => void
+   onBlocked?: () => void
+   getBlockers?: () => Array<NavigationBlocker>
+@@ -274,6 +277,7 @@ export function createHistory(opts: {
+       }
+     },
+     flush: () => opts.flush?.(),
++    settlePendingTraversal: () => opts.settlePendingTraversal?.(),
+     destroy: () => opts.destroy?.(),
+     notify,
+     _getBlockers: () => opts.getBlockers?.() ?? [],
+@@ -353,7 +357,20 @@ export function createBrowserHistory(opts?: {
+   let rollbackLocation: HistoryLocation | undefined
+ 
+   let nextPopIsGo = false
+-  let ignoreNextPop = false
++  let popEpoch = 0
++  const sameEntry = (a: HistoryLocation, b: HistoryLocation) =>
++    a.state[stateIndexKey] === b.state[stateIndexKey] &&
++    a.state.__TSR_key === b.state.__TSR_key
++  let restoration: {
++    source: HistoryLocation
++    promise: Promise<boolean>
++    finish: (restored: boolean) => void
++  } | undefined
++  const retireRestoration = (restored: boolean) => {
++    const pending = restoration
++    restoration = undefined
++    pending?.finish(restored)
++  }
+   // TODO: An ignored traversal past a history boundary emits neither popstate
+   // nor beforeunload, leaving these bypasses active for a later navigation.
+   // The History API provides no completion signal for such no-op traversals.
+@@ -397,6 +414,21 @@ export function createBrowserHistory(opts?: {
+     rollbackLocation = undefined
+   }
+ 
++  const settlePendingTraversal = (): undefined | Promise<boolean> => {
++    popEpoch += 1
++    flush()
++    if (restoration) return restoration.promise
++    const actual = parseLocation()
++    if (sameEntry(actual, currentLocation)) return
++    const delta = currentLocation.state[stateIndexKey] - actual.state[stateIndexKey]
++    if (delta === 0) return Promise.resolve(false)
++    let finish!: (restored: boolean) => void
++    const promise = new Promise<boolean>((resolve) => { finish = resolve })
++    restoration = { source: currentLocation, promise, finish }
++    win.history.go(delta)
++    return promise
++  }
++
+   // This function queues up a call to update the browser history
+   const queueHistoryAction = (
+     isPush: boolean,
+@@ -406,6 +438,8 @@ export function createBrowserHistory(opts?: {
+     // A formatter changes the URL space and must receive the original input.
+     // Otherwise parseHref below already produces the browser destination.
+     const href = opts?.createHref ? createHref(destHref) : undefined
++    popEpoch += 1
++    retireRestoration(false)
+     const hasPendingAction = !!next
+ 
+     if (!hasPendingAction) {
+@@ -430,6 +464,8 @@ export function createBrowserHistory(opts?: {
+ 
+   // NOTE: this function can probably be removed
+   const onPushPop = (type: 'PUSH' | 'REPLACE') => {
++    popEpoch += 1
++    retireRestoration(false)
+     currentLocation = parseLocation()
+     history.notify({ type })
+   }
+@@ -439,14 +475,29 @@ export function createBrowserHistory(opts?: {
+     // exemption here instead of carrying it into a later document navigation.
+     ignoreNextBeforeUnload = false
+ 
+-    if (ignoreNextPop) {
+-      ignoreNextPop = false
+-      return
+-    }
+-
++    const epoch = ++popEpoch
+     const nextLocation = parseLocation()
++    const sourceLocation = currentLocation
++    if (restoration) {
++      const restored = sameEntry(nextLocation, restoration.source)
++      retireRestoration(restored)
++      if (restored) {
++        nextPopIsGo = false
++        skipBlockerNextPop = false
++        return
++      }
++    }
+     const delta =
+-      nextLocation.state[stateIndexKey] - currentLocation.state[stateIndexKey]
++      nextLocation.state[stateIndexKey] - sourceLocation.state[stateIndexKey]
++
++    // Returning to the accepted entry cancels a pending traversal. go(0)
++    // would reload the document and discard unsaved application state.
++    if (sameEntry(nextLocation, sourceLocation)) {
++      nextPopIsGo = false
++      skipBlockerNextPop = false
++      history.notify({ type: 'GO', index: 0 })
++      return
++    }
+     const isForward = delta === 1
+     const isBack = delta === -1
+     const isGo = (!isForward && !isBack) || nextPopIsGo
+@@ -469,13 +520,14 @@ export function createBrowserHistory(opts?: {
+       if (typeof document !== 'undefined' && blockers.length) {
+         for (const blocker of blockers) {
+           const isBlocked = await blocker.blockerFn({
+-            currentLocation,
++            currentLocation: sourceLocation,
+             nextLocation,
+             action,
+           })
++          // A newer traversal or application navigation owns the browser now.
++          if (epoch !== popEpoch || !sameEntry(parseLocation(), nextLocation)) return
+           if (isBlocked) {
+-            ignoreNextPop = true
+-            win.history.go(-delta)
++            void settlePendingTraversal()
+             history.notify(notify)
+             return
+           }
+@@ -483,7 +535,8 @@ export function createBrowserHistory(opts?: {
+       }
+     }
+ 
+-    currentLocation = parseLocation()
++    if (epoch !== popEpoch) return
++    currentLocation = nextLocation
+     history.notify(notify)
+   }
+ 
+@@ -551,7 +604,10 @@ export function createBrowserHistory(opts?: {
+     },
+     createHref: (href) => createHref(href),
+     flush,
++    settlePendingTraversal,
+     destroy: () => {
++      popEpoch += 1
++      retireRestoration(false)
+       win.history.pushState = originalPushState
+       win.history.replaceState = originalReplaceState
+       win.removeEventListener(beforeUnloadEvent, onBeforeUnload, {

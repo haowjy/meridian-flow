@@ -1,8 +1,8 @@
-/** Canonical server-tab locator identity shared by desk mutations and routes. */
+/** Canonical server-tab locator identity shared by workspace mutations and routes. */
 
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 
-import type { ServerContextTab } from "./context-tabs-store";
+import type { ServerContextTab } from "./editor-workspace-model";
 
 export function serverContextTabLocatorKey(
   tab: Pick<ServerContextTab, "scheme" | "path" | "workId">,

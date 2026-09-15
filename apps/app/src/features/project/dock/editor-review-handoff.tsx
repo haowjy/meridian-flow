@@ -10,7 +10,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { useContextTabsActions } from "@/client/stores";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { contextTabFromDraftGroup } from "../context/context-tab-from-draft";
 import type { AdmittedLiveDocument } from "../context/open-project-document";
@@ -18,7 +17,7 @@ import type {
   LiveDocumentAcknowledgement,
   LiveDocumentHostBinding,
 } from "../context/use-live-document-binding";
-import type { OpenContextRoute } from "../routing/ProjectContextRoute";
+import type { OpenContextRoute } from "../routing/ProjectNavigationContext";
 
 export type AiDraftLaunchTarget = {
   workId: string;
@@ -66,7 +65,6 @@ export function EditorReviewHandoffProvider({
   openContextRoute: OpenContextRoute;
   children: ReactNode;
 }) {
-  const { openTab } = useContextTabsActions();
   const [intent, setIntent] = useState<EditorReviewIntent | null>(null);
   const sequence = useRef(0);
   const latest = useRef<EditorReviewIntent | null>(null);
@@ -89,14 +87,19 @@ export function EditorReviewHandoffProvider({
       setIntent(null);
 
       const tab = contextTabFromDraftGroup(target);
-      if (tab) openTab(projectId, tab);
 
       try {
-        await openContextRoute({
-          scheme: "manuscript",
-          path: target.contextPath,
-          workId: target.workId,
-        });
+        const result = await openContextRoute(
+          {
+            scheme: "manuscript",
+            path: target.contextPath,
+            workId: target.workId,
+            documentId: target.documentId,
+          },
+          { tab: tab ?? undefined, canCommit: () => latest.current?.sequence === staged.sequence },
+        );
+        if (result.kind === "failed") throw result.error;
+        if (result.kind !== "applied") return;
         if (latest.current?.sequence === staged.sequence) {
           setIntent(staged);
         }
@@ -108,7 +111,7 @@ export function EditorReviewHandoffProvider({
         throw error;
       }
     },
-    [openContextRoute, openTab, projectId],
+    [openContextRoute, projectId],
   );
   const claim = useCallback((claimedSequence: number) => {
     if (latest.current?.sequence !== claimedSequence) return;

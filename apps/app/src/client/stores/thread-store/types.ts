@@ -1,7 +1,7 @@
 /**
  * thread-store types — the thread store's state/action contracts plus the
- * pending-stream / deferred-send handoff shape. The canonical thread store
- * vocabulary read by the chat flow and the Home→Project handoff.
+ * pending-stream / standalone-creation handoff shape. The canonical thread store
+ * vocabulary read by the chat flow and the standalone creation handoff.
  */
 import type { Block, Thread, ThreadListItem, Turn, TurnStatus } from "@meridian/contracts/protocol";
 
@@ -11,10 +11,10 @@ export type PendingStreamStart = {
   /**
    * When set, the chat surface should create the project + thread on the
    * server and (optionally) send `text` as the first user message before
-   * subscribing to the stream. Used by the Home → Project handoff so
+   * subscribing to the stream. Used by the standalone creation handoff so
    * navigation is instant. Empty `text` means "create only".
    */
-  deferredSend?: {
+  independentCreation?: {
     projectId: string;
     title: string;
     text: string;
@@ -89,7 +89,7 @@ export type ThreadStoreState = {
  *
  * Per-project soft-delete + rename live in `ProjectStoreProvider`; this store
  * owns per-thread turns (optimistic + snapshot apply), handoff, streaming
- * coordination, and the pending-creation gate for optimistic Home → Project
+ * coordination, and the pending-creation gate for optimistic standalone creation
  * navigation.
  */
 export type ThreadStoreActions = {
@@ -127,7 +127,7 @@ export type ThreadStoreActions = {
   consumePendingStream(threadId: string): PendingStreamStart | null;
   /**
    * Mark a (projectId, threadId) pair as pending server creation. Set by the
-   * optimistic Home → Project flow before navigation; cleared by the chat
+   * optimistic standalone creation flow before navigation; cleared by the chat
    * handoff once `createProject` and `createThread` resolve on the server.
    * Consumed by data hooks (`useProjectThreads`, `useWorks`,
    * `useThreadSnapshotSync`) to gate fetches that would otherwise 404.

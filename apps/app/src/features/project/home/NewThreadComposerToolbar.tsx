@@ -146,9 +146,10 @@ function useProspectiveWorkControl({
         ? { status: "error" as const, retry: onRetryWorks }
         : { status: "ready" as const, works, refreshing: false };
   const view = deriveWorkPickerViewModel(catalog, query, disabled);
+  const unavailableLabel = selectedWorkId ? t`Unavailable Work` : t`No Work`;
   const label = work
     ? t`Choose Work for new chat, currently ${work.name}`
-    : t`Choose Work for new chat, currently No Work`;
+    : t`Choose Work for new chat, currently ${unavailableLabel}`;
   return {
     kind: "panel",
     id: "work",
@@ -157,11 +158,11 @@ function useProspectiveWorkControl({
     item: {
       ariaLabel: label,
       label: <Trans>Work</Trans>,
-      value: work?.name ?? t`No Work`,
+      value: work?.name ?? unavailableLabel,
     },
     inline: ({ trigger }) => (
       <ComposerCurrentValueTrigger binding={trigger} ariaLabel={label}>
-        <WorkIdentity name={work?.name} unavailableLabel={t`No Work`} />
+        <WorkIdentity name={work?.name} unavailableLabel={unavailableLabel} />
       </ComposerCurrentValueTrigger>
     ),
     panel: {

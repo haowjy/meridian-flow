@@ -18,6 +18,8 @@ import {
   setDrizzleTransactionLocal,
 } from "../../shared/drizzle-transaction.js";
 import { requireLockedActiveWork } from "../../shared/work-lifecycle-lock.js";
+import { nextProjectSlug } from "../projects/adapters/project-repository/shared.js";
+import { lockContextSources } from "./adapters/context-fs/document-locations.js";
 import {
   type ContextDocumentMembershipObserver,
   DrizzleContextDocumentStore,
@@ -35,14 +37,22 @@ const CONTEXT_SOURCE_NAMES: Record<ProjectContextFsScheme | WorkScopedContextFsS
   manuscript: "Manuscript",
   kb: "Knowledge Base",
   user: "User Files",
+  unfiled: "Unfiled",
   scratch: "Scratch",
   uploads: "Uploads",
 };
 
 async function ensureUserContextProject(db: Database, userId: string): Promise<string> {
+  await currentDrizzleDb(db).execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0::bigint))`,
+  );
   const existing = await findUserContextProject(db, userId);
   if (existing) return existing;
 
+  const reserved = await currentDrizzleDb(db)
+    .select({ slug: projects.slug })
+    .from(projects)
+    .where(eq(projects.userId, userId));
   const id = crypto.randomUUID();
   const [created] = await currentDrizzleDb(db)
     .insert(projects)
@@ -50,7 +60,10 @@ async function ensureUserContextProject(db: Database, userId: string): Promise<s
       id,
       userId,
       name: "User Files",
-      slug: `user-files-${id}`,
+      slug: nextProjectSlug(
+        "User Files",
+        reserved.map((row) => row.slug),
+      ),
       isPersonal: true,
     })
     .returning({ id: projects.id });
@@ -205,6 +218,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
       if (!pending) {
         pending = (async () => {
           const resolved = await this.ensureSourceId();
+          await lockContextSources(this.db, [resolved]);
           await this.catalogMutations?.refreshSources([resolved]);
           return resolved;
         })();

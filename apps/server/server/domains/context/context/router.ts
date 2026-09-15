@@ -17,6 +17,7 @@ import type {
   ContextSchemeAdapter,
 } from "../ports/context-adapter.js";
 import type { ContextCommandTransaction } from "../ports/context-command-transaction.js";
+import { ContextEntryConflictError } from "../ports/context-document-store.js";
 import type {
   ContextCreateTrackedDocumentResult,
   ContextCreateUntitledDocumentResult,
@@ -40,6 +41,7 @@ import { type ContextTreeDispatch, ContextTreeMover } from "./context-tree-mover
 import { type ParseContextUriOptions, parseContextUri, toCanonical } from "./uri.js";
 
 export interface ContextPortRouterDeps {
+  operationReceipts?: import("./context-operation-receipts.js").ContextOperationReceipts;
   adapters: ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
   /** Canonical Work authority for Work-scoped adapters already present in the base map. */
   adapterAuthorities?: ReadonlyMap<ContextScheme, CanonicalContextAuthority>;
@@ -154,6 +156,7 @@ async function callAdapter<T>(
   try {
     result = await op();
   } catch (error) {
+    if (error instanceof ContextEntryConflictError) return Err({ code: "conflict", uri });
     return Err({
       code: "io_error",
       uri,
@@ -166,7 +169,7 @@ async function callAdapter<T>(
 
 export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPort {
   const { adapters, parseOptions } = deps;
-  const treeMover = new ContextTreeMover(deps.commandTransaction);
+  const treeMover = new ContextTreeMover(deps.commandTransaction, deps.operationReceipts);
 
   async function resolve(uri: string): Promise<Result<Dispatch, ContextError>> {
     const parsed = parseContextUri(uri, parseOptions);
@@ -246,6 +249,8 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
   }
 
   return {
+    lookupOperation: (operationId) =>
+      deps.operationReceipts?.lookup(operationId) ?? Promise.resolve(null),
     async stat(uri: string): Promise<Result<FileRef, ContextError>> {
       const r = await resolve(uri);
       if (!r.ok) return r;
@@ -458,14 +463,19 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
       return treeMover.move(source.value, destination.value, options);
     },
 
-    async commitWriterLocation(sourceUri, destinationUri, _options) {
+    async commitWriterLocation(sourceUri, destinationUri, options) {
       const source = await resolve(sourceUri);
       if (!source.ok) return source;
       const destination = await resolveMutation(destinationUri);
       if (!destination.ok) return destination;
       const creationDenied = crossSchemeCreationDenied(source.value, destination.value);
       if (creationDenied) return creationDenied;
-      return treeMover.commitWriterLocation(source.value, destination.value);
+      return treeMover.commitWriterLocation(
+        source.value,
+        destination.value,
+        options?.expected,
+        options?.operationId,
+      );
     },
 
     async delete(

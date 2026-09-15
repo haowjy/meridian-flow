@@ -53,7 +53,7 @@ import { SchemaFenceNotice } from "./SchemaFenceNotice";
 import { SchemaRepairNotice } from "./SchemaRepairNotice";
 import { SyncStatus } from "./SyncStatus";
 import { ImageIngressRuntime } from "./surfaces/images";
-import { ProjectLinkRuntime, useLinkableDocuments } from "./surfaces/link";
+import { ProjectLinkRuntimeWithIndex, useLinkableDocuments } from "./surfaces/link";
 import { documentSlashCatalog } from "./surfaces/slash";
 import { DocumentToolbar } from "./surfaces/toolbar";
 import { useAgentNames } from "./useAgentNames";
@@ -68,6 +68,8 @@ export type EditorViewProps = {
   bindingKey?: string;
   /** Keep a not-yet-materialized live document off server transport. */
   detached?: boolean;
+  /** The host already opened and verified exact local content for this session. */
+  localContentReady?: boolean;
   projectId?: string;
   schemaType?: YjsTrackedSchemaType;
   className?: string;
@@ -201,7 +203,10 @@ type SessionEditorViewProps = EditorViewProps & {
 function SessionEditorView(props: SessionEditorViewProps) {
   const [snapshot, setSnapshot] = useState(() => props.session.getSnapshot());
   const [bindHorizon, setBindHorizon] = useState<EditorBindHorizonResult | null>(null);
-  const requiresFirstServerSync = !(props.identity.surface === "live" && props.identity.detached);
+  const requiresFirstServerSync = !(
+    props.identity.surface === "live" &&
+    (props.identity.detached || props.localContentReady)
+  );
 
   useEffect(() => props.session.subscribe(setSnapshot), [props.session]);
   useEffect(() => {
@@ -315,12 +320,19 @@ function ActiveSessionEditorView({
   // Read when the `[[` menu opens, for the same reason as the slash catalog:
   // the label resolves against whatever locale is active then, and the document
   // list changes every time the writer creates or renames a file.
-  const { documents: wikilinkDocuments } = useLinkableDocuments(scope);
+  const linkableDocuments = useLinkableDocuments(
+    active ? scope : { projectId: null, workId: null },
+  );
+  const { documents: wikilinkDocuments } = linkableDocuments;
   const wikilinkCatalog = useCallback(() => {
     if (identity.schemaType !== "document" || !effectiveEditable || !projectId) return null;
     return { label: t`Link a document`, documents: wikilinkDocuments };
   }, [effectiveEditable, identity.schemaType, projectId, wikilinkDocuments]);
-  const sharedReferenceCatalog = useReferenceBrowserCatalog(projectId, workId, t`Reference a file`);
+  const sharedReferenceCatalog = useReferenceBrowserCatalog(
+    active ? projectId : null,
+    active ? workId : null,
+    t`Reference a file`,
+  );
   const atReferenceCatalog = useCallback(
     () => (identity.schemaType === "document" && effectiveEditable ? sharedReferenceCatalog : null),
     [effectiveEditable, identity.schemaType, sharedReferenceCatalog],
@@ -458,7 +470,12 @@ function ActiveSessionEditorView({
         {/* Where an internal link goes, and where a picture's bytes go. Ports, not
           surfaces: each renders nothing, and what a writer sees from either lane
           mounts through the host above. */}
-        <ProjectLinkRuntime editor={editor} documentId={documentId} />
+        <ProjectLinkRuntimeWithIndex
+          editor={editor}
+          documentId={documentId}
+          index={linkableDocuments}
+          active={active}
+        />
         <ImageIngressRuntime editor={editor} projectId={projectId} documentId={documentId} />
       </section>
     </EditorScopeProvider>

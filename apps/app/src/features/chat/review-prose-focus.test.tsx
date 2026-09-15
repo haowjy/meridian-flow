@@ -6,7 +6,7 @@
  */
 import { act, useEffect, useState, useSyncExternalStore } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ProjectContextRouteProvider } from "@/features/project/routing/ProjectContextRoute";
+import { ProjectNavigationProvider } from "@/features/project/routing/ProjectNavigationContext";
 import type { ScreenKey } from "@/features/project/shell/screens";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 
@@ -107,9 +107,12 @@ function Harness() {
     };
   });
   return (
-    <ProjectContextRouteProvider openContextRoute={async (target) => navigate(target)}>
+    <ProjectNavigationProvider
+      screen="context"
+      openContextRoute={async (target) => navigate(target)}
+    >
       <ReviewShell key={project} screen="context" />
-    </ProjectContextRouteProvider>
+    </ProjectNavigationProvider>
   );
 }
 

@@ -12,6 +12,7 @@ export type ProjectContextRemovalControllerProps = {
   activeContextScheme: ProjectContextTreeScheme | null;
   activeContextPath: string | null;
   editorWorkId: string | null;
+  localDocumentId?: string;
   route: ContextRemovalRoutePort;
 };
 
@@ -21,6 +22,7 @@ export function ProjectContextRemovalController({
   activeContextScheme,
   activeContextPath,
   editorWorkId,
+  localDocumentId,
   route,
 }: ProjectContextRemovalControllerProps) {
   const coordinator = useContextRemovalCoordinator();
@@ -28,6 +30,8 @@ export function ProjectContextRemovalController({
   latestRouteRef.current = route;
   const stableRoute = useMemo<ContextRemovalRoutePort>(
     () => ({
+      transition: (projectId, target, prepared) =>
+        latestRouteRef.current.transition(projectId, target, prepared),
       readSearch: (registeredProjectId) => latestRouteRef.current.readSearch(registeredProjectId),
       updateSearch: (registeredProjectId, update) =>
         latestRouteRef.current.updateSearch(registeredProjectId, update),
@@ -46,6 +50,7 @@ export function ProjectContextRemovalController({
     return () => registration.release();
   }, [coordinator, projectId, stableRoute]);
 
+  const previousLocalDocument = useRef(localDocumentId);
   useLayoutEffect(() => {
     const registration = registrationRef.current;
     if (!registration) return;
@@ -58,9 +63,21 @@ export function ProjectContextRemovalController({
       registration.editorWorkId = editorWorkId;
       return;
     }
+    if (previousLocalDocument.current !== localDocumentId) {
+      previousLocalDocument.current = localDocumentId;
+      coordinator.clearRouteSelection(projectId);
+    }
     if (locator) coordinator.beginRouteSelection(projectId, locator);
     else coordinator.clearRouteSelection(projectId);
-  }, [activeContextPath, activeContextScheme, activeScreen, coordinator, editorWorkId, projectId]);
+  }, [
+    activeContextPath,
+    activeContextScheme,
+    activeScreen,
+    coordinator,
+    editorWorkId,
+    projectId,
+    localDocumentId,
+  ]);
 
   return null;
 }

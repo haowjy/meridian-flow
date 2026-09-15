@@ -19,6 +19,9 @@ vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => `${text}${part}${values[index] ?? ""}`, ""),
 }));
+vi.mock("@/features/chat/CreationComposer", () => ({
+  CreationComposer: () => <div data-testid="creation-composer" />,
+}));
 vi.mock("./NewThreadComposerToolbar", () => ({ NewThreadComposerToolbar: () => null }));
 vi.mock("@/features/editor/references/useReferenceBrowserCatalog", () => ({
   useReferenceBrowserCatalog: () => null,
@@ -112,12 +115,24 @@ describe("HomeScreen", () => {
       <I18nProvider i18n={i18n}>
         <QueryClientProvider client={client}>
           <FirstSendContinuityProvider accountId="account-1">
-            <HomeScreen projectId="project-1" onSelectThread={vi.fn()} onOpenThread={vi.fn()} />
+            <HomeScreen projectId="project-1" onOpenThread={vi.fn()} />
           </FirstSendContinuityProvider>
         </QueryClientProvider>
       </I18nProvider>,
       async () => {
         await waitFor(() => Boolean(document.querySelector('[aria-label="Actions for River"]')));
+        const composer = document.querySelector('[data-testid="creation-composer"]');
+        const previousChat = document.querySelector('[aria-label="Actions for River"]');
+        expect(composer).not.toBeNull();
+        if (!previousChat) throw new Error("Previous chat missing");
+        expect(composer?.compareDocumentPosition(previousChat)).toBe(
+          Node.DOCUMENT_POSITION_FOLLOWING,
+        );
+        expect(
+          [...document.querySelectorAll("button")].some(
+            (button) => button.textContent === "New chat",
+          ),
+        ).toBe(false);
         vi.spyOn(window.HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(rect(20));
         const scroll = document.querySelector("[data-home-scroll-owner]") as HTMLElement;
         Object.defineProperties(scroll, {

@@ -19,9 +19,12 @@ import { createInMemoryCollabDomain } from "../collab/index.js";
 import type { EventSink } from "../observability/index.js";
 import { createDrizzleContextCatalog } from "./adapters/context-catalog.js";
 import { ContextFS } from "./adapters/context-fs/context-fs.js";
+import { lockContextNamespaces } from "./adapters/context-fs/document-locations.js";
 import type { ContextDocumentMembershipObserver } from "./adapters/context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./adapters/context-fs/drizzle-tree-mutation-store.js";
+import { createDrizzleContextOperationReceipts } from "./adapters/context-operation-receipts.js";
 import { createDrizzleProjectContextAvailability } from "./adapters/project-context-availability.js";
+import { ContextOperationReceipts } from "./context/context-operation-receipts.js";
 import { createContextPortRouter } from "./context/router.js";
 import { UNIFIED_CONTEXT_SCHEMES } from "./context/uri.js";
 import {
@@ -133,7 +136,9 @@ function buildProjectContextFsAdapters(
         mutationStore: storeResolvers.resolveMutationStore(manifestView),
         documentSync,
         documentCreation,
-        commandTransaction,
+        commandTransaction: commandTransaction && {
+          run: (operation) => commandTransaction.run(operation, [{ scheme, workId: null }]),
+        },
         scheme,
         ...(scheme === "manuscript" && manifestView ? { manifestView } : {}),
       }),
@@ -164,7 +169,9 @@ function buildWorkScopedContextFsAdapters(
         mutationStore,
         documentSync,
         documentCreation,
-        commandTransaction,
+        commandTransaction: commandTransaction && {
+          run: (operation) => commandTransaction.run(operation, [{ scheme, workId: workId }]),
+        },
         scheme,
       }),
     );
@@ -191,7 +198,9 @@ function buildUnassignedContextFsAdapters(
         mutationStore,
         documentSync,
         documentCreation,
-        commandTransaction,
+        commandTransaction: commandTransaction && {
+          run: (operation) => commandTransaction.run(operation, [{ scheme, workId: null }]),
+        },
         scheme,
       }),
     );
@@ -222,6 +231,7 @@ function buildUnifiedContextPort(input: {
   documentSync: MarkdownDocumentStore;
   documentCreation?: DocumentCreationAggregate;
   commandTransaction?: ContextCommandTransaction;
+  operationReceipts?: ContextOperationReceipts;
 }): ContextPort {
   const { scope, storeResolvers, documentSync } = input;
   const adapters = buildProjectContextFsAdapters(
@@ -287,6 +297,7 @@ function buildUnifiedContextPort(input: {
     resolveNoWorkAdapters: () => unassignedAdapters,
     parseOptions: { barePathDefault: "manuscript", schemes: UNIFIED_CONTEXT_SCHEMES },
     commandTransaction: input.commandTransaction,
+    operationReceipts: input.operationReceipts,
   });
 }
 
@@ -419,8 +430,15 @@ export function createProductionUnifiedContextPortFactory(options: {
         storeResolvers,
         documentSync: options.documentSync,
         documentCreation: options.documentSync,
+        operationReceipts: new ContextOperationReceipts(
+          createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
+        ),
         commandTransaction: {
-          run: (operation) => runInDrizzleTransaction(options.db, operation),
+          run: (operation, scopes = []) =>
+            runInDrizzleTransaction(options.db, async () => {
+              await lockContextNamespaces(options.db, { projectId, userId }, scopes);
+              return operation();
+            }),
         },
       });
     },
@@ -438,8 +456,15 @@ export function createProductionUnifiedContextPortFactory(options: {
         storeResolvers,
         documentSync: options.documentSync,
         documentCreation: options.documentSync,
+        operationReceipts: new ContextOperationReceipts(
+          createDrizzleContextOperationReceipts(options.db, { userId, projectId }),
+        ),
         commandTransaction: {
-          run: (operation) => runInDrizzleTransaction(options.db, operation),
+          run: (operation, scopes = []) =>
+            runInDrizzleTransaction(options.db, async () => {
+              await lockContextNamespaces(options.db, { projectId, userId }, scopes);
+              return operation();
+            }),
         },
       });
     },

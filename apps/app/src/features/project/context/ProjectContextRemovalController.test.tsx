@@ -5,6 +5,7 @@ import {
   AccountFeatureTestProvider,
   useContextRemovalCoordinator,
 } from "@/test-support/account-feature-provider";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectContextRemovalController } from "./ProjectContextRemovalController";
@@ -28,7 +29,7 @@ function SettlingHost({ projectId }: { projectId: string }) {
         transitionRevision: snapshot.transitionRevision,
         locator: snapshot.selection.locator,
         identity: snapshot.selection.identity,
-        owner: { kind: "desk", documentId: "document-1" },
+        owner: { kind: "workspace", documentId: "document-1" },
       });
     }
   }, [coordinator, projectId, snapshot]);
@@ -36,6 +37,7 @@ function SettlingHost({ projectId }: { projectId: string }) {
 }
 
 const route = {
+  transition: acceptContextTransition,
   readSearch: () => ({
     screen: "context" as const,
     work: "work-1",
@@ -101,7 +103,7 @@ describe("ProjectContextRemovalController", () => {
           selectedTabIdByWork: { "work-1": "scratch-1" },
         },
       },
-      _deskHydrated: true,
+      _workspaceHydrated: true,
     });
     await withReactRoot(
       <AccountFeatureTestProvider accountId="account-1">
@@ -154,7 +156,7 @@ describe("ProjectContextRemovalController", () => {
           selectedTabIdByWork: { "work-1": "document-1" },
         },
       },
-      _deskHydrated: true,
+      _workspaceHydrated: true,
     });
     let coordinator: ContextRemovalCoordinator | null = null;
     let setScreen: ((screen: "context" | typeof offScreen) => void) | null = null;

@@ -4,34 +4,49 @@ Reference depth. Read the [AGENTS.md](../AGENTS.md) first.
 
 ## Link navigation versus editor admission
 
-Resolved No Work survives routing as `?work=none`. Work-capable tabs without a
+Resolved No Work survives routing in browser-entry state without an empty query parameter. Work-capable tabs without a
 `workId` belong to No Work; viewer reads and route matching must not inherit the
 host Chat Work. Nullable authority is ready for Context bootstrap and removal
 host registration, not a loading/missing-Work state. No-Work server tabs use
-route selection; the per-Work selected-tab map remains keyed by actual Work IDs.
+route selection; the selected-tab map uses the empty-string key for shared project scope.
 
 `ProjectDocumentNavigationAdapter` opens both tracked editors and existing
 read-only Context viewers through the one stable-ID opener. Its lower-level
 `not-editable` result means no live Yjs admission, not a failed navigation:
-binary/custom metadata still opens a viewer tab and route. The resolved file's
+Editor-eligible project binary/custom metadata still opens a viewer tab and route.
+Scratch/Uploads instead route to the deferred-viewing notice without opening a tab. The resolved file's
 Work/no-Work authority overrides the invoking surface's Work; only project-scoped
 files retain host Work context. Never add upload-specific navigation in Composer.
 
-## Local Untitled ownership
+Availability command admission rejects while removal is suspended or disposed;
+an empty successful receipt would let the availability owner falsely acknowledge
+unapplied authority. Local settlement still differs from session-effect completion:
+failed session effects remain pending for retry. This is not durable namespace
+receipt recovery across account/authority shutdown.
 
-`local-untitled-locks.ts` owns the project/lineage lifetime and identity-reservation
-names and ports. `AccountFeatureLifetime` composes them with the account runtime's
-epoch signal and the lineage ledger/owner. An acquisition that crosses account
-close releases its lease before rejecting; teardown may still release existing
-leases. Native Web Locks adaptation is shared in `core/cross-context-locks.ts`,
-which knows nothing about projects or lineages.
+## Account resource ownership
+
+`AccountResourceReplica` is the sole browser owner for editable document
+resources. It composes the account-qualified metadata database, serialized
+catalog acquisition, namespace journal runner, exact local content access, and
+same-session server adoption. `AccountFeatureLifetime` installs it before
+project descendants and connects its two-phase close to the document-session
+runtime. Account close fences new commands immediately, aborts transport work,
+drains adoption/catalog/namespace operations, releases every retained session,
+and closes metadata last.
+
+The replica uses short account/resource Web Locks for namespace and terminal
+coordination. Typing and ordinary local content access do not hold those locks.
+A stable resource handle survives document-ID remint; the exact persistence name
+and mounted Y.Doc do not change. The resource descriptor also retains the
+catalog-defined file classification so cached code never reopens as rich text.
 
 ## Architecture
 
 ```text
 ContextTreePanel (desktop)          MobileContextBrowser (mobile)
        │                                     │
-       ├─ useContextCatalogView (projection) ┤
+       ├─ useContextCatalogViews (batched projection) ┤
        ├─ useCreateEntryForm ────────────────┤
        ├─ useRenameEntryForm ────────────────┤
        ├─ useDeleteConfirmation ─────────────┤
@@ -48,280 +63,20 @@ ContextPaneController
               ├─ ContextTabBar (reviewing tab surfaces dock tone)
               ├─ DraftReviewHeader (review strip, above the identity bar)
               ├─ DocumentIdentityBar (breadcrumb + chips, incl. DraftReviewChip)
-              ├─ ContextEditorMountHost (warm tracked + untitled Yjs editors)
+              ├─ ContextEditorMountHost (warm tracked + local-resource Yjs editors)
               └─ ContextViewerHost (active binary viewer)
 ```
 
-React Query acquires compact catalog snapshots and whole-commit deltas into one
-normalized stable-ID cache. One QueryClient-scoped high-water coordinator makes
-focus, polling, reconnect, hints, and multiple consumers join the same cursor
-drain. Applied revision advances only through contiguous whole commits; observed
-head can lead it while a bounded replay has more pages. Tree and picker are
-projections over those same entry objects.
-Mutations invalidate the affected catalog scope on success. Delete admits its
-exact evidence to live removal authority first; cache absence never supplies
-deletion evidence. Foreground identity saves and
-background untitled create/move reconciliation share
-`context-identity-mutation.ts`; every successful receipt invalidates its
-materialized tree or both move endpoints, even when no tab is open.
 
-The project availability coordinator watches server-backed tabs, bound route
-selection, retained sessions, and capped recent routes by stable file ID. Exact
-delete receipts enter it directly; explicit authorization-loss observers and
-focus, online, and bounded polling recheck watched identities. A catalog wake
-for a cold Work triggers the same exact-ID availability path without warming a
-second tree. Cache omission is presentation state and never removal evidence.
-Generation-bearing final commands own the atomic tab, route, selection,
-admission, working-set, and Yjs session effects; same-ID moves and local-new
-tabs survive. Opening requires exact final availability plus a live opener and
-admission.
+## Reference pages
 
-`useFileSuggestions` projects directly from the normalized scope views. It
-never walks or caches a second recursive tree and never adds a server-search path; hosts constrain
-schemes and file/directory kinds, then mount the presentation-only list.
-
-Desktop scheme/query orchestration lives in `ContextTreePanel`; `ContextTreeRows`
-selects each expanded row's direct children by stable parent ID through one
-scheme-scoped environment. Mobile renders one level at a time via route params.
-
-## Editor tabs and untitled documents
-
-The writer-facing destination is **Editor**. One account-scoped,
-framework-independent `ContextRemovalCoordinator` owns every live removal
-transition: explicit close, generation-bearing terminal availability, Work pruning,
-and draft discard. Account construction precedes authenticated descendants; device
-desk hydration starts afterward and never gates the visible shell. A project becomes
-live after its desk state reconciles, concrete Editor Work readiness, and one raw
-bootstrap/validation operation. Strict replay and pre-live Work interruption adopt
-that operation with fresh attempt tokens; after first completion, Work interruption
-only suspends the live host and can never restore raw bootstrap authority.
-The leaf route host registers first, then the rendered desktop or phone document host
-settles revisioned route identity in layout phase.
-
-Committed delete receipts carry the server-confirmed exact ID batch and availability
-generation directly into the project availability coordinator before tree invalidation.
-That generation-fenced coordinator normalizes the IDs and emits one deterministic
-`terminal-remove` batch; it is the sole server-deletion authority. Candidate identity
-remains a pure typed selection/obligation protocol for represented local transitions:
-browser locators own only their revision while admitted continuity independently owns
-memory and persistence. Receipt cardinality supplies no identity, and late or
-superseded settlement cannot repair a newer route. The protocol emits exact planning
-or one typed candidate rejection, never a generic promotion.
-The pure `context-removal-planner.ts` keeps eligibility and desk/route continuity
-policy separate from browser lifecycle and effects. Bound selection anchors visible
-identity and exact removal; only revision-checked desk or route-only activation admits
-ordinary continuity. Work change chooses a compatible admitted fallback independently
-from its new route candidate. Same-Work screen leave discards selection while retaining
-admitted continuity. Fulfilled absence runs one coordinator-owned rejection plan that
-atomically selects a desk fallback, reconciles the working set, updates admitted memory,
-publishes, and then issues guarded replace-navigation. Project-host release drops only
-the detachable route adapter and mounted selection. Account-owned revision, terminal
-exact removal, admitted memory, and fence authority survive re-entry; a matching
-terminal removal blocks stale identity re-entry until exact rejection or a different
-identity is proven. Account disposal destroys it.
-The account provider owns one reversible coordinator lifetime lease. Cleanup
-suspends command authority synchronously; Strict effect replay resumes that same
-coordinator before child layout work, while a deferred step only finalizes a lease
-that remained suspended.
-Activation uses selection and transition revision tickets in layout phase. Desktop
-validates live desk membership; phone validates the exact registered route without
-fabricating a tab. `ContextPaneController`
-remains a view/activation controller and owns no lifecycle-removal policy. Later ready
-Work changes use the coordinator's supersession transition. Draft apply only resolves tab metadata. Context-tree
-cache state is presentation metadata and never authorizes removal. `ContextTab` has three variants: `tracked`,
-`viewer`, and the local `{ kind: "new", documentId, workId }` placeholder. A new tab captures its
-canonical Work owner at creation; projection, activation, fallback, pending materialization, and Work
-pruning read that stored fact rather than the currently selected Work. Empty-path Scratch remains local-only
-and is never a working-set route. A new tab uses an ordinary `DocumentSession` from its first render, created detached so
-Y.Doc + IndexedDB exist without opening an unauthorized server room.
-
-The device Context desk persists one exact `selectedTabIdByWork` entry per Work.
-There is no project-wide active-tab slot. One pure desk-route resolver supplies
-render, bind, activation, and guarded materialization redirect identity; desk
-selection is not admission. Every non-draft local `new` tab is persisted
-immediately. Materialization retains `origin: "local-untitled"` across reload and
-Work navigation, while explicit close/deletion and fulfilled bootstrap absence
-still remove it. Server working-set bootstrap merges validated device-owned
-`new` and local-origin tabs by document ID without promoting them into recency.
-
-`untitled-reconciler.ts` is the browser-independent materialization executor;
-`untitled-reconciler-browser.ts` binds APIs, the account-local owner, and React
-hooks. The account/project/document-qualified `LocalUntitledOwner` record is
-the sole durable pre-authority work source, including its monotonic work
-revision, materialization phase and result, desired identity, failure receipt,
-home, and pending timestamp. Explicit writer actions and recovery receipts are
-therefore crash-safe. Reconciliation re-reads the live revision after every
-await; an attempt may clear identity work or drain a record only when that exact
-revision is still current, so the last explicit writer identity wins. Events
-only schedule the same deferred, idempotent sweep. The sweep creates through
-`create-untitled`, attaches the existing Y.Doc, waits for confirmed provider
-sync, then drains the entry. A closed tab is not special: the same entry drives
-a headless attach/flush. A never-materialized empty is the only path that clears
-IndexedDB. A foreign UUID conflict clones the Yjs state into a newly minted
-detached session and replaces the new tab's identity in place before retrying.
-Named/viewed documents never enter this engine. Naming an otherwise-empty new document is itself pending materialization work: the explicit identity keeps the tab reload-safe and is applied immediately after the row is created.
-
-After create returns, the placeholder becomes a normal route-owned `tracked`
-tab in place. `provisionalName` comes from the tree DTO and drives the identity
-bar's provisional state; a cached tree refetch refreshes open-tab metadata so a
-cross-device rename eventually dissolves the state without another invalidation
-channel. Desk-restored `new` tabs retain their sessions in explicit detached
-mode; no transport is created before the server row exists. Successful
-materialization restarts any terminal pre-row session before attaching and
-waiting for durable sync.
-Before materialization, active `new` tabs are projected from the desk store,
-not reconstructed from `scheme`/`path` search params. New-tab navigation still
-uses the canonical Scratch empty route, but a fresh project with no prior scheme
-can activate its local editor immediately.
-
-## Document identity bar
-
-`DocumentIdentityBar.tsx` is the one identity surface: a fixed-height mono
-breadcrumb band (`Scratch › Untitled 4`) at the top of the active tab's canvas,
-on every document — tracked, provisional, viewer. Crumb/field text is `text-sm`
-to match the suggestion-popover rows; `identity-bar-geometry.ts` owns the box
-constants (26px band, 22px child boxes) and the zero-layout-shift contract
-between rest and edit states. Provisional docs are a *state* of the bar (italic
-leaf + jade “Choose a home” chip), never separate chrome; the editor banner
-slot below the toolbar belongs to draft chrome alone, and identity chrome must
-never occupy it again (structural separation, 2026-07-17).
-
-The breadcrumb itself is **inert** — the chip is the only edit entry point.
-Each crumb stays its own `data-seg` element because the next slice attaches a
-VS Code-style per-segment navigator dropdown there; don't flatten the path
-into one string.
-
-Contracts:
-
-- **Keystroke path**: at rest the bar renders from tab metadata only. The
-  content-suggestion observer (300ms debounce, `writerOwnsName` latch) mounts
-  only while the edit field is open on a provisional doc.
-- **Placement grammar** (untitled docs never explicitly renamed or homed:
-  provisional AND still at the default Scratch root): the jade chip opens
-  an EMPTY field — the content-derived suggestion is ghost placeholder text
-  (Tab/→ accepts it; Enter on an empty field accepts it implicitly). The
-  popover opens on the scheme roots (Manuscript / Knowledge Base / Scratch —
-  the roots ARE the context choice); picking drills into folders, building the
-  home as read-only spans left of the name. Enter with a home built moves
-  (+renames); name-only Enter renames in place — naming isn't homing.
-  Placement happens once: any explicit save graduates the document.
-- **Graduated grammar**: the same chip and field handle homed documents. The
-  field opens with the current name selected, while the dropdown offers the
-  current folder's siblings and every writable scheme root. Selecting a folder
-  drills deeper and builds the destination prefix, so rename, move, and
-  rename-plus-move remain one gesture without a second popup or name row.
-- **Commit seam**: the field submits one final `{ destination, name }` to
-  `use-identity-commit.ts`. That seam derives queue, no-op, or commit; every
-  tracked-document commit uses the move transport so canonical collision
-  locators and graduation semantics have one owner. A same-name explicit Save on a provisional
-  document is therefore always a graduation, regardless of which surface
-  submitted it. Conflicts return the canonical locator for Open-existing.
-  Every asynchronous commit carries an operation generation. Every successful
-  receipt invalidates caches; the latest receipt updates tab metadata even when
-  inactive, while stale out-of-order receipts cannot overwrite it. Navigation
-  additionally requires that the committed document is still the active tab.
-  The field does not blur-dismiss while a save is pending.
-- **Queued receipts**: a `new` tab's desired identity applies when the document
-  materializes; its outcome is reconciler *state*
-  (`queuedIdentityFailure(documentId)`), never a promise — the edit session is
-  over when the intent is queued. A failed receipt reopens the field with the
-  writer's name restored and the conflict/error recovery note; the receipt
-  clears when the writer edits or leaves the field. Failures must never drop
-  silently.
-- **Field buttons**: the open field renders ✓/× icon buttons after it —
-  additive mirrors of Enter/Esc (pointerdown is prevented so the blur-revert
-  contract can't fire before the click lands). Keyboard behavior unchanged.
-- **Chip slot**: right edge. The action chip is permanent (D4) and its label
-  graduates with the document: jade "Choose a home" while provisional (opens
-  empty placement), quiet outline "Rename" once homed (opens the same field,
-  pre-filled and selected — rename is the common case, folder browsing keeps
-  move discoverable). Viewer docs get the field too; uploads viewers carry no
-  chip (no dead buttons). The device-only status (warning tokens,
-  `TriangleAlert`) appears *beside* the action — quiet on its left, never in
-  its place: placement commits queue durably offline, so device-only is
-  exactly when the writer may want to file the document. It claims its spot
-  after unsynced words persist for a 2s sustained grace — the clock is the
-  reconciler's per-document `pendingSince`, so remounting chrome (tab
-  switches) cannot restart the window. While the field is open only the
-  action chip yields (the field is the action); the status stays.
-- **Destination keyboard path**: ArrowDown/ArrowUp enters the suggestion list
-  through its typed focus handle. Rows retain arrow wrapping and Enter select;
-  folder selection can drill to arbitrary existing depth.
-
-The tab strip still follows the settled tonal treatment: it paints nothing,
-active tabs continue the canvas upward, inactive neighbors alone receive short
-dividers, and the whole chip is the tab target.
-
-## InlineNameForm semantics
-
-The shared state machine in `use-inline-name-form.ts`. Adapters supply options;
-the core owns focus, validation, and commit behavior.
-
-**Submit:** Enter commits (unless pending or error-blocked). Escape cancels.
-Blur-with-content commits (unless Escape already cancelled). Empty input =
-cancel. Blocking errors refocus the input.
-
-**Focus:** Auto-focus on mount. `requestAnimationFrame` retry handles Radix menu
-focus-scope teardown — the menu's closing animation holds focus for one frame,
-swallowing a same-tick `focus()`.
-
-**Adapter differences:**
-
-| Concern | `useCreateEntryForm` | `useRenameEntryForm` |
-|---|---|---|
-| initialName | `""` | `entry.name` |
-| isCancelName | — | same as current name |
-| siblingNames | all siblings | siblings excluding current |
-| afterFocus | — | extension-aware selection |
-
-Both adapters are ~25 lines. The shared core is ~100 lines.
-
-## Dual-trigger caveat
-
-Desktop right-click context and visible ellipsis overflow map one ordered action
-specification through thin renderers for Radix `ContextMenu.Item` and
-`DropdownMenu.Item`. They remain separate trigger primitives. The visible path
-uses the neutral `OverflowMenu` and canonical trigger shared with Project chat
-rows and Composer; context-specific `EntryAction` types do not cross that UI
-boundary. The raw ContextMenu renderer consumes the canonical declarations from
-`components/ui/dropdown-presentation.ts` directly for surface, row, separator,
-destructive, density, focus, and animation paint. Do not copy those recipes or
-introduce a shallow ContextMenu wrapper family merely to adapt Radix. The
-visible target is 32 px for fine pointers and 44 px for coarse/no-hover input,
-and it remains visible while its portaled menu is open. Mobile uses the same
-context adapter with a 44 px target. Labels, icons, grouping, destructive
-metadata, order, presentation, and dispatch actions therefore cannot drift.
-The ellipsis stops propagation so it doesn't trigger the row's click handler.
-`EntryAction` is four actions in fixed order — New file, New folder,
-separator, Rename, Delete (creation first, destructive last) — identical in
-both triggers. Actions dispatch from `onCloseAutoFocus`, after the menu has
-fully closed with its focus return suppressed: menu teardown otherwise blurs
-a freshly mounted inline row, and blur commits/cancels it.
-
-## Creation targeting
-
-One required `TreeCreationRequest` serves every entry point:
-`{ scheme, kind, parentPath, workId }` (`TreeCreationProvider` request, or the phone
-drawer's controlled mirror), with `""` meaning the scheme root. Scheme headers request the root; a folder
-row requests itself; a file row requests its parent
-(`parentContextEntryPath`). The single `TreeChildren` renderer inserts the
-inline CreateRow at the target; the root calls it with an empty child list
-before fetch, while nested folders use the same mount at child depth. Creation
-explicitly reveals every target ancestor in the stored expansion model before
-the request starts. Clicking any scheme or folder disclosure while the row is
-open cancels creation and then performs the requested toggle; disclosure clicks
-must never feel inert. Sibling-collision
-validation uses the target folder's children. The captured `workId` keeps an in-flight request on its initiating Editor scope across route changes. Starting a creation anywhere
-replaces a pending one; Escape/blur semantics are the shared
-`useInlineNameForm` contract.
-
-## Tree query invalidation
-
-Deleting a file in `manuscript://` only refetches that scheme's tree for
-presentation metadata. Tree absence never proves document removal. The exact
-successful mutation result is the deletion evidence that the removal coordinator
-receives through the project availability coordinator before tree invalidation can
-affect presentation.
+- [Resource catalog and Editor lifecycle](resource-catalog-and-editor-lifecycle.md) —
+  replica acquisition, local resource admission, Editor tabs, recovery, and
+  browser-local workspace membership.
+- [Document identity bar](document-identity-bar.md) — identity chrome and the
+  placement, rename, and repair contract.
+- [Tree interactions](tree-interactions.md) — inline forms, entry actions,
+  creation targeting, and tree invalidation.
 
 ## Downlinks
 

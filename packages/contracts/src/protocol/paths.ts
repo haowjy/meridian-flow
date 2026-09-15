@@ -36,6 +36,21 @@ export function apiProjectPath(projectId: string): string {
   return `${API_PROJECTS_PATH}/${projectId}`;
 }
 
+export function apiProjectAddressPath(slug: string): string {
+  return `/api/project-addresses/${encodeURIComponent(slug)}`;
+}
+
+export function apiProjectDocumentAddressPath(
+  projectId: string,
+  scheme: ProjectContextTreeScheme,
+  path: string,
+  opts?: ProjectContextRequestOptions,
+): string {
+  const query = new URLSearchParams({ path });
+  if (isWorkScopedProjectContextScheme(scheme) && opts?.workId) query.set("workId", opts.workId);
+  return `${apiProjectPath(projectId)}/context/${scheme}/address?${query}`;
+}
+
 export function apiProjectThreadsPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/threads`;
 }
@@ -141,19 +156,15 @@ export function apiProjectContextReadPath(
   return `${apiProjectPath(projectId)}/context/${scheme}/read?${search.toString()}`;
 }
 
-export function apiProjectContextRenamePath(
-  projectId: string,
-  scheme: ProjectContextTreeScheme,
-  opts?: ProjectContextRequestOptions,
-): string {
-  return `${apiProjectPath(projectId)}/context/${scheme}/rename${projectContextQuery(scheme, opts)}`;
-}
-
 export function apiProjectContextMovePath(
   projectId: string,
   scheme: ProjectContextTreeScheme,
 ): string {
   return `${apiProjectPath(projectId)}/context/${scheme}/move`;
+}
+
+export function apiProjectContextOperationPath(projectId: string, operationId: string): string {
+  return `${apiProjectPath(projectId)}/context/operations/${encodeURIComponent(operationId)}`;
 }
 
 export function apiProjectContextDeletePath(

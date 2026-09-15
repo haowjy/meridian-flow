@@ -14,14 +14,15 @@ import {
 
 import { Err, Ok, type Result } from "../../../../shared/result.js";
 import type { EventSink } from "../../../observability/index.js";
-import { parseFilename, splitPath } from "../../context/paths.js";
-import type {
-  ContextDocument,
-  ContextDocumentStore,
-  ContextFolder,
-  CreateBinaryDocumentInput,
-  UpsertBinaryDocumentInput,
-  UpsertDocumentInput,
+import { parseFilename, renderFilename, splitPath } from "../../context/paths.js";
+import {
+  type ContextDocument,
+  type ContextDocumentStore,
+  ContextEntryConflictError,
+  type ContextFolder,
+  type CreateBinaryDocumentInput,
+  type UpsertBinaryDocumentInput,
+  type UpsertDocumentInput,
 } from "../../ports/context-document-store.js";
 import {
   CONTEXT_ROOT_DIRECTORY_ID,
@@ -52,6 +53,7 @@ type DocumentRow = ContextDocument & {
 };
 
 export interface InMemoryContextDocumentStoreBacking {
+  previousLocations: Map<string, string>;
   folders: Map<string, FolderRow>;
   documents: Map<string, DocumentRow>;
   clock: { value: number };
@@ -65,6 +67,7 @@ export interface InMemoryContextDocumentStoreOptions {
 
 export function createInMemoryContextDocumentStoreBacking(): InMemoryContextDocumentStoreBacking {
   return {
+    previousLocations: new Map(),
     folders: new Map(),
     documents: new Map(),
     clock: { value: 0 },
@@ -87,6 +90,94 @@ export function findInMemoryContextDocumentsById(
     } = row;
     return [{ ...document }];
   });
+}
+
+function hasOppositeEntry(
+  backing: InMemoryContextDocumentStoreBacking,
+  sourceId: string,
+  parentId: string | null,
+  filename: string,
+  kind: "file" | "folder",
+): boolean {
+  return kind === "file"
+    ? [...backing.folders.values()].some(
+        (row) =>
+          row.contextSourceId === sourceId &&
+          row.parentId === parentId &&
+          row.name === filename &&
+          row.deletedAt === null,
+      )
+    : [...backing.documents.values()].some(
+        (row) =>
+          row.contextSourceId === sourceId &&
+          row.folderId === parentId &&
+          renderFilename(row.name, row.extension) === filename &&
+          isContentDocumentKind(row.kind) &&
+          row.deletedAt === null,
+      );
+}
+
+function locationPath(
+  backing: InMemoryContextDocumentStoreBacking,
+  parentId: string | null,
+  name: string,
+): string {
+  const segments = [name];
+  while (parentId) {
+    const folder = backing.folders.get(parentId);
+    if (!folder || folder.deletedAt !== null) throw new Error("Namespace parent not found");
+    segments.unshift(folder.name);
+    parentId = folder.parentId;
+  }
+  return segments.join("/");
+}
+
+function claimLocation(
+  backing: InMemoryContextDocumentStoreBacking,
+  sourceId: string,
+  parentId: string | null,
+  name: string,
+): void {
+  backing.previousLocations.delete(
+    JSON.stringify([sourceId, locationPath(backing, parentId, name)]),
+  );
+}
+
+function memoryFileLocations(backing: InMemoryContextDocumentStoreBacking, sourceId: string) {
+  return [...backing.documents.values()]
+    .filter(
+      (row) => row.contextSourceId === sourceId && row.deletedAt === null && row.kind === "content",
+    )
+    .map((row) => ({
+      id: row.id,
+      path: locationPath(
+        backing,
+        row.folderId,
+        row.extension ? `${row.name}.${row.extension}` : row.name,
+      ),
+    }));
+}
+
+function recordMemoryMove(
+  backing: InMemoryContextDocumentStoreBacking,
+  sourceId: string,
+  destinationSourceId: string,
+  previous: ReturnType<typeof memoryFileLocations>,
+): void {
+  const current = memoryFileLocations(backing, destinationSourceId);
+  const byId = new Map(current.map((entry) => [entry.id, entry]));
+  for (const old of previous) {
+    const next = byId.get(old.id);
+    if (next && (sourceId !== destinationSourceId || next.path !== old.path)) {
+      backing.previousLocations.set(JSON.stringify([sourceId, old.path]), old.id);
+    }
+  }
+  for (const entry of current)
+    backing.previousLocations.delete(JSON.stringify([destinationSourceId, entry.path]));
+  for (const folder of backing.folders.values()) {
+    if (folder.contextSourceId === destinationSourceId && folder.deletedAt === null)
+      claimLocation(backing, destinationSourceId, folder.parentId, folder.name);
+  }
 }
 
 /**
@@ -134,6 +225,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
     const documentsSnapshot = new Map(
       [...this.backing.documents].map(([id, row]) => [id, { ...row }] as const),
     );
+    const previousLocationsSnapshot = new Map(this.backing.previousLocations);
     const clockSnapshot = this.backing.clock.value;
     try {
       return await operation();
@@ -142,6 +234,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       for (const entry of foldersSnapshot) this.backing.folders.set(...entry);
       this.backing.documents.clear();
       for (const entry of documentsSnapshot) this.backing.documents.set(...entry);
+      this.backing.previousLocations = previousLocationsSnapshot;
       this.backing.clock.value = clockSnapshot;
       throw error;
     }
@@ -162,6 +255,8 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async createFolder(parentId: string | null, name: string): Promise<ContextFolder> {
+    if (hasOppositeEntry(this.backing, this.sourceId, parentId, name, "folder"))
+      throw new ContextEntryConflictError();
     const existing = await this.findFolder(parentId, name);
     if (existing) return existing;
     const folder: FolderRow = {
@@ -173,6 +268,7 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       updatedAt: this.nextTimestamp(),
     };
     this.backing.folders.set(folder.id, folder);
+    claimLocation(this.backing, folder.contextSourceId, folder.parentId, folder.name);
     return this.publicFolder(folder);
   }
 
@@ -206,6 +302,16 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async upsertDocument(input: UpsertDocumentInput): Promise<ContextDocument> {
+    if (
+      hasOppositeEntry(
+        this.backing,
+        this.sourceId,
+        input.folderId,
+        renderFilename(input.name, input.extension),
+        "file",
+      )
+    )
+      throw new ContextEntryConflictError();
     const existing = await this.findDocument(input.folderId, input.name, input.extension);
     if (existing && existing.fileType !== null) {
       throw new Error(`Cannot replace binary document with tracked text: ${existing.id}`);
@@ -245,10 +351,26 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
+    claimLocation(
+      this.backing,
+      doc.contextSourceId,
+      doc.folderId,
+      doc.extension ? `${doc.name}.${doc.extension}` : doc.name,
+    );
     return this.publicDocument(doc);
   }
 
   async createDocumentRecordIfAbsent(input: UpsertDocumentInput): Promise<ContextDocument | null> {
+    if (
+      hasOppositeEntry(
+        this.backing,
+        this.sourceId,
+        input.folderId,
+        renderFilename(input.name, input.extension),
+        "file",
+      )
+    )
+      return null;
     if (this.backing.documents.has(input.id ?? "")) return null;
     for (const row of this.backing.documents.values()) {
       if (
@@ -281,6 +403,12 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
+    claimLocation(
+      this.backing,
+      doc.contextSourceId,
+      doc.folderId,
+      doc.extension ? `${doc.name}.${doc.extension}` : doc.name,
+    );
     return this.publicDocument(doc);
   }
 
@@ -305,6 +433,16 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
   }
 
   async createBinaryDocument(input: CreateBinaryDocumentInput): Promise<ContextDocument> {
+    if (
+      hasOppositeEntry(
+        this.backing,
+        this.sourceId,
+        input.folderId,
+        renderFilename(input.name, input.extension),
+        "file",
+      )
+    )
+      throw new ContextEntryConflictError();
     const existing = await this.findDocument(input.folderId, input.name, input.extension);
     if (existing) {
       throw new Error(
@@ -329,10 +467,26 @@ export class InMemoryContextDocumentStore implements ContextDocumentStore {
       deletedAt: null,
     };
     this.backing.documents.set(doc.id, doc);
+    claimLocation(
+      this.backing,
+      doc.contextSourceId,
+      doc.folderId,
+      doc.extension ? `${doc.name}.${doc.extension}` : doc.name,
+    );
     return this.publicDocument(doc);
   }
 
   async upsertBinaryDocument(input: UpsertBinaryDocumentInput): Promise<ContextDocument> {
+    if (
+      hasOppositeEntry(
+        this.backing,
+        this.sourceId,
+        input.folderId,
+        renderFilename(input.name, input.extension),
+        "file",
+      )
+    )
+      throw new ContextEntryConflictError();
     const existing = await this.findDocument(input.folderId, input.name, input.extension);
     if (existing) {
       const row = this.backing.documents.get(existing.id);
@@ -458,6 +612,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     return {
       folders: new Map([...this.backing.folders].map(([id, row]) => [id, { ...row }] as const)),
       documents: new Map([...this.backing.documents].map(([id, row]) => [id, { ...row }] as const)),
+      previousLocations: new Map(this.backing.previousLocations),
       clock: this.backing.clock.value,
       availabilityGeneration: this.backing.availabilityGeneration.value,
     };
@@ -468,6 +623,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
     for (const entry of snapshot.folders) this.backing.folders.set(...entry);
     this.backing.documents.clear();
     for (const entry of snapshot.documents) this.backing.documents.set(...entry);
+    this.backing.previousLocations = snapshot.previousLocations;
     this.backing.clock.value = snapshot.clock;
     this.backing.availabilityGeneration.value = snapshot.availabilityGeneration;
   }
@@ -489,6 +645,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
       return result;
     } catch (error) {
       if (this.mutatorTouchedBacking) this.restore(snapshot);
+      if (error instanceof ContextEntryConflictError) return Err({ code: "conflict" });
       throw error;
     } finally {
       releaseMutation();
@@ -524,6 +681,8 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         parentId = existing.id;
         continue;
       }
+      if (hasOppositeEntry(this.backing, sourceId, parentId, name, "folder"))
+        throw new ContextEntryConflictError();
       const folder: FolderRow = {
         id: crypto.randomUUID(),
         contextSourceId: sourceId,
@@ -533,6 +692,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         updatedAt: this.nextTimestamp(),
       };
       this.backing.folders.set(folder.id, folder);
+      claimLocation(this.backing, folder.contextSourceId, folder.parentId, folder.name);
       this.markMutatorWrite();
       parentId = folder.id;
     }
@@ -709,6 +869,7 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         return Err({ code: "invalid_operation" });
       }
 
+      const previousLocations = memoryFileLocations(this.backing, input.source.sourceId);
       if (input.source.kind === "file") {
         if (targetToken?.kind === "file") await this.runBeforeDestructiveWrite();
         await this.runBeforeDestructiveWrite();
@@ -758,6 +919,12 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         }
         sourceRow.updatedAt = this.nextTimestamp();
         this.markMutatorWrite();
+        recordMemoryMove(
+          this.backing,
+          input.source.sourceId,
+          input.destinationSourceId,
+          previousLocations,
+        );
         return Ok({ movedNodeId: sourceRow.id });
       }
 
@@ -799,6 +966,12 @@ export class InMemoryContextTreeMutationStore implements ContextTreeMutationStor
         doc.updatedAt = this.nextTimestamp();
       }
       this.markMutatorWrite();
+      recordMemoryMove(
+        this.backing,
+        input.source.sourceId,
+        input.destinationSourceId,
+        previousLocations,
+      );
       return Ok({ movedNodeId: movedRoot.id });
     });
   }

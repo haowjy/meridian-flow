@@ -5,9 +5,13 @@ export const DEFAULT_WORK_NAME = "Untitled Work";
 export function workSlugBase(name: string): WorkSlug {
   const slug =
     name
+      .normalize("NFKD")
+      .replace(/\p{Mark}/gu, "")
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "work";
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80)
+      .replace(/-+$/g, "") || "work";
   const decoded = decodeWorkSlug(slug);
   if (!decoded) throw new Error(`Generated invalid Work slug: ${slug}`);
   return decoded;

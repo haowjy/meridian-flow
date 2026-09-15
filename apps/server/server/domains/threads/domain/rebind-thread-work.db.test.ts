@@ -48,6 +48,22 @@ else
         ),
       );
 
+    it("allows leaving archived Work but rejects acquiring it again", async () => {
+      await rebind({ kind: "work", workId: ids.workId });
+      await db
+        .update(schema.works)
+        .set({ status: "archived", archivedAt: new Date() })
+        .where(eq(schema.works.id, ids.workId));
+      await expect(rebind({ kind: "none" })).resolves.toMatchObject({
+        after: { kind: "none" },
+        changed: true,
+      });
+      await expect(rebind({ kind: "work", workId: ids.workId })).rejects.toMatchObject({
+        code: "target_work_unavailable",
+      });
+      await expect(repos.threadWorks.findPrimary(ids.threadId)).resolves.toBeNull();
+    });
+
     it("supports none to Work to none while retaining historical membership", async () => {
       await expect(rebind({ kind: "none" })).resolves.toMatchObject({
         before: { kind: "none" },

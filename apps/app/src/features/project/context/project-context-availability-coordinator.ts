@@ -104,6 +104,7 @@ function commandId(
 export class ProjectContextAvailabilityCoordinator {
   private readonly projects = new Map<string, ProjectState>();
   private nextLeaseId = 0;
+  private readonly pendingOpens = new Map<string, Promise<ProjectDocumentOpenResolution>>();
 
   constructor(
     private readonly dependencies: {
@@ -227,11 +228,24 @@ export class ProjectContextAvailabilityCoordinator {
   }
 
   /** One exact-ID authority resolution with its own short-lived project lease. */
-  async resolveForOpen(
+  resolveForOpen(projectId: string, documentId: string): Promise<ProjectDocumentOpenResolution> {
+    const key = JSON.stringify([projectId, documentId]);
+    const pending = this.pendingOpens.get(key);
+    if (pending) return pending;
+    const opening = this.resolveOpen(projectId, documentId).finally(() =>
+      this.pendingOpens.delete(key),
+    );
+    this.pendingOpens.set(key, opening);
+    return opening;
+  }
+
+  private async resolveOpen(
     projectId: string,
     documentId: string,
   ): Promise<ProjectDocumentOpenResolution> {
     const lease = this.attachProject(projectId);
+    // The departing view may release its watch while this explicit open is awaiting authority.
+    lease.watch("open", [{ documentId }]);
     const state = this.project(projectId);
     const requestGeneration = (state.requestGeneration.get(documentId) ?? 0) + 1;
     state.requestGeneration.set(documentId, requestGeneration);
