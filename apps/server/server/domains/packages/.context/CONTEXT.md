@@ -4,6 +4,13 @@ Owns Mars package parsing, import/export, definition editing, catalog projection
 and skill-reference resolution. A package contains `mars.toml`, Agent Markdown,
 and skill directories with `SKILL.md` and supporting files.
 
+Keep the identities distinct: a retained source revision is the complete
+exportable file snapshot; a definition revision is one compiled Agent within
+that snapshot; a catalog entry selects a definition revision for future chats;
+and a thread binding fixes a definition revision plus resolved configuration for
+one conversation. `agent_package_installations` records management head/history
+over retained source revisions. It is not a fifth content or execution owner.
+
 ## Source and compilation
 
 - `domain/mars-source.ts` reads TOML and Markdown frontmatter, preserves structured
@@ -88,7 +95,7 @@ Agent retains its dependency closure; incompatible upstream additions refuse ato
 publication rather than silently changing those references;
 removed pristine definitions leave retained history but no future-chat selection.
 `definition-editing.ts` edits or restores one entity within that complete source.
-The legacy skill-link toggle now versions `skills.available`; it does not activate
+The skill-availability edit versions `skills.available`; it does not activate
 runtime skill loading. `package-export.ts` exports retained files without
 reconstructing source from normalized definitions.
 

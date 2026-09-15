@@ -1,13 +1,13 @@
 # domains/preferences — project preferences
 
-Manages per-project user preferences (thread grouping, pinned threads, default
-agent, auto-resume settings). Copy-on-write merge semantics
+Manages per-project user preferences for thread grouping, pinned threads, and
+auto-resume settings. Copy-on-write merge semantics
 keep in-memory and Drizzle adapters behaviorally identical.
 
 ## What it owns
 
 - **`ProjectPreferencesRepository` port** — `read` / `upsert` with
-  `defaultProjectPreferences()` fallback,.
+  `defaultProjectPreferences()` fallback.
 - **Domain helpers** — `copyProjectPreferences` (defensive copy),
   `mergeProjectPreferences` (patch application),
   `defaultProjectPreferences` (canonical defaults).
@@ -41,9 +41,9 @@ hermetic tests and local reference behavior.
 - **Patch semantics.** Nullable fields (`autoResume`) can be set to `undefined`
   via `UpdateProjectPreferencesRequest`.
 - **Persistence.** Production preferences survive server restart through Drizzle/Postgres.
+
 ## Cross-domain dependencies
 
-- **Consumed by `domains/runtime`** — orchestrator reads preferences for agent
-  selection and auto-resume behavior.
+- **Consumed by `domains/runtime`** — orchestrator reads auto-resume behavior.
 - **Depends on `@meridian/contracts/preferences`** — `ProjectPreferences` type
   and defaults.
