@@ -1,8 +1,8 @@
 /** QueryClient coverage for project-lifetime catalog-to-Works observation. */
 import type { CatalogEntry, CatalogScope } from "@meridian/contracts/protocol";
+import { catalogViewFromSnapshot } from "@meridian/resource-replica";
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
-import { catalogViewFromSnapshot } from "./context-catalog-cache";
 import { projectQueryKeys } from "./project-query-keys";
 
 const api = vi.hoisted(() => ({ listProjectWorks: vi.fn() }));

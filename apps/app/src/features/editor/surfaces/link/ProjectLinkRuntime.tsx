@@ -30,6 +30,8 @@
  * anywhere in the app needs a line that pokes this cache.
  */
 
+import { documentTitleFromUri, parseContextUri } from "@meridian/contracts/context-uri";
+import type { DocumentLinkTarget, ResolvedDocumentLink } from "@meridian/contracts/protocol";
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useMemo } from "react";
 
@@ -46,7 +48,11 @@ import {
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 
 import { useEditorScope } from "../../editor-scope";
-import { useLinkableDocuments } from "./useLinkableDocuments";
+import {
+  type LinkableDocument,
+  type LinkableDocumentIndex,
+  useLinkableDocuments,
+} from "./useLinkableDocuments";
 
 /**
  * How long a follow waits before admitting it is still asking. Under this, the
@@ -54,6 +60,73 @@ import { useLinkableDocuments } from "./useLinkableDocuments";
  * the document open; over it, a silent click would read as a dead control.
  */
 const CHECKING_DELAY_MS = 250;
+
+/** Resolve against the same projected catalog that offers link candidates. */
+export function resolveProjectedDocumentLink(
+  documents: readonly LinkableDocument[],
+  target: DocumentLinkTarget,
+): ResolvedDocumentLink | null | undefined {
+  let matches: readonly LinkableDocument[];
+  if (target.kind === "wikilink") {
+    const name = target.name.trim().toLowerCase();
+    matches = documents.filter((document) =>
+      [document.filename, document.title, ...(document.aliases ?? [])].some(
+        (candidate) => candidate.trim().toLowerCase() === name,
+      ),
+    );
+  } else {
+    const base = parseContextUri(target.kind === "scheme" ? target.uri : target.baseUri);
+    if (!base.ok || !base.value.path) return undefined;
+    const requestedPath =
+      target.kind === "relative"
+        ? relativeDocumentPath(base.value.path, target.path)
+        : base.value.path;
+    if (!requestedPath) return undefined;
+    matches = documents.filter((document) => {
+      const candidate = parseContextUri(document.uri);
+      if (!candidate.ok || candidate.value.scheme !== base.value.scheme) return false;
+      if (!sameDocumentPath(candidate.value.path, requestedPath)) return false;
+      if (base.value.authority.kind === "contextual") return true;
+      return JSON.stringify(candidate.value.authority) === JSON.stringify(base.value.authority);
+    });
+  }
+  if (matches.length === 0) return undefined;
+  if (matches.length !== 1) return null;
+  const document = matches[0];
+  if (!document) return null;
+  const parsed = parseContextUri(document.uri);
+  if (!parsed.ok) return null;
+  return {
+    documentId: document.documentId,
+    title: documentTitleFromUri(document.uri) ?? document.title,
+    scheme: parsed.value.scheme,
+    path: parsed.value.path,
+    uri: document.uri,
+    workId: document.workId,
+  };
+}
+
+function sameDocumentPath(candidate: string, requested: string): boolean {
+  return (
+    candidate === requested ||
+    (candidate.lastIndexOf(".") > candidate.lastIndexOf("/") &&
+      candidate.slice(0, candidate.lastIndexOf(".")) === requested)
+  );
+}
+
+function relativeDocumentPath(base: string, relative: string): string | null {
+  if (!relative || relative.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(relative)) return null;
+  const segments = base.split("/");
+  segments.pop();
+  for (const part of relative.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (segments.length === 0) return null;
+      segments.pop();
+    } else segments.push(part);
+  }
+  return segments.length > 0 ? segments.join("/") : null;
+}
 
 export function ProjectLinkRuntime({
   editor,
@@ -63,10 +136,29 @@ export function ProjectLinkRuntime({
   documentId: string;
 }) {
   const scope = useEditorScope();
+  const index = useLinkableDocuments(scope);
+  return (
+    <ProjectLinkRuntimeWithIndex editor={editor} documentId={documentId} index={index} active />
+  );
+}
+
+/** Runtime over the index already consumed by the editor's wikilink completion surface. */
+export function ProjectLinkRuntimeWithIndex({
+  editor,
+  documentId,
+  index,
+  active,
+}: {
+  editor: Editor | null;
+  documentId: string;
+  index: LinkableDocumentIndex;
+  active: boolean;
+}) {
+  const scope = useEditorScope();
   const { projectId, workId } = scope;
   const resolution = useMemo(() => getLinkResolution(editor), [editor]);
   const surface = useMemo(() => getLinkSurface(editor), [editor]);
-  const { documents, revision } = useLinkableDocuments(scope);
+  const { documents, revision, complete } = index;
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
 
   // What this document's relative links are relative to, read out of the same
@@ -79,7 +171,7 @@ export function ProjectLinkRuntime({
   );
 
   useEffect(() => {
-    if (!resolution || !projectId) return;
+    if (!active || !resolution || !projectId) return;
     return resolution.registerResolver(async (target) => {
       const request = documentLinkTarget(target, baseUri ?? "");
       // A relative path is meaningless without the URI of the document holding
@@ -91,6 +183,8 @@ export function ProjectLinkRuntime({
       if (request.kind === "relative" && !baseUri) {
         throw new Error("relative link has no base document URI yet");
       }
+      const local = complete ? resolveProjectedDocumentLink(documents, request) : undefined;
+      if (local !== undefined) return local;
       const { document } = await resolveDocumentLink(projectId, {
         workId,
         target: request,
@@ -99,7 +193,7 @@ export function ProjectLinkRuntime({
     });
     // `revision` is in here without being read: registering against a different
     // catalog is how an answer about the old one becomes unreachable.
-  }, [baseUri, projectId, resolution, revision, workId]);
+  }, [active, baseUri, complete, documents, projectId, resolution, revision, workId]);
 
   const follow = useCallback(
     async (target: LinkTarget, disposition: LinkFollowDisposition) => {
@@ -144,12 +238,12 @@ export function ProjectLinkRuntime({
   );
 
   useEffect(() => {
-    if (!surface || !projectId) return;
+    if (!active || !surface || !projectId) return;
     const navigate: InternalLinkNavigator = ({ target, disposition }) => {
       void follow(target, disposition);
     };
     return surface.registerNavigator(navigate);
-  }, [follow, projectId, surface]);
+  }, [active, follow, projectId, surface]);
 
   return null;
 }

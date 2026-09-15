@@ -27,6 +27,127 @@ if (!enabled || !databaseUrl) {
         expect(tail[index]?.when).toBeGreaterThan(tail[index - 1]?.when ?? 0);
       }
     });
+    it("moves only provisional Scratch writing into Unfiled without changing document identity", {
+      timeout: 90_000,
+    }, async () => {
+      await withPopulatedMigrationDatabase({
+        databaseUrl,
+        seedBefore: "0086_unfiled_provisional_documents",
+        seed: async (target) => {
+          await target.unsafe(`
+INSERT INTO users(id,external_id,email) VALUES ('00000000-0000-4000-8000-000000000099','unfiled-migration','unfiled-migration@test.invalid');
+INSERT INTO projects(id,user_id,name,slug) VALUES ('00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000099','Probe','probe');
+INSERT INTO works(id,project_id,created_by_user_id,name,slug,status) VALUES ('00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000099','Archived','archived','archived');
+INSERT INTO context_sources(id,project_id,name,slug) VALUES ('00000000-0000-4000-8000-000000000003','00000000-0000-4000-8000-000000000001','Shared','scratch'),('00000000-0000-4000-8000-000000000005','00000000-0000-4000-8000-000000000001','Unfiled','unfiled');
+INSERT INTO context_sources(id,work_id,name,slug,scope) VALUES ('00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000002','Scratch','scratch','work');
+INSERT INTO folders(id,context_source_id,name) VALUES ('00000000-0000-4000-8000-000000000006','00000000-0000-4000-8000-000000000004','Nested'),('00000000-0000-4000-8000-000000000007','00000000-0000-4000-8000-000000000005','Untitled 2.md');
+INSERT INTO documents(id,context_source_id,folder_id,name,provisional_name,markdown_projection) VALUES ('00000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000003',NULL,'Untitled 1',true,'one'),('00000000-0000-4000-8000-000000000011','00000000-0000-4000-8000-000000000004','00000000-0000-4000-8000-000000000006','Untitled 1',true,'two'),('00000000-0000-4000-8000-000000000012','00000000-0000-4000-8000-000000000004',NULL,'Keep scratch',false,'three'),('00000000-0000-4000-8000-000000000013','00000000-0000-4000-8000-000000000005',NULL,'Untitled 1',false,'occupied');
+INSERT INTO context_catalog_scope_heads(scope_key,scope) VALUES ('project:probe',jsonb_build_object('kind','project','projectId','00000000-0000-4000-8000-000000000001'));
+          `);
+        },
+        verify: async (target) => {
+          const documents = await target`
+            SELECT d.id, s.slug, d.name, d.folder_id, d.markdown_projection
+            FROM documents d JOIN context_sources s ON s.id = d.context_source_id
+            WHERE d.kind = 'content' ORDER BY d.id`;
+          expect(documents).toEqual([
+            {
+              id: "00000000-0000-4000-8000-000000000010",
+              slug: "unfiled",
+              name: "Untitled 3",
+              folder_id: null,
+              markdown_projection: "one",
+            },
+            {
+              id: "00000000-0000-4000-8000-000000000011",
+              slug: "unfiled",
+              name: "Untitled 4",
+              folder_id: null,
+              markdown_projection: "two",
+            },
+            {
+              id: "00000000-0000-4000-8000-000000000012",
+              slug: "scratch",
+              name: "Keep scratch",
+              folder_id: null,
+              markdown_projection: "three",
+            },
+            {
+              id: "00000000-0000-4000-8000-000000000013",
+              slug: "unfiled",
+              name: "Untitled 1",
+              folder_id: null,
+              markdown_projection: "occupied",
+            },
+          ]);
+          expect(
+            await target`SELECT path, document_id FROM document_previous_locations ORDER BY document_id`,
+          ).toEqual([
+            { path: "Untitled 1.md", document_id: "00000000-0000-4000-8000-000000000010" },
+            { path: "Nested/Untitled 1.md", document_id: "00000000-0000-4000-8000-000000000011" },
+          ]);
+          expect(await target`SELECT scope_key FROM context_catalog_scope_heads`).toEqual([]);
+          expect(await target`SELECT authority_key FROM context_availability_heads`).toEqual([
+            { authority_key: "project:00000000-0000-4000-8000-000000000001" },
+          ]);
+          await target.unsafe(
+            await readFile(
+              new URL("./migrations/0086_unfiled_provisional_documents.sql", import.meta.url),
+              "utf8",
+            ),
+          );
+          expect(
+            await target`
+            SELECT d.id, s.slug, d.name, d.folder_id, d.markdown_projection
+            FROM documents d JOIN context_sources s ON s.id = d.context_source_id
+            WHERE d.kind = 'content' ORDER BY d.id`,
+          ).toEqual(documents);
+        },
+      });
+    });
+
+    it("backfills readable project and untitled chat handles with deleted reservations", {
+      timeout: 90_000,
+    }, async () => {
+      await withPopulatedMigrationDatabase({
+        databaseUrl,
+        seedBefore: "0083_watery_wind_dancer",
+        seed: async (target) => {
+          await target.unsafe(`
+            INSERT INTO users (id, external_id, email) VALUES ('00000000-0000-4000-8000-000000000231', 'readable-upgrade', 'readable-upgrade@test.invalid');
+            INSERT INTO projects (id, user_id, name, slug, created_at, deleted_at) VALUES
+              ('00000000-0000-4000-8000-000000000232', '00000000-0000-4000-8000-000000000231', 'Silver Moon', 'silver-moon-12345678', '2026-01-01', '2026-01-02'),
+              ('00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Silver Moon', 'silver-moon-87654321', '2026-01-03', NULL);
+            INSERT INTO threads (id, project_id, created_by_user_id, title, slug) VALUES
+              ('00000000-0000-4000-8000-000000000234', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', '', NULL),
+              ('00000000-0000-4000-8000-000000000235', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Chat', 'chat'),
+              ('00000000-0000-4000-8000-000000000236', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Fight Scene', NULL);
+            INSERT INTO threads (id, project_id, created_by_user_id, title, slug, deleted_at) VALUES
+              ('00000000-0000-4000-8000-000000000237', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Deleted Chat', 'chat', '2026-01-01');
+          `);
+        },
+        verify: async (target) => {
+          expect(
+            await target`SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'threads' AND column_name = 'slug'`,
+          ).toEqual([{ is_nullable: "NO" }]);
+          await expect(
+            target`INSERT INTO threads (id, project_id, created_by_user_id, title) VALUES ('00000000-0000-4000-8000-000000000238', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Missing handle')`,
+          ).rejects.toMatchObject({ code: "23502" });
+          expect(
+            await target`SELECT slug FROM projects WHERE user_id = '00000000-0000-4000-8000-000000000231' ORDER BY created_at`,
+          ).toEqual([{ slug: "silver-moon" }, { slug: "silver-moon-2" }]);
+          expect(
+            await target`SELECT slug FROM threads WHERE project_id = '00000000-0000-4000-8000-000000000233' ORDER BY id`,
+          ).toEqual([
+            { slug: "chat-3" },
+            { slug: "chat" },
+            { slug: "fight-scene" },
+            { slug: "chat-2" },
+          ]);
+        },
+      });
+    });
+
     it("deletes working-set rows whose routes predate stable identity", {
       timeout: 90_000,
     }, async () => {
@@ -105,7 +226,7 @@ if (!enabled || !databaseUrl) {
         await target.end();
       }
     });
-    it("backfills active Work slugs without letting deleted Works reserve them", {
+    it("preserves active Work handles while reserving disambiguated deleted handles", {
       timeout: 90_000,
     }, async () => {
       const ids = {
@@ -146,8 +267,8 @@ if (!enabled || !databaseUrl) {
           const slugs = new Map(rows.map((row) => [row.id, row.slug]));
           expect(slugs.get(ids.live)).toBe("book-2");
           expect(slugs.get(ids.archived)).toBe("book-2-2");
-          expect(slugs.get(ids.deletedFirst)).toBe("book-2");
-          expect(slugs.get(ids.deletedLast)).toBe("book-2");
+          expect(slugs.get(ids.deletedFirst)).toBe("book-2-3");
+          expect(slugs.get(ids.deletedLast)).toBe("book-2-4");
         },
       });
     });

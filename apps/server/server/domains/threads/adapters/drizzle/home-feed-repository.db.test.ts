@@ -52,8 +52,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const threadId = "00000000-0000-4000-8000-000000000510";
       const assistantId = "00000000-0000-4000-8000-000000000512";
       await db.execute(sql`
-        INSERT INTO threads (id, project_id, created_by_user_id, title, status)
-        VALUES (${threadId}::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid, 'Visible', 'idle')
+        INSERT INTO threads (slug, id, project_id, created_by_user_id, title, status)
+        VALUES (${threadId}, ${threadId}::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid, 'Visible', 'idle')
       `);
       await db.execute(sql`
         INSERT INTO turns (id, thread_id, role, status, created_at, completed_at)
@@ -123,8 +123,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("paginates equal microsecond activity across four pages with featured exclusivity", async () => {
       const db = database.current;
       await db.execute(sql`
-        INSERT INTO threads (id, project_id, created_by_user_id, title, status)
-        SELECT md5('equal-thread-' || g)::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid,
+        INSERT INTO threads (slug, id, project_id, created_by_user_id, title, status)
+        SELECT md5('equal-thread-' || g), md5('equal-thread-' || g)::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid,
           'Equal ' || g, 'idle' FROM generate_series(1, 76) g
       `);
       await db.execute(sql`
@@ -185,8 +185,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const activeId = "00000000-0000-4000-8000-000000000522";
       const abandonedId = "00000000-0000-4000-8000-000000000523";
       await db.execute(sql`
-        INSERT INTO threads (id, project_id, created_by_user_id, title, status)
-        VALUES (${threadId}::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid, 'Lineage', 'idle')
+        INSERT INTO threads (slug, id, project_id, created_by_user_id, title, status)
+        VALUES (${threadId}, ${threadId}::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid, 'Lineage', 'idle')
       `);
       await db.execute(sql`
         INSERT INTO turns (id, thread_id, parent_turn_id, role, status, created_at, completed_at) VALUES
@@ -242,8 +242,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ('00000000-0000-4000-8000-000000000532', ${PROJECT_ID}::uuid, ${USER_ID}::uuid, 'Secondary', 'secondary', 'active')
       `);
       await db.execute(sql`
-        INSERT INTO threads (id, project_id, created_by_user_id, title, status)
-        VALUES (${threadId}::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid, 'Empty', 'idle')
+        INSERT INTO threads (slug, id, project_id, created_by_user_id, title, status)
+        VALUES (${threadId}, ${threadId}::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid, 'Empty', 'idle')
       `);
       await db.execute(sql`
         INSERT INTO thread_works (thread_id, work_id, project_id, is_primary) VALUES
@@ -294,8 +294,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("keeps a generated 1,000-chat read bounded and reports diagnostic timing", async () => {
       const db = database.current;
       await db.execute(sql`
-        INSERT INTO threads (id, project_id, created_by_user_id, title, status, created_at)
-        SELECT md5('home-thread-' || g)::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid,
+        INSERT INTO threads (slug, id, project_id, created_by_user_id, title, status, created_at)
+        SELECT md5('home-thread-' || g), md5('home-thread-' || g)::uuid, ${PROJECT_ID}::uuid, ${USER_ID}::uuid,
           'Chat ' || g, 'idle', '2026-08-01T00:00:00Z'::timestamptz + g * interval '1 microsecond'
         FROM generate_series(1, 1000) g
       `);

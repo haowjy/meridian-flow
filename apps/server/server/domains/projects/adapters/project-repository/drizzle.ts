@@ -2,7 +2,7 @@ import type { Project } from "@meridian/contracts/projects";
 import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { projects } from "@meridian/database/schema";
-import { and, desc, eq, ilike, isNull, or } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
@@ -15,7 +15,7 @@ import type {
   ProjectRepository,
   UpdateProjectInput,
 } from "../../ports/project-repository.js";
-import { DEFAULT_PROJECT_TITLE, deriveSlug } from "./shared.js";
+import { DEFAULT_PROJECT_TITLE, nextProjectSlug } from "./shared.js";
 
 type ProjectRow = typeof projects.$inferSelect;
 function mapProject(row: ProjectRow): Project {
@@ -48,13 +48,25 @@ export function createDrizzleProjectRepository(
       return runInDrizzleTransaction(db, async () => {
         const id = input.id ?? crypto.randomUUID();
         const title = input.title?.trim() || DEFAULT_PROJECT_TITLE;
-        const [row] = await currentDrizzleDb(db)
+        const tx = currentDrizzleDb(db);
+        // Bootstrap and ordinary creation share the owner namespace lock.
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${input.userId}, 0::bigint))`,
+        );
+        const reserved = await tx
+          .select({ slug: projects.slug })
+          .from(projects)
+          .where(eq(projects.userId, input.userId));
+        const [row] = await tx
           .insert(projects)
           .values({
             id,
             userId: input.userId,
             name: title,
-            slug: deriveSlug(title, id),
+            slug: nextProjectSlug(
+              title,
+              reserved.map((row) => row.slug),
+            ),
             isPersonal: false,
             systemPrompt: input.description ?? null,
           })
@@ -72,6 +84,16 @@ export function createDrizzleProjectRepository(
         .select()
         .from(projects)
         .where(eq(projects.id, id))
+        .limit(1);
+      return row ? mapProject(row) : null;
+    },
+    async findLiveByOwnerSlug(userId: UserId, slug: string): Promise<Project | null> {
+      const [row] = await currentDrizzleDb(db)
+        .select()
+        .from(projects)
+        .where(
+          and(eq(projects.userId, userId), eq(projects.slug, slug), isNull(projects.deletedAt)),
+        )
         .limit(1);
       return row ? mapProject(row) : null;
     },

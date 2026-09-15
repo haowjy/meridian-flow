@@ -47,7 +47,7 @@ export const threads = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull().default(""),
-    slug: text("slug"),
+    slug: text("slug").notNull(),
     kind: text("kind").notNull().default("primary"),
     status: text("status").notNull().default("idle"),
     currentAgentId: text("current_agent_id"),
@@ -71,9 +71,7 @@ export const threads = pgTable(
   },
   (table) => [
     unique("threads_project_id_unique").on(table.projectId, table.id),
-    uniqueIndex("threads_project_slug_active")
-      .on(table.projectId, table.slug)
-      .where(sql`${table.slug} IS NOT NULL AND ${table.deletedAt} IS NULL`),
+    uniqueIndex("threads_project_slug").on(table.projectId, table.slug),
     index("threads_project_updated_active")
       .on(table.projectId, table.updatedAt.desc())
       .where(sql`${table.deletedAt} IS NULL`),

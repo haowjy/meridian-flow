@@ -23,9 +23,9 @@ import { Route as AuthenticatedAuthCheckRouteImport } from './routes/_authentica
 import { Route as AuthenticatedProjectsIndexRouteImport } from './routes/_authenticated/projects/index'
 import { Route as ApiAuthDevLoginRouteImport } from './routes/api/auth/dev-login'
 import { Route as ApiAuthCallbackRouteImport } from './routes/api/auth/callback'
-import { Route as AuthenticatedProjectProjectIdRouteImport } from './routes/_authenticated/project/$projectId'
+import { Route as AuthenticatedPProjectSlugRouteImport } from './routes/_authenticated/p/$projectSlug'
 import { Route as AuthenticatedChatThreadIdRouteImport } from './routes/_authenticated/chat/$threadId'
-import { Route as AuthenticatedProjectsProjectIdIndexRouteImport } from './routes/_authenticated/projects/$projectId/index'
+import { Route as AuthenticatedPProjectSlugSplatRouteImport } from './routes/_authenticated/p/$projectSlug/$'
 
 const LogoutRoute = LogoutRouteImport.update({
   id: '/logout',
@@ -107,10 +107,10 @@ const ApiAuthCallbackRoute = ApiAuthCallbackRouteImport.update({
   path: '/api/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedProjectProjectIdRoute =
-  AuthenticatedProjectProjectIdRouteImport.update({
-    id: '/project/$projectId',
-    path: '/project/$projectId',
+const AuthenticatedPProjectSlugRoute =
+  AuthenticatedPProjectSlugRouteImport.update({
+    id: '/p/$projectSlug',
+    path: '/p/$projectSlug',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
 const AuthenticatedChatThreadIdRoute =
@@ -119,11 +119,11 @@ const AuthenticatedChatThreadIdRoute =
     path: '/chat/$threadId',
     getParentRoute: () => AuthenticatedRoute,
   } as any)
-const AuthenticatedProjectsProjectIdIndexRoute =
-  AuthenticatedProjectsProjectIdIndexRouteImport.update({
-    id: '/projects/$projectId/',
-    path: '/projects/$projectId/',
-    getParentRoute: () => AuthenticatedRoute,
+const AuthenticatedPProjectSlugSplatRoute =
+  AuthenticatedPProjectSlugSplatRouteImport.update({
+    id: '/$',
+    path: '/$',
+    getParentRoute: () => AuthenticatedPProjectSlugRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -140,11 +140,11 @@ export interface FileRoutesByFullPath {
   '/proto/spike-layout': typeof ProtoSpikeLayoutRoute
   '/proto/': typeof ProtoIndexRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
-  '/project/$projectId': typeof AuthenticatedProjectProjectIdRoute
+  '/p/$projectSlug': typeof AuthenticatedPProjectSlugRouteWithChildren
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/projects/': typeof AuthenticatedProjectsIndexRoute
-  '/projects/$projectId/': typeof AuthenticatedProjectsProjectIdIndexRoute
+  '/p/$projectSlug/$': typeof AuthenticatedPProjectSlugSplatRoute
 }
 export interface FileRoutesByTo {
   '/dev-login': typeof DevLoginRoute
@@ -160,11 +160,11 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/proto': typeof ProtoIndexRoute
   '/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
-  '/project/$projectId': typeof AuthenticatedProjectProjectIdRoute
+  '/p/$projectSlug': typeof AuthenticatedPProjectSlugRouteWithChildren
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/projects': typeof AuthenticatedProjectsIndexRoute
-  '/projects/$projectId': typeof AuthenticatedProjectsProjectIdIndexRoute
+  '/p/$projectSlug/$': typeof AuthenticatedPProjectSlugSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -182,11 +182,11 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/proto/': typeof ProtoIndexRoute
   '/_authenticated/chat/$threadId': typeof AuthenticatedChatThreadIdRoute
-  '/_authenticated/project/$projectId': typeof AuthenticatedProjectProjectIdRoute
+  '/_authenticated/p/$projectSlug': typeof AuthenticatedPProjectSlugRouteWithChildren
   '/api/auth/callback': typeof ApiAuthCallbackRoute
   '/api/auth/dev-login': typeof ApiAuthDevLoginRoute
   '/_authenticated/projects/': typeof AuthenticatedProjectsIndexRoute
-  '/_authenticated/projects/$projectId/': typeof AuthenticatedProjectsProjectIdIndexRoute
+  '/_authenticated/p/$projectSlug/$': typeof AuthenticatedPProjectSlugSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -204,11 +204,11 @@ export interface FileRouteTypes {
     | '/proto/spike-layout'
     | '/proto/'
     | '/chat/$threadId'
-    | '/project/$projectId'
+    | '/p/$projectSlug'
     | '/api/auth/callback'
     | '/api/auth/dev-login'
     | '/projects/'
-    | '/projects/$projectId/'
+    | '/p/$projectSlug/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/dev-login'
@@ -224,11 +224,11 @@ export interface FileRouteTypes {
     | '/'
     | '/proto'
     | '/chat/$threadId'
-    | '/project/$projectId'
+    | '/p/$projectSlug'
     | '/api/auth/callback'
     | '/api/auth/dev-login'
     | '/projects'
-    | '/projects/$projectId'
+    | '/p/$projectSlug/$'
   id:
     | '__root__'
     | '/_authenticated'
@@ -245,11 +245,11 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/proto/'
     | '/_authenticated/chat/$threadId'
-    | '/_authenticated/project/$projectId'
+    | '/_authenticated/p/$projectSlug'
     | '/api/auth/callback'
     | '/api/auth/dev-login'
     | '/_authenticated/projects/'
-    | '/_authenticated/projects/$projectId/'
+    | '/_authenticated/p/$projectSlug/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -380,11 +380,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/project/$projectId': {
-      id: '/_authenticated/project/$projectId'
-      path: '/project/$projectId'
-      fullPath: '/project/$projectId'
-      preLoaderRoute: typeof AuthenticatedProjectProjectIdRouteImport
+    '/_authenticated/p/$projectSlug': {
+      id: '/_authenticated/p/$projectSlug'
+      path: '/p/$projectSlug'
+      fullPath: '/p/$projectSlug'
+      preLoaderRoute: typeof AuthenticatedPProjectSlugRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/chat/$threadId': {
@@ -394,15 +394,29 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedChatThreadIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/projects/$projectId/': {
-      id: '/_authenticated/projects/$projectId/'
-      path: '/projects/$projectId'
-      fullPath: '/projects/$projectId/'
-      preLoaderRoute: typeof AuthenticatedProjectsProjectIdIndexRouteImport
-      parentRoute: typeof AuthenticatedRoute
+    '/_authenticated/p/$projectSlug/$': {
+      id: '/_authenticated/p/$projectSlug/$'
+      path: '/$'
+      fullPath: '/p/$projectSlug/$'
+      preLoaderRoute: typeof AuthenticatedPProjectSlugSplatRouteImport
+      parentRoute: typeof AuthenticatedPProjectSlugRoute
     }
   }
 }
+
+interface AuthenticatedPProjectSlugRouteChildren {
+  AuthenticatedPProjectSlugSplatRoute: typeof AuthenticatedPProjectSlugSplatRoute
+}
+
+const AuthenticatedPProjectSlugRouteChildren: AuthenticatedPProjectSlugRouteChildren =
+  {
+    AuthenticatedPProjectSlugSplatRoute: AuthenticatedPProjectSlugSplatRoute,
+  }
+
+const AuthenticatedPProjectSlugRouteWithChildren =
+  AuthenticatedPProjectSlugRoute._addFileChildren(
+    AuthenticatedPProjectSlugRouteChildren,
+  )
 
 interface AuthenticatedRouteChildren {
   AuthenticatedAuthCheckRoute: typeof AuthenticatedAuthCheckRoute
@@ -410,9 +424,8 @@ interface AuthenticatedRouteChildren {
   AuthenticatedHomeRoute: typeof AuthenticatedHomeRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedChatThreadIdRoute: typeof AuthenticatedChatThreadIdRoute
-  AuthenticatedProjectProjectIdRoute: typeof AuthenticatedProjectProjectIdRoute
+  AuthenticatedPProjectSlugRoute: typeof AuthenticatedPProjectSlugRouteWithChildren
   AuthenticatedProjectsIndexRoute: typeof AuthenticatedProjectsIndexRoute
-  AuthenticatedProjectsProjectIdIndexRoute: typeof AuthenticatedProjectsProjectIdIndexRoute
 }
 
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
@@ -421,10 +434,8 @@ const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedHomeRoute: AuthenticatedHomeRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedChatThreadIdRoute: AuthenticatedChatThreadIdRoute,
-  AuthenticatedProjectProjectIdRoute: AuthenticatedProjectProjectIdRoute,
+  AuthenticatedPProjectSlugRoute: AuthenticatedPProjectSlugRouteWithChildren,
   AuthenticatedProjectsIndexRoute: AuthenticatedProjectsIndexRoute,
-  AuthenticatedProjectsProjectIdIndexRoute:
-    AuthenticatedProjectsProjectIdIndexRoute,
 }
 
 const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(

@@ -147,12 +147,15 @@ vi.mock("@/features/chat/DraftReviewProvider", () => ({
 }));
 vi.mock("@/features/project/context/account-feature-context", () => ({
   useLiveDocumentSessionRegistry: () => registry,
+  useOptionalAccountResourceReplica: () => null,
+  useAccountResourceProjection: () => ({ snapshot: null, records: [], error: null }),
 }));
 vi.mock("./useInlineReviewSync", () => ({ useInlineReviewSync: () => {} }));
 vi.mock("./SyncStatus", () => ({ SyncStatus: () => null }));
 vi.mock("./surfaces/link", () => ({
   ProjectLinkRuntime: () => null,
-  useLinkableDocuments: () => ({ documents: [] }),
+  ProjectLinkRuntimeWithIndex: () => null,
+  useLinkableDocuments: () => ({ documents: [], revision: "", complete: false }),
 }));
 // Lifetime is about which editor exists, not what hangs off it. An empty
 // registry keeps every lane's own dependencies out of this suite.
@@ -230,6 +233,27 @@ describe("editor lifetime", () => {
 
       await act(async () => {
         resolveServer();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(mountedEditor()).toBeDefined();
+    });
+  });
+
+  it("binds verified local content without waiting for an offline server sync", async () => {
+    const documentId = "local-horizon-controlled";
+    let resolvePersistence!: () => void;
+    sessionHorizons.set(documentId, {
+      localPersistence: new Promise((resolve) => {
+        resolvePersistence = resolve;
+      }),
+      firstServerSync: new Promise(() => undefined),
+    });
+
+    await withReactRoot(<ExactLiveEditor documentId={documentId} localContentReady />, async () => {
+      expect(document.querySelector(".ProseMirror")).toBeNull();
+      await act(async () => {
+        resolvePersistence();
         await Promise.resolve();
         await Promise.resolve();
       });

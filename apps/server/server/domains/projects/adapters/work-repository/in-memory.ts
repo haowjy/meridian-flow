@@ -56,7 +56,7 @@ export function createInMemoryWorkRepository(
       slug: nextWorkSlug(
         input.name,
         [...rows.values()]
-          .filter((work) => work.projectId === input.projectId && work.deletedAt === null)
+          .filter((work) => work.projectId === input.projectId)
           .map((work) => work.slug),
       ),
       goal: input.goal ?? null,
@@ -107,6 +107,7 @@ export function createInMemoryWorkRepository(
     },
 
     async create(input: CreateWorkInput): Promise<Work> {
+      if (input.id && rows.has(input.id)) throw new Error(`Work already exists: ${input.id}`);
       const work = build(input);
       if (nameIsTaken(work.projectId, work.name)) throw new WorkNameConflictError();
       rows.set(work.id, work);

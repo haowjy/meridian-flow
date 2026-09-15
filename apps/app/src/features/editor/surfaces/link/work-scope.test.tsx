@@ -47,17 +47,33 @@ vi.mock("@/client/api/document-links-api", () => ({
     resolveDocumentLink(projectId, body),
 }));
 vi.mock("@/client/query/useContextCatalog", () => ({
-  useContextCatalogView: (
+  useContextCatalogViews: (
     _projectId: string,
-    scheme: string,
+    schemes: readonly string[],
     options?: { enabled?: boolean; workId?: string | null },
-  ) => ({
-    catalog:
-      options?.enabled === false ? null : (trees.get(treeKey(scheme, options?.workId)) ?? null),
-    isError: false,
-    isFetching: false,
-    refetch: () => {},
-  }),
+  ) =>
+    Object.fromEntries(
+      schemes.map((scheme) => [
+        scheme,
+        {
+          catalog:
+            options?.enabled === false
+              ? null
+              : (trees.get(
+                  treeKey(
+                    scheme,
+                    scheme === "scratch" || scheme === "uploads" ? options?.workId : null,
+                  ),
+                ) ?? null),
+          isComplete: false,
+          isError: false,
+          isFetching: false,
+          refetch: () => {},
+        } satisfies ReturnType<
+          typeof import("@/client/query/useContextCatalog").useContextCatalogView
+        >,
+      ]),
+    ),
 }));
 vi.mock("@/features/project/context/open-project-document", () => ({
   useOpenProjectDocument: () => async () => true,
@@ -125,6 +141,30 @@ describe("the editor's Work", () => {
 
     expect(candidates({ projectId: "project-1", workId: null })).toEqual([
       { title: "chapter-1", location: "" },
+    ]);
+  });
+
+  it("keeps noneditable files in the local resolver candidate set", () => {
+    trees.set(
+      treeKey("manuscript"),
+      directory("manuscript://", [
+        file("Hero.md", "manuscript://Hero.md"),
+        file("Hero.pdf", "manuscript://Hero.pdf", false),
+      ]),
+    );
+
+    expect(candidates({ projectId: "project-1", workId: null })).toEqual([
+      { title: "Hero", location: "" },
+      { title: "Hero", location: "" },
+    ]);
+  });
+
+  it("excludes No Work files while resolving inside a Work", () => {
+    trees.set(treeKey("unfiled"), unfiledTree("Hero.md"));
+    trees.set(treeKey("scratch", "work-1"), scratchTree("work-1", "Hero.md"));
+
+    expect(candidates({ projectId: "project-1", workId: "work-1" })).toEqual([
+      { title: "Hero", location: "Scratch" },
     ]);
   });
 });
@@ -359,24 +399,31 @@ function scratchTree(workSlug: string, ...names: readonly string[]): CatalogCont
   );
 }
 
+function unfiledTree(...names: readonly string[]): CatalogContextView {
+  return directory(
+    "unfiled://",
+    names.map((name) => file(name, `unfiled://${name}`)),
+  );
+}
+
 function directory(_uri: string, children: CatalogNode[]): CatalogContextView {
   return {
     files: () => children.filter((node): node is CatalogFile => node.kind === "file"),
   } as unknown as CatalogContextView;
 }
 
-function file(name: string, uri: string): CatalogNode {
-  return {
-    kind: "file",
+function file(name: string, uri: string, editable = true): CatalogNode {
+  const base = {
+    kind: "file" as const,
     entryId: `document-${name}`,
     parentId: uri,
     documentId: `document-${name}`,
     name,
     path: `/${name}`,
     uri,
-    provisionalName: false,
-    editable: true,
-    filetype: "markdown",
-    schemaType: "document",
+    provisionalName: false as const,
   };
+  return editable
+    ? { ...base, editable: true, filetype: "markdown", schemaType: "document" }
+    : { ...base, editable: false, disposition: "binary", fileType: "binary" };
 }

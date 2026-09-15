@@ -1,8 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { getAuth, getSignInUrl } from "@workos/authkit-tanstack-react-start";
-import { lazy, Suspense, useCallback, useEffect, useMemo } from "react";
+import { lazy, Suspense, useCallback, useEffect } from "react";
 import { getAccountSettings } from "@/client/api/account-api";
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
@@ -13,7 +13,7 @@ import { AppQueryProvider } from "@/client/query/AppQueryProvider";
 import {
   loadProjectList,
   ProjectStoreProvider,
-  rehydrateContextDesks,
+  rehydrateEditorWorkspace,
   ThreadStoreProvider,
   useIndependentProjectsStore,
 } from "@/client/stores";
@@ -21,25 +21,18 @@ import { configureWorkingSetSync } from "@/client/working-set";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
-import {
-  isSettingsSection,
-  SettingsDialog,
-  type SettingsSection,
-} from "@/features/account/SettingsDialog";
+import { SettingsDialog } from "@/features/account/SettingsDialog";
+import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
+import { CreationProvider } from "@/features/chat/CreationProvider";
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
 import {
   AccountFeatureComposition,
-  useLocalUntitledOwner,
-  useProjectContextAvailabilityCoordinator,
-  useProjectDocumentLiveOpener,
+  useOptionalAccountResourceReplica,
 } from "@/features/project/context/account-feature-context";
-import { createContextIdentityMutationService } from "@/features/project/context/context-identity-mutation";
-import {
-  getUntitledReconciler,
-  syncUntitledReceiptOwners,
-} from "@/features/project/context/untitled-reconciler-browser";
 import { DraftApplyRecoveryProvider } from "@/features/project/draft-apply-recovery/DraftApplyRecoveryProvider";
 import { useProjectSurfacePrefsStore } from "@/features/project/layout";
+import { originalBrowserSearch } from "@/router-search";
+import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
 import { isDevAutologinEnabled } from "@/server/dev-auth";
 import { loadAccountSettingsWithDeadline } from "./authenticated-account-settings";
 
@@ -81,6 +74,7 @@ const resolveUnauthRedirect = createServerFn({ method: "GET" })
   });
 
 export const Route = createFileRoute("/_authenticated")({
+  ...PERSISTENT_SHELL_OPTIONS,
   // `?settings=` is layout-owned so the settings overlay is URL-addressable from
   // ANY authenticated route — the path stays put, only the param toggles.
   // See `features/account/SettingsDialog`.
@@ -90,7 +84,7 @@ export const Route = createFileRoute("/_authenticated")({
   loader: async ({ location }) => {
     const { user: workosUser } = await getAuth();
     if (!workosUser) {
-      const path = `${location.pathname}${location.searchStr}`;
+      const path = `${location.pathname}${originalBrowserSearch(location.search)}`;
       const target = await resolveUnauthRedirect({ data: { returnPathname: path } });
       throw redirect(target);
     }
@@ -140,7 +134,6 @@ export const Route = createFileRoute("/_authenticated")({
 function AuthenticatedLayout() {
   const { projects, now, user } = Route.useLoaderData();
   configureWorkingSetSync(user.userId, user.workingSetSyncEnabled === true);
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   // One unconditional provider tree for every authenticated route — the settings
   // overlay (`?settings=`) and the standalone /billing page render over the same
@@ -148,18 +141,16 @@ function AuthenticatedLayout() {
   // ThreadStoreProvider during light↔workspace transitions.
   return (
     <AppQueryProvider initialProjects={projects}>
-      <AuthenticatedAccountProviderTree now={now} pathname={pathname} user={user} />
+      <AuthenticatedAccountProviderTree now={now} user={user} />
     </AppQueryProvider>
   );
 }
 
 function AuthenticatedAccountProviderTree({
   now,
-  pathname,
   user,
 }: {
   now: number;
-  pathname: string;
   user: { userId: string; workingSetSyncEnabled: boolean | null };
 }) {
   const queryClient = useQueryClient();
@@ -174,7 +165,7 @@ function AuthenticatedAccountProviderTree({
     <AccountFeatureComposition accountId={user.userId} repairProjectCatalog={repairProjectCatalog}>
       <DraftApplyRecoveryProvider accountId={user.userId}>
         <FirstSendContinuityProvider accountId={user.userId}>
-          <AuthenticatedProviderTree now={now} pathname={pathname} user={user} />
+          <AuthenticatedProviderTree now={now} user={user} />
         </FirstSendContinuityProvider>
       </DraftApplyRecoveryProvider>
     </AccountFeatureComposition>
@@ -183,73 +174,51 @@ function AuthenticatedAccountProviderTree({
 
 function AuthenticatedProviderTree({
   now,
-  pathname,
   user,
 }: {
   now: number;
-  pathname: string;
   user: { userId: string; workingSetSyncEnabled: boolean | null };
 }) {
-  const queryClient = useQueryClient();
-  const localUntitled = useLocalUntitledOwner();
-  const liveOpener = useProjectDocumentLiveOpener();
-  const availability = useProjectContextAvailabilityCoordinator();
-  const untitledReconciler = useMemo(
-    () =>
-      typeof window === "undefined"
-        ? null
-        : getUntitledReconciler(
-            createContextIdentityMutationService(queryClient),
-            localUntitled,
-            liveOpener,
-            availability,
-          ),
-    [queryClient, localUntitled, liveOpener, availability],
-  );
+  const resources = useOptionalAccountResourceReplica();
 
   // Browser persistence is initialized only after the Query composition root
   // exists. Constructing these services during SSR crashes the authenticated shell.
   useEffect(() => {
-    if (!untitledReconciler) return;
-    untitledReconciler.rehydrate();
-    untitledReconciler.start();
-    void rehydrateContextDesks(user.userId);
-    syncUntitledReceiptOwners();
+    resources?.start();
+    void rehydrateEditorWorkspace(user.userId);
     void useIndependentProjectsStore.persist.rehydrate();
     void useProjectSurfacePrefsStore.persist.rehydrate();
     useProjectSurfacePrefsStore.getState().setHydrated();
-    return () => untitledReconciler.dispose();
-  }, [untitledReconciler, user.userId]);
+  }, [resources, user.userId]);
 
   return (
     <ProjectStoreProvider now={now}>
       <ThreadStoreProvider now={now}>
         <TransportProvider>
-          <MeridianCopilotProvider>
-            <DensityPopoverCollisionProvider>
-              <div className="app-frame flex flex-col">
-                <ConnectionBanner />
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  {/* Keyed by pathname to force a full remount per route — the
-                      providers above stay mounted, so this intentionally discards
-                      in-route state on navigation (e.g. /project/$id ↔ /billing)
-                      rather than reconciling stale subtrees across routes. */}
-                  <Outlet key={pathname} />
+          <CreationProvider>
+            <MeridianCopilotProvider>
+              <DensityPopoverCollisionProvider>
+                <div className="app-frame flex flex-col">
+                  <ConnectionBanner />
+                  <div className="min-h-0 flex-1 overflow-hidden">
+                    {/* Project parents key their shell by resolved identity; account fencing stays above. */}
+                    <Outlet />
+                  </div>
                 </div>
-              </div>
-              <SettingsDialog workingSetSyncEnabled={user.workingSetSyncEnabled} />
-              {DebugOverlay ? (
-                <Suspense fallback={null}>
-                  <DebugOverlay />
-                </Suspense>
-              ) : null}
-              {ReactQueryDevtools ? (
-                <Suspense fallback={null}>
-                  <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
-                </Suspense>
-              ) : null}
-            </DensityPopoverCollisionProvider>
-          </MeridianCopilotProvider>
+                <SettingsDialog workingSetSyncEnabled={user.workingSetSyncEnabled} />
+                {DebugOverlay ? (
+                  <Suspense fallback={null}>
+                    <DebugOverlay />
+                  </Suspense>
+                ) : null}
+                {ReactQueryDevtools ? (
+                  <Suspense fallback={null}>
+                    <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
+                  </Suspense>
+                ) : null}
+              </DensityPopoverCollisionProvider>
+            </MeridianCopilotProvider>
+          </CreationProvider>
         </TransportProvider>
       </ThreadStoreProvider>
     </ProjectStoreProvider>

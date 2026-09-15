@@ -126,6 +126,8 @@ export interface ThreadRepository {
   create(input: CreateThreadInput): Promise<Thread>;
   updateSpawnLifecycle(id: ThreadId, input: UpdateSpawnLifecycleInput): Promise<Thread>;
   findById(id: ThreadId): Promise<Thread | null>;
+  /** Exact live handle lookup; caller must authorize the project. */
+  findLiveByProjectSlug(projectId: ProjectId, slug: string): Promise<Thread | null>;
   /** Returns the owning project even when the thread is soft-deleted. */
   findProjectIdByIdIncludingDeleted(id: ThreadId): Promise<ProjectId | null>;
   /** Locks and returns the thread lifecycle row, including soft-deleted threads. */

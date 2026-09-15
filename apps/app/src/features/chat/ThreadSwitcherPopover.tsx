@@ -11,7 +11,6 @@ import { ChevronDown, Pencil, Plus, Search } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 
 import { useThreadStore } from "@/client/stores";
-import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
@@ -26,7 +25,6 @@ import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sectionLabelVariants } from "@/components/ui/section-label";
-import { useCreateChat } from "@/features/project/chat/use-create-chat";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { PaneTitle } from "@/features/project/PaneTitle";
 import { relativeTime } from "@/features/project/relative-time";
@@ -46,6 +44,7 @@ export function ThreadSwitcherPopover({
   activeThreadId,
   title,
   onSelectThread,
+  onNewChat,
   onRename,
   variant = "quiet",
 }: {
@@ -53,6 +52,7 @@ export function ThreadSwitcherPopover({
   activeThreadId: string;
   title: string;
   onSelectThread: (threadId: string) => void;
+  onNewChat?: () => void;
   onRename: () => void;
   /**
    * `quiet` — hover-pill trigger for chrome that stays chrome (the dock).
@@ -68,7 +68,6 @@ export function ThreadSwitcherPopover({
   const now = useThreadStore((state) => state.now);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const { createChat, creating, createError } = useCreateChat(projectId, selectCreatedThread);
   const filteredThreads = filterThreadsByTitle(primaryThreads, query);
   const filteredIds = new Set(filteredThreads.map((thread) => thread.id));
   const visibleWorkItems = workItems
@@ -96,11 +95,6 @@ export function ThreadSwitcherPopover({
     changeOpen(false);
     onRename();
   };
-
-  function selectCreatedThread(threadId: string) {
-    changeOpen(false);
-    onSelectThread(threadId);
-  }
 
   const handleNavigationKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
@@ -255,15 +249,15 @@ export function ThreadSwitcherPopover({
             type="button"
             variant="quiet"
             className={dropdownRowVariants()}
-            onClick={createChat}
-            disabled={creating}
+            onClick={() => {
+              changeOpen(false);
+              onNewChat?.();
+            }}
+            disabled={!onNewChat}
           >
             <Plus aria-hidden />
             <Trans>New chat</Trans>
           </Button>
-          {createError ? (
-            <InlineErrorRow message={createError.message} onRetry={createChat} />
-          ) : null}
         </div>
       </PopoverContent>
     </Popover>

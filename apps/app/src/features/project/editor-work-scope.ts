@@ -1,34 +1,13 @@
-/** Resolves the Editor's sole Work scope independently from persistent Chat ownership. */
-
-import type { CatalogWorkResolution } from "./catalog-work-resolution";
+/** Converts an already-resolved readable Editor selection into content authority. */
 import type { RouteWorkResolution } from "./routing/project-route";
-
 export type EditorWorkScope =
-  | { status: "ready"; workId: string | null; source: "route" | "chat" }
-  | { status: "loading"; workId: string }
-  | { status: "error"; workId: string }
-  | { status: "empty" }
-  | { status: "normalizing"; workId: string };
-
-export function resolveEditorWorkScope(
-  routeWork: RouteWorkResolution,
-  chatWorkId: string | null,
-  catalogWork: CatalogWorkResolution,
-): EditorWorkScope {
+  | { status: "ready"; workId: string | null; source: "route" }
+  | { status: "loading" | "error" | "unavailable"; workId: string };
+export function resolveEditorWorkScope(routeWork: RouteWorkResolution): EditorWorkScope {
+  if (routeWork.status === "unresolved")
+    return { status: routeWork.reason, workId: routeWork.slug };
   if (routeWork.status === "none") return { status: "ready", workId: null, source: "route" };
-  if (routeWork.status === "present")
-    return { status: "ready", workId: routeWork.workId, source: "route" };
-  if (routeWork.status === "loading") return { status: "loading", workId: routeWork.workId };
-  if (routeWork.status === "catalog-error") return { status: "error", workId: routeWork.workId };
-  if (routeWork.status === "malformed") return { status: "normalizing", workId: routeWork.value };
-  if (routeWork.status === "not-found") return { status: "normalizing", workId: routeWork.workId };
-
-  // Only a genuinely absent route Work may consult the selected Chat and the
-  // catalog-derived scope. A thread binding is authoritative identity;
-  // displaying its Work name must not be a prerequisite for Editor commands.
-  if (chatWorkId) return { status: "ready", workId: chatWorkId, source: "chat" };
-  if (catalogWork.status === "error") return { status: "error", workId: "" };
-  if (catalogWork.status === "empty") return { status: "empty" };
-  if (catalogWork.status === "ready") return { status: "empty" };
-  return { status: "loading", workId: "" };
+  if (routeWork.work.status === "archived")
+    return { status: "unavailable", workId: routeWork.workId };
+  return { status: "ready", workId: routeWork.workId, source: "route" };
 }

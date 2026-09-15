@@ -12,37 +12,31 @@ import { PaneTitle } from "./PaneTitle";
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type HomePaneControllerProps = {
+  mode?: "home" | "chats";
   projectId: string;
   sidebarToggle: PaneHeaderRailToggle;
   chatToggle: PaneHeaderRailToggle;
-  onSelectThread: (threadId: string) => Promise<void>;
   onOpenThread: (threadId: string) => void;
 };
 
 export function HomePaneController({
   projectId,
+  mode = "home",
   sidebarToggle,
   chatToggle,
-  onSelectThread,
   onOpenThread,
 }: HomePaneControllerProps) {
   return (
     <main className="main-pane flex min-h-0 flex-1 flex-col">
       <PaneHeader
         title={
-          <PaneTitle>
-            <Trans>Home</Trans>
-          </PaneTitle>
+          <PaneTitle>{mode === "chats" ? <Trans>Chats</Trans> : <Trans>Home</Trans>}</PaneTitle>
         }
         left={sidebarToggle}
         right={chatToggle}
       />
       <div className="page-sheet min-h-0">
-        <HomeScreen
-          projectId={projectId}
-          onSelectThread={onSelectThread}
-          onOpenThread={onOpenThread}
-        />
+        <HomeScreen projectId={projectId} onOpenThread={onOpenThread} />
       </div>
     </main>
   );

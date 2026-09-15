@@ -5,6 +5,108 @@
 
 ## [Unreleased]
 
+- Reuse fresh catalog acquisitions when switching back to a retained Editor tab.
+
+- Avoid catalog reconstruction on unchanged renders and duplicate reads after catalog acquisition.
+
+- Remove unused catalog API and migration dependency; align Editor workspace and catalog ownership guidance.
+
+- Unify resource identity across projects, persist project-qualified catalog projections, and serialize atomic catalog acquisition.
+
+- Remove unused legacy resource migration compatibility code; no production data requires translation.
+
+- Open proven local document content without waiting for remote admission or first server sync, while preserving its catalog-defined editor type.
+
+- Persist namespace requests before dispatch and recover recorded outcomes after restart.
+
+- Add account-fenced document namespace transport for durable receipt replay.
+
+- Retain local writing when deleting never-submitted resources; cancel queued work without a fabricated server tombstone.
+
+- Keep New documents, tabs, readable links, and catalog rows on one durable local resource lifecycle through acknowledgement, rename, remint, close, and reload.
+- Replace the Untitled lineage, reconciler, pending-sidebar union, and QueryClient catalog installer with one account resource owner.
+- Keep unapplied document deletion retryable while account removal is unavailable.
+- Keep readable document admission idempotent across projection renders and preserve a tab's browser-local identity through bootstrap refresh.
+- Keep delayed bootstrap validation from reviving closed Editor tabs, and resolve catalog paths only inside their selected scheme.
+
+- Keep file-viewer chrome visible while loading. Show quiet pending panes before delayed skeletons; remove viewer spinners and immediate optimistic skeletons.
+
+- Wait for local account storage before reserving new documents.
+
+- Record initialized document caches without treating missing storage as an empty document.
+
+- Settle Editor opens and closes with accepted URLs. Cancelled opens leave tabs unchanged; close and immediate reload stay empty.
+- Preserve unsaved Work edits through overlapping Back/Forward and newer navigation decisions.
+- Keep local writing after closing empty tabs. Remove tab-driven abandonment and share concurrent document lookups.
+
+- Keep explicit document opens alive while a closing Editor view releases its availability watch.
+
+- Cancel superseded Work metadata decisions and resume only the current navigation intent after saving.
+
+- Document remaining local-first lifecycle failures, their evidence, coordinated fixes, migration risks and verification gates.
+
+- Keep destination shells quiet during short waits; replace route loading text and spinners with a delayed skeleton without remounting retained editors.
+
+- Document current project document architecture and track shell-first loading feedback separately from the remaining resource lifecycle cutover.
+
+- Centralize catalog replay in the resource domain package; remove the old app-owned reducer module without a compatibility re-export.
+
+- Record durable move/delete attempt receipts so retries recover committed operations without repeating mutations. Distinguish namespace collisions from HTTP failures.
+
+- Exchange document edits between same-browser sessions while offline and recover missed peer updates from local persistence without waiting for the server.
+
+- Include unsynchronized local documents in account and storage-upgrade shutdown; retain writing and retry failed provider drains before releasing authority.
+
+- Keep Editor tabs independent per browser tab and restore their layout locally; remove the shared desk ledger that could stall New and Close.
+
+- Preserve the editor, cursor and selection while local writing receives its server filename.
+
+- Load basic editor with workspace. Offline New no longer waits for a missing editor chunk.
+
+- Keep Scratch and Uploads out of ordinary Editor tabs; retain their chat/AI access and explain that resource viewing is not available yet.
+- Keep warm local navigation usable offline without rerunning account/project loaders.
+
+- Autosave new documents to project Unfiled without selecting a Work; recover closed local writing from the sidebar and preserve existing unfinished drafts.
+
+- Add project-owned Unfiled document storage and `unfiled://` addresses through the existing context APIs and tools.
+
+- Choose an open document before entering Editor; remove the Resume flash and automatic first-document reopening after closing every tab.
+
+- Remove obsolete navigation-test mocks; test document admission through the real coordinator.
+
+- Open valid encoded URLs without stalling document navigation.
+
+- Clear invalid optional Chat and Work links without blocking the document or selecting a different Work.
+
+- Remove the background URL rewrite for resolved Chat and Editor Work defaults.
+
+- Fixed screen navigation from Work details being undone by background address normalization.
+
+- Keep the current document visible during Editor navigation; remove redundant route-level session opening.
+
+- Show the new-chat composer above previous chats on the Chats page. No extra creation screen or button required.
+- Preserve a draft’s chosen Work and Agent across Home, Chats, and reload.
+
+- Keep empty Chat and Work selections out of URLs; preserve no-selection intent in browser history.
+
+- Use readable project, chat, Work, document, and folder addresses. Preserve renamed bookmarks and exact Back/Forward selections.
+- Keep desktop chat and editor sessions mounted across project screens and unavailable addresses.
+- Persist one creation draft per account/project context; reconcile uncertain creation without duplicate sends or lost newer text.
+- Preserve local Untitled selection in phone read-only views. Ignore stale Composer focus after navigation.
+
+- Serialize full draft Discard with Apply and preserve accepted documents when a stale Discard finishes later.
+
+- Add revision-checked creation draft storage and lossless Composer initialization for reload continuity.
+
+- Fence archived Work content mutations and draft Apply while retaining management, cleanup, and thread-history access.
+
+- Reject stale rename requests after path reuse, and keep file and folder names exclusive.
+
+- Record document rename and folder-move history atomically. Reused paths consume old bookmarks.
+- Share tree rename and document-location mutation, including collision and retry feedback.
+
+- Allocate readable project and chat handles; reserve project, Work, and chat handles through soft deletion.
+
 - Let Composer suggestions handle Enter before message submission.
 
 - Copy internal links as Markdown wikilinks with rich reference data, not browser URLs. Preserve display text on paste.

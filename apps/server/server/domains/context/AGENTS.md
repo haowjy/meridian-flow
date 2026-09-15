@@ -1,7 +1,7 @@
 # domains/context
 
-Agent-readable/writable content addressed by context URIs. Five schemes split
-into durable Project content (`manuscript://`, `kb://`), authenticated personal
+Agent-readable/writable content addressed by context URIs. Context schemes split
+into durable Project content (`manuscript://`, `kb://`, `unfiled://`), authenticated personal
 content (`user://`), and Work/no-Work material (`scratch://`, `uploads://`).
 Bare paths default to `manuscript://`.
 
@@ -13,6 +13,10 @@ project resolution couples an exact non-deleted Work ID and persisted slug into
 the opaque authority used for stable serialization and adapter dispatch.
 `thread_works` membership selects the thread's primary Work but never grants
 context access.
+
+Archived Work identity remains resolvable for management and history, but content
+mutations require active Work under its lifecycle row lock. Context commands
+translate lifecycle loss to `context_unavailable`, not a storage error.
 
 Scheme capabilities are declared once in `ports/context-adapter.ts` and enforced
 by the router. F0 owns Uploads authority, provisioning, and resolution; F4 owns
@@ -31,7 +35,7 @@ journaling.
 
 ## HTTP routes
 
-Eight filesystem mutation/content routes live under
+Filesystem mutation/content routes live under
 `routes/api/projects/[projectId]/context/[scheme]/`. Most use `_helpers.ts` for
 auth, project ownership, scheme/Work resolution, canonical error translation,
 and URI construction. Writer-facing mutation input goes through the shared
@@ -49,10 +53,16 @@ recover that ID across all project and authorized Work schemes, returning its
 canonical scheme/path/Work authority. Returned `name` values are full filenames.
 
 Routes: `read.get.ts`, `create.post.ts`, `create-untitled.post.ts`,
-`rename.post.ts`, `move.post.ts`, `delete.post.ts`, `upload.post.ts`, and the
+`move.post.ts`, `delete.post.ts`, `upload.post.ts`, and the
 identity-bound `upload.delete.ts`. Upload routes delegate all authority,
 classification, collision, persistence, and deletion decisions to `UploadIntake`.
 Composer reference removal never calls the separate upload-delete route.
+
+Browser bookmarks use `address.get.ts`, a current-occupant-first lookup with
+previous paths pointing directly to stable document IDs. This does not change
+wikilink resolution. Every successful namespace claim consumes the exact old
+alias in the same transaction; source provisioning and hidden manifests are not
+path claims.
 
 Metadata browsing uses the sibling catalog routes: complete compact snapshot,
 whole-commit changes, direct children, and stable-ID/canonical-URI lookup. Every

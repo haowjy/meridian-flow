@@ -38,6 +38,10 @@ is a pure function:
 This is deliberately separated from the React hook (`useDockView`) so the
 fallback logic is unit-testable. The hook only adds the Zustand binding.
 
+`useAiDraftLauncher` takes `screen` from the route-owned
+`ProjectNavigationContext`, supplied by `ReadableProjectRoute`. It must not
+recreate the removed project query grammar to choose a dock view.
+
 ### Dock view store
 
 `useDockViewStore` is a Zustand store keyed by `ScreenKey`:

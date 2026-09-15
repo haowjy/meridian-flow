@@ -48,12 +48,11 @@ export function identityDestination(
   };
 }
 
-/** A `new` tab has no server path yet — it lives in Scratch by construction,
- *  so the bar can say so before the server allocates anything. */
+/** Local documents acquire their first durable location in the project Unfiled source. */
 export function tabLocation(tab: ContextTab): TabLocation {
   if (tab.kind === "new") {
     return {
-      scheme: "scratch",
+      scheme: "unfiled",
       parentPath: "/",
       folders: [],
       leaf: tab.name,
@@ -68,7 +67,8 @@ export function tabLocation(tab: ContextTab): TabLocation {
     parentPath: parentFolderPath(tab.path),
     folders: segments.slice(0, -1),
     leaf: tab.name,
-    provisional: tab.kind === "tracked" && Boolean(tab.provisionalName),
+    provisional:
+      tab.scheme === "unfiled" || (tab.kind === "tracked" && Boolean(tab.provisionalName)),
     editable: tab.kind === "tracked",
     workId: tab.workId,
     path: tab.path,

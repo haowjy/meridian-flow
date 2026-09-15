@@ -57,14 +57,15 @@ export async function navigateToPassage(input: {
     if (cancelled()) return { kind: "unavailable" };
     const timeoutMs = input.timeoutMs ?? 10_000;
     const session = binding.session;
-    await Promise.race([
-      session.waitForCurrentSync(timeoutMs),
-      new Promise<void>((resolve) =>
-        input.signal?.addEventListener("abort", () => resolve(), { once: true }),
-      ),
-    ]);
+    if (!binding.local)
+      await Promise.race([
+        session.waitForCurrentSync(timeoutMs),
+        new Promise<void>((resolve) =>
+          input.signal?.addEventListener("abort", () => resolve(), { once: true }),
+        ),
+      ]);
     if (cancelled()) return { kind: "unavailable" };
-    if (session.getSnapshot().status !== "synced") return { kind: "unavailable" };
+    if (!binding.local && session.getSnapshot().status !== "synced") return { kind: "unavailable" };
 
     const show = input.showPassage ?? showPassageInEditor;
     const deadline = Date.now() + timeoutMs;

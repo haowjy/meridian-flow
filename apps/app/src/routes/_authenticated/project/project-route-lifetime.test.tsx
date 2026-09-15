@@ -13,8 +13,7 @@ import {
   createRouter,
   Outlet,
   RouterProvider,
-  useParams,
-  useRouterState,
+  useLoaderData,
 } from "@tanstack/react-router";
 import { act, useLayoutEffect } from "react";
 import { afterEach, expect, it, vi } from "vitest";
@@ -23,7 +22,11 @@ import { useWorks } from "@/client/query/useWorks";
 import { ThreadStoreProvider } from "@/client/stores";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { testWorkSlug } from "@/test-support/work-slug";
-import { Route as ProductionProjectRoute } from "./$projectId";
+import { Route as ProductionProjectRoute, ProjectIdentityBoundary } from "../p/$projectSlug";
+
+vi.mock("@lingui/react/macro", () => ({
+  Trans: ({ children }: { children: import("react").ReactNode }) => children,
+}));
 
 const api = vi.hoisted(() => ({ listWorks: vi.fn() }));
 const activePublishers = new Set<string>();
@@ -65,16 +68,25 @@ const WORK: WorkCatalogEntry = {
   deletedAt: null,
 };
 
-it("releases the live A host immediately while a genuinely cold B loader is unresolved", async () => {
+it.each([
+  false,
+  true,
+])("releases A during cold B loading, failure and retry (failure: %s)", async (fail) => {
+  let rejectB = fail;
   const coldB = deferred<void>();
-  const rootRoute = createRootRoute({ component: KeyedOutlet });
+  const rootRoute = createRootRoute({ component: ProjectOutlet });
   const projectRoute = createRoute({
     getParentRoute: () => rootRoute,
-    path: "/project/$projectId",
+    path: "/p/$projectSlug",
     loader: async ({ params }) => {
-      if (params.projectId === "project-b") await coldB.promise;
+      if (params.projectSlug === "project-b") {
+        await coldB.promise;
+        if (rejectB) throw new Error("Project lookup offline");
+      }
+      return { projectSlug: params.projectSlug };
     },
     pendingComponent: ProductionProjectRoute.options.pendingComponent,
+    errorComponent: ProductionProjectRoute.options.errorComponent,
     pendingMs: ProductionProjectRoute.options.pendingMs,
     pendingMinMs: ProductionProjectRoute.options.pendingMinMs,
     component: ProjectHost,
@@ -82,7 +94,7 @@ it("releases the live A host immediately while a genuinely cold B loader is unre
   const routeTree = rootRoute.addChildren([projectRoute]);
   expect(ProductionProjectRoute.options.pendingMs).toBe(0);
   expect(ProductionProjectRoute.options.pendingMinMs).toBe(0);
-  const history = createMemoryHistory({ initialEntries: ["/project/project-a"] });
+  const history = createMemoryHistory({ initialEntries: ["/p/project-a"] });
   const router = createRouter({ routeTree, history, defaultPendingMinMs: 0 });
   vi.spyOn(window, "scrollTo").mockImplementation(() => {});
   await router.load();
@@ -106,8 +118,8 @@ it("releases the live A host immediately while a genuinely cold B loader is unre
       let navigation!: Promise<void>;
       await act(async () => {
         navigation = router.navigate({
-          to: "/project/$projectId",
-          params: { projectId: "project-b" },
+          to: "/p/$projectSlug",
+          params: { projectSlug: "project-b" },
         });
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
@@ -115,7 +127,7 @@ it("releases the live A host immediately while a genuinely cold B loader is unre
       expect(document.querySelector('main[role="status"]')?.textContent).toContain(
         "Loading project",
       );
-      expect(router.state.location.pathname).toBe("/project/project-b");
+      expect(router.state.location.pathname).toBe("/p/project-b");
       expect(hostA?.isConnected).toBe(false);
       expect(publisherA?.isConnected).toBe(false);
       expect(activePublishers.size).toBe(0);
@@ -127,6 +139,15 @@ it("releases the live A host immediately while a genuinely cold B loader is unre
         coldB.resolve();
         await navigation;
       });
+      if (fail) {
+        expect(document.querySelector('[role="alert"]')?.textContent).toContain("couldn’t load");
+        expect(activePublishers.size).toBe(0);
+        expect(hostA?.isConnected).toBe(false);
+        rejectB = false;
+        await act(async () => {
+          await router.invalidate();
+        });
+      }
       expect(document.querySelector('[data-project-host="project-b"]')).not.toBeNull();
       expect(document.querySelector('[data-context-publisher="project-b"]')).not.toBeNull();
       expect(activePublishers).toEqual(new Set(["project-b"]));
@@ -182,7 +203,14 @@ function worksSnapshot(authorityRevision: string): ListWorksResponse {
 }
 
 function ProjectHost() {
-  const projectId = useParams({ strict: false }).projectId as string;
+  const { projectSlug } = useLoaderData({ strict: false }) as { projectSlug: string };
+  return (
+    <ProjectIdentityBoundary slug={projectSlug}>
+      <PublishingHost projectId={projectSlug} />
+    </ProjectIdentityBoundary>
+  );
+}
+function PublishingHost({ projectId }: { projectId: string }) {
   useLayoutEffect(() => {
     activePublishers.add(projectId);
     return () => {
@@ -198,9 +226,8 @@ function ProjectHost() {
   );
 }
 
-function KeyedOutlet() {
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
-  return <Outlet key={pathname} />;
+function ProjectOutlet() {
+  return <Outlet />;
 }
 
 function SeededProjectHost({ projectId }: { projectId: string }) {

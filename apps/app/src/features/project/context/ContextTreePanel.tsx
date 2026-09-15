@@ -1,41 +1,20 @@
-/**
- * ContextTreePanel — desktop context tree for navigating schemes, folders, and
- * files, rendered persistently inside the desktop project sidebar. The body
- * owns tree expansion / create affordances while the route owns the selected
- * document path. (The phone shell uses MobileContextBrowser's drill-in navigation.)
- *
- * Visual model (VS Code parity): one continuous flex-column that is the panel's
- * single scroll surface — every section and row is natural-height, so blank
- * space pools at the very bottom and only the tree root scrolls. Rows are a
- * fixed twistie + kind-icon + label grid; the whole row is the primary action
- * (folders/sections toggle, files open). Every top-level section is a
- * `RailPaneHeader` pane (headers are panes; everything inside a pane is tree
- * rows), all flush full-width siblings in scheme order. Pane rhythm and labels,
- * rather than stacked surface colors or repeated rules, separate them. The work-scoped
- * schemes (Scratch, Uploads) included. There is no work header row (ruling
- * 2026-08-06 "just get rid of it", superseding the work-title-as-marking
- * model): the work marks itself via a tooltip on its panes' headers instead.
- * Creation lives on the scheme panes.
- */
+/** Project document tree. Chat resources have no ordinary Editor tabs or sidebar sections. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import { useContextCatalogView } from "@/client/query/useContextCatalog";
-import { useWorks } from "@/client/query/useWorks";
+import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
 import type { ContextCreateKind } from "./context-create-kind";
 import {
+  EDITOR_CONTEXT_SCHEMES,
   schemeAllowsCreation,
   schemeIcon,
   schemeLabel,
-  visibleContextSchemes,
 } from "./context-schemes";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
@@ -86,26 +65,18 @@ export function ContextTreePanel({
   if (!onRequestCreate || !onCreateDone) {
     throw new Error("ContextTreePanel requires creation controls");
   }
-  const workId = editorWorkId;
-  const schemes = visibleContextSchemes(workId);
-  const { works } = useWorks(projectId);
-  const currentWork = works?.find((work) => work.id === workId) ?? null;
-
-  // Work-scoped panes follow the active thread's authoritative binding,
-  // whether it changed through navigation, a writer rebind, or an LLM rebind.
-  // `workName` puts that scope in the panes' hover tooltip.
-  const renderScheme = (scheme: ProjectContextTreeScheme) => (
+  const schemes = EDITOR_CONTEXT_SCHEMES;
+  const catalogs = useContextCatalogViews(projectId, schemes, { workId: editorWorkId });
+  const renderScheme = (scheme: (typeof EDITOR_CONTEXT_SCHEMES)[number]) => (
     <SchemeSection
       key={scheme}
       projectId={projectId}
       editorWorkId={editorWorkId}
       scheme={scheme}
+      catalogState={catalogs[scheme]}
       activeScheme={activeScheme}
       activePath={activePath}
       defaultExpanded={scheme === schemes[0]}
-      workName={
-        isWorkScopedProjectContextScheme(scheme) ? (currentWork?.name ?? t`Loading Work`) : null
-      }
       onSelectFile={onSelectFile}
       creating={
         creating?.scheme === scheme && creating.workId === editorWorkId
@@ -131,31 +102,25 @@ export function ContextTreePanel({
 }
 
 function SchemeSection({
+  catalogState,
   projectId,
   editorWorkId,
   scheme,
   activeScheme,
   activePath,
   defaultExpanded,
-  workName,
   onSelectFile,
   creating,
   onRequestCreate,
   onCreateDone,
 }: {
+  catalogState: ReturnType<typeof useContextCatalogViews>[ProjectContextTreeScheme];
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
   defaultExpanded: boolean;
-  /**
-   * Name of the work this pane belongs to, or null for project-scoped panes.
-   * Shown in the header's hover tooltip — since the work header row died
-   * (ruling 2026-08-06), this tooltip is how a work-scoped pane names its
-   * work.
-   */
-  workName: string | null;
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
   creating: { kind: ContextCreateKind; parentPath: string } | null;
   onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
@@ -170,9 +135,7 @@ function SchemeSection({
   const [expandedEntryIds, setExpandedEntryIds] = useState<Record<string, boolean>>({});
   const activeLocationPath = activeScheme === scheme ? activePath : null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
-  const { catalog, isError, refetch } = useContextCatalogView(projectId, scheme, {
-    workId: editorWorkId,
-  });
+  const { catalog, isError, refetch } = catalogState;
 
   const revealPath = useCallback(
     (path: string) => {
@@ -221,11 +184,7 @@ function SchemeSection({
     }));
   }, []);
 
-  // The query is unconditionally enabled: it prefetches at rail mount so the
-  // first expand paints from cache (work-scoped schemes still wait for their
-  // workId inside the hook). `pendingOpenPath` waits on the same always-live
-  // query so a just-created file can resolve and open; its onSelectFile then
-  // lands a new selection here, which re-expands via the effect above.
+  // Catalogs stay warm while collapsed so a newly created row can resolve and open.
   useEffect(() => {
     if (!pendingOpenPath || !catalog) return;
     const entry = catalog.findPath(pendingOpenPath);
@@ -278,21 +237,10 @@ function SchemeSection({
     setExpanded(next);
   };
 
-  /* Work-scoped panes (Scratch, Uploads) share this header untouched: flush
-     full-width bands like their project-scoped siblings. Uploads carries no
-     create shelf (`schemeAllowsCreation`): it is intake only. Its real client
-     upload action is tracked in .context/TODO.md; never add a dead picker. */
   const header = (
     <RailPaneHeader
       label={schemeLabel(scheme)}
       icon={schemeIcon(scheme)}
-      ariaLabel={
-        workName === null
-          ? undefined
-          : scheme === "scratch"
-            ? t`Scratch for Work ${workName}`
-            : t`Uploads for Work ${workName}`
-      }
       expanded={expanded}
       onExpandedChange={handleExpandedChange}
       actions={
@@ -316,27 +264,7 @@ function SchemeSection({
 
   return (
     <section>
-      {workName === null ? (
-        header
-      ) : (
-        /* The work names itself here: with the work header row gone (ruling
-           2026-08-06), hovering or focusing a work-scoped pane header is how
-           the writer learns which work these files belong to. Plain-div
-           trigger: `RailPaneHeader` owns its root element and does not
-           forward refs/props, and Radix's default trigger is a <button>
-           (invalid around the header's own collapse button). The div adds no
-           box of its own; hover anywhere on the row (React focus events
-           bubble from the inner button) opens the tooltip without touching
-           collapse or the action shelf. */
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div>{header}</div>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={4}>
-            <Trans>Work: "{workName}"</Trans>
-          </TooltipContent>
-        </Tooltip>
-      )}
+      {header}
       {expanded && catalog && env ? (
         <TreeEnvProvider value={env}>
           <div>

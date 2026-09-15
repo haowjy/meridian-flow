@@ -341,13 +341,11 @@ export function createBranchCoordinator(input: {
       throw new BranchCasConflictError(snapshot.branchId);
     }
     dirtyTransientBranches.delete(snapshot.branchId);
-    cached.set(snapshot.branchId, {
-      generation: snapshot.generation + 1,
-      state,
-      stateVector,
-      doc: resetDoc,
-    });
-    input.onBranchReset?.({ branchId: snapshot.branchId, generation: snapshot.generation + 1 });
+    cached.delete(snapshot.branchId);
+    resetDoc.destroy();
+    const publish = () =>
+      input.onBranchReset?.({ branchId: snapshot.branchId, generation: snapshot.generation + 1 });
+    if (!input.store.deferUntilCommit(publish)) publish();
   }
 
   async function runWithRetry<T>(

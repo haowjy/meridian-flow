@@ -33,6 +33,7 @@ export const CONTEXT_SCHEME_CAPABILITIES = {
   manuscript: { writable: true, searchable: true, creatable: true },
   kb: { writable: true, searchable: true, creatable: true },
   user: { writable: true, searchable: true, creatable: true },
+  unfiled: { writable: true, searchable: true, creatable: true },
   scratch: { writable: true, searchable: true, creatable: true },
   uploads: { writable: true, searchable: true, creatable: false },
 } as const satisfies Readonly<Record<ContextScheme, SchemeCapabilities>>;

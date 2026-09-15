@@ -89,6 +89,7 @@ export async function runCrossWorkProbe(
     aiWriteMode: "draft",
   });
   await db.insert(schema.threads).values({
+    slug: `fixture-${THREAD_B_ID}`,
     id: THREAD_B_ID,
     projectId: PROJECT_ID,
     createdByUserId: USER_ID,

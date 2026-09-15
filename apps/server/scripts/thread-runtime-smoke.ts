@@ -15,6 +15,7 @@ import {
 } from "@meridian/database";
 import { eq, inArray } from "drizzle-orm";
 import WebSocket from "ws";
+import { createNoopEventSink } from "../server/domains/observability/index.js";
 import {
   createDrizzleEventJournalReader,
   createDrizzleEventJournalWriter,
@@ -125,6 +126,7 @@ await db.insert(works).values({
 });
 await db.insert(threads).values({
   id: threadId,
+  slug: "smoke-thread",
   projectId,
   createdByUserId: userId,
   title: "Smoke thread",
@@ -140,14 +142,14 @@ await db.insert(creditLots).values({
   id: creditLotId,
   userId,
   sourceType: "grant",
-  originalAmountMillicredits: 1_000_000n,
-  remainingMillicredits: 1_000_000n,
+  originalAmountMillicredits: 1_000_000,
+  remainingMillicredits: 1_000_000,
   grantReason: `smoke-${threadId}`,
 });
 await db.insert(creditTransactions).values({
   userId,
   transactionType: "grant",
-  amountMillicredits: 1_000_000n,
+  amountMillicredits: 1_000_000,
   lotId: creditLotId,
   metadata: { source: "smoke" },
 });
@@ -206,6 +208,7 @@ const resumeFrame = await resumePromise;
 resumeWs.close();
 
 const coldReplayHub = createThreadEventHub({
+  eventSink: createNoopEventSink(),
   journalReader: createDrizzleEventJournalReader(db),
   journalWriter: createDrizzleEventJournalWriter(db),
 });

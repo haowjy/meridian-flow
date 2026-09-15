@@ -2,7 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
 
 import { useProjectActions, useProjectStore, useThreadActions } from "@/client/stores";
-import { startIndependentChat } from "@/lib/optimistic-project";
+import { startIndependentChat } from "@/lib/optimistic-independent-chat";
 
 /**
  * Start an independent (project-less) chat. Optionally seeds the first message;

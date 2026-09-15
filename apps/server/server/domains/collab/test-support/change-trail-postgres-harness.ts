@@ -11,6 +11,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { expect } from "vitest";
 import { updateYFragment } from "y-prosemirror";
 import * as Y from "yjs";
+import { createDrizzleWorkDraftDiscard } from "../adapters/drizzle-work-draft-discard.js";
 
 const { createDb } = await import("@meridian/database");
 export const schema = await import("@meridian/database/schema");
@@ -186,6 +187,7 @@ export async function resetDatabase(): Promise<void> {
     },
   ]);
   await db.insert(schema.threads).values({
+    slug: `fixture-${THREAD_ID}`,
     id: THREAD_ID,
     projectId: PROJECT_ID,
     createdByUserId: USER_ID,
@@ -593,6 +595,13 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
     resolveDocumentUri,
   });
   const drafts = createWorkDraftReviewService({
+    discardWorkDraft: createDrizzleWorkDraftDiscard(
+      db,
+      branchStore,
+      branchCoordinator,
+      branchCriticalSections,
+      liveCoordinator,
+    ),
     branches: branchStore,
     branchCoordinator,
     branchJournal: durableBranchJournalReadStore,

@@ -14,11 +14,22 @@ or authority store. `document-session-locks.ts` implements document lock naming
 and callback lifetimes; `document-session-wakeup.ts` only requests reconciliation
 through advisory broadcasts, browser lifecycle events and timed scans.
 
-Project-local Untitled lifetime and identity reservations belong to
-`features/project/context/local-untitled-locks.ts`, composed by
-`AccountFeatureLifetime`. The account runtime supplies its epoch signal, not
-feature-specific lock factories. Keep lineage acquisition outside operation-held
-paths; recovery reaches the feature owner through the terminal continuation port.
+`local-document-peers.ts` is separate content transport, owned by each persisted
+DocumentSession. Its channel is scoped to the exact persistence incarnation and
+current schema, never a path or an unqualified document ID. Symmetric Yjs sync
+exchanges live edits; lifecycle wakes also read the retained IndexedDB update log
+so a departed peer is not required for recovery. Replay is a remote transaction.
+Schema/access fences stop peer traffic synchronously; teardown drains pending
+reads before destroying persistence. Local convergence never means server ack.
+The readonly replay adapter knows y-indexeddb's `updates` store but does not touch
+its private compaction cursor or write a second content journal.
+
+Browser-local document reservations, stable resource handles, exact persistence,
+and namespace intentions belong to the account-global `AccountResourceReplica`,
+composed by `AccountFeatureLifetime`. The document-session runtime supplies its
+account epoch and adopts acknowledged resource sessions without replacing their
+Y.Doc or persistence database. Editor tabs retain only browser-member identity;
+they do not own resource or namespace lifetime.
 
 ## Contracts
 
@@ -31,14 +42,15 @@ paths; recovery reaches the feature owner through the terminal continuation port
 - The account document-session runtime constructs the only production registry
   for one immutable account epoch. Account close fences admission synchronously,
   then drains local providers, lifetime leases, and adopted-session finalizers
-  before the epoch can close. A local-lineage terminal transition has one
-  lineage-owner continuation: it retains HL, re-enters and revalidates O, then
-  publishes, drains, purges exact P, acknowledges lineage, and finishes O.
-  Adoption becomes live only when a final O revalidation converges the owner map
-  and releases HL before releasing O; a terminal winner diverts that retained
-  owner into the same reconciliation continuation instead of returning a session.
-  An admitted continuation remains live during account close; no O-held path may
-  acquire HL. Active registry maps are lookup state, not teardown
+  before the epoch can close. Feature-owned detached resources register their
+  close phases and terminal continuation together through `connectLocalResources`;
+  they participate in the authority database's version-change barrier, not a
+  later feature cleanup. Pending opens may initiate close after an authority
+  failure but must not await the barrier that drains those same opens. Resource
+  terminal continuation runs under the short resource namespace lock and revalidates room authority before exact cleanup. It does not hold an
+  editing-lifetime local-lineage lock. Adoption preserves the existing session;
+  a terminal winner follows the same terminal reconciliation path instead of
+  returning a usable session. Active registry maps are lookup state, not teardown
   ownership: every removed live or branch session transfers to the private
   teardown owner, and its qualified room remains quarantined until the exact
   session's retryable destroy ledger succeeds. Coordination close likewise
@@ -84,11 +96,23 @@ paths; recovery reaches the feature owner through the terminal continuation port
 - Live sessions may use versioned IndexedDB persistence. Review sessions do not:
   the branch room is server-persisted and generation-fenced, and a local cache
   risks recovering state into the wrong review generation.
-- Before binding, `EditorView` waits for local persistence and, for attached
-  rooms, first server sync under one five-second overall timeout. Detached live
-  rooms wait only for local persistence. Expiry always permits binding and
-  passes degraded evidence through the mount into each resulting verdict; the
-  horizon buys better evidence and is never an admission gate.
+- `local-content-initialization.ts` records exact-cache initialization in the
+  existing y-indexeddb `custom` store. Its marker names the database and schema;
+  the snapshot and marker append in one `updates` + `custom` transaction whose
+  completion is the durability boundary. Update count, nonempty text and
+  `whenSynced` are not proof: a recreated empty database also replays successfully.
+  `DocumentSession.hasInitializedLocalContent()` reads this evidence separately
+  from replay readiness. Only a newly allocated local lineage or an actual
+  completed server reconciliation establishes it. Remint/adoption keep the same
+  persistence identity and proof. Destruction drains admitted commits; a failed
+  attempt is reported, not retained as the truth of later evidence reads.
+  Exact initialized local content activates local-first acquisition independently
+  of remote admission. Missing proof requires acquisition or recovery, not a
+  blank editable document.
+- Before binding, `EditorView` waits for local persistence. Detached sessions and
+  verified `localContentReady` sessions do not wait for first server sync. Other
+  attached sessions wait under the existing five-second overall timeout; expiry
+  permits binding with degraded evidence, not upload authorization.
 - `schema-repair-witness.ts` owns one Y.Doc update listener across open and live
   phases. Open-phase local delete-only normalization is classified
   synchronously during construction and resolved against the pre-bind snapshot
@@ -180,17 +204,16 @@ paths; recovery reaches the feature owner through the terminal continuation port
   suspension. `suspend`/`resume`/`release` belong to the session alone. The
   negative-space guard fails the build on a `setLocalState`/`setLocalStateField`
   anywhere in `apps/app/src` outside `local-presence.ts`.
-- Before a server row exists, one local lineage envelope owns one opaque exact
-  IndexedDB name and one detached session under its stable lineage lifetime.
-  Remint changes only session identity. Same-bucket adoption reserves the
-  existing room authority as non-bindable, then makes that same provider and
-  exact name canonical. Room authority carries every exact purge locator;
-  session construction and cleanup never enumerate or infer IndexedDB names.
-  One generation/command-fenced room transaction accepts terminal work and makes
-  the room nonauthoring before lineage publication and provider close. Its exact
-  purge receipt survives native deletion until lineage acknowledgement and room
-  completion finish together, so every terminal prefix commits forward without
-  inferring a database name. Ordinary live operations remain lease-qualified.
+- The account resource replica durably reserves metadata before exact content
+  opening. Content opening awaits account authority readiness and initializes
+  the reserved database before exposing an editable handle. A failure may leave
+  a durable reservation for recovery, never a falsely initialized blank editor.
+- A resource descriptor owns an opaque exact persistence locator. Remint and
+  admission preserve that database and Y.Doc. Resource namespace operations use
+  a short exclusive resource lock, not an editing-lifetime lock. Private room
+  authority still records exact purge receipts and terminal acknowledgements;
+  cleanup never enumerates or guesses IndexedDB names. See
+  [resource ownership](../../resources/.context/CONTEXT.md).
 - A schema fence is orthogonal session state, not a connection status:
   `DocumentSessionSnapshot.schemaFence` composes with detached, synced, offline,
   and access-lost states. The first fence wins, is persisted through the

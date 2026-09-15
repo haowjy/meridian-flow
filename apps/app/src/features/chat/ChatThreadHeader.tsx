@@ -10,8 +10,8 @@ import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "re
 import { useRenameThread } from "@/client/query/useRenameThread";
 import { announce } from "@/client/stores";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
+import { useOpenNewChatRoute } from "@/features/project/routing/ProjectNavigationContext";
 import { displayThreadTitle } from "@/lib/thread-title";
-
 import { ThreadSwitcherPopover } from "./ThreadSwitcherPopover";
 
 /**
@@ -21,7 +21,7 @@ import { ThreadSwitcherPopover } from "./ThreadSwitcherPopover";
  * project's threads (grouped by work) or rename the current one inline.
  * Sits in `ChatSurface`'s `header` slot — above the scroll region, so it stays
  * fixed while messages scroll. Rename is client-cache optimistic today (no
- * PATCH endpoint yet); switching calls `onSelectThread` which updates `?thread=`.
+ * PATCH endpoint yet); switching delegates primary/dock navigation to the project route.
  */
 export type ChatThreadHeaderProps = {
   projectId: string;
@@ -59,6 +59,7 @@ export function ChatThreadTitle({
   /** Trigger presentation — see `ThreadSwitcherPopover`. */
   variant?: "quiet" | "tab";
 }) {
+  const openNewChat = useOpenNewChatRoute();
   const { threadById } = useProjectThreadGroups(projectId);
   const resolved = activeThread ?? threadById.get(threadId) ?? null;
   const title = displayThreadTitle(resolved?.title);
@@ -76,6 +77,7 @@ export function ChatThreadTitle({
       activeThreadId={threadId}
       title={title}
       onSelectThread={onSelectThread}
+      onNewChat={openNewChat}
       onRename={() => setEditing(true)}
       variant={variant}
     />

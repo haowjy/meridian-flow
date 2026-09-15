@@ -45,7 +45,7 @@ const EMPTY_SNAPSHOT: WorkingSetSnapshot = { recentRoutes: [], lastThreadId: nul
 /**
  * Canonical WorkingSetRoute builder from tab/route coordinates. Returns null
  * for empty paths. Callers must resolve Work/no-Work authority before building
- * a Work-capable route. Empty Scratch belongs only to the device desk and
+ * a Work-capable route. Empty Scratch belongs only to the device workspace and
  * coordinator, never recency.
  */
 export function buildWorkingSetRoute(

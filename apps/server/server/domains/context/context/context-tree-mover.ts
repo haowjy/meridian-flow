@@ -6,8 +6,12 @@
  * adapter capability.
  */
 
-import type { DeleteContextEntryResult } from "@meridian/contracts/protocol";
+import {
+  type DeleteContextEntryResult,
+  isWorkScopedProjectContextScheme,
+} from "@meridian/contracts/protocol";
 import { Err, Ok, type Result } from "../../../shared/result.js";
+import { WorkLifecycleUnavailableError } from "../../projects/domain/work-lifecycle.js";
 import type { AdapterFault, ContextSchemeAdapter } from "../ports/context-adapter.js";
 import {
   type ContextCommandTransaction,
@@ -16,6 +20,7 @@ import {
 import type {
   ContextDeleteOptions,
   ContextError,
+  ContextLocationOptions,
   ContextMoveOptions,
   ContextMoveResult,
   ContextScheme,
@@ -25,10 +30,17 @@ import type {
   PreparedContextMove,
 } from "../ports/context-tree-mutation-store.js";
 import { adapterFaultToContextError } from "./adapter-fault.js";
+import type { ContextOperationReceipts } from "./context-operation-receipts.js";
 import {
   createResultAwareCommandExecutor,
   type ResultAwareCommandExecutor,
 } from "./result-aware-command-executor.js";
+
+function lifecycleCommandFailure(error: unknown, uri: string): Result<never, ContextError> {
+  if (error instanceof WorkLifecycleUnavailableError)
+    return Err({ code: "context_unavailable", uri });
+  throw error;
+}
 
 async function callAdapter<T>(
   uri: string,
@@ -79,7 +91,10 @@ function joinPath(...parts: string[]): string {
 export class ContextTreeMover {
   private readonly commandExecutor: ResultAwareCommandExecutor<ContextError>;
 
-  constructor(transaction: ContextCommandTransaction = directContextCommandTransaction) {
+  constructor(
+    transaction: ContextCommandTransaction = directContextCommandTransaction,
+    private readonly receipts?: ContextOperationReceipts,
+  ) {
     this.commandExecutor = createResultAwareCommandExecutor({
       transaction,
       serializeThroughCallbacks: false,
@@ -91,78 +106,95 @@ export class ContextTreeMover {
     destination: ContextTreeDispatch,
     options?: ContextMoveOptions,
   ): Promise<Result<ContextMoveResult, ContextError>> {
-    return this.commandExecutor.run(() => this.moveCommand(source, destination, options));
-  }
-
-  private async moveCommand(
-    source: ContextTreeDispatch,
-    destination: ContextTreeDispatch,
-    options?: ContextMoveOptions,
-  ): Promise<Result<ContextMoveResult, ContextError>> {
-    if (source.canonical === destination.canonical)
-      return Err({ code: "invalid_operation", uri: destination.canonical });
-    if (!source.adapter.capabilities.writable || !destination.adapter.capabilities.writable) {
-      return Err({ code: "permission_denied", uri: destination.canonical });
-    }
-    if (!source.adapter.tree || !destination.adapter.tree) {
-      return Err({ code: "permission_denied", uri: destination.canonical });
-    }
-
-    const prepared = await this.prepareMove(source, destination, {
+    return this.changeLocation(source, destination, {
       target: "container",
       overwrite: options?.overwrite === true,
-    });
-    if (!prepared.ok) return prepared;
-
-    const result = await callAdapter(
-      destination.canonical,
-      () =>
-        destination.adapter.tree?.commitPreparedMove(prepared.value) ??
-        Promise.resolve(Err({ code: "permission_denied" } as const)),
-    );
-    if (!result.ok) return result;
-    return Ok({
-      movedNodeId: result.value.movedNodeId,
-      destinationPath: prepared.value.destinationPath,
     });
   }
 
   async commitWriterLocation(
     source: ContextTreeDispatch,
     destination: ContextTreeDispatch,
+    expected?: ContextLocationOptions["expected"],
+    operationId?: string,
   ): Promise<Result<ContextMoveResult, ContextError>> {
-    return this.commandExecutor.run(() => this.commitWriterLocationCommand(source, destination));
-  }
-
-  private async commitWriterLocationCommand(
-    source: ContextTreeDispatch,
-    destination: ContextTreeDispatch,
-  ): Promise<Result<ContextMoveResult, ContextError>> {
-    if (source.canonical === destination.canonical) return this.graduateInPlace(source);
-    if (!source.adapter.capabilities.writable || !destination.adapter.capabilities.writable) {
-      return Err({ code: "permission_denied", uri: destination.canonical });
+    if (operationId) {
+      if (!this.receipts || !expected)
+        return Err({ code: "invalid_operation", uri: source.canonical });
+      return this.receipts.execute(
+        operationId,
+        {
+          kind: "move",
+          sourceUri: source.canonical,
+          destinationUri: destination.canonical,
+          expected,
+        },
+        () => this.commitWriterLocation(source, destination, expected),
+      );
     }
-    if (!source.adapter.tree || !destination.adapter.tree) {
-      return Err({ code: "permission_denied", uri: destination.canonical });
-    }
-
-    const prepared = await this.prepareMove(source, destination, {
+    return this.changeLocation(source, destination, {
       target: "exact",
       graduateProvisionalName: true,
+      expected,
       overwrite: false,
     });
-    if (!prepared.ok) return prepared;
-    const result = await callAdapter(
-      destination.canonical,
-      () =>
-        destination.adapter.tree?.commitPreparedMove(prepared.value) ??
-        Promise.resolve(Err({ code: "permission_denied" } as const)),
-    );
-    if (!result.ok) return result;
-    return Ok({
-      movedNodeId: result.value.movedNodeId,
-      destinationPath: prepared.value.destinationPath,
-    });
+  }
+
+  private async changeLocation(
+    source: ContextTreeDispatch,
+    destination: ContextTreeDispatch,
+    policy:
+      | { target: "container"; overwrite: boolean }
+      | {
+          target: "exact";
+          overwrite: false;
+          graduateProvisionalName: true;
+          expected?: ContextLocationOptions["expected"];
+        },
+  ): Promise<Result<ContextMoveResult, ContextError>> {
+    return this.commandExecutor
+      .run(
+        async () => {
+          if (policy.target === "exact" && policy.expected) {
+            const token = await this.inspect(source);
+            if (!token.ok) return token;
+            const kind = policy.expected.kind === "folder" ? "directory" : "file";
+            if (token.value?.kind !== kind || token.value.nodeId !== policy.expected.nodeId) {
+              return Err({ code: "stale_source", uri: source.canonical });
+            }
+          }
+          if (source.canonical === destination.canonical) {
+            return policy.target === "exact"
+              ? this.graduateInPlace(source)
+              : Err({ code: "invalid_operation", uri: destination.canonical });
+          }
+          if (!source.adapter.capabilities.writable || !destination.adapter.capabilities.writable) {
+            return Err({ code: "permission_denied", uri: destination.canonical });
+          }
+          if (!source.adapter.tree || !destination.adapter.tree) {
+            return Err({ code: "permission_denied", uri: destination.canonical });
+          }
+
+          const prepared = await this.prepareMove(source, destination, policy);
+          if (!prepared.ok) return prepared;
+          const result = await callAdapter(
+            destination.canonical,
+            () =>
+              destination.adapter.tree?.commitPreparedMove(prepared.value) ??
+              Promise.resolve(Err({ code: "permission_denied" } as const)),
+          );
+          if (!result.ok) return result;
+          return Ok({
+            movedNodeId: result.value.movedNodeId,
+            destinationPath: prepared.value.destinationPath,
+          });
+        },
+        [source, destination].map((dispatch) => ({
+          scheme: dispatch.scheme,
+          workId: isWorkScopedProjectContextScheme(dispatch.scheme) ? dispatch.workScopeId : null,
+        })),
+      )
+      .catch((error) => lifecycleCommandFailure(error, source.canonical));
   }
 
   private async graduateInPlace(
@@ -192,7 +224,25 @@ export class ContextTreeMover {
     target: ContextTreeDispatch,
     options: ContextDeleteOptions,
   ): Promise<Result<DeleteContextEntryResult, ContextError>> {
-    return this.commandExecutor.run(() => this.deleteCommand(target, options));
+    if (options.operationId) {
+      if (!this.receipts) return Err({ code: "invalid_operation", uri: target.canonical });
+      return this.receipts.execute(
+        options.operationId,
+        { kind: "delete", uri: target.canonical, expected: options.expected },
+        () => this.delete(target, { ...options, operationId: undefined }),
+      );
+    }
+    return this.commandExecutor
+      .run(
+        () => this.deleteCommand(target, options),
+        [
+          {
+            scheme: target.scheme,
+            workId: isWorkScopedProjectContextScheme(target.scheme) ? target.workScopeId : null,
+          },
+        ],
+      )
+      .catch((error) => lifecycleCommandFailure(error, target.canonical));
   }
 
   private async deleteCommand(
@@ -239,7 +289,12 @@ export class ContextTreeMover {
     destination: ContextTreeDispatch,
     policy:
       | { target: "container"; overwrite: boolean }
-      | { target: "exact"; overwrite: false; graduateProvisionalName: true },
+      | {
+          target: "exact";
+          overwrite: false;
+          graduateProvisionalName: true;
+          expected?: ContextLocationOptions["expected"];
+        },
   ): Promise<Result<PreparedContextMove, ContextError>> {
     const sourceToken = await this.inspect(source);
     if (!sourceToken.ok) return sourceToken;

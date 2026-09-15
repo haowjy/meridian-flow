@@ -135,7 +135,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         const existingSlugs = await activeDb
           .select({ slug: works.slug })
           .from(works)
-          .where(and(eq(works.projectId, input.projectId), isNull(works.deletedAt)));
+          .where(eq(works.projectId, input.projectId));
         let row: WorkRow | undefined;
         try {
           [row] = await activeDb
@@ -246,7 +246,8 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
 
       await runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);
-        if ((await lockWorkLifecycle(db, id)) !== "active") return;
+        const lifecycle = await lockWorkLifecycle(db, id);
+        if (lifecycle === "missing" || lifecycle === "deleted") return;
         if (await hasUnreviewedDraft(id)) throw new WorkDeleteBlockedError("drafts");
 
         const [membership] = await activeDb
@@ -315,7 +316,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
         if (constraint === "works_project_name_active") {
           throw new WorkRestoreConflictError("name");
         }
-        if (constraint === "works_project_slug_active") {
+        if (constraint === "works_project_slug") {
           throw new WorkRestoreConflictError("slug");
         }
         throw cause;

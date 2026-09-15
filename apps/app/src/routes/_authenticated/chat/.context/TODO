@@ -1,0 +1,8 @@
+# Standalone chat addressing
+
+- `$threadId.tsx`: revisit the standalone-chat product model and browser address
+  separately from project URL cleanup. Keep `/chat/<uuid>` unchanged for now;
+  do not delete this route or require project slugs during that cleanup. If
+  standalone chats remain, evaluate an account-scoped short opaque public ID
+  while retaining the stable internal thread UUID. Identifier length, collision
+  handling, and lookup authorization remain undecided.

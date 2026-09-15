@@ -17,7 +17,7 @@ const HIDDEN_PROJECT_ID = "00000000-0000-4000-8000-000000000715";
 const HIDDEN_THREAD_ID = "00000000-0000-4000-8000-000000000716";
 const OTHER_USER_ID = "00000000-0000-4000-8000-000000000717";
 const HISTORICAL_WORK_ID = "00000000-0000-4000-8000-000000000718";
-const RECLAIMED_WORK_ID = "00000000-0000-4000-8000-000000000719";
+const REPLACEMENT_WORK_ID = "00000000-0000-4000-8000-000000000719";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("Work-context repository and lifecycle (postgres)", () => {});
@@ -66,6 +66,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         slug: "work-context-delivery",
       });
       await db.insert(schema.threads).values({
+        slug: `fixture-${THREAD_ID}`,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -74,6 +75,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         composedSystemPrompt: "Frozen prompt",
       });
       await db.insert(schema.threads).values({
+        slug: `fixture-${OTHER_THREAD_ID}`,
         id: OTHER_THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -165,6 +167,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         deletedAt: new Date(),
       });
       await db.insert(schema.threads).values({
+        slug: `fixture-${HIDDEN_THREAD_ID}`,
         id: HIDDEN_THREAD_ID,
         projectId: HIDDEN_PROJECT_ID,
         createdByUserId: USER_ID,
@@ -420,10 +423,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         name: "Historical",
         slug: "historical",
-        status: "archived",
-        archivedAt: new Date(),
       });
       await repos.threadWorks.addMembership(OTHER_THREAD_ID, HISTORICAL_WORK_ID, true);
+      await db
+        .update(schema.works)
+        .set({ status: "archived", archivedAt: new Date() })
+        .where(eq(schema.works.id, HISTORICAL_WORK_ID));
       await deleteOwnedThreadToTrash(
         {
           repos,
@@ -451,7 +456,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("demotes only a deleted historical primary and never substitutes a reclaimed slug", async () => {
+    it("demotes a deleted historical primary without substituting a same-name Work", async () => {
       const repos = createDrizzleRepositoriesForTest(db);
       await db.insert(schema.works).values({
         id: HISTORICAL_WORK_ID,
@@ -476,13 +481,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .update(schema.works)
         .set({ deletedAt: new Date() })
         .where(eq(schema.works.id, HISTORICAL_WORK_ID));
-      await db.insert(schema.works).values({
-        id: RECLAIMED_WORK_ID,
+      const works = createDrizzleProjectWorkRepository({
+        db,
+        hasUnreviewedDraft: async () => false,
+        projectionMutation: createTestWorkProjectionMutation(db),
+      });
+      const replacement = await works.create({
+        id: REPLACEMENT_WORK_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
-        name: "Replacement",
-        slug: "historical",
+        name: "Historical",
       });
+      expect(replacement.slug).toBe("historical-2");
       await restoreOwnedThreadFromTrash(
         {
           repos,

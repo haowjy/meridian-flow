@@ -98,7 +98,7 @@ function fixture(): Work {
 function props(): WorkScreenProps {
   return {
     projectId: "project-1",
-    routeWork: { status: "absent" },
+    routeWork: { status: "none" },
     routeCommands: { openWork: vi.fn(), workHref: vi.fn(() => "?screen=work") },
     onOpenThread: vi.fn(),
   } as unknown as WorkScreenProps;

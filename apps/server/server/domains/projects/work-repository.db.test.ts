@@ -86,6 +86,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       throw new Error(`Timed out waiting for ${minimum} PostgreSQL ${waitEvent} lock(s)`);
     }
 
+    it("deletes and restores archived management identity without unarchiving it", async () => {
+      const work = await works.create({ projectId: PROJECT_ID, name: "Archived history" });
+      await works.archive(work.id);
+      await works.softDelete(work.id);
+      expect(await works.findById(work.id)).toMatchObject({
+        status: "archived",
+        deletedAt: expect.any(String),
+      });
+      await works.restore(work.id);
+      expect(await works.findById(work.id)).toMatchObject({ status: "archived", deletedAt: null });
+      await expect(authorities.byId(PROJECT_ID, work.id)).resolves.toMatchObject({
+        workId: work.id,
+      });
+      await works.unarchive(work.id);
+      expect(await works.findById(work.id)).toMatchObject({ status: "active", deletedAt: null });
+    });
+
     it("generates deduplicated handles and keeps them through rename", async () => {
       const first = await works.create({ projectId: PROJECT_ID, name: "Book 2!" });
       const second = await works.create({ projectId: PROJECT_ID, name: "Book 2?" });
@@ -178,6 +195,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         "../threads/adapters/drizzle/index.js"
       );
       await db.insert(schema.threads).values({
+        slug: `fixture-${THREAD_ID}`,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,
@@ -369,7 +387,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       }
     });
 
-    it("restores a deleted Work unless its name or slug was reclaimed", async () => {
+    it("reserves deleted Work slugs but refuses a reclaimed name", async () => {
       const available = await works.create({ projectId: PROJECT_ID, name: "Available" });
       await works.softDelete(available.id);
       await expect(works.restore(available.id)).resolves.toMatchObject({ deletedAt: null });
@@ -383,10 +401,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const slugOwner = await works.create({ projectId: PROJECT_ID, name: "Same slug!" });
       await works.softDelete(slugOwner.id);
-      await works.create({ projectId: PROJECT_ID, name: "Same slug?" });
-      await expect(works.restore(slugOwner.id)).rejects.toEqual(
-        new WorkRestoreConflictError("slug"),
+      expect((await works.create({ projectId: PROJECT_ID, name: "Same slug?" })).slug).toBe(
+        "same-slug-2",
       );
+      await expect(works.restore(slugOwner.id)).resolves.toMatchObject({ slug: "same-slug" });
     });
 
     it("allows empty provisioned context sources but blocks live files", async () => {

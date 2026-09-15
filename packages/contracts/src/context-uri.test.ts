@@ -6,6 +6,7 @@ describe("documentTitleFromUri", () => {
   it.each([
     ["manuscript://chapters/Chapter 3 — Ashes of the Vale.md", "Chapter 3 — Ashes of the Vale"],
     ["kb://characters/Elara.mdx", "Elara"],
+    ["unfiled://Untitled 1.md", "Untitled 1"],
     ["scratch://plans/next-chapter.txt", "next-chapter"],
     ["uploads://references/map.png", "map"],
     ["user://style/voice.notes.md", "voice.notes"],
@@ -26,6 +27,14 @@ describe("documentTitleFromUri", () => {
 });
 
 describe("parseContextUri", () => {
+  it("treats Unfiled as a project namespace without Work authority", () => {
+    expect(parseContextUri("unfiled://Untitled 1.md")).toMatchObject({
+      ok: true,
+      value: { scheme: "unfiled", path: "Untitled 1.md" },
+    });
+    expect(parseContextUri("unfiled://@work/Untitled 1.md").ok).toBe(false);
+    expect(canonicalContextUri("unfiled", "Untitled 1.md")).toBe("unfiled://Untitled 1.md");
+  });
   it.each([
     "/chapters/Chapter 1.md",
     "chapters/Chapter 1.md",

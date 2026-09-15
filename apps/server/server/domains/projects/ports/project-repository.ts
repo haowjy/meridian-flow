@@ -31,6 +31,7 @@ export interface ListProjectsOptions {
 export interface ProjectRepository {
   create(input: CreateProjectInput): Promise<Project>;
   findById(id: ProjectId): Promise<Project | null>;
+  findLiveByOwnerSlug(userId: UserId, slug: string): Promise<Project | null>;
   listByUser(userId: UserId, opts?: ListProjectsOptions): Promise<Project[]>;
   search(userId: UserId, query: string): Promise<Project[]>;
   update(id: ProjectId, input: UpdateProjectInput): Promise<Project>;

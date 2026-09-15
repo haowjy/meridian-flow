@@ -15,6 +15,7 @@ import {
   AccountFeatureTestProvider,
   useContextRemovalCoordinator,
 } from "@/test-support/account-feature-provider";
+import { acceptContextTransition } from "@/test-support/context-removal-route";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import type { ProjectSearch } from "../routing/project-route";
 import type { ContextRemovalCoordinator } from "./context-removal-coordinator";
@@ -76,7 +77,7 @@ it("never restamps a Work-scoped route candidate during a production Work transi
         selectedTabIdByWork: { "work-1": "work-2-document" },
       },
     },
-    _deskHydrated: true,
+    _workspaceHydrated: true,
   });
   let coordinator: ContextRemovalCoordinator | null = null;
   let switchWork: (() => void) | null = null;
@@ -87,6 +88,7 @@ it("never restamps a Work-scoped route candidate during a production Work transi
     path: wrongPath,
   };
   const route = {
+    transition: acceptContextTransition,
     readSearch: () => search,
     updateSearch: (_projectId: string, update: (latest: ProjectSearch) => ProjectSearch) => {
       search = update(search);

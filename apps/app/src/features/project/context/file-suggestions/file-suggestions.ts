@@ -1,6 +1,6 @@
 /** Pure normalized-catalog projection and ranking for file suggestion hosts. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import type { CatalogCacheView } from "@/client/query/context-catalog-cache";
+import type { CatalogCacheView } from "@meridian/resource-replica";
 
 export type FileSuggestionKind = "file" | "dir";
 

@@ -54,7 +54,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
     const branches = createDrizzleBranchStore(db, undefined);
 
-    beforeEach(() => resetThreadWorkRaceFixture(db));
+    beforeEach(async () => {
+      await resetThreadWorkRaceFixture(db);
+      await db
+        .update(schema.works)
+        .set({ status: "active", archivedAt: null })
+        .where(eq(schema.works.id, TARGET_WORK_ID));
+    });
 
     afterAll(async () => {
       await control.end();

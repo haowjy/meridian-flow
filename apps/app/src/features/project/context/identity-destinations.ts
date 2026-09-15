@@ -2,9 +2,9 @@
 
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
-/** Uploads/user are storage surfaces, not homes for writing material. */
+/** Filing leaves Unfiled; Work resources are not Editor document destinations. */
 export const WRITABLE_IDENTITY_DESTINATIONS: readonly ProjectContextTreeScheme[] = [
   "manuscript",
   "kb",
-  "scratch",
+  "user",
 ];

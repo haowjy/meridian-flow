@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 /** Literal whitespace exits the real @ lane rather than only hiding its renderer. */
+
+import { emptyCatalogView } from "@meridian/resource-replica";
 import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { expect, it, vi } from "vitest";
-import { emptyCatalogView } from "@/client/query/context-catalog-cache";
 import { AtReferenceExtension, getAtReferenceMenu } from "./AtReferenceExtension";
 
 it("closes on @ Space, stays closed through cache updates and caret re-entry, and rearms on deletion", async () => {

@@ -16,9 +16,11 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { activateLocale, DEFAULT_LOCALE, i18n, resolveLocale } from "@/lib/i18n";
 import { TEXT_SIZE_BOOT_SCRIPT } from "@/lib/text-size";
 import { UI_THEME_BOOT_SCRIPT } from "@/lib/ui-theme";
+import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
 import globalCssUrl from "@/styles/globals.css?url";
 
 export const Route = createRootRoute({
+  ...PERSISTENT_SHELL_OPTIONS,
   head: () => ({
     meta: [
       { charSet: "utf-8" },

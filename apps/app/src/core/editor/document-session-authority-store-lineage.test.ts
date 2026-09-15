@@ -116,7 +116,13 @@ describe("document authority lineage persistence", () => {
         incarnation: { generation: "4", exactDatabaseName: exact },
       },
     });
+    expect((await store.readResourceSnapshot("doc")).room.pendingDrain?.generation).toBe("5");
+    expect((await store.readResourceSnapshot("doc")).pendingPurge).toBeNull();
     await store.finishDocumentDrain({ documentId: "doc", generation: "5", commandId: "delete-5" });
+    const snapshot = await store.readResourceSnapshot("doc");
+    expect(snapshot.pendingPurge).toMatchObject({ exactDatabaseName: exact, revokedThrough: "5" });
+    if (snapshot.pendingPurge) snapshot.pendingPurge.exactDatabaseName = "caller-mutation";
+    expect((await store.readResourceSnapshot("doc")).pendingPurge?.exactDatabaseName).toBe(exact);
     const purge = await store.snapshotPurge("doc");
     expect(purge?.exactDatabaseName).toBe(exact);
     if (!purge) return;
@@ -189,4 +195,48 @@ describe("document authority lineage persistence", () => {
     });
     await store.close();
   });
+});
+
+it("reads empty and same-ID authority snapshots within their own account only", async () => {
+  const first = new DocumentSessionAuthorityStore("snapshot-account-a");
+  const second = new DocumentSessionAuthorityStore("snapshot-account-b");
+  try {
+    await first.beginLocalAdoption({
+      documentId: "same-id",
+      transitionId: "adopt",
+      lineageHandle: "lineage",
+      exactDatabaseName: "original-cache",
+      targetGeneration: null,
+    });
+    expect((await first.readResourceSnapshot("same-id")).room.persistence).toMatchObject({
+      exactDatabaseName: "original-cache",
+    });
+    expect(await second.readResourceSnapshot("same-id")).toEqual({
+      room: {
+        documentId: "same-id",
+        persistence: null,
+        documentAdmittedThrough: null,
+        pendingDrain: null,
+      },
+      pendingPurge: null,
+    });
+  } finally {
+    await Promise.all([first.close(), second.close()]);
+  }
+});
+
+it("does not hide a previous pending purge while a newer drain is running", async () => {
+  const store = new DocumentSessionAuthorityStore("snapshot-drain-and-purge");
+  try {
+    await store.admit({ documentId: "doc", projectId: "project", generation: "1" });
+    await store.startDocumentDrain({ documentId: "doc", generation: "2", commandId: "delete-2" });
+    await store.finishDocumentDrain({ documentId: "doc", generation: "2", commandId: "delete-2" });
+    await store.startDocumentDrain({ documentId: "doc", generation: "3", commandId: "delete-3" });
+    const snapshot = await store.readResourceSnapshot("doc");
+    expect(snapshot.room.pendingDrain?.generation).toBe("3");
+    expect(snapshot.pendingPurge?.revokedThrough).toBe("2");
+    expect(await store.snapshotPurge("doc")).toBeNull();
+  } finally {
+    await store.close();
+  }
 });

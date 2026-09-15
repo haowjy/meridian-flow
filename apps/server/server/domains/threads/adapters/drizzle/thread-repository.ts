@@ -111,7 +111,7 @@ export async function writeThreadCostRecompute(db: DrizzleDb, id: ThreadId) {
 
 async function insertThreadWithStableSlug(
   db: DrizzleDatabase,
-  values: typeof schema.threads.$inferInsert,
+  values: Omit<typeof schema.threads.$inferInsert, "slug">,
   title: string | null | undefined,
 ) {
   return runInDrizzleTransaction(db, async () => {
@@ -122,16 +122,10 @@ async function insertThreadWithStableSlug(
     const rows = await activeDb
       .select({ slug: schema.threads.slug })
       .from(schema.threads)
-      .where(
-        and(
-          eq(schema.threads.projectId, values.projectId as ProjectId),
-          isNotNull(schema.threads.slug),
-          isNull(schema.threads.deletedAt),
-        ),
-      );
+      .where(eq(schema.threads.projectId, values.projectId as ProjectId));
     const slug = uniqueThreadSlug(
       title,
-      rows.flatMap((row) => (row.slug ? [row.slug] : [])),
+      rows.map((row) => row.slug),
     );
     const [created] = await activeDb
       .insert(schema.threads)
@@ -245,6 +239,22 @@ export function createDrizzleThreadRepository(
         .where(
           and(
             eq(schema.threads.id, id),
+            isNull(schema.threads.deletedAt),
+            isNull(schema.projects.deletedAt),
+          ),
+        );
+      return row ? mapThread(row) : null;
+    },
+    async findLiveByProjectSlug(projectId: ProjectId, slug: string) {
+      const [row] = await currentDrizzleDb(db)
+        .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
+        .from(schema.threads)
+        .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
+        .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
+        .where(
+          and(
+            eq(schema.threads.projectId, projectId),
+            eq(schema.threads.slug, slug),
             isNull(schema.threads.deletedAt),
             isNull(schema.projects.deletedAt),
           ),

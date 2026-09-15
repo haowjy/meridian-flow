@@ -17,6 +17,7 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { projectResourceNeedsRepair } from "@meridian/resource-replica";
 import { FolderDown, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -25,15 +26,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { DraftReviewChip } from "@/features/editor/DraftReviewChip";
 import { escapeCssIdent } from "@/lib/css-selector";
 import { cn } from "@/lib/utils";
+import { useAccountResourceProjection } from "./account-feature-context";
 import { schemeIcon, schemeLabel } from "./context-schemes";
 import { IdentityPlacementField } from "./IdentityPlacementField";
 import { IDENTITY_BAR_BAND_CLASS, IDENTITY_BAR_BOX_CLASS } from "./identity-bar-geometry";
 import { type TabLocation, tabLocation } from "./identity-location";
-import {
-  clearQueuedIdentityFailure,
-  useQueuedIdentityFailure,
-  useUntitledPendingSince,
-} from "./untitled-reconciler-browser";
 import {
   type IdentityCommitOwnership,
   type IdentityCommitted,
@@ -61,6 +58,7 @@ export function DocumentIdentityBar({
 }: DocumentIdentityBarProps) {
   const location = tabLocation(tab);
   const [fieldOpen, setFieldOpen] = useState(false);
+  const [dismissedRepairId, setDismissedRepairId] = useState<string | null>(null);
   const commit = useIdentityCommit({
     projectId,
     tab,
@@ -71,10 +69,19 @@ export function DocumentIdentityBar({
   // A queued placement that failed after this document materialized reopens
   // the field with the writer's name restored and the failure's recovery
   // note — the receipt must never be dropped silently.
-  const identityFailure = useQueuedIdentityFailure(projectId, tab.documentId);
+  const { records } = useAccountResourceProjection(projectId);
+  const resource = records.find(({ resource }) =>
+    tab.resourceHandle
+      ? resource.handle === tab.resourceHandle
+      : resource.identity.documentId === tab.documentId,
+  );
+  const repair = resource ? projectResourceNeedsRepair(projectId, resource) : null;
+  const identityFailure =
+    repair?.kind === "set-location" && repair.intentId !== dismissedRepairId
+      ? ({ kind: "error", name: repair.name } as const)
+      : null;
   useEffect(() => {
-    if (!identityFailure) return;
-    setFieldOpen(true);
+    if (identityFailure) setFieldOpen(true);
   }, [identityFailure]);
 
   // The chip always opens the one inline field when moving the document is
@@ -106,8 +113,8 @@ export function DocumentIdentityBar({
             onExit={(reason) => {
               // Leaving the field acknowledges any failure receipt — it must
               // not reopen the editor it just closed.
-              clearQueuedIdentityFailure(projectId, tab.documentId);
               setFieldOpen(false);
+              if (repair?.kind === "set-location") setDismissedRepairId(repair.intentId);
               if (reason === "escape") focusEditorProse(tab.documentId);
             }}
             onOpenExisting={onOpenExisting}
@@ -119,7 +126,7 @@ export function DocumentIdentityBar({
         <DraftReviewChip documentId={tab.documentId} />
         <IdentityChipSlot
           projectId={projectId}
-          documentId={tab.documentId}
+          tab={tab}
           location={location}
           show={showChip && !fieldOpen}
           onChooseHome={() => {
@@ -197,18 +204,18 @@ function IdentityPath({ location }: { location: TabLocation }) {
  */
 function IdentityChipSlot({
   projectId,
-  documentId,
+  tab,
   location,
   show,
   onChooseHome,
 }: {
   projectId: string;
-  documentId: string;
+  tab: ContextTab;
   location: TabLocation;
   show: boolean;
   onChooseHome: () => void;
 }) {
-  const deviceOnly = useDeviceOnly(projectId, documentId);
+  const deviceOnly = useDeviceOnly(projectId, tab);
   if (!deviceOnly && !show) return null;
   return (
     <>
@@ -292,11 +299,19 @@ const DEVICE_ONLY_GRACE_MS = 2_000;
  * reconciler's per-document `pendingSince` — remounting the bar (tab
  * switches) cannot restart the window.
  */
-function useDeviceOnly(projectId: string, documentId: string): boolean {
-  const since = useUntitledPendingSince(projectId, documentId);
+function useDeviceOnly(projectId: string, tab: ContextTab): boolean {
+  const { records } = useAccountResourceProjection(projectId);
+  const resource = records.find(({ resource }) =>
+    tab.kind === "new"
+      ? resource.handle === tab.resourceHandle
+      : resource.identity.documentId === tab.documentId,
+  )?.resource;
+  const since = resource?.obligations.createEligibility?.eligibleAt ?? null;
+  const pending =
+    resource?.lifecycle.kind === "local" || Boolean(resource?.obligations.sessionAdoption);
   const [sustained, setSustained] = useState(false);
   useEffect(() => {
-    if (since === null) {
+    if (!pending || since === null) {
       setSustained(false);
       return;
     }
@@ -308,7 +323,7 @@ function useDeviceOnly(projectId: string, documentId: string): boolean {
     setSustained(false);
     const timer = window.setTimeout(() => setSustained(true), remaining);
     return () => window.clearTimeout(timer);
-  }, [documentId, since]);
+  }, [pending, since, tab.documentId]);
   return sustained;
 }
 

@@ -1,9 +1,4 @@
 # Context browser TODO
 
-- `ContextTreePanel.tsx` and `client/api/projects-api.ts`: add a real Uploads
-  intake action backed by the server's multipart
-  `POST /api/projects/:projectId/context/uploads/upload` route, including the
-  active thread Work ID and invalidating that Work's `uploads` tree after a
-  successful response. Keep the route's flat-path and supported-file-type
-  errors writer-readable. Do not expose a picker until the request and cache
-  refresh are wired end to end.
+- `ContextViewer.tsx`: replace the minimal empty state with an explicit recent-document list. Recents are offered for user selection, never auto-opened on mount or screen entry.
+- Chat frame and Editor pane: add a chat-launched Scratch/Uploads viewer as a temporary overlay over only the Editor pane, beside the still-usable chat. Block Editor tab switching until it closes, then reveal the same underlying document. Never create resource tabs. Chat-focused viewing belongs in its future right sidebar. Include intake controls there, not in the main document tree. Deferred by the writer; not implemented in this change. GitHub issue publication needs approval.
