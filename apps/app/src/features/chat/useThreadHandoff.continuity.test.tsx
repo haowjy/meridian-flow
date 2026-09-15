@@ -6,6 +6,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
+import { ThreadRunScenario } from "@/client/copilot/test-support/ThreadRunScenario";
 import { FirstSendContinuity, FirstSendContinuityProvider } from "@/client/first-send-continuity";
 import type { ThreadStoreActions } from "@/client/stores";
 import {
@@ -98,7 +99,7 @@ async function stageCreation() {
 }
 
 describe("useThreadHandoff durable continuity", () => {
-  it("dispatches ready once, then remount lookup-only while ambiguous", async () => {
+  it("dispatches ready once, then reconciles durable identity on remount", async () => {
     await stage();
     const submit = vi.fn(
       async () =>
@@ -116,13 +117,36 @@ describe("useThreadHandoff durable continuity", () => {
           acceptedRevision: envelope.acceptedRevision,
         }) as const,
     );
-    const controller = { submit, lookup, resume: vi.fn() } as unknown as ThreadRunController;
+    const controller = {
+      submit,
+      recoverFirstSend: lookup,
+      resume: vi.fn(),
+    } as unknown as ThreadRunController;
     const unmount = await mount(controller);
     await vi.waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
     await unmount();
     const unmountAgain = await mount(controller);
     await vi.waitFor(() => expect(lookup).toHaveBeenCalledTimes(1));
     expect(submit).toHaveBeenCalledTimes(1);
+    await unmountAgain();
+  });
+
+  it("recovers the persisted envelope with one same-ID POST and retires continuity", async () => {
+    await stage();
+    await owner.findForThread(key.projectId, key.threadId);
+    await owner.markAmbiguous(key);
+    const scenario = new ThreadRunScenario();
+    const unmount = await mount(scenario.controller);
+    await vi.waitFor(async () => expect(await owner.peek(key)).toBeNull());
+    expect(scenario.appendRequests).toHaveLength(1);
+    expect(scenario.appendRequests[0]?.data).toMatchObject({
+      threadId: key.threadId,
+      submissionId: envelope.submissionId,
+      text: envelope.text,
+    });
+    await unmount();
+    const unmountAgain = await mount(scenario.controller);
+    expect(scenario.appendRequests).toHaveLength(1);
     await unmountAgain();
   });
 
@@ -136,7 +160,7 @@ describe("useThreadHandoff durable continuity", () => {
         submissionId: envelope.submissionId,
         acceptedRevision: envelope.acceptedRevision,
       })),
-      lookup: vi.fn(),
+      recoverFirstSend: vi.fn(),
       resume: vi.fn(),
     } as unknown as ThreadRunController;
     const unmount = await mount(controller, restoreLatest);
@@ -164,7 +188,7 @@ describe("useThreadHandoff durable continuity", () => {
     const restoreLatest = vi.fn(() => 1);
     const controller = {
       submit,
-      lookup: vi.fn(),
+      recoverFirstSend: vi.fn(),
       resume: vi.fn(),
     } as unknown as ThreadRunController;
     const unmount = await mount(controller, restoreLatest);
@@ -205,7 +229,7 @@ describe("useThreadHandoff durable continuity", () => {
     });
     const controller = {
       submit,
-      lookup: vi.fn(),
+      recoverFirstSend: vi.fn(),
       resume: vi.fn(),
     } as unknown as ThreadRunController;
     const unmount = await mount(controller, restoreLatest);
@@ -237,7 +261,7 @@ describe("useThreadHandoff durable continuity", () => {
         submissionId: envelope.submissionId,
         acceptedRevision: envelope.acceptedRevision,
       })),
-      lookup: vi.fn(),
+      recoverFirstSend: vi.fn(),
       resume: vi.fn(),
     } as unknown as ThreadRunController;
     const unmount = await mount(controller, undefined, restoreFailed);
