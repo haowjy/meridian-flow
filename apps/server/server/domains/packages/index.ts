@@ -36,6 +36,12 @@ export {
   prepareAgentSourceRevision,
 } from "./domain/agent-source-revision.js";
 export {
+  type AgentSelection,
+  type BoundAgentCatalog,
+  type BoundAgentCatalogItem,
+  createBoundAgentCatalog,
+} from "./domain/bound-agent-catalog.js";
+export {
   createDefaultPackageSeeder,
   type DefaultPackageSeedConfig,
   type DefaultPackageSeeder,

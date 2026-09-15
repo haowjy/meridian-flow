@@ -624,6 +624,13 @@
       "when": 1789486698284,
       "tag": "0088_material_mauler",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1789487925283,
+      "tag": "0089_lame_revanche",
+      "breakpoints": true
     }
   ]
 }
