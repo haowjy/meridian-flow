@@ -26,7 +26,11 @@ export function turnUsageFromRow(row: typeof schema.turns.$inferSelect): TurnUsa
 }
 
 export function mapThread(
-  row: typeof schema.threads.$inferSelect & { workId?: string | null },
+  row: typeof schema.threads.$inferSelect & {
+    workId?: string | null;
+    agentDefinitionRevisionId?: string | null;
+    agentName?: string | null;
+  },
 ): Thread {
   const isFrozen = row.bakedSkillSlugs !== null;
   return {
@@ -43,6 +47,8 @@ export function mapThread(
     systemPrompt: isFrozen ? null : row.composedSystemPrompt,
     workingState: row.workingState as Thread["workingState"],
     currentAgent: row.currentAgentId,
+    agentDefinitionRevisionId: row.agentDefinitionRevisionId ?? null,
+    agentName: row.agentName ?? null,
     nextSeq: toSeqString(row.nextSeq),
     activeLeafTurnId: row.activeLeafTurnId,
     parentThreadId: row.parentThreadId,

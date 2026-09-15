@@ -14,7 +14,7 @@ import { RecentProjects } from "@/features/home/RecentProjects";
  * A secondary action starts an independent (project-less) chat instead.
  */
 export function HomeView() {
-  const startIndependentChat = useStartIndependentChat();
+  const independentChat = useStartIndependentChat();
 
   return (
     <HomeColumn>
@@ -25,7 +25,13 @@ export function HomeView() {
       </div>
 
       <div className="mt-2 flex justify-center">
-        <Button type="button" variant="quiet" size="sm" onClick={() => startIndependentChat()}>
+        <Button
+          type="button"
+          variant="quiet"
+          size="sm"
+          disabled={!independentChat.ready}
+          onClick={() => independentChat.start()}
+        >
           <MessageSquarePlus className="size-4" aria-hidden />
           <Trans>Start a quick chat without a project</Trans>
         </Button>

@@ -529,8 +529,8 @@ msgid "Breadcrumb"
 msgstr "Breadcrumb"
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Built-in"
-msgstr "Built-in"
+#~ msgid "Built-in"
+#~ msgstr "Built-in"
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bullet list"
@@ -717,6 +717,10 @@ msgstr "Choose a listed option"
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent"
 msgstr "Choose agent"
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "Choose Agent"
+msgstr "Choose Agent"
 
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
@@ -1696,8 +1700,8 @@ msgid "Insert row below"
 msgstr "Insert row below"
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Installed"
-msgstr "Installed"
+#~ msgid "Installed"
+#~ msgstr "Installed"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Interface language"
@@ -2369,6 +2373,10 @@ msgstr "Pending drafts"
 msgid "Pending drafts couldn’t load"
 msgstr "Pending drafts couldn’t load"
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Personal"
+msgstr "Personal"
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "photo"
 msgstr "photo"
@@ -2968,6 +2976,10 @@ msgstr "Switched Work"
 msgid "Switching Work…"
 msgstr "Switching Work…"
 
+#: src/features/agents/AgentPicker.tsx
+msgid "System"
+msgstr "System"
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Table"
@@ -3242,8 +3254,13 @@ msgstr "This chat now uses {0}."
 
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
-msgstr "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
+#~ msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
+#~ msgstr "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
+
+#. placeholder {0}: agent.name
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "This chat uses {0}."
+msgstr "This chat uses {0}."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts

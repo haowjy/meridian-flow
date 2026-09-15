@@ -2,7 +2,7 @@
 
 import { useRouter } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
-import type { CreationChoices } from "@/client/first-send-continuity";
+import type { CreationAgent, CreationChoices } from "@/client/first-send-continuity";
 import type { ComposerDraftChange, ComposerSubmitEnvelope } from "@/components/app/composer";
 import { isSettingsSection } from "@/features/account/settings-sections";
 import { projectAddressHref } from "@/features/project/routing/project-address";
@@ -66,7 +66,7 @@ export function useCreationComposer(projectId: string | null) {
     discard: () => controller.updateDraft(null),
     async submit(
       submission: ComposerSubmitEnvelope,
-      context: { workId: string | null; agentSlug: string },
+      context: { workId: string | null; agent: CreationAgent },
     ) {
       const isCurrent = capture();
       const accepted = await controller.submit({
@@ -77,12 +77,12 @@ export function useCreationComposer(projectId: string | null) {
       if (accepted) await openCreated(isCurrent);
       return accepted;
     },
-    async createEmpty(title: string, agentSlug: string) {
+    async createEmpty(title: string, agent: CreationAgent) {
       const isCurrent = capture();
-      if (await controller.submit({ submission: null, title, workId: null, agentSlug }))
+      if (await controller.submit({ submission: null, title, workId: null, agent }))
         await openCreated(isCurrent);
     },
-    async retry(choices?: { workId: string | null; agentSlug: string }) {
+    async retry(choices?: { workId: string | null; agent: CreationAgent }) {
       const isCurrent = capture();
       if (await controller.retry(choices)) await openCreated(isCurrent);
     },

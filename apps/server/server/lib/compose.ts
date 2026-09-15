@@ -65,6 +65,8 @@ import {
 import { createInMemoryPackageStore } from "../domains/packages/adapters/in-memory-package-store.js";
 import {
   type AgentRevisionStore,
+  type BoundAgentCatalog,
+  createBoundAgentCatalog,
   createDefaultPackageSeeder,
   createDrizzleAgentRevisionStore,
   createDrizzlePackageStore,
@@ -92,6 +94,7 @@ import {
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
 } from "../domains/projects/index.js";
+import { agentDefinitionUnavailableReasons } from "../domains/runtime/agent-definition-support.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
   computeEffectivePermissions,
@@ -201,6 +204,7 @@ export type AppServices = {
   workContextDelivery: WorkContextDelivery;
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
+  agentCatalog: BoundAgentCatalog;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   eventQuery?: EventQuery;
@@ -733,6 +737,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workContextDelivery,
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
+    agentCatalog: createBoundAgentCatalog({
+      store: ports.agentRevisions,
+      unavailableReasons: (definition) =>
+        agentDefinitionUnavailableReasons(definition, ports.gateway),
+    }),
     interruptRegistry,
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
@@ -766,7 +775,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
 
 export function createInMemoryAppServices(): AppServices {
   const transactionOwner = new InMemoryTransactionOwner();
-  const threadRepos = createInMemoryRepositories({ transactionOwner });
+  const threadRepos = createInMemoryRepositories({
+    transactionOwner,
+    boundAgent: (id) => agentRevisions.boundAgent(id),
+  });
   const agentRevisions = createInMemoryAgentRevisionStore({
     transactionOwner,
     threadExists: async (id) =>
@@ -1078,6 +1090,10 @@ export function createInMemoryAppServices(): AppServices {
     workContextDelivery: noopWorkContextDelivery,
     billing: billingDomain.service,
     agentRevisions,
+    agentCatalog: createBoundAgentCatalog({
+      store: agentRevisions,
+      unavailableReasons: (definition) => agentDefinitionUnavailableReasons(definition, {}),
+    }),
     interruptRegistry: createInterruptRegistry(),
     eventSink: createNoopEventSink(),
     packageRepository,

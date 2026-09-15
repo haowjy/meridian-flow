@@ -1,29 +1,23 @@
 /** Account/system selection, immutable revision eligibility, and truthful runtime availability. */
+import type {
+  AgentCatalogPage,
+  AgentSelection,
+  AgentCatalogItem as BoundAgentCatalogItem,
+} from "@meridian/contracts/agents";
 import type { AgentCatalogEntry, AgentRevisionStore } from "../ports/agent-revision-store.js";
 import type { CompiledAgentDefinition } from "./agent-definition-compiler.js";
 import type { AgentSourceSnapshot } from "./agent-source-revision.js";
 
-export interface AgentSelection {
-  catalogEntryId: string;
-  definitionRevisionId: string;
-}
-export interface BoundAgentCatalogItem {
-  selection: AgentSelection;
-  slug: string;
-  name: string;
-  description: string;
-  ownership: "system" | "personal";
-  unavailableReasons: string[];
-}
+export type {
+  AgentCatalogItem as BoundAgentCatalogItem,
+  AgentSelection,
+} from "@meridian/contracts/agents";
 export interface BoundAgentCatalog {
   installSystemSource(source: AgentSourceSnapshot): Promise<void>;
   list(
     userId: string,
     input: { limit: number; after?: { nameSortKey: string; id: string } },
-  ): Promise<{
-    agents: BoundAgentCatalogItem[];
-    nextCursor: { nameSortKey: string; id: string } | null;
-  }>;
+  ): Promise<AgentCatalogPage>;
   resolvePrimary(
     userId: string,
     selection: AgentSelection,

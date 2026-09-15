@@ -3,27 +3,35 @@
  * asserting ownership and resolving its work attachment. App-layer glue tying
  * the projects + threads + packages domains together.
  */
+import type { AgentSelection } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
 import {
   type EventSink,
   emitEvent,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
-import type { PackageRepository } from "../domains/packages/index.js";
+import type { AgentRevisionStore, BoundAgentCatalog } from "../domains/packages/index.js";
 import {
   type ProjectRepository,
   requireProjectOwner,
+  WorkLifecycleUnavailableError,
   type WorkRepository,
 } from "../domains/projects/index.js";
 import type { ThreadRepositories } from "./compose.js";
-import { resolveWorkMembership } from "./work-attachment.js";
+import { InvalidWorkAttachmentError, resolveWorkMembership } from "./work-attachment.js";
 
 export { InvalidWorkAttachmentError } from "./work-attachment.js";
 
 export class AgentBindingNotFoundError extends Error {
-  constructor(public readonly agentSlug: string) {
-    super(`Agent not found: ${agentSlug}`);
+  constructor(public readonly agentRef: string) {
+    super(`Agent not found: ${agentRef}`);
     this.name = "AgentBindingNotFoundError";
+  }
+}
+
+export class ThreadCreationConflictError extends Error {
+  constructor() {
+    super("The reserved thread ID belongs to a different creation");
   }
 }
 
@@ -33,7 +41,8 @@ export interface CreateThreadForProjectDeps {
   threads: ThreadRepositories["threads"];
   threadWorks: ThreadRepositories["threadWorks"];
   transaction: ThreadRepositories["transaction"];
-  packageRepository?: PackageRepository;
+  agentRevisions: AgentRevisionStore;
+  agentCatalog: BoundAgentCatalog;
   eventSink: EventSink;
 }
 
@@ -43,13 +52,9 @@ export interface CreateThreadForProjectArgs {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: string;
   title?: string | null;
-  systemPrompt?: string | null;
-  /** Mars agent slug — when set, agent body becomes the thread system prompt. */
-  currentAgent?: string | null;
+  agentSelection: AgentSelection;
   /** Explicit work assignment from the request, if any. */
   workId?: string | null;
-  /** When set, this is a subagent thread — inherit the parent's work. */
-  parentThreadId?: string | null;
 }
 
 /**
@@ -66,46 +71,72 @@ export async function createThreadForProject(
   const eventSink = deps.eventSink;
   await requireProjectOwner({ projects: deps.projects }, args.projectId, args.userId);
 
-  const agentSlug = args.currentAgent ?? null;
-  if (agentSlug) {
-    if (!deps.packageRepository) {
-      throw new Error("packageRepository is required to bind a thread to an agent");
-    }
-    const resolved = await deps.packageRepository.getAgentWithLinkedSkills(
-      args.projectId,
-      args.userId,
-      agentSlug,
-    );
-    if (!resolved.agent) {
-      throw new AgentBindingNotFoundError(agentSlug);
-    }
-  }
-
+  const recoverCommitted = async (): Promise<Thread | null> => {
+    const existing = args.id ? await deps.threads.findById(args.id) : null;
+    if (!existing) return null;
+    if (
+      existing.projectId !== args.projectId ||
+      existing.userId !== args.userId ||
+      existing.kind !== "primary" ||
+      existing.title !== (args.title || null) ||
+      existing.workId !== (args.workId ?? null) ||
+      existing.parentThreadId !== null ||
+      existing.agentDefinitionRevisionId !== args.agentSelection.definitionRevisionId
+    )
+      throw new ThreadCreationConflictError();
+    return existing;
+  };
+  // Recovery uses committed identity even if prospective catalog eligibility has changed.
+  const existing = await recoverCommitted();
+  if (existing) return existing;
   let resolvedWorkId: string | null = null;
-  const thread = await deps.transaction(async () => {
-    const created = await deps.threads.create({
-      id: args.id ? args.id : undefined,
-      userId: args.userId,
-      projectId: args.projectId,
-      title: args.title ?? null,
-      systemPrompt: agentSlug ? null : (args.systemPrompt ?? null),
-      currentAgent: agentSlug,
-      parentThreadId: args.parentThreadId,
-    });
-    resolvedWorkId = await resolveWorkMembership(
-      {
-        workRepo: deps.workRepo,
-        threadWorks: deps.threadWorks,
-      },
-      {
-        threadId: created.id,
-        projectId: args.projectId,
-        workId: args.workId,
-        parentThreadId: args.parentThreadId,
-      },
+  let thread: Thread;
+  try {
+    const resolved = await deps.agentCatalog.resolvePrimary(args.userId, args.agentSelection);
+    if (!resolved.ok) throw new AgentBindingNotFoundError(args.agentSelection.definitionRevisionId);
+    const revision = await deps.agentRevisions.readRevision(
+      args.agentSelection.definitionRevisionId,
     );
-    return { ...created, workId: resolvedWorkId };
-  });
+    if (!revision) throw new AgentBindingNotFoundError(args.agentSelection.definitionRevisionId);
+
+    thread = await deps.transaction(async () => {
+      const created = await deps.threads.create({
+        id: args.id ? args.id : undefined,
+        userId: args.userId,
+        projectId: args.projectId,
+        title: args.title ?? null,
+        systemPrompt: null,
+        currentAgent: revision.slug,
+      });
+      resolvedWorkId = await resolveWorkMembership(
+        {
+          workRepo: deps.workRepo,
+          threadWorks: deps.threadWorks,
+        },
+        {
+          threadId: created.id,
+          projectId: args.projectId,
+          workId: args.workId,
+        },
+      );
+      if (!(await deps.agentRevisions.bindThread(created.id, revision.id))) {
+        throw new Error("Thread Agent binding conflict");
+      }
+      return {
+        ...created,
+        workId: resolvedWorkId,
+        agentDefinitionRevisionId: revision.id,
+        agentName: revision.definition.metadata.name ?? revision.slug,
+      };
+    });
+  } catch (error) {
+    const committed = await recoverCommitted();
+    if (committed) return committed;
+    if (error instanceof WorkLifecycleUnavailableError) {
+      throw new InvalidWorkAttachmentError("Work is not available in this project");
+    }
+    throw error;
+  }
 
   if (resolvedWorkId) {
     try {

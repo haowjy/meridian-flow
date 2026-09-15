@@ -36,6 +36,8 @@ function thread(): Thread {
     title: "Custom project thread",
     slug: null,
     currentAgent: null,
+    agentDefinitionRevisionId: null,
+    agentName: null,
     activeLeafTurnId: null,
     parentThreadId: null,
     rootThreadId: THREAD_ID,

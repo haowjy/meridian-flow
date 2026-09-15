@@ -1,12 +1,13 @@
 /**
- * AgentPickerPanel — installed then built-in agents from the project catalog
+ * AgentPickerPanel — personal and system entries from the exact Agent catalog
  * with quiet loading, empty, and error states.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ProjectAgentSummary } from "@meridian/contracts/agents";
+import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import type { ReactNode, RefObject } from "react";
-import type { ProjectAgentsStatus } from "@/client/query/useProjectAgents";
+import type { CreationAgent } from "@/client/first-send-continuity";
+import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -14,15 +15,12 @@ import {
   dropdownRowVariants,
 } from "@/components/ui/dropdown-presentation";
 import { sectionLabelVariants } from "@/components/ui/section-label";
-import { sourceBadgeLabel } from "@/lib/source-badge";
 import { cn } from "@/lib/utils";
 
-import { resolveAgentFromCatalog } from "./resolve-agent";
-
 type AgentPickerPanelProps = {
-  status: ProjectAgentsStatus;
-  selectedSlug: string;
-  onSelect: (slug: string) => void;
+  status: AgentCatalogStatus;
+  selectedAgent: CreationAgent | null;
+  onSelect: (agent: CreationAgent) => void;
   focusRefs?: {
     selected: RefObject<HTMLButtonElement | null>;
     first: RefObject<HTMLButtonElement | null>;
@@ -32,14 +30,15 @@ type AgentPickerPanelProps = {
 
 export function AgentPickerPanel({
   status,
-  selectedSlug,
+  selectedAgent,
   onSelect,
   focusRefs,
 }: AgentPickerPanelProps) {
   const agents = status.agents ?? [];
-  const installed = agents.filter((agent) => agent.source === "package" || agent.source === "user");
-  const builtins = agents.filter((agent) => agent.source === "builtin");
-  const firstSlug = agents[0]?.slug;
+  const installed = agents.filter((agent) => agent.ownership === "personal");
+  const builtins = agents.filter((agent) => agent.ownership === "system");
+  const firstId = agents.find((agent) => !agent.unavailableReasons.length)?.selection
+    .catalogEntryId;
 
   return (
     <div className={cn(dropdownResultsVariants({ kind: "picker" }), "flex flex-col")}>
@@ -61,22 +60,22 @@ export function AgentPickerPanel({
         <>
           {installed.length > 0 ? (
             <AgentGroup
-              title={t`Installed`}
+              title={t`Personal`}
               agents={installed}
-              selectedSlug={selectedSlug}
+              selectedAgent={selectedAgent}
               onSelect={onSelect}
               focusRefs={focusRefs}
-              firstSlug={firstSlug}
+              firstId={firstId}
             />
           ) : null}
           {builtins.length > 0 ? (
             <AgentGroup
-              title={t`Built-in`}
+              title={t`System`}
               agents={builtins}
-              selectedSlug={selectedSlug}
+              selectedAgent={selectedAgent}
               onSelect={onSelect}
               focusRefs={focusRefs}
-              firstSlug={firstSlug}
+              firstId={firstId}
             />
           ) : null}
         </>
@@ -88,41 +87,46 @@ export function AgentPickerPanel({
 function AgentGroup({
   title,
   agents,
-  selectedSlug,
+  selectedAgent,
   onSelect,
   focusRefs,
-  firstSlug,
+  firstId,
 }: {
   title: string;
-  agents: ProjectAgentSummary[];
-  selectedSlug: string;
-  onSelect: (slug: string) => void;
+  agents: AgentCatalogItem[];
+  selectedAgent: CreationAgent | null;
+  onSelect: (agent: CreationAgent) => void;
   focusRefs?: {
     selected: RefObject<HTMLButtonElement | null>;
     first: RefObject<HTMLButtonElement | null>;
   };
-  firstSlug?: string;
+  firstId?: string;
 }) {
   return (
     <section>
       <p className={cn(sectionLabelVariants({ variant: "group" }), "mb-1 px-2")}>{title}</p>
       <ul className="flex flex-col gap-0.5">
         {agents.map((agent) => {
-          const active = agent.slug === selectedSlug;
-          const display = resolveAgentFromCatalog(agent.slug, [agent]);
-          const badge = sourceBadgeLabel(display.source, display.packageName);
+          const active =
+            agent.selection.catalogEntryId === selectedAgent?.selection.catalogEntryId &&
+            agent.selection.definitionRevisionId === selectedAgent?.selection.definitionRevisionId;
+          const unavailable = agent.unavailableReasons.length > 0;
+          const badge = agent.ownership === "system" ? t`System` : t`Personal`;
           return (
-            <li key={agent.slug}>
+            <li key={agent.selection.catalogEntryId}>
               <button
                 ref={
-                  agent.slug === selectedSlug
+                  active && !unavailable
                     ? focusRefs?.selected
-                    : agent.slug === firstSlug
+                    : agent.selection.catalogEntryId === firstId
                       ? focusRefs?.first
                       : undefined
                 }
                 type="button"
-                onClick={() => onSelect(agent.slug)}
+                disabled={unavailable}
+                onClick={() =>
+                  onSelect({ selection: agent.selection, slug: agent.slug, name: agent.name })
+                }
                 className={cn(
                   dropdownRowVariants({ kind: "identity", selected: active }),
                   // Pressed neutral, not an accent wash — routine selection
@@ -132,7 +136,7 @@ function AgentGroup({
               >
                 <span className="inline-flex min-w-0 max-w-full items-center gap-2">
                   <span className="min-w-0 truncate text-sm font-medium text-foreground">
-                    {display.name}
+                    {agent.name}
                   </span>
                   {badge ? (
                     <Badge variant="neutral" className="font-medium">
@@ -145,7 +149,11 @@ function AgentGroup({
                     {agent.description}
                   </span>
                 ) : null}
-                {/* TODO(default-agent): per-row "Set as default" affordance */}
+                {unavailable ? (
+                  <span className="text-meta text-muted-foreground">
+                    {agent.unavailableReasons.join(" ")}
+                  </span>
+                ) : null}
               </button>
             </li>
           );

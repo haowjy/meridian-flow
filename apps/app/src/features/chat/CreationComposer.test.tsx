@@ -19,7 +19,19 @@ vi.mock("@lingui/core/macro", () => ({ t: (parts: TemplateStringsArray) => parts
 vi.mock("./useCreationComposer", () => ({
   useCreationComposer: () => ({
     state: {
-      slot: { choices: { agentSlug: "removed-agent", workId: null } },
+      slot: {
+        choices: {
+          agent: {
+            name: "Removed",
+            slug: "removed-agent",
+            selection: {
+              catalogEntryId: "removed-entry",
+              definitionRevisionId: "removed-revision",
+            },
+          },
+          workId: null,
+        },
+      },
       issue: fixture.issue,
     },
     loaded: true,
@@ -28,8 +40,8 @@ vi.mock("./useCreationComposer", () => ({
   }),
 }));
 vi.mock("@/client/query/useWorks", () => ({ useWorks: () => ({ status: "empty", works: [] }) }));
-vi.mock("@/client/query/useProjectAgents", () => ({
-  useProjectAgents: () => ({
+vi.mock("@/client/query/useAgentCatalog", () => ({
+  useAgentCatalog: () => ({
     status: fixture.agentStatus,
     agents: [],
     isError: fixture.agentStatus === "error",

@@ -49,8 +49,10 @@ access and runtime support before selecting or binding. Null catalog ownership
 is reserved for trusted system seeding. App services expose the revision port as
 `agentRevisions`. The hermetic adapter and thread repositories share one snapshot transaction
 owner in app composition. Either entry point commits or rolls back both stores;
-completed transaction frames reject escaped writes. The live creation/runtime path still
-consumes `PackageRepository` below; integration belongs to the milestone work.
+completed transaction frames reject escaped writes. Root creation resolves exact
+account/system selections and binds atomically. Runtime, derived/child factories,
+and the project-scoped picker still consume `PackageRepository` during the
+remaining milestone integration.
 
 `domain/bound-agent-catalog.ts` resolves exact primary selections and builds
 catalog pages from immutable revisions. Listing and resolution share the supplied

@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { truncateDrizzleTables } from "../../../test-support/drizzle-reset.js";
+import { createDrizzleThreadRepository } from "../../threads/adapters/drizzle/thread-repository.js";
 import { createDrizzleAgentRevisionStore } from "../adapters/drizzle-agent-revision-store.js";
 import { createBoundAgentCatalog } from "../domain/bound-agent-catalog.js";
 import { seedGeneralAgent } from "../domain/default-package-seeding.js";
@@ -72,6 +73,24 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect((await store.readRevision(next.selectedRevisionId))?.definition.metadata.model).toBe(
         "next-model",
       );
+    });
+
+    it("projects the retained revision through thread reads, lists, and updates", async () => {
+      const threads = createDrizzleThreadRepository(db);
+      const original = source();
+      original.files["agents/general.md"] = original.files["agents/general.md"].replace(
+        "name: General",
+        "name: Retained Name",
+      );
+      const first = (await store.installSource(original)).definitions[0];
+      await store.bindThread(THREAD, first.id);
+      expect((await threads.findById(THREAD))?.agentDefinitionRevisionId).toBe(first.id);
+      expect((await threads.listByUser(USER))[0]?.agentDefinitionRevisionId).toBe(first.id);
+      const updated = await threads.updateCurrentAgent(THREAD, "display-slug");
+      expect(updated?.agentDefinitionRevisionId).toBe(first.id);
+      expect(updated?.agentName).toBe("Retained Name");
+      expect((await threads.findById(THREAD))?.agentName).toBe("Retained Name");
+      expect((await threads.listByUser(USER))[0]?.agentName).toBe("Retained Name");
     });
 
     it("retains exact source bytes and definitions across independent connections", async () => {

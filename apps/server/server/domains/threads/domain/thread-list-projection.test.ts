@@ -14,6 +14,8 @@ function thread(overrides: Partial<Thread> = {}): Thread {
     title: "Draft review",
     slug: null,
     currentAgent: null,
+    agentDefinitionRevisionId: null,
+    agentName: null,
     activeLeafTurnId: null,
     parentThreadId: null,
     rootThreadId: "thread-1",

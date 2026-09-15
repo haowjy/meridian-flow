@@ -2,7 +2,10 @@
 import type { Work } from "@meridian/contracts/works";
 import { ComposerToolbar, createComposerToolbarModel } from "@/components/app/composer-toolbar";
 import { useSelectedWorkWriteModeToolbarControl } from "@/components/app/work-composer-controls";
-import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
+import {
+  type ComposerAgentControlProps,
+  useComposerAgentToolbarControl,
+} from "@/features/agents/ComposerAgentControl";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 import { useComposerWorkToolbarControl } from "./ComposerWorkControl";
 
@@ -10,27 +13,14 @@ export function ChatComposerToolbar({
   projectId,
   threadId,
   work,
-  agentSlug,
-  readonlyAgent,
-  onAgentChange,
+  agentName,
 }: {
   projectId: string;
   threadId: string;
   work: Work;
-  agentSlug: string;
-  readonlyAgent: boolean;
-  onAgentChange(slug: string): void;
+  agentName: string;
 }) {
-  const agent = useComposerAgentToolbarControl(
-    readonlyAgent
-      ? { projectId, mode: "readonly", selectedSlug: agentSlug }
-      : {
-          projectId,
-          mode: "interactive",
-          selectedSlug: agentSlug,
-          onSelectedSlugChange: onAgentChange,
-        },
-  );
+  const agent = useComposerAgentToolbarControl({ mode: "readonly", name: agentName });
   const { openAiDraft } = useAiDraftLauncher();
   const writeMode = useSelectedWorkWriteModeToolbarControl({
     projectId,
@@ -46,27 +36,15 @@ export function ChatComposerToolbar({
 }
 
 export function AgentOnlyComposerToolbar({
-  projectId,
-  agentSlug,
-  readonlyAgent = false,
-  onAgentChange,
+  control,
+  disabled = false,
 }: {
-  projectId: string | null;
-  agentSlug: string;
-  readonlyAgent?: boolean;
-  onAgentChange?(slug: string): void;
+  control: ComposerAgentControlProps;
+  disabled?: boolean;
 }) {
-  const agent = useComposerAgentToolbarControl(
-    readonlyAgent
-      ? { projectId, mode: "readonly", selectedSlug: agentSlug }
-      : {
-          projectId,
-          mode: "interactive",
-          selectedSlug: agentSlug,
-          onSelectedSlugChange: onAgentChange ?? (() => {}),
-        },
-  );
+  const agent = useComposerAgentToolbarControl(control);
+  const visible = disabled ? { ...agent, interaction: "busy" as const } : agent;
   return (
-    <ComposerToolbar ariaLabel="Composer controls" model={createComposerToolbarModel([agent])} />
+    <ComposerToolbar ariaLabel="Composer controls" model={createComposerToolbarModel([visible])} />
   );
 }

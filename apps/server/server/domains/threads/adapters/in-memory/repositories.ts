@@ -95,6 +95,8 @@ function defaultThread(input: CreateThreadInput): Thread {
     bakedSkillSlugs: null,
     workingState: input.workingState ?? null,
     currentAgent: normalized.currentAgent,
+    agentDefinitionRevisionId: null,
+    agentName: null,
     nextSeq: "0",
     activeLeafTurnId: null,
     parentThreadId: normalized.parentThreadId,
@@ -159,6 +161,7 @@ interface WorkProjectionRepository {
 }
 
 export interface InMemoryRepositoriesOptions {
+  boundAgent?: (threadId: string) => Pick<Thread, "agentDefinitionRevisionId" | "agentName"> | null;
   transactionOwner?: InMemoryTransactionOwner;
   projects?: ProjectVisibilityRepository;
   works?: WorkProjectionRepository;
@@ -211,7 +214,11 @@ export function createInMemoryRepositories(
   }
 
   function projectThread(thread: Thread): Thread {
-    return { ...thread, workId: primaryWorkIdForThread(thread.id as ThreadId) };
+    return {
+      ...thread,
+      workId: primaryWorkIdForThread(thread.id as ThreadId),
+      ...(options.boundAgent?.(thread.id) ?? { agentDefinitionRevisionId: null, agentName: null }),
+    };
   }
 
   async function threadInActiveProject(thread: Thread): Promise<boolean> {

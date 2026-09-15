@@ -16,6 +16,28 @@
  *   builtin/user agents.
  */
 
+/** Exact immutable revision selected from an authorized account/system catalog entry. */
+export interface AgentSelection {
+  catalogEntryId: string;
+  definitionRevisionId: string;
+}
+export interface AgentCatalogItem {
+  selection: AgentSelection;
+  slug: string;
+  name: string;
+  description: string;
+  ownership: "system" | "personal";
+  unavailableReasons: string[];
+}
+export interface AgentCatalogCursor {
+  nameSortKey: string;
+  id: string;
+}
+export interface AgentCatalogPage {
+  agents: AgentCatalogItem[];
+  nextCursor: AgentCatalogCursor | null;
+}
+
 /** Where an agent definition came from, for grouping and provenance badges. */
 export type AgentSource = "builtin" | "package" | "user";
 

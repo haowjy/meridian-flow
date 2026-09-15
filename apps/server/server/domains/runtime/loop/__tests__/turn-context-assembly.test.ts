@@ -23,6 +23,8 @@ function thread(overrides: Partial<Thread> = {}): Thread {
     systemPrompt: null,
     workingState: null,
     currentAgent: "agent-a",
+    agentDefinitionRevisionId: null,
+    agentName: null,
     activeLeafTurnId: null,
     parentThreadId: null,
     rootThreadId: "thread-1",
@@ -102,6 +104,8 @@ describe("assembleNextTurnContext", () => {
   it("rebuilds context when a losing bake observes another agent's frozen row", async () => {
     const frozenByAgentB = thread({
       currentAgent: "agent-b",
+      agentDefinitionRevisionId: null,
+      agentName: null,
       composedSystemPrompt: assembleComposedSystemPrompt({ basePrompt: "Prompt for agent-b" }),
       bakedSkillSlugs: [],
       systemPrompt: null,
@@ -141,6 +145,8 @@ describe("assembleNextTurnContext", () => {
         }
         return thread({
           currentAgent: "agent-b",
+          agentDefinitionRevisionId: null,
+          agentName: null,
           composedSystemPrompt: input.composedSystemPrompt,
           bakedSkillSlugs: input.bakedSkillSlugs,
           systemPrompt: null,
@@ -191,6 +197,8 @@ describe("assembleNextTurnContext", () => {
         }
         return thread({
           currentAgent: "agent-b",
+          agentDefinitionRevisionId: null,
+          agentName: null,
           composedSystemPrompt: input.composedSystemPrompt,
           bakedSkillSlugs: input.bakedSkillSlugs,
           systemPrompt: null,

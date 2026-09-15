@@ -529,8 +529,8 @@ msgid "Breadcrumb"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Built-in"
-msgstr ""
+#~ msgid "Built-in"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bullet list"
@@ -716,6 +716,10 @@ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent"
+msgstr ""
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "Choose Agent"
 msgstr ""
 
 #. placeholder {0}: agent.name
@@ -1696,8 +1700,8 @@ msgid "Insert row below"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Installed"
-msgstr ""
+#~ msgid "Installed"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Interface language"
@@ -2369,6 +2373,10 @@ msgstr ""
 msgid "Pending drafts couldn’t load"
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Personal"
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "photo"
 msgstr ""
@@ -2968,6 +2976,10 @@ msgstr ""
 msgid "Switching Work…"
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "System"
+msgstr ""
+
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Table"
@@ -3242,7 +3254,12 @@ msgstr ""
 
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
+#~ msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
+#~ msgstr ""
+
+#. placeholder {0}: agent.name
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "This chat uses {0}."
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx

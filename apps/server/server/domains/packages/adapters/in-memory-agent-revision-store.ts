@@ -20,6 +20,7 @@ type State = {
   bindings: Map<string, string>;
 };
 export interface InMemoryAgentRevisionStore extends AgentRevisionStore {
+  boundAgent(threadId: string): { agentDefinitionRevisionId: string; agentName: string } | null;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
 }
 
@@ -43,6 +44,16 @@ export function createInMemoryAgentRevisionStore(input: {
     );
 
   const store: InMemoryAgentRevisionStore = {
+    boundAgent(id) {
+      const revisionId = state().bindings.get(id);
+      const revision = revisionId ? state().revisions.get(revisionId) : undefined;
+      return revision
+        ? {
+            agentDefinitionRevisionId: revision.id,
+            agentName: revision.definition.metadata.name ?? revision.slug,
+          }
+        : null;
+    },
     transaction: (operation) => transactionOwner.run(operation),
     withSystemCatalogTransaction(operation) {
       return store.transaction(operation);

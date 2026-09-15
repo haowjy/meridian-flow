@@ -1,15 +1,12 @@
-/** GET /api/agents: enabled primary builtin agents for Home (no project yet). */
+/** GET /api/agents: authenticated account/system revisions with bounded pagination. */
 import { serializeTransport } from "@meridian/contracts/protocol";
-import { defineEventHandler } from "nitro/h3";
+import { defineEventHandler, getQuery } from "nitro/h3";
+import { parseAgentCatalogQuery } from "../../../lib/agent-catalog-query.js";
 import { requireAppUser } from "../../../lib/auth-gate.js";
-import { handleGetBuiltinAgentsRequest } from "../../../lib/builtin-agents-route.js";
 
 export default defineEventHandler(async (event) => {
-  const { app } = await requireAppUser(event);
-
-  const response = await handleGetBuiltinAgentsRequest({
-    packageRepository: app.packageRepository,
-  });
-
-  return serializeTransport(response);
+  const { app, user } = await requireAppUser(event);
+  return serializeTransport(
+    await app.agentCatalog.list(user.userId, parseAgentCatalogQuery(getQuery(event))),
+  );
 });

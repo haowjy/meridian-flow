@@ -39,7 +39,11 @@ async function publish(
       threadId: value.threadId,
       title: "Opening",
       workId: null,
-      agentSlug: "writer",
+      agent: {
+        slug: "writer",
+        name: "writer",
+        selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-revision" },
+      },
       submission: value.envelope,
       phase: "creating",
     });
@@ -192,7 +196,11 @@ describe("single creation slot", () => {
       threadId: "thread",
       title: "Opening",
       workId: null,
-      agentSlug: "writer",
+      agent: {
+        slug: "writer",
+        name: "writer",
+        selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-revision" },
+      },
       submission: envelope,
       phase: "creating" as const,
     };
@@ -203,7 +211,13 @@ describe("single creation slot", () => {
     expect(claims.filter((value) => value.kind === "saved")).toHaveLength(1);
     const reserved = await continuity.readCreation("project");
     expect(
-      await continuity.saveCreationChoices("project", reserved.revision, { agentSlug: "other" }),
+      await continuity.saveCreationChoices("project", reserved.revision, {
+        agent: {
+          slug: "other",
+          name: "other",
+          selection: { catalogEntryId: "other-entry", definitionRevisionId: "other-revision" },
+        },
+      }),
     ).toMatchObject({
       kind: "conflict",
       slot: { attempt },
@@ -240,7 +254,11 @@ describe("single creation slot", () => {
       threadId: "thread",
       title: "Opening",
       workId: null,
-      agentSlug: "writer",
+      agent: {
+        slug: "writer",
+        name: "writer",
+        selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-revision" },
+      },
       submission: envelope,
       phase: "ambiguous" as const,
     };
@@ -278,7 +296,11 @@ describe("creation admission transaction", () => {
       threadId: value.threadId,
       title: "Opening",
       workId: null,
-      agentSlug: "writer",
+      agent: {
+        slug: "writer",
+        name: "writer",
+        selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-revision" },
+      },
       submission: value.envelope,
       phase: "creating",
     });
@@ -317,7 +339,11 @@ describe("creation admission transaction", () => {
       threadId: "thread",
       title: "Package",
       workId: null,
-      agentSlug: "writer",
+      agent: {
+        slug: "writer",
+        name: "writer",
+        selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-revision" },
+      },
       submission: null,
       phase: "creating",
     });

@@ -2,12 +2,14 @@
 import { type CreateThreadRequest, serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody } from "nitro/h3";
 import { requireAppUser } from "../../../lib/auth-gate.js";
-import { parseOptionalRequestId, requireRequestId } from "../../../lib/request-id.js";
 import {
-  AgentBindingNotFoundError,
-  createThreadForProject,
-  InvalidWorkAttachmentError,
-} from "../../../lib/thread-creation.js";
+  parseOptionalRequestId,
+  requireAgentSelection,
+  requireRequestId,
+} from "../../../lib/request-id.js";
+import { createThreadForProject } from "../../../lib/thread-creation.js";
+
+import { parseCreationTitle, throwThreadCreationError } from "../../../lib/thread-creation-http.js";
 
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
@@ -26,16 +28,16 @@ export default defineEventHandler(async (event) => {
         threads: repos.threads,
         threadWorks: repos.threadWorks,
         transaction: repos.transaction,
-        packageRepository: app.packageRepository,
+        agentRevisions: app.agentRevisions,
+        agentCatalog: app.agentCatalog,
         eventSink: app.eventSink,
       },
       {
         projectId: requireRequestId(body.projectId, "projectId"),
         userId,
         id: parseOptionalRequestId(body.id, "id"),
-        title: body.title ?? null,
-        systemPrompt: body.systemPrompt ?? null,
-        currentAgent: body.currentAgent ?? null,
+        title: parseCreationTitle(body.title),
+        agentSelection: requireAgentSelection(body.agentSelection),
         workId: body.workId == null ? null : parseOptionalRequestId(body.workId, "workId"),
       },
     );
@@ -43,10 +45,6 @@ export default defineEventHandler(async (event) => {
     event.res.status = 201;
     return serializeTransport(thread);
   } catch (error) {
-    // An unresolvable agent slug is a client error, not a server fault.
-    if (error instanceof AgentBindingNotFoundError || error instanceof InvalidWorkAttachmentError) {
-      throw createError({ statusCode: 400, message: error.message });
-    }
-    throw error;
+    throwThreadCreationError(error);
   }
 });

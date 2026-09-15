@@ -5,8 +5,6 @@
 export {
   DEFAULT_AGENT_NAME,
   DEFAULT_AGENT_SLUG,
-  threadCreateAgentField,
-  wireAgentSlug,
 } from "./constants";
 export {
   type ResolvedAgentDisplay,

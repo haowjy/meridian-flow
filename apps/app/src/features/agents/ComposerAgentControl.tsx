@@ -1,30 +1,34 @@
 /** Composer Agent adapter: explicit interactive panel or readonly status topology. */
 import { t } from "@lingui/core/macro";
 import { useRef } from "react";
-import { useProjectAgents } from "@/client/query/useProjectAgents";
+import type { CreationAgent } from "@/client/first-send-continuity";
+import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import {
   ComposerCurrentValueStatus,
   ComposerCurrentValueTrigger,
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
 import { AgentPickerPanel } from "./AgentPicker";
-import { DEFAULT_AGENT_SLUG } from "./constants";
-import { resolveAgentFromCatalog } from "./resolve-agent";
 
-export type ComposerAgentControlProps = { projectId: string | null; selectedSlug: string } & (
-  | { mode: "interactive"; onSelectedSlugChange: (slug: string) => void }
-  | { mode: "readonly"; onSelectedSlugChange?: never }
-);
+export type ComposerAgentControlProps =
+  | {
+      mode: "interactive";
+      selectedAgent: CreationAgent | null;
+      onSelectedAgentChange: (agent: CreationAgent) => void;
+    }
+  | { mode: "readonly"; name: string };
 
 export function useComposerAgentToolbarControl(
   props: ComposerAgentControlProps,
 ): ComposerToolbarControl {
-  const catalog = useProjectAgents(props.projectId);
+  const catalog = useAgentCatalog(props.mode === "interactive");
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
-  const slug = props.selectedSlug || DEFAULT_AGENT_SLUG;
-  const agent = resolveAgentFromCatalog(slug, catalog.agents);
+  const selectedAgent = props.mode === "interactive" ? props.selectedAgent : null;
+  const agent = {
+    name: props.mode === "readonly" ? props.name : (selectedAgent?.name ?? t`Choose Agent`),
+  };
   const item = { ariaLabel: t`Agent: ${agent.name}`, label: t`Agent`, value: agent.name };
   if (props.mode === "readonly")
     return {
@@ -36,14 +40,18 @@ export function useComposerAgentToolbarControl(
         <ComposerCurrentValueStatus
           ref={controlRef}
           ariaLabel={t`Agent: ${agent.name}`}
-          tooltip={t`This chat stays on ${agent.name} to keep costs predictable. Swapping agents mid-chat is coming.`}
+          tooltip={t`This chat uses ${agent.name}.`}
         >
           {agent.name}
         </ComposerCurrentValueStatus>
       ),
     };
-  const enabledSlugs =
-    catalog.status === "ready" ? (catalog.agents ?? []).map(({ slug }) => slug) : [];
+  const enabledIds =
+    catalog.status === "ready"
+      ? (catalog.agents ?? [])
+          .filter((agent) => !agent.unavailableReasons.length)
+          .map((agent) => agent.selection.catalogEntryId)
+      : [];
   const pageId =
     catalog.status === "error"
       ? "error"
@@ -68,12 +76,15 @@ export function useComposerAgentToolbarControl(
       size: "identity",
       focus: {
         pageId,
-        repairRevision: enabledSlugs.join("\0"),
+        repairRevision: enabledIds.join("\0"),
         candidates:
           pageId === "ready"
             ? [
-                { key: `selected:${slug}`, ref: selectedRef },
-                { key: `first:${enabledSlugs[0] ?? "none"}`, ref: firstRef },
+                {
+                  key: `selected:${selectedAgent?.selection.catalogEntryId ?? "none"}`,
+                  ref: selectedRef,
+                },
+                { key: `first:${enabledIds[0] ?? "none"}`, ref: firstRef },
               ]
             : pageId === "error"
               ? [{ key: "retry", ref: retryRef }]
@@ -84,9 +95,9 @@ export function useComposerAgentToolbarControl(
         <AgentPickerPanel
           focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
           status={catalog}
-          selectedSlug={slug}
+          selectedAgent={selectedAgent}
           onSelect={(next) => {
-            props.onSelectedSlugChange(next);
+            props.onSelectedAgentChange(next);
             terminalClose();
           }}
         />
