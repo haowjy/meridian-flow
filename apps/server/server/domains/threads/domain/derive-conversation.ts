@@ -1,10 +1,13 @@
-/** Route-core helpers for explicit agent handoff/fork into a new primary thread. */
+/** Domain operations for explicit agent handoff/fork into a new primary thread. */
+import type { AgentSelection, ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
-import type { PackageRepository } from "../domains/packages/index.js";
-import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
-import type { EventJournalWriter, InternalThreadRepositories } from "../domains/threads/index.js";
-import { AgentBindingNotFoundError } from "./thread-creation.js";
+import type { AgentRevision, AgentRevisionStore, BoundAgentCatalog } from "../../packages/index.js";
+import { AgentSelectionError } from "../../packages/index.js";
+import { type ProjectRepository, requireProjectOwner } from "../../projects/index.js";
+import type { EventJournalWriter } from "../ports/event-journal.js";
+import type { InternalThreadRepositories } from "../ports/repositories.js";
+import { createBoundConversation } from "./bound-conversation.js";
 
 export interface ThreadAgentSwapDeps {
   threads: InternalThreadRepositories["threads"];
@@ -14,42 +17,52 @@ export interface ThreadAgentSwapDeps {
   threadDocuments: InternalThreadRepositories["threadDocuments"];
   transaction: InternalThreadRepositories["transaction"];
   projects: ProjectRepository;
-  packageRepository: PackageRepository;
+  agentCatalog: BoundAgentCatalog;
+  agentRevisions: AgentRevisionStore;
   eventWriter: EventJournalWriter;
 }
 
 export async function handoffThreadAgent(
   deps: ThreadAgentSwapDeps,
-  input: { threadId: string; userId: string; targetAgent: string | null; summary?: string | null },
+  input: {
+    threadId: string;
+    userId: string;
+    agentSelection: AgentSelection;
+    summary?: string | null;
+  },
 ): Promise<Thread> {
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
   const sourceWorkId = await requirePrimaryWorkId(deps, source.id);
-  await requireAgent(deps, source, input.targetAgent);
+  const binding = await deps.agentCatalog.resolvePrimary(input.userId, input.agentSelection);
+  if (!binding.ok) throw new AgentSelectionError(input.agentSelection.definitionRevisionId);
   const summary = input.summary?.trim() || (await programmaticSummary(deps, source.id));
-  const target = await createDerivedPrimaryWithMembership(
-    deps,
-    {
-      userId: source.userId,
-      projectId: source.projectId,
-      workId: sourceWorkId,
-      parentThreadId: source.id as ThreadId,
-      originType: "handoff",
-      originTurnId: (await latestTurnId(deps, source.id)) as TurnId | null,
-      currentAgent: input.targetAgent,
-      title: `Handoff from ${source.title ?? "thread"}`,
-    },
-    sourceWorkId,
-  );
-  await inheritEditingDocuments(deps, source, target);
-  await seedSystemTurn(deps, target, `Handoff brief\n\n${summary}`);
-  await deps.eventWriter.appendEvent(source.id as ThreadId, {
-    type: "agent.handoff",
-    sourceThreadId: source.id,
-    targetThreadId: target.id,
-    targetAgentSlug: input.targetAgent,
-    summary,
+  return deps.transaction(async () => {
+    const target = await createDerivedPrimaryWithMembership(
+      deps,
+      {
+        userId: source.userId,
+        projectId: source.projectId,
+        workId: sourceWorkId,
+        parentThreadId: source.id as ThreadId,
+        originType: "handoff",
+        originTurnId: (await latestTurnId(deps, source.id)) as TurnId | null,
+        currentAgent: binding.revision.slug,
+        title: `Handoff from ${source.title ?? "thread"}`,
+      },
+      sourceWorkId,
+      binding,
+    );
+    await inheritEditingDocuments(deps, source, target);
+    await seedSystemTurn(deps, target, `Handoff brief\n\n${summary}`);
+    await deps.eventWriter.appendEvent(source.id as ThreadId, {
+      type: "agent.handoff",
+      sourceThreadId: source.id,
+      targetThreadId: target.id,
+      targetAgentSlug: binding.revision.slug,
+      summary,
+    });
+    return target;
   });
-  return target;
 }
 
 export async function forkThreadAgent(
@@ -57,56 +70,65 @@ export async function forkThreadAgent(
   input: {
     threadId: string;
     userId: string;
-    targetAgent: string | null;
+    agentSelection: AgentSelection;
     originTurnId?: string | null;
   },
 ): Promise<Thread> {
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
   const sourceWorkId = await requirePrimaryWorkId(deps, source.id);
-  await requireAgent(deps, source, input.targetAgent);
+  const binding = await deps.agentCatalog.resolvePrimary(input.userId, input.agentSelection);
+  if (!binding.ok) throw new AgentSelectionError(input.agentSelection.definitionRevisionId);
   const originTurnId = input.originTurnId ?? (await latestTurnId(deps, source.id));
   if (!originTurnId) throw new Error("Cannot fork a thread without an origin turn");
   const originTurn = await deps.turns.findById(originTurnId as TurnId);
   if (!originTurn || originTurn.threadId !== source.id) {
     throw new Error("Fork origin turn must belong to the source thread");
   }
-  const target = await createDerivedPrimaryWithMembership(
-    deps,
-    {
-      userId: source.userId,
-      projectId: source.projectId,
-      workId: sourceWorkId,
-      parentThreadId: source.id as ThreadId,
-      originType: "fork",
-      originTurnId: originTurnId as TurnId,
-      currentAgent: input.targetAgent,
-      title: `Fork from ${source.title ?? "thread"}`,
-    },
-    sourceWorkId,
-  );
-  await inheritEditingDocuments(deps, source, target);
-  await seedSystemTurn(deps, target, `Forked conversation through turn ${originTurnId}.`);
-  await deps.eventWriter.appendEvent(source.id as ThreadId, {
-    type: "agent.fork",
-    sourceThreadId: source.id,
-    targetThreadId: target.id,
-    targetAgentSlug: input.targetAgent,
-    originTurnId,
+  return deps.transaction(async () => {
+    const target = await createDerivedPrimaryWithMembership(
+      deps,
+      {
+        userId: source.userId,
+        projectId: source.projectId,
+        workId: sourceWorkId,
+        parentThreadId: source.id as ThreadId,
+        originType: "fork",
+        originTurnId: originTurnId as TurnId,
+        currentAgent: binding.revision.slug,
+        title: `Fork from ${source.title ?? "thread"}`,
+      },
+      sourceWorkId,
+      binding,
+    );
+    await inheritEditingDocuments(deps, source, target);
+    await seedSystemTurn(deps, target, `Forked conversation through turn ${originTurnId}.`);
+    await deps.eventWriter.appendEvent(source.id as ThreadId, {
+      type: "agent.fork",
+      sourceThreadId: source.id,
+      targetThreadId: target.id,
+      targetAgentSlug: binding.revision.slug,
+      originTurnId,
+    });
+    return target;
   });
-  return target;
 }
 
 async function createDerivedPrimaryWithMembership(
   deps: ThreadAgentSwapDeps,
   input: Parameters<InternalThreadRepositories["threads"]["createDerivedPrimary"]>[0],
   membershipWorkId: WorkId | null,
+  binding: { revision: AgentRevision; configuration: ResolvedAgentConfiguration },
 ): Promise<Thread> {
-  return deps.transaction(async () => {
-    const target = await deps.threads.createDerivedPrimary(input);
-    if (membershipWorkId) {
-      await deps.threadWorks.addMembership(target.id as ThreadId, membershipWorkId, true);
-    }
-    return { ...target, workId: membershipWorkId };
+  return createBoundConversation({
+    transaction: deps.transaction,
+    agentRevisions: deps.agentRevisions,
+    ...binding,
+    createThread: () => deps.threads.createDerivedPrimary(input),
+    resolveWork: async (target) => {
+      if (membershipWorkId)
+        await deps.threadWorks.addMembership(target.id as ThreadId, membershipWorkId, true);
+      return membershipWorkId;
+    },
   });
 }
 
@@ -127,20 +149,6 @@ async function requireOwnedSourceThread(
   if (!thread) throw new Error(`Thread not found: ${threadId}`);
   await requireProjectOwner({ projects: deps.projects }, thread.projectId, userId);
   return thread;
-}
-
-async function requireAgent(
-  deps: ThreadAgentSwapDeps,
-  source: Thread,
-  targetAgent: string | null,
-): Promise<void> {
-  if (!targetAgent) return;
-  const resolved = await deps.packageRepository.getAgentWithLinkedSkills(
-    source.projectId,
-    source.userId,
-    targetAgent,
-  );
-  if (!resolved.agent) throw new AgentBindingNotFoundError(targetAgent);
 }
 
 async function latestTurnId(deps: ThreadAgentSwapDeps, threadId: string): Promise<string | null> {

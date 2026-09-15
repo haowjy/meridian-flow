@@ -151,3 +151,5 @@ history insertion share one transaction. `thread_agent_bindings` has one row per
 owns insert-only content, catalog compare-and-set selection, and idempotent fixed
 binding. It joins the existing ambient transaction owner so thread admission can
 include source, catalog, and binding writes atomically.
+
+`agent_package_dependencies` retains manifest-name edges to exact package revisions with restricted dependency deletion. Source identity includes the dependency map. `thread_agent_bindings.configuration` stores the resolved model, skill-content identities and named-target revisions alongside the immutable definition reference. Idempotent binding compares both revision and configuration; it cannot change either.

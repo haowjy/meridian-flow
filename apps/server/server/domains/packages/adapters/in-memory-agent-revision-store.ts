@@ -1,6 +1,8 @@
 /** Hermetic revision storage with serialized, rollback-safe transactions for app composition. */
 
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
+import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import { InMemoryTransactionOwner } from "../../../shared/in-memory-transaction.js";
 import {
   type AgentSourceSnapshot,
@@ -17,7 +19,7 @@ type State = {
   revisions: Map<string, AgentRevision>;
   catalog: Map<string, AgentCatalogEntry>;
   history: Map<string, Set<string>>;
-  bindings: Map<string, string>;
+  bindings: Map<string, { revisionId: string; configuration: ResolvedAgentConfiguration }>;
 };
 export interface InMemoryAgentRevisionStore extends AgentRevisionStore {
   boundAgent(threadId: string): { agentDefinitionRevisionId: string; agentName: string } | null;
@@ -45,7 +47,7 @@ export function createInMemoryAgentRevisionStore(input: {
 
   const store: InMemoryAgentRevisionStore = {
     boundAgent(id) {
-      const revisionId = state().bindings.get(id);
+      const revisionId = state().bindings.get(id)?.revisionId;
       const revision = revisionId ? state().revisions.get(revisionId) : undefined;
       return revision
         ? {
@@ -55,12 +57,16 @@ export function createInMemoryAgentRevisionStore(input: {
         : null;
     },
     transaction: (operation) => transactionOwner.run(operation),
-    withSystemCatalogTransaction(operation) {
+    withCatalogTransaction(_ownerUserId, operation) {
       return store.transaction(operation);
     },
     installSource(source) {
       const prepared = prepareAgentSourceRevision(source);
       return store.transaction(async () => {
+        for (const dependency of Object.values(prepared.dependencies)) {
+          if (!state().sources.has(dependency))
+            throw new Error("Agent source references a missing dependency revision");
+        }
         const existing = [...state().sources.entries()].find(
           ([, record]) =>
             record.source.coordinate === prepared.coordinate &&
@@ -74,7 +80,11 @@ export function createInMemoryAgentRevisionStore(input: {
         const packageRevisionId = randomUUID();
         state().sources.set(packageRevisionId, {
           digest: prepared.contentDigest,
-          source: { coordinate: prepared.coordinate, files: prepared.source.files },
+          source: {
+            coordinate: prepared.coordinate,
+            files: prepared.source.files,
+            dependencies: prepared.dependencies,
+          },
         });
         for (const definition of prepared.definitions) {
           const id = randomUUID();
@@ -195,19 +205,24 @@ export function createInMemoryAgentRevisionStore(input: {
         return true;
       });
     },
-    bindThread(threadId, revisionId) {
+    bindThread(threadId, revisionId, configuration) {
       return store.transaction(async () => {
         if (!state().revisions.has(revisionId) || !(await input.threadExists(threadId)))
           throw new Error("Agent binding references a missing thread or revision");
         const existing = state().bindings.get(threadId);
-        if (existing) return existing === revisionId;
-        state().bindings.set(threadId, revisionId);
+        if (existing)
+          return (
+            existing.revisionId === revisionId &&
+            isDeepStrictEqual(existing.configuration, configuration)
+          );
+        state().bindings.set(threadId, { revisionId, configuration });
         return true;
       });
     },
     async readThreadBinding(threadId) {
-      const id = state().bindings.get(threadId);
-      return id ? copy(state().revisions.get(id)) : undefined;
+      const binding = state().bindings.get(threadId);
+      const revision = binding && state().revisions.get(binding.revisionId);
+      return revision ? copy({ ...revision, configuration: binding.configuration }) : undefined;
     },
   };
   return store;

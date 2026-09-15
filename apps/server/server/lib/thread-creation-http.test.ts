@@ -1,12 +1,9 @@
 /** Root routes share validation and serialized definite-refusal identities. */
 import { HTTPError } from "nitro/h3";
 import { describe, expect, it } from "vitest";
+import { AgentSelectionError } from "../domains/packages/index.js";
 import interruptErrorHandler from "./interrupt-error-handler.js";
-import {
-  AgentBindingNotFoundError,
-  InvalidWorkAttachmentError,
-  ThreadCreationConflictError,
-} from "./thread-creation.js";
+import { InvalidWorkAttachmentError, ThreadCreationConflictError } from "./thread-creation.js";
 import { parseCreationTitle, throwThreadCreationError } from "./thread-creation-http.js";
 
 describe("root creation transport", () => {
@@ -18,7 +15,7 @@ describe("root creation transport", () => {
     expect(parseCreationTitle(" A scene ")).toBe(" A scene ");
   });
   it.each([
-    [new AgentBindingNotFoundError("revision"), "agent_not_found"],
+    [new AgentSelectionError("revision"), "agent_not_found"],
     [new InvalidWorkAttachmentError("Work unavailable"), "work_unavailable"],
   ])("serializes the shared refusal %s", async (error, code) => {
     let response: Response | undefined;

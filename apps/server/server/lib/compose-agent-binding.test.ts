@@ -21,7 +21,7 @@ describe("in-memory app Agent binding transaction", () => {
         return app.repos.transaction(async () => {
           const thread = await app.repos.threads.create({ projectId: "project", userId: "owner" });
           id = thread.id;
-          await app.agentRevisions.bindThread(id, general.selectedRevisionId);
+          await app.agentRevisions.bindThread(id, general.selectedRevisionId, bindingConfiguration);
           throw new Error("late rollback");
         });
       })().catch((error) => error.message);
@@ -39,11 +39,11 @@ describe("in-memory app Agent binding transaction", () => {
     if (!general) throw new Error("Missing General");
     let id = "";
     await expect(
-      app.agentRevisions.withSystemCatalogTransaction(async () => {
+      app.agentRevisions.withCatalogTransaction(null, async () => {
         await app.repos.transaction(async () => {
           const thread = await app.repos.threads.create({ projectId: "project", userId: "owner" });
           id = thread.id;
-          await app.agentRevisions.bindThread(id, general.selectedRevisionId);
+          await app.agentRevisions.bindThread(id, general.selectedRevisionId, bindingConfiguration);
         });
         throw new Error("outer rollback");
       }),
@@ -90,7 +90,9 @@ describe("in-memory app Agent binding transaction", () => {
       app.repos.transaction(async () => {
         const thread = await app.repos.threads.create({ projectId: "project", userId: "owner" });
         id = thread.id;
-        expect(await app.agentRevisions.bindThread(id, general.selectedRevisionId)).toBe(true);
+        expect(
+          await app.agentRevisions.bindThread(id, general.selectedRevisionId, bindingConfiguration),
+        ).toBe(true);
         throw new Error("after binding");
       }),
     ).rejects.toThrow("after binding");
@@ -98,3 +100,9 @@ describe("in-memory app Agent binding transaction", () => {
     expect(await app.agentRevisions.readThreadBinding(id)).toBeUndefined();
   });
 });
+
+const bindingConfiguration = {
+  model: "mock-model",
+  skills: { load: [], available: [] },
+  namedTargets: [],
+};

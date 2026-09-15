@@ -28,8 +28,6 @@ import { buildContext } from "./context-builder.js";
 import { projectImageBlocksForModel } from "./image-context.js";
 import type { WorkContextReader } from "./work-context.js";
 
-const MAX_REBIND_BAKE_ATTEMPTS = 3;
-
 export interface AssembleNextTurnContextInput {
   thread: Thread;
   turns: Turn[];
@@ -68,112 +66,96 @@ export async function assembleNextTurnContext(
   input: AssembleNextTurnContextInput,
 ): Promise<AssembledNextTurnContext> {
   let thread = input.thread;
-  let attempt = 0;
+  const agentContext = await resolveAgentThreadTurnContext({
+    thread,
+    agentRevisions: input.agentRevisions,
+    toolRegistry: input.toolRegistry,
+    baseTools: input.baseTools,
+  });
 
-  while (true) {
-    const agentContext = await resolveAgentThreadTurnContext({
-      thread,
-      agentRevisions: input.agentRevisions,
+  let tools = agentContext.tools;
+  let skillsSystemPromptSection: string | undefined;
+  let workContextSection: string | undefined;
+  let unfrozenBasePrompt: string | null | undefined;
+  let systemPrompt: string;
+  const baked = thread.bakedSkillSlugs != null;
+
+  if (isThreadPromptFrozen(thread)) {
+    tools = applyBakedInvokeAdvertisement({
+      tools,
+      bakedSkillSlugs: thread.bakedSkillSlugs,
       toolRegistry: input.toolRegistry,
-      baseTools: input.baseTools,
+    });
+    systemPrompt = thread.composedSystemPrompt ?? "";
+  } else {
+    const workContext = (await input.workContext.renderForThread(thread.id as ThreadId)).text;
+    const bakedPrompt = rebakeComposedSystemPrompt({
+      basePrompt: agentContext.agentBody,
+      skillsSystemPromptSection: agentContext.skillsSystemPromptSection,
+      workContext,
     });
 
-    let tools = agentContext.tools;
-    let skillsSystemPromptSection: string | undefined;
-    let workContextSection: string | undefined;
-    let unfrozenBasePrompt: string | null | undefined;
-    let systemPrompt: string;
-    const baked = thread.bakedSkillSlugs != null;
-
-    if (isThreadPromptFrozen(thread)) {
+    if (input.persistBake && input.bakeComposedSystemPrompt) {
+      const bakedSkillSlugs = modelInvocableSkillSlugs(agentContext.resolvedSkills);
+      thread = await input.bakeComposedSystemPrompt(thread.id as ThreadId, {
+        composedSystemPrompt: bakedPrompt,
+        bakedSkillSlugs,
+      });
+      if (!isThreadPromptFrozen(thread))
+        throw new Error("Thread prompt freeze returned an unfrozen thread");
       tools = applyBakedInvokeAdvertisement({
-        tools,
+        tools: agentContext.tools,
         bakedSkillSlugs: thread.bakedSkillSlugs,
         toolRegistry: input.toolRegistry,
       });
-      systemPrompt = thread.composedSystemPrompt ?? "";
+      systemPrompt = thread.composedSystemPrompt ?? bakedPrompt;
     } else {
-      const workContext = (await input.workContext.renderForThread(thread.id as ThreadId)).text;
-      const bakedPrompt = rebakeComposedSystemPrompt({
-        basePrompt: agentContext.agentBody,
-        skillsSystemPromptSection: agentContext.skillsSystemPromptSection,
-        workContext,
-      });
-
-      if (input.persistBake && input.bakeComposedSystemPrompt) {
-        const expectedCurrentAgent = thread.currentAgent;
-        const bakedSkillSlugs = modelInvocableSkillSlugs(agentContext.resolvedSkills);
-        thread = await input.bakeComposedSystemPrompt(thread.id as ThreadId, {
-          composedSystemPrompt: bakedPrompt,
-          bakedSkillSlugs,
-          expectedCurrentAgent,
-        });
-        if (
-          !isThreadPromptFrozen(thread) ||
-          thread.currentAgent !== expectedCurrentAgent ||
-          thread.composedSystemPrompt !== bakedPrompt ||
-          JSON.stringify(thread.bakedSkillSlugs ?? null) !== JSON.stringify(bakedSkillSlugs)
-        ) {
-          attempt += 1;
-          if (attempt >= MAX_REBIND_BAKE_ATTEMPTS) {
-            throw new Error("Failed to freeze thread prompt after concurrent agent rebinds");
-          }
-          continue;
-        }
-        tools = applyBakedInvokeAdvertisement({
-          tools: agentContext.tools,
-          bakedSkillSlugs: thread.bakedSkillSlugs,
-          toolRegistry: input.toolRegistry,
-        });
-        systemPrompt = thread.composedSystemPrompt ?? bakedPrompt;
-      } else {
-        systemPrompt = bakedPrompt;
-        unfrozenBasePrompt = agentContext.agentBody;
-        skillsSystemPromptSection = agentContext.skillsSystemPromptSection;
-        workContextSection = workContext;
-      }
+      systemPrompt = bakedPrompt;
+      unfrozenBasePrompt = agentContext.agentBody;
+      skillsSystemPromptSection = agentContext.skillsSystemPromptSection;
+      workContextSection = workContext;
     }
-
-    const gatewayParams = agentContext.gatewayParams;
-    const modelId = gatewayParams.model ?? input.gateway?.getDefaultModel?.();
-    const supportsImageInput =
-      input.gateway
-        ?.listModels?.()
-        .find((model) => model.id === modelId)
-        ?.capabilities.has("image_input") ?? false;
-    const blocks = await projectImageBlocksForModel({
-      thread,
-      blocks: input.blocks,
-      supportsImageInput,
-      imageAssets: input.imageAssets ?? {
-        async resolve() {
-          return null;
-        },
-      },
-    });
-    const { messages, tools: contextTools } = buildContext({
-      thread,
-      turns: input.turns,
-      blocks,
-      tools,
-      unfrozenBasePrompt,
-      skillsSystemPromptSection,
-      workContext: workContextSection,
-    });
-
-    return {
-      thread,
-      agentSlug: agentContext.agentSlug,
-      resolvedSkills: agentContext.resolvedSkills,
-      systemPrompt,
-      tools: functionToolsFromAdvertised(contextTools),
-      gatewayParams,
-      baked,
-      generateRequest: {
-        messages,
-        tools: contextTools,
-        ...gatewayParams,
-      },
-    };
   }
+
+  const gatewayParams = agentContext.gatewayParams;
+  const modelId = gatewayParams.model ?? input.gateway?.getDefaultModel?.();
+  const supportsImageInput =
+    input.gateway
+      ?.listModels?.()
+      .find((model) => model.id === modelId)
+      ?.capabilities.has("image_input") ?? false;
+  const blocks = await projectImageBlocksForModel({
+    thread,
+    blocks: input.blocks,
+    supportsImageInput,
+    imageAssets: input.imageAssets ?? {
+      async resolve() {
+        return null;
+      },
+    },
+  });
+  const { messages, tools: contextTools } = buildContext({
+    thread,
+    turns: input.turns,
+    blocks,
+    tools,
+    unfrozenBasePrompt,
+    skillsSystemPromptSection,
+    workContext: workContextSection,
+  });
+
+  return {
+    thread,
+    agentSlug: agentContext.agentSlug,
+    resolvedSkills: agentContext.resolvedSkills,
+    systemPrompt,
+    tools: functionToolsFromAdvertised(contextTools),
+    gatewayParams,
+    baked,
+    generateRequest: {
+      messages,
+      tools: contextTools,
+      ...gatewayParams,
+    },
+  };
 }

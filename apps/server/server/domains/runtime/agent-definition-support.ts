@@ -16,11 +16,21 @@ const supported = new Set([
 export function agentDefinitionUnavailableReasons(
   definition: CompiledAgentDefinition,
   gateway: Pick<Gateway, "listModels">,
+  resolvedModel: string,
 ): string[] {
-  const reasons = agentDefinitionUnsupportedReasons(definition);
+  const reasons = agentExecutionUnavailableReasons(definition, gateway, resolvedModel);
   const meta = definition.metadata;
   if (meta.subagents?.length) reasons.push("Bound subagent delegation is not available yet.");
-  if (!meta.model || !gateway.listModels?.().some((model) => model.id === meta.model)) {
+  return reasons;
+}
+
+export function agentExecutionUnavailableReasons(
+  definition: CompiledAgentDefinition,
+  gateway: Pick<Gateway, "listModels">,
+  resolvedModel: string,
+): string[] {
+  const reasons = agentDefinitionUnsupportedReasons(definition);
+  if (!gateway.listModels?.().some((model) => model.id === resolvedModel)) {
     reasons.push("The Agent's configured model is unavailable.");
   }
   return reasons;

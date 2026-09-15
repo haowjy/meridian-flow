@@ -1,9 +1,11 @@
 /** Durable Agent revision/catalog storage participating in the app's ambient transaction. */
+import { isDeepStrictEqual } from "node:util";
 import type { Database } from "@meridian/database";
 import {
   agentCatalogEntries,
   agentCatalogRevisions,
   agentDefinitionRevisions,
+  agentPackageDependencies,
   agentPackageRevisions,
   threadAgentBindings,
 } from "@meridian/database/schema";
@@ -29,11 +31,11 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
   });
 
   const store: AgentRevisionStore = {
-    async withSystemCatalogTransaction(operation) {
+    async withCatalogTransaction(ownerUserId, operation) {
       return runInDrizzleTransaction(database, async () => {
         // System logical keys span sources, including pointers an idempotent publication skips.
         await db().execute(
-          sql`select pg_advisory_xact_lock(hashtext('agent-catalog'), hashtext('system-publication'))`,
+          sql`select pg_advisory_xact_lock(hashtext('agent-catalog'), hashtext(${ownerUserId === null ? "system-publication" : `account:${ownerUserId}`}))`,
         );
         return operation();
       });
@@ -41,7 +43,7 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
     async installSource(input) {
       const prepared = prepareAgentSourceRevision(input);
       return runInDrizzleTransaction(database, async () => {
-        const { definitions, ...sourceRow } = prepared;
+        const { definitions, dependencies, ...sourceRow } = prepared;
         await db().insert(agentPackageRevisions).values(sourceRow).onConflictDoNothing();
         const [source] = await db()
           .select()
@@ -52,6 +54,18 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
               eq(agentPackageRevisions.contentDigest, prepared.contentDigest),
             ),
           );
+        if (Object.keys(dependencies).length) {
+          await db()
+            .insert(agentPackageDependencies)
+            .values(
+              Object.entries(dependencies).map(([name, dependencyRevisionId]) => ({
+                packageRevisionId: source.id,
+                name,
+                dependencyRevisionId,
+              })),
+            )
+            .onConflictDoNothing();
+        }
         if (definitions.length) {
           await db()
             .insert(agentDefinitionRevisions)
@@ -82,9 +96,18 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         .select()
         .from(agentPackageRevisions)
         .where(eq(agentPackageRevisions.id, id));
-      return row
-        ? { coordinate: row.coordinate, files: (row.source as { files: SkillFiles }).files }
-        : undefined;
+      if (!row) return undefined;
+      const dependencies = await db()
+        .select()
+        .from(agentPackageDependencies)
+        .where(eq(agentPackageDependencies.packageRevisionId, id));
+      return {
+        coordinate: row.coordinate,
+        files: (row.source as { files: SkillFiles }).files,
+        dependencies: Object.fromEntries(
+          dependencies.map((item) => [item.name, item.dependencyRevisionId]),
+        ),
+      };
     },
     async readRevision(id) {
       const [row] = await db()
@@ -231,27 +254,33 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         .returning({ id: agentCatalogEntries.id });
       return rows.length === 1;
     },
-    async bindThread(threadId, definitionRevisionId) {
+    async bindThread(threadId, definitionRevisionId, configuration) {
       await db()
         .insert(threadAgentBindings)
-        .values({ threadId, definitionRevisionId })
+        .values({ threadId, definitionRevisionId, configuration })
         .onConflictDoNothing();
       const [binding] = await db()
         .select()
         .from(threadAgentBindings)
         .where(eq(threadAgentBindings.threadId, threadId));
-      return binding.definitionRevisionId === definitionRevisionId;
+      return (
+        binding.definitionRevisionId === definitionRevisionId &&
+        isDeepStrictEqual(binding.configuration, configuration)
+      );
     },
     async readThreadBinding(threadId) {
       const [row] = await db()
-        .select({ revision: agentDefinitionRevisions })
+        .select({
+          revision: agentDefinitionRevisions,
+          configuration: threadAgentBindings.configuration,
+        })
         .from(threadAgentBindings)
         .innerJoin(
           agentDefinitionRevisions,
           eq(agentDefinitionRevisions.id, threadAgentBindings.definitionRevisionId),
         )
         .where(eq(threadAgentBindings.threadId, threadId));
-      return row ? revision(row.revision) : undefined;
+      return row ? { ...revision(row.revision), configuration: row.configuration } : undefined;
     },
   };
   return store;

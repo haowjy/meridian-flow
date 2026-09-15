@@ -74,6 +74,7 @@ export function createTestAgentBinding(
         packageRevisionId: "fixture-source",
         slug: "general",
         definitionDigest: "fixture-digest",
+        configuration: { model, skills: { load: [], available: [] }, namedTargets: [] },
         definition: { schemaVersion: 1, systemPrompt, metadata: { model } },
       };
     },

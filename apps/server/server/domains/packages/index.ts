@@ -21,6 +21,10 @@ export {
   listProjectCatalogAgents,
 } from "./domain/agent-catalog.js";
 export {
+  AgentConfigurationError,
+  resolveAgentConfiguration,
+} from "./domain/agent-configuration.js";
+export {
   type AgentCompilationDiagnostic,
   type AgentCompilationResult,
   type CompiledAgentDefinition,
@@ -36,11 +40,14 @@ export {
   normalizeAgentMetaFields,
 } from "./domain/agent-gateway-meta.js";
 export {
+  AgentSourceError,
   type AgentSourceSnapshot,
   prepareAgentSourceRevision,
 } from "./domain/agent-source-revision.js";
 export {
+  AgentPublicationConflictError,
   type AgentSelection,
+  AgentSelectionError,
   type BoundAgentCatalog,
   type BoundAgentCatalogItem,
   createBoundAgentCatalog,
@@ -148,6 +155,7 @@ export type {
   AgentCatalogSelectionResult,
   AgentRevision,
   AgentRevisionStore,
+  BoundAgentRevision,
 } from "./ports/agent-revision-store.js";
 export type {
   FetchedMarsSource,

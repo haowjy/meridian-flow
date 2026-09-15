@@ -17,7 +17,7 @@ and skill directories with `SKILL.md` and supporting files.
   clear that channel. A disallowed-list overlay replaces all baseline denials,
   including map-form denials; an allowed-list-only overlay retains them.
 - Compilation is syntax validation. Runtime support, resource authorization,
-  model resolution, and dependency binding belong to execution preparation.
+  model resolution, and dependency binding belong to the retained configuration resolver before conversation creation.
   Unknown metadata is retained; acceptance does not establish its execution.
 - Source checksums and compiled-definition digests have different purposes.
   Source checksums drive edited/pristine detection and include config overlays;
@@ -30,6 +30,8 @@ and skill directories with `SKILL.md` and supporting files.
 file snapshot and TOML overlays. Source identity includes supporting files;
 compiled identity describes the Agent configuration. Binary/NUL-containing
 supporting files use base64 for JSONB storage.
+
+`domain/agent-configuration.ts` resolves the configured default model and skill/named-target identities over the retained package dependency graph. Missing or ambiguous references refuse binding; it never consults mutable package installs.
 
 `ports/agent-revision-store.ts` owns immutable source/definition records,
 account/system catalog pointers, and fixed thread bindings.
@@ -51,18 +53,17 @@ is reserved for trusted system seeding. App services expose the revision port as
 owner in app composition. Either entry point commits or rolls back both stores;
 completed transaction frames reject escaped writes. Root creation resolves exact
 account/system selections and binds atomically. Shared runtime preparation reads
-the retained binding. Child creation resolves named targets within the parent's
-retained package and binds within its creation transaction. Derived-primary paths
-remain part of the later provenance integration.
+the retained binding. Child creation consumes exact targets from the parent binding. Root, child and derived-primary creation use the threads domain's atomic bound-conversation operation.
 
 `domain/bound-agent-catalog.ts` resolves exact primary selections and builds
 catalog pages from immutable revisions. Listing and resolution share the supplied
-host-support predicate. System-source publication uses one transaction-scoped
-serialization boundary across the system catalog and rejects
+host-support predicate. Publication uses one owner-scoped transaction boundary (system or account) and rejects
 cross-source logical-key collisions. Production startup seeds General through this
 boundary with an empty Agent-specific body (the shared host prompt remains
 authoritative) and a concrete configured default model. Changing that configured
 model publishes a new revision and retains the former one.
+
+Standalone `POST /api/agents` publishes personal source directly through this owner. Saves require the prior revision for advancement; conflicts roll back the source install. Runtime support can make a preserved definition unavailable without pretending its semantics execute.
 
 ## Package repository and editing
 
@@ -78,8 +79,7 @@ revision history therefore do not survive server restart.
 
 `domain/definition-editing.ts` appends definition history on save/restore and
 updates the live row. Agent skill ordering comes from the declared flat list;
-operational link invocation flags are preserved across reconciliation. Current
-runtime lookup consumes live records by slug.
+operational link invocation flags are preserved across reconciliation. These legacy management operations have not yet been cut over to the retained catalog; they are not an execution authority.
 
 ## Import, export, and resolution
 
@@ -92,10 +92,7 @@ runtime lookup consumes live records by slug.
 - `domain/skill-files.ts` owns supporting-file encodings and checksums.
 - `domain/resolution.ts` merges builtin, user, project/global, and linked skills.
   Linked skills and operational invocation overrides are live repository state.
-- Runtime consumes the catalog through `runtime/tools/agent-thread-context.ts`
-  and `runtime/tools/skill-tools.ts`. Skill catalog descriptions are rendered;
-  executable skill loading is disabled. Source preservation of structured
-  channels does not implement their loading behavior.
+- Shared runtime preparation reads retained binding configuration. Executable skill loading remains disabled; retained dependency identity is not a claim of loading support.
 
 Errors propagate through the existing calling boundary. Repository operations
 and parser/compiler validation do not independently authorize resources.

@@ -1,4 +1,5 @@
 /** Retained Agent source/definition identity and account/system future-chat selection. */
+import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -31,6 +32,21 @@ export const agentPackageRevisions = pgTable(
       table.contentDigest,
     ),
   ],
+);
+
+/** FK-backed retained dependency edges, installed before the dependent source is published. */
+export const agentPackageDependencies = pgTable(
+  "agent_package_dependencies",
+  {
+    packageRevisionId: uuid("package_revision_id")
+      .notNull()
+      .references(() => agentPackageRevisions.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    dependencyRevisionId: uuid("dependency_revision_id")
+      .notNull()
+      .references(() => agentPackageRevisions.id, { onDelete: "restrict" }),
+  },
+  (table) => [primaryKey({ columns: [table.packageRevisionId, table.name] })],
 );
 
 export const agentDefinitionRevisions = pgTable(
@@ -83,6 +99,7 @@ export const threadAgentBindings = pgTable("thread_agent_bindings", {
   definitionRevisionId: uuid("definition_revision_id")
     .notNull()
     .references(() => agentDefinitionRevisions.id, { onDelete: "restrict" }),
+  configuration: jsonb("configuration").$type<ResolvedAgentConfiguration>().notNull(),
   createdAt: createdAt(),
 });
 

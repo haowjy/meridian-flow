@@ -43,8 +43,8 @@ vi.mock("../thread-creation.js", async (importOriginal) => ({
   createThreadForProject,
 }));
 
-vi.mock("../thread-agent-swap.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../thread-agent-swap.js")>()),
+vi.mock("../../domains/threads/index.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../domains/threads/index.js")>()),
   forkThreadAgent,
 }));
 
@@ -291,7 +291,10 @@ describe("malformed HTTP request IDs", () => {
       "thread fork origin turn",
       () =>
         forkThread(
-          event({ threadId: VALID_ID }, { targetAgent: null, originTurnId: MALFORMED_ID }),
+          event(
+            { threadId: VALID_ID },
+            { agentSelection: AGENT_SELECTION, originTurnId: MALFORMED_ID },
+          ),
         ),
     ],
   ])("%s returns 400 before a database call", async (_surface, invoke) => {
@@ -430,8 +433,8 @@ describe("malformed HTTP request IDs", () => {
     "global",
     "project-scoped",
   ])("names %s Agent refusal for lifecycle repair", async (surface) => {
-    const { AgentBindingNotFoundError } = await import("../thread-creation.js");
-    createThreadForProject.mockRejectedValueOnce(new AgentBindingNotFoundError("prose"));
+    const { AgentSelectionError } = await import("../../domains/packages/index.js");
+    createThreadForProject.mockRejectedValueOnce(new AgentSelectionError("prose"));
 
     await expect(
       surface === "global"
@@ -450,7 +453,9 @@ describe("malformed HTTP request IDs", () => {
   it("preserves nullable fork origin semantics through the route", async () => {
     forkThreadAgent.mockResolvedValueOnce({ id: VALID_ID });
 
-    await forkThread(event({ threadId: VALID_ID }, { originTurnId: null }));
+    await forkThread(
+      event({ threadId: VALID_ID }, { agentSelection: AGENT_SELECTION, originTurnId: null }),
+    );
 
     expect(forkThreadAgent).toHaveBeenCalledWith(
       expect.anything(),

@@ -355,14 +355,6 @@ export type CreateThreadRequest = {
 
 export type CreateThreadResponse = Thread;
 
-/** Rebind agent on a thread that has not started. */
-export type UpdateThreadAgentRequest = {
-  /** Agent slug, or null for platform-default (no agent binding). */
-  currentAgent: string | null;
-};
-
-export type UpdateThreadAgentResponse = Thread;
-
 export type UpdateWorkWriteModeRequest = {
   aiWriteMode: AiWriteMode;
   confirmedPush?: boolean;

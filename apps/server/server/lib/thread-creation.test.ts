@@ -21,6 +21,7 @@ async function fixture() {
   const entry = await app.agentRevisions.readCatalogEntry(null, "general");
   if (!entry) throw new Error("Missing General");
   const agentCatalog = createBoundAgentCatalog({
+    defaultModel: () => "test-model",
     store: app.agentRevisions,
     unavailableReasons: () => [],
   });
@@ -115,8 +116,8 @@ describe("exact thread creation", () => {
           ...deps,
           agentRevisions: {
             ...app.agentRevisions,
-            async bindThread(id, revision) {
-              await app.agentRevisions.bindThread(id, revision);
+            async bindThread(id, revision, configuration) {
+              await app.agentRevisions.bindThread(id, revision, configuration);
               throw new Error("after binding");
             },
           },
