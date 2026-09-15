@@ -103,6 +103,12 @@ export type ComposerHandle = {
     later?: ComposerDraftSnapshot | null,
     expectedRevision?: number,
   ) => boolean;
+  restoreFirstSendRecovery: (input: {
+    submissionId: string;
+    submitted: ComposerDraftSnapshot | null;
+    latestDraft: ComposerDraftSnapshot | null;
+    homeRevision: number;
+  }) => number | null;
   insertReference: (
     reference: AuthoritativeReference,
     spelling: string,
@@ -324,6 +330,27 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             ? mergeComposerDraftSnapshots(submitted, later)
             : submitted,
         );
+      },
+      restoreFirstSendRecovery: ({ submissionId, submitted, latestDraft, homeRevision }) => {
+        if (!editor || editor.isDestroyed) return null;
+        const sources = [
+          { id: `${submissionId}:submitted`, draft: submitted },
+          { id: `${submissionId}:home:${homeRevision}`, draft: latestDraft },
+        ].filter((source) => source.draft && !restored.current.has(source.id));
+        if (sources.length === 0) return revision.current;
+        const current = snapshot();
+        let merged = current;
+        for (const source of [...sources].reverse()) {
+          if (!source.draft) continue;
+          const onlyNode = merged.doc.content?.length === 1 ? merged.doc.content[0] : null;
+          merged =
+            onlyNode?.type === "paragraph" && !onlyNode.content?.length
+              ? source.draft
+              : mergeComposerDraftSnapshots(source.draft, merged);
+        }
+        if (!restoreSnapshot(merged, current.revision)) return null;
+        for (const source of sources) restored.current.add(source.id);
+        return revision.current;
       },
       insertReference: (reference, spelling, imageCapable = false) => {
         if (!editor || editor.isDestroyed) return;

@@ -4,7 +4,7 @@ import "fake-indexeddb/auto";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import { ThreadRunScenario } from "@/client/copilot/test-support/ThreadRunScenario";
 import { FirstSendContinuity, FirstSendContinuityProvider } from "@/client/first-send-continuity";
@@ -17,23 +17,26 @@ import { useThreadHandoff } from "./useThreadHandoff";
 
 let accountId: string;
 let owner: FirstSendContinuity;
+let handoff: ReturnType<typeof useThreadHandoff>;
+const restoredRevision = () => 1;
 beforeEach(() => {
   accountId = crypto.randomUUID();
   owner = new FirstSendContinuity(accountId);
 });
+afterEach(() => vi.restoreAllMocks());
 const envelope = serializeComposerDraft(plainComposerDoc("Opening"), 3);
 const key = { projectId: "project-1", threadId: "thread-1", submissionId: envelope.submissionId };
 const actions = { consumePendingStream: () => null } as unknown as ThreadStoreActions;
 function Harness({
   controller,
-  restoreLatest = () => 1,
-  restoreFailed = () => 1,
+  restoreLatest = restoredRevision,
+  restoreFailed = restoredRevision,
 }: {
   controller: ThreadRunController;
   restoreLatest?: (snapshot: typeof envelope.draft, expectedRevision: number) => number | null;
   restoreFailed?: () => number | null;
 }) {
-  useThreadHandoff(
+  handoff = useThreadHandoff(
     "thread-1",
     "project-1",
     controller,
@@ -99,6 +102,95 @@ async function stageCreation() {
 }
 
 describe("useThreadHandoff durable continuity", () => {
+  it("exposes ambiguity and uses read-only status checks without another append", async () => {
+    await stage();
+    const scenario = new ThreadRunScenario({
+      append: async () => {
+        throw new TypeError("offline");
+      },
+    });
+    const unmount = await mount(scenario.controller);
+    try {
+      await vi.waitFor(() => expect(handoff.recovery?.busy).toBe(false));
+      expect(handoff.blocksSubmission).toBe(true);
+      expect(handoff.recovery?.text).toBe("Opening");
+      const lookups = scenario.lookupRequests.length;
+      await act(async () => handoff.recovery?.checkStatus());
+      expect(scenario.lookupRequests).toHaveLength(lookups + 1);
+      expect(scenario.appendRequests).toHaveLength(1);
+      expect(handoff.blocksSubmission).toBe(true);
+      expect(await owner.peek(key)).not.toBeNull();
+    } finally {
+      await unmount();
+    }
+  });
+
+  it.each([
+    "storage failure",
+    "external retirement",
+  ] as const)("releases recovery controls after %s during status check", async (failure) => {
+    await stage();
+    const result = {
+      kind: "ambiguous",
+      submissionId: envelope.submissionId,
+      acceptedRevision: envelope.acceptedRevision,
+    } as const;
+    const controller = {
+      submit: vi.fn(async () => result),
+      lookup: vi.fn(async () => {
+        if (failure === "storage failure")
+          vi.spyOn(FirstSendContinuity.prototype, "peek").mockRejectedValueOnce(
+            new Error("temporary storage failure"),
+          );
+        else {
+          const observed = await owner.peek(key);
+          if (observed) await owner.retire(observed);
+        }
+        return result;
+      }),
+      resume: vi.fn(),
+    } as unknown as ThreadRunController;
+    const unmount = await mount(controller);
+    try {
+      await vi.waitFor(() => expect(handoff.recovery?.busy).toBe(false));
+      await act(async () => handoff.recovery?.checkStatus());
+      if (failure === "storage failure") {
+        expect(handoff.recovery?.busy).toBe(false);
+        expect(handoff.blocksSubmission).toBe(true);
+        expect(await owner.peek(key)).not.toBeNull();
+      } else {
+        expect(handoff.recovery).toBeNull();
+        expect(handoff.blocksSubmission).toBe(false);
+      }
+    } finally {
+      await unmount();
+    }
+  });
+
+  it("waits for server retirement before restoring and unlocking Send", async () => {
+    await stage();
+    const scenario = new ThreadRunScenario({
+      append: async () => {
+        throw new TypeError("offline");
+      },
+      retire: async ({ submissionId }) => ({ kind: "retired", submissionId, code: "retired" }),
+    });
+    const restore = vi.fn(() => {
+      expect(scenario.retireRequests).toHaveLength(1);
+      return 1;
+    });
+    const unmount = await mount(scenario.controller, undefined, restore);
+    try {
+      await vi.waitFor(() => expect(handoff.recovery?.busy).toBe(false));
+      await act(async () => handoff.recovery?.startOver());
+      expect(restore).toHaveBeenCalledTimes(1);
+      expect(await owner.peek(key)).toBeNull();
+      expect(handoff.blocksSubmission).toBe(false);
+    } finally {
+      await unmount();
+    }
+  });
+
   it("dispatches ready once, then reconciles durable identity on remount", async () => {
     await stage();
     const submit = vi.fn(

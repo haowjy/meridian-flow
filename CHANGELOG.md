@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Show saved first-message recovery controls, preserve newer draft text, and prevent another Send while the original submission is unresolved.
+
 - Recover expired pending message admissions after server interruption while preserving live requests and their submission identity.
 
 - Recover interrupted first-message admission after reload with a server-checked retry of the saved submission identity.

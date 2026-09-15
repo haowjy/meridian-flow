@@ -199,6 +199,16 @@ status checks stay read-only. Authoritative replay rejection stays rejected.
 Controller teardown invalidates the whole admission operation, including token
 waits, POST completion, and follow-up lookup, before store or subscription effects.
 
+`useThreadHandoff` exposes saved-first-message recovery beside the Chat Composer.
+Send stays disabled until admission and local continuity settle; the writer can
+continue drafting. Check status performs a read-only admission lookup. Start
+over first retires the server identity, then restores rejected text. Explicit
+recovery merges submitted and untransferred Home drafts before destination input
+through Composer's idempotent source receipts. The handoff remains the sole owner
+of local continuity retirement, using the observed Home revision CAS. Recovery
+controls become available again after storage-read failure and clear when another
+tab retires the record.
+
 Future optimistic surfaces (rename, soft-delete, undo) follow the same
 shape: optimistic store update first, API call second (`threads-api.ts`),
 deterministic reconcile path on response or failure.

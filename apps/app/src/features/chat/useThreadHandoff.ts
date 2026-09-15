@@ -19,7 +19,11 @@ import {
 } from "@/client/query/project-invalidation";
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
-import type { ComposerDraftSnapshot } from "@/components/app/composer";
+import type {
+  ComposerDraftSnapshot,
+  ComposerHandle,
+  ComposerSubmitOutcome,
+} from "@/components/app/composer";
 import {
   plainComposerDoc,
   serializeComposerDraft,
@@ -48,6 +52,13 @@ export function activeSnapshotResumeAfterSeq(liveState: ThreadLiveState): string
   }
 }
 
+export type FirstSendRecovery = {
+  text: string;
+  busy: boolean;
+  checkStatus(): Promise<void>;
+  startOver(): Promise<void>;
+};
+
 /**
  * Consumes {@link ThreadStoreActions.consumePendingStream} once per mount: resumes
  * an in-flight run or claims a durable first-send admission or retained standalone creation.
@@ -65,7 +76,9 @@ export function useThreadHandoff(
     later: ComposerDraftSnapshot | null | undefined,
     expectedRevision: number,
   ) => number | null,
-): void {
+  restoreRecovery?: ComposerHandle["restoreFirstSendRecovery"],
+): { recovery: FirstSendRecovery | null; blocksSubmission: boolean } {
+  const [recovery, setRecovery] = useState<FirstSendRecovery | null>(null);
   const pendingResumeRef = useRef(false);
   const handoffStartedRef = useRef(false);
   const snapshotEvaluatedRef = useRef(false);
@@ -80,6 +93,7 @@ export function useThreadHandoff(
     snapshotEvaluatedRef.current = false;
     continuityStartedRef.current = false;
     setContinuityChecked(projectId === null);
+    setRecovery(null);
   }, [projectId, threadId]);
 
   useEffect(() => {
@@ -97,43 +111,108 @@ export function useThreadHandoff(
         if (record.latestDraft)
           destinationRevision =
             restoreLatestDraft?.(record.latestDraft, destinationRevision) ?? null;
-        let restoredStamp = JSON.stringify([record.latestDraft, record.creation?.draftRevision]);
-        const outcome = claim.dispatch
-          ? await controller.submit(threadId, record.envelope, {
-              optimisticUserTurnId: record.optimisticUserTurnId,
-            })
-          : await controller.recoverFirstSend(threadId, record.envelope, {
-              optimisticUserTurnId: record.optimisticUserTurnId,
+        let restoredStamp =
+          destinationRevision === null
+            ? null
+            : JSON.stringify([record.latestDraft, record.creation?.draftRevision]);
+        let submittedRestored = false;
+        let busy = false;
+        const publish = () => {
+          if (mounted)
+            setRecovery({
+              text: record.envelope.text,
+              busy,
+              checkStatus: () => resolve("lookup"),
+              startOver: () => resolve("retire"),
             });
-        if (outcome.kind === "ambiguous") {
-          await continuity.markAmbiguous(key);
-          return;
-        }
-        // Admission and creation acknowledgement retire together, only after the
-        // destination has restored the latest revision observed in that transaction.
-        let observed = await continuity.peek(key);
-        while (mounted && observed) {
-          if (destinationRevision === null) return;
-          const stamp = JSON.stringify([observed.latestDraft, observed.creation?.draftRevision]);
-          if (outcome.kind === "accepted") {
-            if (stamp !== restoredStamp) {
-              const draft =
-                observed.latestDraft ?? serializeComposerDraft(plainComposerDoc("")).draft;
-              destinationRevision = restoreLatestDraft?.(draft, destinationRevision) ?? null;
-            }
-          } else {
-            destinationRevision =
-              restoreFailedSubmission?.(
-                `${threadId}:${record.submissionId}:${observed.creation?.draftRevision ?? observed.latestDraft?.revision ?? "submitted"}`,
-                record.envelope.draft,
-                observed.latestDraft,
-                destinationRevision,
-              ) ?? null;
+        };
+        const settle = async (outcome: ComposerSubmitOutcome, explicit: boolean) => {
+          if (!mounted) return;
+          if (outcome.kind === "ambiguous") {
+            await continuity.markAmbiguous(key);
+            return;
           }
-          if (destinationRevision === null || (await continuity.retire(observed))) return;
-          restoredStamp = stamp;
-          observed = await continuity.peek(key);
-        }
+          // Local retirement follows restoration of the exact observed creation revision.
+          let observed = await continuity.peek(key);
+          while (mounted && observed) {
+            const stamp = JSON.stringify([observed.latestDraft, observed.creation?.draftRevision]);
+            if (explicit && restoreRecovery) {
+              destinationRevision = restoreRecovery({
+                submissionId: record.submissionId,
+                submitted:
+                  outcome.kind === "rejected" && !submittedRestored ? record.envelope.draft : null,
+                latestDraft: stamp !== restoredStamp ? observed.latestDraft : null,
+                homeRevision: observed.creation.draftRevision,
+              });
+            } else if (destinationRevision === null) return;
+            else if (outcome.kind === "accepted") {
+              if (stamp !== restoredStamp) {
+                const draft =
+                  observed.latestDraft ?? serializeComposerDraft(plainComposerDoc("")).draft;
+                destinationRevision = restoreLatestDraft?.(draft, destinationRevision) ?? null;
+              }
+            } else {
+              destinationRevision =
+                restoreFailedSubmission?.(
+                  `${threadId}:${record.submissionId}:${observed.creation?.draftRevision ?? observed.latestDraft?.revision ?? "submitted"}`,
+                  record.envelope.draft,
+                  observed.latestDraft,
+                  destinationRevision,
+                ) ?? null;
+            }
+            if (destinationRevision === null) return;
+            if (outcome.kind === "rejected") submittedRestored = true;
+            restoredStamp = stamp;
+            if (await continuity.retire(observed)) {
+              if (mounted) setRecovery(null);
+              return;
+            }
+            restoredStamp = stamp;
+            observed = await continuity.peek(key);
+          }
+          if (mounted && !observed) setRecovery(null);
+        };
+        const resolve = async (operation: "submit" | "recover" | "lookup" | "retire") => {
+          if (!mounted || busy) return;
+          busy = true;
+          publish();
+          try {
+            const observed = await continuity.peek(key);
+            if (!observed || !mounted) {
+              if (mounted) setRecovery(null);
+              return;
+            }
+            const options = { optimisticUserTurnId: record.optimisticUserTurnId };
+            const outcome =
+              operation === "submit"
+                ? await controller.submit(threadId, record.envelope, options)
+                : operation === "recover"
+                  ? await controller.recoverFirstSend(threadId, record.envelope, options)
+                  : await controller[operation](threadId, record.envelope, options);
+            await settle(outcome, operation === "lookup" || operation === "retire");
+          } catch (error) {
+            announceError(
+              error instanceof Error ? error.message : "Failed to reconcile submission",
+            );
+          } finally {
+            busy = false;
+            if (mounted) {
+              try {
+                const remaining = await continuity.peek(key);
+                if (mounted) {
+                  if (remaining) publish();
+                  else setRecovery(null);
+                }
+              } catch (error) {
+                announceError(
+                  error instanceof Error ? error.message : "Failed to read saved submission",
+                );
+                publish();
+              }
+            }
+          }
+        };
+        await resolve(claim.dispatch ? "submit" : "recover");
       })
       .catch((error) =>
         announceError(error instanceof Error ? error.message : "Failed to reconcile submission"),
@@ -144,7 +223,15 @@ export function useThreadHandoff(
     return () => {
       mounted = false;
     };
-  }, [continuity, controller, projectId, restoreFailedSubmission, restoreLatestDraft, threadId]);
+  }, [
+    continuity,
+    controller,
+    projectId,
+    restoreFailedSubmission,
+    restoreLatestDraft,
+    restoreRecovery,
+    threadId,
+  ]);
 
   useEffect(() => {
     if (!continuityChecked) return;
@@ -250,4 +337,5 @@ export function useThreadHandoff(
     snapshotResume?.liveState,
     threadId,
   ]);
+  return { recovery, blocksSubmission: !continuityChecked || recovery !== null };
 }
