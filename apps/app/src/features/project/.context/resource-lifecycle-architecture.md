@@ -64,7 +64,7 @@ Known exact content opens locally before remote admission. The returned admissio
 
 File rename, filing, and the identity bar issue one durable resource-location command. The desired projection replaces the old server row immediately; an eventual receipt or catalog refresh converges canonical metadata without remounting content. Folder operations remain on the direct context API because they have no document resource identity.
 
-Delete appends durable intent and hides the exact resource optimistically. A rejected attempt restores it with repair state. A terminal server generation closes matching tabs and session access through the existing availability/removal coordinator. Path reuse resolves the new Document ID rather than resurrecting stale content. Exact storage cleanup requires an authorized terminal transition; catalog disappearance alone is not deletion evidence.
+Delete appends durable intent and hides the exact resource optimistically. A rejected attempt restores it with repair state. A terminal server generation closes matching tabs and session access through the existing availability/removal coordinator. Path reuse resolves the new Document ID rather than resurrecting stale content. Server-backed storage cleanup requires an authorized terminal transition. Explicit deletion of a never-submitted local resource settles locally and records an exact-database cleanup obligation without a server receipt. Catalog disappearance alone is not deletion evidence.
 
 ## Tabs, history, and loading
 

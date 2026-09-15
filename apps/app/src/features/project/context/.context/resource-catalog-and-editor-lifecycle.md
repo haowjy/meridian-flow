@@ -24,8 +24,9 @@ serialized owner.
 
 Editable-file create, rename, move, and delete commands write ordered durable
 resource intentions before transport. Folder commands retain the direct context
-mutation adapter. A failed file delete restores the row with a retry marker; a
-failed placement reopens the identity field. Cache absence never supplies
+mutation adapter. Rejected deletion restores the row with repair state; transport
+uncertainty leaves the submitted attempt recoverable. Rejected placement
+reopens the identity field. Cache absence never supplies
 removal evidence.
 
 The project availability coordinator watches server-backed tabs, bound route
@@ -36,8 +37,10 @@ for a cold Work triggers the same exact-ID availability path without warming a
 second tree. Cache omission is presentation state and never removal evidence.
 Generation-bearing final commands own the atomic tab, route, selection,
 admission, working-set, and Yjs session effects; same-ID moves and local-new
-tabs survive. Opening requires exact final availability plus a live opener and
-admission.
+tabs survive. Known exact initialized content opens through the resource owner before remote
+admission. Unacquired content requires exact final availability and the live
+opener. Verified-local readiness bypasses the first-sync wait, not upload
+authorization.
 
 `useFileSuggestions` projects directly from the normalized scope views. It
 never walks or caches a second recursive tree and never adds a server-search path; hosts constrain

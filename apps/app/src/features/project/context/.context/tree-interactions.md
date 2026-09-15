@@ -70,8 +70,9 @@ replaces a pending one; Escape/blur semantics are the shared
 
 Deleting an editable file queues a resource deletion intent and hides the row
 optimistically. A terminal receipt carries exact identity and generation into
-session/removal authority. A transport or conflict failure restores the row with
-a retry marker. Folder deletion still sends the direct context command and admits
+session/removal authority. A rejected deletion restores the row with repair state. Transport
+failure leaves the submitted attempt recoverable and does not prove rejection
+or deletion. Folder deletion still sends the direct context command and admits
 its exact result to the availability coordinator. Tree absence never proves
 document removal.
 
