@@ -48,6 +48,12 @@ vi.mock("@/client/query/useCreateContextEntry", () => ({
 vi.mock("@/features/project/context/open-project-document", () => ({
   useOpenProjectDocument: () => async () => true,
 }));
+vi.mock("@/features/project/context/account-feature-context", () => ({
+  useAccountResourceReplica: () => ({}),
+  useOptionalAccountResourceReplica: () => null,
+  useAccountResourceProjection: () => ({ snapshot: null, records: [], error: null }),
+  useOptionalProjectContextAvailabilityCoordinator: () => null,
+}));
 
 let page: ReactEditorFixture;
 

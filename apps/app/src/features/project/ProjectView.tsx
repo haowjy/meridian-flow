@@ -78,12 +78,9 @@ import {
   mobileEditableDocumentId,
   useMobileDocumentRoute,
 } from "./mobile/mobile-document-route";
+import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { ProjectRouteBoundary, type ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
-import type {
-  ContextRouteTarget,
-  ProjectRouteCommands,
-  RouteWorkResolution,
-} from "./routing/project-route";
+import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
 import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
@@ -125,6 +122,7 @@ export type ProjectViewProps = {
   activeLocalDocumentId?: string;
   entryHydration: WorkingSetHydrationPlan;
   addressOwnsDocumentAdmission?: boolean;
+  routeLocationKey?: string;
   routeIssues?: { main?: ProjectRouteIssue; chat?: ProjectRouteIssue; editor?: ProjectRouteIssue };
   onDisplayedSelection?: (selection: {
     threadId: string | null;
@@ -151,10 +149,7 @@ export type ProjectViewProps = {
   /**
    * Selects a context file. When `scheme` is provided, the URL records it.
    */
-  onOpenContextTarget: (
-    target: ContextRouteTarget,
-    options?: { replace?: boolean },
-  ) => Promise<void>;
+  onOpenContextTarget: OpenContextRoute;
   onOpenResults: () => void;
   onCloseResults: () => void;
 };
@@ -223,13 +218,11 @@ export function ProjectView(props: ProjectViewProps) {
   useLayoutEffect(() => {
     props.onDisplayedSelection?.({ threadId: resolvedThreadId, editorWorkId });
   }, [props.onDisplayedSelection, resolvedThreadId, editorWorkId]);
-  const deskHydrated = useContextTabsStore((s) => s._deskHydrated);
+  const workspaceHydrated = useContextTabsStore((s) => s._workspaceHydrated);
   const contextPhase = useContextProjectAuthority({
     projectId: props.projectId,
-    deskHydrated,
+    workspaceHydrated,
     editorScope,
-    workingSetHydration,
-    queryClient,
   });
   useEffect(() => {
     if (workingSetHydration.status !== "read-degraded") return;
@@ -249,7 +242,7 @@ export function ProjectView(props: ProjectViewProps) {
   // (localStorage), so this is at most one frame — no visible flash. Gating here
   // (not inside DesktopProject) avoids a conditional-hook ordering violation.
   const prefsHydrated = useProjectSurfacePrefsStore((s) => s._hydrated);
-  const hydrated = prefsHydrated && deskHydrated;
+  const hydrated = prefsHydrated && workspaceHydrated;
   const onSelectEditorContextPath = useCallback(
     (path: string, scheme?: ProjectContextTreeScheme, options?: { replace?: boolean }) => {
       if (editorScope.status !== "ready" || !scheme) return;
@@ -605,6 +598,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
       id: "context-viewer",
       children: (
         <ProjectRouteBoundary
+          destinationKey={props.routeLocationKey}
           issue={props.editorScope.status === "ready" ? props.routeIssues?.editor : undefined}
           retainWhileLoading={
             !!priorEditor.current && priorEditor.current.editorWorkId === props.editorWorkId
@@ -645,7 +639,10 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     {
       id: "chat",
       children: (
-        <ProjectRouteBoundary issue={props.routeIssues?.chat}>
+        <ProjectRouteBoundary
+          issue={props.routeIssues?.chat}
+          destinationKey={props.routeLocationKey}
+        >
           <div
             className="flex min-h-0 flex-1 flex-col"
             role={chatPlacement === "center" && !props.chatDestination ? "main" : undefined}
@@ -727,7 +724,10 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         bounds={SURFACE_WIDTH_BOUNDS}
         mainMinWidth={MAIN_MIN_WIDTH}
       >
-        <ProjectRouteBoundary issue={props.routeIssues?.main}>
+        <ProjectRouteBoundary
+          issue={props.routeIssues?.main}
+          destinationKey={props.routeLocationKey}
+        >
           {renderDesktopPane(props, surfaceToggle)}
         </ProjectRouteBoundary>
       </ProjectShell>

@@ -143,6 +143,8 @@ function contextErrorMessage(error: ContextError): string {
       return "Context path not found";
     case "conflict":
       return "Context path conflict";
+    case "operation_mismatch":
+      return "Operation ID already names a different command";
     case "stale_source":
     case "stale_target":
       return "Context location changed; retry the operation";

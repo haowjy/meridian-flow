@@ -8,17 +8,6 @@ const requests: Array<{ operation: string; workId: string | undefined }> = [];
 let releaseCreate: (() => void) | null = null;
 
 vi.mock("@/client/api/projects-api", () => ({
-  getContextCatalogSnapshot: vi.fn(async (_projectId, scope) => {
-    requests.push({ operation: "tree", workId: scope.kind === "work" ? scope.workId : undefined });
-    return {
-      scope,
-      generation: "generation-1",
-      headRevision: "0",
-      cursor: "cursor-0",
-      entries: [],
-    };
-  }),
-  getContextCatalogChanges: vi.fn(),
   getProjectContextRead: vi.fn(async (_projectId, _scheme, _path, options) => {
     requests.push({ operation: "read", workId: options?.workId });
     return { kind: "binary", url: "https://example.test/file", mimeType: "text/plain" };
@@ -35,18 +24,16 @@ vi.mock("@/client/api/projects-api", () => ({
     return { status: "deleted" };
   }),
 }));
-
 const { useCreateContextEntry } = await import("./useCreateContextEntry");
 const { useDeleteContextEntry } = await import("./useDeleteContextEntry");
 const { useProjectContextRead } = await import("./useProjectContextRead");
-const { useContextCatalogView } = await import("./useContextCatalog");
+const { contextCatalogScope } = await import("./useContextCatalog");
 
 type Commands = ReturnType<typeof useCommands>;
 let commands: Commands | null = null;
 let changeWork: ((workId: string) => void) | null = null;
 
 function useCommands(workId: string) {
-  useContextCatalogView("project", "scratch", { workId });
   useProjectContextRead("project", "scratch", "/file.md", { workId });
   return {
     create: useCreateContextEntry("project"),
@@ -76,17 +63,21 @@ afterEach(() => {
   changeWork = null;
 });
 
-it("sends scratch tree, read, and mutation requests with explicit Editor Work A", async () => {
+it("projects Scratch into the explicit Editor Work scope", () => {
+  expect(contextCatalogScope("project", "scratch", "work-a")).toEqual({
+    kind: "work",
+    projectId: "project",
+    workId: "work-a",
+  });
+});
+
+it("sends scratch read and mutation requests with explicit Editor Work A", async () => {
   await withReactRoot(
     <Providers>
       <Harness workId="work-a" />
     </Providers>,
     async () => {
-      await vi.waitFor(() =>
-        expect(requests.map((request) => request.operation)).toEqual(
-          expect.arrayContaining(["tree", "read"]),
-        ),
-      );
+      await vi.waitFor(() => expect(requests.map(({ operation }) => operation)).toContain("read"));
       await act(async () => {
         const create = commands?.create.mutateAsync({
           scheme: "scratch",
@@ -95,6 +86,7 @@ it("sends scratch tree, read, and mutation requests with explicit Editor Work A"
           workId: "work-a",
         });
         await commands?.delete.mutateAsync({
+          operationId: "00000000-0000-4000-8000-000000000703",
           path: "/gone.md",
           workId: "work-a",
           expected: { kind: "file", documentId: "document-gone" },
@@ -104,7 +96,7 @@ it("sends scratch tree, read, and mutation requests with explicit Editor Work A"
       });
       expect(
         requests
-          .filter(({ operation }) => ["tree", "read", "create", "delete"].includes(operation))
+          .filter(({ operation }) => ["read", "create", "delete"].includes(operation))
           .every(({ workId }) => workId === "work-a"),
       ).toBe(true);
     },

@@ -13,6 +13,7 @@ import {
   type OpenProjectDocument,
   type ProjectDocumentLiveOpener,
   type ProjectDocumentLiveOpenResult,
+  ProjectDocumentNavigationAdapter,
   ProjectDocumentNavigationProvider,
   useOpenProjectDocument,
 } from "./open-project-document";
@@ -20,9 +21,13 @@ import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener
 
 const tabs = vi.hoisted(() => vi.fn());
 
-vi.mock("@/client/stores", () => ({
-  useContextTabsActions: () => ({ openTab: tabs }),
-}));
+vi.mock("@/client/stores", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/client/stores")>();
+  return {
+    ...actual,
+    useContextTabsActions: () => ({ openTab: tabs }),
+  };
+});
 
 const admission = { bind: vi.fn() } as never;
 
@@ -94,13 +99,16 @@ function Door({
 
 describe("ProjectDocumentNavigationProvider", () => {
   beforeEach(() => {
-    tabs.mockReset();
+    tabs.mockReset().mockImplementation((_projectId, tab) => ({ kind: "opened", tab }));
   });
 
-  it("waits for durable tab publication before navigating", async () => {
-    const publication = deferred<void>();
-    tabs.mockReturnValue(publication.promise);
-    const openRoute = vi.fn(async () => undefined);
+  it.each([
+    "applied",
+    "cancelled",
+    "superseded",
+  ] as const)("publishes through the route owner and reports %s", async (kind) => {
+    const decision = deferred<Awaited<ReturnType<OpenContextRoute>>>();
+    const openRoute = vi.fn(() => decision.promise);
     const doors: Record<string, OpenProjectDocument> = {};
     await withReactRoot(
       <Owner projectId="project-a" opener={{ open: async () => opened("a") }} openRoute={openRoute}>
@@ -109,51 +117,367 @@ describe("ProjectDocumentNavigationProvider", () => {
       async () => {
         const opening = doors.catalog({ documentId: "a" });
         await act(async () => undefined);
-        try {
-          expect(tabs).toHaveBeenCalledOnce();
-          expect(openRoute).not.toHaveBeenCalled();
-        } finally {
-          publication.resolve();
-        }
-        await expect(opening).resolves.toMatchObject({ kind: "opened" });
-        expect(openRoute).toHaveBeenCalledOnce();
+        expect(tabs).not.toHaveBeenCalled();
+        expect(openRoute).toHaveBeenCalledWith(
+          expect.objectContaining({ documentId: "a" }),
+          expect.objectContaining({ tab: expect.objectContaining({ documentId: "a" }) }),
+        );
+        decision.resolve({ kind });
+        await expect(opening).resolves.toMatchObject({
+          kind: kind === "applied" ? "opened" : "cancelled",
+        });
       },
     );
   });
 
   it.each([
-    false,
-    true,
-  ])("returns a typed publication failure (superseded: %s)", async (superseded) => {
-    let reject!: (reason: unknown) => void;
-    tabs
-      .mockReturnValueOnce(
-        new Promise<void>((_resolve, fail) => {
-          reject = fail;
+    "caller abort",
+    "owner disposal",
+  ])("does not commit a held route after %s", async (reason) => {
+    const permission = deferred<void>();
+    const route = vi.fn<OpenContextRoute>(async (_target, options) => {
+      await permission.promise;
+      return { kind: options?.canCommit?.() ? "applied" : "superseded" };
+    });
+    const adapter = new ProjectDocumentNavigationAdapter({
+      opener: { open: async () => opened("a") },
+      openTab: tabs,
+      openRoute: route,
+    });
+    const controller = new AbortController();
+    const opening = adapter.open("project-a", { documentId: "a", signal: controller.signal });
+    await Promise.resolve();
+    expect(route).toHaveBeenCalledOnce();
+    if (reason === "caller abort") controller.abort();
+    else adapter.dispose();
+    permission.resolve();
+    await expect(opening).resolves.toEqual({ kind: "cancelled" });
+    expect(tabs).not.toHaveBeenCalled();
+    adapter.dispose();
+  });
+
+  it("opens exact local content without waiting for server availability", async () => {
+    const session = {} as import("@/core/editor/document-session").DocumentSession;
+    const releaseEditor = vi.fn();
+    const releasePrepared = vi.fn();
+    const record = {
+      resource: {
+        handle: "resource-a",
+        revision: 1,
+        identity: { documentId: "local-a", revision: 1 },
+        content: { kind: "exact", databaseName: "exact", schema: null },
+        canonical: null,
+        lifecycle: { kind: "local" },
+        aliases: {},
+        obligations: { createEligibility: { eligibleAt: 1 } },
+      },
+      intents: [
+        {
+          projectId: "project-a",
+          handle: "resource-a",
+          intentId: "create",
+          sequence: 1,
+          identityRevision: 1,
+          desired: { kind: "create", folderPath: "", provisionalName: "Untitled" },
+          attempts: [],
+          state: "pending",
+        },
+      ],
+    } as const;
+    const openKnownDocument = vi.fn(async () => ({
+      kind: "opened" as const,
+      key: { handle: "resource-a" },
+      record,
+      handle: {
+        key: { handle: "resource-a" },
+        documentId: "local-a",
+        session,
+        release: releasePrepared,
+      },
+    }));
+    const openDocument = vi.fn(async () => ({
+      kind: "opened" as const,
+      handle: {
+        key: { handle: "resource-a" },
+        documentId: "local-a",
+        session,
+        release: releaseEditor,
+      },
+    }));
+    const opener = { open: vi.fn() };
+    const openRoute = vi.fn(async () => ({ kind: "applied" as const }));
+    const adapter = new ProjectDocumentNavigationAdapter({
+      opener,
+      openTab: tabs,
+      openRoute,
+      resources: { accountId: "account", openKnownDocument, openDocument } as never,
+    });
+
+    const result = await adapter.open("project-a", { documentId: "local-a" });
+
+    expect(result).toMatchObject({
+      kind: "opened",
+      document: { entryId: "local-a", scope: { kind: "project", projectId: "project-a" } },
+    });
+    expect(opener.open).not.toHaveBeenCalled();
+    expect(openRoute).toHaveBeenCalledWith(
+      { scheme: "unfiled", path: "/Untitled", workId: null, documentId: "local-a" },
+      expect.any(Object),
+    );
+    if (result.kind !== "opened") throw new Error("Expected local document");
+    const binding = await result.admission.bind("editor-owner");
+    expect(binding.session).toBe(session);
+    expect(binding.local).toBe(true);
+    expect(releasePrepared).toHaveBeenCalledOnce();
+    expect(openDocument).toHaveBeenLastCalledWith(
+      "project-a",
+      { handle: "resource-a" },
+      "editor-owner",
+    );
+    binding.release();
+    expect(releaseEditor).toHaveBeenCalledOnce();
+    adapter.dispose();
+  });
+
+  it("opens an accessible acknowledged cache without asking server admission", async () => {
+    const session = {} as import("@/core/editor/document-session").DocumentSession;
+    const record = {
+      resource: {
+        handle: "catalog:server-a",
+        revision: 2,
+        identity: { documentId: "server-a", revision: 1 },
+        content: { kind: "exact" as const, databaseName: "exact", schema: "v0.5" },
+        canonical: {
+          scheme: "manuscript" as const,
+          path: "/server-a.py",
+          name: "server-a.py",
+          workId: null,
+        },
+        classification: {
+          editable: true as const,
+          filetype: "python" as const,
+          schemaType: "code" as const,
+        },
+        lifecycle: { kind: "acknowledged" as const, availabilityGeneration: "2" },
+        aliases: {},
+        obligations: {},
+      },
+      intents: [],
+    };
+    const opener = { open: vi.fn() };
+    const openRoute = vi.fn(async () => ({ kind: "applied" as const }));
+    const adapter = new ProjectDocumentNavigationAdapter({
+      opener,
+      openTab: tabs,
+      openRoute,
+      resources: {
+        accountId: "account",
+        openKnownDocument: vi.fn(async () => ({
+          kind: "opened" as const,
+          key: { handle: "catalog:server-a" },
+          record,
+          handle: { documentId: "server-a", session, release: vi.fn() },
+        })),
+        openDocument: vi.fn(async () => ({
+          kind: "opened" as const,
+          handle: { documentId: "server-a", session, release: vi.fn() },
+        })),
+      } as never,
+    });
+
+    await expect(adapter.open("project-a", { documentId: "server-a" })).resolves.toMatchObject({
+      kind: "opened",
+      document: {
+        entryId: "server-a",
+        filetype: "python",
+        schemaType: "code",
+      },
+    });
+    expect(opener.open).not.toHaveBeenCalled();
+    expect(openRoute).toHaveBeenCalledWith(
+      {
+        scheme: "manuscript",
+        path: "/server-a.py",
+        workId: null,
+        documentId: "server-a",
+      },
+      expect.objectContaining({
+        tab: expect.objectContaining({
+          resourceHandle: "catalog:server-a",
+          filetype: "python",
+          schemaType: "code",
         }),
-      )
-      .mockResolvedValue(undefined);
-    const openRoute = vi.fn(async () => undefined);
+      }),
+    );
+    adapter.dispose();
+  });
+
+  it("falls through to server admission for metadata-only catalog resources", async () => {
+    const serverResult = opened("server-a");
+    const opener = { open: vi.fn(async () => serverResult) };
+    const openRoute = vi.fn(async () => ({ kind: "applied" as const }));
+    const adapter = new ProjectDocumentNavigationAdapter({
+      opener,
+      openTab: tabs,
+      openRoute,
+      resources: {
+        accountId: "account",
+        openKnownDocument: vi.fn(async () => ({
+          kind: "unavailable" as const,
+          reason: "unacquired" as const,
+          key: { handle: "catalog:server-a" },
+          record: {
+            resource: {
+              handle: "catalog:server-a",
+              revision: 1,
+              identity: { documentId: "server-a", revision: 1 },
+              content: { kind: "unacquired" },
+              canonical: {
+                scheme: "manuscript",
+                path: "/server-a.md",
+                name: "server-a.md",
+                workId: null,
+              },
+              lifecycle: { kind: "acknowledged", availabilityGeneration: null },
+              aliases: {},
+              obligations: {},
+            },
+            intents: [],
+          },
+        })),
+        openDocument: vi.fn(),
+      } as never,
+    });
+
+    await expect(adapter.open("project-a", { documentId: "server-a" })).resolves.toBe(serverResult);
+    expect(opener.open).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "server", documentId: "server-a" }),
+    );
+    expect(openRoute).toHaveBeenCalledOnce();
+    adapter.dispose();
+  });
+
+  it("falls through to server admission when an acknowledged exact cache is unusable", async () => {
+    const serverResult = opened("server-a");
+    const opener = { open: vi.fn(async () => serverResult) };
+    const record = {
+      resource: {
+        handle: "resource-a",
+        revision: 1,
+        identity: { documentId: "server-a", revision: 1 },
+        content: { kind: "exact" as const, databaseName: "stale", schema: "old-schema" },
+        canonical: {
+          scheme: "manuscript" as const,
+          path: "/server-a.md",
+          name: "server-a.md",
+          workId: null,
+        },
+        lifecycle: { kind: "acknowledged" as const, availabilityGeneration: "1" },
+        aliases: {},
+        obligations: {},
+      },
+      intents: [],
+    };
+    const adapter = new ProjectDocumentNavigationAdapter({
+      opener,
+      openTab: tabs,
+      openRoute: vi.fn(async () => ({ kind: "applied" as const })),
+      resources: {
+        accountId: "account",
+        openKnownDocument: vi.fn(async () => ({
+          kind: "unavailable" as const,
+          reason: "schema-mismatch" as const,
+          key: { handle: "resource-a" },
+          record,
+        })),
+        openDocument: vi.fn(),
+      } as never,
+    });
+
+    await expect(adapter.open("project-a", { documentId: "server-a" })).resolves.toBe(serverResult);
+    expect(opener.open).toHaveBeenCalledOnce();
+    adapter.dispose();
+  });
+
+  it("does not fall through to server authority for a locally pending delete", async () => {
+    const opener = { open: vi.fn() };
+    const adapter = new ProjectDocumentNavigationAdapter({
+      opener,
+      openTab: tabs,
+      openRoute: vi.fn(async () => ({ kind: "applied" as const })),
+      resources: {
+        accountId: "account",
+        openKnownDocument: vi.fn(async () => ({
+          kind: "unavailable" as const,
+          reason: "deleted" as const,
+          key: { handle: "resource-a" },
+          record: {
+            resource: {
+              handle: "resource-a",
+              revision: 2,
+              identity: { documentId: "local-a", revision: 1 },
+              content: { kind: "exact", databaseName: "exact", schema: null },
+              canonical: {
+                scheme: "manuscript",
+                path: "/Chapter.md",
+                name: "Chapter.md",
+                workId: null,
+              },
+              lifecycle: { kind: "acknowledged", availabilityGeneration: "1" },
+              aliases: {},
+              obligations: {},
+            },
+            intents: [
+              {
+                projectId: "project-a",
+                handle: "resource-a",
+                intentId: "delete",
+                sequence: 1,
+                identityRevision: 1,
+                desired: { kind: "delete" },
+                attempts: [],
+                state: "pending",
+              },
+            ],
+          },
+        })),
+        openDocument: vi.fn(),
+      } as never,
+    });
+
+    await expect(adapter.open("project-a", { documentId: "local-a" })).resolves.toEqual({
+      kind: "unavailable",
+      reason: "deleted",
+    });
+    expect(opener.open).not.toHaveBeenCalled();
+    adapter.dispose();
+  });
+
+  it("opens in the background without cancelling a pending foreground destination", async () => {
+    const delayed = deferred<ProjectDocumentLiveOpenResult>();
+    const openRoute = vi.fn(async () => ({ kind: "applied" as const }));
     const doors: Record<string, OpenProjectDocument> = {};
     await withReactRoot(
       <Owner
         projectId="project-a"
-        opener={{ open: async ({ documentId }) => opened(documentId) }}
+        opener={{
+          open: async ({ documentId }) =>
+            documentId === "a" ? delayed.promise : opened(documentId),
+        }}
         openRoute={openRoute}
       >
         <Door name="catalog" projectId="project-a" doors={doors} />
       </Owner>,
       async () => {
-        const opening = doors.catalog({ documentId: "a" });
-        await act(async () => undefined);
-        const isCurrent = tabs.mock.calls[0][2] as () => boolean;
-        expect(isCurrent()).toBe(true);
-        if (superseded) await doors.catalog({ documentId: "b" });
-        expect(isCurrent()).toBe(!superseded);
-        reject(new Error("storage unavailable"));
-        await expect(opening).resolves.toEqual(
-          superseded ? { kind: "cancelled" } : { kind: "unavailable", reason: "failed" },
-        );
+        const foreground = doors.catalog({ documentId: "a" });
+        await expect(
+          doors.catalog({ documentId: "b", disposition: "background" }),
+        ).resolves.toMatchObject({ kind: "opened" });
+        expect(openRoute).not.toHaveBeenCalled();
+        delayed.resolve(opened("a"));
+        await expect(foreground).resolves.toMatchObject({ kind: "opened" });
+        expect(openRoute).toHaveBeenCalledOnce();
+        expect(tabs).toHaveBeenCalledOnce();
       },
     );
   });
@@ -163,7 +487,7 @@ describe("ProjectDocumentNavigationProvider", () => {
     const open = vi.fn(({ documentId }: { documentId: string }) =>
       documentId === "a" ? delayedA.promise : Promise.resolve(opened(documentId)),
     );
-    const openRoute = vi.fn(async () => undefined);
+    const openRoute = vi.fn(async () => ({ kind: "applied" as const }));
     const doors: Record<string, OpenProjectDocument> = {};
 
     await withReactRoot(
@@ -177,19 +501,22 @@ describe("ProjectDocumentNavigationProvider", () => {
         delayedA.resolve(opened("a"));
         await expect(stale).resolves.toEqual({ kind: "cancelled" });
 
-        expect(tabs).toHaveBeenCalledTimes(1);
-        expect(tabs.mock.calls[0]?.[1]).toMatchObject({ documentId: "b" });
+        expect(tabs).not.toHaveBeenCalled();
         expect(openRoute).toHaveBeenCalledOnce();
-        expect(openRoute).toHaveBeenCalledWith({
-          scheme: "manuscript",
-          path: "/b.md",
-          workId: null,
-        });
+        expect(openRoute).toHaveBeenCalledWith(
+          {
+            scheme: "manuscript",
+            path: "/b.md",
+            workId: null,
+            documentId: "b",
+          },
+          expect.objectContaining({ tab: expect.objectContaining({ documentId: "b" }) }),
+        );
 
         await expect(
           doors.catalog({ documentId: "background", disposition: "background" }),
         ).resolves.toMatchObject({ kind: "opened" });
-        expect(tabs).toHaveBeenCalledTimes(2);
+        expect(tabs).toHaveBeenCalledOnce();
         expect(openRoute).toHaveBeenCalledOnce();
       },
     );
@@ -220,7 +547,7 @@ describe("ProjectDocumentNavigationProvider", () => {
     const open = vi.fn(
       async (): Promise<ProjectDocumentLiveOpenResult> => ({ kind: "not-editable", document }),
     );
-    const openRoute = vi.fn(async () => undefined);
+    const openRoute = vi.fn(async () => ({ kind: "applied" as const }));
     const doors: Record<string, OpenProjectDocument> = {};
     await withReactRoot(
       <Owner projectId="project-a" opener={{ open }} openRoute={openRoute}>
@@ -229,7 +556,10 @@ describe("ProjectDocumentNavigationProvider", () => {
       async () => {
         await doors.reference({ documentId: "image", workId: "work-a" });
         expect(tabs).not.toHaveBeenCalled();
-        expect(openRoute).toHaveBeenCalledWith({ scheme: "uploads", path: "/Map.png", workId });
+        expect(openRoute).toHaveBeenCalledWith(
+          { scheme: "uploads", path: "/Map.png", workId, documentId: "image" },
+          expect.objectContaining({ tab: undefined }),
+        );
       },
     );
   });
@@ -242,7 +572,7 @@ describe("ProjectDocumentNavigationProvider", () => {
       return delayed.promise;
     });
     const doors: Record<string, OpenProjectDocument> = {};
-    const openRoute = vi.fn(async () => undefined);
+    const openRoute = vi.fn(async () => ({ kind: "applied" as const }));
     let leave!: () => void;
 
     function Harness() {
@@ -273,10 +603,18 @@ describe("ProjectDocumentNavigationProvider", () => {
 
     await withReactRoot(
       <>
-        <Owner projectId="project-a" opener={{ open }} openRoute={vi.fn(async () => undefined)}>
+        <Owner
+          projectId="project-a"
+          opener={{ open }}
+          openRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+        >
           <Door name="a" projectId="project-a" doors={doors} />
         </Owner>
-        <Owner projectId="project-b" opener={{ open }} openRoute={vi.fn(async () => undefined)}>
+        <Owner
+          projectId="project-b"
+          opener={{ open }}
+          openRoute={vi.fn(async () => ({ kind: "applied" as const }))}
+        >
           <Door name="b" projectId="project-b" doors={doors} />
         </Owner>
       </>,
@@ -285,7 +623,7 @@ describe("ProjectDocumentNavigationProvider", () => {
         await expect(doors.b({ documentId: "b" })).resolves.toMatchObject({ kind: "opened" });
         delayedA.resolve(opened("a"));
         await expect(first).resolves.toMatchObject({ kind: "opened" });
-        expect(tabs).toHaveBeenCalledTimes(2);
+        expect(tabs).not.toHaveBeenCalled();
       },
     );
   });

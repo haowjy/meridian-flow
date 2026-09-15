@@ -54,7 +54,7 @@ never resolves or invents a Work for no-Work chats. Route-owned detail and inlin
 the typed catalog, PATCH mutation, and associated-chat query seams.
 Work detail owns one page-scoped metadata controller. It coordinates the active field,
 authoritative returned Work, field-local failure, and an awaited Save/Discard/Keep
-editing decision with the TanStack route blocker; leaves only submit intents through it.
+editing decision with the route-owned navigation guard; leaves only submit intents through it.
 Hard unload uses the router's native before-unload integration rather than a second
 draft owner.
 Incoming authoritative Work revisions update the clean baseline without replacing the
@@ -253,9 +253,9 @@ Actual selections remain readable query parameters.
 A fresh copied URL without these parameters may use local defaults; Back/Forward
 and reload preserve the entry's explicit no-selection intent.
 Resolving those defaults does not itself replace the route. The departure
-snapshot path remains, but the browser history adapter can coalesce its replace
-with the following push: a bare entry is not reliably pinned to its displayed
-defaults. Back/reload may therefore use newer remembered selections. Document
+snapshot path freezes displayed choices before the destination push. Native
+history is flushed before matching workspace settlement, so immediate reload
+uses the accepted URL and browser-local layout. Document
 admission still canonicalizes document paths and scope independently.
 
 A readable address has explicit selections, not defaults: absent, no-Work,
@@ -282,13 +282,14 @@ its identity chrome; recovery and unavailable/error destinations mask it.
 The route publishes authorized tab metadata, while the document host owns
 live-session binding. See [Editor document lifecycle](editor-document-lifecycle.md)
 for entry paths, publication ordering, retention, and failure behavior.
-The removal coordinator's route repair remains an identity and revision guarded
-CAS over the current address projection.
+Writer Close commits through accepted navigation; forced availability repair
+remains an identity and revision guarded CAS over the current address projection.
 
 The **Editor** destination retains `ContextPaneController` as its implementation
 name. It owns address-admitted opens, temporary-tab projection, scroll
 restoration. Screen entry resolves a still-open identity before navigation;
-bare Editor routes remain empty. Project-entry desk seed/validation is
+bare Editor routes remain empty. Project-entry workspace validation checks only
+persisted browser-local members and never seeds them from server recents. It is
 hydration-scoped and never re-runs on a Work change. The removal coordinator
 owns close fallback, atomic old/new Work continuity, remembered destination,
 and guarded route repair. A cold address can project loading until the
@@ -324,3 +325,7 @@ The basic `EditorView` is a static dependency of the project hosts, not a lazy
 chunk fetched on first New/open. This makes a loaded empty workspace capable of
 starting local writing offline; it deliberately costs earlier editor-code loading
 for Chat-only project visits. It does not provide cold offline application boot.
+
+## Document system map
+
+[Current project document architecture](resource-lifecycle-architecture.md) connects browser-local views, local creation, session persistence, catalog acquisition and backend synchronization. It separates resource durability, browser-local views, backend namespace acknowledgement, and Yjs synchronization.

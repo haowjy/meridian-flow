@@ -42,6 +42,7 @@ export * from "./agui.js";
 export * from "./billing.js";
 export * from "./context-availability.js";
 export * from "./context-catalog.js";
+export * from "./context-operation.js";
 export * from "./document-links.js";
 export * from "./event-seq.js";
 export * from "./filetype.js";

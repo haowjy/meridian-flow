@@ -29,9 +29,9 @@ registry.reserve({});
 // @ts-expect-error local adoption is a separate private facet
 registry.bindAndAdopt({});
 
-declare function localUntitledOwner(port: LocalDocumentSessionReservationPort): void;
+declare function localResourceOwner(port: LocalDocumentSessionReservationPort): void;
 declare function projectDocumentLiveOpener(port: LocalDocumentSessionAdoptionPort): void;
-localUntitledOwner({} as LocalDocumentSessionReservationPort);
+localResourceOwner({} as LocalDocumentSessionReservationPort);
 projectDocumentLiveOpener({} as LocalDocumentSessionAdoptionPort);
 
 type PublicRegistryModule = typeof import("./document-session-registry");

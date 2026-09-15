@@ -108,6 +108,18 @@ describe("DocumentSession persistence cleanup", () => {
     await expect(synced).resolves.toBeUndefined();
   });
 
+  it("cancels fresh initialization when destroyed before local replay", async () => {
+    persistence.createWhenSynced.mockReturnValue(new Promise(() => {}));
+    const session = new DocumentSession({
+      roomKey: "doc-fresh-pending",
+      persistence: { kind: "indexeddb", key: "test:fresh-pending", fresh: true },
+    });
+    const initialized = session.hasInitializedLocalContent();
+    await session.destroy();
+    expect(await initialized).toBe(false);
+    expect(persistence.destroy).toHaveBeenCalledOnce();
+  });
+
   it("attaches transport after IndexedDB has replayed local updates", async () => {
     let resolveLocalSync!: () => void;
     persistence.createWhenSynced.mockReturnValue(

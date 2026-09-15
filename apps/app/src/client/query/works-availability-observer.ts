@@ -1,6 +1,7 @@
 /** Project-lifetime adapter from installed catalog authority to canonical Works acquisition. */
+
+import type { CatalogCacheView } from "@meridian/resource-replica";
 import type { QueryClient } from "@tanstack/react-query";
-import type { CatalogCacheView } from "./context-catalog-cache";
 import { isProjectContextCatalogKey, projectQueryKeys } from "./project-query-keys";
 import { refreshWorksSnapshot } from "./works-projection-acquisition";
 

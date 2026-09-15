@@ -90,6 +90,12 @@ export type PendingDocumentPurge = {
   transitionId?: string;
 };
 
+/** A committed historical observation, never admission or permission to purge/upload. */
+export type ResourceAuthoritySnapshot = {
+  room: RoomOrderRecord;
+  pendingPurge: PendingDocumentPurge | null;
+};
+
 export type TerminalLineageReceipt = Readonly<{
   kind: "lineage-transition-required";
   documentId: DocumentId;
@@ -341,6 +347,21 @@ export class DocumentSessionAuthorityStore {
     return room ?? emptyRoom(documentId);
   }
 
+  async readResourceSnapshot(documentId: DocumentId): Promise<ResourceAuthoritySnapshot> {
+    const database = await this.databasePromise;
+    const transaction = database.transaction([ROOMS, PURGES], "readonly");
+    const [room, purge] = await Promise.all([
+      requestResult(transaction.objectStore(ROOMS).get(documentId)) as Promise<
+        RoomOrderRecord | undefined
+      >,
+      requestResult(
+        transaction.objectStore(PURGES).get(purgeRecordKey(this.accountId, documentId)),
+      ) as Promise<PendingDocumentPurge | undefined>,
+    ]);
+    await transactionDone(transaction);
+    return { room: room ?? emptyRoom(documentId), pendingPurge: purge ?? null };
+  }
+
   async readAccessHead(
     documentId: DocumentId,
     projectId: ProjectId,
@@ -391,17 +412,7 @@ export class DocumentSessionAuthorityStore {
 
   /** Compares one exact terminal receipt without advancing durable authority. */
   async inspectTerminalLineage(receipt: TerminalLineageReceipt): Promise<TerminalLineageProgress> {
-    const database = await this.databasePromise;
-    const transaction = database.transaction([ROOMS, PURGES], "readonly");
-    const [room, purge] = await Promise.all([
-      requestResult(transaction.objectStore(ROOMS).get(receipt.documentId)) as Promise<
-        RoomOrderRecord | undefined
-      >,
-      requestResult(
-        transaction.objectStore(PURGES).get(purgeRecordKey(this.accountId, receipt.documentId)),
-      ) as Promise<PendingDocumentPurge | undefined>,
-    ]);
-    await transactionDone(transaction);
+    const { room, pendingPurge: purge } = await this.readResourceSnapshot(receipt.documentId);
     const authority = room?.persistence;
     if (
       authority?.phase === "terminal-local" &&
@@ -931,18 +942,8 @@ export class DocumentSessionAuthorityStore {
   }
 
   async snapshotPurge(documentId: DocumentId): Promise<PendingDocumentPurge | null> {
-    const database = await this.databasePromise;
-    const transaction = database.transaction([ROOMS, PURGES], "readonly");
-    const [room, purge] = await Promise.all([
-      requestResult(transaction.objectStore(ROOMS).get(documentId)) as Promise<
-        RoomOrderRecord | undefined
-      >,
-      requestResult(
-        transaction.objectStore(PURGES).get(purgeRecordKey(this.accountId, documentId)),
-      ) as Promise<PendingDocumentPurge | undefined>,
-    ]);
-    await transactionDone(transaction);
-    return room?.pendingDrain ? null : (purge ?? null);
+    const { room, pendingPurge } = await this.readResourceSnapshot(documentId);
+    return room.pendingDrain ? null : pendingPurge;
   }
 
   async compareClearPurge(purge: PendingDocumentPurge): Promise<boolean> {

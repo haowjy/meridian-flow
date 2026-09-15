@@ -19,6 +19,17 @@ with a single unified `ContextPort` that resolves durable project schemes
   defensively capped by the shared domain policy. Work catalog IDs pass through
   the canonical request-ID parser before authority resolution.
 
+- **Namespace attempt settlement** — browser move/delete commands carry immutable
+  operation IDs. `ContextOperationReceipts` locks the actor/project/operation key
+  and checks its receipt before source preflight. The existing tree owner runs in
+  a real savepoint; a typed rejection rolls back namespace/catalog changes before
+  its outcome is recorded. Infrastructure errors remain retryable without a receipt.
+  Receipt lookup requires current project access but not the old source path or
+  Work. A receipt describes the historical attempt, not the document's current
+  location. Replanning requires a new ID; a reused ID cannot name another command.
+  Document deletion and soft project deletion preserve receipts. Hard deletion of
+  their owning project or account cascades them.
+
 - **Project-final availability** — stable-ID lookup classifies current
   project/no-Work/Work/user authority from authoritative rows and advances
   generation heads with mutations. A deleted request project or deleted backing

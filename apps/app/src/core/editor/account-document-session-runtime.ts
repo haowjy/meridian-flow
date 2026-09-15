@@ -2,11 +2,11 @@
 import type { AccountId } from "@meridian/contracts/protocol";
 import type {
   LiveDocumentSessionRegistry,
-  LocalUntitledDocumentSessionFactory,
+  LocalDocumentSessionFactory,
 } from "./document-session-registry";
 import {
   DocumentSessionRegistry,
-  type LocalLineageTerminalPort,
+  type LocalResourceLifetimePort,
 } from "./document-session-registry-implementation";
 import type {
   LocalDocumentSessionAdoptionPort,
@@ -19,8 +19,8 @@ export interface AccountDocumentSessionRuntime {
   readonly registry: LiveDocumentSessionRegistry;
   readonly localReservation: LocalDocumentSessionReservationPort;
   readonly localAdoption: LocalDocumentSessionAdoptionPort;
-  readonly localConstruction: LocalUntitledDocumentSessionFactory;
-  connectLocalLineageTerminal(port: LocalLineageTerminalPort): void;
+  readonly localConstruction: LocalDocumentSessionFactory;
+  connectLocalResources(port: LocalResourceLifetimePort): void;
   beginClose(): void;
   finishClose(): Promise<void>;
 }
@@ -31,8 +31,8 @@ export interface AccountDocumentSessionCore {
   readonly registry: LiveDocumentSessionRegistry;
   readonly localReservation: LocalDocumentSessionReservationPort;
   readonly localAdoption: LocalDocumentSessionAdoptionPort;
-  readonly localConstruction: LocalUntitledDocumentSessionFactory;
-  connectLocalLineageTerminal?(port: LocalLineageTerminalPort): void;
+  readonly localConstruction: LocalDocumentSessionFactory;
+  connectLocalResources(port: LocalResourceLifetimePort): void;
   beginClose(): void;
   finishClose(): Promise<void>;
 }
@@ -50,8 +50,8 @@ function createCore(accountId: AccountId): AccountDocumentSessionCore {
     localReservation: registry,
     localAdoption: registry,
     localConstruction: registry,
-    connectLocalLineageTerminal: (port: LocalLineageTerminalPort) =>
-      registry.connectLocalLineageTerminal(port),
+    connectLocalResources: (port: LocalResourceLifetimePort) =>
+      registry.connectLocalResources(port),
     beginClose: () => registry.beginCloseAccountRuntime(),
     finishClose: () => registry.closeAccountRuntime(),
   });
@@ -126,7 +126,12 @@ export function createAccountDocumentSessionRuntime(
       }
     },
   };
-  const localConstruction: LocalUntitledDocumentSessionFactory = {
+  const localConstruction: LocalDocumentSessionFactory = {
+    async whenAuthorityReady() {
+      requireOpen();
+      await core.localConstruction.whenAuthorityReady();
+      requireOpen();
+    },
     createDetached(request) {
       requireOpen();
       return core.localConstruction.createDetached(request);
@@ -145,8 +150,17 @@ export function createAccountDocumentSessionRuntime(
     localReservation,
     localAdoption,
     localConstruction,
-    connectLocalLineageTerminal: (port: LocalLineageTerminalPort) =>
-      core.connectLocalLineageTerminal?.(port),
+    connectLocalResources: (port: LocalResourceLifetimePort) => {
+      requireOpen();
+      core.connectLocalResources({
+        terminal: port.terminal,
+        beginClose() {
+          beginClose();
+          port.beginClose();
+        },
+        finishClose: () => port.finishClose(),
+      });
+    },
     beginClose,
     finishClose() {
       if (finishPromise) return finishPromise;

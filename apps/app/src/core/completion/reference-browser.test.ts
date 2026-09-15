@@ -5,11 +5,8 @@ import type {
 } from "@meridian/contracts/protocol";
 import { catalogScopeKey } from "@meridian/contracts/protocol";
 import { decodeWorkSlug } from "@meridian/contracts/works";
+import { type CatalogCacheView, catalogViewFromSnapshot } from "@meridian/resource-replica";
 import { describe, expect, it, vi } from "vitest";
-import {
-  type CatalogCacheView,
-  catalogViewFromSnapshot,
-} from "@/client/query/context-catalog-cache";
 
 import { createReferenceBrowserController, type ReferenceCatalogPort } from "./reference-browser";
 import type { ReferenceRow } from "./reference-policy";

@@ -14,18 +14,24 @@ import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
 function parseBody(raw: unknown): DeleteContextEntryRequest {
   if (!raw || typeof raw !== "object")
     throw createError({ statusCode: 400, message: "Request body must be an object" });
-  const body = raw as { path?: unknown; expected?: unknown };
+  const body = raw as { operationId?: unknown; path?: unknown; expected?: unknown };
+  const operationId = requireRequestId(body.operationId, "operationId");
   if (!body.expected || typeof body.expected !== "object") {
     throw createError({ statusCode: 400, message: "expected target is required" });
   }
   const expected = body.expected as { kind?: unknown; documentId?: unknown };
   if (expected.kind === "folder") {
-    return { path: parseContextMutationPath(body.path, "path"), expected: { kind: "folder" } };
+    return {
+      operationId,
+      path: parseContextMutationPath(body.path, "path"),
+      expected: { kind: "folder" },
+    };
   }
   if (expected.kind !== "file") {
     throw createError({ statusCode: 400, message: "expected file identity is required" });
   }
   return {
+    operationId,
     path: parseContextMutationPath(body.path, "path"),
     expected: {
       kind: "file",
@@ -41,6 +47,7 @@ export default defineEventHandler(async (event) => {
   const result = await port.delete(uri, {
     origin: { type: "human", userId },
     expected: body.expected,
+    operationId: body.operationId,
   });
   if (!result.ok) contextErrorToHttp(result.error);
   return result.value;

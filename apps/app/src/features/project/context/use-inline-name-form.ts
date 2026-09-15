@@ -16,6 +16,7 @@ import { type ContextEntryNameSeverity, validateContextEntryName } from "./conte
 
 export type UseInlineNameFormOptions = {
   initialName: string;
+  initialError?: string;
   siblingNames: readonly string[];
   isPending: boolean;
   kind?: ContextCreateKind;
@@ -41,6 +42,7 @@ export type InlineNameForm = {
 
 export function useInlineNameForm({
   initialName,
+  initialError,
   siblingNames,
   isPending,
   kind = "file",
@@ -50,9 +52,11 @@ export function useInlineNameForm({
   afterFocus,
 }: UseInlineNameFormOptions): InlineNameForm {
   const [name, setName] = useState(initialName);
-  const [serverError, setServerError] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(initialError ?? null);
+  const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const cancelledRef = useRef(false);
+  const submittingRef = useRef(false);
 
   // Auto-focus on mount. The rAF retry handles Radix menu focus scope
   // teardown — the menu's closing animation holds the scope for one frame,
@@ -75,7 +79,7 @@ export function useInlineNameForm({
     : validateContextEntryName(name, siblingNames, kind);
 
   async function submit() {
-    if (isPending) return;
+    if (isPending || submittingRef.current) return;
     const trimmed = name.trim();
     if (!trimmed || isCancelName?.(trimmed)) {
       onDone();
@@ -86,11 +90,16 @@ export function useInlineNameForm({
       inputRef.current?.focus();
       return;
     }
+    submittingRef.current = true;
+    setSubmitting(true);
     try {
       await onSubmit(trimmed);
       onDone();
     } catch (error) {
       setServerError(error instanceof Error ? error.message : String(error));
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
   }
 
@@ -98,7 +107,7 @@ export function useInlineNameForm({
     name,
     inputRef,
     severity,
-    isPending,
+    isPending: isPending || submitting,
     onChange(event) {
       setName(event.target.value);
       if (serverError) setServerError(null);

@@ -7,8 +7,8 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ContextTab } from "@/client/stores";
+import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { PassageNotice } from "@/features/editor/PassageNotice";
@@ -47,8 +47,9 @@ export type ContextViewerProps = {
   dockToggle?: PaneHeaderRailToggle;
   /** Whether this persistent surface is currently visible as the active destination. */
   active: boolean;
+  layoutSaveFailed?: boolean;
   onNewDocument?: () => void;
-  onUntitledBecameNonEmpty: (documentId: string) => void;
+  onUntitledBecameNonEmpty: (documentId: string) => Promise<void>;
   onCommitted: (
     documentId: string,
     next: IdentityCommitted,
@@ -73,6 +74,7 @@ export function ContextViewer({
   dockToggle,
   active,
   onNewDocument,
+  layoutSaveFailed = false,
   onUntitledBecameNonEmpty,
   onCommitted,
   onOpenExisting,
@@ -99,6 +101,11 @@ export function ContextViewer({
       className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col"
       role={active ? "main" : undefined}
     >
+      {layoutSaveFailed ? (
+        <p role="alert" className="px-4 py-2 text-muted-foreground text-sm">
+          <Trans>Couldn't save the Editor tab layout. Reload may not restore your tabs.</Trans>
+        </p>
+      ) : null}
       <ContextTabBar
         tabs={tabs}
         activeTabId={activeTabId}
@@ -158,11 +165,18 @@ export function ContextViewer({
             <ContextViewerHost projectId={projectId} editorWorkId={editorWorkId} tab={activeTab} />
           </div>
         ) : null}
-        {optimisticTab ? <OptimisticDocumentLoading name={optimisticTab.name} /> : null}
+        {optimisticTab ? (
+          <div className="relative min-h-0 flex-1" aria-busy>
+            <DelayedContentSkeleton
+              key={JSON.stringify([projectId, optimisticTab.id])}
+              className="absolute inset-0"
+            />
+          </div>
+        ) : null}
         {paneState.kind === "dead-route" ? (
           <MissingDocumentState destination={paneState.destination} />
         ) : null}
-        {paneState.kind === "empty-desk" || paneState.kind === "route-error" ? (
+        {paneState.kind === "empty-workspace" || paneState.kind === "route-error" ? (
           <EditorEmptyState onNewDocument={onNewDocument} />
         ) : null}
       </div>
@@ -176,7 +190,7 @@ export function ContextViewer({
  * The timeline deliberately doesn't pre-check existence: that would make the
  * same row clickable or not depending on cache warmth. This pane is the other
  * half of that decision, so it has to be worth landing on. The generic empty
- * desk read as "nothing here" and offered to start a new document, which is
+ * workspace read as "nothing here" and offered to start a new document, which is
  * both untrue and the wrong thing to hand someone who was following a
  * reference.
  *
@@ -205,28 +219,6 @@ function MissingDocumentState({ destination }: { destination: MissingDestination
   );
 }
 
-function OptimisticDocumentLoading({ name }: { name: string }) {
-  return (
-    <div className="flex min-h-0 flex-1 justify-center overflow-hidden px-8 py-12" role="status">
-      <span className="sr-only">
-        <Trans>Loading {name}</Trans>
-      </span>
-      <div aria-hidden className="w-full max-w-2xl space-y-5">
-        <Skeleton className="h-7 w-2/5" />
-        <div className="space-y-3 pt-3">
-          <Skeleton className="h-3 w-full" />
-          <Skeleton className="h-3 w-11/12" />
-          <Skeleton className="h-3 w-4/5" />
-        </div>
-        <div className="space-y-3 pt-2">
-          <Skeleton className="h-3 w-full" />
-          <Skeleton className="h-3 w-5/6" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
 /**
  * Build a `PaneHeader`-style rail toggle for the tab strip's pinned slots.
  * Returns `null` (not an empty element) when the rail is open so the strip
@@ -250,6 +242,7 @@ function EditorEmptyState({
    * Deliberately NOT the sidebar inline-create: that flow is scheme-targeted
    * and happens off-pane, which reads as a dead button from the empty state.
    */
+  layoutSaveFailed?: boolean;
   onNewDocument?: () => void;
 }) {
   return (

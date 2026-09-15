@@ -1,5 +1,5 @@
 /** Materializes a client-minted untitled document without seeding its Yjs content. */
-import { createError, defineEventHandler, readBody } from "nitro/h3";
+import { createError, defineEventHandler, readBody, setResponseStatus } from "nitro/h3";
 import type { ContextPort, ContextScheme } from "../../../../../../domains/context/index.js";
 import { parseContextMutationPath } from "../../../../../../lib/context-mutation-validation.js";
 import { contextErrorToHttp, resolveContextRoute, toUri } from "./_helpers.js";
@@ -43,7 +43,10 @@ export async function createUntitledContextDocument(input: {
     documentId: input.body.documentId,
     origin: { type: "human", userId: input.userId },
   });
-  if (!result.ok) contextErrorToHttp(result.error);
+  if (!result.ok) {
+    if (result.error.code === "conflict") return { status: "conflict" as const };
+    contextErrorToHttp(result.error);
+  }
   return result.value.status === "created"
     ? {
         ...result.value,
@@ -57,7 +60,7 @@ export default defineEventHandler(async (event) => {
   const { userId, scheme, workId, authority, port } = await resolveContextRoute(event, {
     recoverAcrossProject: true,
   });
-  return createUntitledContextDocument({
+  const result = await createUntitledContextDocument({
     port,
     userId,
     scheme,
@@ -65,4 +68,6 @@ export default defineEventHandler(async (event) => {
     authority,
     body: parseCreateUntitledBody(await readBody(event)),
   });
+  if (result.status === "conflict") setResponseStatus(event, 409);
+  return result;
 });

@@ -10,10 +10,11 @@ import { parseWorkingSetRoute, parseWorkingSetRouteList } from "./http-types.js"
 
 describe("context deletion result", () => {
   it("requires the initiating kind and file identity", () => {
-    expectTypeOf<DeleteContextEntryRequest>().toEqualTypeOf<
-      | { path: string; expected: { kind: "file"; documentId: string } }
-      | { path: string; expected: { kind: "folder" } }
-    >();
+    expectTypeOf<DeleteContextEntryRequest>().toEqualTypeOf<{
+      operationId: string;
+      path: string;
+      expected: { kind: "file"; documentId: string } | { kind: "folder" };
+    }>();
   });
   it("carries an exact batch of committed document identities", () => {
     expectTypeOf<DeleteContextEntryResult>().toEqualTypeOf<{

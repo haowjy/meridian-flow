@@ -10,9 +10,10 @@
 
 import { Trans } from "@lingui/react/macro";
 import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { useProjectContextRead } from "@/client/query/useProjectContextRead";
 import type { ContextTab } from "@/client/stores";
+import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 
 import { BinaryFallbackViewer } from "./viewers/BinaryFallbackViewer";
 import { ImageViewer, imageViewerFooter } from "./viewers/ImageViewer";
@@ -41,23 +42,26 @@ function ContextViewerContent({
   tab,
   header,
 }: ContextViewerHostProps & { header?: ReadOnlyViewerHeader }) {
-  const read = useProjectContextRead(projectId, tab.scheme, tab.path, {
-    workId: isWorkScopedProjectContextScheme(tab.scheme) ? (tab.workId ?? null) : editorWorkId,
-  });
+  const workId = isWorkScopedProjectContextScheme(tab.scheme) ? (tab.workId ?? null) : editorWorkId;
+  const read = useProjectContextRead(projectId, tab.scheme, tab.path, { workId });
   if (read.status === "loading") {
     return (
-      <ViewerStatus tone="muted">
-        <Loader2 className="size-4 animate-spin" aria-hidden />
-        <Trans>Loading file…</Trans>
-      </ViewerStatus>
+      <ReadOnlyViewerFrame header={header}>
+        <div className="relative h-full" aria-busy>
+          <DelayedContentSkeleton
+            key={JSON.stringify([projectId, tab.scheme, tab.path, workId])}
+            className="absolute inset-0"
+          />
+        </div>
+      </ReadOnlyViewerFrame>
     );
   }
   if (read.status === "error") {
     return (
-      <ViewerStatus tone="error">
+      <ViewerError>
         <AlertCircle className="size-4" aria-hidden />
         <Trans>Couldn't load this file.</Trans>
-      </ViewerStatus>
+      </ViewerError>
     );
   }
   if (read.status === "disabled" || !read.data) {
@@ -68,10 +72,10 @@ function ContextViewerContent({
   // means the tab metadata and server stat result diverged.
   if (read.data.kind === "tracked") {
     return (
-      <ViewerStatus tone="error">
+      <ViewerError>
         <AlertCircle className="size-4" aria-hidden />
         <Trans>This file should be opened in the collaborative editor.</Trans>
-      </ViewerStatus>
+      </ViewerError>
     );
   }
 
@@ -99,15 +103,9 @@ function ContextViewerContent({
   );
 }
 
-function ViewerStatus({ children, tone }: { children: React.ReactNode; tone: "muted" | "error" }) {
+function ViewerError({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      className={
-        tone === "error"
-          ? "grid h-full place-items-center bg-background px-6 text-center text-sm text-destructive"
-          : "grid h-full place-items-center bg-background px-6 text-center text-sm text-muted-foreground"
-      }
-    >
+    <div className="grid h-full place-items-center bg-background px-6 text-center text-sm text-destructive">
       <div className="flex items-center gap-2">{children}</div>
     </div>
   );

@@ -7,6 +7,11 @@ import { throwHttpInterrupt } from "./interrupt-boundary.js";
 
 export function contextErrorToHttp(error: ContextError): never {
   switch (error.code) {
+    case "operation_mismatch":
+      throw createError({
+        statusCode: 409,
+        message: "Operation ID already names a different command",
+      });
     case "invalid_uri":
       throw createError({ statusCode: 400, message: error.reason });
     case "permission_denied":

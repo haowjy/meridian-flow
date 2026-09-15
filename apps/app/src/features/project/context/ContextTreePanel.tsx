@@ -5,7 +5,7 @@ import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { FilePlus, FolderPlus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import { useContextCatalogView } from "@/client/query/useContextCatalog";
+import { useContextCatalogViews } from "@/client/query/useContextCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DeleteConfirmationDialog, useDeleteConfirmation } from "./ContextEntryActions";
 import { TreeChildren, type TreeEnv, TreeEnvProvider } from "./ContextTreeRows";
@@ -16,11 +16,8 @@ import {
   schemeIcon,
   schemeLabel,
 } from "./context-schemes";
-import type { LocalUntitledWorkSnapshot } from "./local-untitled-owner";
 import { PaneHeaderActionButton, RailPaneHeader } from "./RailPaneHeader";
 import { type TreeCreationRequest, useOptionalTreeCreation } from "./TreeCreationProvider";
-import { UnfiledPendingDocuments } from "./UnfiledPendingDocuments";
-import { usePendingUnfiledDocuments } from "./untitled-reconciler-browser";
 
 /** Left pad (px) for a row at `depth` — depth 1 = a section's direct child. */
 function rowPaddingLeft(depth: number): number {
@@ -68,18 +65,18 @@ export function ContextTreePanel({
   if (!onRequestCreate || !onCreateDone) {
     throw new Error("ContextTreePanel requires creation controls");
   }
-  const pending = usePendingUnfiledDocuments(projectId);
   const schemes = EDITOR_CONTEXT_SCHEMES;
-  const renderScheme = (scheme: ProjectContextTreeScheme) => (
+  const catalogs = useContextCatalogViews(projectId, schemes, { workId: editorWorkId });
+  const renderScheme = (scheme: (typeof EDITOR_CONTEXT_SCHEMES)[number]) => (
     <SchemeSection
       key={scheme}
       projectId={projectId}
       editorWorkId={editorWorkId}
       scheme={scheme}
+      catalogState={catalogs[scheme]}
       activeScheme={activeScheme}
       activePath={activePath}
       defaultExpanded={scheme === schemes[0]}
-      pending={scheme === "unfiled" ? pending : []}
       onSelectFile={onSelectFile}
       creating={
         creating?.scheme === scheme && creating.workId === editorWorkId
@@ -105,25 +102,25 @@ export function ContextTreePanel({
 }
 
 function SchemeSection({
+  catalogState,
   projectId,
   editorWorkId,
   scheme,
   activeScheme,
   activePath,
   defaultExpanded,
-  pending,
   onSelectFile,
   creating,
   onRequestCreate,
   onCreateDone,
 }: {
+  catalogState: ReturnType<typeof useContextCatalogViews>[ProjectContextTreeScheme];
   projectId: string;
   editorWorkId: string | null;
   scheme: ProjectContextTreeScheme;
   activeScheme: ProjectContextTreeScheme | null;
   activePath: string | null;
   defaultExpanded: boolean;
-  pending: readonly LocalUntitledWorkSnapshot[];
   onSelectFile: (scheme: ProjectContextTreeScheme, file: ContextFile) => void;
   creating: { kind: ContextCreateKind; parentPath: string } | null;
   onRequestCreate: (kind: ContextCreateKind, parentPath: string) => void;
@@ -138,16 +135,7 @@ function SchemeSection({
   const [expandedEntryIds, setExpandedEntryIds] = useState<Record<string, boolean>>({});
   const activeLocationPath = activeScheme === scheme ? activePath : null;
   const [pendingOpenPath, setPendingOpenPath] = useState<string | null>(null);
-  const { catalog, isError, refetch } = useContextCatalogView(projectId, scheme, {
-    workId: editorWorkId,
-  });
-
-  const pendingUnfiled =
-    scheme === "unfiled"
-      ? pending.filter(
-          (record) => !catalog?.files().some((file) => file.documentId === record.key.documentId),
-        )
-      : [];
+  const { catalog, isError, refetch } = catalogState;
 
   const revealPath = useCallback(
     (path: string) => {
@@ -196,11 +184,7 @@ function SchemeSection({
     }));
   }, []);
 
-  // The query is unconditionally enabled: it prefetches at rail mount so the
-  // first expand paints from cache (work-scoped schemes still wait for their
-  // workId inside the hook). `pendingOpenPath` waits on the same always-live
-  // query so a just-created file can resolve and open; its onSelectFile then
-  // lands a new selection here, which re-expands via the effect above.
+  // Catalogs stay warm while collapsed so a newly created row can resolve and open.
   useEffect(() => {
     if (!pendingOpenPath || !catalog) return;
     const entry = catalog.findPath(pendingOpenPath);
@@ -281,13 +265,6 @@ function SchemeSection({
   return (
     <section>
       {header}
-      {expanded && scheme === "unfiled" ? (
-        <UnfiledPendingDocuments
-          projectId={projectId}
-          editorWorkId={editorWorkId}
-          documents={pendingUnfiled}
-        />
-      ) : null}
       {expanded && catalog && env ? (
         <TreeEnvProvider value={env}>
           <div>
@@ -298,9 +275,7 @@ function SchemeSection({
                 mount makes that window nearly unhittable. */}
             {isError ? (
               <InlineErrorRow message={t`Couldn't load files.`} onRetry={refetch} />
-            ) : catalog.children(catalog.root.entryId).length === 0 &&
-              pendingUnfiled.length === 0 &&
-              !creating ? (
+            ) : catalog.children(catalog.root.entryId).length === 0 && !creating ? (
               <EmptyHint depth={1}>
                 <Trans>No context files yet.</Trans>
               </EmptyHint>

@@ -240,7 +240,7 @@ describe("WorkDetailScreen resource boundaries", () => {
     });
   });
 
-  it("holds internal detail navigation until the writer discards the active draft", async () => {
+  it("delegates internal navigation to the shared route guard without a second local decision", async () => {
     resetResources();
     const commands = routeCommands();
     mocks.chats.threads = [chat("thread-1", "Planning")];
@@ -254,11 +254,9 @@ describe("WorkDetailScreen resource boundaries", () => {
         click("Add a goal");
         change(textarea(), "Unsaved goal");
         click("Planning");
-        expect(openChat).not.toHaveBeenCalled();
-        expect(document.body.textContent).toContain("Save metadata changes?");
-        click("Discard changes");
-        await tick();
         expect(openChat).toHaveBeenCalledOnce();
+        expect(document.body.textContent).not.toContain("Save metadata changes?");
+        expect(textarea().value).toBe("Unsaved goal");
         expect(mocks.metadata.mutateAsync).not.toHaveBeenCalled();
       },
     );

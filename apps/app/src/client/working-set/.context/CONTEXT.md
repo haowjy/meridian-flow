@@ -11,30 +11,22 @@ values and pre-migration server rows are deleted rather than decoded.
 
 Live context removal uses `reconcileContextRoutes`: one snapshot transform removes
 only identities with no surviving tab owner, repairs a same-ID locator in place, optionally promotes the resulting
-active route, and clears all routes only for a genuinely empty desk. Callers must
+active route, and clears all routes only for a genuinely empty workspace. Callers must
 not compose remove/promote operations for one removal transition; the sequential
 driver surface is intentionally absent.
 
 ## Hydration contract
 
-`ProjectView`, keyed by project ID, invokes hydration synchronously in its state
-initializer before the prefs-gated project tree can mount. The reducer uses only
-server revision lineage: unavailable stays local and cannot push, absent keeps
-local, matching pending lineage keeps local, and every other row adopts server.
-The account toggle guards the whole operation. Server adoption changes store
-state but never navigates; restore remains owned by the existing context and
-chat controllers.
+`ReadableProjectRoute` hydrates the working set synchronously at project entry.
+The reducer uses server revision lineage: unavailable stays local and cannot
+push, absent keeps local, matching pending lineage keeps local, and every other
+row adopts server. The account sync toggle guards the operation.
 
-Server-adopted routes are a seeding plan, not navigation instructions. The
-project layer resolves each stable ID through the project-final availability
-coordinator, opens it inactive, and checks that the route remains desired
-immediately before the async commit. Exact project-final absence prunes by ID;
-indeterminate and transport failures preserve the durable route. Server-route
-restore never acquires a cold catalog or looks up a path. Device-owned local
-Untitled validation remains catalog-backed and separate. One project-entry raw
-operation owns seed/validation. Strict replay or a pre-live readiness
-interruption adopts that operation; after it completes, Work changes use the
-removal coordinator and never reopen raw tree-absence pruning.
+Server adoption updates recency and the remembered thread, not Editor tab
+membership. `selectEditorEntryTab` may rank existing tabs using recent routes;
+it never reopens a historical path. An empty browser-local workspace stays empty
+through screen entry and reload. Project-entry validation reconciles only tabs
+already restored from sessionStorage against the resource replica.
 
 ## Suspect baseline (recovery sweep errata)
 
@@ -59,6 +51,6 @@ then runs `planSuspectBaselineConfirmation` / `reduceWorkingSetHydration`:
 - **read-degraded** (GET fails) → stay suspect; backoff; retry on `online` or
   the next sweep.
 
-Entry hydration in `ProjectView` is unchanged for UI plans, but when a project
+Entry hydration in `ReadableProjectRoute` is unchanged for UI plans, but when a project
 is suspect the driver does not confirm baselines from loader results — stale
 router cache cannot resurrect a trustworthy baseline mid-session.
