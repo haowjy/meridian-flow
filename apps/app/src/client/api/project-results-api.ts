@@ -26,6 +26,8 @@ export interface ProjectResultItem {
   toolCallId: string | null;
   /** Display attribution — `Thread.currentAgent` slug at promotion time. */
   agentSlug: string;
+  /** Display name from the producing conversation’s retained Agent definition. */
+  agentName: string;
   createdAt: string;
 }
 

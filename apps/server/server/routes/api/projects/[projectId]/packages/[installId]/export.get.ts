@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const exported = await handleExportPackageRequest(
     {
       projectRepo: app.projectRepo,
-      packageRepository: app.packageRepository,
+      agentRevisions: app.agentRevisions,
     },
     { projectId, userId: user.userId, installId },
   );

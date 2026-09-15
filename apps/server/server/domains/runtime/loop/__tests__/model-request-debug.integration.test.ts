@@ -95,7 +95,7 @@ describe("orchestrator model-request debug capture", () => {
         },
         projectPreferences: {
           async read() {
-            return { threadGroupBy: "work", pinnedThreadIds: [], defaultAgentSlug: null };
+            return { threadGroupBy: "work", pinnedThreadIds: [] };
           },
         },
       }),

@@ -116,3 +116,45 @@ export const agentCatalogRevisions = pgTable(
   },
   (table) => [primaryKey({ columns: [table.catalogEntryId, table.definitionRevisionId] })],
 );
+
+/** Account/system installation provenance; source snapshots remain the only definition content. */
+export const agentPackageInstallations = pgTable(
+  "agent_package_installations",
+  {
+    id: idColumn(),
+    ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }),
+    coordinate: text("coordinate").notNull(),
+    currentRevisionId: uuid("current_revision_id")
+      .notNull()
+      .references(() => agentPackageRevisions.id, { onDelete: "restrict" }),
+    upstreamRevisionId: uuid("upstream_revision_id")
+      .notNull()
+      .references(() => agentPackageRevisions.id, { onDelete: "restrict" }),
+    origin: jsonb("origin").$type<{ url: string; ref: string; commitSha: string | null } | null>(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    uniqueIndex("agent_package_installations_personal_coordinate")
+      .on(table.ownerUserId, table.coordinate)
+      .where(sql`${table.ownerUserId} IS NOT NULL`),
+    uniqueIndex("agent_package_installations_system_coordinate")
+      .on(table.coordinate)
+      .where(sql`${table.ownerUserId} IS NULL`),
+  ],
+);
+
+/** Owned source history authorizes restore without granting access to arbitrary retained revisions. */
+export const agentPackageInstallationHistory = pgTable(
+  "agent_package_installation_history",
+  {
+    installationId: uuid("installation_id")
+      .notNull()
+      .references(() => agentPackageInstallations.id, { onDelete: "cascade" }),
+    packageRevisionId: uuid("package_revision_id")
+      .notNull()
+      .references(() => agentPackageRevisions.id, { onDelete: "restrict" }),
+    createdAt: createdAt(),
+  },
+  (table) => [primaryKey({ columns: [table.installationId, table.packageRevisionId] })],
+);

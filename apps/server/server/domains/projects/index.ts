@@ -1,13 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type {
-  AgentDefinitionId,
-  ContextSourceId,
-  DocumentId,
-  ProjectId,
-  UserId,
-} from "@meridian/contracts/runtime";
+import type { ContextSourceId, DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { agentDefinitions, contextSources, documents, projects } from "@meridian/database";
+import { contextSources, documents, projects } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type {
@@ -52,7 +46,6 @@ export type ProjectBootstrapResult = {
   projectId: ProjectId;
   documentId: DocumentId;
   manuscriptSourceId: ContextSourceId;
-  agentDefinitionId: AgentDefinitionId;
   uri: typeof DEFAULT_BOOTSTRAP_URI;
 };
 
@@ -143,35 +136,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       .returning({ id: projects.id });
     if (!project) throw new Error("Failed to create default project");
     return project.id;
-  }
-
-  async function ensureAgent(
-    tx: BootstrapDb,
-    projectId: ProjectId,
-    slug = "writer",
-    name = "Writer",
-    description = "Default fiction-writing assistant.",
-  ): Promise<AgentDefinitionId> {
-    const [existing] = await tx
-      .select({ id: agentDefinitions.id })
-      .from(agentDefinitions)
-      .where(and(eq(agentDefinitions.projectId, projectId), eq(agentDefinitions.slug, slug)))
-      .limit(1);
-    if (existing) return existing.id;
-
-    const [agent] = await tx
-      .insert(agentDefinitions)
-      .values({
-        projectId,
-        name,
-        slug,
-        description,
-        mode: "primary",
-        sourceType: "builtin",
-      })
-      .returning({ id: agentDefinitions.id });
-    if (!agent) throw new Error("Failed to create default agent");
-    return agent.id;
   }
 
   async function ensureContextSource(
@@ -303,7 +267,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       const tx = currentDrizzleDb(db) as BootstrapDb;
       await lockBootstrap(tx, userId);
       const projectId = await ensureProject(tx, userId);
-      const agentDefinitionId = await ensureAgent(tx, projectId);
       const manuscriptSourceId = await ensureContextSource(tx, projectId, {
         slug: "manuscript",
         name: "Manuscript",
@@ -317,7 +280,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
         projectId,
         documentId,
         manuscriptSourceId,
-        agentDefinitionId,
         uri: DEFAULT_BOOTSTRAP_URI,
       } satisfies ProjectBootstrapResult;
 

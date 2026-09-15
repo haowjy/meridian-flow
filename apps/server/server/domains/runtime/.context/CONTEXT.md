@@ -82,7 +82,7 @@ keeps nonempty delegation rosters unavailable while delegation support is comple
 | `ToolExecutor` | Dispatches `ToolCallInput` to registered handlers with timeout, abort, sequential execution, and capability-gated context injection. |
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
 | Core handlers | The strict six-branch `work` union and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
-| Skill tools | `invoke` is registered with `advertise: false`. Advertisement and dispatch use the persisted `bakedSkillSlugs` set. Bound preparation currently freezes an empty set; activating skill loading requires stable bound dependency resolution. |
+| Skills | References are retained at binding, but execution with nonempty skills remains unavailable. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn` and `return_result` with explicit privileged capabilities. |
 
 Handler-owned `{ isError: true, output }` results already define their

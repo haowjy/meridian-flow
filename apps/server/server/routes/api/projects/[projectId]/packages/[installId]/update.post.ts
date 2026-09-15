@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
   const response = await handleApplyPackageUpdateRequest(
     {
       projectRepo: app.projectRepo,
-      packageRepository: app.packageRepository,
+      agentRevisions: app.agentRevisions,
       marsPackageFetcher: app.marsPackageFetcher,
     },
     { projectId, userId: user.userId, installId },

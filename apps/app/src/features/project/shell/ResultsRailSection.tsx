@@ -17,10 +17,8 @@ import { Trans } from "@lingui/react/macro";
 import { FileImage, FileSpreadsheet, FileText, type LucideIcon, Sparkles } from "lucide-react";
 
 import type { ProjectResultItem } from "@/client/api/project-results-api";
-import { useProjectAgents } from "@/client/query/useProjectAgents";
 import { useProjectResults } from "@/client/query/useProjectResults";
 import { Badge } from "@/components/ui/badge";
-import { resolveAgentFromCatalog } from "@/features/agents/resolve-agent";
 import { requestConversationReveal } from "@/features/chat/conversation-reveal";
 import { relativeTime } from "@/features/project/relative-time";
 import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailKindIcon } from "./RailSection";
@@ -48,7 +46,6 @@ export function useResultsRailModel(projectId: string | null): ResultsRailModel 
 }
 
 export function ResultsRailBody({
-  projectId,
   model,
   onOpenResult,
 }: {
@@ -79,7 +76,6 @@ export function ResultsRailBody({
           {status.results.map((result) => (
             <ResultRow
               key={result.id}
-              projectId={projectId}
               result={result}
               onOpen={() => onOpenResult(result)}
               onOpenProducingThread={() =>
@@ -122,19 +118,16 @@ export function ResultsRailSection({ projectId, onOpenResult }: ResultsRailSecti
  */
 
 function ResultRow({
-  projectId,
   result,
   onOpen,
   onOpenProducingThread,
 }: {
-  projectId: string | null;
   result: ProjectResultItem;
   onOpen: () => void;
   onOpenProducingThread: () => void;
 }) {
   const name = displayName(result);
-  const catalog = useProjectAgents(projectId);
-  const agent = resolveAgentFromCatalog(result.agentSlug, catalog.agents);
+  const agentName = result.agentName;
   return (
     <li>
       <div
@@ -160,11 +153,11 @@ function ResultRow({
           type="button"
           onClick={onOpenProducingThread}
           className="focus-ring shrink-0"
-          aria-label={t`Open producing turn in ${agent.name}`}
+          aria-label={t`Open producing turn in ${agentName}`}
           title={t`Open producing turn`}
         >
           <Badge variant="neutral" className="max-w-[8rem] min-w-0 font-medium">
-            <span className="min-w-0 truncate">{agent.name}</span>
+            <span className="min-w-0 truncate">{agentName}</span>
           </Badge>
         </button>
       </div>

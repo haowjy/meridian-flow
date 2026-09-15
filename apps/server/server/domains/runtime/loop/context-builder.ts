@@ -64,7 +64,6 @@ export interface BuildContextInput {
    * Skills catalog for pre-freeze assembly only. Ignored when
    * `thread.composedSystemPrompt` is already frozen.
    */
-  skillsSystemPromptSection?: string;
   /** Frozen Work section for a would-be first bake. */
   workContext?: string;
 }
@@ -85,7 +84,6 @@ export function buildContext(input: BuildContextInput): {
       system(
         assembleComposedSystemPrompt({
           basePrompt: systemPrompt,
-          skillsSystemPromptSection: input.skillsSystemPromptSection,
           workContext: input.workContext,
         }),
       ),

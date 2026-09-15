@@ -18,6 +18,15 @@ export async function resolveAgentConfiguration(input: {
   const model = revision.definition.metadata.model ?? input.defaultModel;
   if (!model) throw new AgentConfigurationError("No configured default model is available.");
 
+  return { model, ...(await resolveAgentDependencies({ revision, store })) };
+}
+
+/** Publication validates retained references without choosing a conversation's model default. */
+export async function resolveAgentDependencies(input: {
+  revision: AgentRevision;
+  store: Pick<AgentRevisionStore, "readSource" | "readPackageDefinitions">;
+}): Promise<Omit<ResolvedAgentConfiguration, "model">> {
+  const { revision, store } = input;
   const packages = new Map<
     string,
     {
@@ -67,7 +76,6 @@ export async function resolveAgentConfiguration(input: {
     );
   const meta = revision.definition.metadata;
   return {
-    model,
     skills: {
       load: (meta.skills?.load ?? []).map(resolveSkill),
       available: (meta.skills && "available" in meta.skills

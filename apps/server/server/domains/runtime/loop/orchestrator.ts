@@ -839,7 +839,6 @@ async function buildGenerateRequest(input: {
   request: GenerateRequest;
   agentSlug: string | null;
   thread: Thread;
-  resolvedSkills: Awaited<ReturnType<typeof assembleNextTurnContext>>["resolvedSkills"];
 }> {
   const assembled = await assembleNextTurnContext({
     thread: input.thread,
@@ -860,7 +859,7 @@ async function buildGenerateRequest(input: {
   return {
     thread: assembled.thread,
     agentSlug: assembled.agentSlug,
-    resolvedSkills: assembled.resolvedSkills,
+
     request: {
       ...assembled.generateRequest,
       signal: input.gatewaySignal ?? input.runInput.signal,
@@ -1037,7 +1036,7 @@ async function* generateEvents(
           iteration: iteration - 1,
           agentSlug: built.agentSlug,
           request,
-          resolvedSkills: built.resolvedSkills,
+
           toolRegistry: deps.toolRegistry,
         });
       } catch (cause) {

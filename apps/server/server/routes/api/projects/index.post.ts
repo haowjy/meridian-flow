@@ -21,8 +21,6 @@ export default defineEventHandler(async (event) => {
     description: body.description ?? null,
   });
 
-  await app.seedDefaultPackagesForProject(project.id);
-
   event.res.status = 201;
   return serializeTransport(project);
 });

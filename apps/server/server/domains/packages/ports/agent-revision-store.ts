@@ -26,7 +26,31 @@ export type AgentCatalogSelectionResult =
   | { ok: true; entry: AgentCatalogEntry }
   | { ok: false; reason: "conflict" | "not-found" };
 
+/** Mutable management head over immutable sources, never consulted by bound execution. */
+export interface AgentPackageInstallation {
+  id: string;
+  ownerUserId: string | null;
+  coordinate: string;
+  currentRevisionId: string;
+  upstreamRevisionId: string;
+  origin: { url: string; ref: string; commitSha: string | null } | null;
+}
+export interface AgentPackageHistoryEntry {
+  packageRevisionId: string;
+  createdAt: string;
+}
+
 export interface AgentRevisionStore {
+  listInstallations(ownerUserId: string | null): Promise<AgentPackageInstallation[]>;
+  readInstallationHistory(
+    ownerUserId: string | null,
+    installationId: string,
+  ): Promise<AgentPackageHistoryEntry[]>;
+  /** Exact head CAS plus retained history, inside the owning publication transaction. */
+  advanceInstallation(
+    input: Omit<AgentPackageInstallation, "id"> & { expectedRevisionId?: string },
+  ): Promise<AgentPackageInstallation | undefined>;
+
   /** Serialize complete owner-scoped catalog publications in one ambient transaction. */
   withCatalogTransaction<T>(ownerUserId: string | null, operation: () => Promise<T>): Promise<T>;
   installSource(
@@ -56,7 +80,7 @@ export interface AgentRevisionStore {
     limit: number;
     after?: { nameSortKey: string; id: string };
   }): Promise<AgentCatalogEntry[]>;
-  removeOwnedEntry(userId: string, entryId: string): Promise<boolean>;
+  removeOwnedEntry(userId: string | null, entryId: string): Promise<boolean>;
   restoreOwnedEntry(userId: string, entryId: string, expectedRevisionId: string): Promise<boolean>;
   bindThread(
     threadId: string,

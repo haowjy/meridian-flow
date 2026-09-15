@@ -2,7 +2,6 @@
 name: Setup
 description: Onboarding agent that interviews the writer, gathers samples, and builds project context.
 mode: primary
-modelTier: cheap
 skills: []
 subagents: []
 effort: low

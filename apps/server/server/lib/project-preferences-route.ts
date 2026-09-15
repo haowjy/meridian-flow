@@ -9,15 +9,12 @@ import {
   type UpdateProjectPreferencesRequest,
 } from "@meridian/contracts/preferences";
 import { createError } from "nitro/h3";
-import { listProjectCatalogAgents } from "../domains/packages/domain/agent-catalog.js";
-import type { PackageRepository } from "../domains/packages/index.js";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
 import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
 
 export interface ProjectPreferencesRouteDeps {
   projectRepo: ProjectRepository;
   preferences: ProjectPreferencesRepository;
-  packageRepository: PackageRepository;
 }
 
 export interface ProjectPreferencesRouteInput {
@@ -60,16 +57,6 @@ export function parseUpdateProjectPreferencesRequest(
       });
     }
     parsed.pinnedThreadIds = [...body.pinnedThreadIds];
-  }
-
-  if (body.defaultAgentSlug !== undefined) {
-    if (body.defaultAgentSlug !== null && typeof body.defaultAgentSlug !== "string") {
-      throw createError({
-        statusCode: 400,
-        message: "`defaultAgentSlug` must be a string or null",
-      });
-    }
-    parsed.defaultAgentSlug = body.defaultAgentSlug;
   }
 
   if (body.autoResume !== undefined) {
@@ -116,18 +103,6 @@ export async function handlePutProjectPreferencesRequest(
   input: ProjectPreferencesRouteInput & { body: UpdateProjectPreferencesRequest },
 ): Promise<ProjectPreferencesResponse> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
-  if (input.body.defaultAgentSlug) {
-    const catalog = await deps.packageRepository.transaction((tx) =>
-      listProjectCatalogAgents(tx, input.projectId),
-    );
-    const known = catalog.some((agent) => agent.slug === input.body.defaultAgentSlug);
-    if (!known) {
-      throw createError({
-        statusCode: 400,
-        message: `Unknown defaultAgentSlug: ${input.body.defaultAgentSlug}`,
-      });
-    }
-  }
   const preferences = await deps.preferences.upsert(input.userId, input.projectId, input.body);
   return { preferences };
 }

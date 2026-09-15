@@ -103,7 +103,6 @@ function event(
           getSignedFigureUrl: databaseCall,
           uploadFigure: databaseCall,
         },
-        packageRepository: {},
         eventSink: {},
         journalWriter: {},
         ...appOverrides,

@@ -1,514 +1,294 @@
-/**
- * Definition save/restore: append-only revision rows plus live record updates.
- * Saves serialize canonical file form (YAML frontmatter + body) and recompute
- * checksums; restore always appends a new revision — history is never rewritten.
- *
- * TODO(git-sync): pull = upstream commits via PackageInstallRecord.sourceCommitSha
- * into update reconciliation; push = export local revisions as commits on a branch.
- */
+/** Versioned Agent/skill edits and owned restore over complete immutable source snapshots. */
 import type {
-  AgentDefinitionDetail,
   AgentDefinitionResponse,
   DefinitionRevisionListResponse,
-  DefinitionRevisionSummary,
   PatchAgentSkillLinkRequest,
-  SkillDefinitionDetail,
   SkillDefinitionResponse,
   UpdateAgentDefinitionRequest,
   UpdateSkillDefinitionRequest,
 } from "@meridian/contracts/agents";
-import type { PackageWriteTransaction } from "../ports/package-store.js";
-import { agentSourceFromRecord, packageNameForDefinition } from "./agent-catalog.js";
-import { skillLinksFromMetaSkills } from "./agent-skill-links.js";
+import type { AgentRevisionStore } from "../ports/agent-revision-store.js";
+import { compileAgentDefinition } from "./agent-definition-compiler.js";
+import { sha256 } from "./helpers.js";
 import {
-  agentDefinitionContentChecksum,
-  definitionContentChecksum,
-  normalizeAgentMeta,
+  canonicalizeJsonObject,
+  parseMarkdownDefinition,
+  serializeMarkdownDefinition,
 } from "./mars-source.js";
-import type {
-  AgentDefinitionRecord,
-  AgentDefinitionRevisionRecord,
-  SkillDefinitionRevisionRecord,
-  SkillRecord,
-} from "./types.js";
+import { requireSource } from "./package-management.js";
+import { replaceSourceEntity, sourceEntities } from "./package-reconciliation.js";
+import { AgentPublicationConflictError, publishAgentSource } from "./source-publication.js";
 
-export function isDefinitionEdited(
-  record: {
-    body: string;
-    meta: Record<string, unknown>;
-    files?: SkillRecord["files"];
-    config?: AgentDefinitionRecord["config"];
-  },
-  originalContentChecksum: string | null,
-): boolean {
-  if (!originalContentChecksum) return false;
-  if (record.config !== undefined) {
-    return (
-      agentDefinitionContentChecksum({
-        body: record.body,
-        meta: record.meta,
-        config: record.config,
-      }) !== originalContentChecksum
-    );
-  }
-  return definitionContentChecksum(record) !== originalContentChecksum;
+type Entity = ReturnType<typeof sourceEntities>[number];
+export class DefinitionEditError extends Error {}
+const checksum = (entity: Entity) => sha256(JSON.stringify(canonicalizeJsonObject(entity)));
+const definitionPath = (entity: Entity) =>
+  entity.kind === "agent" ? `agents/${entity.slug}.md` : `skills/${entity.slug}/SKILL.md`;
+function parsed(entity: Entity) {
+  const text = entity.files[definitionPath(entity)];
+  if (typeof text !== "string") throw new DefinitionEditError("Definition is not UTF-8 text");
+  return parseMarkdownDefinition(text);
 }
-
+async function ownedDefinition(
+  store: AgentRevisionStore,
+  user: string,
+  kind: Entity["kind"],
+  slug: string,
+  includeRetained = false,
+) {
+  const matches = [];
+  for (const installation of await store.listInstallations(user)) {
+    const source = await requireSource(store, installation.currentRevisionId);
+    let entity = sourceEntities(source).find((item) => item.kind === kind && item.slug === slug);
+    if (!entity && includeRetained) {
+      for (const row of await store.readInstallationHistory(user, installation.id)) {
+        entity = sourceEntities(await requireSource(store, row.packageRevisionId)).find(
+          (item) => item.kind === kind && item.slug === slug,
+        );
+        if (entity) break;
+      }
+    }
+    if (entity) matches.push({ installation, source, entity });
+  }
+  if (!matches.length) throw new DefinitionEditError(`Unknown owned ${kind}: ${slug}`);
+  if (matches.length !== 1) throw new AgentPublicationConflictError(`Ambiguous ${kind}: ${slug}`);
+  return matches[0];
+}
+function agentDetail(entity: Entity, original: Entity | undefined, packageName: string) {
+  const { meta, body } = parsed(entity);
+  const compiled = compileAgentDefinition({ meta, body, config: entity.config });
+  if (!compiled.ok)
+    throw new DefinitionEditError(compiled.diagnostics.map((item) => item.message).join("; "));
+  const skills = compiled.definition.metadata.skills;
+  const available = new Set(skills && "available" in skills ? (skills.available ?? []) : []);
+  const all = [...new Set([...(skills?.load ?? []), ...available])];
+  return {
+    slug: entity.slug,
+    meta,
+    body,
+    config: entity.config ?? {},
+    source: "package" as const,
+    packageName,
+    originalContentChecksum: original ? checksum(original) : null,
+    contentChecksum: checksum(entity),
+    isEdited: original ? checksum(original) !== checksum(entity) : true,
+    skillLinks: all.map((skillSlug, ordinal) => ({
+      skillSlug,
+      ordinal,
+      modelInvocable: available.has(skillSlug),
+      userInvocable: null,
+    })),
+  };
+}
+function skillDetail(entity: Entity, original: Entity | undefined, packageName: string) {
+  const { meta, body } = parsed(entity),
+    prefix = `skills/${entity.slug}/`;
+  const files = Object.fromEntries(
+    Object.entries(entity.files)
+      .filter(([name]) => name !== definitionPath(entity))
+      .map(([name, file]) => [name.slice(prefix.length), file]),
+  );
+  return {
+    slug: entity.slug,
+    meta,
+    body,
+    files,
+    source: "package" as const,
+    packageName,
+    originalContentChecksum: original ? checksum(original) : null,
+    contentChecksum: checksum(entity),
+    isEdited: original ? checksum(original) !== checksum(entity) : true,
+  };
+}
+async function edit(
+  store: AgentRevisionStore,
+  user: string,
+  kind: Entity["kind"],
+  slug: string,
+  transform: (
+    entity: Entity,
+    owned: Awaited<ReturnType<typeof ownedDefinition>>,
+  ) => Promise<Entity>,
+  includeRetained = false,
+) {
+  return store.withCatalogTransaction(user, async () => {
+    const owned = await ownedDefinition(store, user, kind, slug, includeRetained);
+    const entity = await transform(structuredClone(owned.entity), owned);
+    const source = structuredClone(owned.source);
+    replaceSourceEntity(source, entity);
+    const published = await publishAgentSource({
+      store,
+      ownerUserId: user,
+      source,
+      expectedRevisionId: owned.installation.currentRevisionId,
+    });
+    const original = sourceEntities(
+      await requireSource(store, owned.installation.upstreamRevisionId),
+    ).find((item) => item.kind === kind && item.slug === slug);
+    return {
+      entity,
+      original,
+      packageName: owned.installation.coordinate,
+      revisionId: published.packageRevisionId,
+    };
+  });
+}
 export async function saveAgentDefinition(
-  tx: PackageWriteTransaction,
-  projectId: string,
+  store: AgentRevisionStore,
+  user: string,
   slug: string,
   input: UpdateAgentDefinitionRequest,
 ): Promise<AgentDefinitionResponse> {
-  const agent = await requireProjectAgent(tx, projectId, slug);
-  const meta = normalizeAgentMeta(input.meta);
-  const config = input.config ?? agent.config;
-  const body = input.body;
-
-  const revision = await tx.appendAgentDefinitionRevision({
-    agentDefinitionId: agent.id,
-    contentChecksum: agentDefinitionContentChecksum({ body, meta, config }),
-    body,
-    meta,
-    config,
-  });
-
-  await tx.updateAgentDefinition(agent.id, {
-    body,
-    meta,
-    config,
-    originalContentChecksum: agent.originalContentChecksum,
-  });
-
-  await reconcileAgentSkillLinks(tx, projectId, agent.id, meta);
-
-  const packageInstalls = await tx.listPackageInstalls(projectId);
-  const packageName = packageNameForDefinition(agent, packageInstalls);
-  const skillLinks = await buildAgentSkillLinkDetails(tx, agent.id);
-
+  const saved = await edit(store, user, "agent", slug, async (entity) => ({
+    ...entity,
+    files: { [definitionPath(entity)]: serializeMarkdownDefinition(input.meta, input.body) },
+    ...(input.config !== undefined ? { config: input.config } : {}),
+  }));
   return {
-    agent: toAgentDefinitionDetail(agent, {
-      body,
-      meta,
-      config,
-      packageName,
-      skillLinks,
-    }),
-    revisionId: revision.id,
+    agent: agentDetail(saved.entity, saved.original, saved.packageName),
+    revisionId: saved.revisionId,
   };
 }
-
 export async function saveSkillDefinition(
-  tx: PackageWriteTransaction,
-  projectId: string,
+  store: AgentRevisionStore,
+  user: string,
   slug: string,
   input: UpdateSkillDefinitionRequest,
 ): Promise<SkillDefinitionResponse> {
-  const skill = await requireProjectSkill(tx, projectId, slug);
-  const meta = input.meta;
-  const body = input.body;
-
-  const revision = await tx.appendSkillDefinitionRevision({
-    skillId: skill.id,
-    contentChecksum: definitionContentChecksum({ body, meta, files: skill.files }),
-    body,
-    meta,
-    files: skill.files,
-  });
-
-  await tx.updateSkill(skill.id, {
-    body,
-    meta,
-    files: skill.files,
-    originalContentChecksum: skill.originalContentChecksum,
-  });
-
-  const packageInstalls = await tx.listPackageInstalls(projectId);
-  const packageName = packageNameForDefinition(skill, packageInstalls);
-
+  const saved = await edit(store, user, "skill", slug, async (entity) => ({
+    ...entity,
+    files: {
+      ...entity.files,
+      [definitionPath(entity)]: serializeMarkdownDefinition(input.meta, input.body),
+    },
+  }));
   return {
-    skill: toSkillDefinitionDetail(skill, { body, meta, files: skill.files, packageName }),
-    revisionId: revision.id,
+    skill: skillDetail(saved.entity, saved.original, saved.packageName),
+    revisionId: saved.revisionId,
   };
 }
-
-export async function listAgentDefinitionRevisions(
-  tx: PackageWriteTransaction,
-  projectId: string,
+async function history(
+  store: AgentRevisionStore,
+  user: string,
+  kind: Entity["kind"],
   slug: string,
 ): Promise<DefinitionRevisionListResponse> {
-  const agent = await requireProjectAgent(tx, projectId, slug);
-  const revisions = await tx.listAgentDefinitionRevisions(agent.id);
-  return { revisions: revisions.map(toRevisionSummary) };
-}
-
-export async function listSkillDefinitionRevisions(
-  tx: PackageWriteTransaction,
-  projectId: string,
-  slug: string,
-): Promise<DefinitionRevisionListResponse> {
-  const skill = await requireProjectSkill(tx, projectId, slug);
-  const revisions = await tx.listSkillDefinitionRevisions(skill.id);
-  return { revisions: revisions.map(toRevisionSummary) };
-}
-
-export async function restoreAgentDefinitionRevision(
-  tx: PackageWriteTransaction,
-  projectId: string,
-  slug: string,
-  revisionId: string,
-): Promise<AgentDefinitionResponse> {
-  const agent = await requireProjectAgent(tx, projectId, slug);
-  const revision = await requireAgentRevision(tx, agent.id, revisionId);
-  return restoreAgentFromRevisionContent(tx, projectId, agent, revision);
-}
-
-export async function restoreAgentDefinitionOriginal(
-  tx: PackageWriteTransaction,
-  projectId: string,
-  slug: string,
-): Promise<AgentDefinitionResponse> {
-  const agent = await requireProjectAgent(tx, projectId, slug);
-  if (!agent.originalContentChecksum) {
-    throw new DefinitionEditError("This agent has no pristine package baseline to restore.");
+  const owned = await ownedDefinition(store, user, kind, slug, true);
+  const revisions = [];
+  for (const row of await store.readInstallationHistory(user, owned.installation.id)) {
+    const entity = sourceEntities(await requireSource(store, row.packageRevisionId)).find(
+      (item) => item.kind === kind && item.slug === slug,
+    );
+    if (entity)
+      revisions.push({
+        id: row.packageRevisionId,
+        contentChecksum: checksum(entity),
+        createdAt: row.createdAt,
+      });
   }
-  const revisions = await tx.listAgentDefinitionRevisions(agent.id);
-  const pristine = revisions.find(
-    (revision) => revision.contentChecksum === agent.originalContentChecksum,
+  return { revisions };
+}
+export const listAgentDefinitionRevisions = (
+  store: AgentRevisionStore,
+  user: string,
+  slug: string,
+) => history(store, user, "agent", slug);
+export const listSkillDefinitionRevisions = (
+  store: AgentRevisionStore,
+  user: string,
+  slug: string,
+) => history(store, user, "skill", slug);
+async function restore(
+  store: AgentRevisionStore,
+  user: string,
+  kind: Entity["kind"],
+  slug: string,
+  revisionId?: string,
+) {
+  return edit(
+    store,
+    user,
+    kind,
+    slug,
+    async (_entity, owned) => {
+      const id = revisionId ?? owned.installation.upstreamRevisionId;
+      const allowed = await store.readInstallationHistory(user, owned.installation.id);
+      if (!allowed.some((item) => item.packageRevisionId === id))
+        throw new DefinitionEditError("Revision does not belong to this package");
+      const target = sourceEntities(await requireSource(store, id)).find(
+        (item) => item.kind === kind && item.slug === slug,
+      );
+      if (!target) throw new DefinitionEditError("Definition is absent from that revision");
+      return target;
+    },
+    true,
   );
-  if (!pristine) {
-    throw new DefinitionEditError("Pristine revision is not available for this agent.");
-  }
-  return restoreAgentFromRevisionContent(tx, projectId, agent, pristine);
 }
-
-export async function restoreSkillDefinitionRevision(
-  tx: PackageWriteTransaction,
-  projectId: string,
+export async function restoreAgentDefinitionRevision(
+  store: AgentRevisionStore,
+  user: string,
   slug: string,
-  revisionId: string,
-): Promise<SkillDefinitionResponse> {
-  const skill = await requireProjectSkill(tx, projectId, slug);
-  const revision = await requireSkillRevision(tx, skill.id, revisionId);
-  return restoreSkillFromRevisionContent(tx, projectId, skill, revision);
+  revisionId?: string,
+): Promise<AgentDefinitionResponse> {
+  const saved = await restore(store, user, "agent", slug, revisionId);
+  return {
+    agent: agentDetail(saved.entity, saved.original, saved.packageName),
+    revisionId: saved.revisionId,
+  };
 }
+export const restoreAgentDefinitionOriginal = (
+  store: AgentRevisionStore,
+  user: string,
+  slug: string,
+) => restoreAgentDefinitionRevision(store, user, slug);
+export async function restoreSkillDefinitionRevision(
+  store: AgentRevisionStore,
+  user: string,
+  slug: string,
+  revisionId?: string,
+): Promise<SkillDefinitionResponse> {
+  const saved = await restore(store, user, "skill", slug, revisionId);
+  return {
+    skill: skillDetail(saved.entity, saved.original, saved.packageName),
+    revisionId: saved.revisionId,
+  };
+}
+export const restoreSkillDefinitionOriginal = (
+  store: AgentRevisionStore,
+  user: string,
+  slug: string,
+) => restoreSkillDefinitionRevision(store, user, slug);
 
-/** Immediate operational mutation — does not append a definition revision. */
+/** The former live link toggle now versions the Agent's explicit loadable-skill declaration. */
 export async function patchAgentSkillLink(
-  tx: PackageWriteTransaction,
-  projectId: string,
-  agentSlug: string,
+  store: AgentRevisionStore,
+  user: string,
+  slug: string,
   skillSlug: string,
   input: PatchAgentSkillLinkRequest,
-): Promise<AgentDefinitionDetail> {
-  const agent = await requireProjectAgent(tx, projectId, agentSlug);
-  const skill =
-    (await tx.findSkillDefinition(projectId, skillSlug)) ??
-    (await tx.findSkillDefinition(null, skillSlug));
-  if (!skill) {
-    throw new DefinitionEditError(`Unknown skill slug: ${skillSlug}`);
-  }
-
-  const links = await tx.listAgentSkillLinks(agent.id);
-  const link = links.find((row) => row.skillId === skill.id);
-  if (!link) {
-    throw new DefinitionEditError(`Skill is not linked to this agent: ${skillSlug}`);
-  }
-
-  await tx.updateAgentSkillLinkModelInvocable(agent.id, skill.id, input.modelInvocable);
-
-  const packageInstalls = await tx.listPackageInstalls(projectId);
-  const packageName = packageNameForDefinition(agent, packageInstalls);
-  const skillLinks = await buildAgentSkillLinkDetails(tx, agent.id);
-  return toAgentDefinitionDetail(agent, {
-    body: agent.body,
-    meta: agent.meta,
-    config: agent.config,
-    packageName,
-    skillLinks,
+) {
+  const saved = await edit(store, user, "agent", slug, async (entity) => {
+    const { meta, body } = parsed(entity);
+    const compiled = compileAgentDefinition({ meta, body, config: entity.config });
+    if (!compiled.ok) throw new DefinitionEditError("Agent cannot be compiled");
+    const skills = compiled.definition.metadata.skills;
+    const load = skills?.load ?? [];
+    const available = new Set(skills && "available" in skills ? (skills.available ?? []) : []);
+    if (!input.modelInvocable && !load.includes(skillSlug) && !available.has(skillSlug))
+      throw new DefinitionEditError("Skill is not declared by this Agent");
+    if (input.modelInvocable) available.add(skillSlug);
+    else available.delete(skillSlug);
+    // Publication resolves enabled references against this source's retained graph.
+    const declaration = { ...skills, available: [...available] };
+    // A package overlay wins over frontmatter; update the existing authority, not a shadowed field.
+    if (entity.config && Object.hasOwn(entity.config, "skills"))
+      entity.config = { ...entity.config, skills: declaration };
+    else
+      entity.files[definitionPath(entity)] = serializeMarkdownDefinition(
+        { ...meta, skills: declaration },
+        body,
+      );
+    return entity;
   });
-}
-
-export async function restoreSkillDefinitionOriginal(
-  tx: PackageWriteTransaction,
-  projectId: string,
-  slug: string,
-): Promise<SkillDefinitionResponse> {
-  const skill = await requireProjectSkill(tx, projectId, slug);
-  if (!skill.originalContentChecksum) {
-    throw new DefinitionEditError("This skill has no pristine package baseline to restore.");
-  }
-  const revisions = await tx.listSkillDefinitionRevisions(skill.id);
-  const pristine = revisions.find(
-    (revision) => revision.contentChecksum === skill.originalContentChecksum,
-  );
-  if (!pristine) {
-    throw new DefinitionEditError("Pristine revision is not available for this skill.");
-  }
-  return restoreSkillFromRevisionContent(tx, projectId, skill, pristine);
-}
-
-/** Append the pristine revision when a definition is first installed. */
-export async function seedInitialAgentRevision(
-  tx: PackageWriteTransaction,
-  agent: AgentDefinitionRecord,
-): Promise<void> {
-  await tx.appendAgentDefinitionRevision({
-    agentDefinitionId: agent.id,
-    contentChecksum: agentDefinitionContentChecksum({
-      body: agent.body,
-      meta: agent.meta,
-      config: agent.config,
-    }),
-    body: agent.body,
-    meta: agent.meta,
-    config: agent.config,
-  });
-}
-
-export async function seedInitialSkillRevision(
-  tx: PackageWriteTransaction,
-  skill: SkillRecord,
-): Promise<void> {
-  await tx.appendSkillDefinitionRevision({
-    skillId: skill.id,
-    contentChecksum: definitionContentChecksum({
-      body: skill.body,
-      meta: skill.meta,
-      files: skill.files,
-    }),
-    body: skill.body,
-    meta: skill.meta,
-    files: skill.files,
-  });
-}
-
-export class DefinitionEditError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "DefinitionEditError";
-  }
-}
-
-async function restoreAgentFromRevisionContent(
-  tx: PackageWriteTransaction,
-  projectId: string,
-  agent: AgentDefinitionRecord,
-  revision: AgentDefinitionRevisionRecord,
-): Promise<AgentDefinitionResponse> {
-  const appended = await tx.appendAgentDefinitionRevision({
-    agentDefinitionId: agent.id,
-    contentChecksum: revision.contentChecksum,
-    body: revision.body,
-    meta: revision.meta,
-    config: revision.config,
-  });
-  await tx.updateAgentDefinition(agent.id, {
-    body: revision.body,
-    meta: revision.meta,
-    config: revision.config,
-    originalContentChecksum: agent.originalContentChecksum,
-  });
-  await reconcileAgentSkillLinks(tx, projectId, agent.id, revision.meta);
-  const packageInstalls = await tx.listPackageInstalls(projectId);
-  const packageName = packageNameForDefinition(agent, packageInstalls);
-  const skillLinks = await buildAgentSkillLinkDetails(tx, agent.id);
-  return {
-    agent: toAgentDefinitionDetail(agent, {
-      body: revision.body,
-      meta: revision.meta,
-      config: revision.config,
-      packageName,
-      skillLinks,
-    }),
-    revisionId: appended.id,
-  };
-}
-
-async function restoreSkillFromRevisionContent(
-  tx: PackageWriteTransaction,
-  projectId: string,
-  skill: SkillRecord,
-  revision: SkillDefinitionRevisionRecord,
-): Promise<SkillDefinitionResponse> {
-  await tx.updateSkill(skill.id, {
-    body: revision.body,
-    meta: revision.meta,
-    files: revision.files,
-    originalContentChecksum: skill.originalContentChecksum,
-  });
-  const appended = await tx.appendSkillDefinitionRevision({
-    skillId: skill.id,
-    contentChecksum: revision.contentChecksum,
-    body: revision.body,
-    meta: revision.meta,
-    files: revision.files,
-  });
-  const packageInstalls = await tx.listPackageInstalls(projectId);
-  const packageName = packageNameForDefinition(skill, packageInstalls);
-  return {
-    skill: toSkillDefinitionDetail(skill, {
-      body: revision.body,
-      meta: revision.meta,
-      files: revision.files,
-      packageName,
-    }),
-    revisionId: appended.id,
-  };
-}
-
-async function requireProjectAgent(
-  tx: PackageWriteTransaction,
-  projectId: string,
-  slug: string,
-): Promise<AgentDefinitionRecord> {
-  const agent = await tx.findAgentDefinition(projectId, slug);
-  if (!agent) {
-    throw new DefinitionEditError(`Agent is not editable in this project: ${slug}`);
-  }
-  return agent;
-}
-
-async function requireProjectSkill(
-  tx: PackageWriteTransaction,
-  projectId: string,
-  slug: string,
-): Promise<SkillRecord> {
-  const skill = await tx.findSkillDefinition(projectId, slug);
-  if (!skill) {
-    throw new DefinitionEditError(`Skill is not editable in this project: ${slug}`);
-  }
-  return skill;
-}
-
-async function requireAgentRevision(
-  tx: PackageWriteTransaction,
-  agentDefinitionId: string,
-  revisionId: string,
-): Promise<AgentDefinitionRevisionRecord> {
-  const revision = await tx.findAgentDefinitionRevision(revisionId);
-  if (!revision || revision.agentDefinitionId !== agentDefinitionId) {
-    throw new DefinitionEditError(`Revision not found: ${revisionId}`);
-  }
-  return revision;
-}
-
-async function requireSkillRevision(
-  tx: PackageWriteTransaction,
-  skillId: string,
-  revisionId: string,
-): Promise<SkillDefinitionRevisionRecord> {
-  const revision = await tx.findSkillDefinitionRevision(revisionId);
-  if (!revision || revision.skillId !== skillId) {
-    throw new DefinitionEditError(`Revision not found: ${revisionId}`);
-  }
-  return revision;
-}
-
-async function reconcileAgentSkillLinks(
-  tx: PackageWriteTransaction,
-  projectId: string,
-  agentDefinitionId: string,
-  meta: AgentDefinitionRecord["meta"],
-): Promise<void> {
-  const existingLinks = await tx.listAgentSkillLinks(agentDefinitionId);
-  const nextLinks = await skillLinksFromMetaSkills(
-    tx,
-    projectId,
-    agentDefinitionId,
-    meta,
-    existingLinks,
-  );
-  await tx.replaceAgentSkillLinks(agentDefinitionId, nextLinks);
-}
-
-async function buildAgentSkillLinkDetails(
-  tx: PackageWriteTransaction,
-  agentDefinitionId: string,
-): Promise<AgentDefinitionDetail["skillLinks"]> {
-  const links = await tx.listAgentSkillLinks(agentDefinitionId);
-  const details: AgentDefinitionDetail["skillLinks"] = [];
-  for (const link of links) {
-    const skill = await tx.findSkillById(link.skillId);
-    if (!skill) continue;
-    details.push({
-      skillSlug: skill.slug,
-      ordinal: link.ordinal ?? 0,
-      modelInvocable: link.modelInvocable ?? null,
-      userInvocable: link.userInvocable ?? null,
-    });
-  }
-  return details.sort((left, right) => left.ordinal - right.ordinal);
-}
-
-function toAgentDefinitionDetail(
-  agent: AgentDefinitionRecord,
-  current: {
-    body: string;
-    meta: AgentDefinitionRecord["meta"];
-    config: AgentDefinitionRecord["config"];
-    packageName: string | null;
-    skillLinks: AgentDefinitionDetail["skillLinks"];
-  },
-): AgentDefinitionDetail {
-  const contentChecksum = agentDefinitionContentChecksum({
-    body: current.body,
-    meta: current.meta,
-    config: current.config,
-  });
-  return {
-    slug: agent.slug,
-    body: current.body,
-    meta: current.meta,
-    config: current.config,
-    source: agentSourceFromRecord(agent.sourceType),
-    packageName: current.packageName,
-    originalContentChecksum: agent.originalContentChecksum,
-    contentChecksum,
-    isEdited: isDefinitionEdited(
-      { body: current.body, meta: current.meta, config: current.config },
-      agent.originalContentChecksum,
-    ),
-    skillLinks: current.skillLinks,
-  };
-}
-
-function toSkillDefinitionDetail(
-  skill: SkillRecord,
-  current: {
-    body: string;
-    meta: SkillRecord["meta"];
-    files: SkillRecord["files"];
-    packageName: string | null;
-  },
-): SkillDefinitionDetail {
-  const contentChecksum = definitionContentChecksum({
-    body: current.body,
-    meta: current.meta,
-    files: current.files,
-  });
-  return {
-    slug: skill.slug,
-    body: current.body,
-    meta: current.meta,
-    files: current.files,
-    source: agentSourceFromRecord(skill.sourceType),
-    packageName: current.packageName,
-    originalContentChecksum: skill.originalContentChecksum,
-    contentChecksum,
-    isEdited: isDefinitionEdited(
-      { body: current.body, meta: current.meta, files: current.files },
-      skill.originalContentChecksum,
-    ),
-  };
-}
-
-function toRevisionSummary(
-  revision: AgentDefinitionRevisionRecord | SkillDefinitionRevisionRecord,
-): DefinitionRevisionSummary {
-  return {
-    id: revision.id,
-    contentChecksum: revision.contentChecksum,
-    createdAt: revision.createdAt,
-  };
+  return agentDetail(saved.entity, saved.original, saved.packageName);
 }

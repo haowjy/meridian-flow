@@ -14,15 +14,11 @@
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
-import type { AgentRevisionStore, ResolvedSkill } from "../../packages/index.js";
+import type { AgentRevisionStore } from "../../packages/index.js";
 import type { BakeComposedSystemPromptInput } from "../../threads/ports/repositories.js";
 import type { FunctionTool, Gateway, GenerateRequest, Tool } from "../gateway/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
-import {
-  applyBakedInvokeAdvertisement,
-  resolveAgentThreadTurnContext,
-} from "../tools/agent-thread-context.js";
-import { modelInvocableSkillSlugs } from "../tools/skill-tools.js";
+import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
 import { isThreadPromptFrozen, rebakeComposedSystemPrompt } from "./composed-system-prompt.js";
 import { buildContext } from "./context-builder.js";
 import { projectImageBlocksForModel } from "./image-context.js";
@@ -49,7 +45,6 @@ export interface AssembleNextTurnContextInput {
 export interface AssembledNextTurnContext {
   thread: Thread;
   agentSlug: string | null;
-  resolvedSkills: ResolvedSkill[];
   systemPrompt: string;
   tools: FunctionTool[];
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
@@ -73,46 +68,32 @@ export async function assembleNextTurnContext(
     baseTools: input.baseTools,
   });
 
-  let tools = agentContext.tools;
-  let skillsSystemPromptSection: string | undefined;
+  const tools = agentContext.tools;
   let workContextSection: string | undefined;
   let unfrozenBasePrompt: string | null | undefined;
   let systemPrompt: string;
   const baked = thread.bakedSkillSlugs != null;
 
   if (isThreadPromptFrozen(thread)) {
-    tools = applyBakedInvokeAdvertisement({
-      tools,
-      bakedSkillSlugs: thread.bakedSkillSlugs,
-      toolRegistry: input.toolRegistry,
-    });
     systemPrompt = thread.composedSystemPrompt ?? "";
   } else {
     const workContext = (await input.workContext.renderForThread(thread.id as ThreadId)).text;
     const bakedPrompt = rebakeComposedSystemPrompt({
       basePrompt: agentContext.agentBody,
-      skillsSystemPromptSection: agentContext.skillsSystemPromptSection,
       workContext,
     });
 
     if (input.persistBake && input.bakeComposedSystemPrompt) {
-      const bakedSkillSlugs = modelInvocableSkillSlugs(agentContext.resolvedSkills);
       thread = await input.bakeComposedSystemPrompt(thread.id as ThreadId, {
         composedSystemPrompt: bakedPrompt,
-        bakedSkillSlugs,
+        bakedSkillSlugs: [],
       });
       if (!isThreadPromptFrozen(thread))
         throw new Error("Thread prompt freeze returned an unfrozen thread");
-      tools = applyBakedInvokeAdvertisement({
-        tools: agentContext.tools,
-        bakedSkillSlugs: thread.bakedSkillSlugs,
-        toolRegistry: input.toolRegistry,
-      });
       systemPrompt = thread.composedSystemPrompt ?? bakedPrompt;
     } else {
       systemPrompt = bakedPrompt;
       unfrozenBasePrompt = agentContext.agentBody;
-      skillsSystemPromptSection = agentContext.skillsSystemPromptSection;
       workContextSection = workContext;
     }
   }
@@ -140,14 +121,12 @@ export async function assembleNextTurnContext(
     blocks,
     tools,
     unfrozenBasePrompt,
-    skillsSystemPromptSection,
     workContext: workContextSection,
   });
 
   return {
     thread,
     agentSlug: agentContext.agentSlug,
-    resolvedSkills: agentContext.resolvedSkills,
     systemPrompt,
     tools: functionToolsFromAdvertised(contextTools),
     gatewayParams,

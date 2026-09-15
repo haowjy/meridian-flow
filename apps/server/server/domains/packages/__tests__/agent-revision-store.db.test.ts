@@ -13,6 +13,7 @@ import { createDrizzleThreadRepository } from "../../threads/adapters/drizzle/th
 import { createDrizzleAgentRevisionStore } from "../adapters/drizzle-agent-revision-store.js";
 import { createBoundAgentCatalog } from "../domain/bound-agent-catalog.js";
 import { seedGeneralAgent } from "../domain/default-package-seeding.js";
+import { AgentPublicationConflictError } from "../domain/source-publication.js";
 
 const USER = "00000000-0000-4000-8000-000000000871";
 const OTHER = "00000000-0000-4000-8000-000000000872";
@@ -284,7 +285,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       const before = await store.listCatalog({ userId: USER, limit: 100 });
       await expect(
         catalog.installSystemSource({ ...source("Colliding source"), coordinate: "other-source" }),
-      ).rejects.toThrow("source collision");
+      ).rejects.toThrow(AgentPublicationConflictError);
       expect(await store.listCatalog({ userId: USER, limit: 100 })).toEqual(before);
     });
 

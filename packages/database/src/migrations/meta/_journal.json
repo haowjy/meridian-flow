@@ -645,6 +645,20 @@
       "when": 1789510696668,
       "tag": "0091_spawn-root-identity",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1789511304397,
+      "tag": "0092_retained-package-management",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1789512110643,
+      "tag": "0093_remove-legacy-agent-ownership",
+      "breakpoints": true
     }
   ]
 }

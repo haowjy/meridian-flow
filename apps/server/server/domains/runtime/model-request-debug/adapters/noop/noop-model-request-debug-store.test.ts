@@ -19,7 +19,7 @@ describe("NoopModelRequestDebugStore", () => {
         iteration: 0,
         agentSlug: "writer",
         request,
-        resolvedSkills: [],
+
         toolRegistry: createToolRegistry(),
       }),
     ).not.toThrow();

@@ -3,9 +3,8 @@
  * timeline's tier-2 rows.
  *
  * Each registered tool contributes a single-line title that reads the tool's
- * input (e.g. `Read Chapter 1`, `Searched "dragon"`, `Invoked the Outline
- * skill`) and an optional inline expansion (curated — search result rows,
- * stream tail, or skill output). Glyphs are not here: they belong to the
+ * input (e.g. `Read Chapter 1`, `Searched "dragon"`) and an optional inline
+ * expansion (curated search result rows, outlines, or prose). Glyphs are not here: they belong to the
  * command, which `ToolRow` resolves.
  *
  * Three-tier contract documented in `.context/tool-expands.md`:
@@ -45,7 +44,7 @@ import { documentDisplayName, folderDisplayName } from "./document-display-name"
 import type { ToolView } from "./group-delivery-segments";
 import { PassageDoor } from "./PassageDoor";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
-import { humanizeSkillSlug, stringInput, toolInputObject, type WriteMode } from "./tool-command";
+import { stringInput, toolInputObject, type WriteMode } from "./tool-command";
 import {
   boundLabel,
   type CappedList,
@@ -60,7 +59,6 @@ import {
   searchCardSummary,
   type ToolResultRow,
   type ToolResultRows,
-  truncate,
 } from "./tool-result-preview";
 
 export type ToolRenderContext = {
@@ -289,80 +287,6 @@ function ListingRows({ results }: { results: ToolResultRows }) {
   );
 }
 
-/**
- * Terminal-style tail for stream-producing tools. Renders as
- * dimmed mono text — no card chrome, just the recent output. Keeps the last
- * ~14 lines so a chatty command can't unbalance the row.
- */
-function StreamTail({ stream }: { stream: string }) {
-  const lines = stream.split("\n");
-  const visible = lines.length > 14 ? lines.slice(-14).join("\n") : stream;
-  return (
-    // Bounded, NON-scrolling teaser: the transcript viewport is the single scroll
-    // owner, so this row must never own a nested scrollport. Slicing to 14 logical
-    // lines does not bound *visual* height — one long line soft-wraps to many rows
-    // in the narrow docked layout — so cap the box and clip. `justify-end` keeps the
-    // newest output pinned to the bottom (older lines clip off the top under a fade).
-    <div className="flex max-h-48 flex-col justify-end overflow-hidden [mask-image:linear-gradient(to_bottom,transparent,black_1.5rem)]">
-      <pre
-        className="font-mono text-meta leading-relaxed break-words whitespace-pre-wrap text-ink-muted"
-        aria-live="polite"
-      >
-        {visible}
-      </pre>
-    </div>
-  );
-}
-
-function PlainOutput({ value }: { value: string }) {
-  return (
-    <div className="text-compact whitespace-pre-wrap text-ink-muted">{truncate(value, 800)}</div>
-  );
-}
-
-function invokeSkillSlug(tool: ToolView): string | undefined {
-  return asString(inputObject(tool).skillname);
-}
-
-/**
- * Classify server-side invoke gate failures. Matches the two strings emitted
- * by `skill-tools.ts` — kept separate from i18n so unit tests can lock the
- * contract without a Lingui compile context.
- */
-export type InvokeSkillFailureKind = "unknown" | "no-longer-available";
-
-export function classifyInvokeSkillFailure(output: string): InvokeSkillFailureKind | null {
-  if (output.startsWith('Unknown skill "')) return "unknown";
-  if (/^Skill "[^"]+" is no longer available\./.test(output)) return "no-longer-available";
-  return null;
-}
-
-/**
- * Map server-side invoke gate failures to reader-facing copy. The dispatcher
- * emits machine strings with slug + available-skills suffix; chat never shows
- * those verbatim — only the two freeze-contract messages below.
- */
-export function invokeSkillFailureCopy(
-  output: JsonValue | null,
-  slug: string | undefined,
-): string | null {
-  if (typeof output !== "string" || output.length === 0) return null;
-  const kind = classifyInvokeSkillFailure(output);
-  if (kind === "unknown") {
-    const skillName = slug ? humanizeSkillSlug(slug) : undefined;
-    return skillName
-      ? t`The ${skillName} skill isn't available in this chat.`
-      : t`That skill isn't available in this chat.`;
-  }
-  if (kind === "no-longer-available") {
-    const skillName = slug ? humanizeSkillSlug(slug) : undefined;
-    return skillName
-      ? t`The ${skillName} skill is no longer available in this chat — start a new chat to use the current version.`
-      : t`This skill is no longer available in this chat — start a new chat to use the current version.`;
-  }
-  return null;
-}
-
 function writeFailureStatus(output: JsonValue | null): string | null {
   if (output == null) return null;
   if (typeof output === "object" && !Array.isArray(output)) {
@@ -480,34 +404,6 @@ function submittedContent(tool: ToolView): ToolExpand | null {
       <QuotedPreview markup={content} path={path} />
     </div>
   );
-}
-
-function invokeExpand(tool: ToolView): ToolExpand | null {
-  if (tool.isError) {
-    const copy = invokeSkillFailureCopy(tool.output, invokeSkillSlug(tool));
-    if (!copy) return null;
-    return () => <div className="text-compact text-destructive">{copy}</div>;
-  }
-  return streamOrOutput(tool);
-}
-
-function streamOrOutput(tool: ToolView): ToolExpand | null {
-  // While running: live tail keeps the freshest output visible. Once complete,
-  // prefer the curated final `output` field (e.g. "exit 0", a summary line) —
-  // the raw stream transcript is noise next to a tight terminal summary.
-  if (tool.status === "complete" && typeof tool.output === "string" && tool.output.length > 0) {
-    const value = tool.output;
-    return () => <PlainOutput value={value} />;
-  }
-  if (tool.streamedOutput && tool.streamedOutput.length > 0) {
-    const stream = tool.streamedOutput;
-    return () => <StreamTail stream={stream} />;
-  }
-  if (typeof tool.output === "string" && tool.output.length > 0) {
-    const stream = tool.output;
-    return () => <StreamTail stream={stream} />;
-  }
-  return null;
 }
 
 function listingOrNothing(tool: ToolView): ToolExpand | null {
@@ -644,10 +540,6 @@ const RENDERERS: Record<string, ToolRenderer> = {
   search: {
     title: phraseTitle,
     expand: resultRowsOrNothing,
-  },
-  invoke: {
-    title: phraseTitle,
-    expand: invokeExpand,
   },
   work: {
     title: (tool) => <WorkToolTitle tool={tool} />,

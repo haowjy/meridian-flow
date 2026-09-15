@@ -144,6 +144,9 @@ function AgentGroup({
                     </Badge>
                   ) : null}
                 </span>
+                {agents.some((other) => other !== agent && other.name === agent.name) ? (
+                  <span className="text-meta text-muted-foreground">{agent.slug}</span>
+                ) : null}
                 {agent.description ? (
                   <span className="line-clamp-1 text-meta text-muted-foreground">
                     {agent.description}

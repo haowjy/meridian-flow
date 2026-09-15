@@ -45,6 +45,9 @@ export function parseGitHubRepoUrl(url: string): { owner: string; repo: string }
     throw new Error(`Invalid GitHub package URL: ${url}`);
   }
 
+  if (parsed.protocol !== "https:") {
+    throw new Error(`GitHub package URLs require HTTPS: ${url}`);
+  }
   if (parsed.hostname !== "github.com") {
     throw new Error(`Unsupported package URL host (expected github.com): ${url}`);
   }

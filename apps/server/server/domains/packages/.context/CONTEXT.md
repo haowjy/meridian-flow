@@ -65,34 +65,35 @@ model publishes a new revision and retains the former one.
 
 Standalone `POST /api/agents` publishes personal source directly through this owner. Saves require the prior revision for advancement; conflicts roll back the source install. Runtime support can make a preserved definition unavailable without pretending its semantics execute.
 
-## Package repository and editing
+## Source management
 
-`ports/package-store.ts` defines `PackageRepository` and its transaction port.
-Mutable records live in `domain/types.ts`: package installs, Agent definitions,
-skills, user-installed skills, and Agent/skill links. Project definitions are
-keyed by project and slug; builtin records use a null project.
+`domain/source-publication.ts` is the atomic publication owner for standalone save,
+package import/update/edit/restore and trusted system provisioning. It installs
+immutable source, validates retained references, advances exact future-chat
+pointers and commits the installation head/history under the same owner lock.
+Removed entries remain hidden on ordinary publication. Source collisions refuse
+the complete import with an actionable rename diagnostic, preserving existing content.
 
-`adapters/in-memory-package-store.ts` uses transaction-local cloned state and
-commits on success. `adapters/drizzle-package-store.ts` currently delegates to
-that in-memory implementation, including in production composition. Records and
-revision history therefore do not survive server restart.
+`agent_package_installations` is account/system management provenance: current
+edited source, upstream pristine source and fetch origin. Its history authorizes
+restore from owned source only, including definitions pruned from the current snapshot. It is never an execution lookup. All definitions
+and skill files live exclusively in retained snapshots; there are no mutable
+Agent/skill records or operational link overrides.
 
-`domain/definition-editing.ts` appends definition history on save/restore and
-updates the live row. Agent skill ordering comes from the declared flat list;
-operational link invocation flags are preserved across reconciliation. These legacy management operations have not yet been cut over to the retained catalog; they are not an execution authority.
+`package-source.ts` materializes local/GitHub dependency graphs before writes,
+preserving supported files and binary data. Explicit downloaded provenance confines local dependencies to their fetched tree;
+URL spelling never grants local filesystem trust. `package-management.ts` imports and reconciles the
+retained graph. Updates keep locally edited entities and references unless reset. Keeping an edited
+Agent retains its dependency closure; incompatible upstream additions refuse atomic
+publication rather than silently changing those references;
+removed pristine definitions leave retained history but no future-chat selection.
+`definition-editing.ts` edits or restores one entity within that complete source.
+The legacy skill-link toggle now versions `skills.available`; it does not activate
+runtime skill loading. `package-export.ts` exports retained files without
+reconstructing source from normalized definitions.
 
-## Import, export, and resolution
-
-- `domain/package-sync.ts` resolves local-path dependencies and writes an import
-  transaction. Remote dependencies are reported as unsupported. Updates replace
-  pristine content, preserve locally edited items unless force-reset, and retain
-  dependencies referenced by preserved Agents.
-- `domain/package-export.ts` reconstructs the package file map for export;
-  `sourcePath` is repository metadata and is excluded.
-- `domain/skill-files.ts` owns supporting-file encodings and checksums.
-- `domain/resolution.ts` merges builtin, user, project/global, and linked skills.
-  Linked skills and operational invocation overrides are live repository state.
-- Shared runtime preparation reads retained binding configuration. Executable skill loading remains disabled; retained dependency identity is not a claim of loading support.
-
-Errors propagate through the existing calling boundary. Repository operations
-and parser/compiler validation do not independently authorize resources.
+Project-addressed management routes still authorize access to that Project; the
+owned package content belongs to the authenticated account and is reusable across
+Projects. Source fetching stays outside owner transactions. Production seeds
+General and configured first-party packages into the system catalog at startup,
+not during Project creation. General replaces the old `<none>` entry.

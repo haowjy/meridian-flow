@@ -62,20 +62,16 @@ import {
   emitEvent,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
-import { createInMemoryPackageStore } from "../domains/packages/adapters/in-memory-package-store.js";
 import {
   type AgentRevisionStore,
   type BoundAgentCatalog,
   createBoundAgentCatalog,
-  createDefaultPackageSeeder,
   createDrizzleAgentRevisionStore,
-  createDrizzlePackageStore,
   createGitHubMarsPackageFetcher,
   createInMemoryAgentRevisionStore,
-  type DefaultPackageSeeder,
   defaultPackageSeedConfigFromEnv,
   type MarsPackageFetcher,
-  type PackageRepository,
+  seedDefaultAgentPackages,
   seedGeneralAgent,
 } from "../domains/packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/adapters/in-memory/project-preferences-repository.js";
@@ -110,7 +106,6 @@ import {
   createHelperResultDelivery,
   createInMemoryThreadRunOwnership,
   createInstrumentedGateway,
-  createInvokeToolRegistration,
   createLateBindRunTurnPort,
   createOrchestrator,
   createPermissionGate,
@@ -211,10 +206,7 @@ export type AppServices = {
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   eventQuery?: EventQuery;
-  packageRepository: PackageRepository;
   marsPackageFetcher: MarsPackageFetcher;
-  defaultPackageSeeder: DefaultPackageSeeder;
-  seedDefaultPackagesForProject(projectId: string): Promise<void>;
   preferences: ProjectPreferencesRepository;
   workingSet: WorkingSetRepository;
   orchestrator: RunTurnPort;
@@ -265,9 +257,7 @@ export type ProductionAppPorts = {
   billingUsage: BillingUsagePolicy;
   billingSpendReader: BillingSpendReader;
   agentRevisions: AgentRevisionStore;
-  packageRepository: PackageRepository;
   marsPackageFetcher: MarsPackageFetcher;
-  defaultPackageSeeder: DefaultPackageSeeder;
   preferences: ProjectPreferencesRepository;
   workingSet: WorkingSetRepository;
   modelRequestDebug: ModelRequestDebugStore;
@@ -434,12 +424,11 @@ export async function createProductionAppPorts(input: {
   });
   const agentRevisions = createDrizzleAgentRevisionStore(db);
   await seedGeneralAgent(agentRevisions, defaultModel);
-  const packageRepository = createDrizzlePackageStore({ db });
   const marsPackageFetcher = createGitHubMarsPackageFetcher({
     githubToken: environment.GITHUB_TOKEN,
   });
-  const defaultPackageSeeder = createDefaultPackageSeeder({
-    repository: packageRepository,
+  await seedDefaultAgentPackages({
+    store: agentRevisions,
     fetcher: marsPackageFetcher,
     config: defaultPackageSeedConfigFromEnv(environment),
   });
@@ -499,9 +488,7 @@ export async function createProductionAppPorts(input: {
     billingUsage: billingDomain.usagePolicy,
     billingSpendReader: billingDomain.spendReader,
     agentRevisions,
-    packageRepository,
     marsPackageFetcher,
-    defaultPackageSeeder,
     preferences,
     workingSet,
     modelRequestDebug: createModelRequestDebugStoreFromEnv(eventSink),
@@ -583,22 +570,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   for (const registration of createWiredCoreToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
   }
-  toolRegistry.register(
-    createInvokeToolRegistration({
-      packageRepository: ports.packageRepository,
-      async findThreadById(threadId: string) {
-        const thread = await ports.threadRepos.threads.findById(threadId);
-        return thread
-          ? {
-              projectId: thread.projectId,
-              userId: thread.userId,
-              currentAgent: thread.currentAgent,
-              bakedSkillSlugs: thread.bakedSkillSlugs ?? null,
-            }
-          : null;
-      },
-    }),
-  );
   for (const registration of createSpawnToolRegistrations()) {
     toolRegistry.register(registration);
   }
@@ -752,12 +723,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     interruptRegistry,
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
-    packageRepository: ports.packageRepository,
     marsPackageFetcher: ports.marsPackageFetcher,
-    defaultPackageSeeder: ports.defaultPackageSeeder,
-    seedDefaultPackagesForProject: async (projectId) => {
-      await ports.defaultPackageSeeder.seedProject(projectId);
-    },
     preferences: ports.preferences,
     workingSet: ports.workingSet,
     orchestrator,
@@ -791,7 +757,6 @@ export function createInMemoryAppServices(): AppServices {
     threadExists: async (id) =>
       Boolean(await threadRepos.threads.findProjectIdByIdIncludingDeleted(id)),
   });
-  const packageRepository = createInMemoryPackageStore();
   const preferences = createInMemoryProjectPreferencesRepository();
   const workingSet = createInMemoryWorkingSetRepository();
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
@@ -1105,18 +1070,11 @@ export function createInMemoryAppServices(): AppServices {
     }),
     interruptRegistry: createInterruptRegistry(),
     eventSink: createNoopEventSink(),
-    packageRepository,
     marsPackageFetcher: {
       async fetch() {
         throw new Error("in-memory Mars package fetcher is not implemented");
       },
     },
-    defaultPackageSeeder: {
-      async seedProject() {
-        return [];
-      },
-    },
-    async seedDefaultPackagesForProject() {},
     preferences,
     workingSet,
     orchestrator: {

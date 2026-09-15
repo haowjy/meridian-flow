@@ -26,7 +26,6 @@ export const projectUserPreferences = pgTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     threadGroupBy: text("thread_group_by").notNull().default("work"),
     pinnedThreadIds: text("pinned_thread_ids").array().notNull().default(sql`'{}'::text[]`),
-    defaultAgentSlug: text("default_agent_slug"),
     autoResumeEnabled: boolean("auto_resume_enabled").notNull().default(true),
     autoResumeTimeoutMs: integer("auto_resume_timeout_ms").notNull().default(270_000),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

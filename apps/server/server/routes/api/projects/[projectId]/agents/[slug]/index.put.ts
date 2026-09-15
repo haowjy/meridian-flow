@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   const body = parseUpdateAgentDefinitionRequest(await readBody(event));
 
   const response = await handlePutAgentDefinitionRequest(
-    { projectRepo: app.projectRepo, packageRepository: app.packageRepository },
+    { projectRepo: app.projectRepo, agentRevisions: app.agentRevisions },
     { projectId, userId: user.userId, slug, body },
   );
 
