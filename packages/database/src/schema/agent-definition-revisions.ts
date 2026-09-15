@@ -6,6 +6,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   uniqueIndex,
   uuid,
@@ -84,3 +85,17 @@ export const threadAgentBindings = pgTable("thread_agent_bindings", {
     .references(() => agentDefinitionRevisions.id, { onDelete: "restrict" }),
   createdAt: createdAt(),
 });
+
+/** Retains eligibility for revisions reserved before a future-chat pointer advances. */
+export const agentCatalogRevisions = pgTable(
+  "agent_catalog_revisions",
+  {
+    catalogEntryId: uuid("catalog_entry_id")
+      .notNull()
+      .references(() => agentCatalogEntries.id, { onDelete: "cascade" }),
+    definitionRevisionId: uuid("definition_revision_id")
+      .notNull()
+      .references(() => agentDefinitionRevisions.id, { onDelete: "restrict" }),
+  },
+  (table) => [primaryKey({ columns: [table.catalogEntryId, table.definitionRevisionId] })],
+);

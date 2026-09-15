@@ -10,6 +10,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import { truncateDrizzleTables } from "../../../test-support/drizzle-reset.js";
 import { createDrizzleAgentRevisionStore } from "../adapters/drizzle-agent-revision-store.js";
+import { createBoundAgentCatalog } from "../domain/bound-agent-catalog.js";
 
 const USER = "00000000-0000-4000-8000-000000000871";
 const OTHER = "00000000-0000-4000-8000-000000000872";
@@ -152,6 +153,104 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(await store.listCatalog({ userId: USER, limit: 100 })).toMatchObject([
         { id, selectedRevisionId: first.id },
       ]);
+    });
+
+    it("authorizes reserved historical revisions without granting unrelated content", async () => {
+      const first = (await store.installSource(source())).definitions[0];
+      const next = (await store.installSource(source("Next"))).definitions[0];
+      const secret = (await store.installSource(source("Private other-account content")))
+        .definitions[0];
+      const entry = await store.selectRevision({
+        ownerUserId: USER,
+        logicalKey: "general",
+        revisionId: first.id,
+      });
+      if (!entry.ok) throw new Error("Catalog creation failed");
+      expect((await store.readSelection(USER, entry.entry.id, first.id))?.revision.id).toBe(
+        first.id,
+      );
+      expect(await store.readSelection(USER, entry.entry.id, secret.id)).toBeUndefined();
+      expect(await store.readSelection(OTHER, entry.entry.id, first.id)).toBeUndefined();
+      await store.selectRevision({
+        ownerUserId: USER,
+        logicalKey: "general",
+        revisionId: next.id,
+        expectedRevisionId: first.id,
+      });
+      expect((await store.readSelection(USER, entry.entry.id, first.id))?.revision.id).toBe(
+        first.id,
+      );
+      expect((await store.readSelection(USER, entry.entry.id, next.id))?.revision.id).toBe(next.id);
+      expect(await store.readSelection(USER, entry.entry.id, secret.id)).toBeUndefined();
+      await store.removeOwnedEntry(USER, entry.entry.id);
+      expect(await store.readSelection(USER, entry.entry.id, first.id)).toBeUndefined();
+    });
+
+    it("lists and resolves exact catalog revisions with one host support check", async () => {
+      const catalog = createBoundAgentCatalog({
+        store,
+        unavailableReasons: (definition) =>
+          definition.metadata.model === "fixture-model" ? [] : ["Model unavailable"],
+      });
+      await catalog.installSystemSource(source());
+      const page = await catalog.list(USER, { limit: 100 });
+      expect(page.agents).toHaveLength(1);
+      const reserved = page.agents[0].selection;
+      expect(page.agents[0].unavailableReasons).toEqual([]);
+      await catalog.installSystemSource(source("Updated prompt"));
+      const resolved = await catalog.resolvePrimary(USER, reserved);
+      expect(resolved).toMatchObject({
+        ok: true,
+        definition: { systemPrompt: "Original prompt." },
+      });
+      const before = await store.listCatalog({ userId: USER, limit: 100 });
+      await expect(
+        catalog.installSystemSource({ ...source("Colliding source"), coordinate: "other-source" }),
+      ).rejects.toThrow("source collision");
+      expect(await store.listCatalog({ userId: USER, limit: 100 })).toEqual(before);
+    });
+
+    it("publishes complete system sources under concurrent updates", async () => {
+      const catalog = createBoundAgentCatalog({ store, unavailableReasons: () => [] });
+      const publication = (version: number) => ({
+        coordinate: "concurrent-system",
+        files: Object.fromEntries(
+          ["a", "b", "c"].map((slug) => [
+            `agents/${slug}.md`,
+            `---\nname: ${slug}\n---\nv${version}`,
+          ]),
+        ),
+      });
+      await catalog.installSystemSource(publication(0));
+      await Promise.all(
+        Array.from({ length: 12 }, (_, version) =>
+          catalog.installSystemSource(publication(version)),
+        ),
+      );
+      const entries = await store.listCatalog({ userId: USER, limit: 100 });
+      expect(entries).toHaveLength(3);
+      const revisions = await Promise.all(
+        entries.map((entry) => store.readRevision(entry.selectedRevisionId)),
+      );
+      expect(new Set(revisions.map((revision) => revision?.packageRevisionId)).size).toBe(1);
+    });
+
+    it("rejects child-only and unsupported revisions consistently in listing and resolution", async () => {
+      const catalog = createBoundAgentCatalog({
+        store,
+        unavailableReasons: () => ["Tools unsupported"],
+      });
+      await catalog.installSystemSource({
+        coordinate: "specialist",
+        files: { "agents/child.md": "---\nname: Child\nmode: subagent\n---\n" },
+      });
+      const page = await catalog.list(USER, { limit: 100 });
+      expect(page.agents[0].unavailableReasons).toHaveLength(2);
+      expect(await catalog.resolvePrimary(USER, page.agents[0].selection)).toEqual({
+        ok: false,
+        reason: "unavailable",
+        details: page.agents[0].unavailableReasons,
+      });
     });
 
     it("fences ownership and paginates tied names without duplicates", async () => {

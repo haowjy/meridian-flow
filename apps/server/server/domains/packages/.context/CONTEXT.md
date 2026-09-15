@@ -33,11 +33,14 @@ supporting files use base64 for JSONB storage.
 
 `ports/agent-revision-store.ts` owns immutable source/definition records,
 account/system catalog pointers, and fixed thread bindings.
-`adapters/drizzle-agent-revision-store.ts` persists them in the four
+`adapters/drizzle-agent-revision-store.ts` persists them in the
 `agent-definition-revisions.ts` schema tables and joins the app's ambient
 transaction. Source installs deduplicate by coordinate/digest. Catalog creation
 is idempotent for the same revision; advancement requires an expected revision.
-Removal hides selection while bound revisions remain readable. An explicit
+The current catalog pointer and retained `agent_catalog_revisions` membership
+authorize exact selections. Pointer advancement retains the old membership in the
+same transaction, allowing a reserved first Send to keep its revision without
+authorizing unrelated account content. Removal hides selection while bound revisions remain readable. An explicit
 owner restore requires the retained revision; ordinary saves leave removed entries hidden. Catalog pages
 combine system and owned entries with a bounded name/keyset order.
 
@@ -45,6 +48,12 @@ The store is an internal persistence port. Callers authorize source/Project/thre
 access and runtime support before selecting or binding. Null catalog ownership
 is reserved for trusted system seeding. The live creation/runtime path still
 consumes `PackageRepository` below; integration belongs to the milestone work.
+
+`domain/bound-agent-catalog.ts` resolves exact primary selections and builds
+catalog pages from immutable revisions. Listing and resolution share the supplied
+host-support predicate. System-source publication uses one transaction-scoped
+serialization boundary across the system catalog and rejects
+cross-source logical-key collisions.
 
 ## Package repository and editing
 

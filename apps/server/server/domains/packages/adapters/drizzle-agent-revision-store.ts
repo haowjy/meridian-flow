@@ -2,11 +2,12 @@
 import type { Database } from "@meridian/database";
 import {
   agentCatalogEntries,
+  agentCatalogRevisions,
   agentDefinitionRevisions,
   agentPackageRevisions,
   threadAgentBindings,
 } from "@meridian/database/schema";
-import { and, asc, eq, gt, isNull, or } from "drizzle-orm";
+import { and, asc, eq, gt, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { CompiledAgentDefinition } from "../domain/agent-definition-compiler.js";
 import { prepareAgentSourceRevision } from "../domain/agent-source-revision.js";
@@ -28,6 +29,15 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
   });
 
   const store: AgentRevisionStore = {
+    async withSystemCatalogTransaction(operation) {
+      return runInDrizzleTransaction(database, async () => {
+        // System logical keys span sources, including pointers an idempotent publication skips.
+        await db().execute(
+          sql`select pg_advisory_xact_lock(hashtext('agent-catalog'), hashtext('system-publication'))`,
+        );
+        return operation();
+      });
+    },
     async installSource(input) {
       const prepared = prepareAgentSourceRevision(input);
       return runInDrizzleTransaction(database, async () => {
@@ -109,7 +119,15 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
               ),
             )
             .returning();
-          return entry ? { ok: true, entry } : { ok: false, reason: "conflict" };
+          if (!entry) return { ok: false, reason: "conflict" };
+          await db()
+            .insert(agentCatalogRevisions)
+            .values({
+              catalogEntryId: entry.id,
+              definitionRevisionId: input.expectedRevisionId,
+            })
+            .onConflictDoNothing();
+          return { ok: true, entry };
         }
         const [created] = await db()
           .insert(agentCatalogEntries)
@@ -126,6 +144,38 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
           ? { ok: true, entry: existing }
           : { ok: false, reason: "conflict" };
       });
+    },
+    async readCatalogEntry(ownerUserId, logicalKey) {
+      const [entry] = await db()
+        .select()
+        .from(agentCatalogEntries)
+        .where(and(ownerFilter(ownerUserId), eq(agentCatalogEntries.logicalKey, logicalKey)));
+      return entry;
+    },
+    async readSelection(userId, catalogEntryId, revisionId) {
+      const [row] = await db()
+        .select({ entry: agentCatalogEntries, revision: agentDefinitionRevisions })
+        .from(agentCatalogEntries)
+        .leftJoin(
+          agentCatalogRevisions,
+          and(
+            eq(agentCatalogRevisions.catalogEntryId, agentCatalogEntries.id),
+            eq(agentCatalogRevisions.definitionRevisionId, revisionId),
+          ),
+        )
+        .innerJoin(agentDefinitionRevisions, eq(agentDefinitionRevisions.id, revisionId))
+        .where(
+          and(
+            eq(agentCatalogEntries.id, catalogEntryId),
+            or(ownerFilter(null), ownerFilter(userId)),
+            eq(agentCatalogEntries.removed, false),
+            or(
+              eq(agentCatalogEntries.selectedRevisionId, revisionId),
+              isNotNull(agentCatalogRevisions.definitionRevisionId),
+            ),
+          ),
+        );
+      return row ? { entry: row.entry, revision: revision(row.revision) } : undefined;
     },
     async listCatalog(input) {
       if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) {

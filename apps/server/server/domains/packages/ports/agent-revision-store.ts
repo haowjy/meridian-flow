@@ -23,6 +23,8 @@ export type AgentCatalogSelectionResult =
   | { ok: false; reason: "conflict" | "not-found" };
 
 export interface AgentRevisionStore {
+  /** Serialize complete system-catalog publications in one ambient transaction. */
+  withSystemCatalogTransaction<T>(operation: () => Promise<T>): Promise<T>;
   installSource(
     source: AgentSourceSnapshot,
   ): Promise<{ packageRevisionId: string; definitions: AgentRevision[] }>;
@@ -36,6 +38,15 @@ export interface AgentRevisionStore {
     revisionId: string;
     expectedRevisionId?: string;
   }): Promise<AgentCatalogSelectionResult>;
+  readCatalogEntry(
+    ownerUserId: string | null,
+    logicalKey: string,
+  ): Promise<AgentCatalogEntry | undefined>;
+  readSelection(
+    userId: string,
+    catalogEntryId: string,
+    revisionId: string,
+  ): Promise<{ entry: AgentCatalogEntry; revision: AgentRevision } | undefined>;
   listCatalog(input: {
     userId: string;
     limit: number;
