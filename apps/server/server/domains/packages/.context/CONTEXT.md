@@ -50,9 +50,10 @@ is reserved for trusted system seeding. App services expose the revision port as
 `agentRevisions`. The hermetic adapter and thread repositories share one snapshot transaction
 owner in app composition. Either entry point commits or rolls back both stores;
 completed transaction frames reject escaped writes. Root creation resolves exact
-account/system selections and binds atomically. Runtime, derived/child factories,
-and the project-scoped picker still consume `PackageRepository` during the
-remaining milestone integration.
+account/system selections and binds atomically. Shared runtime preparation reads
+the retained binding. Child creation resolves named targets within the parent's
+retained package and binds within its creation transaction. Derived-primary paths
+remain part of the later provenance integration.
 
 `domain/bound-agent-catalog.ts` resolves exact primary selections and builds
 catalog pages from immutable revisions. Listing and resolution share the supplied

@@ -55,12 +55,23 @@ skeleton and delegates the moving parts.
 | `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission, read-deduplicated, occurrence-budgeted, and quietly omitted without losing writer text. |
 | `permissions/` | `PermissionGate`; compose currently wires the `coding` profile explicitly. |
 
-`OrchestratorDeps` is fully required: gateway, repos, package repository, tool
+`OrchestratorDeps` is fully required: gateway, repos, retained Agent revision reader, tool
 registry/executor, project preferences, permission gate, credit ledger,
 interrupt artifact flush, child-run coordinator, interrupt registry, and
 `EventSink` are all explicit dependencies. Provider-specific model-call behavior
 stays behind the gateway port. Disabled behavior is represented by explicit
 adapters (for example no-op sinks), not by omitted deps.
+
+## Bound Agent preparation
+
+`agent-thread-context.ts` reads the immutable thread binding for the persona,
+model, effort, and diagnostic Agent identity. Missing bindings fail before a
+gateway call. Catalog removal or advancement leaves continued execution on its
+retained revision. `turn-context-assembly.ts` supplies that persona to the initial
+host-prompt bake and reuses the frozen prompt on later turns; preview shares this
+assembly without persisting. The current supported execution subset requires an
+explicit model and empty skill declarations. Primary catalog selection currently
+keeps nonempty delegation rosters unavailable while delegation support is completed.
 
 ## tools — registry, executor, and handlers
 
@@ -70,7 +81,7 @@ adapters (for example no-op sinks), not by omitted deps.
 | `ToolExecutor` | Dispatches `ToolCallInput` to registered handlers with timeout, abort, sequential execution, and capability-gated context injection. |
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
 | Core handlers | The strict six-branch `work` union and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
-| Skill tools | One statically registered `invoke` dispatcher (`source: "skill"`, `advertise: false`) with schema `{ skillname }` only (`additionalProperties: false`). First turn attempt atomically bakes model-invocable skill catalogs (slug + description rows) into `composedSystemPrompt` and persists `bakedSkillSlugs` via compare-and-swap (`bakeComposedSystemPrompt` while `bakedSkillSlugs` is null); concurrent losers use the winner's frozen prompt. `invoke` advertisement on later turns follows the persisted slug set (non-empty → advertise). Dispatch enforces: `skillname` ∈ baked set (added-after-bake → unknown); still model-invocable and resolvable (demoted/deleted → no-longer-available). Extra invoke properties from frozen prompts are ignored; skills read project workspace context, not call-time params. Error listings = baked ∩ currently-invocable. Subagent threads bake both fields at creation (empty set when no skills). |
+| Skill tools | `invoke` is registered with `advertise: false`. Advertisement and dispatch use the persisted `bakedSkillSlugs` set. Bound preparation currently freezes an empty set; activating skill loading requires stable bound dependency resolution. |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn` and `return_result` with explicit privileged capabilities. |
 
 Handler-owned `{ isError: true, output }` results already define their
@@ -89,10 +100,17 @@ behavior; schema-only stubs are not advertised.
 ## spawn / child runs
 
 `spawn/child-run-coordinator.ts` supervises nested agent execution. It consumes
-`RunTurnPort`, `ChildRunRegistry` from the turn runner, `CreditLedger`, package
-metadata, and the threads repository's `SubagentThreadFactory` seam. Route-facing
+`RunTurnPort`, `ChildRunRegistry` from the turn runner, the billing spend reader,
+immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. Route-facing
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads.
+
+Named targets resolve within the parent binding's immutable package revision,
+after roster and child-invocation eligibility checks. Child creation, Agent binding,
+and Work membership share one transaction. The child starts with an unfrozen
+prompt; ordinary turn preparation adds its retained persona and mandatory report
+instruction. Terminal lifecycle/result persistence precedes helper/Work-context
+cleanup, so cleanup failure preserves the completed report.
 
 ### Vocabulary note
 
@@ -200,8 +218,8 @@ facet.
 
 - **Depends on `domains/threads`** — repositories, event journal, hub, and the
   subagent-thread creation seam.
-- **Depends on `domains/packages`** — agent/skill resolution and spawn
-  authorization.
+- **Depends on `domains/packages`** — immutable Agent revisions and retained
+  package-local named-target resolution.
 - **Depends on `domains/billing` and `@meridian/contracts/spawn`** — credit ledger
   and tree budgets.
 - **Depends on `domains/collab` at composition** — active-document resolution

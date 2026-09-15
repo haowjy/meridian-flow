@@ -32,6 +32,7 @@ describe("turn-runner generator failure", () => {
     });
     const orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
+        boundThreads: () => [thread.id],
         gateway: createInertGateway(),
         repos,
         eventWriter: hub,

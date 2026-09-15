@@ -14,7 +14,7 @@ import {
 } from "../../../billing/index.js";
 import type { Notice, NoticePort } from "../../../notices/index.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
-import { createInMemoryPackageStore } from "../../../packages/index.js";
+import type { AgentRevisionStore } from "../../../packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../../../preferences/index.js";
 import { createInMemoryProjectRepository } from "../../../projects/index.js";
 import {
@@ -60,9 +60,33 @@ function noopChildRunCoordinator(): ChildRunCoordinator {
   };
 }
 
+/** Loop fixtures name their bound threads; newly created children remain unbound. */
+export function createTestAgentBinding(
+  model: string,
+  systemPrompt = "",
+  boundThreads: () => readonly string[] = () => [],
+): Pick<AgentRevisionStore, "readThreadBinding"> {
+  return {
+    async readThreadBinding(threadId) {
+      if (!boundThreads().includes(threadId)) return undefined;
+      return {
+        id: "fixture-definition",
+        packageRevisionId: "fixture-source",
+        slug: "general",
+        definitionDigest: "fixture-digest",
+        definition: { schemaVersion: 1, systemPrompt, metadata: { model } },
+      };
+    },
+  };
+}
+
 export function createTestOrchestratorDeps(
-  overrides: Partial<OrchestratorDeps> & { creditLedger?: CreditLedger } = {},
+  overrides: Partial<OrchestratorDeps> & {
+    creditLedger?: CreditLedger;
+    boundThreads?: () => readonly string[];
+  } = {},
 ): OrchestratorDeps & { creditLedger: CreditLedger } {
+  const { boundThreads, ...dependencies } = overrides;
   const projects = createInMemoryProjectRepository();
   const repos = createInMemoryRepositories({ projects });
   const activeDocuments = createActiveDocumentResolver(repos);
@@ -74,9 +98,10 @@ export function createTestOrchestratorDeps(
   };
 
   const creditLedger = overrides.creditLedger ?? createInMemoryCreditLedger();
+  const gateway = overrides.gateway ?? inertGateway();
 
   return {
-    gateway: inertGateway(),
+    gateway,
     toolExecutor: inertToolExecutor(),
     referenceReader: {
       async read() {
@@ -85,7 +110,11 @@ export function createTestOrchestratorDeps(
     },
     repos,
     eventWriter: createInMemoryEventJournalWriter(),
-    packageRepository: createInMemoryPackageStore(),
+    agentRevisions: createTestAgentBinding(
+      gateway.getDefaultModel?.() ?? "stub-model",
+      "",
+      boundThreads,
+    ),
     toolRegistry: createToolRegistry(),
     projectPreferences,
     workWriteMode: {
@@ -118,7 +147,7 @@ export function createTestOrchestratorDeps(
       },
       async rollbackResponse() {},
     },
-    ...overrides,
+    ...dependencies,
     workContext: overrides.workContext ?? {
       async renderForThread() {
         return {

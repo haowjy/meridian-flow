@@ -23,7 +23,7 @@ import {
 } from "../../gateway/index.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
 import { createOrchestrator } from "../orchestrator.js";
-import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
+import { createTestAgentBinding, createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
 const LEAK_PROBE_MARKER = "MERIDIAN_DEBUG_LEAK_PROBE_MARKER_7f3a9c2e";
 
@@ -92,7 +92,13 @@ describe("model-request debug prompt leak guard", () => {
 
     const orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
+        boundThreads: () => [thread.id],
         gateway,
+        agentRevisions: createTestAgentBinding(
+          "mock-llm-v1",
+          `You are helpful. ${LEAK_PROBE_MARKER}`,
+          () => [thread.id],
+        ),
         repos,
         eventWriter: hub,
         creditLedger,

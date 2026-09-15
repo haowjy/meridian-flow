@@ -14,7 +14,7 @@
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
-import type { PackageRepository, ResolvedSkill } from "../../packages/index.js";
+import type { AgentRevisionStore, ResolvedSkill } from "../../packages/index.js";
 import type { BakeComposedSystemPromptInput } from "../../threads/ports/repositories.js";
 import type { FunctionTool, Gateway, GenerateRequest, Tool } from "../gateway/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
@@ -34,7 +34,7 @@ export interface AssembleNextTurnContextInput {
   thread: Thread;
   turns: Turn[];
   blocks: Block[];
-  packageRepository: PackageRepository;
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
   gateway?: Pick<Gateway, "getDefaultModel" | "listModels">;
   imageAssets?: ImageAssetPort;
@@ -73,7 +73,7 @@ export async function assembleNextTurnContext(
   while (true) {
     const agentContext = await resolveAgentThreadTurnContext({
       thread,
-      packageRepository: input.packageRepository,
+      agentRevisions: input.agentRevisions,
       toolRegistry: input.toolRegistry,
       baseTools: input.baseTools,
     });
@@ -95,7 +95,7 @@ export async function assembleNextTurnContext(
     } else {
       const workContext = (await input.workContext.renderForThread(thread.id as ThreadId)).text;
       const bakedPrompt = rebakeComposedSystemPrompt({
-        basePrompt: thread.systemPrompt ?? agentContext.agentBody ?? null,
+        basePrompt: agentContext.agentBody,
         skillsSystemPromptSection: agentContext.skillsSystemPromptSection,
         workContext,
       });
@@ -128,7 +128,7 @@ export async function assembleNextTurnContext(
         systemPrompt = thread.composedSystemPrompt ?? bakedPrompt;
       } else {
         systemPrompt = bakedPrompt;
-        unfrozenBasePrompt = thread.systemPrompt ?? agentContext.agentBody ?? null;
+        unfrozenBasePrompt = agentContext.agentBody;
         skillsSystemPromptSection = agentContext.skillsSystemPromptSection;
         workContextSection = workContext;
       }
@@ -163,7 +163,7 @@ export async function assembleNextTurnContext(
 
     return {
       thread,
-      agentSlug: thread.currentAgent,
+      agentSlug: agentContext.agentSlug,
       resolvedSkills: agentContext.resolvedSkills,
       systemPrompt,
       tools: functionToolsFromAdvertised(contextTools),

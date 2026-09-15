@@ -1,109 +1,71 @@
-/**
- * Agent-bound thread context: resolves package-backed gateway params and the
- * per-thread advertised tool set. Skills catalogs are baked into the frozen
- * system prompt on first attempt; invoke advertisement on frozen threads is
- * derived from the persisted baked skill slug set, not re-resolved per turn.
- */
+/** Next-turn Agent configuration comes exclusively from the retained thread binding. */
 import type { Thread } from "@meridian/contracts/threads";
-import {
-  type AgentEffort,
-  extractAgentGatewayMeta,
-  type PackageRepository,
-  type ResolvedSkill,
+import type {
+  AgentRevisionStore,
+  CompiledAgentDefinition,
+  ResolvedSkill,
 } from "../../packages/index.js";
+import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";
 import type { FunctionTool, GenerateRequest, Tool } from "../gateway/index.js";
 import { bakedSkillSetAdvertisesInvoke } from "../loop/composed-system-prompt.js";
-import { INVOKE_TOOL_NAME, renderSkillsSystemPromptSection } from "./skill-tools.js";
+import { INVOKE_TOOL_NAME } from "./skill-tools.js";
 import type { ToolRegistry } from "./types.js";
 
 export interface AgentThreadTurnContext {
+  agentSlug: string;
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   tools: Tool[] | undefined;
-  /** Resolved package skills for this iteration (empty when thread has no agent). */
   resolvedSkills: ResolvedSkill[];
-  /** Agent body used when baking the system prompt on first attempt. */
-  agentBody: string | undefined;
-  /** Model-invocable skill catalog appended to the system prompt when present. */
+  agentBody: string;
   skillsSystemPromptSection: string | undefined;
 }
 
 export interface ResolveAgentThreadTurnContextInput {
   thread: Thread;
-  packageRepository: PackageRepository;
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
   toolRegistry: ToolRegistry;
   baseTools: Tool[] | undefined;
 }
 
-/** Map typed agent metadata onto GenerateRequest fields consumed by the gateway. */
-export function agentGatewayMetaToGenerateParams(meta: {
-  model?: string;
-  effort?: AgentEffort;
-}): Pick<GenerateRequest, "model" | "reasoning"> {
+/** Translate canonical Mars effort names into the gateway's provider-neutral contract. */
+export function agentGatewayMetaToGenerateParams(
+  meta: Pick<CompiledAgentDefinition["metadata"], "model" | "effort">,
+): Pick<GenerateRequest, "model" | "reasoning"> {
   const params: Pick<GenerateRequest, "model" | "reasoning"> = {};
-  if (meta.model) {
-    params.model = meta.model;
-  }
-  if (meta.effort) {
-    if (meta.effort === "disabled" || meta.effort === "adaptive") {
-      params.reasoning = meta.effort;
-    } else {
-      params.reasoning = { effort: meta.effort };
-    }
-  }
+  if (meta.model) params.model = meta.model;
+  if (meta.effort === "disabled" || meta.effort === "none") params.reasoning = "disabled";
+  else if (meta.effort === "adaptive") params.reasoning = "adaptive";
+  else if (meta.effort)
+    params.reasoning = { effort: meta.effort === "xhigh" ? "max" : meta.effort };
   return params;
 }
 
-/** Resolve gateway params and advertised tools for an agent-bound thread turn. */
 export async function resolveAgentThreadTurnContext(
   input: ResolveAgentThreadTurnContextInput,
 ): Promise<AgentThreadTurnContext> {
-  const agentSlug = input.thread.currentAgent;
-  if (!agentSlug) {
-    return {
-      gatewayParams: {},
-      tools: input.baseTools,
-      resolvedSkills: [],
-      agentBody: undefined,
-      skillsSystemPromptSection: undefined,
-    };
-  }
+  const revision = await input.agentRevisions.readThreadBinding(input.thread.id);
+  if (!revision) throw new Error("Conversation has no retained Agent binding");
+  const reasons = agentDefinitionUnsupportedReasons(revision.definition);
+  if (reasons.length) throw new Error(reasons.join(" "));
+  if (!revision.definition.metadata.model) throw new Error("Bound Agent has no resolved model");
 
-  const packageContext = await input.packageRepository.getAgentWithLinkedSkills(
-    input.thread.projectId,
-    input.thread.userId,
-    agentSlug,
-  );
-
-  const gatewayParams = packageContext.agent
-    ? agentGatewayMetaToGenerateParams(extractAgentGatewayMeta(packageContext.agent))
-    : {};
-
-  const modelInvocableSkills = packageContext.skills.filter((skill) => skill.modelInvocable);
-  const skillsSystemPromptSection = renderSkillsSystemPromptSection(packageContext.skills);
-  const invokeTool =
-    modelInvocableSkills.length > 0 ? resolveInvokeTool(input.toolRegistry) : undefined;
-
-  const baseTools = input.baseTools ?? [];
   let tools = input.baseTools;
-  if (invokeTool) {
-    tools = [...(tools ?? baseTools), invokeTool];
-  }
-  const spawnTools = resolveSpawnPrimitiveTools(
-    input.toolRegistry,
-    input.thread,
-    packageContext.agent?.meta,
-    tools ?? baseTools,
-  );
-  if (spawnTools.length > 0) {
-    tools = [...(tools ?? []), ...spawnTools];
-  }
-
+  const report =
+    input.thread.kind === "subagent"
+      ? input.toolRegistry.getRegistration("return_result")?.definition
+      : undefined;
+  if (report && !tools?.some((tool) => toolName(tool) === report.name))
+    tools = [...(tools ?? []), report];
   return {
-    gatewayParams,
+    agentSlug: revision.slug,
+    gatewayParams: agentGatewayMetaToGenerateParams(revision.definition.metadata),
     tools,
-    resolvedSkills: packageContext.skills,
-    agentBody: packageContext.agent?.body,
-    skillsSystemPromptSection,
+    resolvedSkills: [],
+    agentBody:
+      input.thread.kind === "subagent"
+        ? `${revision.definition.systemPrompt}\n\nYou are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.`
+        : revision.definition.systemPrompt,
+    skillsSystemPromptSection: undefined,
   };
 }
 
@@ -136,39 +98,4 @@ export function applyBakedInvokeAdvertisement(input: {
     return input.tools;
   }
   return [...(withoutInvoke ?? []), invokeTool];
-}
-
-function subagentsFromMeta(meta: Record<string, unknown> | undefined): string[] {
-  const raw = meta?.subagents;
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((entry): entry is string => typeof entry === "string");
-}
-
-function resolveSpawnPrimitiveTools(
-  registry: ToolRegistry,
-  thread: Thread,
-  agentMeta: Record<string, unknown> | undefined,
-  existingTools: Tool[] | undefined,
-): FunctionTool[] {
-  const existingNames = new Set((existingTools ?? []).map((tool) => toolName(tool)));
-  const advertised: FunctionTool[] = [];
-  const spawnRegistration = registry.getRegistration("spawn");
-  const returnResultRegistration = registry.getRegistration("return_result");
-
-  if (
-    thread.currentAgent &&
-    spawnRegistration &&
-    subagentsFromMeta(agentMeta).length > 0 &&
-    !existingNames.has("spawn")
-  ) {
-    advertised.push(spawnRegistration.definition);
-  }
-  if (
-    thread.kind === "subagent" &&
-    returnResultRegistration &&
-    !existingNames.has("return_result")
-  ) {
-    advertised.push(returnResultRegistration.definition);
-  }
-  return advertised;
 }
