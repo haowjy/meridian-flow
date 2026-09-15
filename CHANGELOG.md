@@ -5,6 +5,8 @@
 
 ## [Unreleased]
 
+- Expose Agent revisions through app services and include hermetic bindings in thread transactions.
+
 - Seed a durable General system Agent with the configured default model during server startup.
 
 - Retain authorized historical Agent selections across catalog updates and add shared catalog availability and exact-revision resolution.

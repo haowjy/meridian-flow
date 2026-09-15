@@ -7,6 +7,10 @@ export {
   type GitHubMarsPackageFetcherDeps,
   parseGitHubRepoUrl,
 } from "./adapters/github-mars-package-fetcher.js";
+export {
+  createInMemoryAgentRevisionStore,
+  type InMemoryAgentRevisionStore,
+} from "./adapters/in-memory-agent-revision-store.js";
 export type {
   InMemoryPackageStore,
   InMemoryPackageStoreSeed,
