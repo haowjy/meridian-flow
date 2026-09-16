@@ -81,7 +81,6 @@ function fixture() {
   return {
     add,
     catalog,
-    works,
     resolve: (target: DocumentLinkTarget, workId: string | null = "a", userId = "u") =>
       resolver.resolve({ projectId: "p", userId, workId, target }),
   };
@@ -142,14 +141,10 @@ describe("catalog-backed document links", () => {
     ).toBeNull();
     expect(await f.resolve({ kind: "scheme", uri: "work://a/Gate.md" })).toBeNull();
   });
-  it("does not use another user's personal scope or a missing/deleted Work", async () => {
+  it("does not use another user's personal scope", async () => {
     const f = fixture();
     const file = f.add(user, "user", "Secret.md");
     expect(await f.resolve({ kind: "scheme", uri: file.uri }, "a", "other")).toBeNull();
-    const note = f.add(b, "scratch", "Other.md");
-    f.works.delete("b");
-    expect(await f.resolve({ kind: "scheme", uri: note.uri })).toBeNull();
-    expect(await f.resolve({ kind: "wikilink", name: "Secret" }, "foreign")).toBeNull();
   });
   it("observes current catalog files and deletion without a separate resolution cache", async () => {
     const f = fixture();

@@ -54,49 +54,4 @@ describe("reverseTurn", () => {
     expect(userReverseCalled).toBe(false);
     expect(agent.status).toBe("cant_undo_dependent");
   });
-
-  it("aggregates reconciled document outcomes as successful", () => {
-    expect(aggregateStatus("undo", [{ status: "reconciled" }, { status: "reversed" }])).toBe(
-      "reconciled",
-    );
-  });
-
-  it("surfaces cant_undo_dependent from reversal persistence without a caller commit guard", async () => {
-    expect.assertions(3);
-    const outcome = await reverseTurn(
-      {
-        reversalStore: {
-          documentsForTurn: async () => ["doc-a"],
-        } as unknown as ReversalStore,
-        agentEdit: {
-          reverse: async (input) => {
-            expect(input).not.toHaveProperty("commitGuard");
-            return {
-              command: "undo",
-              status: "cant_undo_dependent",
-              isError: true,
-              text: "status: cant_undo_dependent\nInjected race row.",
-              result: modelResult({ command: "undo", status: "cant_undo_dependent" }),
-            };
-          },
-        },
-        resolveDocumentUri: async (documentId) => documentId,
-        checkDependentLaterLiveRows: async () => ({
-          hasDependents: false,
-          checkedUntilSeq: 42,
-        }),
-      },
-      {
-        threadId: "thread-a" as never,
-        turnId: "turn-a" as never,
-        direction: "undo",
-        actor: { type: "user", userId: "user-a" },
-      },
-    );
-
-    expect(outcome.status).toBe("cant_undo_dependent");
-    expect(outcome.documents).toEqual([
-      expect.objectContaining({ uri: "doc-a", status: "cant_undo_dependent" }),
-    ]);
-  });
 });

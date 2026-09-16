@@ -502,7 +502,6 @@ describe("toolbar toggles reverse", () => {
     expect(controlsFor(target).bold.active).toBe(false);
   });
 
-  // Which blocks an alignment reaches is `block-alignment.test.ts`'s table.
   // What the toolbar owns is the adapter fact: the command delegates, and the
   // control state the writer sees follows the document.
   it("returns block alignment to the default", () => {
