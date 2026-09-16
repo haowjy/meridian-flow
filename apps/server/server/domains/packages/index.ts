@@ -19,6 +19,7 @@ export {
 export {
   AgentConfigurationError,
   resolveAgentConfiguration,
+  resolveAgentDependencies,
 } from "./domain/agent-configuration.js";
 export {
   type AgentCompilationDiagnostic,

@@ -1,0 +1,69 @@
+/**
+ * Composer `/` list. Group headings while the query is empty; Skills rows as
+ * `/<slug>` with name and description. Manuscript SlashMenu is a different host.
+ */
+
+import type { Editor } from "@tiptap/core";
+import { useSyncExternalStore } from "react";
+import { closedSuggestionMenu } from "@/core/completion";
+import { SuggestionMenu } from "@/features/editor/chrome";
+
+import { type ComposerCommandMenuMeta, getComposerCommandMenu } from "./ComposerCommandExtension";
+import type { ComposerCommandItem } from "./command-catalog";
+
+const NO_SUBSCRIPTION = () => () => {};
+const closed = () => closedSuggestionMenu<ComposerCommandItem, ComposerCommandMenuMeta>();
+
+export function ComposerCommandMenu({ editor }: { editor: Editor }) {
+  const menu = getComposerCommandMenu(editor);
+  const snapshot = useSyncExternalStore(
+    menu?.subscribe ?? NO_SUBSCRIPTION,
+    () => menu?.snapshot() ?? closed(),
+    closed,
+  );
+  if (!menu) return null;
+
+  const groupLabels = snapshot.meta?.groupLabels ?? null;
+  const grouped = snapshot.query === "" && groupLabels !== null;
+
+  return (
+    <SuggestionMenu
+      editor={editor}
+      typingElement={editor.view.dom}
+      id="composer-command-menu"
+      open={snapshot.open}
+      label={snapshot.label}
+      anchorRect={snapshot.anchorRect}
+      activeIndex={snapshot.activeIndex}
+      onActivate={(index) => menu.setActiveIndex(index)}
+      onChoose={(index) => menu.choose(index)}
+      onDismiss={() => menu.dismiss()}
+      rows={snapshot.items.map((item, index) => ({
+        key: item.id,
+        before:
+          grouped && groupLabels && item.group !== snapshot.items[index - 1]?.group ? (
+            <div className="px-2 pt-2 pb-1 font-semibold text-ink-subtle text-xs uppercase tracking-wider">
+              {groupLabels[item.group]}
+            </div>
+          ) : undefined,
+        content: <CommandRow item={item} />,
+      }))}
+    />
+  );
+}
+
+function CommandRow({ item }: { item: ComposerCommandItem }) {
+  return (
+    <div className="flex min-w-0 flex-1 flex-col">
+      <span className="flex min-w-0 items-baseline gap-2">
+        <span>{item.label}</span>
+        {item.name !== item.slug ? (
+          <span className="truncate text-ink-subtle text-xs">{item.name}</span>
+        ) : null}
+      </span>
+      {item.description ? (
+        <span className="truncate text-ink-subtle text-xs">{item.description}</span>
+      ) : null}
+    </div>
+  );
+}

@@ -9,6 +9,7 @@ import { createInMemoryProjectRepository } from "../../projects/index.js";
 import { createInMemoryRepositories } from "../../threads/index.js";
 import {
   loadAvailableSkillBody,
+  resolveSelectionAvailableSkills,
   resolveThreadAvailableSkills,
   SkillUnavailableError,
   unavailableActivatedSkillSlugs,
@@ -66,7 +67,7 @@ async function writerChat() {
     title: "Writer chat",
   });
   await agentRevisions.bindThread(thread.id, writer.id, configuration);
-  return { thread, agentRevisions, accountSkillInstalls, repos };
+  return { thread, agentRevisions, accountSkillInstalls, repos, writer };
 }
 
 describe("available skills body load", () => {
@@ -183,6 +184,35 @@ describe("available skills body load", () => {
     expect(unavailableActivatedSkillSlugs(catalog, ["creative-writing-modes"])).toEqual([]);
     expect(unavailableActivatedSkillSlugs(catalog, ["story-review", "missing"])).toEqual([
       "missing",
+    ]);
+  });
+
+  it("lists the same union for a selected Agent without a thread", async () => {
+    const { agentRevisions, accountSkillInstalls, writer } = await writerChat();
+    const selected = await agentRevisions.selectRevision({
+      ownerUserId: null,
+      logicalKey: "writer",
+      revisionId: writer.id,
+    });
+    if (!selected.ok) throw new Error("Writer selection failed");
+    await accountSkillInstalls.insert({
+      ownerUserId: "user-1",
+      slug: "story-review",
+      name: "story-review",
+      description: "Review drafts after prose exists.",
+      body: "account story-review body.",
+    });
+    const catalog = await resolveSelectionAvailableSkills({
+      userId: "user-1",
+      catalogEntryId: selected.entry.id,
+      definitionRevisionId: writer.id,
+      agentRevisions,
+      accountSkillInstalls,
+    });
+    expect(catalog?.map((skill) => skill.slug)).toEqual([
+      "creative-writing-modes",
+      "writing-principles",
+      "story-review",
     ]);
   });
 });
