@@ -90,8 +90,9 @@ they do not own resource or namespace lifetime.
     pays an extra `view.setProps` — never a rebuild — so editor handlers do not
     have to be identity-stable; they read live editability off `view.editable`
     rather than closing over props.
-  - A thread-query refetch and a live surface change keep the same editor and
-    UndoManager; a room change replaces them.
+  - `EditorView.lifetime.test.tsx` is the enforcement: it proves a thread-query
+    refetch and a live surface change keep the same editor and UndoManager while
+    a room change replaces them.
 - Live sessions may use versioned IndexedDB persistence. Review sessions do not:
   the branch room is server-persisted and generation-fenced, and a local cache
   risks recovering state into the wrong review generation.

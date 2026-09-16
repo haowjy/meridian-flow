@@ -1,5 +1,5 @@
 // End-to-end write(command=...) coverage with in-memory port fakes.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
 import type { UpdateJournal } from "../ports/update-journal.js";
@@ -11,7 +11,7 @@ import {
   outcomeText,
   serializeDoc,
 } from "./test-support/assertions.js";
-import { context, harness, model } from "./test-support/write-tool-harness.js";
+import { codec, context, harness, model } from "./test-support/write-tool-harness.js";
 import { createWriteTool } from "./write.js";
 
 if (Date.now() < 0) {
@@ -79,6 +79,39 @@ describe("write tool dispatch", () => {
     expect(outcomeText(result)).toContain("destructive awareness degraded");
     expect((await ctx.journal.read("chapter.md")).updates).toHaveLength(1);
     expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Agent replacement."]);
+  });
+
+  it("leaves no phantom runtime mutation when write ordinal reservation fails", async () => {
+    let reservations = 0;
+    const ctx = harness(
+      { "chapter.md": "Alpha." },
+      {
+        journalOverride: (journal) => {
+          const reserve = journal.reserveWriteOrdinal.bind(journal);
+          journal.reserveWriteOrdinal = async (...args) => {
+            reservations += 1;
+            if (reservations === 1) throw new Error("forced ordinal failure");
+            return reserve(...args);
+          };
+          return journal;
+        },
+      },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const failed = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Phantom." },
+      context,
+    );
+    expectOutcome(failed, "internal_error", true);
+
+    const durable = await ctx.core.write(
+      { command: "insert", file: "chapter.md", content: "Durable." },
+      context,
+    );
+    expectOutcome(durable, "success");
+    expect(outcomeText(durable)).not.toContain("Phantom");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Alpha.", "Durable."]);
   });
 
   it("reports a pulled human edit once after a failed immediate write", async () => {
@@ -150,6 +183,25 @@ describe("write tool dispatch", () => {
 
     expectOutcome(next, "success");
     expect(outcomeText(next)).not.toContain("concurrent edits:");
+  });
+
+  it("fully replaces canonical blocks on immediate stale-replica create overwrite", async () => {
+    const ctx = harness({ "chapter.md": "Alpha canonical." });
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    appendLiveBlock(ctx.liveDoc("chapter.md"), "Beta canonical.");
+
+    const result = await ctx.core.write(
+      {
+        command: "create",
+        file: "chapter.md",
+        content: "Replacement only.",
+        overwrite: true,
+      },
+      context,
+    );
+
+    expectOutcome(result, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["Replacement only."]);
   });
 
   it("rejects create for an existing non-empty file with overwrite guidance", async () => {
@@ -452,4 +504,36 @@ describe("write tool dispatch", () => {
     expectOutcome(transient, "internal_error", true);
     expect(outcomeText(transient)).not.toContain("database unavailable");
   });
+
+  it("forwards semantic provenance and restores the runtime if its writer rejects", async () => {
+    const writeCertifiedFacts = vi.fn(() => {
+      throw new Error("forced provenance rejection");
+    });
+    const ctx = harness(
+      { "chapter.md": "cat one" },
+      { semanticProvenance: { writeCertifiedFacts } },
+    );
+    await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+
+    const failed = await ctx.core.write(
+      { command: "replace", file: "chapter.md", content: "kitten", find: "cat" },
+      context,
+    );
+    expectOutcome(failed, "internal_error", true);
+    expect(writeCertifiedFacts).toHaveBeenCalledOnce();
+
+    const reread = await ctx.core.write({ command: "read", file: "chapter.md" }, context);
+    expectOutcome(reread, "success");
+    expect(blockTexts(ctx.liveDoc("chapter.md"))).toEqual(["cat one"]);
+  });
 });
+
+function appendLiveBlock(doc: Y.Doc, markdown: string): void {
+  doc.transact(
+    () => {
+      const blocks = model.getBlocks(doc);
+      model.insertBlocks(doc, blocks.at(-1) ?? null, codec.parse(markdown));
+    },
+    { type: "human" },
+  );
+}

@@ -1,0 +1,393 @@
+/** PostgreSQL coverage for thread Work membership and lifecycle serialization. */
+
+import { setTimeout as delay } from "node:timers/promises";
+import postgres from "postgres";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestWorkProjectionMutation } from "../../../../test-support/work-projection.js";
+import {
+  resetThreadWorkRaceFixture,
+  THREAD_WORK_RACE,
+} from "../../test-support/thread-work-postgres-harness.js";
+
+const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
+const DATABASE_URL = process.env.DATABASE_URL;
+
+const {
+  threadId: THREAD_ID,
+  workId: WORK_ID,
+  targetWorkId: TARGET_WORK_ID,
+  branchId: BRANCH_ID,
+} = THREAD_WORK_RACE;
+const ADVISORY_KEY = 748_210_471;
+
+if (!RUN_DB_TESTS || !DATABASE_URL) {
+  describe.skip("thread Work membership races (postgres)", () => {});
+} else {
+  describe("thread Work membership races (postgres)", async () => {
+    const { createDb } = await import("@meridian/database");
+    const schema = await import("@meridian/database/schema");
+    const { eq } = await import("drizzle-orm");
+    const { assertThrowawayDatabaseForRunDbTests } = await import(
+      "@meridian/database/__test-support__/db-fixtures"
+    );
+    const { WorkDeleteBlockedError } = await import("../../../projects/index.js");
+    const { createDrizzleProjectWorkRepository } = await import("../../../projects/index.js");
+    const { createDrizzleBranchStore } = await import(
+      "../../../collab/adapters/drizzle-branches.js"
+    );
+    const { createDrizzleWorkDraftPendingStore } = await import(
+      "../../../collab/adapters/drizzle-branch-push.js"
+    );
+    const { createWorkDraftPending } = await import("../../../collab/domain/work-draft-pending.js");
+    const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
+
+    assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
+    const db = createDb(DATABASE_URL, { max: 4 });
+    const control = postgres(DATABASE_URL, { max: 1 });
+    const threads = createDrizzleRepositoriesForTest(db);
+    const draftPending = createWorkDraftPending(createDrizzleWorkDraftPendingStore(db));
+    const works = createDrizzleProjectWorkRepository({
+      db,
+      hasUnreviewedDraft: async (workId) =>
+        ((await draftPending.countPendingByWorkIds([workId])).get(workId) ?? 0) > 0,
+      projectionMutation: createTestWorkProjectionMutation(db),
+    });
+    const branches = createDrizzleBranchStore(db, undefined);
+
+    beforeEach(async () => {
+      await resetThreadWorkRaceFixture(db);
+      await db
+        .update(schema.works)
+        .set({ status: "active", archivedAt: null })
+        .where(eq(schema.works.id, TARGET_WORK_ID));
+    });
+
+    afterAll(async () => {
+      await control.end();
+      await db.close();
+    });
+
+    async function waitForLock(waitEvent: string): Promise<void> {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        const [row] = await control<{ count: string }[]>`
+          SELECT count(*)::text AS count
+          FROM pg_stat_activity
+          WHERE datname = current_database()
+            AND wait_event = ${waitEvent}
+        `;
+        if (Number(row?.count ?? 0) > 0) return;
+        await delay(10);
+      }
+      throw new Error(`Timed out waiting for PostgreSQL ${waitEvent} lock`);
+    }
+
+    it("serializes attachment before deletion and then blocks the delete", async () => {
+      await control.unsafe(`
+        CREATE FUNCTION test_block_thread_work_insert() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER test_block_thread_work_insert
+        BEFORE INSERT ON thread_works
+        FOR EACH ROW EXECUTE FUNCTION test_block_thread_work_insert();
+      `);
+      await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
+      let advisoryLockHeld = true;
+
+      try {
+        const attach = threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
+        await waitForLock("advisory");
+
+        const deletion = works.softDelete(WORK_ID).then(
+          () => ({ status: "fulfilled" as const }),
+          (reason: unknown) => ({ status: "rejected" as const, reason }),
+        );
+        await waitForLock("transactionid");
+
+        await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        advisoryLockHeld = false;
+        await attach;
+
+        const result = await deletion;
+        expect(result.status).toBe("rejected");
+        if (result.status === "rejected") {
+          expect(result.reason).toBeInstanceOf(WorkDeleteBlockedError);
+        }
+        await expect(works.findById(WORK_ID)).resolves.toMatchObject({ deletedAt: null });
+        await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
+          workId: WORK_ID,
+        });
+      } finally {
+        if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        await control.unsafe(`
+          DROP TRIGGER IF EXISTS test_block_thread_work_insert ON thread_works;
+          DROP FUNCTION IF EXISTS test_block_thread_work_insert();
+        `);
+      }
+    });
+
+    it("serializes competing primary add and rebind without reversing Work/thread locks", async () => {
+      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
+      await control.unsafe(`
+        CREATE FUNCTION test_block_primary_demote() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER test_block_primary_demote
+        BEFORE UPDATE ON thread_works
+        FOR EACH ROW WHEN (OLD.is_primary AND NOT NEW.is_primary)
+        EXECUTE FUNCTION test_block_primary_demote();
+      `);
+      await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
+      let advisoryLockHeld = true;
+
+      try {
+        const add = threads.threadWorks.addMembership(THREAD_ID, TARGET_WORK_ID, true);
+        await waitForLock("advisory");
+        const rebind = threads.threadWorks.rebindPrimary(THREAD_ID, WORK_ID);
+        await waitForLock("transactionid");
+        await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        advisoryLockHeld = false;
+        await Promise.all([add, rebind]);
+        const memberships = await threads.threadWorks.listByThread(THREAD_ID);
+        expect(memberships).toHaveLength(2);
+        expect(memberships).toEqual(
+          expect.arrayContaining([
+            { workId: WORK_ID, isPrimary: true },
+            { workId: TARGET_WORK_ID, isPrimary: false },
+          ]),
+        );
+      } finally {
+        if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        await control.unsafe(`
+          DROP TRIGGER IF EXISTS test_block_primary_demote ON thread_works;
+          DROP FUNCTION IF EXISTS test_block_primary_demote();
+        `);
+      }
+    });
+
+    it("blocks deletion when a draft transition takes the lifecycle lock first", async () => {
+      await control.unsafe(`
+        CREATE FUNCTION test_block_draft_insert() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER test_block_draft_insert
+        BEFORE INSERT ON branch_write_journal
+        FOR EACH ROW EXECUTE FUNCTION test_block_draft_insert();
+      `);
+      await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
+      let advisoryLockHeld = true;
+      try {
+        const draft = branches.appendJournal?.({
+          branchId: BRANCH_ID,
+          generation: 1,
+          updateData: new Uint8Array([1]),
+          source: "agent",
+        });
+        if (!draft) throw new Error("Branch journal append is unavailable");
+        await waitForLock("advisory");
+        const deletion = works.softDelete(WORK_ID).then(
+          () => ({ status: "fulfilled" as const }),
+          (reason: unknown) => ({ status: "rejected" as const, reason }),
+        );
+        await waitForLock("transactionid");
+        await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        advisoryLockHeld = false;
+        await draft;
+        const result = await deletion;
+        expect(result.status).toBe("rejected");
+        if (result.status === "rejected") {
+          expect(result.reason).toMatchObject({ reason: "drafts" });
+        }
+      } finally {
+        if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        await control.unsafe(`
+          DROP TRIGGER IF EXISTS test_block_draft_insert ON branch_write_journal;
+          DROP FUNCTION IF EXISTS test_block_draft_insert();
+        `);
+      }
+    });
+
+    it("deletes first and then refuses a draft transition under that Work", async () => {
+      await control.unsafe(`
+        CREATE FUNCTION test_block_work_delete() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER test_block_work_delete
+        BEFORE UPDATE ON works
+        FOR EACH ROW WHEN (OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL)
+        EXECUTE FUNCTION test_block_work_delete();
+      `);
+      await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
+      let advisoryLockHeld = true;
+      try {
+        const deletion = works.softDelete(WORK_ID);
+        await waitForLock("advisory");
+        const draft = branches.appendJournal?.({
+          branchId: BRANCH_ID,
+          generation: 1,
+          updateData: new Uint8Array([1]),
+          source: "agent",
+        });
+        if (!draft) throw new Error("Branch journal append is unavailable");
+        await waitForLock("transactionid");
+        await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        advisoryLockHeld = false;
+        await deletion;
+        await expect(draft).rejects.toThrow(`Work not found: ${WORK_ID}`);
+        await expect(
+          draftPending.countPendingByWorkIds([WORK_ID]).then((counts) => counts.get(WORK_ID) ?? 0),
+        ).resolves.toBe(0);
+      } finally {
+        if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        await control.unsafe(`
+          DROP TRIGGER IF EXISTS test_block_work_delete ON works;
+          DROP FUNCTION IF EXISTS test_block_work_delete();
+        `);
+      }
+    });
+
+    it("serializes rebind before target deletion and then blocks the delete", async () => {
+      await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
+      await control.unsafe(`
+        CREATE FUNCTION test_block_thread_work_rebind_demote() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER test_block_thread_work_rebind
+        BEFORE UPDATE ON thread_works
+        FOR EACH ROW WHEN (OLD.is_primary AND NOT NEW.is_primary)
+        EXECUTE FUNCTION test_block_thread_work_rebind_demote();
+      `);
+      await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
+      let advisoryLockHeld = true;
+
+      try {
+        const rebind = threads.threadWorks.rebindPrimary(THREAD_ID, TARGET_WORK_ID);
+        await waitForLock("advisory");
+        const deletion = works.softDelete(TARGET_WORK_ID).then(
+          () => ({ status: "fulfilled" as const }),
+          (reason: unknown) => ({ status: "rejected" as const, reason }),
+        );
+        await waitForLock("transactionid");
+
+        await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        advisoryLockHeld = false;
+        await expect(rebind).resolves.toMatchObject({ changed: true });
+        const result = await deletion;
+        expect(result.status).toBe("rejected");
+        if (result.status === "rejected") {
+          expect(result.reason).toBeInstanceOf(WorkDeleteBlockedError);
+        }
+        await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
+          workId: TARGET_WORK_ID,
+        });
+        await expect(works.findById(TARGET_WORK_ID)).resolves.toMatchObject({ deletedAt: null });
+      } finally {
+        if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        await control.unsafe(`
+          DROP TRIGGER IF EXISTS test_block_thread_work_rebind ON thread_works;
+          DROP FUNCTION IF EXISTS test_block_thread_work_rebind_demote();
+        `);
+      }
+    });
+
+    it("deletion wins the thread lock and the waiting rebind refuses the deleted thread", async () => {
+      await control.unsafe(`
+        CREATE FUNCTION test_block_thread_delete() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER test_block_thread_delete
+        BEFORE UPDATE ON threads
+        FOR EACH ROW WHEN (OLD.deleted_at IS NULL AND NEW.deleted_at IS NOT NULL)
+        EXECUTE FUNCTION test_block_thread_delete();
+      `);
+      await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
+      let advisoryLockHeld = true;
+      try {
+        const deletion = (async () => {
+          await db
+            .update(schema.threads)
+            .set({ deletedAt: new Date() })
+            .where(eq(schema.threads.id, THREAD_ID));
+        })();
+        await waitForLock("advisory");
+        const rebind = threads.threadWorks.rebindPrimary(THREAD_ID, TARGET_WORK_ID);
+        await waitForLock("transactionid");
+        await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        advisoryLockHeld = false;
+        await deletion;
+        await expect(rebind).rejects.toMatchObject({ name: "ThreadMembershipUnavailableError" });
+        await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toBeNull();
+      } finally {
+        if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        await control.unsafe(`
+          DROP TRIGGER IF EXISTS test_block_thread_delete ON threads;
+          DROP FUNCTION IF EXISTS test_block_thread_delete();
+        `);
+      }
+    });
+
+    it("rebind wins the thread lock before deletion and commits one primary", async () => {
+      await control.unsafe(`
+        CREATE FUNCTION test_block_rebind_insert() RETURNS trigger
+        LANGUAGE plpgsql AS $$
+        BEGIN
+          PERFORM pg_advisory_xact_lock(${ADVISORY_KEY});
+          RETURN NEW;
+        END;
+        $$;
+        CREATE TRIGGER test_block_rebind_insert
+        BEFORE INSERT ON thread_works
+        FOR EACH ROW EXECUTE FUNCTION test_block_rebind_insert();
+      `);
+      await control`SELECT pg_advisory_lock(${ADVISORY_KEY})`;
+      let advisoryLockHeld = true;
+      try {
+        const rebind = threads.threadWorks.rebindPrimary(THREAD_ID, TARGET_WORK_ID);
+        await waitForLock("advisory");
+        const deletion = (async () => {
+          await db
+            .update(schema.threads)
+            .set({ deletedAt: new Date() })
+            .where(eq(schema.threads.id, THREAD_ID));
+        })();
+        await waitForLock("transactionid");
+        await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        advisoryLockHeld = false;
+        await expect(rebind).resolves.toMatchObject({ changed: true });
+        await deletion;
+        await expect(threads.threadWorks.findPrimary(THREAD_ID)).resolves.toEqual({
+          workId: TARGET_WORK_ID,
+        });
+      } finally {
+        if (advisoryLockHeld) await control`SELECT pg_advisory_unlock(${ADVISORY_KEY})`;
+        await control.unsafe(`
+          DROP TRIGGER IF EXISTS test_block_rebind_insert ON thread_works;
+          DROP FUNCTION IF EXISTS test_block_rebind_insert();
+        `);
+      }
+    });
+  });
+}
