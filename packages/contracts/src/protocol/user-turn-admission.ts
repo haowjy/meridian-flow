@@ -34,6 +34,8 @@ export type UserTurnAdmissionInput = {
   text: string;
   blocks: unknown;
   references: readonly SubmittedReference[];
+  /** Writer-picked skill slugs for this Send. Missing or empty means none. */
+  activatedSkillSlugs?: readonly string[];
 };
 
 export type AcceptedAdmission = {

@@ -81,6 +81,10 @@ function harness(
   existing: AdmissionRecord | null = null,
   resolutions: readonly unknown[] = [availableResolution()],
   draftUploadMatches = true,
+  authorizeActivatedSkills?: (input: {
+    threadId: string;
+    slugs: readonly string[];
+  }) => Promise<void>,
 ) {
   const lookup = vi.fn(async () => existing);
   let reservedFingerprint = "";
@@ -123,6 +127,7 @@ function harness(
     availability,
     threadProject,
     verifyDraftUpload: vi.fn(async () => draftUploadMatches),
+    authorizeActivatedSkills,
     starter: { start: starter },
   });
   return {
@@ -426,6 +431,66 @@ describe("UserTurnAdmission", () => {
     await expect(
       h.service.retire({ actorUserId: actor, threadId, submissionId: "missing" }),
     ).resolves.toEqual({ kind: "retired", submissionId: "missing", code: "retired" });
+  });
+
+  it("authorizes activated skill slugs and rejects unknown ones", async () => {
+    const authorize = vi.fn(async ({ slugs }: { slugs: readonly string[] }) => {
+      if (slugs.includes("missing-skill")) {
+        throw new InvalidAdmissionError('Skill "missing-skill" is not available');
+      }
+    });
+    const acceptedHarness = harness(null, [availableResolution()], true, authorize);
+    await acceptedHarness.service.admit(
+      input({
+        text: "plain",
+        blocks: [{ type: "text", text: "plain" }],
+        references: [],
+        activatedSkillSlugs: ["creative-writing-modes"],
+      }),
+    );
+    expect(authorize).toHaveBeenCalledWith({
+      threadId,
+      slugs: ["creative-writing-modes"],
+    });
+    expect(acceptedHarness.captured()?.admission.activatedSkillSlugs).toEqual([
+      "creative-writing-modes",
+    ]);
+
+    const rejected = harness(null, [availableResolution()], true, authorize);
+    await expect(
+      rejected.service.admit(
+        input({
+          text: "plain",
+          blocks: [{ type: "text", text: "plain" }],
+          references: [],
+          activatedSkillSlugs: ["missing-skill"],
+        }),
+      ),
+    ).rejects.toBeInstanceOf(InvalidAdmissionError);
+    expect(rejected.captured()).toBeNull();
+  });
+
+  it("treats missing activatedSkillSlugs as none and fingerprints the set", () => {
+    const parsed = parseUserMessageBlocks([{ type: "text", text: "plain" }], "plain");
+    const none = canonicalAdmissionFingerprint({
+      ...input({ text: "plain", blocks: parsed, references: [] }),
+      blocks: parsed,
+      references: [],
+    });
+    const empty = canonicalAdmissionFingerprint({
+      ...input({ text: "plain", blocks: parsed, references: [] }),
+      blocks: parsed,
+      references: [],
+      activatedSkillSlugs: [],
+    });
+    const activated = canonicalAdmissionFingerprint({
+      ...input({ text: "plain", blocks: parsed, references: [] }),
+      blocks: parsed,
+      references: [],
+      activatedSkillSlugs: ["writing-principles", "creative-writing-modes"],
+    });
+    expect(none).toBe(empty);
+    expect(activated).not.toBe(none);
   });
 });
 

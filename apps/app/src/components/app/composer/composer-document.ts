@@ -43,6 +43,7 @@ export type ComposerSubmitEnvelope = Readonly<{
   blocks: readonly UserMessageBlock[];
   references: readonly SubmittedReference[];
   draft: ComposerDraftSnapshot;
+  activatedSkillSlugs: readonly string[];
 }>;
 
 function jsonNodeSize(node: JSONContent): number {
@@ -336,6 +337,7 @@ export function serializeComposerDraft(
     blocks,
     references: [...references.values()],
     draft,
+    activatedSkillSlugs: [],
   };
 }
 

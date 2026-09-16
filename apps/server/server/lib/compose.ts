@@ -112,6 +112,7 @@ import {
   createLateBindRunTurnPort,
   createOrchestrator,
   createPermissionGate,
+  createSkillToolRegistrations,
   createSpawnToolRegistrations,
   createToolExecutor,
   createToolRegistry,
@@ -120,6 +121,7 @@ import {
   createWorkContextDelivery,
   createWorkContextReader,
   type Gateway,
+  InvalidAdmissionError,
   type RunTurnPort,
   resolveProfile,
   type ThreadRunOwnership,
@@ -130,6 +132,12 @@ import {
   type WorkContextDelivery,
   type WorkContextReader,
 } from "../domains/runtime/index.js";
+import {
+  loadAvailableSkillBody,
+  resolveThreadAvailableSkills,
+  SkillUnavailableError,
+  unavailableActivatedSkillSlugs,
+} from "../domains/runtime/loop/available-skills.js";
 import {
   createInterruptRegistry,
   type InterruptRegistry,
@@ -580,6 +588,20 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   for (const registration of createSpawnToolRegistrations()) {
     toolRegistry.register(registration);
   }
+  for (const registration of createSkillToolRegistrations({
+    async loadBody(threadId, slug) {
+      const thread = await ports.threadRepos.threads.findById(threadId as never);
+      if (!thread) throw new SkillUnavailableError(slug);
+      return loadAvailableSkillBody({
+        thread,
+        slug,
+        agentRevisions: ports.agentRevisions,
+        accountSkillInstalls: ports.accountSkillInstalls,
+      });
+    },
+  })) {
+    toolRegistry.register(registration);
+  }
   const toolExecutor = createToolExecutor(toolRegistry);
   const runTurnProxy = createLateBindRunTurnPort();
   let helperResultDelivery: ReturnType<typeof createHelperResultDelivery> | undefined;
@@ -613,6 +635,17 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async verifyDraftUpload(reference) {
       const identity = await ports.uploadIdentity.lookupUpload(reference.documentId);
       return identity?.intakeId === reference.intakeId && identity.uri === reference.uri;
+    },
+    async authorizeActivatedSkills({ threadId, slugs }) {
+      const thread = await ports.threadRepos.threads.findById(threadId as never);
+      if (!thread) throw new InvalidAdmissionError("thread is unavailable");
+      const available = await resolveThreadAvailableSkills({
+        thread,
+        agentRevisions: ports.agentRevisions,
+        accountSkillInstalls: ports.accountSkillInstalls,
+      });
+      const missing = unavailableActivatedSkillSlugs(available, slugs);
+      if (missing[0]) throw new InvalidAdmissionError(`Skill "${missing[0]}" is not available`);
     },
     starter: createAdmissionTurnStarter({
       runner,

@@ -376,6 +376,18 @@ export type SendMessageRequest = {
   references: SubmittedReference[];
   /** Client connection token from the WebSocket `connected` frame; rejects starts from stale sockets. */
   connectionToken?: string;
+  /** Writer-picked skill slugs for this Send. Missing or empty means none. */
+  activatedSkillSlugs?: string[];
+};
+
+export type ThreadAvailableSkill = {
+  slug: string;
+  name: string;
+  description: string;
+};
+
+export type ThreadAvailableSkillsResponse = {
+  skills: ThreadAvailableSkill[];
 };
 
 export type SendMessageResponse = {

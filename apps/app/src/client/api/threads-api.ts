@@ -14,6 +14,7 @@ import {
   apiThreadModelRequestsDebugPath,
   apiThreadPath,
   apiThreadRecentDocumentsPath,
+  apiThreadSkillsPath,
   apiThreadSnapshotPath,
   apiThreadTurnContextPreviewDebugPath,
   apiThreadUserStatePath,
@@ -26,6 +27,7 @@ import {
   type RetireAdmissionResult,
   type SendMessageResponse,
   type Thread,
+  type ThreadAvailableSkillsResponse,
   type ThreadRecentDocumentItem,
   type ThreadSnapshotResponse,
   type TurnContextPreview,
@@ -45,6 +47,7 @@ export type AppendUserMessageInput = {
   blocks: readonly import("@meridian/contracts/protocol").UserMessageBlock[];
   references: readonly import("@meridian/contracts/protocol").SubmittedReference[];
   connectionToken?: string;
+  activatedSkillSlugs?: readonly string[];
 };
 
 type CancelTurnInput = {
@@ -79,6 +82,12 @@ export function appendUserMessage({
   data: AppendUserMessageInput;
 }): Promise<SendMessageResponse> {
   return postJson(apiThreadMessagePath(data.threadId), data);
+}
+
+export function listThreadAvailableSkills(
+  threadId: string,
+): Promise<ThreadAvailableSkillsResponse> {
+  return getJson(apiThreadSkillsPath(threadId));
 }
 
 export function lookupUserMessageAdmission(input: {

@@ -40,6 +40,10 @@
  * - **User turns**: all blocks of allowed types (text, image, file)
  *   are merged into a single user message's content[] array.
  *
+ * - **Activated skill bodies**: slash-activated SKILL.md text is appended to
+ *   the current user message at request build. It is not frozen prompt bytes
+ *   and not a pending notice.
+ *
  * - **System turns**: text blocks from system-role turns are concatenated
  *   into a single system message — they appear as multi-line system
  *   content, not as turn-structured data.
@@ -295,26 +299,46 @@ function blockToContentPart(block: Block): ContentPart | null {
   }
 }
 
+export function attachSkillBodiesToLatestUserMessage(
+  messages: readonly Message[],
+  skills: readonly { slug: string; body: string }[],
+): Message[] {
+  if (skills.length === 0) return [...messages];
+  const content = skills.map((skill) => `Loaded skill ${skill.slug}:\n${skill.body}`).join("\n\n");
+  return appendTextToLatestUserMessage(messages, `\n\n${content}`, "skill bodies");
+}
+
 export function attachNoticesToLatestUserMessage(
   messages: readonly Message[],
   notices: readonly Notice[],
 ): Message[] {
   const content = formatNotices(notices);
   if (!content) return [...messages];
+  return appendTextToLatestUserMessage(
+    messages,
+    `\n\nMeridian context for this message:\n${content}`,
+    "pre-turn notices",
+  );
+}
 
+function appendTextToLatestUserMessage(
+  messages: readonly Message[],
+  value: string,
+  label: string,
+): Message[] {
   const updated = [...messages];
-  const notice = text(`\n\nMeridian context for this message:\n${content}`);
+  const part = text(value);
   for (let index = updated.length - 1; index >= 0; index--) {
     const message = updated[index];
     if (message?.role !== "user") continue;
     updated[index] = {
       ...message,
-      content: [...message.content, notice],
+      content: [...message.content, part],
     };
     return updated;
   }
 
-  throw new Error("Cannot attach pre-turn notices without a writer message");
+  throw new Error(`Cannot attach ${label} without a writer message`);
 }
 
 export function insertPostToolNotices(
