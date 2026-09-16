@@ -86,7 +86,7 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { Notice, NoticePort } from "../../notices/index.js";
 import { type EventSink, unknownToEventPayload } from "../../observability/index.js";
-import type { AgentRevisionStore } from "../../packages/index.js";
+import type { AccountSkillInstallStore, AgentRevisionStore } from "../../packages/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import type {
@@ -157,7 +157,8 @@ export interface OrchestratorDeps {
   referenceReader: ReferenceReader;
   repos: OrchestratorRepositories;
   eventWriter: EventJournalWriter;
-  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
+  accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
   toolRegistry: ToolRegistry;
   projectPreferences: {
     read(userId: string, projectId: string): Promise<ProjectPreferences>;
@@ -845,12 +846,17 @@ async function buildGenerateRequest(input: {
     turns: input.turns,
     blocks: input.blocks,
     agentRevisions: input.deps.agentRevisions,
+    accountSkillInstalls: input.deps.accountSkillInstalls,
     toolRegistry: input.deps.toolRegistry,
     gateway: input.deps.gateway,
     imageAssets: input.deps.imageAssets,
     baseTools: input.runInput.tools ?? input.deps.toolExecutor.getDefinitions?.(),
     persistBake: true,
     bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(
+      input.deps.repos.threads,
+    ),
+    notices: input.deps.notices,
+    markSkillSlugsNoticed: input.deps.repos.threads.markSkillSlugsNoticed.bind(
       input.deps.repos.threads,
     ),
     workContext: input.deps.workContext,

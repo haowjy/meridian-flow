@@ -665,6 +665,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     agentRevisions: ports.agentRevisions,
+    accountSkillInstalls: ports.accountSkillInstalls,
     toolRegistry,
     projectPreferences: ports.preferences,
     workWriteMode: {
