@@ -24,15 +24,22 @@ describe("serializeComposerDraft skill slugs", () => {
       ],
     });
     expect(envelope.activatedSkillSlugs).toEqual(["creative-writing-modes", "writing-principles"]);
-    expect(envelope.text).toBe("hello");
-    expect(envelope.blocks).toEqual([{ type: "text", text: "hello" }]);
+    expect(envelope.text).toBe(
+      "hello/creative-writing-modes/writing-principles/creative-writing-modes",
+    );
+    expect(envelope.blocks).toEqual([
+      {
+        type: "text",
+        text: "hello/creative-writing-modes/writing-principles/creative-writing-modes",
+      },
+    ]);
   });
 
   it("keeps an empty slug list when none were picked", () => {
     expect(serializeComposerDraft(plainComposerDoc("hello")).activatedSkillSlugs).toEqual([]);
   });
 
-  it("does not treat skill atoms as message content", () => {
+  it("puts /slug into the submitted message so the transcript can show it", () => {
     const envelope = serializeComposerDraft({
       type: "doc",
       content: [
@@ -43,8 +50,8 @@ describe("serializeComposerDraft skill slugs", () => {
       ],
     });
     expect(envelope.activatedSkillSlugs).toEqual(["writing-principles"]);
-    expect(envelope.text).toBe("");
-    expect(envelope.blocks).toEqual([]);
+    expect(envelope.text).toBe("/writing-principles");
+    expect(envelope.blocks).toEqual([{ type: "text", text: "/writing-principles" }]);
     expect(envelope.references).toEqual([]);
   });
 });

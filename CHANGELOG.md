@@ -17,7 +17,7 @@
 
 ### Fixed
 
-- Composer `/` menu matches the composer shell width. Picked skills stay visible as `/slug` atoms with a hover name and description.
+- Composer `/` menu matches the composer shell width. Picked skills stay visible as `/slug` atoms with a hover name and description, and Send copies that `/slug` into the user message.
 - Proxy Home `GET /api/skills` to the API server so composer `/` can list skills before a thread exists.
 
 ### Changed

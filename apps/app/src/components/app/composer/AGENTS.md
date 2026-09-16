@@ -11,7 +11,8 @@ This directory owns authored text, reference atoms, skill atoms, and pending/fai
 - Submission keys belong at document scope in the editor kernel, below suggestion
   keys. A React capture handler must not submit before a suggestion can choose.
 - Chat `/` is a command lane (`command/`) on the same suggestion kernel as `@`.
-  Skills appear as `/<slug>` atoms in the document. Send reads slugs from the
-  doc; the server does not trust typed `/slug` prose. Session verbs (`compact`,
+  Skills appear as `/<slug>` atoms in the document. Send copies that spelling
+  into the message text and reads slugs from the atoms; typed `/slug` prose is
+  not an activation. Session verbs (`compact`,
   later handoff/clear) are reserved. Manuscript slash insertion is a different
   catalog.
