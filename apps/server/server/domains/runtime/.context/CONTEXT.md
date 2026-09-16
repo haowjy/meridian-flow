@@ -71,7 +71,7 @@ retained revision. `turn-context-assembly.ts` supplies that persona to the initi
 host-prompt bake and reuses the frozen prompt on later turns; preview shares this
 assembly without persisting. The first-bake CAS returns one authoritative prompt
 and skill set; a losing preparation uses that winner directly. Display slugs do
-not guard prompt freezing. The model comes from conversation-owned resolved configuration, including a frozen default when source omits it. The current supported execution subset requires empty skill declarations. Primary catalog selection currently
+not guard prompt freezing. The model comes from conversation-owned resolved configuration, including a frozen default when source omits it. Nonempty skill declarations do not refuse selection or turn preparation. Primary catalog selection currently
 keeps nonempty delegation rosters unavailable while delegation support is completed.
 
 ## tools — registry, executor, and handlers
@@ -82,7 +82,7 @@ keeps nonempty delegation rosters unavailable while delegation support is comple
 | `ToolExecutor` | Dispatches `ToolCallInput` to registered handlers with timeout, abort, sequential execution, and capability-gated context injection. |
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
 | Core handlers | The strict six-branch `work` union and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
-| Skills | References are retained at binding, but execution with nonempty skills remains unavailable. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
+| Skills | References are retained at binding. No skill tool handler is registered. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn` and `return_result` with explicit privileged capabilities. |
 
 Handler-owned `{ isError: true, output }` results already define their
