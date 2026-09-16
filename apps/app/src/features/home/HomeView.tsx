@@ -5,11 +5,10 @@ import { CreationComposer } from "@/features/chat/CreationComposer";
 import { useStartIndependentChat } from "@/features/chat/useStartIndependentChat";
 import { HomeColumn } from "@/features/home/HomeColumn";
 import { HomeHero } from "@/features/home/HomeHero";
-import { PackageShowcase } from "@/features/home/PackageShowcase";
 import { RecentProjects } from "@/features/home/RecentProjects";
 
 /**
- * Authenticated Home: composer + recent projects + first-party package cards.
+ * Authenticated Home: composer + recent projects.
  * Submitting creates a project then opens its chat.
  * A secondary action starts an independent (project-less) chat instead.
  */
@@ -38,7 +37,6 @@ export function HomeView() {
       </div>
 
       <RecentProjects />
-      <PackageShowcase />
     </HomeColumn>
   );
 }

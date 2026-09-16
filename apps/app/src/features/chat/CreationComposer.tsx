@@ -23,7 +23,7 @@ export function CreationComposer({
   const creation = useCreationComposer(projectId);
   const works = useWorks(projectId ?? "", { enabled: projectId !== null });
   const agents = useAgentCatalog(true, projectId ?? undefined);
-  const choices = creation.state.slot?.choices;
+  const choices = creation.choices;
   const defaultAgent = agents.agents?.find(
     (agent) => agent.ownership === "system" && agent.slug === DEFAULT_AGENT_SLUG,
   );

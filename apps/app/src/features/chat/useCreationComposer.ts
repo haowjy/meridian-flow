@@ -1,4 +1,4 @@
-/** Project Home Send navigates first; account Home still creates then routes. */
+/** Prospective composer submit: project Home navigates first; account Home creates then navigates. */
 import { useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import { createProject, createProjectThread } from "@/client/api/projects-api";
@@ -16,17 +16,12 @@ export function useCreationComposer(projectId: string | null) {
   const [busy, setBusy] = useState(false);
 
   return {
-    state: { slot: { choices }, busy, issue: null as string | null, editorEpoch: 0 },
+    choices,
     busy,
     submitLocked: busy,
     contextLocked: busy,
-    initialDraft: undefined,
-    loaded: true,
     updateChoices: (next: CreationChoices) => setChoices((current) => ({ ...current, ...next })),
     updateDraft: (_change: ComposerDraftChange) => undefined,
-    reload: () => undefined,
-    startOver: () => undefined,
-    discard: () => undefined,
     async submit(
       submission: ComposerSubmitEnvelope,
       context: { workId: string | null; agent: CreationAgent },
@@ -72,28 +67,6 @@ export function useCreationComposer(projectId: string | null) {
       } finally {
         setBusy(false);
       }
-    },
-    async createEmpty(title: string, agent: CreationAgent) {
-      if (busy) return;
-      setBusy(true);
-      try {
-        const createdProject = await createProject({ id: crypto.randomUUID(), title });
-        const thread = await createProjectThread(createdProject.id, {
-          id: crypto.randomUUID(),
-          title,
-          workId: null,
-          agentSelection: agent.selection,
-        });
-        await router.navigate({
-          href: `/p/${createdProject.slug}/chat/${thread.id}`,
-          replace: true,
-        });
-      } finally {
-        setBusy(false);
-      }
-    },
-    async retry() {
-      return false;
     },
   };
 }
