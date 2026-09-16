@@ -182,8 +182,9 @@ creation, whose destination must not own an unresolved project/thread create.
 Project Home Send mints a thread id, writes local turns, replaces the URL, then
 `useThreadHandoff` persists create-or-get + admit + run on those ids. Failure
 stays on that chat. An empty working turn shows "Couldn't send" with Retry on
-the turn, which resubmits the same thread and message ids. Do not bounce to
-Home or show Check status, Start over, or saved-first-message recovery.
+the turn, which resubmits the same thread and message ids. `useThreadHandoff`
+clears that chrome once persist and run succeed. Do not bounce to Home or show
+Check status, Start over, or saved-first-message recovery.
 
 Future optimistic surfaces (rename, soft-delete, undo) follow the same
 shape: optimistic store update first, API call second (`threads-api.ts`),
