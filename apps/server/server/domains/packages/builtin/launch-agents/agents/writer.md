@@ -2,7 +2,6 @@
 name: Writer
 description: All-in-one fiction-writing workhorse for drafting, editing, brainstorming, continuity, and critique in one agent.
 mode: primary
-modelTier: cheap-moderate
 skills: []
 subagents: []
 effort: medium

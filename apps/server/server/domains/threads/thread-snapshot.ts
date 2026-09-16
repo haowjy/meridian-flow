@@ -118,7 +118,6 @@ export async function buildThreadSnapshot(
       threadId,
       status: thread.status,
       runningTurnId,
-      currentAgent: thread.currentAgent,
       // During an active run,
       // stream.delta rows can sit between that head and the last read-model
       // projection, so resume from the projection cursor and replay only the

@@ -3,5 +3,4 @@ export interface ResultProvenance {
   threadId: string;
   turnId: string;
   toolCallId: string | null;
-  agentSlug: string;
 }

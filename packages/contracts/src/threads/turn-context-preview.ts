@@ -16,7 +16,7 @@ export type TurnContextPreviewFunctionTool = {
 
 /** Owner-gated debug preview of what the orchestrator would send on the next model call. */
 export type TurnContextPreview = {
-  /** `thread.currentAgent` at preview time. */
+  /** Bound revision slug at preview time. */
   agentSlug: string | null;
   /** Primary gateway system prompt (frozen bake or would-be first-attempt bake). */
   systemPrompt: string;

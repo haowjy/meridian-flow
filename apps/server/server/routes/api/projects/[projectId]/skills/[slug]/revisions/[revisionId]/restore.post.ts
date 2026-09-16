@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const revisionId = getRouterParam(event, "revisionId") ?? "";
 
   const response = await handleRestoreSkillDefinitionRevisionRequest(
-    { projectRepo: app.projectRepo, packageRepository: app.packageRepository },
+    { projectRepo: app.projectRepo, agentRevisions: app.agentRevisions },
     { projectId, userId: user.userId, slug, revisionId },
   );
 

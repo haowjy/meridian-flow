@@ -12,7 +12,6 @@ import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
-import { uniqueThreadSlug } from "../../domain/thread-slug.js";
 import type {
   CreateThreadInput,
   DerivedPrimaryThreadFactory,
@@ -24,6 +23,28 @@ import { mapThread } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
 import { visibleConversationalHeadLateral } from "./visible-conversation-sql.js";
 import { workAssociationCandidatesSql } from "./work-association-candidates-sql.js";
+
+// RETURNING strips table qualifiers from Column chunks; preserve the outer reference
+// when the binding subquery joins another table with its own id.
+const agentDefinitionRevisionId = sql<string | null>`(
+  SELECT ${schema.threadAgentBindings.definitionRevisionId}
+  FROM ${schema.threadAgentBindings}
+  WHERE ${schema.threadAgentBindings.threadId} = ${schema.threads}.${sql.identifier("id")}
+)`;
+
+const agentName = sql<string | null>`(
+  SELECT COALESCE(${schema.agentDefinitionRevisions.definition}->'metadata'->>'name', ${schema.agentDefinitionRevisions.slug})
+  FROM ${schema.threadAgentBindings}
+  JOIN ${schema.agentDefinitionRevisions}
+    ON ${schema.agentDefinitionRevisions.id} = ${schema.threadAgentBindings.definitionRevisionId}
+  WHERE ${schema.threadAgentBindings.threadId} = ${schema.threads}.${sql.identifier("id")}
+)`;
+
+const threadColumns = {
+  ...getTableColumns(schema.threads),
+  agentDefinitionRevisionId,
+  agentName,
+};
 
 const runningTurnId = sql<string | null>`(
   SELECT ${schema.turns.id}
@@ -55,7 +76,7 @@ function mapThreadListRow(row: ThreadListRow) {
 
 function threadListSelect() {
   return {
-    ...getTableColumns(schema.threads),
+    ...threadColumns,
     workId: schema.threadWorks.workId,
     workTitle: schema.works.name,
     lastTurnRole: sql<TurnRole | null>`conversational_head.role`,
@@ -109,28 +130,29 @@ export async function writeThreadCostRecompute(db: DrizzleDb, id: ThreadId) {
   if (!row) throw new Error(`Thread not found: ${id}`);
 }
 
-async function insertThreadWithStableSlug(
+async function insertThreadRow(
   db: DrizzleDatabase,
-  values: Omit<typeof schema.threads.$inferInsert, "slug">,
-  title: string | null | undefined,
+  values: Omit<typeof schema.threads.$inferInsert, "ref">,
 ) {
   return runInDrizzleTransaction(db, async () => {
     const activeDb = currentDrizzleDb(db);
-    await activeDb.execute(
-      sql`select pg_advisory_xact_lock(hashtextextended(${values.projectId}, 73::bigint))`,
-    );
-    const rows = await activeDb
-      .select({ slug: schema.threads.slug })
-      .from(schema.threads)
-      .where(eq(schema.threads.projectId, values.projectId as ProjectId));
-    const slug = uniqueThreadSlug(
-      title,
-      rows.map((row) => row.slug),
-    );
+    let ref: string | null = null;
+    if (values.kind !== "subagent") {
+      const [counter] = await activeDb
+        .insert(schema.projectThreadCounters)
+        .values({ projectId: values.projectId as ProjectId, n: 1 })
+        .onConflictDoUpdate({
+          target: schema.projectThreadCounters.projectId,
+          set: { n: sql`${schema.projectThreadCounters.n} + 1` },
+        })
+        .returning({ n: schema.projectThreadCounters.n });
+      if (!counter) throw new Error("Failed to allocate thread ref");
+      ref = `c${counter.n}`;
+    }
     const [created] = await activeDb
       .insert(schema.threads)
-      .values({ ...values, slug })
-      .returning();
+      .values({ ...values, ref })
+      .returning(threadColumns);
     return created;
   });
 }
@@ -142,73 +164,59 @@ export function createDrizzleThreadRepository(
     async create(input: CreateThreadInput) {
       const normalized = normalizeThreadCreate(input);
       const threadId = input.id ?? crypto.randomUUID();
-      const row = await insertThreadWithStableSlug(
-        db,
-        {
-          id: threadId,
-          projectId: input.projectId as ProjectId,
-          createdByUserId: input.userId as string,
-          kind: normalized.kind,
-          title: normalized.title,
-          composedSystemPrompt: normalized.systemPrompt,
-          currentAgentId: normalized.currentAgent,
-          workingState: input.workingState ?? null,
-          parentThreadId: normalized.parentThreadId,
-          spawnStatus: normalized.spawnStatus,
-          spawnDepth: normalized.spawnDepth,
-          status: "idle",
-        },
-        normalized.title,
-      );
+      const row = await insertThreadRow(db, {
+        id: threadId,
+        projectId: input.projectId as ProjectId,
+        createdByUserId: input.userId as string,
+        kind: normalized.kind,
+        title: normalized.title,
+        composedSystemPrompt: normalized.systemPrompt,
+        workingState: input.workingState ?? null,
+        parentThreadId: normalized.parentThreadId,
+        spawnStatus: normalized.spawnStatus,
+        spawnDepth: normalized.spawnDepth,
+        status: "idle",
+      });
       if (!row) throw new Error("Failed to create thread");
       return mapThread({ ...row, workId: input.workId ?? null });
     },
     async createSubagent(input) {
       const thread = buildSubagentThreadRow(input);
-      const row = await insertThreadWithStableSlug(
-        db,
-        {
-          id: thread.id,
-          projectId: thread.projectId as ProjectId,
-          createdByUserId: thread.userId,
-          kind: thread.kind,
-          title: thread.title ?? "",
-          composedSystemPrompt: thread.composedSystemPrompt,
-          bakedSkillSlugs: thread.bakedSkillSlugs,
-          systemPromptHash: "baked",
-          currentAgentId: thread.currentAgent,
-          parentThreadId: thread.parentThreadId,
-          originTurnId: input.originTurnId ?? thread.id,
-          originType: "spawn",
-          spawnStatus: thread.spawnStatus,
-          spawnDepth: thread.spawnDepth,
-          status: thread.status,
-        },
-        thread.title,
-      );
+      const row = await insertThreadRow(db, {
+        id: thread.id,
+        projectId: thread.projectId as ProjectId,
+        createdByUserId: thread.userId,
+        kind: thread.kind,
+        title: thread.title ?? "",
+        composedSystemPrompt: thread.composedSystemPrompt,
+        bakedSkillSlugs: thread.bakedSkillSlugs,
+        systemPromptHash: null,
+        parentThreadId: thread.parentThreadId,
+        rootThreadId: thread.kind === "subagent" ? thread.rootThreadId : null,
+        originTurnId: input.originTurnId ?? thread.id,
+        originType: "spawn",
+        spawnStatus: thread.spawnStatus,
+        spawnDepth: thread.spawnDepth,
+        status: thread.status,
+      });
       if (!row) throw new Error("Failed to create subagent thread");
       return mapThread({ ...row, workId: thread.workId });
     },
     async createDerivedPrimary(input) {
       const thread = buildDerivedPrimaryThreadRow(input);
-      const row = await insertThreadWithStableSlug(
-        db,
-        {
-          id: thread.id,
-          projectId: thread.projectId as ProjectId,
-          createdByUserId: thread.userId,
-          kind: "primary",
-          title: thread.title ?? "",
-          composedSystemPrompt: thread.systemPrompt,
-          currentAgentId: thread.currentAgent,
-          parentThreadId: input.parentThreadId,
-          originTurnId: input.originTurnId ?? null,
-          originType: input.originType,
-          spawnDepth: 0,
-          status: thread.status,
-        },
-        thread.title,
-      );
+      const row = await insertThreadRow(db, {
+        id: thread.id,
+        projectId: thread.projectId as ProjectId,
+        createdByUserId: thread.userId,
+        kind: "primary",
+        title: thread.title ?? "",
+        composedSystemPrompt: thread.systemPrompt,
+        parentThreadId: input.parentThreadId,
+        originTurnId: input.originTurnId ?? null,
+        originType: input.originType,
+        spawnDepth: 0,
+        status: thread.status,
+      });
       if (!row) throw new Error("Failed to create derived primary thread");
       return mapThread({ ...row, workId: thread.workId });
     },
@@ -221,7 +229,7 @@ export function createDrizzleThreadRepository(
           updatedAt: new Date(),
         })
         .where(eq(schema.threads.id, id))
-        .returning();
+        .returning(threadColumns);
       if (!row) throw new Error(`Thread not found: ${id}`);
       const primary = await currentDrizzleDb(db)
         .select({ workId: schema.threadWorks.workId })
@@ -232,7 +240,10 @@ export function createDrizzleThreadRepository(
     },
     async findById(id: ThreadId) {
       const [row] = await currentDrizzleDb(db)
-        .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
+        .select({
+          ...threadColumns,
+          workId: schema.threadWorks.workId,
+        })
         .from(schema.threads)
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
@@ -245,16 +256,19 @@ export function createDrizzleThreadRepository(
         );
       return row ? mapThread(row) : null;
     },
-    async findLiveByProjectSlug(projectId: ProjectId, slug: string) {
+    async findLiveByProjectRef(projectId: ProjectId, ref: string) {
       const [row] = await currentDrizzleDb(db)
-        .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
+        .select({
+          ...threadColumns,
+          workId: schema.threadWorks.workId,
+        })
         .from(schema.threads)
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .where(
           and(
             eq(schema.threads.projectId, projectId),
-            eq(schema.threads.slug, slug),
+            eq(schema.threads.ref, ref),
             isNull(schema.threads.deletedAt),
             isNull(schema.projects.deletedAt),
           ),
@@ -271,7 +285,10 @@ export function createDrizzleThreadRepository(
     },
     async lockByIdIncludingDeleted(id: ThreadId) {
       const [row] = await currentDrizzleDb(db)
-        .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
+        .select({
+          ...threadColumns,
+          workId: schema.threadWorks.workId,
+        })
         .from(schema.threads)
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .where(eq(schema.threads.id, id))
@@ -281,7 +298,10 @@ export function createDrizzleThreadRepository(
     },
     async listByUser(userId: UserId) {
       const rows = await currentDrizzleDb(db)
-        .select({ ...getTableColumns(schema.threads), workId: schema.threadWorks.workId })
+        .select({
+          ...threadColumns,
+          workId: schema.threadWorks.workId,
+        })
         .from(schema.threads)
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
@@ -353,31 +373,8 @@ export function createDrizzleThreadRepository(
           updatedAt: new Date(),
         })
         .where(eq(schema.threads.id, id))
-        .returning();
+        .returning(threadColumns);
       if (!row) throw new Error(`Thread not found: ${id}`);
-      const primary = await currentDrizzleDb(db)
-        .select({ workId: schema.threadWorks.workId })
-        .from(schema.threadWorks)
-        .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
-        .limit(1);
-      return mapThread({ ...row, workId: primary[0]?.workId ?? null });
-    },
-    async updateCurrentAgent(id, currentAgent) {
-      const [row] = await currentDrizzleDb(db)
-        .update(schema.threads)
-        .set({
-          currentAgentId: currentAgent,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(schema.threads.id, id),
-            isNull(schema.threads.bakedSkillSlugs),
-            eq(schema.threads.turnCount, 0),
-          ),
-        )
-        .returning();
-      if (!row) return null;
       const primary = await currentDrizzleDb(db)
         .select({ workId: schema.threadWorks.workId })
         .from(schema.threadWorks)
@@ -394,18 +391,8 @@ export function createDrizzleThreadRepository(
           systemPromptHash: "baked",
           updatedAt: new Date(),
         })
-        .where(
-          and(
-            eq(schema.threads.id, id),
-            isNull(schema.threads.bakedSkillSlugs),
-            input.expectedCurrentAgent === null
-              ? isNull(schema.threads.currentAgentId)
-              : input.expectedCurrentAgent === undefined
-                ? undefined
-                : eq(schema.threads.currentAgentId, input.expectedCurrentAgent),
-          ),
-        )
-        .returning();
+        .where(and(eq(schema.threads.id, id), isNull(schema.threads.bakedSkillSlugs)))
+        .returning(threadColumns);
       if (row) {
         const primary = await currentDrizzleDb(db)
           .select({ workId: schema.threadWorks.workId })
@@ -437,7 +424,7 @@ export function createDrizzleThreadRepository(
               : isNotNull(schema.threads.deletedAt),
           ),
         )
-        .returning();
+        .returning(threadColumns);
       if (!row) throw new Error(`Thread trash transition requires a changed locked row: ${id}`);
       const primary = await currentDrizzleDb(db)
         .select({ workId: schema.threadWorks.workId })

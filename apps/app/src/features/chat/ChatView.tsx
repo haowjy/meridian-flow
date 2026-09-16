@@ -18,7 +18,7 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
@@ -26,12 +26,10 @@ import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import {
   Composer,
-  type ComposerDraftSnapshot,
   type ComposerHandle,
   type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
 import { documentLinkTarget, type LinkTarget } from "@/core/editor/links";
-import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { displayThreadTitle } from "@/lib/thread-title";
@@ -87,13 +85,7 @@ export function ChatView({
   const latestAssistantTurn =
     [...turns].reverse().find((turn) => turn.role === "assistant") ?? null;
   const isStreaming = latestAssistantTurn?.status === "streaming";
-  const threadStarted = (activeThread?.turnCount ?? turns.length) > 0;
-  const boundAgentSlug = activeThread?.currentAgent ?? DEFAULT_AGENT_SLUG;
-  const [draftAgentSlug, setDraftAgentSlug] = useState(DEFAULT_AGENT_SLUG);
-  useEffect(() => {
-    setDraftAgentSlug(activeThread?.currentAgent ?? DEFAULT_AGENT_SLUG);
-  }, [activeThread?.currentAgent]);
-  const composerAgentSlug = threadStarted ? boundAgentSlug : draftAgentSlug;
+  const composerAgentName = activeThread?.agentName ?? "General";
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
   const referenceCatalog = useReferenceBrowserCatalog(
@@ -112,41 +104,10 @@ export function ChatView({
     isStreaming,
   });
 
-  const restoreFirstSendDraft = useCallback(
-    (snapshot: ComposerDraftSnapshot, expectedRevision: number) => {
-      const composer = composerRef.current;
-      return composer?.restoreSnapshot(snapshot, expectedRevision)
-        ? composer.snapshot().revision
-        : null;
-    },
-    [],
-  );
-  const restoreFailedFirstSend = useCallback(
-    (
-      id: string,
-      submitted: ComposerDraftSnapshot,
-      later: ComposerDraftSnapshot | null | undefined,
-      expectedRevision: number,
-    ) => {
-      const composer = composerRef.current;
-      return composer?.restoreFailedSubmission(id, submitted, later, expectedRevision)
-        ? composer.snapshot().revision
-        : null;
-    },
-    [],
-  );
-  useThreadHandoff(
-    threadId,
-    projectId,
-    controller,
-    actions,
-    {
-      liveState: snapshotLiveState,
-      nextSeq: snapshotNextSeq,
-    },
-    restoreFirstSendDraft,
-    restoreFailedFirstSend,
-  );
+  const failedSendRetry = useThreadHandoff(threadId, projectId, controller, actions, {
+    liveState: snapshotLiveState,
+    nextSeq: snapshotNextSeq,
+  });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
   const draftMode = activeWork?.aiWriteMode === "draft";
@@ -289,21 +250,11 @@ export function ChatView({
                     projectId={projectId}
                     threadId={threadId}
                     work={activeWork}
-                    agentSlug={composerAgentSlug}
-                    readonlyAgent={threadStarted}
-                    onAgentChange={setDraftAgentSlug}
-                  />
-                ) : threadStarted ? (
-                  <AgentOnlyComposerToolbar
-                    projectId={projectId ?? null}
-                    readonlyAgent
-                    agentSlug={composerAgentSlug}
+                    agentName={composerAgentName}
                   />
                 ) : (
                   <AgentOnlyComposerToolbar
-                    projectId={projectId ?? null}
-                    agentSlug={composerAgentSlug}
-                    onAgentChange={setDraftAgentSlug}
+                    control={{ mode: "readonly", name: composerAgentName }}
                   />
                 )
               }
@@ -318,6 +269,7 @@ export function ChatView({
           tailFollowRevision={tailFollowRevision}
           ariaLabel={t`Chat`}
           onRespondToInterrupt={handleRespondToInterrupt}
+          failedSendRetry={failedSendRetry}
           changeTrails={changeTrails.byId}
         />
       </ChatSurface>

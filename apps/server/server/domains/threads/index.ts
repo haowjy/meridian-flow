@@ -12,6 +12,12 @@ export {
   type ActiveDocumentResolver,
   createActiveDocumentResolver,
 } from "./domain/active-document-resolver.js";
+export { createBoundConversation } from "./domain/bound-conversation.js";
+export {
+  forkThreadAgent,
+  handoffThreadAgent,
+  type ThreadAgentSwapDeps,
+} from "./domain/derive-conversation.js";
 export {
   createOrchestratorEventProjector,
   projectOrchestratorEvents,

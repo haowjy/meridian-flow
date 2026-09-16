@@ -11,8 +11,7 @@ category projection and moves only the affected Home thread.
 Thread lifecycle projection owns the independent `actionRequired` fact and
 converges it across Project, Home, and matching Work feed caches.
 The Home feature keeps screen composition in `HomeScreen` and delegates creation
-to the shared `features/chat/CreationComposer` and account-owned
-`client/first-send-continuity/creation-controller`,
+to the shared `features/chat/CreationComposer` (navigate-first Send),
 borderless two-line row semantics in the shared, Home-neutral
 `../chat-list/ProjectChatRow`, list and section layout plus
 cursor-observer lifecycle in `HomeFeed`, date policy in `../chat-list/project-chat-activity-date`,
@@ -20,27 +19,16 @@ and scroll/focus restoration in the favorite-movement hook. Do not duplicate
 any of those concerns in the screen orchestrator. Work detail renders that same
 row component; Work identity inside every list row is display-only.
 
-Project Home and the Chats landing observe one persisted creation slot per account and
-creation context. Prospective Work and Agent choices live in that same slot,
-not in each mounted Composer. Queued choice writes settle before first-send
-reservation; they never mutate a locked attempt. Missing saved choices remain
-explicitly unavailable until the writer chooses a replacement, rather than
-silently becoming No Work or the default Agent. Immutable uncertain attempts
-still reconcile even if a catalog choice later becomes unavailable. The account owner, not a mounted Home or destination Chat,
-atomically claims, creates, and reconciles project-scoped entities. Only
-definite Work/Agent refusals allow correcting captured choices; uncertain
-attempts retain their IDs and immutable original submission. Ready readable
-destination handles and first-send admission commit together. Destination Chat
-restores continuity only when its Composer revision still permits it, then
-retires exactly the restored durable revision. A newer destination edit must
-never be overwritten or retired to finish a handoff. Favorite/feed state is
-independent from this creation lifecycle.
+Project Home Send mints a thread id, writes the local chat, replaces to
+`/p/{projectSlug}/chat/{uuid}`, and persists in the background. Failure stays
+on that chat. There is no first-send continuity slot, destination claim, or
+recovery banner. Favorite/feed state is independent from this creation
+lifecycle.
 
 The Chats landing (`/p/:project/chats`) always composes the shared creation
 Composer above the existing chat feed, on desktop and phone. No button or
 separate `/chats/new` destination gates drafting. Opening the landing creates
-nothing; first send remains the account-owned creation operation. Home uses the
-same content, with its own pane title.
+nothing; Send is the chat. Home uses the same content, with its own pane title.
 
 ## Row layout and feed behavior
 

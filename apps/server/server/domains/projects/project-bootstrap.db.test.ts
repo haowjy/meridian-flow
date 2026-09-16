@@ -78,23 +78,18 @@ else
           .where(eq(schema.projects.id, first.projectId)),
       ).toEqual([{ slug: "my-serial" }]);
       expect(Object.keys(first).sort()).toEqual([
-        "agentDefinitionId",
         "documentId",
         "manuscriptSourceId",
         "projectId",
         "uri",
       ]);
-      const [sources, workRows, threadRows, agents, docs] = await Promise.all([
+      const [sources, workRows, threadRows, docs] = await Promise.all([
         db
           .select({ slug: schema.contextSources.slug, workId: schema.contextSources.workId })
           .from(schema.contextSources)
           .where(eq(schema.contextSources.projectId, first.projectId)),
         db.select().from(schema.works).where(eq(schema.works.projectId, first.projectId)),
         db.select().from(schema.threads).where(eq(schema.threads.projectId, first.projectId)),
-        db
-          .select()
-          .from(schema.agentDefinitions)
-          .where(eq(schema.agentDefinitions.projectId, first.projectId)),
         db.select().from(schema.documents).where(eq(schema.documents.id, first.documentId)),
       ]);
       expect(sources).toEqual(
@@ -106,7 +101,6 @@ else
       );
       expect(workRows).toEqual([]);
       expect(threadRows).toEqual([]);
-      expect(agents).toHaveLength(1);
       expect(docs).toHaveLength(1);
     });
 

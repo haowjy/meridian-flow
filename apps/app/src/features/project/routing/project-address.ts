@@ -15,7 +15,7 @@ export type AddressSelection =
 
 export type ProjectDestination =
   | { kind: "home" | "chats" | "works" | "editor" }
-  | { kind: "chat"; chatSlug: string }
+  | { kind: "chat"; chatId: string }
   | { kind: "work"; workSlug: string }
   | {
       kind: "browse";
@@ -39,10 +39,16 @@ export type ParsedProjectAddress =
 const ABSENT: AddressSelection = { kind: "absent" };
 const RECOGNIZED_QUERY = new Set(["chat", "work", "settings", "results"]);
 const HANDLE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function handle(value: string | undefined): string | null {
   const normalized = value?.toLowerCase();
   return normalized && HANDLE.test(normalized) ? normalized : null;
+}
+
+function uuid(value: string | undefined): string | null {
+  const normalized = value?.toLowerCase();
+  return normalized && UUID.test(normalized) ? normalized : null;
 }
 
 function selection(value: string | null): AddressSelection {
@@ -50,6 +56,13 @@ function selection(value: string | null): AddressSelection {
   if (value === "") return { kind: "none" };
   const slug = handle(value);
   return slug ? { kind: "slug", slug } : { kind: "malformed", value };
+}
+
+function chatSelection(value: string | null): AddressSelection {
+  if (value === null) return ABSENT;
+  if (value === "") return { kind: "none" };
+  const id = uuid(value);
+  return id ? { kind: "slug", slug: id } : { kind: "malformed", value };
 }
 
 function parseDestination(parts: string[]): ProjectDestination | null {
@@ -60,8 +73,8 @@ function parseDestination(parts: string[]): ProjectDestination | null {
     if (parts[0] === "browse") return { kind: "browse", scheme: null, path: "", workSlug: null };
   }
   if (parts.length === 2 && parts[0] === "chat") {
-    const slug = handle(parts[1]);
-    return slug ? { kind: "chat", chatSlug: slug } : null;
+    const chatId = uuid(parts[1]);
+    return chatId ? { kind: "chat", chatId } : null;
   }
   let workSlug: string | null = null;
   if (parts[0] === "work") {
@@ -136,7 +149,7 @@ export function parseProjectAddress(
     chat:
       destination.kind === "chat" || destination.kind === "chats"
         ? ABSENT
-        : selection(query.get("chat")),
+        : chatSelection(query.get("chat")),
     work,
     ...(isSettingsSection(settings) ? { settings } : {}),
     results: (editor || destination.kind === "chat") && query.has("results"),
@@ -172,7 +185,7 @@ export function projectAddressHref(address: ProjectAddress): string {
     case "home":
       break;
     case "chat":
-      parts.push("chat", d.chatSlug);
+      parts.push("chat", d.chatId);
       break;
     case "work":
       parts.push("work", d.workSlug);

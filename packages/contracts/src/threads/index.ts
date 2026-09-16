@@ -135,8 +135,8 @@ export interface Thread {
   kind: ThreadKind;
   status: ThreadStatus;
   title: string | null;
-  /** Stable human-readable handle assigned at creation; null only before persistence (including optimistic threads). */
-  slug: string | null;
+  /** Server-assigned handle `c12`; null before persist and on subagents. */
+  ref: string | null;
   /** Baked system prompt output — set only by first-attempt bake or subagent creation. */
   composedSystemPrompt?: string | null;
   /**
@@ -146,7 +146,9 @@ export interface Thread {
   bakedSkillSlugs?: string[] | null;
   systemPrompt?: string | null;
   workingState?: WorkingState | null;
-  currentAgent: string | null;
+  agentDefinitionRevisionId: string | null;
+  /** Display name from the retained Agent definition. */
+  agentName: string | null;
   nextSeq?: string;
   /** Canonical logical head of the active conversation branch. */
   activeLeafTurnId: string | null;
@@ -193,7 +195,6 @@ export interface Turn {
   /** Write policy frozen when this turn began; null identifies pre-contract turns. */
   writeMode: AiWriteMode | null;
   status: TurnStatus;
-  agentDefinitionId?: string | null;
   finishReason: FinishReason | null;
   model?: string | null;
   provider?: string | null;

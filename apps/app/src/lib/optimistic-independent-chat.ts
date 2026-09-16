@@ -3,12 +3,12 @@
 import type { Project } from "@meridian/contracts/projects";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { useNavigate } from "@tanstack/react-router";
-
 import {
   markIndependentProject,
   type ProjectStoreActions,
   type ThreadStoreActions,
 } from "@/client/stores";
+import type { CreationAgent } from "@/features/agents/creation-agent";
 
 import { deriveTitleFromMessage } from "./thread-title";
 
@@ -19,6 +19,7 @@ type NavigateFn = ReturnType<typeof useNavigate>;
 
 export type StartIndependentChatArgs = {
   text?: string;
+  agent: CreationAgent;
   projectActions: ProjectStoreActions;
   threadActions: ThreadStoreActions;
   navigate: NavigateFn;
@@ -57,8 +58,9 @@ function makeOptimisticThread(
     kind: "primary",
     status: "idle",
     title,
-    slug: null,
-    currentAgent: null,
+    ref: null,
+    agentDefinitionRevisionId: null,
+    agentName: null,
     activeLeafTurnId: null,
     parentThreadId: null,
     rootThreadId: id,
@@ -75,6 +77,7 @@ function makeOptimisticThread(
 /** Independent chats retain their existing UUID route and destination-owned creation. */
 export function startIndependentChat({
   text,
+  agent,
   projectActions,
   threadActions,
   navigate,
@@ -87,7 +90,11 @@ export function startIndependentChat({
   const title = deriveTitleFromMessage(trimmed);
 
   projectActions.ensureProject(makeOptimisticProject(projectId, title, timestamp));
-  threadActions.ensureThread(makeOptimisticThread(threadId, projectId, title, timestamp));
+  threadActions.ensureThread({
+    ...makeOptimisticThread(threadId, projectId, title, timestamp),
+    agentDefinitionRevisionId: agent.selection.definitionRevisionId,
+    agentName: agent.name,
+  });
   markIndependentProject(projectId);
   threadActions.markPendingCreation({ projectId, threadId });
 
@@ -97,10 +104,12 @@ export function startIndependentChat({
     optimisticUserTurnId = threadActions.appendUserTurn(threadId, trimmed).id;
   }
   threadActions.markPendingStream(threadId, {
-    independentCreation: {
+    creation: {
+      agentSelection: agent.selection,
       projectId,
       title,
       text: trimmed,
+      createProject: true,
       ...(optimisticUserTurnId ? { optimisticUserTurnId } : {}),
     },
   });

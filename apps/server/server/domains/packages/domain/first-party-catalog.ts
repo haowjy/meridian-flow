@@ -1,9 +1,8 @@
 /**
  * Canonical first-party package catalog for the install gallery.
  *
- * Lifted from `apps/app/src/features/home/first-party-packages.ts` (names and
- * descriptions only — icons stay client-side). TODO(catalog-consumer): the app
- * should fetch `GET /api/packages/catalog` instead of duplicating this list.
+ * Names and descriptions only. TODO(catalog-consumer): the app should fetch
+ * `GET /api/packages/catalog` when a real gallery exists.
  */
 import type { FirstPartyCatalogEntry } from "@meridian/contracts/agents";
 

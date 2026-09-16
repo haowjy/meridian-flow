@@ -5,24 +5,16 @@
  * Key decisions:
  * - JSON-natural: string IDs, ISO date strings, union literals.
  * - `meta` / `config` are open objects so unknown YAML frontmatter keys round-trip.
- * - Every save appends an immutable revision; restore always creates a new revision.
+ * - Changed source publishes an immutable revision; identical source deduplicates. Restore republishes owned source content.
  */
 import type { AgentSource } from "./index.js";
 
 /** Open YAML-frontmatter object; unknown keys pass through on save. */
 export type DefinitionMeta = Record<string, unknown>;
 
-/** Operational link override — not versioned definition content. */
+/** Versioned update to the Agent’s explicit loadable-skill declaration. */
 export interface PatchAgentSkillLinkRequest {
   modelInvocable: boolean;
-}
-
-/** Per-agent skill wiring submitted with an agent save. */
-export interface AgentSkillLinkInput {
-  skillSlug: string;
-  ordinal: number;
-  modelInvocable?: boolean;
-  userInvocable?: boolean;
 }
 
 /** Resolved skill link returned with an agent definition detail. */
@@ -38,7 +30,6 @@ export interface UpdateAgentDefinitionRequest {
   body: string;
   meta: DefinitionMeta;
   config?: DefinitionMeta;
-  skillLinks?: AgentSkillLinkInput[];
 }
 
 /** PUT body for skill definition save. */

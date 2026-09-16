@@ -94,7 +94,6 @@ else
         workId: null,
         parentThreadId: ids.threadId,
         originType: "handoff",
-        currentAgent: null,
       } as never);
       const subagent = await repos.threads.createSubagent({
         userId: ids.userId,
@@ -103,14 +102,48 @@ else
         parentThreadId: ids.threadId,
         rootThreadId: ids.threadId,
         spawnDepth: 1,
-        currentAgent: "writer",
-        composedSystemPrompt: "frozen prompt",
-        bakedSkillSlugs: [],
       } as never);
       expect(derived.workId).toBeNull();
       expect(subagent.workId).toBeNull();
+      expect(subagent.composedSystemPrompt).toBeNull();
+      expect(subagent.bakedSkillSlugs).toBeNull();
+      const [stored] = await db
+        .select({ hash: schema.threads.systemPromptHash })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, subagent.id));
+      expect(stored.hash).toBeNull();
       await expect(repos.threadWorks.findPrimary(derived.id)).resolves.toBeNull();
       await expect(repos.threadWorks.findPrimary(subagent.id)).resolves.toBeNull();
+    });
+
+    it("rolls back child, retained binding, and inherited Work in one transaction", async () => {
+      const { createDrizzleAgentRevisionStore } = await import("../../packages/index.js");
+      const revisions = createDrizzleAgentRevisionStore(db);
+      const installed = await revisions.installSource({
+        coordinate: "fixture/child-atomicity",
+        files: {
+          "agents/worker.md": "---\nmodel: fixture-model\n---\nWorker",
+        },
+      });
+      let childId = "";
+      await expect(
+        repos.transaction(async () => {
+          const child = await repos.threads.createSubagent({
+            userId: ids.userId,
+            projectId: ids.projectId,
+            parentThreadId: ids.threadId,
+            rootThreadId: ids.threadId,
+            spawnDepth: 1,
+          });
+          childId = child.id;
+          await revisions.bindThread(child.id, installed.definitions[0].id, bindingConfiguration);
+          await repos.threadWorks.addMembership(child.id, ids.targetWorkId, true);
+          throw new Error("after Work membership");
+        }),
+      ).rejects.toThrow("after Work membership");
+      expect(await repos.threads.findById(childId)).toBeNull();
+      expect(await revisions.readThreadBinding(childId)).toBeUndefined();
+      expect(await repos.threadWorks.findPrimary(childId)).toBeNull();
     });
 
     it("serializes concurrent Work targets to one primary", async () => {
@@ -203,3 +236,9 @@ else
       await expect(repos.threadWorks.findPrimary(ids.threadId)).resolves.toBeNull();
     });
   });
+
+const bindingConfiguration = {
+  model: "mock-model",
+  skills: { load: [], available: [] },
+  namedTargets: [],
+};

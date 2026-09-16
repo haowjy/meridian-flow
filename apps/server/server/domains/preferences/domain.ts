@@ -17,7 +17,6 @@ export function defaultProjectPreferences(): ProjectPreferences {
   return {
     threadGroupBy: DEFAULT_PROJECT_PREFERENCES.threadGroupBy,
     pinnedThreadIds: [...DEFAULT_PROJECT_PREFERENCES.pinnedThreadIds],
-    defaultAgentSlug: DEFAULT_PROJECT_PREFERENCES.defaultAgentSlug,
     autoResume: { ...DEFAULT_AUTO_RESUME },
   };
 }
@@ -26,7 +25,6 @@ export function copyProjectPreferences(preferences: ProjectPreferences): Project
   return {
     threadGroupBy: preferences.threadGroupBy,
     pinnedThreadIds: [...preferences.pinnedThreadIds],
-    defaultAgentSlug: preferences.defaultAgentSlug,
     autoResume: preferences.autoResume ? { ...preferences.autoResume } : undefined,
   };
 }
@@ -40,8 +38,6 @@ export function mergeProjectPreferences(
     threadGroupBy: patch.threadGroupBy ?? base.threadGroupBy,
     pinnedThreadIds:
       patch.pinnedThreadIds !== undefined ? [...patch.pinnedThreadIds] : base.pinnedThreadIds,
-    defaultAgentSlug:
-      patch.defaultAgentSlug !== undefined ? patch.defaultAgentSlug : base.defaultAgentSlug,
     autoResume:
       patch.autoResume !== undefined
         ? { ...patch.autoResume }

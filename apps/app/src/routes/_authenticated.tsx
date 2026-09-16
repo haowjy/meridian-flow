@@ -7,7 +7,7 @@ import { getAccountSettings } from "@/client/api/account-api";
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
-import { FirstSendContinuityProvider } from "@/client/first-send-continuity";
+
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
 import {
@@ -23,7 +23,7 @@ import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { SettingsDialog } from "@/features/account/SettingsDialog";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
-import { CreationProvider } from "@/features/chat/CreationProvider";
+
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
 import {
   AccountFeatureComposition,
@@ -164,9 +164,7 @@ function AuthenticatedAccountProviderTree({
   return (
     <AccountFeatureComposition accountId={user.userId} repairProjectCatalog={repairProjectCatalog}>
       <DraftApplyRecoveryProvider accountId={user.userId}>
-        <FirstSendContinuityProvider accountId={user.userId}>
-          <AuthenticatedProviderTree now={now} user={user} />
-        </FirstSendContinuityProvider>
+        <AuthenticatedProviderTree now={now} user={user} />
       </DraftApplyRecoveryProvider>
     </AccountFeatureComposition>
   );
@@ -195,30 +193,28 @@ function AuthenticatedProviderTree({
     <ProjectStoreProvider now={now}>
       <ThreadStoreProvider now={now}>
         <TransportProvider>
-          <CreationProvider>
-            <MeridianCopilotProvider>
-              <DensityPopoverCollisionProvider>
-                <div className="app-frame flex flex-col">
-                  <ConnectionBanner />
-                  <div className="min-h-0 flex-1 overflow-hidden">
-                    {/* Project parents key their shell by resolved identity; account fencing stays above. */}
-                    <Outlet />
-                  </div>
+          <MeridianCopilotProvider>
+            <DensityPopoverCollisionProvider>
+              <div className="app-frame flex flex-col">
+                <ConnectionBanner />
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  {/* Project parents key their shell by resolved identity; account fencing stays above. */}
+                  <Outlet />
                 </div>
-                <SettingsDialog workingSetSyncEnabled={user.workingSetSyncEnabled} />
-                {DebugOverlay ? (
-                  <Suspense fallback={null}>
-                    <DebugOverlay />
-                  </Suspense>
-                ) : null}
-                {ReactQueryDevtools ? (
-                  <Suspense fallback={null}>
-                    <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
-                  </Suspense>
-                ) : null}
-              </DensityPopoverCollisionProvider>
-            </MeridianCopilotProvider>
-          </CreationProvider>
+              </div>
+              <SettingsDialog workingSetSyncEnabled={user.workingSetSyncEnabled} />
+              {DebugOverlay ? (
+                <Suspense fallback={null}>
+                  <DebugOverlay />
+                </Suspense>
+              ) : null}
+              {ReactQueryDevtools ? (
+                <Suspense fallback={null}>
+                  <ReactQueryDevtools buttonPosition="bottom-left" initialIsOpen={false} />
+                </Suspense>
+              ) : null}
+            </DensityPopoverCollisionProvider>
+          </MeridianCopilotProvider>
         </TransportProvider>
       </ThreadStoreProvider>
     </ProjectStoreProvider>

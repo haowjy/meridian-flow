@@ -29,10 +29,12 @@ it("validates the original duplicate query through the installed router", async 
     ),
   ).toEqual({ kind: "invalid", reason: "duplicate:chat" });
   await router.navigate({
-    href: "/p/serial/editor?chat=one&settings=usage",
+    href: "/p/serial/editor?chat=550e8400-e29b-41d4-a716-446655440000&settings=usage",
     replace: true,
   });
-  expect(history.location.href).toBe("/p/serial/editor?chat=one&settings=usage");
+  expect(history.location.href).toBe(
+    "/p/serial/editor?chat=550e8400-e29b-41d4-a716-446655440000&settings=usage",
+  );
   expect(
     parseProjectAddress(
       router.state.location.pathname,
@@ -40,7 +42,10 @@ it("validates the original duplicate query through the installed router", async 
     ),
   ).toMatchObject({
     kind: "valid",
-    address: { chat: { kind: "slug", slug: "one" }, settings: "usage" },
+    address: {
+      chat: { kind: "slug", slug: "550e8400-e29b-41d4-a716-446655440000" },
+      settings: "usage",
+    },
   });
 });
 

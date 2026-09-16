@@ -26,5 +26,8 @@ Authenticated writing workspace. Keep it a thin React/TanStack Start shell over 
   surfaces (AI runtime, billing, auth) are exempt: fail loud and honest instead
   of faking offline. New persistent state must pick a tier (content / continuity /
   workbench / preference / cache) before shipping.
+- **Navigate first.** Change the destination immediately. Create, persist, and
+  connect in the background. Fail on that screen. Never wait for the server
+  before navigation, and never bounce back because materialization lagged.
 - `/_authenticated` mounts one unconditional provider tree (Query → project → thread → transport → copilot); do not gate providers by pathname.
 - Settings is a routed overlay via `?settings=` on any authenticated route (`SettingsDialog` in the layout shell).

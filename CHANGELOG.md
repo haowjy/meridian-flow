@@ -1,9 +1,56 @@
 # Changelog
 
+- Added exact account/system Agent selection, durable first-Send revision reservations, atomic root-chat bindings, and retained Agent names in conversation projections.
+
 - Added route-addressed Work collection and detail management, with real card links, archived disclosure, inline metadata editing, pending drafts, Scratch, Uploads, and associated chat navigation.
 - Corrected Work-detail optional clears, live authoritative refresh reconciliation, route focus continuity, and compact Scratch/Uploads discovery previews.
 
 ## [Unreleased]
+
+### Changed
+
+- Drop leftover Agent slug copies from WS live state, the thread DTO, credit debit metadata, and `project_results`. Debug still joins agent from the bound revision and model from the model-response row.
+
+- Drop `threads.current_agent_id`. Conversation slug and name come from the bound Agent revision join.
+
+- Remove leftover first-send continuity API, Home package gallery stubs, and the unused project-agents path helper.
+
+- Project Home Send opens `/p/{project}/chat/{uuid}` immediately. Persist, admit, and run catch up on that chat. Failure stays there with Retry.
+- Clear first-send Retry chrome once persist and run succeed.
+
+- Remove first-send continuity, destination claim, and saved-first-message recovery copy.
+
+- Compact Agent picker shows selectable agents only (name, model, one-line hint). Unavailable agents are omitted. Removal is not in the composer.
+
+- Publish package imports, edits, updates and restores through the durable account Agent catalog. Preserve edited definitions, retained dependencies, binary files and owned history.
+- Seed first-party Agents once at startup. Remove the old project-local Agent/skill store, unused invocation scaffolding and mutable provenance lookup.
+
+- Agent conversations retain resolved model defaults and exact package dependencies. Root, child, handoff and fork creation share atomic binding, with derived initialization and spawn provenance committed together.
+- Preserve nested spawn-root identity in PostgreSQL and reject unsupported children before creation.
+- Standalone Agent publication writes directly to the durable personal catalog. Stale saves refuse overwrite.
+
+- Freeze bound Agent prompts independently of legacy display slugs and remove the obsolete thread Agent-rebinding endpoint.
+
+- Show saved first-message recovery controls, preserve newer draft text, and prevent another Send while the original submission is unresolved.
+
+- Recover expired pending message admissions after server interruption while preserving live requests and their submission identity.
+
+- Recover interrupted first-message admission after reload with a server-checked retry of the saved submission identity.
+
+- Prepare Agent model calls and previews from retained definitions, preserving the selected model and persona across catalog changes and conversation reloads. Bind named children from retained package revisions and prepare their prompts through the same runtime.
+
+- Expose Agent revisions through app services and include hermetic bindings in thread transactions.
+
+- Seed a durable General system Agent with the configured default model during server startup.
+
+- Retain authorized historical Agent selections across catalog updates and add shared catalog availability and exact-revision resolution.
+
+- Add durable Agent source/definition revisions, account/system catalog selection, and fixed thread-binding storage with transactional rollback and explicit catalog restore.
+
+- Add presence-sensitive Mars Agent compilation with canonical tool names, overlay validation, explicit diagnostics, and versioned definition digests.
+- Preserve Agent body whitespace and reject malformed definition containers instead of silently discarding configuration.
+
+- Preserve structured Agent skill declarations and omitted configuration fields through source normalization and revision checksums.
 
 - Reuse fresh catalog acquisitions when switching back to a retained Editor tab.
 

@@ -41,7 +41,6 @@ export interface InterruptArtifactFlushPort {
       threadId: string;
       turnId: string;
       toolCallId: string | null;
-      agentSlug: string;
     };
     artifacts: ArtifactRef[];
   }): Promise<{ ok: true } | { ok: false; error: unknown }>;
@@ -178,7 +177,6 @@ export function createInterruptSession(
           threadId: state.threadId as string,
           turnId: state.currentTurn.id as string,
           toolCallId: null,
-          agentSlug: state.thread.currentAgent ?? "unknown",
         },
         artifacts: request.artifacts,
       });

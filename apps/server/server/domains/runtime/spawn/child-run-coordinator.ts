@@ -13,7 +13,11 @@ import type {
 } from "@meridian/contracts/spawn";
 import { blockPlainText, type Thread } from "@meridian/contracts/threads";
 import type { BillingSpendReader } from "../../billing/index.js";
-import type { PackageRepository } from "../../packages/index.js";
+import {
+  type AgentRevisionStore,
+  type CompiledAgentDefinition,
+  resolveAgentConfiguration,
+} from "../../packages/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import type {
   BlockRepository,
@@ -23,7 +27,7 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
-import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
+import { createBoundConversation } from "../../threads/index.js";
 import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
 import {
   createInMemoryThreadRunOwnership,
@@ -31,8 +35,6 @@ import {
   type ThreadRunOwnership,
 } from "../loop/thread-run-ownership.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
-import type { WorkContextReader } from "../loop/work-context.js";
-import { modelInvocableSkillSlugs, renderSkillsSystemPromptSection } from "../tools/skill-tools.js";
 import type { HelperResultDelivery } from "./helper-result-delivery.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
 
@@ -62,25 +64,23 @@ export interface ChildRunCoordinatorDeps {
     parentThreadId?: string | null;
   }): Promise<string | null>;
   eventWriter: EventJournalWriter;
-  packageRepository: PackageRepository;
+  agentRevisions: Pick<
+    AgentRevisionStore,
+    "readThreadBinding" | "readRevision" | "readSource" | "readPackageDefinitions" | "bindThread"
+  >;
+  defaultModel(): string | undefined;
+  unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
   childRunRegistry: ChildRunRegistry;
   helperResultDelivery: HelperResultDelivery;
   workContextDelivery: Pick<WorkContextDelivery, "flushOwned">;
   runOwnership?: ThreadRunOwnership;
   billingSpendReader: BillingSpendReader;
-  workContext: WorkContextReader;
 }
 
 export interface ChildRunCoordinator {
   spawnChild(input: SpawnChildInput): Promise<SpawnResult>;
   spawnChildBackground(input: SpawnChildInput): Promise<SpawnResult>;
   createReturnResultCompleter(childThreadId: ThreadId): ReturnResultCompleter;
-}
-
-function subagentsFromMeta(meta: Record<string, unknown>): string[] {
-  const raw = meta.subagents;
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((entry): entry is string => typeof entry === "string");
 }
 
 type ChildTerminal =
@@ -152,15 +152,11 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     const turnError = assertTurnBudget(input.budget);
     if (turnError) return { status: "error", error: turnError };
 
-    const packageContext = await deps.packageRepository.getAgentWithLinkedSkills(
-      input.parentThread.projectId,
-      input.parentThread.userId,
-      input.parentThread.currentAgent ?? "",
+    const parentAgent = await deps.agentRevisions.readThreadBinding(input.parentThread.id);
+    const target = parentAgent?.configuration.namedTargets.find(
+      (item) => item.name === input.agentSlug,
     );
-    const callerSubagents = packageContext.agent
-      ? subagentsFromMeta(packageContext.agent.meta as Record<string, unknown>)
-      : [];
-    if (!callerSubagents.includes(input.agentSlug)) {
+    if (!target) {
       return {
         status: "error",
         error: meridianErrorFromSystem(
@@ -170,87 +166,138 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       };
     }
 
-    const childAgentContext = await deps.packageRepository.getAgentWithLinkedSkills(
-      input.parentThread.projectId,
-      input.parentThread.userId,
-      input.agentSlug,
-    );
-    if (!childAgentContext.agent) {
+    const childAgent = await deps.agentRevisions.readRevision(target.definitionRevisionId);
+    if (
+      !childAgent ||
+      childAgent.definition.metadata.mode === "primary" ||
+      childAgent.definition.metadata["model-invocable"] === false
+    ) {
       return {
         status: "error",
         error: meridianErrorFromSystem(
           "spawn_agent_not_found",
-          `Agent "${input.agentSlug}" not found`,
+          `Agent "${input.agentSlug}" is unavailable in the caller's retained package`,
         ),
       };
     }
-    const childAgent = childAgentContext.agent;
 
-    const workContext = (await deps.workContext.renderForThread(input.parentThread.id as ThreadId))
-      .text;
-    const child = await deps.repos.transaction(async () => {
-      const created = await deps.repos.subagentThreads.createSubagent({
-        userId: input.parentThread.userId,
-        projectId: input.parentThread.projectId,
-        parentThreadId: input.parentThread.id as ThreadId,
-        rootThreadId: input.parentThread.rootThreadId as ThreadId,
-        originTurnId: input.parentTurnId,
-        spawnDepth: input.parentThread.spawnDepth + 1,
-        currentAgent: input.agentSlug,
-        composedSystemPrompt: assembleComposedSystemPrompt({
-          basePrompt: childAgent.body,
-          skillsSystemPromptSection: renderSkillsSystemPromptSection(childAgentContext.skills),
-          workContext,
-        }),
-        bakedSkillSlugs: modelInvocableSkillSlugs(childAgentContext.skills),
-        title: input.description ?? `${input.agentSlug} subagent`,
-        spawnStatus: "running",
-      });
-      const workId = await deps.resolveWorkMembership({
-        threadId: created.id as ThreadId,
-        projectId: input.parentThread.projectId,
-        parentThreadId: input.parentThread.id as ThreadId,
-      });
-      return { ...created, workId };
+    const configuration = await resolveAgentConfiguration({
+      revision: childAgent,
+      store: deps.agentRevisions,
+      defaultModel: deps.defaultModel(),
     });
+    const unavailable = deps.unavailableReasons(childAgent.definition, configuration.model);
+    if (unavailable.length) {
+      return {
+        status: "error",
+        error: meridianErrorFromSystem("spawn_agent_unavailable", unavailable.join(" ")),
+      };
+    }
+    const child = await deps.repos.transaction(async () => {
+      const created = await createBoundConversation({
+        transaction: deps.repos.transaction,
+        agentRevisions: deps.agentRevisions,
+        revision: childAgent,
+        configuration,
+        createThread: () =>
+          deps.repos.subagentThreads.createSubagent({
+            userId: input.parentThread.userId,
+            projectId: input.parentThread.projectId,
+            parentThreadId: input.parentThread.id as ThreadId,
+            rootThreadId: input.parentThread.rootThreadId as ThreadId,
+            originTurnId: input.parentTurnId,
+            spawnDepth: input.parentThread.spawnDepth + 1,
+            title: input.description ?? `${input.agentSlug} subagent`,
+            spawnStatus: "running",
+          }),
+        resolveWork: (created) =>
+          deps.resolveWorkMembership({
+            threadId: created.id as ThreadId,
+            projectId: input.parentThread.projectId,
+            parentThreadId: input.parentThread.id as ThreadId,
+          }),
+      });
 
-    await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-      type: "agent.spawn",
-      parentThreadId: input.parentThread.id,
-      parentTurnId: input.parentTurnId as string,
-      childThreadId: child.id,
-      agentSlug: input.agentSlug,
-      prompt: input.prompt,
+      await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
+        type: "agent.spawn",
+        parentThreadId: input.parentThread.id,
+        parentTurnId: input.parentTurnId as string,
+        childThreadId: created.id,
+        agentSlug: input.agentSlug,
+        prompt: input.prompt,
+      });
+      if (options.background) {
+        await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
+          type: "background.started",
+          parentThreadId: input.parentThread.id,
+          parentTurnId: input.parentTurnId as string,
+          childThreadId: created.id,
+          agentSlug: input.agentSlug,
+          description: input.description,
+        });
+      }
+      return created;
     });
 
     const childController = new AbortController();
-    const runClaim = await runOwnership.tryAcquire(child.id as ThreadId);
-    if (!runClaim) throw new Error(`Child thread already has an active run: ${child.id}`);
-    let childRegistered = false;
-    if (options.background) {
-      deps.childRunRegistry.registerBackgroundChild(
-        input.parentThread.id as ThreadId,
-        child.id as ThreadId,
-        childController,
-      );
-      childRegistered = true;
-    } else {
-      const parentSignal = input.signal;
-      if (parentSignal) {
-        if (parentSignal.aborted) {
-          childController.abort();
-        } else {
-          parentSignal.addEventListener("abort", () => childController.abort(), { once: true });
+    let runClaim: ThreadRunClaim | null = null;
+    try {
+      runClaim = await runOwnership.tryAcquire(child.id as ThreadId);
+      if (!runClaim) throw new Error(`Child thread already has an active run: ${child.id}`);
+      let childRegistered = false;
+      if (options.background) {
+        deps.childRunRegistry.registerBackgroundChild(
+          input.parentThread.id as ThreadId,
+          child.id as ThreadId,
+          childController,
+        );
+        childRegistered = true;
+      } else {
+        const parentSignal = input.signal;
+        if (parentSignal) {
+          if (parentSignal.aborted) {
+            childController.abort();
+          } else {
+            parentSignal.addEventListener("abort", () => childController.abort(), { once: true });
+          }
         }
+        deps.childRunRegistry.registerChild(
+          input.parentThread.id as ThreadId,
+          child.id as ThreadId,
+          childController,
+        );
+        childRegistered = true;
       }
-      deps.childRunRegistry.registerChild(
-        input.parentThread.id as ThreadId,
-        child.id as ThreadId,
-        childController,
-      );
-      childRegistered = true;
+      return { child, childController, childRegistered, runClaim };
+    } catch (error) {
+      childController.abort();
+      deps.childRunRegistry.unregisterChild(child.id as ThreadId);
+      try {
+        const result: SpawnResult = {
+          status: "error",
+          error: meridianErrorFromSystem(
+            "spawn_failed",
+            error instanceof Error ? error.message : String(error),
+          ),
+        };
+        await deps.repos.transaction(async () => {
+          await deps.repos.threads.updateSpawnLifecycle(child.id as ThreadId, {
+            spawnStatus: "failed",
+            spawnResult: result,
+          });
+          await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
+            type: "agent.spawn_completed",
+            parentThreadId: input.parentThread.id,
+            parentTurnId: input.parentTurnId as string,
+            childThreadId: child.id,
+            result,
+          });
+        });
+      } finally {
+        await runClaim?.release();
+      }
+      throw error;
     }
-    return { child, childController, childRegistered, runClaim };
   }
 
   async function driveChild(input: SpawnChildInput, prepared: PreparedChild): Promise<SpawnResult> {
@@ -337,37 +384,40 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       const message = error instanceof Error ? error.message : String(error);
       spawnResult = { status: "error", error: meridianErrorFromSystem("spawn_failed", message) };
     } finally {
-      deps.childRunRegistry.abortChildrenOf(prepared.child.id as ThreadId, {
-        includeBackground: true,
-      });
       try {
-        await deps.helperResultDelivery.markIdleAndFlush(prepared.child.id as ThreadId);
+        await deps.repos.threads.updateSpawnLifecycle(prepared.child.id as ThreadId, {
+          spawnStatus: terminalStatus,
+          spawnResult,
+        });
+        await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
+          type: "agent.spawn_completed",
+          parentThreadId: input.parentThread.id,
+          parentTurnId: input.parentTurnId as string,
+          childThreadId: prepared.child.id,
+          result: spawnResult,
+        });
       } finally {
+        deps.childRunRegistry.abortChildrenOf(prepared.child.id as ThreadId, {
+          includeBackground: true,
+        });
         try {
-          if (prepared.childRegistered) {
-            try {
-              await deps.workContextDelivery.flushOwned(prepared.child.id as ThreadId);
-            } finally {
-              deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
-            }
-          }
+          await deps.helperResultDelivery.markIdleAndFlush(prepared.child.id as ThreadId);
         } finally {
-          await prepared.runClaim.release();
+          try {
+            if (prepared.childRegistered) {
+              try {
+                await deps.workContextDelivery.flushOwned(prepared.child.id as ThreadId);
+              } finally {
+                deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
+              }
+            }
+          } finally {
+            await prepared.runClaim.release();
+          }
         }
       }
     }
 
-    await deps.repos.threads.updateSpawnLifecycle(prepared.child.id as ThreadId, {
-      spawnStatus: terminalStatus,
-      spawnResult,
-    });
-    await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-      type: "agent.spawn_completed",
-      parentThreadId: input.parentThread.id,
-      parentTurnId: input.parentTurnId as string,
-      childThreadId: prepared.child.id,
-      result: spawnResult,
-    });
     return spawnResult;
   }
 
@@ -398,15 +448,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     async spawnChildBackground(input: SpawnChildInput): Promise<SpawnResult> {
       const prepared = await prepareChild(input, { background: true });
       if ("status" in prepared) return prepared;
-
-      await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-        type: "background.started",
-        parentThreadId: input.parentThread.id,
-        parentTurnId: input.parentTurnId as string,
-        childThreadId: prepared.child.id,
-        agentSlug: input.agentSlug,
-        description: input.description,
-      });
 
       void driveChild(input, prepared)
         .then(async (result) => {

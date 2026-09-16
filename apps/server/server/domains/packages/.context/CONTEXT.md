@@ -1,96 +1,115 @@
-# domains/packages — Installed package → agent/skill catalog
+# domains/packages
 
-Parses Mars-format package directories on disk, syncs them into a
-project-scoped repository, and resolves agent skills across merge layers. A
-"package" is a directory with a `mars.toml` manifest plus
-markdown-frontmatter agent/skill definitions. Runtime consumes the resolved
-catalog through scoped skill registrations: an agent thread resolves skills from
-`PackageRepository.getAgentWithLinkedSkills()`, and the runtime's
-`skill-tool-factory.ts` late-registers per-skill executable tools.
+Owns Mars package parsing, import/export, definition editing, catalog projection,
+and skill-reference resolution. A package contains `mars.toml`, Agent Markdown,
+and skill directories with `SKILL.md` and supporting files.
 
-## What it owns
+Keep the identities distinct: a retained source revision is the complete
+exportable file snapshot; a definition revision is one compiled Agent within
+that snapshot; a catalog entry selects a definition revision for future chats;
+and a thread binding fixes a definition revision plus resolved configuration for
+one conversation. `agent_package_installations` records management head/history
+over retained source revisions. It is not a fifth content or execution owner.
 
-**Key types** (all in `domain/types.ts`):
+## Source and compilation
 
-| Type | What it is |
-|---|---|
-| `PackageInstallRecord` | A row tracking that a Mars package has been installed into a project. Keyed by `(projectId, packageName)`. |
-| `AgentDefinitionRecord` | A persisted agent — slug, body, YAML-frontmatter meta, config overlays, `sourceType` (`builtin`/`package`/`user`), optional `packageInstallId` FK. `projectId` is nullable for builtins. `enabled` gates visibility. |
-| `SkillRecord` | A persisted skill — same shape as agent, plus bundled `files`; invocation flags are read from meta and resolution output. |
-| `UserInstalledSkillRecord` | User-scoped skill (no project/package FK). |
-| `AgentSkillLinkRecord` | Join link between agent and skill: ordinal, invocability override flags. |
-| `ResolvedPackageContext` | Output of `resolveAgentSkills()`: matched agent + ordered `ResolvedSkill[]` with layer and invocability flags. |
-| `AgentDefinitionRevisionRecord` / `SkillDefinitionRevisionRecord` | Append-only definition history rows; every save or restore appends, never mutates prior revisions. |
+- `domain/mars-source.ts` reads TOML and Markdown frontmatter, preserves structured
+  Agent skills and field presence, and computes canonical source checksums.
+  Frontmatter must be a mapping. Agent mode defaults are resolved by consumers.
+- `domain/agent-definition-compiler.ts` validates declared configuration and emits
+  a presence-sensitive definition with a versioned digest. Flat skills normalize
+  to `skills.load`. Agent-specific body text becomes `systemPrompt`.
+- Compilation accepts canonical frontmatter tools as lists or allow/deny maps.
+  TOML overlays use `tools.allowed` and `tools.disallowed`; explicit empty lists
+  clear that channel. A disallowed-list overlay replaces all baseline denials,
+  including map-form denials; an allowed-list-only overlay retains them.
+- Compilation is syntax validation. Runtime support, resource authorization,
+  model resolution, and dependency binding belong to the retained configuration resolver before conversation creation.
+  Unknown metadata is retained; acceptance does not establish its execution.
+- Source checksums and compiled-definition digests have different purposes.
+  Source checksums drive edited/pristine detection and include config overlays;
+  compiled digests identify normalized definition content. Both sort object keys
+  recursively and retain list order.
 
-**Modules** (all in `domain/`):
+## Retained definition storage
 
-| File | Responsibility |
-|---|---|
-| `mars-source.ts` | Format owner. Parses `mars.toml` via `smol-toml`, loads `agents/*.md` and `skills/*/SKILL.md` with YAML frontmatter into `ParsedMarsPackageSource`. Normalizes kebab-case keys. Computes `definitionContentChecksum` (sha256 of markdown body + files). Serializes back via `serializeMarkdownDefinition`. |
-| `package-sync.ts` | Import/update pipeline. `importLocalMarsPackage()` resolves a local-path dependency graph (recursive, cycle-safe via `seen` set), then writes everything in one transaction: `PackageInstallRecord`, skill/agent rows, agent-skill links. `updateLocalMarsPackage()` reconciles upstream changes — auto-updates pristine items (checksum match), skips locally edited unless `forceReset`, preserves subagent DAGs pruned upstream. |
-| `package-export.ts` | Inverse of sync. Reads installed package from repository → `ExportedMarsDirectory` (file map). `writeExportedMarsDirectory()` writes to disk. |
-| `resolution.ts` | Skill merge algorithm. `resolveAgentSkills()` merges builtins, user-installed skills, project/global skills, and agent-linked skills. Last writer wins by slug. Sorts by meta type ordinal: principle (0) → guardrail (1) → reference (2). |
-| `helpers.ts` | Defensive JSON-shape accessors, `sha256`, `sortedEntries`, `isNodeError`. |
+`domain/agent-source-revision.ts` derives compiled definitions from the retained
+file snapshot and TOML overlays. Source identity includes supporting files;
+compiled identity describes the Agent configuration. Binary/NUL-containing
+supporting files use base64 for JSONB storage.
 
-## Contracts (ports)
+`domain/agent-configuration.ts` resolves the configured default model and skill/named-target identities over the retained package dependency graph. Missing or ambiguous references refuse binding; it never consults mutable package installs.
 
-| Port | Verbs |
-|---|---|
-| `PackageRepository` | `findPackageInstall(projectId, name)` / `transaction<T>(fn)` / `getAgentWithLinkedSkills(projectId, userId, slug)` |
-| `PackageWriteTransaction` | CRUD methods for packages, agents, skills, user-installed skills, plus `linkAgentSkill`, `replaceAgentSkillLinks`, `listAgentSkillLinks` |
+`ports/agent-revision-store.ts` owns immutable source/definition records,
+account/system catalog pointers, and fixed thread bindings.
+`adapters/drizzle-agent-revision-store.ts` persists them in the
+`agent-definition-revisions.ts` schema tables and joins the app's ambient
+transaction. Source installs deduplicate by coordinate/digest. Catalog creation
+is idempotent for the same revision; advancement requires an expected revision.
+The current catalog pointer and retained `agent_catalog_revisions` membership
+authorize exact selections. Pointer advancement retains the old membership in the
+same transaction, allowing a reserved first Send to keep its revision without
+authorizing unrelated account content. Removal hides selection while bound revisions remain readable. An explicit
+owner restore requires the retained revision; ordinary saves leave removed entries hidden. Catalog pages
+combine system and owned entries with a bounded name/keyset order.
 
-`PackageRepository.getAgentWithLinkedSkills` delegates to
-`resolveAgentSkills()` inside a fresh transaction. Errors propagate as throws,
-not a `Result` type.
+The store is an internal persistence port. Callers authorize source/Project/thread
+access and runtime support before selecting or binding. Null catalog ownership
+is reserved for trusted system seeding. App services expose the revision port as
+`agentRevisions`. The hermetic adapter and thread repositories share one snapshot transaction
+owner in app composition. Either entry point commits or rolls back both stores;
+completed transaction frames reject escaped writes. Root creation resolves exact
+account/system selections and binds atomically. Shared runtime preparation reads
+the retained binding. Child creation consumes exact targets from the parent binding. Root, child and derived-primary creation use the threads domain's atomic bound-conversation operation.
 
-## Adapters
+`domain/bound-agent-catalog.ts` resolves exact primary selections and builds
+catalog pages from immutable revisions. Listing and resolution share the supplied
+host-support predicate. Publication uses one owner-scoped transaction boundary (system or account) and rejects
+cross-source logical-key collisions. Production startup seeds General through this
+boundary with an empty Agent-specific body (the shared host prompt remains
+authoritative) and a concrete configured default model. Changing that configured
+model publishes a new revision and retains the former one.
 
-| Adapter | File | Used when | Key behaviour |
-|---|---|---|---|
-| `DrizzlePackageStore` | `adapters/drizzle-package-store.ts` | Production (`createProductionAppPorts`) | Implements all `PackageWriteTransaction` methods via Drizzle. Denormalizes meta fields (`name`, `description`, `type`, `modelInvocable`, etc.) into queryable schema columns on create/update. `getAgentWithLinkedSkills` opens a new `db.transaction`. |
-| `InMemoryPackageStore` | `adapters/in-memory-package-store.ts` | Dev + tests (`createInMemoryAppServices`) | Hermetic `Map[]` state. `transaction` clones state, runs callback, commits on success. Exposes `dump()` for test assertions. Seeds via `InMemoryPackageStoreSeed`. |
+Standalone `POST /api/agents` publishes personal source directly through this owner. Saves require the prior revision for advancement; conflicts roll back the source install. Runtime support can make a preserved definition unavailable without pretending its semantics execute.
 
-No env-var selection — production always uses Drizzle, dev/test always uses
-in-memory. Unlike the storage domain, there is no `PACKAGE_STORE_PROVIDER`.
+## Source management
 
-## Wiring and runtime consumption
+`domain/source-publication.ts` is the atomic publication owner for standalone save,
+package import/update/edit/restore and trusted system provisioning. It installs
+immutable source, validates retained references, advances exact future-chat
+pointers and commits the installation head/history under the same owner lock.
+Removed entries remain hidden on ordinary publication. Source collisions refuse
+the complete import with an actionable rename diagnostic, preserving existing content.
 
-`lib/compose.ts` wires `packageRepository` into `AppServices` and passes it to:
+`agent_package_installations` is account/system management provenance: current
+edited source, upstream pristine source and fetch origin. Its history authorizes
+restore from owned source only, including definitions pruned from the current snapshot. It is never an execution lookup. All definitions
+and skill files live exclusively in retained snapshots; there are no mutable
+Agent/skill records or operational link overrides.
 
-- `createEnsureSkillToolRegistration()` in `domains/runtime/tools/skill-tool-factory.ts`
-- `createChildRunCoordinator()` for spawn authorization against caller agent metadata
-- core tool wiring that needs package-aware skill execution
-- the default package seeder (`seedDefaultPackagesForProject`)
+`package-source.ts` materializes local/GitHub dependency graphs before writes,
+preserving supported files and binary data. Explicit downloaded provenance confines local dependencies to their fetched tree;
+URL spelling never grants local filesystem trust. `package-management.ts` imports and reconciles the
+retained graph. Updates keep locally edited entities and references unless reset. Keeping an edited
+Agent retains its dependency closure; incompatible upstream additions refuse atomic
+publication rather than silently changing those references;
+removed pristine definitions leave retained history but no future-chat selection.
+`definition-editing.ts` edits or restores one entity within that complete source.
+The skill-availability edit versions `skills.available`; it does not activate
+runtime skill loading. `package-export.ts` exports retained files without
+reconstructing source from normalized definitions.
 
-Skill tool registrations are scoped and lazy: `context-builder.ts` resolves the
-current agent's skills, ensures each skill tool is registered, and advertises
-only the tools available to that agent turn. Skill slugs that collide with
-non-skill tools are blocked by the runtime registry policy and recorded as a
-`skill_tool.name_collision` event.
+Project-addressed management routes still authorize access to that Project; the
+owned package content belongs to the authenticated account and is reusable across
+Projects. Source fetching stays outside owner transactions. Production seeds
+General and configured first-party packages into the system catalog at startup,
+not during Project creation. General replaces the old `<none>` entry.
 
-## Invariants
+## Project availability
 
-- **Agents declare their own resources.** An agent definition carries an explicit
-  skill list (via `agent_skills` links) and subagent references. If installed
-  independently into a fresh project, it gets exactly the skills and subagents
-  it declared — plus the shared builtin/global layer. It never implicitly
-  inherits arbitrary project skills.
-- **`(projectId, slug)` is unique for agents and skills.** Builtins use
-  `projectId IS NULL` uniqueness. Slug collision during import causes a skip
-  (recorded in `skippedAgents`/`skippedSkills`), not an overwrite.
-- **Pristine detection via checksum.** `originalContentChecksum` vs.
-  recomputed `definitionContentChecksum`. Locally edited records (mismatch) are
-  skipped during `updateLocalMarsPackage` unless `forceReset=true`.
-- **Preserved subagent DAG.** When an upstream update removes agents that a
-  locally edited agent references as subagents, the entire referenced subagent
-  DAG is preserved (recursive walk). Same for skills referenced by skipped agents.
-- **Import is transactional.** `importLocalMarsPackage` runs all writes inside
-  a single `repository.transaction`. On failure, nothing is persisted.
-- **Local-dependency-only.** `resolvePackageGraph` only follows `[dependencies]`
-  entries with a `path` (local filesystem). Remote `url` dependencies are collected
-  as `unsupportedDependencies` and returned in `PackageImportResult.skippedDependencies`.
-- **No throw-free boundary.** Unlike the storage domain's `ObjectStoreResult<T>`,
-  errors propagate as raw throws. Callers must catch.
-- **`sourcePath` is not serialized in export.** `exportMarsPackage` reconstructs
-  only `mars.toml`, agent markdown, and skill markdown. The `sourcePath` from
-  `PackageInstallRecord` is metadata only.
+`project_agent_removals` excludes stable catalog-entry IDs from one Project's
+prospective list and primary selection admission. Shared publication/seeding never
+clears exclusions. General is the only non-removable system entry. Routes authorize
+the Project before listing/removal; root, handoff and fork selection pass its ID.
+Previously bound execution and same-ID creation recovery do not recheck prospective
+availability. Removal does not delete source or change account ownership.

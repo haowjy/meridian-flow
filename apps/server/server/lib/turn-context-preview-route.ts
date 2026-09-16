@@ -4,7 +4,7 @@
  */
 
 import type { TurnContextPreview } from "@meridian/contracts/threads";
-import type { PackageRepository } from "../domains/packages/index.js";
+import type { AgentRevisionStore } from "../domains/packages/index.js";
 import { loadThreadConversationContext } from "../domains/runtime/loop/fork-thread-context.js";
 import { assembleNextTurnContext } from "../domains/runtime/loop/turn-context-assembly.js";
 import type { WorkContextReader } from "../domains/runtime/loop/work-context.js";
@@ -18,7 +18,7 @@ export interface TurnContextPreviewRouteDeps {
   repos: Pick<ThreadRepositories, "threads" | "turns" | "blocks">;
   projectRepo: Parameters<typeof requireThreadOwner>[0]["projects"];
   modelRequestDebug: ModelRequestDebugStore;
-  packageRepository: PackageRepository;
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
   toolRegistry: ToolRegistry;
   toolExecutor: Pick<ToolExecutor, "getDefinitions">;
   workContext: WorkContextReader;
@@ -51,7 +51,7 @@ export async function handleGetTurnContextPreview(
     thread,
     turns: conversation.turns,
     blocks: conversation.blocks,
-    packageRepository: deps.packageRepository,
+    agentRevisions: deps.agentRevisions,
     toolRegistry: deps.toolRegistry,
     baseTools: deps.toolExecutor.getDefinitions?.(),
     persistBake: false,

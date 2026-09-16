@@ -32,6 +32,18 @@ app-specific wiring outside them so they can become shared libraries later.
 leaking abstractions, shallow modules, split ownership, or obvious
 simplification.
 
+**Optimistic UI.** The writer sees the result of their action at once. The
+network catches up. Failure belongs on the thing they did. Do not wait for
+the server to change the screen. Do not show a successful screen while the
+action is still pending. Do not invent recovery copy for a lost first send —
+do not lose it.
+
+**Navigate first.** Every destination change goes to the new screen
+immediately. Create, persist, and connect in the background. This is the
+default for the whole app, not a chat special case. If the background work
+fails, the error is on that destination. Never return to the previous screen
+because the new one has not finished materializing.
+
 **Writer primitives:** a **Project** is a serial, book, or body of work. A
 **Work** is a task-scoped editing context within a project; it groups threads,
 owns shared drafts, carries a goal, and holds qualified `scratch://` context.

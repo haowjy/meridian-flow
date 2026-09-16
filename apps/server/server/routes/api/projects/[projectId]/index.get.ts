@@ -11,6 +11,5 @@ export default defineEventHandler(async (event) => {
   const projectId = getRouterParam(event, "projectId") ?? "";
 
   const project = await requireProjectOwner({ projects: projectRepo }, projectId, userId);
-  await app.seedDefaultPackagesForProject(project.id);
   return serializeTransport(project);
 });

@@ -12,7 +12,6 @@ type OwnedThread = {
   id: ThreadId;
   projectId: ProjectId;
   workId: WorkId | null;
-  currentAgentId: string | null;
   activeLeafTurnId: TurnId | null;
   nextSeq: bigint;
   status: string;
@@ -25,7 +24,6 @@ export function createThreadRuntimeService(deps: { db: Database }) {
         id: threads.id,
         projectId: threads.projectId,
         workId: threadWorks.workId,
-        currentAgentId: threads.currentAgentId,
         activeLeafTurnId: threads.activeLeafTurnId,
         nextSeq: threads.nextSeq,
         status: threads.status,
@@ -57,7 +55,6 @@ export function createThreadRuntimeService(deps: { db: Database }) {
       threadId,
       status: thread.status === "archived" ? "archived" : "idle",
       runningTurnId: null,
-      currentAgent: thread.currentAgentId,
       resumeAfterSeq: headSeq.toString(),
     };
   }

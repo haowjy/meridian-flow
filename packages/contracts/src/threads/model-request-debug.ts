@@ -45,7 +45,7 @@ export type ModelRequestDebugRecord = {
   iteration: number;
   /** ISO 8601 */
   requestedAt: string;
-  /** thread.currentAgent at request time */
+  /** Bound revision slug at request time. */
   agentSlug: string | null;
   /** SHA-256 of the complete canonical request, even when its body is omitted. */
   requestDigest: string;

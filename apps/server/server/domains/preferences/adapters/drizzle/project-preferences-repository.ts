@@ -21,7 +21,6 @@ function mapPreferences(row: ProjectPreferencesRow): ProjectPreferences {
   return {
     threadGroupBy: row.threadGroupBy as ThreadGroupBy,
     pinnedThreadIds: [...row.pinnedThreadIds],
-    defaultAgentSlug: row.defaultAgentSlug,
     autoResume: {
       enabled: row.autoResumeEnabled,
       timeoutMs: row.autoResumeTimeoutMs,
@@ -64,7 +63,6 @@ export function createDrizzleProjectPreferencesRepository(
       };
       if (input.threadGroupBy !== undefined) set.threadGroupBy = input.threadGroupBy;
       if (input.pinnedThreadIds !== undefined) set.pinnedThreadIds = [...input.pinnedThreadIds];
-      if (input.defaultAgentSlug !== undefined) set.defaultAgentSlug = input.defaultAgentSlug;
       if (input.autoResume !== undefined) {
         set.autoResumeEnabled = input.autoResume.enabled;
         set.autoResumeTimeoutMs = input.autoResume.timeoutMs;
@@ -77,7 +75,6 @@ export function createDrizzleProjectPreferencesRepository(
           projectId,
           threadGroupBy: defaultsForInsert.threadGroupBy,
           pinnedThreadIds: defaultsForInsert.pinnedThreadIds,
-          defaultAgentSlug: defaultsForInsert.defaultAgentSlug,
           autoResumeEnabled: defaultsForInsert.autoResume?.enabled,
           autoResumeTimeoutMs: defaultsForInsert.autoResume?.timeoutMs,
         })

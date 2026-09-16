@@ -75,13 +75,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(
         Promise.all([
           db.select({ id: schema.projects.id }).from(schema.projects),
-          db.select({ id: schema.agentDefinitions.id }).from(schema.agentDefinitions),
           db.select({ id: schema.works.id }).from(schema.works),
           db.select({ id: schema.contextSources.id }).from(schema.contextSources),
           db.select({ id: schema.documents.id }).from(schema.documents),
           db.select({ id: schema.threads.id }).from(schema.threads),
         ]).then((rows) => rows.map((row) => row.length)),
-      ).resolves.toEqual([1, 1, 0, 3, 2, 0]);
+      ).resolves.toEqual([1, 0, 3, 2, 0]);
 
       const [project] = await db
         .select({ ready: schema.projects.defaultBootstrapReady })
