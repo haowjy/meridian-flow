@@ -14,7 +14,6 @@ import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
-import { uniqueThreadSlug } from "../../domain/thread-slug.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type {
   BlockRepository,
@@ -89,7 +88,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     kind: normalized.kind,
     status: "idle",
     title: normalized.title === "" ? null : normalized.title,
-    slug: null,
+    ref: null,
     systemPrompt: normalized.systemPrompt,
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
@@ -183,6 +182,7 @@ export function createInMemoryRepositories(
   >();
   const workContextDeliveries = transactionOwner.set<string>();
   const userStateByThreadUser = transactionOwner.map<string, { isFavorite: boolean }>();
+  const threadCounters = transactionOwner.map<string, number>();
 
   async function receivesWorkContextUpdate(thread: Thread | undefined): Promise<boolean> {
     return (
@@ -193,13 +193,10 @@ export function createInMemoryRepositories(
     );
   }
 
-  function nextSlug(projectId: string, title: string | null | undefined): string {
-    return uniqueThreadSlug(
-      title,
-      [...threads.values()]
-        .filter((thread) => thread.projectId === projectId)
-        .flatMap((thread) => (thread.slug ? [thread.slug] : [])),
-    );
+  function nextRef(projectId: string): string {
+    const n = (threadCounters.get(projectId) ?? 0) + 1;
+    threadCounters.set(projectId, n);
+    return `c${n}`;
   }
 
   function membershipKey(threadId: ThreadId, workId: WorkId): string {
@@ -251,7 +248,11 @@ export function createInMemoryRepositories(
 
   function insertThread(thread: Thread): Thread {
     if (threads.has(thread.id)) throw new Error(`Thread already exists: ${thread.id}`);
-    const row = { ...thread, workId: null, slug: nextSlug(thread.projectId, thread.title) };
+    const row = {
+      ...thread,
+      workId: null,
+      ref: thread.kind === "subagent" ? null : nextRef(thread.projectId),
+    };
     threads.set(row.id, row);
     return projectThread(row);
   }
@@ -283,9 +284,9 @@ export function createInMemoryRepositories(
       if (!thread || thread.deletedAt || !(await threadInActiveProject(thread))) return null;
       return projectThread(thread);
     },
-    async findLiveByProjectSlug(projectId, slug) {
+    async findLiveByProjectRef(projectId, ref) {
       const thread = [...threads.values()].find(
-        (thread) => thread.projectId === projectId && thread.slug === slug && !thread.deletedAt,
+        (thread) => thread.projectId === projectId && thread.ref === ref && !thread.deletedAt,
       );
       if (!thread || !(await threadInActiveProject(thread))) return null;
       return projectThread(thread);

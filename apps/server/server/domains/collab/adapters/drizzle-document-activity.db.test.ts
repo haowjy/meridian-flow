@@ -91,7 +91,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         updatedAt: OLD,
       });
       await db.insert(threads).values({
-        slug: `fixture-${THREAD_ID}`,
         id: THREAD_ID,
         projectId: PROJECT_ID,
         createdByUserId: USER_ID,

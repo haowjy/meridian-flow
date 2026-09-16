@@ -50,7 +50,7 @@ function setup() {
     kind: "primary",
     status: "idle",
     title: attempt.title || null,
-    slug: "opening",
+    ref: "c1",
     currentAgent: attempt.agent.slug,
     agentDefinitionRevisionId: attempt.agent.selection.definitionRevisionId,
     agentName: attempt.agent.name,

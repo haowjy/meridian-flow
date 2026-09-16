@@ -126,7 +126,6 @@ await db.insert(works).values({
 });
 await db.insert(threads).values({
   id: threadId,
-  slug: "smoke-thread",
   projectId,
   createdByUserId: userId,
   title: "Smoke thread",

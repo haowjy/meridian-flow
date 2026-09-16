@@ -255,7 +255,7 @@ export class CreationController {
       }
       this.assertAlive();
       if (
-        !thread.slug ||
+        !thread.ref ||
         thread.id !== attempt.threadId ||
         thread.projectId !== attempt.projectId ||
         thread.workId !== attempt.workId ||
@@ -277,7 +277,7 @@ export class CreationController {
       this.assertAlive();
       const ready = await this.continuity.publishCreation(this.projectId, attempt.attemptId, {
         projectSlug: project.slug,
-        threadSlug: thread.slug,
+        threadSlug: thread.ref,
         optimisticUserTurnId: prepared.optimisticUserTurnId,
       });
       if (ready.kind === "conflict") prepared.cancel();

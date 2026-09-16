@@ -1,4 +1,4 @@
-/** Exact root binding, committed recovery, and atomic failure in the app transaction. */
+/** Exact root binding, ownership create-or-get, and atomic failure in the app transaction. */
 import { describe, expect, it } from "vitest";
 import { createBoundAgentCatalog, seedGeneralAgent } from "../domains/packages/index.js";
 import {
@@ -11,6 +11,7 @@ import {
   createThreadForProject,
   InvalidWorkAttachmentError,
   ThreadCreationConflictError,
+  ThreadCreationNotFoundError,
 } from "./thread-creation.js";
 
 async function fixture() {
@@ -43,7 +44,7 @@ async function fixture() {
     workId: null,
     agentSelection: { catalogEntryId: entry.id, definitionRevisionId: entry.selectedRevisionId },
   };
-  return { app, deps, args };
+  return { app, deps, args, projects };
 }
 
 describe("exact thread creation", () => {
@@ -52,6 +53,7 @@ describe("exact thread creation", () => {
     const created = await createThreadForProject(deps, args);
     expect(created.agentDefinitionRevisionId).toBe(args.agentSelection.definitionRevisionId);
     expect(created.agentName).toBe("General");
+    expect(created.ref).toBe("c1");
     expect((await app.repos.threads.findById(created.id))?.agentDefinitionRevisionId).toBe(
       args.agentSelection.definitionRevisionId,
     );
@@ -66,12 +68,46 @@ describe("exact thread creation", () => {
           },
         },
       },
-      args,
+      { ...args, title: "Different task" },
     );
     expect(recovered).toEqual(created);
+  });
+
+  it("assigns c1 then c2 for two primary creates in one project", async () => {
+    const { deps, args } = await fixture();
+    const first = await createThreadForProject(deps, { ...args, id: crypto.randomUUID() });
+    const second = await createThreadForProject(deps, { ...args, id: crypto.randomUUID() });
+    expect(first.ref).toBe("c1");
+    expect(second.ref).toBe("c2");
+  });
+
+  it("returns the existing row for same-user same-project retry", async () => {
+    const { deps, args } = await fixture();
+    const created = await createThreadForProject(deps, args);
+    const retried = await createThreadForProject(deps, {
+      ...args,
+      title: "Changed title",
+      workId: null,
+    });
+    expect(retried).toEqual(created);
+  });
+
+  it("conflicts when the same user reuses the id in another project", async () => {
+    const { deps, args, projects } = await fixture();
+    await createThreadForProject(deps, args);
+    const other = await projects.create({ userId: "owner", title: "Other" });
     await expect(
-      createThreadForProject(deps, { ...args, title: "Different task" }),
+      createThreadForProject(deps, { ...args, projectId: other.id }),
     ).rejects.toBeInstanceOf(ThreadCreationConflictError);
+  });
+
+  it("does not confirm another user's thread id", async () => {
+    const { deps, args, projects } = await fixture();
+    await createThreadForProject(deps, args);
+    const strangerProject = await projects.create({ userId: "stranger", title: "Stranger" });
+    await expect(
+      createThreadForProject(deps, { ...args, projectId: strangerProject.id, userId: "stranger" }),
+    ).rejects.toBeInstanceOf(ThreadCreationNotFoundError);
   });
 
   it("reconciles concurrent same-ID creates to the one committed binding", async () => {

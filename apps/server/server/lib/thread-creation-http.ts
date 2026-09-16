@@ -3,7 +3,11 @@ import { meridianErrorFromSystem } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
 import { AgentSelectionError } from "../domains/packages/index.js";
 import { throwHttpInterrupt } from "./interrupt-boundary.js";
-import { InvalidWorkAttachmentError, ThreadCreationConflictError } from "./thread-creation.js";
+import {
+  InvalidWorkAttachmentError,
+  ThreadCreationConflictError,
+  ThreadCreationNotFoundError,
+} from "./thread-creation.js";
 
 export function parseCreationTitle(value: unknown): string | null {
   if (value == null) return null;
@@ -13,6 +17,8 @@ export function parseCreationTitle(value: unknown): string | null {
 }
 
 export function throwThreadCreationError(error: unknown): never {
+  if (error instanceof ThreadCreationNotFoundError)
+    throw createError({ statusCode: 404, message: error.message });
   if (error instanceof ThreadCreationConflictError)
     throw createError({ statusCode: 409, message: error.message });
   if (error instanceof AgentSelectionError)

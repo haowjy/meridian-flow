@@ -3,7 +3,11 @@ import { HTTPError } from "nitro/h3";
 import { describe, expect, it } from "vitest";
 import { AgentSelectionError } from "../domains/packages/index.js";
 import interruptErrorHandler from "./interrupt-error-handler.js";
-import { InvalidWorkAttachmentError, ThreadCreationConflictError } from "./thread-creation.js";
+import {
+  InvalidWorkAttachmentError,
+  ThreadCreationConflictError,
+  ThreadCreationNotFoundError,
+} from "./thread-creation.js";
 import { parseCreationTitle, throwThreadCreationError } from "./thread-creation-http.js";
 
 describe("root creation transport", () => {
@@ -27,13 +31,18 @@ describe("root creation transport", () => {
     expect(response?.status).toBe(400);
     expect(await response?.json()).toMatchObject({ kind: "error", error: { code } });
   });
-  it("preserves infrastructure failures and maps identity conflicts to 409", () => {
+  it("preserves infrastructure failures and maps identity conflicts to 409 or 404", () => {
     const failure = new Error("database unavailable");
     expect(() => throwThreadCreationError(failure)).toThrow(failure);
     try {
       throwThreadCreationError(new ThreadCreationConflictError());
     } catch (error) {
       expect(HTTPError.isError(error) && error.status).toBe(409);
+    }
+    try {
+      throwThreadCreationError(new ThreadCreationNotFoundError());
+    } catch (error) {
+      expect(HTTPError.isError(error) && error.status).toBe(404);
     }
   });
 });

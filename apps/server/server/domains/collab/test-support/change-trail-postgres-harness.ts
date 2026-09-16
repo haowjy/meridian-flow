@@ -187,7 +187,6 @@ export async function resetDatabase(): Promise<void> {
     },
   ]);
   await db.insert(schema.threads).values({
-    slug: `fixture-${THREAD_ID}`,
     id: THREAD_ID,
     projectId: PROJECT_ID,
     createdByUserId: USER_ID,

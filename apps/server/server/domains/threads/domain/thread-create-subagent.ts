@@ -32,7 +32,7 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     kind: "subagent",
     status: "idle",
     title: input.title ?? null,
-    slug: null,
+    ref: null,
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
     systemPrompt: null,

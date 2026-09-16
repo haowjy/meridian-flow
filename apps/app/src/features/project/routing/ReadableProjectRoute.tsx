@@ -143,14 +143,15 @@ export function ReadableProjectRoute({
       ? { status: "ready" as const, entries: works.works ?? [] }
       : { status: works.status === "error" ? ("error" as const) : ("loading" as const) };
   const requestedChat = addressChatSelection(address);
-  const chat = resolveAddressSelection(
-    requestedChat,
-    threads.isError
-      ? { status: "error" }
-      : threads.threads !== null
-        ? { status: "ready", entries: threads.threads }
-        : { status: "loading" },
-  );
+  const chatCatalog = threads.isError
+    ? { status: "error" as const }
+    : threads.threads !== null
+      ? {
+          status: "ready" as const,
+          entries: threads.threads.map((thread) => ({ id: thread.id, slug: thread.ref })),
+        }
+      : { status: "loading" as const };
+  const chat = resolveAddressSelection(requestedChat, chatCatalog);
   const { resolvedThreadId } = useResolvedChatThread(
     projectId,
     chat.status === "resolved" ? chat.value.id : null,
@@ -247,7 +248,10 @@ export function ReadableProjectRoute({
         ? { status: "error" }
         : threads.isFetching || threads.threads === null
           ? { status: "loading" }
-          : { status: "ready", entries: threads.threads },
+          : {
+              status: "ready",
+              entries: threads.threads.map((thread) => ({ id: thread.id, slug: thread.ref })),
+            },
       work: works.isFetching ? { status: "loading" } : workCatalog,
     });
   }, [
@@ -270,8 +274,7 @@ export function ReadableProjectRoute({
   }, []);
   const reportSelection = useCallback(
     (value: { threadId: string | null; editorWorkId: string | null }) => {
-      const chatSlug =
-        threads.threads?.find((thread) => thread.id === value.threadId)?.slug ?? null;
+      const chatSlug = threads.threads?.find((thread) => thread.id === value.threadId)?.ref ?? null;
       const workSlug = works.works?.find((work) => work.id === value.editorWorkId)?.slug ?? null;
       shown.current = { chatSlug, workSlug, local: localPointer };
       if (activeScreen === "context" && !issue(editorWork)) rememberedEditor.current = workSlug;
@@ -391,17 +394,17 @@ export function ReadableProjectRoute({
     if (!threadId && dock) return go({ ...address, chat: NONE }, { replace: true });
     const ticket = navigation?.captureForEntry(location.state.__TSR_key ?? "");
     let thread = threads.threads?.find((thread) => thread.id === threadId);
-    if (!thread?.slug) {
+    if (!thread?.ref) {
       const catalog = await listProjectThreads(projectId);
       queryClient.setQueryData(projectQueryKeys.threads(projectId), catalog);
       if (!ticket || !navigation?.isCurrent(ticket)) return;
       thread = catalog.find((candidate) => candidate.id === threadId);
     }
-    if (!thread?.slug) throw new Error("Chat address is unavailable");
+    if (!thread?.ref) throw new Error("Chat address is unavailable");
     return go(
       dock
-        ? { ...address, chat: selection(thread.slug) }
-        : toDestination({ kind: "chat", chatSlug: thread.slug }),
+        ? { ...address, chat: selection(thread.ref) }
+        : toDestination({ kind: "chat", chatSlug: thread.ref }),
       { replace: dock || options.replace },
     );
   }
