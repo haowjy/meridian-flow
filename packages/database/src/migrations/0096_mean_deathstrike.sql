@@ -1,1 +1,1 @@
-ALTER TABLE "threads" DROP COLUMN "current_agent_id";
+ALTER TABLE "threads" DROP COLUMN "current_agent_id"; -- migration-lint: skip DROP_COLUMN (pre-release; Agent identity is the bound revision join, not a stored slug)
