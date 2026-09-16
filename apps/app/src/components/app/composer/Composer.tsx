@@ -26,6 +26,7 @@ import { editorSuggestionHost } from "@/core/editor/suggestion-host";
 import { AtReferenceMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
+import { ComposerSkillAtom } from "./ComposerSkillAtom";
 import {
   type ComposerAvailableSkill,
   ComposerCommandExtension,
@@ -37,6 +38,7 @@ import {
   type ComposerDraftSnapshot,
   type ComposerPendingUploadAttrs,
   ComposerReferenceNode,
+  ComposerSkillNode,
   type ComposerSubmitEnvelope,
   ComposerUploadNode,
   composerReferenceContent,
@@ -152,7 +154,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   referenceCatalogRef.current = referenceCatalog;
   const availableSkillsRef = useRef(availableSkills);
   availableSkillsRef.current = availableSkills;
-  const activatedSkillSlugsRef = useRef(new Set<string>());
   const resolvedUploadPort = uploadPort;
   const suppressDraftChangeRef = useRef(false);
   const [pending, setPending] = useState(0);
@@ -183,6 +184,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             ),
             { update: ({ oldNode, newNode }) => oldNode.eq(newNode) },
           ),
+      }),
+      ComposerSkillNode.extend({
+        addNodeView: () =>
+          ReactNodeViewRenderer(ComposerSkillAtom, {
+            update: ({ oldNode, newNode }) => oldNode.eq(newNode),
+          }),
       }),
       ComposerUploadNode,
       AtReferenceExtension.configure({
@@ -220,9 +227,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             menuLabel: t`Commands`,
             groupLabels: { skills: t`Skills`, chat: t`Chat` },
             items: composerSkillCommandItems(skills),
-            activateSkill: (slug) => {
-              activatedSkillSlugsRef.current.add(slug);
-            },
           };
         },
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),
@@ -389,7 +393,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       );
       setLocked(false);
       if (outcome.kind === "accepted" && revision.current === envelope.acceptedRevision) {
-        activatedSkillSlugsRef.current.clear();
         editor.commands.clearContent(true);
       }
       if (outcome.kind === "rejected" && revision.current !== envelope.acceptedRevision) {
@@ -412,7 +415,6 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       editor.getJSON(),
       revision.current,
       composerSelection(editor.state.selection),
-      [...activatedSkillSlugsRef.current],
     );
     inFlight.current = envelope;
     const outcome = await Promise.resolve(onSubmit(envelope)).catch(
@@ -524,7 +526,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const keyDown = (event: React.KeyboardEvent) => {
     if (
       event.target instanceof Element &&
-      event.target.closest("[data-composer-reference], [data-composer-upload]")
+      event.target.closest(
+        "[data-composer-reference], [data-composer-skill], [data-composer-upload]",
+      )
     )
       return;
     if (event.key === "Escape" && streaming) {
@@ -534,6 +538,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   };
   return (
     <div
+      data-composer=""
       className={cn(
         "border border-composer-border bg-composer-surface px-4 pt-4 pb-3 focus-within:border-border-focus",
         variant === "hero" ? "rounded-composer" : "rounded-composer-pinned",

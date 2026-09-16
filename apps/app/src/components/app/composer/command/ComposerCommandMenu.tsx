@@ -25,6 +25,10 @@ export function ComposerCommandMenu({ editor }: { editor: Editor }) {
 
   const groupLabels = snapshot.meta?.groupLabels ?? null;
   const grouped = snapshot.query === "" && groupLabels !== null;
+  const shellRect = () => {
+    const shell = editor.view.dom.closest("[data-composer]");
+    return shell instanceof Element ? shell.getBoundingClientRect() : null;
+  };
 
   return (
     <SuggestionMenu
@@ -33,7 +37,8 @@ export function ComposerCommandMenu({ editor }: { editor: Editor }) {
       id="composer-command-menu"
       open={snapshot.open}
       label={snapshot.label}
-      anchorRect={snapshot.anchorRect}
+      anchorRect={shellRect}
+      className="min-w-0 w-(--radix-popper-anchor-width)"
       activeIndex={snapshot.activeIndex}
       onActivate={(index) => menu.setActiveIndex(index)}
       onChoose={(index) => menu.choose(index)}

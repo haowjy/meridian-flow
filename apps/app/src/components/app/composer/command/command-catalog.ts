@@ -27,7 +27,6 @@ export type ComposerCommandCatalog = {
   items: readonly ComposerCommandItem[];
   menuLabel: string;
   groupLabels: Record<ComposerCommandGroupId, string>;
-  activateSkill: (slug: string) => void;
 };
 
 export type ComposerAvailableSkill = {
