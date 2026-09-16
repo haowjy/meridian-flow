@@ -64,6 +64,7 @@ export function useThreadHandoff(
   const snapshotEvaluatedRef = useRef(false);
   const creationRef = useRef<Creation | undefined>(undefined);
   const persistRef = useRef<(creation: Creation) => void>(() => undefined);
+  const sendSucceededRef = useRef(false);
   const [failedTurnId, setFailedTurnId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -72,11 +73,18 @@ export function useThreadHandoff(
     handoffStartedRef.current = false;
     snapshotEvaluatedRef.current = false;
     creationRef.current = undefined;
+    sendSucceededRef.current = false;
     setFailedTurnId(null);
   }, [projectId, threadId]);
 
   useEffect(() => {
+    const clearFailedSend = () => {
+      sendSucceededRef.current = true;
+      setFailedTurnId(null);
+    };
+
     const failSend = (creation: Creation) => {
+      if (sendSucceededRef.current) return;
       if (creation.workingTurnId)
         actions.patchTurnStatus(threadId, creation.workingTurnId, "error");
       setFailedTurnId(creation.workingTurnId ?? null);
@@ -112,8 +120,8 @@ export function useThreadHandoff(
         )
         .then((outcome) => {
           if (outcome.kind === "accepted") {
+            clearFailedSend();
             finishInflightChat(threadId, actions);
-            setFailedTurnId(null);
             return;
           }
           failSend(creation);
@@ -130,9 +138,10 @@ export function useThreadHandoff(
       creationRef.current = creation;
       handoffStartedRef.current = true;
       pendingResumeRef.current = true;
+      sendSucceededRef.current = false;
       setFailedTurnId(null);
       if (creation.workingTurnId) {
-        actions.patchTurnStatus(threadId, creation.workingTurnId, "pending");
+        actions.patchTurnStatus(threadId, creation.workingTurnId, "streaming");
       }
       void runExclusivePersist(threadId, async () => {
         try {

@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import type { PendingStreamStart, ThreadStoreActions } from "@/client/stores";
+import { finishInflightChat } from "@/lib/send-project-chat";
 import { ErrorBlock } from "./ErrorBlock";
 import { useThreadHandoff } from "./useThreadHandoff";
 
@@ -93,6 +94,7 @@ afterEach(async () => {
   await cleanup?.();
   cleanup = undefined;
   mocks.createProjectThread.mockReset();
+  vi.mocked(finishInflightChat).mockReset();
 });
 
 async function mount(threadActions: ThreadStoreActions, run: ThreadRunController) {
@@ -155,5 +157,34 @@ describe("useThreadHandoff failed first send", () => {
       expect.objectContaining({ submissionId: "sub-1", text: "Hello" }),
       expect.objectContaining({ optimisticUserTurnId: "turn_local_1" }),
     );
+    expect(host.textContent).not.toContain("Couldn't send.");
+    expect(host.textContent).not.toContain("Retry");
+  });
+
+  it("does not restore Retry after persist+run already succeeded", async () => {
+    mocks.createProjectThread
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(persistedThread);
+    const threadActions = actions();
+    const run = controller();
+    vi.mocked(finishInflightChat).mockImplementationOnce(() => {
+      throw new Error("inflight clear failed");
+    });
+    const { host } = await mount(threadActions, run);
+
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain("Retry"));
+    });
+
+    await act(async () => {
+      host.querySelector("button")?.click();
+    });
+
+    await act(async () => {
+      await vi.waitFor(() => expect(run.submit).toHaveBeenCalledTimes(1));
+    });
+
+    expect(host.textContent).not.toContain("Couldn't send.");
+    expect(host.textContent).not.toContain("Retry");
   });
 });

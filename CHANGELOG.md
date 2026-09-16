@@ -10,6 +10,7 @@
 ### Changed
 
 - Project Home Send opens `/p/{project}/chat/{uuid}` immediately. Persist, admit, and run catch up on that chat. Failure stays there with Retry.
+- Clear first-send Retry chrome once persist and run succeed.
 
 - Remove first-send continuity, destination claim, and saved-first-message recovery copy.
 
