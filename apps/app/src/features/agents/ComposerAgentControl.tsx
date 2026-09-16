@@ -51,16 +51,17 @@ export function useComposerAgentToolbarControl(
         </ComposerCurrentValueStatus>
       ),
     };
-  const focusableIds =
+  const selectable =
     catalog.status === "ready"
-      ? (catalog.agents ?? []).map((agent) => agent.selection.catalogEntryId)
+      ? (catalog.agents ?? []).filter((agent) => agent.unavailableReasons.length === 0)
       : [];
+  const focusableIds = selectable.map((agent) => agent.selection.catalogEntryId);
   const pageId =
     catalog.status === "error"
       ? "error"
-      : catalog.status === "ready"
+      : catalog.status === "ready" && selectable.length > 0
         ? "ready"
-        : catalog.status === "empty"
+        : catalog.status === "empty" || catalog.status === "ready"
           ? "empty"
           : "loading";
   return {
@@ -98,7 +99,6 @@ export function useComposerAgentToolbarControl(
         <AgentPickerPanel
           focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
           status={catalog}
-          projectId={props.projectId}
           selectedAgent={selectedAgent}
           onSelect={(next) => {
             props.onSelectedAgentChange(next);

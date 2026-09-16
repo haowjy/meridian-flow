@@ -180,7 +180,7 @@ describe("useComposerAgentToolbarControl", () => {
     await act(async () => root.unmount());
   });
 
-  it("distinguishes same-slug entries and disables unsupported revisions", async () => {
+  it("distinguishes same-slug entries and omits unavailable agents", async () => {
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
@@ -198,10 +198,7 @@ describe("useComposerAgentToolbarControl", () => {
       document.querySelector<HTMLButtonElement>('[aria-label="Agent: General"]')?.click(),
     );
     const choices = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')];
-    const disabled = choices.find((button) => button.getAttribute("aria-disabled") === "true");
-    expect(disabled?.getAttribute("aria-disabled")).toBe("true");
-    await act(async () => disabled?.click());
-    expect(onSelect).not.toHaveBeenCalled();
+    expect(choices.some((button) => button.textContent?.includes("Prose"))).toBe(false);
     await act(async () =>
       choices.find((button) => button.textContent?.includes("Personal General"))?.click(),
     );
