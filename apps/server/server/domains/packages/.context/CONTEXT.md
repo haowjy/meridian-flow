@@ -104,3 +104,12 @@ owned package content belongs to the authenticated account and is reusable acros
 Projects. Source fetching stays outside owner transactions. Production seeds
 General and configured first-party packages into the system catalog at startup,
 not during Project creation. General replaces the old `<none>` entry.
+
+## Project availability
+
+`project_agent_removals` excludes stable catalog-entry IDs from one Project's
+prospective list and primary selection admission. Shared publication/seeding never
+clears exclusions. General is the only non-removable system entry. Routes authorize
+the Project before listing/removal; root, handoff and fork selection pass its ID.
+Previously bound execution and same-ID creation recovery do not recheck prospective
+availability. Removal does not delete source or change account ownership.

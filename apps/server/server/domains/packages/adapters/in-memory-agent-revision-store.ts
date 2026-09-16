@@ -17,6 +17,7 @@ import type {
 } from "../ports/agent-revision-store.js";
 
 type State = {
+  projectRemovals: Map<string, boolean>;
   installations: Map<string, AgentPackageInstallation>;
   installationHistory: Map<string, AgentPackageHistoryEntry[]>;
   sources: Map<string, { digest: string; source: AgentSourceSnapshot }>;
@@ -36,6 +37,7 @@ export function createInMemoryAgentRevisionStore(input: {
 }): InMemoryAgentRevisionStore {
   const transactionOwner = input.transactionOwner ?? new InMemoryTransactionOwner();
   const current: State = {
+    projectRemovals: transactionOwner.map(),
     installations: transactionOwner.map(),
     installationHistory: transactionOwner.map(),
     sources: transactionOwner.map(),
@@ -191,7 +193,8 @@ export function createInMemoryAgentRevisionStore(input: {
     async readCatalogEntry(owner, key) {
       return copy(findEntry(owner, key));
     },
-    async readSelection(user, entryId, revisionId) {
+    async readSelection(user, entryId, revisionId, projectId) {
+      if (projectId && state().projectRemovals.has(`${projectId}:${entryId}`)) return undefined;
       const entry = state().catalog.get(entryId);
       if (!entry || entry.removed || (entry.ownerUserId !== null && entry.ownerUserId !== user))
         return undefined;
@@ -221,12 +224,17 @@ export function createInMemoryAgentRevisionStore(input: {
           .filter(
             (entry) =>
               !entry.removed &&
+              (!input.projectId ||
+                !state().projectRemovals.has(`${input.projectId}:${entry.id}`)) &&
               (entry.ownerUserId === null || entry.ownerUserId === input.userId) &&
               (!input.after || compare(entry, input.after) > 0),
           )
           .sort(compare)
           .slice(0, input.limit),
       );
+    },
+    async removeFromProject(projectId, entryId) {
+      state().projectRemovals.set(`${projectId}:${entryId}`, true);
     },
     removeOwnedEntry(user, id) {
       return store.transaction(async () => {

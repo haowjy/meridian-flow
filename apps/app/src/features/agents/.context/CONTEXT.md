@@ -8,10 +8,13 @@ conversations display their bound Agent.
 General is a real system catalog entry backed by an immutable definition.
 Creation sends both its catalog-entry ID and definition-revision ID.
 
-`useAgentCatalog` acquires every account/system catalog page under an
-account-keyed query. The picker works before a project exists, groups Personal
-and System entries, and displays unavailable entries with disabled choices and
-their reasons. Entry and revision IDs distinguish choices that share a slug.
+`useAgentCatalog` acquires every visible catalog page under an account-and-Project
+query key. Rows show name, effective model and a one-line hint. Hover and keyboard
+focus reveal the full hint and unavailable reasons; unavailable choices remain
+focusable but cannot be selected. Ownership and slugs are not picker labels.
+Project pickers allow removal except for system General. Removal filters future
+choices only, never existing bindings or other Projects. Unscoped catalog consumers
+have no removal control; global Home redesign is outside this work.
 
 The account creation owner persists the selection and its name/slug display
 snapshot before requests. Catalog updates cannot replace a reserved choice.
@@ -27,7 +30,7 @@ of retained revisions.
 | Existing conversation, including zero turns | Readonly bound-Agent status. |
 | Results provenance | Inert attribution inside the producing-thread link. |
 
-Agent identity uses a name and source badge. The toolbar owns trigger,
+Picker identity is name-led, without ownership badges. The toolbar owns trigger,
 popover, focus repair, and close behavior; `AgentPickerPanel` owns catalog
 rows and loading/error presentation.
 

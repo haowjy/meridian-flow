@@ -7,9 +7,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Compact Agent picker shows model and one-line hint. Remove any Agent except General from a project without changing existing chats.
+
 - Publish package imports, edits, updates and restores through the durable account Agent catalog. Preserve edited definitions, retained dependencies, binary files and owned history.
 - Seed first-party Agents once at startup. Remove the old project-local Agent/skill store, unused invocation scaffolding and mutable provenance lookup.
-- Distinguish same-name Agent choices by slug.
 
 - Agent conversations retain resolved model defaults and exact package dependencies. Root, child, handoff and fork creation share atomic binding, with derived initialization and spawn provenance committed together.
 - Preserve nested spawn-root identity in PostgreSQL and reject unsupported children before creation.

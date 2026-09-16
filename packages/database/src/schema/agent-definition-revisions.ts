@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, updatedAt } from "./_shared";
 import { threads } from "./agent-threads";
+import { projects } from "./content";
 import { users } from "./users";
 
 export const agentPackageRevisions = pgTable(
@@ -90,6 +91,20 @@ export const agentCatalogEntries = pgTable(
       .where(sql`${table.ownerUserId} IS NULL`),
     index("agent_catalog_entries_owner_name").on(table.ownerUserId, table.nameSortKey, table.id),
   ],
+);
+
+/** Project availability never changes shared source or an existing conversation binding. */
+export const projectAgentRemovals = pgTable(
+  "project_agent_removals",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    catalogEntryId: uuid("catalog_entry_id")
+      .notNull()
+      .references(() => agentCatalogEntries.id, { onDelete: "cascade" }),
+  },
+  (table) => [primaryKey({ columns: [table.projectId, table.catalogEntryId] })],
 );
 
 export const threadAgentBindings = pgTable("thread_agent_bindings", {

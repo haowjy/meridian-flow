@@ -33,7 +33,11 @@ export async function handoffThreadAgent(
 ): Promise<Thread> {
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
   const sourceWorkId = await requirePrimaryWorkId(deps, source.id);
-  const binding = await deps.agentCatalog.resolvePrimary(input.userId, input.agentSelection);
+  const binding = await deps.agentCatalog.resolvePrimary(
+    input.userId,
+    input.agentSelection,
+    source.projectId,
+  );
   if (!binding.ok) throw new AgentSelectionError(input.agentSelection.definitionRevisionId);
   const summary = input.summary?.trim() || (await programmaticSummary(deps, source.id));
   return deps.transaction(async () => {
@@ -76,7 +80,11 @@ export async function forkThreadAgent(
 ): Promise<Thread> {
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
   const sourceWorkId = await requirePrimaryWorkId(deps, source.id);
-  const binding = await deps.agentCatalog.resolvePrimary(input.userId, input.agentSelection);
+  const binding = await deps.agentCatalog.resolvePrimary(
+    input.userId,
+    input.agentSelection,
+    source.projectId,
+  );
   if (!binding.ok) throw new AgentSelectionError(input.agentSelection.definitionRevisionId);
   const originTurnId = input.originTurnId ?? (await latestTurnId(deps, source.id));
   if (!originTurnId) throw new Error("Cannot fork a thread without an origin turn");

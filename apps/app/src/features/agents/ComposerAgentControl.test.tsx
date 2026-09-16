@@ -44,6 +44,7 @@ const general: AgentCatalogItem = {
   slug: "general",
   name: "General",
   description: "General fiction support",
+  model: "mock-model",
   ownership: "system",
   unavailableReasons: [],
   selection: { catalogEntryId: "general-entry", definitionRevisionId: "general-revision" },
@@ -52,6 +53,7 @@ const prose: AgentCatalogItem = {
   slug: "prose",
   name: "Prose",
   description: "Line-level prose",
+  model: "mock-model",
   ownership: "personal",
   unavailableReasons: [],
   selection: { catalogEntryId: "prose-entry", definitionRevisionId: "prose-revision" },
@@ -196,8 +198,8 @@ describe("useComposerAgentToolbarControl", () => {
       document.querySelector<HTMLButtonElement>('[aria-label="Agent: General"]')?.click(),
     );
     const choices = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')];
-    const disabled = choices.find((button) => button.textContent?.includes("Model unavailable"));
-    expect(disabled?.disabled).toBe(true);
+    const disabled = choices.find((button) => button.getAttribute("aria-disabled") === "true");
+    expect(disabled?.getAttribute("aria-disabled")).toBe("true");
     await act(async () => disabled?.click());
     expect(onSelect).not.toHaveBeenCalled();
     await act(async () =>

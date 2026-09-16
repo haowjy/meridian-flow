@@ -73,7 +73,11 @@ export function CreationProvider({ children }: { children: ReactNode }) {
                 });
               else
                 await queryClient.fetchQuery({
-                  ...agentCatalogQueryOptions(continuity.accountId, accountSignal),
+                  ...agentCatalogQueryOptions(
+                    continuity.accountId,
+                    accountSignal,
+                    projectId ?? undefined,
+                  ),
                   staleTime: 0,
                 });
             },

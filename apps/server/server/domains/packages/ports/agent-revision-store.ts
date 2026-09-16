@@ -74,12 +74,15 @@ export interface AgentRevisionStore {
     userId: string,
     catalogEntryId: string,
     revisionId: string,
+    projectId?: string,
   ): Promise<{ entry: AgentCatalogEntry; revision: AgentRevision } | undefined>;
   listCatalog(input: {
     userId: string;
+    projectId?: string;
     limit: number;
     after?: { nameSortKey: string; id: string };
   }): Promise<AgentCatalogEntry[]>;
+  removeFromProject(projectId: string, catalogEntryId: string): Promise<void>;
   removeOwnedEntry(userId: string | null, entryId: string): Promise<boolean>;
   restoreOwnedEntry(userId: string, entryId: string, expectedRevisionId: string): Promise<boolean>;
   bindThread(

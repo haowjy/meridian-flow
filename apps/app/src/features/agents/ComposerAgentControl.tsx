@@ -13,6 +13,7 @@ import { AgentPickerPanel } from "./AgentPicker";
 export type ComposerAgentControlProps =
   | {
       mode: "interactive";
+      projectId?: string;
       selectedAgent: CreationAgent | null;
       onSelectedAgentChange: (agent: CreationAgent) => void;
     }
@@ -21,7 +22,10 @@ export type ComposerAgentControlProps =
 export function useComposerAgentToolbarControl(
   props: ComposerAgentControlProps,
 ): ComposerToolbarControl {
-  const catalog = useAgentCatalog(props.mode === "interactive");
+  const catalog = useAgentCatalog(
+    props.mode === "interactive",
+    props.mode === "interactive" ? props.projectId : undefined,
+  );
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);
   const retryRef = useRef<HTMLButtonElement | null>(null);
@@ -46,11 +50,9 @@ export function useComposerAgentToolbarControl(
         </ComposerCurrentValueStatus>
       ),
     };
-  const enabledIds =
+  const focusableIds =
     catalog.status === "ready"
-      ? (catalog.agents ?? [])
-          .filter((agent) => !agent.unavailableReasons.length)
-          .map((agent) => agent.selection.catalogEntryId)
+      ? (catalog.agents ?? []).map((agent) => agent.selection.catalogEntryId)
       : [];
   const pageId =
     catalog.status === "error"
@@ -76,7 +78,7 @@ export function useComposerAgentToolbarControl(
       size: "identity",
       focus: {
         pageId,
-        repairRevision: enabledIds.join("\0"),
+        repairRevision: focusableIds.join("\0"),
         candidates:
           pageId === "ready"
             ? [
@@ -84,7 +86,7 @@ export function useComposerAgentToolbarControl(
                   key: `selected:${selectedAgent?.selection.catalogEntryId ?? "none"}`,
                   ref: selectedRef,
                 },
-                { key: `first:${enabledIds[0] ?? "none"}`, ref: firstRef },
+                { key: `first:${focusableIds[0] ?? "none"}`, ref: firstRef },
               ]
             : pageId === "error"
               ? [{ key: "retry", ref: retryRef }]
@@ -95,6 +97,7 @@ export function useComposerAgentToolbarControl(
         <AgentPickerPanel
           focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
           status={catalog}
+          projectId={props.projectId}
           selectedAgent={selectedAgent}
           onSelect={(next) => {
             props.onSelectedAgentChange(next);

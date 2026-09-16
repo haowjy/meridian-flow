@@ -1050,6 +1050,10 @@ msgstr "Couldn't read"
 msgid "Couldn't redo"
 msgstr "Couldn't redo"
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Couldn't remove agent from project."
+msgstr "Couldn't remove agent from project."
+
 #: src/features/project/context/ContextTreeRows.tsx
 msgid "Couldn't rename this document. Try again."
 msgstr "Couldn't rename this document. Try again."
@@ -2178,6 +2182,10 @@ msgstr "No matching files"
 msgid "No messages yet."
 msgstr "No messages yet."
 
+#: src/features/agents/AgentPicker.tsx
+msgid "No model"
+msgstr "No model"
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "No pending changes"
 msgstr "No pending changes"
@@ -2390,8 +2398,8 @@ msgid "Pending drafts couldn’t load"
 msgstr "Pending drafts couldn’t load"
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Personal"
-msgstr "Personal"
+#~ msgid "Personal"
+#~ msgstr "Personal"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "photo"
@@ -2556,9 +2564,18 @@ msgstr "remaining"
 msgid "Remove"
 msgstr "Remove"
 
+#. placeholder {0}: agent.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Remove {0} from project"
+msgstr "Remove {0} from project"
+
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Remove from favorites"
 msgstr "Remove from favorites"
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Remove from project"
+msgstr "Remove from project"
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
@@ -2998,8 +3015,8 @@ msgid "Switching Work…"
 msgstr "Switching Work…"
 
 #: src/features/agents/AgentPicker.tsx
-msgid "System"
-msgstr "System"
+#~ msgid "System"
+#~ msgstr "System"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -3497,6 +3514,7 @@ msgstr "Unarchive Work"
 msgid "workReceipt.unarchived"
 msgstr "Unarchived Work {name}"
 
+#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Unavailable"

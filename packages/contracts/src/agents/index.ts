@@ -10,6 +10,7 @@ export interface AgentCatalogItem {
   slug: string;
   name: string;
   description: string;
+  model: string | null;
   ownership: "system" | "personal";
   unavailableReasons: string[];
 }
