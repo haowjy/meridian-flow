@@ -15,6 +15,10 @@
 - Persist account-scoped skill installs. Debug overlay can add a packaged skill (including `story-review`) or a paste, and delete by slug.
 - Snapshot `creative-writing-modes`, `writing-principles`, and `story-review` into launch-agents. Writer lists the first two as available skills.
 
+### Fixed
+
+- Proxy Home `GET /api/skills` to the API server so composer `/` can list skills before a thread exists.
+
 ### Changed
 
 - Nonempty Agent `skills.available` no longer refuses catalog selection or turn preparation. Nonempty `skills.load` still does.
