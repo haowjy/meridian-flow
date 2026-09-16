@@ -1,6 +1,7 @@
 /** Pure Composer document schema, serialization, and exact selection snapshots. */
 import type {
   ReferenceOccurrence,
+  SkillOccurrence,
   SubmittedReference,
   UploadIntakeResult,
   UserMessageBlock,
@@ -362,7 +363,15 @@ export function serializeComposerDraft(
           seenSkillSlugs.add(slug);
           activatedSkillSlugs.push(slug);
         }
-        emitText(`/${slug}`);
+        const occurrence: SkillOccurrence = {
+          type: "skill",
+          text: `/${slug}`,
+          slug,
+          name: typeof node.attrs?.name === "string" ? node.attrs.name : "",
+          description: typeof node.attrs?.description === "string" ? node.attrs.description : "",
+        };
+        blocks.push(occurrence);
+        text += occurrence.text;
       }
       return;
     }

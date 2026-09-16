@@ -28,9 +28,27 @@ describe("serializeComposerDraft skill slugs", () => {
       "hello/creative-writing-modes/writing-principles/creative-writing-modes",
     );
     expect(envelope.blocks).toEqual([
+      { type: "text", text: "hello" },
       {
-        type: "text",
-        text: "hello/creative-writing-modes/writing-principles/creative-writing-modes",
+        type: "skill",
+        text: "/creative-writing-modes",
+        slug: "creative-writing-modes",
+        name: "Creative writing modes",
+        description: "Creative writing modes body",
+      },
+      {
+        type: "skill",
+        text: "/writing-principles",
+        slug: "writing-principles",
+        name: "Writing principles",
+        description: "Writing principles body",
+      },
+      {
+        type: "skill",
+        text: "/creative-writing-modes",
+        slug: "creative-writing-modes",
+        name: "Creative writing modes",
+        description: "Creative writing modes body",
       },
     ]);
   });
@@ -51,7 +69,15 @@ describe("serializeComposerDraft skill slugs", () => {
     });
     expect(envelope.activatedSkillSlugs).toEqual(["writing-principles"]);
     expect(envelope.text).toBe("/writing-principles");
-    expect(envelope.blocks).toEqual([{ type: "text", text: "/writing-principles" }]);
+    expect(envelope.blocks).toEqual([
+      {
+        type: "skill",
+        text: "/writing-principles",
+        slug: "writing-principles",
+        name: "Writing principles",
+        description: "Writing principles body",
+      },
+    ]);
     expect(envelope.references).toEqual([]);
   });
 });

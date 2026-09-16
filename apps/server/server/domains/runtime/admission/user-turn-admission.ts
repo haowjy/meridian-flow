@@ -138,6 +138,28 @@ export function parseUserMessageBlocks(value: unknown, text: string): UserMessag
         uri: canonicalUri(candidate.uri, `blocks[${index}].uri`),
       };
     }
+    if (
+      exactObject(candidate, ["description", "name", "slug", "text", "type"]) &&
+      candidate.type === "skill"
+    ) {
+      if (
+        typeof candidate.slug !== "string" ||
+        candidate.slug.length === 0 ||
+        typeof candidate.name !== "string" ||
+        typeof candidate.description !== "string" ||
+        typeof candidate.text !== "string" ||
+        candidate.text !== `/${candidate.slug}`
+      ) {
+        throw new InvalidAdmissionError(`blocks[${index}] has invalid skill identity`);
+      }
+      return {
+        type: "skill",
+        text: candidate.text,
+        slug: candidate.slug,
+        name: candidate.name,
+        description: candidate.description,
+      };
+    }
     if (exactObject(candidate, ["type", "documentId", "uri"]) && candidate.type === "image") {
       const documentId =
         typeof candidate.documentId === "string" ? parseRequestId(candidate.documentId) : null;
@@ -155,7 +177,9 @@ export function parseUserMessageBlocks(value: unknown, text: string): UserMessag
   });
   if (
     blocks
-      .filter((block) => block.type === "text" || block.type === "reference")
+      .filter(
+        (block) => block.type === "text" || block.type === "reference" || block.type === "skill",
+      )
       .map((block) => block.text)
       .join("") !== text
   ) {
@@ -216,7 +240,7 @@ function validateReferenceMembership(
   const submitted = new Set(references.map(referenceIdentity));
   const distinct = new Set(submitted);
   for (const [index, block] of blocks.entries()) {
-    if (block.type === "text") continue;
+    if (block.type === "text" || block.type === "skill") continue;
     const key = referenceIdentity(block);
     distinct.add(key);
     if (!submitted.has(key)) {
@@ -388,7 +412,9 @@ export function createUserTurnAdmission(deps: {
       const ids = [
         ...new Set([
           ...references.map((reference) => reference.documentId),
-          ...blocks.filter((block) => block.type !== "text").map((block) => block.documentId),
+          ...blocks
+            .filter((block) => block.type === "reference" || block.type === "image")
+            .map((block) => block.documentId),
         ]),
       ];
       const resolved = await deps.availability.lookup(
@@ -419,7 +445,7 @@ export function createUserTurnAdmission(deps: {
         });
       }
       const admittedBlocks = blocks.flatMap((block): UserMessageBlock[] => {
-        if (block.type === "text") return [block];
+        if (block.type === "text" || block.type === "skill") return [block];
         if (admittedIdentities.has(referenceIdentity(block))) return [block];
         return block.type === "reference" ? [{ type: "text", text: block.text }] : [];
       });

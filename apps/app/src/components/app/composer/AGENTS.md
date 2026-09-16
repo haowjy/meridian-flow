@@ -12,7 +12,7 @@ This directory owns authored text, reference atoms, skill atoms, and pending/fai
   keys. A React capture handler must not submit before a suggestion can choose.
 - Chat `/` is a command lane (`command/`) on the same suggestion kernel as `@`.
   Skills appear as `/<slug>` atoms in the document. Send copies that spelling
-  into the message text and reads slugs from the atoms; typed `/slug` prose is
-  not an activation. Session verbs (`compact`,
+  into the message text as a skill occurrence block and reads unique slugs from
+  the atoms; typed `/slug` prose is not an activation. Session verbs (`compact`,
   later handoff/clear) are reserved. Manuscript slash insertion is a different
   catalog.

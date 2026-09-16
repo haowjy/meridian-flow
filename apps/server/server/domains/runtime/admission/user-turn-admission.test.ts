@@ -158,6 +158,40 @@ describe("UserTurnAdmission", () => {
     expect(acquire).not.toHaveBeenCalled();
   });
 
+  it("accepts skill blocks in concat and ignores them for reference membership", async () => {
+    const skill = {
+      type: "skill" as const,
+      text: "/writing-principles",
+      slug: "writing-principles",
+      name: "Writing principles",
+      description: "Reader reward.",
+    };
+    const parsed = parseUserMessageBlocks(
+      [{ type: "text", text: "use " }, skill],
+      "use /writing-principles",
+    );
+    expect(parsed).toEqual([{ type: "text", text: "use " }, skill]);
+    expect(() => parseUserMessageBlocks([{ ...skill, extra: true }], skill.text)).toThrow(
+      InvalidAdmissionError,
+    );
+    expect(() => parseUserMessageBlocks([{ ...skill, text: "/other" }], "/other")).toThrow(
+      InvalidAdmissionError,
+    );
+    const h = harness(null, [availableResolution()], true, async () => undefined);
+    await expect(
+      h.service.admit(
+        input({
+          text: "use /writing-principles",
+          blocks: [{ type: "text", text: "use " }, skill],
+          references: [],
+          activatedSkillSlugs: ["writing-principles"],
+        }),
+      ),
+    ).resolves.toMatchObject({ kind: "accepted" });
+    expect(h.captured()?.blocks).toEqual([{ type: "text", text: "use " }, skill]);
+    expect(h.captured()?.references).toEqual([]);
+  });
+
   it("parses exact ordered occurrences and proves text equivalence", () => {
     const parsed = parseUserMessageBlocks(input().blocks, input().text);
     expect(parsed.map((block) => block.type)).toEqual([

@@ -421,15 +421,8 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
                 textContent: block.text,
                 status: "complete",
               })
-            : block.type === "reference"
+            : block.type === "image"
               ? contentForBlockInput({
-                  turnId: userTurn.id,
-                  blockType: "text",
-                  sequence,
-                  content: block,
-                  status: "complete",
-                })
-              : contentForBlockInput({
                   turnId: userTurn.id,
                   blockType: "image",
                   sequence,
@@ -438,6 +431,13 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
                     documentId: block.documentId,
                     uri: block.uri,
                   },
+                  status: "complete",
+                })
+              : contentForBlockInput({
+                  turnId: userTurn.id,
+                  blockType: "text",
+                  sequence,
+                  content: block,
                   status: "complete",
                 }),
       );

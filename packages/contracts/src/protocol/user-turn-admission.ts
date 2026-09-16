@@ -12,9 +12,18 @@ export type ReferenceOccurrence = {
   uri: CanonicalContextUri;
 };
 
+export type SkillOccurrence = {
+  type: "skill";
+  text: string;
+  slug: string;
+  name: string;
+  description: string;
+};
+
 export type UserMessageBlock =
   | { type: "text"; text: string }
   | ReferenceOccurrence
+  | SkillOccurrence
   | { type: "image"; documentId: DocumentId; uri: CanonicalContextUri };
 
 export type SubmittedReference = {
@@ -131,4 +140,34 @@ export function referenceOccurrenceContent(block: {
     return null;
   }
   return content as ReadReferenceOccurrence;
+}
+
+export function skillOccurrenceContent(block: {
+  blockType: unknown;
+  content: unknown;
+}): SkillOccurrence | null {
+  if (
+    block.blockType !== "text" ||
+    !block.content ||
+    typeof block.content !== "object" ||
+    Array.isArray(block.content)
+  ) {
+    return null;
+  }
+  const content = block.content as Record<string, unknown>;
+  const keys = Object.keys(content).sort();
+  if (
+    keys.length !== 5 ||
+    !["description", "name", "slug", "text", "type"].every((key, index) => keys[index] === key) ||
+    content.type !== "skill" ||
+    typeof content.slug !== "string" ||
+    content.slug.length === 0 ||
+    typeof content.name !== "string" ||
+    typeof content.description !== "string" ||
+    typeof content.text !== "string" ||
+    content.text !== `/${content.slug}`
+  ) {
+    return null;
+  }
+  return content as SkillOccurrence;
 }
