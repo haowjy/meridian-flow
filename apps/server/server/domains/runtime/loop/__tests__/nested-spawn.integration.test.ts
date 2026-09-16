@@ -208,7 +208,6 @@ describe("nested spawn runtime (P2b gate)", () => {
     const thread = await repos.threads.create({
       userId: "user-1",
       projectId: project.id,
-      currentAgent: "orchestrator",
       systemPrompt: "You orchestrate workers.",
     });
     await agentRevisions.bindThread(
@@ -660,7 +659,6 @@ describe("nested spawn runtime (P2b gate)", () => {
       rootThreadId: thread.id,
       originTurnId: "turn-origin",
       spawnDepth: 2,
-      currentAgent: "orchestrator",
       spawnStatus: "running",
     });
     await agentRevisions.bindThread(

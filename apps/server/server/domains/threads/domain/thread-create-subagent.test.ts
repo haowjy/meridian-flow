@@ -10,7 +10,6 @@ const input = {
   parentThreadId: "parent-1",
   rootThreadId: "parent-1",
   spawnDepth: 1,
-  currentAgent: "agent-one",
   composedSystemPrompt: "Caller-supplied prompt",
   bakedSkillSlugs: ["caller-skill"],
 };

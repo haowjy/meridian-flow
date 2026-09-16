@@ -24,7 +24,7 @@ export interface ProjectResultItem {
   turnId: string;
   /** Tool call id if the artifact came out of a tool invocation; null when produced inline. */
   toolCallId: string | null;
-  /** Display attribution — `Thread.currentAgent` slug at promotion time. */
+  /** Display attribution — bound revision slug at promotion time. */
   agentSlug: string;
   /** Display name from the producing conversation’s retained Agent definition. */
   agentName: string;

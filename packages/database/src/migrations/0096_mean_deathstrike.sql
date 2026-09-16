@@ -1,0 +1,1 @@
+ALTER TABLE "threads" DROP COLUMN "current_agent_id";

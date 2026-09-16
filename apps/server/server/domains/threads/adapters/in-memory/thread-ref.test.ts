@@ -17,7 +17,6 @@ describe("in-memory thread ref assignment", () => {
       parentThreadId: "parent",
       rootThreadId: "parent",
       spawnDepth: 1,
-      currentAgent: "writer",
       composedSystemPrompt: "",
       bakedSkillSlugs: [],
       originType: "fork" as const,
@@ -70,7 +69,6 @@ describe("in-memory thread ref assignment", () => {
       parentThreadId: primary.id,
       rootThreadId: primary.id,
       spawnDepth: 1,
-      currentAgent: "writer",
     });
     const next = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
     expect(primary.ref).toBe("c1");

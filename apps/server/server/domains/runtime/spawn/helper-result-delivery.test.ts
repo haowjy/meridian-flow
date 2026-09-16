@@ -13,7 +13,6 @@ describe("createHelperResultDelivery", () => {
       userId: "user-1",
       projectId: "project-1",
       workId: "work-1",
-      currentAgent: "muse",
     });
     const parentTurn = await repos.turns.create({
       threadId: parent.id,
@@ -67,7 +66,6 @@ describe("createHelperResultDelivery", () => {
       userId: "user-1",
       projectId: "project-1",
       workId: "work-1",
-      currentAgent: "muse",
     });
     const parentTurn = await repos.turns.create({
       threadId: parent.id,

@@ -40,7 +40,6 @@ describe("orchestrator model-request debug capture", () => {
       userId: "user-1",
       title: null,
       systemPrompt: "You are a helpful assistant.",
-      currentAgent: "agent-one",
     });
     const creditLedger = createInMemoryCreditLedger();
     await creditLedger.grant({

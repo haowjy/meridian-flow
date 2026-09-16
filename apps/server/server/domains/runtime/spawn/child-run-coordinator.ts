@@ -207,7 +207,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             rootThreadId: input.parentThread.rootThreadId as ThreadId,
             originTurnId: input.parentTurnId,
             spawnDepth: input.parentThread.spawnDepth + 1,
-            currentAgent: childAgent.slug,
             title: input.description ?? `${input.agentSlug} subagent`,
             spawnStatus: "running",
           }),

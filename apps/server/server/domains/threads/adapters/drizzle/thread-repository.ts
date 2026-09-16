@@ -40,7 +40,20 @@ const agentName = sql<string | null>`(
   WHERE ${schema.threadAgentBindings.threadId} = ${schema.threads}.${sql.identifier("id")}
 )`;
 
-const threadColumns = { ...getTableColumns(schema.threads), agentDefinitionRevisionId, agentName };
+const agentSlug = sql<string | null>`(
+  SELECT ${schema.agentDefinitionRevisions.slug}
+  FROM ${schema.threadAgentBindings}
+  JOIN ${schema.agentDefinitionRevisions}
+    ON ${schema.agentDefinitionRevisions.id} = ${schema.threadAgentBindings.definitionRevisionId}
+  WHERE ${schema.threadAgentBindings.threadId} = ${schema.threads}.${sql.identifier("id")}
+)`;
+
+const threadColumns = {
+  ...getTableColumns(schema.threads),
+  agentDefinitionRevisionId,
+  agentName,
+  agentSlug,
+};
 
 const runningTurnId = sql<string | null>`(
   SELECT ${schema.turns.id}
@@ -167,7 +180,6 @@ export function createDrizzleThreadRepository(
         kind: normalized.kind,
         title: normalized.title,
         composedSystemPrompt: normalized.systemPrompt,
-        currentAgentId: normalized.currentAgent,
         workingState: input.workingState ?? null,
         parentThreadId: normalized.parentThreadId,
         spawnStatus: normalized.spawnStatus,
@@ -188,7 +200,6 @@ export function createDrizzleThreadRepository(
         composedSystemPrompt: thread.composedSystemPrompt,
         bakedSkillSlugs: thread.bakedSkillSlugs,
         systemPromptHash: null,
-        currentAgentId: thread.currentAgent,
         parentThreadId: thread.parentThreadId,
         rootThreadId: thread.kind === "subagent" ? thread.rootThreadId : null,
         originTurnId: input.originTurnId ?? thread.id,
@@ -209,7 +220,6 @@ export function createDrizzleThreadRepository(
         kind: "primary",
         title: thread.title ?? "",
         composedSystemPrompt: thread.systemPrompt,
-        currentAgentId: thread.currentAgent,
         parentThreadId: input.parentThreadId,
         originTurnId: input.originTurnId ?? null,
         originType: input.originType,

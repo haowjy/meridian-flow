@@ -223,7 +223,6 @@ export class RuntimeTestRig {
         return {
           ...this.thread,
           workId: "work-1",
-          currentAgentId: null,
           activeLeafTurnId: null,
           nextSeq: 0n,
           status: "active" as const,

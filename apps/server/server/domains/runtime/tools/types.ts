@@ -128,7 +128,7 @@ export interface ToolHandlerContext {
   turnId: string;
   /** Model-response id currently dispatching tool calls. */
   responseId?: string;
-  /** Mars agent slug from Thread.currentAgent; null when the thread has no bound agent. */
+  /** Bound revision slug; null when the thread has no bound agent. */
   agentSlug: string | null;
   /**
    * Optional live-output sink. The orchestrator injects this only for tools

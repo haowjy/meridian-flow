@@ -110,7 +110,6 @@ export async function createThreadForProject(
           projectId: args.projectId,
           title: args.title ?? null,
           systemPrompt: null,
-          currentAgent: revision.slug,
         }),
       resolveWork: async (created) => {
         resolvedWorkId = await resolveWorkMembership(

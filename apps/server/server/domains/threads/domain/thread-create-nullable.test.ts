@@ -7,7 +7,6 @@ const base = {
   projectId: "project",
   workId: null,
   parentThreadId: "parent",
-  currentAgent: "writer",
   title: "Child",
 } as const;
 describe("nullable derived thread creation", () => {
