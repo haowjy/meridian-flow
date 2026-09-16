@@ -642,8 +642,8 @@ msgid "Chat context"
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
-msgid "Chat creation is still being reconciled."
-msgstr ""
+#~ msgid "Chat creation is still being reconciled."
+#~ msgstr ""
 
 #: src/features/project/HomePaneController.tsx
 msgid "Chats"
@@ -659,20 +659,20 @@ msgid "Check again"
 msgstr ""
 
 #: src/features/chat/ChatView.tsx
-msgid "Check status"
-msgstr ""
+#~ msgid "Check status"
+#~ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 msgid "Check submission status"
 msgstr ""
 
 #: src/features/chat/ChatView.tsx
-msgid "Check the saved first message before sending another."
-msgstr ""
+#~ msgid "Check the saved first message before sending another."
+#~ msgstr ""
 
 #: src/features/chat/ChatView.tsx
-msgid "Check this message before sending another. You can keep drafting below."
-msgstr ""
+#~ msgid "Check this message before sending another. You can keep drafting below."
+#~ msgstr ""
 
 #: src/features/project/home/HomeFeed.tsx
 msgid "Check your connection and try again."
@@ -731,8 +731,8 @@ msgid "Choose agent"
 msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "Choose Agent"
-msgstr ""
+#~ msgid "Choose Agent"
+#~ msgstr ""
 
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
@@ -882,8 +882,8 @@ msgid "Continue navigation"
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
-msgid "Continue the saved creation attempt."
-msgstr ""
+#~ msgid "Continue the saved creation attempt."
+#~ msgstr ""
 
 #: src/components/app/CopyTextButton.tsx
 msgid "Copied"
@@ -1522,8 +1522,8 @@ msgid "Finish reopening"
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
-msgid "Finish the current chat attempt"
-msgstr ""
+#~ msgid "Finish the current chat attempt"
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 msgid "Finishing close"
@@ -1860,8 +1860,8 @@ msgid "Loading chats"
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
-msgid "Loading draft…"
-msgstr ""
+#~ msgid "Loading draft…"
+#~ msgstr ""
 
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/rich-content/ImageBlock.tsx
@@ -2754,8 +2754,8 @@ msgid "Save name and location"
 msgstr ""
 
 #: src/features/chat/ChatView.tsx
-msgid "Saved first message"
-msgstr ""
+#~ msgid "Saved first message"
+#~ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally (offline)"
@@ -2921,8 +2921,6 @@ msgid "Start a quick chat without a project"
 msgstr ""
 
 #: src/components/app/composer/Composer.tsx
-#: src/features/chat/ChatView.tsx
-#: src/features/chat/CreationComposer.tsx
 msgid "Start over"
 msgstr ""
 
@@ -3152,8 +3150,8 @@ msgid "The change could not be confirmed. Try again."
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
-msgid "The created destination didn’t match your choices."
-msgstr ""
+#~ msgid "The created destination didn’t match your choices."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "The document could not be created. Try again."
@@ -3321,8 +3319,8 @@ msgid "workReceipt.alreadyCurrent"
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
-msgid "This creation attempt is open in another tab."
-msgstr ""
+#~ msgid "This creation attempt is open in another tab."
+#~ msgstr ""
 
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 msgid "This destination couldn’t load."
@@ -3366,8 +3364,8 @@ msgid "This document is still opening."
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
-msgid "This draft changed in another tab. The saved version has been loaded."
-msgstr ""
+#~ msgid "This draft changed in another tab. The saved version has been loaded."
+#~ msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
@@ -3629,8 +3627,8 @@ msgid "User"
 msgstr ""
 
 #: src/features/chat/ChatView.tsx
-msgid "View saved message"
-msgstr ""
+#~ msgid "View saved message"
+#~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Viewing chat resources is not available yet."
@@ -3762,8 +3760,8 @@ msgid "Your chats will appear here after you send a message."
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
-msgid "Your draft couldn’t be saved on this device."
-msgstr ""
+#~ msgid "Your draft couldn’t be saved on this device."
+#~ msgstr ""
 
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Your edits and the AI's overlapped here, so both were combined into one. Read it closely before applying."
@@ -3790,8 +3788,8 @@ msgid "Your selected Work is unavailable. Choose another Work or No Work."
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
-msgid "Your Work or Agent choice is no longer available."
-msgstr ""
+#~ msgid "Your Work or Agent choice is no longer available."
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Your WorkOS profile, as seen by Meridian."

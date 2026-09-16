@@ -10,23 +10,20 @@ export type PendingStreamStart = {
   after?: string;
   expectedTurnId?: string;
   /**
-   * When set, the chat surface should create the project + thread on the
-   * server and (optionally) send `text` as the first user message before
-   * subscribing to the stream. Used by the standalone creation handoff so
-   * navigation is instant. Empty `text` means "create only".
+   * When set, the chat surface should persist the thread on the server and
+   * (optionally) send `text` as the first user message before subscribing.
+   * Empty `text` means "create only". Independent chat also creates the project.
    */
-  independentCreation?: {
+  creation?: {
     projectId: string;
     title: string;
     text: string;
-    /** Exact Agent selection reserved before navigation. */
     agentSelection: AgentSelection;
-    /**
-     * Client-only user turn id created before deferred navigation. The HTTP
-     * append acknowledgement rewrites this row to the server turn id so the
-     * first snapshot cannot render both bubbles.
-     */
+    workId?: string | null;
     optimisticUserTurnId?: string;
+    workingTurnId?: string;
+    submissionId?: string;
+    createProject?: boolean;
   };
 };
 

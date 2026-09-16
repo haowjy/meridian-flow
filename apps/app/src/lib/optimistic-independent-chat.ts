@@ -3,13 +3,12 @@
 import type { Project } from "@meridian/contracts/projects";
 import type { Thread } from "@meridian/contracts/protocol";
 import type { useNavigate } from "@tanstack/react-router";
-import type { CreationAgent } from "@/client/first-send-continuity";
-
 import {
   markIndependentProject,
   type ProjectStoreActions,
   type ThreadStoreActions,
 } from "@/client/stores";
+import type { CreationAgent } from "@/features/agents/creation-agent";
 
 import { deriveTitleFromMessage } from "./thread-title";
 
@@ -107,11 +106,12 @@ export function startIndependentChat({
     optimisticUserTurnId = threadActions.appendUserTurn(threadId, trimmed).id;
   }
   threadActions.markPendingStream(threadId, {
-    independentCreation: {
+    creation: {
       agentSelection: agent.selection,
       projectId,
       title,
       text: trimmed,
+      createProject: true,
       ...(optimisticUserTurnId ? { optimisticUserTurnId } : {}),
     },
   });

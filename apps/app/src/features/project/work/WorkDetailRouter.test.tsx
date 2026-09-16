@@ -78,7 +78,7 @@ function GuardedOutlet() {
             router.history.replace(href, state, { ignoreBlocker: true }),
           navigate: (href, options) => router.navigate({ href, ...options, ignoreBlocker: true }),
         },
-        () => ({ chatSlug: null, workSlug: null }),
+        () => ({ chatId: null, workSlug: null }),
       ),
     [router],
   );

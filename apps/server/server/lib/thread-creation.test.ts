@@ -81,6 +81,17 @@ describe("exact thread creation", () => {
     expect(second.ref).toBe("c2");
   });
 
+  it("does not resurrect a deleted thread on same-user retry", async () => {
+    const { deps, args } = await fixture();
+    const created = await createThreadForProject(deps, args);
+    await deps.threads.setTrashState(created.id, "deleted");
+    await expect(createThreadForProject(deps, args)).rejects.toBeInstanceOf(
+      ThreadCreationConflictError,
+    );
+    expect(await deps.threads.findById(created.id)).toBeNull();
+    expect((await deps.threads.lockByIdIncludingDeleted(created.id))?.deletedAt).not.toBeNull();
+  });
+
   it("returns the existing row for same-user same-project retry", async () => {
     const { deps, args } = await fixture();
     const created = await createThreadForProject(deps, args);

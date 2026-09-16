@@ -1,90 +1,99 @@
-/** Creation UI observes the account owner and may replace only the entry that submitted. */
-
+/** Project Home Send navigates first; account Home still creates then routes. */
 import { useRouter } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
-import type { CreationAgent, CreationChoices } from "@/client/first-send-continuity";
+import { useState } from "react";
+import { createProject, createProjectThread } from "@/client/api/projects-api";
+import { useThreadActions } from "@/client/stores";
 import type { ComposerDraftChange, ComposerSubmitEnvelope } from "@/components/app/composer";
-import { isSettingsSection } from "@/features/account/settings-sections";
-import { projectAddressHref } from "@/features/project/routing/project-address";
+import type { CreationAgent, CreationChoices } from "@/features/agents/creation-agent";
+import { parseProjectAddress } from "@/features/project/routing/project-address";
+import { sendProjectChat } from "@/lib/send-project-chat";
 import { deriveTitleFromMessage } from "@/lib/thread-title";
-import { useCreation } from "./CreationProvider";
 
 export function useCreationComposer(projectId: string | null) {
-  const { controller, state } = useCreation(projectId);
   const router = useRouter();
-  const revision = useRef(0);
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    const stop = router.history.subscribe(() => {
-      revision.current += 1;
-    });
-    return () => {
-      mounted.current = false;
-      revision.current += 1;
-      stop();
-    };
-  }, [router]);
-  function capture() {
-    const entry = router.history.location;
-    const expected = { revision: revision.current, href: entry.href, key: entry.state.__TSR_key };
-    return () =>
-      mounted.current &&
-      expected.revision === revision.current &&
-      expected.href === router.history.location.href &&
-      expected.key === router.history.location.state.__TSR_key;
-  }
-  async function openCreated(isCurrent: () => boolean) {
-    const attempt = controller.getSnapshot().slot?.attempt;
-    if (!isCurrent() || attempt?.phase !== "ready" || !attempt.projectSlug || !attempt.threadSlug)
-      return false;
-    const settings = new URLSearchParams(router.history.location.search).get("settings");
-    const href = projectAddressHref({
-      projectSlug: attempt.projectSlug,
-      destination: { kind: "chat", chatSlug: attempt.threadSlug },
-      chat: { kind: "absent" },
-      work: { kind: "absent" },
-      results: false,
-      ...(isSettingsSection(settings) ? { settings } : {}),
-    });
-    await router.navigate({ href, replace: true });
-    if (router.history.location.href === href)
-      await controller.acknowledgeNavigation(attempt.attemptId);
-    return true;
-  }
+  const threadActions = useThreadActions();
+  const [choices, setChoices] = useState<CreationChoices>({});
+  const [busy, setBusy] = useState(false);
+
   return {
-    state,
-    busy: state.busy,
-    submitLocked: !state.slot || state.busy || !!state.slot.attempt || !!state.issue,
-    contextLocked: state.busy || (!!state.slot?.attempt && state.slot.attempt.phase !== "refused"),
-    initialDraft: state.slot?.draft,
-    loaded: state.slot !== null,
-    updateChoices: (choices: CreationChoices) => controller.updateChoices(choices),
-    updateDraft: (change: ComposerDraftChange) => controller.updateDraft(change.snapshot),
-    reload: () => controller.reload(),
-    startOver: () => controller.startOver(),
-    discard: () => controller.updateDraft(null),
+    state: { slot: { choices }, busy, issue: null as string | null, editorEpoch: 0 },
+    busy,
+    submitLocked: busy,
+    contextLocked: busy,
+    initialDraft: undefined,
+    loaded: true,
+    updateChoices: (next: CreationChoices) => setChoices((current) => ({ ...current, ...next })),
+    updateDraft: (_change: ComposerDraftChange) => undefined,
+    reload: () => undefined,
+    startOver: () => undefined,
+    discard: () => undefined,
     async submit(
       submission: ComposerSubmitEnvelope,
       context: { workId: string | null; agent: CreationAgent },
     ) {
-      const isCurrent = capture();
-      const accepted = await controller.submit({
-        submission,
-        title: deriveTitleFromMessage(submission.text),
-        ...context,
-      });
-      if (accepted) await openCreated(isCurrent);
-      return accepted;
+      if (busy) return false;
+      if (projectId) {
+        const parsed = parseProjectAddress(
+          router.history.location.pathname,
+          router.history.location.search,
+          router.history.location.state,
+        );
+        if (parsed.kind !== "valid") return false;
+        sendProjectChat({
+          projectId,
+          projectSlug: parsed.address.projectSlug,
+          text: submission.text,
+          submissionId: submission.submissionId,
+          agent: context.agent,
+          workId: context.workId,
+          threadActions,
+          search: router.history.location.search,
+          replace: (href) => router.history.replace(href),
+        });
+        return true;
+      }
+      setBusy(true);
+      try {
+        const createdProject = await createProject({
+          id: crypto.randomUUID(),
+          title: deriveTitleFromMessage(submission.text),
+        });
+        const thread = await createProjectThread(createdProject.id, {
+          id: crypto.randomUUID(),
+          title: deriveTitleFromMessage(submission.text),
+          workId: context.workId,
+          agentSelection: context.agent.selection,
+        });
+        await router.navigate({
+          href: `/p/${createdProject.slug}/chat/${thread.id}`,
+          replace: true,
+        });
+        return true;
+      } finally {
+        setBusy(false);
+      }
     },
     async createEmpty(title: string, agent: CreationAgent) {
-      const isCurrent = capture();
-      if (await controller.submit({ submission: null, title, workId: null, agent }))
-        await openCreated(isCurrent);
+      if (busy) return;
+      setBusy(true);
+      try {
+        const createdProject = await createProject({ id: crypto.randomUUID(), title });
+        const thread = await createProjectThread(createdProject.id, {
+          id: crypto.randomUUID(),
+          title,
+          workId: null,
+          agentSelection: agent.selection,
+        });
+        await router.navigate({
+          href: `/p/${createdProject.slug}/chat/${thread.id}`,
+          replace: true,
+        });
+      } finally {
+        setBusy(false);
+      }
     },
-    async retry(choices?: { workId: string | null; agent: CreationAgent }) {
-      const isCurrent = capture();
-      if (await controller.retry(choices)) await openCreated(isCurrent);
+    async retry() {
+      return false;
     },
   };
 }

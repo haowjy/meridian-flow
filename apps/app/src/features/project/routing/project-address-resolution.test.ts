@@ -45,26 +45,43 @@ describe("authorized address resolution", () => {
   });
   it("keeps path authority independent from Chat and secondary Work", () => {
     expect(
-      addressWorkSelection(address("/p/serial/work/revision/scratch/notes.md?chat=fight")),
+      addressWorkSelection(
+        address(
+          "/p/serial/work/revision/scratch/notes.md?chat=550e8400-e29b-41d4-a716-446655440000",
+        ),
+      ),
     ).toEqual({ kind: "slug", slug: "revision" });
-    expect(addressWorkSelection(address("/p/serial/scratch/notes.md?chat=fight"))).toEqual({
+    expect(
+      addressWorkSelection(
+        address("/p/serial/scratch/notes.md?chat=550e8400-e29b-41d4-a716-446655440000"),
+      ),
+    ).toEqual({
       kind: "none",
     });
     expect(
-      addressWorkSelection(address("/p/serial/manuscript/chapter.md?chat=fight&work=revision")),
+      addressWorkSelection(
+        address(
+          "/p/serial/manuscript/chapter.md?chat=550e8400-e29b-41d4-a716-446655440000&work=revision",
+        ),
+      ),
     ).toEqual({ kind: "slug", slug: "revision" });
-    expect(addressChatSelection(address("/p/serial/chat/fight"))).toEqual({
+    expect(
+      addressChatSelection(address("/p/serial/chat/550e8400-e29b-41d4-a716-446655440000")),
+    ).toEqual({
       kind: "slug",
-      slug: "fight",
+      slug: "550e8400-e29b-41d4-a716-446655440000",
     });
   });
 });
 
 describe("optional query guard", () => {
-  const ready = { status: "ready", entries: [{ slug: "valid" }] } as const;
+  const ready = {
+    status: "ready",
+    entries: [{ slug: "valid" }, { slug: "550e8400-e29b-41d4-a716-446655440000" }],
+  } as const;
   it("clears missing selectors together without changing the document or auxiliary state", () => {
     const input = address(
-      "/p/serial/manuscript/chapter.md?work=missing&chat=missing&settings=general",
+      "/p/serial/manuscript/chapter.md?work=missing&chat=00000000-0000-4000-8000-000000000000&settings=general",
     );
     expect(guardProjectQuerySelections(input, { chat: ready, work: ready })).toEqual({
       ...input,
@@ -74,7 +91,9 @@ describe("optional query guard", () => {
   });
   it("removes invalid query values while pinning no selection on reload", () => {
     const repaired = guardProjectQuerySelections(
-      address("/p/serial/manuscript/chapter.md?work=missing&chat=missing"),
+      address(
+        "/p/serial/manuscript/chapter.md?work=missing&chat=00000000-0000-4000-8000-000000000000",
+      ),
       { chat: ready, work: ready },
     );
     const href = projectAddressHref(repaired);
@@ -83,15 +102,17 @@ describe("optional query guard", () => {
     expect(reloaded.kind === "valid" && reloaded.address).toEqual(repaired);
   });
   it.each(["loading", "error"] as const)("preserves unresolved values during %s", (status) => {
-    const input = address("/p/serial/editor?work=missing&chat=missing");
+    const input = address(
+      "/p/serial/editor?work=missing&chat=00000000-0000-4000-8000-000000000000",
+    );
     expect(guardProjectQuerySelections(input, { chat: { status }, work: { status } })).toBe(input);
   });
   it.each([
     "/p/serial/editor",
     "/p/serial/editor?work=&chat=",
-    "/p/serial/editor?work=valid&chat=valid",
+    "/p/serial/editor?work=valid&chat=550e8400-e29b-41d4-a716-446655440000",
     "/p/serial/work/missing",
-    "/p/serial/chat/missing",
+    "/p/serial/chat/00000000-0000-4000-8000-000000000000",
     "/p/serial/work/missing/scratch/notes.md",
   ])("leaves valid, absent, empty and required path identities untouched: %s", (href) => {
     const input = address(href);

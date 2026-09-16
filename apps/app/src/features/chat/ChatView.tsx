@@ -26,12 +26,9 @@ import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { announce, announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import {
   Composer,
-  type ComposerDraftSnapshot,
   type ComposerHandle,
   type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { documentLinkTarget, type LinkTarget } from "@/core/editor/links";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
@@ -107,46 +104,10 @@ export function ChatView({
     isStreaming,
   });
 
-  const restoreFirstSendDraft = useCallback(
-    (snapshot: ComposerDraftSnapshot, expectedRevision: number) => {
-      const composer = composerRef.current;
-      return composer?.restoreSnapshot(snapshot, expectedRevision)
-        ? composer.snapshot().revision
-        : null;
-    },
-    [],
-  );
-  const restoreFailedFirstSend = useCallback(
-    (
-      id: string,
-      submitted: ComposerDraftSnapshot,
-      later: ComposerDraftSnapshot | null | undefined,
-      expectedRevision: number,
-    ) => {
-      const composer = composerRef.current;
-      return composer?.restoreFailedSubmission(id, submitted, later, expectedRevision)
-        ? composer.snapshot().revision
-        : null;
-    },
-    [],
-  );
-  const restoreRecovery = useCallback<ComposerHandle["restoreFirstSendRecovery"]>(
-    (input) => composerRef.current?.restoreFirstSendRecovery(input) ?? null,
-    [],
-  );
-  const handoff = useThreadHandoff(
-    threadId,
-    projectId,
-    controller,
-    actions,
-    {
-      liveState: snapshotLiveState,
-      nextSeq: snapshotNextSeq,
-    },
-    restoreFirstSendDraft,
-    restoreFailedFirstSend,
-    restoreRecovery,
-  );
+  useThreadHandoff(threadId, projectId, controller, actions, {
+    liveState: snapshotLiveState,
+    nextSeq: snapshotNextSeq,
+  });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
   const draftMode = activeWork?.aiWriteMode === "draft";
@@ -256,39 +217,7 @@ export function ChatView({
               mx-2, top corners rounded, jade-tinted background. The composer
               always keeps its own border and overlaps the strip's edge. */}
             <DraftDock dock={dock} />
-            {handoff.recovery ? (
-              <Alert role="status">
-                <AlertTitle>{t`Saved first message`}</AlertTitle>
-                <AlertDescription>
-                  <p>{t`Check this message before sending another. You can keep drafting below.`}</p>
-                  <details>
-                    <summary>{t`View saved message`}</summary>
-                    <p className="whitespace-pre-wrap break-words">{handoff.recovery.text}</p>
-                  </details>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={handoff.recovery.busy}
-                      onClick={() => void handoff.recovery?.checkStatus()}
-                    >{t`Check status`}</Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      disabled={handoff.recovery.busy}
-                      onClick={() => void handoff.recovery?.startOver()}
-                    >{t`Start over`}</Button>
-                  </div>
-                </AlertDescription>
-              </Alert>
-            ) : null}
             <Composer
-              submitDisabled={handoff.blocksSubmission}
-              submitDisabledReason={
-                handoff.blocksSubmission
-                  ? t`Check the saved first message before sending another.`
-                  : undefined
-              }
               onOpenReference={
                 projectId
                   ? (reference) => {

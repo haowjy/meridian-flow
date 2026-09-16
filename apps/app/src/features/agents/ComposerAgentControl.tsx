@@ -1,7 +1,6 @@
 /** Composer Agent adapter: explicit interactive panel or readonly status topology. */
 import { t } from "@lingui/core/macro";
 import { useRef } from "react";
-import type { CreationAgent } from "@/client/first-send-continuity";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import {
   ComposerCurrentValueStatus,
@@ -9,6 +8,8 @@ import {
   type ComposerToolbarControl,
 } from "@/components/app/composer-toolbar";
 import { AgentPickerPanel } from "./AgentPicker";
+import { DEFAULT_AGENT_NAME } from "./constants";
+import type { CreationAgent } from "./creation-agent";
 
 export type ComposerAgentControlProps =
   | {
@@ -31,7 +32,7 @@ export function useComposerAgentToolbarControl(
   const retryRef = useRef<HTMLButtonElement | null>(null);
   const selectedAgent = props.mode === "interactive" ? props.selectedAgent : null;
   const agent = {
-    name: props.mode === "readonly" ? props.name : (selectedAgent?.name ?? t`Choose Agent`),
+    name: props.mode === "readonly" ? props.name : (selectedAgent?.name ?? DEFAULT_AGENT_NAME),
   };
   const item = { ariaLabel: t`Agent: ${agent.name}`, label: t`Agent`, value: agent.name };
   if (props.mode === "readonly")

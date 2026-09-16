@@ -1,50 +1,40 @@
 // @vitest-environment jsdom
-/** Persisted choices must be validated before new attempts, never before immutable reconciliation. */
+/** Home Send has no first-send recovery copy. */
 import type { ReactNode } from "react";
-import { act } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { CreationComposer } from "./CreationComposer";
 
-const fixture = vi.hoisted(() => ({
-  agentStatus: "loading",
-  locked: false,
-  issue: "refused",
-  retry: vi.fn(),
-}));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => children,
 }));
 vi.mock("@lingui/core/macro", () => ({ t: (parts: TemplateStringsArray) => parts.join("") }));
 vi.mock("./useCreationComposer", () => ({
   useCreationComposer: () => ({
-    state: {
-      slot: {
-        choices: {
-          agent: {
-            name: "Removed",
-            slug: "removed-agent",
-            selection: {
-              catalogEntryId: "removed-entry",
-              definitionRevisionId: "removed-revision",
-            },
-          },
-          workId: null,
-        },
-      },
-      issue: fixture.issue,
-    },
+    state: { slot: { choices: {} }, issue: null, editorEpoch: 0 },
     loaded: true,
-    contextLocked: fixture.locked,
-    retry: fixture.retry,
+    busy: false,
+    submitLocked: false,
+    contextLocked: false,
+    updateChoices: vi.fn(),
+    updateDraft: vi.fn(),
+    submit: vi.fn(),
   }),
 }));
 vi.mock("@/client/query/useWorks", () => ({ useWorks: () => ({ status: "empty", works: [] }) }));
 vi.mock("@/client/query/useAgentCatalog", () => ({
   useAgentCatalog: () => ({
-    status: fixture.agentStatus,
-    agents: [],
-    isError: fixture.agentStatus === "error",
+    status: "ready",
+    agents: [
+      {
+        ownership: "system",
+        slug: "general",
+        name: "General",
+        selection: { catalogEntryId: "general", definitionRevisionId: "rev" },
+        unavailableReasons: [],
+      },
+    ],
+    isError: false,
   }),
 }));
 vi.mock("@/features/editor/references/useReferenceBrowserCatalog", () => ({
@@ -64,33 +54,15 @@ vi.mock("@/components/app/composer", () => ({
   ),
 }));
 
-afterEach(() => {
-  fixture.locked = false;
-  fixture.issue = "refused";
-  vi.clearAllMocks();
-});
-it.each([
-  "loading",
-  "error",
-  "empty",
-])("requires correction/readiness before new submit or refused retry when Agents are %s", async (status) => {
-  fixture.agentStatus = status;
+afterEach(() => vi.clearAllMocks());
+
+it("does not show first-send recovery copy", async () => {
   await withReactRoot(<CreationComposer projectId="project" />, async () => {
-    const buttons = [...document.querySelectorAll("button")];
-    expect(buttons.find((button) => button.textContent === "Send")?.disabled).toBe(true);
-    expect(buttons.some((button) => button.textContent === "Retry")).toBe(false);
-  });
-});
-it("still reconciles a locked ambiguous attempt when its Agent catalog cannot load", async () => {
-  fixture.agentStatus = "error";
-  fixture.locked = true;
-  fixture.issue = "ambiguous";
-  await withReactRoot(<CreationComposer projectId="project" />, async () => {
-    const retry = [...document.querySelectorAll("button")].find(
-      (button) => button.textContent === "Retry",
-    );
-    expect(retry).toBeDefined();
-    await act(async () => retry?.click());
-    expect(fixture.retry).toHaveBeenCalledOnce();
+    expect(document.body.textContent).not.toContain("Continue the saved creation attempt.");
+    expect(document.body.textContent).not.toContain("Saved first message");
+    expect(document.body.textContent).not.toContain("Check status");
+    expect(
+      [...document.querySelectorAll("button")].some((button) => button.textContent === "Send"),
+    ).toBe(true);
   });
 });
