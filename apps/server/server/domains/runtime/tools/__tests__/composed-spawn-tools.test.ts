@@ -38,7 +38,6 @@ describe("resolveAgentThreadTurnContext spawn tools", () => {
         bakedSkillSlugs: null,
         systemPrompt: null,
         workingState: null,
-        currentAgent: "muse",
         agentDefinitionRevisionId: null,
         agentName: null,
         activeLeafTurnId: null,

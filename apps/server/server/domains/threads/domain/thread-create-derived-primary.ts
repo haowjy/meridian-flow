@@ -31,7 +31,6 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     bakedSkillSlugs: null,
     systemPrompt: input.systemPrompt ?? null,
     workingState: null,
-    currentAgent: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     nextSeq: "0",

@@ -22,7 +22,6 @@ const thread: Thread = {
   status: "active",
   title: "Target thread",
   ref: "c1",
-  currentAgent: null,
   agentDefinitionRevisionId: null,
   agentName: null,
   activeLeafTurnId: null,

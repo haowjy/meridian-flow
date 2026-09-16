@@ -16,7 +16,6 @@ describe("in-memory credit ledger", () => {
       rootThreadId: "root-1",
       threadId: "thread-1",
       turnId: "turn-1",
-      agentSlug: "worker",
       millicredits: "125",
       usageEventId: "usage-1",
     });

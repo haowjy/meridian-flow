@@ -108,7 +108,6 @@ const threadLiveStateSchema: z.ZodType<ThreadLiveState> = z.object({
   threadId: z.string().min(1),
   status: z.enum(["idle", "active", "blocked", "error", "archived"]),
   runningTurnId: z.string().min(1).nullable(),
-  currentAgent: z.string().nullable(),
   resumeAfterSeq: wsEventSeqSchema,
 });
 

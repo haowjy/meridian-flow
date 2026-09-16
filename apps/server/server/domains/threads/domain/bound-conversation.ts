@@ -25,7 +25,6 @@ export async function createBoundConversation(input: {
       workId,
       agentDefinitionRevisionId: input.revision.id,
       agentName: input.revision.definition.metadata.name ?? input.revision.slug,
-      currentAgent: input.revision.slug,
     };
   });
 }

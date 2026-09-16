@@ -45,7 +45,6 @@ export function makeOptimisticThread(input: {
     status: "idle",
     title: input.title,
     ref: null,
-    currentAgent: input.agent?.slug ?? null,
     agentDefinitionRevisionId: input.agent?.selection.definitionRevisionId ?? null,
     agentName: input.agent?.name ?? null,
     activeLeafTurnId: null,

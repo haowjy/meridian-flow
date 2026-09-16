@@ -2,14 +2,7 @@
 import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import {
-  agentDefinitionRevisions,
-  eventJournal,
-  projects,
-  threadAgentBindings,
-  threads,
-  threadWorks,
-} from "@meridian/database";
+import { eventJournal, projects, threads, threadWorks } from "@meridian/database";
 import { and, eq, isNull } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
 
@@ -19,7 +12,6 @@ type OwnedThread = {
   id: ThreadId;
   projectId: ProjectId;
   workId: WorkId | null;
-  currentAgent: string | null;
   activeLeafTurnId: TurnId | null;
   nextSeq: bigint;
   status: string;
@@ -32,7 +24,6 @@ export function createThreadRuntimeService(deps: { db: Database }) {
         id: threads.id,
         projectId: threads.projectId,
         workId: threadWorks.workId,
-        currentAgent: agentDefinitionRevisions.slug,
         activeLeafTurnId: threads.activeLeafTurnId,
         nextSeq: threads.nextSeq,
         status: threads.status,
@@ -42,11 +33,6 @@ export function createThreadRuntimeService(deps: { db: Database }) {
       .leftJoin(
         threadWorks,
         and(eq(threadWorks.threadId, threads.id), eq(threadWorks.isPrimary, true)),
-      )
-      .leftJoin(threadAgentBindings, eq(threadAgentBindings.threadId, threads.id))
-      .leftJoin(
-        agentDefinitionRevisions,
-        eq(agentDefinitionRevisions.id, threadAgentBindings.definitionRevisionId),
       )
       .where(
         and(
@@ -69,7 +55,6 @@ export function createThreadRuntimeService(deps: { db: Database }) {
       threadId,
       status: thread.status === "archived" ? "archived" : "idle",
       runningTurnId: null,
-      currentAgent: thread.currentAgent,
       resumeAfterSeq: headSeq.toString(),
     };
   }

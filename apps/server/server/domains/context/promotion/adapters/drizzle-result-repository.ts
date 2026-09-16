@@ -25,7 +25,6 @@ function mapRow(row: typeof projectResults.$inferSelect): ProjectResultRecord {
       threadId: row.threadId,
       turnId: row.turnId,
       toolCallId: row.toolCallId,
-      agentSlug: row.agentSlug,
     },
     createdAt: row.createdAt.toISOString(),
   };
@@ -49,7 +48,6 @@ export class DrizzleResultRepository implements ResultRepository {
           threadId: input.provenance.threadId,
           turnId: input.provenance.turnId,
           toolCallId: input.provenance.toolCallId,
-          agentSlug: input.provenance.agentSlug,
         })
         .onConflictDoNothing()
         .returning();
@@ -89,7 +87,10 @@ export class DrizzleResultRepository implements ResultRepository {
     const rows = await this.db
       .select({
         result: projectResults,
-        agentName: sql<string>`coalesce(${agentDefinitionRevisions.definition}->'metadata'->>'name', ${agentDefinitionRevisions.slug}, ${projectResults.agentSlug})`,
+        agentName: sql<
+          string | null
+        >`coalesce(${agentDefinitionRevisions.definition}->'metadata'->>'name', ${agentDefinitionRevisions.slug})`,
+        agentSlug: agentDefinitionRevisions.slug,
       })
       .from(projectResults)
       .leftJoin(threadAgentBindings, eq(threadAgentBindings.threadId, projectResults.threadId))
@@ -99,7 +100,11 @@ export class DrizzleResultRepository implements ResultRepository {
       )
       .where(eq(projectResults.projectId, projectId))
       .orderBy(desc(projectResults.createdAt));
-    return rows.map((row) => ({ ...mapRow(row.result), agentName: row.agentName }));
+    return rows.map((row) => ({
+      ...mapRow(row.result),
+      agentName: row.agentName ?? undefined,
+      agentSlug: row.agentSlug,
+    }));
   }
 }
 export function createDrizzleResultRepository(db: Database): ResultRepository {

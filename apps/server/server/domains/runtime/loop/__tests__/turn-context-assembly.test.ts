@@ -76,7 +76,7 @@ describe("assembleNextTurnContext", () => {
     expect((await app.repos.threads.findById(input.thread.id))?.bakedSkillSlugs).toBeNull();
   });
 
-  it("uses the atomic freeze winner with the retained Agent despite a stale display slug", async () => {
+  it("uses the atomic freeze winner with the retained Agent", async () => {
     const { app, input } = await fixture();
     const winnerPrompt = "Already frozen by another preparation.";
     const winner = await app.repos.threads.bakeComposedSystemPrompt(input.thread.id, {
@@ -85,7 +85,7 @@ describe("assembleNextTurnContext", () => {
     });
     const assembled = await assembleNextTurnContext({
       ...input,
-      thread: { ...input.thread, currentAgent: "stale-display-slug" },
+      thread: input.thread,
       persistBake: true,
     });
     expect(assembled.thread.composedSystemPrompt).toBe(winner.composedSystemPrompt);
@@ -106,7 +106,7 @@ describe("assembleNextTurnContext", () => {
     });
     const first = await assembleNextTurnContext({
       ...input,
-      thread: { ...input.thread, currentAgent: "stale-display-name" },
+      thread: input.thread,
       persistBake: true,
     });
     expect(first.systemPrompt).toContain("Retained persona.");

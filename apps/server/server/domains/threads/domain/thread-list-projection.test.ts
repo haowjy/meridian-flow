@@ -13,7 +13,6 @@ function thread(overrides: Partial<Thread> = {}): Thread {
     status: "idle",
     title: "Draft review",
     ref: null,
-    currentAgent: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     activeLeafTurnId: null,

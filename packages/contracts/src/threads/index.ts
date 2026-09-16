@@ -146,8 +146,6 @@ export interface Thread {
   bakedSkillSlugs?: string[] | null;
   systemPrompt?: string | null;
   workingState?: WorkingState | null;
-  /** Bound revision slug from `thread_agent_bindings`; not a threads column. */
-  currentAgent: string | null;
   agentDefinitionRevisionId: string | null;
   /** Display name from the retained Agent definition. */
   agentName: string | null;

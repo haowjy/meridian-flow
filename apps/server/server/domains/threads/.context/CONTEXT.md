@@ -114,7 +114,7 @@ Meridian Flow's Postgres schema. Key column mappings:
 |---|---|---|
 | `threads.projectId` | `threads.projectId` | Foreign key into Meridian `projects` |
 | `threads.createdBy` | `threads.createdByUserId` | Explicit user-ID column name |
-| `threads.currentAgent` | **binding join** (`thread_agent_bindings` → `agent_definition_revisions.slug`) | Display slug; never a threads column or execution identity |
+| `threads.agentName` | **binding join** (`thread_agent_bindings` → `agent_definition_revisions`) | Display name (`metadata.name` or slug); never a threads column |
 | `threads.rootThreadId` | `threads.rootThreadId` | Persisted spawn-tree root; primary threads use their own ID |
 | `threads.totalCostUsd` | `threads.totalCostUsd` | Persisted aggregate maintained by repository/projector recompute |
 | `threads.bakedSkillSlugs` | `threads.bakedSkillSlugs` | `null` means not baked; array means first-attempt bake won |
@@ -178,7 +178,7 @@ contract shapes.
 - **Freeze sentinel**: a thread's system prompt is considered "baked" (frozen)
   when `bakedSkillSlugs` is non-null. The first-attempt CAS returns the complete
   winning prompt and skill set to every contender. The retained Agent definition
-  supplies preparation identity; `currentAgent` is the bound revision slug from that join.
+  supplies preparation identity; `agentName` is the bound revision display name from that join.
 - The owner-aware trash command is the sole thread soft-delete/restore boundary.
   It locks the including-deleted thread row, then revalidates thread and live
   project ownership before deciding either desired state. Missing and concealed

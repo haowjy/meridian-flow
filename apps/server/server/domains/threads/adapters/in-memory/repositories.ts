@@ -93,7 +93,6 @@ function defaultThread(input: CreateThreadInput): Thread {
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
     workingState: input.workingState ?? null,
-    currentAgent: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     nextSeq: "0",
@@ -160,9 +159,7 @@ interface WorkProjectionRepository {
 }
 
 export interface InMemoryRepositoriesOptions {
-  boundAgent?: (
-    threadId: string,
-  ) => Pick<Thread, "agentDefinitionRevisionId" | "agentName" | "currentAgent"> | null;
+  boundAgent?: (threadId: string) => Pick<Thread, "agentDefinitionRevisionId" | "agentName"> | null;
   transactionOwner?: InMemoryTransactionOwner;
   projects?: ProjectVisibilityRepository;
   works?: WorkProjectionRepository;
@@ -219,7 +216,6 @@ export function createInMemoryRepositories(
       ...(options.boundAgent?.(thread.id) ?? {
         agentDefinitionRevisionId: null,
         agentName: null,
-        currentAgent: null,
       }),
     };
   }

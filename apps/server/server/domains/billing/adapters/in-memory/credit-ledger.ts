@@ -195,7 +195,6 @@ export function createInMemoryCreditLedger(
           rootThreadId: input.rootThreadId,
           threadId: input.threadId,
           turnId: input.turnId,
-          agentSlug: input.agentSlug,
           usageEventId: input.usageEventId,
         },
       });
