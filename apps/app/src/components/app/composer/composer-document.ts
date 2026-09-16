@@ -272,6 +272,7 @@ export function serializeComposerDraft(
   doc: JSONContent,
   revision = 0,
   selection: ComposerSelection = { anchor: 1, head: 1 },
+  activatedSkillSlugs: readonly string[] = [],
 ): ComposerSubmitEnvelope {
   const blocks: UserMessageBlock[] = [];
   const references = new Map<string, SubmittedReference>();
@@ -337,7 +338,7 @@ export function serializeComposerDraft(
     blocks,
     references: [...references.values()],
     draft,
-    activatedSkillSlugs: [],
+    activatedSkillSlugs: [...new Set(activatedSkillSlugs)],
   };
 }
 

@@ -27,6 +27,12 @@ import { AtReferenceMenu } from "@/features/editor/surfaces/link/AtReferenceMenu
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
 import {
+  type ComposerAvailableSkill,
+  ComposerCommandExtension,
+  ComposerCommandMenu,
+  composerSkillCommandItems,
+} from "./command";
+import {
   type ComposerDraftChange,
   type ComposerDraftSnapshot,
   type ComposerPendingUploadAttrs,
@@ -91,6 +97,7 @@ export type ComposerProps = {
   uploadScope?: ComposerUploadScope;
   uploadPort?: ComposerUploadPort;
   referenceCatalog?: AtReferenceCatalog | null;
+  availableSkills?: readonly ComposerAvailableSkill[] | null;
 };
 export type ComposerHandle = {
   focus: () => void;
@@ -128,6 +135,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     uploadScope,
     uploadPort,
     referenceCatalog = null,
+    availableSkills = null,
   } = props;
   const rotatingPlaceholder = useComposerPlaceholder(streaming);
   const [initialDraft] = useState(props.initialDraft);
@@ -142,6 +150,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   onOpenReferenceRef.current = props.onOpenReference;
   const referenceCatalogRef = useRef(referenceCatalog);
   referenceCatalogRef.current = referenceCatalog;
+  const availableSkillsRef = useRef(availableSkills);
+  availableSkillsRef.current = availableSkills;
+  const activatedSkillSlugsRef = useRef(new Set<string>());
   const resolvedUploadPort = uploadPort;
   const suppressDraftChangeRef = useRef(false);
   const [pending, setPending] = useState(0);
@@ -196,6 +207,21 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                   }),
                 )
                 .run();
+            },
+          };
+        },
+        suggestionHost: (current) => editorSuggestionHost(current, "prose"),
+      }),
+      ComposerCommandExtension.configure({
+        catalog: () => {
+          const skills = availableSkillsRef.current;
+          if (!skills) return null;
+          return {
+            menuLabel: t`Commands`,
+            groupLabels: { skills: t`Skills`, chat: t`Chat` },
+            items: composerSkillCommandItems(skills),
+            activateSkill: (slug) => {
+              activatedSkillSlugsRef.current.add(slug);
             },
           };
         },
@@ -363,6 +389,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       );
       setLocked(false);
       if (outcome.kind === "accepted" && revision.current === envelope.acceptedRevision) {
+        activatedSkillSlugsRef.current.clear();
         editor.commands.clearContent(true);
       }
       if (outcome.kind === "rejected" && revision.current !== envelope.acceptedRevision) {
@@ -385,6 +412,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       editor.getJSON(),
       revision.current,
       composerSelection(editor.state.selection),
+      [...activatedSkillSlugsRef.current],
     );
     inFlight.current = envelope;
     const outcome = await Promise.resolve(onSubmit(envelope)).catch(
@@ -518,6 +546,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         onKeyDownCapture={keyDown}
       />
       {editor ? <AtReferenceMenu editor={editor} /> : null}
+      {editor ? <ComposerCommandMenu editor={editor} /> : null}
       <div className="mt-1 flex items-center gap-2">
         <div className="min-w-0 flex-1">{toolbarLeft}</div>
         {resolvedUploadPort ? (

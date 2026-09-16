@@ -23,6 +23,7 @@ import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
+import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
 import { announce, announceError, useThreadActions, useThreadStore } from "@/client/stores";
 import {
   Composer,
@@ -93,6 +94,7 @@ export function ChatView({
     activeWork?.id,
     t`Reference a file`,
   );
+  const availableSkills = useThreadAvailableSkills(threadId);
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
@@ -232,6 +234,7 @@ export function ChatView({
               variant="pinned"
               streaming={isStreaming}
               referenceCatalog={referenceCatalog}
+              availableSkills={availableSkills.skills}
               uploadPort={uploadIntakePort}
               uploadScope={
                 projectId

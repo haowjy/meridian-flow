@@ -10,3 +10,7 @@ This directory owns authored text, reference atoms, and pending/failed uploads.
   Markdown on paste without inventing a Composer attachment.
 - Submission keys belong at document scope in the editor kernel, below suggestion
   keys. A React capture handler must not submit before a suggestion can choose.
+- Chat `/` is a command lane (`command/`) on the same suggestion kernel as `@`.
+  Skills appear as `/<slug>`. Session verbs (`compact`, later handoff/clear) are
+  reserved. Picks accumulate on `activatedSkillSlugs` for Send; the server does
+  not trust `/slug` text. Manuscript slash insertion is a different catalog.

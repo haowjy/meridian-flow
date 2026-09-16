@@ -1,4 +1,5 @@
 /** Available skill union, body load, and Send-slug authorization for a primary chat. */
+import type { RetainedSkillReference } from "@meridian/contracts/agents";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import { createSkillAvailableNotice, type NoticePort } from "../../notices/index.js";
@@ -6,6 +7,7 @@ import {
   type AccountSkillInstallStore,
   type AgentRevisionStore,
   type BoundAgentRevision,
+  resolveAgentDependencies,
   type SkillListing,
   skillListingFromMarkdown,
 } from "../../packages/index.js";
@@ -47,15 +49,45 @@ export async function resolveThreadAvailableSkills(input: {
 }): Promise<AvailableSkillListing[]> {
   if (input.thread.kind !== "primary") return [];
   const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
-  const agentSkills = binding ? await listBoundAvailableSkills(input.agentRevisions, binding) : [];
-  const accountSkills = (await input.accountSkillInstalls.listByOwner(input.thread.userId)).map(
-    (row) => ({
-      slug: row.slug,
-      name: row.name,
-      description: row.description,
-    }),
+  const agentSkills = binding
+    ? await listAvailableSkillsFromReferences(
+        input.agentRevisions,
+        binding.configuration.skills.available,
+      )
+    : [];
+  return unionAvailableSkills(
+    agentSkills,
+    await listAccountAvailableSkills(input.accountSkillInstalls, input.thread.userId),
   );
-  return unionAvailableSkills(agentSkills, accountSkills);
+}
+
+/** Home / creation composer: selected Agent revision ∪ account installs, no thread yet. */
+export async function resolveSelectionAvailableSkills(input: {
+  userId: string;
+  catalogEntryId: string;
+  definitionRevisionId: string;
+  projectId?: string;
+  agentRevisions: Pick<
+    AgentRevisionStore,
+    "readSelection" | "readSource" | "readPackageDefinitions"
+  >;
+  accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
+}): Promise<AvailableSkillListing[] | null> {
+  const selected = await input.agentRevisions.readSelection(
+    input.userId,
+    input.catalogEntryId,
+    input.definitionRevisionId,
+    input.projectId,
+  );
+  if (!selected) return null;
+  const dependencies = await resolveAgentDependencies({
+    revision: selected.revision,
+    store: input.agentRevisions,
+  });
+  return unionAvailableSkills(
+    await listAvailableSkillsFromReferences(input.agentRevisions, dependencies.skills.available),
+    await listAccountAvailableSkills(input.accountSkillInstalls, input.userId),
+  );
 }
 
 export function unavailableActivatedSkillSlugs(
@@ -127,12 +159,23 @@ export async function recordNewlyAvailableSkillNotices(input: {
   }
 }
 
-async function listBoundAvailableSkills(
+async function listAccountAvailableSkills(
+  installs: Pick<AccountSkillInstallStore, "listByOwner">,
+  ownerUserId: string,
+): Promise<AvailableSkillListing[]> {
+  return (await installs.listByOwner(ownerUserId)).map((row) => ({
+    slug: row.slug,
+    name: row.name,
+    description: row.description,
+  }));
+}
+
+async function listAvailableSkillsFromReferences(
   store: Pick<AgentRevisionStore, "readSource">,
-  binding: BoundAgentRevision,
+  available: readonly RetainedSkillReference[],
 ): Promise<AvailableSkillListing[]> {
   const listings: AvailableSkillListing[] = [];
-  for (const reference of binding.configuration.skills.available) {
+  for (const reference of available) {
     const listing = await listingFromBoundReference(store, reference);
     listings.push({
       slug: listing.slug,

@@ -8,6 +8,7 @@
 import {
   type AdmissionLookup,
   API_THREADS_PATH,
+  apiAvailableSkillsPath,
   apiThreadAdmissionPath,
   apiThreadCancelPath,
   apiThreadMessagePath,
@@ -88,6 +89,14 @@ export function listThreadAvailableSkills(
   threadId: string,
 ): Promise<ThreadAvailableSkillsResponse> {
   return getJson(apiThreadSkillsPath(threadId));
+}
+
+export function listSelectionAvailableSkills(input: {
+  catalogEntryId: string;
+  definitionRevisionId: string;
+  projectId?: string | null;
+}): Promise<ThreadAvailableSkillsResponse> {
+  return getJson(apiAvailableSkillsPath(input));
 }
 
 export function lookupUserMessageAdmission(input: {
