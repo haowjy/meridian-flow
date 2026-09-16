@@ -9,6 +9,8 @@
 
 ### Changed
 
+- Remove leftover first-send continuity API, Home package gallery stubs, and the unused project-agents path helper.
+
 - Project Home Send opens `/p/{project}/chat/{uuid}` immediately. Persist, admit, and run catch up on that chat. Failure stays there with Retry.
 - Clear first-send Retry chrome once persist and run succeed.
 

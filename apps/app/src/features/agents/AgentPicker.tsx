@@ -1,6 +1,7 @@
 /** Compact prospective Agent choices; the composer lists selectable catalog rows only. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
+import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import type { ReactNode, RefObject } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -15,6 +16,7 @@ import type { CreationAgent } from "./creation-agent";
 
 type AgentPickerPanelProps = {
   status: AgentCatalogStatus;
+  agents: AgentCatalogItem[];
   selectedAgent: CreationAgent | null;
   onSelect: (agent: CreationAgent) => void;
   focusRefs?: {
@@ -26,11 +28,11 @@ type AgentPickerPanelProps = {
 
 export function AgentPickerPanel({
   status,
+  agents,
   selectedAgent,
   onSelect,
   focusRefs,
 }: AgentPickerPanelProps) {
-  const agents = (status.agents ?? []).filter((agent) => agent.unavailableReasons.length === 0);
   const firstId = agents[0]?.selection.catalogEntryId;
   return (
     <TooltipProvider delayDuration={500}>

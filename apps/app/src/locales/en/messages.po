@@ -344,10 +344,6 @@ msgstr "After"
 msgid "Agent"
 msgstr "Agent"
 
-#: src/features/home/PackageShowcase.tsx
-msgid "Agent Packages"
-msgstr "Agent Packages"
-
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Agent: {0}"
@@ -565,10 +561,6 @@ msgstr "Cancel editing"
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Caption"
 msgstr "Caption"
-
-#: src/features/home/first-party-packages.ts
-msgid "Capture experiments, methods, and observations in a structured log."
-msgstr "Capture experiments, methods, and observations in a structured log."
 
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Center"
@@ -1164,10 +1156,6 @@ msgstr "Cut"
 msgid "Dark"
 msgstr "Dark"
 
-#: src/features/home/first-party-packages.ts
-msgid "Data Analysis"
-msgstr "Data Analysis"
-
 #: src/features/editor/surfaces/toolbar/DocumentToolbar.tsx
 msgid "Default alignment"
 msgstr "Default alignment"
@@ -1308,10 +1296,6 @@ msgstr "Download image"
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "Draft"
 msgstr "Draft"
-
-#: src/features/home/first-party-packages.ts
-msgid "Draft and iterate on lab protocols with reagent + step suggestions."
-msgstr "Draft and iterate on lab protocols with reagent + step suggestions."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Drafted"
@@ -1767,10 +1751,6 @@ msgstr "Keep editing"
 msgid "Knowledge Base"
 msgstr "Knowledge Base"
 
-#: src/features/home/first-party-packages.ts
-msgid "Lab Notebook"
-msgstr "Lab Notebook"
-
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Label"
 msgstr "Label"
@@ -1831,10 +1811,6 @@ msgstr "links now, page later"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "list"
 msgstr "list"
-
-#: src/features/home/first-party-packages.ts
-msgid "Literature Review"
-msgstr "Literature Review"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "litrpg"
@@ -2424,14 +2400,6 @@ msgstr "Plain text"
 msgid "Plans"
 msgstr "Plans"
 
-#: src/features/home/first-party-packages.ts
-msgid "Plot, transform, and reason over tabular data with code-generating tools."
-msgstr "Plot, transform, and reason over tabular data with code-generating tools."
-
-#: src/features/home/PackageShowcase.tsx
-msgid "Popular"
-msgstr "Popular"
-
 #: src/features/account/SettingsDialog.tsx
 msgid "Preferences"
 msgstr "Preferences"
@@ -2448,10 +2416,6 @@ msgstr "Profile"
 #: src/features/chat/IndependentChatView.tsx
 msgid "Project couldn’t load"
 msgstr "Project couldn’t load"
-
-#: src/features/home/first-party-packages.ts
-msgid "Protocol Designer"
-msgstr "Protocol Designer"
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Put the caret in a table first."
@@ -2794,10 +2758,6 @@ msgstr "Search documents"
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Search documents or paste a web link"
 msgstr "Search documents or paste a web link"
-
-#: src/features/home/first-party-packages.ts
-msgid "Search papers, extract findings, and synthesize a summary across sources."
-msgstr "Search papers, extract findings, and synthesize a summary across sources."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Search Work"

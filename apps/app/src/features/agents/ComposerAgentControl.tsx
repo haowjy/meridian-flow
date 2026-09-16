@@ -99,6 +99,7 @@ export function useComposerAgentToolbarControl(
         <AgentPickerPanel
           focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}
           status={catalog}
+          agents={selectable}
           selectedAgent={selectedAgent}
           onSelect={(next) => {
             props.onSelectedAgentChange(next);
