@@ -14,7 +14,10 @@ import {
 } from "../../../billing/index.js";
 import type { Notice, NoticePort } from "../../../notices/index.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
-import type { AgentRevisionStore } from "../../../packages/index.js";
+import {
+  type AgentRevisionStore,
+  createInMemoryAccountSkillInstallStore,
+} from "../../../packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../../../preferences/index.js";
 import { createInMemoryProjectRepository } from "../../../projects/index.js";
 import {
@@ -65,7 +68,7 @@ export function createTestAgentBinding(
   model: string,
   systemPrompt = "",
   boundThreads: () => readonly string[] = () => [],
-): Pick<AgentRevisionStore, "readThreadBinding"> {
+): Pick<AgentRevisionStore, "readThreadBinding" | "readSource"> {
   return {
     async readThreadBinding(threadId) {
       if (!boundThreads().includes(threadId)) return undefined;
@@ -77,6 +80,9 @@ export function createTestAgentBinding(
         configuration: { model, skills: { load: [], available: [] }, namedTargets: [] },
         definition: { schemaVersion: 1, systemPrompt, metadata: { model } },
       };
+    },
+    async readSource() {
+      return undefined;
     },
   };
 }
@@ -116,6 +122,7 @@ export function createTestOrchestratorDeps(
       "",
       boundThreads,
     ),
+    accountSkillInstalls: createInMemoryAccountSkillInstallStore(),
     toolRegistry: createToolRegistry(),
     projectPreferences,
     workWriteMode: {

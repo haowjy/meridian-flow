@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
       projectRepo: app.projectRepo,
       modelRequestDebug: app.modelRequestDebug,
       agentRevisions: app.agentRevisions,
+      accountSkillInstalls: app.accountSkillInstalls,
       toolRegistry: app.toolRegistry,
       toolExecutor: app.toolExecutor,
       workContext: app.workContext,

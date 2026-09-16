@@ -44,7 +44,7 @@ skeleton and delegates the moving parts.
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. |
-| `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt from the agent body, skills catalog, frozen Work context, core document dialect, and runtime URI instruction; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
+| `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt from the agent body, available skill names and descriptions, frozen Work context, core document dialect, and runtime URI instruction; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
 | `work-context.ts` / `work-context-delivery.ts` | Reads authoritative Work identity with rendered context and owns durable delivery/recovery behind the deep `WorkContextDelivery` port. Every Work-list change queues eligible live threads. Post-commit wakes drain idle threads, running threads flush at completion, and a startup/poll sweep recovers obligations across process recreation. |
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
@@ -69,8 +69,14 @@ model, effort, and diagnostic Agent identity. Missing bindings fail before a
 gateway call. Catalog removal or advancement leaves continued execution on its
 retained revision. `turn-context-assembly.ts` supplies that persona to the initial
 host-prompt bake and reuses the frozen prompt on later turns; preview shares this
-assembly without persisting. The first-bake CAS returns one authoritative prompt
-and skill set; a losing preparation uses that winner directly. Display slugs do
+assembly without persisting. On a primary chat the available set is bound Agent
+`skills.available` (name and description from retained `SKILL.md`) union account
+installs for the thread owner; Agent retained files win on slug collision.
+`skills.load` stays empty on Writer and is not injected into the frozen prompt.
+The first-bake CAS writes those slugs (`[]` when the union is empty). Later
+turns send `composedSystemPrompt` verbatim. Skills that join the union after
+freeze attach one notice on the next user message (`noticedSkillSlugs`); they
+do not rewrite the prompt or `bakedSkillSlugs`. Display slugs do
 not guard prompt freezing. The model comes from conversation-owned resolved configuration, including a frozen default when source omits it. Nonempty skill declarations do not refuse selection or turn preparation. Primary catalog selection currently
 keeps nonempty delegation rosters unavailable while delegation support is completed.
 

@@ -1,0 +1,1 @@
+ALTER TABLE "threads" ADD COLUMN "noticed_skill_slugs" jsonb DEFAULT '[]'::jsonb NOT NULL;

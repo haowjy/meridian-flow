@@ -9,6 +9,7 @@
 
 ### Added
 
+- First-turn bake lists available skill names and descriptions and persists those slugs. An account install after freeze attaches one notice on the next Send without rewriting the prompt.
 - Persist account-scoped skill installs. Debug overlay can add a packaged skill (including `story-review`) or a paste, and delete by slug.
 - Snapshot `creative-writing-modes`, `writing-principles`, and `story-review` into launch-agents. Writer lists the first two as available skills.
 

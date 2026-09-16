@@ -107,6 +107,7 @@ export {
   skillFilesFromJson,
   writeSkillFileToDisk,
 } from "./domain/skill-files.js";
+export { type SkillListing, skillListingFromMarkdown } from "./domain/skill-listing.js";
 export type {
   AgentConfigOverlay,
   ExportedMarsDirectory,

@@ -20,10 +20,9 @@
  *   content parts of the assistant message.
  *
  * - **Frozen system prompt**: on first attempt the orchestrator bakes agent body,
- *   skills catalog, document dialect, and URI guidance into
- *   `composedSystemPrompt`. Later turns send that string verbatim
- *   (byte-identical). Subagent threads may arrive pre-frozen at creation.
- *   Autoprune is the only future re-bake trigger.
+ *   available skill names and descriptions, document dialect, and URI guidance
+ *   into `composedSystemPrompt`. Later turns send that string verbatim
+ *   (byte-identical). Autoprune is the only future re-bake trigger.
  *
  * - **Runtime URI guidance**: the server appends storage-scheme instructions
  *   to every thread prompt so the model chooses `kb://` for knowledge-base
@@ -48,7 +47,11 @@
 
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
-import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
+import {
+  formatSkillAvailableNotice,
+  formatWorkSwitchedNotice,
+  type Notice,
+} from "../../notices/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
@@ -61,9 +64,10 @@ export interface BuildContextInput {
   /** Raw agent/project prompt used only while the thread prompt is not frozen. */
   unfrozenBasePrompt?: string | null;
   /**
-   * Skills catalog for pre-freeze assembly only. Ignored when
-   * `thread.composedSystemPrompt` is already frozen.
+   * Available skill name and description listings for pre-freeze assembly only.
+   * Ignored when the thread prompt is already frozen.
    */
+  availableSkills?: readonly { name: string; description: string }[];
   /** Frozen Work section for a would-be first bake. */
   workContext?: string;
 }
@@ -85,6 +89,7 @@ export function buildContext(input: BuildContextInput): {
         assembleComposedSystemPrompt({
           basePrompt: systemPrompt,
           workContext: input.workContext,
+          availableSkills: input.availableSkills,
         }),
       ),
     );
@@ -345,6 +350,9 @@ export function formatNotices(notices: readonly Notice[]): string {
 function formatNotice(notice: Notice): string {
   if (notice.kind === "work_switched") {
     return formatWorkSwitchedNotice(notice.data) ?? notice.message;
+  }
+  if (notice.kind === "skill_available") {
+    return formatSkillAvailableNotice(notice.data) ?? notice.message;
   }
   const documentName =
     stringData(notice, "documentName") ?? stringData(notice, "documentId") ?? "the document";

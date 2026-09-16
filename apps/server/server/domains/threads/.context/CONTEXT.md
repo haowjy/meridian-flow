@@ -118,6 +118,7 @@ Meridian Flow's Postgres schema. Key column mappings:
 | `threads.rootThreadId` | `threads.rootThreadId` | Persisted spawn-tree root; primary threads use their own ID |
 | `threads.totalCostUsd` | `threads.totalCostUsd` | Persisted aggregate maintained by repository/projector recompute |
 | `threads.bakedSkillSlugs` | `threads.bakedSkillSlugs` | `null` means not baked; array means first-attempt bake won |
+| `threads.noticedSkillSlugs` | `threads.noticedSkillSlugs` | Slugs already given a skill-available notice; not the freeze sentinel |
 | `threads.historySummary` | — | Not a column; hardcoded `null` |
 | `turns.model` / `turns.provider` | `turns.model` / `turns.provider` | Latest model response for the turn |
 | `turns.requestParams` | `turns.requestParams` | Request params captured when the turn row is created |

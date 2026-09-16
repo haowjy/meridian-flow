@@ -17,6 +17,7 @@ import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "./system-instructions/runtime-ur
 export interface AssembleComposedSystemPromptInput {
   basePrompt?: string | null;
   workContext?: string;
+  availableSkills?: readonly { name: string; description: string }[];
 }
 
 /** Compose the full system prompt exactly as context-builder sends it pre-freeze. */
@@ -24,11 +25,25 @@ export function assembleComposedSystemPrompt(input: AssembleComposedSystemPrompt
   return [
     input.basePrompt,
     input.workContext,
+    availableSkillsSection(input.availableSkills),
     DOCUMENT_DIALECT_CORE_INSTRUCTION,
     RUNTIME_URI_SYSTEM_INSTRUCTION,
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+function availableSkillsSection(
+  skills: readonly { name: string; description: string }[] | undefined,
+): string | undefined {
+  if (!skills?.length) return undefined;
+  return [
+    "Available skills",
+    ...skills.map((skill) => {
+      const description = skill.description.replace(/\s+/g, " ").trim();
+      return description ? `${skill.name}\n${description}` : skill.name;
+    }),
+  ].join("\n\n");
 }
 
 /** Frozen threads have a persisted bake (`bakedSkillSlugs` is non-null). */
