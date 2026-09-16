@@ -83,9 +83,14 @@ the complete import with an actionable rename diagnostic, preserving existing co
 
 `agent_package_installations` is account/system management provenance: current
 edited source, upstream pristine source and fetch origin. Its history authorizes
-restore from owned source only, including definitions pruned from the current snapshot. It is never an execution lookup. All definitions
-and skill files live exclusively in retained snapshots; there are no mutable
-Agent/skill records or operational link overrides.
+restore from owned source only, including definitions pruned from the current snapshot. It is never an execution lookup. All Agent definitions
+and package skill files live exclusively in retained snapshots; there are no mutable
+Agent records or operational link overrides.
+
+Account-installed skills live in `account_skill_installs` (unique per owner and
+slug). They are conversation availability for the account, not Agent package
+content and not a rewrite of retained `skills/<slug>/SKILL.md`. Milestone 2
+mutates them only through debug HTTP.
 
 `package-source.ts` materializes local/GitHub dependency graphs before writes,
 preserving supported files and binary data. Explicit downloaded provenance confines local dependencies to their fetched tree;

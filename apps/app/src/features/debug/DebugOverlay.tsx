@@ -36,6 +36,7 @@ import {
   openLlmCallsViewerWindow,
 } from "./llm-calls/LlmCallsViewer";
 import { ConversationSection } from "./sections/ConversationSection";
+import { SkillInstallSection } from "./sections/SkillInstallSection";
 import { TransportSection, useConnectionState } from "./sections/TransportSection";
 import {
   getServerFeedState,
@@ -176,6 +177,9 @@ function DebugPill({ onDisable }: { onDisable: () => void }) {
               </PillSection>
               <PillSection title="Active thread">
                 <ConversationSection />
+              </PillSection>
+              <PillSection title="Account skills (throwaway)">
+                <SkillInstallSection />
               </PillSection>
               <div className="flex items-center gap-2">
                 <div className="flex min-w-0 flex-1 gap-2">
