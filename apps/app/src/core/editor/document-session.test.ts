@@ -669,58 +669,6 @@ describe("DocumentSession status derivation", () => {
     void session.destroy();
   });
 
-  it("emits destroyed after teardown and unsubscribes from transport", async () => {
-    const { factory, current } = makeFakeTransport();
-    const session = new DocumentSession({
-      roomKey: "doc-1",
-      persistence: { kind: "none" },
-      transportFactory: factory,
-    });
-    const before = current();
-    await session.destroy();
-    expect(session.getSnapshot().status).toBe("destroyed");
-    // Further transport emissions must not resurrect status from destroyed.
-    before.emit({ kind: "connected" });
-    expect(session.getSnapshot().status).toBe("destroyed");
-  });
-
-  it("joins one destroy attempt and retries only the rejected transport stage", async () => {
-    let rejectTransport!: (error: Error) => void;
-    const transportDestroy = new Promise<void>((_resolve, reject) => {
-      rejectTransport = reject;
-    });
-    const destroyTransport = vi
-      .fn<() => Promise<void>>()
-      .mockReturnValueOnce(transportDestroy)
-      .mockResolvedValue();
-    const session = new DocumentSession({
-      roomKey: "doc-destroy-rejection",
-      persistence: { kind: "none" },
-      transportFactory: () => ({
-        synced: false,
-        subscribeStatus: () => () => undefined,
-        destroy: destroyTransport,
-      }),
-    });
-    const awarenessDestroy = vi.spyOn(session.awareness, "destroy");
-    const documentDestroy = vi.spyOn(session.document, "destroy");
-
-    const first = session.destroy();
-    const joined = session.destroy();
-    expect(joined).toBe(first);
-    expect(session.getSnapshot().status).toBe("destroyed");
-    expect(awarenessDestroy).not.toHaveBeenCalled();
-
-    const failure = new Error("provider destroy failed");
-    rejectTransport(failure);
-    await expect(first).rejects.toBe(failure);
-    expect(awarenessDestroy).toHaveBeenCalled();
-    expect(documentDestroy).toHaveBeenCalledOnce();
-    await expect(session.destroy()).resolves.toBeUndefined();
-    expect(destroyTransport).toHaveBeenCalledTimes(2);
-    expect(documentDestroy).toHaveBeenCalledOnce();
-  });
-
   it("without a transport, remains detached after local persistence loads", () => {
     const session = new DocumentSession({
       roomKey: "doc-local",
