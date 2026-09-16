@@ -162,6 +162,7 @@ export class ThreadRunController {
             blocks: envelope.blocks,
             references: envelope.references,
             connectionToken,
+            activatedSkillSlugs: envelope.activatedSkillSlugs,
           },
         });
       } catch (error) {

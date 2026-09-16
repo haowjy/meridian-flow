@@ -103,8 +103,13 @@ import type { ImageAssetPort } from "../ports/image-asset.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
+import { loadAvailableSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { attachNoticesToLatestUserMessage, insertPostToolNotices } from "./context-builder.js";
+import {
+  attachNoticesToLatestUserMessage,
+  attachSkillBodiesToLatestUserMessage,
+  insertPostToolNotices,
+} from "./context-builder.js";
 import {
   finalizeCancelled,
   finalizeError,
@@ -909,6 +914,7 @@ async function* generateEvents(
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
+    let activatedSkillBodies: Array<{ slug: string; body: string }> | undefined;
     const preTurnNotices: Notice[] = [];
     const postToolNoticeBatches: Array<{
       afterMessageCount: number;
@@ -1017,6 +1023,22 @@ async function* generateEvents(
           postToolNoticeBatches.push({ afterMessageCount: baseMessageCount, notices });
         }
 
+        if (input.activatedSkillSlugs?.length) {
+          activatedSkillBodies ??= await Promise.all(
+            input.activatedSkillSlugs.map((slug) =>
+              loadAvailableSkillBody({
+                thread,
+                slug,
+                agentRevisions: deps.agentRevisions,
+                accountSkillInstalls: deps.accountSkillInstalls,
+              }),
+            ),
+          );
+          request.messages = attachSkillBodiesToLatestUserMessage(
+            request.messages,
+            activatedSkillBodies,
+          );
+        }
         if (preTurnNotices.length > 0) {
           request.messages = attachNoticesToLatestUserMessage(request.messages, preTurnNotices);
         }

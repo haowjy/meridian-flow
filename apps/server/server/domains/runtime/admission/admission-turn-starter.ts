@@ -45,6 +45,7 @@ export function createAdmissionTurnStarter(deps: {
           threadId: input.admission.threadId,
           userText: input.admission.text,
           userBlocks: input.blocks,
+          activatedSkillSlugs: input.admission.activatedSkillSlugs,
           connectionToken: input.admission.connectionToken,
           admissionIdentity: {
             submissionId: input.admission.submissionId,

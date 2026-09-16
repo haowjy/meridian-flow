@@ -170,6 +170,7 @@ export function createTurnRunner(deps: {
       userText: string;
       connectionToken?: string;
       userBlocks?: readonly UserMessageBlock[];
+      activatedSkillSlugs?: readonly string[];
       admissionIdentity?: {
         submissionId: string;
         onAccepted(response: AcceptedAdmission): Promise<void>;
@@ -205,6 +206,7 @@ export function createTurnRunner(deps: {
           threadId: input.threadId,
           userText: input.userText,
           userBlocks: input.userBlocks,
+          activatedSkillSlugs: input.activatedSkillSlugs,
           signal: controller.signal,
           onStartPersisted: input.admissionIdentity
             ? async ({ userTurnId, assistantTurnId }) =>

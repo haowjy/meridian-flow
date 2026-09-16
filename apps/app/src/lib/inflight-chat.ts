@@ -13,6 +13,7 @@ export type InflightChat = {
   optimisticUserTurnId: string;
   workingTurnId: string;
   submissionId: string;
+  activatedSkillSlugs?: string[];
 };
 
 const key = (threadId: string) => `meridian-inflight-chat:${threadId}`;

@@ -195,6 +195,10 @@ export function apiThreadMessagePath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/messages`;
 }
 
+export function apiThreadSkillsPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/skills`;
+}
+
 /** Durable identity used to reconcile or explicitly retire one message admission. */
 export function apiThreadAdmissionPath(threadId: string, submissionId: string): string {
   return `${API_THREADS_PATH}/${threadId}/admissions/${encodeURIComponent(submissionId)}`;
