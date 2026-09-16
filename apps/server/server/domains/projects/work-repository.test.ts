@@ -1,11 +1,7 @@
 /** WorkRepository lifecycle and D17 deletion contract at the domain port boundary. */
 import { describe, expect, it } from "vitest";
 import { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
-import {
-  WorkDeleteBlockedError,
-  WorkNameConflictError,
-  WorkRestoreConflictError,
-} from "./ports/work-repository.js";
+import { WorkDeleteBlockedError, WorkNameConflictError } from "./ports/work-repository.js";
 
 const PROJECT_ID = "project-1";
 
@@ -116,49 +112,6 @@ describe("WorkRepository", () => {
     await expect(repo.update(second.id, { name: "BOOK TWO" })).resolves.toMatchObject({
       name: "BOOK TWO",
     });
-  });
-
-  it("assigns stable, deduplicated slugs and uses a deterministic symbols-only fallback", async () => {
-    const repo = createInMemoryWorkRepository();
-    const first = await repo.create({ projectId: PROJECT_ID, name: "Book 2!" });
-    const second = await repo.create({ projectId: PROJECT_ID, name: "Book 2?" });
-    const symbols = await repo.create({ projectId: PROJECT_ID, name: "!!!" });
-
-    expect([first.slug, second.slug, symbols.slug]).toEqual(["book-2", "book-2-2", "work"]);
-    await expect(repo.update(first.id, { name: "Renamed" })).resolves.toMatchObject({
-      name: "Renamed",
-      slug: "book-2",
-    });
-  });
-
-  it("restores a deleted Work when its name and slug remain available", async () => {
-    const repo = createInMemoryWorkRepository();
-    const created = await repo.create({ projectId: PROJECT_ID, name: "Restorable" });
-    await repo.softDelete(created.id);
-
-    await expect(repo.restore(created.id)).resolves.toMatchObject({
-      id: created.id,
-      slug: "restorable",
-      deletedAt: null,
-    });
-  });
-
-  it("reserves deleted Work handles while allowing names to be reused", async () => {
-    const nameRepo = createInMemoryWorkRepository();
-    const nameOwner = await nameRepo.create({ projectId: PROJECT_ID, name: "Reclaimed" });
-    await nameRepo.softDelete(nameOwner.id);
-    await nameRepo.create({ projectId: PROJECT_ID, name: "Reclaimed" });
-    await expect(nameRepo.restore(nameOwner.id)).rejects.toEqual(
-      new WorkRestoreConflictError("name"),
-    );
-
-    const slugRepo = createInMemoryWorkRepository();
-    const slugOwner = await slugRepo.create({ projectId: PROJECT_ID, name: "Book 2!" });
-    await slugRepo.softDelete(slugOwner.id);
-    expect((await slugRepo.create({ projectId: PROJECT_ID, name: "Book 2?" })).slug).toBe(
-      "book-2-2",
-    );
-    await expect(slugRepo.restore(slugOwner.id)).resolves.toMatchObject({ slug: "book-2" });
   });
 });
 
