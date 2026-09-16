@@ -7,7 +7,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Snapshot `creative-writing-modes`, `writing-principles`, and `story-review` into launch-agents. Writer lists the first two as available skills.
+
 ### Changed
+
+- Nonempty Agent skill declarations no longer refuse catalog selection or turn preparation.
+- Delete leftover project-addressed skill HTTP (`PUT/GET …/projects/:id/skills/…`, `PATCH …/agents/:slug/skills/…`).
 
 - Drop leftover Agent slug copies from WS live state, the thread DTO, credit debit metadata, and `project_results`. Debug still joins agent from the bound revision and model from the model-response row.
 
