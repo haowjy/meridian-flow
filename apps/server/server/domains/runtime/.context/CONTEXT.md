@@ -44,7 +44,7 @@ skeleton and delegates the moving parts.
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. |
-| `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt from the agent body, available skill names and descriptions, frozen Work context, core document dialect, and runtime URI instruction; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
+| `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt from the agent body, available skill slugs (name when it differs) and descriptions, frozen Work context, core document dialect, and runtime URI instruction; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
 | `work-context.ts` / `work-context-delivery.ts` | Reads authoritative Work identity with rendered context and owns durable delivery/recovery behind the deep `WorkContextDelivery` port. Every Work-list change queues eligible live threads. Post-commit wakes drain idle threads, running threads flush at completion, and a startup/poll sweep recovers obligations across process recreation. |
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
@@ -72,13 +72,16 @@ host-prompt bake and reuses the frozen prompt on later turns; preview shares thi
 assembly without persisting. On a primary chat the available set is bound Agent
 `skills.available` (name and description from retained `SKILL.md`) union account
 installs for the thread owner; Agent retained files win on slug collision.
-`skills.load` stays empty on Writer and is not injected into the frozen prompt.
-The first-bake CAS writes those slugs (`[]` when the union is empty). Later
-turns send `composedSystemPrompt` verbatim. Skills that join the union after
-freeze attach one notice on the next user message (`noticedSkillSlugs`); they
-do not rewrite the prompt or `bakedSkillSlugs`. Display slugs do
-not guard prompt freezing. The model comes from conversation-owned resolved configuration, including a frozen default when source omits it. Nonempty skill declarations do not refuse selection or turn preparation. Primary catalog selection currently
-keeps nonempty delegation rosters unavailable while delegation support is completed.
+`skills.load` is not injected into first-turn context; nonempty `load` refuses
+selection. Writer's load list is empty. The first-bake CAS writes those slugs
+(`[]` when the union is empty). Later turns send `composedSystemPrompt`
+verbatim. Skills that join the union after freeze attach one notice on the next
+user message (`noticedSkillSlugs`); they do not rewrite the prompt or
+`bakedSkillSlugs`. Display slugs do not guard prompt freezing. The model comes
+from conversation-owned resolved configuration, including a frozen default when
+source omits it. Nonempty `skills.available` does not refuse selection or turn
+preparation. Primary catalog selection currently keeps nonempty delegation
+rosters unavailable while delegation support is completed.
 
 ## tools — registry, executor, and handlers
 
@@ -88,7 +91,7 @@ keeps nonempty delegation rosters unavailable while delegation support is comple
 | `ToolExecutor` | Dispatches `ToolCallInput` to registered handlers with timeout, abort, sequential execution, and capability-gated context injection. |
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
 | Core handlers | The strict six-branch `work` union and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
-| Skills | References are retained at binding. No skill tool handler is registered. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
+| Skills | References are retained at binding. `createSkillToolRegistrations` registers the `skill` tool (`source: "skill"`); invoke loads an available SKILL.md body by slug. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn` and `return_result` with explicit privileged capabilities. |
 
 Handler-owned `{ isError: true, output }` results already define their

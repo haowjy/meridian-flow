@@ -17,7 +17,7 @@ import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "./system-instructions/runtime-ur
 export interface AssembleComposedSystemPromptInput {
   basePrompt?: string | null;
   workContext?: string;
-  availableSkills?: readonly { name: string; description: string }[];
+  availableSkills?: readonly { slug: string; name: string; description: string }[];
 }
 
 /** Compose the full system prompt exactly as context-builder sends it pre-freeze. */
@@ -34,14 +34,16 @@ export function assembleComposedSystemPrompt(input: AssembleComposedSystemPrompt
 }
 
 function availableSkillsSection(
-  skills: readonly { name: string; description: string }[] | undefined,
+  skills: readonly { slug: string; name: string; description: string }[] | undefined,
 ): string | undefined {
   if (!skills?.length) return undefined;
   return [
     "Available skills",
     ...skills.map((skill) => {
+      const identity =
+        skill.name && skill.name !== skill.slug ? `${skill.slug} (${skill.name})` : skill.slug;
       const description = skill.description.replace(/\s+/g, " ").trim();
-      return description ? `${skill.name}\n${description}` : skill.name;
+      return description ? `${identity}\n${description}` : identity;
     }),
   ].join("\n\n");
 }

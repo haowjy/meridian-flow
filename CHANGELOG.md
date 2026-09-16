@@ -11,13 +11,13 @@
 
 - Chat composer `/` lists available skills as `/<slug>`. Picking one puts that slug on Send. Home uses the selected Agent plus account installs; bound chat uses the thread catalog. Manuscript `/` is unchanged.
 - Slash-activated skill slugs on Send and the model `skill` tool load SKILL.md into that turn. The available catalog is readable for the bound thread.
-- First-turn bake lists available skill names and descriptions and persists those slugs. An account install after freeze attaches one notice on the next Send without rewriting the prompt.
+- First-turn bake lists available skill slugs (and name when it differs) with descriptions and persists those slugs. An account install after freeze attaches one notice on the next Send without rewriting the prompt.
 - Persist account-scoped skill installs. Debug overlay can add a packaged skill (including `story-review`) or a paste, and delete by slug.
 - Snapshot `creative-writing-modes`, `writing-principles`, and `story-review` into launch-agents. Writer lists the first two as available skills.
 
 ### Changed
 
-- Nonempty Agent skill declarations no longer refuse catalog selection or turn preparation.
+- Nonempty Agent `skills.available` no longer refuses catalog selection or turn preparation. Nonempty `skills.load` still does.
 - Delete leftover project-addressed skill HTTP (`PUT/GET …/projects/:id/skills/…`, `PATCH …/agents/:slug/skills/…`).
 
 - Drop leftover Agent slug copies from WS live state, the thread DTO, credit debit metadata, and `project_results`. Debug still joins agent from the bound revision and model from the model-response row.

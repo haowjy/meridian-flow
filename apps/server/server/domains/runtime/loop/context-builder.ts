@@ -68,10 +68,10 @@ export interface BuildContextInput {
   /** Raw agent/project prompt used only while the thread prompt is not frozen. */
   unfrozenBasePrompt?: string | null;
   /**
-   * Available skill name and description listings for pre-freeze assembly only.
+   * Available skill listings for pre-freeze assembly only.
    * Ignored when the thread prompt is already frozen.
    */
-  availableSkills?: readonly { name: string; description: string }[];
+  availableSkills?: readonly { slug: string; name: string; description: string }[];
   /** Frozen Work section for a would-be first bake. */
   workContext?: string;
 }
