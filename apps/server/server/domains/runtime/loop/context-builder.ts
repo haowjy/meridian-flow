@@ -40,10 +40,11 @@
  * - **User turns**: all blocks of allowed types (text, image, file)
  *   are merged into a single user message's content[] array.
  *
- * - **Activated skill bodies**: slash-activated SKILL.md text is injected as a
- *   request-only `skill` tool_use then tool_result round immediately after the
- *   current user message. It is not persisted, not frozen prompt bytes, and
- *   not a pending notice.
+ * - **Activated skill bodies**: slash-activated SKILL.md text is appended as
+ *   extra request-only text on the current user message. A fabricated
+ *   `skill` tool_use round is not used: DeepSeek rejects client-minted tool
+ *   calls (`invalid_request`). It is not persisted, not frozen prompt bytes,
+ *   and not a pending notice.
  *
  * - **System turns**: text blocks from system-role turns are concatenated
  *   into a single system message — they appear as multi-line system
@@ -300,40 +301,16 @@ function blockToContentPart(block: Block): ContentPart | null {
   }
 }
 
-function skillToolCallId(slug: string): string {
-  return `call_skill_${slug.replace(/[^A-Za-z0-9]/g, "_")}`;
-}
-
 export function attachSkillBodiesToLatestUserMessage(
   messages: readonly Message[],
   skills: readonly { slug: string; body: string }[],
 ): Message[] {
   if (skills.length === 0) return [...messages];
-  let latestUserIndex = -1;
-  for (let index = messages.length - 1; index >= 0; index--) {
-    if (messages[index]?.role === "user") {
-      latestUserIndex = index;
-      break;
-    }
-  }
-  if (latestUserIndex < 0) {
-    throw new Error("Cannot attach skill bodies without a writer message");
-  }
-  return [
-    ...messages.slice(0, latestUserIndex + 1),
-    assistant(
-      skills.map((skill) => ({
-        type: "tool_use" as const,
-        toolCallId: skillToolCallId(skill.slug),
-        toolName: "skill",
-        input: { slug: skill.slug },
-      })),
-    ),
-    ...skills.map((skill) =>
-      toolResult(skillToolCallId(skill.slug), { slug: skill.slug, body: skill.body }),
-    ),
-    ...messages.slice(latestUserIndex + 1),
-  ];
+  return appendTextToLatestUserMessage(
+    messages,
+    skills.map((skill) => `Loaded skill ${skill.slug}:\n${skill.body}`).join("\n\n"),
+    "skill bodies",
+  );
 }
 
 export function attachNoticesToLatestUserMessage(

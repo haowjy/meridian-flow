@@ -1,71 +1,37 @@
-/** Slash-activated skills inject a request-only `skill` tool round. */
+/** Slash-activated skills append SKILL.md onto the latest user message. */
 import { describe, expect, it } from "vitest";
-import { assistant, system, toolResult, user } from "../gateway/helpers/messages.js";
+import { assistant, system, user } from "../gateway/helpers/messages.js";
 import { attachSkillBodiesToLatestUserMessage } from "./context-builder.js";
 
 describe("attachSkillBodiesToLatestUserMessage", () => {
-  it("inserts a skill tool_use then tool_result after the latest user message", () => {
+  it("appends skill bodies to the latest user message without changing earlier ones", () => {
     const later = assistant([{ type: "text", text: "already working" }]);
     const messages = [system("frozen prompt"), user("draft the scene"), later];
     const attached = attachSkillBodiesToLatestUserMessage(messages, [
       { slug: "creative-writing-modes", body: "modes body." },
     ]);
     expect(attached[0]).toEqual(messages[0]);
-    expect(attached[1]).toEqual(messages[1]);
-    expect(attached[1]?.content).toEqual([{ type: "text", text: "draft the scene" }]);
-    expect(attached[2]).toEqual(
-      assistant([
-        {
-          type: "tool_use",
-          toolCallId: "call_skill_creative_writing_modes",
-          toolName: "skill",
-          input: { slug: "creative-writing-modes" },
-        },
-      ]),
-    );
-    expect(attached[3]).toEqual(
-      toolResult("call_skill_creative_writing_modes", {
-        slug: "creative-writing-modes",
-        body: "modes body.",
-      }),
-    );
-    expect(attached[4]).toEqual(later);
+    expect(attached[1]?.content).toEqual([
+      { type: "text", text: "draft the scene" },
+      { type: "text", text: "Loaded skill creative-writing-modes:\nmodes body." },
+    ]);
+    expect(attached).toHaveLength(3);
+    expect(attached[2]).toEqual(later);
   });
 
-  it("emits one tool_use part and one tool_result message per skill", () => {
+  it("joins multiple skill bodies onto the same user message", () => {
     const messages = [user("use both")];
     const attached = attachSkillBodiesToLatestUserMessage(messages, [
       { slug: "creative-writing-modes", body: "modes body." },
       { slug: "writing-principles", body: "principles body." },
     ]);
-    expect(attached[1]).toEqual(
-      assistant([
-        {
-          type: "tool_use",
-          toolCallId: "call_skill_creative_writing_modes",
-          toolName: "skill",
-          input: { slug: "creative-writing-modes" },
-        },
-        {
-          type: "tool_use",
-          toolCallId: "call_skill_writing_principles",
-          toolName: "skill",
-          input: { slug: "writing-principles" },
-        },
-      ]),
-    );
-    expect(attached[2]).toEqual(
-      toolResult("call_skill_creative_writing_modes", {
-        slug: "creative-writing-modes",
-        body: "modes body.",
-      }),
-    );
-    expect(attached[3]).toEqual(
-      toolResult("call_skill_writing_principles", {
-        slug: "writing-principles",
-        body: "principles body.",
-      }),
-    );
+    expect(attached[0]?.content).toEqual([
+      { type: "text", text: "use both" },
+      {
+        type: "text",
+        text: "Loaded skill creative-writing-modes:\nmodes body.\n\nLoaded skill writing-principles:\nprinciples body.",
+      },
+    ]);
   });
 
   it("leaves messages unchanged when no slugs were activated", () => {
@@ -73,7 +39,7 @@ describe("attachSkillBodiesToLatestUserMessage", () => {
     expect(attachSkillBodiesToLatestUserMessage(messages, [])).toEqual(messages);
   });
 
-  it("throws when there is no user message to attach after", () => {
+  it("throws when there is no user message to attach to", () => {
     expect(() =>
       attachSkillBodiesToLatestUserMessage(
         [system("frozen prompt")],
