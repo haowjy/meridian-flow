@@ -81,6 +81,7 @@ export async function createThreadForProject(
   const ownedExisting = (existing: Thread): Thread => {
     if (existing.userId !== args.userId) throw new ThreadCreationNotFoundError();
     if (existing.projectId !== args.projectId) throw new ThreadCreationConflictError();
+    if (existing.deletedAt) throw new ThreadCreationConflictError();
     return existing;
   };
 

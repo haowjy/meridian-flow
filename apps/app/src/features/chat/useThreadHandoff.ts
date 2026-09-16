@@ -1,39 +1,32 @@
 /**
  * useThreadHandoff — starts the chat stream that belongs to this thread mount.
  *
- * The hook owns both durable project first-send admission and snapshot-based
- * reload resume. Keeping them in one place prevents two controller runs from
- * subscribing to the same active thread during mount.
+ * Owns navigate-first persist (create/admit/run) and snapshot-based reload resume.
  */
 
 import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import { createProject } from "@/client/api/projects-api";
+import { useEffect, useRef } from "react";
+import { createProject, createProjectThread } from "@/client/api/projects-api";
 import { createThread } from "@/client/api/threads-api";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
-import { useFirstSendContinuity } from "@/client/first-send-continuity";
 import {
   invalidateProjectThreadData,
   invalidateWorkThreads,
 } from "@/client/query/project-invalidation";
-import type { ThreadStoreActions } from "@/client/stores";
+import type { PendingStreamStart, ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
-import type {
-  ComposerDraftSnapshot,
-  ComposerHandle,
-  ComposerSubmitOutcome,
-} from "@/components/app/composer";
 import {
   plainComposerDoc,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
+import { runExclusivePersist } from "@/lib/inflight-chat";
+import { finishInflightChat, rehydrateInflightChat } from "@/lib/send-project-chat";
 
 type Controller = ThreadRunController;
 
 type SnapshotResumeState = {
   liveState: ThreadLiveState | null;
-  /** Snapshot stream head; retained for non-active diagnostics, not active-run resume. */
   nextSeq: string | null;
 };
 
@@ -52,261 +45,128 @@ export function activeSnapshotResumeAfterSeq(liveState: ThreadLiveState): string
   }
 }
 
-export type FirstSendRecovery = {
-  text: string;
-  busy: boolean;
-  checkStatus(): Promise<void>;
-  startOver(): Promise<void>;
-};
-
-/**
- * Consumes {@link ThreadStoreActions.consumePendingStream} once per mount: resumes
- * an in-flight run or claims a durable first-send admission or retained standalone creation.
- */
 export function useThreadHandoff(
   threadId: string,
   projectId: string | null,
   controller: Controller,
   actions: ThreadStoreActions,
   snapshotResume?: SnapshotResumeState,
-  restoreLatestDraft?: (snapshot: ComposerDraftSnapshot, expectedRevision: number) => number | null,
-  restoreFailedSubmission?: (
-    id: string,
-    submitted: ComposerDraftSnapshot,
-    later: ComposerDraftSnapshot | null | undefined,
-    expectedRevision: number,
-  ) => number | null,
-  restoreRecovery?: ComposerHandle["restoreFirstSendRecovery"],
-): { recovery: FirstSendRecovery | null; blocksSubmission: boolean } {
-  const [recovery, setRecovery] = useState<FirstSendRecovery | null>(null);
+): void {
   const pendingResumeRef = useRef(false);
   const handoffStartedRef = useRef(false);
   const snapshotEvaluatedRef = useRef(false);
-  const continuityStartedRef = useRef(false);
-  const [continuityChecked, setContinuityChecked] = useState(projectId === null);
   const queryClient = useQueryClient();
-  const continuity = useFirstSendContinuity();
 
   useEffect(() => {
     pendingResumeRef.current = false;
     handoffStartedRef.current = false;
     snapshotEvaluatedRef.current = false;
-    continuityStartedRef.current = false;
-    setContinuityChecked(projectId === null);
-    setRecovery(null);
   }, [projectId, threadId]);
 
   useEffect(() => {
-    if (!projectId || continuityStartedRef.current) return;
-    continuityStartedRef.current = true;
-    let mounted = true;
-    void continuity
-      .findForThread(projectId, threadId)
-      .then(async (claim) => {
-        if (!claim || !mounted) return;
-        handoffStartedRef.current = true;
-        const { record } = claim;
-        const key = { projectId: record.projectId, threadId, submissionId: record.submissionId };
-        let destinationRevision: number | null = 0;
-        if (record.latestDraft)
-          destinationRevision =
-            restoreLatestDraft?.(record.latestDraft, destinationRevision) ?? null;
-        let restoredStamp =
-          destinationRevision === null
-            ? null
-            : JSON.stringify([record.latestDraft, record.creation?.draftRevision]);
-        let submittedRestored = false;
-        let busy = false;
-        const publish = () => {
-          if (mounted)
-            setRecovery({
-              text: record.envelope.text,
-              busy,
-              checkStatus: () => resolve("lookup"),
-              startOver: () => resolve("retire"),
-            });
-        };
-        const settle = async (outcome: ComposerSubmitOutcome, explicit: boolean) => {
-          if (!mounted) return;
-          if (outcome.kind === "ambiguous") {
-            await continuity.markAmbiguous(key);
-            return;
-          }
-          // Local retirement follows restoration of the exact observed creation revision.
-          let observed = await continuity.peek(key);
-          while (mounted && observed) {
-            const stamp = JSON.stringify([observed.latestDraft, observed.creation?.draftRevision]);
-            if (explicit && restoreRecovery) {
-              destinationRevision = restoreRecovery({
-                submissionId: record.submissionId,
-                submitted:
-                  outcome.kind === "rejected" && !submittedRestored ? record.envelope.draft : null,
-                latestDraft: stamp !== restoredStamp ? observed.latestDraft : null,
-                homeRevision: observed.creation.draftRevision,
-              });
-            } else if (destinationRevision === null) return;
-            else if (outcome.kind === "accepted") {
-              if (stamp !== restoredStamp) {
-                const draft =
-                  observed.latestDraft ?? serializeComposerDraft(plainComposerDoc("")).draft;
-                destinationRevision = restoreLatestDraft?.(draft, destinationRevision) ?? null;
-              }
-            } else {
-              destinationRevision =
-                restoreFailedSubmission?.(
-                  `${threadId}:${record.submissionId}:${observed.creation?.draftRevision ?? observed.latestDraft?.revision ?? "submitted"}`,
-                  record.envelope.draft,
-                  observed.latestDraft,
-                  destinationRevision,
-                ) ?? null;
-            }
-            if (destinationRevision === null) return;
-            if (outcome.kind === "rejected") submittedRestored = true;
-            restoredStamp = stamp;
-            if (await continuity.retire(observed)) {
-              if (mounted) setRecovery(null);
-              return;
-            }
-            restoredStamp = stamp;
-            observed = await continuity.peek(key);
-          }
-          if (mounted && !observed) setRecovery(null);
-        };
-        const resolve = async (operation: "submit" | "recover" | "lookup" | "retire") => {
-          if (!mounted || busy) return;
-          busy = true;
-          publish();
-          try {
-            const observed = await continuity.peek(key);
-            if (!observed || !mounted) {
-              if (mounted) setRecovery(null);
-              return;
-            }
-            const options = { optimisticUserTurnId: record.optimisticUserTurnId };
-            const outcome =
-              operation === "submit"
-                ? await controller.submit(threadId, record.envelope, options)
-                : operation === "recover"
-                  ? await controller.recoverFirstSend(threadId, record.envelope, options)
-                  : await controller[operation](threadId, record.envelope, options);
-            await settle(outcome, operation === "lookup" || operation === "retire");
-          } catch (error) {
-            announceError(
-              error instanceof Error ? error.message : "Failed to reconcile submission",
-            );
-          } finally {
-            busy = false;
-            if (mounted) {
-              try {
-                const remaining = await continuity.peek(key);
-                if (mounted) {
-                  if (remaining) publish();
-                  else setRecovery(null);
-                }
-              } catch (error) {
-                announceError(
-                  error instanceof Error ? error.message : "Failed to read saved submission",
-                );
-                publish();
-              }
-            }
-          }
-        };
-        await resolve(claim.dispatch ? "submit" : "recover");
-      })
-      .catch((error) =>
-        announceError(error instanceof Error ? error.message : "Failed to reconcile submission"),
-      )
-      .finally(() => {
-        if (mounted) setContinuityChecked(true);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, [
-    continuity,
-    controller,
-    projectId,
-    restoreFailedSubmission,
-    restoreLatestDraft,
-    restoreRecovery,
-    threadId,
-  ]);
-
-  useEffect(() => {
-    if (!continuityChecked) return;
     const startResume = (after?: string, expectedTurnId?: string) => {
       try {
         controller.resume(threadId, { after, expectedTurnId });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to resume stream";
-        announceError(message);
+        announceError(error instanceof Error ? error.message : "Failed to resume stream");
       } finally {
         pendingResumeRef.current = false;
       }
     };
 
-    const startSubmit = (text: string, optimisticUserTurnId?: string) => {
+    const startSubmit = (text: string, optimisticUserTurnId?: string, submissionId?: string) => {
       const envelope = serializeComposerDraft(plainComposerDoc(text));
       void controller
-        .submit(threadId, envelope, { optimisticUserTurnId })
+        .submit(threadId, submissionId ? { ...envelope, submissionId } : envelope, {
+          optimisticUserTurnId,
+        })
         .catch((error) => {
-          const message = error instanceof Error ? error.message : "Failed to start stream";
-          announceError(message);
+          announceError(error instanceof Error ? error.message : "Failed to start stream");
         })
         .finally(() => {
           pendingResumeRef.current = false;
         });
     };
 
-    const pendingStream = actions.consumePendingStream(threadId);
-    if (pendingStream) {
-      if (pendingResumeRef.current) return;
-      pendingResumeRef.current = true;
+    const persistCreation = (creation: PendingStreamStart["creation"]) => {
+      if (!creation) return;
       handoffStartedRef.current = true;
-
-      if (pendingStream.independentCreation) {
-        const { projectId, title, text, optimisticUserTurnId, agentSelection } =
-          pendingStream.independentCreation;
-        void (async () => {
-          try {
-            await createProject({ id: projectId, title });
+      pendingResumeRef.current = true;
+      void runExclusivePersist(threadId, async () => {
+        try {
+          if (creation.createProject) {
+            await createProject({ id: creation.projectId, title: creation.title });
             const thread = await createThread({
               data: {
                 id: threadId,
-                projectId,
-                title,
-                agentSelection,
+                projectId: creation.projectId,
+                title: creation.title,
+                agentSelection: creation.agentSelection,
               },
             });
             actions.ensureThread(thread);
-            // Server confirmation arrived: gated queries can now fire safely.
-            actions.clearPendingCreation({ projectId, threadId });
+            actions.clearPendingCreation({ projectId: creation.projectId, threadId });
             await Promise.all([
-              invalidateProjectThreadData(queryClient, projectId),
+              invalidateProjectThreadData(queryClient, creation.projectId),
               ...(thread.workId
-                ? [invalidateWorkThreads(queryClient, projectId, thread.workId)]
+                ? [invalidateWorkThreads(queryClient, creation.projectId, thread.workId)]
                 : []),
             ]);
-            if (text) {
-              startSubmit(text, optimisticUserTurnId);
-            } else {
-              // No first message (package-card flow); project + thread now exist
-              // on the server. The composer is waiting for the user.
-              pendingResumeRef.current = false;
-            }
-          } catch (error) {
-            // Leave pending-creation set on failure so retries through this
-            // mount remain gated until the next successful confirmation.
-            const message = error instanceof Error ? error.message : "Failed to start conversation";
-            announceError(message);
-            pendingResumeRef.current = false;
+          } else {
+            const thread = await createProjectThread(creation.projectId, {
+              id: threadId,
+              title: creation.title,
+              workId: creation.workId ?? null,
+              agentSelection: creation.agentSelection,
+            });
+            actions.ensureThread(thread);
+            finishInflightChat(threadId, actions);
+            await Promise.all([
+              invalidateProjectThreadData(queryClient, creation.projectId),
+              ...(thread.workId
+                ? [invalidateWorkThreads(queryClient, creation.projectId, thread.workId)]
+                : []),
+            ]);
           }
-        })();
+          if (creation.text)
+            startSubmit(creation.text, creation.optimisticUserTurnId, creation.submissionId);
+          else pendingResumeRef.current = false;
+        } catch (error) {
+          if (creation.workingTurnId)
+            actions.patchTurnStatus(threadId, creation.workingTurnId, "error");
+          announceError(error instanceof Error ? error.message : "Couldn't send");
+          pendingResumeRef.current = false;
+        }
+      });
+    };
+
+    const pendingStream = actions.consumePendingStream(threadId);
+    if (pendingStream) {
+      if (pendingResumeRef.current) return;
+      if (pendingStream.creation) {
+        persistCreation(pendingStream.creation);
         return;
       }
-
+      pendingResumeRef.current = true;
+      handoffStartedRef.current = true;
       startResume(pendingStream.after, pendingStream.expectedTurnId);
+      return;
+    }
+
+    const inflight = rehydrateInflightChat(threadId, actions);
+    if (inflight && inflight.projectId === projectId) {
+      if (pendingResumeRef.current) return;
+      persistCreation({
+        projectId: inflight.projectId,
+        title: inflight.title,
+        text: inflight.text,
+        agentSelection: inflight.agentSelection,
+        workId: inflight.workId,
+        optimisticUserTurnId: inflight.optimisticUserTurnId,
+        workingTurnId: inflight.workingTurnId,
+        submissionId: inflight.submissionId,
+        createProject: false,
+      });
       return;
     }
 
@@ -318,24 +178,7 @@ export function useThreadHandoff(
     const after = activeSnapshotResumeAfterSeq(liveState);
     if (after === null) return;
 
-    // Active snapshots resume from the read-model projection cursor, not the
-    // live head (`nextSeq - 1`): stream.delta rows above this cursor are in the
-    // journal but not in the snapshot's blocks yet, so replaying from here
-    // reconstructs the in-progress text without duplicating materialized rows.
-
     pendingResumeRef.current = true;
     startResume(after, liveState.runningTurnId ?? undefined);
-  }, [
-    actions,
-    controller,
-    continuityChecked,
-    queryClient,
-    continuity,
-    projectId,
-    restoreFailedSubmission,
-    restoreLatestDraft,
-    snapshotResume?.liveState,
-    threadId,
-  ]);
-  return { recovery, blocksSubmission: !continuityChecked || recovery !== null };
+  }, [actions, controller, projectId, queryClient, snapshotResume?.liveState, threadId]);
 }

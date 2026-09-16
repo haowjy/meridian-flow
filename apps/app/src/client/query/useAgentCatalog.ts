@@ -2,8 +2,10 @@
 import type { AgentCatalogItem, AgentSelection } from "@meridian/contracts/agents";
 import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listAgentCatalog, removeProjectAgent } from "@/client/api/agents-api";
-import { useFirstSendContinuity } from "@/client/first-send-continuity";
-import { useAccountEpochSignal } from "@/features/project/context/account-feature-context";
+import {
+  useAccountEpochSignal,
+  useAccountId,
+} from "@/features/project/context/account-feature-context";
 import { type ListQueryStatus, unwrapListQuery } from "./list-query";
 
 export const agentCatalogQueryKey = (accountId: string, projectId?: string) =>
@@ -25,7 +27,7 @@ export function agentCatalogQueryOptions(
 }
 
 export function useAgentCatalog(enabled = true, projectId?: string): AgentCatalogStatus {
-  const { accountId } = useFirstSendContinuity();
+  const accountId = useAccountId();
   const accountSignal = useAccountEpochSignal();
   const result = unwrapListQuery(
     useQuery({
@@ -38,7 +40,7 @@ export function useAgentCatalog(enabled = true, projectId?: string): AgentCatalo
 
 /** Removal changes only prospective choices in the authorized Project. */
 export function useRemoveProjectAgent(projectId: string) {
-  const { accountId } = useFirstSendContinuity();
+  const accountId = useAccountId();
   const signal = useAccountEpochSignal();
   const client = useQueryClient();
   return useMutation({

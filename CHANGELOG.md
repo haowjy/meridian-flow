@@ -9,6 +9,10 @@
 
 ### Changed
 
+- Project Home Send opens `/p/{project}/chat/{uuid}` immediately. Persist, admit, and run catch up on that chat. Failure stays there with Retry.
+
+- Remove first-send continuity, destination claim, and saved-first-message recovery copy.
+
 - Compact Agent picker shows model and one-line hint. Remove any Agent except General from a project without changing existing chats.
 
 - Publish package imports, edits, updates and restores through the durable account Agent catalog. Preserve edited definitions, retained dependencies, binary files and owned history.

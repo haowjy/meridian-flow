@@ -2,9 +2,10 @@
  * chat-thread-resolution — resolves which thread the project chat should show
  * from the available sources.
  *
- * Pure precedence function: resolved explicit chat identity → pending optimistic thread →
- * remembered synced thread → first non-subagent (else first) loaded project
- * thread → null. Explicit and remembered ids must resolve in the loaded list.
+ * Pure precedence function: explicit URL chat id (even if not yet loaded) →
+ * pending optimistic thread → remembered synced thread → first non-subagent
+ * (else first) loaded project thread → null. Remembered ids must resolve in
+ * the loaded list. An explicit URL id never falls through.
  * `ReadableProjectRoute` calls `useResolvedChatThread` once and passes that result to
  * context hydration, review, and every chat surface. Descendants must never
  * re-derive the thread or their Work and conversation can diverge.
@@ -31,9 +32,9 @@ export function resolveChatThreadId({
   const availableThreads = projectThreads?.filter((thread) => thread.deletedAt === null) ?? null;
   const loadedId = (threadId: string | null) =>
     threadId && availableThreads?.some((thread) => thread.id === threadId) ? threadId : null;
-  if (!allowDefaults) return loadedId(explicitThreadId);
+  if (explicitThreadId) return explicitThreadId;
+  if (!allowDefaults) return null;
   return (
-    loadedId(explicitThreadId) ??
     pendingThreadId ??
     loadedId(rememberedThreadId) ??
     (availableThreads && availableThreads.length > 0
@@ -54,7 +55,7 @@ export function useResolvedChatThread(
 ) {
   const pendingThreadId = useThreadStore((state) => {
     for (const [tid, ps] of Object.entries(state.pendingStreamByThreadId)) {
-      if (ps.independentCreation?.projectId === projectId) return tid;
+      if (ps.creation?.projectId === projectId) return tid;
     }
     return null;
   });

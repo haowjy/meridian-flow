@@ -6,7 +6,7 @@ describe("readable project addresses", () => {
   it.each([
     "/p/serial",
     "/p/serial/chats",
-    "/p/serial/chat/editor",
+    "/p/serial/chat/550e8400-e29b-41d4-a716-446655440000",
     "/p/serial/works",
     "/p/serial/work/browse",
     "/p/serial/editor",
@@ -61,6 +61,7 @@ describe("readable project addresses", () => {
     "/p/serial/work/revision/browse/kb",
     "/p/serial/manuscript",
     "/p/serial/chat",
+    "/p/serial/chat/fight-scene",
     "/p/serial/chat/a/b",
     "/p/serial/chats/new",
     "/p/serial/agents",
@@ -113,17 +114,19 @@ describe("readable project addresses", () => {
     expect(
       parseProjectAddress(
         "/p/serial/manuscript/chapter.md",
-        "?work=Revision&chat=Fight-Scene&settings=usage&doc=ignored&unknown=1",
+        "?work=Revision&chat=550e8400-e29b-41d4-a716-446655440000&settings=usage&doc=ignored&unknown=1",
       ),
     ).toMatchObject({
-      href: "/p/serial/manuscript/chapter.md?chat=fight-scene&work=revision&settings=usage",
+      href: "/p/serial/manuscript/chapter.md?chat=550e8400-e29b-41d4-a716-446655440000&work=revision&settings=usage",
     });
     expect(
       parseProjectAddress(
-        "/p/serial/chat/fight-scene",
+        "/p/serial/chat/550e8400-e29b-41d4-a716-446655440000",
         "?chat=other&work=revision&doc=ignored&results=&settings=profile",
       ),
-    ).toMatchObject({ href: "/p/serial/chat/fight-scene?results=&settings=profile" });
+    ).toMatchObject({
+      href: "/p/serial/chat/550e8400-e29b-41d4-a716-446655440000?results=&settings=profile",
+    });
   });
 
   it("path-owned Work cannot be overridden by query context", () => {

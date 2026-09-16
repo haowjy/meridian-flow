@@ -10,7 +10,7 @@ import { RecentProjects } from "@/features/home/RecentProjects";
 
 /**
  * Authenticated Home: composer + recent projects + first-party package cards.
- * Submitting reserves a durable creation attempt before requesting a project.
+ * Submitting creates a project then opens its chat.
  * A secondary action starts an independent (project-less) chat instead.
  */
 export function HomeView() {

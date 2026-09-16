@@ -3,7 +3,6 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { useEffect, useRef, useState } from "react";
-import type { CreationAgent } from "@/client/first-send-continuity";
 import {
   ComposerCurrentValueTrigger,
   ComposerToolbar,
@@ -17,6 +16,7 @@ import {
   WorkPickerPanel,
 } from "@/components/app/work-composer-controls";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
+import type { CreationAgent } from "@/features/agents/creation-agent";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 
 export function NewThreadComposerToolbar({

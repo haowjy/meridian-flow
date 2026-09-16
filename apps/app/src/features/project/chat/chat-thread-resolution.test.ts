@@ -10,19 +10,28 @@ function thread(id: string, kind: Thread["kind"] = "primary"): Thread {
 const projectThreads = [thread("first"), thread("remembered"), thread("explicit")];
 
 describe("chat thread resolution", () => {
-  it.each([
-    null,
-    "unavailable",
-  ])("does not restore another chat for an explicit selection %s", (explicitThreadId) => {
+  it("does not restore another chat when the URL has no chat id", () => {
     expect(
       resolveChatThreadId({
-        explicitThreadId,
+        explicitThreadId: null,
         pendingThreadId: "pending",
         rememberedThreadId: "remembered",
         projectThreads,
         allowDefaults: false,
       }),
     ).toBeNull();
+  });
+
+  it("keeps an explicit URL id even when it is not in the loaded list", () => {
+    expect(
+      resolveChatThreadId({
+        explicitThreadId: "unavailable",
+        pendingThreadId: "pending",
+        rememberedThreadId: "remembered",
+        projectThreads,
+        allowDefaults: false,
+      }),
+    ).toBe("unavailable");
   });
 
   it("prefers a valid explicit thread over every fallback", () => {
@@ -58,7 +67,7 @@ describe("chat thread resolution", () => {
     ).toBe("remembered");
   });
 
-  it("falls through unknown explicit and remembered ids", () => {
+  it("does not fall through an unknown explicit URL id", () => {
     expect(
       resolveChatThreadId({
         explicitThreadId: "deleted-explicit",
@@ -66,7 +75,7 @@ describe("chat thread resolution", () => {
         rememberedThreadId: "deleted-remembered",
         projectThreads,
       }),
-    ).toBe("first");
+    ).toBe("deleted-explicit");
   });
 
   it("falls through a remembered soft-deleted thread", () => {

@@ -16,11 +16,9 @@ Project pickers allow removal except for system General. Removal filters future
 choices only, never existing bindings or other Projects. Unscoped catalog consumers
 have no removal control; global Home redesign is outside this work.
 
-The account creation owner persists the selection and its name/slug display
-snapshot before requests. Catalog updates cannot replace a reserved choice.
-A definite refusal permits correction; an ambiguous attempt retains its IDs and
-selection for reconciliation. The server remains the authority for admission
-of retained revisions.
+Home Send reserves the selected Agent (default General) on the local thread
+before persist. Catalog updates cannot replace that reserved choice. The
+server remains the authority for admission of retained revisions.
 
 ## Controls and identity
 
@@ -39,6 +37,5 @@ rows and loading/error presentation.
 - `ComposerAgentControl.tsx`: prospective picker or readonly name.
 - `AgentPicker.tsx`: exact selections and availability reasons.
 - `constants.ts`: canonical General slug and display label.
-- `client/first-send-continuity`: durable creation choices, attempts, and
-  destination admission.
+- `creation-agent.ts`: exact selection plus display snapshot reserved at Send.
 - Results attribution is projected from the producing conversation’s retained definition; it never queries a mutable slug catalog.

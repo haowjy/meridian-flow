@@ -7,7 +7,6 @@ import { act, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { i18n } from "@/lib/i18n";
 import "fake-indexeddb/auto";
-import { FirstSendContinuityProvider } from "@/client/first-send-continuity";
 import { withReactRoot } from "@/test-support/react-dom-harness";
 import { HomeScreen } from "./HomeScreen";
 
@@ -114,9 +113,7 @@ describe("HomeScreen", () => {
     await withReactRoot(
       <I18nProvider i18n={i18n}>
         <QueryClientProvider client={client}>
-          <FirstSendContinuityProvider accountId="account-1">
-            <HomeScreen projectId="project-1" onOpenThread={vi.fn()} />
-          </FirstSendContinuityProvider>
+          <HomeScreen projectId="project-1" onOpenThread={vi.fn()} />
         </QueryClientProvider>
       </I18nProvider>,
       async () => {

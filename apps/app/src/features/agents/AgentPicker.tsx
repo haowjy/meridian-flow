@@ -4,7 +4,6 @@ import { Trans } from "@lingui/react/macro";
 import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
-import type { CreationAgent } from "@/client/first-send-continuity";
 import { type AgentCatalogStatus, useRemoveProjectAgent } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
@@ -16,6 +15,7 @@ import {
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { DEFAULT_AGENT_SLUG } from "./constants";
+import type { CreationAgent } from "./creation-agent";
 
 type AgentPickerPanelProps = {
   status: AgentCatalogStatus;

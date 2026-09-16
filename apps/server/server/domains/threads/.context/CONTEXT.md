@@ -190,12 +190,11 @@ contract shapes.
 - Trash preserves the last committed primary membership as history. A deleted
   thread has no active scope. Restore never substitutes a same-name Work: membership follows Work ID, and a missing/deleted historical
   primary remains associated but non-primary after no-Work restore.
-- A thread receives its project-unique slug at creation. Untitled chats use
-  `chat`; titled chats derive it from their initial title. Collisions use `-2`,
-  `-3`; later title mutations never regenerate it, and soft deletion reserves it.
-  Persisted handles are NOT NULL; pre-insert/optimistic Thread values can still
-  have no handle until allocation. Exact project-slug lookup excludes deleted threads and deleted projects;
-  its caller must authorize project access.
+- A primary thread receives a project-scoped `ref` (`c1`, `c2`, …) in the create
+  transaction. Subagents stay `ref`-null. Title is not an identifier and is not
+  unique. Chat URLs use the client-minted thread `id`, not `ref`.
+  Create-or-get matches ownership only. A same-user same-project retry of a
+  deleted thread conflicts; persist must not resurrect the tombstone.
 - **Work membership mutation is serialized.** Primary additions and rebinds lock
   the current and target Works in canonical id order before the thread row;
   non-primary additions lock their target Work before the thread. A changed
