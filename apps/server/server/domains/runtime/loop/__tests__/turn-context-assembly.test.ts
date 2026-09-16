@@ -19,7 +19,6 @@ async function fixture() {
   const created = await app.repos.threads.create({
     projectId: "project",
     userId: "user",
-    currentAgent: "writer",
     systemPrompt: "Legacy override must not win.",
   });
   await app.agentRevisions.bindThread(

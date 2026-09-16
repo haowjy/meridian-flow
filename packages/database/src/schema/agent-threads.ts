@@ -48,7 +48,6 @@ export const threads = pgTable(
     ref: text("ref"),
     kind: text("kind").notNull().default("primary"),
     status: text("status").notNull().default("idle"),
-    currentAgentId: text("current_agent_id"),
     workingState: jsonb("working_state"),
     composedSystemPrompt: text("composed_system_prompt"),
     bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[] | null>(),

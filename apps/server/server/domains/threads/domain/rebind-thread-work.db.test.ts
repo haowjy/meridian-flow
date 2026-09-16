@@ -94,7 +94,6 @@ else
         workId: null,
         parentThreadId: ids.threadId,
         originType: "handoff",
-        currentAgent: null,
       } as never);
       const subagent = await repos.threads.createSubagent({
         userId: ids.userId,
@@ -103,7 +102,6 @@ else
         parentThreadId: ids.threadId,
         rootThreadId: ids.threadId,
         spawnDepth: 1,
-        currentAgent: "writer",
       } as never);
       expect(derived.workId).toBeNull();
       expect(subagent.workId).toBeNull();
@@ -136,7 +134,6 @@ else
             parentThreadId: ids.threadId,
             rootThreadId: ids.threadId,
             spawnDepth: 1,
-            currentAgent: "worker",
           });
           childId = child.id;
           await revisions.bindThread(child.id, installed.definitions[0].id, bindingConfiguration);

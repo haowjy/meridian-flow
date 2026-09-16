@@ -673,6 +673,13 @@
       "when": 1789526941692,
       "tag": "0095_lame_tombstone",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1789578972119,
+      "tag": "0096_mean_deathstrike",
+      "breakpoints": true
     }
   ]
 }

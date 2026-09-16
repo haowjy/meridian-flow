@@ -85,7 +85,7 @@ export function ChatView({
   const latestAssistantTurn =
     [...turns].reverse().find((turn) => turn.role === "assistant") ?? null;
   const isStreaming = latestAssistantTurn?.status === "streaming";
-  const composerAgentName = activeThread?.agentName ?? activeThread?.currentAgent ?? "General";
+  const composerAgentName = activeThread?.agentName ?? "General";
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
   const referenceCatalog = useReferenceBrowserCatalog(

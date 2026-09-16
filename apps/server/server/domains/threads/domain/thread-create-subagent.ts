@@ -15,7 +15,6 @@ export interface CreateSubagentThreadInput {
   rootThreadId: ThreadId;
   originTurnId?: TurnId;
   spawnDepth: number;
-  currentAgent: string;
   title?: string | null;
   spawnStatus?: SpawnStatus;
 }
@@ -37,7 +36,7 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     bakedSkillSlugs: null,
     systemPrompt: null,
     workingState: null,
-    currentAgent: input.currentAgent,
+    currentAgent: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     nextSeq: "0",

@@ -11,7 +11,6 @@ export interface CreateDerivedPrimaryThreadInput {
   parentThreadId: ThreadId;
   originType: Extract<ThreadOriginType, "handoff" | "fork">;
   originTurnId?: TurnId | null;
-  currentAgent: string | null;
   title?: string | null;
   systemPrompt?: string | null;
 }
@@ -32,7 +31,7 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     bakedSkillSlugs: null,
     systemPrompt: input.systemPrompt ?? null,
     workingState: null,
-    currentAgent: input.currentAgent,
+    currentAgent: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     nextSeq: "0",

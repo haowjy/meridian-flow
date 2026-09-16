@@ -14,7 +14,6 @@ describe("loadThreadConversationContext", () => {
       userId: "user-1",
       projectId: project.id,
       workId: "work-1",
-      currentAgent: "writer",
     });
     const firstUser = await repos.turns.create({
       threadId: parent.id,
@@ -62,7 +61,6 @@ describe("loadThreadConversationContext", () => {
       parentThreadId: parent.id,
       originType: "fork",
       originTurnId: firstAssistant.id,
-      currentAgent: "muse",
       title: "Fork",
     });
     const forkSystem = await repos.turns.create({
@@ -128,7 +126,6 @@ describe("loadThreadConversationContext", () => {
       parentThreadId: root.id,
       originType: "fork",
       originTurnId: rootTurn.id,
-      currentAgent: null,
       title: "Fork 1",
     });
     const forkTurn = await repos.turns.create({
@@ -150,7 +147,6 @@ describe("loadThreadConversationContext", () => {
       parentThreadId: firstFork.id,
       originType: "fork",
       originTurnId: forkTurn.id,
-      currentAgent: null,
       title: "Fork 2",
     });
 

@@ -102,8 +102,6 @@ export interface CreateThreadInput {
   kind?: ThreadKind;
   title?: string | null;
   systemPrompt?: string | null;
-  /** Mars agent slug when this thread is agent-bound. */
-  currentAgent?: string | null;
   workingState?: WorkingState | null;
   parentThreadId?: ThreadId | null;
   spawnStatus?: SpawnStatus | null;

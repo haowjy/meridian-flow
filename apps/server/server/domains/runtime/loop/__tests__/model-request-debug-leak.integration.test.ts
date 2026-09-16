@@ -62,7 +62,6 @@ describe("model-request debug prompt leak guard", () => {
       userId: "user-1",
       title: null,
       systemPrompt: `You are helpful. ${LEAK_PROBE_MARKER}`,
-      currentAgent: "agent-one",
     });
     const creditLedger = createInMemoryCreditLedger();
     await creditLedger.grant({
