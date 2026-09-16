@@ -1078,6 +1078,10 @@ msgstr ""
 msgid "Couldn't search"
 msgstr ""
 
+#: src/features/chat/ErrorBlock.tsx
+msgid "Couldn't send."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't switch Work"
 msgstr ""
@@ -1428,9 +1432,12 @@ msgstr ""
 msgid "epigraph"
 msgstr ""
 
-#: src/features/chat/ErrorBlock.tsx
 #: src/features/project/lifecycle.ts
 msgid "Errored"
+msgstr ""
+
+#: src/features/chat/ErrorBlock.tsx
+msgid "Errored."
 msgstr ""
 
 #: src/features/chat/DraftDock.tsx
@@ -2661,6 +2668,7 @@ msgstr ""
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/SettingsDialog.tsx
 #: src/features/chat/DraftDock.tsx
+#: src/features/chat/ErrorBlock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/EditorWorkRecovery.tsx

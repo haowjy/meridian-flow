@@ -40,6 +40,8 @@ export type SubscribeLiveOptions = {
 export type SubmitOptions = {
   /** Client-only turn id returned by appendUserTurn for this exact submit. */
   optimisticUserTurnId?: string;
+  /** First-send Retry keeps the user message on the failed turn. */
+  keepOptimisticOnFailure?: boolean;
 };
 
 function isAdmissionPending(error: unknown): boolean {
@@ -111,7 +113,12 @@ export class ThreadRunController {
     envelope: ComposerSubmitEnvelope,
     options: SubmitOptions = {},
   ): Promise<ComposerSubmitOutcome> {
-    return this.dispatch(threadId, envelope, options, this.admissionEpoch, false);
+    return this.dispatch(threadId, envelope, options, this.admissionEpoch);
+  }
+
+  private dropOptimistic(threadId: string, options: SubmitOptions): void {
+    if (options.keepOptimisticOnFailure || !options.optimisticUserTurnId) return;
+    this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
   }
 
   private async dispatch(
@@ -119,7 +126,6 @@ export class ThreadRunController {
     envelope: ComposerSubmitEnvelope,
     options: SubmitOptions,
     admissionEpoch: number,
-    recovery: boolean,
   ): Promise<ComposerSubmitOutcome> {
     const outcome = (kind: ComposerSubmitOutcome["kind"]): ComposerSubmitOutcome => ({
       kind,
@@ -128,10 +134,7 @@ export class ThreadRunController {
     });
     if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
     if (this.admissionLease) {
-      if (recovery) return outcome("ambiguous");
-      if (options.optimisticUserTurnId) {
-        this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
-      }
+      this.dropOptimistic(threadId, options);
       return outcome("rejected");
     }
 
@@ -143,11 +146,7 @@ export class ThreadRunController {
         connectionToken = await this.transport.awaitConnectionToken();
       } catch (error) {
         if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
-        // Preflight rules out only the replay; the original request may still arrive.
-        if (recovery) return this.reconcile(threadId, envelope, options, "lookup", admissionEpoch);
-        if (options.optimisticUserTurnId) {
-          this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
-        }
+        this.dropOptimistic(threadId, options);
         announceError(errorMessage(error, "Failed to submit message"));
         return outcome("rejected");
       }
@@ -169,8 +168,7 @@ export class ThreadRunController {
         if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
         if (isAdmissionPending(error)) return outcome("ambiguous");
         if (isMeridianApiError(error) || error instanceof HttpResponseError) {
-          if (options.optimisticUserTurnId)
-            this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
+          this.dropOptimistic(threadId, options);
           return outcome("rejected");
         }
         return this.reconcile(threadId, envelope, options, "lookup", admissionEpoch);
@@ -204,15 +202,6 @@ export class ThreadRunController {
     return this.reconcile(threadId, envelope, options, "lookup", this.admissionEpoch);
   }
 
-  /** Reconcile durable first-Send identity; only an unseen ID permits one exact replay. */
-  recoverFirstSend(
-    threadId: string,
-    envelope: ComposerSubmitEnvelope,
-    options: SubmitOptions = {},
-  ): Promise<ComposerSubmitOutcome> {
-    return this.reconcile(threadId, envelope, options, "recover", this.admissionEpoch);
-  }
-
   retire(
     threadId: string,
     envelope: ComposerSubmitEnvelope,
@@ -225,7 +214,7 @@ export class ThreadRunController {
     threadId: string,
     envelope: ComposerSubmitEnvelope,
     options: SubmitOptions,
-    operation: "lookup" | "retire" | "recover",
+    operation: "lookup" | "retire",
     admissionEpoch: number,
   ): Promise<ComposerSubmitOutcome> {
     const outcome = (kind: ComposerSubmitOutcome["kind"]): ComposerSubmitOutcome => ({
@@ -246,9 +235,6 @@ export class ThreadRunController {
           return outcome("accepted");
         if (result.kind === "rejected" || result.kind === "retired") return outcome("rejected");
         return outcome("ambiguous");
-      }
-      if (operation === "recover" && result.kind === "not-seen") {
-        return this.dispatch(threadId, envelope, options, admissionEpoch, true);
       }
       if (result.kind === "accepted" || result.kind === "already-accepted") {
         if (options.optimisticUserTurnId) {

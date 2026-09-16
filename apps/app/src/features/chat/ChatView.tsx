@@ -104,7 +104,7 @@ export function ChatView({
     isStreaming,
   });
 
-  useThreadHandoff(threadId, projectId, controller, actions, {
+  const failedSendRetry = useThreadHandoff(threadId, projectId, controller, actions, {
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
   });
@@ -269,6 +269,7 @@ export function ChatView({
           tailFollowRevision={tailFollowRevision}
           ariaLabel={t`Chat`}
           onRespondToInterrupt={handleRespondToInterrupt}
+          failedSendRetry={failedSendRetry}
           changeTrails={changeTrails.byId}
         />
       </ChatSurface>
