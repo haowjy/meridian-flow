@@ -16,7 +16,6 @@ const input = {
     threadId: "thread-1",
     turnId: "turn-1",
     toolCallId: null,
-    agentSlug: "writer",
   },
 };
 

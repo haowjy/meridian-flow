@@ -30,7 +30,6 @@ export function mapThread(
     workId?: string | null;
     agentDefinitionRevisionId?: string | null;
     agentName?: string | null;
-    agentSlug?: string | null;
   },
 ): Thread {
   const isFrozen = row.bakedSkillSlugs !== null;
@@ -47,7 +46,6 @@ export function mapThread(
     bakedSkillSlugs: isFrozen ? (row.bakedSkillSlugs ?? []) : null,
     systemPrompt: isFrozen ? null : row.composedSystemPrompt,
     workingState: row.workingState as Thread["workingState"],
-    currentAgent: row.agentSlug ?? null,
     agentDefinitionRevisionId: row.agentDefinitionRevisionId ?? null,
     agentName: row.agentName ?? null,
     nextSeq: toSeqString(row.nextSeq),

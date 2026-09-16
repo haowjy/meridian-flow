@@ -59,7 +59,6 @@ function makeOptimisticThread(
     status: "idle",
     title,
     ref: null,
-    currentAgent: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     activeLeafTurnId: null,
@@ -93,7 +92,6 @@ export function startIndependentChat({
   projectActions.ensureProject(makeOptimisticProject(projectId, title, timestamp));
   threadActions.ensureThread({
     ...makeOptimisticThread(threadId, projectId, title, timestamp),
-    currentAgent: agent.slug,
     agentDefinitionRevisionId: agent.selection.definitionRevisionId,
     agentName: agent.name,
   });

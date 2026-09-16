@@ -9,6 +9,8 @@
 
 ### Changed
 
+- Drop leftover Agent slug copies from WS live state, the thread DTO, credit debit metadata, and `project_results`. Debug still joins agent from the bound revision and model from the model-response row.
+
 - Drop `threads.current_agent_id`. Conversation slug and name come from the bound Agent revision join.
 
 - Remove leftover first-send continuity API, Home package gallery stubs, and the unused project-agents path helper.

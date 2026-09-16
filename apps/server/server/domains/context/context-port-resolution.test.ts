@@ -35,7 +35,6 @@ function thread(): Thread {
     status: "active",
     title: "Custom project thread",
     ref: null,
-    currentAgent: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     activeLeafTurnId: null,

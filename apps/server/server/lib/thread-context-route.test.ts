@@ -23,7 +23,6 @@ function thread(): Thread {
     status: "active",
     title: "Stable context identity",
     ref: null,
-    currentAgent: null,
     agentDefinitionRevisionId: null,
     agentName: null,
     activeLeafTurnId: null,

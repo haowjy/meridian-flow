@@ -680,6 +680,13 @@
       "when": 1789578972119,
       "tag": "0096_mean_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1789580072984,
+      "tag": "0097_flowery_manta",
+      "breakpoints": true
     }
   ]
 }

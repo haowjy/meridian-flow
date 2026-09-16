@@ -232,7 +232,6 @@ export class RuntimeTestRig {
         threadId: this.thread.id,
         status: "idle" as const,
         runningTurnId: this.runner.getRunningTurnId(this.thread.id),
-        currentAgent: null,
         resumeAfterSeq: "0",
       }),
       journalEvents: async () => [],

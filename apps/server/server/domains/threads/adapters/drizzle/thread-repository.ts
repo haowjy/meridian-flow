@@ -40,19 +40,10 @@ const agentName = sql<string | null>`(
   WHERE ${schema.threadAgentBindings.threadId} = ${schema.threads}.${sql.identifier("id")}
 )`;
 
-const agentSlug = sql<string | null>`(
-  SELECT ${schema.agentDefinitionRevisions.slug}
-  FROM ${schema.threadAgentBindings}
-  JOIN ${schema.agentDefinitionRevisions}
-    ON ${schema.agentDefinitionRevisions.id} = ${schema.threadAgentBindings.definitionRevisionId}
-  WHERE ${schema.threadAgentBindings.threadId} = ${schema.threads}.${sql.identifier("id")}
-)`;
-
 const threadColumns = {
   ...getTableColumns(schema.threads),
   agentDefinitionRevisionId,
   agentName,
-  agentSlug,
 };
 
 const runningTurnId = sql<string | null>`(

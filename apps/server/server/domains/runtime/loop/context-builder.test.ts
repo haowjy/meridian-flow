@@ -18,7 +18,6 @@ const thread: Thread = {
   bakedSkillSlugs: [],
   systemPrompt: null,
   workingState: null,
-  currentAgent: null,
   agentDefinitionRevisionId: null,
   agentName: null,
   activeLeafTurnId: null,

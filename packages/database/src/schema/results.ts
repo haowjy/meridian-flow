@@ -31,7 +31,6 @@ export const projectResults = pgTable(
       .notNull()
       .references(() => turns.id, { onDelete: "restrict" }),
     toolCallId: text("tool_call_id"),
-    agentSlug: text("agent_slug").notNull(),
     createdAt: createdAt(),
   },
   (table) => [

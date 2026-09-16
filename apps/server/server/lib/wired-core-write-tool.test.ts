@@ -551,7 +551,6 @@ function thread() {
     kind: "primary",
     status: "active",
     title: null,
-    currentAgent: null,
     parentThreadId: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

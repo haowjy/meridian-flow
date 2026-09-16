@@ -18,7 +18,7 @@ export interface ProjectResultListItem {
   threadId: string;
   turnId: string;
   toolCallId: string | null;
-  agentSlug: string;
+  agentSlug: string | null;
   agentName: string;
   createdAt: string;
 }
@@ -58,8 +58,8 @@ function toListItem(row: ProjectResultRecord): ProjectResultListItem {
     threadId: row.provenance.threadId,
     turnId: row.provenance.turnId,
     toolCallId: row.provenance.toolCallId,
-    agentSlug: row.provenance.agentSlug,
-    agentName: row.agentName ?? row.provenance.agentSlug,
+    agentSlug: row.agentSlug ?? null,
+    agentName: row.agentName ?? row.agentSlug ?? "",
     createdAt: row.createdAt,
   };
 }

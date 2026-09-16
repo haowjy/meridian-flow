@@ -37,6 +37,7 @@ export interface ToolDispatchDeps {
 
 export interface ToolDispatchContext {
   thread: Thread;
+  agentSlug: string | null;
   responseId: string;
   /** Agent-edit lifecycle scope; rotates at an in-response Work switch. */
   editResponseId?: string;
@@ -166,7 +167,7 @@ export async function dispatchToolCall(
       threadId: ctx.state.threadId,
       turnId: ctx.state.currentTurn.id,
       responseId: ctx.editResponseId ?? ctx.responseId,
-      agentSlug: ctx.thread.currentAgent,
+      agentSlug: ctx.agentSlug,
       signal: ctx.state.signal,
       interruptTimeoutMs: ctx.interruptAutoResume.timeoutMs,
       emitOutputDelta,

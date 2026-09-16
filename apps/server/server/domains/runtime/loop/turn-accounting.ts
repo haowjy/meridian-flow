@@ -93,7 +93,6 @@ export function createTurnAccounting(deps: TurnAccountingDeps): TurnAccounting {
           rootThreadId: thread.rootThreadId,
           threadId: threadId as string,
           turnId: turnId as string,
-          agentSlug: thread.currentAgent ?? "unknown",
           millicredits: computedCost.millicredits,
           usageEventId,
         });

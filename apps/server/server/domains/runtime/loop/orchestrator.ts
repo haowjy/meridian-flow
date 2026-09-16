@@ -1296,6 +1296,7 @@ async function* generateEvents(
             call,
             {
               thread,
+              agentSlug: built.agentSlug,
               responseId,
               editResponseId,
               state: interruptState,

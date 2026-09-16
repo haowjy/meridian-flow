@@ -11,6 +11,7 @@ export interface ProjectResultRecord {
   provenance: ResultProvenance;
   createdAt: string;
   agentName?: string;
+  agentSlug?: string | null;
 }
 
 export interface CreateProjectResultInput {

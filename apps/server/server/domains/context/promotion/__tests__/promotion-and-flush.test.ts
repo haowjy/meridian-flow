@@ -76,7 +76,6 @@ describe("promotion service", () => {
         threadId: "thread-1",
         turnId: "turn-1",
         toolCallId: "call-1",
-        agentSlug: "segmenter",
       },
     });
 
@@ -93,7 +92,6 @@ describe("promotion service", () => {
         threadId: "thread-1",
         turnId: "turn-1",
         toolCallId: "call-1",
-        agentSlug: "segmenter",
       },
     });
     expect(parseUnifiedContextUri(promoted.value.resultsUri)).toMatchObject({
@@ -120,7 +118,6 @@ describe("promotion service", () => {
         threadId: "thread-1",
         turnId: "turn-1",
         toolCallId: null,
-        agentSlug: "segmenter",
       },
     });
     expect(promoted).toMatchObject({
@@ -144,7 +141,6 @@ describe("promotion service", () => {
         threadId: "thread-1",
         turnId: "turn-1",
         toolCallId: null,
-        agentSlug: "segmenter",
       },
     });
 
@@ -185,7 +181,6 @@ describe("interrupt flush and rehydrate", () => {
         threadId: "thread-1",
         turnId: "turn-1",
         toolCallId: null,
-        agentSlug: "orchestrator",
       },
       sourcePaths: [pathA, pathB, "runs/root-1/notes.txt"],
     });

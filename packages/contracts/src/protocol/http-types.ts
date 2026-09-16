@@ -50,7 +50,6 @@ export type ThreadLiveState = {
   threadId: string;
   status: Thread["status"];
   runningTurnId: string | null;
-  currentAgent: string | null;
   /** Last event already materialized in snapshot rows; WS replay resumes strictly after it. */
   resumeAfterSeq: string;
 };

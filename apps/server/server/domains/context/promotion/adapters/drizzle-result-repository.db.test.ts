@@ -43,7 +43,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: THREAD_ID,
         turnId: TURN_ID,
         toolCallId: "call-1",
-        agentSlug: "writer",
       },
     };
 
@@ -110,12 +109,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await transaction`
           INSERT INTO project_results (
             id, project_id, source_path, results_uri, storage_url, mime_type, size_bytes,
-            root_thread_id, thread_id, turn_id, tool_call_id, agent_slug
+            root_thread_id, thread_id, turn_id, tool_call_id
           ) VALUES (
             ${input.id}, ${input.projectId}, ${input.sourcePath}, ${input.resultsUri},
             ${input.storageUrl}, ${input.mimeType}, ${input.sizeBytes},
             ${input.provenance.rootThreadId}, ${input.provenance.threadId},
-            ${input.provenance.turnId}, ${input.provenance.toolCallId}, ${input.provenance.agentSlug}
+            ${input.provenance.turnId}, ${input.provenance.toolCallId}
           )
         `;
         inserted();
