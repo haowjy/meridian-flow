@@ -1,12 +1,13 @@
 /**
  * useThreadHandoff — starts the chat stream that belongs to this thread mount.
  *
- * Owns navigate-first persist (create/admit/run) and snapshot-based reload resume.
+ * Owns navigate-first persist (create/admit/run), snapshot-based reload resume,
+ * and Retry of a failed first send with the same thread and message ids.
  */
 
 import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createProject, createProjectThread } from "@/client/api/projects-api";
 import { createThread } from "@/client/api/threads-api";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
@@ -24,6 +25,12 @@ import { runExclusivePersist } from "@/lib/inflight-chat";
 import { finishInflightChat, rehydrateInflightChat } from "@/lib/send-project-chat";
 
 type Controller = ThreadRunController;
+type Creation = NonNullable<PendingStreamStart["creation"]>;
+
+export type FailedSendRetry = {
+  turnId: string;
+  retry: () => void;
+};
 
 type SnapshotResumeState = {
   liveState: ThreadLiveState | null;
@@ -51,19 +58,32 @@ export function useThreadHandoff(
   controller: Controller,
   actions: ThreadStoreActions,
   snapshotResume?: SnapshotResumeState,
-): void {
+): FailedSendRetry | null {
   const pendingResumeRef = useRef(false);
   const handoffStartedRef = useRef(false);
   const snapshotEvaluatedRef = useRef(false);
+  const creationRef = useRef<Creation | undefined>(undefined);
+  const persistRef = useRef<(creation: Creation) => void>(() => undefined);
+  const [failedTurnId, setFailedTurnId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   useEffect(() => {
     pendingResumeRef.current = false;
     handoffStartedRef.current = false;
     snapshotEvaluatedRef.current = false;
+    creationRef.current = undefined;
+    setFailedTurnId(null);
   }, [projectId, threadId]);
 
   useEffect(() => {
+    const failSend = (creation: Creation) => {
+      if (creation.workingTurnId)
+        actions.patchTurnStatus(threadId, creation.workingTurnId, "error");
+      setFailedTurnId(creation.workingTurnId ?? null);
+      announceError("Couldn't send");
+      pendingResumeRef.current = false;
+    };
+
     const startResume = (after?: string, expectedTurnId?: string) => {
       try {
         controller.resume(threadId, { after, expectedTurnId });
@@ -74,24 +94,46 @@ export function useThreadHandoff(
       }
     };
 
-    const startSubmit = (text: string, optimisticUserTurnId?: string, submissionId?: string) => {
-      const envelope = serializeComposerDraft(plainComposerDoc(text));
+    const startSubmit = (creation: Creation) => {
+      if (!creation.text) {
+        pendingResumeRef.current = false;
+        finishInflightChat(threadId, actions);
+        return;
+      }
+      const envelope = serializeComposerDraft(plainComposerDoc(creation.text));
       void controller
-        .submit(threadId, submissionId ? { ...envelope, submissionId } : envelope, {
-          optimisticUserTurnId,
+        .submit(
+          threadId,
+          creation.submissionId ? { ...envelope, submissionId: creation.submissionId } : envelope,
+          {
+            optimisticUserTurnId: creation.optimisticUserTurnId,
+            keepOptimisticOnFailure: true,
+          },
+        )
+        .then((outcome) => {
+          if (outcome.kind === "accepted") {
+            finishInflightChat(threadId, actions);
+            setFailedTurnId(null);
+            return;
+          }
+          failSend(creation);
         })
-        .catch((error) => {
-          announceError(error instanceof Error ? error.message : "Failed to start stream");
+        .catch(() => {
+          failSend(creation);
         })
         .finally(() => {
           pendingResumeRef.current = false;
         });
     };
 
-    const persistCreation = (creation: PendingStreamStart["creation"]) => {
-      if (!creation) return;
+    const persistCreation = (creation: Creation) => {
+      creationRef.current = creation;
       handoffStartedRef.current = true;
       pendingResumeRef.current = true;
+      setFailedTurnId(null);
+      if (creation.workingTurnId) {
+        actions.patchTurnStatus(threadId, creation.workingTurnId, "pending");
+      }
       void runExclusivePersist(threadId, async () => {
         try {
           if (creation.createProject) {
@@ -120,7 +162,7 @@ export function useThreadHandoff(
               agentSelection: creation.agentSelection,
             });
             actions.ensureThread(thread);
-            finishInflightChat(threadId, actions);
+            actions.clearPendingCreation({ threadId });
             await Promise.all([
               invalidateProjectThreadData(queryClient, creation.projectId),
               ...(thread.workId
@@ -128,17 +170,13 @@ export function useThreadHandoff(
                 : []),
             ]);
           }
-          if (creation.text)
-            startSubmit(creation.text, creation.optimisticUserTurnId, creation.submissionId);
-          else pendingResumeRef.current = false;
-        } catch (error) {
-          if (creation.workingTurnId)
-            actions.patchTurnStatus(threadId, creation.workingTurnId, "error");
-          announceError(error instanceof Error ? error.message : "Couldn't send");
-          pendingResumeRef.current = false;
+          startSubmit(creation);
+        } catch {
+          failSend(creation);
         }
       });
     };
+    persistRef.current = persistCreation;
 
     const pendingStream = actions.consumePendingStream(threadId);
     if (pendingStream) {
@@ -155,7 +193,7 @@ export function useThreadHandoff(
 
     const inflight = rehydrateInflightChat(threadId, actions);
     if (inflight && inflight.projectId === projectId) {
-      if (pendingResumeRef.current) return;
+      if (pendingResumeRef.current || handoffStartedRef.current) return;
       persistCreation({
         projectId: inflight.projectId,
         title: inflight.title,
@@ -181,4 +219,13 @@ export function useThreadHandoff(
     pendingResumeRef.current = true;
     startResume(after, liveState.runningTurnId ?? undefined);
   }, [actions, controller, projectId, queryClient, snapshotResume?.liveState, threadId]);
+
+  const retry = useCallback(() => {
+    const creation = creationRef.current;
+    if (!creation) return;
+    persistRef.current(creation);
+  }, []);
+
+  if (!failedTurnId) return null;
+  return { turnId: failedTurnId, retry };
 }

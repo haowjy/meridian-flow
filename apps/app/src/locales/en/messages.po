@@ -1078,6 +1078,10 @@ msgstr "Couldn't save this document's home. Try again."
 msgid "Couldn't search"
 msgstr "Couldn't search"
 
+#: src/features/chat/ErrorBlock.tsx
+msgid "Couldn't send."
+msgstr "Couldn't send."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't switch Work"
 msgstr "Couldn't switch Work"
@@ -1428,10 +1432,13 @@ msgstr "Enter an amount in USD."
 msgid "epigraph"
 msgstr "epigraph"
 
-#: src/features/chat/ErrorBlock.tsx
 #: src/features/project/lifecycle.ts
 msgid "Errored"
 msgstr "Errored"
+
+#: src/features/chat/ErrorBlock.tsx
+msgid "Errored."
+msgstr "Errored."
 
 #: src/features/chat/DraftDock.tsx
 msgid "Expand changes"
@@ -2661,6 +2668,7 @@ msgstr "Resume where I left off on any device"
 #: src/core/editor/images/ImageNodeView.tsx
 #: src/features/account/SettingsDialog.tsx
 #: src/features/chat/DraftDock.tsx
+#: src/features/chat/ErrorBlock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/EditorWorkRecovery.tsx
