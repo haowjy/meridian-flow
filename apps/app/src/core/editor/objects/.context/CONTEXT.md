@@ -27,7 +27,7 @@ A fenced diagram needs no row: one is generated per diagram provider, keyed
 One column because the two questions have one answer: everything a press can
 take hold of is opaque, and everything that shows its own text takes a caret and
 is swept rather than picked up. A row that needs the fourth combination is the
-signal to split it again, and `object-types.test.ts` is where that shows up.
+  signal to split it again.
 
 `inline-drag` is only legal for a node the schema calls inline, and its node view
 must carry `data-drag-handle`: TipTap's node view refuses the browser's dragstart

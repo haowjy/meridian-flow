@@ -181,9 +181,8 @@ Neither the selection nor a position can be the target, and both were measured:
   which cell. Re-holding there moved the grips to the peer's new row and pointed
   "delete row" at it.
 
-Both cases are in [`table-cell-hold.test.ts`](../table-cell-hold.test.ts),
-against two real bindings, because only a second y-prosemirror binding produces
-the whole-document rebuild that causes them.
+  Both cases need two real bindings, because only a second y-prosemirror
+  binding produces the whole-document rebuild that causes them.
 
 `selection` holds nothing because those menus are mounted BY the arrangement
 they act on — the caret's lists inside the formatting menu, the selected table's
