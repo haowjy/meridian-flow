@@ -1,7 +1,7 @@
 /** Account/system Agent choices with Project-scoped availability and cache ownership. */
-import type { AgentCatalogItem, AgentSelection } from "@meridian/contracts/agents";
-import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { listAgentCatalog, removeProjectAgent } from "@/client/api/agents-api";
+import type { AgentCatalogItem } from "@meridian/contracts/agents";
+import { queryOptions, useQuery } from "@tanstack/react-query";
+import { listAgentCatalog } from "@/client/api/agents-api";
 import {
   useAccountEpochSignal,
   useAccountId,
@@ -36,24 +36,4 @@ export function useAgentCatalog(enabled = true, projectId?: string): AgentCatalo
     }),
   );
   return { ...result, agents: result.data };
-}
-
-/** Removal changes only prospective choices in the authorized Project. */
-export function useRemoveProjectAgent(projectId: string) {
-  const accountId = useAccountId();
-  const signal = useAccountEpochSignal();
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (selection: AgentSelection) => removeProjectAgent(projectId, selection, signal),
-    onSuccess: async (_result, selection) => {
-      signal.throwIfAborted();
-      const queryKey = agentCatalogQueryKey(accountId, projectId);
-      await client.cancelQueries({ queryKey });
-      signal.throwIfAborted();
-      client.setQueryData<AgentCatalogItem[]>(queryKey, (agents) =>
-        agents?.filter((agent) => agent.selection.catalogEntryId !== selection.catalogEntryId),
-      );
-      await client.invalidateQueries({ queryKey });
-    },
-  });
 }

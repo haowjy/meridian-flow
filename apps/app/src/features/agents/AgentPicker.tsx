@@ -1,12 +1,9 @@
-/** Compact prospective Agent choices; Project removal leaves source and bound chats intact. */
+/** Compact prospective Agent choices; the composer lists selectable catalog rows only. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { AgentCatalogItem } from "@meridian/contracts/agents";
-import { X } from "lucide-react";
 import type { ReactNode, RefObject } from "react";
-import { type AgentCatalogStatus, useRemoveProjectAgent } from "@/client/query/useAgentCatalog";
+import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
-import { Button } from "@/components/ui/button";
 import {
   dropdownResultsVariants,
   dropdownRowContainerClass,
@@ -14,14 +11,12 @@ import {
 } from "@/components/ui/dropdown-presentation";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { DEFAULT_AGENT_SLUG } from "./constants";
 import type { CreationAgent } from "./creation-agent";
 
 type AgentPickerPanelProps = {
   status: AgentCatalogStatus;
   selectedAgent: CreationAgent | null;
   onSelect: (agent: CreationAgent) => void;
-  projectId?: string;
   focusRefs?: {
     selected: RefObject<HTMLButtonElement | null>;
     first: RefObject<HTMLButtonElement | null>;
@@ -29,42 +24,13 @@ type AgentPickerPanelProps = {
   };
 };
 
-export function AgentPickerPanel(props: AgentPickerPanelProps) {
-  return props.projectId ? (
-    <ProjectAgentPicker {...props} projectId={props.projectId} />
-  ) : (
-    <PickerChoices {...props} />
-  );
-}
-
-function ProjectAgentPicker(props: AgentPickerPanelProps & { projectId: string }) {
-  const removal = useRemoveProjectAgent(props.projectId);
-  return (
-    <>
-      <PickerChoices
-        {...props}
-        pending={removal.isPending}
-        onRemove={(agent) => removal.mutate(agent.selection)}
-      />
-      {removal.isError ? (
-        <InlineErrorRow
-          message={t`Couldn't remove agent from project.`}
-          onRetry={() => removal.mutate(removal.variables)}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function PickerChoices({
+export function AgentPickerPanel({
   status,
   selectedAgent,
   onSelect,
   focusRefs,
-  onRemove,
-  pending = false,
-}: AgentPickerPanelProps & { onRemove?: (agent: AgentCatalogItem) => void; pending?: boolean }) {
-  const agents = status.agents ?? [];
+}: AgentPickerPanelProps) {
+  const agents = (status.agents ?? []).filter((agent) => agent.unavailableReasons.length === 0);
   const firstId = agents[0]?.selection.catalogEntryId;
   return (
     <TooltipProvider delayDuration={500}>
@@ -79,7 +45,7 @@ function PickerChoices({
             onRetry={status.refetch}
             retryRef={focusRefs?.retry}
           />
-        ) : status.status === "empty" ? (
+        ) : status.status === "empty" || agents.length === 0 ? (
           <PickerHint>
             <Trans>No agents available.</Trans>
           </PickerHint>
@@ -90,13 +56,11 @@ function PickerChoices({
                 agent.selection.catalogEntryId === selectedAgent?.selection.catalogEntryId &&
                 agent.selection.definitionRevisionId ===
                   selectedAgent?.selection.definitionRevisionId;
-              const unavailable = agent.unavailableReasons.length > 0;
-              const general = agent.ownership === "system" && agent.slug === DEFAULT_AGENT_SLUG;
               return (
                 <li
                   key={agent.selection.catalogEntryId}
                   data-selected={active}
-                  className={cn(dropdownRowContainerClass, "flex items-center")}
+                  className={dropdownRowContainerClass}
                 >
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -109,21 +73,15 @@ function PickerChoices({
                               : undefined
                         }
                         type="button"
-                        aria-disabled={unavailable || pending}
                         aria-pressed={active}
-                        onClick={() => {
-                          if (!unavailable && !pending)
-                            onSelect({
-                              selection: agent.selection,
-                              slug: agent.slug,
-                              name: agent.name,
-                            });
-                        }}
-                        className={cn(
-                          dropdownRowVariants({ kind: "identity" }),
-                          "flex-1",
-                          unavailable && "text-muted-foreground",
-                        )}
+                        onClick={() =>
+                          onSelect({
+                            selection: agent.selection,
+                            slug: agent.slug,
+                            name: agent.name,
+                          })
+                        }
+                        className={dropdownRowVariants({ kind: "identity" })}
                       >
                         <span className="flex w-full min-w-0 items-baseline justify-between gap-2">
                           <span className="truncate text-sm font-medium">{agent.name}</span>
@@ -131,16 +89,11 @@ function PickerChoices({
                             {agent.model ?? t`No model`}
                           </span>
                         </span>
-                        <span className="flex w-full min-w-0 gap-2 text-meta text-muted-foreground">
-                          {agent.description ? (
-                            <span className="min-w-0 flex-1 truncate">{agent.description}</span>
-                          ) : null}
-                          {unavailable ? (
-                            <span className="shrink-0">
-                              <Trans>Unavailable</Trans>
-                            </span>
-                          ) : null}
-                        </span>
+                        {agent.description ? (
+                          <span className="w-full min-w-0 truncate text-meta text-muted-foreground">
+                            {agent.description}
+                          </span>
+                        ) : null}
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="right" className="max-w-xs space-y-1">
@@ -149,31 +102,8 @@ function PickerChoices({
                         {agent.model ? ` (${agent.model})` : ""}
                       </p>
                       {agent.description ? <p>{agent.description}</p> : null}
-                      {agent.unavailableReasons.map((reason) => (
-                        <p key={reason}>{reason}</p>
-                      ))}
                     </TooltipContent>
                   </Tooltip>
-                  {onRemove && !general ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          className="shrink-0 text-muted-foreground"
-                          disabled={pending}
-                          aria-label={t`Remove ${agent.name} from project`}
-                          onClick={() => onRemove(agent)}
-                        >
-                          <X />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <Trans>Remove from project</Trans>
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : null}
                 </li>
               );
             })}

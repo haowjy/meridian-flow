@@ -1051,8 +1051,8 @@ msgid "Couldn't redo"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Couldn't remove agent from project."
-msgstr ""
+#~ msgid "Couldn't remove agent from project."
+#~ msgstr ""
 
 #: src/features/project/context/ContextTreeRows.tsx
 msgid "Couldn't rename this document. Try again."
@@ -2573,16 +2573,16 @@ msgstr ""
 
 #. placeholder {0}: agent.name
 #: src/features/agents/AgentPicker.tsx
-msgid "Remove {0} from project"
-msgstr ""
+#~ msgid "Remove {0} from project"
+#~ msgstr ""
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Remove from favorites"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Remove from project"
-msgstr ""
+#~ msgid "Remove from project"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/editor/surfaces/link/LinkMenu.tsx
@@ -3520,7 +3520,6 @@ msgstr ""
 msgid "workReceipt.unarchived"
 msgstr ""
 
-#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Unavailable"
