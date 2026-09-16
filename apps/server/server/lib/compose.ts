@@ -63,11 +63,14 @@ import {
   unknownToEventPayload,
 } from "../domains/observability/index.js";
 import {
+  type AccountSkillInstallStore,
   type AgentRevisionStore,
   type BoundAgentCatalog,
   createBoundAgentCatalog,
+  createDrizzleAccountSkillInstallStore,
   createDrizzleAgentRevisionStore,
   createGitHubMarsPackageFetcher,
+  createInMemoryAccountSkillInstallStore,
   createInMemoryAgentRevisionStore,
   defaultPackageSeedConfigFromEnv,
   type MarsPackageFetcher,
@@ -196,6 +199,7 @@ export type AppServices = {
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
   users: UserRepository;
+  accountSkillInstalls: AccountSkillInstallStore;
   workRepo: ProjectWorkRepository;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContext: WorkContextReader;
@@ -251,6 +255,7 @@ export type ProductionAppPorts = {
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
   users: UserRepository;
+  accountSkillInstalls: AccountSkillInstallStore;
   workRepo: ProjectWorkRepository;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   billing: BillingService;
@@ -433,6 +438,7 @@ export async function createProductionAppPorts(input: {
     config: defaultPackageSeedConfigFromEnv(environment),
   });
   const users = createDrizzleUserRepository({ db });
+  const accountSkillInstalls = createDrizzleAccountSkillInstallStore(db);
   const projects = createDrizzleProjectBootstrapRepository({
     db,
     documents: documentSync,
@@ -482,6 +488,7 @@ export async function createProductionAppPorts(input: {
     works: workRepo,
     projectRepo,
     users,
+    accountSkillInstalls,
     workRepo,
     workAuthorityResolver,
     billing: billingDomain.service,
@@ -708,6 +715,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     works: ports.works,
     projectRepo: ports.projectRepo,
     users: ports.users,
+    accountSkillInstalls: ports.accountSkillInstalls,
     workRepo: ports.workRepo,
     workAuthorityResolver: ports.workAuthorityResolver,
     workContext,
@@ -1015,6 +1023,7 @@ export function createInMemoryAppServices(): AppServices {
         return enabled;
       },
     },
+    accountSkillInstalls: createInMemoryAccountSkillInstallStore(),
     workRepo: {
       async transaction(operation) {
         return operation();

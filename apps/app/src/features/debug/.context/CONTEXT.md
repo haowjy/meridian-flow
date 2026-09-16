@@ -1,8 +1,8 @@
 # features/debug — Dev observability
 
-Read-only, dev-only inspection for an authenticated project. The debug pill is
-only an entry point: inspect each kind of state through the surface that already
-owns it.
+Dev-only inspection for an authenticated project. The debug pill is only an
+entry point: inspect each kind of state through the surface that already owns
+it.
 
 | Evidence | Surface |
 |---|---|
@@ -14,14 +14,17 @@ owns it.
 | Query cache and thread lifecycle | TanStack Query Devtools |
 | Zustand stores | Redux DevTools |
 | Raw WebSocket frames | Browser Network tools |
+| Account skill add/delete (Milestone 2 throwaway) | Debug pill |
 
 Do not mirror these sources inside the pill. Add app-level signals there only
 when no existing inspector owns them.
 
 ## Contracts
 
-- **Read-only.** The pill and inline inspector may read public hooks, stores,
-  and owner-gated debug endpoints. They never mutate application state.
+- **Read-only, except Milestone 2 throwaway.** The pill and inline inspector
+  may read public hooks, stores, and owner-gated debug endpoints. They never
+  mutate application state, except the account-skill add/delete section, which
+  is deleted before release.
 - **One mount.** `DebugOverlay` mounts from `routes/_authenticated.tsx` and owns
   the pill, inline inspector, and pop-out portals.
 - **Build-stripped.** `DEBUG_FEATURE_ALLOWED` is true only for
