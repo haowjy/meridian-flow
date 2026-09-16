@@ -1,6 +1,6 @@
 /** Exact persisted reference-occurrence recognition for transcript consumers. */
 import { describe, expect, it } from "vitest";
-import { referenceOccurrenceContent } from "./user-turn-admission.js";
+import { referenceOccurrenceContent, skillOccurrenceContent } from "./user-turn-admission.js";
 
 const occurrence = {
   type: "reference",
@@ -28,6 +28,30 @@ describe("referenceOccurrenceContent", () => {
       referenceOccurrenceContent({
         blockType: "text",
         content: { ...occurrence, uri: "uploads://@//gate-map.png" },
+      }),
+    ).toBeNull();
+  });
+});
+
+const skill = {
+  type: "skill",
+  text: "/writing-principles",
+  slug: "writing-principles",
+  name: "Writing principles",
+  description: "Reader reward.",
+};
+
+describe("skillOccurrenceContent", () => {
+  it("recognizes only exact structured text-block content", () => {
+    expect(skillOccurrenceContent({ blockType: "text", content: skill })).toEqual(skill);
+    expect(
+      skillOccurrenceContent({ blockType: "text", content: { ...skill, extra: true } }),
+    ).toBeNull();
+    expect(skillOccurrenceContent({ blockType: "image", content: skill })).toBeNull();
+    expect(
+      skillOccurrenceContent({
+        blockType: "text",
+        content: { ...skill, text: "/other" },
       }),
     ).toBeNull();
   });

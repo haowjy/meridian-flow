@@ -17,6 +17,8 @@
 
 ### Fixed
 
+- Slash-activated skills inject as a request-only `skill` tool_use then tool_result after the user message instead of appending SKILL.md onto the user text.
+- User bubbles render picked `/slug` with the same hover name and description as the composer.
 - Composer `/` menu matches the composer shell width. Picked skills stay visible as `/slug` atoms with a hover name and description, and Send copies that `/slug` into the user message.
 - Proxy Home `GET /api/skills` to the API server so composer `/` can list skills before a thread exists.
 
