@@ -90,9 +90,8 @@ they do not own resource or namespace lifetime.
     pays an extra `view.setProps` — never a rebuild — so editor handlers do not
     have to be identity-stable; they read live editability off `view.editable`
     rather than closing over props.
-  - `EditorView.lifetime.test.tsx` is the enforcement: it proves a thread-query
-    refetch and a live surface change keep the same editor and UndoManager while
-    a room change replaces them.
+  - A thread-query refetch and a live surface change keep the same editor and
+    UndoManager; a room change replaces them.
 - Live sessions may use versioned IndexedDB persistence. Review sessions do not:
   the branch room is server-persisted and generation-fenced, and a local cache
   risks recovering state into the wrong review generation.
@@ -348,9 +347,8 @@ they do not own resource or namespace lifetime.
   and the render layer is one stable sibling after it, mounted for the life of
   a diagram fence — so neither a face swap nor a parse settling moves DOM in
   front of ProseMirror's live selection. DOM vanishing ahead of a live
-  selection is what made the two faces alternate, and
-  `CodeBlockNodeView.test.tsx` asserts the sibling list ahead of the host across
-  both transitions. The render layer is keyed by provider: a language change is
+  selection is what made the two faces alternate. The sibling list ahead of the
+  host must stay stable across both transitions. The render layer is keyed by provider: a language change is
   a document change, so remounting there is allowed, and it keeps one provider's
   render state from being handed to another. The face is derived from the current selection on every
   render (`useSyncExternalStore`, no local face state) and tests nothing about

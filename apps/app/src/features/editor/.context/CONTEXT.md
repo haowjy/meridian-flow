@@ -166,7 +166,7 @@ an overflow clip, which makes it the containing block for every measured
 surface and the box that takes one off the page when it leaves
 ([`chrome/manuscript-overlay.ts`](../chrome/manuscript-overlay.ts)). That clip
 turns the column's gutter into a hard constraint rather than a look —
-`editor-column.ts` states the floor and `editor-column.test.ts` holds it.
+`editor-column.ts` states the floor.
 
 Passing the optional `editor` makes the whole scroll area click-to-focus
 territory: gutter presses place the caret at the nearest text position —

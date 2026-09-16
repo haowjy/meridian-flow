@@ -4,7 +4,7 @@
  * The old slash menu's failure (F6) was not a bad rule but an undefined one:
  * the trigger was gated on preconditions nobody had written down, so a writer
  * who typed `/` and got a literal slash had no way to learn why. This function
- * IS the contract (§5.7), and `slash-trigger.test.ts` is its truth table:
+ * IS the contract (§5.7):
  *
  * - opens at the start of a text block, or immediately after whitespace
  * - in paragraphs (empty or not), headings, list items, quote paragraphs, and
