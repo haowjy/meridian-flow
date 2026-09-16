@@ -357,9 +357,12 @@ export function serializeComposerDraft(
     if (node.type === "hardBreak") return emitText("\n");
     if (node.type === "composerSkill") {
       const slug = node.attrs?.slug;
-      if (typeof slug === "string" && slug && !seenSkillSlugs.has(slug)) {
-        seenSkillSlugs.add(slug);
-        activatedSkillSlugs.push(slug);
+      if (typeof slug === "string" && slug) {
+        if (!seenSkillSlugs.has(slug)) {
+          seenSkillSlugs.add(slug);
+          activatedSkillSlugs.push(slug);
+        }
+        emitText(`/${slug}`);
       }
       return;
     }
