@@ -126,9 +126,11 @@
 - **Settlement verification stack**: the killed-process oracle owns durable
   settlement risks—transaction boundaries, claims and leases, lock cuts, crash
   windows, and cold recovery. Pure provenance and policy semantics belong to their
-  focused owners rather than to a second PostgreSQL replay graph.   The oracle is
-  necessary but not sufficient: release probes must verify writer-visible trail
-  flows through the production compose + Hocuspocus + worker-drain chain.
+  focused owners rather than to a second PostgreSQL replay graph. The oracle is
+  necessary but not sufficient: `lib/compose.runtime-settlement.db.test.ts` must
+  also drive the real `createProductionAppPorts` + `composeAppServices` +
+  Hocuspocus + worker-drain chain with production-shaped sync-step-2 full-state
+  updates, and release probes must verify writer-visible trail flows.
 - **Trail-work time**: retry eligibility, backoff, and abandoned-running leases
   use an injected schedule. Production obtains its time from PostgreSQL; tests
   advance a controlled schedule. Do not reintroduce process-clock comparisons or
