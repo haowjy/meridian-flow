@@ -132,5 +132,5 @@ Transport remains room-scoped; multiplexing is outside this routing contract.
 - [Navigation ownership](../routing/project-navigation.ts) and its sibling tests.
 - [Stable-ID navigation](../context/open-project-document.ts).
 - [Loading boundary](../routing/ProjectRouteBoundary.tsx) and its sibling tests.
-- [Shell and phone retention](../ProjectView.tsx), tested in `ProjectView.retention.test.tsx`.
+- [Shell and phone retention](../ProjectView.tsx).
 - [Workspace transitions and restoration codec](../../../client/stores/context-tabs-store/editor-workspace-state.ts).
