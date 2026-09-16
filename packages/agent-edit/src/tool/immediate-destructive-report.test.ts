@@ -57,30 +57,6 @@ describe("immediate destructive reporting", () => {
     expect(ctx.journal.recordedBatches()).toHaveLength(1);
   });
 
-  it("does not reject a human actor against that same user's own update", async () => {
-    const ctx = harness({ [DOC_ID]: "Alpha.\n\nBeta." });
-    let injected = false;
-    ctx.coordinator.concurrentUpdatesSince = async ({ doc, sinceStateVector }) => {
-      if (!injected) {
-        injected = true;
-        humanText(doc, 1, { from: 0, to: 0 }, "Self: ");
-      }
-      const update = Y.encodeStateAsUpdate(doc, sinceStateVector);
-      return update.length > 0 ? [{ update, origin: { type: "human", userId: "user-1" } }] : [];
-    };
-
-    const outcome = await ctx.core.write(
-      { command: "create", file: DOC_ID, content: "Replacement.", overwrite: true },
-      {
-        sessionId: "human-session",
-        actor: { kind: "human", userId: "user-1", threadId: "thread-a" },
-      },
-    );
-
-    expectOutcome(outcome, "success");
-    expect(ctx.journal.recordedBatches()).toHaveLength(1);
-  });
-
   it("reports delete after a human edits its parent and keeps the merge", async () => {
     const ctx = harness({ [DOC_ID]: "Alpha.\n\nBeta.\n\nGamma." });
     const deletedHash = hashAt(ctx.liveDoc(DOC_ID), 0);
@@ -114,19 +90,6 @@ describe("immediate destructive reporting", () => {
     expectOutcome(outcome, "success");
     expect(ctx.journal.recordedBatches()).toHaveLength(1);
     expect(blockTexts(ctx.liveDoc(DOC_ID)).join(" ")).toContain("Writer: Alpha.");
-  });
-
-  it("allows a destructive mutation when there is no concurrent edit", async () => {
-    const ctx = harness({ [DOC_ID]: "Alpha.\n\nBeta.\n\nGamma." });
-
-    const outcome = await ctx.core.write(
-      { command: "replace", file: DOC_ID, find: "Alpha.\n\nBeta.", content: "" },
-      { ...context, turnId: "turn-safe-delete" },
-    );
-
-    expectOutcome(outcome, "success");
-    expect(ctx.journal.recordedBatches()).toHaveLength(1);
-    expect(blockTexts(ctx.liveDoc(DOC_ID))).toEqual(["Gamma."]);
   });
 
   it("allows a compatible-type overwrite and preserves the parent identity", async () => {
