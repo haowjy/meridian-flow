@@ -3,6 +3,8 @@ import { Editor, type JSONContent } from "@tiptap/core";
 import { NodeSelection, TextSelection } from "@tiptap/pm/state";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { installJsdomLayout } from "@/test-support/jsdom-layout";
+
 import { createStandaloneEditorExtensions } from "../config";
 import {
   caretBesideObjectTransaction,
@@ -16,6 +18,10 @@ import {
 
 let editor: Editor | null = null;
 
+// Arrow keys reach gapcursor, which measures the line to decide whether Down
+// leaves the block. jsdom cannot measure.
+installJsdomLayout();
+
 afterEach(() => {
   editor?.destroy();
   editor = null;
@@ -28,6 +34,12 @@ const paragraph = (text: string): JSONContent => ({
 
 const figure: JSONContent = { type: "figure", attrs: { src: "asset:1", caption: "" } };
 
+const mermaid: JSONContent = {
+  type: "code_block",
+  attrs: { language: "mermaid" },
+  content: [{ type: "text", text: "graph TD;" }],
+};
+
 const inlineImage: JSONContent = {
   type: "paragraph",
   content: [
@@ -38,7 +50,10 @@ const inlineImage: JSONContent = {
 };
 
 function mount(content: JSONContent[]): Editor {
+  const element = document.createElement("div");
+  document.body.append(element);
   editor = new Editor({
+    element,
     extensions: createStandaloneEditorExtensions(),
     content: { type: "doc", content },
   });
@@ -59,6 +74,18 @@ function caretAt(instance: Editor, pos: number) {
   instance.view.dispatch(
     instance.state.tr.setSelection(TextSelection.create(instance.state.doc, pos)),
   );
+}
+
+function select(instance: Editor, pos: number) {
+  instance.view.dispatch(
+    instance.state.tr.setSelection(NodeSelection.create(instance.state.doc, pos)),
+  );
+}
+
+function press(instance: Editor, init: KeyboardEventInit): boolean {
+  const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init });
+  instance.view.dom.dispatchEvent(event);
+  return event.defaultPrevented;
 }
 
 describe("walking onto an object", () => {
@@ -535,5 +562,94 @@ describe("stepping beside an object that stands next to another", () => {
     expect(instance.state.doc.nodeAt(positionOf(instance, "code_block"))?.textContent).toBe(
       "graph TD;",
     );
+  });
+});
+
+describe("arrow walking", () => {
+  it("selects the object, then passes beyond it", () => {
+    const instance = mount([paragraph("before"), mermaid, paragraph("after")]);
+    instance.commands.setTextSelection(positionOf(instance, "code_block") - 1);
+
+    expect(press(instance, { key: "ArrowDown" })).toBe(true);
+    expect(instance.state.selection).toBeInstanceOf(NodeSelection);
+
+    expect(press(instance, { key: "ArrowDown" })).toBe(true);
+    expect(instance.state.selection.$head.parent.textContent).toBe("after");
+  });
+
+  it("crosses a diagram as one object, in both directions", () => {
+    const instance = mount([paragraph("before"), mermaid, { type: "horizontal_rule" }]);
+    const diagram = positionOf(instance, "code_block");
+    select(instance, positionOf(instance, "horizontal_rule"));
+
+    // Keyboard must not land in hidden mermaid source: a fence with a caret
+    // in it shows its syntax rather than its picture.
+    expect(press(instance, { key: "ArrowUp" })).toBe(true);
+    expect(selectedObject(instance.state)?.pos).toBe(diagram);
+    expect(instance.state.selection).toBeInstanceOf(NodeSelection);
+
+    expect(press(instance, { key: "ArrowUp" })).toBe(true);
+    expect(instance.state.selection.$head.parent.textContent).toBe("before");
+
+    expect(press(instance, { key: "ArrowDown" })).toBe(true);
+    expect(selectedObject(instance.state)?.pos).toBe(diagram);
+  });
+
+  it("leaves ordinary caret movement to the editor", () => {
+    const instance = mount([paragraph("before"), paragraph("after")]);
+    instance.commands.setTextSelection(3);
+    expect(press(instance, { key: "ArrowDown" })).toBe(false);
+  });
+});
+
+describe("arrow walking into a cell", () => {
+  const cellOf = (...content: JSONContent[]): JSONContent => ({
+    type: "table_cell",
+    content,
+  });
+  const tableOf = (...cells: JSONContent[]): JSONContent => ({
+    type: "table",
+    content: [{ type: "table_row", content: cells }],
+  });
+
+  function caretBesideText(instance: Editor, text: string, side: "start" | "end"): void {
+    let at: number | null = null;
+    instance.state.doc.descendants((node, pos) => {
+      if (at === null && node.isText && node.text === text) {
+        at = side === "end" ? pos + text.length : pos;
+      }
+      return at === null;
+    });
+    if (at === null) throw new Error(`no "${text}" in the fixture`);
+    instance.commands.setTextSelection(at);
+  }
+
+  it("selects a diagram opening the next cell, then passes beyond it", () => {
+    const instance = mount([tableOf(cellOf(paragraph("go")), cellOf(mermaid, paragraph("tail")))]);
+    caretBesideText(instance, "go", "end");
+
+    expect(press(instance, { key: "ArrowRight" })).toBe(true);
+    expect(selectedObject(instance.state)?.node.type.name).toBe("code_block");
+    expect(instance.state.selection).toBeInstanceOf(NodeSelection);
+
+    expect(press(instance, { key: "ArrowRight" })).toBe(true);
+    expect(instance.state.selection.$head.parent.textContent).toBe("tail");
+  });
+
+  it("selects a diagram ending the cell behind when walking back", () => {
+    const instance = mount([tableOf(cellOf(paragraph("lead"), mermaid), cellOf(paragraph("go")))]);
+    caretBesideText(instance, "go", "start");
+
+    expect(press(instance, { key: "ArrowLeft" })).toBe(true);
+    expect(selectedObject(instance.state)?.node.type.name).toBe("code_block");
+  });
+
+  it("crosses into a prose cell in document order, selecting nothing", () => {
+    const instance = mount([tableOf(cellOf(paragraph("go")), cellOf(paragraph("tail")))]);
+    caretBesideText(instance, "go", "end");
+
+    press(instance, { key: "ArrowRight" });
+    expect(selectedObject(instance.state)).toBeNull();
+    expect(instance.state.selection.$head.parent.textContent).toBe("tail");
   });
 });

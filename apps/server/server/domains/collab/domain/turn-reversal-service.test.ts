@@ -61,47 +61,6 @@ const base = {
 };
 
 describe("reverseThreadContext", () => {
-  it("resolves a context document and parses write handles behind the facade", async () => {
-    const { service, agentReverse, refreshDocumentProjection } = createService({});
-
-    await expect(
-      service.reverseThreadContext({
-        ...base,
-        uri: "manuscript://chapter.md",
-        scope: "write",
-        selection: "w7",
-        turnId: "" as never,
-      }),
-    ).resolves.toMatchObject({ status: "reversed" });
-
-    expect(agentReverse).toHaveBeenCalledWith(
-      expect.objectContaining({
-        docId: "document-1",
-        selection: { kind: "single", to: "w7" },
-      }),
-    );
-    expect(refreshDocumentProjection).toHaveBeenCalledWith({
-      documentId: "document-1",
-      threadId: "thread-1",
-    });
-  });
-
-  it("publishes the resolver-returned stable URI instead of contextual request syntax", async () => {
-    const { service } = createService({});
-
-    await expect(
-      service.reverseThreadContext({
-        ...base,
-        uri: "scratch://context.md",
-        scope: "write",
-        turnId: "" as never,
-      }),
-    ).resolves.toMatchObject({
-      status: "reversed",
-      documents: [{ uri: "scratch://@original/context.md", status: "reversed" }],
-    });
-  });
-
   it("rejects invalid write handles before reversal dispatch", async () => {
     const { service, agentReverse, resolveContextDocument } = createService({
       resolvedDocumentId: null,
@@ -118,6 +77,34 @@ describe("reverseThreadContext", () => {
     ).rejects.toEqual(new ReverseThreadContextError("invalid_write", "invalid_write"));
     expect(agentReverse).not.toHaveBeenCalled();
     expect(resolveContextDocument).not.toHaveBeenCalled();
+  });
+
+  it("resolves a write handle and publishes the resolver URI", async () => {
+    const { service, agentReverse, refreshDocumentProjection } = createService({});
+
+    await expect(
+      service.reverseThreadContext({
+        ...base,
+        uri: "scratch://context.md",
+        scope: "write",
+        selection: "w7",
+        turnId: "" as never,
+      }),
+    ).resolves.toMatchObject({
+      status: "reversed",
+      documents: [{ uri: "scratch://@original/context.md", status: "reversed" }],
+    });
+
+    expect(agentReverse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        docId: "document-1",
+        selection: { kind: "single", to: "w7" },
+      }),
+    );
+    expect(refreshDocumentProjection).toHaveBeenCalledWith({
+      documentId: "document-1",
+      threadId: "thread-1",
+    });
   });
 
   it("owner-gates and filters live lineage before turn reversal", async () => {
