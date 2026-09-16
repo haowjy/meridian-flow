@@ -12,7 +12,7 @@ supported preview input.
 The client mounts a constrained schema for code with exactly one `code_block`
 (`config.ts` `CodeDocument`), and `markdown-document.ts` serializes code
 verbatim from block 0 only. Document ↔ code renames return typed
-`invalid_operation` (`context-fs.move-filetype` tests) because remounting the
+`invalid_operation` (`context-fs.law` tests) because remounting the
 other schema against existing content could let ProseMirror normalization
 delete it.
 

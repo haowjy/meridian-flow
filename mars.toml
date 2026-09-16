@@ -2,14 +2,10 @@
 url = "https://github.com/haowjy/meridian-dev-workflow"
 
 [settings]
-targets = [
-    ".claude",
-    ".cursor",
-    ".codex",
-    ".opencode",
-    ".pi",
-]
+targets = [".codex"]
 models_cache_ttl_hours = 24
+agent_emission = "always"
+
 
 [settings.meridian.agent_copy]
 harnesses = ["claude"]
@@ -17,8 +13,7 @@ include_fanout = false
 
 [settings.meridian.fanout]
 agents = [
-"reviewer",
-#    "browser-prober",
-"prober",
-"coder"
+    "reviewer",
+    "prober",
+    "coder",
 ]

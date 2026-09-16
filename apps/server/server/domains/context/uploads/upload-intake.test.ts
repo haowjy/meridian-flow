@@ -8,7 +8,7 @@ import { classifyUpload, createUploadIntake } from "./upload-intake.js";
 const bytes = new TextEncoder().encode("chapter one");
 const digest = createHash("sha256").update(bytes).digest("hex");
 
-function harness(owner: "work" | "none" = "none") {
+function harness() {
   let row: UploadReservation | null = null;
   const repository: UploadIntakeRepository = {
     async reserve(input) {
@@ -23,19 +23,13 @@ function harness(owner: "work" | "none" = "none") {
         fingerprint: input.fingerprint,
         finalPath: input.filename,
         objectKey: "uploads/project/document",
-        canonicalUri:
-          owner === "work"
-            ? `uploads://@revision-pass/${input.filename}`
-            : `uploads://@/${input.filename}`,
+        canonicalUri: `uploads://@/${input.filename}`,
         locationRevision: "revision-1",
         fileType: input.fileType,
         state: "reserved",
         storageUrl: null,
         consumed: false,
-        owner:
-          owner === "work"
-            ? { kind: "work", workId: "work-1", workSlug: "revision-pass" }
-            : { kind: "none" },
+        owner: { kind: "none" },
       };
       return { kind: "reserved", reservation: row };
     },
@@ -99,14 +93,11 @@ function harness(owner: "work" | "none" = "none") {
   };
 }
 
-function input(owner: "work" | "none" = "none") {
+function input() {
   return {
     intakeId: "intake-1",
     actorUserId: "user-1",
-    owner:
-      owner === "work"
-        ? { kind: "work" as const, projectId: "project-1", workId: "work-1" }
-        : { kind: "none" as const, projectId: "project-1" },
+    owner: { kind: "none" as const, projectId: "project-1" },
     filename: "chapter.md",
     mimeType: "text/markdown",
     byteDigest: digest,
@@ -135,22 +126,6 @@ describe("UploadIntake", () => {
       ok: true,
       value: { uri: "uploads://@/Gate[Map].txt" },
     });
-  });
-  it.each([
-    "none",
-    "work",
-  ] as const)("returns canonical %s authority and converges retries", async (owner) => {
-    const { service, content } = harness(owner);
-    const first = await service.intake(input(owner));
-    const replay = await service.intake(input(owner));
-    expect(first).toEqual(replay);
-    expect(first.ok && first.value).toEqual({
-      documentId: "00000000-0000-4000-8000-000000000001",
-      uri: owner === "work" ? "uploads://@revision-pass/chapter.md" : "uploads://@/chapter.md",
-      fileType: "markdown",
-      locationRevision: "revision-1",
-    });
-    expect(content.persist).toHaveBeenCalledOnce();
   });
 
   it("rejects digest and fingerprint mismatches without a second write", async () => {

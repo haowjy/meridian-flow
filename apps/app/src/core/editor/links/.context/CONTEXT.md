@@ -197,8 +197,8 @@ ProseMirror renders an inline decoration as a span INSIDE the mark's `<a>`, so
 `surfaces/link/link-surfaces.css` reaches the anchor through
 `a:has([data-link-state="unresolved"])`
 — the underline belongs to the anchor and a descendant cannot call it off.
-`link-resolution.test.ts` asserts that nesting, because a change to it is a
-silently unstyled unresolved link.
+  That nesting is load-bearing: a change to it is a silently unstyled
+  unresolved link.
 
 Nothing here is stored. Law 9 is the reason: an LLM's `[[Chapter 214]]` needs
 zero extra attributes, and no peer ever receives a resolution.
