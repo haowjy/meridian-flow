@@ -1,12 +1,14 @@
 /**
  * Composer `/` list. Group headings while the query is empty; Skills rows as
- * `/<slug>` with name and description. Manuscript SlashMenu is a different host.
+ * slug plus truncated description. Manuscript SlashMenu is a different host.
  */
 
 import type { Editor } from "@tiptap/core";
 import { useSyncExternalStore } from "react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { closedSuggestionMenu } from "@/core/completion";
 import { SuggestionMenu } from "@/features/editor/chrome";
+import { cn } from "@/lib/utils";
 
 import { type ComposerCommandMenuMeta, getComposerCommandMenu } from "./ComposerCommandExtension";
 import type { ComposerCommandItem } from "./command-catalog";
@@ -58,17 +60,27 @@ export function ComposerCommandMenu({ editor }: { editor: Editor }) {
 }
 
 function CommandRow({ item }: { item: ComposerCommandItem }) {
-  return (
-    <div className="flex min-w-0 flex-1 flex-col">
-      <span className="flex min-w-0 items-baseline gap-2">
-        <span>{item.label}</span>
-        {item.name !== item.slug ? (
-          <span className="truncate text-ink-subtle text-xs">{item.name}</span>
-        ) : null}
-      </span>
+  const detail = item.name !== item.slug || Boolean(item.description);
+  const row = (
+    <span className="flex min-w-0 flex-1 items-baseline gap-4">
+      <span className="shrink-0">{item.slug}</span>
       {item.description ? (
-        <span className="truncate text-ink-subtle text-xs">{item.description}</span>
+        <span className="min-w-0 flex-1 truncate text-ink-subtle text-xs">{item.description}</span>
       ) : null}
-    </div>
+    </span>
+  );
+  if (!detail) return row;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{row}</TooltipTrigger>
+      <TooltipContent side="top" className="pointer-events-none max-w-56">
+        {item.name !== item.slug ? <span className="block">{item.name}</span> : null}
+        {item.description ? (
+          <span className={cn("block", item.name !== item.slug && "text-background/70")}>
+            {item.description}
+          </span>
+        ) : null}
+      </TooltipContent>
+    </Tooltip>
   );
 }
