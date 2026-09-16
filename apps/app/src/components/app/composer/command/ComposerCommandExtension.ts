@@ -8,6 +8,7 @@ import {
   type SuggestionLaneOptions,
 } from "@/core/editor/extensions/suggestion";
 
+import { composerSkillContent } from "../composer-document";
 import {
   type ComposerCommandCatalog,
   type ComposerCommandGroupId,
@@ -40,9 +41,20 @@ const composerCommandLane = createSuggestionLane<
   items: (catalog, query) => filterComposerCommandItems(catalog.items, query),
   rowId: (entry) => entry.id,
   meta: (catalog) => ({ groupLabels: catalog.groupLabels }),
-  choose: ({ editor, catalog, range, entry }) => {
-    catalog.activateSkill(entry.slug);
-    editor.chain().focus().deleteRange(range).run();
+  choose: ({ editor, range, entry }) => {
+    if (entry.kind !== "skill") return;
+    editor
+      .chain()
+      .focus()
+      .insertContentAt(
+        range,
+        composerSkillContent({
+          slug: entry.slug,
+          name: entry.name,
+          description: entry.description,
+        }),
+      )
+      .run();
   },
 });
 

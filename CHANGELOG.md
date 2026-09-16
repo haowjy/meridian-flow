@@ -9,7 +9,7 @@
 
 ### Added
 
-- Chat composer `/` lists available skills as `/<slug>`. Picking one puts that slug on Send. Home uses the selected Agent plus account installs; bound chat uses the thread catalog. Manuscript `/` is unchanged.
+- Chat composer `/` lists available skills as `/<slug>`. Picking one leaves a `/slug` atom in the draft; Send reads those slugs. Home uses the selected Agent plus account installs; bound chat uses the thread catalog. Manuscript `/` is unchanged.
 - Slash-activated skill slugs on Send and the model `skill` tool load SKILL.md into that turn. The available catalog is readable for the bound thread.
 - First-turn bake lists available skill slugs (and name when it differs) with descriptions and persists those slugs. An account install after freeze attaches one notice on the next Send without rewriting the prompt.
 - Persist account-scoped skill installs. Debug overlay can add a packaged skill (including `story-review`) or a paste, and delete by slug.
@@ -17,6 +17,7 @@
 
 ### Fixed
 
+- Composer `/` menu matches the composer shell width. Picked skills stay visible as `/slug` atoms with a hover name and description.
 - Proxy Home `GET /api/skills` to the API server so composer `/` can list skills before a thread exists.
 
 ### Changed

@@ -1,4 +1,3 @@
 - `available-skills.ts`: resolve union once to listings that include body; catalog and load share that result (`apps/server/server/domains/runtime/loop/available-skills.ts`).
-- Composer activations belong on `ComposerDraftSnapshot` as command rows so remount/restore and later `/compact` share one list (`apps/app/src/components/app/composer/Composer.tsx`, `composer-document.ts`).
 - Debug packaged add should resolve launch-agents by coordinate, not scan every system package (`apps/server/server/domains/packages/domain/account-skill-install.ts`).
 - Share fuzzy filter / group-heading chrome between composer `/` and manuscript slash (`apps/app/src/components/app/composer/command/`, `apps/app/src/core/editor/extensions/slash/`).
