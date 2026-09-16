@@ -1,4 +1,4 @@
-/** Runtime support gates: skill availability is not a refusal; unknown fields and subagents still are. */
+/** Runtime support gates: available skills are not a refusal; load, unknown fields, and subagents still are. */
 import { describe, expect, it } from "vitest";
 import type { CompiledAgentDefinition } from "../packages/index.js";
 import {
@@ -22,6 +22,18 @@ describe("agent definition support", () => {
     });
     expect(agentDefinitionUnsupportedReasons(writer)).toEqual([]);
     expect(agentDefinitionUnavailableReasons(writer, gateway, "model-a")).toEqual([]);
+  });
+
+  it("refuses nonempty skill load", () => {
+    const loaded = definition({
+      skills: { load: ["writing-principles"], available: ["creative-writing-modes"] },
+    });
+    expect(agentDefinitionUnsupportedReasons(loaded)).toEqual([
+      "Bound skill load is not available yet.",
+    ]);
+    expect(agentDefinitionUnavailableReasons(loaded, gateway, "model-a")).toEqual([
+      "Bound skill load is not available yet.",
+    ]);
   });
 
   it("still refuses unknown fields and nonempty subagents", () => {

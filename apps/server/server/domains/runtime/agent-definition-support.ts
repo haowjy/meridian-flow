@@ -42,5 +42,6 @@ export function agentDefinitionUnsupportedReasons(definition: CompiledAgentDefin
   for (const key of Object.keys(meta)) {
     if (!supported.has(key)) reasons.push(`Unsupported Agent field: ${key}`);
   }
+  if (meta.skills?.load?.length) reasons.push("Bound skill load is not available yet.");
   return reasons;
 }

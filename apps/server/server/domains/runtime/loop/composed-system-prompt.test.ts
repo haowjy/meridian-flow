@@ -2,15 +2,17 @@ import { describe, expect, it } from "vitest";
 import { assembleComposedSystemPrompt } from "./composed-system-prompt.js";
 
 describe("assembleComposedSystemPrompt", () => {
-  it("joins available skill names and descriptions into the frozen bytes", () => {
+  it("joins available skill slugs and descriptions into the frozen bytes", () => {
     const prompt = assembleComposedSystemPrompt({
       basePrompt: "You are Writer.",
       availableSkills: [
         {
+          slug: "creative-writing-modes",
           name: "creative-writing-modes",
           description: "Modes for putting prose on the page.",
         },
         {
+          slug: "writing-principles",
           name: "writing-principles",
           description: "Reader reward and LLM fiction failure modes.",
         },
@@ -21,10 +23,27 @@ describe("assembleComposedSystemPrompt", () => {
     expect(prompt).toContain("writing-principles\nReader reward and LLM fiction failure modes.");
   });
 
+  it("lists slug as identity and name when they differ", () => {
+    const prompt = assembleComposedSystemPrompt({
+      basePrompt: "You are Writer.",
+      availableSkills: [
+        {
+          slug: "story-review",
+          name: "Story Review",
+          description: "Review drafts after prose exists.",
+        },
+      ],
+    });
+    expect(prompt).toContain("story-review (Story Review)\nReview drafts after prose exists.");
+    expect(prompt).not.toContain("\nStory Review\n");
+  });
+
   it("omits the available-skills section when the union is empty", () => {
     const withSkills = assembleComposedSystemPrompt({
       basePrompt: "You are Writer.",
-      availableSkills: [{ name: "creative-writing-modes", description: "Modes." }],
+      availableSkills: [
+        { slug: "creative-writing-modes", name: "creative-writing-modes", description: "Modes." },
+      ],
     });
     const empty = assembleComposedSystemPrompt({
       basePrompt: "You are Writer.",

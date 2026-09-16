@@ -100,9 +100,10 @@ Agent retains its dependency closure; incompatible upstream additions refuse ato
 publication rather than silently changing those references;
 removed pristine definitions leave retained history but no future-chat selection.
 `definition-editing.ts` edits or restores one entity within that complete source.
-The skill-availability edit versions `skills.available`; it does not activate
-runtime skill loading. `package-export.ts` exports retained files without
-reconstructing source from normalized definitions.
+The skill-availability edit versions `skills.available` on the retained Agent.
+Conversation listing, freeze, and invoke consume that declaration in the runtime
+domain. `package-export.ts` exports retained files without reconstructing source
+from normalized definitions.
 
 Project-addressed management routes still authorize access to that Project; the
 owned package content belongs to the authenticated account and is reusable across
