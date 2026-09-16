@@ -1050,6 +1050,10 @@ msgstr ""
 msgid "Couldn't redo"
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "Couldn't remove agent from project."
+msgstr ""
+
 #: src/features/project/context/ContextTreeRows.tsx
 msgid "Couldn't rename this document. Try again."
 msgstr ""
@@ -2178,6 +2182,10 @@ msgstr ""
 msgid "No messages yet."
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "No model"
+msgstr ""
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "No pending changes"
 msgstr ""
@@ -2390,8 +2398,8 @@ msgid "Pending drafts couldn’t load"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Personal"
-msgstr ""
+#~ msgid "Personal"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "photo"
@@ -2556,8 +2564,17 @@ msgstr ""
 msgid "Remove"
 msgstr ""
 
+#. placeholder {0}: agent.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Remove {0} from project"
+msgstr ""
+
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Remove from favorites"
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Remove from project"
 msgstr ""
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
@@ -2998,8 +3015,8 @@ msgid "Switching Work…"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-msgid "System"
-msgstr ""
+#~ msgid "System"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -3497,6 +3514,7 @@ msgstr ""
 msgid "workReceipt.unarchived"
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Unavailable"

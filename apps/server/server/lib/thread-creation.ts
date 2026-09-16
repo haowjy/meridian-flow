@@ -90,7 +90,11 @@ export async function createThreadForProject(
   let resolvedWorkId: string | null = null;
   let thread: Thread;
   try {
-    const resolved = await deps.agentCatalog.resolvePrimary(args.userId, args.agentSelection);
+    const resolved = await deps.agentCatalog.resolvePrimary(
+      args.userId,
+      args.agentSelection,
+      args.projectId,
+    );
     if (!resolved.ok) throw new AgentSelectionError(args.agentSelection.definitionRevisionId);
     const { revision, configuration } = resolved;
 

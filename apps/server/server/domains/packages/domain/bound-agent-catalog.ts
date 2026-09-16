@@ -37,11 +37,13 @@ export interface BoundAgentCatalog {
   installSystemSource(source: AgentSourceSnapshot): Promise<void>;
   list(
     userId: string,
-    input: { limit: number; after?: { nameSortKey: string; id: string } },
+    input: { limit: number; projectId?: string; after?: { nameSortKey: string; id: string } },
   ): Promise<AgentCatalogPage>;
+  removeFromProject(userId: string, projectId: string, selection: AgentSelection): Promise<boolean>;
   resolvePrimary(
     userId: string,
     selection: AgentSelection,
+    projectId?: string,
   ): Promise<
     | { ok: true; revision: AgentRevision; configuration: ResolvedAgentConfiguration }
     | { ok: false; reason: "not-found" | "unavailable"; details: string[] }
@@ -86,6 +88,7 @@ export function createBoundAgentCatalog(input: {
       slug: revision.slug,
       name: revision.definition.metadata.name ?? revision.slug,
       description: revision.definition.metadata.description ?? "",
+      model: revision.definition.metadata.model ?? input.defaultModel() ?? null,
       ownership: entry.ownerUserId === null ? "system" : "personal",
       unavailableReasons: (await prepare(revision)).unavailable,
     };
@@ -142,7 +145,7 @@ export function createBoundAgentCatalog(input: {
       return installSystemAgentSource(store, source);
     },
     async list(userId, page) {
-      const entries = await store.listCatalog({ userId, limit: page.limit, after: page.after });
+      const entries = await store.listCatalog({ userId, ...page });
       const last = entries.at(-1);
       return {
         agents: await Promise.all(entries.map(summarize)),
@@ -152,11 +155,26 @@ export function createBoundAgentCatalog(input: {
             : null,
       };
     },
-    async resolvePrimary(userId, selection) {
+    async removeFromProject(userId, projectId, selection) {
       const resolved = await store.readSelection(
         userId,
         selection.catalogEntryId,
         selection.definitionRevisionId,
+      );
+      if (
+        !resolved ||
+        (resolved.entry.ownerUserId === null && resolved.entry.logicalKey === "general")
+      )
+        return false;
+      await store.removeFromProject(projectId, resolved.entry.id);
+      return true;
+    },
+    async resolvePrimary(userId, selection, projectId) {
+      const resolved = await store.readSelection(
+        userId,
+        selection.catalogEntryId,
+        selection.definitionRevisionId,
+        projectId,
       );
       if (!resolved) return { ok: false, reason: "not-found", details: [] };
       const { configuration, unavailable } = await prepare(resolved.revision);

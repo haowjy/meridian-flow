@@ -155,3 +155,7 @@ include source, catalog, and binding writes atomically.
 `agent_package_dependencies` retains manifest-name edges to exact package revisions with restricted dependency deletion. Source identity includes the dependency map. `thread_agent_bindings.configuration` stores the resolved model, skill-content identities and named-target revisions alongside the immutable definition reference. Idempotent binding compares both revision and configuration; it cannot change either.
 
 Agent package installations retain account/system current and upstream source heads plus owned history. Definition content stays in immutable source revisions. Legacy project Agent/skill tables, the turn Agent-definition FK and the unused slug-default preference are absent; execution identity comes from the thread binding.
+
+`project_agent_removals` is a Project/catalog-entry exclusion relation. Cascading
+FKs clean up deleted Projects and catalog entries; publication and definition
+revision changes preserve exclusions. It is not another definition owner.

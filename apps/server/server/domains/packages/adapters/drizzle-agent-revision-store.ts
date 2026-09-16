@@ -9,9 +9,10 @@ import {
   agentPackageInstallationHistory,
   agentPackageInstallations,
   agentPackageRevisions,
+  projectAgentRemovals,
   threadAgentBindings,
 } from "@meridian/database/schema";
-import { and, asc, eq, gt, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNotNull, isNull, notExists, or, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
 import type { CompiledAgentDefinition } from "../domain/agent-definition-compiler.js";
 import { prepareAgentSourceRevision } from "../domain/agent-source-revision.js";
@@ -24,6 +25,20 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
     userId === null
       ? isNull(agentCatalogEntries.ownerUserId)
       : eq(agentCatalogEntries.ownerUserId, userId);
+  const availableInProject = (projectId?: string) =>
+    projectId
+      ? notExists(
+          db()
+            .select()
+            .from(projectAgentRemovals)
+            .where(
+              and(
+                eq(projectAgentRemovals.projectId, projectId),
+                eq(projectAgentRemovals.catalogEntryId, agentCatalogEntries.id),
+              ),
+            ),
+        )
+      : undefined;
   const revision = (row: typeof agentDefinitionRevisions.$inferSelect): AgentRevision => ({
     id: row.id,
     packageRevisionId: row.packageRevisionId,
@@ -238,7 +253,7 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         .where(and(ownerFilter(ownerUserId), eq(agentCatalogEntries.logicalKey, logicalKey)));
       return entry;
     },
-    async readSelection(userId, catalogEntryId, revisionId) {
+    async readSelection(userId, catalogEntryId, revisionId, projectId) {
       const [row] = await db()
         .select({ entry: agentCatalogEntries, revision: agentDefinitionRevisions })
         .from(agentCatalogEntries)
@@ -253,6 +268,7 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         .where(
           and(
             eq(agentCatalogEntries.id, catalogEntryId),
+            availableInProject(projectId),
             or(ownerFilter(null), ownerFilter(userId)),
             eq(agentCatalogEntries.removed, false),
             or(
@@ -273,6 +289,7 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         .where(
           and(
             or(ownerFilter(null), ownerFilter(input.userId)),
+            availableInProject(input.projectId),
             eq(agentCatalogEntries.removed, false),
             input.after
               ? or(
@@ -287,6 +304,12 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         )
         .orderBy(asc(agentCatalogEntries.nameSortKey), asc(agentCatalogEntries.id))
         .limit(input.limit);
+    },
+    async removeFromProject(projectId, catalogEntryId) {
+      await db()
+        .insert(projectAgentRemovals)
+        .values({ projectId, catalogEntryId })
+        .onConflictDoNothing();
     },
     async removeOwnedEntry(userId, id) {
       const rows = await db()

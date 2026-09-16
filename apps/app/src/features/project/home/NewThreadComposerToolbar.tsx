@@ -46,6 +46,7 @@ export function NewThreadComposerToolbar({
 }) {
   const agentControl = useComposerAgentToolbarControl({
     mode: "interactive",
+    projectId,
     selectedAgent,
     onSelectedAgentChange: onAgentChange,
   });
