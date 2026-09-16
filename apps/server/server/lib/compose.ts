@@ -3,6 +3,7 @@
  * runtime service graph. App startup supplies process-level resources; this file
  * chooses concrete server adapters and assembles domain services behind ports.
  */
+
 import type { Database } from "@meridian/database";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
@@ -61,15 +62,17 @@ import {
   emitEvent,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
-import { createInMemoryPackageStore } from "../domains/packages/adapters/in-memory-package-store.js";
 import {
-  createDefaultPackageSeeder,
-  createDrizzlePackageStore,
+  type AgentRevisionStore,
+  type BoundAgentCatalog,
+  createBoundAgentCatalog,
+  createDrizzleAgentRevisionStore,
   createGitHubMarsPackageFetcher,
-  type DefaultPackageSeeder,
+  createInMemoryAgentRevisionStore,
   defaultPackageSeedConfigFromEnv,
   type MarsPackageFetcher,
-  type PackageRepository,
+  seedDefaultAgentPackages,
+  seedGeneralAgent,
 } from "../domains/packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../domains/preferences/adapters/in-memory/project-preferences-repository.js";
 import type { ProjectPreferencesRepository } from "../domains/preferences/index.js";
@@ -87,6 +90,10 @@ import {
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
 } from "../domains/projects/index.js";
+import {
+  agentDefinitionUnavailableReasons,
+  agentExecutionUnavailableReasons,
+} from "../domains/runtime/agent-definition-support.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
   computeEffectivePermissions,
@@ -99,7 +106,6 @@ import {
   createHelperResultDelivery,
   createInMemoryThreadRunOwnership,
   createInstrumentedGateway,
-  createInvokeToolRegistration,
   createLateBindRunTurnPort,
   createOrchestrator,
   createPermissionGate,
@@ -157,6 +163,7 @@ import {
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
 import { runAfterDrizzleCommit } from "../shared/drizzle-transaction.js";
+import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { resolveObsVerbose } from "./env.js";
 import { createObjectStoreFromEnv } from "./object-store-factory.js";
@@ -166,8 +173,6 @@ import {
   createReferenceReader,
   createWiredCoreToolRegistrations,
 } from "./wired-core-tools.js";
-
-type AgentPackageStore = { readonly phase: "skeleton" };
 
 export type AppServices = {
   gateway: Gateway;
@@ -196,14 +201,12 @@ export type AppServices = {
   workContext: WorkContextReader;
   workContextDelivery: WorkContextDelivery;
   billing: BillingService;
-  agents: AgentPackageStore;
+  agentRevisions: AgentRevisionStore;
+  agentCatalog: BoundAgentCatalog;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   eventQuery?: EventQuery;
-  packageRepository: PackageRepository;
   marsPackageFetcher: MarsPackageFetcher;
-  defaultPackageSeeder: DefaultPackageSeeder;
-  seedDefaultPackagesForProject(projectId: string): Promise<void>;
   preferences: ProjectPreferencesRepository;
   workingSet: WorkingSetRepository;
   orchestrator: RunTurnPort;
@@ -253,10 +256,8 @@ export type ProductionAppPorts = {
   billing: BillingService;
   billingUsage: BillingUsagePolicy;
   billingSpendReader: BillingSpendReader;
-  agents: AgentPackageStore;
-  packageRepository: PackageRepository;
+  agentRevisions: AgentRevisionStore;
   marsPackageFetcher: MarsPackageFetcher;
-  defaultPackageSeeder: DefaultPackageSeeder;
   preferences: ProjectPreferencesRepository;
   workingSet: WorkingSetRepository;
   modelRequestDebug: ModelRequestDebugStore;
@@ -304,7 +305,7 @@ export async function createProductionAppPorts(input: {
 }): Promise<ProductionAppPorts> {
   const environment = input.environment ?? process.env;
   const eventSink = input.eventSink;
-  const { gateway: rawGateway } = await createGatewayFromEnv(environment, {
+  const { gateway: rawGateway, defaultModel } = await createGatewayFromEnv(environment, {
     onInfo: (info) => {
       emitEvent(eventSink, {
         level: "info",
@@ -421,12 +422,13 @@ export async function createProductionAppPorts(input: {
     eventSink,
     assetPaths: assetPathResolver,
   });
-  const packageRepository = createDrizzlePackageStore({ db });
+  const agentRevisions = createDrizzleAgentRevisionStore(db);
+  await seedGeneralAgent(agentRevisions, defaultModel);
   const marsPackageFetcher = createGitHubMarsPackageFetcher({
     githubToken: environment.GITHUB_TOKEN,
   });
-  const defaultPackageSeeder = createDefaultPackageSeeder({
-    repository: packageRepository,
+  await seedDefaultAgentPackages({
+    store: agentRevisions,
     fetcher: marsPackageFetcher,
     config: defaultPackageSeedConfigFromEnv(environment),
   });
@@ -485,10 +487,8 @@ export async function createProductionAppPorts(input: {
     billing: billingDomain.service,
     billingUsage: billingDomain.usagePolicy,
     billingSpendReader: billingDomain.spendReader,
-    agents: { phase: "skeleton" },
-    packageRepository,
+    agentRevisions,
     marsPackageFetcher,
-    defaultPackageSeeder,
     preferences,
     workingSet,
     modelRequestDebug: createModelRequestDebugStoreFromEnv(eventSink),
@@ -570,22 +570,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   for (const registration of createWiredCoreToolRegistrations(coreToolDeps)) {
     toolRegistry.register(registration);
   }
-  toolRegistry.register(
-    createInvokeToolRegistration({
-      packageRepository: ports.packageRepository,
-      async findThreadById(threadId: string) {
-        const thread = await ports.threadRepos.threads.findById(threadId);
-        return thread
-          ? {
-              projectId: thread.projectId,
-              userId: thread.userId,
-              currentAgent: thread.currentAgent,
-              bakedSkillSlugs: thread.bakedSkillSlugs ?? null,
-            }
-          : null;
-      },
-    }),
-  );
   for (const registration of createSpawnToolRegistrations()) {
     toolRegistry.register(registration);
   }
@@ -613,6 +597,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
   });
   const userTurnAdmission = createUserTurnAdmission({
+    runOwnership: ports.runOwnership,
     records: admissionRecords,
     availability: ports.projectContextAvailability,
     async threadProject(threadId) {
@@ -636,6 +621,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     getRunningTurnId: (threadId) => runner.getRunningTurnId(threadId),
   });
   const childRunCoordinator = createChildRunCoordinator({
+    unavailableReasons: (definition, model) =>
+      agentExecutionUnavailableReasons(definition, ports.gateway, model),
+    defaultModel: () => ports.gateway.getDefaultModel(),
     orchestrator: runTurnProxy,
     repos: {
       threads: ports.threadRepos.threads,
@@ -655,14 +643,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         input,
       );
     },
-    eventWriter: threadEventHub,
-    packageRepository: ports.packageRepository,
+    eventWriter: ports.journalWriter,
+    agentRevisions: ports.agentRevisions,
     childRunRegistry: runner.childRunRegistry,
     helperResultDelivery,
     workContextDelivery: workContextDelivery,
     runOwnership: ports.runOwnership,
     billingSpendReader: ports.billingSpendReader,
-    workContext,
   });
   const orchestrator = createOrchestrator({
     gateway: ports.gateway,
@@ -670,7 +657,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     toolExecutor,
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
-    packageRepository: ports.packageRepository,
+    agentRevisions: ports.agentRevisions,
     toolRegistry,
     projectPreferences: ports.preferences,
     workWriteMode: {
@@ -726,16 +713,17 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workContext,
     workContextDelivery,
     billing: ports.billing,
-    agents: ports.agents,
+    agentRevisions: ports.agentRevisions,
+    agentCatalog: createBoundAgentCatalog({
+      store: ports.agentRevisions,
+      defaultModel: () => ports.gateway.getDefaultModel(),
+      unavailableReasons: (definition, model) =>
+        agentDefinitionUnavailableReasons(definition, ports.gateway, model),
+    }),
     interruptRegistry,
     eventSink: ports.eventSink,
     eventQuery: ports.eventQuery,
-    packageRepository: ports.packageRepository,
     marsPackageFetcher: ports.marsPackageFetcher,
-    defaultPackageSeeder: ports.defaultPackageSeeder,
-    seedDefaultPackagesForProject: async (projectId) => {
-      await ports.defaultPackageSeeder.seedProject(projectId);
-    },
     preferences: ports.preferences,
     workingSet: ports.workingSet,
     orchestrator,
@@ -759,8 +747,16 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
 }
 
 export function createInMemoryAppServices(): AppServices {
-  const threadRepos = createInMemoryRepositories();
-  const packageRepository = createInMemoryPackageStore();
+  const transactionOwner = new InMemoryTransactionOwner();
+  const threadRepos = createInMemoryRepositories({
+    transactionOwner,
+    boundAgent: (id) => agentRevisions.boundAgent(id),
+  });
+  const agentRevisions = createInMemoryAgentRevisionStore({
+    transactionOwner,
+    threadExists: async (id) =>
+      Boolean(await threadRepos.threads.findProjectIdByIdIncludingDeleted(id)),
+  });
   const preferences = createInMemoryProjectPreferencesRepository();
   const workingSet = createInMemoryWorkingSetRepository();
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
@@ -1065,21 +1061,20 @@ export function createInMemoryAppServices(): AppServices {
     workContext: unavailableWorkContext,
     workContextDelivery: noopWorkContextDelivery,
     billing: billingDomain.service,
-    agents: { phase: "skeleton" },
+    agentRevisions,
+    agentCatalog: createBoundAgentCatalog({
+      store: agentRevisions,
+      defaultModel: () => "mock-model",
+      unavailableReasons: (definition, model) =>
+        agentDefinitionUnavailableReasons(definition, {}, model),
+    }),
     interruptRegistry: createInterruptRegistry(),
     eventSink: createNoopEventSink(),
-    packageRepository,
     marsPackageFetcher: {
       async fetch() {
         throw new Error("in-memory Mars package fetcher is not implemented");
       },
     },
-    defaultPackageSeeder: {
-      async seedProject() {
-        return [];
-      },
-    },
-    async seedDefaultPackagesForProject() {},
     preferences,
     workingSet,
     orchestrator: {

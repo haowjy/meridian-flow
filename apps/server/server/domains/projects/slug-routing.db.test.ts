@@ -90,7 +90,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       );
     });
 
-    it("reserves chat handles through trash and resolves only live same-project chats", async () => {
+    it("assigns sequential cN refs and resolves only live same-project chats", async () => {
       const { createDrizzleThreadRepository } = await import(
         "../threads/adapters/drizzle/thread-repository.js"
       );
@@ -102,26 +102,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const project = await repo.create({ userId, title: "Chat handles" });
       const another = await repo.create({ userId, title: "Another" });
       const chats = createDrizzleThreadRepository(db);
-      const created = await Promise.all(
-        Array.from({ length: 3 }, () => chats.create({ projectId: project.id, userId })),
-      );
-      expect(created.map((chat) => chat.slug).sort()).toEqual(["chat", "chat-2", "chat-3"]);
-      const first = created[0];
-      if (!first?.slug) throw new Error("Missing chat handle");
-      expect(await chats.findLiveByProjectSlug(project.id, first.slug)).toMatchObject({
+      const first = await chats.create({ projectId: project.id, userId });
+      const second = await chats.create({ projectId: project.id, userId });
+      expect(first.ref).toBe("c1");
+      expect(second.ref).toBe("c2");
+      expect(await chats.findLiveByProjectRef(project.id, "c1")).toMatchObject({
         id: first.id,
       });
-      expect(await chats.findLiveByProjectSlug(another.id, first.slug)).toBeNull();
+      expect(await chats.findLiveByProjectRef(another.id, "c1")).toBeNull();
       await chats.setTrashState(first.id, "deleted");
-      expect(await chats.findLiveByProjectSlug(project.id, first.slug)).toBeNull();
-      expect((await chats.create({ projectId: project.id, userId })).slug).toBe("chat-4");
+      expect(await chats.findLiveByProjectRef(project.id, "c1")).toBeNull();
+      expect((await chats.create({ projectId: project.id, userId })).ref).toBe("c3");
       await chats.setTrashState(first.id, "visible");
-      expect(await chats.findLiveByProjectSlug(project.id, first.slug)).toMatchObject({
+      expect(await chats.findLiveByProjectRef(project.id, "c1")).toMatchObject({
         id: first.id,
-        slug: first.slug,
       });
       await repo.softDelete(project.id);
-      expect(await chats.findLiveByProjectSlug(project.id, first.slug)).toBeNull();
+      expect(await chats.findLiveByProjectRef(project.id, "c1")).toBeNull();
     });
 
     it("work findById on a non-UUID slug resolves to null", async () => {

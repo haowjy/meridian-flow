@@ -39,6 +39,7 @@ import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { UserTurn } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
+import type { FailedSendRetry } from "./useThreadHandoff";
 import { useTurnRevealLanding } from "./useTurnRevealLanding";
 import { filterVisibleTurns } from "./visible-chat-turns";
 
@@ -58,6 +59,7 @@ export type TurnListProps = {
   /** Accessible label for the scroll log region. */
   ariaLabel: string;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
+  failedSendRetry?: FailedSendRetry | null;
   changeTrails?: Record<string, ChangeTrailShell>;
 };
 
@@ -73,6 +75,7 @@ export function TurnList({
   tailFollowRevision,
   ariaLabel,
   onRespondToInterrupt,
+  failedSendRetry = null,
   changeTrails = {},
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -148,13 +151,14 @@ export function TurnList({
           threadId={threadId}
           turn={turn}
           isLatestAssistant={idx === lastAssistantIdx}
+          onRetry={turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined}
           onRespondToInterrupt={onRespondToInterrupt}
           changeTrail={byTurnId.get(turn.id)}
           navigateToChange={navigateToChange}
         />
       );
     },
-    [byTurnId, lastAssistantIdx, navigateToChange, onRespondToInterrupt, threadId],
+    [byTurnId, failedSendRetry, lastAssistantIdx, navigateToChange, onRespondToInterrupt, threadId],
   );
 
   return (

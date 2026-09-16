@@ -89,7 +89,7 @@ it("keeps the replacement dirty decision while the old native POP restores", asy
         else history.push(href, options.state, { ignoreBlocker: true });
       },
     },
-    () => ({ chatSlug: null, workSlug: null }),
+    () => ({ chatId: null, workSlug: null }),
   );
   let held: { run(): void; cancel(): void } | null = null;
   navigation.registerGuard({

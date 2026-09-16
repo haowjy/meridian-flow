@@ -1,5 +1,4 @@
 import type {
-  AgentDefinitionId,
   DocumentId,
   EventJournalId,
   ModelResponseId,
@@ -30,7 +29,6 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
-import { agentDefinitions } from "./agent-packages";
 import { documents, projects, works } from "./content";
 import { users } from "./users";
 
@@ -47,15 +45,15 @@ export const threads = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull().default(""),
-    slug: text("slug").notNull(),
+    ref: text("ref"),
     kind: text("kind").notNull().default("primary"),
     status: text("status").notNull().default("idle"),
-    currentAgentId: text("current_agent_id"),
     workingState: jsonb("working_state"),
     composedSystemPrompt: text("composed_system_prompt"),
     bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[] | null>(),
     systemPromptHash: text("system_prompt_hash"),
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
+    rootThreadId: uuid("root_thread_id").$type<ThreadId>(),
     originTurnId: uuid("origin_turn_id").$type<TurnId>(),
     originType: text("origin_type"),
     spawnStatus: text("spawn_status"),
@@ -71,7 +69,9 @@ export const threads = pgTable(
   },
   (table) => [
     unique("threads_project_id_unique").on(table.projectId, table.id),
-    uniqueIndex("threads_project_slug").on(table.projectId, table.slug),
+    uniqueIndex("threads_project_ref")
+      .on(table.projectId, table.ref)
+      .where(sql`${table.ref} IS NOT NULL`),
     index("threads_project_updated_active")
       .on(table.projectId, table.updatedAt.desc())
       .where(sql`${table.deletedAt} IS NULL`),
@@ -81,6 +81,15 @@ export const threads = pgTable(
     index("threads_parent_created_active")
       .on(table.parentThreadId, table.createdAt.desc())
       .where(sql`${table.parentThreadId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
+    foreignKey({
+      columns: [table.projectId, table.rootThreadId],
+      foreignColumns: [table.projectId, table.id],
+      name: "threads_spawn_root_same_project_fk",
+    }).onDelete("cascade"),
+    check(
+      "threads_spawn_root_required",
+      sql`${table.kind} != 'subagent' OR ${table.rootThreadId} IS NOT NULL`,
+    ),
     check("threads_no_self_parent", sql`${table.id} != ${table.parentThreadId}`),
     check("threads_spawn_depth_nonneg", sql`${table.spawnDepth} >= 0`),
     check("threads_next_seq_nonneg", sql`${table.nextSeq} >= 0`),
@@ -127,6 +136,14 @@ export const threads = pgTable(
     ),
   ],
 );
+
+export const projectThreadCounters = pgTable("project_thread_counters", {
+  projectId: uuid("project_id")
+    .$type<ProjectId>()
+    .primaryKey()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  n: integer("n").notNull(),
+});
 
 /** M:N thread↔Work history; the optional primary row is contextual authority. */
 export const threadWorks = pgTable(
@@ -178,11 +195,6 @@ export const turns = pgTable(
       .notNull()
       .references(() => threads.id, { onDelete: "restrict" }),
     parentTurnId: uuid("parent_turn_id").$type<TurnId>(),
-    agentDefinitionId: uuid("agent_definition_id")
-      .$type<AgentDefinitionId>()
-      .references(() => agentDefinitions.id, {
-        onDelete: "set null",
-      }),
     compactionModel: text("compaction_model"),
     role: text("role").notNull(),
     aiWriteMode: text("ai_write_mode"),

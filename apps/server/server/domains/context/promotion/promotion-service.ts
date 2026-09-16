@@ -90,8 +90,6 @@ export function createPromotionService(deps: PromotionServiceDeps): PromotionSer
       if (!sourcePath || sourcePath.includes(".."))
         return err("invalid_input", "Invalid source path");
       if (!input.projectId) return err("invalid_input", "projectId is required");
-      if (!input.provenance.agentSlug)
-        return err("invalid_input", "provenance.agentSlug is required");
       const policy = evaluatePromotionPolicy(sourcePath);
       if (policy.decision === "skip" || !policy.mimeType)
         return err("policy_skip", `Path not eligible for promotion: ${sourcePath}`);

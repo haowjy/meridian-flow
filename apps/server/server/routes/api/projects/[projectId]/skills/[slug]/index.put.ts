@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
   const body = parseUpdateSkillDefinitionRequest(await readBody(event));
 
   const response = await handlePutSkillDefinitionRequest(
-    { projectRepo: app.projectRepo, packageRepository: app.packageRepository },
+    { projectRepo: app.projectRepo, agentRevisions: app.agentRevisions },
     { projectId, userId: user.userId, slug, body },
   );
 

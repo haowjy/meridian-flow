@@ -3,27 +3,39 @@
  * asserting ownership and resolving its work attachment. App-layer glue tying
  * the projects + threads + packages domains together.
  */
+import type { AgentSelection } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/protocol";
 import {
   type EventSink,
   emitEvent,
   unknownToEventPayload,
 } from "../domains/observability/index.js";
-import type { PackageRepository } from "../domains/packages/index.js";
+import {
+  type AgentRevisionStore,
+  AgentSelectionError,
+  type BoundAgentCatalog,
+} from "../domains/packages/index.js";
 import {
   type ProjectRepository,
   requireProjectOwner,
+  WorkLifecycleUnavailableError,
   type WorkRepository,
 } from "../domains/projects/index.js";
+import { createBoundConversation } from "../domains/threads/index.js";
 import type { ThreadRepositories } from "./compose.js";
-import { resolveWorkMembership } from "./work-attachment.js";
+import { InvalidWorkAttachmentError, resolveWorkMembership } from "./work-attachment.js";
 
 export { InvalidWorkAttachmentError } from "./work-attachment.js";
 
-export class AgentBindingNotFoundError extends Error {
-  constructor(public readonly agentSlug: string) {
-    super(`Agent not found: ${agentSlug}`);
-    this.name = "AgentBindingNotFoundError";
+export class ThreadCreationConflictError extends Error {
+  constructor() {
+    super("This thread ID is already used in another project");
+  }
+}
+
+export class ThreadCreationNotFoundError extends Error {
+  constructor() {
+    super("Not found");
   }
 }
 
@@ -33,7 +45,8 @@ export interface CreateThreadForProjectDeps {
   threads: ThreadRepositories["threads"];
   threadWorks: ThreadRepositories["threadWorks"];
   transaction: ThreadRepositories["transaction"];
-  packageRepository?: PackageRepository;
+  agentRevisions: AgentRevisionStore;
+  agentCatalog: BoundAgentCatalog;
   eventSink: EventSink;
 }
 
@@ -43,13 +56,9 @@ export interface CreateThreadForProjectArgs {
   /** Client-provided ID for optimistic creation. Server generates one if omitted. */
   id?: string;
   title?: string | null;
-  systemPrompt?: string | null;
-  /** Mars agent slug — when set, agent body becomes the thread system prompt. */
-  currentAgent?: string | null;
+  agentSelection: AgentSelection;
   /** Explicit work assignment from the request, if any. */
   workId?: string | null;
-  /** When set, this is a subagent thread — inherit the parent's work. */
-  parentThreadId?: string | null;
 }
 
 /**
@@ -66,46 +75,58 @@ export async function createThreadForProject(
   const eventSink = deps.eventSink;
   await requireProjectOwner({ projects: deps.projects }, args.projectId, args.userId);
 
-  const agentSlug = args.currentAgent ?? null;
-  if (agentSlug) {
-    if (!deps.packageRepository) {
-      throw new Error("packageRepository is required to bind a thread to an agent");
-    }
-    const resolved = await deps.packageRepository.getAgentWithLinkedSkills(
-      args.projectId,
-      args.userId,
-      agentSlug,
-    );
-    if (!resolved.agent) {
-      throw new AgentBindingNotFoundError(agentSlug);
-    }
-  }
+  const existingById = async (): Promise<Thread | null> =>
+    args.id ? deps.threads.lockByIdIncludingDeleted(args.id) : null;
 
+  const ownedExisting = (existing: Thread): Thread => {
+    if (existing.userId !== args.userId) throw new ThreadCreationNotFoundError();
+    if (existing.projectId !== args.projectId) throw new ThreadCreationConflictError();
+    if (existing.deletedAt) throw new ThreadCreationConflictError();
+    return existing;
+  };
+
+  const existing = await existingById();
+  if (existing) return ownedExisting(existing);
   let resolvedWorkId: string | null = null;
-  const thread = await deps.transaction(async () => {
-    const created = await deps.threads.create({
-      id: args.id ? args.id : undefined,
-      userId: args.userId,
-      projectId: args.projectId,
-      title: args.title ?? null,
-      systemPrompt: agentSlug ? null : (args.systemPrompt ?? null),
-      currentAgent: agentSlug,
-      parentThreadId: args.parentThreadId,
-    });
-    resolvedWorkId = await resolveWorkMembership(
-      {
-        workRepo: deps.workRepo,
-        threadWorks: deps.threadWorks,
-      },
-      {
-        threadId: created.id,
-        projectId: args.projectId,
-        workId: args.workId,
-        parentThreadId: args.parentThreadId,
-      },
+  let thread: Thread;
+  try {
+    const resolved = await deps.agentCatalog.resolvePrimary(
+      args.userId,
+      args.agentSelection,
+      args.projectId,
     );
-    return { ...created, workId: resolvedWorkId };
-  });
+    if (!resolved.ok) throw new AgentSelectionError(args.agentSelection.definitionRevisionId);
+    const { revision, configuration } = resolved;
+
+    thread = await createBoundConversation({
+      transaction: deps.transaction,
+      agentRevisions: deps.agentRevisions,
+      revision,
+      configuration,
+      createThread: () =>
+        deps.threads.create({
+          id: args.id,
+          userId: args.userId,
+          projectId: args.projectId,
+          title: args.title ?? null,
+          systemPrompt: null,
+        }),
+      resolveWork: async (created) => {
+        resolvedWorkId = await resolveWorkMembership(
+          { workRepo: deps.workRepo, threadWorks: deps.threadWorks },
+          { threadId: created.id, projectId: args.projectId, workId: args.workId },
+        );
+        return resolvedWorkId;
+      },
+    });
+  } catch (error) {
+    const committed = await existingById();
+    if (committed) return ownedExisting(committed);
+    if (error instanceof WorkLifecycleUnavailableError) {
+      throw new InvalidWorkAttachmentError("Work is not available in this project");
+    }
+    throw error;
+  }
 
   if (resolvedWorkId) {
     try {

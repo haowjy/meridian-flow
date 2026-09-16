@@ -55,12 +55,24 @@ skeleton and delegates the moving parts.
 | `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission, read-deduplicated, occurrence-budgeted, and quietly omitted without losing writer text. |
 | `permissions/` | `PermissionGate`; compose currently wires the `coding` profile explicitly. |
 
-`OrchestratorDeps` is fully required: gateway, repos, package repository, tool
+`OrchestratorDeps` is fully required: gateway, repos, retained Agent revision reader, tool
 registry/executor, project preferences, permission gate, credit ledger,
 interrupt artifact flush, child-run coordinator, interrupt registry, and
 `EventSink` are all explicit dependencies. Provider-specific model-call behavior
 stays behind the gateway port. Disabled behavior is represented by explicit
 adapters (for example no-op sinks), not by omitted deps.
+
+## Bound Agent preparation
+
+`agent-thread-context.ts` reads the immutable thread binding for the persona,
+model, effort, and diagnostic Agent identity. Missing bindings fail before a
+gateway call. Catalog removal or advancement leaves continued execution on its
+retained revision. `turn-context-assembly.ts` supplies that persona to the initial
+host-prompt bake and reuses the frozen prompt on later turns; preview shares this
+assembly without persisting. The first-bake CAS returns one authoritative prompt
+and skill set; a losing preparation uses that winner directly. Display slugs do
+not guard prompt freezing. The model comes from conversation-owned resolved configuration, including a frozen default when source omits it. The current supported execution subset requires empty skill declarations. Primary catalog selection currently
+keeps nonempty delegation rosters unavailable while delegation support is completed.
 
 ## tools — registry, executor, and handlers
 
@@ -70,7 +82,7 @@ adapters (for example no-op sinks), not by omitted deps.
 | `ToolExecutor` | Dispatches `ToolCallInput` to registered handlers with timeout, abort, sequential execution, and capability-gated context injection. |
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
 | Core handlers | The strict six-branch `work` union and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
-| Skill tools | One statically registered `invoke` dispatcher (`source: "skill"`, `advertise: false`) with schema `{ skillname }` only (`additionalProperties: false`). First turn attempt atomically bakes model-invocable skill catalogs (slug + description rows) into `composedSystemPrompt` and persists `bakedSkillSlugs` via compare-and-swap (`bakeComposedSystemPrompt` while `bakedSkillSlugs` is null); concurrent losers use the winner's frozen prompt. `invoke` advertisement on later turns follows the persisted slug set (non-empty → advertise). Dispatch enforces: `skillname` ∈ baked set (added-after-bake → unknown); still model-invocable and resolvable (demoted/deleted → no-longer-available). Extra invoke properties from frozen prompts are ignored; skills read project workspace context, not call-time params. Error listings = baked ∩ currently-invocable. Subagent threads bake both fields at creation (empty set when no skills). |
+| Skills | References are retained at binding, but execution with nonempty skills remains unavailable. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn` and `return_result` with explicit privileged capabilities. |
 
 Handler-owned `{ isError: true, output }` results already define their
@@ -89,10 +101,17 @@ behavior; schema-only stubs are not advertised.
 ## spawn / child runs
 
 `spawn/child-run-coordinator.ts` supervises nested agent execution. It consumes
-`RunTurnPort`, `ChildRunRegistry` from the turn runner, `CreditLedger`, package
-metadata, and the threads repository's `SubagentThreadFactory` seam. Route-facing
+`RunTurnPort`, `ChildRunRegistry` from the turn runner, the billing spend reader,
+immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. Route-facing
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads.
+
+Named targets resolve within the parent binding's immutable package revision,
+after roster and child-invocation eligibility checks. Child creation, Agent binding,
+and Work membership share one transaction. The child starts with an unfrozen
+prompt; ordinary turn preparation adds its retained persona and mandatory report
+instruction. Terminal lifecycle/result persistence precedes helper/Work-context
+cleanup, so cleanup failure preserves the completed report.
 
 ### Vocabulary note
 
@@ -164,6 +183,12 @@ facet.
   commits. Destructive effects are echoed to the model and writer-lineage
   overlap may elevate receiving-writer-specific session marks. Trail evidence
   stays lifecycle-neutral and read-only.
+- **Expired writer admissions** — lookup, replay, and retirement reconcile expired
+  pending reservations through `UserTurnAdmission`. Recovery takes the runner's
+  shared cross-process claim before the row-locking transaction and holds it
+  through commit. Unexpired reservations do not contend for that claim. The
+  ledger rechecks expiry and committed-turn evidence; an orphan settles to
+  `recovery_no_committed_turn` without starting a model call or document effects.
 - **One running turn per thread** — writer callers enter through
   `UserTurnAdmission`, whose replay lookup precedes the busy fence. An unseen
   identity is durably reserved before token and run-claim settlement; definite
@@ -200,8 +225,8 @@ facet.
 
 - **Depends on `domains/threads`** — repositories, event journal, hub, and the
   subagent-thread creation seam.
-- **Depends on `domains/packages`** — agent/skill resolution and spawn
-  authorization.
+- **Depends on `domains/packages`** — immutable Agent revisions and retained
+  package-local named-target resolution.
 - **Depends on `domains/billing` and `@meridian/contracts/spawn`** — credit ledger
   and tree budgets.
 - **Depends on `domains/collab` at composition** — active-document resolution

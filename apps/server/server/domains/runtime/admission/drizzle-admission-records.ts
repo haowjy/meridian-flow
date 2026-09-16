@@ -34,7 +34,7 @@ function map(row: typeof userTurnAdmissions.$inferSelect): AdmissionRecord {
   }
   if (row.state === "pending") {
     if (!row.fingerprint) throw new Error("Pending admission row is missing fingerprint");
-    return { state: "pending", fingerprint: row.fingerprint };
+    return { state: "pending", fingerprint: row.fingerprint, claimExpiresAt: row.claimExpiresAt };
   }
   return {
     state: row.state as "rejected" | "retired",
@@ -50,12 +50,6 @@ export interface AdmissionPersistencePort extends AdmissionRecordPort {
   }): Promise<
     { kind: "accepted"; response: AcceptedAdmission } | { kind: "winner"; record: AdmissionRecord }
   >;
-  recoverExpiredPending(input: {
-    threadId: string;
-    submissionId: string;
-    now: Date;
-    hasLiveClaim(threadId: string): Promise<boolean>;
-  }): Promise<AdmissionRecord | null>;
 }
 
 export function createDrizzleAdmissionRecords(db: Database): AdmissionPersistencePort {

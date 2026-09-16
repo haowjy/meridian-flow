@@ -5,10 +5,5 @@
 export {
   DEFAULT_AGENT_NAME,
   DEFAULT_AGENT_SLUG,
-  threadCreateAgentField,
-  wireAgentSlug,
 } from "./constants";
-export {
-  type ResolvedAgentDisplay,
-  resolveAgentFromCatalog,
-} from "./resolve-agent";
+export type { CreationAgent, CreationChoices } from "./creation-agent";

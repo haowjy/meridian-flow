@@ -46,6 +46,7 @@ export type AssistantTurnProps = {
   threadId?: string;
   turn: Turn;
   isLatestAssistant?: boolean;
+  onRetry?: () => void;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   changeTrail?: ChangeTrailShell;
   navigateToChange?: NavigateToTrailChange;
@@ -55,6 +56,7 @@ function AssistantTurnComponent({
   threadId,
   turn,
   isLatestAssistant = false,
+  onRetry,
   onRespondToInterrupt,
   changeTrail,
   navigateToChange,
@@ -119,7 +121,13 @@ function AssistantTurnComponent({
         />
       ) : null}
 
-      {isErrored ? <ErrorBlock isLatest={isLatestAssistant} /> : null}
+      {isErrored ? (
+        <ErrorBlock
+          isLatest={isLatestAssistant}
+          kind={turn.blocks.length === 0 ? "send" : "generation"}
+          onRetry={isLatestAssistant ? onRetry : undefined}
+        />
+      ) : null}
       {isCancelled ? (
         <p className="mt-2 text-caption text-muted-foreground italic">
           <Trans>Stopped.</Trans>

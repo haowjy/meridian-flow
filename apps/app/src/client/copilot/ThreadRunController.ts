@@ -40,6 +40,8 @@ export type SubscribeLiveOptions = {
 export type SubmitOptions = {
   /** Client-only turn id returned by appendUserTurn for this exact submit. */
   optimisticUserTurnId?: string;
+  /** First-send Retry keeps the user message on the failed turn. */
+  keepOptimisticOnFailure?: boolean;
 };
 
 function isAdmissionPending(error: unknown): boolean {
@@ -91,7 +93,7 @@ export class ThreadRunController {
   private readonly getThreadSnapshotFn: GetThreadSnapshotFn;
 
   private activeRun: ActiveRun | null = null;
-  private admissionInFlight = false;
+  private admissionLease: object | null = null;
   private admissionEpoch = 0;
   private abortRequested = false;
   private runToken = 0;
@@ -106,78 +108,90 @@ export class ThreadRunController {
     this.getThreadSnapshotFn = options.getThreadSnapshotFn ?? getThreadSnapshot;
   }
 
-  async submit(
+  submit(
     threadId: string,
     envelope: ComposerSubmitEnvelope,
     options: SubmitOptions = {},
+  ): Promise<ComposerSubmitOutcome> {
+    return this.dispatch(threadId, envelope, options, this.admissionEpoch);
+  }
+
+  private dropOptimistic(threadId: string, options: SubmitOptions): void {
+    if (options.keepOptimisticOnFailure || !options.optimisticUserTurnId) return;
+    this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
+  }
+
+  private async dispatch(
+    threadId: string,
+    envelope: ComposerSubmitEnvelope,
+    options: SubmitOptions,
+    admissionEpoch: number,
   ): Promise<ComposerSubmitOutcome> {
     const outcome = (kind: ComposerSubmitOutcome["kind"]): ComposerSubmitOutcome => ({
       kind,
       submissionId: envelope.submissionId,
       acceptedRevision: envelope.acceptedRevision,
     });
-    if (this.admissionInFlight) {
-      if (options.optimisticUserTurnId) {
-        this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
-      }
+    if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
+    if (this.admissionLease) {
+      this.dropOptimistic(threadId, options);
       return outcome("rejected");
     }
 
-    this.admissionInFlight = true;
-    const admissionEpoch = this.admissionEpoch;
-    let result: Awaited<ReturnType<AppendUserMessageFn>>;
-
-    let connectionToken: string;
+    const lease = {};
+    this.admissionLease = lease;
     try {
-      connectionToken = await this.transport.awaitConnectionToken();
-    } catch (error) {
-      if (options.optimisticUserTurnId) {
-        this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
-      }
-      this.admissionInFlight = false;
-      announceError(errorMessage(error, "Failed to submit message"));
-      return outcome("rejected");
-    }
-
-    try {
-      result = await this.appendUserMessageFn({
-        data: {
-          threadId,
-          submissionId: envelope.submissionId,
-          text: envelope.text,
-          blocks: envelope.blocks,
-          references: envelope.references,
-          connectionToken,
-        },
-      });
-    } catch (error) {
-      if (isAdmissionPending(error)) return outcome("ambiguous");
-      if (isMeridianApiError(error) || error instanceof HttpResponseError) {
-        if (options.optimisticUserTurnId)
-          this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
+      let connectionToken: string;
+      try {
+        connectionToken = await this.transport.awaitConnectionToken();
+      } catch (error) {
+        if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
+        this.dropOptimistic(threadId, options);
+        announceError(errorMessage(error, "Failed to submit message"));
         return outcome("rejected");
       }
-      return this.reconcile(threadId, envelope, options, false);
+      if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
+
+      let result: Awaited<ReturnType<AppendUserMessageFn>>;
+      try {
+        result = await this.appendUserMessageFn({
+          data: {
+            threadId,
+            submissionId: envelope.submissionId,
+            text: envelope.text,
+            blocks: envelope.blocks,
+            references: envelope.references,
+            connectionToken,
+          },
+        });
+      } catch (error) {
+        if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
+        if (isAdmissionPending(error)) return outcome("ambiguous");
+        if (isMeridianApiError(error) || error instanceof HttpResponseError) {
+          this.dropOptimistic(threadId, options);
+          return outcome("rejected");
+        }
+        return this.reconcile(threadId, envelope, options, "lookup", admissionEpoch);
+      }
+      if (this.admissionEpoch !== admissionEpoch) return outcome("accepted");
+      if (options.optimisticUserTurnId) {
+        this.actions.acknowledgeUserTurn(
+          threadId,
+          options.optimisticUserTurnId,
+          result.userTurnId,
+          result.snapshotFloorNextSeq,
+        );
+      }
+      const token = this.startRun(threadId, { pruneAbandonedTurn: true });
+      this.attachLiveSubscription(threadId, token, {
+        after: result.resumeAfterSeq,
+        expectedTurnId: result.assistantTurnId,
+      });
+      return outcome("accepted");
     } finally {
-      this.admissionInFlight = false;
+      // An old completion must not release a newer destination's admission lease.
+      if (this.admissionLease === lease) this.admissionLease = null;
     }
-
-    if (options.optimisticUserTurnId) {
-      this.actions.acknowledgeUserTurn(
-        threadId,
-        options.optimisticUserTurnId,
-        result.userTurnId,
-        result.snapshotFloorNextSeq,
-      );
-    }
-    if (this.admissionEpoch !== admissionEpoch) return outcome("accepted");
-
-    const token = this.startRun(threadId, { pruneAbandonedTurn: true });
-    this.attachLiveSubscription(threadId, token, {
-      after: result.resumeAfterSeq,
-      expectedTurnId: result.assistantTurnId,
-    });
-    return outcome("accepted");
   }
 
   lookup(
@@ -185,7 +199,7 @@ export class ThreadRunController {
     envelope: ComposerSubmitEnvelope,
     options: SubmitOptions = {},
   ): Promise<ComposerSubmitOutcome> {
-    return this.reconcile(threadId, envelope, options, false);
+    return this.reconcile(threadId, envelope, options, "lookup", this.admissionEpoch);
   }
 
   retire(
@@ -193,25 +207,35 @@ export class ThreadRunController {
     envelope: ComposerSubmitEnvelope,
     options: SubmitOptions = {},
   ): Promise<ComposerSubmitOutcome> {
-    return this.reconcile(threadId, envelope, options, true);
+    return this.reconcile(threadId, envelope, options, "retire", this.admissionEpoch);
   }
 
   private async reconcile(
     threadId: string,
     envelope: ComposerSubmitEnvelope,
     options: SubmitOptions,
-    retire: boolean,
+    operation: "lookup" | "retire",
+    admissionEpoch: number,
   ): Promise<ComposerSubmitOutcome> {
     const outcome = (kind: ComposerSubmitOutcome["kind"]): ComposerSubmitOutcome => ({
       kind,
       submissionId: envelope.submissionId,
       acceptedRevision: envelope.acceptedRevision,
     });
+    if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
     try {
-      const result = await (retire ? this.retireAdmissionFn : this.lookupAdmissionFn)({
+      const result = await (operation === "retire"
+        ? this.retireAdmissionFn
+        : this.lookupAdmissionFn)({
         threadId,
         submissionId: envelope.submissionId,
       });
+      if (this.admissionEpoch !== admissionEpoch) {
+        if (result.kind === "accepted" || result.kind === "already-accepted")
+          return outcome("accepted");
+        if (result.kind === "rejected" || result.kind === "retired") return outcome("rejected");
+        return outcome("ambiguous");
+      }
       if (result.kind === "accepted" || result.kind === "already-accepted") {
         if (options.optimisticUserTurnId) {
           this.actions.acknowledgeUserTurn(
@@ -265,6 +289,7 @@ export class ThreadRunController {
   teardown(): void {
     // Prevent an append already in flight from attaching after teardown.
     this.admissionEpoch += 1;
+    this.admissionLease = null;
     this.runToken += 1;
     this.cleanupActiveRun();
   }

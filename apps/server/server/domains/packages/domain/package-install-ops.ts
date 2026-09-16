@@ -1,32 +1,28 @@
-/**
- * Package install/update orchestration: resolves GitHub and catalog sources,
- * coordinates fetch cleanup, and maps domain results to contract shapes.
- */
-import { access } from "node:fs/promises";
-
-import type {
-  PackageInstallApplyResponse,
-  PackageInstallPreviewResponse,
-  PackageInstallSource,
-  PackageUpdateApplyResponse,
-  PackageUpdateCheckResponse,
-} from "@meridian/contracts/agents";
+/** Fetch orchestration for account-owned package source publication. */
+import path from "node:path";
+import type { PackageInstallSource, PackageUpdateApplyResponse } from "@meridian/contracts/agents";
 import { createError } from "nitro/h3";
 import { parseGitHubRepoUrl } from "../adapters/github-mars-package-fetcher.js";
+import type {
+  AgentPackageInstallation,
+  AgentRevisionStore,
+} from "../ports/agent-revision-store.js";
 import type { MarsPackageFetcher } from "../ports/mars-package-fetcher.js";
-import type { PackageRepository } from "../ports/package-store.js";
+import { AgentConfigurationError } from "./agent-configuration.js";
+import { AgentSourceError } from "./agent-source-revision.js";
 import { resolveCatalogSource } from "./first-party-catalog.js";
-import { isNodeError } from "./helpers.js";
-import { isPackageImportError } from "./package-import-error.js";
 import {
-  importLocalMarsPackage,
-  previewLocalMarsPackageImport,
-  previewLocalMarsPackageUpdate,
-  updateLocalMarsPackage,
-} from "./package-sync.js";
-import type { PackageImportResult, PackageInstallRecord, PackageUpdateResult } from "./types.js";
+  findOwnedInstallation,
+  importPackageGraph,
+  PackageInstallationNotFoundError,
+  previewPackageGraph,
+  updatePackageGraph,
+} from "./package-management.js";
+import { readPackageGraph } from "./package-source.js";
+import { AgentPublicationConflictError } from "./source-publication.js";
 
 interface ResolvedMarsSource {
+  kind: "local" | "downloaded";
   sourceDir: string;
   sourceCommitSha: string | null;
   sourcePathOverride?: string;
@@ -65,223 +61,132 @@ async function resolveGitHubMarsSource(input: {
   ref?: string;
   fetcher: MarsPackageFetcher;
 }): Promise<ResolvedMarsSource> {
-  parseGitHubRepoUrl(input.url);
+  const repo = parseGitHubRepoUrl(input.url);
   const ref = input.ref?.trim() || "main";
   const fetched = await input.fetcher.fetch({ url: input.url, ref });
   return {
+    kind: "downloaded",
     sourceDir: fetched.sourceDir,
     sourceCommitSha: fetched.commitSha,
-    sourcePathOverride: input.url,
+    sourcePathOverride: `https://github.com/${repo.owner}/${repo.repo}`,
     sourceRef: ref,
     cleanup: fetched.cleanup,
   };
 }
 
-export async function previewPackageInstall(input: {
-  projectId: string;
+type InstallInput = {
+  userId: string;
   source: PackageInstallSource;
-  repository: PackageRepository;
+  store: AgentRevisionStore;
   fetcher: MarsPackageFetcher;
-}): Promise<PackageInstallPreviewResponse> {
-  const resolved = await resolvePackageInstallSource({
-    source: input.source,
-    fetcher: input.fetcher,
-  });
-  try {
-    return await previewLocalMarsPackageImport({
-      projectId: input.projectId,
-      sourceDir: resolved.sourceDir,
-      repository: input.repository,
-      fetcher: input.fetcher,
-      sourceCommitSha: resolved.sourceCommitSha,
-    });
-  } catch (error) {
-    throw toPackageRouteError(error);
-  } finally {
-    await resolved.cleanup();
-  }
-}
-
-export async function applyPackageInstall(input: {
-  projectId: string;
-  source: PackageInstallSource;
-  repository: PackageRepository;
-  fetcher: MarsPackageFetcher;
-}): Promise<PackageInstallApplyResponse> {
-  const resolved = await resolvePackageInstallSource({
-    source: input.source,
-    fetcher: input.fetcher,
-  });
-  try {
-    const result = await importLocalMarsPackage({
-      projectId: input.projectId,
-      sourceDir: resolved.sourceDir,
-      repository: input.repository,
-      fetcher: input.fetcher,
-      sourceCommitSha: resolved.sourceCommitSha,
-      sourcePathOverride: resolved.sourcePathOverride,
-      sourceRef: resolved.sourceRef,
-    });
-    return mapImportResult(result);
-  } catch (error) {
-    throw toPackageRouteError(error);
-  } finally {
-    await resolved.cleanup();
-  }
-}
-
-export async function checkPackageUpdate(input: {
-  projectId: string;
+};
+type UpdateInput = {
+  userId: string;
   installId: string;
-  repository: PackageRepository;
+  store: AgentRevisionStore;
   fetcher: MarsPackageFetcher;
-}): Promise<PackageUpdateCheckResponse> {
-  const install = await findOwnedPackageInstall(input.repository, input.projectId, input.installId);
-  const resolved = await resolveUpdateSource(install, input.fetcher);
+};
+async function withSource<T>(
+  resolved: ResolvedMarsSource,
+  fetcher: MarsPackageFetcher,
+  operation: (graph: Awaited<ReturnType<typeof readPackageGraph>>) => Promise<T>,
+): Promise<T> {
   try {
-    const preview = await previewLocalMarsPackageUpdate({
-      projectId: input.projectId,
-      sourceDir: resolved.sourceDir,
-      repository: input.repository,
-      packageInstallId: install.id,
-      upstreamCommitSha: resolved.sourceCommitSha,
-    });
-    return {
-      installId: install.id,
-      packageName: preview.packageName,
-      currentVersion: preview.currentVersion,
-      upstreamVersion: preview.upstreamVersion,
-      upstreamCommitSha: preview.upstreamCommitSha,
-      willUpdate: preview.willUpdate,
-      willKeep: preview.willKeep,
-      willRemove: preview.willRemove,
-      willRetire: preview.willRetire,
-      updateAvailable: preview.updateAvailable,
-    };
+    return await operation(
+      await readPackageGraph({
+        sourceDir: resolved.sourceDir,
+        kind: resolved.kind,
+        fetcher,
+        origin: {
+          url: resolved.sourcePathOverride ?? resolved.sourceDir,
+          ref: resolved.sourceRef ?? "",
+          commitSha: resolved.sourceCommitSha,
+        },
+      }),
+    );
   } catch (error) {
     throw toPackageRouteError(error);
   } finally {
     await resolved.cleanup();
   }
 }
-
-export async function applyPackageUpdate(input: {
-  projectId: string;
-  installId: string;
-  repository: PackageRepository;
-  fetcher: MarsPackageFetcher;
-}): Promise<PackageUpdateApplyResponse> {
-  const install = await findOwnedPackageInstall(input.repository, input.projectId, input.installId);
-  const resolved = await resolveUpdateSource(install, input.fetcher);
-  try {
-    const result = await updateLocalMarsPackage({
-      projectId: input.projectId,
-      sourceDir: resolved.sourceDir,
-      repository: input.repository,
-    });
-    return mapUpdateResult(install.id, result);
-  } catch (error) {
-    throw toPackageRouteError(error);
-  } finally {
-    await resolved.cleanup();
-  }
+export async function previewPackageInstall(input: InstallInput) {
+  return withSource(await resolvePackageInstallSource(input), input.fetcher, (graph) =>
+    previewPackageGraph(input.store, input.userId, graph),
+  );
 }
-
+export async function applyPackageInstall(input: InstallInput) {
+  return withSource(await resolvePackageInstallSource(input), input.fetcher, (graph) =>
+    importPackageGraph(input.store, input.userId, graph),
+  );
+}
 export async function findOwnedPackageInstall(
-  repository: PackageRepository,
-  projectId: string,
+  store: AgentRevisionStore,
+  userId: string,
   installId: string,
-): Promise<PackageInstallRecord> {
-  const install = await repository.transaction(async (tx) => {
-    const rows = await tx.listPackageInstalls(projectId);
-    return rows.find((row) => row.id === installId);
-  });
-  if (!install) {
-    throw createError({ statusCode: 404, message: "Package install not found" });
+) {
+  try {
+    return await findOwnedInstallation(store, userId, installId);
+  } catch (error) {
+    throw toPackageRouteError(error);
   }
-  return install;
 }
-
 async function resolveUpdateSource(
-  install: PackageInstallRecord,
+  install: AgentPackageInstallation,
   fetcher: MarsPackageFetcher,
 ): Promise<ResolvedMarsSource> {
-  if (install.sourcePath?.startsWith("https://github.com/")) {
-    const ref = install.sourceRef?.trim() || "main";
-    const fetched = await fetcher.fetch({ url: install.sourcePath, ref });
-    return {
-      sourceDir: fetched.sourceDir,
-      sourceCommitSha: fetched.commitSha,
-      sourceRef: ref,
-      cleanup: fetched.cleanup,
-    };
-  }
-
-  if (install.sourcePath) {
-    try {
-      await access(install.sourcePath);
-      return {
-        sourceDir: install.sourcePath,
-        sourceCommitSha: install.sourceCommitSha ?? null,
-        cleanup: async () => undefined,
-      };
-    } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") {
-        throw createError({
-          statusCode: 422,
-          message: `Package source path is no longer available: ${install.sourcePath}`,
-        });
-      }
-      throw error;
-    }
-  }
-
-  throw createError({
-    statusCode: 422,
-    message: "Package install has no resolvable source for update",
-  });
-}
-
-function mapImportResult(result: PackageImportResult): PackageInstallApplyResponse {
+  if (!install.origin)
+    throw createError({ statusCode: 422, message: "Package has no upstream source" });
+  if (!path.isAbsolute(install.origin.url))
+    return resolveGitHubMarsSource({ url: install.origin.url, ref: install.origin.ref, fetcher });
   return {
-    installedPackages: result.installedPackages.map((pkg) => ({
-      id: pkg.id,
-      packageName: pkg.packageName,
-      version: pkg.version ?? null,
-    })),
-    skippedPackages: result.skippedPackages,
-    insertedAgents: result.insertedAgents.map((agent) => agent.slug),
-    insertedSkills: result.insertedSkills.map((skill) => skill.slug),
-    skippedAgents: result.skippedAgents,
-    skippedSkills: result.skippedSkills,
+    kind: "local",
+    sourceDir: install.origin.url,
+    sourceCommitSha: null,
+    sourceRef: "",
+    cleanup: async () => {},
   };
 }
-
-function mapUpdateResult(
-  installId: string,
-  result: PackageUpdateResult,
-): PackageUpdateApplyResponse {
+export async function checkPackageUpdate(input: UpdateInput) {
+  const install = await findOwnedPackageInstall(input.store, input.userId, input.installId);
+  return withSource(await resolveUpdateSource(install, input.fetcher), input.fetcher, (graph) =>
+    updatePackageGraph(input.store, input.userId, install, graph, false),
+  );
+}
+export async function applyPackageUpdate(input: UpdateInput): Promise<PackageUpdateApplyResponse> {
+  const install = await findOwnedPackageInstall(input.store, input.userId, input.installId);
+  const plan = await withSource(
+    await resolveUpdateSource(install, input.fetcher),
+    input.fetcher,
+    (graph) => updatePackageGraph(input.store, input.userId, install, graph, true),
+  );
+  const slugs = (items: typeof plan.willKeep, kind: "agent" | "skill") =>
+    items.filter((item) => item.kind === kind).map((item) => item.slug);
   return {
-    installId,
-    packageName: result.packageInstall?.packageName ?? "",
-    version: result.packageInstall?.version ?? null,
-    updatedAgents: result.updatedAgents,
-    updatedSkills: result.updatedSkills,
-    keptAgents: result.skippedAgents,
-    keptSkills: result.skippedSkills,
-    removedAgents: result.removedAgents,
-    removedSkills: result.removedSkills,
-    retiredAgents: result.retiredAgents,
-    retiredSkills: result.retiredSkills,
+    installId: install.id,
+    packageName: install.coordinate,
+    version: plan.upstreamVersion,
+    updatedAgents: slugs(plan.willUpdate, "agent"),
+    updatedSkills: slugs(plan.willUpdate, "skill"),
+    keptAgents: slugs(plan.willKeep, "agent"),
+    keptSkills: slugs(plan.willKeep, "skill"),
+    removedAgents: [],
+    removedSkills: [],
+    retiredAgents: slugs(plan.willRetire, "agent"),
+    retiredSkills: slugs(plan.willRetire, "skill"),
   };
 }
-
-function toPackageRouteError(error: unknown): Error {
-  if (isPackageImportError(error)) {
-    throw createError({ statusCode: 422, message: error.message });
-  }
-  if (error instanceof Error && error.message.includes("GitHub")) {
-    throw createError({ statusCode: 422, message: error.message });
-  }
-  throw error;
+export function toPackageRouteError(error: unknown): Error {
+  if (error instanceof AgentPublicationConflictError)
+    return createError({ statusCode: 409, message: error.message });
+  if (error instanceof PackageInstallationNotFoundError)
+    return createError({ statusCode: 404, message: error.message });
+  if (
+    error instanceof AgentSourceError ||
+    error instanceof AgentConfigurationError ||
+    (error instanceof Error && error.message.includes("GitHub"))
+  )
+    return createError({ statusCode: 422, message: error.message });
+  if (error instanceof Error) return error;
+  return new Error(String(error));
 }

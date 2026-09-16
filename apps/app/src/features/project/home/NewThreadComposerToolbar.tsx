@@ -16,6 +16,7 @@ import {
   WorkPickerPanel,
 } from "@/components/app/work-composer-controls";
 import { useComposerAgentToolbarControl } from "@/features/agents/ComposerAgentControl";
+import type { CreationAgent } from "@/features/agents/creation-agent";
 import { useAiDraftLauncher } from "@/features/project/dock/useAiDraftLauncher";
 
 export function NewThreadComposerToolbar({
@@ -24,7 +25,7 @@ export function NewThreadComposerToolbar({
   selectedWorkId,
   works,
   worksStatus,
-  agentSlug,
+  agent: selectedAgent,
   disabled,
   onAgentChange,
   onWorkChange,
@@ -36,18 +37,18 @@ export function NewThreadComposerToolbar({
   selectedWorkId: string | null;
   works: Work[];
   worksStatus: "loading" | "error" | "ready";
-  agentSlug: string;
+  agent: CreationAgent | null;
   disabled: boolean;
-  onAgentChange(slug: string): void;
+  onAgentChange(agent: CreationAgent): void;
   onWorkChange(work: Work | null): void;
   onRetryWorks(): void;
   onModePendingChange(pending: boolean): void;
 }) {
   const agentControl = useComposerAgentToolbarControl({
-    projectId,
     mode: "interactive",
-    selectedSlug: agentSlug,
-    onSelectedSlugChange: onAgentChange,
+    projectId,
+    selectedAgent,
+    onSelectedAgentChange: onAgentChange,
   });
   const agent = disabled ? { ...agentControl, interaction: "busy" as const } : agentControl;
   const workControl = useProspectiveWorkControl({

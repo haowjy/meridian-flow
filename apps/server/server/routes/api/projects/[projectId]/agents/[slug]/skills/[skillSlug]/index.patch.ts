@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   const body = parsePatchAgentSkillLinkRequest(await readBody(event));
 
   const agent = await handlePatchAgentSkillLinkRequest(
-    { projectRepo: app.projectRepo, packageRepository: app.packageRepository },
+    { projectRepo: app.projectRepo, agentRevisions: app.agentRevisions },
     { projectId, userId: user.userId, slug, skillSlug, body },
   );
 

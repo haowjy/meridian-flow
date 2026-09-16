@@ -36,7 +36,6 @@ export interface InterruptFlushManifest {
   rootThreadId: string;
   threadId: string;
   turnId: string;
-  agentSlug: string;
   flushedAt: string;
   entries: InterruptFlushManifestEntry[];
 }
@@ -186,7 +185,6 @@ export function createInterruptFlushService(
           rootThreadId: input.provenance.rootThreadId,
           threadId: input.provenance.threadId,
           turnId: input.provenance.turnId,
-          agentSlug: input.provenance.agentSlug,
           flushedAt: new Date().toISOString(),
           entries,
         },

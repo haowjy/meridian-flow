@@ -37,7 +37,6 @@ async function debit(ledger: ReturnType<typeof createInMemoryCreditLedger>, amou
     rootThreadId: "thread-1",
     threadId: "thread-1",
     turnId: "turn-1",
-    agentSlug: "writer",
     millicredits: amount,
     usageEventId: `usage-${amount}-${crypto.randomUUID()}`,
   });

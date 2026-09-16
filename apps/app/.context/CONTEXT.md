@@ -55,7 +55,8 @@ Two interfaces are the only paths between the visual layer and the substrate:
   account-scoped IndexedDB owner, not Zustand. Home stages the immutable
   Composer envelope before navigation; destination Chat atomically claims
   `ready` as `dispatching`, while a remounted `dispatching` or `ambiguous`
-  record performs ledger lookup only. `ThreadRunController` joins append,
+  record enters server-checked recovery (see Client-led creation patterns).
+  `ThreadRunController` joins append,
   lookup, and explicit retirement to a typed settlement boundary. Definite rejection remains durable until
   the matching shared Composer acknowledges an idempotent restoration; when a
   newer draft exists, the failed first send is prepended with a blank-line
@@ -178,16 +179,12 @@ optimistic flow: client-generated UUID → navigate immediately → API call →
 reconcile on response. It is deliberately separate from project-address
 creation, whose destination must not own an unresolved project/thread create.
 
-Home first send deliberately orders the boundary differently: stable client ID
-→ canonical create or same-ID ambiguity reconciliation → optimistic turn and
-durable continuity stage → route → destination claim. A definite stale Work or Agent refusal, whether
-returned by the initial create or its guarded same-ID retry after absence
-reconciliation, is identified only by the named `work_unavailable` or
-`agent_not_found` code, refreshes the relevant catalog, and unlocks prospective
-context repair while retaining the stable ID and immutable first text. Every
-other uncertain create remains locked to that original envelope while same-ID
-reconciliation continues. A canonical mismatch is never handed off; Start over
-retires it before a later submission allocates a fresh ID.
+Project Home Send mints a thread id, writes local turns, replaces the URL, then
+`useThreadHandoff` persists create-or-get + admit + run on those ids. Failure
+stays on that chat. An empty working turn shows "Couldn't send" with Retry on
+the turn, which resubmits the same thread and message ids. `useThreadHandoff`
+clears that chrome once persist and run succeed. Do not bounce to Home or show
+Check status, Start over, or saved-first-message recovery.
 
 Future optimistic surfaces (rename, soft-delete, undo) follow the same
 shape: optimistic store update first, API call second (`threads-api.ts`),

@@ -118,6 +118,7 @@ describe("smoke: in-process turn", () => {
     });
     const orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
+        boundThreads: () => [thread.id],
         gateway,
         repos,
         eventWriter: createInMemoryEventJournalWriter(),

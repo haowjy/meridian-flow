@@ -11,7 +11,6 @@ export interface NormalizedThreadCreate {
   title: string;
   /** Raw system prompt at creation; bake output lives in `composedSystemPrompt` only. */
   systemPrompt: string | null;
-  currentAgent: string | null;
   parentThreadId: string | null;
   spawnStatus: SpawnStatus | null;
   spawnDepth: number;
@@ -51,7 +50,6 @@ export function normalizeThreadCreate(input: CreateThreadInput): NormalizedThrea
     kind: "primary",
     title: input.title ?? "",
     systemPrompt: input.systemPrompt ?? null,
-    currentAgent: input.currentAgent ?? null,
     parentThreadId: null,
     spawnStatus: null,
     spawnDepth: 0,

@@ -13,7 +13,7 @@ function address(href: string) {
 }
 function setup(
   initial: string,
-  displayed: DisplayedProjectSelection = { chatSlug: null, workSlug: null },
+  displayed: DisplayedProjectSelection = { chatId: null, workSlug: null },
   restore?: () => undefined | Promise<boolean>,
 ) {
   const history = createMemoryHistory({ initialEntries: [initial] });
@@ -94,17 +94,17 @@ describe("project navigation", () => {
   });
   it("freezes displayed selections before a main push without waiting for defaults", async () => {
     const { history, navigation, changes } = setup("/p/serial/editor?settings=usage", {
-      chatSlug: "fight-scene",
+      chatId: "550e8400-e29b-41d4-a716-446655440000",
       workSlug: "revision",
     });
     await navigation.navigate(address("/p/serial/works"), { replace: false });
     expect(changes).toEqual([
-      "freeze:/p/serial/editor?chat=fight-scene&work=revision&settings=usage",
+      "freeze:/p/serial/editor?chat=550e8400-e29b-41d4-a716-446655440000&work=revision&settings=usage",
       "push:/p/serial/works?settings=usage",
     ]);
     history.back();
     expect(history.location.href).toBe(
-      "/p/serial/editor?chat=fight-scene&work=revision&settings=usage",
+      "/p/serial/editor?chat=550e8400-e29b-41d4-a716-446655440000&work=revision&settings=usage",
     );
     expect(history.length).toBe(2);
     navigation.dispose();
@@ -142,9 +142,12 @@ describe("project navigation", () => {
     });
     await navigation.replaceIfCurrent(navigation.capture(), empty);
     expect(changes).toEqual(["replace:/p/serial/editor"]);
-    await navigation.navigate(address("/p/serial/editor?chat=other&work=revision"), {
-      replace: false,
-    });
+    await navigation.navigate(
+      address("/p/serial/editor?chat=550e8400-e29b-41d4-a716-446655440000&work=revision"),
+      {
+        replace: false,
+      },
+    );
     expect(history.location.state).not.toHaveProperty(
       "meridianProjectEmptySelection",
       expect.anything(),
@@ -155,19 +158,33 @@ describe("project navigation", () => {
       address: { chat: { kind: "absent" }, work: { kind: "absent" } },
     });
     expect(
-      parseProjectAddress("/p/serial/editor", "?chat=other", history.location.state),
+      parseProjectAddress(
+        "/p/serial/editor",
+        "?chat=550e8400-e29b-41d4-a716-446655440000",
+        history.location.state,
+      ),
     ).toMatchObject({
-      address: { chat: { kind: "slug", slug: "other" }, work: { kind: "absent" } },
+      address: {
+        chat: { kind: "slug", slug: "550e8400-e29b-41d4-a716-446655440000" },
+        work: { kind: "absent" },
+      },
     });
     navigation.dispose();
   });
   it("replaces dock and Work choices without another Back entry", async () => {
     const { history, navigation, changes } = setup("/p/serial/manuscript/chapter.md?chat=&work=");
-    await navigation.navigate(address("/p/serial/manuscript/chapter.md?chat=other&work=revision"), {
-      replace: true,
-    });
+    await navigation.navigate(
+      address(
+        "/p/serial/manuscript/chapter.md?chat=550e8400-e29b-41d4-a716-446655440000&work=revision",
+      ),
+      {
+        replace: true,
+      },
+    );
     expect(history.length).toBe(1);
-    expect(changes).toEqual(["replace:/p/serial/manuscript/chapter.md?chat=other&work=revision"]);
+    expect(changes).toEqual([
+      "replace:/p/serial/manuscript/chapter.md?chat=550e8400-e29b-41d4-a716-446655440000&work=revision",
+    ]);
     navigation.dispose();
   });
   it("never turns an explicit malformed or unavailable selection into a default", async () => {
@@ -195,7 +212,7 @@ describe("project navigation", () => {
   it("retains a scoped local pointer without putting its UUID in the public URL", async () => {
     const local = { accountId: "account", projectId: "project-id", resourceHandle: "resource" };
     const { history, navigation } = setup("/p/serial/editor", {
-      chatSlug: null,
+      chatId: null,
       workSlug: null,
       local,
     });

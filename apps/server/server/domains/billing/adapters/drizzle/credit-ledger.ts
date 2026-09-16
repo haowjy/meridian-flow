@@ -209,7 +209,6 @@ export function createDrizzleCreditLedger(db: Database): CreditLedger {
         rootThreadId: input.rootThreadId,
         threadId: input.threadId,
         turnId: input.turnId,
-        agentSlug: input.agentSlug,
       });
       const rows = await tx.execute<{
         remaining_balance: bigint;

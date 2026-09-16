@@ -1,6 +1,10 @@
 import type { Database } from "@meridian/database";
-import { projectResults } from "@meridian/database/schema";
-import { desc, eq } from "drizzle-orm";
+import {
+  agentDefinitionRevisions,
+  projectResults,
+  threadAgentBindings,
+} from "@meridian/database/schema";
+import { desc, eq, sql } from "drizzle-orm";
 import type {
   CreateProjectResultInput,
   ProjectResultRecord,
@@ -21,7 +25,6 @@ function mapRow(row: typeof projectResults.$inferSelect): ProjectResultRecord {
       threadId: row.threadId,
       turnId: row.turnId,
       toolCallId: row.toolCallId,
-      agentSlug: row.agentSlug,
     },
     createdAt: row.createdAt.toISOString(),
   };
@@ -45,7 +48,6 @@ export class DrizzleResultRepository implements ResultRepository {
           threadId: input.provenance.threadId,
           turnId: input.provenance.turnId,
           toolCallId: input.provenance.toolCallId,
-          agentSlug: input.provenance.agentSlug,
         })
         .onConflictDoNothing()
         .returning();
@@ -83,11 +85,26 @@ export class DrizzleResultRepository implements ResultRepository {
   }
   async listByProject(projectId: string): Promise<ProjectResultRecord[]> {
     const rows = await this.db
-      .select()
+      .select({
+        result: projectResults,
+        agentName: sql<
+          string | null
+        >`coalesce(${agentDefinitionRevisions.definition}->'metadata'->>'name', ${agentDefinitionRevisions.slug})`,
+        agentSlug: agentDefinitionRevisions.slug,
+      })
       .from(projectResults)
+      .leftJoin(threadAgentBindings, eq(threadAgentBindings.threadId, projectResults.threadId))
+      .leftJoin(
+        agentDefinitionRevisions,
+        eq(agentDefinitionRevisions.id, threadAgentBindings.definitionRevisionId),
+      )
       .where(eq(projectResults.projectId, projectId))
       .orderBy(desc(projectResults.createdAt));
-    return rows.map(mapRow);
+    return rows.map((row) => ({
+      ...mapRow(row.result),
+      agentName: row.agentName ?? undefined,
+      agentSlug: row.agentSlug,
+    }));
   }
 }
 export function createDrizzleResultRepository(db: Database): ResultRepository {

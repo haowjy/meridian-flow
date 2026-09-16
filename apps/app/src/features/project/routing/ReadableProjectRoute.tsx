@@ -7,7 +7,7 @@ import type { WorksSnapshot } from "@meridian/contracts/works";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { getProjectDocumentAddress, listProjectThreads } from "@/client/api/projects-api";
+import { getProjectDocumentAddress } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type ProjectRouteData, seedProjectRouteData } from "@/client/query/project-route-data";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
@@ -18,8 +18,11 @@ import {
   getContextTabs,
   useContextTabs,
   useContextTabsStore,
+  useIsThreadPendingCreation,
+  useThreadStore,
 } from "@/client/stores";
 import { hydrateWorkingSet, readRecentRoutes, setThread } from "@/client/working-set";
+import { readInflightChat } from "@/lib/inflight-chat";
 import { originalBrowserSearch } from "@/router-search";
 import { useResolvedChatThread } from "../chat/chat-thread-resolution";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
@@ -143,19 +146,33 @@ export function ReadableProjectRoute({
       ? { status: "ready" as const, entries: works.works ?? [] }
       : { status: works.status === "error" ? ("error" as const) : ("loading" as const) };
   const requestedChat = addressChatSelection(address);
-  const chat = resolveAddressSelection(
-    requestedChat,
-    threads.isError
-      ? { status: "error" }
-      : threads.threads !== null
-        ? { status: "ready", entries: threads.threads }
-        : { status: "loading" },
-  );
+  const chatCatalog = threads.isError
+    ? { status: "error" as const }
+    : threads.threads !== null
+      ? {
+          status: "ready" as const,
+          entries: threads.threads.map((thread) => ({ id: thread.id, slug: thread.id })),
+        }
+      : { status: "loading" as const };
+  const chat = resolveAddressSelection(requestedChat, chatCatalog);
+  const urlChatId = requestedChat.kind === "slug" ? requestedChat.slug : null;
   const { resolvedThreadId } = useResolvedChatThread(
     projectId,
-    chat.status === "resolved" ? chat.value.id : null,
+    urlChatId,
     requestedChat.kind === "absent",
   );
+  const pendingChat = useIsThreadPendingCreation(urlChatId);
+  const localTurns = useThreadStore((state) =>
+    urlChatId ? state.turnsByThread[urlChatId] : undefined,
+  );
+  const inflightChat = urlChatId ? readInflightChat(urlChatId) : null;
+  const localChat =
+    !!urlChatId &&
+    (pendingChat ||
+      !!inflightChat ||
+      (localTurns !== undefined && localTurns.length > 0) ||
+      chat.status === "resolved");
+  const chatIssue = localChat ? undefined : issue(chat);
   const displayedChat = threads.threads?.find((thread) => thread.id === resolvedThreadId) ?? null;
   const rememberedEditor = useRef<string | null | undefined>(undefined);
   const requestedWork = addressWorkSelection(address);
@@ -204,7 +221,7 @@ export function ReadableProjectRoute({
     if (localDocumentId)
       void useContextTabsStore.getState().selectTab(projectId, workId ?? "", localDocumentId);
   }, [projectId, workId, localDocumentId]);
-  const shown = useRef<DisplayedProjectSelection>({ chatSlug: null, workSlug: null });
+  const shown = useRef<DisplayedProjectSelection>({ chatId: null, workSlug: null });
   const [navigation, setNavigation] = useState<ReturnType<typeof createProjectNavigation> | null>(
     null,
   );
@@ -247,7 +264,10 @@ export function ReadableProjectRoute({
         ? { status: "error" }
         : threads.isFetching || threads.threads === null
           ? { status: "loading" }
-          : { status: "ready", entries: threads.threads },
+          : {
+              status: "ready",
+              entries: threads.threads.map((thread) => ({ id: thread.id, slug: thread.id })),
+            },
       work: works.isFetching ? { status: "loading" } : workCatalog,
     });
   }, [
@@ -270,10 +290,8 @@ export function ReadableProjectRoute({
   }, []);
   const reportSelection = useCallback(
     (value: { threadId: string | null; editorWorkId: string | null }) => {
-      const chatSlug =
-        threads.threads?.find((thread) => thread.id === value.threadId)?.slug ?? null;
       const workSlug = works.works?.find((work) => work.id === value.editorWorkId)?.slug ?? null;
-      shown.current = { chatSlug, workSlug, local: localPointer };
+      shown.current = { chatId: value.threadId, workSlug, local: localPointer };
       if (activeScreen === "context" && !issue(editorWork)) rememberedEditor.current = workSlug;
     },
     [
@@ -389,19 +407,10 @@ export function ReadableProjectRoute({
   }
   async function openChat(threadId: string, options: NavigationOptions, dock = false) {
     if (!threadId && dock) return go({ ...address, chat: NONE }, { replace: true });
-    const ticket = navigation?.captureForEntry(location.state.__TSR_key ?? "");
-    let thread = threads.threads?.find((thread) => thread.id === threadId);
-    if (!thread?.slug) {
-      const catalog = await listProjectThreads(projectId);
-      queryClient.setQueryData(projectQueryKeys.threads(projectId), catalog);
-      if (!ticket || !navigation?.isCurrent(ticket)) return;
-      thread = catalog.find((candidate) => candidate.id === threadId);
-    }
-    if (!thread?.slug) throw new Error("Chat address is unavailable");
     return go(
       dock
-        ? { ...address, chat: selection(thread.slug) }
-        : toDestination({ kind: "chat", chatSlug: thread.slug }),
+        ? { ...address, chat: { kind: "slug", slug: threadId } }
+        : toDestination({ kind: "chat", chatId: threadId }),
       { replace: dock || options.replace },
     );
   }
@@ -653,7 +662,7 @@ export function ReadableProjectRoute({
           routeWork={routeWork(work)}
           editorRouteWork={routeWork(editorWork)}
           routeLocationKey={location.state.__TSR_key ?? location.href}
-          routeIssues={{ main: mainIssue, chat: issue(chat), editor: editorIssue }}
+          routeIssues={{ main: mainIssue, chat: chatIssue, editor: editorIssue }}
           onDisplayedSelection={reportSelection}
           routeCommands={routeCommands}
           contextRemovalRoute={{

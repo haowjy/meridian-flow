@@ -9,8 +9,6 @@
  *   the only future re-bake trigger.
  * - `rebakeComposedSystemPrompt` is the only re-bake entry point today (first
  *   attempt). A future autoprune event should call it from exactly one place.
- * - Invoke advertisement follows the persisted baked skill slug set, not prompt
- *   marker sniffing.
  */
 
 import { DOCUMENT_DIALECT_CORE_INSTRUCTION } from "./system-instructions/document-dialect.js";
@@ -18,7 +16,6 @@ import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "./system-instructions/runtime-ur
 
 export interface AssembleComposedSystemPromptInput {
   basePrompt?: string | null;
-  skillsSystemPromptSection?: string;
   workContext?: string;
 }
 
@@ -26,7 +23,6 @@ export interface AssembleComposedSystemPromptInput {
 export function assembleComposedSystemPrompt(input: AssembleComposedSystemPromptInput): string {
   return [
     input.basePrompt,
-    input.skillsSystemPromptSection,
     input.workContext,
     DOCUMENT_DIALECT_CORE_INSTRUCTION,
     RUNTIME_URI_SYSTEM_INSTRUCTION,
@@ -38,13 +34,6 @@ export function assembleComposedSystemPrompt(input: AssembleComposedSystemPrompt
 /** Frozen threads have a persisted bake (`bakedSkillSlugs` is non-null). */
 export function isThreadPromptFrozen(thread: { bakedSkillSlugs?: string[] | null }): boolean {
   return thread.bakedSkillSlugs != null;
-}
-
-/** Non-empty baked slug set means `invoke` was advertised at bake time. */
-export function bakedSkillSetAdvertisesInvoke(
-  bakedSkillSlugs: string[] | null | undefined,
-): boolean {
-  return Array.isArray(bakedSkillSlugs) && bakedSkillSlugs.length > 0;
 }
 
 /**

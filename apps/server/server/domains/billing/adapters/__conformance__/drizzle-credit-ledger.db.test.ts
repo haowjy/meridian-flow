@@ -69,7 +69,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         rootThreadId: "root-thread",
         threadId: "thread-1",
         turnId: "turn-1",
-        agentSlug: "agent",
         millicredits: "125",
         usageEventId: "model-response-1",
       });
@@ -110,7 +109,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         rootThreadId: "root-thread",
         threadId: "thread-1",
         turnId: "turn-1",
-        agentSlug: "agent",
         millicredits: "125",
         usageEventId: "model-response-1",
       };
@@ -145,7 +143,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           rootThreadId: "root-thread",
           threadId: "thread-1",
           turnId: "turn-1",
-          agentSlug: "agent",
           millicredits: "125",
           usageEventId: sharedEvent,
         });

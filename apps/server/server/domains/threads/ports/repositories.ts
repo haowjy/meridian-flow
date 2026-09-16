@@ -102,8 +102,6 @@ export interface CreateThreadInput {
   kind?: ThreadKind;
   title?: string | null;
   systemPrompt?: string | null;
-  /** Mars agent slug when this thread is agent-bound. */
-  currentAgent?: string | null;
   workingState?: WorkingState | null;
   parentThreadId?: ThreadId | null;
   spawnStatus?: SpawnStatus | null;
@@ -119,15 +117,14 @@ export interface UpdateSpawnLifecycleInput {
 export interface BakeComposedSystemPromptInput {
   composedSystemPrompt: string;
   bakedSkillSlugs: string[];
-  expectedCurrentAgent?: string | null;
 }
 
 export interface ThreadRepository {
   create(input: CreateThreadInput): Promise<Thread>;
   updateSpawnLifecycle(id: ThreadId, input: UpdateSpawnLifecycleInput): Promise<Thread>;
   findById(id: ThreadId): Promise<Thread | null>;
-  /** Exact live handle lookup; caller must authorize the project. */
-  findLiveByProjectSlug(projectId: ProjectId, slug: string): Promise<Thread | null>;
+  /** Exact live handle lookup by server-assigned `cN` ref; caller must authorize the project. */
+  findLiveByProjectRef(projectId: ProjectId, ref: string): Promise<Thread | null>;
   /** Returns the owning project even when the thread is soft-deleted. */
   findProjectIdByIdIncludingDeleted(id: ThreadId): Promise<ProjectId | null>;
   /** Locks and returns the thread lifecycle row, including soft-deleted threads. */
@@ -142,8 +139,6 @@ export interface ThreadRepository {
     limit: number,
   ): Promise<WorkThreadSummary[]>;
   updateStatus(id: ThreadId, status: ThreadStatus): Promise<Thread>;
-  /** Rebinds the thread agent only before the first prompt bake/turn; returns null after freeze. */
-  updateCurrentAgent(id: ThreadId, currentAgent: string | null): Promise<Thread | null>;
   /**
    * Compare-and-swap first-attempt bake: writes only while `bakedSkillSlugs` is still
    * null. Returns the authoritative thread row (winner's bake on CAS loss).

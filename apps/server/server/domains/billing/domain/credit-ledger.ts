@@ -27,7 +27,6 @@ export interface CreditDebitInput {
   rootThreadId: string;
   threadId: string;
   turnId: string;
-  agentSlug: string;
   millicredits: string;
   usageEventId: string;
 }

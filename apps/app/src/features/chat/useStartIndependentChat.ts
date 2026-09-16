@@ -1,7 +1,13 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback } from "react";
-
-import { useProjectActions, useProjectStore, useThreadActions } from "@/client/stores";
+import { useAgentCatalog } from "@/client/query/useAgentCatalog";
+import {
+  announceError,
+  useProjectActions,
+  useProjectStore,
+  useThreadActions,
+} from "@/client/stores";
+import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { startIndependentChat } from "@/lib/optimistic-independent-chat";
 
 /**
@@ -10,14 +16,26 @@ import { startIndependentChat } from "@/lib/optimistic-independent-chat";
  */
 export function useStartIndependentChat() {
   const navigate = useNavigate();
+  const catalog = useAgentCatalog();
+  const general = catalog.agents?.find(
+    (agent) =>
+      agent.ownership === "system" &&
+      agent.slug === DEFAULT_AGENT_SLUG &&
+      !agent.unavailableReasons.length,
+  );
   const projectActions = useProjectActions();
   const threadActions = useThreadActions();
   const now = useProjectStore((s) => s.now);
 
-  return useCallback(
+  const start = useCallback(
     (text?: string) => {
-      startIndependentChat({ text, projectActions, threadActions, navigate, now });
+      if (!general) {
+        announceError("General is unavailable. Load the Agent catalog and try again.");
+        return;
+      }
+      startIndependentChat({ agent: general, text, projectActions, threadActions, navigate, now });
     },
-    [navigate, now, projectActions, threadActions],
+    [general, navigate, now, projectActions, threadActions],
   );
+  return { start, ready: !!general };
 }

@@ -2,7 +2,6 @@
 name: Critic
 description: Background helper that gives adversarial craft critique.
 mode: subagent
-modelTier: moderate
 skills: []
 subagents: []
 effort: medium

@@ -135,3 +135,27 @@ independent, non-nested scope.
 The schema stays ordinary Postgres with no provider-specific auth coupling
 (identity is app-owned `public.users` keyed by WorkOS `external_id`). The Date
 vs string `mode` split is a known inconsistency, not a pattern to extend.
+
+### Retained Agent definitions
+
+`agent_package_revisions` retains complete source snapshots. Its coordinate/digest
+key deduplicates installs. `agent_definition_revisions` retains one compiled Agent
+per package revision and local slug. Catalog pointers and thread bindings use
+revision FKs with restricted deletion; hiding a catalog entry preserves bound
+content. Account deletion cascades catalog entries and threads, not source rows.
+
+`agent_catalog_entries` has account-owned and system-owned logical-key indexes.
+`agent_catalog_revisions` retains previously selected revision memberships; the
+current catalog pointer grants current membership directly. Pointer CAS and
+history insertion share one transaction. `thread_agent_bindings` has one row per thread. The server's Agent revision store
+owns insert-only content, catalog compare-and-set selection, and idempotent fixed
+binding. It joins the existing ambient transaction owner so thread admission can
+include source, catalog, and binding writes atomically.
+
+`agent_package_dependencies` retains manifest-name edges to exact package revisions with restricted dependency deletion. Source identity includes the dependency map. `thread_agent_bindings.configuration` stores the resolved model, skill-content identities and named-target revisions alongside the immutable definition reference. Idempotent binding compares both revision and configuration; it cannot change either.
+
+Agent package installations retain account/system current and upstream source heads plus owned history. Definition content stays in immutable source revisions. Legacy project Agent/skill tables, the turn Agent-definition FK and the unused slug-default preference are absent; execution identity comes from the thread binding.
+
+`project_agent_removals` is a Project/catalog-entry exclusion relation. Cascading
+FKs clean up deleted Projects and catalog entries; publication and definition
+revision changes preserve exclusions. It is not another definition owner.

@@ -114,11 +114,6 @@ export function apiProjectPreferencesPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/preferences`;
 }
 
-/** Selectable agent catalog for composer picker and Library. */
-export function apiProjectAgentsPath(projectId: string): string {
-  return `${apiProjectPath(projectId)}/agents`;
-}
-
 export function apiProjectContextCatalogPath(
   projectId: string,
   operation: "snapshot" | "changes" | "children" | "lookup",

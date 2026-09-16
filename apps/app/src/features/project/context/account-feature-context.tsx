@@ -18,6 +18,7 @@ import type { ProjectContextAvailabilityCoordinator } from "./project-context-av
 import { ProjectDocumentLiveOpenerContext } from "./project-document-live-opener-context";
 
 const AccountEpochContext = createContext<AbortSignal | null>(null);
+const AccountIdContext = createContext<string | null>(null);
 
 const ContextRemovalAccountContext = createContext<ContextRemovalCoordinator | null>(null);
 const ProjectAvailabilityAccountContext =
@@ -143,19 +144,21 @@ function AccountFeatureProviders({
   }, [lifetime]);
   return (
     <AccountEpochContext.Provider value={lifetime.runtime.epochSignal}>
-      <ContextRemovalAccountContext.Provider value={lifetime.removal}>
-        <ProjectAvailabilityAccountContext.Provider value={lifetime.availability}>
-          <ResourceReplicaAccountContext.Provider value={lifetime.resources}>
-            <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
-              <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
-                <PostApplyOwnerAccountContext.Provider value={lifetime.postApplyOwner}>
-                  {children}
-                </PostApplyOwnerAccountContext.Provider>
-              </ProjectDocumentLiveOpenerContext.Provider>
-            </LiveDocumentRegistryAccountContext.Provider>
-          </ResourceReplicaAccountContext.Provider>
-        </ProjectAvailabilityAccountContext.Provider>
-      </ContextRemovalAccountContext.Provider>
+      <AccountIdContext.Provider value={lifetime.accountId}>
+        <ContextRemovalAccountContext.Provider value={lifetime.removal}>
+          <ProjectAvailabilityAccountContext.Provider value={lifetime.availability}>
+            <ResourceReplicaAccountContext.Provider value={lifetime.resources}>
+              <LiveDocumentRegistryAccountContext.Provider value={lifetime.registry}>
+                <ProjectDocumentLiveOpenerContext.Provider value={lifetime.opener}>
+                  <PostApplyOwnerAccountContext.Provider value={lifetime.postApplyOwner}>
+                    {children}
+                  </PostApplyOwnerAccountContext.Provider>
+                </ProjectDocumentLiveOpenerContext.Provider>
+              </LiveDocumentRegistryAccountContext.Provider>
+            </ResourceReplicaAccountContext.Provider>
+          </ProjectAvailabilityAccountContext.Provider>
+        </ContextRemovalAccountContext.Provider>
+      </AccountIdContext.Provider>
     </AccountEpochContext.Provider>
   );
 }
@@ -248,4 +251,10 @@ export function useAccountEpochSignal(): AbortSignal {
   const signal = useContext(AccountEpochContext);
   if (!signal) throw new Error("AccountFeatureComposition is required");
   return signal;
+}
+
+export function useAccountId(): string {
+  const accountId = useContext(AccountIdContext);
+  if (!accountId) throw new Error("AccountFeatureComposition is required");
+  return accountId;
 }

@@ -15,6 +15,7 @@ import type {
 } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { ProjectContextAvailabilityPort } from "../../context/index.js";
+import type { ThreadRunOwnership } from "../loop/thread-run-ownership.js";
 
 export const MAX_USER_MESSAGE_BLOCKS = 64;
 export const MAX_USER_MESSAGE_IMAGES = 16;
@@ -36,6 +37,12 @@ export type AuthorizedReference = SubmittedReference & {
 };
 
 export interface AdmissionRecordPort {
+  recoverExpiredPending(input: {
+    threadId: string;
+    submissionId: string;
+    now: Date;
+    hasLiveClaim(threadId: string): Promise<boolean>;
+  }): Promise<AdmissionRecord | null>;
   lookup(threadId: string, submissionId: string): Promise<AdmissionRecord | null>;
   reserve(input: {
     threadId: string;
@@ -54,7 +61,7 @@ export interface AdmissionRecordPort {
 }
 
 export type AdmissionRecord =
-  | { state: "pending"; fingerprint: AdmissionFingerprint }
+  | { state: "pending"; fingerprint: AdmissionFingerprint; claimExpiresAt: Date | null }
   | { state: "rejected" | "retired"; fingerprint: AdmissionFingerprint | null; code: string }
   | { state: "accepted"; fingerprint: AdmissionFingerprint; response: AcceptedAdmission };
 
@@ -258,20 +265,56 @@ function assertMatchingFingerprint(record: AdmissionRecord, fingerprint: string)
 
 export function createUserTurnAdmission(deps: {
   records: AdmissionRecordPort;
+  runOwnership: ThreadRunOwnership;
   availability: ProjectContextAvailabilityPort;
   threadProject(threadId: string): Promise<string | null>;
   verifyDraftUpload?(reference: SubmittedReference & { intakeId: string }): Promise<boolean>;
   starter: AdmissionTurnStarter;
   now?: () => Date;
 }): UserTurnAdmission {
+  const recover = async (
+    threadId: string,
+    submissionId: string,
+    record: AdmissionRecord | null,
+  ) => {
+    const now = deps.now?.() ?? new Date();
+    if (record?.state !== "pending" || !record.claimExpiresAt || record.claimExpiresAt > now)
+      return record;
+    // Match runner ordering and keep the claim until the recovery transaction commits.
+    const claim = await deps.runOwnership.tryAcquire(threadId as never);
+    if (!claim) return deps.records.lookup(threadId, submissionId);
+    try {
+      return await deps.records.recoverExpiredPending({
+        threadId,
+        submissionId,
+        now,
+        async hasLiveClaim() {
+          return false;
+        },
+      });
+    } finally {
+      await claim.release();
+    }
+  };
   return {
     async lookup(request) {
       return lookupProjection(
-        await deps.records.lookup(request.threadId, request.submissionId),
+        await recover(
+          request.threadId,
+          request.submissionId,
+          await deps.records.lookup(request.threadId, request.submissionId),
+        ),
         request.submissionId,
       );
     },
-    retire: (request) => deps.records.retire(request),
+    async retire(request) {
+      await recover(
+        request.threadId,
+        request.submissionId,
+        await deps.records.lookup(request.threadId, request.submissionId),
+      );
+      return deps.records.retire(request);
+    },
     async admit(input) {
       const blocks = parseUserMessageBlocks(input.blocks, input.text);
       const references = parseSubmittedReferences(input.references);
@@ -280,7 +323,10 @@ export function createUserTurnAdmission(deps: {
       const existing = await deps.records.lookup(input.threadId, input.submissionId);
       if (existing) {
         assertMatchingFingerprint(existing, fingerprint);
-        return lookupProjection(existing, input.submissionId) as UserTurnAdmissionResult;
+        return lookupProjection(
+          await recover(input.threadId, input.submissionId, existing),
+          input.submissionId,
+        ) as UserTurnAdmissionResult;
       }
 
       const now = deps.now?.() ?? new Date();
@@ -293,7 +339,10 @@ export function createUserTurnAdmission(deps: {
       });
       if (reservation.kind === "winner") {
         assertMatchingFingerprint(reservation.record, fingerprint);
-        return lookupProjection(reservation.record, input.submissionId) as UserTurnAdmissionResult;
+        return lookupProjection(
+          await recover(input.threadId, input.submissionId, reservation.record),
+          input.submissionId,
+        ) as UserTurnAdmissionResult;
       }
 
       const projectId = await deps.threadProject(input.threadId);

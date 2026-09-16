@@ -15,7 +15,7 @@ export default defineEventHandler(async (event) => {
   const response = await handleApplyPackageInstallRequest(
     {
       projectRepo: app.projectRepo,
-      packageRepository: app.packageRepository,
+      agentRevisions: app.agentRevisions,
       marsPackageFetcher: app.marsPackageFetcher,
     },
     { projectId, userId: user.userId, ...body },

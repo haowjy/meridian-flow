@@ -22,7 +22,7 @@ export type ProjectNavigationPort = {
   ): Promise<void>;
 };
 export type DisplayedProjectSelection = {
-  chatSlug: string | null;
+  chatId: string | null;
   workSlug: string | null;
   /** Existing local ownership pointer, never content or a new draft instance. */
   local?: { accountId: string; projectId: string; resourceHandle: string };
@@ -135,8 +135,8 @@ export function createProjectNavigation(
       ...current,
       chat:
         current.chat.kind === "absent"
-          ? shown.chatSlug
-            ? { kind: "slug", slug: shown.chatSlug }
+          ? shown.chatId
+            ? { kind: "slug", slug: shown.chatId }
             : { kind: "none" }
           : current.chat,
       work:

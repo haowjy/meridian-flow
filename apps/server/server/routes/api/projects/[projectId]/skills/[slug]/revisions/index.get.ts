@@ -10,7 +10,7 @@ export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, "slug") ?? "";
 
   const response = await handleListSkillDefinitionRevisionsRequest(
-    { projectRepo: app.projectRepo, packageRepository: app.packageRepository },
+    { projectRepo: app.projectRepo, agentRevisions: app.agentRevisions },
     { projectId, userId: user.userId, slug },
   );
 

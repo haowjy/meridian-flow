@@ -1,36 +1,39 @@
 /**
  * useThreadHandoff — starts the chat stream that belongs to this thread mount.
  *
- * The hook owns both durable project first-send admission and snapshot-based
- * reload resume. Keeping them in one place prevents two controller runs from
- * subscribing to the same active thread during mount.
+ * Owns navigate-first persist (create/admit/run), snapshot-based reload resume,
+ * and Retry of a failed first send with the same thread and message ids.
  */
 
 import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import { createProject } from "@/client/api/projects-api";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createProject, createProjectThread } from "@/client/api/projects-api";
 import { createThread } from "@/client/api/threads-api";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
-import { useFirstSendContinuity } from "@/client/first-send-continuity";
 import {
   invalidateProjectThreadData,
   invalidateWorkThreads,
 } from "@/client/query/project-invalidation";
-import type { ThreadStoreActions } from "@/client/stores";
+import type { PendingStreamStart, ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
-import type { ComposerDraftSnapshot } from "@/components/app/composer";
 import {
   plainComposerDoc,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
-import { threadCreateAgentField } from "@/features/agents/constants";
+import { runExclusivePersist } from "@/lib/inflight-chat";
+import { finishInflightChat, rehydrateInflightChat } from "@/lib/send-project-chat";
 
 type Controller = ThreadRunController;
+type Creation = NonNullable<PendingStreamStart["creation"]>;
+
+export type FailedSendRetry = {
+  turnId: string;
+  retry: () => void;
+};
 
 type SnapshotResumeState = {
   liveState: ThreadLiveState | null;
-  /** Snapshot stream head; retained for non-active diagnostics, not active-run resume. */
   nextSeq: string | null;
 };
 
@@ -49,178 +52,168 @@ export function activeSnapshotResumeAfterSeq(liveState: ThreadLiveState): string
   }
 }
 
-/**
- * Consumes {@link ThreadStoreActions.consumePendingStream} once per mount: resumes
- * an in-flight run or claims a durable first-send admission or retained standalone creation.
- */
 export function useThreadHandoff(
   threadId: string,
   projectId: string | null,
   controller: Controller,
   actions: ThreadStoreActions,
   snapshotResume?: SnapshotResumeState,
-  restoreLatestDraft?: (snapshot: ComposerDraftSnapshot, expectedRevision: number) => number | null,
-  restoreFailedSubmission?: (
-    id: string,
-    submitted: ComposerDraftSnapshot,
-    later: ComposerDraftSnapshot | null | undefined,
-    expectedRevision: number,
-  ) => number | null,
-): void {
+): FailedSendRetry | null {
   const pendingResumeRef = useRef(false);
   const handoffStartedRef = useRef(false);
   const snapshotEvaluatedRef = useRef(false);
-  const continuityStartedRef = useRef(false);
-  const [continuityChecked, setContinuityChecked] = useState(projectId === null);
+  const creationRef = useRef<Creation | undefined>(undefined);
+  const persistRef = useRef<(creation: Creation) => void>(() => undefined);
+  const sendSucceededRef = useRef(false);
+  const [failedTurnId, setFailedTurnId] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const continuity = useFirstSendContinuity();
 
   useEffect(() => {
     pendingResumeRef.current = false;
     handoffStartedRef.current = false;
     snapshotEvaluatedRef.current = false;
-    continuityStartedRef.current = false;
-    setContinuityChecked(projectId === null);
+    creationRef.current = undefined;
+    sendSucceededRef.current = false;
+    setFailedTurnId(null);
   }, [projectId, threadId]);
 
   useEffect(() => {
-    if (!projectId || continuityStartedRef.current) return;
-    continuityStartedRef.current = true;
-    let mounted = true;
-    void continuity
-      .findForThread(projectId, threadId)
-      .then(async (claim) => {
-        if (!claim || !mounted) return;
-        handoffStartedRef.current = true;
-        const { record } = claim;
-        const key = { projectId: record.projectId, threadId, submissionId: record.submissionId };
-        let destinationRevision: number | null = 0;
-        if (record.latestDraft)
-          destinationRevision =
-            restoreLatestDraft?.(record.latestDraft, destinationRevision) ?? null;
-        let restoredStamp = JSON.stringify([record.latestDraft, record.creation?.draftRevision]);
-        const outcome = claim.dispatch
-          ? await controller.submit(threadId, record.envelope, {
-              optimisticUserTurnId: record.optimisticUserTurnId,
-            })
-          : await controller.lookup(threadId, record.envelope, {
-              optimisticUserTurnId: record.optimisticUserTurnId,
-            });
-        if (outcome.kind === "ambiguous") {
-          await continuity.markAmbiguous(key);
-          return;
-        }
-        // Admission and creation acknowledgement retire together, only after the
-        // destination has restored the latest revision observed in that transaction.
-        let observed = await continuity.peek(key);
-        while (mounted && observed) {
-          if (destinationRevision === null) return;
-          const stamp = JSON.stringify([observed.latestDraft, observed.creation?.draftRevision]);
-          if (outcome.kind === "accepted") {
-            if (stamp !== restoredStamp) {
-              const draft =
-                observed.latestDraft ?? serializeComposerDraft(plainComposerDoc("")).draft;
-              destinationRevision = restoreLatestDraft?.(draft, destinationRevision) ?? null;
-            }
-          } else {
-            destinationRevision =
-              restoreFailedSubmission?.(
-                `${threadId}:${record.submissionId}:${observed.creation?.draftRevision ?? observed.latestDraft?.revision ?? "submitted"}`,
-                record.envelope.draft,
-                observed.latestDraft,
-                destinationRevision,
-              ) ?? null;
-          }
-          if (destinationRevision === null || (await continuity.retire(observed))) return;
-          restoredStamp = stamp;
-          observed = await continuity.peek(key);
-        }
-      })
-      .catch((error) =>
-        announceError(error instanceof Error ? error.message : "Failed to reconcile submission"),
-      )
-      .finally(() => {
-        if (mounted) setContinuityChecked(true);
-      });
-    return () => {
-      mounted = false;
+    const clearFailedSend = () => {
+      sendSucceededRef.current = true;
+      setFailedTurnId(null);
     };
-  }, [continuity, controller, projectId, restoreFailedSubmission, restoreLatestDraft, threadId]);
 
-  useEffect(() => {
-    if (!continuityChecked) return;
+    const failSend = (creation: Creation) => {
+      if (sendSucceededRef.current) return;
+      if (creation.workingTurnId)
+        actions.patchTurnStatus(threadId, creation.workingTurnId, "error");
+      setFailedTurnId(creation.workingTurnId ?? null);
+      announceError("Couldn't send");
+      pendingResumeRef.current = false;
+    };
+
     const startResume = (after?: string, expectedTurnId?: string) => {
       try {
         controller.resume(threadId, { after, expectedTurnId });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Failed to resume stream";
-        announceError(message);
+        announceError(error instanceof Error ? error.message : "Failed to resume stream");
       } finally {
         pendingResumeRef.current = false;
       }
     };
 
-    const startSubmit = (text: string, optimisticUserTurnId?: string) => {
-      const envelope = serializeComposerDraft(plainComposerDoc(text));
+    const startSubmit = (creation: Creation) => {
+      if (!creation.text) {
+        pendingResumeRef.current = false;
+        finishInflightChat(threadId, actions);
+        return;
+      }
+      const envelope = serializeComposerDraft(plainComposerDoc(creation.text));
       void controller
-        .submit(threadId, envelope, { optimisticUserTurnId })
-        .catch((error) => {
-          const message = error instanceof Error ? error.message : "Failed to start stream";
-          announceError(message);
+        .submit(
+          threadId,
+          creation.submissionId ? { ...envelope, submissionId: creation.submissionId } : envelope,
+          {
+            optimisticUserTurnId: creation.optimisticUserTurnId,
+            keepOptimisticOnFailure: true,
+          },
+        )
+        .then((outcome) => {
+          if (outcome.kind === "accepted") {
+            clearFailedSend();
+            finishInflightChat(threadId, actions);
+            return;
+          }
+          failSend(creation);
+        })
+        .catch(() => {
+          failSend(creation);
         })
         .finally(() => {
           pendingResumeRef.current = false;
         });
     };
 
-    const pendingStream = actions.consumePendingStream(threadId);
-    if (pendingStream) {
-      if (pendingResumeRef.current) return;
-      pendingResumeRef.current = true;
+    const persistCreation = (creation: Creation) => {
+      creationRef.current = creation;
       handoffStartedRef.current = true;
-
-      if (pendingStream.independentCreation) {
-        const { projectId, title, text, optimisticUserTurnId, currentAgent } =
-          pendingStream.independentCreation;
-        void (async () => {
-          try {
-            await createProject({ id: projectId, title });
+      pendingResumeRef.current = true;
+      sendSucceededRef.current = false;
+      setFailedTurnId(null);
+      if (creation.workingTurnId) {
+        actions.patchTurnStatus(threadId, creation.workingTurnId, "streaming");
+      }
+      void runExclusivePersist(threadId, async () => {
+        try {
+          if (creation.createProject) {
+            await createProject({ id: creation.projectId, title: creation.title });
             const thread = await createThread({
               data: {
                 id: threadId,
-                projectId,
-                title,
-                ...threadCreateAgentField(currentAgent),
+                projectId: creation.projectId,
+                title: creation.title,
+                agentSelection: creation.agentSelection,
               },
             });
             actions.ensureThread(thread);
-            // Server confirmation arrived: gated queries can now fire safely.
-            actions.clearPendingCreation({ projectId, threadId });
+            actions.clearPendingCreation({ projectId: creation.projectId, threadId });
             await Promise.all([
-              invalidateProjectThreadData(queryClient, projectId),
+              invalidateProjectThreadData(queryClient, creation.projectId),
               ...(thread.workId
-                ? [invalidateWorkThreads(queryClient, projectId, thread.workId)]
+                ? [invalidateWorkThreads(queryClient, creation.projectId, thread.workId)]
                 : []),
             ]);
-            if (text) {
-              startSubmit(text, optimisticUserTurnId);
-            } else {
-              // No first message (package-card flow); project + thread now exist
-              // on the server. The composer is waiting for the user.
-              pendingResumeRef.current = false;
-            }
-          } catch (error) {
-            // Leave pending-creation set on failure so retries through this
-            // mount remain gated until the next successful confirmation.
-            const message = error instanceof Error ? error.message : "Failed to start conversation";
-            announceError(message);
-            pendingResumeRef.current = false;
+          } else {
+            const thread = await createProjectThread(creation.projectId, {
+              id: threadId,
+              title: creation.title,
+              workId: creation.workId ?? null,
+              agentSelection: creation.agentSelection,
+            });
+            actions.ensureThread(thread);
+            actions.clearPendingCreation({ threadId });
+            await Promise.all([
+              invalidateProjectThreadData(queryClient, creation.projectId),
+              ...(thread.workId
+                ? [invalidateWorkThreads(queryClient, creation.projectId, thread.workId)]
+                : []),
+            ]);
           }
-        })();
+          startSubmit(creation);
+        } catch {
+          failSend(creation);
+        }
+      });
+    };
+    persistRef.current = persistCreation;
+
+    const pendingStream = actions.consumePendingStream(threadId);
+    if (pendingStream) {
+      if (pendingResumeRef.current) return;
+      if (pendingStream.creation) {
+        persistCreation(pendingStream.creation);
         return;
       }
-
+      pendingResumeRef.current = true;
+      handoffStartedRef.current = true;
       startResume(pendingStream.after, pendingStream.expectedTurnId);
+      return;
+    }
+
+    const inflight = rehydrateInflightChat(threadId, actions);
+    if (inflight && inflight.projectId === projectId) {
+      if (pendingResumeRef.current || handoffStartedRef.current) return;
+      persistCreation({
+        projectId: inflight.projectId,
+        title: inflight.title,
+        text: inflight.text,
+        agentSelection: inflight.agentSelection,
+        workId: inflight.workId,
+        optimisticUserTurnId: inflight.optimisticUserTurnId,
+        workingTurnId: inflight.workingTurnId,
+        submissionId: inflight.submissionId,
+        createProject: false,
+      });
       return;
     }
 
@@ -232,23 +225,16 @@ export function useThreadHandoff(
     const after = activeSnapshotResumeAfterSeq(liveState);
     if (after === null) return;
 
-    // Active snapshots resume from the read-model projection cursor, not the
-    // live head (`nextSeq - 1`): stream.delta rows above this cursor are in the
-    // journal but not in the snapshot's blocks yet, so replaying from here
-    // reconstructs the in-progress text without duplicating materialized rows.
-
     pendingResumeRef.current = true;
     startResume(after, liveState.runningTurnId ?? undefined);
-  }, [
-    actions,
-    controller,
-    continuityChecked,
-    queryClient,
-    continuity,
-    projectId,
-    restoreFailedSubmission,
-    restoreLatestDraft,
-    snapshotResume?.liveState,
-    threadId,
-  ]);
+  }, [actions, controller, projectId, queryClient, snapshotResume?.liveState, threadId]);
+
+  const retry = useCallback(() => {
+    const creation = creationRef.current;
+    if (!creation) return;
+    persistRef.current(creation);
+  }, []);
+
+  if (!failedTurnId) return null;
+  return { turnId: failedTurnId, retry };
 }

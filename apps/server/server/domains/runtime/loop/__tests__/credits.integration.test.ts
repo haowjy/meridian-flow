@@ -55,6 +55,7 @@ async function setup(gateway: Gateway) {
   const toolExecutor = createToolExecutor(registry);
   const orchestrator = createOrchestrator(
     createTestOrchestratorDeps({
+      boundThreads: () => [thread.id],
       gateway,
       toolExecutor,
       repos,
