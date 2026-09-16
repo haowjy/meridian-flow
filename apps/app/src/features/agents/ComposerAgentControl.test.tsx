@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /** Real Agent adapter integration with the toolbar-owned page/focus contract. */
-import type { ProjectAgentSummary } from "@meridian/contracts/agents";
+import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import { act, createRef, type ReactNode, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { ProjectAgentsStatus } from "@/client/query/useProjectAgents";
+import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import {
   ComposerToolbar,
   type ComposerToolbarControl,
@@ -20,8 +20,8 @@ vi.mock("@lingui/core/macro", () => ({
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
-let catalog: ProjectAgentsStatus;
-vi.mock("@/client/query/useProjectAgents", () => ({ useProjectAgents: () => catalog }));
+let catalog: AgentCatalogStatus;
+vi.mock("@/client/query/useAgentCatalog", () => ({ useAgentCatalog: () => catalog }));
 vi.mock("@/components/app/composer-toolbar/useMeasuredComposerToolbar", async () => ({
   useMeasuredComposerToolbar: (
     await import("@/components/app/composer-toolbar/composer-toolbar-test-harness")
@@ -30,9 +30,9 @@ vi.mock("@/components/app/composer-toolbar/useMeasuredComposerToolbar", async ()
 
 const refetch = vi.fn();
 const status = (
-  value: ProjectAgentsStatus["status"],
-  agents: ProjectAgentSummary[] | null,
-): ProjectAgentsStatus => ({
+  value: AgentCatalogStatus["status"],
+  agents: AgentCatalogItem[] | null,
+): AgentCatalogStatus => ({
   status: value,
   agents,
   data: agents,
@@ -40,19 +40,23 @@ const status = (
   isFetching: value === "loading",
   refetch,
 });
-const general: ProjectAgentSummary = {
+const general: AgentCatalogItem = {
   slug: "general",
   name: "General",
   description: "General fiction support",
-  source: "builtin",
-  packageName: null,
+  model: "mock-model",
+  ownership: "system",
+  unavailableReasons: [],
+  selection: { catalogEntryId: "general-entry", definitionRevisionId: "general-revision" },
 };
-const prose: ProjectAgentSummary = {
+const prose: AgentCatalogItem = {
   slug: "prose",
   name: "Prose",
   description: "Line-level prose",
-  source: "user",
-  packageName: null,
+  model: "mock-model",
+  ownership: "personal",
+  unavailableReasons: [],
+  selection: { catalogEntryId: "prose-entry", definitionRevisionId: "prose-revision" },
 };
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
 const previousActEnvironment = actGlobal.IS_REACT_ACT_ENVIRONMENT;
@@ -97,14 +101,16 @@ const competingControl = (): ComposerToolbarControl => {
 function Harness({
   mode,
   competing = false,
+  onSelect = vi.fn(),
 }: {
   mode: "interactive" | "readonly";
   competing?: boolean;
+  onSelect?: (agent: Pick<AgentCatalogItem, "name" | "slug" | "selection">) => void;
 }) {
   const control = useComposerAgentToolbarControl(
     mode === "interactive"
-      ? { projectId: "project", mode, selectedSlug: "general", onSelectedSlugChange: vi.fn() }
-      : { projectId: "project", mode, selectedSlug: "general" },
+      ? { mode, selectedAgent: general, onSelectedAgentChange: onSelect }
+      : { mode, name: "General" },
   );
   return (
     <ComposerToolbar
@@ -171,6 +177,39 @@ describe("useComposerAgentToolbarControl", () => {
     const readonly = document.querySelector<HTMLButtonElement>('[aria-label="Agent: General"]');
     expect(document.activeElement).toBe(readonly);
     expect(readonly?.hasAttribute("aria-haspopup")).toBe(false);
+    await act(async () => root.unmount());
+  });
+
+  it("distinguishes same-slug entries and disables unsupported revisions", async () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const personal = {
+      ...general,
+      name: "Personal General",
+      ownership: "personal" as const,
+      selection: { catalogEntryId: "personal-general", definitionRevisionId: "personal-v1" },
+    };
+    const unavailable = { ...prose, unavailableReasons: ["Model unavailable"] };
+    catalog = status("ready", [general, personal, unavailable]);
+    const onSelect = vi.fn();
+    await act(async () => root.render(<Harness mode="interactive" onSelect={onSelect} />));
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="Agent: General"]')?.click(),
+    );
+    const choices = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')];
+    const disabled = choices.find((button) => button.getAttribute("aria-disabled") === "true");
+    expect(disabled?.getAttribute("aria-disabled")).toBe("true");
+    await act(async () => disabled?.click());
+    expect(onSelect).not.toHaveBeenCalled();
+    await act(async () =>
+      choices.find((button) => button.textContent?.includes("Personal General"))?.click(),
+    );
+    expect(onSelect).toHaveBeenCalledWith({
+      name: personal.name,
+      slug: "general",
+      selection: personal.selection,
+    });
     await act(async () => root.unmount());
   });
 

@@ -1,4 +1,5 @@
 import { Trans } from "@lingui/react/macro";
+import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useCreationComposer } from "@/features/chat/useCreationComposer";
@@ -14,8 +15,15 @@ import type { PackageCardData } from "./package-card-data";
  */
 export function PackageShowcase() {
   const creation = useCreationComposer(null);
+  const catalog = useAgentCatalog();
+  const general = catalog.agents?.find(
+    (agent) =>
+      agent.ownership === "system" &&
+      agent.slug === DEFAULT_AGENT_SLUG &&
+      !agent.unavailableReasons.length,
+  );
   function handleSelect(pkg: PackageCardData) {
-    if (!creation.submitLocked) void creation.createEmpty(i18n._(pkg.name), DEFAULT_AGENT_SLUG);
+    if (!creation.submitLocked && general) void creation.createEmpty(i18n._(pkg.name), general);
   }
 
   return (
@@ -30,7 +38,12 @@ export function PackageShowcase() {
 
       <div className="flex gap-3 overflow-x-auto pb-1">
         {FIRST_PARTY_PACKAGES.map((pkg) => (
-          <PackageCard key={pkg.id} pkg={pkg} onSelect={handleSelect} />
+          <PackageCard
+            key={pkg.id}
+            pkg={pkg}
+            onSelect={handleSelect}
+            disabled={creation.submitLocked || !general}
+          />
         ))}
       </div>
     </section>

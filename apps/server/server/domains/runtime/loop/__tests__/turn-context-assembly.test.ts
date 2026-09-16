@@ -1,207 +1,141 @@
-import type { Thread } from "@meridian/contracts/threads";
+/** Preview and execution use one retained definition and the same frozen host prompt. */
 import { describe, expect, it } from "vitest";
+import { createInMemoryAppServices } from "../../../../lib/compose.js";
 import { testWorkSlug } from "../../../../test-support/work-slug.js";
-import { assembleComposedSystemPrompt } from "../composed-system-prompt.js";
+import { resolveAgentConfiguration } from "../../../packages/index.js";
 import { DOCUMENT_DIALECT_CORE_INSTRUCTION } from "../system-instructions/document-dialect.js";
 import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "../system-instructions/runtime-uris.js";
 import { assembleNextTurnContext } from "../turn-context-assembly.js";
 
-const createdAt = "2026-06-07T00:00:00.000Z";
-
-function thread(overrides: Partial<Thread> = {}): Thread {
-  return {
-    id: "thread-1",
-    projectId: "project-1",
-    workId: null,
-    userId: "user-1",
-    kind: "primary",
-    status: "idle",
-    title: null,
-    slug: null,
-    composedSystemPrompt: null,
-    bakedSkillSlugs: null,
-    systemPrompt: null,
-    workingState: null,
-    currentAgent: "agent-a",
-    activeLeafTurnId: null,
-    parentThreadId: null,
-    rootThreadId: "thread-1",
-    spawnDepth: 0,
-    spawnStatus: null,
-    totalCostUsd: "0",
-    turnCount: 0,
-    createdAt,
-    updatedAt: createdAt,
-    deletedAt: null,
-    ...overrides,
-  };
-}
-
-function packageRepository() {
-  return {
-    async getAgentWithLinkedSkills(_projectId: string, _userId: string, agentSlug: string) {
-      return {
-        agent: {
-          id: `${agentSlug}-id`,
-          projectId: "project-1",
-          slug: agentSlug,
-          body: `Prompt for ${agentSlug}`,
-          meta: { model: `model-${agentSlug}` },
-          config: {},
-          packageInstallId: null,
-          originalContentChecksum: null,
-          sourceType: "user",
-          enabled: true,
-        },
-        skills: [],
-      };
+async function fixture() {
+  const app = createInMemoryAppServices();
+  const source = {
+    coordinate: "fixture/preparation",
+    files: {
+      "agents/writer.md": "---\nname: Writer\nmodel: original-model\n---\nRetained persona.",
     },
   };
+  const revision = (await app.agentRevisions.installSource(source)).definitions[0];
+  const created = await app.repos.threads.create({
+    projectId: "project",
+    userId: "user",
+    currentAgent: "writer",
+    systemPrompt: "Legacy override must not win.",
+  });
+  await app.agentRevisions.bindThread(
+    created.id,
+    revision.id,
+    await resolveAgentConfiguration({
+      store: app.agentRevisions,
+      revision: revision,
+      defaultModel: "test-model",
+    }),
+  );
+  const thread = await app.repos.threads.findById(created.id);
+  if (!thread) throw new Error("Missing fixture thread");
+  const input = {
+    thread,
+    turns: [],
+    blocks: [],
+    agentRevisions: app.agentRevisions,
+    toolRegistry: app.toolRegistry,
+    bakeComposedSystemPrompt: app.repos.threads.bakeComposedSystemPrompt.bind(app.repos.threads),
+    workContext: {
+      async renderForThread() {
+        return {
+          text: "<work_context>\ntest\n</work_context>",
+          current: {
+            projectId: "00000000-0000-0000-0000-000000000001",
+            execution: {
+              scope: {
+                kind: "work" as const,
+                workId: "00000000-0000-0000-0000-000000000002",
+                workSlug: testWorkSlug("test-work"),
+              },
+              aiWriteMode: "direct" as const,
+              draftOwner: null,
+            },
+          },
+        };
+      },
+    },
+  };
+  return { app, input, source, revision };
 }
 
 describe("assembleNextTurnContext", () => {
-  it("assembles the non-persisting preview prompt exactly once", async () => {
-    const assembled = await assembleNextTurnContext({
-      thread: thread({ currentAgent: "agent-a" }),
-      turns: [],
-      blocks: [],
-      packageRepository: packageRepository() as never,
-      toolRegistry: { getRegistration: () => undefined } as never,
-      persistBake: false,
-      workContext: {
-        async renderForThread() {
-          return {
-            text: "<work_context>\ntest\n</work_context>",
-            current: {
-              projectId: "00000000-0000-0000-0000-000000000001",
-              execution: {
-                scope: {
-                  kind: "work",
-                  workId: "00000000-0000-0000-0000-000000000002",
-                  workSlug: testWorkSlug("test-work"),
-                },
-                aiWriteMode: "direct",
-                draftOwner: null,
-              },
-            },
-          };
-        },
-      },
-    });
-    const systemMessage = assembled.generateRequest.messages[0];
-    const systemText = Array.isArray(systemMessage?.content)
-      ? systemMessage.content.find((part) => part.type === "text")?.text
-      : systemMessage?.content;
-
-    expect(systemMessage?.role).toBe("system");
-    expect(systemText).toBe(assembled.systemPrompt);
-    expect(systemText?.split(DOCUMENT_DIALECT_CORE_INSTRUCTION)).toHaveLength(2);
-    expect(systemText?.split(RUNTIME_URI_SYSTEM_INSTRUCTION)).toHaveLength(2);
+  it("previews the retained persona and generic host instructions exactly once without persisting", async () => {
+    const { app, input } = await fixture();
+    const assembled = await assembleNextTurnContext(input);
+    expect(assembled.systemPrompt).toContain("Retained persona.");
+    expect(assembled.systemPrompt).not.toContain("Legacy override");
+    expect(assembled.systemPrompt.split(DOCUMENT_DIALECT_CORE_INSTRUCTION)).toHaveLength(2);
+    expect(assembled.systemPrompt.split(RUNTIME_URI_SYSTEM_INSTRUCTION)).toHaveLength(2);
+    expect(assembled.generateRequest.messages[0]?.content).toEqual([
+      { type: "text", text: assembled.systemPrompt },
+    ]);
+    expect((await app.repos.threads.findById(input.thread.id))?.bakedSkillSlugs).toBeNull();
   });
 
-  it("rebuilds context when a losing bake observes another agent's frozen row", async () => {
-    const frozenByAgentB = thread({
-      currentAgent: "agent-b",
-      composedSystemPrompt: assembleComposedSystemPrompt({ basePrompt: "Prompt for agent-b" }),
+  it("uses the atomic freeze winner with the retained Agent despite a stale display slug", async () => {
+    const { app, input } = await fixture();
+    const winnerPrompt = "Already frozen by another preparation.";
+    const winner = await app.repos.threads.bakeComposedSystemPrompt(input.thread.id, {
+      composedSystemPrompt: winnerPrompt,
       bakedSkillSlugs: [],
-      systemPrompt: null,
     });
-    const bakeAttempts: string[] = [];
-
     const assembled = await assembleNextTurnContext({
-      thread: thread({ currentAgent: "agent-a" }),
-      turns: [],
-      blocks: [],
-      packageRepository: packageRepository() as never,
-      toolRegistry: { getRegistration: () => undefined } as never,
+      ...input,
+      thread: { ...input.thread, currentAgent: "stale-display-slug" },
       persistBake: true,
-      workContext: {
-        async renderForThread() {
-          return {
-            text: "<work_context>\ntest\n</work_context>",
-            current: {
-              projectId: "00000000-0000-0000-0000-000000000001",
-              execution: {
-                scope: {
-                  kind: "work",
-                  workId: "00000000-0000-0000-0000-000000000002",
-                  workSlug: testWorkSlug("test-work"),
-                },
-                aiWriteMode: "direct",
-                draftOwner: null,
-              },
-            },
-          };
-        },
-      },
-      async bakeComposedSystemPrompt(_threadId, input) {
-        bakeAttempts.push(input.expectedCurrentAgent ?? "none");
-        if (input.expectedCurrentAgent === "agent-a") {
-          return frozenByAgentB;
-        }
-        return thread({
-          currentAgent: "agent-b",
-          composedSystemPrompt: input.composedSystemPrompt,
-          bakedSkillSlugs: input.bakedSkillSlugs,
-          systemPrompt: null,
-        });
-      },
     });
-
-    expect(bakeAttempts).toEqual(["agent-a"]);
-    expect(assembled.agentSlug).toBe("agent-b");
-    expect(assembled.generateRequest.model).toBe("model-agent-b");
-    expect(assembled.systemPrompt).toContain("Prompt for agent-b");
-    expect(assembled.systemPrompt).not.toContain("Prompt for agent-a");
+    expect(assembled.thread.composedSystemPrompt).toBe(winner.composedSystemPrompt);
+    expect(assembled.systemPrompt).toBe(winnerPrompt);
+    expect(assembled.generateRequest.messages[0]?.content).toEqual([
+      { type: "text", text: winnerPrompt },
+    ]);
+    expect(assembled.generateRequest.model).toBe("original-model");
+    expect(assembled.agentSlug).toBe("writer");
   });
 
-  it("retries the bake when an agent rebind wins before the prompt is frozen", async () => {
-    const bakeAttempts: string[] = [];
-
-    const assembled = await assembleNextTurnContext({
-      thread: thread({ currentAgent: "agent-a" }),
-      turns: [],
-      blocks: [],
-      packageRepository: packageRepository() as never,
-      toolRegistry: { getRegistration: () => undefined } as never,
-      persistBake: true,
-      workContext: {
-        async renderForThread() {
-          return {
-            text: "<work_context>\ntest\n</work_context>",
-            current: {
-              projectId: "00000000-0000-0000-0000-000000000001",
-              execution: {
-                scope: {
-                  kind: "work",
-                  workId: "00000000-0000-0000-0000-000000000002",
-                  workSlug: testWorkSlug("test-work"),
-                },
-                aiWriteMode: "direct",
-                draftOwner: null,
-              },
-            },
-          };
-        },
-      },
-      async bakeComposedSystemPrompt(_threadId, input) {
-        bakeAttempts.push(input.expectedCurrentAgent ?? "none");
-        if (input.expectedCurrentAgent === "agent-a") {
-          return thread({ currentAgent: "agent-b" });
-        }
-        return thread({
-          currentAgent: "agent-b",
-          composedSystemPrompt: input.composedSystemPrompt,
-          bakedSkillSlugs: input.bakedSkillSlugs,
-          systemPrompt: null,
-        });
-      },
+  it("freezes once and retains model, body, and host prefix after catalog advancement", async () => {
+    const { app, input, source, revision } = await fixture();
+    await app.agentRevisions.selectRevision({
+      ownerUserId: "user",
+      logicalKey: "writer",
+      revisionId: revision.id,
     });
-
-    expect(bakeAttempts).toEqual(["agent-a", "agent-b"]);
-    expect(assembled.agentSlug).toBe("agent-b");
-    expect(assembled.generateRequest.model).toBe("model-agent-b");
-    expect(assembled.systemPrompt).toContain("Prompt for agent-b");
-    expect(assembled.systemPrompt).not.toContain("Prompt for agent-a");
+    const first = await assembleNextTurnContext({
+      ...input,
+      thread: { ...input.thread, currentAgent: "stale-display-name" },
+      persistBake: true,
+    });
+    expect(first.systemPrompt).toContain("Retained persona.");
+    expect(first.agentSlug).toBe("writer");
+    const next = (
+      await app.agentRevisions.installSource({
+        ...source,
+        files: {
+          "agents/writer.md": "---\nname: Writer\nmodel: changed-model\n---\nChanged persona.",
+        },
+      })
+    ).definitions[0];
+    await app.agentRevisions.selectRevision({
+      ownerUserId: "user",
+      logicalKey: "writer",
+      revisionId: next.id,
+      expectedRevisionId: revision.id,
+    });
+    const reloaded = await app.repos.threads.findById(input.thread.id);
+    if (!reloaded) throw new Error("Missing bound thread");
+    const continued = await assembleNextTurnContext({
+      ...input,
+      thread: reloaded,
+      persistBake: true,
+    });
+    expect(continued.systemPrompt).toBe(first.systemPrompt);
+    expect(continued.generateRequest.model).toBe("original-model");
+    expect(continued.agentSlug).toBe("writer");
+    expect(continued.baked).toBe(true);
   });
 });

@@ -1,6 +1,7 @@
 /** Behavioral coverage for the stateful ThreadRunController lifecycle. */
 
 import type {
+  AdmissionLookup,
   SendMessageResponse,
   Thread,
   ThreadSnapshotResponse,
@@ -30,6 +31,8 @@ const thread: Thread = {
   title: "Thread",
   slug: "thread",
   currentAgent: null,
+  agentDefinitionRevisionId: null,
+  agentName: null,
   activeLeafTurnId: null,
   parentThreadId: null,
   rootThreadId: "thread_1",
@@ -359,6 +362,187 @@ describe("ThreadRunController", () => {
         submissionId: scenario.appendRequests[0]?.data.submissionId,
       },
     ]);
+  });
+
+  it("recovers an unseen first Send with the exact saved envelope", async () => {
+    const scenario = new ThreadRunScenario({
+      lookup: async ({ submissionId }) => ({ kind: "not-seen", submissionId }),
+    });
+    const envelope = serializeComposerDraft(plainComposerDoc("Saved opening"), 7);
+    const outcome = await scenario.controller.recoverFirstSend("thread_1", envelope);
+    expect(scenario.appendRequests).toHaveLength(1);
+    expect(scenario.appendRequests[0]?.data).toMatchObject({
+      submissionId: envelope.submissionId,
+      text: envelope.text,
+      blocks: envelope.blocks,
+      references: envelope.references,
+      connectionToken: "conn-test",
+    });
+    expect(outcome).toMatchObject({
+      kind: "accepted",
+      submissionId: envelope.submissionId,
+      acceptedRevision: 7,
+    });
+  });
+
+  it("keeps status checks read-only even when the ID is unseen", async () => {
+    const scenario = new ThreadRunScenario();
+    const envelope = serializeComposerDraft(plainComposerDoc("Saved"));
+    expect(await scenario.controller.lookup("thread_1", envelope)).toMatchObject({
+      kind: "ambiguous",
+    });
+    expect(scenario.appendRequests).toEqual([]);
+  });
+
+  it.each(["pending", "network"] as const)("does not replay after %s lookup", async (kind) => {
+    const scenario = new ThreadRunScenario({
+      lookup: async ({ submissionId }) => {
+        if (kind === "network") throw new TypeError("offline");
+        return { kind: "pending", submissionId };
+      },
+    });
+    const envelope = serializeComposerDraft(plainComposerDoc("Saved"));
+    expect(await scenario.controller.recoverFirstSend("thread_1", envelope)).toMatchObject({
+      kind: "ambiguous",
+    });
+    expect(scenario.appendRequests).toEqual([]);
+  });
+
+  it("does not loop when its single replay loses the response", async () => {
+    const scenario = new ThreadRunScenario({
+      append: async () => {
+        throw new TypeError("response lost");
+      },
+    });
+    const envelope = serializeComposerDraft(plainComposerDoc("Saved"));
+    expect(await scenario.controller.recoverFirstSend("thread_1", envelope)).toMatchObject({
+      kind: "ambiguous",
+    });
+    expect(scenario.appendRequests).toHaveLength(1);
+    expect(scenario.lookupRequests).toHaveLength(2);
+    expect(scenario.appendRequests[0]?.data.submissionId).toBe(envelope.submissionId);
+  });
+
+  it("preserves uncertainty when recovery cannot obtain a connection token", async () => {
+    const scenario = new ThreadRunScenario();
+    scenario.disconnectAdmission();
+    const envelope = serializeComposerDraft(plainComposerDoc("Saved"));
+    const recovery = scenario.controller.recoverFirstSend("thread_1", envelope);
+    await vi.waitFor(() => expect(scenario.lookupRequests).toHaveLength(1));
+    scenario.rejectConnection(new Error("disconnected"));
+    expect(await recovery).toMatchObject({ kind: "ambiguous" });
+    expect(scenario.appendRequests).toEqual([]);
+    expect(scenario.lookupRequests).toHaveLength(2);
+  });
+
+  it("fences token-wait recovery after navigation without blocking the new Send", async () => {
+    const scenario = new ThreadRunScenario();
+    scenario.disconnectAdmission();
+    const envelope = serializeComposerDraft(plainComposerDoc("Old"));
+    const recovery = scenario.controller.recoverFirstSend("thread_1", envelope);
+    await vi.waitFor(() => expect(scenario.lookupRequests).toHaveLength(1));
+    scenario.controller.teardown();
+    const next = scenario.controller.submit(
+      "thread_2",
+      serializeComposerDraft(plainComposerDoc("New")),
+    );
+    scenario.connect("new-token");
+    expect(await recovery).toMatchObject({ kind: "ambiguous" });
+    expect(await next).toMatchObject({ kind: "accepted" });
+    expect(scenario.appendRequests.map((request) => request.data.threadId)).toEqual(["thread_2"]);
+    expect(scenario.activeSubscription()?.threadId).toBe("thread_2");
+  });
+
+  it.each([
+    "resolve",
+    "reject",
+  ] as const)("ignores a stale recovery POST %s after a new run starts", async (settlement) => {
+    const gate = scenarioGate<SendMessageResponse>();
+    const scenario = new ThreadRunScenario({
+      append: async ({ data }) =>
+        data.threadId === "thread_1" ? gate.promise : defaultSendResponse(),
+    });
+    const optimistic = scenario.store.getState().appendUserTurn("thread_1", "Old");
+    const recovery = scenario.controller.recoverFirstSend(
+      "thread_1",
+      serializeComposerDraft(plainComposerDoc("Old")),
+      { optimisticUserTurnId: optimistic.id },
+    );
+    await vi.waitFor(() => expect(scenario.appendRequests).toHaveLength(1));
+    scenario.controller.teardown();
+    await scenario.controller.submit("thread_2", serializeComposerDraft(plainComposerDoc("New")));
+    if (settlement === "resolve") gate.resolve(defaultSendResponse());
+    else gate.reject(new TypeError("lost response"));
+    await recovery;
+    expect(scenario.lookupRequests).toHaveLength(1);
+    expect(scenario.turns()[0]?.id).toBe(optimistic.id);
+    expect(scenario.activeSubscription()?.threadId).toBe("thread_2");
+    expect(scenario.transport.subscriptions).toHaveLength(1);
+  });
+
+  it("fences a delayed post-failure lookup with the original recovery epoch", async () => {
+    const gate = scenarioGate<AdmissionLookup>();
+    const scenario = new ThreadRunScenario({
+      append: async ({ data }) => {
+        if (data.threadId === "thread_1") throw new TypeError("lost response");
+        return defaultSendResponse();
+      },
+      lookup: async ({ submissionId }): Promise<AdmissionLookup> =>
+        scenario.lookupRequests.length === 1 ? { kind: "not-seen", submissionId } : gate.promise,
+    });
+    const envelope = serializeComposerDraft(plainComposerDoc("Old"));
+    const recovery = scenario.controller.recoverFirstSend("thread_1", envelope);
+    await vi.waitFor(() => expect(scenario.lookupRequests).toHaveLength(2));
+    scenario.controller.teardown();
+    await scenario.controller.submit("thread_2", serializeComposerDraft(plainComposerDoc("New")));
+    gate.resolve({
+      ...defaultSendResponse(),
+      kind: "accepted",
+      submissionId: envelope.submissionId,
+    });
+    await recovery;
+    expect(scenario.activeSubscription()?.threadId).toBe("thread_2");
+    expect(scenario.transport.subscriptions).toHaveLength(1);
+  });
+
+  it("preserves an authoritative replay fingerprint conflict", async () => {
+    const scenario = new ThreadRunScenario({
+      append: async () => {
+        throw new MeridianApiError({
+          code: "idempotency_conflict",
+          message: "Different envelope",
+          retryable: false,
+          source: "system",
+        });
+      },
+      lookup: async ({ threadId, submissionId }): Promise<AdmissionLookup> =>
+        scenario.lookupRequests.length === 1
+          ? { kind: "not-seen", submissionId }
+          : {
+              ...defaultSendResponse(),
+              kind: "accepted",
+              threadId: threadId as never,
+              submissionId,
+            },
+    });
+    const envelope = serializeComposerDraft(plainComposerDoc("Saved"));
+    expect(await scenario.controller.recoverFirstSend("thread_1", envelope)).toMatchObject({
+      kind: "rejected",
+    });
+    expect(scenario.lookupRequests).toHaveLength(1);
+    expect(scenario.transport.subscriptions).toEqual([]);
+  });
+
+  it("does not replay a delayed lookup after controller teardown", async () => {
+    const gate = scenarioGate<{ kind: "not-seen"; submissionId: string }>();
+    const scenario = new ThreadRunScenario({ lookup: () => gate.promise });
+    const envelope = serializeComposerDraft(plainComposerDoc("Saved"));
+    const recovery = scenario.controller.recoverFirstSend("thread_1", envelope);
+    scenario.controller.teardown();
+    gate.resolve({ kind: "not-seen", submissionId: envelope.submissionId });
+    expect(await recovery).toMatchObject({ kind: "ambiguous" });
+    expect(scenario.appendRequests).toEqual([]);
+    expect(scenario.transport.subscriptions).toEqual([]);
   });
 
   it("keeps pending lookup ambiguous and maps explicit retirement's durable winner", async () => {

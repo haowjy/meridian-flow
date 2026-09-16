@@ -35,7 +35,7 @@ explicitly rebound through the composer or model tool; both adapters share the
 canonical thread-domain operation. Work management and navigation never invoke
 that operation implicitly.
 `apps/server/server/lib/app.ts` is the composition root that wires the runtime,
-thread repositories, gateway, event hub, package repository, preferences,
+thread repositories, gateway, event hub, Agent revision store, preferences,
 billing, projects, collab services, and the shared model/writer safety-notice port.
 
 ## Harness composition

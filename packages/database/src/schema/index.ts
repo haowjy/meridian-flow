@@ -1,4 +1,4 @@
-export * from "./agent-packages";
+export * from "./agent-definition-revisions";
 export * from "./agent-threads";
 export * from "./billing";
 export * from "./content";
@@ -13,7 +13,7 @@ export * from "./waitlist";
 export * from "./working-sets";
 export * from "./yjs";
 
-import * as agentPackages from "./agent-packages";
+import * as agentDefinitionRevisions from "./agent-definition-revisions";
 import * as agentThreads from "./agent-threads";
 import * as billing from "./billing";
 import * as content from "./content";
@@ -36,7 +36,7 @@ export const schema = {
   ...contextCatalog,
   ...contextOperations,
   ...agentThreads,
-  ...agentPackages,
+  ...agentDefinitionRevisions,
   ...provenance,
   ...preferences,
   ...results,

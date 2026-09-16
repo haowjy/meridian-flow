@@ -7,7 +7,7 @@ This domain is not the full project CRUD surface; that lives in
 ## What it owns
 
 - **Default bootstrap** — `ProjectRepository.ensureDefaultBootstrap(userId)`
-  idempotently creates or reuses the user's personal project, default `Writer` agent, manuscript context source, `chapter-1.md` document, and project-owned unassigned Scratch and Uploads sources. Bootstrap creates no Work or thread.
+  idempotently creates or reuses the user's personal project, manuscript context source, `chapter-1.md` document, and project-owned unassigned Scratch and Uploads sources. Bootstrap creates no Work or thread.
 - **Bootstrap URI** — `DEFAULT_BOOTSTRAP_URI` is `manuscript://chapter-1.md`.
 - **Work domain** — `WorkRepository` owns explicit Work metadata/lifecycle persistence, and `listWorkCatalog` owns the owner-gated catalog projection across Work persistence and collab pending-draft counts.
 
@@ -23,7 +23,7 @@ missing, foreign-owner and deleted handles resolve unavailable.
 |---|---|
 | `ProjectRepository.ensureDefaultBootstrap(userId)` | Returns the converged `DefaultBootstrap` bundle for the authenticated user. |
 | `ProjectRepository.ensureDefaultBootstrapReady(userId)` | Auth path: performs one idempotent repair check per process, then uses the durable completion flag as its lock-free fast path. Seed failures leave no partial bootstrap and return false without failing unrelated requests. |
-| `ProjectBootstrapResult` | Project, manuscript document/source, Writer agent definition, and URI IDs needed by the app shell. |
+| `ProjectBootstrapResult` | Project, manuscript document/source, and URI IDs needed by the app shell. |
 | `WorkRepository` | Creates/lists/updates/archives/unarchives/deletes/restores Works; delete is guarded by all Work-owned durable content. Its `transaction` boundary keeps compound Work commands atomic. |
 | `ProjectWorkAuthorityResolver` | Exact same-project `byId`/`bySlug` and transactional `lockById` resolution; it is the only projects-domain mint for opaque stable Work URI authority. |
 | `listWorkCatalog(deps, input)` | Owner-gates and lists the requested Work collection, then enriches it through one set-oriented pending-draft count read. |
@@ -38,8 +38,8 @@ missing, foreign-owner and deleted handles resolve unavailable.
   so concurrent first-load requests converge.
 - The personal project is selected by `projects.userId`, `isPersonal = true`,
   and `deletedAt IS NULL`.
-- The default agent slug is `writer`. Bootstrap creates no Work, thread, or
-  membership; root thread creation owns those choices separately.
+- Bootstrap creates no Agent, Work, thread, or membership. System Agent provisioning
+  happens at startup; root thread creation owns exact catalog selection.
 - Re-running bootstrap must return the same logical bundle instead of creating a
   second personal project, manuscript source, or chapter document.
 - WorkOS `external_id` is the sole automatic user identity key. Email collisions

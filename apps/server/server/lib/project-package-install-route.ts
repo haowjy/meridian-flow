@@ -12,16 +12,16 @@ import type {
 import { createError } from "nitro/h3";
 
 import {
+  type AgentRevisionStore,
   applyPackageInstall,
   type MarsPackageFetcher,
-  type PackageRepository,
   previewPackageInstall,
 } from "../domains/packages/index.js";
 import { type ProjectRepository, requireProjectOwner } from "../domains/projects/index.js";
 
 export interface ProjectPackageInstallRouteDeps {
   projectRepo: ProjectRepository;
-  packageRepository: PackageRepository;
+  agentRevisions: AgentRevisionStore;
   marsPackageFetcher: MarsPackageFetcher;
 }
 
@@ -80,9 +80,9 @@ export async function handlePreviewPackageInstallRequest(
 ): Promise<PackageInstallPreviewResponse> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   return previewPackageInstall({
-    projectId: input.projectId,
+    userId: input.userId,
     source: input.source,
-    repository: deps.packageRepository,
+    store: deps.agentRevisions,
     fetcher: deps.marsPackageFetcher,
   });
 }
@@ -93,9 +93,9 @@ export async function handleApplyPackageInstallRequest(
 ): Promise<PackageInstallApplyResponse> {
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   return applyPackageInstall({
-    projectId: input.projectId,
+    userId: input.userId,
     source: input.source,
-    repository: deps.packageRepository,
+    store: deps.agentRevisions,
     fetcher: deps.marsPackageFetcher,
   });
 }

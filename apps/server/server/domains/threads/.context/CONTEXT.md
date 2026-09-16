@@ -5,6 +5,8 @@ the event journal that bridges orchestrator writes to AG-UI client streams.
 Threads now use an M:N membership model with Works (`thread_works` join table)
 instead of the N:1 `threads.workId` column.
 
+`domain/bound-conversation.ts` owns atomic thread creation, retained Agent configuration and optional Work membership. Root and child creation and the `derive-conversation.ts` handoff/fork operations use it. Derived requests require exact catalog selection rather than mutable target slugs; each mode includes required history and provenance writes in its outer transaction. Spawn execution begins only after commit.
+
 ## What it owns
 
 - **Thread / Turn / Block / ModelResponse repositories** — CRUD for the
@@ -112,8 +114,8 @@ Meridian Flow's Postgres schema. Key column mappings:
 |---|---|---|
 | `threads.projectId` | `threads.projectId` | Foreign key into Meridian `projects` |
 | `threads.createdBy` | `threads.createdByUserId` | Explicit user-ID column name |
-| `threads.currentAgent` | `threads.currentAgentId` | Agent ID column |
-| `threads.rootThreadId` | — | Computed as `parentThreadId ?? id` |
+| `threads.currentAgent` | `threads.currentAgentId` | Legacy-named display slug column; never definition or execution identity |
+| `threads.rootThreadId` | `threads.rootThreadId` | Persisted spawn-tree root; primary threads use their own ID |
 | `threads.totalCostUsd` | `threads.totalCostUsd` | Persisted aggregate maintained by repository/projector recompute |
 | `threads.bakedSkillSlugs` | `threads.bakedSkillSlugs` | `null` means not baked; array means first-attempt bake won |
 | `threads.historySummary` | — | Not a column; hardcoded `null` |
@@ -149,6 +151,11 @@ contract shapes.
 
 ## Invariants
 
+- **Child creation starts unfrozen.** `SubagentThreadFactory` initializes prompt,
+  skill-freeze state, and prompt hash to null. The coordinator commits the retained
+  Agent binding and Work membership with creation; shared runtime preparation
+  owns the first bake.
+
 - **Read-model projection before journal append.** The persistence helper
   (`runtime/loop/persistence.ts`) runs `projectReadModelEvent` before
   `eventWriter.appendEvent` so that `event_journal.turn_id` FK can reference
@@ -169,8 +176,9 @@ contract shapes.
   are recomputed atomically from `model_responses` by the read-model projector as
   `model.response_received` events are appended, so journal replay is idempotent.
 - **Freeze sentinel**: a thread's system prompt is considered "baked" (frozen)
-  when `bakedSkillSlugs` is non-null. Before bake, `composedSystemPrompt` may
-  carry a raw pre-bake system prompt.
+  when `bakedSkillSlugs` is non-null. The first-attempt CAS returns the complete
+  winning prompt and skill set to every contender. The retained Agent definition
+  supplies preparation identity; `currentAgent` is display metadata.
 - The owner-aware trash command is the sole thread soft-delete/restore boundary.
   It locks the including-deleted thread row, then revalidates thread and live
   project ownership before deciding either desired state. Missing and concealed

@@ -26,7 +26,11 @@ export function turnUsageFromRow(row: typeof schema.turns.$inferSelect): TurnUsa
 }
 
 export function mapThread(
-  row: typeof schema.threads.$inferSelect & { workId?: string | null },
+  row: typeof schema.threads.$inferSelect & {
+    workId?: string | null;
+    agentDefinitionRevisionId?: string | null;
+    agentName?: string | null;
+  },
 ): Thread {
   const isFrozen = row.bakedSkillSlugs !== null;
   return {
@@ -43,12 +47,14 @@ export function mapThread(
     systemPrompt: isFrozen ? null : row.composedSystemPrompt,
     workingState: row.workingState as Thread["workingState"],
     currentAgent: row.currentAgentId,
+    agentDefinitionRevisionId: row.agentDefinitionRevisionId ?? null,
+    agentName: row.agentName ?? null,
     nextSeq: toSeqString(row.nextSeq),
     activeLeafTurnId: row.activeLeafTurnId,
     parentThreadId: row.parentThreadId,
     originType: (row.originType as Thread["originType"]) ?? null,
     originTurnId: row.originTurnId ?? null,
-    rootThreadId: row.kind === "primary" ? row.id : (row.parentThreadId ?? row.id),
+    rootThreadId: row.rootThreadId ?? row.id,
     spawnDepth: row.spawnDepth,
     spawnStatus: row.spawnStatus as Thread["spawnStatus"],
     spawnResult: row.spawnResult as Thread["spawnResult"],
@@ -70,7 +76,6 @@ export function mapTurn(row: typeof schema.turns.$inferSelect): Turn {
     role: row.role as Turn["role"],
     writeMode: row.aiWriteMode as Turn["writeMode"],
     status: row.status as Turn["status"],
-    agentDefinitionId: row.agentDefinitionId,
     finishReason: row.finishReason as Turn["finishReason"],
     model: row.model,
     provider: row.provider,

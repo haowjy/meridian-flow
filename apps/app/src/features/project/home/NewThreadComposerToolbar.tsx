@@ -3,6 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Work } from "@meridian/contracts/works";
 import { useEffect, useRef, useState } from "react";
+import type { CreationAgent } from "@/client/first-send-continuity";
 import {
   ComposerCurrentValueTrigger,
   ComposerToolbar,
@@ -24,7 +25,7 @@ export function NewThreadComposerToolbar({
   selectedWorkId,
   works,
   worksStatus,
-  agentSlug,
+  agent: selectedAgent,
   disabled,
   onAgentChange,
   onWorkChange,
@@ -36,18 +37,18 @@ export function NewThreadComposerToolbar({
   selectedWorkId: string | null;
   works: Work[];
   worksStatus: "loading" | "error" | "ready";
-  agentSlug: string;
+  agent: CreationAgent | null;
   disabled: boolean;
-  onAgentChange(slug: string): void;
+  onAgentChange(agent: CreationAgent): void;
   onWorkChange(work: Work | null): void;
   onRetryWorks(): void;
   onModePendingChange(pending: boolean): void;
 }) {
   const agentControl = useComposerAgentToolbarControl({
-    projectId,
     mode: "interactive",
-    selectedSlug: agentSlug,
-    onSelectedSlugChange: onAgentChange,
+    projectId,
+    selectedAgent,
+    onSelectedAgentChange: onAgentChange,
   });
   const agent = disabled ? { ...agentControl, interaction: "busy" as const } : agentControl;
   const workControl = useProspectiveWorkControl({

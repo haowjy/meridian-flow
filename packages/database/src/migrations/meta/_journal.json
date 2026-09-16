@@ -617,6 +617,55 @@
       "when": 1789266039652,
       "tag": "0087_ancient_spencer_smythe",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1789486698284,
+      "tag": "0088_material_mauler",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1789487925283,
+      "tag": "0089_lame_revanche",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1789509312876,
+      "tag": "0090_resolved-agent-configuration",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1789510696668,
+      "tag": "0091_spawn-root-identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1789511304397,
+      "tag": "0092_retained-package-management",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1789512110643,
+      "tag": "0093_remove-legacy-agent-ownership",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1789520256612,
+      "tag": "0094_faulty_sebastian_shaw",
+      "breakpoints": true
     }
   ]
 }

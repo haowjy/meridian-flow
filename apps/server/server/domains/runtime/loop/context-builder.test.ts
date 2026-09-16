@@ -19,6 +19,8 @@ const thread: Thread = {
   systemPrompt: null,
   workingState: null,
   currentAgent: null,
+  agentDefinitionRevisionId: null,
+  agentName: null,
   activeLeafTurnId: null,
   parentThreadId: null,
   rootThreadId: "thread-1",

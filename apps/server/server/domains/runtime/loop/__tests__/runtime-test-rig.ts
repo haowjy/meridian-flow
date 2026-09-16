@@ -134,6 +134,7 @@ export class RuntimeTestRig {
     });
     const orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
+        boundThreads: () => [thread.id],
         gateway,
         toolExecutor: createToolExecutor(createToolRegistry()),
         repos,
@@ -198,7 +199,8 @@ export class RuntimeTestRig {
 
   async awaitCancelled(turnId: string) {
     await this.awaitEvent(EventType.RUN_FINISHED);
-    const turn = await this.turn(turnId);
+    // The hermetic hub signals inside the write transaction; wait for committed state.
+    const turn = await this.repos.transaction(() => this.turn(turnId));
     if (turn?.status !== "cancelled") {
       throw new Error(
         `Expected turn ${turnId} to be cancelled, received ${turn?.status ?? "missing"}`,

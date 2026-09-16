@@ -10,6 +10,7 @@ import {
 import { createThreadWebSocketSession, type WsPeer } from "../ws-thread-handler.js";
 
 const VALID_ID = "00000000-0000-0000-0000-000000000001";
+const AGENT_SELECTION = { catalogEntryId: VALID_ID, definitionRevisionId: VALID_ID };
 const MALFORMED_ID = "not-a-uuid";
 const CANONICAL_THREAD_ID = "abcdef00-0000-0000-0000-000000000001";
 const CANONICAL_TURN_ID = "abcdef00-0000-0000-0000-000000000002";
@@ -42,8 +43,8 @@ vi.mock("../thread-creation.js", async (importOriginal) => ({
   createThreadForProject,
 }));
 
-vi.mock("../thread-agent-swap.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../thread-agent-swap.js")>()),
+vi.mock("../../domains/threads/index.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../domains/threads/index.js")>()),
   forkThreadAgent,
 }));
 
@@ -102,7 +103,6 @@ function event(
           getSignedFigureUrl: databaseCall,
           uploadFigure: databaseCall,
         },
-        packageRepository: {},
         eventSink: {},
         journalWriter: {},
         ...appOverrides,
@@ -263,7 +263,10 @@ describe("malformed HTTP request IDs", () => {
     ["global thread create project ID", () => createThread(event({}, { projectId: MALFORMED_ID }))],
     [
       "global thread create work ID",
-      () => createThread(event({}, { projectId: VALID_ID, workId: MALFORMED_ID })),
+      () =>
+        createThread(
+          event({}, { projectId: VALID_ID, workId: MALFORMED_ID, agentSelection: AGENT_SELECTION }),
+        ),
     ],
     [
       "project-scoped thread create client ID",
@@ -276,13 +279,21 @@ describe("malformed HTTP request IDs", () => {
     [
       "project-scoped thread create work ID",
       () =>
-        createProjectThread(event({ projectId: VALID_ID }, { id: VALID_ID, workId: MALFORMED_ID })),
+        createProjectThread(
+          event(
+            { projectId: VALID_ID },
+            { id: VALID_ID, workId: MALFORMED_ID, agentSelection: AGENT_SELECTION },
+          ),
+        ),
     ],
     [
       "thread fork origin turn",
       () =>
         forkThread(
-          event({ threadId: VALID_ID }, { targetAgent: null, originTurnId: MALFORMED_ID }),
+          event(
+            { threadId: VALID_ID },
+            { agentSelection: AGENT_SELECTION, originTurnId: MALFORMED_ID },
+          ),
         ),
     ],
   ])("%s returns 400 before a database call", async (_surface, invoke) => {
@@ -327,8 +338,20 @@ describe("malformed HTTP request IDs", () => {
   });
 
   it.each([
-    ["global", () => createThread(event({}, { projectId: VALID_ID, workId: null }))],
-    ["project-scoped", () => createProjectThread(event({ projectId: VALID_ID }, { workId: null }))],
+    [
+      "global",
+      () =>
+        createThread(
+          event({}, { projectId: VALID_ID, workId: null, agentSelection: AGENT_SELECTION }),
+        ),
+    ],
+    [
+      "project-scoped",
+      () =>
+        createProjectThread(
+          event({ projectId: VALID_ID }, { workId: null, agentSelection: AGENT_SELECTION }),
+        ),
+    ],
   ])("accepts explicit null Work on %s root creation", async (_surface, invoke) => {
     createThreadForProject.mockResolvedValueOnce({ id: VALID_ID });
     await expect(invoke()).resolves.toBeDefined();
@@ -344,7 +367,14 @@ describe("malformed HTTP request IDs", () => {
     await createProjectThread(
       event(
         { projectId: CANONICAL_THREAD_ID.toUpperCase() },
-        { id: CANONICAL_TURN_ID.toUpperCase(), workId: VALID_ID.toUpperCase() },
+        {
+          id: CANONICAL_TURN_ID.toUpperCase(),
+          workId: VALID_ID.toUpperCase(),
+          agentSelection: {
+            catalogEntryId: CANONICAL_THREAD_ID.toUpperCase(),
+            definitionRevisionId: CANONICAL_TURN_ID.toUpperCase(),
+          },
+        },
       ),
     );
 
@@ -354,6 +384,10 @@ describe("malformed HTTP request IDs", () => {
         projectId: CANONICAL_THREAD_ID,
         id: CANONICAL_TURN_ID,
         workId: VALID_ID,
+        agentSelection: {
+          catalogEntryId: CANONICAL_THREAD_ID,
+          definitionRevisionId: CANONICAL_TURN_ID,
+        },
       }),
     );
   });
@@ -364,18 +398,27 @@ describe("malformed HTTP request IDs", () => {
       new InvalidWorkAttachmentError("Work is not available in this project"),
     );
 
-    await expect(createThread(event({}, { projectId: VALID_ID }))).rejects.toMatchObject({
+    await expect(
+      createThread(event({}, { projectId: VALID_ID, agentSelection: AGENT_SELECTION })),
+    ).rejects.toMatchObject({
       statusCode: 400,
     });
   });
 
-  it("names project-scoped Work refusal for Home lifecycle repair", async () => {
+  it.each([
+    "global",
+    "project-scoped",
+  ])("names %s Work refusal for lifecycle repair", async (surface) => {
     const { InvalidWorkAttachmentError } = await import("../thread-creation.js");
     createThreadForProject.mockRejectedValueOnce(
       new InvalidWorkAttachmentError("Work is not available in this project"),
     );
 
-    await expect(createProjectThread(event({ projectId: VALID_ID }))).rejects.toMatchObject({
+    await expect(
+      surface === "global"
+        ? createThread(event({}, { projectId: VALID_ID, agentSelection: AGENT_SELECTION }))
+        : createProjectThread(event({ projectId: VALID_ID }, { agentSelection: AGENT_SELECTION })),
+    ).rejects.toMatchObject({
       statusCode: 400,
       data: {
         __meridianInterruptEnvelope: {
@@ -385,11 +428,18 @@ describe("malformed HTTP request IDs", () => {
     });
   });
 
-  it("names project-scoped Agent refusal for Home lifecycle repair", async () => {
-    const { AgentBindingNotFoundError } = await import("../thread-creation.js");
-    createThreadForProject.mockRejectedValueOnce(new AgentBindingNotFoundError("prose"));
+  it.each([
+    "global",
+    "project-scoped",
+  ])("names %s Agent refusal for lifecycle repair", async (surface) => {
+    const { AgentSelectionError } = await import("../../domains/packages/index.js");
+    createThreadForProject.mockRejectedValueOnce(new AgentSelectionError("prose"));
 
-    await expect(createProjectThread(event({ projectId: VALID_ID }))).rejects.toMatchObject({
+    await expect(
+      surface === "global"
+        ? createThread(event({}, { projectId: VALID_ID, agentSelection: AGENT_SELECTION }))
+        : createProjectThread(event({ projectId: VALID_ID }, { agentSelection: AGENT_SELECTION })),
+    ).rejects.toMatchObject({
       statusCode: 400,
       data: {
         __meridianInterruptEnvelope: {
@@ -402,7 +452,9 @@ describe("malformed HTTP request IDs", () => {
   it("preserves nullable fork origin semantics through the route", async () => {
     forkThreadAgent.mockResolvedValueOnce({ id: VALID_ID });
 
-    await forkThread(event({ threadId: VALID_ID }, { originTurnId: null }));
+    await forkThread(
+      event({ threadId: VALID_ID }, { agentSelection: AGENT_SELECTION, originTurnId: null }),
+    );
 
     expect(forkThreadAgent).toHaveBeenCalledWith(
       expect.anything(),

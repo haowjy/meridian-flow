@@ -23,13 +23,6 @@ export {
   WorkCommandSchema,
   workCommandCategory,
 } from "./core-tools.js";
-export {
-  createInvokeToolRegistration,
-  INVOKE_TOOL_NAME,
-  type InvokeToolDeps,
-  invokeFunctionToolDefinition,
-  renderSkillsSystemPromptSection,
-} from "./skill-tools.js";
 export { createSpawnToolRegistrations } from "./spawn-tools.js";
 export { createToolExecutor, type ToolExecutorWithBatch } from "./tool-executor.js";
 export { createToolRegistry } from "./tool-registry.js";

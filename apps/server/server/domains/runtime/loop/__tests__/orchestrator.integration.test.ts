@@ -74,6 +74,10 @@ describe("runtime loop integration", () => {
       eventWriter: ReturnType<typeof createInMemoryEventJournalWriter>,
     ) => Parameters<typeof createOrchestrator>[0]["workContextDelivery"],
   ) {
+    const boundThreadIds: string[] = [];
+    const bindAgent = (threadId: string) => {
+      boundThreadIds.push(threadId);
+    };
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
     configureRepos?.(repos);
@@ -96,6 +100,7 @@ describe("runtime loop integration", () => {
     });
     const orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
+        boundThreads: () => boundThreadIds,
         gateway,
         toolExecutor: toolExecutor ?? {
           executeTool: async (call) => ({
@@ -111,7 +116,7 @@ describe("runtime loop integration", () => {
           createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
         projectPreferences: projectPreferences ?? {
           async read() {
-            return { threadGroupBy: "work", pinnedThreadIds: [], defaultAgentSlug: null };
+            return { threadGroupBy: "work", pinnedThreadIds: [] };
           },
         },
         ...(workWriteMode ? { workWriteMode } : {}),
@@ -149,7 +154,14 @@ describe("runtime loop integration", () => {
           : {}),
       }),
     );
-    return { repos, eventWriter, orchestrator, projectId: project.id, interruptRegistry };
+    return {
+      bindAgent,
+      repos,
+      eventWriter,
+      orchestrator,
+      projectId: project.id,
+      interruptRegistry,
+    };
   }
 
   async function collectEvents(
@@ -650,8 +662,9 @@ describe("runtime loop integration", () => {
   }
 
   it("runs a simple text turn end-to-end", async () => {
-    const { repos, orchestrator, projectId } = await setupOrchestrator();
+    const { bindAgent, repos, orchestrator, projectId } = await setupOrchestrator();
     const thread = await repos.threads.create({ userId: "user-1", projectId });
+    bindAgent(thread.id);
 
     const events = await collectEvents(
       await orchestrator.runTurn({
@@ -682,7 +695,7 @@ describe("runtime loop integration", () => {
   });
 
   it("freezes the Work write mode on the assistant turn at creation", async () => {
-    const { repos, orchestrator, projectId } = await setupOrchestrator(
+    const { bindAgent, repos, orchestrator, projectId } = await setupOrchestrator(
       undefined,
       undefined,
       undefined,
@@ -691,6 +704,7 @@ describe("runtime loop integration", () => {
       { read: async () => "draft" },
     );
     const thread = await repos.threads.create({ userId: "user-1", projectId });
+    bindAgent(thread.id);
     await repos.threadWorks.addMembership(thread.id, "00000000-0000-4000-8000-000000000001", true);
 
     const handle = await orchestrator.runTurn({ threadId: thread.id, userText: "draft this" });
@@ -747,8 +761,12 @@ describe("runtime loop integration", () => {
       },
     });
     const toolExecutor = createToolExecutor(registry);
-    const { repos, orchestrator, projectId } = await setupOrchestrator(toolExecutor, gateway);
+    const { bindAgent, repos, orchestrator, projectId } = await setupOrchestrator(
+      toolExecutor,
+      gateway,
+    );
     const thread = await repos.threads.create({ userId: "user-1", projectId });
+    bindAgent(thread.id);
 
     const events = await collectEvents(
       await orchestrator.runTurn({
@@ -884,7 +902,7 @@ describe("runtime loop integration", () => {
         },
       },
     });
-    const { repos, orchestrator, projectId } = await setupOrchestrator(
+    const { bindAgent, repos, orchestrator, projectId } = await setupOrchestrator(
       createToolExecutor(registry),
       gateway,
       undefined,
@@ -896,6 +914,7 @@ describe("runtime loop integration", () => {
     enqueueWorkContext = (threadId) =>
       repos.workContextDeliveries.enqueueThread(threadId).then(() => undefined);
     const thread = await repos.threads.create({ userId: "user-1", projectId });
+    bindAgent(thread.id);
     await collectEvents(
       await orchestrator.runTurn({
         threadId: thread.id,
@@ -982,7 +1001,7 @@ describe("runtime loop integration", () => {
       });
     }
     const settlements: Array<{ responseId: string; work: string }> = [];
-    const { repos, orchestrator, projectId } = await setupOrchestrator(
+    const { bindAgent, repos, orchestrator, projectId } = await setupOrchestrator(
       createToolExecutor(registry),
       gateway,
       undefined,
@@ -1026,6 +1045,7 @@ describe("runtime loop integration", () => {
       },
     );
     const thread = await repos.threads.create({ userId: "user-1", projectId });
+    bindAgent(thread.id);
     await collectEvents(
       await orchestrator.runTurn({ threadId: thread.id, userText: "write then switch" }),
     );
@@ -1102,7 +1122,7 @@ describe("runtime loop integration", () => {
     });
     let running = true;
     let delivery: ReturnType<typeof createWorkContextDelivery> | undefined;
-    const { repos, eventWriter, orchestrator, projectId } = await setupOrchestrator(
+    const { bindAgent, repos, eventWriter, orchestrator, projectId } = await setupOrchestrator(
       createToolExecutor(registry),
       capturingGateway,
       undefined,
@@ -1149,6 +1169,7 @@ describe("runtime loop integration", () => {
     enqueueWorkContext = (threadId) =>
       repos.workContextDeliveries.enqueueThread(threadId).then(() => undefined);
     const thread = await repos.threads.create({ userId: "user-1", projectId });
+    bindAgent(thread.id);
     const events = await collectEvents(
       await orchestrator.runTurn({ threadId: thread.id, userText: "switch" }),
     );
@@ -1214,9 +1235,10 @@ describe("runtime loop integration", () => {
 
   it("suspends on a mock interrupt without re-entering the gateway, then resumes on response", async () => {
     const gateway = interruptGateway({ interruptId: "interrupt-user" });
-    const { repos, eventWriter, orchestrator, projectId, interruptRegistry } =
+    const { bindAgent, repos, eventWriter, orchestrator, projectId, interruptRegistry } =
       await setupOrchestrator(createMockInterruptToolExecutor(), gateway);
     const thread = await repos.threads.create({ userId: "user-1", projectId });
+    bindAgent(thread.id);
     const handle = await orchestrator.runTurn({
       threadId: thread.id,
       userText: "pause",
@@ -1269,8 +1291,9 @@ describe("runtime loop integration", () => {
   });
 
   it("finalizes cancelled when signal is already aborted", async () => {
-    const { repos, eventWriter, orchestrator, projectId } = await setupOrchestrator();
+    const { bindAgent, repos, eventWriter, orchestrator, projectId } = await setupOrchestrator();
     const thread = await repos.threads.create({ userId: "user-1", projectId });
+    bindAgent(thread.id);
     const controller = new AbortController();
     controller.abort();
 
@@ -1320,8 +1343,12 @@ describe("runtime loop integration", () => {
       },
     };
 
-    const { repos, orchestrator, projectId } = await setupOrchestrator(undefined, failingGateway);
+    const { bindAgent, repos, orchestrator, projectId } = await setupOrchestrator(
+      undefined,
+      failingGateway,
+    );
     const thread = await repos.threads.create({ userId: "user-1", projectId });
+    bindAgent(thread.id);
     const events = await collectEvents(
       await orchestrator.runTurn({ threadId: thread.id, userText: "fail" }),
     );

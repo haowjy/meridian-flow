@@ -16,9 +16,6 @@ export interface CreateSubagentThreadInput {
   originTurnId?: TurnId;
   spawnDepth: number;
   currentAgent: string;
-  composedSystemPrompt: string;
-  /** Model-invocable slugs frozen with composedSystemPrompt; empty when none. */
-  bakedSkillSlugs: string[];
   title?: string | null;
   spawnStatus?: SpawnStatus;
 }
@@ -36,13 +33,13 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     status: "idle",
     title: input.title ?? null,
     slug: null,
-    composedSystemPrompt: input.composedSystemPrompt,
-    bakedSkillSlugs: input.bakedSkillSlugs,
-    // Frozen subagents bake into composedSystemPrompt; systemPrompt stays null
-    // (agent-bound resolution uses currentAgent, same as drizzle mapThread).
+    composedSystemPrompt: null,
+    bakedSkillSlugs: null,
     systemPrompt: null,
     workingState: null,
     currentAgent: input.currentAgent,
+    agentDefinitionRevisionId: null,
+    agentName: null,
     nextSeq: "0",
     activeLeafTurnId: null,
     parentThreadId: input.parentThreadId,

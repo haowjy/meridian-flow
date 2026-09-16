@@ -1,4 +1,5 @@
 /** Account-scoped creation draft slots and first-send admission continuity. */
+import type { AgentCatalogItem } from "@meridian/contracts/agents";
 import type { ComposerDraftSnapshot, ComposerSubmitEnvelope } from "@/components/app/composer";
 
 export type FirstSendContinuityKey = Readonly<{
@@ -21,22 +22,25 @@ export type FirstSendContinuityClaim = Readonly<{
 
 export type CreationRefusal = "work_unavailable" | "agent_not_found";
 
+/** Exact selection and its display snapshot, retained before any creation request. */
+export type CreationAgent = Pick<AgentCatalogItem, "selection" | "slug" | "name">;
+
 export type CreationAttempt = Readonly<{
   attemptId: string;
   projectId: string;
   threadId: string;
   title: string;
   workId: string | null;
-  agentSlug: string;
+  agent: CreationAgent;
   submission: ComposerSubmitEnvelope | null;
   phase: "creating" | "ambiguous" | "refused" | "mismatched" | "ready";
   refusal?: CreationRefusal;
   projectSlug?: string;
   threadSlug?: string;
 }>;
-export type CreationChoices = { workId?: string | null; agentSlug?: string };
+export type CreationChoices = { workId?: string | null; agent?: CreationAgent };
 export type CreationSlot = Readonly<{
-  version: 1;
+  version: 2;
   revision: number;
   draftRevision: number;
   choices?: CreationChoices;
@@ -45,7 +49,7 @@ export type CreationSlot = Readonly<{
 }>;
 export type CreationSlotResult = { kind: "saved" | "conflict"; slot: CreationSlot };
 const EMPTY_CREATION: CreationSlot = {
-  version: 1,
+  version: 2,
   revision: 0,
   draftRevision: 0,
   draft: null,
@@ -146,18 +150,29 @@ function validSubmission(value: unknown): value is ComposerSubmitEnvelope {
     validSnapshot(envelope.draft)
   );
 }
+function validCreationAgent(value: unknown): value is CreationAgent {
+  if (!value || typeof value !== "object") return false;
+  const agent = value as Record<string, unknown>;
+  const selection = agent.selection as Record<string, unknown> | undefined;
+  return (
+    typeof agent.name === "string" &&
+    typeof agent.slug === "string" &&
+    !!selection &&
+    typeof selection.catalogEntryId === "string" &&
+    selection.catalogEntryId.length > 0 &&
+    typeof selection.definitionRevisionId === "string" &&
+    selection.definitionRevisionId.length > 0
+  );
+}
 function validCreationAttempt(value: unknown): value is CreationSlot["attempt"] {
   if (value === null) return true;
   if (!value || typeof value !== "object") return false;
   const attempt = value as Record<string, unknown>;
   return (
-    [
-      attempt.attemptId,
-      attempt.projectId,
-      attempt.threadId,
-      attempt.title,
-      attempt.agentSlug,
-    ].every((field) => typeof field === "string") &&
+    [attempt.attemptId, attempt.projectId, attempt.threadId, attempt.title].every(
+      (field) => typeof field === "string",
+    ) &&
+    validCreationAgent(attempt.agent) &&
     (attempt.draftRevision === null ||
       (Number.isSafeInteger(attempt.draftRevision) && Number(attempt.draftRevision) >= 0)) &&
     (attempt.workId === null || typeof attempt.workId === "string") &&
@@ -251,7 +266,7 @@ export class FirstSendContinuity {
   async reviseRefusedCreation(
     projectId: string | null,
     attemptId: string,
-    choices: { workId: string | null; agentSlug: string },
+    choices: { workId: string | null; agent: CreationAgent },
   ): Promise<CreationSlotResult> {
     return this.changeCreation(projectId, (slot) =>
       slot.attempt?.attemptId === attemptId && slot.attempt.phase === "refused"
@@ -421,7 +436,7 @@ export class FirstSendContinuity {
     if (value === undefined) return EMPTY_CREATION;
     const slot = value as CreationSlot;
     if (
-      slot?.version !== 1 ||
+      slot?.version !== 2 ||
       !Number.isSafeInteger(slot.revision) ||
       !Number.isSafeInteger(slot.draftRevision) ||
       (slot.draft !== null && !validSnapshot(slot.draft)) ||
@@ -431,7 +446,7 @@ export class FirstSendContinuity {
           (slot.choices.workId !== undefined &&
             slot.choices.workId !== null &&
             typeof slot.choices.workId !== "string") ||
-          (slot.choices.agentSlug !== undefined && typeof slot.choices.agentSlug !== "string"))) ||
+          (slot.choices.agent !== undefined && !validCreationAgent(slot.choices.agent)))) ||
       !validCreationAttempt(slot.attempt)
     )
       throw new Error("Creation draft is unreadable");

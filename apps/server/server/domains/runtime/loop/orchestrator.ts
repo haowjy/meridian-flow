@@ -86,7 +86,7 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { Notice, NoticePort } from "../../notices/index.js";
 import { type EventSink, unknownToEventPayload } from "../../observability/index.js";
-import type { PackageRepository } from "../../packages/index.js";
+import type { AgentRevisionStore } from "../../packages/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import type {
@@ -157,7 +157,7 @@ export interface OrchestratorDeps {
   referenceReader: ReferenceReader;
   repos: OrchestratorRepositories;
   eventWriter: EventJournalWriter;
-  packageRepository: PackageRepository;
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
   toolRegistry: ToolRegistry;
   projectPreferences: {
     read(userId: string, projectId: string): Promise<ProjectPreferences>;
@@ -837,14 +837,14 @@ async function buildGenerateRequest(input: {
   gatewaySignal?: AbortSignal;
 }): Promise<{
   request: GenerateRequest;
+  agentSlug: string | null;
   thread: Thread;
-  resolvedSkills: Awaited<ReturnType<typeof assembleNextTurnContext>>["resolvedSkills"];
 }> {
   const assembled = await assembleNextTurnContext({
     thread: input.thread,
     turns: input.turns,
     blocks: input.blocks,
-    packageRepository: input.deps.packageRepository,
+    agentRevisions: input.deps.agentRevisions,
     toolRegistry: input.deps.toolRegistry,
     gateway: input.deps.gateway,
     imageAssets: input.deps.imageAssets,
@@ -858,7 +858,8 @@ async function buildGenerateRequest(input: {
 
   return {
     thread: assembled.thread,
-    resolvedSkills: assembled.resolvedSkills,
+    agentSlug: assembled.agentSlug,
+
     request: {
       ...assembled.generateRequest,
       signal: input.gatewaySignal ?? input.runInput.signal,
@@ -998,7 +999,7 @@ async function* generateEvents(
         threadId: input.threadId,
         turnId: currentAssistantTurn.id,
         iteration: iteration - 1,
-        ...(thread.currentAgent ? { agentSlug: thread.currentAgent } : {}),
+        ...(built.agentSlug ? { agentSlug: built.agentSlug } : {}),
       };
 
       {
@@ -1033,9 +1034,9 @@ async function* generateEvents(
           threadId: input.threadId,
           turnId: currentAssistantTurn.id,
           iteration: iteration - 1,
-          agentSlug: thread.currentAgent,
+          agentSlug: built.agentSlug,
           request,
-          resolvedSkills: built.resolvedSkills,
+
           toolRegistry: deps.toolRegistry,
         });
       } catch (cause) {

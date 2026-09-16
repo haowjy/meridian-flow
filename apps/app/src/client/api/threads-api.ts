@@ -19,6 +19,7 @@ import {
   apiThreadUserStatePath,
   apiThreadWorkPath,
   type CancelTurnResponse,
+  type CreateThreadRequest,
   type ListThreadRecentDocumentsResponse,
   type ListThreadsResponse,
   type ModelRequestDebugListResponse,
@@ -31,19 +32,11 @@ import {
   type UpdateThreadUserStateRequest,
   type UpdateThreadUserStateResponse,
 } from "@meridian/contracts/protocol";
-import type { WorkId } from "@meridian/contracts/runtime";
 import type { RebindThreadWorkRequest, RebindThreadWorkResponse } from "@meridian/contracts/works";
 
 import { deleteJson, deleteRequest, getJson, patchJson, postJson, putJson } from "./http-client";
 
-type CreateThreadInput = {
-  id?: string;
-  projectId: string;
-  title?: string;
-  systemPrompt?: string | null;
-  currentAgent?: string;
-  workId?: WorkId | null;
-};
+type CreateThreadInput = CreateThreadRequest;
 
 export type AppendUserMessageInput = {
   threadId: string;

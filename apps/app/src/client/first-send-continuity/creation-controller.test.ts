@@ -49,9 +49,11 @@ function setup() {
     userId: continuity.accountId,
     kind: "primary",
     status: "idle",
-    title: attempt.title,
+    title: attempt.title || null,
     slug: "opening",
-    currentAgent: attempt.agentSlug,
+    currentAgent: attempt.agent.slug,
+    agentDefinitionRevisionId: attempt.agent.selection.definitionRevisionId,
+    agentName: attempt.agent.name,
     activeLeafTurnId: null,
     parentThreadId: null,
     rootThreadId: attempt.threadId,
@@ -76,8 +78,6 @@ function setup() {
       threads.set(thread.id, thread);
       return thread;
     },
-    matchesThread: (thread, attempt) =>
-      thread.workId === attempt.workId && thread.currentAgent === attempt.agentSlug,
     refusal: (error) =>
       error instanceof Error && error.message === "refused" ? "work_unavailable" : null,
     refreshChoices: async () => undefined,
@@ -98,14 +98,27 @@ describe("CreationController", () => {
     const draft = submission().draft;
     controller.updateDraft(draft);
     controller.updateChoices({ workId: "work-b" });
-    controller.updateChoices({ agentSlug: "editor" });
+    controller.updateChoices({
+      agent: {
+        slug: "editor",
+        name: "editor",
+        selection: { catalogEntryId: "editor-entry", definitionRevisionId: "editor-revision" },
+      },
+    });
     await controller.reload();
     controller.dispose();
     const remounted = new CreationController("project", continuity, ports);
     await remounted.load();
     expect(remounted.getSnapshot().slot).toMatchObject({
       draft,
-      choices: { workId: "work-b", agentSlug: "editor" },
+      choices: {
+        workId: "work-b",
+        agent: {
+          slug: "editor",
+          name: "editor",
+          selection: { catalogEntryId: "editor-entry", definitionRevisionId: "editor-revision" },
+        },
+      },
     });
     expect(ports.createThread).not.toHaveBeenCalled();
     // A submit immediately after another choice must use the queued intent, not stale UI props.
@@ -114,10 +127,21 @@ describe("CreationController", () => {
       submission: submission(),
       title: "Exact opening",
       workId: "work-b",
-      agentSlug: "writer",
+      agent: {
+        slug: "writer",
+        name: "writer",
+        selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-revision" },
+      },
     });
     expect(ports.createThread).toHaveBeenCalledWith(
-      expect.objectContaining({ workId: "work-a", agentSlug: "editor" }),
+      expect.objectContaining({
+        workId: "work-a",
+        agent: {
+          slug: "editor",
+          name: "editor",
+          selection: { catalogEntryId: "editor-entry", definitionRevisionId: "editor-revision" },
+        },
+      }),
     );
     remounted.dispose();
   });
@@ -137,7 +161,11 @@ describe("CreationController", () => {
       submission: envelope,
       title: "Exact opening",
       workId: "work-a",
-      agentSlug: "writer",
+      agent: {
+        slug: "writer",
+        name: "writer",
+        selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-revision" },
+      },
     });
     const attempt = await started.promise;
     const later = { ...envelope.draft, revision: 9, selection: { anchor: 2, head: 1 } };
@@ -170,7 +198,11 @@ describe("CreationController", () => {
         submission: envelope,
         title: "Exact opening",
         workId: null,
-        agentSlug: "writer",
+        agent: {
+          slug: "writer",
+          name: "writer",
+          selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-revision" },
+        },
       }),
     ).toBe(true);
     const attemptId = controller.getSnapshot().slot?.attempt?.attemptId;
@@ -180,6 +212,48 @@ describe("CreationController", () => {
     expect(await resumed.retry()).toBe(true);
     expect(resumed.getSnapshot().slot?.attempt?.attemptId).toBe(attemptId);
     expect(create).toHaveBeenCalledTimes(1);
+    resumed.dispose();
+  });
+
+  it("reserves the exact revision before I/O and ignores replacement choices on ambiguous retry", async () => {
+    const { continuity, ports, makeThread } = setup();
+    const original = {
+      name: "Writer",
+      slug: "writer",
+      selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-v1" },
+    };
+    const replacement = {
+      ...original,
+      selection: { ...original.selection, definitionRevisionId: "writer-v2" },
+    };
+    let reserved: CreationAttempt | undefined;
+    ports.createThread = vi.fn(async (attempt) => {
+      expect((await continuity.readCreation("project")).attempt?.agent).toEqual(original);
+      reserved = attempt;
+      throw new Error("Connection lost before outcome is known");
+    });
+    const first = new CreationController("project", continuity, ports);
+    await first.load();
+    expect(
+      await first.submit({
+        submission: submission(),
+        title: "Opening",
+        workId: null,
+        agent: original,
+      }),
+    ).toBe(false);
+    expect(first.getSnapshot().slot?.attempt?.phase).toBe("ambiguous");
+    first.dispose();
+
+    ports.createThread = vi.fn(async (attempt) => {
+      expect(attempt.threadId).toBe(reserved?.threadId);
+      expect(attempt.agent).toEqual(original);
+      return makeThread(attempt);
+    });
+    const resumed = new CreationController("project", continuity, ports);
+    await resumed.load();
+    expect(await resumed.retry({ workId: null, agent: replacement })).toBe(true);
+    expect(resumed.getSnapshot().slot?.attempt?.agent).toEqual(original);
     resumed.dispose();
   });
 
@@ -215,7 +289,11 @@ describe("CreationController", () => {
         submission: envelope,
         title: "Opening",
         workId: null,
-        agentSlug: "writer",
+        agent: {
+          slug: "writer",
+          name: "writer",
+          selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-revision" },
+        },
       }),
     ).toBe(false);
     expect(projected.size).toBe(0);
@@ -233,8 +311,12 @@ describe("CreationController", () => {
   });
 
   it("starts over only after mismatch without deleting the mismatched entity or draft", async () => {
-    const { continuity, ports, threads } = setup();
-    ports.matchesThread = () => false;
+    const { continuity, ports, threads, makeThread } = setup();
+    ports.createThread = async (attempt) => {
+      const thread = { ...makeThread(attempt), agentDefinitionRevisionId: "different-revision" };
+      threads.set(thread.id, thread);
+      return thread;
+    };
     const controller = new CreationController("project", continuity, ports);
     await controller.load();
     const envelope = submission();
@@ -244,7 +326,11 @@ describe("CreationController", () => {
         submission: envelope,
         title: "Opening",
         workId: null,
-        agentSlug: "writer",
+        agent: {
+          slug: "writer",
+          name: "writer",
+          selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-revision" },
+        },
       }),
     ).toBe(false);
     expect(controller.getSnapshot().slot?.attempt?.phase).toBe("mismatched");
@@ -272,7 +358,11 @@ describe("CreationController", () => {
         submission: envelope,
         title: "Opening",
         workId: null,
-        agentSlug: "writer",
+        agent: {
+          slug: "writer",
+          name: "writer",
+          selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-revision" },
+        },
       }),
     ).toBe(true);
     expect(create).toHaveBeenCalledTimes(1);
@@ -299,12 +389,25 @@ describe("CreationController", () => {
         submission: envelope,
         title: "Exact opening",
         workId: "archived",
-        agentSlug: "writer",
+        agent: {
+          slug: "writer",
+          name: "writer",
+          selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-revision" },
+        },
       }),
     ).toBe(false);
     expect(controller.getSnapshot().issue).toBe("refused");
     expect(refresh).toHaveBeenCalledWith("project", "work_unavailable");
-    expect(await controller.retry({ workId: null, agentSlug: "writer" })).toBe(true);
+    expect(
+      await controller.retry({
+        workId: null,
+        agent: {
+          slug: "writer",
+          name: "writer",
+          selection: { catalogEntryId: "writer-entry", definitionRevisionId: "writer-revision" },
+        },
+      }),
+    ).toBe(true);
     expect(attempted[1]?.submission).toEqual(envelope);
     const admission = await continuity.findForThread("project", attempted[1]?.threadId ?? "");
     expect(admission?.record.latestDraft).toBeNull();
@@ -337,7 +440,11 @@ it("fences old-account creation synchronously while project lookup is in flight"
   const pending = controller.submit({
     title: "Old private draft",
     workId: null,
-    agentSlug: "default",
+    agent: {
+      slug: "default",
+      name: "default",
+      selection: { catalogEntryId: "default-entry", definitionRevisionId: "default-revision" },
+    },
     submission: submission(),
   });
   await lookupStarted;

@@ -18,7 +18,7 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
@@ -30,8 +30,9 @@ import {
   type ComposerHandle,
   type ComposerSubmitEnvelope,
 } from "@/components/app/composer";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { documentLinkTarget, type LinkTarget } from "@/core/editor/links";
-import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { displayThreadTitle } from "@/lib/thread-title";
@@ -87,13 +88,7 @@ export function ChatView({
   const latestAssistantTurn =
     [...turns].reverse().find((turn) => turn.role === "assistant") ?? null;
   const isStreaming = latestAssistantTurn?.status === "streaming";
-  const threadStarted = (activeThread?.turnCount ?? turns.length) > 0;
-  const boundAgentSlug = activeThread?.currentAgent ?? DEFAULT_AGENT_SLUG;
-  const [draftAgentSlug, setDraftAgentSlug] = useState(DEFAULT_AGENT_SLUG);
-  useEffect(() => {
-    setDraftAgentSlug(activeThread?.currentAgent ?? DEFAULT_AGENT_SLUG);
-  }, [activeThread?.currentAgent]);
-  const composerAgentSlug = threadStarted ? boundAgentSlug : draftAgentSlug;
+  const composerAgentName = activeThread?.agentName ?? activeThread?.currentAgent ?? "General";
 
   const pageTitle = activeThread?.title ? displayThreadTitle(activeThread.title) : t`New chat`;
   const referenceCatalog = useReferenceBrowserCatalog(
@@ -135,7 +130,11 @@ export function ChatView({
     },
     [],
   );
-  useThreadHandoff(
+  const restoreRecovery = useCallback<ComposerHandle["restoreFirstSendRecovery"]>(
+    (input) => composerRef.current?.restoreFirstSendRecovery(input) ?? null,
+    [],
+  );
+  const handoff = useThreadHandoff(
     threadId,
     projectId,
     controller,
@@ -146,6 +145,7 @@ export function ChatView({
     },
     restoreFirstSendDraft,
     restoreFailedFirstSend,
+    restoreRecovery,
   );
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 
@@ -256,7 +256,39 @@ export function ChatView({
               mx-2, top corners rounded, jade-tinted background. The composer
               always keeps its own border and overlaps the strip's edge. */}
             <DraftDock dock={dock} />
+            {handoff.recovery ? (
+              <Alert role="status">
+                <AlertTitle>{t`Saved first message`}</AlertTitle>
+                <AlertDescription>
+                  <p>{t`Check this message before sending another. You can keep drafting below.`}</p>
+                  <details>
+                    <summary>{t`View saved message`}</summary>
+                    <p className="whitespace-pre-wrap break-words">{handoff.recovery.text}</p>
+                  </details>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={handoff.recovery.busy}
+                      onClick={() => void handoff.recovery?.checkStatus()}
+                    >{t`Check status`}</Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={handoff.recovery.busy}
+                      onClick={() => void handoff.recovery?.startOver()}
+                    >{t`Start over`}</Button>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            ) : null}
             <Composer
+              submitDisabled={handoff.blocksSubmission}
+              submitDisabledReason={
+                handoff.blocksSubmission
+                  ? t`Check the saved first message before sending another.`
+                  : undefined
+              }
               onOpenReference={
                 projectId
                   ? (reference) => {
@@ -289,21 +321,11 @@ export function ChatView({
                     projectId={projectId}
                     threadId={threadId}
                     work={activeWork}
-                    agentSlug={composerAgentSlug}
-                    readonlyAgent={threadStarted}
-                    onAgentChange={setDraftAgentSlug}
-                  />
-                ) : threadStarted ? (
-                  <AgentOnlyComposerToolbar
-                    projectId={projectId ?? null}
-                    readonlyAgent
-                    agentSlug={composerAgentSlug}
+                    agentName={composerAgentName}
                   />
                 ) : (
                   <AgentOnlyComposerToolbar
-                    projectId={projectId ?? null}
-                    agentSlug={composerAgentSlug}
-                    onAgentChange={setDraftAgentSlug}
+                    control={{ mode: "readonly", name: composerAgentName }}
                   />
                 )
               }

@@ -20,6 +20,8 @@ import {
 
 export interface GatewayFromEnv {
   gateway: Gateway;
+  /** Concrete default after enabled-provider selection and local mock fallback. */
+  defaultModel: string;
   /** Closes the in-process mock server when one was started for this instance. */
   cleanup?: () => Promise<void>;
 }
@@ -90,7 +92,9 @@ export async function createGatewayFromEnv(
   }
 
   const gatewayOptions = defaultGatewayOptions(providers, registryDefaultModel);
-  const startupInfo = formatGatewayStartupInfo(providers, gatewayOptions.defaultModel);
+  const defaultModel = gatewayOptions.defaultModel;
+  if (!defaultModel) throw new Error("Gateway configuration has no default model");
+  const startupInfo = formatGatewayStartupInfo(providers, defaultModel);
   if (options?.onInfo) {
     options.onInfo(startupInfo);
   }
@@ -102,5 +106,5 @@ export async function createGatewayFromEnv(
     onWarning: options?.onWarning,
   });
 
-  return { gateway, cleanup };
+  return { gateway, defaultModel, cleanup };
 }

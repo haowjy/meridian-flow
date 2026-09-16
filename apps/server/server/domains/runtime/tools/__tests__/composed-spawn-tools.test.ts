@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createInMemoryPackageStore } from "../../../packages/index.js";
+import { createTestAgentBinding } from "../../loop/__tests__/test-orchestrator-deps.js";
 import { resolveAgentThreadTurnContext } from "../agent-thread-context.js";
 import {
   createCoreToolRegistrations,
@@ -10,23 +10,7 @@ import {
 const coreHandler = async () => ({ ok: true });
 
 describe("resolveAgentThreadTurnContext spawn tools", () => {
-  it("advertises spawn exactly once for Muse when base tools include core handlers only", async () => {
-    const packageRepository = createInMemoryPackageStore({
-      agents: [
-        {
-          id: "agent-muse",
-          projectId: "project-1",
-          slug: "muse",
-          body: "Muse",
-          meta: { subagents: ["writer-helper"] },
-          config: {},
-          packageInstallId: null,
-          originalContentChecksum: null,
-          sourceType: "builtin",
-          enabled: true,
-        },
-      ],
-    });
+  it("advertises a bound child report tool exactly once", async () => {
     const registry = createToolRegistry({
       registrations: [
         ...createCoreToolRegistrations({
@@ -46,7 +30,7 @@ describe("resolveAgentThreadTurnContext spawn tools", () => {
         projectId: "project-1",
         workId: null,
         userId: "user-1",
-        kind: "primary",
+        kind: "subagent",
         status: "idle",
         title: null,
         slug: null,
@@ -55,6 +39,8 @@ describe("resolveAgentThreadTurnContext spawn tools", () => {
         systemPrompt: null,
         workingState: null,
         currentAgent: "muse",
+        agentDefinitionRevisionId: null,
+        agentName: null,
         activeLeafTurnId: null,
         parentThreadId: null,
         rootThreadId: "thread-1",
@@ -66,15 +52,15 @@ describe("resolveAgentThreadTurnContext spawn tools", () => {
         updatedAt: "2026-06-12T00:00:00.000Z",
         deletedAt: null,
       },
-      packageRepository,
+      agentRevisions: createTestAgentBinding("fixture-model", "", () => ["thread-1"]),
       toolRegistry: registry,
       baseTools: registry.getDefinitions(),
     });
 
     const names =
       context.tools?.map((tool) => (tool.type === "function" ? tool.name : tool.kind)) ?? [];
-    expect(names.filter((name) => name === "spawn")).toHaveLength(1);
-    expect(names.filter((name) => name === "return_result")).toHaveLength(0);
+    expect(names.filter((name) => name === "spawn")).toHaveLength(0);
+    expect(names.filter((name) => name === "return_result")).toHaveLength(1);
     expect(new Set(names).size).toBe(names.length);
   });
 });

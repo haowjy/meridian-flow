@@ -1,6 +1,10 @@
 import type { Database } from "@meridian/database";
-import { projectResults } from "@meridian/database/schema";
-import { desc, eq } from "drizzle-orm";
+import {
+  agentDefinitionRevisions,
+  projectResults,
+  threadAgentBindings,
+} from "@meridian/database/schema";
+import { desc, eq, sql } from "drizzle-orm";
 import type {
   CreateProjectResultInput,
   ProjectResultRecord,
@@ -83,11 +87,19 @@ export class DrizzleResultRepository implements ResultRepository {
   }
   async listByProject(projectId: string): Promise<ProjectResultRecord[]> {
     const rows = await this.db
-      .select()
+      .select({
+        result: projectResults,
+        agentName: sql<string>`coalesce(${agentDefinitionRevisions.definition}->'metadata'->>'name', ${agentDefinitionRevisions.slug}, ${projectResults.agentSlug})`,
+      })
       .from(projectResults)
+      .leftJoin(threadAgentBindings, eq(threadAgentBindings.threadId, projectResults.threadId))
+      .leftJoin(
+        agentDefinitionRevisions,
+        eq(agentDefinitionRevisions.id, threadAgentBindings.definitionRevisionId),
+      )
       .where(eq(projectResults.projectId, projectId))
       .orderBy(desc(projectResults.createdAt));
-    return rows.map(mapRow);
+    return rows.map((row) => ({ ...mapRow(row.result), agentName: row.agentName }));
   }
 }
 export function createDrizzleResultRepository(db: Database): ResultRepository {

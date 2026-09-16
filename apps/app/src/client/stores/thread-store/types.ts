@@ -3,6 +3,7 @@
  * pending-stream / standalone-creation handoff shape. The canonical thread store
  * vocabulary read by the chat flow and the standalone creation handoff.
  */
+import type { AgentSelection } from "@meridian/contracts/agents";
 import type { Block, Thread, ThreadListItem, Turn, TurnStatus } from "@meridian/contracts/protocol";
 
 export type PendingStreamStart = {
@@ -18,8 +19,8 @@ export type PendingStreamStart = {
     projectId: string;
     title: string;
     text: string;
-    /** Mars agent slug bound at thread creation (Home composer handoff). */
-    currentAgent?: string;
+    /** Exact Agent selection reserved before navigation. */
+    agentSelection: AgentSelection;
     /**
      * Client-only user turn id created before deferred navigation. The HTTP
      * append acknowledgement rewrites this row to the server turn id so the

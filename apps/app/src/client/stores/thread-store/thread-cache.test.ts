@@ -23,6 +23,8 @@ const thread: Thread = {
   title: "Target thread",
   slug: "target-thread",
   currentAgent: null,
+  agentDefinitionRevisionId: null,
+  agentName: null,
   activeLeafTurnId: null,
   parentThreadId: null,
   rootThreadId: "thread-1",

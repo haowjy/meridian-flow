@@ -17,7 +17,7 @@ import {
 } from "../../gateway/index.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
 import { createOrchestrator } from "../orchestrator.js";
-import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
+import { createTestAgentBinding, createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
 describe("orchestrator model-request debug capture", () => {
   let mock: MockOpenAIServer;
@@ -59,7 +59,13 @@ describe("orchestrator model-request debug capture", () => {
     let workSwitchPending = true;
     const orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
+        boundThreads: () => [thread.id],
         gateway,
+        agentRevisions: createTestAgentBinding(
+          "mock-llm-v1",
+          "You are a helpful assistant.",
+          () => [thread.id],
+        ),
         repos,
         eventWriter: createInMemoryEventJournalWriter(),
         creditLedger,
@@ -89,7 +95,7 @@ describe("orchestrator model-request debug capture", () => {
         },
         projectPreferences: {
           async read() {
-            return { threadGroupBy: "work", pinnedThreadIds: [], defaultAgentSlug: null };
+            return { threadGroupBy: "work", pinnedThreadIds: [] };
           },
         },
       }),
@@ -113,7 +119,7 @@ describe("orchestrator model-request debug capture", () => {
       threadId: thread.id,
       turnId: handle.assistantTurnId,
       iteration: 0,
-      agentSlug: "agent-one",
+      agentSlug: "general",
       capture: { status: "complete" },
     });
     expect(first?.gatewayCallId).toEqual(expect.any(String));

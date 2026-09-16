@@ -2,9 +2,8 @@
  * Package install/update contract — preview-before-commit and reconciliation shapes.
  *
  * Preview responses must mirror what apply actually does: slug collisions against
- * the project inventory surface as `keep_existing` (skip-and-keep), matching
- * `package-sync` import semantics — never promise "will install" for a slug that
- * apply would skip.
+ * the account inventory require rename and re-import; apply preserves existing entries
+ * and refuses the whole conflicting publication.
  *
  * Key decisions:
  * - JSON-natural per the contracts package rule.
@@ -36,12 +35,13 @@ export interface PackagePreviewSkill {
   description: string;
 }
 
-/** Slug already owned by the project — apply keeps the existing definition. */
+/** Logical key already owned by another account source. */
 export interface PackagePreviewCollision {
   slug: string;
   kind: "agent" | "skill";
-  /** Always `keep_existing` today — preview truthfulness guard for install UX. */
-  action: "keep_existing";
+  /** Apply rejects the conflicting publication; existing content is unchanged. */
+  action: "rename_required";
+  source: string;
 }
 
 /** Response for install preview (dry-run, no writes). */

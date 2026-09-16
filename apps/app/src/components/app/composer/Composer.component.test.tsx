@@ -62,6 +62,32 @@ const textSnapshot = (text: string, revision: number) => ({
   ownedUploads: [],
 });
 describe("Composer draft changes", () => {
+  it.each([
+    true,
+    false,
+  ])("restores first-Send sources around destination typing (rejected=%s)", async (rejected) => {
+    const ref = await mount((e) => outcome(e, "accepted"), {
+      initialDraft: textSnapshot("Destination", 1),
+    });
+    const recovery = {
+      submissionId: "saved-first",
+      submitted: rejected ? textSnapshot("Submitted", 4) : null,
+      latestDraft: textSnapshot("Later Home", 7),
+      homeRevision: 7,
+    };
+    await act(async () => {
+      expect(ref.current?.restoreFirstSendRecovery(recovery)).not.toBeNull();
+    });
+    const restored = ref.current?.getDraft();
+    expect(restored).toBe(
+      rejected ? "Submitted\n\nLater Home\n\nDestination" : "Later Home\n\nDestination",
+    );
+    await act(async () => {
+      ref.current?.restoreFirstSendRecovery(recovery);
+    });
+    expect(ref.current?.getDraft()).toBe(restored);
+  });
+
   it("declines delayed continuity restoration after the destination draft changes", async () => {
     const ref = await mount((e) => outcome(e, "accepted"));
     await act(async () =>

@@ -1,5 +1,4 @@
 import type {
-  AgentDefinitionId,
   DocumentId,
   EventJournalId,
   ModelResponseId,
@@ -30,7 +29,6 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { createdAt, idColumn, jsonbDefault, softDeleteAt, updatedAt } from "./_shared";
-import { agentDefinitions } from "./agent-packages";
 import { documents, projects, works } from "./content";
 import { users } from "./users";
 
@@ -56,6 +54,7 @@ export const threads = pgTable(
     bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[] | null>(),
     systemPromptHash: text("system_prompt_hash"),
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
+    rootThreadId: uuid("root_thread_id").$type<ThreadId>(),
     originTurnId: uuid("origin_turn_id").$type<TurnId>(),
     originType: text("origin_type"),
     spawnStatus: text("spawn_status"),
@@ -81,6 +80,15 @@ export const threads = pgTable(
     index("threads_parent_created_active")
       .on(table.parentThreadId, table.createdAt.desc())
       .where(sql`${table.parentThreadId} IS NOT NULL AND ${table.deletedAt} IS NULL`),
+    foreignKey({
+      columns: [table.projectId, table.rootThreadId],
+      foreignColumns: [table.projectId, table.id],
+      name: "threads_spawn_root_same_project_fk",
+    }).onDelete("cascade"),
+    check(
+      "threads_spawn_root_required",
+      sql`${table.kind} != 'subagent' OR ${table.rootThreadId} IS NOT NULL`,
+    ),
     check("threads_no_self_parent", sql`${table.id} != ${table.parentThreadId}`),
     check("threads_spawn_depth_nonneg", sql`${table.spawnDepth} >= 0`),
     check("threads_next_seq_nonneg", sql`${table.nextSeq} >= 0`),
@@ -178,11 +186,6 @@ export const turns = pgTable(
       .notNull()
       .references(() => threads.id, { onDelete: "restrict" }),
     parentTurnId: uuid("parent_turn_id").$type<TurnId>(),
-    agentDefinitionId: uuid("agent_definition_id")
-      .$type<AgentDefinitionId>()
-      .references(() => agentDefinitions.id, {
-        onDelete: "set null",
-      }),
     compactionModel: text("compaction_model"),
     role: text("role").notNull(),
     aiWriteMode: text("ai_write_mode"),

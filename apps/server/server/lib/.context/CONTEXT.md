@@ -26,7 +26,7 @@ Production wiring is split by side-effect boundary:
    and global hot-reload-safe caching.
 2. `createProductionAppPorts()` in `compose.ts` constructs concrete adapters and
    env-driven provider ports: Drizzle repositories, event journal, object store,
-   document sync, context port factory, package repository/fetcher/seeder,
+   document sync, context port factory, Agent revision store/package fetcher/seeder,
    preferences, projects/works/users, billing, model gateway, model-request debug,
    upload/figure/result services, and document access.
 3. `composeAppServices()` in `compose.ts` is pure service graph wiring: it builds
@@ -63,11 +63,10 @@ represented as a fully-typed slot:
 | `projects` | projects | Drizzle project repository |
 | `works` | projects | Drizzle work repository |
 | `creditLedger` | billing | Drizzle credit lot/transaction ledger |
-| `agents` | agents | Package store (skeleton) |
+| `agentRevisions` | packages | Immutable Agent source/definition revisions, catalog membership, and thread bindings |
 | `interruptRegistry` | runtime | In-memory interrupt registry |
 | `eventSink` | observability | Process-scoped deferred sink bound to env-selected local/no-op adapter |
 | `eventQuery` | observability | Optional recent-event query port, present only for local dev/test composition |
-| `packageRepository` | packages | Drizzle package store |
 | `preferences` | preferences | Drizzle project preferences repository |
 | `orchestrator` | runtime | `RunTurnPort` — the full orchestrator |
 | `runner` | runtime | `TurnRunner` with child-run registry |

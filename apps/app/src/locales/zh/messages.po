@@ -529,8 +529,8 @@ msgid "Breadcrumb"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Built-in"
-msgstr ""
+#~ msgid "Built-in"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bullet list"
@@ -658,8 +658,20 @@ msgstr ""
 msgid "Check again"
 msgstr ""
 
+#: src/features/chat/ChatView.tsx
+msgid "Check status"
+msgstr ""
+
 #: src/components/app/composer/Composer.tsx
 msgid "Check submission status"
+msgstr ""
+
+#: src/features/chat/ChatView.tsx
+msgid "Check the saved first message before sending another."
+msgstr ""
+
+#: src/features/chat/ChatView.tsx
+msgid "Check this message before sending another. You can keep drafting below."
 msgstr ""
 
 #: src/features/project/home/HomeFeed.tsx
@@ -716,6 +728,10 @@ msgstr ""
 
 #: src/features/agents/ComposerAgentControl.tsx
 msgid "Choose agent"
+msgstr ""
+
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "Choose Agent"
 msgstr ""
 
 #. placeholder {0}: agent.name
@@ -1032,6 +1048,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't redo"
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Couldn't remove agent from project."
 msgstr ""
 
 #: src/features/project/context/ContextTreeRows.tsx
@@ -1696,8 +1716,8 @@ msgid "Insert row below"
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
-msgid "Installed"
-msgstr ""
+#~ msgid "Installed"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "Interface language"
@@ -2162,6 +2182,10 @@ msgstr ""
 msgid "No messages yet."
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
+msgid "No model"
+msgstr ""
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "No pending changes"
 msgstr ""
@@ -2310,7 +2334,11 @@ msgstr ""
 
 #. placeholder {0}: agent.name
 #: src/features/project/shell/ResultsRailSection.tsx
-msgid "Open producing turn in {0}"
+#~ msgid "Open producing turn in {0}"
+#~ msgstr ""
+
+#: src/features/project/shell/ResultsRailSection.tsx
+msgid "Open producing turn in {agentName}"
 msgstr ""
 
 #: src/features/project/shell/ResultsRailSection.tsx
@@ -2368,6 +2396,10 @@ msgstr ""
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Pending drafts couldn’t load"
 msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+#~ msgid "Personal"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "photo"
@@ -2532,8 +2564,17 @@ msgstr ""
 msgid "Remove"
 msgstr ""
 
+#. placeholder {0}: agent.name
+#: src/features/agents/AgentPicker.tsx
+msgid "Remove {0} from project"
+msgstr ""
+
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Remove from favorites"
+msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+msgid "Remove from project"
 msgstr ""
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
@@ -2712,6 +2753,10 @@ msgstr ""
 msgid "Save name and location"
 msgstr ""
 
+#: src/features/chat/ChatView.tsx
+msgid "Saved first message"
+msgstr ""
+
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally (offline)"
 msgstr ""
@@ -2876,6 +2921,7 @@ msgid "Start a quick chat without a project"
 msgstr ""
 
 #: src/components/app/composer/Composer.tsx
+#: src/features/chat/ChatView.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Start over"
 msgstr ""
@@ -2967,6 +3013,10 @@ msgstr ""
 #: src/features/chat/command-descriptor.ts
 msgid "Switching Work…"
 msgstr ""
+
+#: src/features/agents/AgentPicker.tsx
+#~ msgid "System"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -3067,8 +3117,8 @@ msgid "That rename couldn't be completed. Choose another name or try again."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "That skill isn't available in this chat."
-msgstr ""
+#~ msgid "That skill isn't available in this chat."
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
@@ -3076,12 +3126,12 @@ msgid "That Work is no longer available. Choose another Work."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The {skillName} skill is no longer available in this chat — start a new chat to use the current version."
-msgstr ""
+#~ msgid "The {skillName} skill is no longer available in this chat — start a new chat to use the current version."
+#~ msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "The {skillName} skill isn't available in this chat."
-msgstr ""
+#~ msgid "The {skillName} skill isn't available in this chat."
+#~ msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
@@ -3242,7 +3292,12 @@ msgstr ""
 
 #. placeholder {0}: agent.name
 #: src/features/agents/ComposerAgentControl.tsx
-msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
+#~ msgid "This chat stays on {0} to keep costs predictable. Swapping agents mid-chat is coming."
+#~ msgstr ""
+
+#. placeholder {0}: agent.name
+#: src/features/agents/ComposerAgentControl.tsx
+msgid "This chat uses {0}."
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
@@ -3376,8 +3431,8 @@ msgid "This selection holds blocks that keep their own block type."
 msgstr ""
 
 #: src/features/chat/tool-renderers.tsx
-msgid "This skill is no longer available in this chat — start a new chat to use the current version."
-msgstr ""
+#~ msgid "This skill is no longer available in this chat — start a new chat to use the current version."
+#~ msgstr ""
 
 #: src/core/editor/asset-image-render-state.ts
 msgid "This stored figure needs a project before it can be rendered."
@@ -3459,6 +3514,7 @@ msgstr ""
 msgid "workReceipt.unarchived"
 msgstr ""
 
+#: src/features/agents/AgentPicker.tsx
 #: src/features/chat/ComposerWorkControl.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Unavailable"
@@ -3570,6 +3626,10 @@ msgstr ""
 
 #: src/features/project/context/context-schemes.ts
 msgid "User"
+msgstr ""
+
+#: src/features/chat/ChatView.tsx
+msgid "View saved message"
 msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx

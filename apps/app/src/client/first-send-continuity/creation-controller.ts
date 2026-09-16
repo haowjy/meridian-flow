@@ -4,6 +4,7 @@ import type { Thread } from "@meridian/contracts/protocol";
 import type { ComposerDraftSnapshot, ComposerSubmitEnvelope } from "@/components/app/composer";
 import { nativeLocks, tryAcquireExclusiveLock } from "@/core/cross-context-locks";
 import type {
+  CreationAgent,
   CreationAttempt,
   CreationChoices,
   CreationRefusal,
@@ -24,7 +25,6 @@ export type CreationPorts = {
     attempt: CreationAttempt,
     assertAlive: () => void,
   ): Promise<{ optimisticUserTurnId?: string; cancel(): void }>;
-  matchesThread(thread: Thread, attempt: CreationAttempt): boolean;
   refusal(error: unknown): CreationRefusal | null;
   refreshChoices(projectId: string, refusal: CreationRefusal): Promise<void>;
 };
@@ -125,13 +125,13 @@ export class CreationController {
     submission: ComposerSubmitEnvelope | null;
     title: string;
     workId: string | null;
-    agentSlug: string;
+    agent: CreationAgent;
   }): Promise<boolean> {
     if (this.state.busy || this.state.slot?.attempt || this.state.issue === "conflict")
       return false;
     return this.run(input);
   }
-  async retry(choices?: { workId: string | null; agentSlug: string }): Promise<boolean> {
+  async retry(choices?: { workId: string | null; agent: CreationAgent }): Promise<boolean> {
     return this.state.busy
       ? false
       : this.state.slot?.attempt?.phase === "ready"
@@ -144,9 +144,9 @@ export class CreationController {
       submission: ComposerSubmitEnvelope | null;
       title: string;
       workId: string | null;
-      agentSlug: string;
+      agent: CreationAgent;
     },
-    repairChoices?: { workId: string | null; agentSlug: string },
+    repairChoices?: { workId: string | null; agent: CreationAgent },
   ): Promise<boolean> {
     this.change({ busy: true, issue: null });
     const locks = nativeLocks();
@@ -254,7 +254,18 @@ export class CreationController {
         }
       }
       this.assertAlive();
-      if (!thread.slug || !this.ports.matchesThread(thread, attempt)) {
+      if (
+        !thread.slug ||
+        thread.id !== attempt.threadId ||
+        thread.projectId !== attempt.projectId ||
+        thread.workId !== attempt.workId ||
+        thread.userId !== this.continuity.accountId ||
+        thread.kind !== "primary" ||
+        thread.title !== (attempt.title || null) ||
+        thread.deletedAt !== null ||
+        thread.parentThreadId !== null ||
+        thread.agentDefinitionRevisionId !== attempt.agent.selection.definitionRevisionId
+      ) {
         await this.settle(attempt, "mismatched");
         return false;
       }

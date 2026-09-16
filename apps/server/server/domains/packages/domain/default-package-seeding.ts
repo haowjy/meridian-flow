@@ -1,19 +1,18 @@
 /**
- * Purpose: Imports the configured default Mars packages into a project and
- * keeps already-installed package records reconciled with source changes.
- * Key decision: defaults are code-seeded from local package directories; the
- * repository checksum/update logic is the idempotence boundary, so startup and
- * first-touch callers can safely invoke this repeatedly.
+ * Publishes configured first-party package sources to the immutable system catalog at startup.
+ * Local development and bundled Nitro assets feed the same retained-source publisher.
  */
 
 import { access, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { AgentRevisionStore } from "../ports/agent-revision-store.js";
 import type { MarsPackageFetcher } from "../ports/mars-package-fetcher.js";
-import type { PackageRepository } from "../ports/package-store.js";
-import { importLocalMarsPackage, updateLocalMarsPackage } from "./package-sync.js";
-import type { PackageImportResult, PackageUpdateResult } from "./types.js";
+import { installSystemAgentSource } from "./bound-agent-catalog.js";
+import { serializeMarkdownDefinition } from "./mars-source.js";
+import { readPackageGraph } from "./package-source.js";
+import { publishAgentSource } from "./source-publication.js";
 
 export interface DefaultPackageSeedConfig {
   /** Absolute or process-cwd-relative Mars package directories. */
@@ -28,16 +27,6 @@ const BUILTIN_LAUNCH_AGENT_ASSET_PREFIX = "builtin/launch-agents/";
 const SOURCE_LAUNCH_AGENT_PACKAGE_RELATIVE_PATH =
   "apps/server/server/domains/packages/builtin/launch-agents";
 let materializedLaunchAgentPackageDir: Promise<string> | null = null;
-
-export interface DefaultPackageSeedResult {
-  sourceDir: string;
-  action: "imported" | "updated";
-  result: PackageImportResult | PackageUpdateResult;
-}
-
-export interface DefaultPackageSeeder {
-  seedProject(projectId: string): Promise<DefaultPackageSeedResult[]>;
-}
 
 export function defaultPackageSeedConfigFromEnv(env: {
   DEFAULT_PACKAGE_DIRS?: string;
@@ -57,44 +46,43 @@ export async function resolveLaunchAgentPackageDir(): Promise<string> {
   return resolvePackageSourceDir(LAUNCH_AGENT_PACKAGE_DIR);
 }
 
-export function createDefaultPackageSeeder(input: {
-  repository: PackageRepository;
+export async function seedDefaultAgentPackages(input: {
+  store: AgentRevisionStore;
   fetcher: MarsPackageFetcher;
   config: DefaultPackageSeedConfig;
-}): DefaultPackageSeeder {
-  const packageDirs = input.config.packageDirs.map((dir) => path.resolve(dir));
-  return {
-    async seedProject(projectId) {
-      const results: DefaultPackageSeedResult[] = [];
-      for (const sourceDir of packageDirs) {
-        const resolvedSourceDir = await resolvePackageSourceDir(sourceDir);
-        const imported = await importLocalMarsPackage({
-          projectId,
-          sourceDir: resolvedSourceDir,
-          repository: input.repository,
-          fetcher: input.fetcher,
-        });
-        if (imported.installedPackages.length > 0) {
-          results.push({ sourceDir: resolvedSourceDir, action: "imported", result: imported });
-          continue;
-        }
-
-        // Existing package: reconcile pristine records. This keeps repeated
-        // seeding cheap and content-sensitive without supporting compatibility
-        // aliases for stale package definitions.
-        results.push({
-          sourceDir: resolvedSourceDir,
-          action: "updated",
-          result: await updateLocalMarsPackage({
-            projectId,
-            sourceDir: resolvedSourceDir,
-            repository: input.repository,
+}): Promise<void> {
+  for (const sourceDir of input.config.packageDirs) {
+    const graph = await readPackageGraph({
+      kind: "local",
+      sourceDir: await resolvePackageSourceDir(path.resolve(sourceDir)),
+      fetcher: input.fetcher,
+    });
+    await input.store.withCatalogTransaction(null, async () => {
+      const heads = new Map(
+        (await input.store.listInstallations(null)).map((item) => [item.coordinate, item]),
+      );
+      for (const node of graph) {
+        const dependencies = Object.fromEntries(
+          Object.entries(node.dependencies).map(([name, coordinate]) => {
+            const head = heads.get(coordinate);
+            if (!head) throw new Error(`Missing system package dependency ${coordinate}`);
+            return [name, head.currentRevisionId];
           }),
+        );
+        const source = { ...node.source, dependencies };
+        const installed = await input.store.installSource(source);
+        const published = await publishAgentSource({
+          store: input.store,
+          ownerUserId: null,
+          source,
+          origin: node.origin,
+          upstreamRevisionId: installed.packageRevisionId,
+          expectedRevisionId: heads.get(source.coordinate)?.currentRevisionId,
         });
+        heads.set(source.coordinate, published.installation);
       }
-      return results;
-    },
-  };
+    });
+  }
 }
 
 async function resolvePackageSourceDir(sourceDir: string): Promise<string> {
@@ -149,4 +137,23 @@ async function materializeLaunchAgentPackageFromNitroAssets(): Promise<string> {
     await writeFile(target, await serverAssets.assets.getItem(key), "utf8");
   }
   return packageDir;
+}
+
+/** General adds no persona to the shared host prompt and pins the configured default model. */
+export async function seedGeneralAgent(store: AgentRevisionStore, model: string): Promise<void> {
+  await installSystemAgentSource(store, {
+    coordinate: "meridian/general",
+    files: {
+      "mars.toml": '[package]\nname = "meridian-general"\n',
+      "agents/general.md": serializeMarkdownDefinition(
+        {
+          name: "General",
+          description: "General-purpose assistant.",
+          mode: "primary",
+          model,
+        },
+        "",
+      ),
+    },
+  });
 }

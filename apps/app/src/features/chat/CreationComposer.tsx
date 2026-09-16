@@ -3,7 +3,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { useState } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
-import { useProjectAgents } from "@/client/query/useProjectAgents";
+import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useWorks } from "@/client/query/useWorks";
 import { Composer } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -23,12 +23,15 @@ export function CreationComposer({
 }) {
   const creation = useCreationComposer(projectId);
   const works = useWorks(projectId ?? "", { enabled: projectId !== null });
-  const agents = useProjectAgents(projectId);
+  const agents = useAgentCatalog(true, projectId ?? undefined);
   const choices = creation.state.slot?.choices;
   const attempt = creation.state.slot?.attempt;
-  const agentSlug = creation.contextLocked
-    ? (attempt?.agentSlug ?? DEFAULT_AGENT_SLUG)
-    : (choices?.agentSlug ?? attempt?.agentSlug ?? DEFAULT_AGENT_SLUG);
+  const defaultAgent = agents.agents?.find(
+    (agent) => agent.ownership === "system" && agent.slug === DEFAULT_AGENT_SLUG,
+  );
+  const agent = creation.contextLocked
+    ? (attempt?.agent ?? null)
+    : (choices?.agent ?? attempt?.agent ?? defaultAgent ?? null);
   const [modePending, setModePending] = useState(false);
   const initialWork = works.works?.find((work) => work.status === "active") ?? null;
   const workId =
@@ -46,13 +49,18 @@ export function CreationComposer({
     t`Reference a file`,
   );
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
-  const context = { workId, agentSlug };
+  const context = agent ? { workId, agent } : undefined;
   const unavailableWork =
     (works.status === "ready" || works.status === "empty") && workId !== null && !work;
+  const catalogAgent = agents.agents?.find(
+    (item) => item.selection.catalogEntryId === agent?.selection.catalogEntryId,
+  );
   const unavailableAgent =
     (agents.status === "ready" || agents.status === "empty") &&
-    agentSlug !== DEFAULT_AGENT_SLUG &&
-    !agents.agents?.some((agent) => agent.slug === agentSlug);
+    (!agent ||
+      !catalogAgent ||
+      (catalogAgent.selection.definitionRevisionId === agent.selection.definitionRevisionId &&
+        catalogAgent.unavailableReasons.length > 0));
   const unavailableChoice = !creation.contextLocked && (unavailableWork || unavailableAgent);
   const unavailableMessage = !unavailableChoice
     ? null
@@ -62,7 +70,7 @@ export function CreationComposer({
         ? t`Your selected Agent is unavailable. Choose another Agent.`
         : null;
   const worksReady = projectId === null || works.status === "ready" || works.status === "empty";
-  const agentsReady = projectId === null || agents.status === "ready" || agents.status === "empty";
+  const agentsReady = agents.status === "ready" || agents.status === "empty";
   const choicesReady = worksReady && agentsReady && !unavailableChoice;
   const issue =
     creation.state.issue ??
@@ -93,7 +101,9 @@ export function CreationComposer({
           autoFocus={autoFocus}
           onSubmit={async (envelope) => ({
             kind:
-              choicesReady && (await creation.submit(envelope, context)) ? "accepted" : "rejected",
+              choicesReady && context && (await creation.submit(envelope, context))
+                ? "accepted"
+                : "rejected",
             submissionId: envelope.submissionId,
             acceptedRevision: envelope.acceptedRevision,
           })}
@@ -140,9 +150,9 @@ export function CreationComposer({
                 selectedWorkId={workId}
                 works={works.works ?? []}
                 worksStatus={works.isError ? "error" : worksReady ? "ready" : "loading"}
-                agentSlug={agentSlug}
+                agent={agent}
                 disabled={creation.contextLocked}
-                onAgentChange={(agentSlug) => creation.updateChoices({ agentSlug })}
+                onAgentChange={(agent) => creation.updateChoices({ agent })}
                 onWorkChange={(selected) =>
                   creation.updateChoices({ workId: selected?.id ?? null })
                 }
@@ -151,10 +161,12 @@ export function CreationComposer({
               />
             ) : (
               <AgentOnlyComposerToolbar
-                projectId={null}
-                agentSlug={agentSlug}
-                readonlyAgent={creation.contextLocked}
-                onAgentChange={(agentSlug) => creation.updateChoices({ agentSlug })}
+                control={{
+                  mode: "interactive",
+                  selectedAgent: agent,
+                  onSelectedAgentChange: (agent) => creation.updateChoices({ agent }),
+                }}
+                disabled={creation.contextLocked}
               />
             )
           }

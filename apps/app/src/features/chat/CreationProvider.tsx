@@ -10,7 +10,6 @@ import {
   useSyncExternalStore,
 } from "react";
 import { isMeridianApiError } from "@/client/api/http-client";
-import { listProjectAgents } from "@/client/api/project-agents-api";
 import {
   createProject,
   createProjectThread,
@@ -25,9 +24,9 @@ import {
   invalidateWorkThreads,
 } from "@/client/query/project-invalidation";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
+import { agentCatalogQueryOptions } from "@/client/query/useAgentCatalog";
 import { refreshWorksSnapshot } from "@/client/query/works-projection-acquisition";
 import { useProjectActions, useThreadActions } from "@/client/stores";
-import { threadCreateAgentField, wireAgentSlug } from "@/features/agents";
 
 import { useAccountEpochSignal } from "@/features/project/context/account-feature-context";
 
@@ -58,17 +57,8 @@ export function CreationProvider({ children }: { children: ReactNode }) {
                 id: attempt.threadId,
                 title: attempt.title,
                 workId: attempt.workId,
-                ...threadCreateAgentField(attempt.agentSlug),
+                agentSelection: attempt.agent.selection,
               }),
-            matchesThread: (thread, attempt) =>
-              thread.id === attempt.threadId &&
-              thread.projectId === attempt.projectId &&
-              thread.workId === attempt.workId &&
-              thread.userId === continuity.accountId &&
-              thread.kind === "primary" &&
-              thread.title === attempt.title &&
-              thread.deletedAt === null &&
-              thread.currentAgent === (wireAgentSlug(attempt.agentSlug) ?? null),
             refusal: (error) =>
               isMeridianApiError(error) &&
               (error.code === "agent_not_found" || error.code === "work_unavailable")
@@ -83,8 +73,11 @@ export function CreationProvider({ children }: { children: ReactNode }) {
                 });
               else
                 await queryClient.fetchQuery({
-                  queryKey: projectQueryKeys.agents(projectId),
-                  queryFn: async () => (await listProjectAgents(projectId)).agents,
+                  ...agentCatalogQueryOptions(
+                    continuity.accountId,
+                    accountSignal,
+                    projectId ?? undefined,
+                  ),
                   staleTime: 0,
                 });
             },

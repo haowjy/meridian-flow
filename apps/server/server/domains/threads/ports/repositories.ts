@@ -119,7 +119,6 @@ export interface UpdateSpawnLifecycleInput {
 export interface BakeComposedSystemPromptInput {
   composedSystemPrompt: string;
   bakedSkillSlugs: string[];
-  expectedCurrentAgent?: string | null;
 }
 
 export interface ThreadRepository {
@@ -142,8 +141,6 @@ export interface ThreadRepository {
     limit: number,
   ): Promise<WorkThreadSummary[]>;
   updateStatus(id: ThreadId, status: ThreadStatus): Promise<Thread>;
-  /** Rebinds the thread agent only before the first prompt bake/turn; returns null after freeze. */
-  updateCurrentAgent(id: ThreadId, currentAgent: string | null): Promise<Thread | null>;
   /**
    * Compare-and-swap first-attempt bake: writes only while `bakedSkillSlugs` is still
    * null. Returns the authoritative thread row (winner's bake on CAS loss).
