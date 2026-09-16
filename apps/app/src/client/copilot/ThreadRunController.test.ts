@@ -29,7 +29,7 @@ const thread: Thread = {
   kind: "primary",
   status: "active",
   title: "Thread",
-  slug: "thread",
+  ref: "c1",
   currentAgent: null,
   agentDefinitionRevisionId: null,
   agentName: null,

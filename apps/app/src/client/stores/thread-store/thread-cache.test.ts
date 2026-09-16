@@ -21,7 +21,7 @@ const thread: Thread = {
   kind: "primary",
   status: "active",
   title: "Target thread",
-  slug: "target-thread",
+  ref: "c1",
   currentAgent: null,
   agentDefinitionRevisionId: null,
   agentName: null,

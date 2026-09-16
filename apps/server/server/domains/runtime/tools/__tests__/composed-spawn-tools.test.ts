@@ -33,7 +33,7 @@ describe("resolveAgentThreadTurnContext spawn tools", () => {
         kind: "subagent",
         status: "idle",
         title: null,
-        slug: null,
+        ref: null,
         composedSystemPrompt: null,
         bakedSkillSlugs: null,
         systemPrompt: null,

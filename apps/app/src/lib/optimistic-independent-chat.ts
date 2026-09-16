@@ -59,7 +59,7 @@ function makeOptimisticThread(
     kind: "primary",
     status: "idle",
     title,
-    slug: null,
+    ref: null,
     currentAgent: null,
     agentDefinitionRevisionId: null,
     agentName: null,

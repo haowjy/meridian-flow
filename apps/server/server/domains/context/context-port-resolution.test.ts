@@ -34,7 +34,7 @@ function thread(): Thread {
     kind: "primary",
     status: "active",
     title: "Custom project thread",
-    slug: null,
+    ref: null,
     currentAgent: null,
     agentDefinitionRevisionId: null,
     agentName: null,

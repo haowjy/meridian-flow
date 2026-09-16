@@ -29,7 +29,13 @@ export { InvalidWorkAttachmentError } from "./work-attachment.js";
 
 export class ThreadCreationConflictError extends Error {
   constructor() {
-    super("The reserved thread ID belongs to a different creation");
+    super("This thread ID is already used in another project");
+  }
+}
+
+export class ThreadCreationNotFoundError extends Error {
+  constructor() {
+    super("Not found");
   }
 }
 
@@ -69,24 +75,17 @@ export async function createThreadForProject(
   const eventSink = deps.eventSink;
   await requireProjectOwner({ projects: deps.projects }, args.projectId, args.userId);
 
-  const recoverCommitted = async (): Promise<Thread | null> => {
-    const existing = args.id ? await deps.threads.findById(args.id) : null;
-    if (!existing) return null;
-    if (
-      existing.projectId !== args.projectId ||
-      existing.userId !== args.userId ||
-      existing.kind !== "primary" ||
-      existing.title !== (args.title || null) ||
-      existing.workId !== (args.workId ?? null) ||
-      existing.parentThreadId !== null ||
-      existing.agentDefinitionRevisionId !== args.agentSelection.definitionRevisionId
-    )
-      throw new ThreadCreationConflictError();
+  const existingById = async (): Promise<Thread | null> =>
+    args.id ? deps.threads.lockByIdIncludingDeleted(args.id) : null;
+
+  const ownedExisting = (existing: Thread): Thread => {
+    if (existing.userId !== args.userId) throw new ThreadCreationNotFoundError();
+    if (existing.projectId !== args.projectId) throw new ThreadCreationConflictError();
     return existing;
   };
-  // Recovery uses committed identity even if prospective catalog eligibility has changed.
-  const existing = await recoverCommitted();
-  if (existing) return existing;
+
+  const existing = await existingById();
+  if (existing) return ownedExisting(existing);
   let resolvedWorkId: string | null = null;
   let thread: Thread;
   try {
@@ -121,8 +120,8 @@ export async function createThreadForProject(
       },
     });
   } catch (error) {
-    const committed = await recoverCommitted();
-    if (committed) return committed;
+    const committed = await existingById();
+    if (committed) return ownedExisting(committed);
     if (error instanceof WorkLifecycleUnavailableError) {
       throw new InvalidWorkAttachmentError("Work is not available in this project");
     }

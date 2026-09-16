@@ -135,8 +135,8 @@ export interface Thread {
   kind: ThreadKind;
   status: ThreadStatus;
   title: string | null;
-  /** Stable human-readable handle assigned at creation; null only before persistence (including optimistic threads). */
-  slug: string | null;
+  /** Server-assigned handle `c12`; null before persist and on subagents. */
+  ref: string | null;
   /** Baked system prompt output — set only by first-attempt bake or subagent creation. */
   composedSystemPrompt?: string | null;
   /**

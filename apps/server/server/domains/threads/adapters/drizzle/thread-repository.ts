@@ -12,7 +12,6 @@ import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
-import { uniqueThreadSlug } from "../../domain/thread-slug.js";
 import type {
   CreateThreadInput,
   DerivedPrimaryThreadFactory,
@@ -127,27 +126,28 @@ export async function writeThreadCostRecompute(db: DrizzleDb, id: ThreadId) {
   if (!row) throw new Error(`Thread not found: ${id}`);
 }
 
-async function insertThreadWithStableSlug(
+async function insertThreadRow(
   db: DrizzleDatabase,
-  values: Omit<typeof schema.threads.$inferInsert, "slug">,
-  title: string | null | undefined,
+  values: Omit<typeof schema.threads.$inferInsert, "ref">,
 ) {
   return runInDrizzleTransaction(db, async () => {
     const activeDb = currentDrizzleDb(db);
-    await activeDb.execute(
-      sql`select pg_advisory_xact_lock(hashtextextended(${values.projectId}, 73::bigint))`,
-    );
-    const rows = await activeDb
-      .select({ slug: schema.threads.slug })
-      .from(schema.threads)
-      .where(eq(schema.threads.projectId, values.projectId as ProjectId));
-    const slug = uniqueThreadSlug(
-      title,
-      rows.map((row) => row.slug),
-    );
+    let ref: string | null = null;
+    if (values.kind !== "subagent") {
+      const [counter] = await activeDb
+        .insert(schema.projectThreadCounters)
+        .values({ projectId: values.projectId as ProjectId, n: 1 })
+        .onConflictDoUpdate({
+          target: schema.projectThreadCounters.projectId,
+          set: { n: sql`${schema.projectThreadCounters.n} + 1` },
+        })
+        .returning({ n: schema.projectThreadCounters.n });
+      if (!counter) throw new Error("Failed to allocate thread ref");
+      ref = `c${counter.n}`;
+    }
     const [created] = await activeDb
       .insert(schema.threads)
-      .values({ ...values, slug })
+      .values({ ...values, ref })
       .returning(threadColumns);
     return created;
   });
@@ -160,74 +160,62 @@ export function createDrizzleThreadRepository(
     async create(input: CreateThreadInput) {
       const normalized = normalizeThreadCreate(input);
       const threadId = input.id ?? crypto.randomUUID();
-      const row = await insertThreadWithStableSlug(
-        db,
-        {
-          id: threadId,
-          projectId: input.projectId as ProjectId,
-          createdByUserId: input.userId as string,
-          kind: normalized.kind,
-          title: normalized.title,
-          composedSystemPrompt: normalized.systemPrompt,
-          currentAgentId: normalized.currentAgent,
-          workingState: input.workingState ?? null,
-          parentThreadId: normalized.parentThreadId,
-          spawnStatus: normalized.spawnStatus,
-          spawnDepth: normalized.spawnDepth,
-          status: "idle",
-        },
-        normalized.title,
-      );
+      const row = await insertThreadRow(db, {
+        id: threadId,
+        projectId: input.projectId as ProjectId,
+        createdByUserId: input.userId as string,
+        kind: normalized.kind,
+        title: normalized.title,
+        composedSystemPrompt: normalized.systemPrompt,
+        currentAgentId: normalized.currentAgent,
+        workingState: input.workingState ?? null,
+        parentThreadId: normalized.parentThreadId,
+        spawnStatus: normalized.spawnStatus,
+        spawnDepth: normalized.spawnDepth,
+        status: "idle",
+      });
       if (!row) throw new Error("Failed to create thread");
       return mapThread({ ...row, workId: input.workId ?? null });
     },
     async createSubagent(input) {
       const thread = buildSubagentThreadRow(input);
-      const row = await insertThreadWithStableSlug(
-        db,
-        {
-          id: thread.id,
-          projectId: thread.projectId as ProjectId,
-          createdByUserId: thread.userId,
-          kind: thread.kind,
-          title: thread.title ?? "",
-          composedSystemPrompt: thread.composedSystemPrompt,
-          bakedSkillSlugs: thread.bakedSkillSlugs,
-          systemPromptHash: null,
-          currentAgentId: thread.currentAgent,
-          parentThreadId: thread.parentThreadId,
-          rootThreadId: thread.kind === "subagent" ? thread.rootThreadId : null,
-          originTurnId: input.originTurnId ?? thread.id,
-          originType: "spawn",
-          spawnStatus: thread.spawnStatus,
-          spawnDepth: thread.spawnDepth,
-          status: thread.status,
-        },
-        thread.title,
-      );
+      const row = await insertThreadRow(db, {
+        id: thread.id,
+        projectId: thread.projectId as ProjectId,
+        createdByUserId: thread.userId,
+        kind: thread.kind,
+        title: thread.title ?? "",
+        composedSystemPrompt: thread.composedSystemPrompt,
+        bakedSkillSlugs: thread.bakedSkillSlugs,
+        systemPromptHash: null,
+        currentAgentId: thread.currentAgent,
+        parentThreadId: thread.parentThreadId,
+        rootThreadId: thread.kind === "subagent" ? thread.rootThreadId : null,
+        originTurnId: input.originTurnId ?? thread.id,
+        originType: "spawn",
+        spawnStatus: thread.spawnStatus,
+        spawnDepth: thread.spawnDepth,
+        status: thread.status,
+      });
       if (!row) throw new Error("Failed to create subagent thread");
       return mapThread({ ...row, workId: thread.workId });
     },
     async createDerivedPrimary(input) {
       const thread = buildDerivedPrimaryThreadRow(input);
-      const row = await insertThreadWithStableSlug(
-        db,
-        {
-          id: thread.id,
-          projectId: thread.projectId as ProjectId,
-          createdByUserId: thread.userId,
-          kind: "primary",
-          title: thread.title ?? "",
-          composedSystemPrompt: thread.systemPrompt,
-          currentAgentId: thread.currentAgent,
-          parentThreadId: input.parentThreadId,
-          originTurnId: input.originTurnId ?? null,
-          originType: input.originType,
-          spawnDepth: 0,
-          status: thread.status,
-        },
-        thread.title,
-      );
+      const row = await insertThreadRow(db, {
+        id: thread.id,
+        projectId: thread.projectId as ProjectId,
+        createdByUserId: thread.userId,
+        kind: "primary",
+        title: thread.title ?? "",
+        composedSystemPrompt: thread.systemPrompt,
+        currentAgentId: thread.currentAgent,
+        parentThreadId: input.parentThreadId,
+        originTurnId: input.originTurnId ?? null,
+        originType: input.originType,
+        spawnDepth: 0,
+        status: thread.status,
+      });
       if (!row) throw new Error("Failed to create derived primary thread");
       return mapThread({ ...row, workId: thread.workId });
     },
@@ -267,7 +255,7 @@ export function createDrizzleThreadRepository(
         );
       return row ? mapThread(row) : null;
     },
-    async findLiveByProjectSlug(projectId: ProjectId, slug: string) {
+    async findLiveByProjectRef(projectId: ProjectId, ref: string) {
       const [row] = await currentDrizzleDb(db)
         .select({
           ...threadColumns,
@@ -279,7 +267,7 @@ export function createDrizzleThreadRepository(
         .where(
           and(
             eq(schema.threads.projectId, projectId),
-            eq(schema.threads.slug, slug),
+            eq(schema.threads.ref, ref),
             isNull(schema.threads.deletedAt),
             isNull(schema.projects.deletedAt),
           ),

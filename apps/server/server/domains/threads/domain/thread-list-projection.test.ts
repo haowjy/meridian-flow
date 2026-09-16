@@ -12,7 +12,7 @@ function thread(overrides: Partial<Thread> = {}): Thread {
     kind: "primary",
     status: "idle",
     title: "Draft review",
-    slug: null,
+    ref: null,
     currentAgent: null,
     agentDefinitionRevisionId: null,
     agentName: null,

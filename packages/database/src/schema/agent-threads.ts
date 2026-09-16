@@ -45,7 +45,7 @@ export const threads = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     title: text("title").notNull().default(""),
-    slug: text("slug").notNull(),
+    ref: text("ref"),
     kind: text("kind").notNull().default("primary"),
     status: text("status").notNull().default("idle"),
     currentAgentId: text("current_agent_id"),
@@ -70,7 +70,9 @@ export const threads = pgTable(
   },
   (table) => [
     unique("threads_project_id_unique").on(table.projectId, table.id),
-    uniqueIndex("threads_project_slug").on(table.projectId, table.slug),
+    uniqueIndex("threads_project_ref")
+      .on(table.projectId, table.ref)
+      .where(sql`${table.ref} IS NOT NULL`),
     index("threads_project_updated_active")
       .on(table.projectId, table.updatedAt.desc())
       .where(sql`${table.deletedAt} IS NULL`),
@@ -135,6 +137,14 @@ export const threads = pgTable(
     ),
   ],
 );
+
+export const projectThreadCounters = pgTable("project_thread_counters", {
+  projectId: uuid("project_id")
+    .$type<ProjectId>()
+    .primaryKey()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  n: integer("n").notNull(),
+});
 
 /** M:N thread↔Work history; the optional primary row is contextual authority. */
 export const threadWorks = pgTable(

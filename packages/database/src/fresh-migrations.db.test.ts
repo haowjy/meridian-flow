@@ -128,22 +128,14 @@ INSERT INTO context_catalog_scope_heads(scope_key,scope) VALUES ('project:probe'
         },
         verify: async (target) => {
           expect(
-            await target`SELECT is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'threads' AND column_name = 'slug'`,
-          ).toEqual([{ is_nullable: "NO" }]);
-          await expect(
-            target`INSERT INTO threads (id, project_id, created_by_user_id, title) VALUES ('00000000-0000-4000-8000-000000000238', '00000000-0000-4000-8000-000000000233', '00000000-0000-4000-8000-000000000231', 'Missing handle')`,
-          ).rejects.toMatchObject({ code: "23502" });
-          expect(
             await target`SELECT slug FROM projects WHERE user_id = '00000000-0000-4000-8000-000000000231' ORDER BY created_at`,
           ).toEqual([{ slug: "silver-moon" }, { slug: "silver-moon-2" }]);
           expect(
-            await target`SELECT slug FROM threads WHERE project_id = '00000000-0000-4000-8000-000000000233' ORDER BY id`,
-          ).toEqual([
-            { slug: "chat-3" },
-            { slug: "chat" },
-            { slug: "fight-scene" },
-            { slug: "chat-2" },
-          ]);
+            await target`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'threads' AND column_name = 'slug'`,
+          ).toEqual([]);
+          expect(
+            await target`SELECT ref FROM threads WHERE project_id = '00000000-0000-4000-8000-000000000233' ORDER BY id`,
+          ).toEqual([{ ref: "c1" }, { ref: "c2" }, { ref: "c3" }, { ref: "c4" }]);
         },
       });
     });
@@ -345,6 +337,44 @@ INSERT INTO context_catalog_scope_heads(scope_key,scope) VALUES ('project:probe'
             migration.replaceAll("--> statement-breakpoint", ""),
           );
           expect(replayed.count).toBe(0);
+        },
+      });
+    });
+
+    it("replaces word thread slugs with sequential cN refs", {
+      timeout: 90_000,
+    }, async () => {
+      const ids = {
+        user: "00000000-0000-4000-8000-000000000241",
+        project: "00000000-0000-4000-8000-000000000242",
+        first: "00000000-0000-4000-8000-000000000243",
+        second: "00000000-0000-4000-8000-000000000244",
+      };
+      await withPopulatedMigrationDatabase({
+        databaseUrl,
+        seedBefore: "0095_lame_tombstone",
+        seed: async (target) => {
+          await target.unsafe(`
+            INSERT INTO users (id, external_id, email)
+            VALUES ('${ids.user}', 'thread-ref-upgrade', 'thread-ref-upgrade@test.invalid');
+            INSERT INTO projects (id, user_id, name, slug)
+            VALUES ('${ids.project}', '${ids.user}', 'Ref upgrade', 'ref-upgrade');
+            INSERT INTO threads (id, project_id, created_by_user_id, title, slug, kind, created_at)
+            VALUES
+              ('${ids.first}', '${ids.project}', '${ids.user}', 'Fight Scene', 'fight-scene', 'primary', '2026-01-01'),
+              ('${ids.second}', '${ids.project}', '${ids.user}', 'Chat', 'chat', 'primary', '2026-01-02');
+          `);
+        },
+        verify: async (target) => {
+          expect(await target`SELECT ref FROM threads WHERE id = ${ids.first}`).toEqual([
+            { ref: "c1" },
+          ]);
+          expect(await target`SELECT ref FROM threads WHERE id = ${ids.second}`).toEqual([
+            { ref: "c2" },
+          ]);
+          expect(
+            await target`SELECT n FROM project_thread_counters WHERE project_id = ${ids.project}`,
+          ).toEqual([{ n: 2 }]);
         },
       });
     });

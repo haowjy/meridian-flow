@@ -22,7 +22,7 @@ function thread(): Thread {
     kind: "primary",
     status: "active",
     title: "Stable context identity",
-    slug: null,
+    ref: null,
     currentAgent: null,
     agentDefinitionRevisionId: null,
     agentName: null,
