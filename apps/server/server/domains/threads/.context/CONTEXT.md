@@ -47,7 +47,7 @@ instead of the N:1 `threads.workId` column.
 - **AI write mode** — `works.ai_write_mode` column (`'direct'` | `'draft'`)
   controls whether AI edits go into branch review or directly to live.
   The column is owned by the Work, not the thread. It is seeded from the
-  project's `ProjectPreferences.aiWriteMode` at Work creation. Write-time routing resolves `thread → optional primary Work → works.ai_write_mode`; no-Work always executes directly with no draft owner.
+  project's `ProjectPreferences.aiWriteMode` at Work creation. Write-time routing resolves `thread → primary Work → works.ai_write_mode`. Missing primary is corrupt. No Work uses the same column; `draftOwner` is null only for Auto-apply.
 
   The write-mode route (`lib/work-write-mode-route.ts`) maps
   `aiWriteMode` → branch `pushPolicy` (`'direct'` → `'auto'`, `'draft'` →

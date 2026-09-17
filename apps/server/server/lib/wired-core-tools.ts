@@ -219,7 +219,7 @@ async function resolveExecutionContext(
   threadId: string,
 ): Promise<ThreadExecutionContext | ToolErrorOutput> {
   const primary = await deps.threadWorks.findPrimary(threadId);
-  if (!primary) return threadExecutionContext(null);
+  if (!primary) throw new Error(`Thread primary Work is missing: ${threadId}`);
   const work = await deps.works.findById(primary.workId);
   if (!work || work.deletedAt || work.status === "archived") {
     return toolError({ code: "work_unavailable", message: "The current Work is unavailable" });
@@ -232,7 +232,7 @@ async function resolveExecutionContextOrThrow(
   threadId: string,
 ): Promise<ThreadExecutionContext> {
   const primary = await deps.threadWorks.findPrimary(threadId);
-  if (!primary) return threadExecutionContext(null);
+  if (!primary) throw new Error(`Thread primary Work is missing: ${threadId}`);
   const work = await deps.works.findById(primary.workId);
   if (!work || work.deletedAt || work.status === "archived") {
     throw new Error("The current Work is unavailable during response finalization");

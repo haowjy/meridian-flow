@@ -1,4 +1,4 @@
-/** Renders and resolves the frozen model-facing nullable Work context block. */
+/** Renders and resolves the frozen model-facing Work context block. */
 import type { ProjectId, ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadExecutionContext, Work } from "@meridian/contracts/works";
 import type { WorkRepository } from "../../projects/index.js";
@@ -31,12 +31,19 @@ function workLine(work: Pick<Work, "slug" | "name" | "goal">): string {
   return `${promptText(work.slug ?? "none")}: ${JSON.stringify(promptText(work.name))} (goal: ${promptText(oneLine(work.goal))})`;
 }
 
+function currentLine(
+  work: Pick<Work, "slug" | "name" | "goal" | "aiWriteMode" | "isNoWork">,
+): string {
+  if (work.isNoWork) return `current: none (${work.aiWriteMode} writes)`;
+  return `current: ${workLine(work)}`;
+}
+
 export function renderWorkContext(input: {
-  current: Pick<Work, "id" | "slug" | "name" | "goal"> | null;
-  activeWorks: Array<Pick<Work, "id" | "slug" | "name" | "goal" | "lastActivityAt">>;
+  current: Pick<Work, "id" | "slug" | "name" | "goal" | "aiWriteMode" | "isNoWork">;
+  activeWorks: Array<Pick<Work, "id" | "slug" | "name" | "goal" | "lastActivityAt" | "isNoWork">>;
 }): string {
   const otherActive = input.activeWorks
-    .filter((work) => work.id !== input.current?.id)
+    .filter((work) => !work.isNoWork && work.id !== input.current.id)
     .sort(
       (left, right) =>
         right.lastActivityAt.localeCompare(left.lastActivityAt) ||
@@ -46,7 +53,7 @@ export function renderWorkContext(input: {
   const elided = otherActive.length - visible.length;
   const lines = [
     "<work_context>",
-    input.current ? `current: ${workLine(input.current)}` : "current: none (direct writes)",
+    currentLine(input.current),
     `active (most recent first; max ${WORK_CONTEXT_ACTIVE_LIMIT}):`,
     ...visible.map((work) => `  ${workLine(work)}`),
   ];
@@ -66,8 +73,9 @@ export function createWorkContextReader(deps: {
       const thread = await deps.threads.findById(threadId);
       if (!thread || thread.deletedAt) throw new Error(`Thread unavailable: ${threadId}`);
       const primary = await deps.threadWorks.findPrimary(threadId);
-      const current = primary ? await deps.works.findById(primary.workId) : null;
-      if (primary && (!current || current.deletedAt)) {
+      if (!primary) throw new Error(`Thread primary Work is missing: ${threadId}`);
+      const current = await deps.works.findById(primary.workId);
+      if (!current || current.deletedAt) {
         throw new Error(`Thread primary Work is unavailable: ${threadId}`);
       }
       const activeWorks = await deps.works.listByProject(thread.projectId, { status: "active" });
