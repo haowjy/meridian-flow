@@ -1,8 +1,10 @@
 /** User slash catalog versus model-available catalog, body load, and Send-slug authorization. */
 import { describe, expect, it } from "vitest";
 import {
+  type AgentSourceSnapshot,
   createInMemoryAccountSkillInstallStore,
   createInMemoryAgentRevisionStore,
+  type InMemoryAgentRevisionStore,
   resolveAgentConfiguration,
 } from "../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
@@ -77,16 +79,39 @@ const PACKAGED_USER_SLUGS = [
   "writing-principles",
 ] as const;
 
-async function launchAgentsChat(agentSlug: "writer" | "spark" = "writer") {
+async function publishSource(
+  store: InMemoryAgentRevisionStore,
+  source: AgentSourceSnapshot,
+  ownerUserId: string | null = null,
+) {
+  const installed = await store.installSource(source);
+  const installation = await store.advanceInstallation({
+    ownerUserId,
+    coordinate: source.coordinate,
+    currentRevisionId: installed.packageRevisionId,
+    upstreamRevisionId: installed.packageRevisionId,
+    origin: null,
+  });
+  if (!installation) throw new Error(`Failed to publish ${source.coordinate}`);
+  return installed;
+}
+
+async function bindPrimary(input: {
+  userId?: string;
+  agentSlug: string;
+  source: AgentSourceSnapshot;
+  ownerUserId?: string | null;
+}) {
+  const userId = input.userId ?? "user-1";
   const projects = createInMemoryProjectRepository();
-  const project = await projects.create({ userId: "user-1", title: "Serial" });
+  const project = await projects.create({ userId, title: "Serial" });
   const repos = createInMemoryRepositories({ projects });
   const agentRevisions = createInMemoryAgentRevisionStore({
     threadExists: async (id) => Boolean(await repos.threads.findById(id)),
   });
-  const installed = await agentRevisions.installSource(WRITER_SOURCE);
-  const definition = installed.definitions.find((entry) => entry.slug === agentSlug);
-  if (!definition) throw new Error(`${agentSlug} definition missing`);
+  const installed = await publishSource(agentRevisions, input.source, input.ownerUserId ?? null);
+  const definition = installed.definitions.find((entry) => entry.slug === input.agentSlug);
+  if (!definition) throw new Error(`${input.agentSlug} definition missing`);
   const configuration = await resolveAgentConfiguration({
     revision: definition,
     store: agentRevisions,
@@ -94,12 +119,16 @@ async function launchAgentsChat(agentSlug: "writer" | "spark" = "writer") {
   });
   const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
   const thread = await repos.threads.create({
-    userId: "user-1",
+    userId,
     projectId: project.id,
-    title: `${agentSlug} chat`,
+    title: `${input.agentSlug} chat`,
   });
   await agentRevisions.bindThread(thread.id, definition.id, configuration);
   return { thread, agentRevisions, accountSkillInstalls, repos, definition };
+}
+
+async function launchAgentsChat(agentSlug: "writer" | "spark" = "writer") {
+  return bindPrimary({ agentSlug, source: WRITER_SOURCE });
 }
 
 describe("skill catalogs", () => {
@@ -167,7 +196,7 @@ describe("skill catalogs", () => {
     const agentRevisions = createInMemoryAgentRevisionStore({
       threadExists: async (id) => Boolean(await repos.threads.findById(id)),
     });
-    const installed = await agentRevisions.installSource({
+    const installed = await publishSource(agentRevisions, {
       coordinate: "meridian-launch-agents",
       files: {
         "agents/writer.md": `---
@@ -349,5 +378,140 @@ You are Writer.
       accountSkillInstalls,
     });
     expect(catalog?.map((skill) => skill.slug)).toEqual([...PACKAGED_USER_SLUGS, "voice-notes"]);
+  });
+
+  it("lists packaged slash skills on General from system launch-agents, not the bound package", async () => {
+    const projects = createInMemoryProjectRepository();
+    const project = await projects.create({ userId: "user-1", title: "Serial" });
+    const repos = createInMemoryRepositories({ projects });
+    const agentRevisions = createInMemoryAgentRevisionStore({
+      threadExists: async (id) => Boolean(await repos.threads.findById(id)),
+    });
+    await publishSource(agentRevisions, WRITER_SOURCE);
+    const general = await publishSource(agentRevisions, {
+      coordinate: "meridian/general",
+      files: {
+        "agents/general.md": `---
+name: General
+mode: primary
+model: fixture-model
+skills: []
+---
+
+You are General.
+`,
+      },
+    });
+    const definition = general.definitions.find((entry) => entry.slug === "general");
+    if (!definition) throw new Error("General definition missing");
+    const configuration = await resolveAgentConfiguration({
+      revision: definition,
+      store: agentRevisions,
+      defaultModel: "fixture-model",
+    });
+    const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
+    const thread = await repos.threads.create({
+      userId: "user-1",
+      projectId: project.id,
+      title: "General chat",
+    });
+    await agentRevisions.bindThread(thread.id, definition.id, configuration);
+
+    const userCatalog = await resolveThreadUserInvocableSkills({
+      thread,
+      agentRevisions,
+      accountSkillInstalls,
+    });
+    expect(userCatalog.map((skill) => skill.slug)).toEqual([...PACKAGED_USER_SLUGS]);
+    expect(await resolveThreadModelAvailableSkills({ thread, agentRevisions })).toEqual([]);
+    const review = await loadUserSkillBody({
+      thread,
+      slug: "story-review",
+      agentRevisions,
+      accountSkillInstalls,
+    });
+    expect(review.body).toBe("story-review body.\n");
+    await expect(
+      loadModelSkillBody({ thread, slug: "story-review", agentRevisions }),
+    ).rejects.toBeInstanceOf(SkillUnavailableError);
+  });
+
+  it("unions user-invocable skills across installed packages and lets the first package file win", async () => {
+    const projects = createInMemoryProjectRepository();
+    const project = await projects.create({ userId: "user-1", title: "Serial" });
+    const repos = createInMemoryRepositories({ projects });
+    const agentRevisions = createInMemoryAgentRevisionStore({
+      threadExists: async (id) => Boolean(await repos.threads.findById(id)),
+    });
+    const packageA = await publishSource(
+      agentRevisions,
+      {
+        coordinate: "package-a",
+        files: {
+          "agents/alpha.md": `---
+name: Alpha
+mode: primary
+model: fixture-model
+skills: []
+---
+
+You are Alpha.
+`,
+          "skills/skill1/SKILL.md": skillMd("skill1", "First package skill one."),
+          "skills/skill2/SKILL.md": skillMd("skill2", "First package skill two."),
+        },
+      },
+      "user-1",
+    );
+    await publishSource(
+      agentRevisions,
+      {
+        coordinate: "package-b",
+        files: {
+          "skills/skill2/SKILL.md": skillMd("skill2", "Second package colliding skill two."),
+          "skills/skill3/SKILL.md": skillMd("skill3", "Second package skill three."),
+        },
+      },
+      "user-1",
+    );
+    const definition = packageA.definitions.find((entry) => entry.slug === "alpha");
+    if (!definition) throw new Error("Alpha definition missing");
+    const configuration = await resolveAgentConfiguration({
+      revision: definition,
+      store: agentRevisions,
+      defaultModel: "fixture-model",
+    });
+    const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
+    const thread = await repos.threads.create({
+      userId: "user-1",
+      projectId: project.id,
+      title: "Alpha chat",
+    });
+    await agentRevisions.bindThread(thread.id, definition.id, configuration);
+
+    const userCatalog = await resolveThreadUserInvocableSkills({
+      thread,
+      agentRevisions,
+      accountSkillInstalls,
+    });
+    expect(userCatalog.map((skill) => skill.slug)).toEqual(["skill1", "skill2", "skill3"]);
+    expect(userCatalog.find((skill) => skill.slug === "skill2")?.description).toBe(
+      "First package skill two.",
+    );
+    const skill3 = await loadUserSkillBody({
+      thread,
+      slug: "skill3",
+      agentRevisions,
+      accountSkillInstalls,
+    });
+    expect(skill3.body).toBe("skill3 body.\n");
+    const skill2 = await loadUserSkillBody({
+      thread,
+      slug: "skill2",
+      agentRevisions,
+      accountSkillInstalls,
+    });
+    expect(skill2.body).toBe("skill2 body.\n");
+    expect(skill2.description).toBe("First package skill two.");
   });
 });

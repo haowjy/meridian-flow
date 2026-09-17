@@ -9,7 +9,10 @@
 
 ### Added
 
-- Chat composer `/` lists user-invocable package-graph skills as `/<slug>` plus account installs. Picking one leaves a `/slug` atom in the draft; Send reads those slugs. Manuscript `/` is unchanged.
+- Seed Writer with full write/edit allow and promote Critic to a pickable primary that may read but not mutate.
+- Advertise Agent turns from the bound revision's projected tool policy: filtered tools, narrowed write/work command schemas, and a per-turn permission gate that denies unknown names and unavailable write/work commands.
+- Project compiled Agent Mars `tools` / `disallowed-tools` onto Flow write/work command policy.
+- Chat composer `/` lists user-invocable skills from installed packages (system and owner) as `/<slug>` plus account installs. Picking one leaves a `/slug` atom in the draft; Send reads those slugs. Manuscript `/` is unchanged.
 - Slash-activated skill slugs on Send append that SKILL.md as extra user text for the turn. The model `skill` tool loads Agent `skills.available` only. The slash catalog is readable for the bound thread.
 - First-turn bake lists Agent `skills.available` slugs (and name when it differs) with descriptions and persists those slugs. An account install after freeze does not rewrite the prompt and does not notify the model.
 - Persist account-scoped skill installs. Debug overlay can add a packaged skill (including `story-review`) or a paste, and delete by slug.
@@ -17,6 +20,8 @@
 
 ### Fixed
 
+- Allow a pickable primary (Critic) to remain a named child on Muse's roster. Child invocability is `model-invocable: false` only.
+- Deny unavailable write/work commands through the same permission-gate persist path as unknown tools. Dispatch only executes; the core catalogue stays policy-free.
 - Slash-activated skills append as extra user text (`skill invoked`, description, SKILL.md). No fabricated tool round.
 - Anthropic requests prepend empty thinking before `tool_use` when thinking is required and missing (DeepSeek always; other Anthropic only when thinking is on).
 - Composer `/` menu opens above the input so a phone keyboard does not cover it.
@@ -26,7 +31,8 @@
 
 ### Changed
 
-- Slash and Send authorize the package-graph ∪ account catalog. Prompt bake and `skill()` use Agent `skills.available` only. The Agent∪account union is gone.
+- Per-turn tool name gate is advertised names plus extraAllowed. Wildcard allow, millicredit cost cap, and unused permission profiles are gone.
+- Slash and Send authorize the installed-packages ∪ account catalog, not the bound Agent package. Prompt bake and `skill()` use Agent `skills.available` only. The Agent∪account union is gone.
 - Nonempty Agent `skills.available` no longer refuses catalog selection or turn preparation. Nonempty `skills.load` still does.
 - Delete leftover project-addressed skill HTTP (`PUT/GET …/projects/:id/skills/…`, `PATCH …/agents/:slug/skills/…`).
 

@@ -8,7 +8,7 @@ import type { ThreadRepositories } from "./compose.js";
 export interface ThreadAvailableSkillsRouteDeps {
   repos: Pick<ThreadRepositories, "threads">;
   projectRepo: Parameters<typeof requireThreadOwner>[0]["projects"];
-  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
+  agentRevisions: Pick<AgentRevisionStore, "listInstallations" | "readSource">;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
 }
 

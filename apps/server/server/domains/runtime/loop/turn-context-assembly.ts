@@ -29,6 +29,7 @@ import {
 import { isThreadPromptFrozen, rebakeComposedSystemPrompt } from "./composed-system-prompt.js";
 import { buildContext } from "./context-builder.js";
 import { projectImageBlocksForModel } from "./image-context.js";
+import type { EffectiveToolPolicy } from "./permissions/project-tool-policy.js";
 import type { WorkContextReader } from "./work-context.js";
 
 export interface AssembleNextTurnContextInput {
@@ -54,6 +55,7 @@ export interface AssembledNextTurnContext {
   agentSlug: string | null;
   systemPrompt: string;
   tools: FunctionTool[];
+  policy: EffectiveToolPolicy;
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   baked: boolean;
   generateRequest: Pick<GenerateRequest, "messages" | "tools" | "model" | "reasoning">;
@@ -144,6 +146,7 @@ export async function assembleNextTurnContext(
     agentSlug: agentContext.agentSlug,
     systemPrompt,
     tools: functionToolsFromAdvertised(contextTools),
+    policy: agentContext.policy,
     gatewayParams,
     baked,
     generateRequest: {

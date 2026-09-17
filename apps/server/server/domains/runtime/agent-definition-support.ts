@@ -12,6 +12,8 @@ const supported = new Set([
   "user-invocable",
   "skills",
   "subagents",
+  "tools",
+  "disallowed-tools",
 ]);
 export function agentDefinitionUnavailableReasons(
   definition: CompiledAgentDefinition,

@@ -99,7 +99,6 @@ import {
 } from "../domains/runtime/agent-definition-support.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
-  computeEffectivePermissions,
   createAdmissionTurnStarter,
   createChildRunCoordinator,
   createContextImageAssetPort,
@@ -111,7 +110,6 @@ import {
   createInstrumentedGateway,
   createLateBindRunTurnPort,
   createOrchestrator,
-  createPermissionGate,
   createSkillToolRegistrations,
   createSpawnToolRegistrations,
   createToolExecutor,
@@ -123,7 +121,6 @@ import {
   type Gateway,
   InvalidAdmissionError,
   type RunTurnPort,
-  resolveProfile,
   type ThreadRunOwnership,
   type ToolExecutor,
   type ToolRegistry,
@@ -708,7 +705,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       },
     },
     workContext,
-    permissionGate: createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
     childRunCoordinator,
     helperResultDelivery,
     workContextDelivery: workContextDelivery,

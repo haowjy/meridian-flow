@@ -180,9 +180,10 @@ Domain API call → contract wire shape
 
 - **One composition root.** Adapter choice belongs in `compose.ts` / small env
   factories called from it. Domains must not import from `lib/`.
-- **Explicit required deps.** EventSink, CreditLedger, PermissionGate,
+- **Explicit required deps.** EventSink, CreditLedger,
   InterruptRegistry, and RunTurnPort wiring are explicit; disabled behavior uses
-  explicit adapters.
+  explicit adapters. Tool names are gated per turn from advertised policy, not
+  a compose-time PermissionGate.
 - **One-process hub.** `app.ts` guards `AppServices` on `globalThis`; live hub
   fan-out is process-local even though journal rows are durable.
 - **Ownership gate on every route and WS subscribe.** Project workspace/thread gates run

@@ -122,7 +122,7 @@ import {
   type InterruptAutoResumePolicy,
   type InterruptRegistry,
 } from "./interrupts.js";
-import type { PermissionGate } from "./permissions/index.js";
+import { type PermissionGate, permissionGateFromToolPolicy } from "./permissions/index.js";
 import {
   appendEvent,
   persistAndAppendEvents,
@@ -162,7 +162,10 @@ export interface OrchestratorDeps {
   referenceReader: ReferenceReader;
   repos: OrchestratorRepositories;
   eventWriter: EventJournalWriter;
-  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
+  agentRevisions: Pick<
+    AgentRevisionStore,
+    "readThreadBinding" | "listInstallations" | "readSource"
+  >;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
   toolRegistry: ToolRegistry;
   projectPreferences: {
@@ -172,7 +175,6 @@ export interface OrchestratorDeps {
     read(workId: string): Promise<AiWriteMode>;
   };
   workContext: WorkContextReader;
-  permissionGate: PermissionGate;
   billingUsage: BillingUsagePolicy;
   /** Interrupt-boundary artifact flush; explicit noop adapter means disabled. */
   interruptArtifacts: InterruptArtifactFlushPort;
@@ -845,6 +847,7 @@ async function buildGenerateRequest(input: {
   request: GenerateRequest;
   agentSlug: string | null;
   thread: Thread;
+  permissionGate: PermissionGate;
 }> {
   const assembled = await assembleNextTurnContext({
     thread: input.thread,
@@ -865,7 +868,10 @@ async function buildGenerateRequest(input: {
   return {
     thread: assembled.thread,
     agentSlug: assembled.agentSlug,
-
+    permissionGate: permissionGateFromToolPolicy(
+      assembled.policy,
+      assembled.thread.kind === "subagent" ? ["return_result"] : [],
+    ),
     request: {
       ...assembled.generateRequest,
       signal: input.gatewaySignal ?? input.runInput.signal,
@@ -1273,10 +1279,7 @@ async function* generateEvents(
 
           // If denied, we still persist a tool_result block (with isError: true)
           // so the model sees the rejection in the next turn's context build.
-          const decision = deps.permissionGate.check(
-            call.name,
-            Number(currentAssistantTurn.totalCostUsd),
-          );
+          const decision = built.permissionGate.check(call.name, call.arguments);
           if (!decision.allowed) {
             const persistedDenial = await persistPermissionDenial({
               deps,

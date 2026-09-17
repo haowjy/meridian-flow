@@ -106,10 +106,8 @@ export async function resolveAgentDependencies(input: {
         "Agent",
         [...packages.values()].flatMap((pkg) => pkg.agents.filter((agent) => agent.slug === name)),
       );
-      if (
-        target.definition.metadata.mode === "primary" ||
-        target.definition.metadata["model-invocable"] === false
-      ) {
+      // Child-invocability is model-invocable: false only. A pickable primary may also be a named spawn target.
+      if (target.definition.metadata["model-invocable"] === false) {
         throw new AgentConfigurationError(`Agent "${name}" cannot be invoked as a child.`);
       }
       return { name, definitionRevisionId: target.id };
