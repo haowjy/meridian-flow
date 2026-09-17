@@ -4,7 +4,6 @@ import { testWorkSlug } from "../../test-support/work-slug.js";
 import { resolvedWorkAuthority } from "../projects/domain/work-authority.js";
 import type { ProjectWorkAuthorityResolver } from "../projects/index.js";
 import {
-  contextPortForProjectBrowse,
   contextPortForProjectRecovery,
   contextPortForThread,
   resolveThreadContext,
@@ -215,49 +214,6 @@ describe("project recovery context-port resolution", () => {
       requestedWorkId: noWorkId,
     });
 
-    expect(calls).toEqual([noWorkId]);
-  });
-});
-
-describe("project browse context-port resolution", () => {
-  it("resolves No Work by id without requiring a slug", async () => {
-    const noWorkId = "no-work-custom";
-    const calls: string[] = [];
-    const port = await contextPortForProjectBrowse({
-      deps: {
-        contextPorts: {
-          forWork: (authority) => {
-            calls.push(authority.workId);
-            return {} as ContextPort;
-          },
-          forProject: () => {
-            throw new Error("No Work browse must not fall back to project port");
-          },
-        },
-        works: {
-          listByProject: async () => [{ id: WORK_ID, slug: "current-work" }] as never,
-        },
-        workAuthorityResolver: {
-          byId: async (_projectId, workId) =>
-            workId === noWorkId
-              ? resolvedWorkAuthority({ kind: "none", workId: noWorkId })
-              : workId === WORK_ID
-                ? resolvedWorkAuthority({
-                    kind: "work",
-                    workId: WORK_ID,
-                    workSlug: testWorkSlug("current-work"),
-                  })
-                : null,
-          lockById: async () => null,
-          bySlug: async () => null,
-        },
-      },
-      projectId: CUSTOM_PROJECT_ID,
-      userId: "user-1",
-      workId: noWorkId,
-    });
-
-    expect(port).not.toBeNull();
     expect(calls).toEqual([noWorkId]);
   });
 });

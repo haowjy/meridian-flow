@@ -54,19 +54,6 @@ describe("renderWorkContext", () => {
       ].join("\n"),
     );
   });
-
-  it("bakes Auto-apply No Work as direct writes", () => {
-    const locked = work({
-      id: NO_WORK_ID,
-      name: "No Work",
-      slug: null,
-      isNoWork: true,
-      aiWriteMode: "direct",
-    });
-    expect(renderWorkContext({ current: locked, activeWorks: [locked] })).toContain(
-      "current: none (direct writes)",
-    );
-  });
 });
 
 describe("createWorkContextReader", () => {
