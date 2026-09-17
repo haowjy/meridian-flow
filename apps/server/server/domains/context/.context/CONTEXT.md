@@ -157,7 +157,7 @@ currently available to the request owner in the requested project.
   project and authenticated personal files plus the selected Work/no-Work scope,
   never another Work's titles. Canonical qualifiers may explicitly name another
   available (active) Work in the project. Contextual scratch/uploads use the selected
-  scope; `@/` always means no Work. Legacy `work://` is not accepted.
+  scope; `@/` always means No Work. Legacy `work://` is not accepted.
   Archived Work identity still parses/resolves as authority, but the catalog
   excludes its files from navigation. Zero or multiple matches both resolve to
   `null`; resolution never guesses.

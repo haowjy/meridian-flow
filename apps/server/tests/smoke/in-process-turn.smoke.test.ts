@@ -6,6 +6,7 @@ import { createInMemoryEventSink } from "../../server/domains/observability/inde
 import {
   createInMemoryProjectRepository,
   createInMemoryWorkRepository,
+  resolvedWorkAuthority,
 } from "../../server/domains/projects/index.js";
 import type {
   Gateway,
@@ -88,8 +89,11 @@ describe("smoke: in-process turn", () => {
 
     const projectRepo = createInMemoryProjectRepository();
     const repos = createInMemoryRepositories({ projects: projectRepo });
+    const works = createInMemoryWorkRepository();
     const project = await projectRepo.create({ userId: "smoke-user", title: "Smoke" });
     const thread = await repos.threads.create({ userId: "smoke-user", projectId: project.id });
+    const noWork = await works.ensureNoWork(project.id);
+    await repos.threadWorks.addMembership(thread.id, noWork.id, true);
     const documentSync = createInMemoryCollabDomain();
     const contextPorts = createInMemoryUnifiedContextPortFactory({ documentSync });
     const writeResult = await contextPorts
@@ -100,7 +104,20 @@ describe("smoke: in-process turn", () => {
     const toolRegistry = createToolRegistry({
       registrations: createWiredCoreToolRegistrations({
         threads: repos.threads,
-        works: createInMemoryWorkRepository(),
+        works,
+        workAuthorityResolver: {
+          async byId(projectId, workId) {
+            const work = await works.findById(workId);
+            if (!work || work.projectId !== projectId || work.deletedAt) return null;
+            return work.isNoWork ? resolvedWorkAuthority({ kind: "none", workId: work.id }) : null;
+          },
+          async bySlug() {
+            return null;
+          },
+          async lockById(projectId, workId) {
+            return this.byId(projectId, workId);
+          },
+        },
         contextPorts,
         documentSync,
         threadWorks: repos.threadWorks,

@@ -29,11 +29,11 @@ flowchart TD
 
 Acyclic at the domain level: threads reference project/work ownership, never
 the reverse (the only projects↔threads imports are test fixtures).
-Root thread creation may omit a Work choice or send explicit null: both create
-an executable no-Work thread with no primary membership. An existing thread may later be
-explicitly rebound through the composer or model tool; both adapters share the
-canonical thread-domain operation. Work management and navigation never invoke
-that operation implicitly.
+Every live thread has a primary `thread_works` row. Root creation may omit a
+Work or send explicit null: both bind the project's locked No Work row.
+An existing thread may later be explicitly rebound through the composer or
+model tool; both adapters share the canonical thread-domain operation. Work
+management and navigation never invoke that operation implicitly.
 `apps/server/server/lib/app.ts` is the composition root that wires the runtime,
 thread repositories, gateway, event hub, Agent revision store, preferences,
 billing, projects, collab services, and the shared model/writer safety-notice port.

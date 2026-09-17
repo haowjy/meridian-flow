@@ -1,9 +1,10 @@
 # domains/context/uploads — authoritative upload intake
 
 One project-scoped intake aggregate owns upload identity before bytes become
-visible. It accepts either an active real Work owner or explicit no-Work project
-owner and returns only server-issued document identity, canonical URI, and
-persisted file classification.
+visible. It accepts a Work owner (named or No Work). Public omitted/null
+`workId` and `@/` resolve to the locked No Work row. It returns only
+server-issued document identity, canonical URI, and persisted file
+classification.
 
 ## What it owns
 
@@ -29,9 +30,9 @@ when present.
 
 ## Invariants
 
-- Real Work authority serializes as `uploads://@slug/name`; no-Work serializes as
+- Named Work authority serializes as `uploads://@slug/name`; No Work serializes as
   `uploads://@/name`. Internal Work IDs and contextual shorthand never persist.
-- General ContextFS creation remains disabled for Uploads. Both Work and no-Work
+- General ContextFS creation remains disabled for Uploads. Named Work and No Work
   Uploads sources are flat and provisioned by intake.
 - A same-key retry either returns the original trio or conflicts on the complete
   normalized actor/owner/name/MIME/byte-digest fingerprint.

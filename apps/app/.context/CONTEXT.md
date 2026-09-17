@@ -98,10 +98,10 @@ Two interfaces are the only paths between the visual layer and the substrate:
   history and action-required lifecycle state. Favorite commands share one
   normalized project/thread authority across Home and Work rows; Home alone
   projects the affected item between its categories without invalidation.
-  `useWorks` exposes only the owned-project Work catalog. Home derives its
-  initial prospective choice from the first active (then first available) catalog
-  Work and sends that explicit ID; omitted root-chat creation remains the sole
-  server boundary where omission and explicit null both mean no primary Work.
+  `useWorks` exposes named catalog Works plus `noWork`. Home derives its
+  initial prospective choice from the first active (then first available) named
+  catalog Work, or No Work. Omitted or explicit-null root creation binds the
+  locked No Work row as primary.
   Direct `/project/*` and `/chat/*` authenticated routes mount the project
   provider stack and seed the project list + `now`; the project route loader
   seeds per-project threads and works before the workspace renders, and carries
@@ -288,8 +288,9 @@ child failure parks only the requested host.
 
 The dedicated Work screen presents Active Work first and keeps Archived Work in
 a default-collapsed disclosure. Work management has no project-wide selection
-state and never resolves, repairs, or changes a chat binding. The catalog is
-catalog-only: omitted/null root creation is explicitly no-Work. Home and Work
+  state and never resolves, repairs, or changes a chat binding. The catalog is
+  catalog-only and omits No Work. Omitted or null root creation binds locked
+  No Work; the catalog never does. Home and Work
 each own exactly one screen-level `app-scroll`; neither adds a nested scroll
 owner.
 
