@@ -119,7 +119,9 @@ describe("runtime credits", () => {
           yield {
             type: "end",
             result: {
-              content: [{ type: "tool_use", toolCallId: "cp-call", toolName: "park", input: {} }],
+              content: [
+                { type: "tool_use", toolCallId: "cp-call", toolName: "ask_user", input: {} },
+              ],
               toolCalls: [],
               finishReason: "tool_use",
               usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
@@ -147,7 +149,7 @@ describe("runtime credits", () => {
       source: "core",
       definition: {
         type: "function",
-        name: "park",
+        name: "ask_user",
         description: "parks",
         inputSchema: { type: "object", properties: {} },
       },

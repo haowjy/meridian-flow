@@ -1,5 +1,9 @@
 import { t } from "@lingui/core/macro";
-import { referenceOccurrenceContent, type Turn } from "@meridian/contracts/protocol";
+import {
+  referenceOccurrenceContent,
+  skillOccurrenceContent,
+  type Turn,
+} from "@meridian/contracts/protocol";
 import { memo, useEffect, useMemo, useState } from "react";
 
 import { lookupProjectContextAvailability } from "@/client/query/project-context-availability";
@@ -8,7 +12,10 @@ import {
   useProjectDocumentNavigationProjectId,
 } from "@/features/project/context/open-project-document";
 import { Markdown } from "@/rich-content/Markdown";
-import type { MarkdownReferenceOccurrence } from "@/rich-content/reference-occurrences";
+import type {
+  MarkdownReferenceOccurrence,
+  MarkdownSkillOccurrence,
+} from "@/rich-content/reference-occurrences";
 import type { TranscriptReferenceResolution } from "@/rich-content/TranscriptReference";
 
 export type UserTurnProps = { turn: Turn };
@@ -16,15 +23,26 @@ export type UserTurnProps = { turn: Turn };
 export function projectUserTurn(turn: Turn): {
   text: string;
   references: MarkdownReferenceOccurrence[];
+  skills: MarkdownSkillOccurrence[];
 } {
   let text = "";
   const references: MarkdownReferenceOccurrence[] = [];
+  const skills: MarkdownSkillOccurrence[] = [];
   for (const block of [...turn.blocks].sort((a, b) => a.sequence - b.sequence)) {
     if (block.blockType !== "text") continue;
+    const skill = skillOccurrenceContent(block);
     const occurrence = referenceOccurrenceContent(block);
-    const chunk = occurrence?.text ?? block.textContent ?? "";
+    const chunk = skill?.text ?? occurrence?.text ?? block.textContent ?? "";
     const from = text.length;
     text += chunk;
+    if (skill)
+      skills.push({
+        from,
+        to: text.length,
+        slug: skill.slug,
+        name: skill.name,
+        description: skill.description,
+      });
     if (occurrence)
       references.push({
         from,
@@ -33,7 +51,7 @@ export function projectUserTurn(turn: Turn): {
         uri: occurrence.uri,
       });
   }
-  return { text, references };
+  return { text, references, skills };
 }
 
 function UserTurnComponent({ turn }: UserTurnProps) {
@@ -92,6 +110,7 @@ function UserTurnComponent({ turn }: UserTurnProps) {
         <Markdown
           breaks
           references={projected.references}
+          skills={projected.skills}
           referenceResolutions={resolutions}
           onOpenReference={(documentId) =>
             void openDocument({ documentId, disposition: "current" })

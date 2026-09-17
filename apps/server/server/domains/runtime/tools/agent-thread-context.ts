@@ -3,13 +3,19 @@ import type { Thread } from "@meridian/contracts/threads";
 import type { AgentRevisionStore, CompiledAgentDefinition } from "../../packages/index.js";
 import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";
 import type { GenerateRequest, Tool } from "../gateway/index.js";
+import { advertiseTools } from "../loop/permissions/apply-tool-policy.js";
+import {
+  type EffectiveToolPolicy,
+  projectToolPolicy,
+} from "../loop/permissions/project-tool-policy.js";
 import type { ToolRegistry } from "./types.js";
 
 export interface AgentThreadTurnContext {
   agentSlug: string;
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
-  tools: Tool[] | undefined;
+  tools: Tool[];
   agentBody: string;
+  policy: EffectiveToolPolicy;
 }
 
 export interface ResolveAgentThreadTurnContextInput {
@@ -40,13 +46,13 @@ export async function resolveAgentThreadTurnContext(
   const reasons = agentDefinitionUnsupportedReasons(revision.definition);
   if (reasons.length) throw new Error(reasons.join(" "));
 
-  let tools = input.baseTools;
+  const policy = projectToolPolicy(revision.definition.metadata);
+  let tools = advertiseTools(input.baseTools, policy);
   const report =
     input.thread.kind === "subagent"
       ? input.toolRegistry.getRegistration("return_result")?.definition
       : undefined;
-  if (report && !tools?.some((tool) => toolName(tool) === report.name))
-    tools = [...(tools ?? []), report];
+  if (report && !tools.some((tool) => toolName(tool) === report.name)) tools = [...tools, report];
   return {
     agentSlug: revision.slug,
     gatewayParams: agentGatewayMetaToGenerateParams({
@@ -54,6 +60,7 @@ export async function resolveAgentThreadTurnContext(
       model: revision.configuration.model,
     }),
     tools,
+    policy,
     agentBody:
       input.thread.kind === "subagent"
         ? `${revision.definition.systemPrompt}\n\nYou are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.`

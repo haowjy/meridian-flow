@@ -16,6 +16,7 @@ export interface RunTurnInput {
   threadId: ThreadId;
   userText: string;
   userBlocks?: readonly UserMessageBlock[];
+  activatedSkillSlugs?: readonly string[];
   onStartPersisted?: (turns: { userTurnId: TurnId; assistantTurnId: TurnId }) => Promise<void>;
   tools?: Tool[];
   signal?: AbortSignal;

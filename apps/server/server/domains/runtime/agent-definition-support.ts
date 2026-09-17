@@ -12,6 +12,8 @@ const supported = new Set([
   "user-invocable",
   "skills",
   "subagents",
+  "tools",
+  "disallowed-tools",
 ]);
 export function agentDefinitionUnavailableReasons(
   definition: CompiledAgentDefinition,
@@ -42,10 +44,6 @@ export function agentDefinitionUnsupportedReasons(definition: CompiledAgentDefin
   for (const key of Object.keys(meta)) {
     if (!supported.has(key)) reasons.push(`Unsupported Agent field: ${key}`);
   }
-  if (
-    meta.skills?.load?.length ||
-    (meta.skills && "available" in meta.skills && meta.skills.available?.length)
-  )
-    reasons.push("Agent skill loading is not available yet.");
+  if (meta.skills?.load?.length) reasons.push("Bound skill load is not available yet.");
   return reasons;
 }

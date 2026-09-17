@@ -39,6 +39,7 @@ export function useCreationComposer(projectId: string | null) {
           projectSlug: parsed.address.projectSlug,
           text: submission.text,
           submissionId: submission.submissionId,
+          activatedSkillSlugs: submission.activatedSkillSlugs,
           agent: context.agent,
           workId: context.workId,
           threadActions,

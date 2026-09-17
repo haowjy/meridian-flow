@@ -28,6 +28,7 @@ export default defineEventHandler(async (event): Promise<SendMessageResponse> =>
       blocks: body.blocks,
       references: body.references,
       connectionToken: body.connectionToken,
+      activatedSkillSlugs: body.activatedSkillSlugs,
     });
     if (result.kind === "pending") {
       throw createError({ statusCode: 409, message: "admission_pending" });

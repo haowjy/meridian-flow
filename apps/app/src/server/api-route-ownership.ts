@@ -18,6 +18,7 @@ const API_ROUTE_OWNERSHIP = [
   { owner: "app", path: "/api/auth/dev-login", match: "exact" },
   { owner: "server", path: "/api/auth", match: "family" },
   { owner: "server", path: "/api/agents", match: "exact" },
+  { owner: "server", path: "/api/skills", match: "exact" },
   { owner: "server", path: "/api/account", match: "family" },
   { owner: "server", path: "/api/billing", match: "family" },
   { owner: "server", path: "/api/packages", match: "family" },

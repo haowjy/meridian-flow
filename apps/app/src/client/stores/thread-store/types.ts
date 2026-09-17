@@ -23,6 +23,7 @@ export type PendingStreamStart = {
     optimisticUserTurnId?: string;
     workingTurnId?: string;
     submissionId?: string;
+    activatedSkillSlugs?: readonly string[];
     createProject?: boolean;
   };
 };

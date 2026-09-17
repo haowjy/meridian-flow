@@ -86,7 +86,7 @@ import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { Notice, NoticePort } from "../../notices/index.js";
 import { type EventSink, unknownToEventPayload } from "../../observability/index.js";
-import type { AgentRevisionStore } from "../../packages/index.js";
+import type { AccountSkillInstallStore, AgentRevisionStore } from "../../packages/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import type {
@@ -103,8 +103,13 @@ import type { ImageAssetPort } from "../ports/image-asset.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
+import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { attachNoticesToLatestUserMessage, insertPostToolNotices } from "./context-builder.js";
+import {
+  attachNoticesToLatestUserMessage,
+  attachSkillBodiesToLatestUserMessage,
+  insertPostToolNotices,
+} from "./context-builder.js";
 import {
   finalizeCancelled,
   finalizeError,
@@ -117,7 +122,7 @@ import {
   type InterruptAutoResumePolicy,
   type InterruptRegistry,
 } from "./interrupts.js";
-import type { PermissionGate } from "./permissions/index.js";
+import { type PermissionGate, permissionGateFromToolPolicy } from "./permissions/index.js";
 import {
   appendEvent,
   persistAndAppendEvents,
@@ -157,7 +162,11 @@ export interface OrchestratorDeps {
   referenceReader: ReferenceReader;
   repos: OrchestratorRepositories;
   eventWriter: EventJournalWriter;
-  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
+  agentRevisions: Pick<
+    AgentRevisionStore,
+    "readThreadBinding" | "listInstallations" | "readSource"
+  >;
+  accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
   toolRegistry: ToolRegistry;
   projectPreferences: {
     read(userId: string, projectId: string): Promise<ProjectPreferences>;
@@ -166,7 +175,6 @@ export interface OrchestratorDeps {
     read(workId: string): Promise<AiWriteMode>;
   };
   workContext: WorkContextReader;
-  permissionGate: PermissionGate;
   billingUsage: BillingUsagePolicy;
   /** Interrupt-boundary artifact flush; explicit noop adapter means disabled. */
   interruptArtifacts: InterruptArtifactFlushPort;
@@ -415,15 +423,8 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
                 textContent: block.text,
                 status: "complete",
               })
-            : block.type === "reference"
+            : block.type === "image"
               ? contentForBlockInput({
-                  turnId: userTurn.id,
-                  blockType: "text",
-                  sequence,
-                  content: block,
-                  status: "complete",
-                })
-              : contentForBlockInput({
                   turnId: userTurn.id,
                   blockType: "image",
                   sequence,
@@ -432,6 +433,13 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
                     documentId: block.documentId,
                     uri: block.uri,
                   },
+                  status: "complete",
+                })
+              : contentForBlockInput({
+                  turnId: userTurn.id,
+                  blockType: "text",
+                  sequence,
+                  content: block,
                   status: "complete",
                 }),
       );
@@ -839,6 +847,7 @@ async function buildGenerateRequest(input: {
   request: GenerateRequest;
   agentSlug: string | null;
   thread: Thread;
+  permissionGate: PermissionGate;
 }> {
   const assembled = await assembleNextTurnContext({
     thread: input.thread,
@@ -859,7 +868,10 @@ async function buildGenerateRequest(input: {
   return {
     thread: assembled.thread,
     agentSlug: assembled.agentSlug,
-
+    permissionGate: permissionGateFromToolPolicy(
+      assembled.policy,
+      assembled.thread.kind === "subagent" ? ["return_result"] : [],
+    ),
     request: {
       ...assembled.generateRequest,
       signal: input.gatewaySignal ?? input.runInput.signal,
@@ -903,6 +915,9 @@ async function* generateEvents(
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
+    let activatedSkillBodies:
+      | Array<{ slug: string; description: string; body: string }>
+      | undefined;
     const preTurnNotices: Notice[] = [];
     const postToolNoticeBatches: Array<{
       afterMessageCount: number;
@@ -1011,6 +1026,22 @@ async function* generateEvents(
           postToolNoticeBatches.push({ afterMessageCount: baseMessageCount, notices });
         }
 
+        if (input.activatedSkillSlugs?.length) {
+          activatedSkillBodies ??= await Promise.all(
+            input.activatedSkillSlugs.map((slug) =>
+              loadUserSkillBody({
+                thread,
+                slug,
+                agentRevisions: deps.agentRevisions,
+                accountSkillInstalls: deps.accountSkillInstalls,
+              }),
+            ),
+          );
+          request.messages = attachSkillBodiesToLatestUserMessage(
+            request.messages,
+            activatedSkillBodies,
+          );
+        }
         if (preTurnNotices.length > 0) {
           request.messages = attachNoticesToLatestUserMessage(request.messages, preTurnNotices);
         }
@@ -1248,10 +1279,7 @@ async function* generateEvents(
 
           // If denied, we still persist a tool_result block (with isError: true)
           // so the model sees the rejection in the next turn's context build.
-          const decision = deps.permissionGate.check(
-            call.name,
-            Number(currentAssistantTurn.totalCostUsd),
-          );
+          const decision = built.permissionGate.check(call.name, call.arguments);
           if (!decision.allowed) {
             const persistedDenial = await persistPermissionDenial({
               deps,

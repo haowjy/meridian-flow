@@ -165,12 +165,14 @@
   summary {
     cursor: pointer;
   }
-  [data-composer-reference] {
+  [data-composer-reference],
+  [data-composer-skill] {
     text-decoration: underline;
     text-decoration-color: var(--color-border-subtle);
     text-underline-offset: 0.15em;
   }
-  [data-composer-reference]:focus-visible {
+  [data-composer-reference]:focus-visible,
+  [data-composer-skill]:focus-visible {
     outline: 2px solid var(--color-border-focus);
     outline-offset: 2px;
   }

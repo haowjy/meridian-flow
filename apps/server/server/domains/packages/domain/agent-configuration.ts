@@ -9,6 +9,41 @@ import { canonicalizeJsonObject } from "./mars-source.js";
 
 export class AgentConfigurationError extends Error {}
 
+const SKILL_MD_PATH = /^skills\/([^/]+)\/SKILL\.md$/;
+
+/** Per-package `skills/<slug>/SKILL.md` maps for the retained dependency graph, root first. */
+export async function retainedPackageSkillMaps(
+  packageRevisionId: string,
+  store: Pick<AgentRevisionStore, "readSource">,
+): Promise<Map<string, Map<string, RetainedSkillReference>>> {
+  const packages = new Map<string, Map<string, RetainedSkillReference>>();
+  async function visit(id: string): Promise<void> {
+    if (packages.has(id)) return;
+    const source = await store.readSource(id);
+    if (!source) throw new AgentConfigurationError("A retained dependency source is missing.");
+    const skills = new Map<string, RetainedSkillReference>();
+    for (const path of Object.keys(source.files).sort()) {
+      const match = SKILL_MD_PATH.exec(path);
+      if (!match) continue;
+      const slug = match[1];
+      if (!slug) continue;
+      const prefix = `skills/${slug}/`;
+      const files = Object.fromEntries(
+        Object.entries(source.files).filter(([name]) => name.startsWith(prefix)),
+      );
+      skills.set(slug, {
+        packageRevisionId: id,
+        path,
+        contentDigest: sha256(JSON.stringify(canonicalizeJsonObject(files))),
+      });
+    }
+    packages.set(id, skills);
+    for (const dependency of Object.values(source.dependencies ?? {})) await visit(dependency);
+  }
+  await visit(packageRevisionId);
+  return packages;
+}
+
 export async function resolveAgentConfiguration(input: {
   revision: AgentRevision;
   store: Pick<AgentRevisionStore, "readSource" | "readPackageDefinitions">;
@@ -27,6 +62,7 @@ export async function resolveAgentDependencies(input: {
   store: Pick<AgentRevisionStore, "readSource" | "readPackageDefinitions">;
 }): Promise<Omit<ResolvedAgentConfiguration, "model">> {
   const { revision, store } = input;
+  const skillMaps = await retainedPackageSkillMaps(revision.packageRevisionId, store);
   const packages = new Map<
     string,
     {
@@ -34,28 +70,9 @@ export async function resolveAgentDependencies(input: {
       agents: AgentRevision[];
     }
   >();
-  async function visit(id: string): Promise<void> {
-    if (packages.has(id)) return;
-    const source = await store.readSource(id);
-    if (!source) throw new AgentConfigurationError("A retained dependency source is missing.");
-    const skills = new Map<string, RetainedSkillReference>();
-    for (const path of Object.keys(source.files).sort()) {
-      const match = /^skills\/([^/]+)\/SKILL\.md$/.exec(path);
-      if (!match) continue;
-      const prefix = `skills/${match[1]}/`;
-      const files = Object.fromEntries(
-        Object.entries(source.files).filter(([name]) => name.startsWith(prefix)),
-      );
-      skills.set(match[1], {
-        packageRevisionId: id,
-        path,
-        contentDigest: sha256(JSON.stringify(canonicalizeJsonObject(files))),
-      });
-    }
+  for (const [id, skills] of skillMaps) {
     packages.set(id, { skills, agents: await store.readPackageDefinitions(id) });
-    for (const dependency of Object.values(source.dependencies ?? {})) await visit(dependency);
   }
-  await visit(revision.packageRevisionId);
 
   function unique<T>(reference: string, kind: string, candidates: T[]): T {
     if (candidates.length !== 1) {
@@ -89,10 +106,8 @@ export async function resolveAgentDependencies(input: {
         "Agent",
         [...packages.values()].flatMap((pkg) => pkg.agents.filter((agent) => agent.slug === name)),
       );
-      if (
-        target.definition.metadata.mode === "primary" ||
-        target.definition.metadata["model-invocable"] === false
-      ) {
+      // Child-invocability is model-invocable: false only. A pickable primary may also be a named spawn target.
+      if (target.definition.metadata["model-invocable"] === false) {
         throw new AgentConfigurationError(`Agent "${name}" cannot be invoked as a child.`);
       }
       return { name, definitionRevisionId: target.id };

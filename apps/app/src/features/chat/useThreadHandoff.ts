@@ -108,7 +108,10 @@ export function useThreadHandoff(
         finishInflightChat(threadId, actions);
         return;
       }
-      const envelope = serializeComposerDraft(plainComposerDoc(creation.text));
+      const envelope = {
+        ...serializeComposerDraft(plainComposerDoc(creation.text)),
+        activatedSkillSlugs: creation.activatedSkillSlugs ?? [],
+      };
       void controller
         .submit(
           threadId,
@@ -212,6 +215,7 @@ export function useThreadHandoff(
         optimisticUserTurnId: inflight.optimisticUserTurnId,
         workingTurnId: inflight.workingTurnId,
         submissionId: inflight.submissionId,
+        activatedSkillSlugs: inflight.activatedSkillSlugs,
         createProject: false,
       });
       return;

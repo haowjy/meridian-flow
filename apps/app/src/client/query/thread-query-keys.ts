@@ -12,6 +12,7 @@ export const threadQueryKeys = {
   all: ["threads"] as const,
   thread: (threadId: string) => ["threads", threadId] as const,
   snapshot: (threadId: string) => ["threads", threadId, "snapshot"] as const,
+  skills: (threadId: string) => ["threads", threadId, "skills"] as const,
   recentDocuments: (threadId: string, limit?: number) =>
     ["threads", threadId, "recent-documents", limit ?? null] as const,
   liveLineageRoot: (threadId: string) => ["threads", threadId, "live-lineage"] as const,

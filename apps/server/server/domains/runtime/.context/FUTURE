@@ -1,0 +1,2 @@
+- Debug packaged add should resolve launch-agents by coordinate, not scan every system package (`apps/server/server/domains/packages/domain/account-skill-install.ts`).
+- Share fuzzy filter / group-heading chrome between composer `/` and manuscript slash (`apps/app/src/components/app/composer/command/`, `apps/app/src/core/editor/extensions/slash/`).

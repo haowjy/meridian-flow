@@ -22,6 +22,11 @@ describe("API route ownership", () => {
     expect(getApiRouteOwner("/api/worksheets/work-1")).toBeNull();
   });
 
+  it("forwards GET /api/skills to the API server without claiming nested paths", () => {
+    expect(getApiRouteOwner("/api/skills")).toBe("server");
+    expect(getApiRouteOwner("/api/skills/extra")).toBeNull();
+  });
+
   it.each([
     "/api/auth/callback",
     "/api/auth/dev-login",

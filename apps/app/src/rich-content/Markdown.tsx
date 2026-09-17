@@ -11,10 +11,13 @@ import { cn } from "@/lib/utils";
 import { collapseMarkdownBlocks } from "./collapse-markdown-blocks";
 import {
   type MarkdownReferenceOccurrence,
+  type MarkdownSkillOccurrence,
   REFERENCE_TAG,
   remarkReferenceOccurrences,
+  SKILL_TAG,
 } from "./reference-occurrences";
 import { remarkLineBreaks } from "./remark-line-breaks";
+import { TranscriptSkillToken } from "./SkillToken";
 import {
   TranscriptReference,
   TranscriptReferenceContext,
@@ -37,13 +40,17 @@ export type MarkdownProps = {
   className?: string;
   breaks?: boolean;
   references?: readonly MarkdownReferenceOccurrence[];
+  skills?: readonly MarkdownSkillOccurrence[];
   referenceResolutions?: ReadonlyMap<string, TranscriptReferenceResolution>;
   onOpenReference?: (documentId: string) => void;
 };
 
 const SHIKI_THEME: NonNullable<StreamdownProps["shikiTheme"]> = ["github-light", "github-dark"];
 
-const REFERENCE_COMPONENTS = { [REFERENCE_TAG]: TranscriptReference as ComponentType };
+const REFERENCE_COMPONENTS = {
+  [REFERENCE_TAG]: TranscriptReference as ComponentType,
+  [SKILL_TAG]: TranscriptSkillToken as ComponentType,
+};
 const EXACT_BLOCK = (source: string) => (source ? [source] : []);
 const REFERENCE_REMEND = { links: false, images: false };
 
@@ -60,14 +67,16 @@ export function Markdown({
   className,
   breaks = false,
   references = [],
+  skills = [],
   referenceResolutions,
   onOpenReference,
 }: MarkdownProps) {
   const streaming = mode === "streaming";
+  const exactSource = references.length > 0 || skills.length > 0;
   const remarkPlugins: NonNullable<StreamdownProps["remarkPlugins"]> = [
     ...Object.values(defaultRemarkPlugins),
     remarkWikiLink,
-    [remarkReferenceOccurrences, { occurrences: references }],
+    [remarkReferenceOccurrences, { occurrences: references, skills }],
     ...(breaks ? [remarkLineBreaks] : []),
   ];
 
@@ -76,19 +85,20 @@ export function Markdown({
       value={{ resolutions: referenceResolutions, onOpen: onOpenReference }}
     >
       <Streamdown
-        key={JSON.stringify(references)}
+        key={JSON.stringify({ references, skills })}
         mode={mode}
         isAnimating={streaming}
         parseMarkdownIntoBlocksFn={
-          references.length ? EXACT_BLOCK : streaming ? collapseMarkdownBlocks : undefined
+          exactSource ? EXACT_BLOCK : streaming ? collapseMarkdownBlocks : undefined
         }
-        parseIncompleteMarkdown={references.length ? false : undefined}
+        parseIncompleteMarkdown={exactSource ? false : undefined}
         remend={REFERENCE_REMEND}
         shikiTheme={SHIKI_THEME}
         controls={CONTROLS}
         remarkPlugins={remarkPlugins}
         allowedTags={{
           [REFERENCE_TAG]: ["dataDocumentId", "dataUri", "dataTargetHref", "dataAuthoredLabel"],
+          [SKILL_TAG]: ["dataSlug", "dataName", "dataDescription"],
         }}
         components={REFERENCE_COMPONENTS}
         className={cn(
