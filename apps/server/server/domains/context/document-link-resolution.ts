@@ -18,8 +18,12 @@ export function createDocumentLinkResolver({
   catalog: ContextCatalog;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }): DocumentLinkResolver {
+  async function noWorkScope(projectId: ResolveDocumentLinkInput["projectId"]) {
+    const work = await workAuthorityResolver.noWork(projectId);
+    return work ? { kind: "work" as const, projectId, workId: work.workId } : null;
+  }
   async function currentScope(input: ResolveDocumentLinkInput): Promise<CatalogScope | null> {
-    if (!input.workId) return { kind: "none", projectId: input.projectId };
+    if (!input.workId) return noWorkScope(input.projectId);
     const work = await workAuthorityResolver.byId(input.projectId, input.workId);
     return work ? { kind: "work", projectId: input.projectId, workId: work.workId } : null;
   }
@@ -32,7 +36,7 @@ export function createDocumentLinkResolver({
     if (scheme === "user") scope = { kind: "user", userId: input.userId };
     else if (scheme === "manuscript" || scheme === "kb")
       scope = { kind: "project", projectId: input.projectId };
-    else if (authority.kind === "none") scope = { kind: "none", projectId: input.projectId };
+    else if (authority.kind === "none") scope = await noWorkScope(input.projectId);
     else if (authority.kind === "work") {
       const work = await workAuthorityResolver.bySlug(input.projectId, authority.workSlug);
       scope = work ? { kind: "work", projectId: input.projectId, workId: work.workId } : null;

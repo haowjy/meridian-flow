@@ -239,6 +239,7 @@ function localFileForRecord(
   const location = projectResourceLocation(projectId, record);
   if (!location) return null;
   const scope = contextCatalogScope(projectId, location.scheme, location.workId);
+  if (!scope) return null;
   const projected = accessibleResourceCatalogView(projectId, scope, record);
   const file = projectCatalogView(projectId, location.scheme, projected, [record]).findDocument(
     record.resource.identity.documentId,
@@ -366,11 +367,7 @@ export class ProjectDocumentNavigationAdapter {
       const scheme = schemeForEntry(result.document);
       if (!scheme) return { kind: "unavailable", reason: "failed" };
       const routeWorkId =
-        result.document.scope.kind === "work"
-          ? result.document.scope.workId
-          : result.document.scope.kind === "none"
-            ? null
-            : workId;
+        result.document.scope.kind === "work" ? result.document.scope.workId : workId;
       const file = projectCatalogFile(result.document);
       if (disposition === "current" && !this.dependencies.openRoute) {
         throw new Error("Opening a project document requires the project route owner");

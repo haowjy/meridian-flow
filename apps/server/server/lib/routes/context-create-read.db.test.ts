@@ -345,7 +345,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         authority,
         PROJECT_ID,
         USER_ID,
-        new Map([[authority.workSlug, authority]]),
+        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
       );
 
       const created = await createContextEntry({

@@ -55,9 +55,7 @@ function availableTab(
   const workId = isWorkScopedProjectContextScheme(scheme)
     ? resolution.authority.kind === "work"
       ? resolution.authority.workId
-      : resolution.authority.kind === "none"
-        ? null
-        : undefined
+      : undefined
     : undefined;
   if (isWorkScopedProjectContextScheme(scheme) && workId === undefined) {
     throw new TypeError("Invalid available route authority");

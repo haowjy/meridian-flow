@@ -24,9 +24,10 @@ index below. Only a `relative` target needs it, and without one the port THROWS
 rather than answering null: an unasked question must not render as a missing
 document.
 
-`workId` is the active Work or null for no-Work. The server uses it for omitted
-`scratch://` or `uploads://` authority; `@/` is explicit no-Work and a canonical
-`@<slug>` resolves through Project Work authority. Legacy `work://` is invalid.
+`workId` is the named Work id, or null for public No Work encoding (`@/`).
+The server resolves null to the locked row for omitted `scratch://` or
+`uploads://` authority; `@/` is explicit No Work and a canonical `@<slug>`
+resolves through Project Work authority. Legacy `work://` is invalid.
 Dropping nullable scope would make contextual links resolve against the wrong
 authority even though the route contract carries the distinction.
 

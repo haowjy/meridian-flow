@@ -1,5 +1,6 @@
 /** First bake persists Agent available; later account adds do not rebake. */
 import { describe, expect, it } from "vitest";
+import { testWorkSlug } from "../../../test-support/work-slug.js";
 import {
   createInMemoryAccountSkillInstallStore,
   createInMemoryAgentRevisionStore,
@@ -49,7 +50,10 @@ function emptyWorkContext(projectId: string): WorkContextReader {
         current: {
           projectId,
           execution: {
-            scope: { kind: "none" },
+            scope: {
+              workId: "00000000-0000-0000-0000-000000000002",
+              workSlug: testWorkSlug("test-work"),
+            },
             aiWriteMode: "direct",
             draftOwner: null,
           },

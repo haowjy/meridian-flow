@@ -364,7 +364,7 @@ function useDraftReviewScopeOwner(
     const treeQuery = contextCatalogQueryOptions(
       resources,
       projectId,
-      contextCatalogScope(projectId, "manuscript", null),
+      contextCatalogScope(projectId, "manuscript", null) ?? { kind: "project", projectId },
     );
     const attempt = new AbortController();
     void queryClient

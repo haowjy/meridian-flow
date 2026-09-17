@@ -2,7 +2,7 @@
 
 import { Hocuspocus } from "@hocuspocus/server";
 import { splitHashline } from "@meridian/agent-edit";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
@@ -28,6 +28,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const PROJECT_ID = "00000000-0000-4000-8000-000000000902";
     const SOURCE_ID = "00000000-0000-4000-8000-000000000903";
     const WORK_ID = "00000000-0000-4000-8000-000000000904";
+    const NO_WORK_ID = "00000000-0000-4000-8000-000000000911";
     const THREAD_ID = "00000000-0000-4000-8000-000000000905";
     const TURN_ID = "00000000-0000-4000-8000-000000000906";
     const DOC_ID = "00000000-0000-4000-8000-000000000907";
@@ -95,8 +96,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("reports writer prose overwritten without a concurrent edit", () => runScenario(false));
 
-    it("routes a no-Work model write through the live production core", async () => {
+    it("writes a No Work draft onto a branch keyed by the locked Work", async () => {
+      await db.insert(schema.works).values({
+        id: NO_WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "No Work",
+        slug: null,
+        isNoWork: true,
+        aiWriteMode: "draft",
+      });
       await db.delete(schema.threadWorks).where(eq(schema.threadWorks.threadId, THREAD_ID));
+      await db.insert(schema.threadWorks).values({
+        threadId: THREAD_ID,
+        workId: NO_WORK_ID,
+        projectId: PROJECT_ID,
+        isPrimary: true,
+      });
       const eventSink = createInMemoryEventSink();
       const runtime = await composeRuntime(eventSink);
       await runtime.ports.documentSync.writeDocument({
@@ -140,7 +156,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             command: "replace",
             path: "manuscript://runtime-settlement.md",
             find: "Writer live content.",
-            content: "Model direct content.",
+            content: "Model draft content.",
             all: true,
           },
         },
@@ -153,12 +169,34 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await runtime.ports.documentSync.finalizeResponseCommit(RESPONSE_ID, {
         threadId: THREAD_ID,
         turnId: TURN_ID,
-        execution: { scope: { kind: "none" }, aiWriteMode: "direct", draftOwner: null },
+        execution: {
+          scope: { workId: NO_WORK_ID, workSlug: null },
+          aiWriteMode: "draft",
+          draftOwner: { kind: "work", workId: NO_WORK_ID },
+        },
       });
       const live = await runtime.ports.documentSync.readAsMarkdown(DOC_ID);
-      expect(live.ok && live.value.trim()).toBe("Model direct content.");
-      expect(await db.select().from(schema.documentBranches)).toHaveLength(0);
-      expect(await db.select().from(schema.threadWorks)).toHaveLength(0);
+      expect(live.ok && live.value.trim()).toBe("Writer live content.");
+      const drafts = await db
+        .select({
+          documentId: schema.documentBranches.documentId,
+          workId: schema.documentBranches.workId,
+        })
+        .from(schema.documentBranches)
+        .where(
+          and(
+            eq(schema.documentBranches.kind, "work_draft"),
+            eq(schema.documentBranches.documentId, DOC_ID),
+          ),
+        );
+      expect(drafts).toEqual([{ documentId: DOC_ID, workId: NO_WORK_ID }]);
+      expect(await db.select().from(schema.threadWorks)).toEqual([
+        expect.objectContaining({
+          threadId: THREAD_ID,
+          workId: NO_WORK_ID,
+          isPrimary: true,
+        }),
+      ]);
       await unloadRuntime(runtime.hocuspocus);
     });
 

@@ -172,8 +172,8 @@ not an exotic one.
 All five canonical Context schemes resolve through the same server port. Wiki
 names search project/personal content plus the selected Work/no-Work, not other
 Works. An explicit canonical Work slug may navigate to that Work in the same
-project; contextual scratch/uploads use the host's selected Work and `@/` is
-explicit no-Work. The server gets personal scope from authenticated identity.
+  project; contextual scratch/uploads use the host's selected Work and `@/` is
+  explicit No Work. The server gets personal scope from authenticated identity.
 There is no legacy `work://` adapter or client-side title-search fallback.
 Submitted transcript `(documentId, uri)` authority remains separate from syntax
 lookup; rendering a title does not adopt it as an attachment.

@@ -143,7 +143,7 @@ export function rebindThreadWork(
   body: RebindThreadWorkRequest,
 ): Promise<RebindThreadWorkResponse> {
   return putJson(apiThreadWorkPath(threadId), {
-    workId: body.target.kind === "work" ? body.target.workId : null,
+    workId: body.workId,
   });
 }
 

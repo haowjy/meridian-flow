@@ -1,7 +1,7 @@
 /** Soft-delete and restore commands that refresh model-visible Work lists once. */
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Work } from "@meridian/contracts/works";
-import type { WorkRepository } from "./ports/work-repository.js";
+import { WorkLockedError, type WorkRepository } from "./ports/work-repository.js";
 import type { WorkContextDelivery } from "./work-context-delivery.js";
 
 type Deps = {
@@ -22,6 +22,7 @@ export async function deleteWorkTransition(
   const transition = await deps.works.transaction(async () => {
     const before = await deps.works.lockById(workId);
     if (!before || before.deletedAt) return { before, after: before, changed: false };
+    if (before.isNoWork) throw new WorkLockedError();
     await deps.works.softDelete(workId);
     const after = await deps.works.findById(workId);
     const transition = { before, after, changed: !!after?.deletedAt };

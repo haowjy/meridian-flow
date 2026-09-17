@@ -2,7 +2,11 @@ import type { CatalogEntry, CatalogScope } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import { InMemoryContextCatalog } from "./in-memory-context-catalog";
 
-const scope = { kind: "none", projectId: "project-1" } as const satisfies CatalogScope;
+const scope = {
+  kind: "work",
+  projectId: "project-1",
+  workId: "no-work-1",
+} as const satisfies CatalogScope;
 const source: CatalogEntry = {
   kind: "source",
   entryId: "source-1",

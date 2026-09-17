@@ -43,14 +43,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const resolver = createDrizzleProjectWorkAuthorityResolver(db);
       const resolveLocator = async (locator: typeof move.source) => {
-        if (locator.scope !== "work") return locator;
-        const [work] = await db
-          .select({ projectId: schema.works.projectId })
-          .from(schema.works)
-          .where(eq(schema.works.id, locator.workId));
-        if (!work) throw new Error("missing Work for move test");
-        const authority = await resolver.byId(work.projectId, locator.workId);
-        if (!authority) throw new Error("missing Work authority for move test");
+        if (locator.scope === "project") return locator;
+        const authority =
+          locator.scope === "none"
+            ? await resolver.noWork(
+                (
+                  await db
+                    .select({ projectId: schema.works.projectId })
+                    .from(schema.works)
+                    .where(eq(schema.works.isNoWork, true))
+                    .limit(1)
+                )[0]?.projectId ?? "",
+              )
+            : await (async () => {
+                const [work] = await db
+                  .select({ projectId: schema.works.projectId })
+                  .from(schema.works)
+                  .where(eq(schema.works.id, locator.workId));
+                if (!work) throw new Error("missing Work for move test");
+                return resolver.byId(work.projectId, locator.workId);
+              })();
+        if (!authority) {
+          throw new Error("missing Work authority for move test");
+        }
         return { scope: "work" as const, scheme: locator.scheme, path: locator.path, authority };
       };
       return commitContextMove({
@@ -146,7 +161,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         authority,
         projectId,
         USER_ID,
-        new Map([[authority.workSlug, authority]]),
+        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
       );
       await createUntitledContextDocument({
         port,
@@ -493,11 +508,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       if (!created.ok || !created.value.documentId) throw new Error("missing no-Work document");
       const documentId = created.value.documentId;
+      const [noWork] = await db
+        .select({ id: schema.works.id })
+        .from(schema.works)
+        .where(and(eq(schema.works.projectId, projectId), eq(schema.works.isNoWork, true)));
       await expect(documentOwner(documentId)).resolves.toMatchObject({
         documentId,
-        sourceScope: "project",
-        sourceWorkId: null,
-        sourceProjectId: projectId,
+        sourceScope: "work",
+        sourceWorkId: noWork?.id,
+        sourceProjectId: null,
         folderName: null,
         documentName: "Unassigned",
         extension: "md",
@@ -563,9 +582,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const returned = await documentOwner(documentId);
       expect(returned).toMatchObject({
         documentId,
-        sourceScope: "project",
-        sourceWorkId: null,
-        sourceProjectId: projectId,
+        sourceScope: "work",
+        sourceWorkId: noWork?.id,
+        sourceProjectId: null,
         folderName: "Returned",
       });
       expect(returned?.documentSourceId).toBe(returned?.folderSourceId);

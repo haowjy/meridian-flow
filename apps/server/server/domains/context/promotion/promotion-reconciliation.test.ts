@@ -39,12 +39,14 @@ function harness(outcome: { kind: "definitely_not_committed" | "unknown"; error:
     workAuthorityResolver: {
       async byId(_projectId, workId) {
         return resolvedWorkAuthority({
-          kind: "work",
           workId,
           workSlug: testWorkSlug("123e4567-e89b-12d3-a456-426614174000"),
         });
       },
       async bySlug() {
+        return null;
+      },
+      async noWork() {
         return null;
       },
       async lockById() {
@@ -92,6 +94,9 @@ describe("promotion terminal reconciliation", () => {
           return null;
         },
         async bySlug() {
+          return null;
+        },
+        async noWork() {
           return null;
         },
         async lockById() {

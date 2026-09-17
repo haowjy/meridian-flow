@@ -10,29 +10,22 @@ export function createContextUploadContentPort(
 ): UploadContentPort {
   return {
     async persist(input) {
-      const decodedSlug =
-        input.reservation.owner.kind === "work"
-          ? decodeWorkSlug(input.reservation.owner.workSlug)
-          : null;
-      const authority =
-        input.reservation.owner.kind === "work" && decodedSlug
-          ? resolvedWorkAuthority({
-              kind: "work",
-              workId: input.reservation.owner.workId as never,
-              workSlug: decodedSlug,
-            })
-          : null;
-      if (input.reservation.owner.kind === "work" && !authority)
-        return { ok: false, definite: true };
-      const authorities = authority ? new Map([[authority.workSlug, authority]]) : new Map();
-      const port = authority
-        ? contextPorts.forWork(
-            authority,
-            input.reservation.projectId,
-            input.actorUserId,
-            authorities,
-          )
-        : contextPorts.forProject(input.reservation.projectId, input.actorUserId, authorities);
+      const owner = input.reservation.owner;
+      const workSlug = owner.workSlug === null ? null : decodeWorkSlug(owner.workSlug);
+      if (owner.workSlug !== null && !workSlug) return { ok: false, definite: true };
+      const authority = resolvedWorkAuthority({
+        workId: owner.workId as never,
+        workSlug,
+      });
+      const authorities = authority.workSlug
+        ? new Map([[authority.workSlug, authority]])
+        : new Map();
+      const port = contextPorts.forWork(
+        authority,
+        input.reservation.projectId,
+        input.actorUserId,
+        authorities,
+      );
       const classification = classifyFiletype(input.reservation.fileType);
       const result =
         classification.kind === "tracked"

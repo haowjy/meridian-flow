@@ -10,10 +10,11 @@ import {
   readStableThreadWorkBinding,
   type ThreadWorkProjectionCursor,
 } from "./thread-work-binding-cache";
+import { workFromSnapshot } from "./works-projection-acquisition";
 
 export type ThreadWorkMutationInput =
   | {
-      target: { kind: "none" } | { kind: "work"; workId: string };
+      workId: string | null;
       previousWorkId: string | null;
     }
   | { targetWorkId: string; previousWorkId: string };
@@ -34,16 +35,14 @@ export function useRebindThreadWork(projectId: string, threadId: string) {
   const client = useQueryClient();
   return useMutation<ThreadWorkMutationOutcome, unknown, ThreadWorkMutationInput>({
     mutationFn: async (input) => {
-      const target =
-        "target" in input ? input.target : { kind: "work" as const, workId: input.targetWorkId };
-      const targetWorkId = target.kind === "work" ? target.workId : null;
+      const targetWorkId = "workId" in input ? input.workId : input.targetWorkId;
       const { previousWorkId } = input;
       const cursorKey = threadQueryKeys.workProjectionCursor(threadId);
       const admitted = client.getQueryData<ThreadWorkProjectionCursor>(cursorKey)?.seq ?? null;
       let response: RebindThreadWorkResponse | null = null;
       try {
         response = await rebindThreadWork(threadId, {
-          target,
+          workId: targetWorkId,
         });
       } catch (cause) {
         if (isMeridianApiError(cause)) throw cause;
@@ -52,14 +51,13 @@ export function useRebindThreadWork(projectId: string, threadId: string) {
       const overlapped = admitted !== settled;
       if (response && !overlapped) {
         convergeThreadWorkBinding(client, { source: "confirmed", projectId, result: response });
-        const work = targetWorkId
-          ? (client
-              .getQueryData<import("@meridian/contracts/protocol").ListWorksResponse>(
-                projectQueryKeys.works(projectId),
-              )
-              ?.works.find(({ id }) => id === targetWorkId) ?? null)
-          : null;
-        if (work || targetWorkId === null) {
+        const work = workFromSnapshot(
+          client.getQueryData<import("@meridian/contracts/protocol").ListWorksResponse>(
+            projectQueryKeys.works(projectId),
+          ),
+          targetWorkId,
+        );
+        if (work) {
           return {
             kind: "confirmed",
             result: { threadId: response.threadId, work, changed: response.changed },
@@ -73,7 +71,7 @@ export function useRebindThreadWork(projectId: string, threadId: string) {
         threadId,
         previousWorkId,
       });
-      const currentWork = fresh.catalog.works.find(({ id }) => id === fresh.workId) ?? null;
+      const currentWork = workFromSnapshot(fresh.catalog, fresh.workId);
       if (fresh.workId === targetWorkId) {
         if (response) {
           return {

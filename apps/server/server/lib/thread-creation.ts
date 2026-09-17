@@ -87,7 +87,7 @@ export async function createThreadForProject(
 
   const existing = await existingById();
   if (existing) return ownedExisting(existing);
-  let resolvedWorkId: string | null = null;
+  let resolvedWorkId!: string;
   let thread: Thread;
   try {
     const resolved = await deps.agentCatalog.resolvePrimary(
@@ -128,22 +128,20 @@ export async function createThreadForProject(
     throw error;
   }
 
-  if (resolvedWorkId) {
-    try {
-      await deps.workRepo.touch(resolvedWorkId);
-    } catch (error) {
-      emitEvent(eventSink, {
-        level: "warn",
-        source: "lib.thread-creation",
-        name: "work_touch.failed",
-        payload: {
-          threadId: thread.id,
-          projectId: args.projectId,
-          workId: resolvedWorkId,
-          ...unknownToEventPayload(error),
-        },
-      });
-    }
+  try {
+    await deps.workRepo.touch(resolvedWorkId);
+  } catch (error) {
+    emitEvent(eventSink, {
+      level: "warn",
+      source: "lib.thread-creation",
+      name: "work_touch.failed",
+      payload: {
+        threadId: thread.id,
+        projectId: args.projectId,
+        workId: resolvedWorkId,
+        ...unknownToEventPayload(error),
+      },
+    });
   }
   return thread;
 }

@@ -20,6 +20,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const personal = "00000000-0000-4000-8000-000000000902";
     const a = "00000000-0000-4000-8000-000000000903";
     const b = "00000000-0000-4000-8000-000000000904";
+    const noWork = "00000000-0000-4000-8000-000000000905";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => truncateDrizzleTables(db, [users]),
     });
@@ -31,6 +32,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { id: personal, userId: u, name: "Personal", slug: "personal", isPersonal: true },
       ]);
       await db.insert(works).values([
+        {
+          id: noWork,
+          projectId: p,
+          createdByUserId: u,
+          name: "No Work",
+          slug: null,
+          isNoWork: true,
+        },
         { id: a, projectId: p, createdByUserId: u, name: "A", slug: "work-a" },
         { id: b, projectId: p, createdByUserId: u, name: "B", slug: "work-b" },
       ]);
@@ -67,13 +76,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ["user", null, ""],
         ["scratch", b, "@work-b/"],
         ["uploads", b, "@work-b/"],
-        ["uploads", null, "@/"],
+        ["uploads", noWork, "@/"],
       ] as const) {
         const id = await add(scheme, "Gate", workId);
         const uri = `${scheme}://${qualifier}Gate.md`;
         expect(
           await r.resolve({ projectId: p, userId: u, workId: a, target: { kind: "scheme", uri } }),
-        ).toMatchObject({ documentId: id, uri, workId });
+        ).toMatchObject({
+          documentId: id,
+          uri,
+          workId,
+        });
       }
     });
     it("does not search another Work's titles and observes deleted authority", async () => {

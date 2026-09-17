@@ -28,6 +28,7 @@ it.each(["active", "archived"] as const)("only admits active Work (%s)", (status
     createdByUserId: "user",
     name: "Work",
     slug: testWorkSlug("work"),
+    isNoWork: false,
     goal: null,
     description: null,
     archivedAt: null,

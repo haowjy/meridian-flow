@@ -12,7 +12,7 @@ export function catalogWorkAuthorityChanged(
   const authorities = (view: CatalogCacheView) =>
     new Map(
       [...view.entries.values()].flatMap((entry) =>
-        entry.kind === "authority" && entry.authority.kind === "work"
+        entry.kind === "authority"
           ? [[entry.authority.workId, `${entry.available}:${entry.entityRevision}`] as const]
           : [],
       ),

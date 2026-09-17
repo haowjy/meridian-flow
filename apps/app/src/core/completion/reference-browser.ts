@@ -212,14 +212,20 @@ export function createReferenceBrowserController(
           if (parsed.scheme === "kb" || parsed.scheme === "manuscript")
             return scope.kind === "project";
           if (parsed.scheme === "user") return scope.kind === "user";
-          if (parsed.authority.kind === "none") return scope.kind === "none";
-          if (parsed.authority.kind === "contextual")
-            return scope.kind === "work" || scope.kind === "none";
+          if (parsed.authority.kind === "none") {
+            return (
+              scope.kind === "work" &&
+              [...authorityIndex.values()].some(
+                (entry) =>
+                  entry.authority.workId === scope.workId && entry.authority.workSlug === null,
+              )
+            );
+          }
+          if (parsed.authority.kind === "contextual") return scope.kind === "work";
           return (
             scope.kind === "work" &&
             [...authorityIndex.values()].some(
               (entry) =>
-                entry.authority.kind === "work" &&
                 entry.authority.workId === scope.workId &&
                 parsed.authority.kind === "work" &&
                 entry.authority.workSlug === parsed.authority.workSlug,
@@ -597,20 +603,21 @@ function populatedContainers(
 function rowForAuthority(
   entry: CatalogAuthorityEntry,
 ): Extract<ReferenceRow, { kind: "authority" }> {
-  const scope: CatalogScope =
-    entry.authority.kind === "work"
-      ? { kind: "work", projectId: entry.scope.projectId, workId: entry.authority.workId }
-      : { kind: "none", projectId: entry.scope.projectId };
+  const scope: CatalogScope = {
+    kind: "work",
+    projectId: entry.scope.projectId,
+    workId: entry.authority.workId,
+  };
   return {
     kind: "authority",
-    authorityKind: entry.authority.kind,
+    authorityKind: "work",
     rowId: `authority:${entry.entryId}`,
     label: entry.name,
     location: "",
-    matchAliases: entry.authority.kind === "work" ? [entry.authority.workSlug] : ["@"],
+    matchAliases: entry.authority.workSlug === null ? ["@"] : [entry.authority.workSlug],
     action: {
       type: "navigate",
-      prefix: entry.authority.kind === "work" ? `@${entry.authority.workSlug}/` : "@/",
+      prefix: entry.authority.workSlug === null ? "@/" : `@${entry.authority.workSlug}/`,
       scope,
       acquire: true,
     },

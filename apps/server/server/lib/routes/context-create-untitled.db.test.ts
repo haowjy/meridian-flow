@@ -98,7 +98,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         authority,
         projectId,
         USER_ID,
-        new Map([[authority.workSlug, authority]]),
+        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
       );
 
       await expect(
@@ -186,7 +186,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         authority,
         projectId,
         USER_ID,
-        new Map([[authority.workSlug, authority]]),
+        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
       );
       const create = () =>
         createUntitledContextDocument({
@@ -226,7 +226,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         authority,
         projectId,
         USER_ID,
-        new Map([[authority.workSlug, authority]]),
+        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
       );
 
       await expect(
@@ -254,11 +254,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       await expect(db.select().from(schema.contextSources)).resolves.toEqual(
-        expect.arrayContaining(
-          ["manuscript", "scratch", "uploads"].map((slug) =>
-            expect.objectContaining({ projectId, slug, scope: "project", workId: null }),
-          ),
-        ),
+        expect.arrayContaining([
+          expect.objectContaining({
+            projectId,
+            slug: "manuscript",
+            scope: "project",
+            workId: null,
+          }),
+          expect.objectContaining({ slug: "scratch", scope: "work", projectId: null }),
+          expect.objectContaining({ slug: "uploads", scope: "work", projectId: null }),
+        ]),
       );
       await expect(
         db.select().from(schema.contextSources).where(eq(schema.contextSources.workId, workId)),

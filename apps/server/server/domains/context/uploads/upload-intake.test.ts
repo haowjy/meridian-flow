@@ -29,7 +29,7 @@ function harness() {
         state: "reserved",
         storageUrl: null,
         consumed: false,
-        owner: { kind: "none" },
+        owner: { kind: "work", workId: input.owner.workId, workSlug: null },
       };
       return { kind: "reserved", reservation: row };
     },
@@ -97,7 +97,7 @@ function input() {
   return {
     intakeId: "intake-1",
     actorUserId: "user-1",
-    owner: { kind: "none" as const, projectId: "project-1" },
+    owner: { kind: "work" as const, projectId: "project-1", workId: "no-work-1" },
     filename: "chapter.md",
     mimeType: "text/markdown",
     byteDigest: digest,

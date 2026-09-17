@@ -12,6 +12,7 @@ export const THREAD_WORK_RACE = {
   targetWorkId: "00000000-0000-4000-8000-000000000475",
   contextId: "00000000-0000-4000-8000-000000000476",
   documentId: "00000000-0000-4000-8000-000000000477",
+  noWorkId: "00000000-0000-4000-8000-000000000478",
   branchId: "branch_work_lifecycle_race",
 } as const;
 
@@ -26,6 +27,14 @@ export async function resetThreadWorkRaceFixture(db: Database): Promise<void> {
     slug: "work-lifecycle-race",
   });
   await db.insert(schema.works).values([
+    {
+      id: ids.noWorkId,
+      projectId: ids.projectId,
+      createdByUserId: ids.userId,
+      name: "No Work",
+      slug: null,
+      isNoWork: true,
+    },
     {
       id: ids.workId,
       projectId: ids.projectId,

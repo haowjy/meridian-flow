@@ -67,7 +67,7 @@ export async function resolveDocumentUri(
     scheme === "scratch" || scheme === "uploads"
       ? document.workId && document.workProjectId
         ? await workAuthorityResolver.byId(document.workProjectId, document.workId)
-        : { kind: "none" as const }
+        : null
       : { kind: "contextual" as const };
   if (!workAuthority) return null;
   return toCanonical(scheme, path, workAuthority);

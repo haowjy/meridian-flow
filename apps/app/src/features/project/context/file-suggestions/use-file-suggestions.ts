@@ -20,20 +20,25 @@ export function useFileSuggestions(
   query: string,
   options: Options,
 ): { suggestions: FileSuggestion[]; isFetching: boolean; isError: boolean } {
+  const manuscriptScope = contextCatalogScope(projectId, "manuscript", options.workId);
+  const userScope = contextCatalogScope(projectId, "user", options.workId);
+  const scratchScope = contextCatalogScope(projectId, "scratch", options.workId);
   const project = useContextCatalogScope(
     projectId,
-    contextCatalogScope(projectId, "manuscript", options.workId),
-    options.schemes.some((scheme) => scheme === "manuscript" || scheme === "kb"),
+    manuscriptScope ?? { kind: "project", projectId },
+    manuscriptScope != null &&
+      options.schemes.some((scheme) => scheme === "manuscript" || scheme === "kb"),
   );
   const user = useContextCatalogScope(
     projectId,
-    contextCatalogScope(projectId, "user", options.workId),
-    options.schemes.includes("user"),
+    userScope ?? { kind: "user", userId: "self" },
+    userScope != null && options.schemes.includes("user"),
   );
   const current = useContextCatalogScope(
     projectId,
-    contextCatalogScope(projectId, "scratch", options.workId),
-    options.schemes.some((scheme) => scheme === "scratch" || scheme === "uploads"),
+    scratchScope ?? { kind: "project", projectId },
+    scratchScope != null &&
+      options.schemes.some((scheme) => scheme === "scratch" || scheme === "uploads"),
   );
   const suggestions = useMemo(() => {
     const entries = catalogFileSuggestions(

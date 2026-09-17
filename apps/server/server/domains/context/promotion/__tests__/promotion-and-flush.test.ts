@@ -45,10 +45,13 @@ const promotionDeps = (
   workAuthorityResolver: {
     async byId(_projectId: string, workId: string) {
       return workId === "work-1"
-        ? resolvedWorkAuthority({ kind: "work", workId, workSlug: testWorkSlug("revision-pass") })
+        ? resolvedWorkAuthority({ workId, workSlug: testWorkSlug("revision-pass") })
         : null;
     },
     async bySlug() {
+      return null;
+    },
+    async noWork() {
       return null;
     },
     async lockById() {

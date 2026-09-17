@@ -8,7 +8,7 @@
  */
 
 import type { Database } from "@meridian/database";
-import { contextSources, projects } from "@meridian/database/schema";
+import { contextSources, projects, works } from "@meridian/database/schema";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
@@ -82,10 +82,19 @@ async function findUserContextProject(db: Database, userId: string): Promise<str
   return existing?.id ?? null;
 }
 
+export async function findNoWorkId(db: Database, projectId: string): Promise<string | null> {
+  const [row] = await currentDrizzleDb(db)
+    .select({ id: works.id })
+    .from(works)
+    .where(and(eq(works.projectId, projectId), eq(works.isNoWork, true), isNull(works.deletedAt)))
+    .limit(1);
+  return row?.id ?? null;
+}
+
 async function findProjectContextSource(
   db: Database,
   projectId: string,
-  scheme: ProjectContextFsScheme | WorkScopedContextFsScheme,
+  scheme: ProjectContextFsScheme,
   userId: string,
 ): Promise<string | null> {
   const sourceProjectId = scheme === "user" ? await findUserContextProject(db, userId) : projectId;
@@ -108,7 +117,7 @@ async function findProjectContextSource(
 async function ensureProjectContextSource(
   db: Database,
   projectId: string,
-  scheme: ProjectContextFsScheme | WorkScopedContextFsScheme,
+  scheme: ProjectContextFsScheme,
   userId: string,
 ): Promise<string> {
   const sourceProjectId =
@@ -142,7 +151,7 @@ async function findWorkContextSource(
   workId: string,
   scheme: WorkScopedContextFsScheme,
 ): Promise<string | null> {
-  const [row] = await db
+  const [row] = await currentDrizzleDb(db)
     .select({ id: contextSources.id })
     .from(contextSources)
     .where(
@@ -156,7 +165,7 @@ async function findWorkContextSource(
   return row?.id ?? null;
 }
 
-async function ensureWorkContextSource(
+export async function ensureWorkContextSource(
   db: Database,
   workId: string,
   scheme: WorkScopedContextFsScheme,
@@ -199,13 +208,17 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
     private readonly ensureSourceId: () => Promise<string>,
     private readonly findSourceId: () => Promise<string | null>,
     private readonly membershipObserver?: ContextDocumentMembershipObserver,
-    private readonly workId?: string,
+    private readonly workId?: string | (() => Promise<string>),
     private readonly catalogMutations?: ContextCatalogMutationPort,
   ) {}
 
+  private async resolvedWorkId(): Promise<string | undefined> {
+    return typeof this.workId === "function" ? this.workId() : this.workId;
+  }
+
   private async mutate<T>(operation: (store: DrizzleContextDocumentStore) => Promise<T>) {
-    const workId = this.workId;
     return runInDrizzleTransaction(this.db, async () => {
+      const workId = await this.resolvedWorkId();
       if (workId) await requireLockedActiveWork(this.db, workId);
       return operation(await this.sourceStore());
     });
@@ -304,8 +317,8 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
   }
 
   async transaction<T>(operation: () => Promise<T>) {
-    const workId = this.workId;
     return runInDrizzleTransaction(this.db, async () => {
+      const workId = await this.resolvedWorkId();
       if (workId) await requireLockedActiveWork(this.db, workId);
       await this.sourceStore();
       return operation();
@@ -324,7 +337,7 @@ class SourceResolvedContextDocumentStore implements ContextDocumentStore {
 export function createProjectContextDocumentStore(
   db: Database,
   projectId: string,
-  scheme: ProjectContextFsScheme | WorkScopedContextFsScheme,
+  scheme: ProjectContextFsScheme,
   userId: string,
   membershipObserver?: ContextDocumentMembershipObserver,
   catalogMutations?: ContextCatalogMutationPort,
@@ -352,6 +365,31 @@ export function createWorkContextDocumentStore(
     () => findWorkContextSource(db, workId, scheme),
     membershipObserver,
     workId,
+    catalogMutations,
+  );
+}
+
+export function createNoWorkContextDocumentStore(
+  db: Database,
+  projectId: string,
+  scheme: WorkScopedContextFsScheme,
+  membershipObserver?: ContextDocumentMembershipObserver,
+  catalogMutations?: ContextCatalogMutationPort,
+): ContextDocumentStore {
+  const resolveWorkId = async () => {
+    const workId = await findNoWorkId(db, projectId);
+    if (!workId) throw new Error(`No Work missing for project ${projectId}`);
+    return workId;
+  };
+  return new SourceResolvedContextDocumentStore(
+    db,
+    async () => ensureWorkContextSource(db, await resolveWorkId(), scheme),
+    async () => {
+      const workId = await findNoWorkId(db, projectId);
+      return workId ? findWorkContextSource(db, workId, scheme) : null;
+    },
+    membershipObserver,
+    resolveWorkId,
     catalogMutations,
   );
 }

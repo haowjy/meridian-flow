@@ -204,7 +204,6 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
     scope: z.discriminatedUnion("kind", [
       z.object({ kind: z.literal("project"), projectId: z.string().min(1) }),
       z.object({ kind: z.literal("user"), userId: z.string().min(1) }),
-      z.object({ kind: z.literal("none"), projectId: z.string().min(1) }),
       z.object({
         kind: z.literal("work"),
         projectId: z.string().min(1),

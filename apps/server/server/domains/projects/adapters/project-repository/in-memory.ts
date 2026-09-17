@@ -11,7 +11,9 @@ import type {
 import { DEFAULT_PROJECT_TITLE, nextProjectSlug } from "./shared.js";
 
 /** In-memory {@link ProjectRepository} for tests. */
-export function createInMemoryProjectRepository(): ProjectRepository {
+export function createInMemoryProjectRepository(options?: {
+  ensureNoWork?: (projectId: ProjectId) => Promise<unknown>;
+}): ProjectRepository {
   const rows = new Map<string, Project>();
 
   function now(): string {
@@ -44,6 +46,7 @@ export function createInMemoryProjectRepository(): ProjectRepository {
         deletedAt: null,
       };
       rows.set(project.id, project);
+      await options?.ensureNoWork?.(project.id);
       return { ...project };
     },
 

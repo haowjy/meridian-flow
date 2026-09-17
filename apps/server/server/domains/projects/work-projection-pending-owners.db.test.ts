@@ -119,9 +119,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         entityRevision: work?.entityRevision,
         availabilityGeneration: head?.generation,
         catalogEntityRevision:
-          entry?.entry.kind === "authority" && entry.entry.authority.kind === "work"
-            ? entry.entry.entityRevision
-            : undefined,
+          entry?.entry.kind === "authority" ? entry.entry.entityRevision : undefined,
       };
     }
 

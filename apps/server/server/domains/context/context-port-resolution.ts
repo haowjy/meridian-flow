@@ -40,7 +40,10 @@ export async function resolveThreadContext(
     : null;
   const workAuthorities = new Map(
     authorities
-      .filter((authority): authority is ResolvedWorkAuthority => authority !== null)
+      .filter(
+        (authority): authority is ResolvedWorkAuthority & { workSlug: WorkSlug } =>
+          authority != null && authority.workSlug !== null,
+      )
       .map((authority) => [authority.workSlug, authority]),
   );
   return {
@@ -56,20 +59,16 @@ export function contextPortForThread(
   resolution: ThreadContextResolution,
   options: { responseId?: string | null } = {},
 ): ContextPort {
-  if (resolution.primaryWorkAuthority) {
-    return contextPorts.forWork(
-      resolution.primaryWorkAuthority,
-      resolution.thread.projectId,
-      resolution.thread.userId,
-      resolution.workAuthorities,
-      resolution.thread.id,
-      options.responseId,
-    );
+  if (!resolution.primaryWorkAuthority) {
+    throw new Error(`Thread ${resolution.thread.id} has no primary Work`);
   }
-  return contextPorts.forProject(
+  return contextPorts.forWork(
+    resolution.primaryWorkAuthority,
     resolution.thread.projectId,
     resolution.thread.userId,
     resolution.workAuthorities,
+    resolution.thread.id,
+    options.responseId,
   );
 }
 
@@ -89,7 +88,10 @@ async function resolvedAuthorities(
   );
   return new Map(
     resolved
-      .filter((value): value is ResolvedWorkAuthority => value !== null)
+      .filter(
+        (value): value is ResolvedWorkAuthority & { workSlug: WorkSlug } =>
+          value != null && value.workSlug !== null,
+      )
       .map((value) => [value.workSlug, value]),
   );
 }
@@ -102,13 +104,12 @@ export async function contextPortForProjectRecovery(input: {
   requestedWorkId?: string | null;
 }): Promise<ContextPort> {
   const works = await input.deps.works.listByProject(input.projectId);
-  const workIds = new Set(works.map((work) => work.id));
   const workAuthorities = await resolvedAuthorities(input.deps, input.projectId, works);
   const primaryWorkId = input.requestedWorkId ?? null;
   const primaryAuthority = primaryWorkId
     ? await input.deps.workAuthorityResolver.byId(input.projectId, primaryWorkId)
     : null;
-  if (!primaryWorkId || !workIds.has(primaryWorkId) || !primaryAuthority) {
+  if (!primaryWorkId || !primaryAuthority) {
     return input.deps.contextPorts.forProject(input.projectId, input.userId, workAuthorities);
   }
   return input.deps.contextPorts.forWork(
@@ -132,15 +133,17 @@ export async function contextPortForProjectAuthorities(input: {
     return input.deps.contextPorts.forProject(input.projectId, input.userId, new Map());
   }
   if (!input.primaryWorkId || !input.workIds.has(input.primaryWorkId)) return null;
-  const works = input.projectWorks ?? (await input.deps.works.listByProject(input.projectId));
-  const projectWorkIds = new Set(works.map((work) => work.id));
-  if ([...input.workIds].some((workId) => !projectWorkIds.has(workId))) return null;
-  const workAuthorities = await resolvedAuthorities(input.deps, input.projectId, works);
-  const primaryAuthority = await input.deps.workAuthorityResolver.byId(
-    input.projectId,
-    input.primaryWorkId,
+  const resolved = await Promise.all(
+    [...input.workIds].map(async (workId) => {
+      const authority = await input.deps.workAuthorityResolver.byId(input.projectId, workId);
+      return [workId, authority] as const;
+    }),
   );
+  if (resolved.some(([, authority]) => !authority)) return null;
+  const primaryAuthority = resolved.find(([workId]) => workId === input.primaryWorkId)?.[1];
   if (!primaryAuthority) return null;
+  const works = input.projectWorks ?? (await input.deps.works.listByProject(input.projectId));
+  const workAuthorities = await resolvedAuthorities(input.deps, input.projectId, works);
   return input.deps.contextPorts.forWork(
     primaryAuthority,
     input.projectId,
