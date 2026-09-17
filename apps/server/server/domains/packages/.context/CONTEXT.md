@@ -38,7 +38,7 @@ file snapshot and TOML overlays. Source identity includes supporting files;
 compiled identity describes the Agent configuration. Binary/NUL-containing
 supporting files use base64 for JSONB storage.
 
-`domain/agent-configuration.ts` resolves the configured default model and skill/named-target identities over the retained package dependency graph. Missing or ambiguous references refuse binding; it never consults mutable package installs.
+`domain/agent-configuration.ts` resolves the configured default model and skill/named-target identities over the retained package dependency graph. `retainedPackageSkillMaps` is the graph walk for every `skills/<slug>/SKILL.md` in that closure; runtime slash listing reuses it. Missing or ambiguous Agent `load`/`available` references refuse binding; it never consults mutable package installs or account rows.
 
 `ports/agent-revision-store.ts` owns immutable source/definition records,
 account/system catalog pointers, and fixed thread bindings.
@@ -88,9 +88,9 @@ and package skill files live exclusively in retained snapshots; there are no mut
 Agent records or operational link overrides.
 
 Account-installed skills live in `account_skill_installs` (unique per owner and
-slug). They are conversation availability for the account, not Agent package
-content and not a rewrite of retained `skills/<slug>/SKILL.md`. Milestone 2
-mutates them only through debug HTTP.
+slug). They are extra user-slash inventory for the account, not Agent package
+content, not a prompt-list entry, and not a rewrite of retained
+`skills/<slug>/SKILL.md`. Milestone 2 mutates them only through debug HTTP.
 
 `package-source.ts` materializes local/GitHub dependency graphs before writes,
 preserving supported files and binary data. Explicit downloaded provenance confines local dependencies to their fetched tree;
@@ -101,8 +101,9 @@ publication rather than silently changing those references;
 removed pristine definitions leave retained history but no future-chat selection.
 `definition-editing.ts` edits or restores one entity within that complete source.
 The skill-availability edit versions `skills.available` on the retained Agent.
-Conversation listing, freeze, and invoke consume that declaration in the runtime
-domain. `package-export.ts` exports retained files without reconstructing source
+Prompt freeze and `skill()` consume that declaration in the runtime domain.
+Slash listing is the package-graph skill map plus account installs, not Agent
+`available`. `package-export.ts` exports retained files without reconstructing source
 from normalized definitions.
 
 Project-addressed management routes still authorize access to that Project; the

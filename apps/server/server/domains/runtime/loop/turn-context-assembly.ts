@@ -5,23 +5,27 @@
  * Key decisions:
  * - Preview (`persistBake: false`) computes a would-be first-attempt bake in memory
  *   only; `baked` in the response still reflects persisted `bakedSkillSlugs`.
- * - Orchestrator (`persistBake: true`) atomically persists prompt + available
- *   skill slugs on first attempt via compare-and-swap `bakeComposedSystemPrompt`.
- *   Empty union still writes `[]`. A losing concurrent bake refetches and uses
- *   the winner's frozen prompt + slugs. After freeze, new available slugs do
- *   not rewrite the prompt. Compact (M4) is the rebake.
+ * - Orchestrator (`persistBake: true`) atomically persists prompt + Agent
+ *   `skills.available` slugs on first attempt via compare-and-swap
+ *   `bakeComposedSystemPrompt`. Empty Agent available still writes `[]`. A losing
+ *   concurrent bake refetches and uses the winner's frozen prompt + slugs. After
+ *   freeze, new available slugs do not rewrite the prompt. Compact (M4) is the
+ *   rebake.
  * - Freeze happens at first turn attempt (context assembly), even if the gateway
  *   send then fails or is cancelled; autoprune is the only future re-bake trigger.
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
-import type { AccountSkillInstallStore, AgentRevisionStore } from "../../packages/index.js";
+import type { AgentRevisionStore } from "../../packages/index.js";
 import type { BakeComposedSystemPromptInput } from "../../threads/ports/repositories.js";
 import type { FunctionTool, Gateway, GenerateRequest, Tool } from "../gateway/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
 import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
-import { type AvailableSkillListing, resolveThreadAvailableSkills } from "./available-skills.js";
+import {
+  type AvailableSkillListing,
+  resolveThreadModelAvailableSkills,
+} from "./available-skills.js";
 import { isThreadPromptFrozen, rebakeComposedSystemPrompt } from "./composed-system-prompt.js";
 import { buildContext } from "./context-builder.js";
 import { projectImageBlocksForModel } from "./image-context.js";
@@ -32,7 +36,6 @@ export interface AssembleNextTurnContextInput {
   turns: Turn[];
   blocks: Block[];
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
-  accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
   gateway?: Pick<Gateway, "getDefaultModel" | "listModels">;
   imageAssets?: ImageAssetPort;
@@ -78,15 +81,14 @@ export async function assembleNextTurnContext(
   let availableSkillsForUnfrozen: AvailableSkillListing[] | undefined;
   let systemPrompt: string;
   const baked = thread.bakedSkillSlugs != null;
-  const availableSkills = await resolveThreadAvailableSkills({
-    thread,
-    agentRevisions: input.agentRevisions,
-    accountSkillInstalls: input.accountSkillInstalls,
-  });
 
   if (isThreadPromptFrozen(thread)) {
     systemPrompt = thread.composedSystemPrompt ?? "";
   } else {
+    const availableSkills = await resolveThreadModelAvailableSkills({
+      thread,
+      agentRevisions: input.agentRevisions,
+    });
     const workContext = (await input.workContext.renderForThread(thread.id as ThreadId)).text;
     const bakedPrompt = rebakeComposedSystemPrompt({
       basePrompt: agentContext.agentBody,

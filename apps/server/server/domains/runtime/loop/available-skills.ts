@@ -1,11 +1,11 @@
-/** Available skill union, body load, and Send-slug authorization for a primary chat. */
+/** User slash catalog (package graph ∪ account) and model-available catalog (Agent available). */
 import type { RetainedSkillReference } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
 import {
   type AccountSkillInstallStore,
   type AgentRevisionStore,
   type BoundAgentRevision,
-  resolveAgentDependencies,
+  retainedPackageSkillMaps,
   type SkillListing,
   skillListingFromMarkdown,
 } from "../../packages/index.js";
@@ -26,49 +26,28 @@ export class SkillUnavailableError extends Error {
   }
 }
 
-export function unionAvailableSkills(
-  agentSkills: readonly AvailableSkillListing[],
-  accountSkills: readonly AvailableSkillListing[],
-): AvailableSkillListing[] {
-  const seen = new Set<string>();
-  const result: AvailableSkillListing[] = [];
-  for (const skill of [...agentSkills, ...accountSkills]) {
-    if (seen.has(skill.slug)) continue;
-    seen.add(skill.slug);
-    result.push(skill);
-  }
-  return result;
-}
-
-export async function resolveThreadAvailableSkills(input: {
+export async function resolveThreadUserInvocableSkills(input: {
   thread: Thread;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
 }): Promise<AvailableSkillListing[]> {
   if (input.thread.kind !== "primary") return [];
   const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
-  const agentSkills = binding
-    ? await listAvailableSkillsFromReferences(
-        input.agentRevisions,
-        binding.configuration.skills.available,
-      )
-    : [];
-  return unionAvailableSkills(
-    agentSkills,
-    await listAccountAvailableSkills(input.accountSkillInstalls, input.thread.userId),
-  );
+  return listUserInvocableSkills({
+    packageRevisionId: binding?.packageRevisionId,
+    ownerUserId: input.thread.userId,
+    agentRevisions: input.agentRevisions,
+    accountSkillInstalls: input.accountSkillInstalls,
+  });
 }
 
-/** Home / creation composer: selected Agent revision ∪ account installs, no thread yet. */
-export async function resolveSelectionAvailableSkills(input: {
+/** Home / creation composer: selected Agent package graph ∪ account installs, no thread yet. */
+export async function resolveSelectionUserInvocableSkills(input: {
   userId: string;
   catalogEntryId: string;
   definitionRevisionId: string;
   projectId?: string;
-  agentRevisions: Pick<
-    AgentRevisionStore,
-    "readSelection" | "readSource" | "readPackageDefinitions"
-  >;
+  agentRevisions: Pick<AgentRevisionStore, "readSelection" | "readSource">;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
 }): Promise<AvailableSkillListing[] | null> {
   const selected = await input.agentRevisions.readSelection(
@@ -78,14 +57,32 @@ export async function resolveSelectionAvailableSkills(input: {
     input.projectId,
   );
   if (!selected) return null;
-  const dependencies = await resolveAgentDependencies({
-    revision: selected.revision,
-    store: input.agentRevisions,
+  return listUserInvocableSkills({
+    packageRevisionId: selected.revision.packageRevisionId,
+    ownerUserId: input.userId,
+    agentRevisions: input.agentRevisions,
+    accountSkillInstalls: input.accountSkillInstalls,
   });
-  return unionAvailableSkills(
-    await listAvailableSkillsFromReferences(input.agentRevisions, dependencies.skills.available),
-    await listAccountAvailableSkills(input.accountSkillInstalls, input.userId),
-  );
+}
+
+export async function resolveThreadModelAvailableSkills(input: {
+  thread: Thread;
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
+}): Promise<AvailableSkillListing[]> {
+  if (input.thread.kind !== "primary") return [];
+  const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
+  if (!binding) return [];
+  const listings: AvailableSkillListing[] = [];
+  for (const reference of binding.configuration.skills.available) {
+    const listing = await listingFromBoundReference(input.agentRevisions, reference);
+    if (!listing.modelInvocable) continue;
+    listings.push({
+      slug: listing.slug,
+      name: listing.name,
+      description: listing.description,
+    });
+  }
+  return listings;
 }
 
 export function unavailableActivatedSkillSlugs(
@@ -96,7 +93,7 @@ export function unavailableActivatedSkillSlugs(
   return requested.filter((slug) => !allowed.has(slug));
 }
 
-export async function loadAvailableSkillBody(input: {
+export async function loadUserSkillBody(input: {
   thread: Thread;
   slug: string;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
@@ -105,8 +102,15 @@ export async function loadAvailableSkillBody(input: {
   if (input.thread.kind === "primary") {
     const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
     if (binding) {
-      const agentSkill = await readBoundAvailableSkill(input.agentRevisions, binding, input.slug);
-      if (agentSkill) return agentSkill;
+      const packaged = await readPackageSkill(
+        input.agentRevisions,
+        binding.packageRevisionId,
+        input.slug,
+      );
+      if (packaged) {
+        if (!packaged.userInvocable) throw new SkillUnavailableError(input.slug);
+        return packaged;
+      }
     }
     const accountSkill = (await input.accountSkillInstalls.listByOwner(input.thread.userId)).find(
       (row) => row.slug === input.slug,
@@ -117,37 +121,91 @@ export async function loadAvailableSkillBody(input: {
         name: accountSkill.name,
         description: accountSkill.description,
         body: accountSkill.body,
+        userInvocable: true,
+        modelInvocable: true,
       };
     }
   }
   throw new SkillUnavailableError(input.slug);
 }
 
-async function listAccountAvailableSkills(
-  installs: Pick<AccountSkillInstallStore, "listByOwner">,
-  ownerUserId: string,
-): Promise<AvailableSkillListing[]> {
-  return (await installs.listByOwner(ownerUserId)).map((row) => ({
-    slug: row.slug,
-    name: row.name,
-    description: row.description,
-  }));
+export async function loadModelSkillBody(input: {
+  thread: Thread;
+  slug: string;
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
+}): Promise<SkillListing> {
+  if (input.thread.kind === "primary") {
+    const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
+    if (binding) {
+      const modelSkill = await readBoundAvailableSkill(input.agentRevisions, binding, input.slug);
+      if (modelSkill) {
+        if (!modelSkill.modelInvocable) throw new SkillUnavailableError(input.slug);
+        return modelSkill;
+      }
+    }
+  }
+  throw new SkillUnavailableError(input.slug);
 }
 
-async function listAvailableSkillsFromReferences(
+async function listUserInvocableSkills(input: {
+  packageRevisionId: string | undefined;
+  ownerUserId: string;
+  agentRevisions: Pick<AgentRevisionStore, "readSource">;
+  accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
+}): Promise<AvailableSkillListing[]> {
+  const packaged = input.packageRevisionId
+    ? await listPackageSkills(input.agentRevisions, input.packageRevisionId)
+    : [];
+  const packagedSlugs = new Set(packaged.map((skill) => skill.slug));
+  const account = (await input.accountSkillInstalls.listByOwner(input.ownerUserId))
+    .filter((row) => !packagedSlugs.has(row.slug))
+    .map((row) => ({
+      slug: row.slug,
+      name: row.name,
+      description: row.description,
+      userInvocable: true,
+    }));
+  return [...packaged, ...account]
+    .filter((skill) => skill.userInvocable)
+    .map((skill) => ({
+      slug: skill.slug,
+      name: skill.name,
+      description: skill.description,
+    }));
+}
+
+async function listPackageSkills(
   store: Pick<AgentRevisionStore, "readSource">,
-  available: readonly RetainedSkillReference[],
-): Promise<AvailableSkillListing[]> {
-  const listings: AvailableSkillListing[] = [];
-  for (const reference of available) {
-    const listing = await listingFromBoundReference(store, reference);
-    listings.push({
-      slug: listing.slug,
-      name: listing.name,
-      description: listing.description,
-    });
+  packageRevisionId: string,
+): Promise<Array<AvailableSkillListing & { userInvocable: boolean }>> {
+  const listings: Array<AvailableSkillListing & { userInvocable: boolean }> = [];
+  const seen = new Set<string>();
+  for (const skills of (await retainedPackageSkillMaps(packageRevisionId, store)).values()) {
+    for (const [slug, reference] of skills) {
+      if (seen.has(slug)) continue;
+      seen.add(slug);
+      const listing = await listingFromBoundReference(store, reference);
+      listings.push({
+        slug,
+        name: listing.name,
+        description: listing.description,
+        userInvocable: listing.userInvocable,
+      });
+    }
   }
   return listings;
+}
+
+async function readPackageSkill(
+  store: Pick<AgentRevisionStore, "readSource">,
+  packageRevisionId: string,
+  slug: string,
+): Promise<SkillListing | undefined> {
+  for (const skills of (await retainedPackageSkillMaps(packageRevisionId, store)).values()) {
+    const reference = skills.get(slug);
+    if (reference) return listingFromBoundReference(store, reference);
+  }
+  return undefined;
 }
 
 async function readBoundAvailableSkill(
@@ -156,11 +214,7 @@ async function readBoundAvailableSkill(
   slug: string,
 ): Promise<SkillListing | undefined> {
   for (const reference of binding.configuration.skills.available) {
-    const match = SKILL_MD_PATH.exec(reference.path);
-    if (!match) {
-      throw new Error(`Retained skill path is not a SKILL.md file: ${reference.path}`);
-    }
-    if (match[1] !== slug) continue;
+    if (skillSlugFromPath(reference.path) !== slug) continue;
     return listingFromBoundReference(store, reference);
   }
   return undefined;
@@ -168,20 +222,22 @@ async function readBoundAvailableSkill(
 
 async function listingFromBoundReference(
   store: Pick<AgentRevisionStore, "readSource">,
-  reference: BoundAgentRevision["configuration"]["skills"]["available"][number],
+  reference: RetainedSkillReference,
 ): Promise<SkillListing> {
-  const match = SKILL_MD_PATH.exec(reference.path);
-  if (!match) {
-    throw new Error(`Retained skill path is not a SKILL.md file: ${reference.path}`);
-  }
-  const slug = match[1];
-  if (!slug) {
-    throw new Error(`Retained skill path is not a SKILL.md file: ${reference.path}`);
-  }
+  const slug = skillSlugFromPath(reference.path);
   const source = await store.readSource(reference.packageRevisionId);
   const entry = source?.files[reference.path];
   if (typeof entry !== "string") {
     throw new Error(`Retained skill "${slug}" is missing from package source`);
   }
   return skillListingFromMarkdown(entry, slug);
+}
+
+function skillSlugFromPath(path: string): string {
+  const match = SKILL_MD_PATH.exec(path);
+  const slug = match?.[1];
+  if (!slug) {
+    throw new Error(`Retained skill path is not a SKILL.md file: ${path}`);
+  }
+  return slug;
 }

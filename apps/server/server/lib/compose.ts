@@ -133,8 +133,8 @@ import {
   type WorkContextReader,
 } from "../domains/runtime/index.js";
 import {
-  loadAvailableSkillBody,
-  resolveThreadAvailableSkills,
+  loadModelSkillBody,
+  resolveThreadUserInvocableSkills,
   SkillUnavailableError,
   unavailableActivatedSkillSlugs,
 } from "../domains/runtime/loop/available-skills.js";
@@ -592,11 +592,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async loadBody(threadId, slug) {
       const thread = await ports.threadRepos.threads.findById(threadId as never);
       if (!thread) throw new SkillUnavailableError(slug);
-      return loadAvailableSkillBody({
+      return loadModelSkillBody({
         thread,
         slug,
         agentRevisions: ports.agentRevisions,
-        accountSkillInstalls: ports.accountSkillInstalls,
       });
     },
   })) {
@@ -639,7 +638,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async authorizeActivatedSkills({ threadId, slugs }) {
       const thread = await ports.threadRepos.threads.findById(threadId as never);
       if (!thread) throw new InvalidAdmissionError("thread is unavailable");
-      const available = await resolveThreadAvailableSkills({
+      const available = await resolveThreadUserInvocableSkills({
         thread,
         agentRevisions: ports.agentRevisions,
         accountSkillInstalls: ports.accountSkillInstalls,

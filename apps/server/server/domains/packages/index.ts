@@ -20,6 +20,7 @@ export {
   AgentConfigurationError,
   resolveAgentConfiguration,
   resolveAgentDependencies,
+  retainedPackageSkillMaps,
 } from "./domain/agent-configuration.js";
 export {
   type AgentCompilationDiagnostic,

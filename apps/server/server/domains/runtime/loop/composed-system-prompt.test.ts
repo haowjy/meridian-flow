@@ -38,7 +38,7 @@ describe("assembleComposedSystemPrompt", () => {
     expect(prompt).not.toContain("\nStory Review\n");
   });
 
-  it("omits the available-skills section when the union is empty", () => {
+  it("omits the available-skills section when no skills are listed", () => {
     const withSkills = assembleComposedSystemPrompt({
       basePrompt: "You are Writer.",
       availableSkills: [
