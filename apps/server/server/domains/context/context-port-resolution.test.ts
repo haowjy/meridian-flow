@@ -81,40 +81,54 @@ describe("thread context-port resolution", () => {
     expect(calls).toEqual([{ workId: WORK_ID, projectId: CUSTOM_PROJECT_ID, threadId: THREAD_ID }]);
   });
 
-  it("keeps every real Work explicitly addressable from a no-Work thread", async () => {
+  it("keeps every named Work explicitly addressable from a No Work thread", async () => {
+    const noWorkId = "no-work-custom";
+    const noWorkAuthority = resolvedWorkAuthority({ kind: "none", workId: noWorkId });
     const resolution = await resolveThreadContext(
       {
-        threads: { findById: async () => ({ ...thread(), workId: null }) },
-        threadWorks: { findPrimary: async () => null },
+        threads: { findById: async () => thread() },
+        threadWorks: { findPrimary: async () => ({ workId: noWorkId }) },
         works: {
           listByProject: async () => [{ id: WORK_ID, slug: "current-work" }] as never,
         },
-        workAuthorityResolver: resolver({ [WORK_ID]: "current-work" }),
+        workAuthorityResolver: {
+          byId: async (_projectId, workId) =>
+            workId === noWorkId
+              ? noWorkAuthority
+              : workId === WORK_ID
+                ? resolvedWorkAuthority({
+                    kind: "work",
+                    workId: WORK_ID,
+                    workSlug: testWorkSlug("current-work"),
+                  })
+                : null,
+          lockById: async () => null,
+          bySlug: async () => null,
+        },
       },
       THREAD_ID,
     );
     if (!resolution) throw new Error("missing resolution");
 
-    const authorities: Array<ReadonlyMap<string, unknown> | undefined> = [];
+    const calls: Array<{ workId: string; authorities: string[] }> = [];
     const contextPorts = {
-      forWork: () => {
-        throw new Error("no-Work thread must use its project-owned base port");
-      },
-      forProject: (
+      forWork: (
+        authority: { workId: string },
         _projectId: string,
         _userId: string,
         workAuthorities: ReadonlyMap<string, unknown>,
       ) => {
-        authorities.push(workAuthorities);
+        calls.push({ workId: authority.workId, authorities: [...workAuthorities.keys()] });
         return {} as ContextPort;
+      },
+      forProject: () => {
+        throw new Error("thread with primary Work must not fall back to project port");
       },
     } as unknown as UnifiedContextPortFactory;
 
     contextPortForThread(contextPorts, resolution);
 
-    expect([...(authorities[0]?.entries() ?? [])]).toEqual([
-      ["current-work", expect.objectContaining({ workId: WORK_ID })],
-    ]);
+    expect(calls).toEqual([{ workId: noWorkId, authorities: ["current-work"] }]);
   });
 });
 

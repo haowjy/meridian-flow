@@ -27,6 +27,7 @@ if (!RUN) {
     const USER = "00000000-0000-4000-8000-000000000a01";
     const PROJECT = "00000000-0000-4000-8000-000000000a02";
     const WORK = "00000000-0000-4000-8000-000000000a03";
+    const NO_WORK = "00000000-0000-4000-8000-000000000a04";
     const database = useRollbackTestDatabase(DATABASE_URL, {
       prepareSuite: (db) => truncateDrizzleTables(db, [users]),
     });
@@ -36,13 +37,23 @@ if (!RUN) {
       await db
         .insert(projects)
         .values({ id: PROJECT, userId: USER, name: "Project", slug: "project" });
-      await db.insert(works).values({
-        id: WORK,
-        projectId: PROJECT,
-        createdByUserId: USER,
-        name: "Draft",
-        slug: "draft",
-      });
+      await db.insert(works).values([
+        {
+          id: NO_WORK,
+          projectId: PROJECT,
+          createdByUserId: USER,
+          name: "No Work",
+          slug: null,
+          isNoWork: true,
+        },
+        {
+          id: WORK,
+          projectId: PROJECT,
+          createdByUserId: USER,
+          name: "Draft",
+          slug: "draft",
+        },
+      ]);
       return createDrizzleUploadIntakeRepository(db);
     }
 

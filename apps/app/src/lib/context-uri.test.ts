@@ -51,7 +51,7 @@ describe("contextRouteTargetFromUri", () => {
     ).toBeNull();
   });
 
-  it("routes contextual scratch to the unassigned source when no Work is displayed", () => {
+  it("routes contextual scratch with no displayed Work as `@/` (workId null)", () => {
     expect(contextRouteTargetFromUri("scratch://probe-cycle-3.mdx", null)).toEqual({
       scheme: "scratch",
       path: "/probe-cycle-3.mdx",

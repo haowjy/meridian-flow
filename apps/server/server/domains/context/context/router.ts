@@ -5,7 +5,10 @@
  */
 
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
-import type { CanonicalContextAuthority } from "@meridian/contracts/context-uri";
+import {
+  type CanonicalContextAuthority,
+  WORK_SCOPED_CONTEXT_URI_SCHEMES,
+} from "@meridian/contracts/context-uri";
 import type { DeleteContextEntryResult } from "@meridian/contracts/protocol";
 import type { ResolvedWorkAuthority, WorkSlug } from "@meridian/contracts/works";
 import { Err, Ok, type Result } from "../../../shared/result.js";
@@ -53,8 +56,11 @@ export interface ContextPortRouterDeps {
   resolveWorkAdapters?: (
     authority: ResolvedWorkAuthority,
   ) => ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
-  /** Builds project-owned Scratch and Uploads adapters for explicit no-Work authority. */
-  resolveNoWorkAdapters?: () => ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
+  /** Builds No Work Scratch and Uploads adapters for explicit `@/` authority. */
+  resolveNoWork?: () => Promise<{
+    adapters: ReadonlyMap<ContextScheme, ContextSchemeAdapter>;
+    workId: string;
+  }>;
   /** URI parse options — unified port passes manuscript default + extended schemes. */
   parseOptions?: ParseContextUriOptions;
   commandTransaction?: ContextCommandTransaction;
@@ -186,7 +192,18 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
     let workScopeId =
       authority.kind === "contextual" ? (deps.primaryWorkAuthority?.workId ?? null) : null;
     if (authority.kind === "none") {
-      adapterMap = deps.resolveNoWorkAdapters?.() ?? adapters;
+      const noWork = await deps.resolveNoWork?.();
+      if (noWork) {
+        adapterMap = noWork.adapters;
+        workScopeId = noWork.workId;
+      }
+    } else if (
+      authority.kind === "contextual" &&
+      !workScopeId &&
+      (WORK_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme)
+    ) {
+      const noWork = await deps.resolveNoWork?.();
+      if (noWork) workScopeId = noWork.workId;
     } else if (authority.kind === "work") {
       const resolvedAuthority = deps.workAuthorities.get(authority.workSlug) ?? null;
       if (!resolvedAuthority) {
@@ -344,13 +361,20 @@ export function createContextPortRouter(deps: ContextPortRouterDeps): ContextPor
         locationKeys.add(key);
         locations.push({ scheme, authority, workScopeId, adapter: candidate });
       };
+      const noWork = await deps.resolveNoWork?.();
       for (const [scheme, candidate] of adapters) {
+        const workScoped = (WORK_SCOPED_CONTEXT_URI_SCHEMES as readonly string[]).includes(scheme);
         addLocation(
           scheme,
           deps.adapterAuthorities?.get(scheme) ?? { kind: "contextual" },
-          deps.primaryWorkAuthority?.workId ?? null,
+          workScoped ? (deps.primaryWorkAuthority?.workId ?? noWork?.workId ?? null) : null,
           candidate,
         );
+      }
+      if (noWork) {
+        for (const [scheme, candidate] of noWork.adapters) {
+          addLocation(scheme, { kind: "none" }, noWork.workId, candidate);
+        }
       }
       for (const authority of deps.workAuthorities.values()) {
         for (const [scheme, candidate] of deps.resolveWorkAdapters?.(authority) ?? []) {

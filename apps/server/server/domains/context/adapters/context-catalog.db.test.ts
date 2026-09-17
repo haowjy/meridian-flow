@@ -305,7 +305,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const store = createProjectContextDocumentStore(
         db,
         PROJECT_ID,
-        "scratch",
+        "kb",
         USER_ID,
         undefined,
         failingCatalog,
@@ -313,7 +313,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const context = new ContextFS({
         store,
         mutationStore: new DrizzleContextTreeMutationStore(db, undefined, failingCatalog),
-        scheme: "scratch",
+        scheme: "kb",
         documentSync: {
           ensureDocument: async () => {},
           readAsMarkdown: async () => Ok(""),
@@ -328,7 +328,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .where(
             and(
               eq(contextSources.projectId, PROJECT_ID),
-              eq(contextSources.slug, "scratch"),
+              eq(contextSources.slug, "kb"),
               isNull(contextSources.deletedAt),
             ),
           ),
@@ -342,7 +342,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         db
           .select()
           .from(contextSources)
-          .where(and(eq(contextSources.projectId, PROJECT_ID), eq(contextSources.slug, "scratch"))),
+          .where(and(eq(contextSources.projectId, PROJECT_ID), eq(contextSources.slug, "kb"))),
       ).resolves.toHaveLength(1);
     });
 

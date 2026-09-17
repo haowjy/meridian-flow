@@ -134,7 +134,7 @@ else
         name: "Ambient source",
         slug: `ambient-${projectId}`,
       });
-      const store = createProjectContextDocumentStore(db, projectId, "scratch", USER_ID);
+      const store = createProjectContextDocumentStore(db, projectId, "manuscript", USER_ID);
       await expect(
         runInDrizzleTransaction(db, () =>
           store.transaction(async () => {

@@ -89,18 +89,18 @@ function scopeForSource(row: {
   projectUserId: string | null;
   projectIsPersonal: boolean | null;
   workProjectId: string | null;
+  workIsNoWork: boolean | null;
   sourceSlug: string;
 }): CatalogScope | null {
   if (row.sourceWorkId && row.workProjectId) {
+    if (row.workIsNoWork) return { kind: "none", projectId: row.workProjectId };
     return { kind: "work", projectId: row.workProjectId, workId: row.sourceWorkId };
   }
   if (!row.sourceProjectId) return null;
   if (row.sourceSlug === "user" && row.projectIsPersonal && row.projectUserId) {
     return { kind: "user", userId: row.projectUserId };
   }
-  if (row.sourceSlug === "scratch" || row.sourceSlug === "uploads") {
-    return { kind: "none", projectId: row.sourceProjectId };
-  }
+  if (row.sourceSlug === "scratch" || row.sourceSlug === "uploads") return null;
   return { kind: "project", projectId: row.sourceProjectId };
 }
 
@@ -113,6 +113,7 @@ async function sourceScope(db: CatalogDb, sourceId: string): Promise<CatalogScop
       projectUserId: projects.userId,
       projectIsPersonal: projects.isPersonal,
       workProjectId: works.projectId,
+      workIsNoWork: works.isNoWork,
     })
     .from(contextSources)
     .leftJoin(projects, eq(contextSources.projectId, projects.id))
@@ -125,7 +126,11 @@ async function sourceScope(db: CatalogDb, sourceId: string): Promise<CatalogScop
 async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
   const conditions =
     scope.kind === "work"
-      ? and(eq(contextSources.workId, scope.workId), isNull(contextSources.deletedAt))
+      ? and(
+          eq(contextSources.workId, scope.workId),
+          eq(works.isNoWork, false),
+          isNull(contextSources.deletedAt),
+        )
       : scope.kind === "user"
         ? and(
             eq(projects.userId, scope.userId),
@@ -136,7 +141,9 @@ async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
           )
         : scope.kind === "none"
           ? and(
-              eq(contextSources.projectId, scope.projectId),
+              eq(works.projectId, scope.projectId),
+              eq(works.isNoWork, true),
+              isNull(works.deletedAt),
               inArray(contextSources.slug, ["scratch", "uploads"]),
               isNull(contextSources.deletedAt),
             )
@@ -603,7 +610,7 @@ export function createDrizzleContextCatalog(
       const workRows = await tx
         .select({ id: works.id })
         .from(works)
-        .where(eq(works.projectId, projectId));
+        .where(and(eq(works.projectId, projectId), eq(works.isNoWork, false)));
       await availabilityMutations.advance({
         projectIds: [projectId],
         userIds: project?.isPersonal ? [project.userId] : [],

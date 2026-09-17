@@ -10,6 +10,7 @@ import {
 } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { findNoWorkId } from "../context-source-provisioning.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type {
   ReserveUploadResult,
@@ -52,9 +53,8 @@ function mapRow(row: IntakeRow, workSlug: string | null): UploadReservation {
     state: row.state as UploadReservation["state"],
     storageUrl: row.storageUrl,
     consumed: row.consumedAt !== null,
-    owner: row.workId
-      ? { kind: "work", workId: row.workId, workSlug: workSlug ?? "" }
-      : { kind: "none" },
+    owner:
+      row.workId && workSlug ? { kind: "work", workId: row.workId, workSlug } : { kind: "none" },
   };
 }
 
@@ -84,21 +84,25 @@ async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: strin
     )
     .limit(1);
   if (!project) return null;
-  let workSlug: string | null = null;
-  if (owner.kind === "work") {
-    const locked = await activeDb.execute(sql`
-      select slug from works
-      where id = ${owner.workId} and project_id = ${owner.projectId}
-        and deleted_at is null and status = 'active'
-      for update
-    `);
-    workSlug = (locked[0]?.slug as string | undefined) ?? null;
-    if (!workSlug) return null;
-  }
-  const workId = owner.kind === "work" ? owner.workId : null;
-  const scopePredicate = workId
-    ? eq(contextSources.workId, workId as never)
-    : and(eq(contextSources.projectId, owner.projectId as never), isNull(contextSources.workId));
+  const workId = owner.kind === "work" ? owner.workId : await findNoWorkId(db, owner.projectId);
+  if (!workId) return null;
+  const [lockedRow] = await activeDb
+    .select({ slug: works.slug, isNoWork: works.isNoWork })
+    .from(works)
+    .where(
+      and(
+        eq(works.id, workId as never),
+        eq(works.projectId, owner.projectId as never),
+        isNull(works.deletedAt),
+        eq(works.status, "active"),
+      ),
+    )
+    .for("update")
+    .limit(1);
+  if (!lockedRow) return null;
+  const workSlug = lockedRow.isNoWork ? null : lockedRow.slug;
+  if (!lockedRow.isNoWork && !workSlug) return null;
+  const scopePredicate = eq(contextSources.workId, workId as never);
   const [existing] = await activeDb
     .select({ id: contextSources.id })
     .from(contextSources)
@@ -111,9 +115,8 @@ async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: strin
     const [created] = await activeDb
       .insert(contextSources)
       .values({
-        ...(workId
-          ? { workId: workId as never, scope: "work" }
-          : { projectId: owner.projectId as never, scope: "project" }),
+        workId: workId as never,
+        scope: "work",
         name: "Uploads",
         slug: "uploads",
         adapterType: "local",

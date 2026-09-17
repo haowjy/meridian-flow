@@ -495,11 +495,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       if (!created.ok || !created.value.documentId) throw new Error("missing no-Work document");
       const documentId = created.value.documentId;
+      const [noWork] = await db
+        .select({ id: schema.works.id })
+        .from(schema.works)
+        .where(and(eq(schema.works.projectId, projectId), eq(schema.works.isNoWork, true)));
       await expect(documentOwner(documentId)).resolves.toMatchObject({
         documentId,
-        sourceScope: "project",
-        sourceWorkId: null,
-        sourceProjectId: projectId,
+        sourceScope: "work",
+        sourceWorkId: noWork?.id,
+        sourceProjectId: null,
         folderName: null,
         documentName: "Unassigned",
         extension: "md",
@@ -565,9 +569,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const returned = await documentOwner(documentId);
       expect(returned).toMatchObject({
         documentId,
-        sourceScope: "project",
-        sourceWorkId: null,
-        sourceProjectId: projectId,
+        sourceScope: "work",
+        sourceWorkId: noWork?.id,
+        sourceProjectId: null,
         folderName: "Returned",
       });
       expect(returned?.documentSourceId).toBe(returned?.folderSourceId);

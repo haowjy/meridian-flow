@@ -26,10 +26,17 @@ export default defineEventHandler(async (event): Promise<UploadIntakeResult> => 
   if (!intakeId || !/^[0-9a-f]{64}$/.test(byteDigest)) {
     throw createError({ statusCode: 400, message: "intakeId and SHA-256 byteDigest are required" });
   }
+  const owner = workId
+    ? { kind: "work" as const, projectId, workId }
+    : await (async () => {
+        const noWork = await app.workRepo.findNoWork(projectId);
+        if (!noWork) throw createError({ statusCode: 404, message: "Work not found" });
+        return { kind: "work" as const, projectId, workId: noWork.id };
+      })();
   const result = await app.uploadIntake.intake({
     intakeId,
     actorUserId: userId,
-    owner: workId ? { kind: "work", projectId, workId } : { kind: "none", projectId },
+    owner,
     filename: file.filename,
     mimeType: file.type ?? "application/octet-stream",
     byteDigest,
