@@ -27,7 +27,7 @@ export interface ThreadWorkRebindRouteDeps {
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "rebindPrimary">;
   projects: Pick<ProjectRepository, "findById">;
-  works: Pick<WorkRepository, "findById">;
+  works: Pick<WorkRepository, "findById" | "findNoWork">;
   obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
   workContextDelivery: Pick<WorkContextDelivery, "deliverAfterCommit">;
   notices: Pick<NoticePort, "record">;
@@ -63,11 +63,17 @@ export async function handleRebindThreadWorkRequest(
     input.threadId,
     input.userId,
   );
-  if (input.body.target.kind === "work") {
+  let workId: WorkId;
+  if (input.body.target.kind === "none") {
+    const noWork = await deps.works.findNoWork(thread.projectId);
+    if (!noWork) throw new Error("No Work is missing for this project");
+    workId = noWork.id;
+  } else {
     const target = await deps.works.findById(input.body.target.workId);
     if (!target || target.deletedAt || target.projectId !== thread.projectId) {
       throwHttpInterrupt(meridianErrorFromSystem("not_found", "Thread or Work not found"), 404);
     }
+    workId = input.body.target.workId;
   }
 
   const claim = await deps.runOwnership.tryAcquire(thread.id);
@@ -86,7 +92,7 @@ export async function handleRebindThreadWorkRequest(
     transition = await deps.transaction(async () => {
       const rebound = await rebindThreadWork(deps, {
         threadId: thread.id,
-        target: input.body.target,
+        workId,
       });
       await recordWriterWorkSwitchNotice(deps.notices, rebound);
       return rebound;

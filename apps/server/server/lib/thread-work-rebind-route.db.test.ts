@@ -139,6 +139,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           if (targetReads === 1) await works.softDelete(TARGET_WORK_ID);
           return staleTarget;
         },
+        findNoWork: works.findNoWork.bind(works),
       };
 
       let thrown: unknown;

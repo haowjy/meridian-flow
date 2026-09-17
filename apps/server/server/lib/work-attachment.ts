@@ -1,4 +1,4 @@
-/** Nullable Work membership resolution for newly created root and child threads. */
+/** Work membership resolution for newly created root and child threads. */
 import type { WorkRepository } from "../domains/projects/index.js";
 import type { ThreadWorksRepository } from "../domains/threads/index.js";
 
@@ -17,16 +17,16 @@ export interface ResolveWorkMembershipDeps {
 export interface ResolveWorkMembershipArgs {
   threadId: string;
   projectId: string;
-  /** Explicit root assignment. Null and omission both mean no Work. */
+  /** Explicit root assignment. Null and omission both bind to No Work. */
   workId?: string | null;
-  /** Child threads inherit the parent's real or absent primary membership. */
+  /** Child threads inherit the parent's primary membership. */
   parentThreadId?: string | null;
 }
 
 export async function resolveWorkMembership(
   deps: ResolveWorkMembershipDeps,
   args: ResolveWorkMembershipArgs,
-): Promise<string | null> {
+): Promise<string> {
   let primaryWorkId: string | null = null;
 
   if (args.parentThreadId) {
@@ -44,8 +44,12 @@ export async function resolveWorkMembership(
     primaryWorkId = args.workId;
   }
 
-  if (primaryWorkId) {
-    await deps.threadWorks.addMembership(args.threadId, primaryWorkId, true);
+  if (!primaryWorkId) {
+    const noWork = await deps.workRepo.findNoWork(args.projectId);
+    if (!noWork) throw new InvalidWorkAttachmentError("No Work is missing for this project");
+    primaryWorkId = noWork.id;
   }
+
+  await deps.threadWorks.addMembership(args.threadId, primaryWorkId, true);
   return primaryWorkId;
 }

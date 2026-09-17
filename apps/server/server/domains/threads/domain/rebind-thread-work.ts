@@ -1,7 +1,6 @@
-/** Canonical nullable thread Work-rebind command shared by model and writer adapters. */
+/** Canonical thread Work-rebind command shared by model and writer adapters. */
 import type { ThreadId, WorkId } from "@meridian/contracts/runtime";
 import type {
-  RebindThreadWorkRequest,
   RebindThreadWorkResult,
   Work,
   WorkBindingReceiptState,
@@ -40,12 +39,19 @@ interface RebindThreadWorkDeps {
   obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
 }
 
-export interface RebindThreadWorkInput extends RebindThreadWorkRequest {
+export interface RebindThreadWorkInput {
   threadId: ThreadId;
+  workId: WorkId;
 }
 
 function receiptState(work: Work | null): WorkBindingReceiptState {
-  if (!work?.slug) return { kind: "none" };
+  if (!work || work.isNoWork || work.slug === null) {
+    return {
+      kind: "none",
+      name: work?.name ?? "No Work",
+      aiWriteMode: work?.aiWriteMode ?? "direct",
+    };
+  }
   return {
     kind: "work",
     workId: work.id,
@@ -67,21 +73,17 @@ export async function rebindThreadWork(
     throw new RebindThreadWorkError("thread_unavailable", input.threadId);
   }
 
-  const targetWorkId = input.target.kind === "work" ? input.target.workId : null;
-  let requestedTarget: Work | null = null;
-  if (targetWorkId) {
-    requestedTarget = await deps.works.findById(targetWorkId);
-    if (!requestedTarget || requestedTarget.deletedAt || requestedTarget.status === "archived") {
-      throw new RebindThreadWorkError("target_work_unavailable", input.threadId, targetWorkId);
-    }
-    if (requestedTarget.projectId !== thread.projectId) {
-      throw new RebindThreadWorkError("project_mismatch", input.threadId, targetWorkId);
-    }
+  const requestedTarget = await deps.works.findById(input.workId);
+  if (!requestedTarget || requestedTarget.deletedAt || requestedTarget.status === "archived") {
+    throw new RebindThreadWorkError("target_work_unavailable", input.threadId, input.workId);
+  }
+  if (requestedTarget.projectId !== thread.projectId) {
+    throw new RebindThreadWorkError("project_mismatch", input.threadId, input.workId);
   }
 
   let rebound: Awaited<ReturnType<ThreadWorksRepository["rebindPrimary"]>>;
   try {
-    rebound = await deps.threadWorks.rebindPrimary(thread.id, targetWorkId);
+    rebound = await deps.threadWorks.rebindPrimary(thread.id, input.workId);
   } catch (cause) {
     if (cause instanceof ThreadMembershipUnavailableError) {
       throw new RebindThreadWorkError("thread_unavailable", input.threadId);
@@ -97,9 +99,9 @@ export async function rebindThreadWork(
   const previousWork = rebound.previousWorkId
     ? await deps.works.findById(rebound.previousWorkId)
     : null;
-  const targetWork = targetWorkId ? await deps.works.findById(targetWorkId) : null;
-  if (targetWorkId && (!targetWork || targetWork.deletedAt || targetWork.status === "archived")) {
-    throw new RebindThreadWorkError("target_work_unavailable", input.threadId, targetWorkId);
+  const targetWork = await deps.works.findById(input.workId);
+  if (!targetWork || targetWork.deletedAt || targetWork.status === "archived") {
+    throw new RebindThreadWorkError("target_work_unavailable", input.threadId, input.workId);
   }
 
   const before = receiptState(previousWork);

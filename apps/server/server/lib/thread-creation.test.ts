@@ -26,9 +26,11 @@ async function fixture() {
     store: app.agentRevisions,
     unavailableReasons: () => [],
   });
+  const workRepo = createInMemoryWorkRepository();
+  await workRepo.ensureNoWork(project.id);
   const deps = {
     projects,
-    workRepo: createInMemoryWorkRepository(),
+    workRepo,
     threads: app.repos.threads,
     threadWorks: app.repos.threadWorks,
     transaction: app.repos.transaction,
@@ -48,6 +50,20 @@ async function fixture() {
 }
 
 describe("exact thread creation", () => {
+  it("binds omitted and null workId to No Work", async () => {
+    const { deps, args } = await fixture();
+    const noWork = await deps.workRepo.findNoWork(args.projectId);
+    if (!noWork) throw new Error("expected No Work");
+    const created = await createThreadForProject(deps, args);
+    await expect(deps.threadWorks.findPrimary(created.id)).resolves.toEqual({ workId: noWork.id });
+    const omitted = await createThreadForProject(deps, {
+      ...args,
+      id: crypto.randomUUID(),
+      workId: undefined,
+    });
+    await expect(deps.threadWorks.findPrimary(omitted.id)).resolves.toEqual({ workId: noWork.id });
+  });
+
   it("binds the reserved revision and recovers it before prospective catalog eligibility", async () => {
     const { app, deps, args } = await fixture();
     const created = await createThreadForProject(deps, args);

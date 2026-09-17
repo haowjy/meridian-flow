@@ -79,7 +79,7 @@ export type ThreadExecutionContext =
       draftOwner: { kind: "work"; workId: WorkId } | null;
     };
 
-/** Canonical domain command shared by writer and agent adapters. */
+/** Public writer/model encoding. Adapters resolve `none` through findNoWork. */
 export interface RebindThreadWorkRequest {
   target: { kind: "none" } | { kind: "work"; workId: WorkId };
 }

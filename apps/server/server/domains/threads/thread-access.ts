@@ -55,6 +55,7 @@ export interface SetOwnedThreadTrashStateDeps {
   obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
   workContextDelivery: Pick<WorkContextDelivery, "deliverAfterCommit">;
   workAuthorityResolver: import("../projects/index.js").ProjectWorkAuthorityResolver;
+  works: Pick<import("../projects/index.js").WorkRepository, "findNoWork">;
 }
 
 /** Authenticated adapter for the serialized trash command and restore wake. */

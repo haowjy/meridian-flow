@@ -35,6 +35,8 @@
 - Slash and Send authorize the installed-packages ∪ account catalog, not the bound Agent package. Prompt bake and `skill()` use Agent `skills.available` only. The Agent∪account union is gone.
 - Nonempty Agent `skills.available` no longer refuses catalog selection or turn preparation. Nonempty `skills.load` still does.
 - Delete leftover project-addressed skill HTTP (`PUT/GET …/projects/:id/skills/…`, `PATCH …/agents/:slug/skills/…`).
+- Omit or null workId and work.switch none bind a real No Work primary. Rebind always takes a WorkId.
+
 - Every project gets a locked No Work row. Unlabeled scratch/uploads and threads without a primary bind to it.
 
 - Drop leftover Agent slug copies from WS live state, the thread DTO, credit debit metadata, and `project_results`. Debug still joins agent from the bound revision and model from the model-response row.

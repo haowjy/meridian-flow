@@ -4,7 +4,11 @@ import type { Thread } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId, WorkId } from "@meridian/contracts/runtime";
 import type { AgentRevision, AgentRevisionStore, BoundAgentCatalog } from "../../packages/index.js";
 import { AgentSelectionError } from "../../packages/index.js";
-import { type ProjectRepository, requireProjectOwner } from "../../projects/index.js";
+import {
+  type ProjectRepository,
+  requireProjectOwner,
+  type WorkRepository,
+} from "../../projects/index.js";
 import type { EventJournalWriter } from "../ports/event-journal.js";
 import type { InternalThreadRepositories } from "../ports/repositories.js";
 import { createBoundConversation } from "./bound-conversation.js";
@@ -17,6 +21,7 @@ export interface ThreadAgentSwapDeps {
   threadDocuments: InternalThreadRepositories["threadDocuments"];
   transaction: InternalThreadRepositories["transaction"];
   projects: ProjectRepository;
+  works: Pick<WorkRepository, "findNoWork">;
   agentCatalog: BoundAgentCatalog;
   agentRevisions: AgentRevisionStore;
   eventWriter: EventJournalWriter;
@@ -32,7 +37,7 @@ export async function handoffThreadAgent(
   },
 ): Promise<Thread> {
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
-  const sourceWorkId = await requirePrimaryWorkId(deps, source.id);
+  const sourceWorkId = await requirePrimaryWorkId(deps, source.id, source.projectId);
   const binding = await deps.agentCatalog.resolvePrimary(
     input.userId,
     input.agentSelection,
@@ -78,7 +83,7 @@ export async function forkThreadAgent(
   },
 ): Promise<Thread> {
   const source = await requireOwnedSourceThread(deps, input.threadId, input.userId);
-  const sourceWorkId = await requirePrimaryWorkId(deps, source.id);
+  const sourceWorkId = await requirePrimaryWorkId(deps, source.id, source.projectId);
   const binding = await deps.agentCatalog.resolvePrimary(
     input.userId,
     input.agentSelection,
@@ -122,7 +127,7 @@ export async function forkThreadAgent(
 async function createDerivedPrimaryWithMembership(
   deps: ThreadAgentSwapDeps,
   input: Parameters<InternalThreadRepositories["threads"]["createDerivedPrimary"]>[0],
-  membershipWorkId: WorkId | null,
+  membershipWorkId: WorkId,
   binding: { revision: AgentRevision; configuration: ResolvedAgentConfiguration },
 ): Promise<Thread> {
   return createBoundConversation({
@@ -131,19 +136,22 @@ async function createDerivedPrimaryWithMembership(
     ...binding,
     createThread: () => deps.threads.createDerivedPrimary(input),
     resolveWork: async (target) => {
-      if (membershipWorkId)
-        await deps.threadWorks.addMembership(target.id as ThreadId, membershipWorkId, true);
+      await deps.threadWorks.addMembership(target.id as ThreadId, membershipWorkId, true);
       return membershipWorkId;
     },
   });
 }
 
 async function requirePrimaryWorkId(
-  deps: Pick<ThreadAgentSwapDeps, "threadWorks">,
+  deps: Pick<ThreadAgentSwapDeps, "threadWorks" | "works">,
   threadId: string,
-): Promise<WorkId | null> {
+  projectId: string,
+): Promise<WorkId> {
   const membership = await deps.threadWorks.findPrimary(threadId as ThreadId);
-  return membership?.workId ?? null;
+  if (membership) return membership.workId;
+  const noWork = await deps.works.findNoWork(projectId);
+  if (!noWork) throw new Error("No Work is missing for this project");
+  return noWork.id;
 }
 
 async function requireOwnedSourceThread(
