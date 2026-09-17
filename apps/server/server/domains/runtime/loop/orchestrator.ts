@@ -162,7 +162,10 @@ export interface OrchestratorDeps {
   referenceReader: ReferenceReader;
   repos: OrchestratorRepositories;
   eventWriter: EventJournalWriter;
-  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
+  agentRevisions: Pick<
+    AgentRevisionStore,
+    "readThreadBinding" | "listInstallations" | "readSource"
+  >;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
   toolRegistry: ToolRegistry;
   projectPreferences: {

@@ -69,9 +69,12 @@ model, effort, and diagnostic Agent identity. Missing bindings fail before a
 gateway call. Catalog removal or advancement leaves continued execution on its
 retained revision. `turn-context-assembly.ts` supplies that persona to the initial
 host-prompt bake and reuses the frozen prompt on later turns; preview shares this
-assembly without persisting. Slash (`/` and Send `activatedSkillSlugs`) lists
-every user-invocable `skills/<slug>/SKILL.md` in the bound package graph plus
-account installs for the owner; package files win slug collisions. Prompt bake
+  assembly without persisting. Slash (`/` and Send `activatedSkillSlugs`) lists
+every user-invocable `skills/<slug>/SKILL.md` from system and owner package
+installations (each walked with `retainedPackageSkillMaps`) plus account
+installs; first installed package file wins slug collisions, and package files
+win over account rows. The bound Agent package is not the slash catalog.
+Prompt bake
 and the `skill` tool use bound Agent `skills.available` only (name and
 description from retained `SKILL.md`), dropping `model-invocable: false`.
 Account installs never join the prompt or `skill()`. `skills.load` is not
