@@ -159,6 +159,7 @@ export function createWorkContextDelivery(deps: {
               textContent: `<system_update>\n${rendered.text}\n</system_update>`,
               status: "complete",
             });
+            const { scope } = rendered.current.execution;
             const events: OrchestratorEvent[] = [
               { type: "turn.created", turn },
               { type: "block.upserted", block },
@@ -167,7 +168,10 @@ export function createWorkContextDelivery(deps: {
                 turnId: turn.id,
                 threadId,
                 projectId: rendered.current.projectId,
-                scope: rendered.current.execution.scope,
+                scope:
+                  scope.workSlug === null
+                    ? { kind: "none" }
+                    : { kind: "work", workId: scope.workId, workSlug: scope.workSlug },
               },
               ...pendingBlocks.flatMap(acknowledgedPresentationEvents),
             ];
