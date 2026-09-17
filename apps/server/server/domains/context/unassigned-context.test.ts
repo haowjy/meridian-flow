@@ -3,8 +3,8 @@ import { testWorkSlug } from "../../test-support/work-slug.js";
 import { resolvedWorkAuthority } from "../projects/domain/work-authority.js";
 import { createInMemoryUnifiedContextPortFactory } from "./unified-context-port-factory.js";
 
-describe("project-owned unassigned context", () => {
-  it("writes contextual Scratch under explicit no-Work authority", async () => {
+describe("No Work context authority", () => {
+  it("writes contextual Scratch under explicit `@/` authority", async () => {
     const port = createInMemoryUnifiedContextPortFactory().forProject("project", "user", new Map());
     await expect(port.write("scratch://notes/plan.md", "Plan")).resolves.toMatchObject({
       ok: true,
@@ -19,7 +19,7 @@ describe("project-owned unassigned context", () => {
     });
   });
 
-  it("accepts flat no-Work upload intake", async () => {
+  it("accepts flat `@/` upload intake", async () => {
     const port = createInMemoryUnifiedContextPortFactory().forProject("project", "user", new Map());
     await expect(
       port.writeBinary("uploads://cover.png", {
@@ -35,7 +35,7 @@ describe("project-owned unassigned context", () => {
     });
   });
 
-  it("resolves an explicit real-Work authority from a no-Work base port", async () => {
+  it("resolves an explicit named-Work authority from a No Work base port", async () => {
     const port = createInMemoryUnifiedContextPortFactory().forProject(
       "project",
       "user",

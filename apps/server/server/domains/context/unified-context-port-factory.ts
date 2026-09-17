@@ -28,8 +28,10 @@ import { ContextOperationReceipts } from "./context/context-operation-receipts.j
 import { createContextPortRouter } from "./context/router.js";
 import { UNIFIED_CONTEXT_SCHEMES } from "./context/uri.js";
 import {
+  createNoWorkContextDocumentStore,
   createProjectContextDocumentStore,
   createWorkContextDocumentStore,
+  findNoWorkId,
 } from "./context-source-provisioning.js";
 import type { ContextSchemeAdapter } from "./ports/context-adapter.js";
 import type { ContextCatalogMutationPort } from "./ports/context-catalog.js";
@@ -81,7 +83,7 @@ interface ContextStoreResolvers {
   resolveProjectStore(
     projectId: string,
     userId: string,
-    scheme: ProjectContextFsScheme | WorkScopedContextFsScheme,
+    scheme: ProjectContextFsScheme,
     manifestView?: ManifestView,
   ): ContextDocumentStore;
   resolveWorkStore(
@@ -89,6 +91,12 @@ interface ContextStoreResolvers {
     scheme: WorkScopedContextFsScheme,
     projectId?: string,
   ): ContextDocumentStore;
+  resolveNoWorkStore(
+    projectId: string,
+    scheme: WorkScopedContextFsScheme,
+    userId?: string,
+  ): ContextDocumentStore;
+  resolveNoWorkId(projectId: string): Promise<string>;
   resolveMutationStore(
     manifestView?: ManifestView,
   ): import("./ports/context-tree-mutation-store.js").ContextTreeMutationStore;
@@ -179,9 +187,8 @@ function buildWorkScopedContextFsAdapters(
   return adapters;
 }
 
-function buildUnassignedContextFsAdapters(
+function buildNoWorkContextFsAdapters(
   projectId: string,
-  userId: string,
   storeResolvers: ContextStoreResolvers,
   documentSync: MarkdownDocumentStore,
   documentCreation?: DocumentCreationAggregate,
@@ -194,12 +201,15 @@ function buildUnassignedContextFsAdapters(
     adapters.set(
       scheme,
       contextFsAdapter({
-        store: storeResolvers.resolveProjectStore(projectId, userId, scheme, manifestView),
+        store: storeResolvers.resolveNoWorkStore(projectId, scheme),
         mutationStore,
         documentSync,
         documentCreation,
         commandTransaction: commandTransaction && {
-          run: (operation) => commandTransaction.run(operation, [{ scheme, workId: null }]),
+          run: async (operation) => {
+            const workId = await storeResolvers.resolveNoWorkId(projectId);
+            return commandTransaction.run(operation, [{ scheme, workId }]);
+          },
         },
         scheme,
       }),
@@ -251,9 +261,8 @@ function buildUnifiedContextPort(input: {
     input.commandTransaction,
   );
 
-  const unassignedAdapters = buildUnassignedContextFsAdapters(
+  const noWorkAdapters = buildNoWorkContextFsAdapters(
     scope.projectId,
-    scope.userId,
     storeResolvers,
     documentSync,
     input.documentCreation,
@@ -272,7 +281,7 @@ function buildUnifiedContextPort(input: {
       adapters.set(scheme, adapter);
     }
   } else {
-    for (const [scheme, adapter] of unassignedAdapters) adapters.set(scheme, adapter);
+    for (const [scheme, adapter] of noWorkAdapters) adapters.set(scheme, adapter);
   }
 
   return createContextPortRouter({
@@ -294,11 +303,31 @@ function buildUnifiedContextPort(input: {
         input.documentCreation,
         input.commandTransaction,
       ),
-    resolveNoWorkAdapters: () => unassignedAdapters,
+    resolveNoWork: async () => {
+      const workId =
+        scope.kind === "work" && scope.authority.kind === "none"
+          ? scope.authority.workId
+          : await storeResolvers.resolveNoWorkId(scope.projectId);
+      return {
+        adapters: buildWorkScopedContextFsAdapters(
+          workId,
+          scope.projectId,
+          storeResolvers,
+          documentSync,
+          input.documentCreation,
+          input.commandTransaction,
+        ),
+        workId,
+      };
+    },
     parseOptions: { barePathDefault: "manuscript", schemes: UNIFIED_CONTEXT_SCHEMES },
     commandTransaction: input.commandTransaction,
     operationReceipts: input.operationReceipts,
   });
+}
+
+function inMemoryNoWorkId(projectId: string): string {
+  return `no-work:${projectId}`;
 }
 
 function createInMemoryStoreResolvers(
@@ -310,6 +339,12 @@ function createInMemoryStoreResolvers(
     },
     resolveWorkStore(workId, scheme, _projectId) {
       return getInMemoryWorkContextStore(registry, workId, scheme);
+    },
+    resolveNoWorkStore(projectId, scheme) {
+      return getInMemoryWorkContextStore(registry, inMemoryNoWorkId(projectId), scheme);
+    },
+    async resolveNoWorkId(projectId) {
+      return inMemoryNoWorkId(projectId);
     },
     resolveMutationStore(_manifestView) {
       return getInMemoryContextTreeMutationStore(registry);
@@ -356,6 +391,20 @@ function createProductionStoreResolvers(
         projectId ? membershipObserverFor({ projectId }) : undefined,
         catalogMutations,
       );
+    },
+    resolveNoWorkStore(projectId, scheme) {
+      return createNoWorkContextDocumentStore(
+        db,
+        projectId,
+        scheme,
+        membershipObserverFor({ projectId }),
+        catalogMutations,
+      );
+    },
+    async resolveNoWorkId(projectId) {
+      const workId = await findNoWorkId(db, projectId);
+      if (!workId) throw new Error(`No Work missing for project ${projectId}`);
+      return workId;
     },
     resolveMutationStore(manifestView) {
       return new DrizzleContextTreeMutationStore(

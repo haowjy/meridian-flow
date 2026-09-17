@@ -145,8 +145,7 @@ function classifyAuthoritativeIdentity(input: {
     authority = { kind: "user", userId: input.actorUserId } as never;
     generation = input.checkedGeneration;
   } else if (isWorkScheme) {
-    scope = { kind: "none", projectId: input.requestProjectId } as never;
-    authority = { kind: "none", projectId: input.requestProjectId } as never;
+    return { kind: "inconsistent" };
   } else {
     scope = { kind: "project", projectId: input.requestProjectId } as never;
     authority = { kind: "project", projectId: input.requestProjectId } as never;

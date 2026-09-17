@@ -59,20 +59,16 @@ export function contextPortForThread(
   resolution: ThreadContextResolution,
   options: { responseId?: string | null } = {},
 ): ContextPort {
-  if (resolution.primaryWorkAuthority) {
-    return contextPorts.forWork(
-      resolution.primaryWorkAuthority,
-      resolution.thread.projectId,
-      resolution.thread.userId,
-      resolution.workAuthorities,
-      resolution.thread.id,
-      options.responseId,
-    );
+  if (!resolution.primaryWorkAuthority) {
+    throw new Error(`Thread ${resolution.thread.id} has no primary Work`);
   }
-  return contextPorts.forProject(
+  return contextPorts.forWork(
+    resolution.primaryWorkAuthority,
     resolution.thread.projectId,
     resolution.thread.userId,
     resolution.workAuthorities,
+    resolution.thread.id,
+    options.responseId,
   );
 }
 

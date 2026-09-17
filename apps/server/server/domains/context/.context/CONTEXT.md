@@ -144,10 +144,12 @@ currently available to the request owner in the requested project.
   The prefix is reserved for Work authority qualifiers; interior `@` characters
   remain valid.
 - Work-scoped schemes (`scratch://`, `uploads://`) accept one `@<work-slug>`
-  qualifier. Omitted authority resolves contextually to the thread's real or absent scope; absent scope uses writable project-owned Scratch and Uploads sources. Every
-  non-deleted Work in the same project is addressable regardless of thread
-  membership; cross-project Works are refused. `manuscript://`,
-  `kb://`, `user://`, `unfiled://` carry no Work authority.
+  qualifier. Omitted authority resolves contextually to the thread's primary Work.
+  Explicit `@/` resolves to that project's locked No Work row and serializes as
+  `@/`. Every non-deleted named Work in the same project is addressable regardless
+  of thread membership; cross-project Works are refused. `manuscript://`,
+  `kb://`, `user://`, `unfiled://` carry no Work authority. Scratch and uploads
+  are Work-scoped only.
 - Strings that look scheme-prefixed but omit `//` are invalid, not bare paths.
 - Wikilink title/alias matching is case-insensitive and trims outer whitespace.
   Scheme and relative paths are exact (an omitted final extension may match);
