@@ -699,13 +699,18 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         }
 
         if (command.command === "switch") {
-          const selected =
-            command.target.kind === "work"
-              ? await workBySlug(deps, thread.projectId, command.target.work)
-              : null;
-          if (isToolError(selected)) return selected;
-          if (!selected && command.target.kind === "work") {
-            return toolError({ message: `Unknown Work ${command.target.work}` });
+          let workId: Work["id"];
+          if (command.target.kind === "work") {
+            const selected = await workBySlug(deps, thread.projectId, command.target.work);
+            if (isToolError(selected)) return selected;
+            if (!selected) {
+              return toolError({ message: `Unknown Work ${command.target.work}` });
+            }
+            workId = selected.id;
+          } else {
+            const noWork = await deps.works.findNoWork(thread.projectId);
+            if (!noWork) return toolError({ message: "No Work is missing for this project" });
+            workId = noWork.id;
           }
           const rebound = await deps.transaction(() =>
             rebindThreadWork(
@@ -717,7 +722,7 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
               },
               {
                 threadId: thread.id,
-                target: selected ? { kind: "work", workId: selected.id } : { kind: "none" },
+                workId,
               },
             ),
           );
@@ -731,7 +736,11 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
                     description: rebound.after.description,
                     status: rebound.after.status,
                   }
-                : { kind: "none", aiWriteMode: "direct", draftOwner: null },
+                : {
+                    kind: "none",
+                    name: rebound.after.name,
+                    aiWriteMode: rebound.after.aiWriteMode,
+                  },
             metadata: {
               workReceipt: rebound.receipt,
               ...(rebound.changed ? { workContextChanged: true } : {}),

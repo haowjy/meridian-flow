@@ -10,7 +10,7 @@ export async function createBoundConversation(input: {
   revision: AgentRevision;
   configuration: ResolvedAgentConfiguration;
   createThread(): Promise<Thread>;
-  resolveWork(thread: Thread): Promise<string | null>;
+  resolveWork(thread: Thread): Promise<string>;
 }): Promise<Thread> {
   return input.transaction(async () => {
     const thread = await input.createThread();

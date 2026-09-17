@@ -2,12 +2,14 @@ import type { ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { Work } from "@meridian/contracts/works";
 import { describe, expect, it, vi } from "vitest";
+import { testWorkSlug } from "../../../test-support/work-slug.js";
 import { ThreadMembershipUnavailableError } from "../ports/repositories.js";
 import { rebindThreadWork } from "./rebind-thread-work.js";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000101" as ThreadId;
 const SOURCE_ID = "00000000-0000-4000-8000-000000000102" as WorkId;
 const TARGET_ID = "00000000-0000-4000-8000-000000000103" as WorkId;
+const NO_WORK_ID = "00000000-0000-4000-8000-000000000105" as WorkId;
 const USER_ID = "00000000-0000-4000-8000-000000000104" as UserId;
 
 function work(id: WorkId, name: string, projectId = "project-1"): Work {
@@ -16,25 +18,34 @@ function work(id: WorkId, name: string, projectId = "project-1"): Work {
     projectId,
     createdByUserId: USER_ID,
     name,
-    slug: name.toLowerCase(),
+    slug: testWorkSlug(name.toLowerCase().replaceAll(" ", "-")),
+    isNoWork: false,
     goal: null,
     description: null,
     status: "active",
     archivedAt: null,
     aiWriteMode: "direct",
+    entityRevision: "1",
     createdAt: "2026-08-08T00:00:00.000Z",
     updatedAt: "2026-08-08T00:00:00.000Z",
     lastActivityAt: "2026-08-08T00:00:00.000Z",
     deletedAt: null,
-  } as Work;
+  };
 }
 
-function fixture(
-  initial: WorkId | null = SOURCE_ID,
-  target: Work | null = work(TARGET_ID, "Target"),
-) {
+function noWorkRow(projectId = "project-1"): Work {
+  return {
+    ...work(NO_WORK_ID, "No Work", projectId),
+    slug: null,
+    isNoWork: true,
+    aiWriteMode: "draft",
+  };
+}
+
+function fixture(initial: WorkId = SOURCE_ID, target: Work | null = work(TARGET_ID, "Target")) {
   const source = work(SOURCE_ID, "Source");
-  let current = initial;
+  const locked = noWorkRow();
+  let current: WorkId | null = initial;
   const enqueueThread = vi.fn(async () => [THREAD_ID]);
   const deps = {
     threads: {
@@ -43,10 +54,10 @@ function fixture(
     },
     works: {
       findById: async (id: WorkId) =>
-        id === SOURCE_ID ? source : id === TARGET_ID ? target : null,
+        id === SOURCE_ID ? source : id === TARGET_ID ? target : id === NO_WORK_ID ? locked : null,
     },
     threadWorks: {
-      rebindPrimary: async (_threadId: ThreadId, next: WorkId | null) => {
+      rebindPrimary: async (_threadId: ThreadId, next: WorkId) => {
         const previousWorkId = current;
         const changed = current !== next;
         current = next;
@@ -59,20 +70,37 @@ function fixture(
 }
 
 describe("rebindThreadWork", () => {
-  it.each([
-    [SOURCE_ID, { kind: "none" } as const, "work", "none", true],
-    [null, { kind: "work", workId: TARGET_ID } as const, "none", "work", true],
-    [null, { kind: "none" } as const, "none", "none", false],
-  ])("rebinds nullable scope with a factual receipt", async (initial, target, before, after, changed) => {
-    const h = fixture(initial);
-    const result = await rebindThreadWork(h.deps, { threadId: THREAD_ID, target });
+  it("rebinds named Work to No Work with a writer-facing none receipt", async () => {
+    const h = fixture(SOURCE_ID);
+    const result = await rebindThreadWork(h.deps, { threadId: THREAD_ID, workId: NO_WORK_ID });
     expect(result).toMatchObject({
-      changed,
-      before: { kind: before },
-      after: { kind: after },
-      receipt: { before: { kind: before }, after: { kind: after }, inverse: null },
+      changed: true,
+      before: { kind: "work", workId: SOURCE_ID, name: "Source" },
+      after: { kind: "none", name: "No Work", aiWriteMode: "draft" },
+      receipt: {
+        before: { kind: "work", workId: SOURCE_ID },
+        after: { kind: "none", name: "No Work", aiWriteMode: "draft" },
+        inverse: null,
+      },
     });
-    expect(h.enqueueThread).toHaveBeenCalledTimes(changed ? 1 : 0);
+    expect(h.enqueueThread).toHaveBeenCalledTimes(1);
+  });
+
+  it("rebinds No Work to named Work", async () => {
+    const h = fixture(NO_WORK_ID);
+    const result = await rebindThreadWork(h.deps, { threadId: THREAD_ID, workId: TARGET_ID });
+    expect(result).toMatchObject({
+      changed: true,
+      before: { kind: "none", name: "No Work", aiWriteMode: "draft" },
+      after: { kind: "work", workId: TARGET_ID, name: "Target" },
+    });
+  });
+
+  it("no-ops when already bound to No Work", async () => {
+    const h = fixture(NO_WORK_ID);
+    const result = await rebindThreadWork(h.deps, { threadId: THREAD_ID, workId: NO_WORK_ID });
+    expect(result.changed).toBe(false);
+    expect(h.enqueueThread).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -81,22 +109,22 @@ describe("rebindThreadWork", () => {
     [work(TARGET_ID, "Other", "project-2"), "project_mismatch"],
   ])("returns a typed target error", async (target, code) => {
     await expect(
-      rebindThreadWork(fixture(null, target).deps, {
+      rebindThreadWork(fixture(SOURCE_ID, target).deps, {
         threadId: THREAD_ID,
-        target: { kind: "work", workId: TARGET_ID },
+        workId: TARGET_ID,
       }),
     ).rejects.toEqual(expect.objectContaining({ name: "RebindThreadWorkError", code }));
   });
 
   it("translates a lifecycle loss under the membership lock", async () => {
-    const h = fixture(null);
+    const h = fixture(SOURCE_ID);
     h.deps.threadWorks.rebindPrimary = async () => {
       throw new ThreadMembershipUnavailableError(THREAD_ID);
     };
     await expect(
       rebindThreadWork(h.deps, {
         threadId: THREAD_ID,
-        target: { kind: "work", workId: TARGET_ID },
+        workId: TARGET_ID,
       }),
     ).rejects.toMatchObject({ name: "RebindThreadWorkError", code: "thread_unavailable" });
   });

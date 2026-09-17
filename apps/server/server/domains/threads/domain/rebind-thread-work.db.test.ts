@@ -1,4 +1,4 @@
-/** PostgreSQL coverage for nullable and concurrent thread Work rebinds. */
+/** PostgreSQL coverage for No Work and concurrent thread Work rebinds. */
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkProjectionMutation } from "../../../test-support/work-projection.js";
 import {
@@ -8,9 +8,9 @@ import {
 
 const RUN = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
-if (!RUN || !DATABASE_URL) describe.skip("nullable thread Work rebind (postgres)", () => {});
+if (!RUN || !DATABASE_URL) describe.skip("thread Work rebind (postgres)", () => {});
 else
-  describe("nullable thread Work rebind (postgres)", async () => {
+  describe("thread Work rebind (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { eq } = await import("drizzle-orm");
@@ -35,7 +35,7 @@ else
         .where(eq(schema.works.id, ids.targetWorkId));
     });
     afterAll(() => db.close());
-    const rebind = (target: { kind: "none" } | { kind: "work"; workId: string }) =>
+    const rebind = (workId: string) =>
       repos.transaction(() =>
         rebindThreadWork(
           {
@@ -44,67 +44,76 @@ else
             works,
             obligations: repos.workContextDeliveries,
           },
-          { threadId: ids.threadId, target } as never,
+          { threadId: ids.threadId, workId },
         ),
       );
 
     it("allows leaving archived Work but rejects acquiring it again", async () => {
-      await rebind({ kind: "work", workId: ids.workId });
+      await rebind(ids.workId);
       await db
         .update(schema.works)
         .set({ status: "archived", archivedAt: new Date() })
         .where(eq(schema.works.id, ids.workId));
-      await expect(rebind({ kind: "none" })).resolves.toMatchObject({
-        after: { kind: "none" },
+      await expect(rebind(ids.noWorkId)).resolves.toMatchObject({
+        after: { kind: "none", name: "No Work" },
         changed: true,
       });
-      await expect(rebind({ kind: "work", workId: ids.workId })).rejects.toMatchObject({
+      await expect(rebind(ids.workId)).rejects.toMatchObject({
         code: "target_work_unavailable",
       });
-      await expect(repos.threadWorks.findPrimary(ids.threadId)).resolves.toBeNull();
+      await expect(repos.threadWorks.findPrimary(ids.threadId)).resolves.toEqual({
+        workId: ids.noWorkId,
+      });
     });
 
-    it("supports none to Work to none while retaining historical membership", async () => {
-      await expect(rebind({ kind: "none" })).resolves.toMatchObject({
-        before: { kind: "none" },
-        after: { kind: "none" },
-        changed: false,
+    it("supports No Work to named Work to No Work while retaining historical membership", async () => {
+      await expect(rebind(ids.noWorkId)).resolves.toMatchObject({
+        before: { kind: "none", name: "No Work" },
+        after: { kind: "none", name: "No Work" },
+        changed: true,
       });
-      await expect(rebind({ kind: "work", workId: ids.workId })).resolves.toMatchObject({
-        before: { kind: "none" },
+      await expect(rebind(ids.workId)).resolves.toMatchObject({
+        before: { kind: "none", name: "No Work" },
         after: { kind: "work", workId: ids.workId },
         changed: true,
       });
-      await expect(rebind({ kind: "none" })).resolves.toMatchObject({
+      await expect(rebind(ids.noWorkId)).resolves.toMatchObject({
         before: { kind: "work", workId: ids.workId },
-        after: { kind: "none" },
+        after: { kind: "none", name: "No Work" },
         changed: true,
       });
-      await expect(repos.threadWorks.findPrimary(ids.threadId)).resolves.toBeNull();
+      await expect(repos.threadWorks.findPrimary(ids.threadId)).resolves.toEqual({
+        workId: ids.noWorkId,
+      });
       await expect(repos.threadWorks.listByThread(ids.threadId)).resolves.toContainEqual({
         workId: ids.workId,
         isPrimary: false,
       });
+      await expect(repos.threadWorks.listByThread(ids.threadId)).resolves.toContainEqual({
+        workId: ids.noWorkId,
+        isPrimary: true,
+      });
     });
 
-    it("persists derived and subagent no-Work scope without membership rows", async () => {
+    it("derived and subagent inherit No Work membership", async () => {
+      await repos.threadWorks.addMembership(ids.threadId, ids.noWorkId, true);
       const derived = await repos.threads.createDerivedPrimary({
         userId: ids.userId,
         projectId: ids.projectId,
-        workId: null,
+        workId: ids.noWorkId,
         parentThreadId: ids.threadId,
         originType: "handoff",
       } as never);
       const subagent = await repos.threads.createSubagent({
         userId: ids.userId,
         projectId: ids.projectId,
-        workId: null,
+        workId: ids.noWorkId,
         parentThreadId: ids.threadId,
         rootThreadId: ids.threadId,
         spawnDepth: 1,
       } as never);
-      expect(derived.workId).toBeNull();
-      expect(subagent.workId).toBeNull();
+      await repos.threadWorks.addMembership(derived.id, ids.noWorkId, true);
+      await repos.threadWorks.addMembership(subagent.id, ids.noWorkId, true);
       expect(subagent.composedSystemPrompt).toBeNull();
       expect(subagent.bakedSkillSlugs).toBeNull();
       const [stored] = await db
@@ -112,8 +121,12 @@ else
         .from(schema.threads)
         .where(eq(schema.threads.id, subagent.id));
       expect(stored.hash).toBeNull();
-      await expect(repos.threadWorks.findPrimary(derived.id)).resolves.toBeNull();
-      await expect(repos.threadWorks.findPrimary(subagent.id)).resolves.toBeNull();
+      await expect(repos.threadWorks.findPrimary(derived.id)).resolves.toEqual({
+        workId: ids.noWorkId,
+      });
+      await expect(repos.threadWorks.findPrimary(subagent.id)).resolves.toEqual({
+        workId: ids.noWorkId,
+      });
     });
 
     it("rolls back child, retained binding, and inherited Work in one transaction", async () => {
@@ -147,15 +160,12 @@ else
     });
 
     it("serializes concurrent Work targets to one primary", async () => {
-      await Promise.all([
-        rebind({ kind: "none" }),
-        rebind({ kind: "work", workId: ids.targetWorkId }),
-      ]);
+      await Promise.all([rebind(ids.noWorkId), rebind(ids.targetWorkId)]);
       const primary = await repos.threadWorks.findPrimary(ids.threadId);
-      expect(primary === null || primary.workId === ids.targetWorkId).toBe(true);
+      expect(primary?.workId === ids.noWorkId || primary?.workId === ids.targetWorkId).toBe(true);
       expect(
         (await repos.threadWorks.listByThread(ids.threadId)).filter((row) => row.isPrimary),
-      ).toHaveLength(primary ? 1 : 0);
+      ).toHaveLength(1);
     });
 
     it("retains historical feed projection and rolls back if obligation enqueue fails", async () => {
@@ -175,8 +185,8 @@ else
             },
             {
               threadId: ids.threadId,
-              target: { kind: "work", workId: ids.targetWorkId },
-            } as never,
+              workId: ids.targetWorkId,
+            },
           ),
         ),
       ).rejects.toThrow("injected durable enqueue failure");
@@ -184,7 +194,7 @@ else
         workId: ids.workId,
       });
 
-      await rebind({ kind: "work", workId: ids.targetWorkId });
+      await rebind(ids.targetWorkId);
       for (const workId of [ids.workId, ids.targetWorkId]) {
         const feed = await repos.workChatFeed.queryPage({
           projectId: ids.projectId,
@@ -224,8 +234,8 @@ else
             },
             {
               threadId: ids.threadId,
-              target: { kind: "work", workId: ids.targetWorkId },
-            } as never,
+              workId: ids.targetWorkId,
+            },
           ),
         ),
       ).rejects.toMatchObject({

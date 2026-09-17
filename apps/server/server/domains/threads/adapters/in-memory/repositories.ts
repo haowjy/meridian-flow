@@ -454,7 +454,7 @@ export function createInMemoryRepositories(
     async rebindPrimary(threadId, workId) {
       const thread = threads.get(threadId);
       if (!thread || thread.deletedAt) throw new ThreadMembershipUnavailableError(threadId);
-      if (options.works && workId) {
+      if (options.works) {
         const work = await options.works.findById(workId);
         if (!work || work.deletedAt) {
           throw new WorkLifecycleUnavailableError(workId, !work ? "missing" : "deleted");
@@ -469,15 +469,16 @@ export function createInMemoryRepositories(
         const previous = threadWorks.get(previousKey);
         if (previous) threadWorks.set(previousKey, { ...previous, isPrimary: false });
       }
-      if (workId) {
-        threadWorks.set(membershipKey(threadId, workId), { threadId, workId, isPrimary: true });
-      }
+      threadWorks.set(membershipKey(threadId, workId), { threadId, workId, isPrimary: true });
       return { previousWorkId, changed: true };
     },
-    async demotePrimaryForRestore(threadId, workId) {
-      const key = membershipKey(threadId, workId);
-      const membership = threadWorks.get(key);
-      if (membership?.isPrimary) threadWorks.set(key, { ...membership, isPrimary: false });
+    async rebindPrimaryForRestore(threadId, workId) {
+      for (const [key, row] of threadWorks) {
+        if (row.threadId === threadId && row.isPrimary) {
+          threadWorks.set(key, { ...row, isPrimary: false });
+        }
+      }
+      threadWorks.set(membershipKey(threadId, workId), { threadId, workId, isPrimary: true });
     },
     async listByThread(threadId) {
       return [...threadWorks.values()]

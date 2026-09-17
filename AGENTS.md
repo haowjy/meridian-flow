@@ -48,10 +48,9 @@ because the new one has not finished materializing.
 **Work** is a task-scoped editing context within a project; it groups threads,
 owns shared drafts, carries a goal, and holds qualified `scratch://` context.
 Every project has one locked **No Work** row. Omitting a Work or sending
-explicit null still creates an executable no-Work thread with no primary
-membership until bind lands. After creation, the writer or LLM may explicitly
-rebind the chat through one canonical operation; Work management and navigation
-never invoke it implicitly. Work-capable URIs use `@/` for No Work authority and
+explicit null binds the thread to that row. After creation, the writer or LLM
+may explicitly rebind the chat through one canonical operation; Work management
+and navigation never invoke it implicitly. Work-capable URIs use `@/` for No Work authority and
 `@slug` for a named Work; internal IDs never appear in URI authority. The schema
 is `works` + `thread_works`.
 
