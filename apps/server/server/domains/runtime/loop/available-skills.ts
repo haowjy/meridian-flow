@@ -172,13 +172,23 @@ async function listInstalledPackageSkills(
   ownerUserId: string,
 ): Promise<Array<AvailableSkillListing & { userInvocable: boolean }>> {
   const listings: Array<AvailableSkillListing & { userInvocable: boolean }> = [];
-  for await (const listing of firstInstalledPackageSkills(store, ownerUserId)) {
-    listings.push({
-      slug: listing.slug,
-      name: listing.name,
-      description: listing.description,
-      userInvocable: listing.userInvocable,
-    });
+  const seen = new Set<string>();
+  for (const installation of await installedPackageHeads(store, ownerUserId)) {
+    for (const skills of (
+      await retainedPackageSkillMaps(installation.currentRevisionId, store)
+    ).values()) {
+      for (const [slug, reference] of skills) {
+        if (seen.has(slug)) continue;
+        seen.add(slug);
+        const listing = await listingFromBoundReference(store, reference);
+        listings.push({
+          slug,
+          name: listing.name,
+          description: listing.description,
+          userInvocable: listing.userInvocable,
+        });
+      }
+    }
   }
   return listings;
 }
@@ -188,31 +198,22 @@ async function readInstalledPackageSkill(
   ownerUserId: string,
   slug: string,
 ): Promise<SkillListing | undefined> {
-  for await (const listing of firstInstalledPackageSkills(store, ownerUserId)) {
-    if (listing.slug === slug) return listing;
+  for (const installation of await installedPackageHeads(store, ownerUserId)) {
+    for (const skills of (
+      await retainedPackageSkillMaps(installation.currentRevisionId, store)
+    ).values()) {
+      const reference = skills.get(slug);
+      if (reference) return listingFromBoundReference(store, reference);
+    }
   }
   return undefined;
 }
 
-async function* firstInstalledPackageSkills(
-  store: UserSkillCatalogStore,
-  ownerUserId: string,
-): AsyncGenerator<SkillListing> {
-  const seen = new Set<string>();
-  for (const installation of [
+async function installedPackageHeads(store: UserSkillCatalogStore, ownerUserId: string) {
+  return [
     ...(await store.listInstallations(null)),
     ...(await store.listInstallations(ownerUserId)),
-  ]) {
-    for (const skills of (
-      await retainedPackageSkillMaps(installation.currentRevisionId, store)
-    ).values()) {
-      for (const [slug, reference] of skills) {
-        if (seen.has(slug)) continue;
-        seen.add(slug);
-        yield await listingFromBoundReference(store, reference);
-      }
-    }
-  }
+  ];
 }
 
 async function readBoundAvailableSkill(
