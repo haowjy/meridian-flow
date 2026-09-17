@@ -11,6 +11,15 @@ import type {
   ToolRegistration,
 } from "./types.js";
 
+const SPAWN_DESCRIPTION =
+  "Run a subagent in its own thread to delegate a task. Prefer a named specialist from your subagents roster when one fits; use the generic helper (omit agent or pass an empty string) sparingly. Use mode=background for non-blocking helper checks.";
+const SPAWN_DESCRIPTION_EMPTY_ROSTER = `${SPAWN_DESCRIPTION} You have no named subagents; do not spawn unless the writer asks.`;
+
+/** Roster-aware spawn description; the caller's binding supplies whether it has named targets. */
+export function spawnToolDescription(hasNamedTargets: boolean): string {
+  return hasNamedTargets ? SPAWN_DESCRIPTION : SPAWN_DESCRIPTION_EMPTY_ROSTER;
+}
+
 export function createSpawnToolRegistrations(): ToolRegistration[] {
   return [
     {
@@ -18,12 +27,15 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       definition: {
         type: "function",
         name: "spawn",
-        description:
-          "Run a subagent in an isolated thread. Use mode=background for non-blocking helper checks.",
+        description: SPAWN_DESCRIPTION,
         inputSchema: {
           type: "object",
           properties: {
-            agent: { type: "string", description: "Mars agent slug; must be in caller subagents." },
+            agent: {
+              type: "string",
+              description:
+                "Named subagent from your subagents roster. Omit or pass an empty string for the generic helper.",
+            },
             prompt: { type: "string", description: "Task prompt for the child agent." },
             description: { type: "string", description: "Short label for the subagent thread." },
             mode: {
@@ -33,7 +45,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
                 "foreground waits for return_result; background returns immediately and posts an inline helper result when done.",
             },
           },
-          required: ["agent", "prompt"],
+          required: ["prompt"],
           additionalProperties: false,
         },
       },
@@ -41,7 +53,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
         type: "server",
         handler: async (input: unknown, ctx: SpawnToolHandlerContext) => {
           const args = input as {
-            agent: string;
+            agent?: string;
             prompt: string;
             description?: string;
             mode?: "foreground" | "background";
@@ -56,7 +68,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       },
       sequential: true,
       capability: "spawn",
-      advertise: false,
+      advertise: true,
     },
     {
       source: "spawn",

@@ -33,7 +33,10 @@ function stubHandlers(): CoreToolHandlers {
   };
 }
 
-async function boundContext(metadata: { tools?: typeof WRITER_MAP | typeof CRITIC_MAP }) {
+async function boundContext(metadata: {
+  tools?: typeof WRITER_MAP | typeof CRITIC_MAP;
+  namedTargets?: Array<{ name: string; definitionRevisionId: string }>;
+}) {
   const projects = createInMemoryProjectRepository();
   const project = await projects.create({ userId: "user-1", title: "Serial" });
   const repos = createInMemoryRepositories({ projects });
@@ -57,12 +60,12 @@ async function boundContext(metadata: { tools?: typeof WRITER_MAP | typeof CRITI
           configuration: {
             model: "fixture-model",
             skills: { load: [], available: [] },
-            namedTargets: [],
+            namedTargets: metadata.namedTargets ?? [],
           },
           definition: {
             schemaVersion: 1,
             systemPrompt: "You are an agent.",
-            metadata: { model: "fixture-model", ...metadata },
+            metadata: { model: "fixture-model", tools: metadata.tools },
           },
         };
       },
@@ -84,13 +87,30 @@ function writeCommandConsts(tools: Tool[]) {
   });
 }
 
+function spawnDescription(tools: Tool[]): string {
+  const spawn = tools.find((tool) => tool.type === "function" && tool.name === "spawn");
+  if (spawn?.type !== "function") throw new Error("spawn tool missing");
+  return spawn.description;
+}
+
 describe("resolveAgentThreadTurnContext tool policy", () => {
-  it("advertises Critic write as diff/read, Writer replace, and no spawn", async () => {
+  it("advertises Critic write as diff/read, Writer replace, and spawn for both", async () => {
     const critic = await boundContext({ tools: CRITIC_MAP });
     const writer = await boundContext({ tools: WRITER_MAP });
     expect([...writeCommandConsts(critic.tools)].sort()).toEqual(["diff", "read"]);
     expect(writeCommandConsts(writer.tools)).toContain("replace");
-    expect(critic.tools.some((tool) => "name" in tool && tool.name === "spawn")).toBe(false);
-    expect(writer.tools.some((tool) => "name" in tool && tool.name === "spawn")).toBe(false);
+    expect(critic.tools.some((tool) => "name" in tool && tool.name === "spawn")).toBe(true);
+    expect(writer.tools.some((tool) => "name" in tool && tool.name === "spawn")).toBe(true);
+  });
+
+  it("tells an empty-roster caller not to spawn, and a rostered caller to prefer named", async () => {
+    const empty = await boundContext({ tools: WRITER_MAP });
+    const rostered = await boundContext({
+      tools: WRITER_MAP,
+      namedTargets: [{ name: "critic", definitionRevisionId: "critic-rev" }],
+    });
+    expect(spawnDescription(empty.tools)).toContain("do not spawn unless the writer asks");
+    expect(spawnDescription(rostered.tools)).not.toContain("do not spawn unless the writer asks");
+    expect(spawnDescription(rostered.tools)).toContain("Prefer a named specialist");
   });
 });

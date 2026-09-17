@@ -146,7 +146,8 @@ export type InterruptResponse = InterruptAnswerEnvelope;
  */
 export interface SpawnToolHandlerContext extends ToolHandlerContext {
   spawn(input: {
-    agent: string;
+    /** Named roster target; omitted or empty selects the generic helper. */
+    agent?: string;
     prompt: string;
     description?: string;
     mode?: "foreground" | "background";

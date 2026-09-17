@@ -6,7 +6,18 @@
 
 import type { MeridianError } from "@meridian/contracts/interrupt";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
-import type { TreeBudget } from "@meridian/contracts/spawn";
+import { DEFAULT_MAX_SPAWN_DEPTH, type TreeBudget } from "@meridian/contracts/spawn";
+
+/**
+ * Operator-only depth override for a new spawn tree. The client cannot set
+ * depth: it comes from host env at tree creation, never from spawn tool args.
+ */
+export function resolveMaxSpawnDepth(env: {
+  MERIDIAN_MAX_SPAWN_DEPTH?: string | undefined;
+}): number {
+  const parsed = Number(env.MERIDIAN_MAX_SPAWN_DEPTH);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_SPAWN_DEPTH;
+}
 
 export function assertSpawnDepthAllowed(
   budget: TreeBudget,
@@ -16,7 +27,7 @@ export function assertSpawnDepthAllowed(
   if (childDepth > budget.maxDepth) {
     return meridianErrorFromSystem(
       "spawn_depth_exceeded",
-      `Spawn depth ${childDepth} exceeds maxDepth ${budget.maxDepth}`,
+      `Spawn depth ${childDepth} exceeds maxDepth ${budget.maxDepth}. Complete the task directly instead of spawning another subagent.`,
     );
   }
   return null;

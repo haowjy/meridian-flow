@@ -86,9 +86,10 @@ verbatim. Skills that join slash after freeze do not rewrite the prompt or
 `bakedSkillSlugs`. Compact rebakes the model catalog. Display slugs do not
 guard prompt freezing. The model comes from conversation-owned resolved
 configuration, including a frozen default when source omits it. Nonempty
-`skills.available` does not refuse selection or turn preparation. Primary
-catalog selection currently keeps nonempty delegation rosters unavailable while
-delegation support is completed.
+`skills.available` does not refuse selection or turn preparation. A nonempty
+`subagents` roster no longer refuses selection. `spawn` is advertised to every
+Agent; named targets come from the binding's roster, and an omitted or empty
+`agent` selects the generic helper.
 
 ## tools — registry, executor, and handlers
 
@@ -122,9 +123,13 @@ immutable Agent revisions, and the threads repository's `SubagentThreadFactory` 
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads.
 
-Named targets resolve within the parent binding's immutable package revision,
-after roster and child-invocation eligibility checks. Child creation, Agent binding,
-and Work membership share one transaction. The child starts with an unfrozen
+Named targets resolve by name within the parent binding's roster; a target with
+`model-invocable: false` is refused, while a primary-mode target is spawnable.
+An omitted or empty `agent` selects the generic helper: the built-in General
+revision supplies body and identity, while the child binding inherits the
+caller's resolved configuration plus its tool/effort metadata. Max spawn depth
+defaults to 3, overridable only through operator env at tree creation. Child
+creation, Agent binding, and Work membership share one transaction. The child starts with an unfrozen
 prompt; ordinary turn preparation adds its retained persona and mandatory report
 instruction. Terminal lifecycle/result persistence precedes helper/Work-context
 cleanup, so cleanup failure preserves the completed report.
