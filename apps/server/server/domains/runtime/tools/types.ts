@@ -53,6 +53,11 @@ export interface ToolExecutionContext {
   turnId: TurnId;
   /** Model-response id currently dispatching tool calls. */
   responseId?: string;
+  /** Per-turn write/work command policy. Missing denies write and work commands. */
+  toolPolicy?: {
+    writeCommands: ReadonlySet<string>;
+    workCommands: ReadonlySet<string>;
+  };
   agentSlug: string | null;
   signal?: AbortSignal;
   /**
@@ -128,6 +133,11 @@ export interface ToolHandlerContext {
   turnId: string;
   /** Model-response id currently dispatching tool calls. */
   responseId?: string;
+  /** Per-turn write/work command policy. Missing denies write and work commands. */
+  toolPolicy?: {
+    writeCommands: ReadonlySet<string>;
+    workCommands: ReadonlySet<string>;
+  };
   /** Bound revision slug; null when the thread has no bound agent. */
   agentSlug: string | null;
   /**

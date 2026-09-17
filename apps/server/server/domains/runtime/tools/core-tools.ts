@@ -16,7 +16,8 @@ import {
 } from "@meridian/agent-edit/integration";
 import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
 import { z } from "zod";
-import type { ToolExecutionError, ToolRegistration } from "./types.js";
+import { denyDisallowedToolCommand } from "../loop/permissions/apply-tool-policy.js";
+import type { ToolExecutionError, ToolHandler, ToolRegistration } from "./types.js";
 
 const WorkStatusSchema = z.enum(["active", "archived"]);
 const WorkSelectorSchema = z.object({ work: z.string().min(1) });
@@ -139,6 +140,15 @@ function stripSchemaProperty(schema: unknown, property: string): void {
   for (const value of Object.values(record)) stripSchemaProperty(value, property);
 }
 
+function withCommandPolicy(tool: "write" | "work", handler: ServerToolHandler): ToolHandler {
+  const run = handler as ToolHandler;
+  return async (input, ctx) => {
+    const denied = denyDisallowedToolCommand(tool, input, ctx.toolPolicy);
+    if (denied) return denied;
+    return run(input, ctx);
+  };
+}
+
 export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolRegistration[] {
   return [
     {
@@ -150,7 +160,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
           "Document edit tool. Results use the meridian.agent-edit.v1 JSON envelope; each block record separates hash from exact body and says whether body is full or a prefix. Use read for block-addressed content. Use diff to inspect the folded net effect of this turn's writes; it is provisional until the trail settles. To replace an entire existing document, use create with overwrite=true. insert adds content; before/after take block hashes, not text. replace edits content; find replaces only the exact matched span, never following blocks. delete removes the block or block range selected by in. in accepts one block hash or 1-based block number, or an inclusive [start, end] range of hashes or block numbers. Block hashes are internal targeting tokens: use them in tool arguments, but do not quote or label writer-facing prose with hashes unless the writer explicitly asks for edit-protocol details. undo and redo reverse or reapply this thread's document writes.",
         inputSchema: writeToolInputSchema(),
       },
-      execution: { type: "server", handler: handlers.write },
+      execution: { type: "server", handler: withCommandPolicy("write", handlers.write) },
       sequential: true,
       timeoutMs: 30_000,
       formatExecutionError: formatWriteExecutionError,
@@ -163,7 +173,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         description: "Inspect or change the project Work and this conversation's Work binding.",
         inputSchema: workToolInputSchema(),
       },
-      execution: { type: "server", handler: handlers.work },
+      execution: { type: "server", handler: withCommandPolicy("work", handlers.work) },
       sequential: true,
       timeoutMs: 30_000,
     },
