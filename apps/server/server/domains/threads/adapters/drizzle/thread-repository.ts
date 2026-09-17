@@ -284,17 +284,20 @@ export function createDrizzleThreadRepository(
       return row?.projectId ?? null;
     },
     async lockByIdIncludingDeleted(id: ThreadId) {
-      const [row] = await currentDrizzleDb(db)
-        .select({
-          ...threadColumns,
-          workId: schema.threadWorks.workId,
-        })
+      const activeDb = currentDrizzleDb(db);
+      const [row] = await activeDb
+        .select(threadColumns)
         .from(schema.threads)
-        .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .where(eq(schema.threads.id, id))
-        .for("update", { of: schema.threads })
+        .for("update")
         .limit(1);
-      return row ? mapThread(row) : null;
+      if (!row) return null;
+      const [membership] = await activeDb
+        .select({ workId: schema.threadWorks.workId })
+        .from(schema.threadWorks)
+        .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
+        .limit(1);
+      return mapThread({ ...row, workId: membership?.workId ?? null });
     },
     async listByUser(userId: UserId) {
       const rows = await currentDrizzleDb(db)
