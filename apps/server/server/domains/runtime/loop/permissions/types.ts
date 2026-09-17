@@ -2,5 +2,5 @@
 export type PermissionDecision = { allowed: true } | { allowed: false; reason: string };
 
 export interface PermissionGate {
-  check(toolName: string): PermissionDecision;
+  check(toolName: string, input?: unknown): PermissionDecision;
 }
