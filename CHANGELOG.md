@@ -10,7 +10,7 @@
 ### Added
 
 - Seed Writer with full write/edit allow and promote Critic to a pickable primary that may read but not mutate.
-- Advertise and dispatch Agent turns from the bound revision's projected tool policy: filtered tools, narrowed write/work command schemas, a per-turn name gate, and a command gate that refuses invented mutate commands.
+- Advertise Agent turns from the bound revision's projected tool policy: filtered tools, narrowed write/work command schemas, and a per-turn permission gate that denies unknown names and unavailable write/work commands.
 - Project compiled Agent Mars `tools` / `disallowed-tools` onto Flow write/work command policy.
 - Chat composer `/` lists user-invocable skills from installed packages (system and owner) as `/<slug>` plus account installs. Picking one leaves a `/slug` atom in the draft; Send reads those slugs. Manuscript `/` is unchanged.
 - Slash-activated skill slugs on Send append that SKILL.md as extra user text for the turn. The model `skill` tool loads Agent `skills.available` only. The slash catalog is readable for the bound thread.
@@ -21,7 +21,7 @@
 ### Fixed
 
 - Allow a pickable primary (Critic) to remain a named child on Muse's roster. Child invocability is `model-invocable: false` only.
-- Enforce write/work command policy in loop dispatch so the core catalogue stays policy-free and direct executor writes still run.
+- Deny unavailable write/work commands through the same permission-gate persist path as unknown tools. Dispatch only executes; the core catalogue stays policy-free.
 - Slash-activated skills append as extra user text (`skill invoked`, description, SKILL.md). No fabricated tool round.
 - Anthropic requests prepend empty thinking before `tool_use` when thinking is required and missing (DeepSeek always; other Anthropic only when thinking is on).
 - Composer `/` menu opens above the input so a phone keyboard does not cover it.

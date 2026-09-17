@@ -122,11 +122,7 @@ import {
   type InterruptAutoResumePolicy,
   type InterruptRegistry,
 } from "./interrupts.js";
-import {
-  type EffectiveToolPolicy,
-  type PermissionGate,
-  permissionGateFromToolPolicy,
-} from "./permissions/index.js";
+import { type PermissionGate, permissionGateFromToolPolicy } from "./permissions/index.js";
 import {
   appendEvent,
   persistAndAppendEvents,
@@ -851,7 +847,6 @@ async function buildGenerateRequest(input: {
   request: GenerateRequest;
   agentSlug: string | null;
   thread: Thread;
-  policy: EffectiveToolPolicy;
   permissionGate: PermissionGate;
 }> {
   const assembled = await assembleNextTurnContext({
@@ -873,7 +868,6 @@ async function buildGenerateRequest(input: {
   return {
     thread: assembled.thread,
     agentSlug: assembled.agentSlug,
-    policy: assembled.policy,
     permissionGate: permissionGateFromToolPolicy(
       assembled.policy,
       assembled.thread.kind === "subagent" ? ["return_result"] : [],
@@ -1285,7 +1279,7 @@ async function* generateEvents(
 
           // If denied, we still persist a tool_result block (with isError: true)
           // so the model sees the rejection in the next turn's context build.
-          const decision = built.permissionGate.check(call.name);
+          const decision = built.permissionGate.check(call.name, call.arguments);
           if (!decision.allowed) {
             const persistedDenial = await persistPermissionDenial({
               deps,
@@ -1331,7 +1325,6 @@ async function* generateEvents(
             {
               thread,
               agentSlug: built.agentSlug,
-              toolPolicy: built.policy,
               responseId,
               editResponseId,
               state: interruptState,

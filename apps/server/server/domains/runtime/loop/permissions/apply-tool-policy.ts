@@ -1,24 +1,35 @@
-/** Applies EffectiveToolPolicy to advertisement, name gates, and write/work command dispatch. */
+/** Applies EffectiveToolPolicy to advertisement and the name+command permission gate. */
 
-import { meridianErrorFromTool } from "@meridian/contracts/interrupt";
 import type { Tool } from "../../gateway/index.js";
 import type { EffectiveToolPolicy } from "./project-tool-policy.js";
 import type { PermissionGate } from "./types.js";
-
-export type ToolCommandPolicy = {
-  writeCommands: ReadonlySet<string>;
-  workCommands: ReadonlySet<string>;
-};
 
 export function permissionGateFromToolPolicy(
   policy: EffectiveToolPolicy,
   extraAllowed: Iterable<string> = [],
 ): PermissionGate {
   const allowed = new Set([...policy.tools, ...extraAllowed]);
+  const writeCommands: ReadonlySet<string> = policy.writeCommands;
+  const workCommands: ReadonlySet<string> = policy.workCommands;
   return {
-    check(toolName) {
-      if (allowed.has(toolName)) return { allowed: true };
-      return { allowed: false, reason: `Tool "${toolName}" is not enabled.` };
+    check(toolName, input) {
+      if (!allowed.has(toolName)) {
+        return { allowed: false, reason: `Tool "${toolName}" is not enabled.` };
+      }
+      if (toolName === "write" || toolName === "work") {
+        const commands = toolName === "write" ? writeCommands : workCommands;
+        const command = commandName(input);
+        if (command === undefined || !commands.has(command)) {
+          return {
+            allowed: false,
+            reason:
+              command === undefined
+                ? `Command is not enabled for ${toolName}.`
+                : `Command "${command}" is not enabled for ${toolName}.`,
+          };
+        }
+      }
+      return { allowed: true };
     },
   };
 }
@@ -42,24 +53,6 @@ export function advertiseTools(baseTools: Tool[] | undefined, policy: EffectiveT
       }
       return tool;
     });
-}
-
-export function denyDisallowedToolCommand(
-  tool: "write" | "work",
-  input: unknown,
-  policy: ToolCommandPolicy | undefined,
-): { isError: true; output: ReturnType<typeof meridianErrorFromTool> } | null {
-  const allowed = tool === "write" ? policy?.writeCommands : policy?.workCommands;
-  const command = commandName(input);
-  if (allowed && command !== undefined && allowed.has(command)) return null;
-  return {
-    isError: true,
-    output: meridianErrorFromTool(
-      command === undefined
-        ? `Command is not enabled for ${tool}.`
-        : `Command "${command}" is not enabled for ${tool}.`,
-    ),
-  };
 }
 
 function toolName(tool: Tool): string {
