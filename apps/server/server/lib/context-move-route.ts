@@ -209,6 +209,7 @@ export async function commitContextMove(input: {
           : destination.scope === "none"
             ? collision.value.authority.kind === "none"
             : collision.value.authority.kind === "work" &&
+              destination.authority.kind === "work" &&
               collision.value.authority.workSlug === destination.authority.workSlug;
       if (
         collision.value.scheme !== destination.scheme ||
@@ -227,11 +228,14 @@ export async function commitContextMove(input: {
             ? {
                 scheme: destination.scheme,
                 path: collision.value.path,
-                authority: {
-                  kind: "work",
-                  workId: destination.authority.workId,
-                  workSlug: destination.authority.workSlug,
-                },
+                authority:
+                  destination.authority.kind === "work"
+                    ? {
+                        kind: "work" as const,
+                        workId: destination.authority.workId,
+                        workSlug: destination.authority.workSlug,
+                      }
+                    : { kind: "none" as const },
               }
             : destination.scope === "none"
               ? {

@@ -28,6 +28,8 @@ export interface ListWorksOptions {
   /** Include soft-deleted works. Defaults to false. */
   includeDeleted?: boolean;
   status?: WorkStatus;
+  /** Include the locked No Work row. Defaults to false. */
+  includeNoWork?: boolean;
 }
 
 export class WorkDeleteBlockedError extends Error {
@@ -61,6 +63,14 @@ export class WorkRestoreConflictError extends Error {
   }
 }
 
+export class WorkLockedError extends Error {
+  readonly code = "work_locked" as const;
+  constructor() {
+    super("No Work cannot be renamed, archived, or deleted");
+    this.name = "WorkLockedError";
+  }
+}
+
 /**
  * Work-item CRUD for the projects domain. Backed by the `schema` `works`
  * table; rows map to the JSON-natural {@link Work} contract.
@@ -75,7 +85,9 @@ export interface WorkRepository {
   lockById(id: WorkId): Promise<Work | null>;
   create(input: CreateWorkInput): Promise<Work>;
   findById(id: WorkId): Promise<Work | null>;
-  /** Lists most recently updated first. */
+  findNoWork(projectId: ProjectId): Promise<Work | null>;
+  ensureNoWork(projectId: ProjectId): Promise<Work>;
+  /** Lists most recently updated first. Named Works only unless includeNoWork. */
   listByProject(projectId: ProjectId, opts?: ListWorksOptions): Promise<Work[]>;
   snapshotIdentity(projectId: ProjectId): Promise<{
     catalogGeneration: string;

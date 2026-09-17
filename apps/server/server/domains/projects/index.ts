@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { ContextSourceId, DocumentId, ProjectId, UserId } from "@meridian/contracts/runtime";
+import type {
+  ContextSourceId,
+  DocumentId,
+  ProjectId,
+  UserId,
+  WorkId,
+} from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { contextSources, documents, projects } from "@meridian/database";
+import { contextSources, documents, projects, works } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type {
@@ -9,9 +15,11 @@ import type {
   DocumentCreationAggregate,
   MarkdownDocumentStore,
 } from "../collab/index.js";
+import { ensureWorkContextSource } from "../context/context-source-provisioning.js";
 import { DrizzleContextDocumentStore } from "../context/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 import { nextProjectSlug } from "./adapters/project-repository/shared.js";
+import { NO_WORK_NAME } from "./adapters/work-repository/shared.js";
 import type { ContextCatalogLifecyclePort } from "./ports/context-catalog-lifecycle.js";
 
 export const DEFAULT_BOOTSTRAP_URI = MANUSCRIPT_URI;
@@ -138,10 +146,48 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     return project.id;
   }
 
+  async function ensureLockedNoWork(
+    tx: BootstrapDb,
+    projectId: ProjectId,
+    userId: UserId,
+  ): Promise<WorkId> {
+    const [existing] = await tx
+      .select({ id: works.id })
+      .from(works)
+      .where(and(eq(works.projectId, projectId), eq(works.isNoWork, true), isNull(works.deletedAt)))
+      .limit(1);
+    if (existing) return existing.id;
+    await tx
+      .update(works)
+      .set({ name: `${NO_WORK_NAME} (named)`, updatedAt: new Date() })
+      .where(
+        and(
+          eq(works.projectId, projectId),
+          eq(works.isNoWork, false),
+          isNull(works.deletedAt),
+          sql`lower(btrim(${works.name})) = ${NO_WORK_NAME.toLowerCase()}`,
+        ),
+      );
+    const [row] = await tx
+      .insert(works)
+      .values({
+        projectId,
+        createdByUserId: userId,
+        name: NO_WORK_NAME,
+        slug: null,
+        isNoWork: true,
+        status: "active",
+        aiWriteMode: "direct",
+      })
+      .returning({ id: works.id });
+    if (!row) throw new Error("Failed to create No Work");
+    return row.id;
+  }
+
   async function ensureContextSource(
     tx: BootstrapDb,
     projectId: ProjectId,
-    input: { slug: "manuscript" | "scratch" | "uploads"; name: string; isPrimary?: boolean },
+    input: { slug: "manuscript"; name: string; isPrimary?: boolean },
   ): Promise<ContextSourceId> {
     const [existing] = await tx
       .select({ id: contextSources.id })
@@ -267,13 +313,14 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       const tx = currentDrizzleDb(db) as BootstrapDb;
       await lockBootstrap(tx, userId);
       const projectId = await ensureProject(tx, userId);
+      const noWorkId = await ensureLockedNoWork(tx, projectId, userId);
       const manuscriptSourceId = await ensureContextSource(tx, projectId, {
         slug: "manuscript",
         name: "Manuscript",
         isPrimary: true,
       });
-      await ensureContextSource(tx, projectId, { slug: "scratch", name: "Scratch" });
-      await ensureContextSource(tx, projectId, { slug: "uploads", name: "Uploads" });
+      await ensureWorkContextSource(db, noWorkId, "scratch");
+      await ensureWorkContextSource(db, noWorkId, "uploads");
       const documentId = await ensureDocument(tx, projectId, manuscriptSourceId);
 
       const result = {
@@ -348,6 +395,7 @@ export {
   type ListWorksOptions,
   type UpdateWorkInput,
   WorkDeleteBlockedError,
+  WorkLockedError,
   WorkNameConflictError,
   type WorkRepository,
   WorkRestoreConflictError,

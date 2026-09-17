@@ -79,7 +79,8 @@ export const works = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    slug: text("slug").notNull(),
+    slug: text("slug"),
+    isNoWork: boolean("is_no_work").notNull().default(false),
     goal: text("goal"),
     description: text("description"),
     status: text("status").notNull().default("active"),
@@ -100,9 +101,22 @@ export const works = pgTable(
     uniqueIndex("works_project_name_active")
       .on(table.projectId, sql`lower(${table.name})`)
       .where(sql`${table.deletedAt} IS NULL`),
-    uniqueIndex("works_project_slug").on(table.projectId, table.slug),
+    uniqueIndex("works_project_slug")
+      .on(table.projectId, table.slug)
+      .where(sql`${table.slug} IS NOT NULL`),
+    uniqueIndex("works_project_no_work_active")
+      .on(table.projectId)
+      .where(sql`${table.isNoWork} = true AND ${table.deletedAt} IS NULL`),
     check("works_name_nonempty", sql`btrim(${table.name}) <> ''`),
-    check("works_slug_valid", sql`${table.slug} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`),
+    check(
+      "works_no_work_slug",
+      sql`(${table.isNoWork} AND ${table.slug} IS NULL) OR (NOT ${table.isNoWork} AND ${table.slug} IS NOT NULL)`,
+    ),
+    check("works_no_work_active", sql`NOT ${table.isNoWork} OR ${table.status} = 'active'`),
+    check(
+      "works_slug_valid",
+      sql`${table.slug} IS NULL OR ${table.slug} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`,
+    ),
     check("works_status_valid", sql`${table.status} IN ('active', 'archived')`),
     check("works_ai_write_mode_valid", sql`${table.aiWriteMode} IN ('direct', 'draft')`),
     unique("works_project_id_unique").on(table.projectId, table.id),

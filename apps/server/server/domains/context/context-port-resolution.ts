@@ -40,7 +40,10 @@ export async function resolveThreadContext(
     : null;
   const workAuthorities = new Map(
     authorities
-      .filter((authority): authority is ResolvedWorkAuthority => authority !== null)
+      .filter(
+        (authority): authority is Extract<ResolvedWorkAuthority, { kind: "work" }> =>
+          authority?.kind === "work",
+      )
       .map((authority) => [authority.workSlug, authority]),
   );
   return {
@@ -89,7 +92,10 @@ async function resolvedAuthorities(
   );
   return new Map(
     resolved
-      .filter((value): value is ResolvedWorkAuthority => value !== null)
+      .filter(
+        (value): value is Extract<ResolvedWorkAuthority, { kind: "work" }> =>
+          value?.kind === "work",
+      )
       .map((value) => [value.workSlug, value]),
   );
 }

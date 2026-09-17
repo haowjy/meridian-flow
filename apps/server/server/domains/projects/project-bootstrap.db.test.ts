@@ -1,13 +1,13 @@
-/** PostgreSQL contract for Work-free project bootstrap. */
+/** PostgreSQL contract for project bootstrap with locked No Work. */
 
 import { beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
 
 const RUN = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const DATABASE_URL = process.env.DATABASE_URL;
-if (!RUN || !DATABASE_URL) describe.skip("Work-free project bootstrap (postgres)", () => {});
+if (!RUN || !DATABASE_URL) describe.skip("project bootstrap (postgres)", () => {});
 else
-  describe("Work-free project bootstrap (postgres)", async () => {
+  describe("project bootstrap (postgres)", async () => {
     const { Hocuspocus } = await import("@hocuspocus/server");
     const schema = await import("@meridian/database/schema");
     const { conformanceUserValues } = await import(
@@ -66,7 +66,7 @@ else
       domain.bindHocuspocus(hocuspocus);
       return { domain, hocuspocus };
     }
-    it("converges project, Writer, manuscript and unassigned sources without a Work or thread", async () => {
+    it("converges project, manuscript, locked No Work, and work-scoped scratch/uploads without a thread", async () => {
       const repository = createDrizzleProjectBootstrapRepository({ db, documents: collab() });
       const first = await repository.ensureDefaultBootstrap(USER_ID as never);
       const second = await repository.ensureDefaultBootstrap(USER_ID as never);
@@ -83,23 +83,45 @@ else
         "projectId",
         "uri",
       ]);
-      const [sources, workRows, threadRows, docs] = await Promise.all([
+      const [manuscript, workRows, threadRows, docs] = await Promise.all([
         db
-          .select({ slug: schema.contextSources.slug, workId: schema.contextSources.workId })
+          .select({
+            slug: schema.contextSources.slug,
+            workId: schema.contextSources.workId,
+            scope: schema.contextSources.scope,
+          })
           .from(schema.contextSources)
           .where(eq(schema.contextSources.projectId, first.projectId)),
         db.select().from(schema.works).where(eq(schema.works.projectId, first.projectId)),
         db.select().from(schema.threads).where(eq(schema.threads.projectId, first.projectId)),
         db.select().from(schema.documents).where(eq(schema.documents.id, first.documentId)),
       ]);
-      expect(sources).toEqual(
+      expect(workRows).toEqual([
+        expect.objectContaining({
+          isNoWork: true,
+          slug: null,
+          name: "No Work",
+          status: "active",
+        }),
+      ]);
+      const noWorkId = workRows[0]?.id;
+      const workSources = await db
+        .select({
+          slug: schema.contextSources.slug,
+          workId: schema.contextSources.workId,
+          scope: schema.contextSources.scope,
+          projectId: schema.contextSources.projectId,
+        })
+        .from(schema.contextSources)
+        .where(eq(schema.contextSources.workId, noWorkId));
+      expect(manuscript).toEqual([{ slug: "manuscript", workId: null, scope: "project" }]);
+      expect(workSources).toEqual(
         expect.arrayContaining([
-          { slug: "manuscript", workId: null },
-          { slug: "scratch", workId: null },
-          { slug: "uploads", workId: null },
+          { slug: "scratch", workId: noWorkId, scope: "work", projectId: null },
+          { slug: "uploads", workId: noWorkId, scope: "work", projectId: null },
         ]),
       );
-      expect(workRows).toEqual([]);
+      expect(workSources).toHaveLength(2);
       expect(threadRows).toEqual([]);
       expect(docs).toHaveLength(1);
     });

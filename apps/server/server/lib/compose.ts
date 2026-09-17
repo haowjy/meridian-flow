@@ -363,10 +363,14 @@ export async function createProductionAppPorts(input: {
   const { objectStore, localObjectStore } = createObjectStoreFromEnv();
   const documentAccess = createDrizzleDocumentAccess(db);
   const notices = createDrizzleNoticePort(db);
-  const projectRepo = createDrizzleProjectRepository({ db, catalogLifecycle: contextCatalog });
+  let workRepo: ProjectWorkRepository;
+  const projectRepo = createDrizzleProjectRepository({
+    db,
+    catalogLifecycle: contextCatalog,
+    ensureNoWork: (projectId) => workRepo.ensureNoWork(projectId),
+  });
   const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
   let contextPorts: UnifiedContextPortFactory;
-  let workRepo: ProjectWorkRepository;
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
   const assetPathResolver = await createDrizzleAssetPathResolver(db);
@@ -984,6 +988,12 @@ export function createInMemoryAppServices(): AppServices {
       async findById() {
         throw new Error("in-memory work repository is not implemented");
       },
+      async findNoWork() {
+        return null;
+      },
+      async ensureNoWork() {
+        throw new Error("in-memory work repository is not implemented");
+      },
       async lockById() {
         throw new Error("in-memory work repository is not implemented");
       },
@@ -1067,6 +1077,12 @@ export function createInMemoryAppServices(): AppServices {
         throw new Error("in-memory work repository is not implemented");
       },
       async findById() {
+        throw new Error("in-memory work repository is not implemented");
+      },
+      async findNoWork() {
+        return null;
+      },
+      async ensureNoWork() {
         throw new Error("in-memory work repository is not implemented");
       },
       async lockById() {

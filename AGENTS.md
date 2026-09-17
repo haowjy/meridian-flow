@@ -47,12 +47,13 @@ because the new one has not finished materializing.
 **Writer primitives:** a **Project** is a serial, book, or body of work. A
 **Work** is a task-scoped editing context within a project; it groups threads,
 owns shared drafts, carries a goal, and holds qualified `scratch://` context.
-Omitting a Work or sending explicit null creates an executable no-Work thread
-with no primary membership. After creation, the writer or LLM may explicitly
+Every project has one locked **No Work** row. Omitting a Work or sending
+explicit null still creates an executable no-Work thread with no primary
+membership until bind lands. After creation, the writer or LLM may explicitly
 rebind the chat through one canonical operation; Work management and navigation
-never invoke it implicitly. Work-capable URIs use `@/` for no-Work authority and
-`@slug` for a real Work; internal IDs never appear in URI authority. The schema
-is `works` + `thread_works`; projects do not receive a default Work.
+never invoke it implicitly. Work-capable URIs use `@/` for No Work authority and
+`@slug` for a named Work; internal IDs never appear in URI authority. The schema
+is `works` + `thread_works`.
 
 ## Agency
 

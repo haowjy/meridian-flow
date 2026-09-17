@@ -38,6 +38,7 @@ function mapProject(row: ProjectRow): Project {
 export interface DrizzleProjectRepositoryDeps {
   db: Database;
   catalogLifecycle?: ContextCatalogLifecyclePort;
+  ensureNoWork?: (projectId: ProjectId) => Promise<unknown>;
 }
 export function createDrizzleProjectRepository(
   deps: DrizzleProjectRepositoryDeps,
@@ -72,6 +73,7 @@ export function createDrizzleProjectRepository(
           })
           .returning();
         if (!row) throw new Error("Failed to create project");
+        await deps.ensureNoWork?.(row.id);
         await deps.catalogLifecycle?.refreshProject(row.id);
         return mapProject(row);
       });

@@ -238,8 +238,13 @@ export function ChatView({
               uploadPort={uploadIntakePort}
               uploadScope={
                 projectId
-                  ? activeWork
-                    ? { kind: "work", projectId, workId: activeWork.id, workSlug: activeWork.slug }
+                  ? activeWork?.slug
+                    ? {
+                        kind: "work",
+                        projectId,
+                        workId: activeWork.id,
+                        workSlug: activeWork.slug,
+                      }
                     : { kind: "none", projectId }
                   : undefined
               }

@@ -50,7 +50,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           .where(eq(schema.works.id, locator.workId));
         if (!work) throw new Error("missing Work for move test");
         const authority = await resolver.byId(work.projectId, locator.workId);
-        if (!authority) throw new Error("missing Work authority for move test");
+        if (authority?.kind !== "work") {
+          throw new Error("missing Work authority for move test");
+        }
         return { scope: "work" as const, scheme: locator.scheme, path: locator.path, authority };
       };
       return commitContextMove({
@@ -141,7 +143,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         manifestMembership: collab,
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
-      if (!authority) throw new Error("missing Work authority");
+      if (authority?.kind !== "work") throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         projectId,

@@ -378,5 +378,128 @@ INSERT INTO context_catalog_scope_heads(scope_key,scope) VALUES ('project:probe'
         },
       });
     });
+
+    it("inserts locked No Work, re-keys unlabeled scratch/uploads, and binds threads without a primary", {
+      timeout: 90_000,
+    }, async () => {
+      const ids = {
+        user: "00000000-0000-4000-8000-000000000261",
+        project: "00000000-0000-4000-8000-000000000262",
+        deletedProject: "00000000-0000-4000-8000-000000000263",
+        namedNoWork: "00000000-0000-4000-8000-000000000264",
+        named: "00000000-0000-4000-8000-000000000265",
+        scratch: "00000000-0000-4000-8000-000000000266",
+        uploads: "00000000-0000-4000-8000-000000000267",
+        manuscript: "00000000-0000-4000-8000-000000000268",
+        unbound: "00000000-0000-4000-8000-000000000269",
+        bound: "00000000-0000-4000-8000-000000000270",
+        deletedThread: "00000000-0000-4000-8000-000000000271",
+        document: "00000000-0000-4000-8000-000000000272",
+      };
+      await withPopulatedMigrationDatabase({
+        databaseUrl,
+        seedBefore: "0099_military_ultragirl",
+        seed: async (target) => {
+          await target.unsafe(`
+            INSERT INTO users (id, external_id, email)
+            VALUES ('${ids.user}', 'no-work-upgrade', 'no-work-upgrade@test.invalid');
+            INSERT INTO projects (id, user_id, name, slug)
+            VALUES ('${ids.project}', '${ids.user}', 'No Work upgrade', 'no-work-upgrade');
+            INSERT INTO projects (id, user_id, name, slug, deleted_at)
+            VALUES ('${ids.deletedProject}', '${ids.user}', 'Deleted', 'deleted-upgrade', '2026-01-02');
+            INSERT INTO works (id, project_id, created_by_user_id, name, slug, status)
+            VALUES
+              ('${ids.namedNoWork}', '${ids.project}', '${ids.user}', 'No Work', 'no-work', 'active'),
+              ('${ids.named}', '${ids.project}', '${ids.user}', 'Fight Scene', 'fight-scene', 'active');
+            INSERT INTO context_sources (id, project_id, name, slug)
+            VALUES
+              ('${ids.scratch}', '${ids.project}', 'Scratch', 'scratch'),
+              ('${ids.uploads}', '${ids.project}', 'Uploads', 'uploads'),
+              ('${ids.manuscript}', '${ids.project}', 'Manuscript', 'manuscript');
+            INSERT INTO documents (id, context_source_id, name, markdown_projection)
+            VALUES ('${ids.document}', '${ids.scratch}', 'note', 'hello');
+            INSERT INTO threads (id, project_id, created_by_user_id, title, kind)
+            VALUES
+              ('${ids.unbound}', '${ids.project}', '${ids.user}', 'Unbound', 'primary'),
+              ('${ids.bound}', '${ids.project}', '${ids.user}', 'Bound', 'primary');
+            INSERT INTO threads (id, project_id, created_by_user_id, title, kind, deleted_at)
+            VALUES ('${ids.deletedThread}', '${ids.project}', '${ids.user}', 'Deleted', 'primary', '2026-01-02');
+            INSERT INTO thread_works (thread_id, work_id, project_id, is_primary)
+            VALUES ('${ids.bound}', '${ids.named}', '${ids.project}', true);
+          `);
+          expect(
+            await target`SELECT slug, work_id FROM context_sources WHERE id IN (${ids.scratch}, ${ids.uploads}) ORDER BY slug`,
+          ).toEqual([
+            { slug: "scratch", work_id: null },
+            { slug: "uploads", work_id: null },
+          ]);
+          expect(
+            await target`SELECT work_id FROM thread_works WHERE thread_id = ${ids.unbound} AND is_primary`,
+          ).toEqual([]);
+          expect(
+            await target`SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'works' AND column_name = 'is_no_work'`,
+          ).toEqual([]);
+        },
+        verify: async (target) => {
+          const locked = await target<{ id: string; name: string; slug: string | null }[]>`
+            SELECT id, name, slug FROM works
+            WHERE project_id = ${ids.project} AND is_no_work AND deleted_at IS NULL`;
+          expect(locked).toEqual([expect.objectContaining({ name: "No Work", slug: null })]);
+          const noWorkId = locked[0]?.id;
+          expect(
+            await target`SELECT id FROM works WHERE project_id = ${ids.deletedProject} AND is_no_work`,
+          ).toEqual([]);
+          expect(await target`SELECT name, slug FROM works WHERE id = ${ids.namedNoWork}`).toEqual([
+            { name: "No Work (named)", slug: "no-work" },
+          ]);
+          expect(
+            await target`
+              SELECT id, work_id, project_id, scope, slug
+              FROM context_sources
+              WHERE id IN (${ids.scratch}, ${ids.uploads}, ${ids.manuscript})
+              ORDER BY slug`,
+          ).toEqual([
+            {
+              id: ids.manuscript,
+              work_id: null,
+              project_id: ids.project,
+              scope: "project",
+              slug: "manuscript",
+            },
+            {
+              id: ids.scratch,
+              work_id: noWorkId,
+              project_id: null,
+              scope: "work",
+              slug: "scratch",
+            },
+            {
+              id: ids.uploads,
+              work_id: noWorkId,
+              project_id: null,
+              scope: "work",
+              slug: "uploads",
+            },
+          ]);
+          expect(
+            await target`SELECT context_source_id FROM documents WHERE id = ${ids.document}`,
+          ).toEqual([{ context_source_id: ids.scratch }]);
+          expect(
+            await target`SELECT work_id, is_primary FROM thread_works WHERE thread_id = ${ids.unbound}`,
+          ).toEqual([{ work_id: noWorkId, is_primary: true }]);
+          expect(
+            await target`SELECT work_id FROM thread_works WHERE thread_id = ${ids.bound} AND is_primary`,
+          ).toEqual([{ work_id: ids.named }]);
+          expect(
+            await target`SELECT work_id FROM thread_works WHERE thread_id = ${ids.deletedThread}`,
+          ).toEqual([]);
+          expect(
+            await target`
+              SELECT count(*)::int AS count FROM context_sources
+              WHERE work_id IS NULL AND slug IN ('scratch', 'uploads') AND deleted_at IS NULL`,
+          ).toEqual([{ count: 0 }]);
+        },
+      });
+    });
   });
 }
