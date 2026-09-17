@@ -93,7 +93,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalogMutations: catalog,
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
-      if (!authority) throw new Error("missing Work authority");
+      if (authority?.kind !== "work") throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         projectId,
@@ -181,7 +181,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
-      if (!authority) throw new Error("missing Work authority");
+      if (authority?.kind !== "work") throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         projectId,
@@ -221,7 +221,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         manifestMembership: collab,
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
-      if (!authority) throw new Error("missing Work authority");
+      if (authority?.kind !== "work") throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         projectId,
@@ -254,11 +254,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       await expect(db.select().from(schema.contextSources)).resolves.toEqual(
-        expect.arrayContaining(
-          ["manuscript", "scratch", "uploads"].map((slug) =>
-            expect.objectContaining({ projectId, slug, scope: "project", workId: null }),
-          ),
-        ),
+        expect.arrayContaining([
+          expect.objectContaining({
+            projectId,
+            slug: "manuscript",
+            scope: "project",
+            workId: null,
+          }),
+          expect.objectContaining({ slug: "scratch", scope: "work", projectId: null }),
+          expect.objectContaining({ slug: "uploads", scope: "work", projectId: null }),
+        ]),
       );
       await expect(
         db.select().from(schema.contextSources).where(eq(schema.contextSources.workId, workId)),

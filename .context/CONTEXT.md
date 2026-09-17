@@ -52,7 +52,7 @@ domains/runtime + domains/threads + domains/packages + domains/projects + domain
 | `domains/runtime/gateway` | LLM access: provider-neutral generation/streaming |
 | `domains/runtime/tools` | Tool registry/executor for Meridian-owned tools; no external execution runtime |
 | `domains/packages` | Agent/package catalog and future package install surface |
-| `domains/projects` | Project/work ownership, personal-project bootstrap without an implicit Work, project CRUD, Work catalogs, and owner gates for project-scoped routes |
+| `domains/projects` | Project/work ownership, personal-project bootstrap with locked No Work, project CRUD, Work catalogs, and owner gates for project-scoped routes |
 | `domains/context` | ContextPort router/adapters for agent-readable writing context |
 | `domains/collab` | Yjs document sync and markdown projection |
 

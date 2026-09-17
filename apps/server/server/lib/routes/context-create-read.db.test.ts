@@ -340,7 +340,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         PROJECT_ID,
         WORK_ID,
       );
-      if (!authority) throw new Error("missing Work authority");
+      if (authority?.kind !== "work") throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         PROJECT_ID,

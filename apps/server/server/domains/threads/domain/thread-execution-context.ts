@@ -13,7 +13,9 @@ export class WorkRequiredError extends Error {
 export function threadExecutionContext(
   work: Pick<Work, "id" | "slug" | "aiWriteMode"> | null,
 ): ThreadExecutionContext {
-  if (!work) return { scope: { kind: "none" }, aiWriteMode: "direct", draftOwner: null };
+  if (!work?.slug) {
+    return { scope: { kind: "none" }, aiWriteMode: "direct", draftOwner: null };
+  }
   return {
     scope: { kind: "work", workId: work.id, workSlug: work.slug },
     aiWriteMode: work.aiWriteMode,

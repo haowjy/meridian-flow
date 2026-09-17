@@ -36,7 +36,8 @@ function fixture() {
     },
     async bySlug(projectId, slug) {
       return projectId === "p"
-        ? ([...works.values()].find((work) => work.workSlug === slug) ?? null)
+        ? ([...works.values()].find((work) => work.kind === "work" && work.workSlug === slug) ??
+            null)
         : null;
     },
     async lockById(projectId, id) {

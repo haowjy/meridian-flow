@@ -2,7 +2,11 @@
 
 import type { WorkId } from "@meridian/contracts/runtime";
 import type { Work, WorkStatus } from "@meridian/contracts/works";
-import type { UpdateWorkInput, WorkRepository } from "./ports/work-repository.js";
+import {
+  type UpdateWorkInput,
+  WorkLockedError,
+  type WorkRepository,
+} from "./ports/work-repository.js";
 import type { WorkContextDelivery } from "./work-context-delivery.js";
 
 export type UpdateWorkCommandInput = UpdateWorkInput & { status?: WorkStatus };
@@ -55,6 +59,15 @@ export async function updateWorkTransition(
   const result = await deps.works.transaction(async () => {
     const before = await deps.works.lockById(workId);
     if (!before || before.deletedAt) throw new Error(`Work not found: ${workId}`);
+    if (
+      before.isNoWork &&
+      (normalized.name !== undefined ||
+        normalized.goal !== undefined ||
+        normalized.description !== undefined ||
+        normalized.status !== undefined)
+    ) {
+      throw new WorkLockedError();
+    }
     const requested = {
       name: normalized.name === undefined ? before.name : normalized.name,
       goal: normalized.goal === undefined ? before.goal : normalized.goal,

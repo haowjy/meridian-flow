@@ -9,10 +9,11 @@ import type {
 } from "../../ports/work-repository.js";
 import {
   WorkDeleteBlockedError,
+  WorkLockedError,
   WorkNameConflictError,
   WorkRestoreConflictError,
 } from "../../ports/work-repository.js";
-import { nextWorkSlug } from "./shared.js";
+import { NO_WORK_NAME, nextWorkSlug } from "./shared.js";
 
 export interface InMemoryWorkRepositoryOptions {
   hasLiveThreads?: (workId: WorkId) => boolean | Promise<boolean>;
@@ -59,6 +60,7 @@ export function createInMemoryWorkRepository(
           .filter((work) => work.projectId === input.projectId)
           .map((work) => work.slug),
       ),
+      isNoWork: false,
       goal: input.goal ?? null,
       description: input.description ?? null,
       status: "active",
@@ -120,10 +122,58 @@ export function createInMemoryWorkRepository(
       return row ? { ...row } : null;
     },
 
+    async findNoWork(projectId: ProjectId): Promise<Work | null> {
+      const row = [...rows.values()].find(
+        (work) => work.projectId === projectId && work.isNoWork && work.deletedAt === null,
+      );
+      return row ? { ...row } : null;
+    },
+
+    async ensureNoWork(projectId: ProjectId): Promise<Work> {
+      const existing = await repo.findNoWork(projectId);
+      if (existing) return existing;
+      const timestamp = now();
+      for (const row of rows.values()) {
+        if (
+          row.projectId === projectId &&
+          !row.isNoWork &&
+          row.deletedAt === null &&
+          row.name.trim().toLocaleLowerCase() === NO_WORK_NAME.toLocaleLowerCase()
+        ) {
+          row.name = `${NO_WORK_NAME} (named)`;
+          row.updatedAt = timestamp;
+          row.lastActivityAt = timestamp;
+          advance(row);
+        }
+      }
+      const work: Work = {
+        id: crypto.randomUUID(),
+        projectId,
+        createdByUserId: "00000000-0000-4000-8000-000000000000",
+        name: NO_WORK_NAME,
+        slug: null,
+        isNoWork: true,
+        goal: null,
+        description: null,
+        status: "active",
+        archivedAt: null,
+        aiWriteMode: "direct",
+        entityRevision: "1",
+        lastActivityAt: timestamp,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        deletedAt: null,
+      };
+      rows.set(work.id, work);
+      projectState(projectId).revision += 1n;
+      return { ...work };
+    },
+
     async listByProject(projectId: ProjectId, opts?: ListWorksOptions): Promise<Work[]> {
       return [...rows.values()]
         .filter((w) => w.projectId === projectId && (opts?.includeDeleted || w.deletedAt === null))
         .filter((w) => !opts?.status || w.status === opts.status)
+        .filter((w) => opts?.includeNoWork || !w.isNoWork)
         .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
         .map((w) => ({ ...w }));
     },
@@ -139,6 +189,7 @@ export function createInMemoryWorkRepository(
     async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
       const row = rows.get(id);
       if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
+      if (row.isNoWork) throw new WorkLockedError();
       if (input.name !== undefined) {
         if (nameIsTaken(row.projectId, input.name, row.id)) throw new WorkNameConflictError();
         row.name = input.name.trim();
@@ -159,6 +210,7 @@ export function createInMemoryWorkRepository(
     async archive(id: WorkId): Promise<Work> {
       const row = rows.get(id);
       if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
+      if (row.isNoWork) throw new WorkLockedError();
       if (row.status === "active") {
         row.status = "archived";
         row.archivedAt = now();
@@ -172,6 +224,7 @@ export function createInMemoryWorkRepository(
     async unarchive(id: WorkId): Promise<Work> {
       const row = rows.get(id);
       if (!row || row.deletedAt) throw new Error(`Work not found: ${id}`);
+      if (row.isNoWork) throw new WorkLockedError();
       if (row.status === "archived") {
         row.status = "active";
         row.archivedAt = null;
@@ -189,6 +242,7 @@ export function createInMemoryWorkRepository(
     async softDelete(id: WorkId): Promise<void> {
       const row = rows.get(id);
       if (!row || row.deletedAt) return;
+      if (row.isNoWork) throw new WorkLockedError();
       if (await options.hasLiveThreads?.(id)) throw new WorkDeleteBlockedError("threads");
       if (await repo.hasUnreviewedDraft(id)) throw new WorkDeleteBlockedError("drafts");
       if (await options.hasDocuments?.(id)) throw new WorkDeleteBlockedError("documents");

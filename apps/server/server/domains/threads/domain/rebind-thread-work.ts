@@ -45,7 +45,7 @@ export interface RebindThreadWorkInput extends RebindThreadWorkRequest {
 }
 
 function receiptState(work: Work | null): WorkBindingReceiptState {
-  if (!work) return { kind: "none" };
+  if (!work?.slug) return { kind: "none" };
   return {
     kind: "work",
     workId: work.id,

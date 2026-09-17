@@ -145,7 +145,7 @@ export const projectThreadCounters = pgTable("project_thread_counters", {
   n: integer("n").notNull(),
 });
 
-/** M:N thread↔Work history; the optional primary row is contextual authority. */
+/** M:N thread↔Work history; every live thread has one primary row. */
 export const threadWorks = pgTable(
   "thread_works",
   {

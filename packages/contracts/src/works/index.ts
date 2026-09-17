@@ -12,8 +12,9 @@ export interface Work {
   projectId: ProjectId;
   createdByUserId: UserId;
   name: string;
-  /** Stable project-unique handle. Renaming a Work does not change it. */
-  slug: WorkSlug;
+  /** Stable project-unique handle. Null on the locked No Work row. */
+  slug: WorkSlug | null;
+  isNoWork: boolean;
   goal: string | null;
   description: string | null;
   status: WorkStatus;
@@ -37,6 +38,8 @@ export interface Work {
 }
 
 export type WorkCatalogEntry = Work & { unpushedChangeCount: number };
+export type NamedWorkCatalogEntry = WorkCatalogEntry & { isNoWork: false; slug: WorkSlug };
+export type NoWorkCatalogEntry = WorkCatalogEntry & { isNoWork: true; slug: null };
 
 /** Complete, version-ordered Work lifecycle projection for one project. */
 export type WorksSnapshot = {
@@ -47,7 +50,8 @@ export type WorksSnapshot = {
   authorityRevision: string;
   /** Correlates one acquisition response; it is not ordering authority. */
   requestId: string;
-  works: readonly WorkCatalogEntry[];
+  works: readonly NamedWorkCatalogEntry[];
+  noWork: NoWorkCatalogEntry;
 };
 
 export interface CreateWorkRequest {

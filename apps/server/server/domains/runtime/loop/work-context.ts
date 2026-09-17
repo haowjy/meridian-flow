@@ -28,7 +28,7 @@ function promptText(value: string): string {
 }
 
 function workLine(work: Pick<Work, "slug" | "name" | "goal">): string {
-  return `${promptText(work.slug)}: ${JSON.stringify(promptText(work.name))} (goal: ${promptText(oneLine(work.goal))})`;
+  return `${promptText(work.slug ?? "none")}: ${JSON.stringify(promptText(work.name))} (goal: ${promptText(oneLine(work.goal))})`;
 }
 
 export function renderWorkContext(input: {
@@ -40,7 +40,7 @@ export function renderWorkContext(input: {
     .sort(
       (left, right) =>
         right.lastActivityAt.localeCompare(left.lastActivityAt) ||
-        left.slug.localeCompare(right.slug),
+        (left.slug ?? "").localeCompare(right.slug ?? ""),
     );
   const visible = otherActive.slice(0, WORK_CONTEXT_ACTIVE_LIMIT);
   const elided = otherActive.length - visible.length;

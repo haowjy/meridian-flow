@@ -24,7 +24,8 @@ export function createContextUploadContentPort(
           : null;
       if (input.reservation.owner.kind === "work" && !authority)
         return { ok: false, definite: true };
-      const authorities = authority ? new Map([[authority.workSlug, authority]]) : new Map();
+      const authorities =
+        authority?.kind === "work" ? new Map([[authority.workSlug, authority]]) : new Map();
       const port = authority
         ? contextPorts.forWork(
             authority,

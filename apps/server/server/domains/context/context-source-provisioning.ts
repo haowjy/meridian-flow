@@ -156,7 +156,7 @@ async function findWorkContextSource(
   return row?.id ?? null;
 }
 
-async function ensureWorkContextSource(
+export async function ensureWorkContextSource(
   db: Database,
   workId: string,
   scheme: WorkScopedContextFsScheme,
