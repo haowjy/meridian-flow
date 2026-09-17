@@ -32,11 +32,6 @@ import { createToolRegistry, type ToolExecutor } from "../../tools/index.js";
 import { createNoopInterruptArtifactFlushPort } from "../interrupt-session.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import type { OrchestratorDeps } from "../orchestrator.js";
-import {
-  computeEffectivePermissions,
-  createPermissionGate,
-  resolveProfile,
-} from "../permissions/index.js";
 import { createInertGateway } from "./test-gateway.js";
 
 function inertGateway(): Gateway {
@@ -68,7 +63,7 @@ export function createTestAgentBinding(
   model: string,
   systemPrompt = "",
   boundThreads: () => readonly string[] = () => [],
-): Pick<AgentRevisionStore, "readThreadBinding" | "readSource"> {
+): Pick<AgentRevisionStore, "readThreadBinding" | "listInstallations" | "readSource"> {
   return {
     async readThreadBinding(threadId) {
       if (!boundThreads().includes(threadId)) return undefined;
@@ -78,8 +73,15 @@ export function createTestAgentBinding(
         slug: "general",
         definitionDigest: "fixture-digest",
         configuration: { model, skills: { load: [], available: [] }, namedTargets: [] },
-        definition: { schemaVersion: 1, systemPrompt, metadata: { model } },
+        definition: {
+          schemaVersion: 1,
+          systemPrompt,
+          metadata: { model },
+        },
       };
+    },
+    async listInstallations() {
+      return [];
     },
     async readSource() {
       return undefined;
@@ -130,7 +132,6 @@ export function createTestOrchestratorDeps(
         return "direct";
       },
     },
-    permissionGate: createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
     billingUsage: overrides.billingUsage ?? createBillingUsagePolicy(creditLedger),
     interruptArtifacts: createNoopInterruptArtifactFlushPort(),
     childRunCoordinator: noopChildRunCoordinator(),

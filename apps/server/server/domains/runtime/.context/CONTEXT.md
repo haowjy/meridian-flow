@@ -40,7 +40,7 @@ skeleton and delegates the moving parts.
 | `block-helpers.ts` | Content block conversion and local accumulator helpers. |
 | `turn-accounting.ts` | Credit ledger checks/debits and cumulative usage events. |
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
-| `tool-dispatch.ts` | Permission check, tool execution ordering, result event shaping. |
+| `tool-dispatch.ts` | Live output, spawn/return-result bridges, and durable tool_result persistence. Dispatch does not apply policy. |
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. |
@@ -53,14 +53,15 @@ skeleton and delegates the moving parts.
 | `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, serialized persistence/provenance/upload consumption, lookup, and retirement. |
 | `reference-context.ts` | Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads. |
 | `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission, read-deduplicated, occurrence-budgeted, and quietly omitted without losing writer text. |
-| `permissions/` | `PermissionGate`; compose currently wires the `coding` profile explicitly. |
+| `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow names and write/work commands. Advertise and the per-turn permission gate (name + write/work command) use that policy. Dispatch does not apply policy. The core catalogue stays policy-free. |
 
 `OrchestratorDeps` is fully required: gateway, repos, retained Agent revision reader, tool
-registry/executor, project preferences, permission gate, credit ledger,
+registry/executor, project preferences, credit ledger,
 interrupt artifact flush, child-run coordinator, interrupt registry, and
-`EventSink` are all explicit dependencies. Provider-specific model-call behavior
-stays behind the gateway port. Disabled behavior is represented by explicit
-adapters (for example no-op sinks), not by omitted deps.
+`EventSink` are all explicit dependencies. Do not re-add a global permission
+gate here; names and write/work commands are gated per turn from advertised policy. Provider-specific
+model-call behavior stays behind the gateway port. Disabled behavior is
+represented by explicit adapters (for example no-op sinks), not by omitted deps.
 
 ## Bound Agent preparation
 
@@ -69,9 +70,12 @@ model, effort, and diagnostic Agent identity. Missing bindings fail before a
 gateway call. Catalog removal or advancement leaves continued execution on its
 retained revision. `turn-context-assembly.ts` supplies that persona to the initial
 host-prompt bake and reuses the frozen prompt on later turns; preview shares this
-assembly without persisting. Slash (`/` and Send `activatedSkillSlugs`) lists
-every user-invocable `skills/<slug>/SKILL.md` in the bound package graph plus
-account installs for the owner; package files win slug collisions. Prompt bake
+  assembly without persisting. Slash (`/` and Send `activatedSkillSlugs`) lists
+every user-invocable `skills/<slug>/SKILL.md` from system and owner package
+installations (each walked with `retainedPackageSkillMaps`) plus account
+installs; first installed package file wins slug collisions, and package files
+win over account rows. The bound Agent package is not the slash catalog.
+Prompt bake
 and the `skill` tool use bound Agent `skills.available` only (name and
 description from retained `SKILL.md`), dropping `model-invocable: false`.
 Account installs never join the prompt or `skill()`. `skills.load` is not
@@ -136,9 +140,9 @@ facet.
 
 ## Cost, billing, and permissions
 
-- Tool permissions are enforced by `PermissionGate.check()` before dispatch.
-  `lib/compose.ts` explicitly composes the pilot `coding` profile, which is
-  currently allow-all.
+- Tool permissions are per-turn: `projectToolPolicy` → permission gate
+  (`check` name + write/work command) → `persistPermissionDenial`. Dispatch
+  does not apply policy. Direct `toolExecutor.executeTool` does not apply policy.
 - Model-call cost gating is not a `PermissionGate` method. The runtime uses
   `CreditLedger` plus `TreeBudget` (for spawn trees) through `turn-accounting.ts`
   and `ChildRunCoordinator`.

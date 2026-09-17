@@ -5,7 +5,7 @@ import type { AccountSkillInstallStore, AgentRevisionStore } from "../domains/pa
 import { resolveSelectionUserInvocableSkills } from "../domains/runtime/loop/available-skills.js";
 
 export interface SelectionAvailableSkillsRouteDeps {
-  agentRevisions: Pick<AgentRevisionStore, "readSelection" | "readSource">;
+  agentRevisions: Pick<AgentRevisionStore, "readSelection" | "listInstallations" | "readSource">;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
 }
 

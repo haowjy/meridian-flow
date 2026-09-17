@@ -36,6 +36,17 @@ describe("agent definition support", () => {
     ]);
   });
 
+  it("allows compiled tools and disallowed-tools", () => {
+    expect(
+      agentDefinitionUnsupportedReasons(
+        definition({
+          tools: { read: "allow", write: "deny", edit: "deny", ask_user: "allow" },
+          "disallowed-tools": ["bash"],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
   it("still refuses unknown fields and nonempty subagents", () => {
     expect(agentDefinitionUnsupportedReasons(definition({ approval: "never" }))).toEqual([
       "Unsupported Agent field: approval",
