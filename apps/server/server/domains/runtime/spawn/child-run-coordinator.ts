@@ -184,9 +184,12 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         };
       }
       const meta = parentAgent.definition.metadata;
+      // A generic parent carries its caller's execution on inheritedExecution;
+      // copy that before falling back to the bound definition's own metadata so
+      // the overlay survives across nested generic spawns.
       configuration = {
         ...parentAgent.configuration,
-        inheritedExecution: {
+        inheritedExecution: parentAgent.configuration.inheritedExecution ?? {
           ...(meta.tools !== undefined ? { tools: meta.tools } : {}),
           ...(meta["disallowed-tools"] !== undefined
             ? { "disallowed-tools": meta["disallowed-tools"] }
