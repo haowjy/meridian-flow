@@ -40,7 +40,7 @@ skeleton and delegates the moving parts.
 | `block-helpers.ts` | Content block conversion and local accumulator helpers. |
 | `turn-accounting.ts` | Credit ledger checks/debits and cumulative usage events. |
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
-| `tool-dispatch.ts` | Permission check, tool execution ordering, result event shaping. |
+| `tool-dispatch.ts` | Write/work command gate before `executeTool`, live output, spawn/return-result bridges, and durable tool_result persistence. |
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. |
@@ -53,7 +53,7 @@ skeleton and delegates the moving parts.
 | `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, serialized persistence/provenance/upload consumption, lookup, and retirement. |
 | `reference-context.ts` | Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads. |
 | `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission, read-deduplicated, occurrence-budgeted, and quietly omitted without losing writer text. |
-| `permissions/` | `PermissionGate`; `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow names and write/work commands. Compose currently wires the `coding` profile explicitly. |
+| `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow names and write/work commands. Advertise and the per-turn name gate use that policy; the write/work command gate lives in `tool-dispatch.ts`. The core catalogue stays policy-free. |
 
 `OrchestratorDeps` is fully required: gateway, repos, retained Agent revision reader, tool
 registry/executor, project preferences, permission gate, credit ledger,
@@ -139,9 +139,10 @@ facet.
 
 ## Cost, billing, and permissions
 
-- Tool permissions are enforced by `PermissionGate.check()` before dispatch.
-  `lib/compose.ts` explicitly composes the pilot `coding` profile, which is
-  currently allow-all.
+- Tool permissions are per-turn: `projectToolPolicy` → advertised tools →
+  `permissionGateFromToolPolicy` for names, then `dispatchToolCall` for write/work
+  commands. Missing policy on the orchestrator path fail-closes those commands.
+  Direct `toolExecutor.executeTool` (no dispatch) does not apply the command gate.
 - Model-call cost gating is not a `PermissionGate` method. The runtime uses
   `CreditLedger` plus `TreeBudget` (for spawn trees) through `turn-accounting.ts`
   and `ChildRunCoordinator`.

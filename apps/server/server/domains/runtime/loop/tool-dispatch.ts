@@ -1,13 +1,15 @@
 /**
  * Stateless tool dispatch step for the runtime loop.
  *
- * The orchestrator decides whether a tool call is allowed; this module owns the
- * mechanics of running the allowed call: live output journal appends, spawn and
- * return-result bridges, interrupt callback wiring, and durable tool_result
- * persistence. The caller supplies mutable turn/block state so interrupt
- * callbacks can update the active turn while the tool handler is awaited.
+ * The orchestrator decides whether a tool name is allowed; this module owns the
+ * write/work command gate and the mechanics of running the allowed call: live
+ * output journal appends, spawn and return-result bridges, interrupt callback
+ * wiring, and durable tool_result persistence. The caller supplies mutable
+ * turn/block state so interrupt callbacks can update the active turn while the
+ * tool handler is awaited.
  */
 
+import { meridianErrorToJson } from "@meridian/contracts/interrupt";
 import type { TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
@@ -24,6 +26,7 @@ import type { ToolCallInput, ToolExecutor } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
+import { denyDisallowedToolCommand } from "./permissions/apply-tool-policy.js";
 import { appendEvent, type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
 import type { ReturnResultCompleter } from "./run-turn-port.js";
 
@@ -160,28 +163,37 @@ export async function dispatchToolCall(
     ? async (capture: Parameters<ReturnResultCompleter>[0]) => returnResultCompleter(capture)
     : undefined;
 
-  const execResult = await deps.toolExecutor.executeTool(
-    {
-      id: call.id,
-      name: call.name,
-      arguments: call.arguments,
-      ...(call.argumentsParseError ? { argumentsParseError: call.argumentsParseError } : {}),
-    },
-    {
-      threadId: ctx.state.threadId,
-      turnId: ctx.state.currentTurn.id,
-      responseId: ctx.editResponseId ?? ctx.responseId,
-      agentSlug: ctx.agentSlug,
-      ...(ctx.toolPolicy ? { toolPolicy: ctx.toolPolicy } : {}),
-      signal: ctx.state.signal,
-      interruptTimeoutMs: ctx.interruptAutoResume.timeoutMs,
-      emitOutputDelta,
-      interrupt: ctx.interruptSession.interrupt,
-      updateComponentBlock: ctx.interruptSession.updateComponentBlock,
-      spawn,
-      returnResult,
-    },
-  );
+  const deniedCommand =
+    call.name === "write" || call.name === "work"
+      ? denyDisallowedToolCommand(call.name, call.arguments, ctx.toolPolicy)
+      : null;
+  const execResult = deniedCommand
+    ? {
+        toolCallId: call.id,
+        isError: true as const,
+        output: meridianErrorToJson(deniedCommand.output),
+      }
+    : await deps.toolExecutor.executeTool(
+        {
+          id: call.id,
+          name: call.name,
+          arguments: call.arguments,
+          ...(call.argumentsParseError ? { argumentsParseError: call.argumentsParseError } : {}),
+        },
+        {
+          threadId: ctx.state.threadId,
+          turnId: ctx.state.currentTurn.id,
+          responseId: ctx.editResponseId ?? ctx.responseId,
+          agentSlug: ctx.agentSlug,
+          signal: ctx.state.signal,
+          interruptTimeoutMs: ctx.interruptAutoResume.timeoutMs,
+          emitOutputDelta,
+          interrupt: ctx.interruptSession.interrupt,
+          updateComponentBlock: ctx.interruptSession.updateComponentBlock,
+          spawn,
+          returnResult,
+        },
+      );
   await outputDeltaAppendChain;
   events.push(...outputDeltaEventBuffer, ...ctx.interruptSession.drainEvents());
   if (ctx.state.signal?.aborted) {

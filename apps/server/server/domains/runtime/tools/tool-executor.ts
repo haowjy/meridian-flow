@@ -365,7 +365,6 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         threadId: ctx.threadId as string,
         turnId: ctx.turnId as string,
         responseId: ctx.responseId,
-        ...(ctx.toolPolicy ? { toolPolicy: ctx.toolPolicy } : {}),
         agentSlug: ctx.agentSlug,
         emitOutputDelta: ctx.emitOutputDelta
           ? (chunk) => ctx.emitOutputDelta?.(call.id, chunk)
