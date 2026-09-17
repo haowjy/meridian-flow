@@ -144,11 +144,6 @@ export interface Thread {
    * (or subagent creation). `null` = not yet baked; `[]` = baked with no skills.
    */
   bakedSkillSlugs?: string[] | null;
-  /**
-   * Slugs already given a skill-available notice. Distinct from `bakedSkillSlugs`
-   * (the frozen prompt list). Empty until a post-bake union growth is noticed.
-   */
-  noticedSkillSlugs?: string[];
   systemPrompt?: string | null;
   workingState?: WorkingState | null;
   agentDefinitionRevisionId: string | null;

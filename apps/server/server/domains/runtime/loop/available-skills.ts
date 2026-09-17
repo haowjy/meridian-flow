@@ -1,8 +1,6 @@
 /** Available skill union, body load, and Send-slug authorization for a primary chat. */
 import type { RetainedSkillReference } from "@meridian/contracts/agents";
-import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
-import { createSkillAvailableNotice, type NoticePort } from "../../notices/index.js";
 import {
   type AccountSkillInstallStore,
   type AgentRevisionStore,
@@ -123,40 +121,6 @@ export async function loadAvailableSkillBody(input: {
     }
   }
   throw new SkillUnavailableError(input.slug);
-}
-
-export async function recordNewlyAvailableSkillNotices(input: {
-  threadId: ThreadId;
-  available: readonly AvailableSkillListing[];
-  bakedSkillSlugs: string[] | null | undefined;
-  noticedSkillSlugs: readonly string[] | undefined;
-  notices: Pick<NoticePort, "record">;
-  markSkillSlugsNoticed: (threadId: ThreadId, slugs: string[]) => Promise<string[]>;
-}): Promise<void> {
-  if (input.bakedSkillSlugs == null) return;
-  const baked = new Set(input.bakedSkillSlugs);
-  const noticed = new Set(input.noticedSkillSlugs ?? []);
-  const candidates = input.available.filter(
-    (skill) => !baked.has(skill.slug) && !noticed.has(skill.slug),
-  );
-  if (candidates.length === 0) return;
-  const fresh = new Set(
-    await input.markSkillSlugsNoticed(
-      input.threadId,
-      candidates.map((skill) => skill.slug),
-    ),
-  );
-  for (const skill of candidates) {
-    if (!fresh.has(skill.slug)) continue;
-    await input.notices.record(
-      createSkillAvailableNotice({
-        threadId: input.threadId,
-        slug: skill.slug,
-        name: skill.name,
-        description: skill.description,
-      }),
-    );
-  }
 }
 
 async function listAccountAvailableSkills(

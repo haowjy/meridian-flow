@@ -65,56 +65,8 @@ export function formatWorkSwitchedNotice(data: Record<string, unknown>): string 
     : null;
 }
 
-export type SkillAvailableNoticeData = {
-  slug: string;
-  name: string;
-  description: string;
-};
-
-export type SkillAvailableNotice = NoticeInput & {
-  kind: "skill_available";
-  scope: { kind: "thread"; threadId: ThreadId };
-  data: SkillAvailableNoticeData;
-};
-
-export function createSkillAvailableNotice(input: {
-  threadId: ThreadId;
-  slug: string;
-  name: string;
-  description: string;
-}): SkillAvailableNotice {
-  const data: SkillAvailableNoticeData = {
-    slug: input.slug,
-    name: input.name,
-    description: input.description,
-  };
-  return {
-    kind: "skill_available",
-    scope: { kind: "thread", threadId: input.threadId },
-    message: skillAvailableNoticeMessage(data),
-    data,
-  };
-}
-
-export function formatSkillAvailableNotice(data: Record<string, unknown>): string | null {
-  const name = nonEmptyString(data.name);
-  return name
-    ? skillAvailableNoticeMessage({
-        name,
-        description: typeof data.description === "string" ? data.description : "",
-      })
-    : null;
-}
-
 function workSwitchedNoticeMessage(data: { previousWorkName: string; workName: string }): string {
   return `This conversation's Work switched from ${JSON.stringify(data.previousWorkName)} to ${JSON.stringify(data.workName)}.`;
-}
-
-function skillAvailableNoticeMessage(data: { name: string; description: string }): string {
-  const description = data.description.replace(/\s+/g, " ").trim();
-  return description
-    ? `The skill ${JSON.stringify(data.name)} is available to be used. ${description}`
-    : `The skill ${JSON.stringify(data.name)} is available to be used.`;
 }
 
 function nonEmptyString(value: unknown): string | null {

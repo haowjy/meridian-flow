@@ -92,7 +92,6 @@ function defaultThread(input: CreateThreadInput): Thread {
     systemPrompt: normalized.systemPrompt,
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
-    noticedSkillSlugs: [],
     workingState: input.workingState ?? null,
     agentDefinitionRevisionId: null,
     agentName: null,
@@ -370,20 +369,6 @@ export function createInMemoryRepositories(
       };
       threads.set(id, updated);
       return projectThread(updated);
-    },
-    async markSkillSlugsNoticed(id, slugs) {
-      const thread = threads.get(id);
-      if (!thread) throw new Error(`Thread not found: ${id}`);
-      const current = thread.noticedSkillSlugs ?? [];
-      const seen = new Set(current);
-      const fresh = slugs.filter((slug) => !seen.has(slug));
-      if (fresh.length === 0) return [];
-      threads.set(id, {
-        ...thread,
-        noticedSkillSlugs: [...current, ...fresh],
-        updatedAt: toIsoString(new Date()),
-      });
-      return fresh;
     },
     async recomputeCostFromModelResponses(id) {
       const thread = threads.get(id);

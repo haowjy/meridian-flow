@@ -51,11 +51,7 @@
 
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
-import {
-  formatSkillAvailableNotice,
-  formatWorkSwitchedNotice,
-  type Notice,
-} from "../../notices/index.js";
+import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
 import { assistant, system, text, toolResult } from "../gateway/helpers/messages.js";
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
@@ -387,9 +383,6 @@ export function formatNotices(notices: readonly Notice[]): string {
 function formatNotice(notice: Notice): string {
   if (notice.kind === "work_switched") {
     return formatWorkSwitchedNotice(notice.data) ?? notice.message;
-  }
-  if (notice.kind === "skill_available") {
-    return formatSkillAvailableNotice(notice.data) ?? notice.message;
   }
   const documentName =
     stringData(notice, "documentName") ?? stringData(notice, "documentId") ?? "the document";

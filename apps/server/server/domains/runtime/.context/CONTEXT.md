@@ -75,9 +75,9 @@ installs for the thread owner; Agent retained files win on slug collision.
 `skills.load` is not injected into first-turn context; nonempty `load` refuses
 selection. Writer's load list is empty. The first-bake CAS writes those slugs
 (`[]` when the union is empty). Later turns send `composedSystemPrompt`
-verbatim. Skills that join the union after freeze attach one notice on the next
-user message (`noticedSkillSlugs`); they do not rewrite the prompt or
-`bakedSkillSlugs`. Display slugs do not guard prompt freezing. The model comes
+verbatim. Skills that join the union after freeze do not rewrite the prompt or
+`bakedSkillSlugs`; slash and the `skill` tool still load them. Compact rebakes
+the catalog. Display slugs do not guard prompt freezing. The model comes
 from conversation-owned resolved configuration, including a frozen default when
 source omits it. Nonempty `skills.available` does not refuse selection or turn
 preparation. Primary catalog selection currently keeps nonempty delegation

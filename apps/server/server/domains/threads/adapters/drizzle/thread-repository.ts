@@ -405,22 +405,6 @@ export function createDrizzleThreadRepository(
       if (!existing) throw new Error(`Thread not found: ${id}`);
       return existing;
     },
-    async markSkillSlugsNoticed(id, slugs) {
-      const existing = await this.findById(id);
-      if (!existing) throw new Error(`Thread not found: ${id}`);
-      const current = existing.noticedSkillSlugs ?? [];
-      const seen = new Set(current);
-      const fresh = slugs.filter((slug) => !seen.has(slug));
-      if (fresh.length === 0) return [];
-      await currentDrizzleDb(db)
-        .update(schema.threads)
-        .set({
-          noticedSkillSlugs: [...current, ...fresh],
-          updatedAt: new Date(),
-        })
-        .where(eq(schema.threads.id, id));
-      return fresh;
-    },
     async recomputeCostFromModelResponses(id) {
       await writeThreadCostRecompute(db, id);
     },

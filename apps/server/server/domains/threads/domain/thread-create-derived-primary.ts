@@ -29,7 +29,6 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     ref: null,
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
-    noticedSkillSlugs: [],
     systemPrompt: input.systemPrompt ?? null,
     workingState: null,
     agentDefinitionRevisionId: null,
