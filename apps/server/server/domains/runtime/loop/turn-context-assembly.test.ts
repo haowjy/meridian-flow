@@ -1,6 +1,5 @@
-/** First bake persists the available union; later account adds notice once without rebake. */
+/** First bake persists the available union; later account adds do not rebake or notice. */
 import { describe, expect, it } from "vitest";
-import type { NoticeInput } from "../../notices/index.js";
 import {
   createInMemoryAccountSkillInstallStore,
   createInMemoryAgentRevisionStore,
@@ -77,7 +76,6 @@ async function writerChat() {
     defaultModel: "fixture-model",
   });
   const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
-  const notices: NoticeInput[] = [];
   async function createBoundThread() {
     const thread = await repos.threads.create({
       userId: "user-1",
@@ -99,22 +97,15 @@ async function writerChat() {
       toolRegistry: createToolRegistry(),
       persistBake: true,
       bakeComposedSystemPrompt: repos.threads.bakeComposedSystemPrompt.bind(repos.threads),
-      notices: {
-        async record(input) {
-          notices.push(input);
-        },
-      },
-      markSkillSlugsNoticed: repos.threads.markSkillSlugsNoticed.bind(repos.threads),
       workContext: emptyWorkContext(project.id),
     });
   }
-  return { createBoundThread, assemble, accountSkillInstalls, notices, repos };
+  return { createBoundThread, assemble, accountSkillInstalls, repos };
 }
 
 describe("assembleNextTurnContext skill freeze", () => {
-  it("bakes Writer available skills, then notices an account add once without rebake", async () => {
-    const { createBoundThread, assemble, accountSkillInstalls, notices, repos } =
-      await writerChat();
+  it("bakes Writer available skills, then leaves an account add frozen without a notice", async () => {
+    const { createBoundThread, assemble, accountSkillInstalls } = await writerChat();
     const thread = await createBoundThread();
 
     const first = await assemble(thread.id);
@@ -125,12 +116,10 @@ describe("assembleNextTurnContext skill freeze", () => {
     expect(first.systemPrompt).toContain(
       "writing-principles\nReader reward and LLM fiction failure modes.",
     );
-    expect(notices).toEqual([]);
 
     const second = await assemble(thread.id);
     expect(second.systemPrompt).toBe(first.systemPrompt);
     expect(second.thread.bakedSkillSlugs).toEqual(first.thread.bakedSkillSlugs);
-    expect(notices).toEqual([]);
 
     await accountSkillInstalls.insert({
       ownerUserId: "user-1",
@@ -146,19 +135,10 @@ describe("assembleNextTurnContext skill freeze", () => {
       "creative-writing-modes",
       "writing-principles",
     ]);
-    expect(notices).toHaveLength(1);
-    expect(notices[0]).toMatchObject({
-      kind: "skill_available",
-      data: { slug: "story-review", name: "story-review" },
-    });
-    expect(notices[0]?.message).toContain("is available to be used");
-    expect(notices[0]?.message).toContain("Review drafts after prose exists.");
 
-    const afterNotice = await assemble(thread.id);
-    expect(afterNotice.systemPrompt).toBe(first.systemPrompt);
-    expect(afterNotice.thread.bakedSkillSlugs).toEqual(first.thread.bakedSkillSlugs);
-    expect(notices).toHaveLength(1);
-    expect((await repos.threads.findById(thread.id))?.noticedSkillSlugs).toEqual(["story-review"]);
+    const afterStillFrozen = await assemble(thread.id);
+    expect(afterStillFrozen.systemPrompt).toBe(first.systemPrompt);
+    expect(afterStillFrozen.thread.bakedSkillSlugs).toEqual(first.thread.bakedSkillSlugs);
 
     const nextChat = await createBoundThread();
     const nextFirst = await assemble(nextChat.id);
@@ -168,6 +148,5 @@ describe("assembleNextTurnContext skill freeze", () => {
       "story-review",
     ]);
     expect(nextFirst.systemPrompt).toContain("story-review\nReview drafts after prose exists.");
-    expect(notices).toHaveLength(1);
   });
 });

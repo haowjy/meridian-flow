@@ -144,11 +144,6 @@ export interface ThreadRepository {
    * null. Returns the authoritative thread row (winner's bake on CAS loss).
    */
   bakeComposedSystemPrompt(id: ThreadId, input: BakeComposedSystemPromptInput): Promise<Thread>;
-  /**
-   * Unions `slugs` into `noticedSkillSlugs`. Returns only the slugs that were
-   * not already recorded, so skill-available notices fire once.
-   */
-  markSkillSlugsNoticed(id: ThreadId, slugs: string[]): Promise<string[]>;
   /** Recomputes total cost from all model responses belonging to this thread's turns. */
   recomputeCostFromModelResponses(id: ThreadId): Promise<void>;
   updateCost(id: ThreadId, deltaCostUsd: string, turnCountIncrement?: number): Promise<void>;

@@ -51,10 +51,6 @@ export const threads = pgTable(
     workingState: jsonb("working_state"),
     composedSystemPrompt: text("composed_system_prompt"),
     bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[] | null>(),
-    noticedSkillSlugs: jsonb("noticed_skill_slugs")
-      .$type<string[]>()
-      .notNull()
-      .default(sql`'[]'::jsonb`),
     systemPromptHash: text("system_prompt_hash"),
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
     rootThreadId: uuid("root_thread_id").$type<ThreadId>(),

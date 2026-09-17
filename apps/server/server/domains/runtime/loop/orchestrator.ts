@@ -860,10 +860,6 @@ async function buildGenerateRequest(input: {
     bakeComposedSystemPrompt: input.deps.repos.threads.bakeComposedSystemPrompt.bind(
       input.deps.repos.threads,
     ),
-    notices: input.deps.notices,
-    markSkillSlugsNoticed: input.deps.repos.threads.markSkillSlugsNoticed.bind(
-      input.deps.repos.threads,
-    ),
     workContext: input.deps.workContext,
   });
 
