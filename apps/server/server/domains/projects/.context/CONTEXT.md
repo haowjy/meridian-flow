@@ -58,8 +58,9 @@ missing, foreign-owner and deleted handles resolve unavailable.
   advisory lock and never enter collab.
 - Readiness becomes true only after document authority and manifest membership
   are durable, rather than merely after row existence.
-- Omitted and explicit-null root-create `workId` both mean no primary Work.
-  Human Chat rebind and model `work.switch` remain explicit, separate commands.
+- Omitted and explicit-null root-create `workId` both bind the project's locked
+  No Work as primary. Human Chat rebind and model `work.switch` remain explicit,
+  separate commands.
 - Work collections nest under `/api/projects/:projectId/works`; Work items and
   their thread lists are flat under `/api/works/:workId`. Collection responses
   contain only the requested catalog Works and never select a Work implicitly.

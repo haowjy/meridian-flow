@@ -348,7 +348,7 @@ export type CreateThreadRequest = {
   projectId: string;
   title?: string;
   agentSelection: AgentSelection;
-  /** Omission and explicit null both create an executable no-Work root thread. */
+  /** Omission and explicit null both bind the project's locked No Work as primary. */
   workId?: WorkId | null;
 };
 

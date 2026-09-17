@@ -32,10 +32,11 @@ lib/ plugins/ routes/ shared/
 
 ### projects
 
-Owns personal-project bootstrap, explicit Work persistence, and no-Work thread
-creation. Bootstrap inserts the locked No Work row and creates no thread. WorkOS AuthKit credentials are resolved at the HTTP/WS edge and mapped to the
-internal user id
-used by project/thread ownership.
+Owns personal-project bootstrap and explicit Work persistence. Bootstrap
+inserts the locked No Work row and creates no thread. Omitted or null
+`workId` at root thread create binds that row. WorkOS AuthKit credentials
+are resolved at the HTTP/WS edge and mapped to the internal user id used
+by project/thread ownership.
 
 ### threads
 
