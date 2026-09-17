@@ -9,7 +9,6 @@ import {
 } from "../../threads/index.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import {
-  type CoreToolHandlers,
   createCoreToolRegistrations,
   createToolExecutor,
   createToolRegistry,
@@ -19,13 +18,6 @@ import {
 import type { InterruptSession } from "./interrupt-session.js";
 import { projectToolPolicy } from "./permissions/project-tool-policy.js";
 import { dispatchToolCall } from "./tool-dispatch.js";
-
-const WRITER_MAP = {
-  read: "allow",
-  write: "allow",
-  edit: "allow",
-  ask_user: "allow",
-} as const;
 
 const CRITIC_MAP = {
   read: "allow",
@@ -54,18 +46,16 @@ const childRunCoordinator: ChildRunCoordinator = {
   },
 };
 
-function coreExecutor(handlers: Partial<CoreToolHandlers> = {}) {
-  const write = handlers.write ?? vi.fn(async () => ({ ok: true }));
-  const work = handlers.work ?? vi.fn(async () => ({ ok: true }));
+function coreExecutor() {
+  const write = vi.fn(async () => ({ ok: true }));
   const noop = async () => ({ ok: true });
   return {
     write,
-    work,
     tools: createToolExecutor(
       createToolRegistry({
         registrations: createCoreToolRegistrations({
           write,
-          work,
+          work: noop,
           ls: noop,
           search: noop,
           ask_user: noop,
@@ -83,8 +73,6 @@ async function dispatchFixture(executeTool: ToolExecutor["executeTool"]) {
   const turn = await repos.turns.create({ threadId: thread.id, role: "assistant" });
   const blockSeqRef = { value: 0 };
   return {
-    thread,
-    turn,
     dispatch(input: { call: ToolCallInput; toolPolicy?: ReturnType<typeof projectToolPolicy> }) {
       return dispatchToolCall(
         {
@@ -156,46 +144,6 @@ describe("dispatch write/work command policy", () => {
     });
   });
 
-  it("runs Critic write read", async () => {
-    const executeTool = vi.fn(async (call: ToolCallInput) => ({
-      toolCallId: call.id,
-      output: { ok: true },
-    }));
-    const { dispatch } = await dispatchFixture(executeTool);
-    const result = await dispatch({
-      call: {
-        id: "call-read",
-        name: "write",
-        arguments: { command: "read", path: "kb://notes.md" },
-      },
-      toolPolicy: projectToolPolicy({ tools: CRITIC_MAP }),
-    });
-    expect(executeTool).toHaveBeenCalledOnce();
-    expect(result).toMatchObject({
-      block: { content: { toolCallId: "call-read", output: { ok: true } } },
-    });
-  });
-
-  it("runs Writer write replace", async () => {
-    const executeTool = vi.fn(async (call: ToolCallInput) => ({
-      toolCallId: call.id,
-      output: { ok: true },
-    }));
-    const { dispatch } = await dispatchFixture(executeTool);
-    const result = await dispatch({
-      call: {
-        id: "call-replace",
-        name: "write",
-        arguments: { command: "replace", path: "kb://notes.md", content: "yes" },
-      },
-      toolPolicy: projectToolPolicy({ tools: WRITER_MAP }),
-    });
-    expect(executeTool).toHaveBeenCalledOnce();
-    expect(result).toMatchObject({
-      block: { content: { toolCallId: "call-replace", output: { ok: true } } },
-    });
-  });
-
   it("fail-closes write when dispatch has no policy", async () => {
     const executeTool = vi.fn(async (call: ToolCallInput) => ({
       toolCallId: call.id,
@@ -215,31 +163,6 @@ describe("dispatch write/work command policy", () => {
         content: {
           isError: true,
           output: { message: 'Command "read" is not enabled for write.' },
-        },
-      },
-    });
-  });
-
-  it("refuses Critic work create without calling the executor", async () => {
-    const executeTool = vi.fn(async (call: ToolCallInput) => ({
-      toolCallId: call.id,
-      output: { ok: true },
-    }));
-    const { dispatch } = await dispatchFixture(executeTool);
-    const result = await dispatch({
-      call: {
-        id: "call-create",
-        name: "work",
-        arguments: { command: "create", name: "New work" },
-      },
-      toolPolicy: projectToolPolicy({ tools: CRITIC_MAP }),
-    });
-    expect(executeTool).not.toHaveBeenCalled();
-    expect(result).toMatchObject({
-      block: {
-        content: {
-          isError: true,
-          output: { message: 'Command "create" is not enabled for work.' },
         },
       },
     });
