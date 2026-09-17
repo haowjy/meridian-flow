@@ -22,7 +22,13 @@ import { useIsProjectPendingCreation } from "@/client/stores";
 import { projectQueryKeys } from "./project-query-keys";
 import { threadQueryKeys } from "./thread-query-keys";
 import { convergeWorkProjection } from "./work-projection-cache";
-import { acquireWorksSnapshot, repairWorksSnapshot } from "./works-projection-acquisition";
+import {
+  acquireWorksSnapshot,
+  repairWorksSnapshot,
+  workFromSnapshot,
+} from "./works-projection-acquisition";
+
+export { workFromSnapshot };
 
 export function useWorks(projectId: string, options?: { enabled?: boolean }) {
   const enabled = (options?.enabled ?? true) && !useIsProjectPendingCreation(projectId);
@@ -35,6 +41,7 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
   });
   const works =
     list.data?.works.filter((work) => work.deletedAt === null) ?? (list.isError ? [] : null);
+  const noWork = list.data?.noWork ?? null;
   const refetch = useCallback(() => void list.refetch(), [list.refetch]);
   const status = !enabled
     ? "disabled"
@@ -47,6 +54,7 @@ export function useWorks(projectId: string, options?: { enabled?: boolean }) {
           : "ready";
   return {
     works,
+    noWork,
     isError: list.isError,
     isFetching: list.isFetching,
     status: status as "disabled" | "error" | "loading" | "empty" | "ready",

@@ -1,8 +1,18 @@
 /** Sole acquisition and QueryCache installation owner for canonical Works snapshots. */
-import type { WorksSnapshot } from "@meridian/contracts/works";
+import type { Work, WorksSnapshot } from "@meridian/contracts/works";
 import type { QueryClient } from "@tanstack/react-query";
 import { listProjectWorks } from "@/client/api/projects-api";
 import { projectQueryKeys } from "./project-query-keys";
+
+/** Prospective `workId === null` and `workId === noWork.id` both mean No Work. */
+export function workFromSnapshot(
+  snapshot: Pick<WorksSnapshot, "works" | "noWork"> | null | undefined,
+  workId: string | null,
+): Work | null {
+  if (!snapshot) return null;
+  if (workId === null || workId === snapshot.noWork.id) return snapshot.noWork;
+  return snapshot.works.find((work) => work.id === workId && work.deletedAt === null) ?? null;
+}
 
 type RequestWorksSnapshot = () => Promise<WorksSnapshot>;
 type ProjectState = {

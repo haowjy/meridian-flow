@@ -173,6 +173,7 @@ export function WorkPickerPanel({
       <div className={`${dropdownResultsVariants({ kind: "picker" })} space-y-2`}>
         {view.status === "ready" && onChooseNone ? (
           <Button
+            ref={operation.currentWorkId === "" ? focusRefs?.selected : undefined}
             type="button"
             variant="ghost"
             className={cn(dropdownRowVariants(), "w-full justify-start")}
@@ -228,7 +229,7 @@ export function WorkPickerPanel({
             archived
           />
         ) : null}
-        {view.status === "ready" && !view.ordered.length ? (
+        {view.status === "ready" && view.query.trim() !== "" && !view.ordered.length ? (
           <p className="px-2 py-4 text-center text-sm text-muted-foreground">
             <Trans>No Work matches your search.</Trans>
           </p>

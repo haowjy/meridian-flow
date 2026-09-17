@@ -147,7 +147,8 @@ function useProspectiveWorkControl({
         ? { status: "error" as const, retry: onRetryWorks }
         : { status: "ready" as const, works, refreshing: false };
   const view = deriveWorkPickerViewModel(catalog, query, disabled);
-  const unavailableLabel = selectedWorkId ? t`Unavailable Work` : t`No Work`;
+  const noneSelected = !selectedWorkId || Boolean(work?.isNoWork);
+  const unavailableLabel = selectedWorkId && !work?.isNoWork ? t`Unavailable Work` : t`No Work`;
   const label = work
     ? t`Choose Work for new chat, currently ${work.name}`
     : t`Choose Work for new chat, currently ${unavailableLabel}`;
@@ -176,7 +177,7 @@ function useProspectiveWorkControl({
           view.status === "ready"
             ? [
                 { key: "search", ref: searchRef },
-                { key: `selected:${selectedWorkId ?? "none"}`, ref: selectedRef },
+                { key: `selected:${noneSelected ? "none" : selectedWorkId}`, ref: selectedRef },
                 { key: `first:${view.enabledIds[0] ?? "none"}`, ref: firstRef },
               ]
             : view.status === "error"
@@ -189,7 +190,7 @@ function useProspectiveWorkControl({
           purposeLabel={t`Choose Work for new chat`}
           view={view}
           operation={{
-            currentWorkId: selectedWorkId ?? "",
+            currentWorkId: noneSelected ? "" : selectedWorkId,
             targetId: null,
             pending: false,
             failure: null,
