@@ -4,33 +4,69 @@ import { assistant, system, user } from "../gateway/helpers/messages.js";
 import { attachSkillBodiesToLatestUserMessage } from "./context-builder.js";
 
 describe("attachSkillBodiesToLatestUserMessage", () => {
-  it("appends skill bodies to the latest user message without changing earlier ones", () => {
+  it("appends invoked slug, description, and body as extra user text", () => {
     const later = assistant([{ type: "text", text: "already working" }]);
     const messages = [system("frozen prompt"), user("draft the scene"), later];
     const attached = attachSkillBodiesToLatestUserMessage(messages, [
-      { slug: "creative-writing-modes", body: "modes body." },
+      {
+        slug: "creative-writing-modes",
+        description: "Creative-writing addendum to /llm-writing.",
+        body: "modes body.",
+      },
     ]);
     expect(attached[0]).toEqual(messages[0]);
     expect(attached[1]?.content).toEqual([
       { type: "text", text: "draft the scene" },
-      { type: "text", text: "Loaded skill creative-writing-modes:\nmodes body." },
+      {
+        type: "text",
+        text: [
+          "skill invoked: creative-writing-modes",
+          "",
+          "description: Creative-writing addendum to /llm-writing.",
+          "",
+          "modes body.",
+        ].join("\n"),
+      },
     ]);
     expect(attached).toHaveLength(3);
     expect(attached[2]).toEqual(later);
   });
 
-  it("joins multiple skill bodies onto the same user message", () => {
+  it("joins multiple invoked skills onto the same user message", () => {
     const messages = [user("use both")];
     const attached = attachSkillBodiesToLatestUserMessage(messages, [
-      { slug: "creative-writing-modes", body: "modes body." },
-      { slug: "writing-principles", body: "principles body." },
+      { slug: "creative-writing-modes", description: "modes.", body: "modes body." },
+      { slug: "writing-principles", description: "principles.", body: "principles body." },
     ]);
     expect(attached[0]?.content).toEqual([
       { type: "text", text: "use both" },
       {
         type: "text",
-        text: "Loaded skill creative-writing-modes:\nmodes body.\n\nLoaded skill writing-principles:\nprinciples body.",
+        text: [
+          "skill invoked: creative-writing-modes",
+          "",
+          "description: modes.",
+          "",
+          "modes body.",
+          "",
+          "skill invoked: writing-principles",
+          "",
+          "description: principles.",
+          "",
+          "principles body.",
+        ].join("\n"),
       },
+    ]);
+  });
+
+  it("omits an empty description line", () => {
+    const attached = attachSkillBodiesToLatestUserMessage(
+      [user("/writing-principles")],
+      [{ slug: "writing-principles", description: "  ", body: "body" }],
+    );
+    expect(attached[0]?.content).toEqual([
+      { type: "text", text: "/writing-principles" },
+      { type: "text", text: "skill invoked: writing-principles\n\nbody" },
     ]);
   });
 
@@ -43,7 +79,7 @@ describe("attachSkillBodiesToLatestUserMessage", () => {
     expect(() =>
       attachSkillBodiesToLatestUserMessage(
         [system("frozen prompt")],
-        [{ slug: "writing-principles", body: "body" }],
+        [{ slug: "writing-principles", description: "d", body: "body" }],
       ),
     ).toThrow("Cannot attach skill bodies without a writer message");
   });

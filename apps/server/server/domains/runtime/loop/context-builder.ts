@@ -40,11 +40,9 @@
  * - **User turns**: all blocks of allowed types (text, image, file)
  *   are merged into a single user message's content[] array.
  *
- * - **Activated skill bodies**: slash-activated SKILL.md text is appended as
- *   extra request-only text on the current user message. A fabricated
- *   `skill` tool_use round is not used: DeepSeek rejects client-minted tool
- *   calls (`invalid_request`). It is not persisted, not frozen prompt bytes,
- *   and not a pending notice.
+ * - **Activated skill bodies**: slash-activated SKILL.md is appended as extra
+ *   request-only text on the current user message (slug, description, body).
+ *   Not a fabricated tool round, not persisted, not frozen prompt bytes.
  *
  * - **System turns**: text blocks from system-role turns are concatenated
  *   into a single system message — they appear as multi-line system
@@ -303,14 +301,24 @@ function blockToContentPart(block: Block): ContentPart | null {
 
 export function attachSkillBodiesToLatestUserMessage(
   messages: readonly Message[],
-  skills: readonly { slug: string; body: string }[],
+  skills: readonly { slug: string; description: string; body: string }[],
 ): Message[] {
   if (skills.length === 0) return [...messages];
   return appendTextToLatestUserMessage(
     messages,
-    skills.map((skill) => `Loaded skill ${skill.slug}:\n${skill.body}`).join("\n\n"),
+    skills.map(formatInvokedSkill).join("\n\n"),
     "skill bodies",
   );
+}
+
+function formatInvokedSkill(skill: { slug: string; description: string; body: string }): string {
+  const description = skill.description.replace(/\s+/g, " ").trim();
+  return [
+    `skill invoked: ${skill.slug}`,
+    ...(description ? ["", `description: ${description}`] : []),
+    "",
+    skill.body,
+  ].join("\n");
 }
 
 export function attachNoticesToLatestUserMessage(
