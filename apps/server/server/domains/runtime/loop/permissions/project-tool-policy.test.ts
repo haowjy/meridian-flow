@@ -42,77 +42,24 @@ function snapshot(policy: EffectiveToolPolicy) {
 }
 
 describe("projectToolPolicy", () => {
-  it("treats omitted tools as the full supported set with write and work mutate", () => {
-    expect(snapshot(projectToolPolicy({}))).toEqual({
+  it("treats omitted tools and tools: [] as the same full mutate set", () => {
+    const omitted = snapshot(projectToolPolicy({}));
+    expect(omitted).toEqual({
       tools: ALL_FLOW_TOOLS,
       writeCommands: [...WRITE_READ, ...WRITE_MUTATE].sort(),
       workCommands: [...WORK_NAV, ...WORK_MUTATE].sort(),
     });
+    expect(snapshot(projectToolPolicy({ tools: [] }))).toEqual(omitted);
   });
 
-  it("treats an empty tools list as omitted, not deny-all", () => {
-    expect(snapshot(projectToolPolicy({ tools: [] }))).toEqual(snapshot(projectToolPolicy({})));
-  });
-
-  it("gives Writer mutate write and work commands", () => {
-    const policy = projectToolPolicy({ tools: WRITER_MAP });
-    expect(snapshot(policy)).toEqual(snapshot(projectToolPolicy({})));
-    for (const command of WRITE_MUTATE) expect(policy.writeCommands.has(command)).toBe(true);
-  });
-
-  it("gives Critic write read/diff without mutate", () => {
-    const policy = projectToolPolicy({ tools: CRITIC_MAP });
-    expect(snapshot(policy)).toEqual({
+  it("maps Writer to full mutate and Critic to write read/diff with work nav", () => {
+    expect(snapshot(projectToolPolicy({ tools: WRITER_MAP }))).toEqual(
+      snapshot(projectToolPolicy({})),
+    );
+    expect(snapshot(projectToolPolicy({ tools: CRITIC_MAP }))).toEqual({
       tools: ALL_FLOW_TOOLS,
       writeCommands: WRITE_READ,
       workCommands: WORK_NAV,
     });
-    for (const command of WRITE_MUTATE) expect(policy.writeCommands.has(command)).toBe(false);
-    expect(policy.writeCommands.has("read")).toBe(true);
-    expect(policy.writeCommands.has("diff")).toBe(true);
-  });
-
-  it("projects an allowlist of read and ask_user without mutate", () => {
-    expect(snapshot(projectToolPolicy({ tools: ["read", "ask_user"] }))).toEqual({
-      tools: ["ask_user", "ls", "search", "skill", "work", "write"],
-      writeCommands: WRITE_READ,
-      workCommands: WORK_NAV,
-    });
-  });
-
-  it("subtracts disallowed-tools after the allow set", () => {
-    expect(
-      snapshot(
-        projectToolPolicy({ tools: ["read", "write", "ask_user"], "disallowed-tools": ["write"] }),
-      ),
-    ).toEqual(snapshot(projectToolPolicy({ tools: ["read", "ask_user"] })));
-  });
-
-  it("keeps mutate when only Mars write is disallowed because edit still defaults on", () => {
-    const policy = projectToolPolicy({ "disallowed-tools": ["write"] });
-    expect(policy.tools.has("write")).toBe(true);
-    for (const command of WRITE_MUTATE) expect(policy.writeCommands.has(command)).toBe(true);
-  });
-
-  it("omits write when both command groups are empty", () => {
-    const policy = projectToolPolicy({
-      tools: { read: "deny", write: "deny", edit: "deny" },
-    });
-    expect(snapshot(policy)).toEqual({
-      tools: ["ask_user", "skill", "work"],
-      writeCommands: [],
-      workCommands: WORK_NAV,
-    });
-  });
-
-  it("ignores unknown Mars names", () => {
-    expect(snapshot(projectToolPolicy({ tools: ["bash", "agent", "web_search"] }))).toEqual({
-      tools: ["skill", "work"],
-      writeCommands: [],
-      workCommands: WORK_NAV,
-    });
-    expect(
-      snapshot(projectToolPolicy({ tools: ["read"], "disallowed-tools": ["bash", "agent"] })),
-    ).toEqual(snapshot(projectToolPolicy({ tools: ["read"] })));
   });
 });

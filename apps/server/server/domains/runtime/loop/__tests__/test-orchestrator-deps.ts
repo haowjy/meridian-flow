@@ -16,7 +16,6 @@ import type { Notice, NoticePort } from "../../../notices/index.js";
 import { createInMemoryEventSink } from "../../../observability/index.js";
 import {
   type AgentRevisionStore,
-  type CompiledAgentDefinition,
   createInMemoryAccountSkillInstallStore,
 } from "../../../packages/index.js";
 import { createInMemoryProjectPreferencesRepository } from "../../../preferences/index.js";
@@ -64,7 +63,6 @@ export function createTestAgentBinding(
   model: string,
   systemPrompt = "",
   boundThreads: () => readonly string[] = () => [],
-  metadata: CompiledAgentDefinition["metadata"] = {},
 ): Pick<AgentRevisionStore, "readThreadBinding" | "listInstallations" | "readSource"> {
   return {
     async readThreadBinding(threadId) {
@@ -78,7 +76,7 @@ export function createTestAgentBinding(
         definition: {
           schemaVersion: 1,
           systemPrompt,
-          metadata: { model, ...metadata },
+          metadata: { model },
         },
       };
     },
