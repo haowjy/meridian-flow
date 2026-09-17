@@ -9,6 +9,7 @@
 
 ### Added
 
+- Seed Writer with full write/edit allow and promote Critic to a pickable primary that may read but not mutate.
 - Advertise and dispatch Agent turns from the bound revision's projected tool policy: filtered tools, narrowed write/work command schemas, a per-turn name gate, and a command gate that refuses invented mutate commands.
 - Project compiled Agent Mars `tools` / `disallowed-tools` onto Flow write/work command policy.
 - Chat composer `/` lists user-invocable skills from installed packages (system and owner) as `/<slug>` plus account installs. Picking one leaves a `/slug` atom in the draft; Send reads those slugs. Manuscript `/` is unchanged.
