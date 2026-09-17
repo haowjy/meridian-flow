@@ -2,7 +2,6 @@
 
 import { meridianErrorFromTool } from "@meridian/contracts/interrupt";
 import type { Tool } from "../../gateway/index.js";
-import { computeEffectivePermissions, createPermissionGate } from "./gate.js";
 import type { EffectiveToolPolicy } from "./project-tool-policy.js";
 import type { PermissionGate } from "./types.js";
 
@@ -15,11 +14,13 @@ export function permissionGateFromToolPolicy(
   policy: EffectiveToolPolicy,
   extraAllowed: Iterable<string> = [],
 ): PermissionGate {
-  return createPermissionGate(
-    computeEffectivePermissions({
-      tools: { allow: [...policy.tools, ...extraAllowed] },
-    }),
-  );
+  const allowed = new Set([...policy.tools, ...extraAllowed]);
+  return {
+    check(toolName) {
+      if (allowed.has(toolName)) return { allowed: true };
+      return { allowed: false, reason: `Tool "${toolName}" is not enabled.` };
+    },
+  };
 }
 
 export function advertiseTools(baseTools: Tool[] | undefined, policy: EffectiveToolPolicy): Tool[] {
