@@ -26,7 +26,7 @@ export function workReceiptLine(receipt: WorkReceipt): string {
       return i18n._("workReceipt.deleted", values, { message: "Deleted Work {name}" });
     }
     case "switch": {
-      const values = { name: receipt.after.kind === "work" ? receipt.after.name : "No Work" };
+      const values = { name: receipt.after.name };
       const changed = JSON.stringify(receipt.before) !== JSON.stringify(receipt.after);
       return changed
         ? i18n._("workReceipt.switched", values, {

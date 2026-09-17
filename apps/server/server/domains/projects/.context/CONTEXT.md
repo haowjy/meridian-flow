@@ -7,7 +7,7 @@ This domain is not the full project CRUD surface; that lives in
 ## What it owns
 
 - **Default bootstrap** — `ProjectRepository.ensureDefaultBootstrap(userId)`
-  idempotently creates or reuses the user's personal project, manuscript context source, `chapter-1.md` document, and project-owned unassigned Scratch and Uploads sources. Bootstrap creates no Work or thread.
+  idempotently creates or reuses the user's personal project, manuscript context source, `chapter-1.md` document, the locked No Work row, and that Work's Scratch and Uploads sources. Bootstrap creates no thread.
 - **Bootstrap URI** — `DEFAULT_BOOTSTRAP_URI` is `manuscript://chapter-1.md`.
 - **Work domain** — `WorkRepository` owns explicit Work metadata/lifecycle persistence, and `listWorkCatalog` owns the owner-gated catalog projection across Work persistence and collab pending-draft counts.
 
@@ -38,8 +38,9 @@ missing, foreign-owner and deleted handles resolve unavailable.
   so concurrent first-load requests converge.
 - The personal project is selected by `projects.userId`, `isPersonal = true`,
   and `deletedAt IS NULL`.
-- Bootstrap creates no Agent, Work, thread, or membership. System Agent provisioning
-  happens at startup; root thread creation owns exact catalog selection.
+- Bootstrap creates no Agent, thread, or membership. It does insert the locked No Work
+  row and that Work's Scratch/Uploads sources. System Agent provisioning happens at
+  startup; root thread creation owns exact catalog selection.
 - Re-running bootstrap must return the same logical bundle instead of creating a
   second personal project, manuscript source, or chapter document.
 - WorkOS `external_id` is the sole automatic user identity key. Email collisions
@@ -48,8 +49,8 @@ missing, foreign-owner and deleted handles resolve unavailable.
   additional email canonicalization.
 - Chapter seeding is initialize-only and is decided from canonical journal state,
   never from `markdown_projection`. Any admission or checkpoint means initialized.
-- The project, chapter row, initialize-only canonical seed, live manifest
-  membership, unassigned Scratch/Uploads sources, and readiness flag commit in one ambient
+- The project, locked No Work, chapter row, initialize-only canonical seed, live manifest
+  membership, No Work Scratch/Uploads sources, and readiness flag commit in one ambient
   transaction. Interruption leaves no partial bootstrap.
 - Auth provisioning performs one idempotent bootstrap repair check per user and
   repository instance so older ready projects with a ghost chapter gain manifest
@@ -57,8 +58,9 @@ missing, foreign-owner and deleted handles resolve unavailable.
   advisory lock and never enter collab.
 - Readiness becomes true only after document authority and manifest membership
   are durable, rather than merely after row existence.
-- Omitted and explicit-null root-create `workId` both mean no primary Work.
-  Human Chat rebind and model `work.switch` remain explicit, separate commands.
+- Omitted and explicit-null root-create `workId` both bind the project's locked
+  No Work as primary. Human Chat rebind and model `work.switch` remain explicit,
+  separate commands.
 - Work collections nest under `/api/projects/:projectId/works`; Work items and
   their thread lists are flat under `/api/works/:workId`. Collection responses
   contain only the requested catalog Works and never select a Work implicitly.

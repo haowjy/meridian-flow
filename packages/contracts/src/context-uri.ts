@@ -86,7 +86,7 @@ export function canonicalContextUri(
   path: string,
   authority: CanonicalContextAuthority = { kind: "contextual" },
 ): string {
-  if (authority.kind !== "contextual" && isProjectScopedScheme(scheme)) {
+  if (isProjectScopedScheme(scheme) && !("kind" in authority && authority.kind === "contextual")) {
     throw new RangeError(`Scheme "${scheme}" does not support authority qualifiers`);
   }
   const segments = path.split("/").filter((segment) => segment !== "" && segment !== ".");
@@ -97,13 +97,17 @@ export function canonicalContextUri(
     throw new RangeError('Path segments beginning with "@" are reserved');
   }
   const normalizedPath = segments.join("/");
-  const qualifier =
-    authority.kind === "work" ? `@${authority.workSlug}` : authority.kind === "none" ? "@" : null;
+  const qualifier = authorityQualifier(authority);
   if (qualifier)
     return normalizedPath
       ? `${scheme}://${qualifier}/${normalizedPath}`
       : `${scheme}://${qualifier}/`;
   return normalizedPath ? `${scheme}://${normalizedPath}` : `${scheme}://`;
+}
+
+function authorityQualifier(authority: CanonicalContextAuthority): string | null {
+  if ("workSlug" in authority) return authority.workSlug ? `@${authority.workSlug}` : "@";
+  return authority.kind === "none" ? "@" : null;
 }
 
 /** Strict serializer, lenient parser; bare paths resolve to `manuscript://`. */

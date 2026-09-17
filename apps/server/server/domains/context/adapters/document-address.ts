@@ -44,12 +44,12 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
             and(
               eq(contextSources.slug, input.scheme),
               isNull(contextSources.deletedAt),
-              workScoped && input.workId !== null
+              workScoped
                 ? and(
-                    eq(works.id, input.workId),
                     eq(works.projectId, input.projectId),
                     isNull(works.deletedAt),
                     eq(works.status, "active"),
+                    input.workId !== null ? eq(works.id, input.workId) : eq(works.isNoWork, true),
                   )
                 : and(
                     isNull(contextSources.workId),

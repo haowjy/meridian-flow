@@ -62,7 +62,7 @@ export interface ChildRunCoordinatorDeps {
     threadId: ThreadId;
     projectId: string;
     parentThreadId?: string | null;
-  }): Promise<string | null>;
+  }): Promise<string>;
   eventWriter: EventJournalWriter;
   agentRevisions: Pick<
     AgentRevisionStore,

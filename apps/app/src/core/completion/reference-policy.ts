@@ -22,8 +22,7 @@ export const MAX_REFERENCE_QUERY_LENGTH = 80;
 export type StableReferenceAuthority =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "user"; userId: UserId }
-  | { kind: "none"; projectId: ProjectId }
-  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug };
+  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null };
 
 export type AuthoritativeReference = {
   documentId: DocumentId;
@@ -58,7 +57,7 @@ type NavigationRowBase = {
 
 export type ReferenceRow =
   | (NavigationRowBase & { kind: "source" })
-  | (NavigationRowBase & { kind: "authority"; authorityKind: "work" | "none" })
+  | (NavigationRowBase & { kind: "authority"; authorityKind: "work" })
   | (NavigationRowBase & { kind: "folder" })
   | {
       kind: "file";
@@ -214,11 +213,9 @@ function stableAuthority(
       return { kind: "project", projectId: scope.projectId };
     case "user":
       return { kind: "user", userId: scope.userId };
-    case "none":
-      return { kind: "none", projectId: scope.projectId };
     case "work": {
       const entry = authorities.get(`work:${scope.workId}`);
-      if (entry?.authority.kind !== "work") return null;
+      if (!entry) return null;
       return {
         kind: "work",
         projectId: scope.projectId,
@@ -236,13 +233,13 @@ export function referenceUriForAuthority(
   const parsed = parseContextUri(uri);
   if (!parsed.ok) return null;
   if (authority.kind === "work") {
+    if (authority.workSlug === null) {
+      return parsed.value.authority.kind === "none" ? parsed.value.normalized : null;
+    }
     return parsed.value.authority.kind === "work" &&
       parsed.value.authority.workSlug === authority.workSlug
       ? parsed.value.normalized
       : null;
-  }
-  if (authority.kind === "none") {
-    return parsed.value.authority.kind === "none" ? parsed.value.normalized : null;
   }
   return (authority.kind === "project" || authority.kind === "user") &&
     parsed.value.authority.kind === "contextual" &&
@@ -253,7 +250,7 @@ export function referenceUriForAuthority(
 }
 
 function authorityKey(authority: CatalogAuthorityEntry["authority"]): string {
-  return authority.kind === "none" ? "none" : `work:${authority.workId}`;
+  return `work:${authority.workId}`;
 }
 
 function canonicalRowIdentity(row: ReferenceRow): string {

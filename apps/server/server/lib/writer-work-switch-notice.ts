@@ -7,7 +7,7 @@ export async function recordWriterWorkSwitchNotice(
   transition: RebindThreadWorkResult,
 ): Promise<void> {
   if (!transition.changed) return;
-  if (transition.before.kind === "none" || transition.after.kind === "none") return;
+  if (transition.before.slug === null || transition.after.slug === null) return;
   await notices.record(
     createWriterWorkSwitchedNotice({
       threadId: transition.threadId,

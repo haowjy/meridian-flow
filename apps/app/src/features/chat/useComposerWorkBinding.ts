@@ -23,6 +23,7 @@ export type ComposerWorkBindingController = {
   busy: boolean;
   changeQuery(query: string): void;
   choose(work: Work): Promise<"close" | "stay">;
+  chooseNone(): Promise<"close" | "stay">;
   retryCatalog(): void;
 };
 
@@ -64,7 +65,7 @@ export function useComposerWorkBinding({
   }, [announce, announceError, state.effects, worksQuery.refetch]);
 
   const run = useCallback(
-    async (target: Work) => {
+    async (target: Work, workId: string | null) => {
       if (mutation.isPending || target.id === state.observed.id) {
         return target.id === state.observed.id ? ("close" as const) : ("stay" as const);
       }
@@ -76,7 +77,7 @@ export function useComposerWorkBinding({
       dispatch({ type: "change.started", request, message: t`Changing work to ${target.name}` });
       try {
         const outcome = await mutation.mutateAsync({
-          targetWorkId: target.id,
+          workId,
           previousWorkId: state.observed.id,
         });
         if (outcome.kind === "superseded") {
@@ -146,12 +147,10 @@ export function useComposerWorkBinding({
       ? { status: "loading" }
       : worksQuery.status === "error"
         ? { status: "error", retry: worksQuery.refetch }
-        : worksQuery.status === "empty"
-          ? { status: "empty" }
-          : { status: "ready", works: allWorks, refreshing: worksQuery.isFetching };
+        : { status: "ready", works: allWorks, refreshing: worksQuery.isFetching };
   const busy = state.view.kind === "changing";
   const operation: WorkPickerOperation = {
-    currentWorkId: state.observed.id,
+    currentWorkId: state.observed.id === worksQuery.noWork?.id ? "" : state.observed.id,
     targetId:
       state.view.kind === "changing"
         ? state.view.request.target.id
@@ -167,7 +166,11 @@ export function useComposerWorkBinding({
     operation,
     busy,
     changeQuery: (query) => dispatch({ type: "query.changed", query }),
-    choose: run,
+    choose: (target) => run(target, target.id),
+    chooseNone: () => {
+      const noWork = worksQuery.noWork;
+      return noWork ? run(noWork, noWork.id) : Promise.resolve("stay" as const);
+    },
     retryCatalog: worksQuery.refetch,
   };
 }

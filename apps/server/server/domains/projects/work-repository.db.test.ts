@@ -122,6 +122,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect([bySlugWork.slug, collision.slug]).toEqual([ambiguous, `${ambiguous}-2`]);
       const idAuthority = await authorities.byId(PROJECT_ID, byIdWork.id);
+      if (!bySlugWork.slug) throw new Error("named Work missing slug");
       const slugAuthority = await authorities.bySlug(PROJECT_ID, bySlugWork.slug);
       expect(idAuthority).toMatchObject({ workId: byIdWork.id, workSlug: "alpha" });
       expect(slugAuthority).toMatchObject({ workId: bySlugWork.id, workSlug: ambiguous });

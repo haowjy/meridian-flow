@@ -2,7 +2,8 @@
 
 Agent-readable/writable content addressed by context URIs. Context schemes split
 into durable Project content (`manuscript://`, `kb://`, `unfiled://`), authenticated personal
-content (`user://`), and Work/no-Work material (`scratch://`, `uploads://`).
+content (`user://`), and Work-scoped material (`scratch://`, `uploads://`), including
+No Work. Public `@/` authority stays parse-only; resolve mints the locked Work id.
 Bare paths default to `manuscript://`.
 
 Single unified `ContextPort` — callers resolve through `contextPortForThread`,

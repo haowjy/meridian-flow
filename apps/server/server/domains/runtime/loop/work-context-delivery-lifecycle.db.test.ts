@@ -18,6 +18,7 @@ const HIDDEN_THREAD_ID = "00000000-0000-4000-8000-000000000716";
 const OTHER_USER_ID = "00000000-0000-4000-8000-000000000717";
 const HISTORICAL_WORK_ID = "00000000-0000-4000-8000-000000000718";
 const REPLACEMENT_WORK_ID = "00000000-0000-4000-8000-000000000719";
+const NO_WORK_ID = "00000000-0000-4000-8000-000000000720";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("Work-context repository and lifecycle (postgres)", () => {});
@@ -55,6 +56,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const sharedRunOwnership = createDrizzleThreadRunOwnership(db);
     const projects = createDrizzleProjectRepository({ db });
     const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
+    const workRepo = createDrizzleProjectWorkRepository({
+      db,
+      hasUnreviewedDraft: async () => false,
+      projectionMutation: createTestWorkProjectionMutation(db),
+    });
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [schema.users]);
@@ -64,6 +70,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         userId: USER_ID,
         name: "Work Context Delivery",
         slug: "work-context-delivery",
+      });
+      await db.insert(schema.works).values({
+        id: NO_WORK_ID,
+        projectId: PROJECT_ID,
+        createdByUserId: USER_ID,
+        name: "No Work",
+        slug: null,
+        isNoWork: true,
       });
       await db.insert(schema.threads).values({
         id: THREAD_ID,
@@ -118,7 +132,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 projectId: "00000000-0000-0000-0000-000000000001",
                 execution: {
                   scope: {
-                    kind: "work",
                     workId: "00000000-0000-0000-0000-000000000002",
                     workSlug: testWorkSlug("test-work"),
                   },
@@ -217,6 +230,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           repos,
           projects,
           workAuthorityResolver,
+          works: workRepo,
           obligations: repos.workContextDeliveries,
           workContextDelivery: delivery(repos),
         },
@@ -268,6 +282,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           repos,
           projects,
           workAuthorityResolver,
+          works: workRepo,
           obligations: repos.workContextDeliveries,
           workContextDelivery: delivery(repos),
         },
@@ -290,6 +305,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             repos,
             projects,
             workAuthorityResolver,
+            works: workRepo,
             obligations: repos.workContextDeliveries,
             workContextDelivery: delivery(repos),
           },
@@ -317,6 +333,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             repos,
             projects,
             workAuthorityResolver,
+            works: workRepo,
             obligations: repos.workContextDeliveries,
             workContextDelivery: delivery(repos),
           },
@@ -352,6 +369,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           repos: restoringRepos,
           projects,
           workAuthorityResolver,
+          works: workRepo,
           obligations: {
             async enqueueThread(threadId) {
               const result = await restoringRepos.workContextDeliveries.enqueueThread(threadId);
@@ -372,6 +390,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           repos: deletingRepos,
           projects,
           workAuthorityResolver,
+          works: workRepo,
           obligations: deletingRepos.workContextDeliveries,
           workContextDelivery: delivery(deletingRepos),
         },
@@ -398,6 +417,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         repos,
         projects,
         workAuthorityResolver,
+        works: workRepo,
         obligations: repos.workContextDeliveries,
         workContextDelivery: delivery(repos),
       };
@@ -431,6 +451,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           repos,
           projects,
           workAuthorityResolver,
+          works: workRepo,
           obligations: repos.workContextDeliveries,
           workContextDelivery: delivery(repos),
         },
@@ -442,6 +463,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           repos,
           projects,
           workAuthorityResolver,
+          works: workRepo,
           obligations: repos.workContextDeliveries,
           workContextDelivery: delivery(repos),
         },
@@ -453,7 +475,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
     });
 
-    it("demotes a deleted historical primary without substituting a same-name Work", async () => {
+    it("binds a deleted historical primary to No Work without substituting a same-name Work", async () => {
       const repos = createDrizzleRepositoriesForTest(db);
       await db.insert(schema.works).values({
         id: HISTORICAL_WORK_ID,
@@ -468,6 +490,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           repos,
           projects,
           workAuthorityResolver,
+          works: workRepo,
           obligations: repos.workContextDeliveries,
           workContextDelivery: delivery(repos),
         },
@@ -495,16 +518,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           repos,
           projects,
           workAuthorityResolver,
+          works: workRepo,
           obligations: repos.workContextDeliveries,
           workContextDelivery: delivery(repos),
         },
         OTHER_THREAD_ID,
         USER_ID,
       );
-      await expect(repos.threadWorks.findPrimary(OTHER_THREAD_ID)).resolves.toBeNull();
+      await expect(repos.threadWorks.findPrimary(OTHER_THREAD_ID)).resolves.toEqual({
+        workId: NO_WORK_ID,
+      });
       await expect(repos.threadWorks.listByThread(OTHER_THREAD_ID)).resolves.toContainEqual({
         workId: HISTORICAL_WORK_ID,
         isPrimary: false,
+      });
+      expect(await repos.threadWorks.listByThread(OTHER_THREAD_ID)).not.toContainEqual({
+        workId: REPLACEMENT_WORK_ID,
+        isPrimary: true,
       });
     });
 
@@ -527,6 +557,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         repos,
         projects,
         workAuthorityResolver,
+        works: workRepo,
         obligations: repos.workContextDeliveries,
         workContextDelivery: delivery(repos),
       };
@@ -556,7 +587,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         advisoryLockHeld = false;
         await deletion;
         await restore;
-        await expect(repos.threadWorks.findPrimary(OTHER_THREAD_ID)).resolves.toBeNull();
+        await expect(repos.threadWorks.findPrimary(OTHER_THREAD_ID)).resolves.toEqual({
+          workId: NO_WORK_ID,
+        });
         await expect(repos.threadWorks.listByThread(OTHER_THREAD_ID)).resolves.toContainEqual({
           workId: HISTORICAL_WORK_ID,
           isPrimary: false,
@@ -589,6 +622,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         repos,
         projects,
         workAuthorityResolver,
+        works: workRepo,
         obligations: repos.workContextDeliveries,
         workContextDelivery: delivery(repos),
       };
@@ -650,6 +684,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             repos,
             projects,
             workAuthorityResolver,
+            works: workRepo,
             obligations: repos.workContextDeliveries,
             workContextDelivery: delivery(repos),
           },
@@ -664,6 +699,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             repos,
             projects,
             workAuthorityResolver,
+            works: workRepo,
             obligations: repos.workContextDeliveries,
             workContextDelivery: delivery(repos),
           },
@@ -691,6 +727,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             repos,
             projects,
             workAuthorityResolver,
+            works: workRepo,
             obligations: {
               async enqueueThread(threadId) {
                 await repos.workContextDeliveries.enqueueThread(threadId);

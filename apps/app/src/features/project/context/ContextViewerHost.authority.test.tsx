@@ -30,10 +30,7 @@ it("reads an explicit no-Work image without inheriting the selected chat Work", 
   const scope = resolveEditorWorkScope({ status: "none" });
   expect(scope).toEqual({ status: "ready", workId: null, source: "route" });
   if (scope.status !== "ready") throw new Error("expected resolved scope");
-  expect(contextCatalogScope("project", "uploads", scope.workId)).toEqual({
-    kind: "none",
-    projectId: "project",
-  });
+  expect(contextCatalogScope("project", "uploads", scope.workId)).toBeNull();
   const tab = contextTabFromFile(
     "uploads",
     {

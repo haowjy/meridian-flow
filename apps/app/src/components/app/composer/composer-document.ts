@@ -124,18 +124,18 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
       authority = { kind: "user", userId };
       break;
     }
-    case "project":
-    case "none": {
+    case "project": {
       const projectId = parseRequestId(rawAuthority.projectId);
       if (!projectId) return null;
-      authority = { kind: rawAuthority.kind, projectId };
+      authority = { kind: "project", projectId };
       break;
     }
     case "work": {
       const projectId = parseRequestId(rawAuthority.projectId);
       const workId = parseRequestId(rawAuthority.workId);
-      const workSlug = decodeWorkSlug(rawAuthority.workSlug);
-      if (!projectId || !workId || !workSlug) return null;
+      const workSlug =
+        rawAuthority.workSlug === null ? null : decodeWorkSlug(rawAuthority.workSlug);
+      if (!projectId || !workId || (rawAuthority.workSlug !== null && !workSlug)) return null;
       authority = { kind: "work", projectId, workId, workSlug };
       break;
     }

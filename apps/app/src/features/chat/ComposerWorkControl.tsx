@@ -31,6 +31,7 @@ export function useComposerWorkToolbarControl({
   const query = controller.state.view.query;
   const view = deriveWorkPickerViewModel(controller.catalog, query, controller.busy);
   const pageId = view.status;
+  const noneSelected = work.isNoWork;
   return {
     kind: "panel",
     id: "work",
@@ -61,7 +62,7 @@ export function useComposerWorkToolbarControl({
                 { key: "search", ref: searchRef },
                 ...(!controller.busy
                   ? [
-                      { key: `selected:${work.id}`, ref: selectedRef },
+                      { key: `selected:${noneSelected ? "none" : work.id}`, ref: selectedRef },
                       { key: `first:${view.enabledIds[0] ?? "none"}`, ref: firstRef },
                     ]
                   : []),
@@ -79,6 +80,10 @@ export function useComposerWorkToolbarControl({
           onChoose={(target) => {
             const lock = beginBlocking();
             if (lock.kind === "started") void controller.choose(target).then(lock.settle);
+          }}
+          onChooseNone={() => {
+            const lock = beginBlocking();
+            if (lock.kind === "started") void controller.chooseNone().then(lock.settle);
           }}
           searchRef={searchRef}
           focusRefs={{ selected: selectedRef, first: firstRef, retry: retryRef }}

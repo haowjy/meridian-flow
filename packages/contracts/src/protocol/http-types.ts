@@ -148,7 +148,7 @@ export type MoveContextEntryLocator =
   | {
       scheme: WorkAuthorityScheme;
       path: string;
-      authority: { kind: "none" } | { kind: "work"; workId: WorkId; workSlug: WorkSlug };
+      authority: { workId: WorkId; workSlug: WorkSlug | null };
     };
 export type MoveContextEntryConflict = {
   status: "conflict";
@@ -348,7 +348,7 @@ export type CreateThreadRequest = {
   projectId: string;
   title?: string;
   agentSelection: AgentSelection;
-  /** Omission and explicit null both create an executable no-Work root thread. */
+  /** Omission and explicit null both bind the project's locked No Work as primary. */
   workId?: WorkId | null;
 };
 

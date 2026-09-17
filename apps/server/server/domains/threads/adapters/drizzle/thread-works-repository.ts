@@ -24,7 +24,7 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
 
   async function mutateMembership<T>(
     threadId: ThreadId,
-    targetWorkId: WorkId | null,
+    targetWorkId: WorkId,
     changesPrimary: boolean,
     operation: (input: {
       activeDb: ReturnType<typeof currentDrizzleDb>;
@@ -88,14 +88,12 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
             }
           }
 
-          if (targetWorkId) {
-            const [target] = await activeDb
-              .select({ projectId: schema.works.projectId })
-              .from(schema.works)
-              .where(eq(schema.works.id, targetWorkId));
-            if (!target || target.projectId !== thread.projectId) {
-              throw new ThreadWorkProjectMismatchError(targetWorkId);
-            }
+          const [target] = await activeDb
+            .select({ projectId: schema.works.projectId })
+            .from(schema.works)
+            .where(eq(schema.works.id, targetWorkId));
+          if (!target || target.projectId !== thread.projectId) {
+            throw new ThreadWorkProjectMismatchError(targetWorkId);
           }
           return operation({
             activeDb,
@@ -161,15 +159,13 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
                 ),
               );
           }
-          if (workId) {
-            await activeDb
-              .insert(schema.threadWorks)
-              .values({ threadId, workId, projectId, isPrimary: true })
-              .onConflictDoUpdate({
-                target: [schema.threadWorks.threadId, schema.threadWorks.workId],
-                set: { projectId, isPrimary: true },
-              });
-          }
+          await activeDb
+            .insert(schema.threadWorks)
+            .values({ threadId, workId, projectId, isPrimary: true })
+            .onConflictDoUpdate({
+              target: [schema.threadWorks.threadId, schema.threadWorks.workId],
+              set: { projectId, isPrimary: true },
+            });
           return { previousWorkId: currentWorkId, changed: true };
         },
       );
@@ -185,17 +181,26 @@ export function createDrizzleThreadWorksRepository(db: DrizzleDatabase): ThreadW
       return row ?? null;
     },
 
-    async demotePrimaryForRestore(threadId, workId) {
-      await currentDrizzleDb(db)
+    async rebindPrimaryForRestore(threadId, workId) {
+      const activeDb = currentDrizzleDb(db);
+      const [thread] = await activeDb
+        .select({ projectId: schema.threads.projectId })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, threadId));
+      if (!thread) throw new ThreadMembershipUnavailableError(threadId);
+      await activeDb
         .update(schema.threadWorks)
         .set({ isPrimary: false })
         .where(
-          and(
-            eq(schema.threadWorks.threadId, threadId),
-            eq(schema.threadWorks.workId, workId),
-            eq(schema.threadWorks.isPrimary, true),
-          ),
+          and(eq(schema.threadWorks.threadId, threadId), eq(schema.threadWorks.isPrimary, true)),
         );
+      await activeDb
+        .insert(schema.threadWorks)
+        .values({ threadId, workId, projectId: thread.projectId, isPrimary: true })
+        .onConflictDoUpdate({
+          target: [schema.threadWorks.threadId, schema.threadWorks.workId],
+          set: { projectId: thread.projectId, isPrimary: true },
+        });
     },
 
     async lockPrimary(threadId: ThreadId) {

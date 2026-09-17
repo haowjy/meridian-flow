@@ -35,6 +35,20 @@
 - Slash and Send authorize the installed-packages ∪ account catalog, not the bound Agent package. Prompt bake and `skill()` use Agent `skills.available` only. The Agent∪account union is gone.
 - Nonempty Agent `skills.available` no longer refuses catalog selection or turn preparation. Nonempty `skills.load` still does.
 - Delete leftover project-addressed skill HTTP (`PUT/GET …/projects/:id/skills/…`, `PATCH …/agents/:slug/skills/…`).
+- Work-scoped catalog and address by No Work id return that Work's `@/` scratch and uploads. Home `scope=none` still lists the same sources.
+- No Work is identified by work id and null slug, not `{ kind: "none" }`.
+
+- Work-scoped catalog and address by No Work id return that Work's `@/` scratch and uploads. Home unlabeled queries that same Work id.
+
+- Home and existing Chat show the Work picker and Draft / Auto-apply for No Work. The Work catalog still omits that row. Account New stays Agent-only.
+
+- Resolve `@/` scratch and uploads to the locked No Work row. Thread context ports always use that Work. Public URIs stay `@/`.
+
+- Thread execution always receives the primary Work. No Work uses `ai_write_mode`; missing primary is corrupt.
+
+- Omit or null workId and work.switch none bind a real No Work primary. Rebind always takes a WorkId.
+
+- Every project gets a locked No Work row. Unlabeled scratch/uploads and threads without a primary bind to it.
 
 - Drop leftover Agent slug copies from WS live state, the thread DTO, credit debit metadata, and `project_results`. Debug still joins agent from the bound revision and model from the model-response row.
 

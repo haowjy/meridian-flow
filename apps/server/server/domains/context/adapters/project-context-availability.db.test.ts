@@ -45,6 +45,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const USER_SOURCE = "00000000-0000-4000-8000-000000000919";
     const FOREIGN_SOURCE = "00000000-0000-4000-8000-000000000920";
     const WORK = "00000000-0000-4000-8000-000000000921";
+    const NO_WORK = "00000000-0000-4000-8000-000000000938";
     const PROJECT_AUTHORITY_KEY = `project:${PROJECT}`;
     const FOREIGN_PROJECT_AUTHORITY_KEY = `project:${FOREIGN_PROJECT}`;
     const USER_AUTHORITY_KEY = `user:${USER}`;
@@ -72,16 +73,32 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { id: FOREIGN_PROJECT, userId: OTHER, name: "Foreign", slug: "foreign" },
         { id: PERSONAL, userId: USER, name: "Personal", slug: "personal", isPersonal: true },
       ]);
-      await db.insert(works).values({
-        id: WORK,
-        projectId: PROJECT,
-        createdByUserId: USER,
-        name: "Draft",
-        slug: "draft",
-      });
+      await db.insert(works).values([
+        {
+          id: NO_WORK,
+          projectId: PROJECT,
+          createdByUserId: USER,
+          name: "No Work",
+          slug: null,
+          isNoWork: true,
+        },
+        {
+          id: WORK,
+          projectId: PROJECT,
+          createdByUserId: USER,
+          name: "Draft",
+          slug: "draft",
+        },
+      ]);
       await db.insert(contextSources).values([
         { id: PROJECT_SOURCE, projectId: PROJECT, name: "Manuscript", slug: "manuscript" },
-        { id: NONE_SOURCE, projectId: PROJECT, name: "Scratch", slug: "scratch" },
+        {
+          id: NONE_SOURCE,
+          workId: NO_WORK,
+          scope: "work",
+          name: "Scratch",
+          slug: "scratch",
+        },
         { id: WORK_SOURCE, workId: WORK, scope: "work", name: "Work scratch", slug: "scratch" },
         { id: USER_SOURCE, projectId: PERSONAL, name: "User", slug: "user" },
         { id: FOREIGN_SOURCE, projectId: FOREIGN_PROJECT, name: "Foreign", slug: "manuscript" },
@@ -122,7 +139,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         result.resolutions
           .slice(0, 4)
           .map((item) => (item.kind === "available" ? item.authority.kind : "wrong")),
-      ).toEqual(["project", "none", "work", "user"]);
+      ).toEqual(["project", "work", "work", "user"]);
       const unknown = await availability.lookup(
         {
           projectId: PROJECT as never,

@@ -28,6 +28,7 @@ export default defineEventHandler(async (event) => {
         threadDocuments: app.repos.threadDocuments,
         transaction: app.repos.transaction,
         projects: app.projectRepo,
+        works: app.workRepo,
         agentCatalog: app.agentCatalog,
         agentRevisions: app.agentRevisions,
         eventWriter: app.journalWriter,

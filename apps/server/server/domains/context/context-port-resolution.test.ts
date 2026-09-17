@@ -18,11 +18,9 @@ const WORK_ID = "work-custom";
 function resolver(slugs: Record<string, string>): ProjectWorkAuthorityResolver {
   const byId = async (_projectId: string, workId: string) => {
     const slug = slugs[workId];
-    return slug
-      ? resolvedWorkAuthority({ kind: "work", workId, workSlug: testWorkSlug(slug) })
-      : null;
+    return slug ? resolvedWorkAuthority({ workId, workSlug: testWorkSlug(slug) }) : null;
   };
-  return { byId, lockById: byId, bySlug: async () => null };
+  return { byId, noWork: async () => null, lockById: byId, bySlug: async () => null };
 }
 
 function thread(): Thread {
@@ -81,40 +79,54 @@ describe("thread context-port resolution", () => {
     expect(calls).toEqual([{ workId: WORK_ID, projectId: CUSTOM_PROJECT_ID, threadId: THREAD_ID }]);
   });
 
-  it("keeps every real Work explicitly addressable from a no-Work thread", async () => {
+  it("keeps every named Work explicitly addressable from a No Work thread", async () => {
+    const noWorkId = "no-work-custom";
+    const noWorkAuthority = resolvedWorkAuthority({ workId: noWorkId, workSlug: null });
     const resolution = await resolveThreadContext(
       {
-        threads: { findById: async () => ({ ...thread(), workId: null }) },
-        threadWorks: { findPrimary: async () => null },
+        threads: { findById: async () => thread() },
+        threadWorks: { findPrimary: async () => ({ workId: noWorkId }) },
         works: {
           listByProject: async () => [{ id: WORK_ID, slug: "current-work" }] as never,
         },
-        workAuthorityResolver: resolver({ [WORK_ID]: "current-work" }),
+        workAuthorityResolver: {
+          byId: async (_projectId, workId) =>
+            workId === noWorkId
+              ? noWorkAuthority
+              : workId === WORK_ID
+                ? resolvedWorkAuthority({
+                    workId: WORK_ID,
+                    workSlug: testWorkSlug("current-work"),
+                  })
+                : null,
+          noWork: async () => null,
+          lockById: async () => null,
+          bySlug: async () => null,
+        },
       },
       THREAD_ID,
     );
     if (!resolution) throw new Error("missing resolution");
 
-    const authorities: Array<ReadonlyMap<string, unknown> | undefined> = [];
+    const calls: Array<{ workId: string; authorities: string[] }> = [];
     const contextPorts = {
-      forWork: () => {
-        throw new Error("no-Work thread must use its project-owned base port");
-      },
-      forProject: (
+      forWork: (
+        authority: { workId: string },
         _projectId: string,
         _userId: string,
         workAuthorities: ReadonlyMap<string, unknown>,
       ) => {
-        authorities.push(workAuthorities);
+        calls.push({ workId: authority.workId, authorities: [...workAuthorities.keys()] });
         return {} as ContextPort;
+      },
+      forProject: () => {
+        throw new Error("thread with primary Work must not fall back to project port");
       },
     } as unknown as UnifiedContextPortFactory;
 
     contextPortForThread(contextPorts, resolution);
 
-    expect([...(authorities[0]?.entries() ?? [])]).toEqual([
-      ["current-work", expect.objectContaining({ workId: WORK_ID })],
-    ]);
+    expect(calls).toEqual([{ workId: noWorkId, authorities: ["current-work"] }]);
   });
 });
 
@@ -156,5 +168,50 @@ describe("project recovery context-port resolution", () => {
     });
 
     expect(calls).toEqual([{ workId: "work-1", authorities: ["work-1", "work-2"] }]);
+  });
+
+  it("keeps a requested No Work id on the Work-scoped recovery port", async () => {
+    const noWorkId = "no-work-custom";
+    const calls: string[] = [];
+    const contextPorts = {
+      forWork: (authority: { workId: string }) => {
+        calls.push(authority.workId);
+        return {} as ContextPort;
+      },
+      forProject: () => {
+        throw new Error("No Work recovery must not fall back to project port");
+      },
+    } as unknown as UnifiedContextPortFactory;
+
+    await contextPortForProjectRecovery({
+      deps: {
+        contextPorts,
+        works: {
+          listByProject: async () =>
+            [{ id: WORK_ID, slug: "current-work" }] as Awaited<
+              ReturnType<import("../projects/index.js").WorkRepository["listByProject"]>
+            >,
+        },
+        workAuthorityResolver: {
+          byId: async (_projectId, workId) =>
+            workId === noWorkId
+              ? resolvedWorkAuthority({ workId: noWorkId, workSlug: null })
+              : workId === WORK_ID
+                ? resolvedWorkAuthority({
+                    workId: WORK_ID,
+                    workSlug: testWorkSlug("current-work"),
+                  })
+                : null,
+          noWork: async () => null,
+          lockById: async () => null,
+          bySlug: async () => null,
+        },
+      },
+      projectId: CUSTOM_PROJECT_ID,
+      userId: "user-1",
+      requestedWorkId: noWorkId,
+    });
+
+    expect(calls).toEqual([noWorkId]);
   });
 });

@@ -119,8 +119,10 @@ function ChatScreenLoaded({
       <div className="min-h-0 flex-1">
         <ProjectChatContextNavigationProvider
           projectId={projectId}
-          activeWork={activeWork}
-          availableWorks={availableWorks}
+          activeWork={activeWork?.slug ? { id: activeWork.id, slug: activeWork.slug } : null}
+          availableWorks={availableWorks.flatMap((work) =>
+            work.slug ? [{ id: work.id, slug: work.slug }] : [],
+          )}
           onOpenContextTarget={onOpenContextTarget}
         >
           <ChatView

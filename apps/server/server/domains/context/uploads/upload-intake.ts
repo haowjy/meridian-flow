@@ -45,7 +45,7 @@ export interface UploadReservation {
   state: "reserved" | "object_stored" | "finalized" | "deleted";
   storageUrl: string | null;
   consumed: boolean;
-  owner: { kind: "none" } | { kind: "work"; workId: string; workSlug: string };
+  owner: { kind: "work"; workId: string; workSlug: string | null };
 }
 
 export type ReserveUploadResult =
@@ -162,10 +162,7 @@ function fingerprint(input: {
   mimeType: string;
   byteDigest: string;
 }): string {
-  const owner =
-    input.owner.kind === "work"
-      ? `work:${input.owner.projectId}:${input.owner.workId}`
-      : `none:${input.owner.projectId}`;
+  const owner = `work:${input.owner.projectId}:${input.owner.workId}`;
   return createHash("sha256")
     .update(
       JSON.stringify([input.actorUserId, owner, input.filename, input.mimeType, input.byteDigest]),

@@ -34,11 +34,12 @@ import type {
 } from "../../ports/work-repository.js";
 import {
   WorkDeleteBlockedError,
+  WorkLockedError,
   WorkNameConflictError,
   WorkRestoreConflictError,
 } from "../../ports/work-repository.js";
 import type { WorkProjectionMutation } from "../work-projection-mutation.js";
-import { nextWorkSlug } from "./shared.js";
+import { NO_WORK_NAME, nextWorkSlug } from "./shared.js";
 
 type WorkRow = typeof works.$inferSelect;
 function workUniqueConstraint(cause: unknown): string | null {
@@ -54,14 +55,15 @@ function workUniqueConstraint(cause: unknown): string | null {
 }
 
 function mapWork(row: WorkRow): Work {
-  const slug = decodeWorkSlug(row.slug);
-  if (!slug) throw new Error(`Persisted Work ${row.id} has an invalid slug`);
+  const slug = row.isNoWork ? null : decodeWorkSlug(row.slug);
+  if (!row.isNoWork && !slug) throw new Error(`Persisted Work ${row.id} has an invalid slug`);
   return {
     id: row.id,
     projectId: row.projectId,
     createdByUserId: row.createdByUserId,
     name: row.name,
     slug,
+    isNoWork: row.isNoWork,
     goal: row.goal,
     description: row.description,
     status: row.status as WorkStatus,
@@ -94,6 +96,22 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     if (!isUuid(id)) return null;
     const [row] = await currentDrizzleDb(db).select().from(works).where(eq(works.id, id)).limit(1);
     return row ? mapWork(row) : null;
+  }
+
+  async function findNoWorkRow(projectId: ProjectId): Promise<Work | null> {
+    const [row] = await currentDrizzleDb(db)
+      .select()
+      .from(works)
+      .where(and(eq(works.projectId, projectId), eq(works.isNoWork, true), isNull(works.deletedAt)))
+      .limit(1);
+    return row ? mapWork(row) : null;
+  }
+
+  async function requireUnlocked(id: WorkId): Promise<Work> {
+    const existing = await findWorkById(id);
+    if (!existing || existing.deletedAt) throw new Error(`Work not found: ${id}`);
+    if (existing.isNoWork) throw new WorkLockedError();
+    return existing;
   }
 
   async function updateWork(id: WorkId, patch: Partial<typeof works.$inferInsert>): Promise<Work> {
@@ -170,11 +188,54 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       // error; treat it as not-found so callers get a clean 404, not a 500.
       return findWorkById(id);
     },
+    async findNoWork(projectId: ProjectId): Promise<Work | null> {
+      return findNoWorkRow(projectId);
+    },
+    async ensureNoWork(projectId: ProjectId): Promise<Work> {
+      return runInDrizzleTransaction(db, async () => {
+        await lockProjectWorkCreation(projectId);
+        const existing = await findNoWorkRow(projectId);
+        if (existing) return existing;
+        const activeDb = currentDrizzleDb(db);
+        const [project] = await activeDb
+          .select({ userId: projects.userId })
+          .from(projects)
+          .where(eq(projects.id, projectId))
+          .limit(1);
+        if (!project) throw new Error(`Project not found: ${projectId}`);
+        await activeDb
+          .update(works)
+          .set({ name: `${NO_WORK_NAME} (named)`, updatedAt: new Date() })
+          .where(
+            and(
+              eq(works.projectId, projectId),
+              eq(works.isNoWork, false),
+              isNull(works.deletedAt),
+              sql`lower(btrim(${works.name})) = ${NO_WORK_NAME.toLowerCase()}`,
+            ),
+          );
+        const [row] = await activeDb
+          .insert(works)
+          .values({
+            projectId,
+            createdByUserId: project.userId,
+            name: NO_WORK_NAME,
+            slug: null,
+            isNoWork: true,
+            status: "active",
+            aiWriteMode: "direct",
+          })
+          .returning();
+        if (!row) throw new Error("Failed to create No Work");
+        return mapWork(row);
+      });
+    },
     async listByProject(projectId: ProjectId, opts?: ListWorksOptions): Promise<Work[]> {
       const where = and(
         eq(works.projectId, projectId),
         opts?.includeDeleted ? undefined : isNull(works.deletedAt),
         opts?.status ? eq(works.status, opts.status) : undefined,
+        opts?.includeNoWork ? undefined : eq(works.isNoWork, false),
       );
       const rows = await currentDrizzleDb(db)
         .select()
@@ -207,6 +268,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       };
     },
     async update(id: WorkId, input: UpdateWorkInput): Promise<Work> {
+      await requireUnlocked(id);
       const patch: Partial<typeof works.$inferInsert> = {};
       if (input.name !== undefined) patch.name = input.name.trim();
       if (input.goal !== undefined) patch.goal = input.goal;
@@ -225,15 +287,13 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
       }
     },
     async archive(id: WorkId): Promise<Work> {
-      const existing = await findWorkById(id);
-      if (!existing || existing.deletedAt) throw new Error(`Work not found: ${id}`);
-      if (existing?.status === "archived") return existing;
+      const existing = await requireUnlocked(id);
+      if (existing.status === "archived") return existing;
       return updateWork(id, { status: "archived", archivedAt: new Date() });
     },
     async unarchive(id: WorkId): Promise<Work> {
-      const existing = await findWorkById(id);
-      if (!existing || existing.deletedAt) throw new Error(`Work not found: ${id}`);
-      if (existing?.status === "active") return existing;
+      const existing = await requireUnlocked(id);
+      if (existing.status === "active") return existing;
       return updateWork(id, { status: "active", archivedAt: null });
     },
     async hasUnreviewedDraft(id: WorkId): Promise<boolean> {
@@ -243,6 +303,7 @@ export function createDrizzleWorkRepository(deps: DrizzleWorkRepositoryDeps): Wo
     async softDelete(id: WorkId): Promise<void> {
       const existing = await findWorkById(id);
       if (!existing || existing.deletedAt) return;
+      if (existing.isNoWork) throw new WorkLockedError();
 
       await runInDrizzleTransaction(db, async () => {
         const activeDb = currentDrizzleDb(db);

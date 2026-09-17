@@ -1,7 +1,11 @@
 /** WorkRepository lifecycle and D17 deletion contract at the domain port boundary. */
 import { describe, expect, it } from "vitest";
 import { createInMemoryWorkRepository } from "./adapters/work-repository/in-memory.js";
-import { WorkDeleteBlockedError, WorkNameConflictError } from "./ports/work-repository.js";
+import {
+  WorkDeleteBlockedError,
+  WorkLockedError,
+  WorkNameConflictError,
+} from "./ports/work-repository.js";
 
 const PROJECT_ID = "project-1";
 
@@ -112,6 +116,37 @@ describe("WorkRepository", () => {
     await expect(repo.update(second.id, { name: "BOOK TWO" })).resolves.toMatchObject({
       name: "BOOK TWO",
     });
+  });
+});
+
+describe("No Work", () => {
+  it("is idempotent, omitted from named lists, and cannot be minted by create", async () => {
+    const repo = createInMemoryWorkRepository();
+    const first = await repo.ensureNoWork(PROJECT_ID);
+    const second = await repo.ensureNoWork(PROJECT_ID);
+    expect(second.id).toBe(first.id);
+    expect(first).toMatchObject({ isNoWork: true, slug: null, name: "No Work" });
+    expect(await repo.listByProject(PROJECT_ID)).toEqual([]);
+    expect(await repo.listByProject(PROJECT_ID, { includeNoWork: true })).toEqual([
+      expect.objectContaining({ id: first.id, isNoWork: true }),
+    ]);
+    const named = await repo.create({ projectId: PROJECT_ID, name: "Book Two" });
+    expect(named.isNoWork).toBe(false);
+    expect(named.slug).toBeTruthy();
+  });
+
+  it("throws work_locked on mutate and delete", async () => {
+    const repo = createInMemoryWorkRepository();
+    const locked = await repo.ensureNoWork(PROJECT_ID);
+    await expect(repo.update(locked.id, { name: "Renamed" })).rejects.toBeInstanceOf(
+      WorkLockedError,
+    );
+    await expect(repo.update(locked.id, { goal: "x" })).rejects.toMatchObject({
+      code: "work_locked",
+    });
+    await expect(repo.archive(locked.id)).rejects.toBeInstanceOf(WorkLockedError);
+    await expect(repo.unarchive(locked.id)).rejects.toBeInstanceOf(WorkLockedError);
+    await expect(repo.softDelete(locked.id)).rejects.toBeInstanceOf(WorkLockedError);
   });
 });
 

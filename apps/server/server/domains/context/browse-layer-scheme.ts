@@ -43,7 +43,7 @@ export function projectBrowseContextUri(
 
 export function workScopedBrowseUri(
   scheme: WorkAuthorityScheme,
-  authority: Extract<CanonicalContextAuthority, { kind: "work" | "none" }>,
+  authority: Exclude<CanonicalContextAuthority, { kind: "contextual" }>,
   path = "",
 ): string {
   return projectBrowseContextUri(scheme, path, authority);

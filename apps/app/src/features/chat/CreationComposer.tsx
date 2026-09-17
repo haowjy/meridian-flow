@@ -4,7 +4,7 @@ import { useState } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useSelectionAvailableSkills } from "@/client/query/useAvailableSkills";
-import { useWorks } from "@/client/query/useWorks";
+import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { Composer } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
@@ -33,7 +33,11 @@ export function CreationComposer({
   const [modePending, setModePending] = useState(false);
   const initialWork = works.works?.find((work) => work.status === "active") ?? null;
   const workId = choices?.workId === undefined ? (initialWork?.id ?? null) : choices.workId;
-  const work = works.works?.find((item) => item.id === workId && item.status === "active") ?? null;
+  const selected = workFromSnapshot(
+    works.noWork ? { works: works.works ?? [], noWork: works.noWork } : null,
+    workId,
+  );
+  const work = selected?.status === "active" || selected?.isNoWork ? selected : null;
   const references = useReferenceBrowserCatalog(
     projectId ?? undefined,
     work?.id,
@@ -85,13 +89,7 @@ export function CreationComposer({
             : undefined
         }
         uploadPort={projectId ? uploadIntakePort : undefined}
-        uploadScope={
-          projectId
-            ? work
-              ? { kind: "work", projectId, workId: work.id, workSlug: work.slug }
-              : { kind: "none", projectId }
-            : undefined
-        }
+        uploadScope={projectId && work ? { kind: "work", projectId, workId: work.id } : undefined}
         busy={creation.busy}
         submitDisabled={!choicesReady || modePending || creation.submitLocked}
         submitDisabledReason={

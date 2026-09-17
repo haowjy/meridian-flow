@@ -121,8 +121,11 @@ function classifyAuthoritativeIdentity(input: {
   let authority: ProjectContextAuthority;
   let generation = input.projectGeneration;
   if (hasWorkOwnership) {
-    const workSlug = decodeWorkSlug(work?.slug);
-    if (!work || work.projectId !== input.requestProjectId || !workSlug) {
+    if (!work || work.projectId !== input.requestProjectId) {
+      return { kind: "inconsistent" };
+    }
+    const workSlug = work.isNoWork ? null : decodeWorkSlug(work.slug);
+    if (!work.isNoWork && !workSlug) {
       return { kind: "inconsistent" };
     }
     scope = { kind: "work", projectId: input.requestProjectId, workId: work.id } as never;
@@ -137,8 +140,7 @@ function classifyAuthoritativeIdentity(input: {
     authority = { kind: "user", userId: input.actorUserId } as never;
     generation = input.checkedGeneration;
   } else if (isWorkScheme) {
-    scope = { kind: "none", projectId: input.requestProjectId } as never;
-    authority = { kind: "none", projectId: input.requestProjectId } as never;
+    return { kind: "inconsistent" };
   } else {
     scope = { kind: "project", projectId: input.requestProjectId } as never;
     authority = { kind: "project", projectId: input.requestProjectId } as never;
@@ -365,8 +367,8 @@ export function createDrizzleProjectContextAvailability(
                   document,
                   scope,
                   scheme,
-                  workId: authority.kind === "work" ? authority.workId : null,
-                  workSlug: authority.kind === "work" ? authority.workSlug : null,
+                  workId: work?.id ?? null,
+                  workSlug: work && !work.isNoWork ? work.slug : null,
                   parentPath,
                 }),
               } as never;

@@ -1,4 +1,4 @@
-/** Postgres coverage for Work-free bootstrap readiness fast and repair paths. */
+/** Postgres coverage for bootstrap readiness fast and repair paths. */
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
@@ -80,7 +80,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           db.select({ id: schema.documents.id }).from(schema.documents),
           db.select({ id: schema.threads.id }).from(schema.threads),
         ]).then((rows) => rows.map((row) => row.length)),
-      ).resolves.toEqual([1, 0, 3, 2, 0]);
+      ).resolves.toEqual([1, 1, 3, 2, 0]);
 
       const [project] = await db
         .select({ ready: schema.projects.defaultBootstrapReady })

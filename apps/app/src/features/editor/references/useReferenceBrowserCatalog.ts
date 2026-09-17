@@ -30,9 +30,7 @@ export function useReferenceBrowserCatalog(
         ? [
             { kind: "project" as const, projectId },
             { kind: "user" as const, userId: "self" },
-            workId
-              ? { kind: "work" as const, projectId, workId }
-              : { kind: "none" as const, projectId },
+            ...(workId ? [{ kind: "work" as const, projectId, workId }] : []),
           ]
         : [],
     [projectId, workId],

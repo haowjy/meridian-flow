@@ -20,19 +20,21 @@ export function createDrizzleProjectWorkAuthorityResolver(
     predicate: ReturnType<typeof eq>,
   ): Promise<ResolvedWorkAuthority | null> {
     const [row] = await currentDrizzleDb(db)
-      .select({ workId: works.id, workSlug: works.slug })
+      .select({ workId: works.id, workSlug: works.slug, isNoWork: works.isNoWork })
       .from(works)
       .where(and(eq(works.projectId, projectId), predicate, isNull(works.deletedAt)))
       .limit(1);
     if (!row) return null;
+    if (row.isNoWork) return resolvedWorkAuthority({ workId: row.workId, workSlug: null });
     const workSlug = decodeWorkSlug(row.workSlug);
     if (!workSlug) throw new Error(`Persisted Work ${row.workId} has an invalid slug`);
-    return resolvedWorkAuthority({ kind: "work", workId: row.workId, workSlug });
+    return resolvedWorkAuthority({ workId: row.workId, workSlug });
   }
 
   return {
     byId: (projectId, workId) => selectBy(projectId, eq(works.id, workId)),
     bySlug: (projectId, workSlug) => selectBy(projectId, eq(works.slug, workSlug)),
+    noWork: (projectId) => selectBy(projectId, eq(works.isNoWork, true)),
     async lockById(projectId, workId) {
       await lockWorkLifecycle(db, workId);
       return selectBy(projectId, eq(works.id, workId));

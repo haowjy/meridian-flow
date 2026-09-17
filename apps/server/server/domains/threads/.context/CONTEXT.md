@@ -13,17 +13,17 @@ instead of the N:1 `threads.workId` column.
   conversation data model. A thread contains turns; a turn contains blocks
   (text, reasoning, tool_use, tool_result, image, file, custom) and model
   responses with token/cost rollups.
-- **Thread↔Work membership** — `thread_works` join table (at most one primary per thread; absence is executable no-Work). `threads.workId` column is **dropped**. Membership is organizational;
+- **Thread↔Work membership** — `thread_works` join table (exactly one primary per live thread; No Work is a real row). `threads.workId` column is **dropped**. Membership is organizational;
   same-project Work-authority URIs do not require membership.
 - **Thread Work rebind** — `rebindThreadWork` is the canonical mutation for
   explicitly changing an existing thread's primary Work. It owns lifecycle validation,
   the transaction-composable binding transition, the exact binding receipt, idempotent no-op behavior, and the
-  targeted durable context refresh obligation. Writer and model commands share
-  that transition; switch receipts are factual and are not reversible through
-  turn Undo/Redo. The authenticated writer adapter additionally holds
-  cross-process thread-run ownership across its transaction. Preflight
-  absence remains concealed by the HTTP adapter; lifecycle-lock absence is a
-  typed refreshable conflict, no-Work is a valid before/after binding state, and database failures propagate unchanged.
+      targeted durable context refresh obligation. Writer and model commands share
+      that transition; switch receipts are factual and are not reversible through
+      turn Undo/Redo. The authenticated writer adapter additionally holds
+      cross-process thread-run ownership across its transaction. Preflight
+      absence remains concealed by the HTTP adapter; lifecycle-lock absence is a
+      typed refreshable conflict, No Work receipts use a Work id and null slug, and database failures propagate unchanged.
 - **Event journal** — append-only log of `OrchestratorEvent` payloads per
   thread, used for replay and real-time fan-out. Model-response and block rows
   are now projected from durable journal facts, not authored directly by the
@@ -47,7 +47,7 @@ instead of the N:1 `threads.workId` column.
 - **AI write mode** — `works.ai_write_mode` column (`'direct'` | `'draft'`)
   controls whether AI edits go into branch review or directly to live.
   The column is owned by the Work, not the thread. It is seeded from the
-  project's `ProjectPreferences.aiWriteMode` at Work creation. Write-time routing resolves `thread → optional primary Work → works.ai_write_mode`; no-Work always executes directly with no draft owner.
+  project's `ProjectPreferences.aiWriteMode` at Work creation. Write-time routing resolves `thread → primary Work → works.ai_write_mode`. Missing primary is corrupt. No Work uses the same column; `draftOwner` is null only for Auto-apply.
 
   The write-mode route (`lib/work-write-mode-route.ts`) maps
   `aiWriteMode` → branch `pushPolicy` (`'direct'` → `'auto'`, `'draft'` →
@@ -76,9 +76,9 @@ instead of the N:1 `threads.workId` column.
 | `ModelResponseRepository` | `create / findById / listByTurn` |
 | `UsageRecorder` | `recordModelResponseUsage` — legacy helper retained for repository conformance/direct callers; runtime model responses now flow through the read-model projector |
 | `ThreadRepositories` | aggregate of the above four + `transaction<T>` for atomic multi-repo writes + `runTurnStartTransition` for thread-row-serialized turn setup |
-| `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its Work-before-thread primary rebind revalidates thread lifecycle under the same row lock, then demotes the old membership and promotes/upserts the target, retaining association history while preserving exactly one primary. |
+| `ThreadWorksRepository` | Adds organizational memberships and reads the primary. Its Work-before-thread primary rebind revalidates thread lifecycle under the same row lock, then demotes the old membership and promotes/upserts the target WorkId, retaining association history while preserving exactly one primary. |
 | `rebindThreadWork` | Transaction-composable mutation above `rebindPrimary`; binding, receipt, typed lifecycle errors, and targeted durable obligation have one policy owner. Actor adapters own transaction and post-commit delivery. |
-| `restoreOwnedThreadFromTrash` | Authenticated restore boundary; revalidates historical primary Work then thread under Work-before-thread locks. It restores the exact available Work, or demotes only an unavailable primary marker and restores factual no-Work scope. |
+| `restoreOwnedThreadFromTrash` | Authenticated restore boundary; revalidates historical primary Work then thread under Work-before-thread locks. It restores the exact available Work, or rebinds an unavailable historical primary to No Work. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
 
@@ -189,7 +189,7 @@ contract shapes.
   deletion never wake delivery.
 - Trash preserves the last committed primary membership as history. A deleted
   thread has no active scope. Restore never substitutes a same-name Work: membership follows Work ID, and a missing/deleted historical
-  primary remains associated but non-primary after no-Work restore.
+  primary remains associated but non-primary after restore binds No Work.
 - A primary thread receives a project-scoped `ref` (`c1`, `c2`, …) in the create
   transaction. Subagents stay `ref`-null. Title is not an identifier and is not
   unique. Chat URLs use the client-minted thread `id`, not `ref`.

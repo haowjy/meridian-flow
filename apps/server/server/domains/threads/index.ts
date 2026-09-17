@@ -29,7 +29,6 @@ export {
   rebindThreadWork,
 } from "./domain/rebind-thread-work.js";
 export {
-  directWriteMode,
   requireWorkDraftOwner,
   threadExecutionContext,
   WorkRequiredError,

@@ -12,8 +12,9 @@ export interface Work {
   projectId: ProjectId;
   createdByUserId: UserId;
   name: string;
-  /** Stable project-unique handle. Renaming a Work does not change it. */
-  slug: WorkSlug;
+  /** Stable project-unique handle. Null on the locked No Work row. */
+  slug: WorkSlug | null;
+  isNoWork: boolean;
   goal: string | null;
   description: string | null;
   status: WorkStatus;
@@ -37,6 +38,8 @@ export interface Work {
 }
 
 export type WorkCatalogEntry = Work & { unpushedChangeCount: number };
+export type NamedWorkCatalogEntry = WorkCatalogEntry & { isNoWork: false; slug: WorkSlug };
+export type NoWorkCatalogEntry = WorkCatalogEntry & { isNoWork: true; slug: null };
 
 /** Complete, version-ordered Work lifecycle projection for one project. */
 export type WorksSnapshot = {
@@ -47,7 +50,8 @@ export type WorksSnapshot = {
   authorityRevision: string;
   /** Correlates one acquisition response; it is not ordering authority. */
   requestId: string;
-  works: readonly WorkCatalogEntry[];
+  works: readonly NamedWorkCatalogEntry[];
+  noWork: NoWorkCatalogEntry;
 };
 
 export interface CreateWorkRequest {
@@ -63,21 +67,19 @@ export interface UpdateWorkRequest {
   description?: string;
 }
 
-export type ThreadWorkScope =
-  | { kind: "none" }
-  | { kind: "work"; workId: WorkId; workSlug: WorkSlug };
+/** Resolved execution scope. Null slug is No Work. */
+export type ThreadWorkScope = { workId: WorkId; workSlug: WorkSlug | null };
 
-export type ThreadExecutionContext =
-  | { scope: { kind: "none" }; aiWriteMode: "direct"; draftOwner: null }
-  | {
-      scope: Extract<ThreadWorkScope, { kind: "work" }>;
-      aiWriteMode: AiWriteMode;
-      draftOwner: { kind: "work"; workId: WorkId } | null;
-    };
+/** Resolved execution always has a Work id. Null slug is No Work. */
+export type ThreadExecutionContext = {
+  scope: ThreadWorkScope;
+  aiWriteMode: AiWriteMode;
+  draftOwner: { kind: "work"; workId: WorkId } | null;
+};
 
-/** Canonical domain command shared by writer and agent adapters. */
+/** HTTP rebind body. Null workId falls back to the project's No Work row. */
 export interface RebindThreadWorkRequest {
-  target: { kind: "none" } | { kind: "work"; workId: WorkId };
+  workId: WorkId | null;
 }
 
 export type RebindThreadWorkError =

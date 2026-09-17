@@ -237,10 +237,8 @@ export function ChatView({
               availableSkills={availableSkills.skills}
               uploadPort={uploadIntakePort}
               uploadScope={
-                projectId
-                  ? activeWork
-                    ? { kind: "work", projectId, workId: activeWork.id, workSlug: activeWork.slug }
-                    : { kind: "none", projectId }
+                projectId && activeWork
+                  ? { kind: "work", projectId, workId: activeWork.id }
                   : undefined
               }
               onSubmit={handleSubmit}
@@ -248,18 +246,18 @@ export function ChatView({
               onRetireSubmission={(envelope) => settleQuarantined(envelope, true)}
               onStop={handleStop}
               toolbarLeft={
-                projectId && activeWork ? (
+                !projectId ? (
+                  <AgentOnlyComposerToolbar
+                    control={{ mode: "readonly", name: composerAgentName }}
+                  />
+                ) : activeWork ? (
                   <ChatComposerToolbar
                     projectId={projectId}
                     threadId={threadId}
                     work={activeWork}
                     agentName={composerAgentName}
                   />
-                ) : (
-                  <AgentOnlyComposerToolbar
-                    control={{ mode: "readonly", name: composerAgentName }}
-                  />
-                )
+                ) : undefined
               }
             />
           </div>

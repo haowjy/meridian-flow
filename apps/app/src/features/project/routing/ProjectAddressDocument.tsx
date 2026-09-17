@@ -67,8 +67,7 @@ export function ProjectAddressDocument({
       return;
     }
     const scope = document.scope;
-    const routeWorkId =
-      scope.kind === "work" ? scope.workId : scope.kind === "none" ? null : workId;
+    const routeWorkId = scope.kind === "work" ? scope.workId : workId;
     void (async () => {
       const installed = openTab(
         projectId,
@@ -93,7 +92,7 @@ export function ProjectAddressDocument({
           workSlug: uri.value.authority.kind === "work" ? uri.value.authority.workSlug : null,
         },
         work:
-          scope.kind === "work" || scope.kind === "none"
+          scope.kind === "work"
             ? { kind: "absent" }
             : workSlug
               ? { kind: "slug", slug: workSlug }

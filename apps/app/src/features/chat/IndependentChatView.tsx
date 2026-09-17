@@ -11,7 +11,7 @@ import { useCallback } from "react";
 import { getProject } from "@/client/api/projects-api";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
-import { useWorks } from "@/client/query/useWorks";
+import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { promoteIndependentProject } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
@@ -45,8 +45,10 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
     enabled: !!projectId,
   });
 
-  const { works } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
-  const activeWork = works?.find((work) => work.id === thread?.workId) ?? null;
+  const { works, noWork } = useWorks(projectId ?? "", { enabled: Boolean(projectId) });
+  const activeWork = thread
+    ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, thread.workId ?? null)
+    : null;
 
   const handlePromote = useCallback(() => {
     if (!project.data) return;
@@ -88,7 +90,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
       <main className="min-h-0 flex-1">
         <DraftReviewProvider
           projectId={projectId}
-          workId={thread?.workId ?? null}
+          workId={activeWork?.id ?? null}
           owningWorkLabel={activeWork?.name ?? null}
           threadId={threadId}
         >

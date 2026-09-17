@@ -5,8 +5,10 @@ The server collab domain supplies concrete Postgres/Hocuspocus adapters around
 and WebSocket callers.
 
 Model writes pass the frozen `ThreadExecutionContext` through `agentEdit`.
-No-Work and direct-mode contexts select the live core and create no Work draft
-or thread-peer branch; draft-mode Work contexts select the thread-peer core.
+Direct-mode contexts (`draftOwner === null`) select the live core and create no
+Work draft or thread-peer branch, including Auto-apply on No Work. Draft-mode
+contexts select the thread-peer core; Draft on No Work owns a Work draft keyed
+`(documentId, workId)`.
 Draft-only operations must cross `requireWorkDraftOwner` and return typed
 `work_required` rather than manufacturing an owner.
 
