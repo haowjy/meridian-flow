@@ -24,7 +24,8 @@
       "!.opencode",
       "!.cursor",
       "!**/.context",
-      "!packages/agent-edit/demo/**/*.html"
+      "!packages/agent-edit/demo/**/*.html",
+      "!packages/database/src/migrations/meta/*_snapshot.json"
     ]
   },
   "formatter": {

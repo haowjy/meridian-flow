@@ -687,6 +687,13 @@
       "when": 1789580072984,
       "tag": "0097_flowery_manta",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1789589981121,
+      "tag": "0098_nosy_kid_colt",
+      "breakpoints": true
     }
   ]
 }

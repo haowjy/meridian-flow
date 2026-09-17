@@ -26,11 +26,19 @@ import { editorSuggestionHost } from "@/core/editor/suggestion-host";
 import { AtReferenceMenu } from "@/features/editor/surfaces/link/AtReferenceMenu";
 import { cn } from "@/lib/utils";
 import { ComposerReferenceMenu } from "./ComposerReferenceMenu";
+import { ComposerSkillAtom } from "./ComposerSkillAtom";
+import {
+  type ComposerAvailableSkill,
+  ComposerCommandExtension,
+  ComposerCommandMenu,
+  composerSkillCommandItems,
+} from "./command";
 import {
   type ComposerDraftChange,
   type ComposerDraftSnapshot,
   type ComposerPendingUploadAttrs,
   ComposerReferenceNode,
+  ComposerSkillNode,
   type ComposerSubmitEnvelope,
   ComposerUploadNode,
   composerReferenceContent,
@@ -91,6 +99,7 @@ export type ComposerProps = {
   uploadScope?: ComposerUploadScope;
   uploadPort?: ComposerUploadPort;
   referenceCatalog?: AtReferenceCatalog | null;
+  availableSkills?: readonly ComposerAvailableSkill[] | null;
 };
 export type ComposerHandle = {
   focus: () => void;
@@ -128,6 +137,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     uploadScope,
     uploadPort,
     referenceCatalog = null,
+    availableSkills = null,
   } = props;
   const rotatingPlaceholder = useComposerPlaceholder(streaming);
   const [initialDraft] = useState(props.initialDraft);
@@ -142,6 +152,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   onOpenReferenceRef.current = props.onOpenReference;
   const referenceCatalogRef = useRef(referenceCatalog);
   referenceCatalogRef.current = referenceCatalog;
+  const availableSkillsRef = useRef(availableSkills);
+  availableSkillsRef.current = availableSkills;
   const resolvedUploadPort = uploadPort;
   const suppressDraftChangeRef = useRef(false);
   const [pending, setPending] = useState(0);
@@ -173,6 +185,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
             { update: ({ oldNode, newNode }) => oldNode.eq(newNode) },
           ),
       }),
+      ComposerSkillNode.extend({
+        addNodeView: () =>
+          ReactNodeViewRenderer(ComposerSkillAtom, {
+            update: ({ oldNode, newNode }) => oldNode.eq(newNode),
+          }),
+      }),
       ComposerUploadNode,
       AtReferenceExtension.configure({
         catalog: () => {
@@ -197,6 +215,18 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                 )
                 .run();
             },
+          };
+        },
+        suggestionHost: (current) => editorSuggestionHost(current, "prose"),
+      }),
+      ComposerCommandExtension.configure({
+        catalog: () => {
+          const skills = availableSkillsRef.current;
+          if (!skills) return null;
+          return {
+            menuLabel: t`Commands`,
+            groupLabels: { skills: t`Skills`, chat: t`Chat` },
+            items: composerSkillCommandItems(skills),
           };
         },
         suggestionHost: (current) => editorSuggestionHost(current, "prose"),
@@ -496,7 +526,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const keyDown = (event: React.KeyboardEvent) => {
     if (
       event.target instanceof Element &&
-      event.target.closest("[data-composer-reference], [data-composer-upload]")
+      event.target.closest(
+        "[data-composer-reference], [data-composer-skill], [data-composer-upload]",
+      )
     )
       return;
     if (event.key === "Escape" && streaming) {
@@ -506,6 +538,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   };
   return (
     <div
+      data-composer=""
       className={cn(
         "border border-composer-border bg-composer-surface px-4 pt-4 pb-3 focus-within:border-border-focus",
         variant === "hero" ? "rounded-composer" : "rounded-composer-pinned",
@@ -518,6 +551,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         onKeyDownCapture={keyDown}
       />
       {editor ? <AtReferenceMenu editor={editor} /> : null}
+      {editor ? <ComposerCommandMenu editor={editor} /> : null}
       <div className="mt-1 flex items-center gap-2">
         <div className="min-w-0 flex-1">{toolbarLeft}</div>
         {resolvedUploadPort ? (

@@ -2,6 +2,7 @@
  * Drizzle Kit schema entry (public tables + views only).
  */
 
+export * from "./account-skill-installs";
 export * from "./agent-definition-revisions";
 export * from "./agent-threads";
 export * from "./billing";

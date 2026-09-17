@@ -23,6 +23,7 @@ export const MAX_SUBMITTED_REFERENCES = 128;
 export const MAX_REFERENCE_OCCURRENCES = 128;
 export const MAX_DISTINCT_REFERENCE_IDENTITIES = 128;
 export const MAX_USER_MESSAGE_TEXT = 200_000;
+export const MAX_ACTIVATED_SKILL_SLUGS = 32;
 
 export class InvalidAdmissionError extends Error {
   readonly code = "invalid_message" as const;
@@ -137,6 +138,28 @@ export function parseUserMessageBlocks(value: unknown, text: string): UserMessag
         uri: canonicalUri(candidate.uri, `blocks[${index}].uri`),
       };
     }
+    if (
+      exactObject(candidate, ["description", "name", "slug", "text", "type"]) &&
+      candidate.type === "skill"
+    ) {
+      if (
+        typeof candidate.slug !== "string" ||
+        candidate.slug.length === 0 ||
+        typeof candidate.name !== "string" ||
+        typeof candidate.description !== "string" ||
+        typeof candidate.text !== "string" ||
+        candidate.text !== `/${candidate.slug}`
+      ) {
+        throw new InvalidAdmissionError(`blocks[${index}] has invalid skill identity`);
+      }
+      return {
+        type: "skill",
+        text: candidate.text,
+        slug: candidate.slug,
+        name: candidate.name,
+        description: candidate.description,
+      };
+    }
     if (exactObject(candidate, ["type", "documentId", "uri"]) && candidate.type === "image") {
       const documentId =
         typeof candidate.documentId === "string" ? parseRequestId(candidate.documentId) : null;
@@ -154,7 +177,9 @@ export function parseUserMessageBlocks(value: unknown, text: string): UserMessag
   });
   if (
     blocks
-      .filter((block) => block.type === "text" || block.type === "reference")
+      .filter(
+        (block) => block.type === "text" || block.type === "reference" || block.type === "skill",
+      )
       .map((block) => block.text)
       .join("") !== text
   ) {
@@ -215,7 +240,7 @@ function validateReferenceMembership(
   const submitted = new Set(references.map(referenceIdentity));
   const distinct = new Set(submitted);
   for (const [index, block] of blocks.entries()) {
-    if (block.type === "text") continue;
+    if (block.type === "text" || block.type === "skill") continue;
     const key = referenceIdentity(block);
     distinct.add(key);
     if (!submitted.has(key)) {
@@ -233,12 +258,31 @@ function validateReferenceMembership(
   }
 }
 
+export function parseActivatedSkillSlugs(value: unknown): string[] {
+  if (value == null) return [];
+  if (!Array.isArray(value) || value.length > MAX_ACTIVATED_SKILL_SLUGS) {
+    throw new InvalidAdmissionError("activatedSkillSlugs must be a bounded array");
+  }
+  const seen = new Set<string>();
+  const slugs: string[] = [];
+  for (const [index, item] of value.entries()) {
+    if (typeof item !== "string" || item.length === 0) {
+      throw new InvalidAdmissionError(`activatedSkillSlugs[${index}] is invalid`);
+    }
+    if (seen.has(item)) continue;
+    seen.add(item);
+    slugs.push(item);
+  }
+  return slugs;
+}
+
 export function canonicalAdmissionFingerprint(input: {
   actorUserId: string;
   threadId: string;
   text: string;
   blocks: readonly UserMessageBlock[];
   references: readonly SubmittedReference[];
+  activatedSkillSlugs?: readonly string[];
 }): AdmissionFingerprint {
   const canonical = JSON.stringify({
     actorUserId: input.actorUserId,
@@ -246,6 +290,7 @@ export function canonicalAdmissionFingerprint(input: {
     text: input.text,
     blocks: input.blocks,
     references: input.references,
+    activatedSkillSlugs: [...(input.activatedSkillSlugs ?? [])].sort(),
   });
   return createHash("sha256").update(canonical).digest("hex");
 }
@@ -269,6 +314,7 @@ export function createUserTurnAdmission(deps: {
   availability: ProjectContextAvailabilityPort;
   threadProject(threadId: string): Promise<string | null>;
   verifyDraftUpload?(reference: SubmittedReference & { intakeId: string }): Promise<boolean>;
+  authorizeActivatedSkills?(input: { threadId: string; slugs: readonly string[] }): Promise<void>;
   starter: AdmissionTurnStarter;
   now?: () => Date;
 }): UserTurnAdmission {
@@ -319,7 +365,13 @@ export function createUserTurnAdmission(deps: {
       const blocks = parseUserMessageBlocks(input.blocks, input.text);
       const references = parseSubmittedReferences(input.references);
       validateReferenceMembership(blocks, references);
-      const fingerprint = canonicalAdmissionFingerprint({ ...input, blocks, references });
+      const activatedSkillSlugs = parseActivatedSkillSlugs(input.activatedSkillSlugs);
+      const fingerprint = canonicalAdmissionFingerprint({
+        ...input,
+        blocks,
+        references,
+        activatedSkillSlugs,
+      });
       const existing = await deps.records.lookup(input.threadId, input.submissionId);
       if (existing) {
         assertMatchingFingerprint(existing, fingerprint);
@@ -327,6 +379,16 @@ export function createUserTurnAdmission(deps: {
           await recover(input.threadId, input.submissionId, existing),
           input.submissionId,
         ) as UserTurnAdmissionResult;
+      }
+
+      if (activatedSkillSlugs.length > 0) {
+        if (!deps.authorizeActivatedSkills) {
+          throw new Error("activated skill authorization is not configured");
+        }
+        await deps.authorizeActivatedSkills({
+          threadId: input.threadId,
+          slugs: activatedSkillSlugs,
+        });
       }
 
       const now = deps.now?.() ?? new Date();
@@ -350,7 +412,9 @@ export function createUserTurnAdmission(deps: {
       const ids = [
         ...new Set([
           ...references.map((reference) => reference.documentId),
-          ...blocks.filter((block) => block.type !== "text").map((block) => block.documentId),
+          ...blocks
+            .filter((block) => block.type === "reference" || block.type === "image")
+            .map((block) => block.documentId),
         ]),
       ];
       const resolved = await deps.availability.lookup(
@@ -381,12 +445,12 @@ export function createUserTurnAdmission(deps: {
         });
       }
       const admittedBlocks = blocks.flatMap((block): UserMessageBlock[] => {
-        if (block.type === "text") return [block];
+        if (block.type === "text" || block.type === "skill") return [block];
         if (admittedIdentities.has(referenceIdentity(block))) return [block];
         return block.type === "reference" ? [{ type: "text", text: block.text }] : [];
       });
       return deps.starter.start({
-        admission: input,
+        admission: { ...input, activatedSkillSlugs },
         fingerprint,
         blocks: admittedBlocks,
         references: admittedReferences,

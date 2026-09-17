@@ -3,6 +3,7 @@ import { t } from "@lingui/core/macro";
 import { useState } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
+import { useSelectionAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useWorks } from "@/client/query/useWorks";
 import { Composer } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
@@ -28,6 +29,7 @@ export function CreationComposer({
     (agent) => agent.ownership === "system" && agent.slug === DEFAULT_AGENT_SLUG,
   );
   const agent = choices?.agent ?? defaultAgent ?? null;
+  const availableSkills = useSelectionAvailableSkills(agent?.selection ?? null, projectId);
   const [modePending, setModePending] = useState(false);
   const initialWork = works.works?.find((work) => work.status === "active") ?? null;
   const workId = choices?.workId === undefined ? (initialWork?.id ?? null) : choices.workId;
@@ -74,6 +76,7 @@ export function CreationComposer({
         })}
         onDraftChange={creation.updateDraft}
         referenceCatalog={references}
+        availableSkills={availableSkills.skills}
         onOpenReference={
           projectId
             ? (reference) => {

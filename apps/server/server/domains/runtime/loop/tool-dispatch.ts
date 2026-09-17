@@ -1,11 +1,11 @@
 /**
  * Stateless tool dispatch step for the runtime loop.
  *
- * The orchestrator decides whether a tool call is allowed; this module owns the
- * mechanics of running the allowed call: live output journal appends, spawn and
- * return-result bridges, interrupt callback wiring, and durable tool_result
- * persistence. The caller supplies mutable turn/block state so interrupt
- * callbacks can update the active turn while the tool handler is awaited.
+ * The orchestrator owns permission. This module runs the allowed call: live
+ * output journal appends, spawn and return-result bridges, interrupt callback
+ * wiring, and durable tool_result persistence. The caller supplies mutable
+ * turn/block state so interrupt callbacks can update the active turn while the
+ * tool handler is awaited.
  */
 
 import type { TreeBudget } from "@meridian/contracts/spawn";

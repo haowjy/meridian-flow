@@ -63,11 +63,14 @@ import {
   unknownToEventPayload,
 } from "../domains/observability/index.js";
 import {
+  type AccountSkillInstallStore,
   type AgentRevisionStore,
   type BoundAgentCatalog,
   createBoundAgentCatalog,
+  createDrizzleAccountSkillInstallStore,
   createDrizzleAgentRevisionStore,
   createGitHubMarsPackageFetcher,
+  createInMemoryAccountSkillInstallStore,
   createInMemoryAgentRevisionStore,
   defaultPackageSeedConfigFromEnv,
   type MarsPackageFetcher,
@@ -96,7 +99,6 @@ import {
 } from "../domains/runtime/agent-definition-support.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
-  computeEffectivePermissions,
   createAdmissionTurnStarter,
   createChildRunCoordinator,
   createContextImageAssetPort,
@@ -108,7 +110,7 @@ import {
   createInstrumentedGateway,
   createLateBindRunTurnPort,
   createOrchestrator,
-  createPermissionGate,
+  createSkillToolRegistrations,
   createSpawnToolRegistrations,
   createToolExecutor,
   createToolRegistry,
@@ -117,8 +119,8 @@ import {
   createWorkContextDelivery,
   createWorkContextReader,
   type Gateway,
+  InvalidAdmissionError,
   type RunTurnPort,
-  resolveProfile,
   type ThreadRunOwnership,
   type ToolExecutor,
   type ToolRegistry,
@@ -127,6 +129,12 @@ import {
   type WorkContextDelivery,
   type WorkContextReader,
 } from "../domains/runtime/index.js";
+import {
+  loadModelSkillBody,
+  resolveThreadUserInvocableSkills,
+  SkillUnavailableError,
+  unavailableActivatedSkillSlugs,
+} from "../domains/runtime/loop/available-skills.js";
 import {
   createInterruptRegistry,
   type InterruptRegistry,
@@ -196,6 +204,7 @@ export type AppServices = {
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
   users: UserRepository;
+  accountSkillInstalls: AccountSkillInstallStore;
   workRepo: ProjectWorkRepository;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContext: WorkContextReader;
@@ -251,6 +260,7 @@ export type ProductionAppPorts = {
   works: ProjectWorkRepository;
   projectRepo: ProjectRepository;
   users: UserRepository;
+  accountSkillInstalls: AccountSkillInstallStore;
   workRepo: ProjectWorkRepository;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   billing: BillingService;
@@ -433,6 +443,7 @@ export async function createProductionAppPorts(input: {
     config: defaultPackageSeedConfigFromEnv(environment),
   });
   const users = createDrizzleUserRepository({ db });
+  const accountSkillInstalls = createDrizzleAccountSkillInstallStore(db);
   const projects = createDrizzleProjectBootstrapRepository({
     db,
     documents: documentSync,
@@ -482,6 +493,7 @@ export async function createProductionAppPorts(input: {
     works: workRepo,
     projectRepo,
     users,
+    accountSkillInstalls,
     workRepo,
     workAuthorityResolver,
     billing: billingDomain.service,
@@ -573,6 +585,19 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   for (const registration of createSpawnToolRegistrations()) {
     toolRegistry.register(registration);
   }
+  for (const registration of createSkillToolRegistrations({
+    async loadBody(threadId, slug) {
+      const thread = await ports.threadRepos.threads.findById(threadId as never);
+      if (!thread) throw new SkillUnavailableError(slug);
+      return loadModelSkillBody({
+        thread,
+        slug,
+        agentRevisions: ports.agentRevisions,
+      });
+    },
+  })) {
+    toolRegistry.register(registration);
+  }
   const toolExecutor = createToolExecutor(toolRegistry);
   const runTurnProxy = createLateBindRunTurnPort();
   let helperResultDelivery: ReturnType<typeof createHelperResultDelivery> | undefined;
@@ -606,6 +631,17 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async verifyDraftUpload(reference) {
       const identity = await ports.uploadIdentity.lookupUpload(reference.documentId);
       return identity?.intakeId === reference.intakeId && identity.uri === reference.uri;
+    },
+    async authorizeActivatedSkills({ threadId, slugs }) {
+      const thread = await ports.threadRepos.threads.findById(threadId as never);
+      if (!thread) throw new InvalidAdmissionError("thread is unavailable");
+      const available = await resolveThreadUserInvocableSkills({
+        thread,
+        agentRevisions: ports.agentRevisions,
+        accountSkillInstalls: ports.accountSkillInstalls,
+      });
+      const missing = unavailableActivatedSkillSlugs(available, slugs);
+      if (missing[0]) throw new InvalidAdmissionError(`Skill "${missing[0]}" is not available`);
     },
     starter: createAdmissionTurnStarter({
       runner,
@@ -658,6 +694,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
     agentRevisions: ports.agentRevisions,
+    accountSkillInstalls: ports.accountSkillInstalls,
     toolRegistry,
     projectPreferences: ports.preferences,
     workWriteMode: {
@@ -668,7 +705,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       },
     },
     workContext,
-    permissionGate: createPermissionGate(computeEffectivePermissions(resolveProfile("coding"))),
     childRunCoordinator,
     helperResultDelivery,
     workContextDelivery: workContextDelivery,
@@ -708,6 +744,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     works: ports.works,
     projectRepo: ports.projectRepo,
     users: ports.users,
+    accountSkillInstalls: ports.accountSkillInstalls,
     workRepo: ports.workRepo,
     workAuthorityResolver: ports.workAuthorityResolver,
     workContext,
@@ -1015,6 +1052,7 @@ export function createInMemoryAppServices(): AppServices {
         return enabled;
       },
     },
+    accountSkillInstalls: createInMemoryAccountSkillInstallStore(),
     workRepo: {
       async transaction(operation) {
         return operation();

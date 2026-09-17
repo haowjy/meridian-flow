@@ -1,6 +1,6 @@
 # Composer document model
 
-This directory owns authored text, reference atoms, and pending/failed uploads.
+This directory owns authored text, reference atoms, skill atoms, and pending/failed uploads.
 
 - Rich clipboard HTML preserves selected reference identity. Plain clipboard text
   uses canonical scoped wikilinks with display text. HTML metadata is untrusted;
@@ -10,3 +10,9 @@ This directory owns authored text, reference atoms, and pending/failed uploads.
   Markdown on paste without inventing a Composer attachment.
 - Submission keys belong at document scope in the editor kernel, below suggestion
   keys. A React capture handler must not submit before a suggestion can choose.
+- Chat `/` is a command lane (`command/`) on the same suggestion kernel as `@`.
+  Skills appear as `/<slug>` atoms in the document. Send copies that spelling
+  into the message text as a skill occurrence block and reads unique slugs from
+  the atoms; typed `/slug` prose is not an activation. Session verbs (`compact`,
+  later handoff/clear) are reserved. Manuscript slash insertion is a different
+  catalog.

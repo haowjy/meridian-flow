@@ -18,7 +18,7 @@ export interface TurnContextPreviewRouteDeps {
   repos: Pick<ThreadRepositories, "threads" | "turns" | "blocks">;
   projectRepo: Parameters<typeof requireThreadOwner>[0]["projects"];
   modelRequestDebug: ModelRequestDebugStore;
-  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding">;
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
   toolRegistry: ToolRegistry;
   toolExecutor: Pick<ToolExecutor, "getDefinitions">;
   workContext: WorkContextReader;

@@ -195,6 +195,25 @@ export function apiThreadMessagePath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}/messages`;
 }
 
+export function apiThreadSkillsPath(threadId: string): string {
+  return `${API_THREADS_PATH}/${threadId}/skills`;
+}
+
+export const API_AVAILABLE_SKILLS_PATH = "/api/skills";
+
+export function apiAvailableSkillsPath(input: {
+  catalogEntryId: string;
+  definitionRevisionId: string;
+  projectId?: string | null;
+}): string {
+  const query = new URLSearchParams({
+    catalogEntryId: input.catalogEntryId,
+    definitionRevisionId: input.definitionRevisionId,
+  });
+  if (input.projectId) query.set("projectId", input.projectId);
+  return `${API_AVAILABLE_SKILLS_PATH}?${query}`;
+}
+
 /** Durable identity used to reconcile or explicitly retire one message admission. */
 export function apiThreadAdmissionPath(threadId: string, submissionId: string): string {
   return `${API_THREADS_PATH}/${threadId}/admissions/${encodeURIComponent(submissionId)}`;

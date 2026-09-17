@@ -1,6 +1,7 @@
 /** Pure Composer document schema, serialization, and exact selection snapshots. */
 import type {
   ReferenceOccurrence,
+  SkillOccurrence,
   SubmittedReference,
   UploadIntakeResult,
   UserMessageBlock,
@@ -43,6 +44,7 @@ export type ComposerSubmitEnvelope = Readonly<{
   blocks: readonly UserMessageBlock[];
   references: readonly SubmittedReference[];
   draft: ComposerDraftSnapshot;
+  activatedSkillSlugs: readonly string[];
 }>;
 
 function jsonNodeSize(node: JSONContent): number {
@@ -84,6 +86,11 @@ export type ComposerPendingUploadAttrs = {
   name: string;
   state: "pending" | "failed";
   error: string | null;
+};
+export type ComposerSkillAttrs = {
+  slug: string;
+  name: string;
+  description: string;
 };
 
 /** HTML clipboard metadata is untrusted input; turn admission still authorizes identity. */
@@ -151,6 +158,26 @@ function parseClipboardReference(raw: string | null): ComposerReferenceAttrs | n
     upload: null,
     imageCapable: classification.kind === "binary" && classification.fileType === "image",
   };
+}
+
+function parseClipboardSkill(raw: string | null): ComposerSkillAttrs | null {
+  if (!raw) return null;
+  let value: ComposerSkillAttrs;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (
+    !value ||
+    typeof value !== "object" ||
+    typeof value.slug !== "string" ||
+    typeof value.name !== "string" ||
+    typeof value.description !== "string" ||
+    !value.slug
+  )
+    return null;
+  return { slug: value.slug, name: value.name, description: value.description };
 }
 
 export const ComposerReferenceNode = Node.create({
@@ -224,6 +251,43 @@ export const ComposerReferenceNode = Node.create({
   },
 });
 
+export const ComposerSkillNode = Node.create({
+  name: "composerSkill",
+  group: "inline",
+  inline: true,
+  atom: true,
+  selectable: true,
+  addAttributes: () => ({
+    slug: { default: "", rendered: false },
+    name: { default: "", rendered: false },
+    description: { default: "", rendered: false },
+  }),
+  parseHTML: () => [
+    {
+      tag: "span[data-composer-skill]",
+      getAttrs: (element) =>
+        parseClipboardSkill(
+          element instanceof HTMLElement ? element.getAttribute("data-composer-skill") : null,
+        ) ?? false,
+    },
+  ],
+  renderText: ({ node }) => `/${(node.attrs as ComposerSkillAttrs).slug}`,
+  renderHTML: ({ node, HTMLAttributes }) => {
+    const value = node.attrs as ComposerSkillAttrs;
+    return [
+      "span",
+      mergeAttributes(HTMLAttributes, {
+        "data-composer-skill": JSON.stringify({
+          slug: value.slug,
+          name: value.name,
+          description: value.description,
+        }),
+      }),
+      `/${value.slug}`,
+    ];
+  },
+});
+
 export const ComposerUploadNode = Node.create({
   name: "composerUpload",
   group: "inline",
@@ -255,6 +319,10 @@ export function composerReferenceContent(reference: ComposerReferenceAttrs): JSO
   return { type: "composerReference", attrs: { reference } };
 }
 
+export function composerSkillContent(skill: ComposerSkillAttrs): JSONContent {
+  return { type: "composerSkill", attrs: skill };
+}
+
 export function composerSelection(selection: Selection): ComposerSelection {
   return { anchor: selection.anchor, head: selection.head };
 }
@@ -275,6 +343,8 @@ export function serializeComposerDraft(
   const blocks: UserMessageBlock[] = [];
   const references = new Map<string, SubmittedReference>();
   const ownedUploads: ComposerOwnedUpload[] = [];
+  const activatedSkillSlugs: string[] = [];
+  const seenSkillSlugs = new Set<string>();
   let text = "";
   const emitText = (value: string) => {
     if (!value) return;
@@ -286,6 +356,25 @@ export function serializeComposerDraft(
   const walk = (node: JSONContent, top = false) => {
     if (node.type === "text") return emitText(node.text ?? "");
     if (node.type === "hardBreak") return emitText("\n");
+    if (node.type === "composerSkill") {
+      const slug = node.attrs?.slug;
+      if (typeof slug === "string" && slug) {
+        if (!seenSkillSlugs.has(slug)) {
+          seenSkillSlugs.add(slug);
+          activatedSkillSlugs.push(slug);
+        }
+        const occurrence: SkillOccurrence = {
+          type: "skill",
+          text: `/${slug}`,
+          slug,
+          name: typeof node.attrs?.name === "string" ? node.attrs.name : "",
+          description: typeof node.attrs?.description === "string" ? node.attrs.description : "",
+        };
+        blocks.push(occurrence);
+        text += occurrence.text;
+      }
+      return;
+    }
     if (node.type === "composerReference") {
       const value = node.attrs?.reference as ComposerReferenceAttrs;
       const spelling =
@@ -336,6 +425,7 @@ export function serializeComposerDraft(
     blocks,
     references: [...references.values()],
     draft,
+    activatedSkillSlugs,
   };
 }
 

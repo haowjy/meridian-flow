@@ -20,10 +20,9 @@
  *   content parts of the assistant message.
  *
  * - **Frozen system prompt**: on first attempt the orchestrator bakes agent body,
- *   skills catalog, document dialect, and URI guidance into
- *   `composedSystemPrompt`. Later turns send that string verbatim
- *   (byte-identical). Subagent threads may arrive pre-frozen at creation.
- *   Autoprune is the only future re-bake trigger.
+ *   available skill names and descriptions, document dialect, and URI guidance
+ *   into `composedSystemPrompt`. Later turns send that string verbatim
+ *   (byte-identical). Autoprune is the only future re-bake trigger.
  *
  * - **Runtime URI guidance**: the server appends storage-scheme instructions
  *   to every thread prompt so the model chooses `kb://` for knowledge-base
@@ -40,6 +39,10 @@
  *
  * - **User turns**: all blocks of allowed types (text, image, file)
  *   are merged into a single user message's content[] array.
+ *
+ * - **Activated skill bodies**: slash-activated SKILL.md is appended as extra
+ *   request-only text on the current user message (slug, description, body).
+ *   Not a fabricated tool round, not persisted, not frozen prompt bytes.
  *
  * - **System turns**: text blocks from system-role turns are concatenated
  *   into a single system message — they appear as multi-line system
@@ -61,9 +64,10 @@ export interface BuildContextInput {
   /** Raw agent/project prompt used only while the thread prompt is not frozen. */
   unfrozenBasePrompt?: string | null;
   /**
-   * Skills catalog for pre-freeze assembly only. Ignored when
-   * `thread.composedSystemPrompt` is already frozen.
+   * Available skill listings for pre-freeze assembly only.
+   * Ignored when the thread prompt is already frozen.
    */
+  availableSkills?: readonly { slug: string; name: string; description: string }[];
   /** Frozen Work section for a would-be first bake. */
   workContext?: string;
 }
@@ -85,6 +89,7 @@ export function buildContext(input: BuildContextInput): {
         assembleComposedSystemPrompt({
           basePrompt: systemPrompt,
           workContext: input.workContext,
+          availableSkills: input.availableSkills,
         }),
       ),
     );
@@ -290,26 +295,59 @@ function blockToContentPart(block: Block): ContentPart | null {
   }
 }
 
+export function attachSkillBodiesToLatestUserMessage(
+  messages: readonly Message[],
+  skills: readonly { slug: string; description: string; body: string }[],
+): Message[] {
+  if (skills.length === 0) return [...messages];
+  return appendTextToLatestUserMessage(
+    messages,
+    skills.map(formatInvokedSkill).join("\n\n"),
+    "skill bodies",
+  );
+}
+
+function formatInvokedSkill(skill: { slug: string; description: string; body: string }): string {
+  const description = skill.description.replace(/\s+/g, " ").trim();
+  return [
+    `skill invoked: ${skill.slug}`,
+    ...(description ? ["", `description: ${description}`] : []),
+    "",
+    skill.body,
+  ].join("\n");
+}
+
 export function attachNoticesToLatestUserMessage(
   messages: readonly Message[],
   notices: readonly Notice[],
 ): Message[] {
   const content = formatNotices(notices);
   if (!content) return [...messages];
+  return appendTextToLatestUserMessage(
+    messages,
+    `\n\nMeridian context for this message:\n${content}`,
+    "pre-turn notices",
+  );
+}
 
+function appendTextToLatestUserMessage(
+  messages: readonly Message[],
+  value: string,
+  label: string,
+): Message[] {
   const updated = [...messages];
-  const notice = text(`\n\nMeridian context for this message:\n${content}`);
+  const part = text(value);
   for (let index = updated.length - 1; index >= 0; index--) {
     const message = updated[index];
     if (message?.role !== "user") continue;
     updated[index] = {
       ...message,
-      content: [...message.content, notice],
+      content: [...message.content, part],
     };
     return updated;
   }
 
-  throw new Error("Cannot attach pre-turn notices without a writer message");
+  throw new Error(`Cannot attach ${label} without a writer message`);
 }
 
 export function insertPostToolNotices(

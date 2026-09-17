@@ -1,18 +1,26 @@
 // Public package parsing, compilation, catalog, and persistence surface.
 
+export { createDrizzleAccountSkillInstallStore } from "./adapters/drizzle-account-skill-install-store.js";
 export { createDrizzleAgentRevisionStore } from "./adapters/drizzle-agent-revision-store.js";
 export {
   createGitHubMarsPackageFetcher,
   type GitHubMarsPackageFetcherDeps,
   parseGitHubRepoUrl,
 } from "./adapters/github-mars-package-fetcher.js";
+export { createInMemoryAccountSkillInstallStore } from "./adapters/in-memory-account-skill-install-store.js";
 export {
   createInMemoryAgentRevisionStore,
   type InMemoryAgentRevisionStore,
 } from "./adapters/in-memory-agent-revision-store.js";
 export {
+  installPackagedAccountSkill,
+  PackagedSkillNotFoundError,
+} from "./domain/account-skill-install.js";
+export {
   AgentConfigurationError,
   resolveAgentConfiguration,
+  resolveAgentDependencies,
+  retainedPackageSkillMaps,
 } from "./domain/agent-configuration.js";
 export {
   type AgentCompilationDiagnostic,
@@ -101,6 +109,7 @@ export {
   skillFilesFromJson,
   writeSkillFileToDisk,
 } from "./domain/skill-files.js";
+export { type SkillListing, skillListingFromMarkdown } from "./domain/skill-listing.js";
 export type {
   AgentConfigOverlay,
   ExportedMarsDirectory,
@@ -113,6 +122,11 @@ export type {
   ParsedMarsToml,
   ParsedSkillDefinition,
 } from "./domain/types.js";
+export {
+  type AccountSkillInstall,
+  AccountSkillInstallConflictError,
+  type AccountSkillInstallStore,
+} from "./ports/account-skill-install-store.js";
 export type {
   AgentCatalogEntry,
   AgentCatalogSelectionResult,

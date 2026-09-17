@@ -617,6 +617,7 @@ msgstr "Changing work to {0}"
 msgid "chart"
 msgstr "chart"
 
+#: src/components/app/composer/Composer.tsx
 #: src/features/chat/ChatView.tsx
 #: src/features/project/chat/ChatSurface.tsx
 #: src/features/project/ChatPaneController.tsx
@@ -839,6 +840,10 @@ msgstr "Column options"
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "Combines {0} AI turns"
 msgstr "Combines {0} AI turns"
+
+#: src/components/app/composer/Composer.tsx
+msgid "Commands"
+msgstr "Commands"
 
 #: src/features/project/lifecycle.ts
 msgid "Completed"
@@ -2846,6 +2851,10 @@ msgstr "Signed in"
 #: src/routes/dev-login.tsx
 msgid "Signing in…"
 msgstr "Signing in…"
+
+#: src/components/app/composer/Composer.tsx
+msgid "Skills"
+msgstr "Skills"
 
 #: src/features/chat/command-descriptor.ts
 msgid "Skimmed"

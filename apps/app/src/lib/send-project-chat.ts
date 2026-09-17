@@ -20,6 +20,7 @@ export type SendProjectChatArgs = {
   projectSlug: string;
   text: string;
   submissionId: string;
+  activatedSkillSlugs?: readonly string[];
   agent: CreationAgent;
   workId: string | null;
   threadActions: ThreadStoreActions;
@@ -78,6 +79,7 @@ export function sendProjectChat({
   projectSlug,
   text,
   submissionId,
+  activatedSkillSlugs,
   agent,
   workId,
   threadActions,
@@ -117,6 +119,7 @@ export function sendProjectChat({
     optimisticUserTurnId,
     workingTurnId,
     submissionId,
+    ...(activatedSkillSlugs?.length ? { activatedSkillSlugs: [...activatedSkillSlugs] } : {}),
   };
   writeInflightChat(inflight);
   threadActions.markPendingStream(threadId, {
@@ -129,6 +132,7 @@ export function sendProjectChat({
       optimisticUserTurnId,
       workingTurnId,
       submissionId,
+      ...(activatedSkillSlugs?.length ? { activatedSkillSlugs: [...activatedSkillSlugs] } : {}),
       createProject: false,
     },
   });

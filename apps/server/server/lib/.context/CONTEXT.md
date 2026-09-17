@@ -64,6 +64,7 @@ represented as a fully-typed slot:
 | `works` | projects | Drizzle work repository |
 | `creditLedger` | billing | Drizzle credit lot/transaction ledger |
 | `agentRevisions` | packages | Immutable Agent source/definition revisions, catalog membership, and thread bindings |
+| `accountSkillInstalls` | packages | Account-owned skill installs (unique per owner and slug) |
 | `interruptRegistry` | runtime | In-memory interrupt registry |
 | `eventSink` | observability | Process-scoped deferred sink bound to env-selected local/no-op adapter |
 | `eventQuery` | observability | Optional recent-event query port, present only for local dev/test composition |
@@ -179,9 +180,10 @@ Domain API call → contract wire shape
 
 - **One composition root.** Adapter choice belongs in `compose.ts` / small env
   factories called from it. Domains must not import from `lib/`.
-- **Explicit required deps.** EventSink, CreditLedger, PermissionGate,
+- **Explicit required deps.** EventSink, CreditLedger,
   InterruptRegistry, and RunTurnPort wiring are explicit; disabled behavior uses
-  explicit adapters.
+  explicit adapters. Tool names are gated per turn from advertised policy, not
+  a compose-time PermissionGate.
 - **One-process hub.** `app.ts` guards `AppServices` on `globalThis`; live hub
   fan-out is process-local even though journal rows are durable.
 - **Ownership gate on every route and WS subscribe.** Project workspace/thread gates run

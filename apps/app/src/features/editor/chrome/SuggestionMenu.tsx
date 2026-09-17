@@ -68,6 +68,8 @@ export type SuggestionMenuProps = {
    */
   note?: ReactNode;
   className?: string;
+  /** Composer sits on the phone keyboard; open above it. Manuscript stays below the caret. */
+  side?: "top" | "bottom";
 };
 
 /** Which of the scroller's own edges have more list behind them, for its fades. */
@@ -87,6 +89,7 @@ export function SuggestionMenu({
   onDismiss,
   note,
   className,
+  side = "bottom",
 }: SuggestionMenuProps) {
   // Law: a surface stands down while a drag or sweep is in flight, without
   // guessing which gesture it was.
@@ -153,7 +156,7 @@ export function SuggestionMenu({
       }}
       anchorRect={anchorRect}
       align="start"
-      side="bottom"
+      side={side}
       focusOnOpen="prose"
       returnFocus={() => typingElement.focus()}
       className={cn("meridian-suggestion-menu-shell min-w-64 p-0", className)}
