@@ -20,6 +20,8 @@
 
 ### Fixed
 
+- Allow a pickable primary (Critic) to remain a named child on Muse's roster. Child invocability is `model-invocable: false` only.
+- Enforce write/work command policy in loop dispatch so the core catalogue stays policy-free and direct executor writes still run.
 - Slash-activated skills append as extra user text (`skill invoked`, description, SKILL.md). No fabricated tool round.
 - Anthropic requests prepend empty thinking before `tool_use` when thinking is required and missing (DeepSeek always; other Anthropic only when thinking is on).
 - Composer `/` menu opens above the input so a phone keyboard does not cover it.
