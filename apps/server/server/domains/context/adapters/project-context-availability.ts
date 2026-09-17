@@ -125,7 +125,7 @@ function classifyAuthoritativeIdentity(input: {
       return { kind: "inconsistent" };
     }
     if (work.isNoWork) {
-      scope = { kind: "none", projectId: input.requestProjectId } as never;
+      scope = { kind: "work", projectId: input.requestProjectId, workId: work.id } as never;
       authority = { kind: "none", projectId: input.requestProjectId } as never;
     } else {
       const workSlug = decodeWorkSlug(work.slug);
@@ -372,8 +372,8 @@ export function createDrizzleProjectContextAvailability(
                   document,
                   scope,
                   scheme,
-                  workId: authority.kind === "work" ? authority.workId : null,
-                  workSlug: authority.kind === "work" ? authority.workSlug : null,
+                  workId: work?.id ?? null,
+                  workSlug: work && !work.isNoWork ? work.slug : null,
                   parentPath,
                 }),
               } as never;

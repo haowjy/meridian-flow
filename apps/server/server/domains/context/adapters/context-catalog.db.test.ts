@@ -7,6 +7,7 @@ import {
   folders,
   projects,
   users,
+  works,
 } from "@meridian/database/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
@@ -22,6 +23,7 @@ import { createDrizzleContextCatalog } from "./context-catalog.js";
 import { ContextFS } from "./context-fs/context-fs.js";
 import { DrizzleContextDocumentStore } from "./context-fs/drizzle-store.js";
 import { DrizzleContextTreeMutationStore } from "./context-fs/drizzle-tree-mutation-store.js";
+import { createDrizzleDocumentAddressStore } from "./document-address.js";
 import { createDrizzleProjectContextAvailability } from "./project-context-availability.js";
 
 const RUN_DB_TESTS = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -537,6 +539,94 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         kind: "reset-required",
         reason: "gap",
       });
+    });
+
+    it("returns the same @/ scratch and uploads for none and No Work id", async () => {
+      const db = database.current;
+      const NO_WORK = "00000000-0000-4000-8000-000000000808";
+      const NAMED = "00000000-0000-4000-8000-000000000809";
+      const SCRATCH = "00000000-0000-4000-8000-00000000080a";
+      const UPLOADS = "00000000-0000-4000-8000-00000000080b";
+      const NAMED_SCRATCH = "00000000-0000-4000-8000-00000000080c";
+      const FILE = "00000000-0000-4000-8000-00000000080d";
+      const UPLOAD_FILE = "00000000-0000-4000-8000-00000000080e";
+      const NAMED_FILE = "00000000-0000-4000-8000-00000000080f";
+      await db.insert(users).values(conformanceUserValues(USER_ID, "catalog-no-work"));
+      await db.insert(projects).values({
+        id: PROJECT_ID,
+        userId: USER_ID,
+        name: "Catalog Project",
+        slug: "catalog-project",
+      });
+      await db.insert(works).values([
+        {
+          id: NO_WORK,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          name: "No Work",
+          slug: null,
+          isNoWork: true,
+        },
+        {
+          id: NAMED,
+          projectId: PROJECT_ID,
+          createdByUserId: USER_ID,
+          name: "Draft",
+          slug: "draft",
+        },
+      ]);
+      await db.insert(contextSources).values([
+        { id: SCRATCH, workId: NO_WORK, scope: "work", name: "Scratch", slug: "scratch" },
+        { id: UPLOADS, workId: NO_WORK, scope: "work", name: "Uploads", slug: "uploads" },
+        {
+          id: NAMED_SCRATCH,
+          workId: NAMED,
+          scope: "work",
+          name: "Scratch",
+          slug: "scratch",
+        },
+      ]);
+      await db.insert(documents).values([
+        { id: FILE, contextSourceId: SCRATCH, name: "notes", extension: "md" },
+        {
+          id: UPLOAD_FILE,
+          contextSourceId: UPLOADS,
+          name: "shot",
+          extension: "png",
+          fileType: "image",
+        },
+        { id: NAMED_FILE, contextSourceId: NAMED_SCRATCH, name: "arc", extension: "md" },
+      ]);
+      const catalog = createDrizzleContextCatalog(db);
+      const fileUris = async (scope: {
+        kind: "none" | "work";
+        projectId: string;
+        workId?: string;
+      }) =>
+        (await catalog.snapshot(scope as never)).entries
+          .flatMap((entry) => (entry.kind === "file" ? [entry.uri] : []))
+          .sort();
+      const noneUris = await fileUris({ kind: "none", projectId: PROJECT_ID });
+      const noWorkUris = await fileUris({
+        kind: "work",
+        projectId: PROJECT_ID,
+        workId: NO_WORK,
+      });
+      expect(noneUris).toEqual(["scratch://@/notes.md", "uploads://@/shot.png"]);
+      expect(noWorkUris).toEqual(noneUris);
+      expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
+        "scratch://@draft/arc.md",
+      ]);
+
+      await expect(
+        createDrizzleDocumentAddressStore(db).candidate({
+          projectId: PROJECT_ID as never,
+          userId: USER_ID,
+          scheme: "scratch",
+          workId: NO_WORK,
+          path: "/notes.md",
+        }),
+      ).resolves.toMatchObject({ kind: "current", documentId: FILE });
     });
   });
 }
