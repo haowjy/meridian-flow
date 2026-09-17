@@ -914,7 +914,9 @@ async function* generateEvents(
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
-    let activatedSkillBodies: Array<{ slug: string; body: string }> | undefined;
+    let activatedSkillBodies:
+      | Array<{ slug: string; description: string; body: string }>
+      | undefined;
     const preTurnNotices: Notice[] = [];
     const postToolNoticeBatches: Array<{
       afterMessageCount: number;
