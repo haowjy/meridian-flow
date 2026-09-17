@@ -68,7 +68,7 @@ export function createTestAgentBinding(
   model: string,
   systemPrompt = "",
   boundThreads: () => readonly string[] = () => [],
-): Pick<AgentRevisionStore, "readThreadBinding" | "readSource"> {
+): Pick<AgentRevisionStore, "readThreadBinding" | "listInstallations" | "readSource"> {
   return {
     async readThreadBinding(threadId) {
       if (!boundThreads().includes(threadId)) return undefined;
@@ -80,6 +80,9 @@ export function createTestAgentBinding(
         configuration: { model, skills: { load: [], available: [] }, namedTargets: [] },
         definition: { schemaVersion: 1, systemPrompt, metadata: { model } },
       };
+    },
+    async listInstallations() {
+      return [];
     },
     async readSource() {
       return undefined;

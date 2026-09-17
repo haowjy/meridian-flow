@@ -102,8 +102,9 @@ removed pristine definitions leave retained history but no future-chat selection
 `definition-editing.ts` edits or restores one entity within that complete source.
 The skill-availability edit versions `skills.available` on the retained Agent.
 Prompt freeze and `skill()` consume that declaration in the runtime domain.
-Slash listing is the package-graph skill map plus account installs, not Agent
-`available`. `package-export.ts` exports retained files without reconstructing source
+Slash listing walks system and owner installation heads with
+`retainedPackageSkillMaps`, then account installs; it is not the bound Agent
+package and not Agent `available`. `package-export.ts` exports retained files without reconstructing source
 from normalized definitions.
 
 Project-addressed management routes still authorize access to that Project; the
