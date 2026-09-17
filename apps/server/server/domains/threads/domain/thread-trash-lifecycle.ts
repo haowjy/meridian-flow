@@ -52,9 +52,7 @@ export async function transitionThreadTrash(
         if (!availableAuthority) {
           const noWork = await deps.works.findNoWork(snapshotProjectId);
           if (!noWork) throw new Error("No Work is missing for this project");
-          if (snapshotPrimary) {
-            await deps.workAuthorityResolver.lockById(snapshotProjectId, noWork.id);
-          }
+          await deps.workAuthorityResolver.lockById(snapshotProjectId, noWork.id);
           replacementWorkId = noWork.id;
         }
         const before = await deps.repos.threads.lockByIdIncludingDeleted(input.threadId);
