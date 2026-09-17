@@ -31,6 +31,7 @@
 
 ### Changed
 
+- Per-turn tool name gate is advertised names plus extraAllowed. Wildcard allow, millicredit cost cap, and unused permission profiles are gone.
 - Slash and Send authorize the installed-packages ∪ account catalog, not the bound Agent package. Prompt bake and `skill()` use Agent `skills.available` only. The Agent∪account union is gone.
 - Nonempty Agent `skills.available` no longer refuses catalog selection or turn preparation. Nonempty `skills.load` still does.
 - Delete leftover project-addressed skill HTTP (`PUT/GET …/projects/:id/skills/…`, `PATCH …/agents/:slug/skills/…`).

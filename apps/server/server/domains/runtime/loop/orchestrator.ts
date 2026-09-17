@@ -1285,10 +1285,7 @@ async function* generateEvents(
 
           // If denied, we still persist a tool_result block (with isError: true)
           // so the model sees the rejection in the next turn's context build.
-          const decision = built.permissionGate.check(
-            call.name,
-            Number(currentAssistantTurn.totalCostUsd),
-          );
+          const decision = built.permissionGate.check(call.name);
           if (!decision.allowed) {
             const persistedDenial = await persistPermissionDenial({
               deps,

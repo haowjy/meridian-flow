@@ -56,11 +56,12 @@ skeleton and delegates the moving parts.
 | `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow names and write/work commands. Advertise and the per-turn name gate use that policy; the write/work command gate lives in `tool-dispatch.ts`. The core catalogue stays policy-free. |
 
 `OrchestratorDeps` is fully required: gateway, repos, retained Agent revision reader, tool
-registry/executor, project preferences, permission gate, credit ledger,
+registry/executor, project preferences, credit ledger,
 interrupt artifact flush, child-run coordinator, interrupt registry, and
-`EventSink` are all explicit dependencies. Provider-specific model-call behavior
-stays behind the gateway port. Disabled behavior is represented by explicit
-adapters (for example no-op sinks), not by omitted deps.
+`EventSink` are all explicit dependencies. Do not re-add a global permission
+gate here; names are gated per turn from advertised policy. Provider-specific
+model-call behavior stays behind the gateway port. Disabled behavior is
+represented by explicit adapters (for example no-op sinks), not by omitted deps.
 
 ## Bound Agent preparation
 
@@ -139,10 +140,10 @@ facet.
 
 ## Cost, billing, and permissions
 
-- Tool permissions are per-turn: `projectToolPolicy` → advertised tools →
-  `permissionGateFromToolPolicy` for names, then `dispatchToolCall` for write/work
-  commands. Missing policy on the orchestrator path fail-closes those commands.
-  Direct `toolExecutor.executeTool` (no dispatch) does not apply the command gate.
+- Tool permissions are per-turn: `projectToolPolicy` → name gate from advertised
+  names, then the write/work command gate in `tool-dispatch`. Missing policy on
+  the orchestrator path fail-closes those commands. Direct
+  `toolExecutor.executeTool` (no dispatch) does not apply the command gate.
 - Model-call cost gating is not a `PermissionGate` method. The runtime uses
   `CreditLedger` plus `TreeBudget` (for spawn trees) through `turn-accounting.ts`
   and `ChildRunCoordinator`.
