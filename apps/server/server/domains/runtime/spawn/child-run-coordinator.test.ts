@@ -3,6 +3,7 @@
  * the generic omitted/empty-agent helper inheriting caller config, and the
  * pre-create depth refusal.
  */
+import type { InheritedExecutionMetadata } from "@meridian/contracts/agents";
 import type { TurnId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture } from "@meridian/contracts/spawn";
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
@@ -153,6 +154,7 @@ async function fixture() {
   return {
     coordinator,
     revisions,
+    repos,
     parent,
     parentConfiguration,
     critic: critic as AgentRevision,
@@ -252,5 +254,37 @@ describe("ChildRunCoordinator spawn selection", () => {
         effort: "high",
       });
     }
+  });
+
+  it("propagates a generic parent's inherited execution to its generic child", async () => {
+    const { coordinator, revisions, repos } = await fixture();
+    const generalEntry = await revisions.readCatalogEntry(null, "general");
+    const general = generalEntry && (await revisions.readRevision(generalEntry.selectedRevisionId));
+    if (!general) throw new Error("Missing General revision");
+
+    const inheritedExecution: InheritedExecutionMetadata = {
+      tools: { read: "allow", write: "deny", edit: "deny" },
+      effort: "high",
+    };
+    const genericParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    await revisions.bindThread(genericParent.id, general.id, {
+      model: "parent-model",
+      skills: { load: [], available: [] },
+      namedTargets: [],
+      inheritedExecution,
+    });
+
+    const result = await coordinator.spawnChild({
+      parentThread: genericParent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      budget,
+    });
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    const binding = await revisions.readThreadBinding(result.report.threadId);
+    expect(binding?.definition.metadata.name).toBe("General");
+    expect(binding?.configuration.inheritedExecution).toEqual(inheritedExecution);
   });
 });

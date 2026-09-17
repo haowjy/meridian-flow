@@ -1,4 +1,5 @@
 /** Writer vs Critic metadata advertise different write schemas. */
+import type { InheritedExecutionMetadata } from "@meridian/contracts/agents";
 import { describe, expect, it } from "vitest";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
 import { createInMemoryRepositories } from "../../threads/index.js";
@@ -36,6 +37,7 @@ function stubHandlers(): CoreToolHandlers {
 async function boundContext(metadata: {
   tools?: typeof WRITER_MAP | typeof CRITIC_MAP;
   namedTargets?: Array<{ name: string; definitionRevisionId: string }>;
+  inheritedExecution?: InheritedExecutionMetadata;
 }) {
   const projects = createInMemoryProjectRepository();
   const project = await projects.create({ userId: "user-1", title: "Serial" });
@@ -61,6 +63,9 @@ async function boundContext(metadata: {
             model: "fixture-model",
             skills: { load: [], available: [] },
             namedTargets: metadata.namedTargets ?? [],
+            ...(metadata.inheritedExecution !== undefined
+              ? { inheritedExecution: metadata.inheritedExecution }
+              : {}),
           },
           definition: {
             schemaVersion: 1,
@@ -101,6 +106,11 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
     expect(writeCommandConsts(writer.tools)).toContain("replace");
     expect(critic.tools.some((tool) => "name" in tool && tool.name === "spawn")).toBe(true);
     expect(writer.tools.some((tool) => "name" in tool && tool.name === "spawn")).toBe(true);
+  });
+
+  it("advertises a generic child's inherited Critic execution, not General's absent tools", async () => {
+    const generic = await boundContext({ inheritedExecution: { tools: CRITIC_MAP } });
+    expect([...writeCommandConsts(generic.tools)].sort()).toEqual(["diff", "read"]);
   });
 
   it("tells an empty-roster caller not to spawn, and a rostered caller to prefer named", async () => {

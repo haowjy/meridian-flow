@@ -127,7 +127,10 @@ Named targets resolve by name within the parent binding's roster; a target with
 `model-invocable: false` is refused, while a primary-mode target is spawnable.
 An omitted or empty `agent` selects the generic helper: the built-in General
 revision supplies body and identity, while the child binding inherits the
-caller's resolved configuration plus its tool/effort metadata. Max spawn depth
+caller's resolved configuration plus its effective execution — the caller's
+`inheritedExecution` when present (so a nested generic keeps an ancestor's
+tool/effort overlay), otherwise its bound definition's tool/effort metadata.
+Max spawn depth
 defaults to 3, overridable only through operator env at tree creation. Child
 creation, Agent binding, and Work membership share one transaction. The child starts with an unfrozen
 prompt; ordinary turn preparation adds its retained persona and mandatory report
