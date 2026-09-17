@@ -93,7 +93,6 @@ function scopeForSource(row: {
   sourceSlug: string;
 }): CatalogScope | null {
   if (row.sourceWorkId && row.workProjectId) {
-    if (row.workIsNoWork) return { kind: "none", projectId: row.workProjectId };
     return { kind: "work", projectId: row.workProjectId, workId: row.sourceWorkId };
   }
   if (!row.sourceProjectId) return null;
@@ -104,7 +103,16 @@ function scopeForSource(row: {
   return { kind: "project", projectId: row.sourceProjectId };
 }
 
-async function sourceScope(db: CatalogDb, sourceId: string): Promise<CatalogScope | null> {
+function catalogDispatchScopes(row: Parameters<typeof scopeForSource>[0]): readonly CatalogScope[] {
+  const scope = scopeForSource(row);
+  if (!scope) return [];
+  if (scope.kind === "work" && row.workIsNoWork) {
+    return [scope, { kind: "none", projectId: scope.projectId }];
+  }
+  return [scope];
+}
+
+async function sourceScopes(db: CatalogDb, sourceId: string): Promise<readonly CatalogScope[]> {
   const [row] = await db
     .select({
       sourceProjectId: contextSources.projectId,
@@ -120,17 +128,13 @@ async function sourceScope(db: CatalogDb, sourceId: string): Promise<CatalogScop
     .leftJoin(works, eq(contextSources.workId, works.id))
     .where(eq(contextSources.id, sourceId as never))
     .limit(1);
-  return row ? scopeForSource(row) : null;
+  return row ? catalogDispatchScopes(row) : [];
 }
 
 async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
   const conditions =
     scope.kind === "work"
-      ? and(
-          eq(contextSources.workId, scope.workId),
-          eq(works.isNoWork, false),
-          isNull(contextSources.deletedAt),
-        )
+      ? and(eq(contextSources.workId, scope.workId), isNull(contextSources.deletedAt))
       : scope.kind === "user"
         ? and(
             eq(projects.userId, scope.userId),
@@ -557,8 +561,9 @@ export function createDrizzleContextCatalog(
       const scopes = new Map<string, CatalogScope>();
       const commitId = randomUUID();
       for (const sourceId of new Set(sourceIds)) {
-        const scope = await sourceScope(tx, sourceId);
-        if (scope) scopes.set(catalogScopeKey(scope), scope);
+        for (const scope of await sourceScopes(tx, sourceId)) {
+          scopes.set(catalogScopeKey(scope), scope);
+        }
       }
       const ownershipRows =
         sourceIds.length === 0
@@ -610,7 +615,7 @@ export function createDrizzleContextCatalog(
       const workRows = await tx
         .select({ id: works.id })
         .from(works)
-        .where(and(eq(works.projectId, projectId), eq(works.isNoWork, false)));
+        .where(eq(works.projectId, projectId));
       await availabilityMutations.advance({
         projectIds: [projectId],
         userIds: project?.isPersonal ? [project.userId] : [],

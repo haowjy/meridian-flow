@@ -35,6 +35,8 @@
 - Slash and Send authorize the installed-packages ∪ account catalog, not the bound Agent package. Prompt bake and `skill()` use Agent `skills.available` only. The Agent∪account union is gone.
 - Nonempty Agent `skills.available` no longer refuses catalog selection or turn preparation. Nonempty `skills.load` still does.
 - Delete leftover project-addressed skill HTTP (`PUT/GET …/projects/:id/skills/…`, `PATCH …/agents/:slug/skills/…`).
+- Work-scoped catalog and address by No Work id return that Work's `@/` scratch and uploads. Home `scope=none` still lists the same sources.
+
 - Home and existing Chat show the Work picker and Draft / Auto-apply for No Work. The Work catalog still omits that row. Account New stays Agent-only.
 
 - Resolve `@/` scratch and uploads to the locked No Work row. Thread context ports always use that Work. Public URIs stay `@/`.
