@@ -9,6 +9,7 @@
 
 ### Added
 
+- Project compiled Agent Mars `tools` / `disallowed-tools` onto Flow write/work command policy.
 - Chat composer `/` lists user-invocable skills from installed packages (system and owner) as `/<slug>` plus account installs. Picking one leaves a `/slug` atom in the draft; Send reads those slugs. Manuscript `/` is unchanged.
 - Slash-activated skill slugs on Send append that SKILL.md as extra user text for the turn. The model `skill` tool loads Agent `skills.available` only. The slash catalog is readable for the bound thread.
 - First-turn bake lists Agent `skills.available` slugs (and name when it differs) with descriptions and persists those slugs. An account install after freeze does not rewrite the prompt and does not notify the model.

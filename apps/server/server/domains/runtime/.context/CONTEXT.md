@@ -53,7 +53,7 @@ skeleton and delegates the moving parts.
 | `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, serialized persistence/provenance/upload consumption, lookup, and retirement. |
 | `reference-context.ts` | Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads. |
 | `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission, read-deduplicated, occurrence-budgeted, and quietly omitted without losing writer text. |
-| `permissions/` | `PermissionGate`; compose currently wires the `coding` profile explicitly. |
+| `permissions/` | `PermissionGate`; `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow names and write/work commands. Compose currently wires the `coding` profile explicitly. |
 
 `OrchestratorDeps` is fully required: gateway, repos, retained Agent revision reader, tool
 registry/executor, project preferences, permission gate, credit ledger,
