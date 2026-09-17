@@ -285,11 +285,17 @@ export function createDrizzleThreadRepository(
     },
     async lockByIdIncludingDeleted(id: ThreadId) {
       const activeDb = currentDrizzleDb(db);
+      const [locked] = await activeDb
+        .select({ id: schema.threads.id })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, id))
+        .for("update")
+        .limit(1);
+      if (!locked) return null;
       const [row] = await activeDb
         .select(threadColumns)
         .from(schema.threads)
         .where(eq(schema.threads.id, id))
-        .for("update")
         .limit(1);
       if (!row) return null;
       const [membership] = await activeDb
