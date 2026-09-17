@@ -69,19 +69,22 @@ model, effort, and diagnostic Agent identity. Missing bindings fail before a
 gateway call. Catalog removal or advancement leaves continued execution on its
 retained revision. `turn-context-assembly.ts` supplies that persona to the initial
 host-prompt bake and reuses the frozen prompt on later turns; preview shares this
-assembly without persisting. On a primary chat the available set is bound Agent
-`skills.available` (name and description from retained `SKILL.md`) union account
-installs for the thread owner; Agent retained files win on slug collision.
-`skills.load` is not injected into first-turn context; nonempty `load` refuses
-selection. Writer's load list is empty. The first-bake CAS writes those slugs
-(`[]` when the union is empty). Later turns send `composedSystemPrompt`
-verbatim. Skills that join the union after freeze do not rewrite the prompt or
-`bakedSkillSlugs`; slash and the `skill` tool still load them. Compact rebakes
-the catalog. Display slugs do not guard prompt freezing. The model comes
-from conversation-owned resolved configuration, including a frozen default when
-source omits it. Nonempty `skills.available` does not refuse selection or turn
-preparation. Primary catalog selection currently keeps nonempty delegation
-rosters unavailable while delegation support is completed.
+assembly without persisting. Slash (`/` and Send `activatedSkillSlugs`) lists
+every user-invocable `skills/<slug>/SKILL.md` in the bound package graph plus
+account installs for the owner; package files win slug collisions. Prompt bake
+and the `skill` tool use bound Agent `skills.available` only (name and
+description from retained `SKILL.md`), dropping `model-invocable: false`.
+Account installs never join the prompt or `skill()`. `skills.load` is not
+injected into first-turn context; nonempty `load` refuses selection. Writer's
+load list is empty. The first-bake CAS writes those Agent-available slugs (`[]`
+when the Agent list is empty). Later turns send `composedSystemPrompt`
+verbatim. Skills that join slash after freeze do not rewrite the prompt or
+`bakedSkillSlugs`. Compact rebakes the model catalog. Display slugs do not
+guard prompt freezing. The model comes from conversation-owned resolved
+configuration, including a frozen default when source omits it. Nonempty
+`skills.available` does not refuse selection or turn preparation. Primary
+catalog selection currently keeps nonempty delegation rosters unavailable while
+delegation support is completed.
 
 ## tools — registry, executor, and handlers
 
@@ -91,7 +94,7 @@ rosters unavailable while delegation support is completed.
 | `ToolExecutor` | Dispatches `ToolCallInput` to registered handlers with timeout, abort, sequential execution, and capability-gated context injection. |
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
 | Core handlers | The strict six-branch `work` union and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
-| Skills | References are retained at binding. `createSkillToolRegistrations` registers the `skill` tool (`source: "skill"`); invoke loads an available SKILL.md body by slug. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
+| Skills | References are retained at binding. `createSkillToolRegistrations` registers the `skill` tool (`source: "skill"`); invoke loads a SKILL.md body only when the slug is in Agent `skills.available` and `model-invocable` is not false. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn` and `return_result` with explicit privileged capabilities. |
 
 Handler-owned `{ isError: true, output }` results already define their

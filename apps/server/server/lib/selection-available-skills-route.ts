@@ -1,14 +1,11 @@
-/** Route core for GET /api/skills — available union for a selected Agent, no thread. */
+/** Route core for GET /api/skills — user slash catalog for a selected Agent, no thread. */
 import type { ThreadAvailableSkillsResponse } from "@meridian/contracts/protocol";
 import { createError } from "nitro/h3";
 import type { AccountSkillInstallStore, AgentRevisionStore } from "../domains/packages/index.js";
-import { resolveSelectionAvailableSkills } from "../domains/runtime/loop/available-skills.js";
+import { resolveSelectionUserInvocableSkills } from "../domains/runtime/loop/available-skills.js";
 
 export interface SelectionAvailableSkillsRouteDeps {
-  agentRevisions: Pick<
-    AgentRevisionStore,
-    "readSelection" | "readSource" | "readPackageDefinitions"
-  >;
+  agentRevisions: Pick<AgentRevisionStore, "readSelection" | "readSource">;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
 }
 
@@ -21,7 +18,7 @@ export async function handleGetSelectionAvailableSkills(
     projectId?: string;
   },
 ): Promise<ThreadAvailableSkillsResponse> {
-  const skills = await resolveSelectionAvailableSkills({
+  const skills = await resolveSelectionUserInvocableSkills({
     userId: input.userId,
     catalogEntryId: input.catalogEntryId,
     definitionRevisionId: input.definitionRevisionId,

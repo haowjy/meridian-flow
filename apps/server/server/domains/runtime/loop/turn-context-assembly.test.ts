@@ -1,4 +1,4 @@
-/** First bake persists the available union; later account adds do not rebake or notice. */
+/** First bake persists Agent available; later account adds do not rebake. */
 import { describe, expect, it } from "vitest";
 import {
   createInMemoryAccountSkillInstallStore,
@@ -93,7 +93,6 @@ async function writerChat() {
       turns: [],
       blocks: [],
       agentRevisions,
-      accountSkillInstalls,
       toolRegistry: createToolRegistry(),
       persistBake: true,
       bakeComposedSystemPrompt: repos.threads.bakeComposedSystemPrompt.bind(repos.threads),
@@ -145,8 +144,7 @@ describe("assembleNextTurnContext skill freeze", () => {
     expect(nextFirst.thread.bakedSkillSlugs).toEqual([
       "creative-writing-modes",
       "writing-principles",
-      "story-review",
     ]);
-    expect(nextFirst.systemPrompt).toContain("story-review\nReview drafts after prose exists.");
+    expect(nextFirst.systemPrompt).not.toContain("story-review");
   });
 });

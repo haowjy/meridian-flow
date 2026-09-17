@@ -4,7 +4,7 @@
  */
 
 import type { TurnContextPreview } from "@meridian/contracts/threads";
-import type { AccountSkillInstallStore, AgentRevisionStore } from "../domains/packages/index.js";
+import type { AgentRevisionStore } from "../domains/packages/index.js";
 import { loadThreadConversationContext } from "../domains/runtime/loop/fork-thread-context.js";
 import { assembleNextTurnContext } from "../domains/runtime/loop/turn-context-assembly.js";
 import type { WorkContextReader } from "../domains/runtime/loop/work-context.js";
@@ -19,7 +19,6 @@ export interface TurnContextPreviewRouteDeps {
   projectRepo: Parameters<typeof requireThreadOwner>[0]["projects"];
   modelRequestDebug: ModelRequestDebugStore;
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
-  accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
   toolRegistry: ToolRegistry;
   toolExecutor: Pick<ToolExecutor, "getDefinitions">;
   workContext: WorkContextReader;
@@ -53,7 +52,6 @@ export async function handleGetTurnContextPreview(
     turns: conversation.turns,
     blocks: conversation.blocks,
     agentRevisions: deps.agentRevisions,
-    accountSkillInstalls: deps.accountSkillInstalls,
     toolRegistry: deps.toolRegistry,
     baseTools: deps.toolExecutor.getDefinitions?.(),
     persistBake: false,

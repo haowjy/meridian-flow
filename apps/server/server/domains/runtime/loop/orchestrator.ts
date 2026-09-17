@@ -103,7 +103,7 @@ import type { ImageAssetPort } from "../ports/image-asset.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
-import { loadAvailableSkillBody } from "./available-skills.js";
+import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
   attachNoticesToLatestUserMessage,
@@ -851,7 +851,6 @@ async function buildGenerateRequest(input: {
     turns: input.turns,
     blocks: input.blocks,
     agentRevisions: input.deps.agentRevisions,
-    accountSkillInstalls: input.deps.accountSkillInstalls,
     toolRegistry: input.deps.toolRegistry,
     gateway: input.deps.gateway,
     imageAssets: input.deps.imageAssets,
@@ -1024,7 +1023,7 @@ async function* generateEvents(
         if (input.activatedSkillSlugs?.length) {
           activatedSkillBodies ??= await Promise.all(
             input.activatedSkillSlugs.map((slug) =>
-              loadAvailableSkillBody({
+              loadUserSkillBody({
                 thread,
                 slug,
                 agentRevisions: deps.agentRevisions,

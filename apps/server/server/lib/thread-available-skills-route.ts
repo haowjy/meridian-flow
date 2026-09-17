@@ -1,7 +1,7 @@
-/** Route core for GET /api/threads/:threadId/skills — current available union. */
+/** Route core for GET /api/threads/:threadId/skills — user slash catalog. */
 import type { ThreadAvailableSkillsResponse } from "@meridian/contracts/protocol";
 import type { AccountSkillInstallStore, AgentRevisionStore } from "../domains/packages/index.js";
-import { resolveThreadAvailableSkills } from "../domains/runtime/loop/available-skills.js";
+import { resolveThreadUserInvocableSkills } from "../domains/runtime/loop/available-skills.js";
 import { requireThreadOwner } from "../domains/threads/index.js";
 import type { ThreadRepositories } from "./compose.js";
 
@@ -21,7 +21,7 @@ export async function handleGetThreadAvailableSkills(
     input.threadId,
     input.userId,
   );
-  const skills = await resolveThreadAvailableSkills({
+  const skills = await resolveThreadUserInvocableSkills({
     thread,
     agentRevisions: deps.agentRevisions,
     accountSkillInstalls: deps.accountSkillInstalls,
