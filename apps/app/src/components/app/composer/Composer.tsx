@@ -66,24 +66,20 @@ export type ComposerSubmitOutcome =
   | Readonly<{ kind: "rejected"; submissionId: string; acceptedRevision: number }>
   | Readonly<{ kind: "ambiguous"; submissionId: string; acceptedRevision: number }>;
 
-export type ComposerUploadScope =
-  | { kind: "work"; projectId: string; workId: string }
-  | { kind: "none"; projectId: string };
+export type ComposerUploadScope = { kind: "work"; projectId: string; workId: string };
 
 function authorityForUpload(
   scope: ComposerUploadScope,
   uri: UploadIntakeResult["uri"],
 ): StableReferenceAuthority {
   const parsed = parseContextUri(uri);
-  if (scope.kind === "work" && parsed.ok && parsed.value.authority.kind === "work") {
-    return {
-      kind: "work",
-      projectId: scope.projectId,
-      workId: scope.workId,
-      workSlug: parsed.value.authority.workSlug,
-    };
-  }
-  return { kind: "none", projectId: scope.projectId };
+  return {
+    kind: "work",
+    projectId: scope.projectId,
+    workId: scope.workId,
+    workSlug:
+      parsed.ok && parsed.value.authority.kind === "work" ? parsed.value.authority.workSlug : null,
+  };
 }
 export type ComposerUploadPort = Readonly<{
   intake: (input: {

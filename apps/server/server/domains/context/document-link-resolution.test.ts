@@ -16,7 +16,7 @@ import { createDocumentLinkResolver } from "./document-link-resolution.js";
 
 const project = { kind: "project", projectId: "p" } as const;
 const user = { kind: "user", userId: "u" } as const;
-const none = { kind: "none", projectId: "p" } as const;
+const noneWork = { kind: "work", projectId: "p", workId: "none-id" } as const;
 const a = { kind: "work", projectId: "p", workId: "a" } as const;
 const b = { kind: "work", projectId: "p", workId: "b" } as const;
 function fixture() {
@@ -24,11 +24,12 @@ function fixture() {
   const authority = (id: string) => {
     const workSlug = decodeWorkSlug(`work-${id}`);
     if (!workSlug) throw new Error("invalid fixture slug");
-    return resolvedWorkAuthority({ kind: "work", workId: id, workSlug });
+    return resolvedWorkAuthority({ workId: id, workSlug });
   };
   const works = new Map([
     ["a", authority("a")],
     ["b", authority("b")],
+    ["none-id", resolvedWorkAuthority({ workId: "none-id", workSlug: null })],
   ]);
   const workAuthorityResolver: ProjectWorkAuthorityResolver = {
     async byId(projectId, id) {
@@ -36,9 +37,11 @@ function fixture() {
     },
     async bySlug(projectId, slug) {
       return projectId === "p"
-        ? ([...works.values()].find((work) => work.kind === "work" && work.workSlug === slug) ??
-            null)
+        ? ([...works.values()].find((work) => work.workSlug === slug) ?? null)
         : null;
+    },
+    async noWork(projectId) {
+      return projectId === "p" ? (works.get("none-id") ?? null) : null;
     },
     async lockById(projectId, id) {
       return this.byId(projectId, id);
@@ -56,10 +59,8 @@ function fixture() {
       scheme,
       path,
       scope.kind === "work"
-        ? authority(scope.workId)
-        : scope.kind === "none"
-          ? { kind: "none" }
-          : { kind: "contextual" },
+        ? (works.get(scope.workId) ?? authority(scope.workId))
+        : { kind: "contextual" },
     );
     const file: CatalogFileEntry = {
       kind: "file",
@@ -108,8 +109,8 @@ describe("catalog-backed document links", () => {
     [project, "manuscript", "chapters/Gate.md"],
     [project, "kb", "Gate.md"],
     [user, "user", "Gate.md"],
-    [none, "uploads", "Gate Map.png"],
-    [none, "scratch", "Gate.md"],
+    [noneWork, "uploads", "Gate Map.png"],
+    [noneWork, "scratch", "Gate.md"],
     [b, "scratch", "notes/Gate.md"],
     [b, "uploads", "Gate.png"],
   ] as const)("opens an explicitly addressed file in %j / %s", async (scope, scheme, path) => {
@@ -124,7 +125,7 @@ describe("catalog-backed document links", () => {
   it("resolves contextual and relative paths without escaping their authority", async () => {
     const f = fixture();
     const file = f.add(a, "scratch", "Gate.md");
-    const noWork = f.add(none, "scratch", "Gate.md");
+    const noWork = f.add(noneWork, "scratch", "Gate.md");
     expect(await f.resolve({ kind: "scheme", uri: "scratch://Gate" })).toMatchObject({
       documentId: file.entryId,
     });

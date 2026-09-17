@@ -85,7 +85,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ).toMatchObject({
           documentId: id,
           uri,
-          workId: workId === noWork ? null : workId,
+          workId,
         });
       }
     });

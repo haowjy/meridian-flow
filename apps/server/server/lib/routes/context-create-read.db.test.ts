@@ -340,12 +340,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         PROJECT_ID,
         WORK_ID,
       );
-      if (authority?.kind !== "work") throw new Error("missing Work authority");
+      if (!authority) throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         PROJECT_ID,
         USER_ID,
-        new Map([[authority.workSlug, authority]]),
+        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
       );
 
       const created = await createContextEntry({

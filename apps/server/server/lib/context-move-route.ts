@@ -66,7 +66,7 @@ export interface ParsedContextMove {
 }
 
 type ResolvedWorkLocator = Omit<WorkLocator, "workId"> & { authority: ResolvedWorkAuthority };
-export type ResolvedContextMoveLocator = ProjectLocator | NoWorkLocator | ResolvedWorkLocator;
+export type ResolvedContextMoveLocator = ProjectLocator | ResolvedWorkLocator;
 export type ResolvedContextMove = {
   operationId: string;
   expected: MoveContextEntryRequest["expected"];
@@ -167,13 +167,9 @@ function joinPath(parent: string, name: string): string {
 }
 
 function locatorUri(locator: ResolvedContextMoveLocator, path = locator.path): string {
-  if (locator.scope === "work") {
-    return projectBrowseContextUri(locator.scheme, path, locator.authority);
-  }
-  if (locator.scope === "none") {
-    return projectBrowseContextUri(locator.scheme, path, { kind: "none" });
-  }
-  return projectBrowseContextUri(locator.scheme, path);
+  return locator.scope === "work"
+    ? projectBrowseContextUri(locator.scheme, path, locator.authority)
+    : projectBrowseContextUri(locator.scheme, path);
 }
 
 export async function commitContextMove(input: {
@@ -206,10 +202,9 @@ export async function commitContextMove(input: {
       const authorityMatches =
         destination.scope === "project"
           ? collision.value.authority.kind === "contextual"
-          : destination.scope === "none"
+          : destination.authority.workSlug === null
             ? collision.value.authority.kind === "none"
             : collision.value.authority.kind === "work" &&
-              destination.authority.kind === "work" &&
               collision.value.authority.workSlug === destination.authority.workSlug;
       if (
         collision.value.scheme !== destination.scheme ||
@@ -228,26 +223,16 @@ export async function commitContextMove(input: {
             ? {
                 scheme: destination.scheme,
                 path: collision.value.path,
-                authority:
-                  destination.authority.kind === "work"
-                    ? {
-                        kind: "work" as const,
-                        workId: destination.authority.workId,
-                        workSlug: destination.authority.workSlug,
-                      }
-                    : { kind: "none" as const },
-              }
-            : destination.scope === "none"
-              ? {
-                  scheme: destination.scheme,
-                  path: collision.value.path,
-                  authority: { kind: "none" },
-                }
-              : {
-                  scheme: destination.scheme,
-                  path: collision.value.path,
-                  authority: { kind: "project" },
+                authority: {
+                  workId: destination.authority.workId,
+                  workSlug: destination.authority.workSlug,
                 },
+              }
+            : {
+                scheme: destination.scheme,
+                path: collision.value.path,
+                authority: { kind: "project" },
+              },
       };
     }
     contextErrorToHttp(result.error);
@@ -267,8 +252,11 @@ export async function handleContextMoveRequest(
   await requireProjectOwner({ projects: deps.projectRepo }, input.projectId, input.userId);
   const move = parseContextMove({ sourceScheme: input.sourceScheme, body: input.body });
   async function resolveLocator(locator: ContextMoveLocator): Promise<ResolvedContextMoveLocator> {
-    if (locator.scope !== "work") return locator;
-    const authority = await deps.workAuthorityResolver.byId(input.projectId, locator.workId);
+    if (locator.scope === "project") return locator;
+    const authority =
+      locator.scope === "none"
+        ? await deps.workAuthorityResolver.noWork(input.projectId)
+        : await deps.workAuthorityResolver.byId(input.projectId, locator.workId);
     if (!authority) throw createError({ statusCode: 404, message: "Work not found" });
     return { scope: "work", scheme: locator.scheme, path: locator.path, authority };
   }
@@ -280,11 +268,12 @@ export async function handleContextMoveRequest(
     ...(move.name ? { name: move.name } : {}),
   };
   const workIds = new Set(
-    [move.source, move.destination]
-      .filter((locator): locator is WorkLocator => locator.scope === "work")
-      .map((locator) => locator.workId),
+    [resolvedMove.source, resolvedMove.destination].flatMap((locator) =>
+      locator.scope === "work" ? [locator.authority.workId] : [],
+    ),
   );
-  const primaryWorkId = move.source.scope === "work" ? move.source.workId : [...workIds][0];
+  const primaryWorkId =
+    resolvedMove.source.scope === "work" ? resolvedMove.source.authority.workId : [...workIds][0];
   const works = await deps.workRepo.listByProject(input.projectId);
   const port = await contextPortForProjectAuthorities({
     deps: {

@@ -10,9 +10,11 @@ export type WorkReceiptState = {
   status: WorkStatus;
 };
 
-export type WorkBindingReceiptState =
-  | { kind: "none"; name: string; aiWriteMode: AiWriteMode }
-  | ({ kind: "work"; workId: WorkId; workSlug: WorkSlug } & WorkReceiptState);
+export type WorkBindingReceiptState = WorkReceiptState & {
+  workId: WorkId;
+  slug: WorkSlug | null;
+  aiWriteMode: AiWriteMode;
+};
 
 export type WorkReceiptInverse =
   | { command: "delete"; workId: WorkId }
@@ -100,26 +102,26 @@ export function parseWorkReceipt(value: unknown): WorkReceipt | null {
 function parseBindingState(value: unknown): WorkBindingReceiptState | null {
   const state = record(value);
   if (!state) return null;
-  if (state.kind === "none") {
-    if (
-      typeof state.name !== "string" ||
-      (state.aiWriteMode !== "direct" && state.aiWriteMode !== "draft")
-    ) {
-      return null;
-    }
-    return { kind: "none", name: state.name, aiWriteMode: state.aiWriteMode };
-  }
   if (
-    state.kind !== "work" ||
     typeof state.workId !== "string" ||
-    typeof state.workSlug !== "string"
+    typeof state.name !== "string" ||
+    (state.aiWriteMode !== "direct" && state.aiWriteMode !== "draft")
   ) {
     return null;
   }
   const details = parseState(state);
-  const workSlug = decodeWorkSlug(state.workSlug);
-  return details && workSlug
-    ? { kind: "work", workId: state.workId as WorkId, workSlug, ...details }
+  if (!details) return null;
+  if (state.slug === null) {
+    return {
+      workId: state.workId as WorkId,
+      slug: null,
+      aiWriteMode: state.aiWriteMode,
+      ...details,
+    };
+  }
+  const slug = decodeWorkSlug(state.slug);
+  return slug
+    ? { workId: state.workId as WorkId, slug, aiWriteMode: state.aiWriteMode, ...details }
     : null;
 }
 

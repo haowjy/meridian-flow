@@ -57,7 +57,6 @@ async function pendingDeliveryFixture() {
               projectId: "00000000-0000-0000-0000-000000000001",
               execution: {
                 scope: {
-                  kind: "work",
                   workId: "00000000-0000-0000-0000-000000000002",
                   workSlug: testWorkSlug("test-work"),
                 },
@@ -105,7 +104,7 @@ describe("createWorkContextDelivery", () => {
             current: {
               projectId: project.id,
               execution: {
-                scope: { kind: "work", workId, workSlug: testWorkSlug(currentWork) },
+                scope: { workId, workSlug: testWorkSlug(currentWork) },
                 aiWriteMode: "direct",
                 draftOwner: null,
               },
@@ -148,7 +147,7 @@ describe("createWorkContextDelivery", () => {
             turnId: turns[0]?.id,
             threadId: thread.id,
             projectId: project.id,
-            scope: { kind: "work", workId, workSlug: testWorkSlug("book-2") },
+            scope: { workId, workSlug: testWorkSlug("book-2") },
           },
         }),
       ]),
@@ -238,7 +237,6 @@ describe("createWorkContextDelivery", () => {
               projectId: "00000000-0000-0000-0000-000000000001",
               execution: {
                 scope: {
-                  kind: "work",
                   workId: "00000000-0000-0000-0000-000000000002",
                   workSlug: testWorkSlug("test-work"),
                 },
@@ -326,7 +324,6 @@ describe("createWorkContextDelivery", () => {
               projectId: "00000000-0000-0000-0000-000000000001",
               execution: {
                 scope: {
-                  kind: "work",
                   workId: "00000000-0000-0000-0000-000000000002",
                   workSlug: testWorkSlug("test-work"),
                 },

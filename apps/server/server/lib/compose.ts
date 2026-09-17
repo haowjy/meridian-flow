@@ -869,6 +869,9 @@ export function createInMemoryAppServices(): AppServices {
     async bySlug() {
       return null;
     },
+    async noWork() {
+      return null;
+    },
     async lockById() {
       return null;
     },

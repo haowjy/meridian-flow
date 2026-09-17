@@ -6,12 +6,20 @@ describe("parseWorkReceipt", () => {
     const receipt = {
       operation: "switch",
       category: "binding",
-      before: { kind: "none", name: "No Work", aiWriteMode: "direct" },
+      before: {
+        workId: "w0",
+        name: "No Work",
+        slug: null,
+        aiWriteMode: "direct",
+        goal: null,
+        description: null,
+        status: "active",
+      },
       after: {
-        kind: "work",
         workId: "w1",
-        workSlug: "arc",
         name: "Arc",
+        slug: "arc",
+        aiWriteMode: "direct",
         goal: null,
         description: null,
         status: "active",

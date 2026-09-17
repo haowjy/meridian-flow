@@ -89,7 +89,6 @@ function scopeForSource(row: {
   projectUserId: string | null;
   projectIsPersonal: boolean | null;
   workProjectId: string | null;
-  workIsNoWork: boolean | null;
   sourceSlug: string;
 }): CatalogScope | null {
   if (row.sourceWorkId && row.workProjectId) {
@@ -105,11 +104,7 @@ function scopeForSource(row: {
 
 function catalogDispatchScopes(row: Parameters<typeof scopeForSource>[0]): readonly CatalogScope[] {
   const scope = scopeForSource(row);
-  if (!scope) return [];
-  if (scope.kind === "work" && row.workIsNoWork) {
-    return [scope, { kind: "none", projectId: scope.projectId }];
-  }
-  return [scope];
+  return scope ? [scope] : [];
 }
 
 async function sourceScopes(db: CatalogDb, sourceId: string): Promise<readonly CatalogScope[]> {
@@ -121,7 +116,6 @@ async function sourceScopes(db: CatalogDb, sourceId: string): Promise<readonly C
       projectUserId: projects.userId,
       projectIsPersonal: projects.isPersonal,
       workProjectId: works.projectId,
-      workIsNoWork: works.isNoWork,
     })
     .from(contextSources)
     .leftJoin(projects, eq(contextSources.projectId, projects.id))
@@ -143,19 +137,11 @@ async function sourcesForScope(db: CatalogDb, scope: CatalogScope) {
             isNull(projects.deletedAt),
             isNull(contextSources.deletedAt),
           )
-        : scope.kind === "none"
-          ? and(
-              eq(works.projectId, scope.projectId),
-              eq(works.isNoWork, true),
-              isNull(works.deletedAt),
-              inArray(contextSources.slug, ["scratch", "uploads"]),
-              isNull(contextSources.deletedAt),
-            )
-          : and(
-              eq(contextSources.projectId, scope.projectId),
-              inArray(contextSources.slug, ["manuscript", "kb", "unfiled"]),
-              isNull(contextSources.deletedAt),
-            );
+        : and(
+            eq(contextSources.projectId, scope.projectId),
+            inArray(contextSources.slug, ["manuscript", "kb", "unfiled"]),
+            isNull(contextSources.deletedAt),
+          );
   return db
     .select({
       id: contextSources.id,
@@ -295,22 +281,14 @@ async function buildScopeEntries(db: CatalogDb, scope: CatalogScope): Promise<Ca
       })
       .from(works)
       .where(eq(works.projectId, scope.projectId));
-    entries.push({
-      kind: "authority",
-      entryId: `none:${scope.projectId}`,
-      scope,
-      authority: { kind: "none" },
-      name: "No Work",
-      available: true,
-    });
     for (const work of workRows) {
-      const slug = decodeWorkSlug(work.slug);
-      if (!slug) continue;
+      const workSlug = work.slug === null ? null : decodeWorkSlug(work.slug);
+      if (work.slug !== null && !workSlug) continue;
       entries.push({
         kind: "authority",
         entryId: work.id,
         scope,
-        authority: { kind: "work", workId: work.id, workSlug: slug },
+        authority: { workId: work.id, workSlug },
         name: work.name,
         available: work.deletedAt === null && work.status === "active",
         entityRevision: String(work.entityRevision),
@@ -622,7 +600,6 @@ export function createDrizzleContextCatalog(
       });
       const scopes: CatalogScope[] = [
         { kind: "project", projectId },
-        { kind: "none", projectId },
         ...workRows.map(({ id }) => ({ kind: "work" as const, projectId, workId: id })),
         ...(project?.isPersonal ? [{ kind: "user" as const, userId: project.userId }] : []),
       ];
@@ -686,13 +663,13 @@ export function createDrizzleContextCatalog(
             );
           const existingById = new Map(existingRows.map(({ entryId, entry }) => [entryId, entry]));
           for (const work of projectRows.sort((left, right) => left.id.localeCompare(right.id))) {
-            const slug = decodeWorkSlug(work.slug);
-            if (!slug) continue;
+            const workSlug = work.slug === null ? null : decodeWorkSlug(work.slug);
+            if (work.slug !== null && !workSlug) continue;
             const entry: CatalogEntry = {
               kind: "authority",
               entryId: work.id,
               scope,
-              authority: { kind: "work", workId: work.id, workSlug: slug },
+              authority: { workId: work.id, workSlug },
               name: work.name,
               available: work.deletedAt === null && work.status === "active",
               entityRevision: String(work.entityRevision),

@@ -93,12 +93,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         catalogMutations: catalog,
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
-      if (authority?.kind !== "work") throw new Error("missing Work authority");
+      if (!authority) throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         projectId,
         USER_ID,
-        new Map([[authority.workSlug, authority]]),
+        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
       );
 
       await expect(
@@ -181,12 +181,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         },
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
-      if (authority?.kind !== "work") throw new Error("missing Work authority");
+      if (!authority) throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         projectId,
         USER_ID,
-        new Map([[authority.workSlug, authority]]),
+        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
       );
       const create = () =>
         createUntitledContextDocument({
@@ -221,12 +221,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         manifestMembership: collab,
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
-      if (authority?.kind !== "work") throw new Error("missing Work authority");
+      if (!authority) throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         projectId,
         USER_ID,
-        new Map([[authority.workSlug, authority]]),
+        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
       );
 
       await expect(

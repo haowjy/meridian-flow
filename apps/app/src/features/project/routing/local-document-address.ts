@@ -26,10 +26,9 @@ export function resolveLocalDocumentAddress(
   let authority: AvailableDocumentAuthority;
   if (entry.scope.kind === "project") authority = entry.scope;
   else if (entry.scope.kind === "user") authority = entry.scope;
-  else if (entry.scope.kind === "none") authority = entry.scope;
   else {
-    const workSlug = decodeWorkSlug(destination.workSlug);
-    if (!workSlug) return undefined;
+    const workSlug = destination.workSlug === null ? null : decodeWorkSlug(destination.workSlug);
+    if (destination.workSlug !== null && !workSlug) return undefined;
     authority = {
       kind: "work",
       projectId,

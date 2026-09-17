@@ -72,16 +72,18 @@ export function resolveContextReadPath(
     const parsed = parseUnifiedContextUri(trimmed);
     if (!parsed.ok) throw createError({ statusCode: 400, message: parsed.error.reason });
     if (isWorkScopedBrowseScheme(scheme)) {
-      if (authority.kind === "contextual")
+      if ("kind" in authority && authority.kind === "contextual")
         throw createError({ statusCode: 500, message: "Missing resolved context authority" });
       if (parsed.value.authority.kind === "contextual") {
         uri = workScopedBrowseUri(scheme, authority, parsed.value.path);
       } else {
         const sameAuthority =
-          parsed.value.authority.kind === authority.kind &&
-          (authority.kind !== "work" ||
-            (parsed.value.authority.kind === "work" &&
-              parsed.value.authority.workSlug === authority.workSlug));
+          "workSlug" in authority
+            ? authority.workSlug === null
+              ? parsed.value.authority.kind === "none"
+              : parsed.value.authority.kind === "work" &&
+                parsed.value.authority.workSlug === authority.workSlug
+            : parsed.value.authority.kind === "none";
         if (!sameAuthority) {
           throw createError({ statusCode: 400, message: "Context authority does not match route" });
         }
@@ -91,7 +93,7 @@ export function resolveContextReadPath(
   } else if (/^[a-z][a-z0-9+.-]*:/.test(trimmed)) {
     throw createError({ statusCode: 400, message: 'Malformed URI: expected "scheme://path"' });
   } else if (isWorkScopedBrowseScheme(scheme)) {
-    if (authority.kind === "contextual") {
+    if ("kind" in authority && authority.kind === "contextual") {
       throw createError({ statusCode: 500, message: "Missing resolved context authority" });
     }
     uri = workScopedBrowseUri(scheme, authority, trimmed);

@@ -89,13 +89,7 @@ export function CreationComposer({
             : undefined
         }
         uploadPort={projectId ? uploadIntakePort : undefined}
-        uploadScope={
-          projectId
-            ? work
-              ? { kind: "work", projectId, workId: work.id }
-              : { kind: "none", projectId }
-            : undefined
-        }
+        uploadScope={projectId && work ? { kind: "work", projectId, workId: work.id } : undefined}
         busy={creation.busy}
         submitDisabled={!choicesReady || modePending || creation.submitLocked}
         submitDisabledReason={

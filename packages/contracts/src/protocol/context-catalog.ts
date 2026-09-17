@@ -1,30 +1,24 @@
 /** JSON-natural protocol for the authoritative context metadata catalog. */
 import type { CanonicalContextUri, ContextUriScheme } from "../context-uri.js";
 import type { ContextSourceId, DocumentId, FolderId, ProjectId, UserId, WorkId } from "../ids.js";
-import type { WorkSlug } from "../works/work-slug.js";
+import type { WorkAuthorityDto } from "../works/work-authority.js";
 import type { Filetype, YjsTrackedSchemaType } from "./filetype.js";
 import type { DocumentFileType } from "./http-types.js";
 
 export type CatalogScope =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "user"; userId: UserId }
-  | { kind: "none"; projectId: ProjectId }
   | { kind: "work"; projectId: ProjectId; workId: WorkId };
 
 export type CatalogAuthorityEntry = {
   kind: "authority";
-  entryId: WorkId | `none:${string}`;
+  entryId: WorkId;
   scope: { kind: "project"; projectId: ProjectId };
-  authority: { kind: "work"; workId: WorkId; workSlug: WorkSlug } | { kind: "none" };
+  authority: WorkAuthorityDto;
   name: string;
   available: boolean;
-} & (
-  | { authority: { kind: "none" }; entityRevision?: never }
-  | {
-      authority: { kind: "work"; workId: WorkId; workSlug: WorkSlug };
-      entityRevision: string;
-    }
-);
+  entityRevision: string;
+};
 
 export type CatalogSourceEntry = {
   kind: "source";
@@ -161,8 +155,6 @@ export function catalogScopeKey(scope: CatalogScope): string {
       return `project:${scope.projectId}`;
     case "user":
       return `user:${scope.userId}`;
-    case "none":
-      return `none:${scope.projectId}`;
     case "work":
       return `work:${scope.projectId}:${scope.workId}`;
   }

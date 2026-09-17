@@ -36,6 +36,9 @@
 - Nonempty Agent `skills.available` no longer refuses catalog selection or turn preparation. Nonempty `skills.load` still does.
 - Delete leftover project-addressed skill HTTP (`PUT/GET …/projects/:id/skills/…`, `PATCH …/agents/:slug/skills/…`).
 - Work-scoped catalog and address by No Work id return that Work's `@/` scratch and uploads. Home `scope=none` still lists the same sources.
+- No Work is identified by work id and null slug, not `{ kind: "none" }`.
+
+- Work-scoped catalog and address by No Work id return that Work's `@/` scratch and uploads. Home unlabeled queries that same Work id.
 
 - Home and existing Chat show the Work picker and Draft / Auto-apply for No Work. The Work catalog still omits that row. Account New stays Agent-only.
 

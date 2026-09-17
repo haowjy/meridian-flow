@@ -47,10 +47,10 @@ export function contextCatalogScope(
   projectId: string,
   scheme: ProjectContextTreeScheme,
   workId: string | null,
-): CatalogScope {
+): CatalogScope | null {
   if (scheme === "user") return { kind: "user", userId: "self" };
   if (scheme === "scratch" || scheme === "uploads") {
-    return workId ? { kind: "work", projectId, workId } : { kind: "none", projectId };
+    return workId ? { kind: "work", projectId, workId } : null;
   }
   return { kind: "project", projectId };
 }
@@ -86,16 +86,12 @@ function locationBelongsToScope(
     return !isWorkScopedProjectContextScheme(location.scheme) && location.scheme !== "user";
   if (scope.kind === "user") return location.scheme === "user";
   if (!isWorkScopedProjectContextScheme(location.scheme)) return false;
-  return scope.kind === "work" ? location.workId === scope.workId : location.workId === null;
+  return scope.kind === "work" && location.workId === scope.workId;
 }
 
-function catalogUri(scheme: ProjectContextTreeScheme, path: string, scope: CatalogScope): string {
+function catalogUri(scheme: ProjectContextTreeScheme, path: string): string {
   return isWorkScopedProjectContextScheme(scheme)
-    ? canonicalContextUri(
-        scheme,
-        path,
-        scope.kind === "none" ? { kind: "none" } : { kind: "contextual" },
-      )
+    ? canonicalContextUri(scheme, path, { kind: "contextual" })
     : canonicalContextUri(scheme, path);
 }
 
@@ -142,7 +138,7 @@ function overlayResourceCatalogView(
         scope,
         scheme: location.scheme,
         name: ROOT_NAMES[location.scheme],
-        uri: catalogUri(location.scheme, "", scope),
+        uri: catalogUri(location.scheme, ""),
       });
     }
     invalidatedEntryIds.delete(sourceId);
@@ -170,13 +166,13 @@ function overlayResourceCatalogView(
         parentId,
         name: folderPath.at(-1) ?? "",
         path: folderPath,
-        uri: catalogUri(location.scheme, folderPath.join("/"), scope),
+        uri: catalogUri(location.scheme, folderPath.join("/")),
         hasChildren: true,
       });
       invalidatedEntryIds.delete(folderId);
       parentId = folderId;
     }
-    const uri = catalogUri(location.scheme, path.join("/"), scope);
+    const uri = catalogUri(location.scheme, path.join("/"));
     entries.set(documentId, {
       kind: "file",
       entryId: documentId,
@@ -375,11 +371,9 @@ export async function lookupContextCatalogFile(
   workId: string | null,
   lookup: { entryId: string } | { uri: string },
 ) {
-  const result = await getContextCatalogLookup(
-    projectId,
-    contextCatalogScope(projectId, scheme, workId),
-    lookup,
-  );
+  const scope = contextCatalogScope(projectId, scheme, workId);
+  if (!scope) return null;
+  const result = await getContextCatalogLookup(projectId, scope, lookup);
   return result.entry?.kind === "file" && result.entry.uri.startsWith(`${scheme}://`)
     ? projectCatalogFile(result.entry)
     : null;
@@ -413,7 +407,7 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
     const result: CatalogScope[] = [];
     for (const scheme of schemes) {
       const scope = contextCatalogScope(projectId, scheme, options.workId);
-      if (!result.some((existing) => sameCatalogProjectionScope(existing, scope)))
+      if (scope && !result.some((existing) => sameCatalogProjectionScope(existing, scope)))
         result.push(scope);
     }
     return result;
@@ -436,13 +430,8 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
           : query.data;
         const projected = view ? projectResourceCatalogView(projectId, scope, view, records) : null;
         for (const scheme of schemes) {
-          if (
-            !sameCatalogProjectionScope(
-              contextCatalogScope(projectId, scheme, options.workId),
-              scope,
-            )
-          )
-            continue;
+          const requested = contextCatalogScope(projectId, scheme, options.workId);
+          if (!requested || !sameCatalogProjectionScope(requested, scope)) continue;
           results[scheme] = {
             catalog: projected ? projectCatalogView(projectId, scheme, projected, records) : null,
             isComplete: resources ? Boolean(checkpoint) : Boolean(query.data),
@@ -452,6 +441,16 @@ export function useContextCatalogViews<S extends ProjectContextTreeScheme>(
           };
         }
       });
+      for (const scheme of schemes) {
+        if (results[scheme]) continue;
+        results[scheme] = {
+          catalog: null,
+          isComplete: false,
+          isError: false,
+          isFetching: false,
+          refetch: () => undefined,
+        };
+      }
       return results;
     },
     [projectId, schemes, options.workId, scopes, resources, records, snapshot, error],
@@ -480,7 +479,7 @@ export function useContextCatalogScope(projectId: string, scope: CatalogScope, e
               projectId: scopeProjectId as string,
               workId: scopeWorkId as string,
             }
-          : { kind: scopeKind, projectId: scopeProjectId as string },
+          : { kind: "project", projectId: scopeProjectId as string },
     [scopeKind, scopeProjectId, scopeUserId, scopeWorkId],
   );
   const resources = useOptionalAccountResourceReplica();

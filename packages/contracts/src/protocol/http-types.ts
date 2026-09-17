@@ -148,7 +148,7 @@ export type MoveContextEntryLocator =
   | {
       scheme: WorkAuthorityScheme;
       path: string;
-      authority: { kind: "none" } | { kind: "work"; workId: WorkId; workSlug: WorkSlug };
+      authority: { workId: WorkId; workSlug: WorkSlug | null };
     };
 export type MoveContextEntryConflict = {
   status: "conflict";

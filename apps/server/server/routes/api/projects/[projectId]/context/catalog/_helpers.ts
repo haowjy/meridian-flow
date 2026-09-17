@@ -15,7 +15,6 @@ export async function resolveCatalogRoute(event: H3Event) {
   let scope: CatalogScope;
   if (kind === "project") scope = { kind, projectId };
   else if (kind === "user") scope = { kind, userId: user.userId };
-  else if (kind === "none") scope = { kind, projectId };
   else if (kind === "work") {
     const workId = requireRequestId(query.workId, "workId");
     if (!(await app.workAuthorityResolver.byId(projectId, workId))) {

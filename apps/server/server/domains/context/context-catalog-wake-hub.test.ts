@@ -36,7 +36,7 @@ describe("context catalog wake hub", () => {
     });
     const hint: CatalogWakeHint = {
       type: "context-catalog-hint",
-      scope: { kind: "none", projectId: "project-1" },
+      scope: { kind: "work", projectId: "project-1", workId: "no-work-1" },
       headRevision: "1",
     };
     expect(() => hub.publish(hint)).not.toThrow();

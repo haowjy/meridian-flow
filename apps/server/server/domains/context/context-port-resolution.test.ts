@@ -18,11 +18,9 @@ const WORK_ID = "work-custom";
 function resolver(slugs: Record<string, string>): ProjectWorkAuthorityResolver {
   const byId = async (_projectId: string, workId: string) => {
     const slug = slugs[workId];
-    return slug
-      ? resolvedWorkAuthority({ kind: "work", workId, workSlug: testWorkSlug(slug) })
-      : null;
+    return slug ? resolvedWorkAuthority({ workId, workSlug: testWorkSlug(slug) }) : null;
   };
-  return { byId, lockById: byId, bySlug: async () => null };
+  return { byId, noWork: async () => null, lockById: byId, bySlug: async () => null };
 }
 
 function thread(): Thread {
@@ -83,7 +81,7 @@ describe("thread context-port resolution", () => {
 
   it("keeps every named Work explicitly addressable from a No Work thread", async () => {
     const noWorkId = "no-work-custom";
-    const noWorkAuthority = resolvedWorkAuthority({ kind: "none", workId: noWorkId });
+    const noWorkAuthority = resolvedWorkAuthority({ workId: noWorkId, workSlug: null });
     const resolution = await resolveThreadContext(
       {
         threads: { findById: async () => thread() },
@@ -97,11 +95,11 @@ describe("thread context-port resolution", () => {
               ? noWorkAuthority
               : workId === WORK_ID
                 ? resolvedWorkAuthority({
-                    kind: "work",
                     workId: WORK_ID,
                     workSlug: testWorkSlug("current-work"),
                   })
                 : null,
+          noWork: async () => null,
           lockById: async () => null,
           bySlug: async () => null,
         },
@@ -197,14 +195,14 @@ describe("project recovery context-port resolution", () => {
         workAuthorityResolver: {
           byId: async (_projectId, workId) =>
             workId === noWorkId
-              ? resolvedWorkAuthority({ kind: "none", workId: noWorkId })
+              ? resolvedWorkAuthority({ workId: noWorkId, workSlug: null })
               : workId === WORK_ID
                 ? resolvedWorkAuthority({
-                    kind: "work",
                     workId: WORK_ID,
                     workSlug: testWorkSlug("current-work"),
                   })
                 : null,
+          noWork: async () => null,
           lockById: async () => null,
           bySlug: async () => null,
         },

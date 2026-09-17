@@ -293,10 +293,10 @@ describe("planCatalogInstallation", () => {
       expected: { scheme: "user", workId: null },
     },
     {
-      scope: { kind: "none", projectId } as const,
+      scope: { kind: "work", projectId, workId: "no-work-id" } as const,
       scheme: "scratch" as const,
       uri: "scratch://@/notes.md",
-      expected: { scheme: "scratch", workId: null },
+      expected: { scheme: "scratch", workId: "no-work-id" },
     },
     {
       scope: { kind: "work", projectId, workId: "work-id" } as const,

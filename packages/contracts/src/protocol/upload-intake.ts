@@ -3,9 +3,7 @@ import type { ContextEntryValidationReason } from "../context-entry-validation.j
 import type { CanonicalContextUri } from "../context-uri.js";
 import type { Filetype } from "./filetype.js";
 
-export type UploadOwner =
-  | { kind: "work"; projectId: string; workId: string }
-  | { kind: "none"; projectId: string };
+export type UploadOwner = { kind: "work"; projectId: string; workId: string };
 
 export interface UploadIntakeResult {
   documentId: string;

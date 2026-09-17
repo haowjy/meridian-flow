@@ -170,7 +170,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         threadId: THREAD_ID,
         turnId: TURN_ID,
         execution: {
-          scope: { kind: "work", workId: NO_WORK_ID, workSlug: null },
+          scope: { workId: NO_WORK_ID, workSlug: null },
           aiWriteMode: "draft",
           draftOwner: { kind: "work", workId: NO_WORK_ID },
         },

@@ -88,9 +88,7 @@ export const projectQueryKeys = {
       scheme === "user"
         ? { kind: "user", userId: "self" }
         : scheme === "scratch" || scheme === "uploads"
-          ? workId
-            ? { kind: "work", projectId, workId }
-            : { kind: "none", projectId }
+          ? { kind: "work", projectId, workId: workId ?? "" }
           : { kind: "project", projectId };
     return ["projects", projectId, "context-catalog", catalogScopeKey(scope)] as const;
   },

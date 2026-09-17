@@ -67,21 +67,19 @@ export interface UpdateWorkRequest {
   description?: string;
 }
 
-/** Public writer/model encoding. Parse and adapter targets use `none` without an id. */
-export type ThreadWorkScope =
-  | { kind: "none" }
-  | { kind: "work"; workId: WorkId; workSlug: WorkSlug };
+/** Resolved execution scope. Null slug is No Work. */
+export type ThreadWorkScope = { workId: WorkId; workSlug: WorkSlug | null };
 
-/** Resolved execution always has a Work id. Public none stays on URI parse and adapter targets. */
+/** Resolved execution always has a Work id. Null slug is No Work. */
 export type ThreadExecutionContext = {
-  scope: { kind: "work"; workId: WorkId; workSlug: WorkSlug | null };
+  scope: ThreadWorkScope;
   aiWriteMode: AiWriteMode;
   draftOwner: { kind: "work"; workId: WorkId } | null;
 };
 
-/** Public writer/model encoding. Adapters resolve `none` through findNoWork. */
+/** HTTP rebind body. Null workId falls back to the project's No Work row. */
 export interface RebindThreadWorkRequest {
-  target: { kind: "none" } | { kind: "work"; workId: WorkId };
+  workId: WorkId | null;
 }
 
 export type RebindThreadWorkError =

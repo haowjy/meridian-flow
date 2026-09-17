@@ -10,7 +10,6 @@ import {
 } from "@meridian/database/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
-import { findNoWorkId } from "../context-source-provisioning.js";
 import type { ContextCatalogMutationPort } from "../ports/context-catalog.js";
 import type {
   ReserveUploadResult,
@@ -40,6 +39,7 @@ async function lockIntakeKey(db: Database, projectId: string, intakeId: string):
 }
 
 function mapRow(row: IntakeRow, workSlug: string | null): UploadReservation {
+  if (!row.workId) throw new Error(`Upload ${row.intakeId} is missing Work id`);
   return {
     projectId: row.projectId,
     intakeId: row.intakeId,
@@ -53,8 +53,7 @@ function mapRow(row: IntakeRow, workSlug: string | null): UploadReservation {
     state: row.state as UploadReservation["state"],
     storageUrl: row.storageUrl,
     consumed: row.consumedAt !== null,
-    owner:
-      row.workId && workSlug ? { kind: "work", workId: row.workId, workSlug } : { kind: "none" },
+    owner: { kind: "work", workId: row.workId, workSlug },
   };
 }
 
@@ -84,7 +83,7 @@ async function resolveOwner(db: Database, owner: UploadOwner, actorUserId: strin
     )
     .limit(1);
   if (!project) return null;
-  const workId = owner.kind === "work" ? owner.workId : await findNoWorkId(db, owner.projectId);
+  const workId = owner.workId;
   if (!workId) return null;
   const [lockedRow] = await activeDb
     .select({ slug: works.slug, isNoWork: works.isNoWork })

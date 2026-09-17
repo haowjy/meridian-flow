@@ -132,7 +132,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
                 projectId: "00000000-0000-0000-0000-000000000001",
                 execution: {
                   scope: {
-                    kind: "work",
                     workId: "00000000-0000-0000-0000-000000000002",
                     workSlug: testWorkSlug("test-work"),
                   },
