@@ -15,6 +15,10 @@
  * - Consecutive same-role messages are merged to satisfy Anthropic's
  *   alternating user/assistant requirement. Thinking blocks within assistant
  *   content are ordered first (Anthropic requires thinking before tool_use/text).
+ * - Last-step repair: thinking-mode requests (and DeepSeek, which is always in
+ *   thinking mode) prepend empty `{ type: "thinking", thinking: "" }` when an
+ *   assistant message has tool_use and no thinking block. Missing tool_result
+ *   is repaired earlier in context-builder `completeToolResultGroups`.
  * - Thinking budget is computed as a percentage of max_tokens, scaled by the
  *   effort level (low=25%, medium=50%, high=75%, max=100%).
  */
@@ -212,6 +216,28 @@ function messageContentBlocks(
  * consecutive messages of the same role must be collapsed. Thinking blocks
  * in the merged assistant content are re-ordered to the front.
  */
+const EMPTY_THINKING = { type: "thinking" as const, thinking: "" } as AnthropicContentBlock;
+
+function blockIsThinking(block: Anthropic.Messages.ContentBlockParam): boolean {
+  return block.type === "thinking" || block.type === "redacted_thinking";
+}
+
+/** DeepSeek thinking mode (and Anthropic thinking) require thinking before tool_use. */
+function ensureThinkingBeforeToolUse(
+  messages: Anthropic.Messages.MessageParam[],
+): Anthropic.Messages.MessageParam[] {
+  return messages.map((message) => {
+    if (message.role !== "assistant") return message;
+    const blocks = messageContentBlocks(message.content);
+    const hasToolUse = blocks.some((block) => block.type === "tool_use");
+    if (!hasToolUse || blocks.some(blockIsThinking)) return message;
+    return {
+      ...message,
+      content: orderedAnthropicBlocks([EMPTY_THINKING, ...blocks]),
+    };
+  });
+}
+
 function mergeConsecutiveSameRole(
   messages: Anthropic.Messages.MessageParam[],
 ): Anthropic.Messages.MessageParam[] {
@@ -392,11 +418,13 @@ export function toAnthropicMessageParams(
   );
 
   const thinking = mapThinking(request.reasoning, maxTokens);
+  const repaired =
+    thinking || providerId === "deepseek" ? ensureThinkingBeforeToolUse(messages) : messages;
 
   return {
     model: modelId,
     max_tokens: maxTokens,
-    messages,
+    messages: repaired,
     stream: true,
     ...(system !== undefined ? { system } : {}),
     ...(mapTools(request.tools) ? { tools: mapTools(request.tools) } : {}),
