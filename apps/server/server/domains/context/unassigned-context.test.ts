@@ -43,7 +43,6 @@ describe("No Work context authority", () => {
         [
           testWorkSlug("arc-one"),
           resolvedWorkAuthority({
-            kind: "work",
             workId: "work-1",
             workSlug: testWorkSlug("arc-one"),
           }),

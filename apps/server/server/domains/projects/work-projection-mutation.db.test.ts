@@ -206,9 +206,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         updatedAt: work?.updatedAt,
         availabilityGeneration: head?.generation,
         catalogEntityRevision:
-          authority?.kind === "authority" && authority.authority.kind === "work"
-            ? authority.entityRevision
-            : undefined,
+          authority?.kind === "authority" ? authority.entityRevision : undefined,
       };
     }
     it("commits turn activity, entity authority, catalog signal, and project head together", async () => {

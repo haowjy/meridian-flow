@@ -65,7 +65,7 @@ export function useComposerWorkBinding({
   }, [announce, announceError, state.effects, worksQuery.refetch]);
 
   const run = useCallback(
-    async (target: Work, rebind: { kind: "none" } | { kind: "work"; workId: string }) => {
+    async (target: Work, workId: string | null) => {
       if (mutation.isPending || target.id === state.observed.id) {
         return target.id === state.observed.id ? ("close" as const) : ("stay" as const);
       }
@@ -77,7 +77,7 @@ export function useComposerWorkBinding({
       dispatch({ type: "change.started", request, message: t`Changing work to ${target.name}` });
       try {
         const outcome = await mutation.mutateAsync({
-          target: rebind,
+          workId,
           previousWorkId: state.observed.id,
         });
         if (outcome.kind === "superseded") {
@@ -166,10 +166,10 @@ export function useComposerWorkBinding({
     operation,
     busy,
     changeQuery: (query) => dispatch({ type: "query.changed", query }),
-    choose: (target) => run(target, { kind: "work", workId: target.id }),
+    choose: (target) => run(target, target.id),
     chooseNone: () => {
       const noWork = worksQuery.noWork;
-      return noWork ? run(noWork, { kind: "none" }) : Promise.resolve("stay" as const);
+      return noWork ? run(noWork, noWork.id) : Promise.resolve("stay" as const);
     },
     retryCatalog: worksQuery.refetch,
   };

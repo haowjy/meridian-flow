@@ -43,10 +43,7 @@ export const WorkCommandSchema = z.discriminatedUnion("command", [
   z
     .object({
       command: z.literal("switch"),
-      target: z.discriminatedUnion("kind", [
-        z.object({ kind: z.literal("none") }).strict(),
-        z.object({ kind: z.literal("work"), work: z.string().min(1) }).strict(),
-      ]),
+      target: z.string().min(1).nullable().optional(),
     })
     .strict(),
 ]);

@@ -35,7 +35,7 @@ export class RebindThreadWorkError extends Error {
 interface RebindThreadWorkDeps {
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "rebindPrimary">;
-  works: Pick<WorkRepository, "findById">;
+  works: Pick<WorkRepository, "findById" | "findNoWork">;
   obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
 }
 
@@ -44,19 +44,12 @@ export interface RebindThreadWorkInput {
   workId: WorkId;
 }
 
-function receiptState(work: Work | null): WorkBindingReceiptState {
-  if (!work || work.isNoWork || work.slug === null) {
-    return {
-      kind: "none",
-      name: work?.name ?? "No Work",
-      aiWriteMode: work?.aiWriteMode ?? "direct",
-    };
-  }
+function receiptState(work: Work): WorkBindingReceiptState {
   return {
-    kind: "work",
     workId: work.id,
-    workSlug: work.slug,
     name: work.name,
+    slug: work.slug,
+    aiWriteMode: work.aiWriteMode,
     goal: work.goal,
     description: work.description,
     status: work.status,
@@ -98,7 +91,10 @@ export async function rebindThreadWork(
   }
   const previousWork = rebound.previousWorkId
     ? await deps.works.findById(rebound.previousWorkId)
-    : null;
+    : await deps.works.findNoWork(thread.projectId);
+  if (!previousWork) {
+    throw new RebindThreadWorkError("thread_unavailable", input.threadId);
+  }
   const targetWork = await deps.works.findById(input.workId);
   if (!targetWork || targetWork.deletedAt || targetWork.status === "archived") {
     throw new RebindThreadWorkError("target_work_unavailable", input.threadId, input.workId);

@@ -6,6 +6,7 @@ import type { ResolvedWorkAuthority, WorkAuthorityDto, WorkSlug } from "@meridia
 export interface ProjectWorkAuthorityResolver {
   byId(projectId: ProjectId, workId: WorkId): Promise<ResolvedWorkAuthority | null>;
   bySlug(projectId: ProjectId, workSlug: WorkSlug): Promise<ResolvedWorkAuthority | null>;
+  noWork(projectId: ProjectId): Promise<ResolvedWorkAuthority | null>;
   lockById(projectId: ProjectId, workId: WorkId): Promise<ResolvedWorkAuthority | null>;
 }
 

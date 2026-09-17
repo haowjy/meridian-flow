@@ -139,7 +139,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         result.resolutions
           .slice(0, 4)
           .map((item) => (item.kind === "available" ? item.authority.kind : "wrong")),
-      ).toEqual(["project", "none", "work", "user"]);
+      ).toEqual(["project", "work", "work", "user"]);
       const unknown = await availability.lookup(
         {
           projectId: PROJECT as never,

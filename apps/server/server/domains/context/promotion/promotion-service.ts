@@ -105,7 +105,7 @@ export function createPromotionService(deps: PromotionServiceDeps): PromotionSer
           );
         }
       }
-      if (input.workId && authority.kind === "none")
+      if (input.workId && !("workId" in authority))
         return err("invalid_input", "Work is not available in this project");
       const resultId = randomUUID();
       const objectKey = objectStoreKeyForResult(

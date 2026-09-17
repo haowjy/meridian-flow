@@ -43,14 +43,27 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       const resolver = createDrizzleProjectWorkAuthorityResolver(db);
       const resolveLocator = async (locator: typeof move.source) => {
-        if (locator.scope !== "work") return locator;
-        const [work] = await db
-          .select({ projectId: schema.works.projectId })
-          .from(schema.works)
-          .where(eq(schema.works.id, locator.workId));
-        if (!work) throw new Error("missing Work for move test");
-        const authority = await resolver.byId(work.projectId, locator.workId);
-        if (authority?.kind !== "work") {
+        if (locator.scope === "project") return locator;
+        const authority =
+          locator.scope === "none"
+            ? await resolver.noWork(
+                (
+                  await db
+                    .select({ projectId: schema.works.projectId })
+                    .from(schema.works)
+                    .where(eq(schema.works.isNoWork, true))
+                    .limit(1)
+                )[0]?.projectId ?? "",
+              )
+            : await (async () => {
+                const [work] = await db
+                  .select({ projectId: schema.works.projectId })
+                  .from(schema.works)
+                  .where(eq(schema.works.id, locator.workId));
+                if (!work) throw new Error("missing Work for move test");
+                return resolver.byId(work.projectId, locator.workId);
+              })();
+        if (!authority) {
           throw new Error("missing Work authority for move test");
         }
         return { scope: "work" as const, scheme: locator.scheme, path: locator.path, authority };
@@ -143,12 +156,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         manifestMembership: collab,
       });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(projectId, workId);
-      if (authority?.kind !== "work") throw new Error("missing Work authority");
+      if (!authority) throw new Error("missing Work authority");
       const port = contextPorts.forWork(
         authority,
         projectId,
         USER_ID,
-        new Map([[authority.workSlug, authority]]),
+        authority.workSlug ? new Map([[authority.workSlug, authority]]) : new Map(),
       );
       await createUntitledContextDocument({
         port,

@@ -259,8 +259,8 @@ function authorityMatches(
   workSlug: string | null,
 ): boolean {
   if (!isWorkScopedProjectContextScheme(scheme)) return authority.kind === "contextual";
-  if (!workId) return authority.kind === "none";
-  return authority.kind === "work" && workSlug !== null && authority.workSlug === workSlug;
+  if (!workId || workSlug === null) return authority.kind === "none";
+  return authority.kind === "work" && authority.workSlug === workSlug;
 }
 
 function attemptIs<Kind extends NamespaceRequest["kind"]>(

@@ -68,8 +68,7 @@ export type ProjectContextIdentityLookupRequest = {
 export type ProjectContextAuthority =
   | { kind: "project"; projectId: ProjectId }
   | { kind: "user"; userId: UserId }
-  | { kind: "none"; projectId: ProjectId }
-  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug };
+  | { kind: "work"; projectId: ProjectId; workId: WorkId; workSlug: WorkSlug | null };
 
 export type ProjectContextIdentityResolution =
   | {

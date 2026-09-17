@@ -18,12 +18,12 @@ instead of the N:1 `threads.workId` column.
 - **Thread Work rebind** — `rebindThreadWork` is the canonical mutation for
   explicitly changing an existing thread's primary Work. It owns lifecycle validation,
   the transaction-composable binding transition, the exact binding receipt, idempotent no-op behavior, and the
-  targeted durable context refresh obligation. Writer and model commands share
-  that transition; switch receipts are factual and are not reversible through
-  turn Undo/Redo. The authenticated writer adapter additionally holds
-  cross-process thread-run ownership across its transaction. Preflight
-  absence remains concealed by the HTTP adapter; lifecycle-lock absence is a
-  typed refreshable conflict, No Work receipts stay public `kind: "none"`, and database failures propagate unchanged.
+      targeted durable context refresh obligation. Writer and model commands share
+      that transition; switch receipts are factual and are not reversible through
+      turn Undo/Redo. The authenticated writer adapter additionally holds
+      cross-process thread-run ownership across its transaction. Preflight
+      absence remains concealed by the HTTP adapter; lifecycle-lock absence is a
+      typed refreshable conflict, No Work receipts use a Work id and null slug, and database failures propagate unchanged.
 - **Event journal** — append-only log of `OrchestratorEvent` payloads per
   thread, used for replay and real-time fan-out. Model-response and block rows
   are now projected from durable journal facts, not authored directly by the

@@ -168,10 +168,7 @@ export function createWorkContextDelivery(deps: {
                 turnId: turn.id,
                 threadId,
                 projectId: rendered.current.projectId,
-                scope:
-                  scope.workSlug === null
-                    ? { kind: "none" }
-                    : { kind: "work", workId: scope.workId, workSlug: scope.workSlug },
+                scope: { workId: scope.workId, workSlug: scope.workSlug },
               },
               ...pendingBlocks.flatMap(acknowledgedPresentationEvents),
             ];

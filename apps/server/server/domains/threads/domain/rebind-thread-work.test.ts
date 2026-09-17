@@ -55,6 +55,7 @@ function fixture(initial: WorkId = SOURCE_ID, target: Work | null = work(TARGET_
     works: {
       findById: async (id: WorkId) =>
         id === SOURCE_ID ? source : id === TARGET_ID ? target : id === NO_WORK_ID ? locked : null,
+      findNoWork: async () => locked,
     },
     threadWorks: {
       rebindPrimary: async (_threadId: ThreadId, next: WorkId) => {
@@ -70,16 +71,16 @@ function fixture(initial: WorkId = SOURCE_ID, target: Work | null = work(TARGET_
 }
 
 describe("rebindThreadWork", () => {
-  it("rebinds named Work to No Work with a writer-facing none receipt", async () => {
+  it("rebinds named Work to No Work with a null slug receipt", async () => {
     const h = fixture(SOURCE_ID);
     const result = await rebindThreadWork(h.deps, { threadId: THREAD_ID, workId: NO_WORK_ID });
     expect(result).toMatchObject({
       changed: true,
-      before: { kind: "work", workId: SOURCE_ID, name: "Source" },
-      after: { kind: "none", name: "No Work", aiWriteMode: "draft" },
+      before: { workId: SOURCE_ID, name: "Source", slug: expect.any(String) },
+      after: { workId: NO_WORK_ID, name: "No Work", slug: null, aiWriteMode: "draft" },
       receipt: {
-        before: { kind: "work", workId: SOURCE_ID },
-        after: { kind: "none", name: "No Work", aiWriteMode: "draft" },
+        before: { workId: SOURCE_ID },
+        after: { workId: NO_WORK_ID, name: "No Work", slug: null, aiWriteMode: "draft" },
         inverse: null,
       },
     });
@@ -91,8 +92,8 @@ describe("rebindThreadWork", () => {
     const result = await rebindThreadWork(h.deps, { threadId: THREAD_ID, workId: TARGET_ID });
     expect(result).toMatchObject({
       changed: true,
-      before: { kind: "none", name: "No Work", aiWriteMode: "draft" },
-      after: { kind: "work", workId: TARGET_ID, name: "Target" },
+      before: { workId: NO_WORK_ID, name: "No Work", slug: null, aiWriteMode: "draft" },
+      after: { workId: TARGET_ID, name: "Target" },
     });
   });
 

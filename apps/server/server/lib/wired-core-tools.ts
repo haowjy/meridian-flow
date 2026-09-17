@@ -700,11 +700,11 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
 
         if (command.command === "switch") {
           let workId: Work["id"];
-          if (command.target.kind === "work") {
-            const selected = await workBySlug(deps, thread.projectId, command.target.work);
+          if (command.target) {
+            const selected = await workBySlug(deps, thread.projectId, command.target);
             if (isToolError(selected)) return selected;
             if (!selected) {
-              return toolError({ message: `Unknown Work ${command.target.work}` });
+              return toolError({ message: `Unknown Work ${command.target}` });
             }
             workId = selected.id;
           } else {
@@ -727,20 +727,15 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
             ),
           );
           return {
-            output:
-              rebound.after.kind === "work"
-                ? {
-                    slug: rebound.after.workSlug,
-                    name: rebound.after.name,
-                    goal: rebound.after.goal,
-                    description: rebound.after.description,
-                    status: rebound.after.status,
-                  }
-                : {
-                    kind: "none",
-                    name: rebound.after.name,
-                    aiWriteMode: rebound.after.aiWriteMode,
-                  },
+            output: {
+              workId: rebound.after.workId,
+              slug: rebound.after.slug,
+              name: rebound.after.name,
+              goal: rebound.after.goal,
+              description: rebound.after.description,
+              status: rebound.after.status,
+              aiWriteMode: rebound.after.aiWriteMode,
+            },
             metadata: {
               workReceipt: rebound.receipt,
               ...(rebound.changed ? { workContextChanged: true } : {}),

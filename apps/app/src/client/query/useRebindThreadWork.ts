@@ -14,7 +14,7 @@ import { workFromSnapshot } from "./works-projection-acquisition";
 
 export type ThreadWorkMutationInput =
   | {
-      target: { kind: "none" } | { kind: "work"; workId: string };
+      workId: string | null;
       previousWorkId: string | null;
     }
   | { targetWorkId: string; previousWorkId: string };
@@ -35,16 +35,14 @@ export function useRebindThreadWork(projectId: string, threadId: string) {
   const client = useQueryClient();
   return useMutation<ThreadWorkMutationOutcome, unknown, ThreadWorkMutationInput>({
     mutationFn: async (input) => {
-      const target =
-        "target" in input ? input.target : { kind: "work" as const, workId: input.targetWorkId };
-      const targetWorkId = target.kind === "work" ? target.workId : null;
+      const targetWorkId = "workId" in input ? input.workId : input.targetWorkId;
       const { previousWorkId } = input;
       const cursorKey = threadQueryKeys.workProjectionCursor(threadId);
       const admitted = client.getQueryData<ThreadWorkProjectionCursor>(cursorKey)?.seq ?? null;
       let response: RebindThreadWorkResponse | null = null;
       try {
         response = await rebindThreadWork(threadId, {
-          target,
+          workId: targetWorkId,
         });
       } catch (cause) {
         if (isMeridianApiError(cause)) throw cause;

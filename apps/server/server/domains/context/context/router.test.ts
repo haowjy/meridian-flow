@@ -8,7 +8,7 @@ import type { ContextScheme } from "../ports/context-port.js";
 import { createContextPortRouter } from "./router.js";
 
 const authority = (workId: string, slug: string) =>
-  resolvedWorkAuthority({ kind: "work", workId, workSlug: testWorkSlug(slug) });
+  resolvedWorkAuthority({ workId, workSlug: testWorkSlug(slug) });
 
 function writableAdapter(scheme: ContextScheme): ContextSchemeAdapter {
   return {

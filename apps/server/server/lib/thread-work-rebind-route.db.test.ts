@@ -85,7 +85,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             {
               threadId: THREAD_ID,
               userId: USER_ID,
-              body: { target: { kind: "work", workId: TARGET_WORK_ID } },
+              body: { workId: TARGET_WORK_ID },
             },
           );
         } catch (cause) {
@@ -117,7 +117,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           threadId: THREAD_ID,
           userId: USER_ID,
-          body: { target: { kind: "work", workId: TARGET_WORK_ID } },
+          body: { workId: TARGET_WORK_ID },
         },
       );
 
@@ -161,7 +161,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           {
             threadId: THREAD_ID,
             userId: USER_ID,
-            body: { target: { kind: "work", workId: TARGET_WORK_ID } },
+            body: { workId: TARGET_WORK_ID },
           },
         );
       } catch (cause) {
@@ -229,7 +229,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             {
               threadId: THREAD_ID,
               userId: USER_ID,
-              body: { target: { kind: "work", workId: TARGET_WORK_ID } },
+              body: { workId: TARGET_WORK_ID },
             },
           ),
         );
@@ -268,7 +268,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         {
           threadId: THREAD_ID,
           userId: USER_ID,
-          body: { target: { kind: "work", workId: TARGET_WORK_ID } },
+          body: { workId: TARGET_WORK_ID },
         },
       );
 
@@ -320,7 +320,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           {
             threadId: THREAD_ID,
             userId: USER_ID,
-            body: { target: { kind: "work", workId: TARGET_WORK_ID } },
+            body: { workId: TARGET_WORK_ID },
           },
         ),
       ).rejects.toThrow("injected Notice failure");

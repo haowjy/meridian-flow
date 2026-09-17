@@ -30,10 +30,11 @@ export function catalogSourceAuthority(
   workSlug: string | null,
 ): CanonicalContextAuthority {
   if (scheme !== "scratch" && scheme !== "uploads") return { kind: "contextual" };
-  if (!workSlug) return { kind: "none" };
+  if (!workId) throw new Error("Work-scoped catalog row is missing Work id");
+  if (workSlug === null) return { workId, workSlug: null } as ResolvedWorkAuthority;
   const decoded = decodeWorkSlug(workSlug);
-  if (!decoded || !workId) throw new Error("Persisted Work authority is inconsistent");
-  return { kind: "work", workId, workSlug: decoded } as ResolvedWorkAuthority;
+  if (!decoded) throw new Error("Persisted Work authority is inconsistent");
+  return { workId, workSlug: decoded } as ResolvedWorkAuthority;
 }
 
 export function mapAuthoritativeFile(input: {

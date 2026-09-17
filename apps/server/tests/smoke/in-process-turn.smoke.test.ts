@@ -109,9 +109,14 @@ describe("smoke: in-process turn", () => {
           async byId(projectId, workId) {
             const work = await works.findById(workId);
             if (!work || work.projectId !== projectId || work.deletedAt) return null;
-            return work.isNoWork ? resolvedWorkAuthority({ kind: "none", workId: work.id }) : null;
+            return work.isNoWork
+              ? resolvedWorkAuthority({ workId: work.id, workSlug: null })
+              : null;
           },
           async bySlug() {
+            return null;
+          },
+          async noWork() {
             return null;
           },
           async lockById(projectId, workId) {

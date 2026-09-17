@@ -55,7 +55,7 @@ else
         .set({ status: "archived", archivedAt: new Date() })
         .where(eq(schema.works.id, ids.workId));
       await expect(rebind(ids.noWorkId)).resolves.toMatchObject({
-        after: { kind: "none", name: "No Work" },
+        after: { workId: ids.noWorkId, name: "No Work", slug: null },
         changed: true,
       });
       await expect(rebind(ids.workId)).rejects.toMatchObject({
@@ -68,18 +68,18 @@ else
 
     it("supports No Work to named Work to No Work while retaining historical membership", async () => {
       await expect(rebind(ids.noWorkId)).resolves.toMatchObject({
-        before: { kind: "none", name: "No Work" },
-        after: { kind: "none", name: "No Work" },
+        before: { workId: ids.noWorkId, name: "No Work", slug: null },
+        after: { workId: ids.noWorkId, name: "No Work", slug: null },
         changed: true,
       });
       await expect(rebind(ids.workId)).resolves.toMatchObject({
-        before: { kind: "none", name: "No Work" },
-        after: { kind: "work", workId: ids.workId },
+        before: { workId: ids.noWorkId, name: "No Work", slug: null },
+        after: { workId: ids.workId },
         changed: true,
       });
       await expect(rebind(ids.noWorkId)).resolves.toMatchObject({
-        before: { kind: "work", workId: ids.workId },
-        after: { kind: "none", name: "No Work" },
+        before: { workId: ids.workId },
+        after: { workId: ids.noWorkId, name: "No Work", slug: null },
         changed: true,
       });
       await expect(repos.threadWorks.findPrimary(ids.threadId)).resolves.toEqual({
@@ -222,6 +222,7 @@ else
           if (targetReads === 1) await works.softDelete(ids.targetWorkId);
           return staleTarget;
         },
+        findNoWork: (projectId: typeof ids.projectId) => works.findNoWork(projectId),
       };
       await expect(
         repos.transaction(() =>

@@ -237,10 +237,8 @@ export function ChatView({
               availableSkills={availableSkills.skills}
               uploadPort={uploadIntakePort}
               uploadScope={
-                projectId
-                  ? activeWork
-                    ? { kind: "work", projectId, workId: activeWork.id }
-                    : { kind: "none", projectId }
+                projectId && activeWork
+                  ? { kind: "work", projectId, workId: activeWork.id }
                   : undefined
               }
               onSubmit={handleSubmit}

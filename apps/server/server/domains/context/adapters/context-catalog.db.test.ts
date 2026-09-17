@@ -598,22 +598,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         { id: NAMED_FILE, contextSourceId: NAMED_SCRATCH, name: "arc", extension: "md" },
       ]);
       const catalog = createDrizzleContextCatalog(db);
-      const fileUris = async (scope: {
-        kind: "none" | "work";
-        projectId: string;
-        workId?: string;
-      }) =>
-        (await catalog.snapshot(scope as never)).entries
+      const fileUris = async (scope: { kind: "work"; projectId: string; workId: string }) =>
+        (await catalog.snapshot(scope)).entries
           .flatMap((entry) => (entry.kind === "file" ? [entry.uri] : []))
           .sort();
-      const noneUris = await fileUris({ kind: "none", projectId: PROJECT_ID });
-      const noWorkUris = await fileUris({
-        kind: "work",
-        projectId: PROJECT_ID,
-        workId: NO_WORK,
-      });
-      expect(noneUris).toEqual(["scratch://@/notes.md", "uploads://@/shot.png"]);
-      expect(noWorkUris).toEqual(noneUris);
+      expect(
+        await fileUris({
+          kind: "work",
+          projectId: PROJECT_ID,
+          workId: NO_WORK,
+        }),
+      ).toEqual(["scratch://@/notes.md", "uploads://@/shot.png"]);
       expect(await fileUris({ kind: "work", projectId: PROJECT_ID, workId: NAMED })).toEqual([
         "scratch://@draft/arc.md",
       ]);

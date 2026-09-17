@@ -14,7 +14,7 @@ export function threadExecutionContext(
   work: Pick<Work, "id" | "slug" | "aiWriteMode">,
 ): ThreadExecutionContext {
   return {
-    scope: { kind: "work", workId: work.id, workSlug: work.slug },
+    scope: { workId: work.id, workSlug: work.slug },
     aiWriteMode: work.aiWriteMode,
     draftOwner: work.aiWriteMode === "draft" ? { kind: "work", workId: work.id } : null,
   };

@@ -245,7 +245,7 @@ it("rejects a User catalog response for another account", async () => {
 
 it.each([
   [{ kind: "project", projectId: "other" } as const],
-  [{ kind: "none", projectId: "other" } as const],
+  [{ kind: "user", userId: "other" } as const],
   [{ kind: "work", projectId, workId: "other" } as const],
 ])("rejects an initial snapshot for a different requested scope", async (responseScope) => {
   const metadata = new MemoryMetadata();

@@ -289,7 +289,7 @@ function buildUnifiedContextPort(input: {
     adapterAuthorities: new Map(
       WORK_SCOPED_CONTEXTFS_SCHEMES.map((scheme) => [
         scheme,
-        scope.kind === "work" ? scope.authority : { kind: "none" as const },
+        scope.kind === "work" ? scope.authority : { kind: "none" },
       ]),
     ),
     workAuthorities,
@@ -305,7 +305,7 @@ function buildUnifiedContextPort(input: {
       ),
     resolveNoWork: async () => {
       const workId =
-        scope.kind === "work" && scope.authority.kind === "none"
+        scope.kind === "work" && scope.authority.workSlug === null
           ? scope.authority.workId
           : await storeResolvers.resolveNoWorkId(scope.projectId);
       return {

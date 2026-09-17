@@ -96,7 +96,7 @@ export function convergeThreadWorkBinding(
     const cursor = client.getQueryData<ThreadWorkProjectionCursor>(cursorKey);
     if (cursor && compareSeq(seq, cursor.seq) <= 0) return;
     notifyManager.batch(() => {
-      const projectedWorkId = signal.scope.kind === "work" ? signal.scope.workId : null;
+      const projectedWorkId = signal.scope.workId;
       const catalog = client.getQueryData<ListWorksResponse>(
         projectQueryKeys.works(signal.projectId),
       );
@@ -128,12 +128,8 @@ export function convergeThreadWorkBinding(
     if (transition.source === "confirmed") {
       const { result } = transition;
       const catalog = client.getQueryData<ListWorksResponse>(projectQueryKeys.works(projectId));
-      const afterWork =
-        result.after.kind === "work"
-          ? workFromSnapshot(catalog, result.after.workId)
-          : workFromSnapshot(catalog, null);
-      const afterWorkId =
-        afterWork?.id ?? (result.after.kind === "work" ? result.after.workId : null);
+      const afterWork = workFromSnapshot(catalog, result.after.workId);
+      const afterWorkId = afterWork?.id ?? result.after.workId;
       if (afterWork) {
         patchThreadInProjectCaches(client, threadId, {
           workId: afterWork.id,
@@ -141,8 +137,7 @@ export function convergeThreadWorkBinding(
         });
       }
       patchSnapshot(client, threadId, afterWorkId);
-      const beforeWorkId =
-        result.before.kind === "work" ? result.before.workId : (catalog?.noWork.id ?? null);
+      const beforeWorkId = result.before.workId;
       invalidateThreadProjectionDependencies(client, {
         threadId,
         projectId,

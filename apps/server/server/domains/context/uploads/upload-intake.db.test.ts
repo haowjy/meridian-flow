@@ -67,7 +67,7 @@ if (!RUN) {
       owner:
         owner === "work"
           ? { kind: "work" as const, projectId: PROJECT, workId: WORK }
-          : { kind: "none" as const, projectId: PROJECT },
+          : { kind: "work" as const, projectId: PROJECT, workId: NO_WORK },
       filename: "chapter.md",
       mimeType: "text/markdown",
       byteDigest: "a".repeat(64),
@@ -254,7 +254,11 @@ if (!RUN) {
         ok: true,
         value: "# Chapter One\n\nIt began.\n",
       });
-      const snapshot = await catalog.snapshot({ kind: "none", projectId: PROJECT as never });
+      const snapshot = await catalog.snapshot({
+        kind: "work",
+        projectId: PROJECT as never,
+        workId: NO_WORK as never,
+      });
       expect(snapshot.entries).toEqual(
         expect.arrayContaining([
           expect.objectContaining({

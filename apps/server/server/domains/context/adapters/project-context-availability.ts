@@ -124,22 +124,17 @@ function classifyAuthoritativeIdentity(input: {
     if (!work || work.projectId !== input.requestProjectId) {
       return { kind: "inconsistent" };
     }
-    if (work.isNoWork) {
-      scope = { kind: "work", projectId: input.requestProjectId, workId: work.id } as never;
-      authority = { kind: "none", projectId: input.requestProjectId } as never;
-    } else {
-      const workSlug = decodeWorkSlug(work.slug);
-      if (!workSlug) {
-        return { kind: "inconsistent" };
-      }
-      scope = { kind: "work", projectId: input.requestProjectId, workId: work.id } as never;
-      authority = {
-        kind: "work",
-        projectId: input.requestProjectId,
-        workId: work.id,
-        workSlug,
-      } as never;
+    const workSlug = work.isNoWork ? null : decodeWorkSlug(work.slug);
+    if (!work.isNoWork && !workSlug) {
+      return { kind: "inconsistent" };
     }
+    scope = { kind: "work", projectId: input.requestProjectId, workId: work.id } as never;
+    authority = {
+      kind: "work",
+      projectId: input.requestProjectId,
+      workId: work.id,
+      workSlug,
+    } as never;
   } else if (isActorUserSource) {
     scope = { kind: "user", userId: input.actorUserId } as never;
     authority = { kind: "user", userId: input.actorUserId } as never;

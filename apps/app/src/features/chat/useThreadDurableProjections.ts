@@ -54,21 +54,21 @@ function decodeWorkProjection(
     return null;
   }
   const parsedScope = scope as Record<string, unknown>;
-  if (parsedScope.kind === "none") {
-    return { seq, signal: { threadId, projectId, scope: { kind: "none" } } };
+  if (typeof parsedScope.workId !== "string") return null;
+  if (parsedScope.workSlug === null) {
+    return {
+      seq,
+      signal: { threadId, projectId, scope: { workId: parsedScope.workId, workSlug: null } },
+    };
   }
   const workSlug = decodeWorkSlug(parsedScope.workSlug);
-  return parsedScope.kind === "work" && typeof parsedScope.workId === "string" && workSlug
+  return workSlug
     ? {
         seq,
         signal: {
           threadId,
           projectId,
-          scope: {
-            kind: "work",
-            workId: parsedScope.workId,
-            workSlug,
-          },
+          scope: { workId: parsedScope.workId, workSlug },
         },
       }
     : null;

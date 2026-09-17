@@ -187,7 +187,12 @@ if (!RUN) {
                   kind: "available",
                   documentId: input.documentId,
                   generation: "1",
-                  authority: { kind: "none", projectId: PROJECT },
+                  authority: {
+                    kind: "work",
+                    projectId: PROJECT,
+                    workId: "00000000-0000-4000-8000-000000000f70",
+                    workSlug: null,
+                  },
                   entry: {
                     kind: "file",
                     entryId: input.documentId,
@@ -196,7 +201,11 @@ if (!RUN) {
                     disposition: "binary",
                     fileType: "image",
                     mimeType: "image/png",
-                    scope: { kind: "none", projectId: PROJECT },
+                    scope: {
+                      kind: "work",
+                      projectId: PROJECT,
+                      workId: "00000000-0000-4000-8000-000000000f70",
+                    },
                     sourceId: SOURCE,
                     parentId: SOURCE,
                     name: "map.png",
