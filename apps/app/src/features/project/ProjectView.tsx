@@ -22,7 +22,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
-import { useWorks } from "@/client/query/useWorks";
+import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { observeWorksAvailability } from "@/client/query/works-availability-observer";
 import { useContextTabs, useContextTabsStore } from "@/client/stores";
 import type { ContextTab } from "@/client/stores/context-tabs-store/context-tabs-store";
@@ -209,10 +209,12 @@ export function ProjectView(props: ProjectViewProps) {
   const { threads: projectThreads } = useProjectThreads(props.projectId);
   const resolvedThreadId = props.activeThreadId;
   const worksQuery = useWorks(props.projectId);
-  const { works } = worksQuery;
-  const chatWorkId =
-    projectThreads?.find((thread) => thread.id === resolvedThreadId)?.workId ?? null;
-  const chatWork = works?.find((work) => work.id === chatWorkId) ?? null;
+  const { works, noWork } = worksQuery;
+  const chatThread = projectThreads?.find((thread) => thread.id === resolvedThreadId);
+  const chatWork = chatThread
+    ? workFromSnapshot(noWork ? { works: works ?? [], noWork } : null, chatThread.workId ?? null)
+    : null;
+  const chatWorkId = chatWork?.id ?? null;
   const editorScope = resolveEditorWorkScope(props.editorRouteWork ?? props.routeWork);
   const editorWorkId = editorScope.status === "ready" ? editorScope.workId : null;
   useLayoutEffect(() => {

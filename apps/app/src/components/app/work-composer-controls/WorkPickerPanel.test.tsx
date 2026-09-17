@@ -61,6 +61,29 @@ describe("WorkPickerPanel", () => {
     );
   });
 
+  it("offers No Work without listing it as a catalog card", async () => {
+    const chooseNone = vi.fn();
+    await withReactRoot(
+      <WorkPickerPanel
+        view={view({ status: "ready", works: [], refreshing: false })}
+        operation={{ currentWorkId: "", targetId: null, pending: false, failure: null }}
+        onQueryChange={() => {}}
+        onChoose={() => {}}
+        onChooseNone={chooseNone}
+      />,
+      () => {
+        expect(document.body.textContent).not.toContain("No Work matches your search.");
+        expect(document.body.textContent).not.toContain("No Work yet.");
+        const none = Array.from(document.querySelectorAll("button")).find(
+          (node) => node.textContent === "No Work",
+        );
+        expect(none).not.toBeNull();
+        none?.click();
+        expect(chooseNone).toHaveBeenCalledOnce();
+      },
+    );
+  });
+
   it("chooses an archived Work without confirmation", async () => {
     const choose = vi.fn();
     await withReactRoot(

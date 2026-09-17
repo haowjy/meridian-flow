@@ -24,6 +24,7 @@ import {
   refreshWorksSnapshot,
   repairWorksSnapshot,
   seedWorksSnapshot,
+  workFromSnapshot,
 } from "./works-projection-acquisition";
 
 export type ThreadWorkProjectionCursor = { seq: string; workId: string | null };
@@ -96,20 +97,17 @@ export function convergeThreadWorkBinding(
     if (cursor && compareSeq(seq, cursor.seq) <= 0) return;
     notifyManager.batch(() => {
       const projectedWorkId = signal.scope.kind === "work" ? signal.scope.workId : null;
-      client.setQueryData(cursorKey, { seq, workId: projectedWorkId });
       const catalog = client.getQueryData<ListWorksResponse>(
         projectQueryKeys.works(signal.projectId),
       );
-      const work = catalog?.works.find(({ id }) => id === projectedWorkId);
+      const work = workFromSnapshot(catalog, projectedWorkId);
+      client.setQueryData(cursorKey, { seq, workId: work?.id ?? projectedWorkId });
       if (work) {
         patchThreadInProjectCaches(client, signal.threadId, {
           workId: work.id,
           work: { id: work.id, title: work.name },
         });
         patchSnapshot(client, signal.threadId, work.id);
-      } else if (projectedWorkId === null) {
-        patchThreadInProjectCaches(client, signal.threadId, { workId: null, work: null });
-        patchSnapshot(client, signal.threadId, null);
       }
       invalidateThreadProjectionDependencies(client, {
         threadId: signal.threadId,
@@ -129,27 +127,27 @@ export function convergeThreadWorkBinding(
   notifyManager.batch(() => {
     if (transition.source === "confirmed") {
       const { result } = transition;
-      const afterWorkId = result.after.kind === "work" ? result.after.workId : null;
-      patchThreadInProjectCaches(
-        client,
-        threadId,
+      const catalog = client.getQueryData<ListWorksResponse>(projectQueryKeys.works(projectId));
+      const afterWork =
         result.after.kind === "work"
-          ? {
-              workId: result.after.workId,
-              work: { id: result.after.workId, title: result.after.name },
-            }
-          : { workId: null, work: null },
-      );
+          ? workFromSnapshot(catalog, result.after.workId)
+          : workFromSnapshot(catalog, null);
+      const afterWorkId =
+        afterWork?.id ?? (result.after.kind === "work" ? result.after.workId : null);
+      if (afterWork) {
+        patchThreadInProjectCaches(client, threadId, {
+          workId: afterWork.id,
+          work: { id: afterWork.id, title: afterWork.name },
+        });
+      }
       patchSnapshot(client, threadId, afterWorkId);
+      const beforeWorkId =
+        result.before.kind === "work" ? result.before.workId : (catalog?.noWork.id ?? null);
       invalidateThreadProjectionDependencies(client, {
         threadId,
         projectId,
         refreshLists: false,
-        workIds: new Set(
-          [result.before.kind === "work" ? result.before.workId : null, afterWorkId].filter(
-            Boolean,
-          ) as string[],
-        ),
+        workIds: new Set([beforeWorkId, afterWorkId].filter(Boolean) as string[]),
         contextTrees: "work-scoped",
       });
       convergeWorkProjection(client, { kind: "binding", projectId });

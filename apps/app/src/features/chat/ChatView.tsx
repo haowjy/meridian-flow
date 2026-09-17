@@ -238,13 +238,8 @@ export function ChatView({
               uploadPort={uploadIntakePort}
               uploadScope={
                 projectId
-                  ? activeWork?.slug
-                    ? {
-                        kind: "work",
-                        projectId,
-                        workId: activeWork.id,
-                        workSlug: activeWork.slug,
-                      }
+                  ? activeWork
+                    ? { kind: "work", projectId, workId: activeWork.id }
                     : { kind: "none", projectId }
                   : undefined
               }
@@ -253,18 +248,18 @@ export function ChatView({
               onRetireSubmission={(envelope) => settleQuarantined(envelope, true)}
               onStop={handleStop}
               toolbarLeft={
-                projectId && activeWork ? (
+                !projectId ? (
+                  <AgentOnlyComposerToolbar
+                    control={{ mode: "readonly", name: composerAgentName }}
+                  />
+                ) : activeWork ? (
                   <ChatComposerToolbar
                     projectId={projectId}
                     threadId={threadId}
                     work={activeWork}
                     agentName={composerAgentName}
                   />
-                ) : (
-                  <AgentOnlyComposerToolbar
-                    control={{ mode: "readonly", name: composerAgentName }}
-                  />
-                )
+                ) : undefined
               }
             />
           </div>
