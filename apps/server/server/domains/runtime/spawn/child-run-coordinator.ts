@@ -3,6 +3,7 @@
  * terminal state, captures return_result, and persists spawnStatus/spawnResult.
  * The sole caller allowed through the thread-create spawn gate.
  */
+import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
@@ -14,6 +15,7 @@ import type {
 import { blockPlainText, type Thread } from "@meridian/contracts/threads";
 import type { BillingSpendReader } from "../../billing/index.js";
 import {
+  type AgentRevision,
   type AgentRevisionStore,
   type CompiledAgentDefinition,
   resolveAgentConfiguration,
@@ -38,10 +40,14 @@ import type { ChildRunRegistry } from "../loop/turn-runner.js";
 import type { HelperResultDelivery } from "./helper-result-delivery.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
 
+/** Event/thread label for a generic helper child; never a specialist catalog slug. */
+const GENERIC_HELPER_SLUG = "helper";
+
 export interface SpawnChildInput {
   parentThread: Thread;
   parentTurnId: TurnId;
-  agentSlug: string;
+  /** Named roster target; omitted or empty selects the generic helper baseline. */
+  agentSlug?: string;
   prompt: string;
   description?: string;
   budget: TreeBudget;
@@ -69,6 +75,8 @@ export interface ChildRunCoordinatorDeps {
     "readThreadBinding" | "readRevision" | "readSource" | "readPackageDefinitions" | "bindThread"
   >;
   defaultModel(): string | undefined;
+  /** Built-in generic baseline identity; execution config still comes from the caller. */
+  genericBaseline(): Promise<AgentRevision | undefined>;
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
   childRunRegistry: ChildRunRegistry;
   helperResultDelivery: HelperResultDelivery;
@@ -90,6 +98,8 @@ type ChildTerminal =
 
 type PreparedChild = {
   child: Thread;
+  /** Event/thread-visible slug; a named roster name or the generic helper label. */
+  resolvedSlug: string;
   childController: AbortController;
   childRegistered: boolean;
   runClaim: ThreadRunClaim;
@@ -153,40 +163,74 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     if (turnError) return { status: "error", error: turnError };
 
     const parentAgent = await deps.agentRevisions.readThreadBinding(input.parentThread.id);
-    const target = parentAgent?.configuration.namedTargets.find(
-      (item) => item.name === input.agentSlug,
-    );
-    if (!target) {
+    if (!parentAgent) {
       return {
         status: "error",
-        error: meridianErrorFromSystem(
-          "spawn_agent_not_allowed",
-          `Agent "${input.agentSlug}" is not in caller subagents`,
-        ),
+        error: meridianErrorFromSystem("spawn_failed", "Caller has no retained Agent binding"),
       };
     }
 
-    const childAgent = await deps.agentRevisions.readRevision(target.definitionRevisionId);
-    if (
-      !childAgent ||
-      childAgent.definition.metadata.mode === "primary" ||
-      childAgent.definition.metadata["model-invocable"] === false
-    ) {
-      return {
-        status: "error",
-        error: meridianErrorFromSystem(
-          "spawn_agent_not_found",
-          `Agent "${input.agentSlug}" is unavailable in the caller's retained package`,
-        ),
+    const requestedSlug = input.agentSlug?.trim() ?? "";
+    let revision: AgentRevision;
+    let configuration: ResolvedAgentConfiguration;
+    let resolvedSlug: string;
+    let defaultTitle: string;
+    if (requestedSlug === "") {
+      const baseline = await deps.genericBaseline();
+      if (!baseline) {
+        return {
+          status: "error",
+          error: meridianErrorFromSystem("spawn_agent_not_found", "Generic helper is unavailable"),
+        };
+      }
+      const meta = parentAgent.definition.metadata;
+      configuration = {
+        ...parentAgent.configuration,
+        inheritedExecution: {
+          ...(meta.tools !== undefined ? { tools: meta.tools } : {}),
+          ...(meta["disallowed-tools"] !== undefined
+            ? { "disallowed-tools": meta["disallowed-tools"] }
+            : {}),
+          ...(meta.effort !== undefined ? { effort: meta.effort } : {}),
+        },
       };
+      revision = baseline;
+      resolvedSlug = GENERIC_HELPER_SLUG;
+      defaultTitle = GENERIC_HELPER_SLUG;
+    } else {
+      const target = parentAgent.configuration.namedTargets.find(
+        (item) => item.name === requestedSlug,
+      );
+      if (!target) {
+        return {
+          status: "error",
+          error: meridianErrorFromSystem(
+            "spawn_agent_not_allowed",
+            `Agent "${requestedSlug}" is not in caller subagents`,
+          ),
+        };
+      }
+      const childAgent = await deps.agentRevisions.readRevision(target.definitionRevisionId);
+      if (!childAgent || childAgent.definition.metadata["model-invocable"] === false) {
+        return {
+          status: "error",
+          error: meridianErrorFromSystem(
+            "spawn_agent_not_found",
+            `Agent "${requestedSlug}" is unavailable in the caller's retained package`,
+          ),
+        };
+      }
+      revision = childAgent;
+      configuration = await resolveAgentConfiguration({
+        revision: childAgent,
+        store: deps.agentRevisions,
+        defaultModel: deps.defaultModel(),
+      });
+      resolvedSlug = requestedSlug;
+      defaultTitle = `${requestedSlug} subagent`;
     }
 
-    const configuration = await resolveAgentConfiguration({
-      revision: childAgent,
-      store: deps.agentRevisions,
-      defaultModel: deps.defaultModel(),
-    });
-    const unavailable = deps.unavailableReasons(childAgent.definition, configuration.model);
+    const unavailable = deps.unavailableReasons(revision.definition, configuration.model);
     if (unavailable.length) {
       return {
         status: "error",
@@ -197,7 +241,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       const created = await createBoundConversation({
         transaction: deps.repos.transaction,
         agentRevisions: deps.agentRevisions,
-        revision: childAgent,
+        revision,
         configuration,
         createThread: () =>
           deps.repos.subagentThreads.createSubagent({
@@ -207,7 +251,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             rootThreadId: input.parentThread.rootThreadId as ThreadId,
             originTurnId: input.parentTurnId,
             spawnDepth: input.parentThread.spawnDepth + 1,
-            title: input.description ?? `${input.agentSlug} subagent`,
+            title: input.description ?? defaultTitle,
             spawnStatus: "running",
           }),
         resolveWork: (created) =>
@@ -223,7 +267,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         parentThreadId: input.parentThread.id,
         parentTurnId: input.parentTurnId as string,
         childThreadId: created.id,
-        agentSlug: input.agentSlug,
+        agentSlug: resolvedSlug,
         prompt: input.prompt,
       });
       if (options.background) {
@@ -232,7 +276,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           parentThreadId: input.parentThread.id,
           parentTurnId: input.parentTurnId as string,
           childThreadId: created.id,
-          agentSlug: input.agentSlug,
+          agentSlug: resolvedSlug,
           description: input.description,
         });
       }
@@ -268,7 +312,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         );
         childRegistered = true;
       }
-      return { child, childController, childRegistered, runClaim };
+      return { child, resolvedSlug, childController, childRegistered, runClaim };
     } catch (error) {
       childController.abort();
       deps.childRunRegistry.unregisterChild(child.id as ThreadId);
@@ -424,12 +468,13 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   async function deliverHelperResult(
     input: SpawnChildInput,
     child: Thread,
+    resolvedSlug: string,
     result: SpawnResult,
   ): Promise<void> {
     await deps.helperResultDelivery.deliverOrQueue({
       parentThread: input.parentThread,
       parentTurnId: input.parentTurnId,
-      agentSlug: input.agentSlug,
+      agentSlug: resolvedSlug,
       description: input.description,
       childThreadId: child.id,
       result,
@@ -457,7 +502,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
               parentThreadId: input.parentThread.id,
               parentTurnId: input.parentTurnId as string,
               childThreadId: prepared.child.id,
-              agentSlug: input.agentSlug,
+              agentSlug: prepared.resolvedSlug,
               result,
             });
           } else {
@@ -466,11 +511,11 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
               parentThreadId: input.parentThread.id,
               parentTurnId: input.parentTurnId as string,
               childThreadId: prepared.child.id,
-              agentSlug: input.agentSlug,
+              agentSlug: prepared.resolvedSlug,
               error: result.status === "error" ? result.error.message : "Background run failed",
             });
           }
-          await deliverHelperResult(input, prepared.child, result);
+          await deliverHelperResult(input, prepared.child, prepared.resolvedSlug, result);
         })
         .catch(async (error: unknown) => {
           await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
@@ -478,7 +523,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             parentThreadId: input.parentThread.id,
             parentTurnId: input.parentTurnId as string,
             childThreadId: prepared.child.id,
-            agentSlug: input.agentSlug,
+            agentSlug: prepared.resolvedSlug,
             error: error instanceof Error ? error.message : String(error),
           });
         });
@@ -486,7 +531,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       return {
         status: "background",
         threadId: prepared.child.id,
-        agentSlug: input.agentSlug,
+        agentSlug: prepared.resolvedSlug,
         description: input.description,
       };
     },

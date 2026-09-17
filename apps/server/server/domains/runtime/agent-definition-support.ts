@@ -15,17 +15,6 @@ const supported = new Set([
   "tools",
   "disallowed-tools",
 ]);
-export function agentDefinitionUnavailableReasons(
-  definition: CompiledAgentDefinition,
-  gateway: Pick<Gateway, "listModels">,
-  resolvedModel: string,
-): string[] {
-  const reasons = agentExecutionUnavailableReasons(definition, gateway, resolvedModel);
-  const meta = definition.metadata;
-  if (meta.subagents?.length) reasons.push("Bound subagent delegation is not available yet.");
-  return reasons;
-}
-
 export function agentExecutionUnavailableReasons(
   definition: CompiledAgentDefinition,
   gateway: Pick<Gateway, "listModels">,

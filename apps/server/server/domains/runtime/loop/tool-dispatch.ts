@@ -133,7 +133,7 @@ export async function dispatchToolCall(
   const spawn =
     call.name === "spawn"
       ? async (spawnInput: {
-          agent: string;
+          agent?: string;
           prompt: string;
           description?: string;
           mode?: "foreground" | "background";

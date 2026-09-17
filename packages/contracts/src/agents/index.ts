@@ -30,11 +30,24 @@ export interface RetainedSkillReference {
   contentDigest: string;
 }
 
+/**
+ * Effective Mars execution fields a generic child inherits from its calling
+ * Agent. Carried on the child binding so execution uses the parent's tools and
+ * effort rather than those of the generic baseline identity it is bound to.
+ */
+export interface InheritedExecutionMetadata {
+  tools?: string[] | Record<string, "allow" | "deny">;
+  "disallowed-tools"?: string[];
+  effort?: "low" | "medium" | "high" | "xhigh" | "none" | "disabled" | "adaptive";
+}
+
 /** Resolved once at binding; authored source remains presence-sensitive. */
 export interface ResolvedAgentConfiguration {
   model: string;
   skills: { load: RetainedSkillReference[]; available: RetainedSkillReference[] };
   namedTargets: Array<{ name: string; definitionRevisionId: string }>;
+  /** Present only on a generic child; absent means the bound revision's own metadata governs. */
+  inheritedExecution?: InheritedExecutionMetadata;
 }
 
 /** Where an agent definition came from, for grouping and provenance badges. */

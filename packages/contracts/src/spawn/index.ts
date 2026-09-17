@@ -49,7 +49,7 @@ export interface TreeBudget {
   };
 }
 
-export const DEFAULT_MAX_SPAWN_DEPTH = 2;
+export const DEFAULT_MAX_SPAWN_DEPTH = 3;
 
 export function createDefaultTreeBudget(
   overrides: Partial<Pick<TreeBudget, "maxDepth" | "maxTotalTurns" | "maxCostMillicredits">> = {},

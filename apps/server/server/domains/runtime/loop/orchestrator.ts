@@ -102,6 +102,7 @@ import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
+import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
@@ -488,7 +489,7 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
       inheritedTurns,
       inheritedBlocks,
       setup.events,
-      input.treeBudget ?? createDefaultTreeBudget(),
+      input.treeBudget ?? createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
     ),
   };
 }

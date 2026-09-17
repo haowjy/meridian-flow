@@ -8,6 +8,7 @@ import {
   type EffectiveToolPolicy,
   projectToolPolicy,
 } from "../loop/permissions/project-tool-policy.js";
+import { spawnToolDescription } from "./spawn-tools.js";
 import type { ToolRegistry } from "./types.js";
 
 export interface AgentThreadTurnContext {
@@ -46,8 +47,16 @@ export async function resolveAgentThreadTurnContext(
   const reasons = agentDefinitionUnsupportedReasons(revision.definition);
   if (reasons.length) throw new Error(reasons.join(" "));
 
-  const policy = projectToolPolicy(revision.definition.metadata);
-  let tools = advertiseTools(input.baseTools, policy);
+  // A generic child carries its caller's execution fields so it inherits
+  // parent tools/effort rather than the generic baseline identity's.
+  const inherited = revision.configuration.inheritedExecution;
+  const policy = projectToolPolicy(inherited ?? revision.definition.metadata);
+  const hasNamedTargets = revision.configuration.namedTargets.length > 0;
+  let tools = advertiseTools(input.baseTools, policy).map((tool) =>
+    tool.type === "function" && tool.name === "spawn"
+      ? { ...tool, description: spawnToolDescription(hasNamedTargets) }
+      : tool,
+  );
   const report =
     input.thread.kind === "subagent"
       ? input.toolRegistry.getRegistration("return_result")?.definition
@@ -56,8 +65,8 @@ export async function resolveAgentThreadTurnContext(
   return {
     agentSlug: revision.slug,
     gatewayParams: agentGatewayMetaToGenerateParams({
-      ...revision.definition.metadata,
       model: revision.configuration.model,
+      effort: inherited?.effort ?? revision.definition.metadata.effort,
     }),
     tools,
     policy,

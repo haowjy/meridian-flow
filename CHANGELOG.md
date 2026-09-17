@@ -17,6 +17,7 @@
 - First-turn bake lists Agent `skills.available` slugs (and name when it differs) with descriptions and persists those slugs. An account install after freeze does not rewrite the prompt and does not notify the model.
 - Persist account-scoped skill installs. Debug overlay can add a packaged skill (including `story-review`) or a paste, and delete by slug.
 - Snapshot `creative-writing-modes`, `writing-principles`, and `story-review` into launch-agents. Writer lists the first two as available skills.
+- Advertise the `spawn` tool to every Agent. Named children resolve from the caller's `subagents` roster; an omitted or empty `agent` selects the generic helper, which inherits the caller's model, tools, skills, effort, and roster while the built-in General revision supplies its body. Default max spawn depth is now 3, operator-overridable through `MERIDIAN_MAX_SPAWN_DEPTH`; a deeper spawn is a tool error before any child is created.
 
 ### Fixed
 
