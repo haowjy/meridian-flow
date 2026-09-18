@@ -52,7 +52,7 @@ function noopChildRunCoordinator(): ChildRunCoordinator {
     async spawnChildBackground() {
       throw new Error("Test child run coordinator not configured");
     },
-    createReturnResultCompleter() {
+    createReturnResultCompleter(_childThreadId, _options) {
       return async () => ({ ok: true as const });
     },
   };

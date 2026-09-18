@@ -98,6 +98,8 @@ export interface ToolExecutionResult {
   isError?: boolean;
   /** Host metadata persisted beside the result for request reconstruction. */
   metadata?: JsonObject;
+  /** Typed return_result envelope; dispatch must not reverse-parse `output`. */
+  returnResult?: ReturnResultOutcome;
 }
 
 /**

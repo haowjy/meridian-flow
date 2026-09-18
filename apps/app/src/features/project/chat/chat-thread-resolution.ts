@@ -3,9 +3,9 @@
  * from the available sources.
  *
  * Pure precedence function: explicit URL chat id (even if not yet loaded) →
- * pending optimistic thread → remembered synced thread → first non-subagent
- * (else first) loaded project thread → null. Remembered ids must resolve in
- * the loaded list. An explicit URL id never falls through.
+ * pending optimistic thread → remembered synced thread → first loaded project
+ * thread → null. Remembered ids must resolve in the loaded list. An explicit
+ * URL id never falls through. The loaded list is primaries only.
  * `ReadableProjectRoute` calls `useResolvedChatThread` once and passes that result to
  * context hydration, review, and every chat surface. Descendants must never
  * re-derive the thread or their Work and conversation can diverge.
@@ -37,9 +37,7 @@ export function resolveChatThreadId({
   return (
     pendingThreadId ??
     loadedId(rememberedThreadId) ??
-    (availableThreads && availableThreads.length > 0
-      ? (availableThreads.find((t) => t.kind !== "subagent")?.id ?? availableThreads[0].id)
-      : null)
+    (availableThreads && availableThreads.length > 0 ? availableThreads[0].id : null)
   );
 }
 

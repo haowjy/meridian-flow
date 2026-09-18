@@ -20,6 +20,13 @@ export type ReturnResultCapture = {
 /** A run accepts one report; a second return_result is refused, not thrown. */
 export type ReturnResultOutcome = { ok: true } | { ok: false; message: string };
 
+export function isReturnResultOutcome(value: unknown): value is ReturnResultOutcome {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  if (!("ok" in value)) return false;
+  if (value.ok === true) return true;
+  return value.ok === false && "message" in value && typeof value.message === "string";
+}
+
 /** Child agent terminal hand-back (execution-model §4.1). */
 export type AgentReport = {
   threadId: string;

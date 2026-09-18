@@ -4,7 +4,7 @@ import { ChevronLeft } from "lucide-react";
 
 export type SubagentBannerProps = {
   subagent: Thread;
-  parent: Thread | null;
+  parent: { id: string; title: string | null } | null;
   onOpenParent: (threadId: string) => void;
 };
 
