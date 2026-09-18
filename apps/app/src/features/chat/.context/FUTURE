@@ -28,6 +28,28 @@
   current sizes; revisit if streaming with many long turns shows partition
   cost. (Noted during the #558 render-model work, 2026-09-18.)
 
+- Performance, further (from the `chat-render-perf` investigation, 2026-09-18).
+  #558 removed the structural costs — per-token full-document reparse,
+  per-token store update/render, per-revision forced layout. These remain, all
+  unquantified; measure with `react renders` plus a `trace` during a long
+  stream before implementing:
+  - **Tail-bound the streaming markdown repair.** While streaming, Streamdown
+    runs incomplete-markdown repair (`remend`) and the block split over the
+    entire document on every content change. The per-block `memo` keeps settled
+    blocks from re-rendering, but that parent pass is still O(n) per token —
+    the same shape as the reparse #558 removed, just cheaper. Repair and split
+    only the unstable tail, copying settled blocks raw (assistant-ui's
+    `tailBoundedRemend` is the reference).
+  - **Dirty-track transcript row identity.** The store replaces the turns array
+    per stream update, so `TurnList`/the virtualizer (and non-memoized
+    neighbors like `ChatSurface`/`Composer`) do work per frame. Coalescing
+    already cut this to one update per frame; a stable row id-array identity
+    across content-only updates would let the virtualizer and memoized rows
+    skip.
+  - **Render-count attribution is still unmeasured.** No clean frame-level A/B
+    was captured for #558; profile per-component render counts per frame to
+    decide whether either item above is worth doing.
+
 - Streamdown wraps a markdown image in a `<div>`, which lands inside the
   paragraph `<p>` and logs a React hydration warning (`<div>` cannot be a
   descendant of `<p>`). Upstream streamdown rendering, pre-existing; revisit
