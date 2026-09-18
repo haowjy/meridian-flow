@@ -2679,6 +2679,10 @@ msgstr "Retry sign-in"
 msgid "Retry Work"
 msgstr "Retry Work"
 
+#: src/features/chat/ChildReportBlock.tsx
+msgid "Return"
+msgstr "Return"
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Review"
 msgstr "Review"
