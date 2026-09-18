@@ -34,6 +34,8 @@
 
 ### Changed
 
+- `TurnCard` is the shared shell for `ask_user` and `spawn` turn cards, with a door slot and running/failed tones. `SpawnReportCard` is a thin adapter over it and drops its separate muted strip.
+
 - Per-turn tool name gate is advertised names plus extraAllowed. Wildcard allow, millicredit cost cap, and unused permission profiles are gone.
 - Slash and Send authorize the installed-packages ∪ account catalog, not the bound Agent package. Prompt bake and `skill()` use Agent `skills.available` only. The Agent∪account union is gone.
 - Nonempty Agent `skills.available` no longer refuses catalog selection or turn preparation. Nonempty `skills.load` still does.

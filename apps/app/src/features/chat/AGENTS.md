@@ -56,8 +56,10 @@ composer mode, and review state live in
    `isLive` or partial block content; use the contracts terminal-status
    predicate.
 3. **Interrupt and spawn cards stay visible.** Both are custom cards and
-   segment boundaries (`ask_user` interrupt, spawn `helper-result`). Their
-   tool protocol is hidden. Later model prose is a new Thinking/Activity pair.
+   segment boundaries (`ask_user` interrupt, spawn `helper-result`). Both render
+   through the shared `TurnCard` shell (`icon`/`tone`/`title`/`door`/`hint`/
+   children); process tools render as `ActivityRow`. Their tool protocol is
+   hidden. Later model prose is a new Thinking/Activity pair.
 4. **Document names are doors.** `DocumentName.tsx` renders every
    writer-facing document name in the timeline and is the only place that
    decides whether one is a link. Don't add navigation to a renderer, and

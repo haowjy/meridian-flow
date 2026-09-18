@@ -143,8 +143,9 @@ Each segment applies the same durable-settlement rule independently.
   settle, its tool rows fold but its resolved interrupt card remains visible.
 - **Spawn blocks stay visible.** `spawn` tool_use/tool_result blocks are the
   writer's door to the child chat, so `isFoldableToolBlock` exempts them like
-  images. On settle they remain on the frontier as `SpawnReportCard`; they are
-  no longer rendered only by the humanized default renderer.
+  images. On settle they remain on the frontier as `SpawnReportCard`, a thin
+  adapter over `TurnCard`; they are no longer rendered only by the humanized
+  default renderer.
 - **Block render keys are positional.** `blockRenderKey` derives from
   `(turnId, sequence)`, never `block.id`. Updates within one render zone preserve
   DOM identity. Settlement keeps frontier prose, images, and custom/interrupt
@@ -193,8 +194,10 @@ keys must be real runtime tool names from
 `apps/server/server/domains/runtime/tools/`. The current runtime surface is
 `write`, `work`, `ls`, `search`, `ask_user`, `spawn`, and `return_result`.
 `ask_user` and `spawn` render through custom cards (`choice`/`form`/`free-text`
-and `helper-result` → `SpawnReportCard`). Their tool rows are hidden.
-`return_result` uses the humanized default renderer.
+and `helper-result` → `SpawnReportCard`), all built on the shared `TurnCard`
+shell (`icon`/`tone`/`title`/`door`/`hint`/children). Their tool rows are
+hidden. Process tools (`write`, `work`, `ls`, `search`) render as
+`ActivityRow`. `return_result` uses the humanized default renderer.
 Three conventions govern all renderers:
 
 - **Unknown tools show a humanized name only.** The default renderer displays
