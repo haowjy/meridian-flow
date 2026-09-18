@@ -7,12 +7,14 @@ whole turn lifecycle. This is the implemented contract for the turn render surfa
 ## Two zones
 
 - **Process fold** — default-collapsed history: every reasoning/thinking block,
-  every earlier activity run, and every frontier tool operation once the turn
-  reaches a durable terminal status. If the fold contains tools, its visible
-  label is their deterministic digest; otherwise it reads `Thinking`.
+  every earlier activity run, and every frontier process-tool operation once the
+  turn reaches a durable terminal status. If the fold contains tools, its visible
+  label is their deterministic digest; otherwise it reads `Thinking`. A fold with
+  no visible content renders no disclosure.
 - **`ActivityBlock`** — the live delivery frontier. For a settled turn it keeps
-  only non-tool frontier blocks (text, image, custom, including resolved
-  interrupt cards). A tools-only settled frontier is empty.
+  only non-foldable frontier blocks (text, image, custom, including resolved
+  interrupt cards, plus hidden turn-card protocol). A foldable-tools-only settled
+  frontier is empty.
 
 The zones are rendered by `ProcessDisclosure.tsx` (fold) and `AssistantTurn.tsx`
 (the visible zone, driving `DeliverySegments` → `groupDeliverySegments`).
@@ -42,9 +44,11 @@ last activity run is the frontier.
 `waiting_interrupt`), the frontier stays whole and visible. For settled statuses
 (`complete`, `cancelled`, `error`), tool protocol blocks from the frontier move
 into that segment's fold in chronological position; frontier non-tool blocks
-remain visible. An image renders a preview and stays with the frontier. A
-spawn's tool protocol stays on the frontier only when the turn has no
-helper-result card; otherwise the card replaced it. Nothing else is exempt.
+remain visible. An image renders a preview and stays with the frontier.
+Turn-card protocol (`ask_user`, `spawn`, `return_result`) never folds: it stays
+on the frontier hidden behind its card, or, for an old turn with no
+helper-result card, as the legacy spawn card. Nothing else is exempt. A fold
+with only hidden protocol renders no `Thinking`.
 
 The settlement input is the canonical `isTerminalTurnStatus` result. Partition
 never reads transient component liveness, partial-block shape, or stream buffers.
@@ -152,12 +156,12 @@ Each segment applies the same durable-settlement rule independently.
   tool rows. Transient `isLive` and partial-block state never drive partitioning.
 - **Interrupt cards stay visible.** Resolution freezes the segment boundary; on
   settle, its tool rows fold but its resolved interrupt card remains visible.
-- **Spawn blocks stay visible only without a helper-result.** When a turn has
-  no helper-result card (old turns), `isFoldableToolBlock` exempts the `spawn`
-  tool blocks like images, so they settle onto the frontier as
-  `SpawnReportCard`. When a helper-result card exists, the protocol is hidden
-  and folds. The `child-report` card is the same family: it replaces the
-  `return_result` protocol and stays visible after settlement.
+- **Turn-card protocol never folds.** `isFoldableToolBlock` exempts
+  `ask_user`, `spawn`, and `return_result` tool blocks like images, so they stay
+  on the frontier. When a turn has no helper-result card (old turns), the spawn
+  protocol surfaces there as `SpawnReportCard`; otherwise it renders nothing.
+  The `child-report` card is the same family: it replaces the `return_result`
+  protocol, which is hidden behind it after settlement.
 - **Block render keys are positional.** `blockRenderKey` derives from
   `(turnId, sequence)`, never `block.id`. Updates within one render zone preserve
   DOM identity. Settlement keeps frontier prose, images, and custom/interrupt
@@ -262,7 +266,8 @@ Key files:
 Implemented in `partition-turn-segments.ts`, `ProcessDisclosure.tsx`, and
 `AssistantTurn.tsx`. The partition returns interrupt-bounded segments where
 `foldRuns` contains reasoning, earlier activity runs, and — for settled turns —
-the frontier's tool protocol blocks. `frontier` contains the complete last
-activity run while live and only its non-tool blocks after settlement.
+the frontier's foldable process-tool blocks. `frontier` contains the complete
+last activity run while live and, after settlement, its non-foldable blocks
+(non-tool content plus turn-card protocol and images).
 `ProcessDisclosure` is a default-collapsed shell; callers compose reasoning rows
 and folded activity runs.
