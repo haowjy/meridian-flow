@@ -93,8 +93,10 @@ the model; the writer never sees their rows. Parent spawn cards render only from
 the helper-result custom block.
 
 After the boundary, later reasoning and prose open a fresh fold/frontier pair
-below. A running spawn card is persisted before the child runs, so the live
-frontier already shows the card.
+below. Foreground persist a running helper-result card before the child runs,
+so the live frontier already shows the card. Background posts the card on a
+later system turn after the child completes; the parent shows nothing while
+that child runs.
 
 When the turn settles, ordinary tool rows fold; interrupt, helper-result, and
 child-report cards remain visible.
