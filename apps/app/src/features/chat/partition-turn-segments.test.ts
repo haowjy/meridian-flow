@@ -58,6 +58,11 @@ const spawnCard = block({
     },
   },
 });
+const childReport = block({
+  blockType: "custom",
+  sequence: 7,
+  content: { kind: "child-report", props: { summary: "Returned report." } },
+});
 
 describe("partitionTurnSegments durable settlement", () => {
   it("splits at the spawn helper-result card like an interrupt", () => {
@@ -100,6 +105,27 @@ describe("partitionTurnSegments durable settlement", () => {
     );
     expect(segment?.frontier.map((b) => b.sequence)).toEqual([1]);
     expect(segment?.foldRuns.flatMap((run) => run.blocks).map((b) => b.sequence)).toEqual([0]);
+  });
+
+  it("splits at the child-report card like an interrupt", () => {
+    const reasoning = block({
+      blockType: "reasoning",
+      sequence: 0,
+      content: { text: "Wrapping up." },
+    });
+    const after = block({ blockType: "text", sequence: 8 });
+    const segments = partitionTurnSegments([reasoning, childReport, after], true);
+
+    expect(segments).toHaveLength(2);
+    expect(segments[0]?.frontier.map((b) => b.sequence)).toEqual([7]);
+    expect(segments[1]?.frontier.map((b) => b.sequence)).toEqual([8]);
+  });
+
+  it("keeps an old spawn report on the settled frontier without a helper-result card", () => {
+    const [segment] = partitionTurnSegments([spawnUse, spawnResult], true);
+
+    expect(segment?.foldRuns).toEqual([]);
+    expect(segment?.frontier.map((b) => b.sequence)).toEqual([3, 4]);
   });
 
   it("drops empty reasoning so it never opens an empty Thinking fold", () => {

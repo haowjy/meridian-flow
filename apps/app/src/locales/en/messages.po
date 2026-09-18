@@ -2941,8 +2941,8 @@ msgid "Stopped"
 msgstr "Stopped"
 
 #: src/features/chat/AssistantTurn.tsx
-msgid "Stopped."
-msgstr "Stopped."
+#~ msgid "Stopped."
+#~ msgstr "Stopped."
 
 #: src/features/home/RecentProjects.tsx
 msgid "Streaming"

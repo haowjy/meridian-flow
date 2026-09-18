@@ -140,7 +140,12 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   const pendingReports = new Map<string, AgentReport>();
 
   function createReturnResultCompleter(childThreadId: ThreadId): ReturnResultCompleter {
+    let used = false;
     return async (capture: ReturnResultCapture) => {
+      if (used) {
+        return { ok: false as const, message: "return_result already called for this run" };
+      }
+      used = true;
       pendingReports.set(childThreadId as string, {
         threadId: childThreadId as string,
         summary: capture.summary,
@@ -148,7 +153,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         artifacts: capture.artifacts,
         costMillicredits: 0,
       });
-      deps.childRunRegistry.abortChild(childThreadId);
       return { ok: true as const };
     };
   }

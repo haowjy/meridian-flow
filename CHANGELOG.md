@@ -19,9 +19,12 @@
 - Snapshot `creative-writing-modes`, `writing-principles`, and `story-review` into launch-agents. Writer lists the first two as available skills.
 - Advertise the `spawn` tool to every Agent. Named children resolve from the caller's `subagents` roster; an omitted or empty `agent` selects the generic helper, which inherits the caller's model, tools, skills, effort, and roster while the built-in General revision supplies its body. Default max spawn depth is now 3, operator-overridable through `MERIDIAN_MAX_SPAWN_DEPTH`; a deeper spawn is a tool error before any child is created.
 - Parent transcript shows a spawn report card: who ran, the returned summary, and an Open door into the child chat. Spawn uses the same custom-card path as ask_user (tool protocol hidden, card splits Thinking). Neither the card nor the persisted model output carries spawn cost.
+- A subagent's `return_result` records its report, then completes the child turn instead of aborting it. The child transcript renders the summary as a body-only `child-report` `TurnCard`, with the `return_result` protocol hidden.
 
 ### Fixed
 
+- A second `return_result` in one child run fails with `already_returned` rather than overwriting the first report; the tool protocol reports `{ ok: false, message }` with `isError`.
+- Old parent turns that carry only spawn tool blocks keep their spawn report card on the settled frontier instead of folding it into Thinking.
 - Empty reasoning blocks no longer render an empty Thinking disclosure or split the activity runs around them.
 - A generic helper spawned by another generic helper now keeps the caller's inherited execution, so a Critic's missing write no longer opens to full mutation at the second generic level.
 - Allow a pickable primary (Critic) to remain a named child on Muse's roster. Child invocability is `model-invocable: false` only.
@@ -37,7 +40,8 @@
 
 - Subagent chat renders its goal as a quiet `Goal` line and hides completely when no goal is set, replacing the always-on task card with icon, section label, and placeholder copy.
 
-- `TurnCard` is the shared shell for `ask_user` and `spawn` turn cards, with a door slot and running/failed tones. `SpawnReportCard` is a thin adapter over it and drops its separate muted strip.
+- `TurnCard` is the shared shell for `ask_user`, `spawn`, and `child-report` turn cards, with a door slot, running/failed tones, and an optional title. `SpawnReportCard` is a thin adapter over it and drops its separate muted strip.
+- The cancelled assistant turn no longer renders a visible `Stopped.` caption; the live-region announcement is unchanged.
 
 - Per-turn tool name gate is advertised names plus extraAllowed. Wildcard allow, millicredit cost cap, and unused permission profiles are gone.
 - Slash and Send authorize the installed-packages ∪ account catalog, not the bound Agent package. Prompt bake and `skill()` use Agent `skills.available` only. The Agent∪account union is gone.

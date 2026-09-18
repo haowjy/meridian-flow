@@ -21,8 +21,18 @@ export function isHelperResultBlock(block: Block): boolean {
   return block.blockType === "custom" && blockContentRecord(block).kind === "helper-result";
 }
 
+/** The child's returned report, rendered as a `TurnCard` in the child transcript. */
+export function isChildReportBlock(block: Block): boolean {
+  return block.blockType === "custom" && blockContentRecord(block).kind === "child-report";
+}
+
 export function isToolDeliveryBlock(block: Block): boolean {
   return block.blockType === "tool_use" || block.blockType === "tool_result";
+}
+
+/** Both halves of a `spawn` tool call: the protocol the helper-result card replaces. */
+export function isSpawnToolBlock(block: Block): boolean {
+  return isToolDeliveryBlock(block) && blockContentRecord(block).toolName === "spawn";
 }
 
 export function imageContentForBlock(block: Block): ImageBlockContent | null {

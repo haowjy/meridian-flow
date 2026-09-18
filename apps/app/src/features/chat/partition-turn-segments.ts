@@ -7,7 +7,13 @@
  * lifecycle input: transient stream shape never changes the partition.
  */
 import { type Block, blockPlainText, interruptIdForBlock } from "@meridian/contracts/protocol";
-import { isHelperResultBlock, isImageBlock, isToolDeliveryBlock } from "./block-kind";
+import {
+  isChildReportBlock,
+  isHelperResultBlock,
+  isImageBlock,
+  isSpawnToolBlock,
+  isToolDeliveryBlock,
+} from "./block-kind";
 
 export type Run = { kind: "reasoning"; blocks: Block[] } | { kind: "activity"; blocks: Block[] };
 
@@ -25,24 +31,34 @@ export function isInterruptBlock(block: Block): boolean {
 }
 
 export function partitionTurnSegments(blocks: Block[], settled: boolean): TurnSegment[] {
-  return splitAtSegmentBoundaries(blocks).map((segment) => partitionSegment(segment, settled));
+  // New turns hide the spawn protocol behind a helper-result card; old turns
+  // have only the tool blocks, so they keep their card on the frontier.
+  const turnHasHelperResult = blocks.some(isHelperResultBlock);
+  return splitAtSegmentBoundaries(blocks, turnHasHelperResult).map((segment) =>
+    partitionSegment(segment, settled, turnHasHelperResult),
+  );
 }
 
 /**
- * ask_user and spawn both close a segment with a custom card. The tool
- * protocol stays hidden; the card is the last block of the segment.
+ * ask_user, spawn, and return_result each close a segment with a custom card.
+ * The tool protocol stays hidden; the card is the last block of the segment.
+ * Old turns with no helper-result also split at the spawn tool_result so the
+ * legacy card lands on its own segment frontier.
  */
-function isSegmentBoundary(block: Block): boolean {
-  return isInterruptBlock(block) || isHelperResultBlock(block);
+function isSegmentBoundary(block: Block, turnHasHelperResult: boolean): boolean {
+  if (isInterruptBlock(block) || isHelperResultBlock(block) || isChildReportBlock(block)) {
+    return true;
+  }
+  return !turnHasHelperResult && block.blockType === "tool_result" && isSpawnToolBlock(block);
 }
 
-function splitAtSegmentBoundaries(blocks: Block[]): Block[][] {
+function splitAtSegmentBoundaries(blocks: Block[], turnHasHelperResult: boolean): Block[][] {
   const segments: Block[][] = [];
   let current: Block[] = [];
 
   for (const block of blocks) {
     current.push(block);
-    if (isSegmentBoundary(block)) {
+    if (isSegmentBoundary(block, turnHasHelperResult)) {
       segments.push(current);
       current = [];
     }
@@ -55,7 +71,11 @@ function splitAtSegmentBoundaries(blocks: Block[]): Block[][] {
   return segments;
 }
 
-function partitionSegment(blocks: Block[], settled: boolean): TurnSegment {
+function partitionSegment(
+  blocks: Block[],
+  settled: boolean,
+  turnHasHelperResult: boolean,
+): TurnSegment {
   const runs = groupRuns(blocks);
   const lastActivityRunIndex = findLastActivityRunIndex(runs);
 
@@ -71,8 +91,12 @@ function partitionSegment(blocks: Block[], settled: boolean): TurnSegment {
     };
   }
 
-  const foldedFrontierTools = frontierRun.blocks.filter(isFoldableToolBlock);
-  const visibleFrontier = frontierRun.blocks.filter((block) => !isFoldableToolBlock(block));
+  const foldedFrontierTools = frontierRun.blocks.filter((block) =>
+    isFoldableToolBlock(block, turnHasHelperResult),
+  );
+  const visibleFrontier = frontierRun.blocks.filter(
+    (block) => !isFoldableToolBlock(block, turnHasHelperResult),
+  );
   const foldRuns = runs.flatMap((run, index): Run[] => {
     if (index !== lastActivityRunIndex) return [run];
     return foldedFrontierTools.length > 0
@@ -83,8 +107,14 @@ function partitionSegment(blocks: Block[], settled: boolean): TurnSegment {
   return { foldRuns, frontier: visibleFrontier };
 }
 
-function isFoldableToolBlock(block: Block): boolean {
-  return isToolDeliveryBlock(block) && !isImageBlock(block);
+/**
+ * A spawn's tool protocol is the writer's card only when no helper-result card
+ * exists in the turn; otherwise the card replaced it and the protocol folds.
+ */
+function isFoldableToolBlock(block: Block, turnHasHelperResult: boolean): boolean {
+  if (!isToolDeliveryBlock(block) || isImageBlock(block)) return false;
+  if (isSpawnToolBlock(block) && !turnHasHelperResult) return false;
+  return true;
 }
 
 function groupRuns(blocks: Block[]): Run[] {
