@@ -124,7 +124,7 @@ async function fixture() {
       transaction: repos.transaction,
       threadWorks: repos.threadWorks,
     },
-    resolveWorkMembership: async () => null,
+    resolveWorkMembership: async () => "no-work",
     eventWriter,
     agentRevisions: revisions,
     defaultModel: () => "parent-model",
