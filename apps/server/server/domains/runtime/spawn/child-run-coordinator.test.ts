@@ -3,7 +3,6 @@
  * the generic omitted/empty-agent helper inheriting caller config, and the
  * pre-create depth refusal.
  */
-import type { InheritedExecutionMetadata } from "@meridian/contracts/agents";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture } from "@meridian/contracts/spawn";
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
@@ -101,6 +100,8 @@ async function fixture() {
     model: "parent-model",
     skills: { load: [], available: [] },
     namedTargets,
+    tools: { read: "allow", write: "deny" } as const,
+    effort: "high" as const,
   };
   await revisions.bindThread(parent.id, parentRevision.id, parentConfiguration);
 
@@ -267,10 +268,8 @@ describe("ChildRunCoordinator spawn selection", () => {
       expect(binding?.definition.metadata.name).toBe("General");
       expect(binding?.configuration.model).toBe("parent-model");
       expect(binding?.configuration.namedTargets).toEqual(parentConfiguration.namedTargets);
-      expect(binding?.configuration.inheritedExecution).toEqual({
-        tools: { read: "allow", write: "deny" },
-        effort: "high",
-      });
+      expect(binding?.configuration.tools).toEqual({ read: "allow", write: "deny" });
+      expect(binding?.configuration.effort).toBe("high");
     }
   });
 
@@ -280,17 +279,15 @@ describe("ChildRunCoordinator spawn selection", () => {
     const general = generalEntry && (await revisions.readRevision(generalEntry.selectedRevisionId));
     if (!general) throw new Error("Missing General revision");
 
-    const inheritedExecution: InheritedExecutionMetadata = {
-      tools: { read: "allow", write: "deny", edit: "deny" },
-      effort: "high",
-    };
-    const genericParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
-    await revisions.bindThread(genericParent.id, general.id, {
+    const parentConfiguration = {
       model: "parent-model",
       skills: { load: [], available: [] },
-      namedTargets: [],
-      inheritedExecution,
-    });
+      namedTargets: [] as Array<{ name: string; definitionRevisionId: string }>,
+      tools: { read: "allow", write: "deny", edit: "deny" } as const,
+      effort: "high" as const,
+    };
+    const genericParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    await revisions.bindThread(genericParent.id, general.id, parentConfiguration);
 
     const result = await coordinator.spawnChild({
       parentThread: genericParent,
@@ -303,6 +300,8 @@ describe("ChildRunCoordinator spawn selection", () => {
     if (result.status !== "completed") return;
     const binding = await revisions.readThreadBinding(result.report.threadId);
     expect(binding?.definition.metadata.name).toBe("General");
-    expect(binding?.configuration.inheritedExecution).toEqual(inheritedExecution);
+    expect(binding?.configuration.tools).toEqual(parentConfiguration.tools);
+    expect(binding?.configuration.effort).toBe("high");
+    expect(binding?.configuration["disallowed-tools"]).toBeUndefined();
   });
 });

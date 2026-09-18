@@ -38,7 +38,7 @@ file snapshot and TOML overlays. Source identity includes supporting files;
 compiled identity describes the Agent configuration. Binary/NUL-containing
 supporting files use base64 for JSONB storage.
 
-`domain/agent-configuration.ts` resolves the configured default model and skill/named-target identities over the retained package dependency graph. `retainedPackageSkillMaps` is the graph walk for every `skills/<slug>/SKILL.md` in that closure; runtime slash listing reuses it. Missing or ambiguous Agent `load`/`available` references refuse binding; it never consults mutable package installs or account rows. Named-target resolution refuses `model-invocable: false` only; a pickable primary may also be a child spawn target. The picker still uses `mode`.
+`domain/agent-configuration.ts` resolves the configured default model, skill/named-target identities, and presence-sensitive `tools` / `disallowed-tools` / `effort` over the retained package dependency graph. `retainedPackageSkillMaps` is the graph walk for every `skills/<slug>/SKILL.md` in that closure; runtime slash listing reuses it. Missing or ambiguous Agent `load`/`available` references refuse binding; it never consults mutable package installs or account rows. Named-target resolution refuses `model-invocable: false` only; a pickable primary may also be a child spawn target. The picker still uses `mode`.
 
 `ports/agent-revision-store.ts` owns immutable source/definition records,
 account/system catalog pointers, and fixed thread bindings.

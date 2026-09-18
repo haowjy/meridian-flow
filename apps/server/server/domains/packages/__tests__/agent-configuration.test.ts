@@ -1,4 +1,4 @@
-/** Named-target resolution allows pickable primaries; only model-invocable: false refuses. */
+/** Named-target resolution and presence-sensitive tools/effort copy. */
 import { describe, expect, it } from "vitest";
 import { createInMemoryAgentRevisionStore } from "../adapters/in-memory-agent-revision-store.js";
 import {
@@ -43,6 +43,30 @@ describe("resolveAgentDependencies named targets", () => {
     if (!muse) throw new Error("Missing Muse fixture");
     await expect(resolveAgentDependencies({ revision: muse, store: revisions })).rejects.toThrow(
       new AgentConfigurationError('Agent "helper" cannot be invoked as a child.'),
+    );
+  });
+});
+
+describe("resolveAgentDependencies execution fields", () => {
+  it("copies tools, disallowed-tools, and effort when present", async () => {
+    const revisions = store();
+    const installed = await revisions.installSource({
+      coordinate: "launch-agents",
+      files: {
+        "agents/critic.md":
+          "---\nname: Critic\nmode: primary\neffort: high\ntools:\n  read: allow\n  write: deny\n  edit: deny\ndisallowed-tools:\n  - bash\n---\nCritic body.\n",
+      },
+    });
+    const critic = installed.definitions.find((agent) => agent.slug === "critic");
+    if (!critic) throw new Error("Missing Critic fixture");
+    await expect(resolveAgentDependencies({ revision: critic, store: revisions })).resolves.toEqual(
+      {
+        skills: { load: [], available: [] },
+        namedTargets: [],
+        tools: { read: "allow", write: "deny", edit: "deny" },
+        "disallowed-tools": ["bash"],
+        effort: "high",
+      },
     );
   });
 });

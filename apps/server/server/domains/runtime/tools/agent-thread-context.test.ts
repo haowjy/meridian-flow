@@ -1,5 +1,4 @@
 /** Writer vs Critic metadata advertise different write schemas. */
-import type { InheritedExecutionMetadata } from "@meridian/contracts/agents";
 import { describe, expect, it } from "vitest";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
 import { createInMemoryRepositories } from "../../threads/index.js";
@@ -36,8 +35,8 @@ function stubHandlers(): CoreToolHandlers {
 
 async function boundContext(metadata: {
   tools?: typeof WRITER_MAP | typeof CRITIC_MAP;
+  definitionTools?: typeof WRITER_MAP | typeof CRITIC_MAP;
   namedTargets?: Array<{ name: string; definitionRevisionId: string }>;
-  inheritedExecution?: InheritedExecutionMetadata;
 }) {
   const projects = createInMemoryProjectRepository();
   const project = await projects.create({ userId: "user-1", title: "Serial" });
@@ -63,14 +62,12 @@ async function boundContext(metadata: {
             model: "fixture-model",
             skills: { load: [], available: [] },
             namedTargets: metadata.namedTargets ?? [],
-            ...(metadata.inheritedExecution !== undefined
-              ? { inheritedExecution: metadata.inheritedExecution }
-              : {}),
+            ...(metadata.tools !== undefined ? { tools: metadata.tools } : {}),
           },
           definition: {
             schemaVersion: 1,
             systemPrompt: "You are an agent.",
-            metadata: { model: "fixture-model", tools: metadata.tools },
+            metadata: { model: "fixture-model", tools: metadata.definitionTools },
           },
         };
       },
@@ -109,7 +106,7 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
   });
 
   it("advertises a generic child's inherited Critic execution, not General's absent tools", async () => {
-    const generic = await boundContext({ inheritedExecution: { tools: CRITIC_MAP } });
+    const generic = await boundContext({ tools: CRITIC_MAP, definitionTools: WRITER_MAP });
     expect([...writeCommandConsts(generic.tools)].sort()).toEqual(["diff", "read"]);
   });
 

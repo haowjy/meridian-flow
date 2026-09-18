@@ -112,5 +112,10 @@ export async function resolveAgentDependencies(input: {
       }
       return { name, definitionRevisionId: target.id };
     }),
+    ...(meta.tools !== undefined ? { tools: meta.tools } : {}),
+    ...(meta["disallowed-tools"] !== undefined
+      ? { "disallowed-tools": meta["disallowed-tools"] }
+      : {}),
+    ...(meta.effort !== undefined ? { effort: meta.effort } : {}),
   };
 }

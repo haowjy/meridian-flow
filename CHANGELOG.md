@@ -40,6 +40,7 @@
 
 ### Changed
 
+- Generic and named child execution resolve onto the conversation configuration (`tools`, `disallowed-tools`, `effort`); the `inheritedExecution` overlay is gone.
 - Subagent chat renders its goal as a quiet `Goal` line and hides completely when no goal is set, replacing the always-on task card with icon, section label, and placeholder copy.
 - Subagent banner drops the Working/Idle status badge. Run state stays on the composer.
 
