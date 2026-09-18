@@ -18,6 +18,8 @@ export {
 } from "./domain/account-skill-install.js";
 export {
   AgentConfigurationError,
+  buildRetainedSkillResolver,
+  type RetainedSkillResolver,
   resolveAgentConfiguration,
   resolveAgentDependencies,
   retainedPackageSkillMaps,
