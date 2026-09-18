@@ -1,5 +1,5 @@
 /** Retained Agent source/definition identity and account/system future-chat selection. */
-import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
+import type { InvocationOverlay, ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import { sql } from "drizzle-orm";
 import {
   boolean,
@@ -111,10 +111,16 @@ export const threadAgentBindings = pgTable("thread_agent_bindings", {
   threadId: uuid("thread_id")
     .primaryKey()
     .references(() => threads.id, { onDelete: "cascade" }),
-  definitionRevisionId: uuid("definition_revision_id")
-    .notNull()
-    .references(() => agentDefinitionRevisions.id, { onDelete: "restrict" }),
+  /** Null for an agent-less binding (generic subagent inheriting the caller's configuration). */
+  definitionRevisionId: uuid("definition_revision_id").references(
+    () => agentDefinitionRevisions.id,
+    {
+      onDelete: "restrict",
+    },
+  ),
   configuration: jsonb("configuration").$type<ResolvedAgentConfiguration>().notNull(),
+  /** Raw spawn-time overlay; effective values are already resolved into `configuration`. */
+  invocationOverlay: jsonb("invocation_overlay").$type<InvocationOverlay>(),
   createdAt: createdAt(),
 });
 
