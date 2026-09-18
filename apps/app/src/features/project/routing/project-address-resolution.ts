@@ -1,5 +1,5 @@
 /** Resolves readable selections against an authorized project catalog without inventing IDs. */
-import type { AddressSelection, ProjectAddress } from "./project-address";
+import type { AddressSelection, ProjectAddress, ProjectDestination } from "./project-address";
 
 export type AddressCatalog<T> =
   | { status: "loading" }
@@ -40,6 +40,17 @@ export function addressChatSelection(address: ProjectAddress): AddressSelection 
   if (d.kind === "chat") return { kind: "slug", slug: d.chatId };
   if (d.kind === "chats") return { kind: "none" };
   return address.chat;
+}
+
+/** Path `/chat/{id}` is identity, not a primary-catalog lookup. Query chat still is. */
+export function chatCatalogIssue(
+  destination: ProjectDestination,
+  resolution: AddressResolution<{ slug: string | null }>,
+): "loading" | "error" | "unavailable" | undefined {
+  if (destination.kind === "chat") return undefined;
+  if (resolution.status === "loading" || resolution.status === "error") return resolution.status;
+  if (resolution.status === "unavailable" || resolution.status === "malformed")
+    return "unavailable";
 }
 
 /** Repair optional query selectors only; path identities must never fall back. */

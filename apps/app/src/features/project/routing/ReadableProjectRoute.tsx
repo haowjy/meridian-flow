@@ -45,6 +45,7 @@ import {
   type AddressResolution,
   addressChatSelection,
   addressWorkSelection,
+  chatCatalogIssue,
   resolveAddressSelection,
 } from "./project-address-resolution";
 import { resolveLocalDocumentSelection, selectEditorEntryTab } from "./project-local-selection";
@@ -172,7 +173,7 @@ export function ReadableProjectRoute({
       !!inflightChat ||
       (localTurns !== undefined && localTurns.length > 0) ||
       chat.status === "resolved");
-  const chatIssue = localChat ? undefined : issue(chat);
+  const chatIssue = localChat ? undefined : chatCatalogIssue(destination, chat);
   const displayedChat = threads.threads?.find((thread) => thread.id === resolvedThreadId) ?? null;
   const rememberedEditor = useRef<string | null | undefined>(undefined);
   const requestedWork = addressWorkSelection(address);

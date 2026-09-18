@@ -4,6 +4,7 @@ import { parseProjectAddress, projectAddressHref, projectAddressState } from "./
 import {
   addressChatSelection,
   addressWorkSelection,
+  chatCatalogIssue,
   guardProjectQuerySelections,
   resolveAddressSelection,
 } from "./project-address-resolution";
@@ -71,6 +72,22 @@ describe("authorized address resolution", () => {
       kind: "slug",
       slug: "550e8400-e29b-41d4-a716-446655440000",
     });
+  });
+  it("does not overlay a path chat missing from the primary catalog", () => {
+    const childId = "8d67b6b1-a47d-4cc2-86ec-7304666fd560";
+    const miss = resolveAddressSelection(
+      { kind: "slug", slug: childId },
+      { status: "ready", entries: [{ slug: "550e8400-e29b-41d4-a716-446655440000" }] },
+    );
+    expect(miss).toEqual({ status: "unavailable", slug: childId });
+    expect(chatCatalogIssue({ kind: "chat", chatId: childId }, miss)).toBeUndefined();
+  });
+  it("still overlays a missing query chat against the primary catalog", () => {
+    const miss = resolveAddressSelection(
+      { kind: "slug", slug: "00000000-0000-4000-8000-000000000000" },
+      { status: "ready", entries: [{ slug: "550e8400-e29b-41d4-a716-446655440000" }] },
+    );
+    expect(chatCatalogIssue({ kind: "editor" }, miss)).toBe("unavailable");
   });
 });
 
