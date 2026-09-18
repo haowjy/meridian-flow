@@ -22,11 +22,10 @@ An assistant turn renders as a **stack of segments**, one per interrupt or
 spawn-result boundary. Each segment has exactly two zones:
 
 - **Process disclosure** (collapsed) — all reasoning, all completed activity
-  runs, and (once the durable turn settles) every frontier tool operation
-  except spawn. Its visible label becomes a deterministic digest when it
-  contains tools.
+  runs, and (once the durable turn settles) every frontier tool operation.
+  Its visible label becomes a deterministic digest when it contains tools.
 - **`ActivityBlock`** (visible) — the live last activity run. After settlement,
-  non-tool blocks and spawn cards remain visible.
+  non-tool blocks remain visible (interrupt cards, spawn helper-result cards).
 
 The partition keys off block order/type and the durable terminal-status
 predicate. It never reads transient stream state (`isLive`, partial blocks).
@@ -52,14 +51,13 @@ composer mode, and review state live in
 1. **Default-collapsed everywhere.** `Thinking` disclosures are closed by default
    whether streaming live or settled. No auto-open on streaming.
 2. **Durable settlement folds tool rows.** `complete`, `cancelled`, and `error`
-   put every segment's tool operations inside its fold, except the two that are
-   themselves an affordance: images and `spawn` (the door to the child chat).
+   put every segment's tool operations inside its fold, except images.
    Live statuses keep the last activity run visible. Never key this decision off
    `isLive` or partial block content; use the contracts terminal-status
    predicate.
-3. **Interrupt and spawn cards stay visible.** Each is a segment boundary.
-   On settle, ordinary tool rows fold; the interrupt card and the spawn report
-   (with Open) remain expanded. Later model prose is a new Thinking/Activity pair.
+3. **Interrupt and spawn cards stay visible.** Both are custom cards and
+   segment boundaries (`ask_user` interrupt, spawn `helper-result`). Their
+   tool protocol is hidden. Later model prose is a new Thinking/Activity pair.
 4. **Document names are doors.** `DocumentName.tsx` renders every
    writer-facing document name in the timeline and is the only place that
    decides whether one is a link. Don't add navigation to a renderer, and

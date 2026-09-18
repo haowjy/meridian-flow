@@ -1,11 +1,11 @@
 /**
- * spawn-output — the spawn tool result as the transcript persists it.
+ * spawn-output — transcript-facing spawn payloads.
  *
- * `AgentReport.costMillicredits` stays on the internal report, the spawn
- * ledger, and the tree budget, but the value written as the spawn tool's output
- * must not carry it: the writer's card never shows cost, and nothing else
- * downstream should either.
+ * Cost stays on the internal report / tree budget, never on the tool output.
+ * The writer-facing surface is a helper-result custom block, same family as
+ * ask_user's custom card: the spawn tool_use/tool_result stay protocol-only.
  */
+import type { HelperResultProps } from "@meridian/contracts/components";
 import type { JsonValue } from "@meridian/contracts/threads";
 
 export function spawnOutputForTranscript(output: JsonValue): JsonValue {
@@ -15,6 +15,50 @@ export function spawnOutputForTranscript(output: JsonValue): JsonValue {
   const reportWithoutCost = { ...report };
   delete reportWithoutCost.costMillicredits;
   return { ...output, report: reportWithoutCost };
+}
+
+export function spawnHelperCardProps(input: {
+  agent?: string;
+  description?: string;
+  parentTurnId: string;
+  output?: JsonValue;
+}): HelperResultProps {
+  const slug = input.agent?.trim() || "helper";
+  const base: HelperResultProps = {
+    agentSlug: slug,
+    agentName: helperAgentName(slug),
+    status: "running",
+    summary: "",
+    childThreadId: "",
+    parentTurnId: input.parentTurnId,
+    ...(input.description !== undefined ? { title: input.description } : {}),
+  };
+  const output = input.output;
+  if (!isRecord(output)) return base;
+  if (output.status === "completed" && isRecord(output.report)) {
+    return {
+      ...base,
+      status: "completed",
+      summary: typeof output.report.summary === "string" ? output.report.summary : "",
+      childThreadId: typeof output.report.threadId === "string" ? output.report.threadId : "",
+    };
+  }
+  if (output.status === "error") {
+    const error = isRecord(output.error) ? output.error : null;
+    return {
+      ...base,
+      status: "failed",
+      summary: typeof error?.message === "string" ? error.message : "",
+    };
+  }
+  return base;
+}
+
+function helperAgentName(slug: string): string {
+  return slug
+    .split("-")
+    .map((part) => (part ? `${part[0]?.toUpperCase()}${part.slice(1)}` : part))
+    .join(" ");
 }
 
 function isRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {

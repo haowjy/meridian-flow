@@ -1,7 +1,7 @@
 /**
- * block-kind — image and spawn sniffing for protocol `Block` values on the
- * assistant turn surface. Text and tool rendering use block types directly in
- * delivery helpers.
+ * block-kind — image and helper-result sniffing for protocol `Block` values on
+ * the assistant turn surface. Text and tool rendering use block types directly
+ * in delivery helpers.
  */
 import { type Block, blockContentRecord } from "@meridian/contracts/protocol";
 
@@ -16,15 +16,9 @@ export function isImageBlock(block: Block): boolean {
   return parseImageBlockContent(content) !== null;
 }
 
-/**
- * A spawn is the writer's door to the child chat, so its tool blocks stay on
- * the settled frontier instead of folding into process history. Both halves
- * carry the tool name: the `tool_use` from the model, the persisted
- * `tool_result` from the spawn dispatch.
- */
-export function isSpawnBlock(block: Block): boolean {
-  if (block.blockType !== "tool_use" && block.blockType !== "tool_result") return false;
-  return blockContentRecord(block).toolName === "spawn";
+/** Writer-facing spawn card: a custom helper-result block, like ask_user's interrupt card. */
+export function isHelperResultBlock(block: Block): boolean {
+  return block.blockType === "custom" && blockContentRecord(block).kind === "helper-result";
 }
 
 export function isToolDeliveryBlock(block: Block): boolean {

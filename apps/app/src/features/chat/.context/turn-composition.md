@@ -73,20 +73,19 @@ the visible digest.
 ## Interrupts and spawn results segment the turn
 
 Two writer-facing events close a segment: an **interrupt** (`custom` block with
-`content.interrupt.id`, via `ask_user`) and a **spawn `tool_result`**. Each is
-the *final block of its segment* and stays on that segment's `ActivityBlock`.
+`content.interrupt.id`, via `ask_user`) and a **spawn helper-result card**
+(`custom` `kind: "helper-result"`). Each is the *final block of its segment*.
 
-`ask_user` hides its tool_use/tool_result rows (`tool-view-visibility.ts`)
-because the custom card is the surface. `spawn` does the opposite: the tool
-pair *is* the surface (`SpawnReportCard`), so those blocks must not fold.
+Both hide their tool_use/tool_result rows (`tool-view-visibility.ts`). The
+custom card is the surface. Spawn protocol is persisted for the parent model;
+the writer never sees a wrench "Spawn" row.
 
 After the boundary, later reasoning and prose open a fresh fold/frontier pair
-below. While the turn is live, an in-flight spawn (tool_use, no result yet)
-stays on the current segment's frontier — live turns do not fold tools. The
-split happens when the spawn result arrives.
+below. A running spawn card is persisted before the child runs, so the live
+frontier already shows the card.
 
-When the turn settles, ordinary tool rows in each segment fold; interrupt cards
-and spawn cards remain visible.
+When the turn settles, ordinary tool rows fold; interrupt and helper-result
+cards remain visible.
 
 A turn renders as a **vertical stack of `(Thinking + ActivityBlock)` segments**,
 one per interrupt round. There can be **multiple visible `ActivityBlock`s** (one per
@@ -129,7 +128,7 @@ Each segment applies the same durable-settlement rule independently.
 | **`ActivityBlock` (delivery frontier)** | The live last activity run; after settlement, its non-tool blocks only. Rendered by `AssistantTurn.tsx` → `DeliverySegments`. |
 | **Activity run** | A maximal contiguous run of activity blocks (non-reasoning). The last one in a segment is the visible frontier. |
 | **Segment** | A subdivision of the turn at interrupt or spawn-result boundaries. Each segment has its own `Thinking` + `ActivityBlock` pair. |
-| **Segment boundary** | An interrupt `custom` block, or a spawn `tool_result`. It is the final block of its segment. |
+| **Segment boundary** | An interrupt `custom` block, or a spawn `helper-result` custom card. It is the final block of its segment. |
 | **Roll-up** | When a new activity run begins, the previous frontier collapses into `Thinking` in its chronological position. |
 
 ## Contracts & invariants
@@ -193,10 +192,9 @@ AssistantTurn.tsx
 keys must be real runtime tool names from
 `apps/server/server/domains/runtime/tools/`. The current runtime surface is
 `write`, `work`, `ls`, `search`, `ask_user`, `spawn`, and `return_result`.
-`ask_user` renders through component cards, `spawn` renders the shared
-`SpawnReportCard` (who ran, the report, and a door to the child chat; see
-`spawn-report.ts`), and `return_result` intentionally uses the humanized default
-renderer.
+`ask_user` and `spawn` render through custom cards (`choice`/`form`/`free-text`
+and `helper-result` → `SpawnReportCard`). Their tool rows are hidden.
+`return_result` uses the humanized default renderer.
 Three conventions govern all renderers:
 
 - **Unknown tools show a humanized name only.** The default renderer displays
