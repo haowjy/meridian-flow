@@ -14,8 +14,8 @@ import { CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 
 import { cn } from "@/lib/utils";
+import { ArtifactCard, ComponentResolvedSummary } from "./ArtifactCard";
 import type { ComponentBlockProps } from "./component-registry";
-import { ComponentResolvedSummary, TurnCard } from "./TurnCard";
 
 export function ChoiceBlock({ content, respond, isAwaitingResponse }: ComponentBlockProps) {
   const props = askUserChoiceProps(content);
@@ -44,7 +44,7 @@ export function ChoiceBlock({ content, respond, isAwaitingResponse }: ComponentB
   }
 
   return (
-    <TurnCard
+    <ArtifactCard
       icon={CheckCircle2}
       tone="pending"
       title={question}
@@ -83,7 +83,7 @@ export function ChoiceBlock({ content, respond, isAwaitingResponse }: ComponentB
           );
         })}
       </fieldset>
-    </TurnCard>
+    </ArtifactCard>
   );
 }
 
