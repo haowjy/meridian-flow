@@ -859,8 +859,8 @@ msgid "Commands"
 msgstr ""
 
 #: src/features/project/lifecycle.ts
-msgid "Completed"
-msgstr ""
+#~ msgid "Completed"
+#~ msgstr ""
 
 #: src/features/project/home/NewThreadComposerToolbar.tsx
 msgid "Composer controls"
@@ -1435,8 +1435,8 @@ msgid "epigraph"
 msgstr ""
 
 #: src/features/project/lifecycle.ts
-msgid "Errored"
-msgstr ""
+#~ msgid "Errored"
+#~ msgstr ""
 
 #: src/features/chat/ErrorBlock.tsx
 msgid "Errored."
@@ -1586,8 +1586,8 @@ msgid "grid"
 msgstr ""
 
 #: src/features/project/lifecycle.ts
-msgid "Grilling"
-msgstr ""
+#~ msgid "Grilling"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "h1"
@@ -1656,8 +1656,8 @@ msgid "Identity"
 msgstr ""
 
 #: src/features/project/lifecycle.ts
-msgid "Idle"
-msgstr ""
+#~ msgid "Idle"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -2076,8 +2076,8 @@ msgid "Names cannot end with '/'"
 msgstr ""
 
 #: src/features/project/lifecycle.ts
-msgid "Needs your answer"
-msgstr ""
+#~ msgid "Needs your answer"
+#~ msgstr ""
 
 #: src/components/app/NewBadge.tsx
 msgid "New"
@@ -3709,8 +3709,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/lifecycle.ts
-msgid "Working…"
-msgstr ""
+#~ msgid "Working…"
+#~ msgstr ""
 
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx
