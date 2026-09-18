@@ -165,7 +165,7 @@ export interface OrchestratorDeps {
   eventWriter: EventJournalWriter;
   agentRevisions: Pick<
     AgentRevisionStore,
-    "readThreadBinding" | "listInstallations" | "readSource"
+    "readThreadBinding" | "listInstallations" | "readSource" | "readRevision"
   >;
   accountSkillInstalls: Pick<AccountSkillInstallStore, "listByOwner">;
   toolRegistry: ToolRegistry;

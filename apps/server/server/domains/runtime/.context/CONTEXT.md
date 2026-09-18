@@ -44,7 +44,7 @@ skeleton and delegates the moving parts.
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. |
-| `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt from the agent body, available skill slugs (name when it differs) and descriptions, frozen Work context, core document dialect, and runtime URI instruction; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
+| `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt from the agent body, available skill slugs (name when it differs) and descriptions, named subagent slug/name/description from the bound roster, frozen Work context, core document dialect, and runtime URI instruction; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
 | `work-context.ts` / `work-context-delivery.ts` | Reads authoritative Work identity with rendered context and owns durable delivery/recovery behind the deep `WorkContextDelivery` port. Every Work-list change queues eligible live threads. Post-commit wakes drain idle threads, running threads flush at completion, and a startup/poll sweep recovers obligations across process recreation. |
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
@@ -89,8 +89,9 @@ guard prompt freezing. The model comes from conversation-owned resolved
 configuration, including a frozen default when source omits it. Nonempty
 `skills.available` does not refuse selection or turn preparation. A nonempty
 `subagents` roster no longer refuses selection. `spawn` is advertised to every
-Agent; named targets come from the binding's roster, and an omitted or empty
-`agent` selects the generic helper.
+Agent; named targets come from the binding's roster, baked into the frozen
+system prompt like available skills (not listed on the spawn tool), and an
+omitted or empty `agent` selects the generic helper.
 
 ## tools — registry, executor, and handlers
 

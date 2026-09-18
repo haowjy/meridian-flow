@@ -14,10 +14,13 @@
 import { DOCUMENT_DIALECT_CORE_INSTRUCTION } from "./system-instructions/document-dialect.js";
 import { RUNTIME_URI_SYSTEM_INSTRUCTION } from "./system-instructions/runtime-uris.js";
 
+export type PromptInventoryListing = { slug: string; name: string; description: string };
+
 export interface AssembleComposedSystemPromptInput {
   basePrompt?: string | null;
   workContext?: string;
-  availableSkills?: readonly { slug: string; name: string; description: string }[];
+  availableSkills?: readonly PromptInventoryListing[];
+  namedSubagents?: readonly PromptInventoryListing[];
 }
 
 /** Compose the full system prompt exactly as context-builder sends it pre-freeze. */
@@ -25,7 +28,8 @@ export function assembleComposedSystemPrompt(input: AssembleComposedSystemPrompt
   return [
     input.basePrompt,
     input.workContext,
-    availableSkillsSection(input.availableSkills),
+    inventorySection("Available skills", input.availableSkills),
+    inventorySection("Named subagents", input.namedSubagents),
     DOCUMENT_DIALECT_CORE_INSTRUCTION,
     RUNTIME_URI_SYSTEM_INSTRUCTION,
   ]
@@ -33,16 +37,17 @@ export function assembleComposedSystemPrompt(input: AssembleComposedSystemPrompt
     .join("\n\n");
 }
 
-function availableSkillsSection(
-  skills: readonly { slug: string; name: string; description: string }[] | undefined,
+function inventorySection(
+  heading: string,
+  items: readonly PromptInventoryListing[] | undefined,
 ): string | undefined {
-  if (!skills?.length) return undefined;
+  if (!items?.length) return undefined;
   return [
-    "Available skills",
-    ...skills.map((skill) => {
+    heading,
+    ...items.map((item) => {
       const identity =
-        skill.name && skill.name !== skill.slug ? `${skill.slug} (${skill.name})` : skill.slug;
-      const description = skill.description.replace(/\s+/g, " ").trim();
+        item.name && item.name !== item.slug ? `${item.slug} (${item.name})` : item.slug;
+      const description = item.description.replace(/\s+/g, " ").trim();
       return description ? `${identity}\n${description}` : identity;
     }),
   ].join("\n\n");

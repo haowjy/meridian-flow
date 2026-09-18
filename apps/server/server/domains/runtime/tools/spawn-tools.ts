@@ -36,10 +36,9 @@ export function parseSpawnToolArgs(input: unknown): SpawnToolArgs {
   };
 }
 
-/** Roster-aware spawn description; names come from the caller's bound namedTargets. */
-export function spawnToolDescription(namedTargets: readonly string[]): string {
-  if (namedTargets.length === 0) return SPAWN_DESCRIPTION_EMPTY_ROSTER;
-  return `${SPAWN_DESCRIPTION} Named subagents: ${namedTargets.join(", ")}.`;
+/** Roster-aware spawn description; the caller's binding supplies whether it has named targets. */
+export function spawnToolDescription(hasNamedTargets: boolean): string {
+  return hasNamedTargets ? SPAWN_DESCRIPTION : SPAWN_DESCRIPTION_EMPTY_ROSTER;
 }
 
 export function createSpawnToolRegistrations(): ToolRegistration[] {

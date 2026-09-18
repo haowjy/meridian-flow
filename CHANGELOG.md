@@ -23,7 +23,6 @@
 
 ### Fixed
 
-- Spawn tool description lists the caller's named subagent slugs, so Muse can name critic and the rest of its roster instead of treating an unlisted roster as empty.
 - A second `return_result` in one child run fails with `already_returned` rather than overwriting the first report; the tool protocol reports `{ ok: false, message }` with `isError`.
 - Empty reasoning blocks no longer render an empty Thinking disclosure or split the activity runs around them.
 - Turn-card protocol (`ask_user`, `spawn`, `return_result`) no longer folds, so a settled turn whose only process is hidden protocol opens no empty Thinking. A fold with no visible content renders no disclosure.
@@ -40,6 +39,7 @@
 
 ### Changed
 
+- First-turn bake lists named subagents (slug, name when it differs, description) in the frozen system prompt like available skills. The spawn tool description stays empty-vs-named and does not name them.
 - Helper-result and child-report cards persist through one spawn-owned path; tool dispatch no longer stamps `toolName: "spawn"` on `tool_result`.
 - Generic and named child execution resolve onto the conversation configuration (`tools`, `disallowed-tools`, `effort`); the `inheritedExecution` overlay is gone.
 - Parent spawn cards render only from the helper-result custom block; spawn protocol is not a card.
