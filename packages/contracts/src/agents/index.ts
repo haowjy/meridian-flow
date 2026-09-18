@@ -30,6 +30,9 @@ export interface RetainedSkillReference {
   contentDigest: string;
 }
 
+/** Canonical reasoning-effort names carried from Mars metadata into resolved configuration. */
+export type AgentEffort = "low" | "medium" | "high" | "xhigh" | "none" | "disabled" | "adaptive";
+
 /** Resolved once at binding; authored source remains presence-sensitive. */
 export interface ResolvedAgentConfiguration {
   model: string;
@@ -37,7 +40,23 @@ export interface ResolvedAgentConfiguration {
   namedTargets: Array<{ name: string; definitionRevisionId: string }>;
   tools?: string[] | Record<string, "allow" | "deny">;
   "disallowed-tools"?: string[];
-  effort?: "low" | "medium" | "high" | "xhigh" | "none" | "disabled" | "adaptive";
+  effort?: AgentEffort;
+}
+
+/** Presence-sensitive per-invocation patch. Omitted inherits; empty list clears; tool map patches one entry. */
+export interface InvocationPatch {
+  model?: string;
+  effort?: AgentEffort;
+  tools?: string[] | Record<string, "allow" | "deny">;
+  "disallowed-tools"?: string[];
+  subagents?: string[];
+  skills?: { load?: string[]; available?: string[] };
+}
+
+/** Raw overlay retained for inspection/export; effective values live in `configuration`. */
+export interface InvocationOverlay {
+  systemPrompt?: string;
+  overrides?: InvocationPatch;
 }
 
 /** Where an agent definition came from, for grouping and provenance badges. */
