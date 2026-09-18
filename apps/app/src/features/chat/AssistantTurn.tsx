@@ -32,7 +32,12 @@ import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlock
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
 import { ProcessDisclosure } from "./ProcessDisclosure";
-import { partitionTurnSegments, type Run, type TurnSegment } from "./partition-turn-segments";
+import {
+  hasVisibleReasoningText,
+  partitionTurnSegments,
+  type Run,
+  type TurnSegment,
+} from "./partition-turn-segments";
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
@@ -274,7 +279,10 @@ function thinkingAriaLabel(segmentIndex: number, segmentCount: number): string |
  * hidden turn-card protocol must not show Thinking.
  */
 function foldHasVisibleContent(runs: Run[]): boolean {
-  return runs.some((run) => run.kind === "reasoning") || toolViewsInFold(runs).length > 0;
+  return (
+    runs.some((run) => run.kind === "reasoning" && run.blocks.some(hasVisibleReasoningText)) ||
+    toolViewsInFold(runs).length > 0
+  );
 }
 
 function toolViewsInFold(runs: Run[]) {
@@ -304,7 +312,7 @@ const FoldRun = memo(function FoldRun({
   if (run.kind === "reasoning") {
     return (
       <>
-        {run.blocks.map((block) => (
+        {run.blocks.filter(hasVisibleReasoningText).map((block) => (
           <TurnBlockStep key={blockRenderKey(block)} block={block} />
         ))}
       </>

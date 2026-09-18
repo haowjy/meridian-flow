@@ -155,9 +155,13 @@ function groupRuns(blocks: Block[]): Run[] {
  * Dropping it here means Thinking is never shown for it, and it does not split
  * the activity runs on either side.
  */
-function hasVisibleReasoningText(block: Block): boolean {
+export function visibleReasoningText(block: Block): string | null {
   const text = block.textContent?.trim() || blockPlainText(block.blockType, block.content)?.trim();
-  return Boolean(text);
+  return text || null;
+}
+
+export function hasVisibleReasoningText(block: Block): boolean {
+  return visibleReasoningText(block) !== null;
 }
 
 function findLastActivityRunIndex(runs: Run[]): number {
