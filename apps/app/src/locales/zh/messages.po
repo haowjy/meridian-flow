@@ -2679,6 +2679,10 @@ msgstr ""
 msgid "Retry Work"
 msgstr ""
 
+#: src/features/chat/ChildReportBlock.tsx
+msgid "Return"
+msgstr ""
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Review"
 msgstr ""

@@ -17,7 +17,7 @@ export type TurnCardTone = "pending" | "running" | "resolved" | "failed" | "reve
 export type TurnCardProps = {
   icon: LucideIcon;
   tone: TurnCardTone;
-  /** Omitted for body-only cards such as the child report. */
+  /** The card's heading, rendered above the body. */
   title?: ReactNode;
   door?: ReactNode;
   hint?: ReactNode;
