@@ -52,16 +52,17 @@ composer mode, and review state live in
    whether streaming live or settled. No auto-open on streaming.
 2. **Durable settlement folds process-tool rows.** `complete`, `cancelled`, and
    `error` put every segment's process-tool operations inside its fold, except
-   images and turn-card protocol. Live statuses keep the last activity run
+   images and artifact protocol. Live statuses keep the last activity run
    visible. Never key this decision off `isLive` or partial block content; use
    the contracts terminal-status predicate.
-3. **Interrupt and turn cards stay visible.** Custom cards and segment
+3. **Artifact cards stay visible.** Custom cards and segment
    boundaries (`ask_user` interrupt, spawn `helper-result`, child
-   `child-report`) render through the shared `TurnCard` shell (`icon`/`tone`/
+   `child-report`) render through the shared `ArtifactCard` shell (`icon`/`tone`/
    `title`/`door`/`hint`/children); process tools render as `ActivityRow`. Their
    tool protocol is hidden. Later model prose is a new Thinking/Activity pair.
-   Turn-card protocol never folds: hidden protocol stays on the frontier behind
-   the card.
+   Artifact protocol never folds: hidden protocol stays on the frontier behind
+   the card. The two tool kinds are named in `tool-kind.ts`: an artifact's result
+   is writer-facing (custom card, image); a process tool is scaffolding.
 4. **Document names are doors.** `DocumentName.tsx` renders every
    writer-facing document name in the timeline and is the only place that
    decides whether one is a link. Don't add navigation to a renderer, and

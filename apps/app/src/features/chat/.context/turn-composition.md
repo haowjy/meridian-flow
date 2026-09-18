@@ -209,9 +209,11 @@ keys must be real runtime tool names from
 `write`, `work`, `ls`, `search`, `ask_user`, `spawn`, and `return_result`.
 `ask_user`, `spawn`, and `return_result` render through custom cards
 (`choice`/`form`/`free-text`, `helper-result` → `SpawnReportCard`, and
-`child-report` → `ChildReportBlock`), all built on the shared `TurnCard` shell
+`child-report` → `ChildReportBlock`), all built on the shared `ArtifactCard` shell
 (`icon`/`tone`/`title`/`door`/`hint`/children). Their tool rows are hidden.
 Process tools (`write`, `work`, `ls`, `search`) render as `ActivityRow`.
+`tool-kind.ts` names the split: an **artifact** result is writer-facing
+(custom card, image) and never folds; a **process** tool is scaffolding.
 Three conventions govern all renderers:
 
 - **Unknown tools show a humanized name only.** The default renderer displays

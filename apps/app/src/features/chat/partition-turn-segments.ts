@@ -12,13 +12,9 @@ import {
   blockPlainText,
   interruptIdForBlock,
 } from "@meridian/contracts/protocol";
-import {
-  isChildReportBlock,
-  isHelperResultBlock,
-  isImageBlock,
-  isToolDeliveryBlock,
-} from "./block-kind";
+import { isChildReportBlock, isHelperResultBlock, isToolDeliveryBlock } from "./block-kind";
 import { groupDeliverySegments } from "./group-delivery-segments";
+import { isArtifactBlock } from "./tool-kind";
 import { isToolViewVisible } from "./tool-view-visibility";
 
 export type Run = { kind: "reasoning"; blocks: Block[] } | { kind: "activity"; blocks: Block[] };
@@ -108,7 +104,7 @@ function partitionSegment(blocks: Block[], settled: boolean): TurnSegment {
  * frontier. Images stay on the frontier too. Only process tools fold.
  */
 function isFoldableToolBlock(block: Block, hiddenCalls: ReadonlySet<string>): boolean {
-  if (!isToolDeliveryBlock(block) || isImageBlock(block)) return false;
+  if (!isToolDeliveryBlock(block) || isArtifactBlock(block)) return false;
   const toolCallId = blockContentRecord(block).toolCallId;
   return !(typeof toolCallId === "string" && hiddenCalls.has(toolCallId));
 }
