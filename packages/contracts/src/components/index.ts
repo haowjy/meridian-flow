@@ -55,7 +55,7 @@ export function buildHelperResultComponentContent(
   };
 }
 
-/** The child's returned report, rendered as a `TurnCard` in the child transcript. */
+/** The child's returned report, rendered as an `ArtifactCard` in the child transcript. */
 export type ChildReportProps = JsonObject & {
   summary: string;
 };

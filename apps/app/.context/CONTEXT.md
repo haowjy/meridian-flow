@@ -126,12 +126,12 @@ settled assistant turns are the same `Turn` rows in `turnsByThread`, with
 in-flight blocks marked `status: "partial"`.
 
 Rendering flows through `AssistantTurn` →
-`partitionTurnSegments` (`features/chat/partition-turn-segments.ts`): ordered
-turn blocks are split at checkpoint boundaries, and each segment renders a
-default-collapsed `Thinking` fold plus its visible `ActivityBlock` frontier.
-`groupDeliverySegments` normalizes tool delivery into ToolViews while preserving
-image-producing tool results as image blocks. For the full Thinking/Activity
-contract, see [`features/chat/.context/CONTEXT.md`](../src/features/chat/.context/CONTEXT.md).
+`partitionTurn` (`features/chat/partition-turn.ts`): ordered turn blocks become
+one ordered list of process, text, and artifact items. Process items collapse
+into a default-collapsed `Thinking` fold in place; text and artifacts stay
+visible and close the open process run. `groupDeliverySegments` normalizes tool
+delivery into ToolViews. For the full process/text/artifact contract, see
+[`features/chat/.context/CONTEXT.md`](../src/features/chat/.context/CONTEXT.md).
 
 ### Transcript reference rendering
 

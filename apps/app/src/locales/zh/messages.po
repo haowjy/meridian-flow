@@ -224,6 +224,14 @@ msgstr ""
 msgid "{shown} of {total}"
 msgstr ""
 
+#: src/features/chat/thinking-digest.ts
+#~ msgid "{stepCount, plural, one {# step} other {# steps}}"
+#~ msgstr ""
+
+#: src/features/chat/thinking-digest.ts
+msgid "{steps, plural, one {# step} other {# steps}}"
+msgstr ""
+
 #. placeholder {0}: target.name
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "<0>{0}</0> and all its contents will be permanently deleted."
@@ -3204,7 +3212,7 @@ msgstr "思考"
 msgid "Thinking out loud?"
 msgstr "边想边说？"
 
-#. placeholder {0}: segmentIndex + 1
+#. placeholder {0}: processIndex + 1
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking part {0}"
 msgstr ""

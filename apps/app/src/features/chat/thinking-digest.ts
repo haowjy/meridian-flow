@@ -1,6 +1,9 @@
 /**
  * Deterministic, presentation-only summary of tool operations hidden by one
- * process fold. The digest never describes visible frontier rows.
+ * process fold. The digest never describes visible text or artifacts.
+ *
+ * `countFoldTools` holds the counting rule as a pure, macro-free core so it can
+ * be unit-tested; `thinkingDigest` only formats its result.
  */
 import { plural, t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
@@ -9,29 +12,43 @@ import type { ToolView } from "./group-delivery-segments";
 
 export type ThinkingDigestWriteMode = "direct" | "draft";
 
-export function thinkingDigest(
-  tools: readonly ToolView[],
-  writeMode: ThinkingDigestWriteMode,
-): string | null {
+export type FoldToolCounts = {
+  readDocuments: Set<string>;
+  editedDocuments: Set<string>;
+  steps: number;
+};
+
+export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
   const readDocuments = new Set<string>();
   const editedDocuments = new Set<string>();
+  let steps = 0;
 
   for (const tool of tools) {
     const input = inputObject(tool);
     const command = stringField(input, "command");
     const path = stringField(input, "path");
+    const isWrite = tool.toolName === "write";
 
-    if (tool.isError) {
+    if (!tool.isError && isWrite && path) {
+      if (command === "read") readDocuments.add(documentIdentity(path));
+      else editedDocuments.add(documentIdentity(path));
       continue;
     }
-    if (tool.toolName === "write" && command === "read") {
-      if (path) readDocuments.add(documentIdentity(path));
-    } else if (tool.toolName === "write") {
-      if (path) editedDocuments.add(documentIdentity(path));
-    }
+    // Failed, non-write (`search`, `ls`, `work`), and pathless operations are
+    // uncountable: they contribute a step instead of a document.
+    steps += 1;
   }
 
+  return { readDocuments, editedDocuments, steps };
+}
+
+export function thinkingDigest(
+  tools: readonly ToolView[],
+  writeMode: ThinkingDigestWriteMode,
+): string | null {
+  const { readDocuments, editedDocuments, steps } = countFoldTools(tools);
   const clauses: string[] = [];
+
   if (readDocuments.size > 0) {
     clauses.push(
       plural(readDocuments.size, {
@@ -56,6 +73,14 @@ export function thinkingDigest(
               one: "edited # document",
               other: "edited # documents",
             }),
+    );
+  }
+  if (steps > 0) {
+    clauses.push(
+      plural(steps, {
+        one: "# step",
+        other: "# steps",
+      }),
     );
   }
 

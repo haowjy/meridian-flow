@@ -3,8 +3,8 @@
 This directory's durable contracts are split by concern so turn rendering and
 draft-control changes can be understood independently.
 
-- [Turn composition](turn-composition.md) — the `Thinking`/`ActivityBlock`
-  rendering model, interrupt segmentation, tool rendering, and positional keys.
+- [Turn composition](turn-composition.md) — the process/text/artifact render
+  model, tool kinds, tool rendering, and positional keys.
 - [Activity row anatomy](activity-row-anatomy.md) — document names as doors,
   the stretched-button row, command glyphs, verb vocabulary, and why row
   chrome carries no colour of its own.

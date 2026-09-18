@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { ArtifactCard, ComponentResolvedSummary } from "./ArtifactCard";
 import type { ComponentBlockProps } from "./component-registry";
 import {
   type InterruptField,
@@ -47,7 +48,6 @@ import {
   interruptFieldsFromSchema,
   validateFormValues,
 } from "./interrupt-form-schema";
-import { ComponentResolvedSummary, TurnCard } from "./TurnCard";
 
 type InterruptProps = {
   prompt: string;
@@ -99,11 +99,11 @@ export function FormBlock({ content, respond, isAwaitingResponse }: ComponentBlo
 
   if (!parsed) {
     return (
-      <TurnCard icon={Pause} tone="resolved" title={t`Form payload is malformed.`}>
+      <ArtifactCard icon={Pause} tone="resolved" title={t`Form payload is malformed.`}>
         <p className="text-xs text-muted-foreground">
           <Trans>Form payload is malformed.</Trans>
         </p>
-      </TurnCard>
+      </ArtifactCard>
     );
   }
 
@@ -176,7 +176,7 @@ function InterruptForm({
   }
 
   return (
-    <TurnCard icon={Pause} tone="pending" title={prompt}>
+    <ArtifactCard icon={Pause} tone="pending" title={prompt}>
       {artifacts.length > 0 ? (
         <div className="mb-3 border-border-subtle border-b pb-3">
           <ArtifactGrid artifacts={artifacts} />
@@ -219,7 +219,7 @@ function InterruptForm({
           </button>
         </div>
       </form>
-    </TurnCard>
+    </ArtifactCard>
   );
 }
 

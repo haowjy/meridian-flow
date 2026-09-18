@@ -1,14 +1,20 @@
 /**
- * Markdown renderer wrapper around Streamdown with Meridian's prose tokens and streaming block collapse behavior.
+ * Markdown renderer wrapper around Streamdown with Meridian's prose tokens.
+ *
+ * In `streaming` mode we deliberately keep Streamdown's own block splitting
+ * (one block per lexer token) so its per-block `memo` can hold: only the last,
+ * unstable block re-parses per token. Merging blocks back into one (as an older
+ * helper did) forced a full-document reparse on every token. Streaming and
+ * `static` share Streamdown's container spacing, so nothing shifts when the
+ * stream settles.
  */
 
 import { remarkWikiLink } from "@meridian/markup";
-import type { ComponentType } from "react";
+import { type ComponentType, useMemo } from "react";
 import { defaultRemarkPlugins, Streamdown, type StreamdownProps } from "streamdown";
 
 import { cn } from "@/lib/utils";
 
-import { collapseMarkdownBlocks } from "./collapse-markdown-blocks";
 import {
   type MarkdownReferenceOccurrence,
   type MarkdownSkillOccurrence,
@@ -33,7 +39,8 @@ export type MarkdownProps = {
    */
   variant?: "compact";
   /**
-   *  - `streaming` → live frontier; uses block splitting + collapse helper.
+   *  - `streaming` → live frontier; Streamdown's per-block memo keeps stable
+   *    blocks from re-parsing, so only the growing tail re-renders.
    *  - `static` → settled content; single markdown tree.
    */
   mode?: "streaming" | "static";
@@ -57,6 +64,18 @@ const REFERENCE_REMEND = { links: false, images: false };
 const CONTROLS = { code: true, table: false, mermaid: false } as const;
 
 /**
+ * Stable identity for the common "empty" case. A fresh `[]` default would
+ * change every render and bust the memoized plugin/Streamdown props.
+ */
+const NO_REFERENCES: readonly MarkdownReferenceOccurrence[] = [];
+const NO_SKILLS: readonly MarkdownSkillOccurrence[] = [];
+
+const ALLOWED_TAGS = {
+  [REFERENCE_TAG]: ["dataDocumentId", "dataUri", "dataTargetHref", "dataAuthoredLabel"],
+  [SKILL_TAG]: ["dataSlug", "dataName", "dataDescription"],
+};
+
+/**
  * Thin Streamdown shell. Warm Organic element styling lives in `globals.css`
  * under `.prose-tokens` — not a full `components` override map.
  */
@@ -66,19 +85,22 @@ export function Markdown({
   mode = "static",
   className,
   breaks = false,
-  references = [],
-  skills = [],
+  references = NO_REFERENCES,
+  skills = NO_SKILLS,
   referenceResolutions,
   onOpenReference,
 }: MarkdownProps) {
   const streaming = mode === "streaming";
   const exactSource = references.length > 0 || skills.length > 0;
-  const remarkPlugins: NonNullable<StreamdownProps["remarkPlugins"]> = [
-    ...Object.values(defaultRemarkPlugins),
-    remarkWikiLink,
-    [remarkReferenceOccurrences, { occurrences: references, skills }],
-    ...(breaks ? [remarkLineBreaks] : []),
-  ];
+  const remarkPlugins: NonNullable<StreamdownProps["remarkPlugins"]> = useMemo(
+    () => [
+      ...Object.values(defaultRemarkPlugins),
+      remarkWikiLink,
+      [remarkReferenceOccurrences, { occurrences: references, skills }],
+      ...(breaks ? [remarkLineBreaks] : []),
+    ],
+    [breaks, references, skills],
+  );
 
   return (
     <TranscriptReferenceContext.Provider
@@ -88,25 +110,15 @@ export function Markdown({
         key={JSON.stringify({ references, skills })}
         mode={mode}
         isAnimating={streaming}
-        parseMarkdownIntoBlocksFn={
-          exactSource ? EXACT_BLOCK : streaming ? collapseMarkdownBlocks : undefined
-        }
+        parseMarkdownIntoBlocksFn={exactSource ? EXACT_BLOCK : undefined}
         parseIncompleteMarkdown={exactSource ? false : undefined}
         remend={REFERENCE_REMEND}
         shikiTheme={SHIKI_THEME}
         controls={CONTROLS}
         remarkPlugins={remarkPlugins}
-        allowedTags={{
-          [REFERENCE_TAG]: ["dataDocumentId", "dataUri", "dataTargetHref", "dataAuthoredLabel"],
-          [SKILL_TAG]: ["dataSlug", "dataName", "dataDescription"],
-        }}
+        allowedTags={ALLOWED_TAGS}
         components={REFERENCE_COMPONENTS}
-        className={cn(
-          "prose-tokens",
-          variant === "compact" && "text-tier-compact",
-          streaming && "space-y-2",
-          className,
-        )}
+        className={cn("prose-tokens", variant === "compact" && "text-tier-compact", className)}
       >
         {children}
       </Streamdown>
