@@ -4,14 +4,22 @@
  *
  * Two surfaces share this card: the foreground `spawn` tool result parsed from
  * its output (`spawn-report.ts`), and the background `helper-result` component
- * block. The card is the report; cost and the raw status field are deliberately
- * absent, and the status icon carries running/completed/failed as shape only.
+ * block. It is a thin adapter over `TurnCard`: the shell owns the chrome, the
+ * status maps to a tone, and the title names the agent. Cost and the raw status
+ * field stay absent.
  */
 import { t } from "@lingui/core/macro";
 import { CheckCircle2, CircleAlert, LoaderCircle } from "lucide-react";
 import { Markdown } from "@/rich-content/Markdown";
 import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { SpawnReportView } from "./spawn-report";
+import { TurnCard, type TurnCardTone } from "./TurnCard";
+
+const statusPresentation = {
+  running: { Icon: LoaderCircle, tone: "running" },
+  completed: { Icon: CheckCircle2, tone: "resolved" },
+  failed: { Icon: CircleAlert, tone: "failed" },
+} satisfies Record<SpawnReportView["status"], { Icon: typeof CheckCircle2; tone: TurnCardTone }>;
 
 export function SpawnReportCard({
   agentName,
@@ -20,32 +28,19 @@ export function SpawnReportCard({
   status,
   childThreadId,
 }: SpawnReportView) {
-  const Icon =
-    status === "completed" ? CheckCircle2 : status === "failed" ? CircleAlert : LoaderCircle;
-  const secondaryTitle = title && title !== agentName ? title : null;
+  const { Icon, tone } = statusPresentation[status];
+  const hint = title && title !== agentName ? title : undefined;
 
   return (
-    <section
-      className="my-2 rounded-lg border border-subtle bg-muted px-3 py-2"
-      data-spawn-report
-      data-spawn-thread={childThreadId ?? undefined}
+    <TurnCard
+      icon={Icon}
+      tone={tone}
+      title={agentName}
+      hint={hint}
+      door={childThreadId ? <OpenChildThreadDoor threadId={childThreadId} /> : undefined}
     >
-      <div className="flex items-center gap-2 text-caption font-medium text-muted-foreground">
-        <Icon className="size-3.5" aria-hidden />
-        <span>{agentName}</span>
-        {secondaryTitle ? <span className="min-w-0 truncate">{secondaryTitle}</span> : null}
-        {childThreadId ? (
-          <span className="ml-auto shrink-0">
-            <OpenChildThreadDoor threadId={childThreadId} />
-          </span>
-        ) : null}
-      </div>
-      {summary ? (
-        <div className="mt-1 text-compact text-foreground">
-          <Markdown variant="compact">{summary}</Markdown>
-        </div>
-      ) : null}
-    </section>
+      {summary ? <Markdown variant="compact">{summary}</Markdown> : null}
+    </TurnCard>
   );
 }
 

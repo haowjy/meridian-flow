@@ -1,32 +1,46 @@
-/** ComponentCard — shared shell for inline component-block and draft-review cards. */
+/**
+ * TurnCard — the shared shell for writer-facing turn cards.
+ *
+ * One chrome for `ask_user` interrupts and spawn reports: an icon chip, a
+ * title, an optional door (a name-like control that navigates, never a
+ * full-row button), an optional hint, and the card body. The tone only tints
+ * the icon; status words stay out of the card.
+ */
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { sectionLabelVariants } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
-export type ComponentCardTone = "pending" | "resolved" | "reversible";
+export type TurnCardTone = "pending" | "running" | "resolved" | "failed" | "reversible";
 
-export type ComponentCardProps = {
+export type TurnCardProps = {
   icon: LucideIcon;
-  tone: ComponentCardTone;
-  eyebrow?: ReactNode;
+  tone: TurnCardTone;
   title: ReactNode;
+  door?: ReactNode;
   hint?: ReactNode;
   children?: ReactNode;
   className?: string;
 };
 
-export function ComponentCard({
+const iconTone: Record<TurnCardTone, string> = {
+  pending: "text-primary",
+  running: "text-primary",
+  resolved: "text-muted-foreground",
+  failed: "text-destructive",
+  reversible: "text-muted-foreground",
+};
+
+export function TurnCard({
   icon: Icon,
   tone,
-  eyebrow,
   title,
+  door,
   hint,
   children,
   className,
-}: ComponentCardProps) {
+}: TurnCardProps) {
   return (
     <section
       className={cn(
@@ -38,14 +52,16 @@ export function ComponentCard({
         <div
           className={cn(
             "mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-muted",
-            tone === "pending" ? "text-primary" : "text-muted-foreground",
+            iconTone[tone],
           )}
         >
           <Icon className="size-3.5" aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
-          {eyebrow ? <p className={sectionLabelVariants({ variant: "group" })}>{eyebrow}</p> : null}
-          <p className="text-sm font-medium text-foreground">{title}</p>
+          <div className="flex items-start justify-between gap-2">
+            <p className="min-w-0 text-sm font-medium text-foreground">{title}</p>
+            {door ? <div className="shrink-0">{door}</div> : null}
+          </div>
           {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
           {children ? <div className="mt-3">{children}</div> : null}
         </div>
@@ -59,7 +75,7 @@ export type ComponentResolvedSummaryProps = {
   title: ReactNode;
   value: ReactNode;
   statusLabel: ReactNode;
-  tone?: Extract<ComponentCardTone, "resolved" | "reversible">;
+  tone?: Extract<TurnCardTone, "resolved" | "reversible">;
   className?: string;
 };
 
@@ -72,7 +88,7 @@ export function ComponentResolvedSummary({
   className,
 }: ComponentResolvedSummaryProps) {
   return (
-    <ComponentCard
+    <TurnCard
       icon={icon}
       tone={tone}
       title={<span className="text-muted-foreground">{title}</span>}
@@ -82,6 +98,6 @@ export function ComponentResolvedSummary({
         <span className="font-medium">{value}</span>
         <Badge variant="neutral">{statusLabel}</Badge>
       </div>
-    </ComponentCard>
+    </TurnCard>
   );
 }
