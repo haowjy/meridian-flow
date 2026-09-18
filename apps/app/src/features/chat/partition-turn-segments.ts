@@ -7,7 +7,7 @@
  * lifecycle input: transient stream shape never changes the partition.
  */
 import { type Block, interruptIdForBlock } from "@meridian/contracts/protocol";
-import { isImageBlock, isSpawnBlock, isToolDeliveryBlock } from "./block-kind";
+import { isHelperResultBlock, isImageBlock, isToolDeliveryBlock } from "./block-kind";
 
 export type Run = { kind: "reasoning"; blocks: Block[] } | { kind: "activity"; blocks: Block[] };
 
@@ -29,15 +29,11 @@ export function partitionTurnSegments(blocks: Block[], settled: boolean): TurnSe
 }
 
 /**
- * A spawn tool_result is the same kind of writer-facing boundary as an
- * interrupt card: it closes the current Thinking/Activity pair so the spawn
- * stays visible and later reasoning starts a fresh fold. Split after the
- * result, not the tool_use, so pairing stays in one segment. An in-flight
- * spawn (use without result) stays on the live frontier of the current
- * segment — live turns do not fold tools.
+ * ask_user and spawn both close a segment with a custom card. The tool
+ * protocol stays hidden; the card is the last block of the segment.
  */
 function isSegmentBoundary(block: Block): boolean {
-  return isInterruptBlock(block) || (block.blockType === "tool_result" && isSpawnBlock(block));
+  return isInterruptBlock(block) || isHelperResultBlock(block);
 }
 
 function splitAtSegmentBoundaries(blocks: Block[]): Block[][] {
@@ -87,10 +83,8 @@ function partitionSegment(blocks: Block[], settled: boolean): TurnSegment {
   return { foldRuns, frontier: visibleFrontier };
 }
 
-// Tool rows fold on settlement except the ones that are themselves an
-// affordance: images render a preview, and a spawn is the door to the child.
 function isFoldableToolBlock(block: Block): boolean {
-  return isToolDeliveryBlock(block) && !isImageBlock(block) && !isSpawnBlock(block);
+  return isToolDeliveryBlock(block) && !isImageBlock(block);
 }
 
 function groupRuns(blocks: Block[]): Run[] {

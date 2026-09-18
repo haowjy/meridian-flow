@@ -8,6 +8,7 @@
  * tool handler is awaited.
  */
 
+import { buildHelperResultComponentContent } from "@meridian/contracts/components";
 import type { TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
@@ -20,7 +21,7 @@ import type {
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
-import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
+import { spawnHelperCardProps, spawnOutputForTranscript } from "../spawn/spawn-output.js";
 import type { ToolCallInput, ToolExecutor } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
@@ -157,6 +158,17 @@ export async function dispatchToolCall(
     ? async (capture: Parameters<ReturnResultCompleter>[0]) => returnResultCompleter(capture)
     : undefined;
 
+  const spawnArgs = spawnCallFields(call.arguments);
+  const spawnCardOnTurn = call.name === "spawn" && spawnArgs.mode !== "background";
+  let spawnCard: Block | null = null;
+  if (spawnCardOnTurn) {
+    spawnCard = await persistSpawnHelperCard(deps, ctx, events, {
+      agent: spawnArgs.agent,
+      description: spawnArgs.description,
+      parentTurnId: ctx.state.currentTurn.id,
+    });
+  }
+
   const execResult = await deps.toolExecutor.executeTool(
     {
       id: call.id,
@@ -228,6 +240,20 @@ export async function dispatchToolCall(
   );
   ctx.state.allBlocks.push(persistedToolResult.result);
   events.push(...persistedToolResult.events);
+  if (spawnCardOnTurn && spawnCard) {
+    await persistSpawnHelperCard(
+      deps,
+      ctx,
+      events,
+      {
+        agent: spawnArgs.agent,
+        description: spawnArgs.description,
+        parentTurnId: ctx.state.currentTurn.id,
+        output: persistedOutput,
+      },
+      spawnCard,
+    );
+  }
   let resultBlock = persistedToolResult.result;
   let resultMetadata = execResult.metadata;
   if (execResult.metadata?.workContextChanged === true) {
@@ -295,5 +321,55 @@ export async function dispatchToolCall(
           },
         }
       : {}),
+  };
+}
+
+async function persistSpawnHelperCard(
+  deps: ToolDispatchDeps,
+  ctx: ToolDispatchContext,
+  events: OrchestratorEvent[],
+  input: Parameters<typeof spawnHelperCardProps>[0],
+  existing?: Block | null,
+): Promise<Block> {
+  const persisted = await persistAndAppendEvents(
+    deps.persistenceDeps,
+    ctx.state.threadId,
+    async () => {
+      const block = contentForBlockInput({
+        ...(existing ? { id: existing.id } : {}),
+        turnId: ctx.state.currentTurn.id,
+        blockType: "custom",
+        sequence: existing?.sequence ?? ctx.blockSeqRef.value++,
+        content: buildHelperResultComponentContent(spawnHelperCardProps(input)),
+        status: "complete",
+      });
+      return {
+        result: localBlockFromEvent(block),
+        events: [{ type: "block.upserted" as const, block }],
+      };
+    },
+  );
+  if (existing) {
+    const index = ctx.state.allBlocks.findIndex((block) => block.id === existing.id);
+    if (index >= 0) ctx.state.allBlocks[index] = persisted.result;
+    else ctx.state.allBlocks.push(persisted.result);
+  } else {
+    ctx.state.allBlocks.push(persisted.result);
+  }
+  events.push(...persisted.events);
+  return persisted.result;
+}
+
+function spawnCallFields(value: unknown): {
+  agent?: string;
+  description?: string;
+  mode?: string;
+} {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const rec = value as Record<string, unknown>;
+  return {
+    ...(typeof rec.agent === "string" ? { agent: rec.agent } : {}),
+    ...(typeof rec.description === "string" ? { description: rec.description } : {}),
+    ...(typeof rec.mode === "string" ? { mode: rec.mode } : {}),
   };
 }

@@ -45,37 +45,49 @@ const spawnResult = block({
     output: { status: "completed", report: { threadId: "child-1", summary: "2+2=4." } },
   },
 });
+const spawnCard = block({
+  blockType: "custom",
+  sequence: 5,
+  content: {
+    kind: "helper-result",
+    props: {
+      agentName: "Helper",
+      status: "completed",
+      summary: "2+2=4.",
+      childThreadId: "child-1",
+    },
+  },
+});
 
 describe("partitionTurnSegments durable settlement", () => {
-  it("splits at a spawn result like an interrupt, and keeps spawn on that frontier", () => {
+  it("splits at the spawn helper-result card like an interrupt", () => {
     const reasoning = block({ blockType: "reasoning", sequence: 0 });
-    const after = block({ blockType: "text", sequence: 5 });
+    const after = block({ blockType: "text", sequence: 6 });
     const segments = partitionTurnSegments(
-      [reasoning, writeUse, writeResult, spawnUse, spawnResult, after],
+      [reasoning, writeUse, writeResult, spawnUse, spawnResult, spawnCard, after],
       true,
     );
 
     expect(segments).toHaveLength(2);
-    expect(segments[0]?.frontier.map((b) => b.sequence)).toEqual([3, 4]);
+    expect(segments[0]?.frontier.map((b) => b.sequence)).toEqual([5]);
     expect(segments[0]?.foldRuns.flatMap((run) => run.blocks).map((b) => b.sequence)).toEqual([
-      0, 1, 2,
+      0, 1, 2, 3, 4,
     ]);
-    expect(segments[1]?.frontier.map((b) => b.sequence)).toEqual([5]);
+    expect(segments[1]?.frontier.map((b) => b.sequence)).toEqual([6]);
     expect(segments[1]?.foldRuns).toEqual([]);
   });
 
-  it("keeps an in-flight spawn on the live frontier of the current segment", () => {
+  it("keeps a running spawn card on the live frontier", () => {
+    const running = block({
+      blockType: "custom",
+      sequence: 1,
+      content: { kind: "helper-result", props: { status: "running", agentName: "Helper" } },
+    });
     const [segment] = partitionTurnSegments(
-      [block({ blockType: "reasoning", sequence: 0 }), spawnUse],
+      [block({ blockType: "reasoning", sequence: 0 }), running],
       false,
     );
-    expect(segment?.frontier.map((b) => b.sequence)).toEqual([3]);
+    expect(segment?.frontier.map((b) => b.sequence)).toEqual([1]);
     expect(segment?.foldRuns.flatMap((run) => run.blocks).map((b) => b.sequence)).toEqual([0]);
-  });
-
-  it("keeps every tool on the frontier while the turn is live, before a spawn result", () => {
-    const [segment] = partitionTurnSegments([writeUse, writeResult, spawnUse], false);
-    expect(segment?.frontier.map((b) => b.sequence)).toEqual([1, 2, 3]);
-    expect(segment?.foldRuns).toEqual([]);
   });
 });
