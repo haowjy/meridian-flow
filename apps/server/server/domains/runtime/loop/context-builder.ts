@@ -89,7 +89,7 @@ export function buildContext(input: BuildContextInput): {
   if (composed && isThreadPromptFrozen(input.thread)) {
     messages.push(system(composed));
   } else {
-    const systemPrompt = input.unfrozenBasePrompt ?? composed ?? input.thread.systemPrompt;
+    const systemPrompt = input.unfrozenBasePrompt ?? composed;
     messages.push(
       system(
         assembleComposedSystemPrompt({

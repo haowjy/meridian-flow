@@ -144,7 +144,6 @@ export interface Thread {
    * (or subagent creation). `null` = not yet baked; `[]` = baked with no skills.
    */
   bakedSkillSlugs?: string[] | null;
-  systemPrompt?: string | null;
   workingState?: WorkingState | null;
   agentDefinitionRevisionId: string | null;
   /** Display name from the retained Agent definition. */

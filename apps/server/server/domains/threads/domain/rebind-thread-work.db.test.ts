@@ -116,11 +116,6 @@ else
       await repos.threadWorks.addMembership(subagent.id, ids.noWorkId, true);
       expect(subagent.composedSystemPrompt).toBeNull();
       expect(subagent.bakedSkillSlugs).toBeNull();
-      const [stored] = await db
-        .select({ hash: schema.threads.systemPromptHash })
-        .from(schema.threads)
-        .where(eq(schema.threads.id, subagent.id));
-      expect(stored.hash).toBeNull();
       await expect(repos.threadWorks.findPrimary(derived.id)).resolves.toEqual({
         workId: ids.noWorkId,
       });
