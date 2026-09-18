@@ -48,10 +48,6 @@ async function fixture() {
   });
 
   await seedGeneralAgent(revisions, "general-model");
-  const generalEntry = await revisions.readCatalogEntry(null, "general");
-  if (!generalEntry) throw new Error("Missing General");
-  const general = await revisions.readRevision(generalEntry.selectedRevisionId);
-  if (!general) throw new Error("Missing General revision");
 
   const installed = await revisions.installSource({
     coordinate: "test/agents",
@@ -103,7 +99,7 @@ async function fixture() {
     tools: { read: "allow", write: "deny" } as const,
     effort: "high" as const,
   };
-  await revisions.bindThread(parent.id, parentRevision.id, parentConfiguration);
+  await revisions.bindThread(parent.id, parentRevision.id, parentConfiguration, null);
 
   const journal: Array<{ type: string; childThreadId?: string }> = [];
   const abortedChildren: string[] = [];
@@ -128,7 +124,6 @@ async function fixture() {
     eventWriter,
     agentRevisions: revisions,
     defaultModel: () => "parent-model",
-    genericBaseline: async () => general,
     unavailableReasons: () => [],
     childRunRegistry: {
       registerChild() {},
@@ -232,8 +227,8 @@ describe("ChildRunCoordinator spawn selection", () => {
     expect(result.status).toBe("completed");
     if (result.status !== "completed") return;
     const binding = await revisions.readThreadBinding(result.report.threadId);
-    expect(binding?.id).toBe(critic.id);
-    expect(binding?.definition.metadata.name).toBe("Critic");
+    expect(binding?.revision?.id).toBe(critic.id);
+    expect(binding?.revision?.definition.metadata.name).toBe("Critic");
     expect(binding?.configuration.model).toBe("critic-model");
   });
 
@@ -277,7 +272,7 @@ describe("ChildRunCoordinator spawn selection", () => {
       expect(result.status).toBe("completed");
       if (result.status !== "completed") continue;
       const binding = await revisions.readThreadBinding(result.report.threadId);
-      expect(binding?.definition.metadata.name).toBe("General");
+      expect(binding?.revision).toBeNull();
       expect(binding?.configuration.model).toBe("parent-model");
       expect(binding?.configuration.namedTargets).toEqual(parentConfiguration.namedTargets);
       expect(binding?.configuration.tools).toEqual({ read: "allow", write: "deny" });
@@ -299,7 +294,7 @@ describe("ChildRunCoordinator spawn selection", () => {
       effort: "high" as const,
     };
     const genericParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
-    await revisions.bindThread(genericParent.id, general.id, parentConfiguration);
+    await revisions.bindThread(genericParent.id, general.id, parentConfiguration, null);
 
     const result = await coordinator.spawnChild({
       parentThread: genericParent,
@@ -311,7 +306,7 @@ describe("ChildRunCoordinator spawn selection", () => {
     expect(result.status).toBe("completed");
     if (result.status !== "completed") return;
     const binding = await revisions.readThreadBinding(result.report.threadId);
-    expect(binding?.definition.metadata.name).toBe("General");
+    expect(binding?.revision).toBeNull();
     expect(binding?.configuration.tools).toEqual(parentConfiguration.tools);
     expect(binding?.configuration.effort).toBe("high");
     expect(binding?.configuration["disallowed-tools"]).toBeUndefined();

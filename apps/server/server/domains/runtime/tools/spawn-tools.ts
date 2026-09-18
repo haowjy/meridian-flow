@@ -12,7 +12,7 @@ import type {
 } from "./types.js";
 
 const SPAWN_DESCRIPTION =
-  "Run a subagent in its own thread to delegate a task. Prefer a named specialist from your subagents roster when one fits; use the generic helper (omit agent or pass an empty string) sparingly. Use mode=background for non-blocking helper checks.";
+  "Run a subagent in its own thread to delegate a task. Prefer a named specialist from your subagents roster when one fits; use the generic subagent (omit agent or pass an empty string) sparingly. Use mode=background for non-blocking helper checks.";
 const SPAWN_DESCRIPTION_EMPTY_ROSTER = `${SPAWN_DESCRIPTION} You have no named subagents; do not spawn unless the writer asks.`;
 
 export type SpawnToolArgs = {
@@ -55,7 +55,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
             agent: {
               type: "string",
               description:
-                "Named subagent from your subagents roster. Omit or pass an empty string for the generic helper.",
+                "Named subagent from your subagents roster. Omit or pass an empty string for the generic subagent.",
             },
             prompt: { type: "string", description: "Task prompt for the child agent." },
             description: { type: "string", description: "Short label for the subagent thread." },

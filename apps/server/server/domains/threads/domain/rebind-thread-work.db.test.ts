@@ -149,7 +149,12 @@ else
             spawnDepth: 1,
           });
           childId = child.id;
-          await revisions.bindThread(child.id, installed.definitions[0].id, bindingConfiguration);
+          await revisions.bindThread(
+            child.id,
+            installed.definitions[0].id,
+            bindingConfiguration,
+            null,
+          );
           await repos.threadWorks.addMembership(child.id, ids.targetWorkId, true);
           throw new Error("after Work membership");
         }),

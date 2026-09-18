@@ -340,10 +340,10 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         .returning({ id: agentCatalogEntries.id });
       return rows.length === 1;
     },
-    async bindThread(threadId, definitionRevisionId, configuration) {
+    async bindThread(threadId, definitionRevisionId, configuration, invocationOverlay) {
       await db()
         .insert(threadAgentBindings)
-        .values({ threadId, definitionRevisionId, configuration })
+        .values({ threadId, definitionRevisionId, configuration, invocationOverlay })
         .onConflictDoNothing();
       const [binding] = await db()
         .select()
@@ -359,14 +359,20 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         .select({
           revision: agentDefinitionRevisions,
           configuration: threadAgentBindings.configuration,
+          invocationOverlay: threadAgentBindings.invocationOverlay,
         })
         .from(threadAgentBindings)
-        .innerJoin(
+        .leftJoin(
           agentDefinitionRevisions,
           eq(agentDefinitionRevisions.id, threadAgentBindings.definitionRevisionId),
         )
         .where(eq(threadAgentBindings.threadId, threadId));
-      return row ? { ...revision(row.revision), configuration: row.configuration } : undefined;
+      if (!row) return undefined;
+      return {
+        revision: row.revision?.id ? revision(row.revision) : null,
+        configuration: row.configuration,
+        invocationOverlay: row.invocationOverlay,
+      };
     },
   };
   return store;

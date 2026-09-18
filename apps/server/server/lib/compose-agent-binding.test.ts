@@ -21,7 +21,12 @@ describe("in-memory app Agent binding transaction", () => {
         return app.repos.transaction(async () => {
           const thread = await app.repos.threads.create({ projectId: "project", userId: "owner" });
           id = thread.id;
-          await app.agentRevisions.bindThread(id, general.selectedRevisionId, bindingConfiguration);
+          await app.agentRevisions.bindThread(
+            id,
+            general.selectedRevisionId,
+            bindingConfiguration,
+            null,
+          );
           throw new Error("late rollback");
         });
       })().catch((error) => error.message);
@@ -43,7 +48,12 @@ describe("in-memory app Agent binding transaction", () => {
         await app.repos.transaction(async () => {
           const thread = await app.repos.threads.create({ projectId: "project", userId: "owner" });
           id = thread.id;
-          await app.agentRevisions.bindThread(id, general.selectedRevisionId, bindingConfiguration);
+          await app.agentRevisions.bindThread(
+            id,
+            general.selectedRevisionId,
+            bindingConfiguration,
+            null,
+          );
         });
         throw new Error("outer rollback");
       }),
@@ -91,7 +101,12 @@ describe("in-memory app Agent binding transaction", () => {
         const thread = await app.repos.threads.create({ projectId: "project", userId: "owner" });
         id = thread.id;
         expect(
-          await app.agentRevisions.bindThread(id, general.selectedRevisionId, bindingConfiguration),
+          await app.agentRevisions.bindThread(
+            id,
+            general.selectedRevisionId,
+            bindingConfiguration,
+            null,
+          ),
         ).toBe(true);
         throw new Error("after binding");
       }),

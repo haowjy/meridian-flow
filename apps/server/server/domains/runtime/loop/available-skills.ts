@@ -3,8 +3,8 @@ import type { RetainedSkillReference } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
 import {
   type AccountSkillInstallStore,
+  type AgentRevisionBinding,
   type AgentRevisionStore,
-  type BoundAgentRevision,
   retainedPackageSkillMaps,
   type SkillListing,
   skillListingFromMarkdown,
@@ -218,7 +218,7 @@ async function installedPackageHeads(store: UserSkillCatalogStore, ownerUserId: 
 
 async function readBoundAvailableSkill(
   store: Pick<AgentRevisionStore, "readSource">,
-  binding: BoundAgentRevision,
+  binding: AgentRevisionBinding,
   slug: string,
 ): Promise<SkillListing | undefined> {
   for (const reference of binding.configuration.skills.available) {
