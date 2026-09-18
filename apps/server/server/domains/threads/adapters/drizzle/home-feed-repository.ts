@@ -33,6 +33,7 @@ export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeCh
           LEFT JOIN thread_user_state tus
             ON tus.thread_id = t.id AND tus.user_id = ${input.userId}::uuid
           WHERE t.project_id = ${input.projectId}::uuid
+            AND t.kind = 'primary'
             AND t.deleted_at IS NULL AND t.status <> 'archived'
         ), lineage AS (
           SELECT e.thread_id, tr.id AS turn_id, tr.parent_turn_id, tr.role,

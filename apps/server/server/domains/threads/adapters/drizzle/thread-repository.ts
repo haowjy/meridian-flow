@@ -338,6 +338,7 @@ export function createDrizzleThreadRepository(
         .where(
           and(
             eq(schema.threads.projectId, projectId),
+            eq(schema.threads.kind, "primary"),
             isNull(schema.threads.deletedAt),
             isNull(schema.projects.deletedAt),
           ),
