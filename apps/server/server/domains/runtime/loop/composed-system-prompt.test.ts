@@ -52,4 +52,37 @@ describe("assembleComposedSystemPrompt", () => {
     expect(withSkills).toContain("Available skills");
     expect(empty).not.toContain("Available skills");
   });
+
+  it("joins named subagent slugs and descriptions into the frozen bytes", () => {
+    const prompt = assembleComposedSystemPrompt({
+      basePrompt: "You are Muse.",
+      namedSubagents: [
+        {
+          slug: "critic",
+          name: "critic",
+          description: "Adversarial craft critique.",
+        },
+        {
+          slug: "writer-helper",
+          name: "Writer Helper",
+          description: "Fast draft variants.",
+        },
+      ],
+    });
+    expect(prompt).toContain("Named subagents\n\ncritic\nAdversarial craft critique.");
+    expect(prompt).toContain("writer-helper (Writer Helper)\nFast draft variants.");
+  });
+
+  it("omits the named-subagents section when the roster is empty", () => {
+    const withRoster = assembleComposedSystemPrompt({
+      basePrompt: "You are Muse.",
+      namedSubagents: [{ slug: "critic", name: "critic", description: "Critique." }],
+    });
+    const empty = assembleComposedSystemPrompt({
+      basePrompt: "You are Muse.",
+      namedSubagents: [],
+    });
+    expect(withRoster).toContain("Named subagents");
+    expect(empty).not.toContain("Named subagents");
+  });
 });

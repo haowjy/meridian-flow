@@ -20,9 +20,10 @@
  *   content parts of the assistant message.
  *
  * - **Frozen system prompt**: on first attempt the orchestrator bakes agent body,
- *   available skill names and descriptions, document dialect, and URI guidance
- *   into `composedSystemPrompt`. Later turns send that string verbatim
- *   (byte-identical). Autoprune is the only future re-bake trigger.
+ *   available skill names and descriptions, named subagent slug/name/description,
+ *   document dialect, and URI guidance into `composedSystemPrompt`. Later turns
+ *   send that string verbatim (byte-identical). Autoprune is the only future
+ *   re-bake trigger.
  *
  * - **Runtime URI guidance**: the server appends storage-scheme instructions
  *   to every thread prompt so the model chooses `kb://` for knowledge-base
@@ -68,6 +69,11 @@ export interface BuildContextInput {
    * Ignored when the thread prompt is already frozen.
    */
   availableSkills?: readonly { slug: string; name: string; description: string }[];
+  /**
+   * Named subagent listings for pre-freeze assembly only.
+   * Ignored when the thread prompt is already frozen.
+   */
+  namedSubagents?: readonly { slug: string; name: string; description: string }[];
   /** Frozen Work section for a would-be first bake. */
   workContext?: string;
 }
@@ -90,6 +96,7 @@ export function buildContext(input: BuildContextInput): {
           basePrompt: systemPrompt,
           workContext: input.workContext,
           availableSkills: input.availableSkills,
+          namedSubagents: input.namedSubagents,
         }),
       ),
     );

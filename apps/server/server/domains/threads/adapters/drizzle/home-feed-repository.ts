@@ -25,14 +25,19 @@ export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeCh
           SELECT t.id AS thread_id, t.title,
             t.created_at AS thread_created_at, t.active_leaf_turn_id,
             tw.work_id, w.name AS work_title,
+            COALESCE(adr.definition->'metadata'->>'name', adr.slug) AS agent_name,
             COALESCE(tus.is_favorite, false) AS is_favorite
           FROM threads t
           JOIN projects p ON p.id = t.project_id AND p.deleted_at IS NULL
           LEFT JOIN thread_works tw ON tw.thread_id = t.id AND tw.is_primary = true
           LEFT JOIN works w ON w.id = tw.work_id AND w.deleted_at IS NULL
+          LEFT JOIN thread_agent_bindings tab ON tab.thread_id = t.id
+          LEFT JOIN agent_definition_revisions adr
+            ON adr.id = tab.definition_revision_id
           LEFT JOIN thread_user_state tus
             ON tus.thread_id = t.id AND tus.user_id = ${input.userId}::uuid
           WHERE t.project_id = ${input.projectId}::uuid
+            AND t.kind = 'primary'
             AND t.deleted_at IS NULL AND t.status <> 'archived'
         ), lineage AS (
           SELECT e.thread_id, tr.id AS turn_id, tr.parent_turn_id, tr.role,
@@ -85,7 +90,8 @@ export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeCh
           ) recent
         )
         SELECT selected.section, selected.thread_id, selected.title,
-          selected.work_id, selected.work_title, selected.action_required, selected.is_favorite,
+          selected.work_id, selected.work_title, selected.agent_name,
+          selected.action_required, selected.is_favorite,
           conversation_preview.last_message_preview,
           ${exactUtcTimestampSql(sql`selected.last_activity_at`)} AS last_activity_at_exact
         FROM selected

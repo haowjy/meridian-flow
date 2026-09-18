@@ -7,34 +7,45 @@ whole turn lifecycle. This is the implemented contract for the turn render surfa
 ## Two zones
 
 - **Process fold** — default-collapsed history: every reasoning/thinking block,
-  every earlier activity run, and every frontier tool operation once the turn
-  reaches a durable terminal status. If the fold contains tools, its visible
-  label is their deterministic digest; otherwise it reads `Thinking`.
+  every earlier activity run, and every frontier process-tool operation once the
+  turn reaches a durable terminal status. If the fold contains tools, its visible
+  label is their deterministic digest; otherwise it reads `Thinking`. A fold with
+  no visible content renders no disclosure.
 - **`ActivityBlock`** — the live delivery frontier. For a settled turn it keeps
-  only non-tool frontier blocks (text, image, custom, including resolved
-  interrupt cards). A tools-only settled frontier is empty.
+  only non-foldable frontier blocks (text, image, custom, including resolved
+  interrupt cards, plus hidden turn-card protocol). A foldable-tools-only settled
+  frontier is empty.
 
 The zones are rendered by `ProcessDisclosure.tsx` (fold) and `AssistantTurn.tsx`
 (the visible zone, driving `DeliverySegments` → `groupDeliverySegments`).
 
 ## Partition rule
 
-**Step 1 — segment at interrupts.** Split ordered `Block[]` at each interrupt;
-the interrupt is the final block of its segment.
+**Step 1 — segment at cards.** Split ordered `Block[]` at each interrupt,
+helper-result, and child-report card; the card is the final block of its
+segment.
 
 **Step 2 — group maximal runs** within each segment:
 
 - **reasoning** = `reasoning` | `thinking`
 - **activity** = everything else
 
-Earlier activity runs and all reasoning runs go into the fold. The last activity
-run is the frontier.
+An empty reasoning block (no visible `textContent` or `content.text`) is a
+provider repair placeholder: the frontend drops it before grouping, so Thinking
+is not shown for it and it does not split the activity runs on either side.
+A segment left with no blocks after the drop emits no segment.
+
+Earlier activity runs and all remaining reasoning runs go into the fold. The
+last activity run is the frontier.
 
 **Step 3 — apply durable settlement.** For live statuses (`pending`, `streaming`,
 `waiting_interrupt`), the frontier stays whole and visible. For settled statuses
 (`complete`, `cancelled`, `error`), tool protocol blocks from the frontier move
 into that segment's fold in chronological position; frontier non-tool blocks
-remain visible.
+remain visible. An image renders a preview and stays with the frontier.
+Turn-card protocol (`ask_user`, `spawn`, `return_result`) never folds: it stays
+on the frontier hidden behind its card. Nothing else is exempt. A fold
+with only hidden protocol does not show `Thinking`.
 
 The settlement input is the canonical `isTerminalTurnStatus` result. Partition
 never reads transient component liveness, partial-block shape, or stream buffers.
@@ -68,18 +79,27 @@ uncountable operations contribute steps. Clauses are ordered explore → edit �
 steps. The accessible name remains `Thinking` / `Thinking part N` regardless of
 the visible digest.
 
-## Interrupts segment the turn
+## Cards segment the turn
 
-A **interrupt** (user-interaction / HITL block — a `custom` block resolved via
-`onRespondToInterrupt` in `CustomBlockRenderer.tsx`) is a **segment boundary**. It is the
-*final block of its segment* and the **frontier** of that segment's `ActivityBlock` (the
-round is waiting on the user).
+Writer-facing cards close a segment: an **interrupt** (`custom` block with
+`content.interrupt.id`, via `ask_user`), a **spawn helper-result card**
+(`custom` `kind: "helper-result"`), and a **child-report card** (`custom`
+`kind: "child-report"`, from `return_result`). Each is the *final block of its
+segment*.
 
-After the user responds, the interrupt card stays expanded and the continuation
-opens a fresh fold/frontier pair below. While the turn remains live, that earlier
-segment's frontier stays whole. When the turn settles, its tool rows fold just
-like every other segment's; the interrupt card and other non-tool blocks remain
-visible.
+Cards hide their tool_use/tool_result rows (`tool-view-visibility.ts`). The
+custom card is the surface. Spawn and `return_result` protocol are persisted for
+the model; the writer never sees their rows. Parent spawn cards render only from
+the helper-result custom block.
+
+After the boundary, later reasoning and prose open a fresh fold/frontier pair
+below. Foreground persist a running helper-result card before the child runs,
+so the live frontier already shows the card. Background posts the card on a
+later system turn after the child completes; the parent shows nothing while
+that child runs.
+
+When the turn settles, ordinary tool rows fold; interrupt, helper-result, and
+child-report cards remain visible.
 
 A turn renders as a **vertical stack of `(Thinking + ActivityBlock)` segments**,
 one per interrupt round. There can be **multiple visible `ActivityBlock`s** (one per
@@ -121,8 +141,8 @@ Each segment applies the same durable-settlement rule independently.
 | **Process fold / `Thinking` disclosure** | The default-collapsed disclosure rendered by `ProcessDisclosure.tsx`. Holds reasoning, completed activity runs, and settled frontier tool rows. Its visible label is a tool digest when possible. |
 | **`ActivityBlock` (delivery frontier)** | The live last activity run; after settlement, its non-tool blocks only. Rendered by `AssistantTurn.tsx` → `DeliverySegments`. |
 | **Activity run** | A maximal contiguous run of activity blocks (non-reasoning). The last one in a segment is the visible frontier. |
-| **Segment** | A subdivision of the turn at interrupt boundaries. Each segment has its own `Thinking` + `ActivityBlock` pair. |
-| **Interrupt boundary** | A `custom` block that partitions segments. It is the final block of its segment. |
+| **Segment** | A subdivision of the turn at card boundaries. Each segment has its own `Thinking` + `ActivityBlock` pair. |
+| **Segment boundary** | An interrupt `custom` block, a spawn `helper-result` card, or a `child-report` card. It is the final block of its segment. |
 | **Roll-up** | When a new activity run begins, the previous frontier collapses into `Thinking` in its chronological position. |
 
 ## Contracts & invariants
@@ -135,6 +155,11 @@ Each segment applies the same durable-settlement rule independently.
   tool rows. Transient `isLive` and partial-block state never drive partitioning.
 - **Interrupt cards stay visible.** Resolution freezes the segment boundary; on
   settle, its tool rows fold but its resolved interrupt card remains visible.
+- **Turn-card protocol never folds.** `isFoldableToolBlock` exempts
+  `ask_user`, `spawn`, and `return_result` tool blocks like images, so they stay
+  on the frontier hidden. The helper-result custom block is the only spawn card.
+  The `child-report` card is the same family: it replaces the `return_result`
+  protocol, which is hidden behind it after settlement.
 - **Block render keys are positional.** `blockRenderKey` derives from
   `(turnId, sequence)`, never `block.id`. Updates within one render zone preserve
   DOM identity. Settlement keeps frontier prose, images, and custom/interrupt
@@ -154,7 +179,7 @@ Each segment applies the same durable-settlement rule independently.
 ```mermaid
 flowchart TD
     Turn[Turn.blocks: Block[]] --> Sort[sort by sequence]
-    Sort --> Segment[segment at interrupts]
+    Sort --> Segment[segment at cards]
     Segment --> S1[Segment 1]
     Segment --> S2[Segment 2]
     S1 --> Group1[group into maximal reason/activity runs]
@@ -168,7 +193,7 @@ Current code path:
 ```
 AssistantTurn.tsx
   → partitionTurnSegments(sortedBlocks, settled)
-                                           ← interrupt segmentation, run grouping,
+                                           ← card segmentation, run grouping,
                                              and terminal tool folding
   → ProcessDisclosure(label, children)     ← default-collapsed fold shell
       → TurnBlockStep | DeliverySegments   ← fold runs in chronological order
@@ -181,9 +206,12 @@ AssistantTurn.tsx
 `tool-renderers.tsx` is the registry for tool-name-specific presentation. Registry
 keys must be real runtime tool names from
 `apps/server/server/domains/runtime/tools/`. The current runtime surface is
-`write`, `work`, `ls`, `search`, `ask_user`, `spawn`, and `return_result`;
-`ask_user` renders through component cards, while `spawn` and `return_result`
-intentionally use the humanized default renderer.
+`write`, `work`, `ls`, `search`, `ask_user`, `spawn`, and `return_result`.
+`ask_user`, `spawn`, and `return_result` render through custom cards
+(`choice`/`form`/`free-text`, `helper-result` → `SpawnReportCard`, and
+`child-report` → `ChildReportBlock`), all built on the shared `TurnCard` shell
+(`icon`/`tone`/`title`/`door`/`hint`/children). Their tool rows are hidden.
+Process tools (`write`, `work`, `ls`, `search`) render as `ActivityRow`.
 Three conventions govern all renderers:
 
 - **Unknown tools show a humanized name only.** The default renderer displays
@@ -236,7 +264,8 @@ Key files:
 Implemented in `partition-turn-segments.ts`, `ProcessDisclosure.tsx`, and
 `AssistantTurn.tsx`. The partition returns interrupt-bounded segments where
 `foldRuns` contains reasoning, earlier activity runs, and — for settled turns —
-the frontier's tool protocol blocks. `frontier` contains the complete last
-activity run while live and only its non-tool blocks after settlement.
+the frontier's foldable process-tool blocks. `frontier` contains the complete
+last activity run while live and, after settlement, its non-foldable blocks
+(non-tool content plus turn-card protocol and images).
 `ProcessDisclosure` is a default-collapsed shell; callers compose reasoning rows
 and folded activity runs.

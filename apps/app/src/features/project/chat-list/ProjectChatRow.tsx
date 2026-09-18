@@ -57,7 +57,8 @@ export function ProjectChatRow({
     dateStyle: "full",
     timeStyle: "short",
   }).format(new Date(item.lastActivityAt));
-  const workLabel = item.work?.title ? t`Work: ${item.work.title}` : t`Work unavailable`;
+  const agentName = item.agentName ?? "General";
+  const agentLabel = t`Agent: ${agentName}`;
   const active = menuOpen || focusWithin;
   useEffect(() => {
     onActiveChange?.(item.id, active);
@@ -103,10 +104,10 @@ export function ProjectChatRow({
         <WorkIdentity
           data-project-chat-row-work
           className="px-1"
-          name={item.work?.title}
-          unavailableLabel={t`Unavailable`}
-          aria-label={workLabel}
-          title={item.work?.title}
+          name={item.agentName}
+          unavailableLabel="General"
+          aria-label={agentLabel}
+          title={agentName}
         />
         <div
           data-project-chat-row-line

@@ -12,6 +12,7 @@ import type { EventJournalWriter } from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import type { OrchestratorRepositories } from "../loop/orchestrator.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
+import { spawnHelperCardProps } from "./spawn-output.js";
 
 export interface HelperResultDeliveryInput {
   parentThread: Thread;
@@ -36,19 +37,6 @@ export interface HelperResultDelivery {
 }
 
 type PendingDelivery = HelperResultDeliveryInput;
-
-function helperAgentName(slug: string): string {
-  return slug
-    .split("-")
-    .map((part) => (part ? `${part[0]?.toUpperCase()}${part.slice(1)}` : part))
-    .join(" ");
-}
-
-function helperSummary(result: SpawnResult): string {
-  if (result.status === "completed") return result.report.summary;
-  if (result.status === "error") return result.error.message;
-  return "Running";
-}
 
 function createLocalSystemTurn(input: { threadId: ThreadId; parentTurnId: TurnId | null }): Turn {
   const now = toIsoString(new Date());
@@ -104,24 +92,20 @@ export function createHelperResultDelivery(deps: HelperResultDeliveryDeps): Help
     const threadId = input.parentThread.id as ThreadId;
     const leafTurn = await deps.repos.turns.getLatestByThread(threadId);
     const parentTurnId = (leafTurn?.id ?? input.parentTurnId) as TurnId | null;
-    const summary = helperSummary(input.result);
     const systemTurn = createLocalSystemTurn({ threadId, parentTurnId });
     const helperBlock = contentForBlockInput({
       turnId: systemTurn.id,
       blockType: "custom",
       sequence: 0,
-      content: buildHelperResultComponentContent({
-        agentSlug: input.agentSlug,
-        agentName: helperAgentName(input.agentSlug),
-        status: input.result.status === "completed" ? "completed" : "failed",
-        summary,
-        childThreadId: input.childThreadId,
-        parentTurnId: input.parentTurnId as string,
-        ...(input.description !== undefined ? { title: input.description } : {}),
-        ...(input.result.status === "completed" && input.result.report.payload !== undefined
-          ? { payload: input.result.report.payload }
-          : {}),
-      }),
+      content: buildHelperResultComponentContent(
+        spawnHelperCardProps({
+          agent: input.agentSlug,
+          description: input.description,
+          parentTurnId: input.parentTurnId as string,
+          childThreadId: input.childThreadId,
+          output: input.result,
+        }),
+      ),
       status: "complete",
     });
 

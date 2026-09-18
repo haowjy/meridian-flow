@@ -5,6 +5,8 @@ export interface ProjectChatItem {
   id: string;
   title: string;
   work: { id: string; title: string } | null;
+  /** Bound Agent display name; null when the binding join has no name. */
+  agentName: string | null;
   lastMessagePreview: string | null;
   lastActivityAt: string;
   actionRequired: boolean;

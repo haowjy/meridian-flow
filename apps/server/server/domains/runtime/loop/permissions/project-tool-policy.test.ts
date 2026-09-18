@@ -17,7 +17,7 @@ const WRITE_MUTATE = [
 ] as const satisfies readonly WriteCommandName[];
 const WORK_NAV = ["list", "show", "switch"] as const;
 const WORK_MUTATE = ["create", "delete", "update"] as const;
-const ALL_FLOW_TOOLS = ["ask_user", "ls", "search", "skill", "work", "write"];
+const ALL_FLOW_TOOLS = ["ask_user", "ls", "search", "skill", "spawn", "work", "write"];
 
 const WRITER_MAP = {
   read: "allow",

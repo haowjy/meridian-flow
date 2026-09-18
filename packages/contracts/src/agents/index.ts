@@ -35,6 +35,9 @@ export interface ResolvedAgentConfiguration {
   model: string;
   skills: { load: RetainedSkillReference[]; available: RetainedSkillReference[] };
   namedTargets: Array<{ name: string; definitionRevisionId: string }>;
+  tools?: string[] | Record<string, "allow" | "deny">;
+  "disallowed-tools"?: string[];
+  effort?: "low" | "medium" | "high" | "xhigh" | "none" | "disabled" | "adaptive";
 }
 
 /** Where an agent definition came from, for grouping and provenance badges. */

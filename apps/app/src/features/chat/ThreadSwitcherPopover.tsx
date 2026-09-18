@@ -1,8 +1,8 @@
 /**
  * ThreadSwitcherPopover — project thread navigation from the chat pane header.
  *
- * Keeps switching primary, with recency and action-required state visible at a glance;
- * rename stays attached only to the active row and creation stays in the footer.
+ * Keeps switching primary, with recency visible at a glance; rename stays
+ * attached only to the active row and creation stays in the footer.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
@@ -11,6 +11,7 @@ import { ChevronDown, Pencil, Plus, Search } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 
 import { useThreadStore } from "@/client/stores";
+import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { Button } from "@/components/ui/button";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
@@ -31,11 +32,7 @@ import { relativeTime } from "@/features/project/relative-time";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 
-import {
-  filterThreadsByTitle,
-  hasOtherThreadActionRequired,
-  shouldShowThreadSearch,
-} from "./thread-switcher";
+import { filterThreadsByTitle, shouldShowThreadSearch } from "./thread-switcher";
 
 /* ── Switcher popover ──────────────────────────────────────────────── */
 
@@ -79,7 +76,6 @@ export function ThreadSwitcherPopover({
   const visibleUngrouped = ungroupedThreads.filter((thread) => filteredIds.has(thread.id));
   const showGroupHeaders = workItems.length > 1;
   const showSearch = shouldShowThreadSearch(primaryThreads.length);
-  const triggerHasActionRequired = hasOtherThreadActionRequired(primaryThreads, activeThreadId);
 
   const changeOpen = (nextOpen: boolean) => {
     setOpen(nextOpen);
@@ -136,13 +132,6 @@ export function ThreadSwitcherPopover({
           )}
         >
           <PaneTitle className="min-w-0 flex-1">{title}</PaneTitle>
-          {triggerHasActionRequired ? (
-            <span
-              role="img"
-              aria-label={t`Another chat needs your answer`}
-              className="size-1.5 shrink-0 rounded-full bg-status-warning"
-            />
-          ) : null}
           <ChevronDown
             className={cn(
               "size-4 shrink-0 text-muted-foreground transition-transform",
@@ -279,6 +268,7 @@ function ThreadSwitchItem({
 }) {
   const title = displayThreadTitle(thread.title);
   const rel = relativeTime(thread.updatedAt, now);
+  const agentName = thread.agentName ?? "General";
   return (
     <li
       className={cn(
@@ -301,10 +291,15 @@ function ThreadSwitchItem({
         )}
       >
         <span className="min-w-0 flex-1 truncate">{title}</span>
+        <WorkIdentity
+          className="shrink-0"
+          name={thread.agentName}
+          unavailableLabel="General"
+          aria-label={t`Agent: ${agentName}`}
+        />
         {rel ? (
           <span className="shrink-0 text-meta font-normal tabular-nums text-ink-subtle">{rel}</span>
         ) : null}
-        <ActionRequiredDot actionRequired={thread.actionRequired} />
       </button>
       {active ? (
         <IconButton
@@ -319,18 +314,5 @@ function ThreadSwitchItem({
         </IconButton>
       ) : null}
     </li>
-  );
-}
-
-function ActionRequiredDot({ actionRequired }: { actionRequired: boolean }) {
-  if (!actionRequired) return null;
-  const label = t`The AI asked you a question`;
-  return (
-    <span
-      role="img"
-      aria-label={label}
-      title={label}
-      className="size-1.5 shrink-0 rounded-full bg-status-warning"
-    />
   );
 }

@@ -12,7 +12,7 @@
 import type { ComponentBlockContent } from "@meridian/contracts/components";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { ComponentType } from "react";
-
+import { ChildReportBlock } from "./ChildReportBlock";
 import { ChoiceBlock } from "./ChoiceBlock";
 import { FormBlock } from "./FormBlock";
 import { HelperResultBlock } from "./HelperResultBlock";
@@ -33,4 +33,5 @@ export const COMPONENT_REGISTRY: Record<string, ComponentEntry> = {
   "free-text": TextBlock,
   form: FormBlock,
   "helper-result": HelperResultBlock,
+  "child-report": ChildReportBlock,
 };

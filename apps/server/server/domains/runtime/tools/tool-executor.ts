@@ -51,6 +51,7 @@ import {
   meridianErrorFromTool,
   meridianErrorToJson,
 } from "@meridian/contracts/interrupt";
+import { isReturnResultOutcome } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type {
   InterruptToolHandlerContext,
@@ -149,18 +150,28 @@ function isStructuredHandlerResult(
  * forwards `isError`. Thrown and executor-owned failures use the registration's
  * formatter or the generic Meridian error protocol.
  */
-function successResult(toolCallId: string, output: unknown): ToolExecutionResult {
+function successResult(
+  toolCallId: string,
+  output: unknown,
+  capability?: ToolRegistration["capability"],
+): ToolExecutionResult {
   if (isHandlerErrorResult(output)) {
     return { toolCallId, output: toJsonValue(output.output), isError: true };
   }
+  let value = output;
+  let metadata: JsonObject | undefined;
   if (isStructuredHandlerResult(output)) {
-    return {
-      toolCallId,
-      output: toJsonValue(output.output),
-      ...(output.metadata ? { metadata: toJsonValue(output.metadata) as JsonObject } : {}),
-    };
+    value = output.output;
+    if (output.metadata) metadata = toJsonValue(output.metadata) as JsonObject;
   }
-  return { toolCallId, output: toJsonValue(output) };
+  return {
+    toolCallId,
+    output: toJsonValue(value),
+    ...(metadata ? { metadata } : {}),
+    ...(capability === "return_result" && isReturnResultOutcome(value)
+      ? { returnResult: value }
+      : {}),
+  };
 }
 
 /**
@@ -398,7 +409,7 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
             arguments: call.arguments,
           });
         }
-        return successResult(call.id, outcome.result);
+        return successResult(call.id, outcome.result, registration.capability);
       }
 
       // ── No per-tool timeout — race handler vs abort only ──
@@ -428,7 +439,7 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
           arguments: call.arguments,
         });
       }
-      return successResult(call.id, outcome.result);
+      return successResult(call.id, outcome.result, registration.capability);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return executionErrorResult(call.id, registration, {

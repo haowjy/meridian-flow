@@ -55,6 +55,25 @@ export function buildHelperResultComponentContent(
   };
 }
 
+/** The child's returned report, rendered as a `TurnCard` in the child transcript. */
+export type ChildReportProps = JsonObject & {
+  summary: string;
+};
+
+export type ChildReportComponentContent = ComponentBlockContent & {
+  kind: "child-report";
+  props: ChildReportProps;
+};
+
+export function buildChildReportComponentContent(
+  input: ChildReportProps,
+): ChildReportComponentContent {
+  return {
+    kind: "child-report",
+    props: input,
+  };
+}
+
 /** Answer returned to interrupt tools after user response or auto-resume. */
 export type InterruptAnswerEnvelope = {
   value: JsonValue;

@@ -6,11 +6,15 @@
 
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { ReturnResultCapture, TreeBudget } from "@meridian/contracts/spawn";
+import type {
+  ReturnResultCapture,
+  ReturnResultOutcome,
+  TreeBudget,
+} from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import type { Tool } from "../gateway/index.js";
 
-export type ReturnResultCompleter = (capture: ReturnResultCapture) => Promise<{ ok: true }>;
+export type ReturnResultCompleter = (capture: ReturnResultCapture) => Promise<ReturnResultOutcome>;
 
 export interface RunTurnInput {
   threadId: ThreadId;

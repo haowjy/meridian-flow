@@ -1,9 +1,9 @@
-/** Runtime support gates: available skills are not a refusal; load, unknown fields, and subagents still are. */
+/** Runtime support gates: available skills and subagent rosters are not refusals; unknown fields still are. */
 import { describe, expect, it } from "vitest";
 import type { CompiledAgentDefinition } from "../packages/index.js";
 import {
-  agentDefinitionUnavailableReasons,
   agentDefinitionUnsupportedReasons,
+  agentExecutionUnavailableReasons,
 } from "./agent-definition-support.js";
 import type { Gateway } from "./gateway/index.js";
 
@@ -21,7 +21,7 @@ describe("agent definition support", () => {
       skills: { available: ["creative-writing-modes", "writing-principles"] },
     });
     expect(agentDefinitionUnsupportedReasons(writer)).toEqual([]);
-    expect(agentDefinitionUnavailableReasons(writer, gateway, "model-a")).toEqual([]);
+    expect(agentExecutionUnavailableReasons(writer, gateway, "model-a")).toEqual([]);
   });
 
   it("refuses nonempty skill load", () => {
@@ -31,7 +31,7 @@ describe("agent definition support", () => {
     expect(agentDefinitionUnsupportedReasons(loaded)).toEqual([
       "Bound skill load is not available yet.",
     ]);
-    expect(agentDefinitionUnavailableReasons(loaded, gateway, "model-a")).toEqual([
+    expect(agentExecutionUnavailableReasons(loaded, gateway, "model-a")).toEqual([
       "Bound skill load is not available yet.",
     ]);
   });
@@ -47,16 +47,16 @@ describe("agent definition support", () => {
     ).toEqual([]);
   });
 
-  it("still refuses unknown fields and nonempty subagents", () => {
+  it("still refuses unknown fields but allows a nonempty subagent roster", () => {
     expect(agentDefinitionUnsupportedReasons(definition({ approval: "never" }))).toEqual([
       "Unsupported Agent field: approval",
     ]);
     expect(
-      agentDefinitionUnavailableReasons(
+      agentExecutionUnavailableReasons(
         definition({ subagents: ["writer-helper"] }),
         gateway,
         "model-a",
       ),
-    ).toEqual(["Bound subagent delegation is not available yet."]);
+    ).toEqual([]);
   });
 });

@@ -92,23 +92,15 @@ describe("chat thread resolution", () => {
     ).toBe("first");
   });
 
-  it("prefers a primary thread for the list fallback and otherwise uses the first", () => {
+  it("uses the first loaded project thread when nothing else resolves", () => {
     expect(
       resolveChatThreadId({
         explicitThreadId: null,
         pendingThreadId: null,
         rememberedThreadId: null,
-        projectThreads: [thread("subagent", "subagent"), thread("primary")],
+        projectThreads: [thread("first"), thread("second")],
       }),
-    ).toBe("primary");
-    expect(
-      resolveChatThreadId({
-        explicitThreadId: null,
-        pendingThreadId: null,
-        rememberedThreadId: null,
-        projectThreads: [thread("subagent", "subagent")],
-      }),
-    ).toBe("subagent");
+    ).toBe("first");
   });
 
   it("returns null when no rung resolves", () => {
