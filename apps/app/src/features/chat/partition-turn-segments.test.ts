@@ -162,4 +162,24 @@ describe("partitionTurnSegments durable settlement", () => {
     expect(segment?.foldRuns[0]?.kind).toBe("activity");
     expect(segment?.foldRuns[0]?.blocks.map((b) => b.sequence)).toEqual([1, 2, 4, 5]);
   });
+
+  it("emits no segment when the only blocks are empty reasoning", () => {
+    const emptyReasoning = block({ blockType: "reasoning", sequence: 0, content: { text: "" } });
+
+    expect(partitionTurnSegments([emptyReasoning], false)).toEqual([]);
+    expect(partitionTurnSegments([emptyReasoning], true)).toEqual([]);
+  });
+
+  it("emits only the card when empty reasoning follows a helper-result", () => {
+    const card = block({
+      blockType: "custom",
+      sequence: 1,
+      content: { kind: "helper-result", props: { status: "running", agentName: "Helper" } },
+    });
+    const emptyReasoning = block({ blockType: "reasoning", sequence: 2, content: { text: "" } });
+    const segments = partitionTurnSegments([card, emptyReasoning], false);
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.frontier.map((b) => b.sequence)).toEqual([1]);
+  });
 });

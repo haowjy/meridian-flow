@@ -332,10 +332,12 @@ const FoldRun = memo(function FoldRun({
   );
 });
 
+// The partition omits empty segments, so a blockless one never reaches render.
+// Returning a stable key instead of throwing keeps a stray empty segment from
+// tripping the project route error boundary.
 function segmentRenderKey(segment: TurnSegment): string {
   const firstBlock = firstSegmentBlock(segment);
-  if (!firstBlock) throw new Error("Turn segments must contain at least one block");
-  return `segment:${blockRenderKey(firstBlock)}`;
+  return firstBlock ? `segment:${blockRenderKey(firstBlock)}` : "segment:empty";
 }
 
 function runRenderKey(run: Run): string {

@@ -32,6 +32,8 @@ so the legacy spawn card lands on its own frontier.
 An empty reasoning block (no visible `textContent` or `content.text`) is a
 provider repair placeholder: it is dropped before grouping, so it neither opens
 an empty `Thinking` fold nor splits the activity runs on either side of it.
+A segment left with no blocks after the drop emits no segment, so empty
+reasoning never produces an empty `Thinking` or a blockless render.
 
 Earlier activity runs and all remaining reasoning runs go into the fold. The
 last activity run is the frontier.

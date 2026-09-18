@@ -26,6 +26,7 @@
 - A second `return_result` in one child run fails with `already_returned` rather than overwriting the first report; the tool protocol reports `{ ok: false, message }` with `isError`.
 - Old parent turns that carry only spawn tool blocks keep their spawn report card on the settled frontier instead of folding it into Thinking.
 - Empty reasoning blocks no longer render an empty Thinking disclosure or split the activity runs around them.
+- A segment left blockless after empty reasoning is dropped is omitted instead of reaching render with no key, so an empty post-card reasoning frame no longer trips the project error boundary.
 - A generic helper spawned by another generic helper now keeps the caller's inherited execution, so a Critic's missing write no longer opens to full mutation at the second generic level.
 - Allow a pickable primary (Critic) to remain a named child on Muse's roster. Child invocability is `model-invocable: false` only.
 - Deny unavailable write/work commands through the same permission-gate persist path as unknown tools. Dispatch only executes; the core catalogue stays policy-free.

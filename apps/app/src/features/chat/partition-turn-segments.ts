@@ -34,9 +34,9 @@ export function partitionTurnSegments(blocks: Block[], settled: boolean): TurnSe
   // New turns hide the spawn protocol behind a helper-result card; old turns
   // have only the tool blocks, so they keep their card on the frontier.
   const turnHasHelperResult = blocks.some(isHelperResultBlock);
-  return splitAtSegmentBoundaries(blocks, turnHasHelperResult).map((segment) =>
-    partitionSegment(segment, settled, turnHasHelperResult),
-  );
+  return splitAtSegmentBoundaries(blocks, turnHasHelperResult)
+    .map((segment) => partitionSegment(segment, settled, turnHasHelperResult))
+    .filter((segment) => segment.foldRuns.length > 0 || segment.frontier.length > 0);
 }
 
 /**
