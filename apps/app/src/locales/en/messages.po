@@ -1557,6 +1557,7 @@ msgstr "Form payload is malformed."
 msgid "Go ahead"
 msgstr "Go ahead"
 
+#: src/features/project/chat/SubagentTaskCard.tsx
 #: src/features/project/work/WorkDialog.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Goal"
@@ -3023,8 +3024,8 @@ msgid "Talk it out"
 msgstr "Talk it out"
 
 #: src/features/project/chat/SubagentTaskCard.tsx
-msgid "Task Assignment"
-msgstr "Task Assignment"
+#~ msgid "Task Assignment"
+#~ msgstr "Task Assignment"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Text"

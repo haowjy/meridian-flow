@@ -1557,6 +1557,7 @@ msgstr ""
 msgid "Go ahead"
 msgstr "说吧"
 
+#: src/features/project/chat/SubagentTaskCard.tsx
 #: src/features/project/work/WorkDialog.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Goal"
@@ -3023,8 +3024,8 @@ msgid "Talk it out"
 msgstr "说出来理一理"
 
 #: src/features/project/chat/SubagentTaskCard.tsx
-msgid "Task Assignment"
-msgstr ""
+#~ msgid "Task Assignment"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "Text"
