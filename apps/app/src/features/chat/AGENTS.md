@@ -50,18 +50,19 @@ composer mode, and review state live in
 
 1. **Default-collapsed everywhere.** `Thinking` disclosures are closed by default
    whether streaming live or settled. No auto-open on streaming.
-2. **Durable settlement folds tool rows.** `complete`, `cancelled`, and `error`
-   put every segment's tool operations inside its fold, except images.
-   Live statuses keep the last activity run visible. Never key this decision off
-   `isLive` or partial block content; use the contracts terminal-status
-   predicate.
+2. **Durable settlement folds process-tool rows.** `complete`, `cancelled`, and
+   `error` put every segment's process-tool operations inside its fold, except
+   images and turn-card protocol. Live statuses keep the last activity run
+   visible. Never key this decision off `isLive` or partial block content; use
+   the contracts terminal-status predicate.
 3. **Interrupt and turn cards stay visible.** Custom cards and segment
    boundaries (`ask_user` interrupt, spawn `helper-result`, child
    `child-report`) render through the shared `TurnCard` shell (`icon`/`tone`/
    `title`/`door`/`hint`/children); process tools render as `ActivityRow`. Their
    tool protocol is hidden. Later model prose is a new Thinking/Activity pair.
-   A turn with no helper-result keeps a spawn's tool protocol on the frontier as
-   its legacy card; a turn with one hides and folds it.
+   Turn-card protocol never folds: a turn with no helper-result keeps a spawn's
+   tool protocol on the frontier as its legacy card; a turn with one leaves the
+   hidden protocol on the frontier behind the card.
 4. **Document names are doors.** `DocumentName.tsx` renders every
    writer-facing document name in the timeline and is the only place that
    decides whether one is a link. Don't add navigation to a renderer, and

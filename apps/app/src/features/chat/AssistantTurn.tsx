@@ -235,9 +235,10 @@ const TurnSegmentView = memo(function TurnSegmentView({
     () => thinkingDigest(toolViewsInFold(segment.foldRuns), writeMode),
     [segment.foldRuns, writeMode],
   );
+  const showFold = useMemo(() => foldHasVisibleContent(segment.foldRuns), [segment.foldRuns]);
   return (
     <div data-turn-segment={segmentIndex + 1}>
-      {segment.foldRuns.length > 0 ? (
+      {showFold ? (
         <ProcessDisclosure
           label={digest ?? thinkingLabel()}
           ariaLabel={thinkingAriaLabel(segmentIndex, segmentCount)}
@@ -279,6 +280,15 @@ function thinkingLabel() {
 
 function thinkingAriaLabel(segmentIndex: number, segmentCount: number): string | undefined {
   return segmentCount <= 1 ? t`Thinking` : t`Thinking part ${segmentIndex + 1}`;
+}
+
+/**
+ * A fold earns its disclosure only when it holds something the writer can read:
+ * a reasoning run, or an activity run with a visible tool row. A fold of only
+ * hidden turn-card protocol would otherwise open an empty Thinking.
+ */
+function foldHasVisibleContent(runs: Run[]): boolean {
+  return runs.some((run) => run.kind === "reasoning") || toolViewsInFold(runs).length > 0;
 }
 
 function toolViewsInFold(runs: Run[]) {

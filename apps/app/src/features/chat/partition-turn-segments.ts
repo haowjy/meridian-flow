@@ -6,7 +6,12 @@
  * runs and the visible activity frontier. Durable turn settlement is the only
  * lifecycle input: transient stream shape never changes the partition.
  */
-import { type Block, blockPlainText, interruptIdForBlock } from "@meridian/contracts/protocol";
+import {
+  type Block,
+  blockContentRecord,
+  blockPlainText,
+  interruptIdForBlock,
+} from "@meridian/contracts/protocol";
 import {
   isChildReportBlock,
   isHelperResultBlock,
@@ -14,6 +19,8 @@ import {
   isSpawnToolBlock,
   isToolDeliveryBlock,
 } from "./block-kind";
+import { groupDeliverySegments } from "./group-delivery-segments";
+import { isToolViewVisible } from "./tool-view-visibility";
 
 export type Run = { kind: "reasoning"; blocks: Block[] } | { kind: "activity"; blocks: Block[] };
 
@@ -35,7 +42,7 @@ export function partitionTurnSegments(blocks: Block[], settled: boolean): TurnSe
   // have only the tool blocks, so they keep their card on the frontier.
   const turnHasHelperResult = blocks.some(isHelperResultBlock);
   return splitAtSegmentBoundaries(blocks, turnHasHelperResult)
-    .map((segment) => partitionSegment(segment, settled, turnHasHelperResult))
+    .map((segment) => partitionSegment(segment, settled))
     .filter((segment) => segment.foldRuns.length > 0 || segment.frontier.length > 0);
 }
 
@@ -71,11 +78,7 @@ function splitAtSegmentBoundaries(blocks: Block[], turnHasHelperResult: boolean)
   return segments;
 }
 
-function partitionSegment(
-  blocks: Block[],
-  settled: boolean,
-  turnHasHelperResult: boolean,
-): TurnSegment {
+function partitionSegment(blocks: Block[], settled: boolean): TurnSegment {
   const runs = groupRuns(blocks);
   const lastActivityRunIndex = findLastActivityRunIndex(runs);
 
@@ -91,11 +94,12 @@ function partitionSegment(
     };
   }
 
+  const hiddenCalls = hiddenToolCallIds(frontierRun.blocks);
   const foldedFrontierTools = frontierRun.blocks.filter((block) =>
-    isFoldableToolBlock(block, turnHasHelperResult),
+    isFoldableToolBlock(block, hiddenCalls),
   );
   const visibleFrontier = frontierRun.blocks.filter(
-    (block) => !isFoldableToolBlock(block, turnHasHelperResult),
+    (block) => !isFoldableToolBlock(block, hiddenCalls),
   );
   const foldRuns = runs.flatMap((run, index): Run[] => {
     if (index !== lastActivityRunIndex) return [run];
@@ -108,13 +112,33 @@ function partitionSegment(
 }
 
 /**
- * A spawn's tool protocol is the writer's card only when no helper-result card
- * exists in the turn; otherwise the card replaced it and the protocol folds.
+ * Turn-card protocol (`ask_user`, `spawn`, `return_result`) never folds: its
+ * card is the writer-facing surface, and the raw rows stay hidden on the
+ * frontier (a legacy spawn card renders there only when the turn has no
+ * helper-result card). Images stay on the frontier too. Only process tools fold.
  */
-function isFoldableToolBlock(block: Block, turnHasHelperResult: boolean): boolean {
+function isFoldableToolBlock(block: Block, hiddenCalls: ReadonlySet<string>): boolean {
   if (!isToolDeliveryBlock(block) || isImageBlock(block)) return false;
-  if (isSpawnToolBlock(block) && !turnHasHelperResult) return false;
-  return true;
+  const toolCallId = blockContentRecord(block).toolCallId;
+  return !(typeof toolCallId === "string" && hiddenCalls.has(toolCallId));
+}
+
+/**
+ * toolCallIds whose tool rows a turn card hides, read through the same
+ * visibility policy the render path uses. `tool_result` blocks carry
+ * `toolName` only for `spawn`, so an unnamed result is matched to its
+ * `tool_use` by pairing before classification.
+ */
+function hiddenToolCallIds(blocks: Block[]): Set<string> {
+  const hidden = new Set<string>();
+  for (const segment of groupDeliverySegments(blocks)) {
+    const tools =
+      segment.kind === "tool" ? [segment.tool] : segment.kind === "tool-run" ? segment.tools : [];
+    for (const tool of tools) {
+      if (!isToolViewVisible(tool) && tool.toolCallId) hidden.add(tool.toolCallId);
+    }
+  }
+  return hidden;
 }
 
 function groupRuns(blocks: Block[]): Run[] {

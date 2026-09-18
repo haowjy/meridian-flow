@@ -78,9 +78,11 @@ describe("partitionTurnSegments durable settlement", () => {
     );
 
     expect(segments).toHaveLength(2);
-    expect(segments[0]?.frontier.map((b) => b.sequence)).toEqual([5]);
+    // Spawn protocol does not fold; it stays hidden on the frontier with the
+    // card, so the fold is only the reasoning plus the process tool.
+    expect(segments[0]?.frontier.map((b) => b.sequence)).toEqual([3, 4, 5]);
     expect(segments[0]?.foldRuns.flatMap((run) => run.blocks).map((b) => b.sequence)).toEqual([
-      0, 1, 2, 3, 4,
+      0, 1, 2,
     ]);
     expect(segments[1]?.frontier.map((b) => b.sequence)).toEqual([6]);
     expect(segments[1]?.foldRuns).toEqual([]);
@@ -119,6 +121,32 @@ describe("partitionTurnSegments durable settlement", () => {
     expect(segments).toHaveLength(2);
     expect(segments[0]?.frontier.map((b) => b.sequence)).toEqual([7]);
     expect(segments[1]?.frontier.map((b) => b.sequence)).toEqual([8]);
+  });
+
+  it("folds no Thinking when a settled return_result turn hides only its protocol", () => {
+    const emptyReasoning = block({ blockType: "reasoning", sequence: 0, content: { text: "" } });
+    const returnUse = block({
+      blockType: "tool_use",
+      sequence: 1,
+      content: {
+        toolCallId: "return-1",
+        toolName: "return_result",
+        input: { summary: "Returned report." },
+      },
+    });
+    const returnResult = block({
+      blockType: "tool_result",
+      sequence: 2,
+      content: { toolCallId: "return-1", output: { ok: true } },
+    });
+    const segments = partitionTurnSegments(
+      [emptyReasoning, returnUse, returnResult, childReport],
+      true,
+    );
+
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.foldRuns).toEqual([]);
+    expect(segments[0]?.frontier.map((b) => b.sequence)).toEqual([1, 2, 7]);
   });
 
   it("keeps an old spawn report on the settled frontier without a helper-result card", () => {
