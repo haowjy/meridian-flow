@@ -149,11 +149,13 @@ describe("partitionTurnSegments durable settlement", () => {
     expect(segments[0]?.frontier.map((b) => b.sequence)).toEqual([1, 2, 7]);
   });
 
-  it("keeps an old spawn report on the settled frontier without a helper-result card", () => {
-    const [segment] = partitionTurnSegments([spawnUse, spawnResult], true);
+  it("does not split at a spawn tool_result without a helper-result card", () => {
+    const after = block({ blockType: "text", sequence: 6 });
+    const segments = partitionTurnSegments([spawnUse, spawnResult, after], true);
 
-    expect(segment?.foldRuns).toEqual([]);
-    expect(segment?.frontier.map((b) => b.sequence)).toEqual([3, 4]);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.foldRuns).toEqual([]);
+    expect(segments[0]?.frontier.map((b) => b.sequence)).toEqual([3, 4, 6]);
   });
 
   it("drops empty reasoning so it never opens an empty Thinking fold", () => {

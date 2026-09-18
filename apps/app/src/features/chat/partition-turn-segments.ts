@@ -2,7 +2,7 @@
  * partition-turn-segments — structural Thinking/Activity segmentation for assistant turns.
  *
  * Purpose: Converts an already ordered `Block[]` into interrupt- and
- * spawn-bounded turn segments, then separates each segment into process-fold
+ * card-bounded turn segments, then separates each segment into process-fold
  * runs and the visible activity frontier. Durable turn settlement is the only
  * lifecycle input: transient stream shape never changes the partition.
  */
@@ -16,7 +16,6 @@ import {
   isChildReportBlock,
   isHelperResultBlock,
   isImageBlock,
-  isSpawnToolBlock,
   isToolDeliveryBlock,
 } from "./block-kind";
 import { groupDeliverySegments } from "./group-delivery-segments";
@@ -38,10 +37,7 @@ export function isInterruptBlock(block: Block): boolean {
 }
 
 export function partitionTurnSegments(blocks: Block[], settled: boolean): TurnSegment[] {
-  // New turns hide the spawn protocol behind a helper-result card; old turns
-  // have only the tool blocks, so they keep their card on the frontier.
-  const turnHasHelperResult = blocks.some(isHelperResultBlock);
-  return splitAtSegmentBoundaries(blocks, turnHasHelperResult)
+  return splitAtSegmentBoundaries(blocks)
     .map((segment) => partitionSegment(segment, settled))
     .filter((segment) => segment.foldRuns.length > 0 || segment.frontier.length > 0);
 }
@@ -49,23 +45,18 @@ export function partitionTurnSegments(blocks: Block[], settled: boolean): TurnSe
 /**
  * ask_user, spawn, and return_result each close a segment with a custom card.
  * The tool protocol stays hidden; the card is the last block of the segment.
- * Old turns with no helper-result also split at the spawn tool_result so the
- * legacy card lands on its own segment frontier.
  */
-function isSegmentBoundary(block: Block, turnHasHelperResult: boolean): boolean {
-  if (isInterruptBlock(block) || isHelperResultBlock(block) || isChildReportBlock(block)) {
-    return true;
-  }
-  return !turnHasHelperResult && block.blockType === "tool_result" && isSpawnToolBlock(block);
+function isSegmentBoundary(block: Block): boolean {
+  return isInterruptBlock(block) || isHelperResultBlock(block) || isChildReportBlock(block);
 }
 
-function splitAtSegmentBoundaries(blocks: Block[], turnHasHelperResult: boolean): Block[][] {
+function splitAtSegmentBoundaries(blocks: Block[]): Block[][] {
   const segments: Block[][] = [];
   let current: Block[] = [];
 
   for (const block of blocks) {
     current.push(block);
-    if (isSegmentBoundary(block, turnHasHelperResult)) {
+    if (isSegmentBoundary(block)) {
       segments.push(current);
       current = [];
     }
@@ -114,8 +105,7 @@ function partitionSegment(blocks: Block[], settled: boolean): TurnSegment {
 /**
  * Turn-card protocol (`ask_user`, `spawn`, `return_result`) never folds: its
  * card is the writer-facing surface, and the raw rows stay hidden on the
- * frontier (a legacy spawn card renders there only when the turn has no
- * helper-result card). Images stay on the frontier too. Only process tools fold.
+ * frontier. Images stay on the frontier too. Only process tools fold.
  */
 function isFoldableToolBlock(block: Block, hiddenCalls: ReadonlySet<string>): boolean {
   if (!isToolDeliveryBlock(block) || isImageBlock(block)) return false;

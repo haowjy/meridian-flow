@@ -23,8 +23,7 @@ The zones are rendered by `ProcessDisclosure.tsx` (fold) and `AssistantTurn.tsx`
 
 **Step 1 — segment at cards.** Split ordered `Block[]` at each interrupt,
 helper-result, and child-report card; the card is the final block of its
-segment. A turn with no helper-result also splits at the spawn `tool_result`,
-so the legacy spawn card lands on its own frontier.
+segment.
 
 **Step 2 — group maximal runs** within each segment:
 
@@ -46,8 +45,7 @@ last activity run is the frontier.
 into that segment's fold in chronological position; frontier non-tool blocks
 remain visible. An image renders a preview and stays with the frontier.
 Turn-card protocol (`ask_user`, `spawn`, `return_result`) never folds: it stays
-on the frontier hidden behind its card, or, for an old turn with no
-helper-result card, as the legacy spawn card. Nothing else is exempt. A fold
+on the frontier hidden behind its card. Nothing else is exempt. A fold
 with only hidden protocol renders no `Thinking`.
 
 The settlement input is the canonical `isTerminalTurnStatus` result. Partition
@@ -92,8 +90,8 @@ segment*.
 
 Cards hide their tool_use/tool_result rows (`tool-view-visibility.ts`). The
 custom card is the surface. Spawn and `return_result` protocol are persisted for
-the model; the writer never sees their rows. Old turns with no helper-result
-have no card, so the spawn tool result is itself the frontier card.
+the model; the writer never sees their rows. Parent spawn cards render only from
+the helper-result custom block.
 
 After the boundary, later reasoning and prose open a fresh fold/frontier pair
 below. A running spawn card is persisted before the child runs, so the live
@@ -158,8 +156,7 @@ Each segment applies the same durable-settlement rule independently.
   settle, its tool rows fold but its resolved interrupt card remains visible.
 - **Turn-card protocol never folds.** `isFoldableToolBlock` exempts
   `ask_user`, `spawn`, and `return_result` tool blocks like images, so they stay
-  on the frontier. When a turn has no helper-result card (old turns), the spawn
-  protocol surfaces there as `SpawnReportCard`; otherwise it renders nothing.
+  on the frontier hidden. The helper-result custom block is the only spawn card.
   The `child-report` card is the same family: it replaces the `return_result`
   protocol, which is hidden behind it after settlement.
 - **Block render keys are positional.** `blockRenderKey` derives from

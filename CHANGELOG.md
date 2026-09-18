@@ -24,7 +24,6 @@
 ### Fixed
 
 - A second `return_result` in one child run fails with `already_returned` rather than overwriting the first report; the tool protocol reports `{ ok: false, message }` with `isError`.
-- Old parent turns that carry only spawn tool blocks keep their spawn report card on the settled frontier instead of folding it into Thinking.
 - Empty reasoning blocks no longer render an empty Thinking disclosure or split the activity runs around them.
 - Turn-card protocol (`ask_user`, `spawn`, `return_result`) no longer folds, so a settled turn whose only process is hidden protocol opens no empty Thinking. A fold with no visible content renders no disclosure.
 - A segment left blockless after empty reasoning is dropped is omitted instead of reaching render with no key, so an empty post-card reasoning frame no longer trips the project error boundary.
@@ -41,6 +40,7 @@
 ### Changed
 
 - Generic and named child execution resolve onto the conversation configuration (`tools`, `disallowed-tools`, `effort`); the `inheritedExecution` overlay is gone.
+- Parent spawn cards render only from the helper-result custom block; spawn protocol is not a card.
 - Subagent chat renders its goal as a quiet `Goal` line and hides completely when no goal is set, replacing the always-on task card with icon, section label, and placeholder copy.
 - Subagent banner drops the Working/Idle status badge. Run state stays on the composer.
 
