@@ -34,6 +34,7 @@ import { groupDeliverySegments } from "./group-delivery-segments";
 import { ProcessDisclosure } from "./ProcessDisclosure";
 import { partitionTurnSegments, type Run, type TurnSegment } from "./partition-turn-segments";
 import { StreamingText } from "./StreamingText";
+import { spawnReportFromTool } from "./spawn-report";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
@@ -161,12 +162,16 @@ function lastVisibleSegmentElementIsTool(segments: TurnSegment[]): boolean {
   for (let index = deliverySegments.length - 1; index >= 0; index -= 1) {
     const segment = deliverySegments[index];
     if (!segment) continue;
+    // A spawn that has its report renders a card, not a row; the ink drop then
+    // starts at the prose edge like any other non-row frontier block.
     if (segment.kind === "tool") {
-      if (isToolViewVisible(segment.tool)) return true;
+      if (isToolViewVisible(segment.tool) && !spawnReportFromTool(segment.tool)) return true;
       continue;
     }
     if (segment.kind === "tool-run") {
-      if (segment.tools.some(isToolViewVisible)) return true;
+      if (segment.tools.some((tool) => isToolViewVisible(tool) && !spawnReportFromTool(tool))) {
+        return true;
+      }
       continue;
     }
     if (isVisibleDeliveryBlock(segment.block)) return false;

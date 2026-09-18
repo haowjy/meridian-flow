@@ -18,14 +18,15 @@ the rebind adapter.
 
 ## Mental model
 
-An assistant turn renders as a **stack of segments**, one per interrupt round.
-Each segment has exactly two zones:
+An assistant turn renders as a **stack of segments**, one per interrupt or
+spawn-result boundary. Each segment has exactly two zones:
 
 - **Process disclosure** (collapsed) — all reasoning, all completed activity
-  runs, and (once the durable turn settles) every frontier tool operation.
-  Its visible label becomes a deterministic digest when it contains tools.
+  runs, and (once the durable turn settles) every frontier tool operation
+  except spawn. Its visible label becomes a deterministic digest when it
+  contains tools.
 - **`ActivityBlock`** (visible) — the live last activity run. After settlement,
-  only that frontier's non-tool blocks remain visible.
+  non-tool blocks and spawn cards remain visible.
 
 The partition keys off block order/type and the durable terminal-status
 predicate. It never reads transient stream state (`isLive`, partial blocks).
@@ -33,8 +34,9 @@ At the durable status flip, tool rows move into the fold; the resulting final
 frame is identical to a reload.
 
 When a new activity run begins, the previous frontier **rolls up** into the
-process fold in chronological position. Interrupts end a segment; their cards
-remain visible after resolution even though tool protocol rows fold on settle.
+process fold in chronological position. Interrupts and spawn results end a
+segment; their cards remain visible after settlement even though other tool
+rows fold.
 
 The full model lives in
 [`.context/turn-composition.md`](.context/turn-composition.md); one row's
@@ -50,12 +52,14 @@ composer mode, and review state live in
 1. **Default-collapsed everywhere.** `Thinking` disclosures are closed by default
    whether streaming live or settled. No auto-open on streaming.
 2. **Durable settlement folds tool rows.** `complete`, `cancelled`, and `error`
-   put every segment's tool operations inside its fold. Live statuses keep the
-   last activity run visible. Never key this decision off `isLive` or partial
-   block content; use the contracts terminal-status predicate.
-3. **Interrupt cards stay visible.** Resolution starts a new segment. On settle,
-   tool protocol rows in every segment fold, while resolved interrupt cards and
-   other frontier non-tool blocks remain expanded.
+   put every segment's tool operations inside its fold, except the two that are
+   themselves an affordance: images and `spawn` (the door to the child chat).
+   Live statuses keep the last activity run visible. Never key this decision off
+   `isLive` or partial block content; use the contracts terminal-status
+   predicate.
+3. **Interrupt and spawn cards stay visible.** Each is a segment boundary.
+   On settle, ordinary tool rows fold; the interrupt card and the spawn report
+   (with Open) remain expanded. Later model prose is a new Thinking/Activity pair.
 4. **Document names are doors.** `DocumentName.tsx` renders every
    writer-facing document name in the timeline and is the only place that
    decides whether one is a link. Don't add navigation to a renderer, and

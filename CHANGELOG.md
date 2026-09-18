@@ -18,6 +18,7 @@
 - Persist account-scoped skill installs. Debug overlay can add a packaged skill (including `story-review`) or a paste, and delete by slug.
 - Snapshot `creative-writing-modes`, `writing-principles`, and `story-review` into launch-agents. Writer lists the first two as available skills.
 - Advertise the `spawn` tool to every Agent. Named children resolve from the caller's `subagents` roster; an omitted or empty `agent` selects the generic helper, which inherits the caller's model, tools, skills, effort, and roster while the built-in General revision supplies its body. Default max spawn depth is now 3, operator-overridable through `MERIDIAN_MAX_SPAWN_DEPTH`; a deeper spawn is a tool error before any child is created.
+- Parent transcript shows a spawn report card: who ran, the returned summary, and an Open door into the child chat. A spawn result splits the turn the way an interrupt does, so the card stays visible outside Thinking. Neither the card nor the persisted model output carries spawn cost.
 
 ### Fixed
 

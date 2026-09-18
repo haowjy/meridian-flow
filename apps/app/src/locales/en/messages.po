@@ -1610,6 +1610,10 @@ msgstr "Heading 2"
 msgid "Heading 3"
 msgstr "Heading 3"
 
+#: src/features/chat/spawn-report.ts
+msgid "Helper"
+msgstr "Helper"
+
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Hide source"
 msgstr "Hide source"
@@ -2257,6 +2261,10 @@ msgstr "Only on this device"
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Only part of this change could be reversed."
 msgstr "Only part of this change could be reversed."
+
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Open"
+msgstr "Open"
 
 #. placeholder {0}: work.name
 #: src/features/project/work/WorkCard.tsx

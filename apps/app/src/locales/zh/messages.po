@@ -1610,6 +1610,10 @@ msgstr ""
 msgid "Heading 3"
 msgstr ""
 
+#: src/features/chat/spawn-report.ts
+msgid "Helper"
+msgstr ""
+
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Hide source"
 msgstr ""
@@ -2256,6 +2260,10 @@ msgstr ""
 
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Only part of this change could be reversed."
+msgstr ""
+
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Open"
 msgstr ""
 
 #. placeholder {0}: work.name

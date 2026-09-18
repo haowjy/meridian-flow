@@ -20,6 +20,7 @@ import type {
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
+import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
 import type { ToolCallInput, ToolExecutor } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
@@ -184,8 +185,13 @@ export async function dispatchToolCall(
   }
 
   const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;
-  const persistedOutput = execResult.output;
+  const persistedOutput =
+    call.name === "spawn" ? spawnOutputForTranscript(execResult.output) : execResult.output;
   const persistedMetadata = execResult.metadata;
+  // A settled spawn stays on the frontier, so the durable result must name its
+  // tool for `block-kind.ts` to find it without pairing back to the tool_use.
+  const persistedToolName: Record<string, JsonValue> =
+    call.name === "spawn" ? { toolName: call.name } : {};
 
   const persistedToolResult = await persistAndAppendEvents(
     deps.persistenceDeps,
@@ -198,6 +204,7 @@ export async function dispatchToolCall(
         sequence: ctx.blockSeqRef.value++,
         content: {
           toolCallId: execResult.toolCallId,
+          ...persistedToolName,
           output: persistedOutput,
           ...(execResult.isError !== undefined ? { isError: execResult.isError } : {}),
           ...(persistedMetadata ? { metadata: persistedMetadata } : {}),

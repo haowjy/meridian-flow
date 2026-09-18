@@ -1,13 +1,13 @@
 /**
  * partition-turn-segments — structural Thinking/Activity segmentation for assistant turns.
  *
- * Purpose: Converts an already ordered `Block[]` into interrupt-bounded turn
- * segments, then separates each segment into process-fold runs and the visible
- * activity frontier. Durable turn settlement is the only lifecycle input:
- * transient stream shape never changes the partition.
+ * Purpose: Converts an already ordered `Block[]` into interrupt- and
+ * spawn-bounded turn segments, then separates each segment into process-fold
+ * runs and the visible activity frontier. Durable turn settlement is the only
+ * lifecycle input: transient stream shape never changes the partition.
  */
 import { type Block, interruptIdForBlock } from "@meridian/contracts/protocol";
-import { isImageBlock, isToolDeliveryBlock } from "./block-kind";
+import { isImageBlock, isSpawnBlock, isToolDeliveryBlock } from "./block-kind";
 
 export type Run = { kind: "reasoning"; blocks: Block[] } | { kind: "activity"; blocks: Block[] };
 
@@ -25,16 +25,28 @@ export function isInterruptBlock(block: Block): boolean {
 }
 
 export function partitionTurnSegments(blocks: Block[], settled: boolean): TurnSegment[] {
-  return splitAtInterrupts(blocks).map((segment) => partitionSegment(segment, settled));
+  return splitAtSegmentBoundaries(blocks).map((segment) => partitionSegment(segment, settled));
 }
 
-function splitAtInterrupts(blocks: Block[]): Block[][] {
+/**
+ * A spawn tool_result is the same kind of writer-facing boundary as an
+ * interrupt card: it closes the current Thinking/Activity pair so the spawn
+ * stays visible and later reasoning starts a fresh fold. Split after the
+ * result, not the tool_use, so pairing stays in one segment. An in-flight
+ * spawn (use without result) stays on the live frontier of the current
+ * segment — live turns do not fold tools.
+ */
+function isSegmentBoundary(block: Block): boolean {
+  return isInterruptBlock(block) || (block.blockType === "tool_result" && isSpawnBlock(block));
+}
+
+function splitAtSegmentBoundaries(blocks: Block[]): Block[][] {
   const segments: Block[][] = [];
   let current: Block[] = [];
 
   for (const block of blocks) {
     current.push(block);
-    if (isInterruptBlock(block)) {
+    if (isSegmentBoundary(block)) {
       segments.push(current);
       current = [];
     }
@@ -75,8 +87,10 @@ function partitionSegment(blocks: Block[], settled: boolean): TurnSegment {
   return { foldRuns, frontier: visibleFrontier };
 }
 
+// Tool rows fold on settlement except the ones that are themselves an
+// affordance: images render a preview, and a spawn is the door to the child.
 function isFoldableToolBlock(block: Block): boolean {
-  return isToolDeliveryBlock(block) && !isImageBlock(block);
+  return isToolDeliveryBlock(block) && !isImageBlock(block) && !isSpawnBlock(block);
 }
 
 function groupRuns(blocks: Block[]): Run[] {

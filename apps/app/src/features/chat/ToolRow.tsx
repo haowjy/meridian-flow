@@ -23,6 +23,8 @@ import { memo, useMemo } from "react";
 import { ActivityRow, type ActivityRowStatus } from "./ActivityRow";
 import { descriptorFor } from "./command-descriptor";
 import type { ToolView } from "./group-delivery-segments";
+import { SpawnReportCard } from "./SpawnReportCard";
+import { spawnReportFromTool } from "./spawn-report";
 import type { WriteMode } from "./tool-command";
 import { rendererFor } from "./tool-renderers";
 import { isToolViewVisible } from "./tool-view-visibility";
@@ -44,6 +46,11 @@ function ToolRowComponent({ tool, writeMode = "direct" }: ToolRowProps) {
     [renderer, tool, writeMode],
   );
   if (!isToolViewVisible(tool)) return null;
+
+  // A spawn is the writer's door to the child chat: once its report lands it
+  // renders the card, never a row that folds into Thinking at settlement.
+  const spawnReport = spawnReportFromTool(tool);
+  if (spawnReport) return <SpawnReportCard {...spawnReport} />;
 
   return (
     <ActivityRow
