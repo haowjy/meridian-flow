@@ -3,14 +3,14 @@
  * it reported, and a door into the child chat.
  *
  * Canonical surface is the `helper-result` custom block. It is a thin adapter
- * over `TurnCard`: the shell owns the chrome, the status maps to a tone, and
+ * over `ArtifactCard`: the shell owns the chrome, the status maps to a tone, and
  * the title names the agent. Cost and the raw status field stay absent.
  */
 import { t } from "@lingui/core/macro";
 import { CheckCircle2, CircleAlert, LoaderCircle } from "lucide-react";
 import { Markdown } from "@/rich-content/Markdown";
+import { ArtifactCard, type ArtifactCardTone } from "./ArtifactCard";
 import { useOpenChatThread } from "./ChatThreadNavigation";
-import { TurnCard, type TurnCardTone } from "./TurnCard";
 
 type SpawnReportStatus = "running" | "completed" | "failed";
 
@@ -26,7 +26,7 @@ const statusPresentation = {
   running: { Icon: LoaderCircle, tone: "running" },
   completed: { Icon: CheckCircle2, tone: "resolved" },
   failed: { Icon: CircleAlert, tone: "failed" },
-} satisfies Record<SpawnReportStatus, { Icon: typeof CheckCircle2; tone: TurnCardTone }>;
+} satisfies Record<SpawnReportStatus, { Icon: typeof CheckCircle2; tone: ArtifactCardTone }>;
 
 export function SpawnReportCard({
   agentName,
@@ -39,7 +39,7 @@ export function SpawnReportCard({
   const hint = title && title !== agentName ? title : undefined;
 
   return (
-    <TurnCard
+    <ArtifactCard
       icon={Icon}
       tone={tone}
       title={agentName}
@@ -47,7 +47,7 @@ export function SpawnReportCard({
       door={childThreadId ? <OpenChildThreadDoor threadId={childThreadId} /> : undefined}
     >
       {summary ? <Markdown variant="compact">{summary}</Markdown> : null}
-    </TurnCard>
+    </ArtifactCard>
   );
 }
 

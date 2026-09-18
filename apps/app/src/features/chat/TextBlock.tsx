@@ -13,8 +13,8 @@ import { MessageSquareText } from "lucide-react";
 import { type FormEvent, useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import { ArtifactCard, ComponentResolvedSummary } from "./ArtifactCard";
 import type { ComponentBlockProps } from "./component-registry";
-import { ComponentResolvedSummary, TurnCard } from "./TurnCard";
 
 export function TextBlock({ content, respond, isAwaitingResponse }: ComponentBlockProps) {
   const props = askUserFreeTextProps(content);
@@ -47,7 +47,7 @@ export function TextBlock({ content, respond, isAwaitingResponse }: ComponentBlo
   }
 
   return (
-    <TurnCard
+    <ArtifactCard
       icon={MessageSquareText}
       tone="pending"
       title={question}
@@ -74,6 +74,6 @@ export function TextBlock({ content, respond, isAwaitingResponse }: ComponentBlo
           <Trans>Submit</Trans>
         </button>
       </form>
-    </TurnCard>
+    </ArtifactCard>
   );
 }

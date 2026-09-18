@@ -1,10 +1,12 @@
 /**
- * TurnCard — the shared shell for writer-facing turn cards.
+ * ArtifactCard — the shared chrome for a writer-facing artifact (see
+ * `tool-kind.ts`): the card-shaped half of the turn, opposite the collapsed
+ * Thinking process.
  *
- * One chrome for `ask_user` interrupts and spawn reports: an icon chip, a
- * title, an optional door (a name-like control that navigates, never a
- * full-row button), an optional hint, and the card body. The tone only tints
- * the icon; status words stay out of the card.
+ * One shell for `ask_user` interrupts, spawn reports, and child Returns: an
+ * icon chip, a title, an optional door (a name-like control that navigates,
+ * never a full-row button), an optional hint, and the card body. The tone only
+ * tints the icon; status words stay out of the card.
  */
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
@@ -12,11 +14,11 @@ import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-export type TurnCardTone = "pending" | "running" | "resolved" | "failed" | "reversible";
+export type ArtifactCardTone = "pending" | "running" | "resolved" | "failed" | "reversible";
 
-export type TurnCardProps = {
+export type ArtifactCardProps = {
   icon: LucideIcon;
-  tone: TurnCardTone;
+  tone: ArtifactCardTone;
   /** The card's heading, rendered above the body. */
   title?: ReactNode;
   door?: ReactNode;
@@ -25,7 +27,7 @@ export type TurnCardProps = {
   className?: string;
 };
 
-const iconTone: Record<TurnCardTone, string> = {
+const iconTone: Record<ArtifactCardTone, string> = {
   pending: "text-primary",
   running: "text-primary",
   resolved: "text-muted-foreground",
@@ -33,7 +35,7 @@ const iconTone: Record<TurnCardTone, string> = {
   reversible: "text-muted-foreground",
 };
 
-export function TurnCard({
+export function ArtifactCard({
   icon: Icon,
   tone,
   title,
@@ -41,7 +43,7 @@ export function TurnCard({
   hint,
   children,
   className,
-}: TurnCardProps) {
+}: ArtifactCardProps) {
   return (
     <section
       className={cn(
@@ -80,7 +82,7 @@ export type ComponentResolvedSummaryProps = {
   title: ReactNode;
   value: ReactNode;
   statusLabel: ReactNode;
-  tone?: Extract<TurnCardTone, "resolved" | "reversible">;
+  tone?: Extract<ArtifactCardTone, "resolved" | "reversible">;
   className?: string;
 };
 
@@ -93,7 +95,7 @@ export function ComponentResolvedSummary({
   className,
 }: ComponentResolvedSummaryProps) {
   return (
-    <TurnCard
+    <ArtifactCard
       icon={icon}
       tone={tone}
       title={<span className="text-muted-foreground">{title}</span>}
@@ -103,6 +105,6 @@ export function ComponentResolvedSummary({
         <span className="font-medium">{value}</span>
         <Badge variant="neutral">{statusLabel}</Badge>
       </div>
-    </TurnCard>
+    </ArtifactCard>
   );
 }

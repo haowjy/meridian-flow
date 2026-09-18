@@ -29,6 +29,13 @@
  *   2. In the scroll handler, the near-bottom check wins BEFORE the "moved up"
  *      release check — otherwise a 1px downward settle at the bottom
  *      false-releases. A ~1px upward deadzone guards sub-pixel jitter.
+ *
+ * Geometry comes from cached heights (the virtualizer's total content height,
+ * the ResizeObserver-tracked viewport height) instead of reading `scrollHeight`
+ * per revision: the pin runs on every content revision, and forcing a layout of
+ * the whole scroll container on each one is measurable jank. `scrollTop` is the
+ * only value read at pin time. The cached sizes are exactly what a read would
+ * return — the virtualized list's height IS the content height.
  */
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
@@ -47,24 +54,18 @@ const AUTOSCROLL_GUARD_MS = 180;
 type Options = {
   scrollRef: RefObject<HTMLElement | null>;
   /**
-   * Bump whenever transcript content/size may have changed (turn appended,
-   * streaming row grew, composer inset changed). While in `follow`, every bump
-   * re-pins the viewport to the bottom before paint. The virtualizer's
-   * `getTotalSize()` is a good revision: it changes on append AND on measured
-   * row growth, and each change re-renders the owner.
+   * Total scrollable content height (the virtualizer's `getTotalSize()`, i.e.
+   * the rendered content height the viewport scrolls over). Its identity as a
+   * number is also the content revision: every change re-pins in `follow`.
    */
-  contentRevision: number;
+  contentHeight: number;
 };
 
-function maxScrollTop(el: HTMLElement): number {
-  return Math.max(el.scrollHeight - el.clientHeight, 0);
+function maxScrollTopFrom(contentHeight: number, viewportHeight: number): number {
+  return Math.max(contentHeight - viewportHeight, 0);
 }
 
-function isNearBottom(el: HTMLElement): boolean {
-  return maxScrollTop(el) - el.scrollTop <= BOTTOM_THRESHOLD_PX;
-}
-
-export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
+export function useChatFollowScroll({ scrollRef, contentHeight }: Options): {
   mode: FollowMode;
   /**
    * Re-acquire follow (pill click, submit): flips mode synchronously — so the
@@ -85,6 +86,18 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
   const guardTimeoutRef = useRef<number | null>(null);
   const lastScrollTopRef = useRef(0);
   const touchStartYRef = useRef<number | null>(null);
+  // Cached geometry: the pin avoids reading `scrollHeight`/`clientHeight`.
+  const contentHeightRef = useRef(contentHeight);
+  const viewportHeightRef = useRef(0);
+  contentHeightRef.current = contentHeight;
+
+  const maxScrollTop = useCallback(() => {
+    const el = scrollRef.current;
+    // Viewport height is unknown until the observer has run once; a one-time
+    // read here keeps the first pin from overshooting into a clamp.
+    if (viewportHeightRef.current === 0 && el) viewportHeightRef.current = el.clientHeight;
+    return maxScrollTopFrom(contentHeightRef.current, viewportHeightRef.current);
+  }, [scrollRef]);
 
   // Single write path for mode: ref for callbacks, state for rendering. Always
   // offer the state update: React may still have an older queued render even
@@ -104,14 +117,28 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
     }, AUTOSCROLL_GUARD_MS);
   }, []);
 
+  // Track the viewport's height without reading it at pin time.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => {
+      viewportHeightRef.current = el.clientHeight;
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [scrollRef]);
+
   const enterFollow = useCallback(() => {
     commitMode("follow");
     const el = scrollRef.current;
     if (!el) return;
     beginProgrammaticScroll();
-    el.scrollTop = maxScrollTop(el);
+    el.scrollTop = maxScrollTop();
     lastScrollTopRef.current = el.scrollTop;
-  }, [beginProgrammaticScroll, commitMode, scrollRef]);
+  }, [beginProgrammaticScroll, commitMode, maxScrollTop, scrollRef]);
 
   // Deliberate upward intent releases immediately, independent of geometry.
   useEffect(() => {
@@ -165,6 +192,7 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
         reconcileTimer = null;
         const currentTop = el.scrollTop;
         const prevTop = lastScrollTopRef.current;
+        const max = maxScrollTop();
         // Keep the baseline fresh even for guarded writes, so the next real user
         // delta is measured from where the viewport actually is.
         lastScrollTopRef.current = currentTop;
@@ -175,13 +203,13 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
           // only be the user (scrollbar drag mid-stream — the guard is re-armed
           // continuously while streaming pins, so without this the drag would be
           // swallowed and the next pin would yank the reader back down).
-          const farAboveBottom = maxScrollTop(el) - currentTop > 2 * BOTTOM_THRESHOLD_PX;
+          const farAboveBottom = max - currentTop > 2 * BOTTOM_THRESHOLD_PX;
           if (farAboveBottom && currentTop < prevTop - 1) commitMode("free");
           return;
         }
 
         // Near-bottom ALWAYS wins (invariant 2 in the header).
-        if (isNearBottom(el)) {
+        if (max - currentTop <= BOTTOM_THRESHOLD_PX) {
           commitMode("follow");
           return;
         }
@@ -196,14 +224,14 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
       el.removeEventListener("scroll", onScroll);
       if (reconcileTimer !== null) clearTimeout(reconcileTimer);
     };
-  }, [commitMode, scrollRef]);
+  }, [commitMode, maxScrollTop, scrollRef]);
 
   // Follow mode: pin to the bottom on every content revision, before paint.
   useLayoutEffect(() => {
     if (mode !== "follow") return;
     const el = scrollRef.current;
     if (!el) return;
-    const top = maxScrollTop(el);
+    const top = maxScrollTop();
     // Guard only when actually writing: an idle pin (already at the bottom) must
     // not open a guard window that swallows the user's next real scroll.
     if (el.scrollTop !== top) {
@@ -211,7 +239,7 @@ export function useChatFollowScroll({ scrollRef, contentRevision }: Options): {
       el.scrollTop = top;
     }
     lastScrollTopRef.current = el.scrollTop;
-  }, [contentRevision, mode, beginProgrammaticScroll, scrollRef]);
+  }, [contentHeight, mode, beginProgrammaticScroll, maxScrollTop, scrollRef]);
 
   useEffect(() => {
     return () => {

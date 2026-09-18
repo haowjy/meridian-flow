@@ -22,6 +22,7 @@ import { announceError } from "@/client/stores";
 import type { ComposerSubmitEnvelope, ComposerSubmitOutcome } from "@/components/app/composer";
 import { applyAguiEventToStore } from "@/core/session/reduce-turn-event";
 import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
+import { StreamDeltaCoalescer } from "./stream-delta-coalescer";
 
 type AppendUserMessageFn = typeof appendUserMessage;
 type LookupAdmissionFn = typeof lookupUserMessageAdmission;
@@ -316,7 +317,14 @@ export class ThreadRunController {
     if (!this.isActiveToken(token)) return;
 
     let disposed = false;
+    // One frame boundary for the whole run: append-only text/reasoning deltas
+    // coalesce into a single store update; everything else flushes first.
+    const coalescer = new StreamDeltaCoalescer((event) => {
+      if (disposed || !this.isActiveToken(token)) return;
+      applyAguiEventToStore(this.actions, threadId, event);
+    });
     const markDisposed = () => {
+      coalescer.flush();
       disposed = true;
     };
 
@@ -367,7 +375,7 @@ export class ThreadRunController {
             }
           }
 
-          applyAguiEventToStore(this.actions, threadId, effectiveEvent);
+          coalescer.push(effectiveEvent);
 
           if (
             effectiveEvent.type === EventType.RUN_FINISHED ||
@@ -378,11 +386,13 @@ export class ThreadRunController {
         },
         onError: (error) => {
           if (disposed || !this.isActiveToken(token)) return;
+          coalescer.flush();
           this.cleanupActiveRun();
           announceError(errorMessage(error, "Thread stream failed"));
         },
         onGap: ({ threadId: gapThreadId }) => {
           if (disposed || !this.isActiveToken(token)) return;
+          coalescer.flush();
           void this.replaceFromSnapshot(gapThreadId).catch((error) => {
             if (!this.isActiveToken(token)) return;
             this.cleanupActiveRun();
@@ -444,9 +454,12 @@ export class ThreadRunController {
   private cleanupActiveRun(): void {
     this.abortRequested = false;
     const activeRun = this.activeRun;
-    this.activeRun = null;
+    // Dispose (flush the coalescer) before clearing `activeRun`: the coalesced
+    // apply is gated on `isActiveToken`, so nulling first would drop the last
+    // buffered frame on teardown, run switch, and unmount.
     activeRun?.dispose?.();
     activeRun?.unsubscribe?.();
+    this.activeRun = null;
   }
 
   private isActiveToken(token: number): boolean {

@@ -1,12 +1,12 @@
 /**
  * AssistantTurn — single render path for assistant turns.
  *
- * After Stream S3 convergence: both live and settled turns flow through the
- * SAME `Block[]` model. There is no synthetic `"live-reasoning"` block and no
- * separate `thinkingStream`/`textStream`/`visibleTool` props — in-progress
- * frontiers are partial blocks in the same array. Block render keys derive
- * from `(turnId, sequence)`, so non-tool frontier blocks keep their identity
- * across settlement. Tool rows may remount when they move into the process fold.
+ * One `Block[]` for live and settled alike: no synthetic `"live-reasoning"`
+ * block and no separate `thinkingStream`/`textStream`/`visibleTool` props.
+ * `partitionTurn` reduces it to an ordered `RenderItem[]` — process folds
+ * (reasoning + process tools) collapse in place, text and artifacts stay
+ * visible — so prose never folds and is never remounted by a later reasoning
+ * run. Render keys derive from `(turnId, sequence)` via `blockRenderKey`.
  *
  * Draft affordances live OFF the transcript now: pending AI changes are the
  * composer-attached DraftDock's job, and this turn only records what it edited
@@ -14,30 +14,24 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import {
-  type Block,
-  blockPlainText,
-  isTerminalTurnStatus,
-  type Turn,
-} from "@meridian/contracts/protocol";
+import { type Block, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
 import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
-import { ACTIVITY_ROW_TEXT_INSET } from "./ActivityRow";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { ErrorBlock } from "./ErrorBlock";
-import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
+import { groupDeliverySegments } from "./group-delivery-segments";
 import { ProcessDisclosure } from "./ProcessDisclosure";
 import {
   hasVisibleReasoningText,
-  partitionTurnSegments,
+  partitionTurn,
+  type RenderItem,
   type Run,
-  type TurnSegment,
-} from "./partition-turn-segments";
+} from "./partition-turn";
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
@@ -71,10 +65,24 @@ function AssistantTurnComponent({
     [turn.blocks],
   );
   const isSettled = isTerminalTurnStatus(turn.status);
-  const segments = useMemo(
-    () => partitionTurnSegments(sortedBlocks, isSettled),
-    [sortedBlocks, isSettled],
-  );
+  const items = useMemo(() => partitionTurn(sortedBlocks), [sortedBlocks]);
+  // Progressive-disclosure label: "Thinking part N" for a turn with several
+  // process folds (one per artifact/interrupt-delimited stretch).
+  // Ordinals count only visible folds: a process item whose runs have nothing
+  // to show renders nothing, so it must not advance "Thinking part N" or the
+  // total.
+  const rows = useMemo(() => {
+    const isVisibleFold = (item: RenderItem) =>
+      item.kind === "process" && foldHasVisibleContent(item.runs);
+    const processCount = items.filter(isVisibleFold).length;
+    const result: { item: RenderItem; processOrdinal: number; processCount: number }[] = [];
+    let processOrdinal = 0;
+    for (const item of items) {
+      if (isVisibleFold(item)) processOrdinal += 1;
+      result.push({ item, processOrdinal, processCount });
+    }
+    return result;
+  }, [items]);
   const isErrored = turn.status === "error";
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
@@ -100,12 +108,12 @@ function AssistantTurnComponent({
       data-turn-role="assistant"
       data-turn-status={turn.status}
     >
-      {segments.map((segment, index) => (
-        <TurnSegmentView
-          key={segmentRenderKey(segment)}
-          segment={segment}
-          segmentIndex={index}
-          segmentCount={segments.length}
+      {rows.map(({ item, processOrdinal, processCount }) => (
+        <TurnItemView
+          key={itemRenderKey(item)}
+          item={item}
+          processOrdinal={processOrdinal}
+          processCount={processCount}
           threadId={resolvedThreadId}
           turnStatus={turn.status}
           onRespondToInterrupt={onRespondToInterrupt}
@@ -132,59 +140,17 @@ function AssistantTurnComponent({
           onRetry={isLatestAssistant ? onRetry : undefined}
         />
       ) : null}
-      {showsInkDrop ? <InkDrop indented={lastVisibleSegmentElementIsTool(segments)} /> : null}
+      {showsInkDrop ? <InkDrop /> : null}
     </div>
   );
 }
 
-function InkDrop({ indented }: { indented: boolean }) {
+function InkDrop() {
   return (
-    <div
-      className={
-        indented
-          ? "mt-[7px] flex min-h-5 items-center pl-[3.5px]"
-          : "mt-[7px] flex min-h-5 items-center"
-      }
-      data-live-turn-ink
-    >
+    <div className="mt-[7px] flex min-h-5 items-center" data-live-turn-ink>
       <span className="ink-drop" aria-hidden />
     </div>
   );
-}
-
-function lastVisibleSegmentElementIsTool(segments: TurnSegment[]): boolean {
-  const lastSegment = segments.at(-1);
-  if (!lastSegment) return false;
-
-  const deliverySegments = groupDeliverySegments(lastSegment.frontier);
-  for (let index = deliverySegments.length - 1; index >= 0; index -= 1) {
-    const segment = deliverySegments[index];
-    if (!segment) continue;
-    if (segment.kind === "tool") {
-      if (isToolViewVisible(segment.tool)) return true;
-      continue;
-    }
-    if (segment.kind === "tool-run") {
-      if (segment.tools.some(isToolViewVisible)) return true;
-      continue;
-    }
-    if (isVisibleDeliveryBlock(segment.block)) return false;
-  }
-  return false;
-}
-
-function isVisibleDeliveryBlock(block: Block): boolean {
-  if (block.blockType === ("activity" as Block["blockType"])) return false;
-  if (isImageBlock(block)) return imageContentForBlock(block) !== null;
-  if (block.blockType === "custom") return true;
-  if (block.blockType === "text") return Boolean(block.textContent?.trim());
-  const text = block.textContent?.trim() || blockPlainText(block.blockType, block.content)?.trim();
-  if (text) return true;
-  if (!block.content || typeof block.content !== "object" || Array.isArray(block.content)) {
-    return false;
-  }
-  const summary = (block.content as Record<string, unknown>).summary;
-  return typeof summary === "string" && summary.trim().length > 0;
 }
 
 /**
@@ -207,36 +173,38 @@ function dedupeTurnEditDocuments<T extends { uri: string; scope: "live" | "draft
   return [...byUri.values()];
 }
 
-const TurnSegmentView = memo(function TurnSegmentView({
-  segment,
-  segmentIndex,
-  segmentCount,
+const TurnItemView = memo(function TurnItemView({
+  item,
+  processOrdinal,
+  processCount,
   threadId,
   turnStatus,
   onRespondToInterrupt,
   writeMode,
 }: {
-  segment: TurnSegment;
-  segmentIndex: number;
-  segmentCount: number;
+  item: RenderItem;
+  processOrdinal: number;
+  processCount: number;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   writeMode: "direct" | "draft";
 }) {
+  const runs = item.kind === "process" ? item.runs : null;
   const digest = useMemo(
-    () => thinkingDigest(toolViewsInFold(segment.foldRuns), writeMode),
-    [segment.foldRuns, writeMode],
+    () => (runs ? thinkingDigest(toolViewsInFold(runs), writeMode) : null),
+    [runs, writeMode],
   );
-  const showFold = useMemo(() => foldHasVisibleContent(segment.foldRuns), [segment.foldRuns]);
-  return (
-    <div data-turn-segment={segmentIndex + 1}>
-      {showFold ? (
+
+  if (item.kind === "process") {
+    if (!foldHasVisibleContent(item.runs)) return null;
+    return (
+      <div data-turn-item-kind="process">
         <ProcessDisclosure
           label={digest ?? thinkingLabel()}
-          ariaLabel={thinkingAriaLabel(segmentIndex, segmentCount)}
+          ariaLabel={thinkingAriaLabel(processOrdinal - 1, processCount)}
         >
-          {segment.foldRuns.map((run) => (
+          {item.runs.map((run) => (
             <FoldRun
               key={runRenderKey(run)}
               run={run}
@@ -247,20 +215,18 @@ const TurnSegmentView = memo(function TurnSegmentView({
             />
           ))}
         </ProcessDisclosure>
-      ) : null}
+      </div>
+    );
+  }
 
-      {segment.frontier.length > 0 ? (
-        <div className="space-y-1" data-activity-block>
-          <DeliverySegments
-            blocks={segment.frontier}
-            threadId={threadId}
-            turnStatus={turnStatus}
-            mode="frontier"
-            onRespondToInterrupt={onRespondToInterrupt}
-            writeMode={writeMode}
-          />
-        </div>
-      ) : null}
+  return (
+    <div className="space-y-1" data-turn-item-kind={item.kind}>
+      <DeliveryBlock
+        block={item.block}
+        threadId={threadId}
+        turnStatus={turnStatus}
+        onRespondToInterrupt={onRespondToInterrupt}
+      />
     </div>
   );
 });
@@ -269,20 +235,20 @@ function thinkingLabel() {
   return <Trans>Thinking</Trans>;
 }
 
-function thinkingAriaLabel(segmentIndex: number, segmentCount: number): string | undefined {
-  return segmentCount <= 1 ? t`Thinking` : t`Thinking part ${segmentIndex + 1}`;
+function thinkingAriaLabel(processIndex: number, processCount: number): string | undefined {
+  return processCount <= 1 ? t`Thinking` : t`Thinking part ${processIndex + 1}`;
 }
 
 /**
- * A fold earns its disclosure only when it holds something the writer can read:
- * a reasoning run, or an activity run with a visible tool row. A fold of only
- * hidden turn-card protocol must not show Thinking.
+ * A process item earns its disclosure only when it holds something the writer
+ * can read. Reasoning runs always qualify (empty ones are dropped in
+ * `partitionTurn`); an activity run qualifies with at least one visible tool
+ * row. The gate covers the one gap: a hidden protocol block whose provider
+ * omitted its `toolCallId` is not detected as hidden, and `ToolRow` renders
+ * nothing for it.
  */
 function foldHasVisibleContent(runs: Run[]): boolean {
-  return (
-    runs.some((run) => run.kind === "reasoning" && run.blocks.some(hasVisibleReasoningText)) ||
-    toolViewsInFold(runs).length > 0
-  );
+  return runs.some((run) => run.kind === "reasoning") || toolViewsInFold(runs).length > 0;
 }
 
 function toolViewsInFold(runs: Run[]) {
@@ -325,7 +291,6 @@ const FoldRun = memo(function FoldRun({
         blocks={run.blocks}
         threadId={threadId}
         turnStatus={turnStatus}
-        mode="fold"
         onRespondToInterrupt={onRespondToInterrupt}
         writeMode={writeMode}
       />
@@ -333,12 +298,13 @@ const FoldRun = memo(function FoldRun({
   );
 });
 
-// The partition omits empty segments, so a blockless one never reaches render.
-// Returning a stable key instead of throwing keeps a stray empty segment from
-// tripping the project route error boundary.
-function segmentRenderKey(segment: TurnSegment): string {
-  const firstBlock = firstSegmentBlock(segment);
-  return firstBlock ? `segment:${blockRenderKey(firstBlock)}` : "segment:empty";
+// A turn with only empty blocks partitions to nothing, so a blockless item
+// never reaches render. Returning a stable key instead of throwing keeps a
+// stray empty item from tripping the project route error boundary.
+function itemRenderKey(item: RenderItem): string {
+  if (item.kind !== "process") return `${item.kind}:${blockRenderKey(item.block)}`;
+  const firstBlock = item.runs[0]?.blocks[0];
+  return firstBlock ? `process:${blockRenderKey(firstBlock)}` : "process:empty";
 }
 
 function runRenderKey(run: Run): string {
@@ -346,65 +312,48 @@ function runRenderKey(run: Run): string {
   return firstBlock ? `${run.kind}:${blockRenderKey(firstBlock)}` : run.kind;
 }
 
-function firstSegmentBlock(segment: TurnSegment): Block | undefined {
-  const blocks = [...segment.foldRuns.flatMap((run) => run.blocks), ...segment.frontier];
-  return blocks.reduce<Block | undefined>((earliest, block) => {
-    if (!earliest || block.sequence < earliest.sequence) return block;
-    return earliest;
-  }, undefined);
-}
-
 export const AssistantTurn = memo(AssistantTurnComponent);
 AssistantTurn.displayName = "AssistantTurn";
 
 /**
- * Activity zone is rendered in two visual modes. The routing skeleton is the
- * same; the modes exist so future per-mode tweaks (e.g. tool-row density) have
- * a seam to dispatch through.
- *
- * **Text deliberately breaks the timeline in BOTH modes.** Reasoning, tools,
- * and other process blocks render as icon-rail rows; text renders as full
- * prose with no icon. That contrast carries the meaning: the timeline is
- * "what the assistant did", and text is "what the assistant said". When a
- * text block rolls up into a later `Thinking` fold its altitude does not
- * change — it stays as voice, stepping out of the rail of process around it.
+ * Process rows: reasoning, tools, and other process blocks render as icon-rail
+ * rows inside the Thinking disclosure. Text and artifacts render outside it
+ * (see `DeliveryBlock`); that contrast carries the meaning — the fold is "what
+ * the assistant did", prose is "what the assistant said".
  */
-type DeliveryMode = "frontier" | "fold";
-
 const DeliverySegments = memo(function DeliverySegments({
   blocks,
   threadId,
   turnStatus,
-  mode,
   onRespondToInterrupt,
   writeMode,
 }: {
   blocks: Block[];
   threadId: string;
   turnStatus: Turn["status"];
-  mode: DeliveryMode;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   writeMode: "direct" | "draft";
 }) {
   const segments = useMemo(() => groupDeliverySegments(blocks), [blocks]);
-  const renderTool = (tool: ToolView) => (
-    <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} writeMode={writeMode} />
-  );
   return (
     <>
       {segments.flatMap((segment) => {
         if (segment.kind === "tool") {
-          const rendered = renderTool(segment.tool);
-          return rendered ? [rendered] : [];
+          return [
+            <ToolRow
+              key={blockRenderKey(segment.tool.keyBlock)}
+              tool={segment.tool}
+              writeMode={writeMode}
+            />,
+          ];
         }
         // Claude-style timeline: adjacent tools stack as siblings instead of
         // collapsing into a grouping disclosure. With text-altitude rows the
         // visual weight is low enough that grouping reads as extra chrome.
         if (segment.kind === "tool-run") {
-          return segment.tools.flatMap((tool) => {
-            const rendered = renderTool(tool);
-            return rendered ? [rendered] : [];
-          });
+          return segment.tools.map((tool) => (
+            <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} writeMode={writeMode} />
+          ));
         }
         return [
           <DeliveryBlock
@@ -412,7 +361,6 @@ const DeliverySegments = memo(function DeliverySegments({
             block={segment.block}
             threadId={threadId}
             turnStatus={turnStatus}
-            mode={mode}
             onRespondToInterrupt={onRespondToInterrupt}
           />,
         ];
@@ -428,20 +376,18 @@ function DeliveryBlock({
   block,
   threadId,
   turnStatus,
-  mode,
   onRespondToInterrupt,
 }: {
   block: Block;
   threadId: string;
   turnStatus: Turn["status"];
-  mode: DeliveryMode;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
 }) {
   // `activity` blocks are AG-UI progress placeholders (`ACTIVITY_SNAPSHOT` /
   // `ACTIVITY_DELTA` events with no tool target) that the reducer parks under
   // a non-canonical blockType. They're transport-level liveness, not
   // deliverable content. Rendering them produces "(activity)" placeholder rows
-  // during streaming; hide them here so the turn frontier stays clean.
+  // during streaming; hide them here so the item list stays clean.
   if (block.blockType === ("activity" as Block["blockType"])) return null;
 
   if (isImageBlock(block)) {
@@ -462,21 +408,10 @@ function DeliveryBlock({
   if (block.blockType === "text") {
     const text = block.textContent ?? "";
     if (!text.trim()) return null;
-    // Text stays as full prose in both modes — it's the assistant's voice and
-    // shouldn't read like another process row, so it carries no icon and no
-    // rail segment.
-    if (block.status === "partial" && mode === "frontier") {
+    // Text is the assistant's voice: full prose, no icon, no rail — and it is
+    // only ever rendered here, outside the Thinking fold.
+    if (block.status === "partial") {
       return <StreamingText text={text} />;
-    }
-    // Inside a fold it still shares a left edge with the rows around it.
-    // Breaking the rail is the intended signal; shifting the text 29px left
-    // as well made the same break read as a rendering fault.
-    if (mode === "fold") {
-      return (
-        <div className={ACTIVITY_ROW_TEXT_INSET}>
-          <Markdown>{text}</Markdown>
-        </div>
-      );
     }
     return <Markdown>{text}</Markdown>;
   }

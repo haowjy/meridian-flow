@@ -13,6 +13,10 @@
  * jsdom document has been laid out, so nothing has a box. Any test that needs
  * real geometry has to stub the specific measurement it depends on; this only
  * keeps the absence from becoming an exception.
+ *
+ * The target is a parameter because a fresh `JSDOM` realm has its own
+ * `Element`/`Range` prototypes: patching the ambient globals does nothing for
+ * nodes created in a harness-owned window. Pass that window to cover it.
  */
 
 const EMPTY_RECT: DOMRect = {
@@ -32,27 +36,44 @@ function emptyRectList(): DOMRectList {
   return list as unknown as DOMRectList;
 }
 
-export function installJsdomLayoutFallbacks(): void {
-  if (typeof Range === "undefined") return;
+type JsdomTarget = Omit<typeof globalThis, "Element" | "Range" | "document"> & {
+  Element?: typeof Element;
+  Range?: typeof Range;
+  document?: Document;
+};
 
-  if (typeof Range.prototype.getClientRects !== "function") {
-    Range.prototype.getClientRects = emptyRectList;
+export function installJsdomLayoutFallbacks(target: JsdomTarget = globalThis): void {
+  const RangeCtor = target.Range;
+  if (RangeCtor) {
+    if (typeof RangeCtor.prototype.getClientRects !== "function") {
+      RangeCtor.prototype.getClientRects = emptyRectList;
+    }
+    if (typeof RangeCtor.prototype.getBoundingClientRect !== "function") {
+      RangeCtor.prototype.getBoundingClientRect = () => EMPTY_RECT;
+    }
   }
-  if (typeof Range.prototype.getBoundingClientRect !== "function") {
-    Range.prototype.getBoundingClientRect = () => EMPTY_RECT;
-  }
+
   // The context-menu router's tests hit-test the point under the pointer;
   // jsdom has no layout, so "nothing there" is the honest answer.
-  if (typeof document !== "undefined") {
-    document.elementFromPoint ??= () => null;
+  if (target.document) {
+    target.document.elementFromPoint ??= () => null;
   }
 
   // Every floating surface observes the manuscript's boxes. Nothing here is
   // laid out, so nothing ever resizes: an observer that never fires is what an
   // unlaid-out document would honestly report, and a missing constructor is a
   // throw out of a layout effect instead.
-  if (typeof globalThis.ResizeObserver === "undefined") {
-    globalThis.ResizeObserver = InertResizeObserver;
+  if (typeof target.ResizeObserver === "undefined") {
+    target.ResizeObserver = InertResizeObserver;
+  }
+
+  // jsdom ships `scrollTop`/`scrollLeft` but not the `scrollTo`/`scrollBy`
+  // methods. Streamdown's pinned code/table panes scroll themselves from a
+  // passive effect; with nothing laid out there is nowhere to scroll, so a
+  // no-op is the honest answer and keeps the absence from throwing.
+  if (target.Element) {
+    target.Element.prototype.scrollTo ??= () => {};
+    target.Element.prototype.scrollBy ??= () => {};
   }
 }
 

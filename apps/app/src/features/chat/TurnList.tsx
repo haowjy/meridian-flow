@@ -126,13 +126,16 @@ export function TurnList({
     scrollToIndex: (index) => virtualizer.scrollToIndex(index, { align: "center" }),
   });
 
-  // Follow policy. `getTotalSize()` is the content revision: it changes on turn
-  // append, on measured streaming-row growth, and on composer-inset change — and
-  // each change re-renders this component, so the follow pin fires before paint.
+  // Follow policy. `getTotalSize()` is the content height AND the revision: it is
+  // the height the virtualized list scrolls over, and it changes on turn append,
+  // on measured streaming-row growth, and on composer-inset change — each change
+  // re-renders this component, so the follow pin fires before paint. Passing the
+  // height (not a bare counter) lets the pin compute the bottom without reading
+  // `scrollHeight`, which would force a layout on every revision.
   // The thread opens in `follow`, so the very first pin anchors to the newest turn.
   const { mode, enterFollow } = useChatFollowScroll({
     scrollRef: viewportRef,
-    contentRevision: virtualizer.getTotalSize(),
+    contentHeight: virtualizer.getTotalSize(),
   });
 
   // Reacquire follow when the user submits (each local message bumps the revision).
