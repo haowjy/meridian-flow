@@ -21,3 +21,20 @@
   - The icon chip fill (`bg-chip-muted-bg`) sits ~2% from the fold
     background, so only the glyph reads and the rail's 26px interruption is
     bridged by an icon rather than a solid chip. Token decision.
+
+- `partitionTurn` walks the whole block list every render. Items are already
+  keyed by identity (`itemRenderKey`), so an incremental walk could reuse
+  unchanged items per frame instead of re-walking the turn. Not needed at
+  current sizes; revisit if streaming with many long turns shows partition
+  cost. (Noted during the #558 render-model work, 2026-09-18.)
+
+- Streamdown wraps a markdown image in a `<div>`, which lands inside the
+  paragraph `<p>` and logs a React hydration warning (`<div>` cannot be a
+  descendant of `<p>`). Upstream streamdown rendering, pre-existing; revisit
+  on a streamdown upgrade rather than patching the wrapper here.
+  (Noted during the #558 image probe, 2026-09-18.)
+
+- A user-attached image does not render in the user turn: `UserTurn` skips
+  non-text blocks, so the transcript shows a link, not the picture. Pre-existing
+  composer/UserTurn gap, outside the #558 render model.
+  (Noted during the #558 image probe, 2026-09-18.)
