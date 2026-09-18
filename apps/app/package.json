@@ -78,7 +78,7 @@
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-reverse-portal": "^2.3.0",
-    "streamdown": "^2.5.0",
+    "streamdown": "^2.6.0",
     "tailwind-merge": "^3.6.0",
     "y-indexeddb": "9.0.12",
     "y-protocols": "^1.0.7",
