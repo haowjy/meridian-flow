@@ -317,6 +317,7 @@ export function createInMemoryRepositories(
       const visible: Thread[] = [];
       for (const thread of threads.values()) {
         if (
+          thread.kind === "primary" &&
           thread.projectId === projectId &&
           !thread.deletedAt &&
           (await threadInActiveProject(thread))
@@ -332,6 +333,7 @@ export function createInMemoryRepositories(
       const visible: Thread[] = [];
       for (const thread of threads.values()) {
         if (
+          thread.kind === "primary" &&
           thread.projectId === projectId &&
           [...threadWorks.values()].some(
             (row) => row.threadId === thread.id && row.workId === workId,

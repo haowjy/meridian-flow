@@ -93,10 +93,7 @@ import {
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
 } from "../domains/projects/index.js";
-import {
-  agentDefinitionUnavailableReasons,
-  agentExecutionUnavailableReasons,
-} from "../domains/runtime/agent-definition-support.js";
+import { agentExecutionUnavailableReasons } from "../domains/runtime/agent-definition-support.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
   createAdmissionTurnStarter,
@@ -664,6 +661,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
     defaultModel: () => ports.gateway.getDefaultModel(),
+    genericBaseline: async () => {
+      const entry = await ports.agentRevisions.readCatalogEntry(null, "general");
+      return entry ? ports.agentRevisions.readRevision(entry.selectedRevisionId) : undefined;
+    },
     orchestrator: runTurnProxy,
     repos: {
       threads: ports.threadRepos.threads,
@@ -759,7 +760,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       store: ports.agentRevisions,
       defaultModel: () => ports.gateway.getDefaultModel(),
       unavailableReasons: (definition, model) =>
-        agentDefinitionUnavailableReasons(definition, ports.gateway, model),
+        agentExecutionUnavailableReasons(definition, ports.gateway, model),
     }),
     interruptRegistry,
     eventSink: ports.eventSink,
@@ -1123,7 +1124,7 @@ export function createInMemoryAppServices(): AppServices {
       store: agentRevisions,
       defaultModel: () => "mock-model",
       unavailableReasons: (definition, model) =>
-        agentDefinitionUnavailableReasons(definition, {}, model),
+        agentExecutionUnavailableReasons(definition, {}, model),
     }),
     interruptRegistry: createInterruptRegistry(),
     eventSink: createNoopEventSink(),

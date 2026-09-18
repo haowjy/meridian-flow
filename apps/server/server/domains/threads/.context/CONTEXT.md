@@ -39,8 +39,11 @@ instead of the N:1 `threads.workId` column.
   `turns`, `model_responses`, `turn_blocks`, and recomputed token/cost rollups.
 - **Thread snapshot builder** — assembles the full `ThreadSnapshotResponse`
   (thread + turns + blocks + responses + live state) for initial page load.
-- **Thread lifecycle validation** — `normalizeThreadCreate` enforces Phase 1
-  constraints (primary root threads only; spawn/fork fields rejected).
+  Subagent snapshots include `parent: { id, title }` from a `findById` point
+  lookup, not the parent's conversation.
+- **Thread lifecycle validation** — public create (`normalizeThreadCreate`)
+  accepts primary roots only and rejects spawn/fork fields. Subagent threads
+  are created only by `SubagentThreadFactory` from the child-run coordinator.
 - **Access control** — `requireThreadOwner` gates thread operations behind
   ownership + project ownership, returning 404 on any mismatch to avoid
   existence leaks.
@@ -67,9 +70,9 @@ instead of the N:1 `threads.workId` column.
 
 | Port | Surface |
 |---|---|
-| `ThreadRepository` | Thread lifecycle plus project lists and the hard-bounded `listRecentByWork` model summary. It does not expose an unbounded Work list. |
-| `HomeChatFeedRepository` | Continue/Favorite/Recent policy over the neutral Project-chat projection. Home retains its set-oriented whole-project ranking. |
-| `WorkChatFeedRepository` | Bounded historical-Work association pages over the same Project-chat projection, ordered by `(threads.updated_at DESC, threads.id DESC)`. |
+| `ThreadRepository` | Thread lifecycle plus writer-facing project lists (`kind: "primary"` only) and the hard-bounded `listRecentByWork` model summary. It does not expose an unbounded Work list. Get-by-id still returns subagents. |
+| `HomeChatFeedRepository` | Continue/Favorite/Recent policy over the neutral Project-chat projection of primary threads. Home retains its set-oriented whole-project ranking. |
+| `WorkChatFeedRepository` | Bounded historical-Work association pages over the same primary Project-chat projection, ordered by `(threads.updated_at DESC, threads.id DESC)`. |
 | `ThreadUserStateRepository` | Per-writer favorite authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
 | `BlockRepository` | `create / findById / listByTurn / listByThread / updatePruned` |
@@ -200,8 +203,9 @@ contract shapes.
   non-primary additions lock their target Work before the thread. A changed
   primary snapshot retries the whole transaction. This prevents deletion races,
   opposite lock orders, and concurrent moves validating stale primary state.
-- Phase 1: only `kind: "primary"` threads with `spawnDepth: 0`.
+- Public create accepts only `kind: "primary"` with `spawnDepth: 0`.
   `normalizeThreadCreate` rejects all spawn/fork lifecycle fields.
+  Subagent rows are created only through `SubagentThreadFactory`.
 - Hot cache is bounded at 500 events; older events fall through to journal
   replay (capped at 10,000 entries).
 - Thread status is stored in DB using the domain vocabulary
@@ -214,11 +218,14 @@ contract shapes.
 - Home returns Continue and Favorites only on the first page. Recent pagination
   uses the strict shared Project-chat keyset codec over `(lastActivityAt DESC, threadId DESC)`;
   every page excludes Continue and Favorites, so equal activity times remain
-  stable without duplicating a chat.
+  stable without duplicating a chat. Home, the project switcher (`listByProject`),
+  and Work-associated chats list `kind: "primary"` only. Subagent Open is get-by-id.
 - Work-associated chat pages use the same codec over thread update
-  time plus thread ID. The association filter is M:N history; row Work identity
-  always comes from the current primary membership. Projection and serialization
-  are bounded to 50 rows per page.
+  time plus thread ID. The association filter is M:N history among primary
+  threads; row Work identity always comes from the current primary membership.
+  Bound Agent name is projected from the same binding join as thread list
+  (`metadata.name` or slug) and is the writer-facing row identity.
+  Projection and serialization are bounded to 50 rows per page.
 - Project chat lists have no read/unread state. The user-state route and
   repository persist Favorite only; opening a chat performs no state mutation.
 - Draft-review action-required state remains an extension point. Establishing it requires

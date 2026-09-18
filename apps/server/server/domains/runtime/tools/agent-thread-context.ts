@@ -1,6 +1,7 @@
 /** Next-turn Agent configuration comes exclusively from the retained thread binding. */
+import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
-import type { AgentRevisionStore, CompiledAgentDefinition } from "../../packages/index.js";
+import type { AgentRevisionStore } from "../../packages/index.js";
 import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";
 import type { GenerateRequest, Tool } from "../gateway/index.js";
 import { advertiseTools } from "../loop/permissions/apply-tool-policy.js";
@@ -8,6 +9,7 @@ import {
   type EffectiveToolPolicy,
   projectToolPolicy,
 } from "../loop/permissions/project-tool-policy.js";
+import { spawnToolDescription } from "./spawn-tools.js";
 import type { ToolRegistry } from "./types.js";
 
 export interface AgentThreadTurnContext {
@@ -27,7 +29,7 @@ export interface ResolveAgentThreadTurnContextInput {
 
 /** Translate canonical Mars effort names into the gateway's provider-neutral contract. */
 export function agentGatewayMetaToGenerateParams(
-  meta: Pick<CompiledAgentDefinition["metadata"], "model" | "effort">,
+  meta: Pick<ResolvedAgentConfiguration, "model" | "effort">,
 ): Pick<GenerateRequest, "model" | "reasoning"> {
   const params: Pick<GenerateRequest, "model" | "reasoning"> = {};
   if (meta.model) params.model = meta.model;
@@ -46,8 +48,15 @@ export async function resolveAgentThreadTurnContext(
   const reasons = agentDefinitionUnsupportedReasons(revision.definition);
   if (reasons.length) throw new Error(reasons.join(" "));
 
-  const policy = projectToolPolicy(revision.definition.metadata);
-  let tools = advertiseTools(input.baseTools, policy);
+  const policy = projectToolPolicy(revision.configuration);
+  let tools = advertiseTools(input.baseTools, policy).map((tool) =>
+    tool.type === "function" && tool.name === "spawn"
+      ? {
+          ...tool,
+          description: spawnToolDescription(revision.configuration.namedTargets.length > 0),
+        }
+      : tool,
+  );
   const report =
     input.thread.kind === "subagent"
       ? input.toolRegistry.getRegistration("return_result")?.definition
@@ -56,8 +65,8 @@ export async function resolveAgentThreadTurnContext(
   return {
     agentSlug: revision.slug,
     gatewayParams: agentGatewayMetaToGenerateParams({
-      ...revision.definition.metadata,
       model: revision.configuration.model,
+      effort: revision.configuration.effort,
     }),
     tools,
     policy,

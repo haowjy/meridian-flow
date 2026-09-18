@@ -7,6 +7,7 @@ export type ProjectChatSqlRow = {
   title: string;
   work_id: string | null;
   work_title: string | null;
+  agent_name: string | null;
   last_message_preview: string | null;
   last_activity_at_exact: string;
   action_required: boolean;
@@ -18,6 +19,7 @@ export function mapProjectChatRow(row: ProjectChatSqlRow): ProjectChatItem {
     id: row.thread_id,
     title: row.title,
     work: row.work_id && row.work_title ? { id: row.work_id, title: row.work_title } : null,
+    agentName: row.agent_name,
     lastMessagePreview: row.last_message_preview,
     lastActivityAt: row.last_activity_at_exact,
     actionRequired: row.action_required,

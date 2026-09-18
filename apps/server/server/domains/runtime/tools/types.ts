@@ -13,7 +13,11 @@
 import type { InterruptAnswerEnvelope } from "@meridian/contracts/components";
 import type { AskRequest } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { ReturnResultCapture, SpawnResult } from "@meridian/contracts/spawn";
+import type {
+  ReturnResultCapture,
+  ReturnResultOutcome,
+  SpawnResult,
+} from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type { FunctionTool } from "../gateway/index.js";
 
@@ -94,6 +98,8 @@ export interface ToolExecutionResult {
   isError?: boolean;
   /** Host metadata persisted beside the result for request reconstruction. */
   metadata?: JsonObject;
+  /** Typed return_result envelope; dispatch must not reverse-parse `output`. */
+  returnResult?: ReturnResultOutcome;
 }
 
 /**
@@ -146,7 +152,8 @@ export type InterruptResponse = InterruptAnswerEnvelope;
  */
 export interface SpawnToolHandlerContext extends ToolHandlerContext {
   spawn(input: {
-    agent: string;
+    /** Named roster target; omitted or empty selects the generic helper. */
+    agent?: string;
     prompt: string;
     description?: string;
     mode?: "foreground" | "background";
@@ -154,7 +161,7 @@ export interface SpawnToolHandlerContext extends ToolHandlerContext {
 }
 
 export interface ReturnResultToolHandlerContext extends ToolHandlerContext {
-  returnResult(capture: ReturnResultCapture): Promise<{ ok: true }>;
+  returnResult(capture: ReturnResultCapture): Promise<ReturnResultOutcome>;
 }
 
 export interface InterruptToolHandlerContext extends ToolHandlerContext {

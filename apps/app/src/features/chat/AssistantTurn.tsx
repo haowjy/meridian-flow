@@ -30,9 +30,14 @@ import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { ErrorBlock } from "./ErrorBlock";
-import { groupDeliverySegments } from "./group-delivery-segments";
+import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
 import { ProcessDisclosure } from "./ProcessDisclosure";
-import { partitionTurnSegments, type Run, type TurnSegment } from "./partition-turn-segments";
+import {
+  hasVisibleReasoningText,
+  partitionTurnSegments,
+  type Run,
+  type TurnSegment,
+} from "./partition-turn-segments";
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
@@ -71,7 +76,6 @@ function AssistantTurnComponent({
     [sortedBlocks, isSettled],
   );
   const isErrored = turn.status === "error";
-  const isCancelled = turn.status === "cancelled";
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
   const resolvedThreadId = threadId ?? turn.threadId;
@@ -127,11 +131,6 @@ function AssistantTurnComponent({
           kind={turn.blocks.length === 0 ? "send" : "generation"}
           onRetry={isLatestAssistant ? onRetry : undefined}
         />
-      ) : null}
-      {isCancelled ? (
-        <p className="mt-2 text-caption text-muted-foreground italic">
-          <Trans>Stopped.</Trans>
-        </p>
       ) : null}
       {showsInkDrop ? <InkDrop indented={lastVisibleSegmentElementIsTool(segments)} /> : null}
     </div>
@@ -229,9 +228,10 @@ const TurnSegmentView = memo(function TurnSegmentView({
     () => thinkingDigest(toolViewsInFold(segment.foldRuns), writeMode),
     [segment.foldRuns, writeMode],
   );
+  const showFold = useMemo(() => foldHasVisibleContent(segment.foldRuns), [segment.foldRuns]);
   return (
     <div data-turn-segment={segmentIndex + 1}>
-      {segment.foldRuns.length > 0 ? (
+      {showFold ? (
         <ProcessDisclosure
           label={digest ?? thinkingLabel()}
           ariaLabel={thinkingAriaLabel(segmentIndex, segmentCount)}
@@ -273,6 +273,18 @@ function thinkingAriaLabel(segmentIndex: number, segmentCount: number): string |
   return segmentCount <= 1 ? t`Thinking` : t`Thinking part ${segmentIndex + 1}`;
 }
 
+/**
+ * A fold earns its disclosure only when it holds something the writer can read:
+ * a reasoning run, or an activity run with a visible tool row. A fold of only
+ * hidden turn-card protocol must not show Thinking.
+ */
+function foldHasVisibleContent(runs: Run[]): boolean {
+  return (
+    runs.some((run) => run.kind === "reasoning" && run.blocks.some(hasVisibleReasoningText)) ||
+    toolViewsInFold(runs).length > 0
+  );
+}
+
 function toolViewsInFold(runs: Run[]) {
   return runs.flatMap((run) => {
     if (run.kind !== "activity") return [];
@@ -300,7 +312,7 @@ const FoldRun = memo(function FoldRun({
   if (run.kind === "reasoning") {
     return (
       <>
-        {run.blocks.map((block) => (
+        {run.blocks.filter(hasVisibleReasoningText).map((block) => (
           <TurnBlockStep key={blockRenderKey(block)} block={block} />
         ))}
       </>
@@ -321,10 +333,12 @@ const FoldRun = memo(function FoldRun({
   );
 });
 
+// The partition omits empty segments, so a blockless one never reaches render.
+// Returning a stable key instead of throwing keeps a stray empty segment from
+// tripping the project route error boundary.
 function segmentRenderKey(segment: TurnSegment): string {
   const firstBlock = firstSegmentBlock(segment);
-  if (!firstBlock) throw new Error("Turn segments must contain at least one block");
-  return `segment:${blockRenderKey(firstBlock)}`;
+  return firstBlock ? `segment:${blockRenderKey(firstBlock)}` : "segment:empty";
 }
 
 function runRenderKey(run: Run): string {
@@ -373,25 +387,24 @@ const DeliverySegments = memo(function DeliverySegments({
   writeMode: "direct" | "draft";
 }) {
   const segments = useMemo(() => groupDeliverySegments(blocks), [blocks]);
+  const renderTool = (tool: ToolView) => (
+    <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} writeMode={writeMode} />
+  );
   return (
     <>
       {segments.flatMap((segment) => {
         if (segment.kind === "tool") {
-          return [
-            <ToolRow
-              key={blockRenderKey(segment.tool.keyBlock)}
-              tool={segment.tool}
-              writeMode={writeMode}
-            />,
-          ];
+          const rendered = renderTool(segment.tool);
+          return rendered ? [rendered] : [];
         }
         // Claude-style timeline: adjacent tools stack as siblings instead of
         // collapsing into a grouping disclosure. With text-altitude rows the
         // visual weight is low enough that grouping reads as extra chrome.
         if (segment.kind === "tool-run") {
-          return segment.tools.map((tool) => (
-            <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} writeMode={writeMode} />
-          ));
+          return segment.tools.flatMap((tool) => {
+            const rendered = renderTool(tool);
+            return rendered ? [rendered] : [];
+          });
         }
         return [
           <DeliveryBlock

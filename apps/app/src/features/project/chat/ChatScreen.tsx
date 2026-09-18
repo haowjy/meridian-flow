@@ -8,6 +8,7 @@ import type { Thread, Work } from "@meridian/contracts/protocol";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
+import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { ChatView } from "@/features/chat/ChatView";
 import type { ContextRouteTarget } from "../routing/project-route";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
@@ -85,6 +86,7 @@ function ChatScreenLoaded({
   onOpenContextTarget?: (target: ContextRouteTarget) => void;
 }) {
   const {
+    snapshot,
     thread: snapshotThread,
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
@@ -93,9 +95,7 @@ function ChatScreenLoaded({
     refetch,
   } = useThreadSnapshotSync(threadId);
   const thread = projectThreads.find((t) => t.id === threadId) ?? snapshotThread;
-  const parent = thread?.parentThreadId
-    ? (projectThreads.find((t) => t.id === thread.parentThreadId) ?? null)
-    : null;
+  const parent = snapshot?.parent ?? null;
 
   const isSubagent = thread?.kind === "subagent";
 
@@ -117,25 +117,27 @@ function ChatScreenLoaded({
       ) : null}
 
       <div className="min-h-0 flex-1">
-        <ProjectChatContextNavigationProvider
-          projectId={projectId}
-          activeWork={activeWork?.slug ? { id: activeWork.id, slug: activeWork.slug } : null}
-          availableWorks={availableWorks.flatMap((work) =>
-            work.slug ? [{ id: work.id, slug: work.slug }] : [],
-          )}
-          onOpenContextTarget={onOpenContextTarget}
-        >
-          <ChatView
-            threadId={threadId}
+        <ChatThreadNavigationProvider onOpenThread={onSelectThread}>
+          <ProjectChatContextNavigationProvider
             projectId={projectId}
-            activeThread={thread}
-            activeWork={activeWork}
-            snapshotLiveState={snapshotLiveState}
-            snapshotNextSeq={snapshotNextSeq}
-            historySettled={historySettled}
-            key={`${projectId}:${threadId}`}
-          />
-        </ProjectChatContextNavigationProvider>
+            activeWork={activeWork?.slug ? { id: activeWork.id, slug: activeWork.slug } : null}
+            availableWorks={availableWorks.flatMap((work) =>
+              work.slug ? [{ id: work.id, slug: work.slug }] : [],
+            )}
+            onOpenContextTarget={onOpenContextTarget}
+          >
+            <ChatView
+              threadId={threadId}
+              projectId={projectId}
+              activeThread={thread}
+              activeWork={activeWork}
+              snapshotLiveState={snapshotLiveState}
+              snapshotNextSeq={snapshotNextSeq}
+              historySettled={historySettled}
+              key={`${projectId}:${threadId}`}
+            />
+          </ProjectChatContextNavigationProvider>
+        </ChatThreadNavigationProvider>
       </div>
     </div>
   );

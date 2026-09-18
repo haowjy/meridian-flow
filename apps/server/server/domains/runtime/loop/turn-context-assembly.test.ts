@@ -150,5 +150,80 @@ describe("assembleNextTurnContext skill freeze", () => {
       "writing-principles",
     ]);
     expect(nextFirst.systemPrompt).not.toContain("story-review");
+    expect(first.systemPrompt).not.toContain("Named subagents");
+  });
+});
+
+const MUSE_SOURCE = {
+  coordinate: "meridian-launch-agents",
+  files: {
+    "agents/muse.md": `---
+name: Muse
+mode: primary
+model: fixture-model
+subagents:
+  - critic
+---
+
+You are Muse.
+`,
+    "agents/critic.md": `---
+name: Critic
+description: Adversarial craft critique. Reads the manuscript; does not edit it.
+mode: primary
+model: fixture-model
+---
+
+You are Critic.
+`,
+  },
+};
+
+describe("assembleNextTurnContext named subagent freeze", () => {
+  it("bakes critic slug and description, then leaves freeze unchanged", async () => {
+    const projects = createInMemoryProjectRepository();
+    const project = await projects.create({ userId: "user-1", title: "Serial" });
+    const repos = createInMemoryRepositories({ projects });
+    const agentRevisions = createInMemoryAgentRevisionStore({
+      threadExists: async (id) => Boolean(await repos.threads.findById(id)),
+    });
+    const installed = await agentRevisions.installSource(MUSE_SOURCE);
+    const muse = installed.definitions.find((definition) => definition.slug === "muse");
+    if (!muse) throw new Error("Muse definition missing");
+    const configuration = await resolveAgentConfiguration({
+      revision: muse,
+      store: agentRevisions,
+      defaultModel: "fixture-model",
+    });
+    const thread = await repos.threads.create({
+      userId: "user-1",
+      projectId: project.id,
+      title: "Muse chat",
+    });
+    await agentRevisions.bindThread(thread.id, muse.id, configuration);
+
+    const assemble = async (threadId: string) => {
+      const current = await repos.threads.findById(threadId);
+      if (!current) throw new Error("Thread missing");
+      return assembleNextTurnContext({
+        thread: current,
+        turns: [],
+        blocks: [],
+        agentRevisions,
+        toolRegistry: createToolRegistry(),
+        persistBake: true,
+        bakeComposedSystemPrompt: repos.threads.bakeComposedSystemPrompt.bind(repos.threads),
+        workContext: emptyWorkContext(project.id),
+      });
+    };
+
+    const first = await assemble(thread.id);
+    expect(first.systemPrompt).toContain(
+      "Named subagents\n\ncritic (Critic)\nAdversarial craft critique. Reads the manuscript; does not edit it.",
+    );
+    expect(first.systemPrompt).not.toContain("Named subagents: critic.");
+
+    const second = await assemble(thread.id);
+    expect(second.systemPrompt).toBe(first.systemPrompt);
   });
 });

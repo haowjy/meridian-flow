@@ -40,11 +40,11 @@ skeleton and delegates the moving parts.
 | `block-helpers.ts` | Content block conversion and local accumulator helpers. |
 | `turn-accounting.ts` | Credit ledger checks/debits and cumulative usage events. |
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
-| `tool-dispatch.ts` | Live output, spawn/return-result bridges, and durable tool_result persistence. Dispatch does not apply policy. |
+| `tool-dispatch.ts` | Live output, spawn/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy. return_result settlement is spawn-owned: dispatch honors the typed `ReturnResultOutcome` and does not parse arguments or reconstruct the envelope from JSON. |
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. |
-| `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt from the agent body, available skill slugs (name when it differs) and descriptions, frozen Work context, core document dialect, and runtime URI instruction; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
+| `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt from the agent body, available skill slugs (name when it differs) and descriptions, named subagent slug/name/description from the bound roster, frozen Work context, core document dialect, and runtime URI instruction; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
 | `work-context.ts` / `work-context-delivery.ts` | Reads authoritative Work identity with rendered context and owns durable delivery/recovery behind the deep `WorkContextDelivery` port. Every Work-list change queues eligible live threads. Post-commit wakes drain idle threads, running threads flush at completion, and a startup/poll sweep recovers obligations across process recreation. |
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
@@ -65,8 +65,9 @@ represented by explicit adapters (for example no-op sinks), not by omitted deps.
 
 ## Bound Agent preparation
 
-`agent-thread-context.ts` reads the immutable thread binding for the persona,
-model, effort, and diagnostic Agent identity. Missing bindings fail before a
+`agent-thread-context.ts` reads the immutable thread binding for the persona
+and diagnostic Agent identity. Tools and effort come from the bound
+configuration, never definition metadata. Missing bindings fail before a
 gateway call. Catalog removal or advancement leaves continued execution on its
 retained revision. `turn-context-assembly.ts` supplies that persona to the initial
 host-prompt bake and reuses the frozen prompt on later turns; preview shares this
@@ -86,9 +87,11 @@ verbatim. Skills that join slash after freeze do not rewrite the prompt or
 `bakedSkillSlugs`. Compact rebakes the model catalog. Display slugs do not
 guard prompt freezing. The model comes from conversation-owned resolved
 configuration, including a frozen default when source omits it. Nonempty
-`skills.available` does not refuse selection or turn preparation. Primary
-catalog selection currently keeps nonempty delegation rosters unavailable while
-delegation support is completed.
+`skills.available` does not refuse selection or turn preparation. A nonempty
+`subagents` roster no longer refuses selection. `spawn` is advertised to every
+Agent; Mars `tools` cannot hide it. Named targets come from the binding's
+roster, baked into the frozen system prompt like available skills (not listed
+on the spawn tool), and an omitted or empty `agent` selects the generic helper.
 
 ## tools — registry, executor, and handlers
 
@@ -120,11 +123,25 @@ behavior; schema-only stubs are not advertised.
 `RunTurnPort`, `ChildRunRegistry` from the turn runner, the billing spend reader,
 immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. Route-facing
 thread creation still goes through public thread creation normalization; only the
-child-run coordinator can create subagent threads.
+child-run coordinator can create subagent threads. Writer-facing helper-result cards persist through `spawn/spawn-transcript.ts`
+(one `spawnHelperCardProps` builder). Foreground spawn upserts a running card
+before the child runs and patches it on completion; background delivery posts
+the same card on a later system turn. Successful `return_result` persists
+`tool_result` and the child-report card in one `persistAndAppendEvents` (card
+last). `pendingReports` is `driveChild` only; writer-continue uses a settle-only
+completer.
 
-Named targets resolve within the parent binding's immutable package revision,
-after roster and child-invocation eligibility checks. Child creation, Agent binding,
-and Work membership share one transaction. The child starts with an unfrozen
+Named targets resolve by name within the parent binding's roster; a target with
+`model-invocable: false` is refused, while a primary-mode target is spawnable.
+An omitted or empty `agent` selects the generic helper: the built-in General
+revision supplies body and identity; the child binding copies the caller's
+resolved configuration, including `tools`, `disallowed-tools`, and `effort`.
+Named children resolve those fields from their own retained revision.
+A nested generic keeps the ancestor's write deny because it copies that
+record. Turn context reads tools and effort from configuration only.
+Max spawn depth
+defaults to 3, overridable only through operator env at tree creation. Child
+creation, Agent binding, and Work membership share one transaction. The child starts with an unfrozen
 prompt; ordinary turn preparation adds its retained persona and mandatory report
 instruction. Terminal lifecycle/result persistence precedes helper/Work-context
 cleanup, so cleanup failure preserves the completed report.

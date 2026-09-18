@@ -52,7 +52,7 @@ function noopChildRunCoordinator(): ChildRunCoordinator {
     async spawnChildBackground() {
       throw new Error("Test child run coordinator not configured");
     },
-    createReturnResultCompleter() {
+    createReturnResultCompleter(_childThreadId, _options) {
       return async () => ({ ok: true as const });
     },
   };
@@ -63,7 +63,10 @@ export function createTestAgentBinding(
   model: string,
   systemPrompt = "",
   boundThreads: () => readonly string[] = () => [],
-): Pick<AgentRevisionStore, "readThreadBinding" | "listInstallations" | "readSource"> {
+): Pick<
+  AgentRevisionStore,
+  "readThreadBinding" | "listInstallations" | "readSource" | "readRevision"
+> {
   return {
     async readThreadBinding(threadId) {
       if (!boundThreads().includes(threadId)) return undefined;
@@ -84,6 +87,9 @@ export function createTestAgentBinding(
       return [];
     },
     async readSource() {
+      return undefined;
+    },
+    async readRevision() {
       return undefined;
     },
   };

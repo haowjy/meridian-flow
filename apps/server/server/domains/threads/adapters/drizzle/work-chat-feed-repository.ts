@@ -27,6 +27,7 @@ export function createDrizzleWorkChatFeedRepository(db: DrizzleDatabase): WorkCh
         })})
         SELECT t.id AS thread_id, COALESCE(t.title, '') AS title,
           primary_tw.work_id, primary_work.name AS work_title,
+          COALESCE(adr.definition->'metadata'->>'name', adr.slug) AS agent_name,
           conversation_preview.last_message_preview,
           ${exactUtcTimestampSql(sql`COALESCE(conversational_head.activity_at, t.created_at)`)}
             AS last_activity_at_exact,
@@ -42,6 +43,9 @@ export function createDrizzleWorkChatFeedRepository(db: DrizzleDatabase): WorkCh
           ON primary_tw.thread_id = t.id AND primary_tw.is_primary = true
         LEFT JOIN works primary_work
           ON primary_work.id = primary_tw.work_id AND primary_work.deleted_at IS NULL
+        LEFT JOIN thread_agent_bindings tab ON tab.thread_id = t.id
+        LEFT JOIN agent_definition_revisions adr
+          ON adr.id = tab.definition_revision_id
         LEFT JOIN thread_user_state tus
           ON tus.thread_id = t.id AND tus.user_id = ${input.userId}::uuid
         LEFT JOIN ${visibleConversationalHeadLateral(sql`t.active_leaf_turn_id`)} ON true

@@ -87,6 +87,7 @@ export function createInMemoryProjectChatAdapter(
       id: thread.id,
       title: thread.title ?? "",
       work: workId && work && !work.deletedAt ? { id: workId, title: work.name } : null,
+      agentName: thread.agentName,
       lastMessagePreview: preview ? Array.from(preview).slice(0, 240).join("") : null,
       lastActivityAt: exactTimestamp(
         head ? (head.completedAt ?? head.createdAt) : thread.createdAt,
@@ -101,6 +102,7 @@ export function createInMemoryProjectChatAdapter(
       const eligible: ProjectChatItem[] = [];
       for (const thread of source.threads()) {
         if (
+          thread.kind === "primary" &&
           thread.projectId === input.projectId &&
           !thread.deletedAt &&
           thread.status !== "archived" &&
@@ -133,6 +135,7 @@ export function createInMemoryProjectChatAdapter(
       const associated: Array<{ thread: Thread; updatedAt: string }> = [];
       for (const thread of source.threads()) {
         if (
+          thread.kind === "primary" &&
           thread.projectId === input.projectId &&
           !thread.deletedAt &&
           source.hasWorkMembership(thread.id as ThreadId, input.workId) &&

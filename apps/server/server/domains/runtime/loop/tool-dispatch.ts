@@ -2,10 +2,12 @@
  * Stateless tool dispatch step for the runtime loop.
  *
  * The orchestrator owns permission. This module runs the allowed call: live
- * output journal appends, spawn and return-result bridges, interrupt callback
- * wiring, and durable tool_result persistence. The caller supplies mutable
- * turn/block state so interrupt callbacks can update the active turn while the
- * tool handler is awaited.
+ * output journal appends, spawn/returnResult callback wiring, interrupt
+ * callback wiring, and durable tool_result persistence. Writer-facing
+ * helper-result cards belong to spawn. return_result settlement (envelope,
+ * tool_result + child-report, endTurn) is spawn-owned. The caller supplies
+ * mutable turn/block state so interrupt callbacks can update the active turn
+ * while the tool handler is awaited.
  */
 
 import type { TreeBudget } from "@meridian/contracts/spawn";
@@ -20,6 +22,8 @@ import type {
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
+import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
+import { persistReturnResult, type SpawnTranscript } from "../spawn/spawn-transcript.js";
 import type { ToolCallInput, ToolExecutor } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
@@ -56,6 +60,8 @@ export type ToolDispatchResult =
       block: Block;
       metadata?: Record<string, unknown>;
       cancelled?: false;
+      /** Successful return_result asks the orchestrator to complete the turn after this batch. */
+      endTurn?: true;
     }
   | { events: OrchestratorEvent[]; cancelled: true };
 
@@ -130,17 +136,24 @@ export async function dispatchToolCall(
       });
   };
 
+  const transcript: SpawnTranscript = {
+    persistence: deps.persistenceDeps,
+    threadId: ctx.state.threadId,
+    turnId: ctx.state.currentTurn.id,
+    blockSeqRef: ctx.blockSeqRef,
+    allBlocks: ctx.state.allBlocks,
+    events,
+  };
+
   const spawn =
     call.name === "spawn"
       ? async (spawnInput: {
-          agent: string;
+          agent?: string;
           prompt: string;
           description?: string;
           mode?: "foreground" | "background";
-        }) =>
-          deps.childRunCoordinator[
-            spawnInput.mode === "background" ? "spawnChildBackground" : "spawnChild"
-          ]({
+        }) => {
+          const childInput = {
             parentThread: ctx.thread,
             parentTurnId: ctx.state.currentTurn.id,
             agentSlug: spawnInput.agent,
@@ -148,13 +161,24 @@ export async function dispatchToolCall(
             description: spawnInput.description,
             budget: ctx.treeBudget,
             signal: ctx.state.signal,
-          })
+          };
+          if (spawnInput.mode === "background") {
+            return deps.childRunCoordinator.spawnChildBackground(childInput);
+          }
+          return deps.childRunCoordinator.spawnChild({ ...childInput, transcript });
+        }
       : undefined;
 
   const returnResultCompleter = ctx.returnResultCompleter;
-  const returnResult = returnResultCompleter
-    ? async (capture: Parameters<ReturnResultCompleter>[0]) => returnResultCompleter(capture)
-    : undefined;
+  let returnResultSummary = "";
+  const returnResult = async (capture: Parameters<ReturnResultCompleter>[0]) => {
+    if (!returnResultCompleter) {
+      return { ok: false as const, message: "return_result is not available on this run." };
+    }
+    const outcome = await returnResultCompleter(capture);
+    returnResultSummary = capture.summary;
+    return outcome;
+  };
 
   const execResult = await deps.toolExecutor.executeTool(
     {
@@ -184,7 +208,21 @@ export async function dispatchToolCall(
   }
 
   const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;
-  const persistedOutput = execResult.output;
+  if (execResult.returnResult) {
+    const settled = await persistReturnResult(transcript, {
+      toolCallId: execResult.toolCallId,
+      outcome: execResult.returnResult,
+      summary: returnResultSummary,
+    });
+    return {
+      events,
+      block: settled.block,
+      ...(settled.endTurn ? { endTurn: true as const } : {}),
+    };
+  }
+  const persistedOutput: JsonValue =
+    call.name === "spawn" ? spawnOutputForTranscript(execResult.output) : execResult.output;
+  const persistedIsError = execResult.isError;
   const persistedMetadata = execResult.metadata;
 
   const persistedToolResult = await persistAndAppendEvents(
@@ -199,7 +237,7 @@ export async function dispatchToolCall(
         content: {
           toolCallId: execResult.toolCallId,
           output: persistedOutput,
-          ...(execResult.isError !== undefined ? { isError: execResult.isError } : {}),
+          ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
           ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
         },
         status: "complete",
@@ -212,7 +250,7 @@ export async function dispatchToolCall(
             type: "tool.result",
             toolCallId: execResult.toolCallId,
             output: persistedOutput,
-            isError: execResult.isError,
+            isError: persistedIsError,
             ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
           },
         ],
@@ -251,7 +289,7 @@ export async function dispatchToolCall(
             content: {
               toolCallId: execResult.toolCallId,
               output,
-              ...(execResult.isError !== undefined ? { isError: execResult.isError } : {}),
+              ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
               metadata,
             },
             status: "complete",
@@ -264,7 +302,7 @@ export async function dispatchToolCall(
                 type: "tool.result" as const,
                 toolCallId: execResult.toolCallId,
                 output,
-                isError: execResult.isError,
+                isError: persistedIsError,
                 metadata,
               },
             ],

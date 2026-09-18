@@ -66,6 +66,9 @@ export async function buildThreadSnapshot(
   if (!thread) {
     throw new Error(`Thread not found: ${threadId}`);
   }
+  const parentThread = thread.parentThreadId
+    ? await repos.threads.findById(thread.parentThreadId as ThreadId)
+    : null;
 
   // Capture liveness BEFORE reading the durable turn list (ordering matters — see below).
   const runnerTurnId = runner.getRunningTurnId(threadId);
@@ -113,6 +116,7 @@ export async function buildThreadSnapshot(
   return {
     threadId,
     thread,
+    parent: parentThread ? { id: parentThread.id, title: parentThread.title } : null,
     turns: threadTurns,
     liveState: {
       threadId,

@@ -270,8 +270,11 @@ without empty URL parameters. This same-destination repair bypasses blockers;
 it never queues a competing navigation behind a pending dirty-edit decision.
 Pending catalog refreshes and catalog errors never prove absence. Valid and omitted selectors are not rewritten. Duplicate query keys,
 invalid percent encoding, and conflicting path/query Work scope remain parser
-errors, not recoverable selector values. Required path identities remain
-unavailable rather than falling back. Editor can seed its initially absent Work
+errors, not recoverable selector values. Required path identities never fall
+back. Work and document path misses stay unavailable. Path `/chat/{id}` is
+identity, not a primary-list lookup; ChatScreen's snapshot miss is the error,
+not the destination overlay. Query `?chat=` still drops missing primaries.
+Editor can seed its initially absent Work
 from the selected Chat once; afterwards Editor Work is independent from Chat Work.
 With no selected Chat it is explicit no-Work. The Work catalog never selects a
 first Work for Editor.
@@ -304,9 +307,11 @@ shortcut targets that same landing; there is no separate `/chats/new` route.
 
 Chat switching lives in `features/chat/ThreadSwitcherPopover`; it filters by
 chat title, groups chats by Work when meaningful, and delegates actual
-navigation to the route owner. `ProjectView` resolves a chat once and passes its
-current Work to context hydration, Draft Review, the chat body, and headers.
-Descendants must not independently derive either value.
+navigation to the route owner. `ProjectView` resolves a primary-list chat once
+and passes its current Work to context hydration, Draft Review, the chat body,
+and headers. Descendants must not independently derive those listed-primary
+values. Path `/chat/{id}` is identity, so a subagent is not in that list and
+does not receive that Work projection.
 
 ## Don't
 

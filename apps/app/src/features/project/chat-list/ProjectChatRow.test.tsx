@@ -16,6 +16,7 @@ const chat = (favorite = false): ProjectChatItem => ({
   id: "thread-1",
   title: "River",
   work: { id: "work-1", title: "First Work" },
+  agentName: "Muse",
   lastMessagePreview: "Keep climbing.",
   lastActivityAt: "2025-08-13T15:30:00.000Z",
   actionRequired: false,
@@ -72,11 +73,19 @@ async function waitFor(assertion: () => void) {
 }
 
 describe("ProjectChatRow", () => {
-  it("shows the Composer-style Work value while preserving its accessible label", async () => {
+  it("shows the bound Agent name in the identity lane", async () => {
     await withRow(<ProjectChatRow {...props()} />, () => {
-      const work = document.querySelector("[data-project-chat-row-work]");
-      expect(work?.textContent).toBe("First Work");
-      expect(work?.getAttribute("aria-label")).toBe("Work: First Work");
+      const agent = document.querySelector("[data-project-chat-row-work]");
+      expect(agent?.textContent).toBe("Muse");
+      expect(agent?.getAttribute("aria-label")).toBe("Agent: Muse");
+    });
+  });
+
+  it("falls back to General when the bound Agent name is missing", async () => {
+    await withRow(<ProjectChatRow {...props({ item: { ...chat(), agentName: null } })} />, () => {
+      const agent = document.querySelector("[data-project-chat-row-work]");
+      expect(agent?.textContent).toBe("General");
+      expect(agent?.getAttribute("aria-label")).toBe("Agent: General");
     });
   });
 
