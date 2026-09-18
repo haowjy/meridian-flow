@@ -23,6 +23,7 @@
 
 ### Fixed
 
+- Opening `/chat/{id}` for a subagent no longer shows "This destination is unavailable." Path chat is identity; the primary list is not a lookup. Snapshot miss stays ChatScreen's error. Query `?chat=` still drops missing primaries.
 - Nested subagent Parent back resolves the parent by id on the child snapshot, not the primary-only list.
 - `return_result` persists the protocol result and child-report card in one transaction.
 - Writer-continue `return_result` no longer parks reports in the process Map.
