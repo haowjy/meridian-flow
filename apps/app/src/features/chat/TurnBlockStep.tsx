@@ -16,6 +16,7 @@ import { type Block, blockPlainText } from "@meridian/contracts/protocol";
 import { Clock, type LucideIcon, MessageSquareText } from "lucide-react";
 import { Markdown } from "@/rich-content/Markdown";
 import { ActivityRow } from "./ActivityRow";
+import { visibleReasoningText } from "./partition-turn-segments";
 
 export type TurnBlockStepProps = {
   block: Block;
@@ -56,6 +57,9 @@ function iconForBlock(blockType: string): LucideIcon {
 }
 
 function stepBody(block: Block): string | null {
+  if (block.blockType === "reasoning" || block.blockType === "thinking") {
+    return visibleReasoningText(block);
+  }
   const raw = block.textContent?.trim() || blockPlainText(block.blockType, block.content)?.trim();
   if (raw) return raw;
   if (block.content && typeof block.content === "object" && !Array.isArray(block.content)) {

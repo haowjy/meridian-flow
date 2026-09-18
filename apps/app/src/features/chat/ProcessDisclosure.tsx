@@ -6,6 +6,7 @@
  * can now contain mixed reasoning rows and completed activity runs. The key
  * decision is that this shell always starts closed; streaming status must not
  * auto-open or force-close it, so live and settled turns keep the same layout.
+ * Do not mount it for an empty fold: there is no expand control for nothing.
  *
  * Body chrome is intentionally bare — no left border, no inset padding. Each
  * `ActivityRow` paints its own piece of the timeline rail inside its icon
