@@ -454,9 +454,12 @@ export class ThreadRunController {
   private cleanupActiveRun(): void {
     this.abortRequested = false;
     const activeRun = this.activeRun;
-    this.activeRun = null;
+    // Dispose (flush the coalescer) before clearing `activeRun`: the coalesced
+    // apply is gated on `isActiveToken`, so nulling first would drop the last
+    // buffered frame on teardown, run switch, and unmount.
     activeRun?.dispose?.();
     activeRun?.unsubscribe?.();
+    this.activeRun = null;
   }
 
   private isActiveToken(token: number): boolean {
