@@ -26,7 +26,11 @@ import {
   type AvailableSkillListing,
   resolveThreadModelAvailableSkills,
 } from "./available-skills.js";
-import { isThreadPromptFrozen, rebakeComposedSystemPrompt } from "./composed-system-prompt.js";
+import {
+  isThreadPromptFrozen,
+  type PromptInventoryListing,
+  rebakeComposedSystemPrompt,
+} from "./composed-system-prompt.js";
 import { buildContext } from "./context-builder.js";
 import { projectImageBlocksForModel } from "./image-context.js";
 import type { EffectiveToolPolicy } from "./permissions/project-tool-policy.js";
@@ -36,7 +40,7 @@ export interface AssembleNextTurnContextInput {
   thread: Thread;
   turns: Turn[];
   blocks: Block[];
-  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource">;
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource" | "readRevision">;
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
   gateway?: Pick<Gateway, "getDefaultModel" | "listModels">;
   imageAssets?: ImageAssetPort;
@@ -81,6 +85,7 @@ export async function assembleNextTurnContext(
   let workContextSection: string | undefined;
   let unfrozenBasePrompt: string | null | undefined;
   let availableSkillsForUnfrozen: AvailableSkillListing[] | undefined;
+  let namedSubagentsForUnfrozen: PromptInventoryListing[] | undefined;
   let systemPrompt: string;
   const baked = thread.bakedSkillSlugs != null;
 
@@ -91,11 +96,16 @@ export async function assembleNextTurnContext(
       thread,
       agentRevisions: input.agentRevisions,
     });
+    const namedSubagents = await resolveNamedSubagentListings({
+      thread,
+      agentRevisions: input.agentRevisions,
+    });
     const workContext = (await input.workContext.renderForThread(thread.id as ThreadId)).text;
     const bakedPrompt = rebakeComposedSystemPrompt({
       basePrompt: agentContext.agentBody,
       workContext,
       availableSkills,
+      namedSubagents,
     });
 
     if (input.persistBake && input.bakeComposedSystemPrompt) {
@@ -111,6 +121,7 @@ export async function assembleNextTurnContext(
       unfrozenBasePrompt = agentContext.agentBody;
       workContextSection = workContext;
       availableSkillsForUnfrozen = availableSkills;
+      namedSubagentsForUnfrozen = namedSubagents;
     }
   }
 
@@ -139,6 +150,7 @@ export async function assembleNextTurnContext(
     unfrozenBasePrompt,
     workContext: workContextSection,
     availableSkills: availableSkillsForUnfrozen,
+    namedSubagents: namedSubagentsForUnfrozen,
   });
 
   return {
@@ -155,4 +167,22 @@ export async function assembleNextTurnContext(
       ...gatewayParams,
     },
   };
+}
+
+async function resolveNamedSubagentListings(input: {
+  thread: Thread;
+  agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readRevision">;
+}): Promise<PromptInventoryListing[]> {
+  const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
+  if (!binding) return [];
+  const listings: PromptInventoryListing[] = [];
+  for (const target of binding.configuration.namedTargets) {
+    const revision = await input.agentRevisions.readRevision(target.definitionRevisionId);
+    listings.push({
+      slug: target.name,
+      name: revision?.definition.metadata.name ?? target.name,
+      description: revision?.definition.metadata.description ?? "",
+    });
+  }
+  return listings;
 }
