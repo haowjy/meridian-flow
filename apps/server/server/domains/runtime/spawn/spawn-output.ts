@@ -21,6 +21,7 @@ export function spawnHelperCardProps(input: {
   agent?: string;
   description?: string;
   parentTurnId: string;
+  childThreadId?: string;
   output?: JsonValue;
 }): HelperResultProps {
   const slug = input.agent?.trim() || "helper";
@@ -29,7 +30,7 @@ export function spawnHelperCardProps(input: {
     agentName: helperAgentName(slug),
     status: "running",
     summary: "",
-    childThreadId: "",
+    childThreadId: input.childThreadId ?? "",
     parentTurnId: input.parentTurnId,
     ...(input.description !== undefined ? { title: input.description } : {}),
   };
@@ -40,7 +41,9 @@ export function spawnHelperCardProps(input: {
       ...base,
       status: "completed",
       summary: typeof output.report.summary === "string" ? output.report.summary : "",
-      childThreadId: typeof output.report.threadId === "string" ? output.report.threadId : "",
+      childThreadId:
+        typeof output.report.threadId === "string" ? output.report.threadId : base.childThreadId,
+      ...(output.report.payload !== undefined ? { payload: output.report.payload } : {}),
     };
   }
   if (output.status === "error") {

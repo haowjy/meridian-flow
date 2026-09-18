@@ -38,6 +38,7 @@ import {
 } from "../loop/thread-run-ownership.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
 import type { HelperResultDelivery } from "./helper-result-delivery.js";
+import { persistSpawnHelperCard, type SpawnTranscript } from "./spawn-transcript.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
 
 /** Event/thread label for a generic helper child; never a specialist catalog slug. */
@@ -52,6 +53,8 @@ export interface SpawnChildInput {
   description?: string;
   budget: TreeBudget;
   signal?: AbortSignal;
+  /** Parent-turn card writer; foreground spawn upserts running then completed. */
+  transcript?: SpawnTranscript;
 }
 
 export interface ChildRunCoordinatorDeps {
@@ -479,9 +482,46 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     createReturnResultCompleter,
 
     async spawnChild(input: SpawnChildInput): Promise<SpawnResult> {
-      const prepared = await prepareChild(input);
-      if ("status" in prepared) return prepared;
-      return driveChild(input, prepared);
+      const cardFields = {
+        agent: input.agentSlug,
+        description: input.description,
+        parentTurnId: input.parentTurnId as string,
+      };
+      const runningCard = await persistSpawnHelperCard(input.transcript, cardFields);
+      try {
+        const prepared = await prepareChild(input);
+        if ("status" in prepared) {
+          await persistSpawnHelperCard(
+            input.transcript,
+            { ...cardFields, output: prepared },
+            runningCard,
+          );
+          return prepared;
+        }
+        const result = await driveChild(input, prepared);
+        await persistSpawnHelperCard(
+          input.transcript,
+          { ...cardFields, childThreadId: prepared.child.id, output: result },
+          runningCard,
+        );
+        return result;
+      } catch (error) {
+        await persistSpawnHelperCard(
+          input.transcript,
+          {
+            ...cardFields,
+            output: {
+              status: "error",
+              error: meridianErrorFromSystem(
+                "spawn_failed",
+                error instanceof Error ? error.message : String(error),
+              ),
+            },
+          },
+          runningCard,
+        );
+        throw error;
+      }
     },
 
     async spawnChildBackground(input: SpawnChildInput): Promise<SpawnResult> {
