@@ -39,6 +39,8 @@ instead of the N:1 `threads.workId` column.
   `turns`, `model_responses`, `turn_blocks`, and recomputed token/cost rollups.
 - **Thread snapshot builder** — assembles the full `ThreadSnapshotResponse`
   (thread + turns + blocks + responses + live state) for initial page load.
+  Subagent snapshots include `parent: { id, title }` from a `findById` point
+  lookup, not the parent's conversation.
 - **Thread lifecycle validation** — `normalizeThreadCreate` enforces Phase 1
   constraints (primary root threads only; spawn/fork fields rejected).
 - **Access control** — `requireThreadOwner` gates thread operations behind

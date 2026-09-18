@@ -86,6 +86,7 @@ function ChatScreenLoaded({
   onOpenContextTarget?: (target: ContextRouteTarget) => void;
 }) {
   const {
+    snapshot,
     thread: snapshotThread,
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
@@ -94,9 +95,7 @@ function ChatScreenLoaded({
     refetch,
   } = useThreadSnapshotSync(threadId);
   const thread = projectThreads.find((t) => t.id === threadId) ?? snapshotThread;
-  const parent = thread?.parentThreadId
-    ? (projectThreads.find((t) => t.id === thread.parentThreadId) ?? null)
-    : null;
+  const parent = snapshot?.parent ?? null;
 
   const isSubagent = thread?.kind === "subagent";
 

@@ -91,7 +91,10 @@ export interface ChildRunCoordinatorDeps {
 export interface ChildRunCoordinator {
   spawnChild(input: SpawnChildInput): Promise<SpawnResult>;
   spawnChildBackground(input: SpawnChildInput): Promise<SpawnResult>;
-  createReturnResultCompleter(childThreadId: ThreadId): ReturnResultCompleter;
+  createReturnResultCompleter(
+    childThreadId: ThreadId,
+    options?: { capture?: boolean },
+  ): ReturnResultCompleter;
 }
 
 type ChildTerminal =
@@ -142,20 +145,26 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   const runOwnership = deps.runOwnership ?? createInMemoryThreadRunOwnership();
   const pendingReports = new Map<string, AgentReport>();
 
-  function createReturnResultCompleter(childThreadId: ThreadId): ReturnResultCompleter {
+  function createReturnResultCompleter(
+    childThreadId: ThreadId,
+    options?: { capture?: boolean },
+  ): ReturnResultCompleter {
     let used = false;
+    const captureReport = options?.capture !== false;
     return async (capture: ReturnResultCapture) => {
       if (used) {
         return { ok: false as const, message: "return_result already called for this run" };
       }
       used = true;
-      pendingReports.set(childThreadId as string, {
-        threadId: childThreadId as string,
-        summary: capture.summary,
-        payload: capture.payload,
-        artifacts: capture.artifacts,
-        costMillicredits: 0,
-      });
+      if (captureReport) {
+        pendingReports.set(childThreadId as string, {
+          threadId: childThreadId as string,
+          summary: capture.summary,
+          payload: capture.payload,
+          artifacts: capture.artifacts,
+          costMillicredits: 0,
+        });
+      }
       return { ok: true as const };
     };
   }

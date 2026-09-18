@@ -23,6 +23,9 @@
 
 ### Fixed
 
+- Nested subagent Parent back resolves the parent by id on the child snapshot, not the primary-only list.
+- `return_result` persists the protocol result and child-report card in one transaction.
+- Writer-continue `return_result` no longer parks reports in the process Map.
 - A second `return_result` in one child run fails with `already_returned` rather than overwriting the first report; the tool protocol reports `{ ok: false, message }` with `isError`.
 - Empty reasoning blocks no longer render an empty Thinking disclosure or split the activity runs around them.
 - Turn-card protocol (`ask_user`, `spawn`, `return_result`) no longer folds, so a settled turn whose only process is hidden protocol opens no empty Thinking. A fold with no visible content renders no disclosure.
@@ -39,6 +42,7 @@
 
 ### Changed
 
+- `return_result` records the report and ends this turn; the child chat stays open.
 - Home/Work chat rows and the chat switcher show the bound Agent name; Work is no longer the row identity.
 - The chat switcher no longer shows an unlabeled warning dot for an unanswered `ask_user` on another chat.
 - Home Continue/Recent/Favorite, the chat switcher, and Work-associated chats list primary threads only.

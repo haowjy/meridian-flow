@@ -4,7 +4,8 @@
  * The orchestrator owns permission. This module runs the allowed call: live
  * output journal appends, spawn/returnResult callback wiring, interrupt
  * callback wiring, and durable tool_result persistence. Writer-facing
- * helper-result and child-report cards belong to spawn. The caller supplies
+ * helper-result cards belong to spawn. return_result settlement (envelope,
+ * tool_result + child-report, endTurn) is spawn-owned. The caller supplies
  * mutable turn/block state so interrupt callbacks can update the active turn
  * while the tool handler is awaited.
  */
@@ -22,8 +23,8 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../../observab
 import type { WorkContextDelivery } from "../../projects/index.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
-import { persistChildReportCard, type SpawnTranscript } from "../spawn/spawn-transcript.js";
-import type { ToolCallInput, ToolExecutionResult, ToolExecutor } from "../tools/index.js";
+import { persistReturnResult, type SpawnTranscript } from "../spawn/spawn-transcript.js";
+import type { ToolCallInput, ToolExecutor } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
@@ -169,9 +170,15 @@ export async function dispatchToolCall(
       : undefined;
 
   const returnResultCompleter = ctx.returnResultCompleter;
-  const returnResult = returnResultCompleter
-    ? async (capture: Parameters<ReturnResultCompleter>[0]) => returnResultCompleter(capture)
-    : undefined;
+  let returnResultSummary = "";
+  const returnResult = async (capture: Parameters<ReturnResultCompleter>[0]) => {
+    if (!returnResultCompleter) {
+      return { ok: false as const, message: "return_result is not available on this run." };
+    }
+    const outcome = await returnResultCompleter(capture);
+    returnResultSummary = capture.summary;
+    return outcome;
+  };
 
   const execResult = await deps.toolExecutor.executeTool(
     {
@@ -201,21 +208,21 @@ export async function dispatchToolCall(
   }
 
   const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;
-  const isReturnResult = call.name === "return_result";
-  // A return_result turn always answers with a normalized completion envelope:
-  // `{ ok: true }` or `{ ok: false, message }`. Anything else (missing completer,
-  // already returned, handler throw) is a model-facing failure.
-  const returnResultError = isReturnResult
-    ? returnResultErrorFor(execResult, Boolean(returnResultCompleter))
-    : null;
-  const persistedOutput: JsonValue = isReturnResult
-    ? returnResultError === null
-      ? { ok: true }
-      : { ok: false, message: returnResultError }
-    : call.name === "spawn"
-      ? spawnOutputForTranscript(execResult.output)
-      : execResult.output;
-  const persistedIsError = isReturnResult ? returnResultError !== null : execResult.isError;
+  if (execResult.returnResult) {
+    const settled = await persistReturnResult(transcript, {
+      toolCallId: execResult.toolCallId,
+      outcome: execResult.returnResult,
+      summary: returnResultSummary,
+    });
+    return {
+      events,
+      block: settled.block,
+      ...(settled.endTurn ? { endTurn: true as const } : {}),
+    };
+  }
+  const persistedOutput: JsonValue =
+    call.name === "spawn" ? spawnOutputForTranscript(execResult.output) : execResult.output;
+  const persistedIsError = execResult.isError;
   const persistedMetadata = execResult.metadata;
 
   const persistedToolResult = await persistAndAppendEvents(
@@ -252,11 +259,6 @@ export async function dispatchToolCall(
   );
   ctx.state.allBlocks.push(persistedToolResult.result);
   events.push(...persistedToolResult.events);
-  if (isReturnResult && returnResultError === null) {
-    await persistChildReportCard(transcript, {
-      summary: returnResultSummary(call.arguments),
-    });
-  }
   let resultBlock = persistedToolResult.result;
   let resultMetadata = execResult.metadata;
   if (execResult.metadata?.workContextChanged === true) {
@@ -324,32 +326,5 @@ export async function dispatchToolCall(
           },
         }
       : {}),
-    ...(isReturnResult && returnResultError === null ? { endTurn: true as const } : {}),
   };
-}
-
-/** Resolves the model-facing failure message for a return_result dispatch, or null on success. */
-function returnResultErrorFor(result: ToolExecutionResult, hasCompleter: boolean): string | null {
-  if (!hasCompleter) return "return_result is not available on this run.";
-  if (result.isError === true) {
-    return errorMessage(result.output) ?? "return_result failed.";
-  }
-  const output = result.output;
-  if (output && typeof output === "object" && !Array.isArray(output)) {
-    const record = output as Record<string, unknown>;
-    if (record.ok === false) {
-      return typeof record.message === "string" ? record.message : "return_result failed.";
-    }
-  }
-  return null;
-}
-
-function errorMessage(output: JsonValue): string | null {
-  if (!output || typeof output !== "object" || Array.isArray(output)) return null;
-  const message = (output as Record<string, unknown>).message;
-  return typeof message === "string" && message.length > 0 ? message : null;
-}
-
-function returnResultSummary(args: Record<string, unknown>): string {
-  return typeof args.summary === "string" ? args.summary : "";
 }

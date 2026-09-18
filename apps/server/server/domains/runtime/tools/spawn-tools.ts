@@ -85,8 +85,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       definition: {
         type: "function",
         name: "return_result",
-        description:
-          "Terminate the subagent run and hand a typed report back to the parent spawn caller.",
+        description: "Record the report and end this turn. The child chat stays open.",
         inputSchema: {
           type: "object",
           properties: {

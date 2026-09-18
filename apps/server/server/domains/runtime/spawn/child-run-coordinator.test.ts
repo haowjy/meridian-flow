@@ -185,6 +185,18 @@ describe("ChildRunCoordinator spawn selection", () => {
     expect(abortedChildren).toEqual([]);
   });
 
+  it("settle-only completer records one report without capturing for driveChild", async () => {
+    const { coordinator } = await fixture();
+    const completer = coordinator.createReturnResultCompleter("child-thread" as ThreadId, {
+      capture: false,
+    });
+
+    expect(await completer({ summary: "done" })).toEqual({ ok: true });
+    const second = await completer({ summary: "again" });
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.message.length).toBeGreaterThan(0);
+  });
+
   it("refuses depth 4 before creating a child; depth 3 still spawns", async () => {
     const { coordinator, parent, journal } = await fixture();
     const refused = await coordinator.spawnChild({

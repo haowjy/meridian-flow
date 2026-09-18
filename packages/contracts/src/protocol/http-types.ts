@@ -410,6 +410,11 @@ export type CancelTurnResponse = {
   status: "cancelled" | "already_finished" | "not_found";
 };
 
+export type ThreadSnapshotParent = {
+  id: string;
+  title: string | null;
+};
+
 export type ThreadSnapshotResponse = {
   threadId: string;
   thread: Thread;
@@ -418,6 +423,8 @@ export type ThreadSnapshotResponse = {
   actionRequired: boolean;
   /** First event position after this snapshot; clients reject it below their stored floor. */
   nextSeq: string;
+  /** Point-lookup parent for subagent chrome. Absent conversation payload. */
+  parent?: ThreadSnapshotParent | null;
 };
 
 /** Dev-only: per-request model context captured by the orchestrator. */

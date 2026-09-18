@@ -1,4 +1,4 @@
-/** Groups project threads by Work, parent, and activity date for chat navigation. */
+/** Groups project threads by Work and activity date for chat navigation. */
 import type { ThreadListItem, Work } from "@meridian/contracts/protocol";
 import { useMemo } from "react";
 
@@ -18,7 +18,6 @@ export type ProjectThreadGroups = {
   threads: ThreadListItem[];
   threadsLoaded: boolean;
   primaryThreads: ThreadListItem[];
-  subagentsByParent: Map<string, ThreadListItem[]>;
   ungroupedThreads: ThreadListItem[];
   threadById: Map<string, ThreadListItem>;
 };
@@ -44,10 +43,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * Group a project's real threads under their real work items.
  *
- * Primary threads are grouped by `thread.workId` against the project's works.
- * Subagents nest under their parent thread (via `parentThreadId`). Primary
- * threads without a resolved work fall through to `ungroupedThreads` only
- * after works have loaded; while works are `null`, grouping waits.
+ * Writer lists are primaries only. Primary threads are grouped by
+ * `thread.workId` against the project's works. Threads without a resolved work
+ * fall through to `ungroupedThreads` only after works have loaded; while works
+ * are `null`, grouping waits.
  *
  * This is the single source of grouping for project chat navigation.
  */
@@ -58,18 +57,11 @@ export function groupProjectThreads(
   const baseThreads: ThreadListItem[] = realThreads ?? [];
 
   const primaryThreads: ThreadListItem[] = [];
-  const subagentsByParent = new Map<string, ThreadListItem[]>();
   const threadById = new Map<string, ThreadListItem>();
 
   for (const thread of baseThreads) {
     threadById.set(thread.id, thread);
-    if (thread.kind === "primary") {
-      primaryThreads.push(thread);
-    } else if (thread.parentThreadId) {
-      const list = subagentsByParent.get(thread.parentThreadId) ?? [];
-      list.push(thread);
-      subagentsByParent.set(thread.parentThreadId, list);
-    }
+    if (thread.kind === "primary") primaryThreads.push(thread);
   }
 
   const grouped = new Set<string>();
@@ -94,7 +86,6 @@ export function groupProjectThreads(
     threads: baseThreads,
     threadsLoaded: realThreads !== null,
     primaryThreads,
-    subagentsByParent,
     ungroupedThreads,
     threadById,
   };
