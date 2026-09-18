@@ -60,9 +60,8 @@ composer mode, and review state live in
    `child-report`) render through the shared `TurnCard` shell (`icon`/`tone`/
    `title`/`door`/`hint`/children); process tools render as `ActivityRow`. Their
    tool protocol is hidden. Later model prose is a new Thinking/Activity pair.
-   Turn-card protocol never folds: a turn with no helper-result keeps a spawn's
-   tool protocol on the frontier as its legacy card; a turn with one leaves the
-   hidden protocol on the frontier behind the card.
+   Turn-card protocol never folds: hidden protocol stays on the frontier behind
+   the card.
 4. **Document names are doors.** `DocumentName.tsx` renders every
    writer-facing document name in the timeline and is the only place that
    decides whether one is a link. Don't add navigation to a renderer, and

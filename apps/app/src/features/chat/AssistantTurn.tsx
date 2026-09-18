@@ -26,16 +26,14 @@ import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
 import { ACTIVITY_ROW_TEXT_INSET } from "./ActivityRow";
-import { imageContentForBlock, isHelperResultBlock, isImageBlock } from "./block-kind";
+import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments, type ToolView } from "./group-delivery-segments";
 import { ProcessDisclosure } from "./ProcessDisclosure";
 import { partitionTurnSegments, type Run, type TurnSegment } from "./partition-turn-segments";
-import { SpawnReportCard } from "./SpawnReportCard";
 import { StreamingText } from "./StreamingText";
-import { spawnReportFromTool } from "./spawn-report";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
 import { hasTurnEditsReceiptContent, TurnEditsReceipt } from "./TurnEditsReceipt";
@@ -72,9 +70,6 @@ function AssistantTurnComponent({
     () => partitionTurnSegments(sortedBlocks, isSettled),
     [sortedBlocks, isSettled],
   );
-  // New parent turns replace the spawn protocol with a helper-result card; old
-  // turns have only the tool blocks and must still render the report card.
-  const turnHasHelperResult = useMemo(() => sortedBlocks.some(isHelperResultBlock), [sortedBlocks]);
   const isErrored = turn.status === "error";
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
@@ -108,7 +103,6 @@ function AssistantTurnComponent({
           segmentCount={segments.length}
           threadId={resolvedThreadId}
           turnStatus={turn.status}
-          turnHasHelperResult={turnHasHelperResult}
           onRespondToInterrupt={onRespondToInterrupt}
           writeMode={turn.writeMode ?? "direct"}
         />
@@ -161,16 +155,12 @@ function lastVisibleSegmentElementIsTool(segments: TurnSegment[]): boolean {
   for (let index = deliverySegments.length - 1; index >= 0; index -= 1) {
     const segment = deliverySegments[index];
     if (!segment) continue;
-    // A spawn that has its report renders a card, not a row; the ink drop then
-    // starts at the prose edge like any other non-row frontier block.
     if (segment.kind === "tool") {
-      if (isToolViewVisible(segment.tool) && !spawnReportFromTool(segment.tool)) return true;
+      if (isToolViewVisible(segment.tool)) return true;
       continue;
     }
     if (segment.kind === "tool-run") {
-      if (segment.tools.some((tool) => isToolViewVisible(tool) && !spawnReportFromTool(tool))) {
-        return true;
-      }
+      if (segment.tools.some(isToolViewVisible)) return true;
       continue;
     }
     if (isVisibleDeliveryBlock(segment.block)) return false;
@@ -218,7 +208,6 @@ const TurnSegmentView = memo(function TurnSegmentView({
   segmentCount,
   threadId,
   turnStatus,
-  turnHasHelperResult,
   onRespondToInterrupt,
   writeMode,
 }: {
@@ -227,7 +216,6 @@ const TurnSegmentView = memo(function TurnSegmentView({
   segmentCount: number;
   threadId: string;
   turnStatus: Turn["status"];
-  turnHasHelperResult: boolean;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   writeMode: "direct" | "draft";
 }) {
@@ -249,7 +237,6 @@ const TurnSegmentView = memo(function TurnSegmentView({
               run={run}
               threadId={threadId}
               turnStatus={turnStatus}
-              turnHasHelperResult={turnHasHelperResult}
               onRespondToInterrupt={onRespondToInterrupt}
               writeMode={writeMode}
             />
@@ -263,7 +250,6 @@ const TurnSegmentView = memo(function TurnSegmentView({
             blocks={segment.frontier}
             threadId={threadId}
             turnStatus={turnStatus}
-            turnHasHelperResult={turnHasHelperResult}
             mode="frontier"
             onRespondToInterrupt={onRespondToInterrupt}
             writeMode={writeMode}
@@ -306,14 +292,12 @@ const FoldRun = memo(function FoldRun({
   run,
   threadId,
   turnStatus,
-  turnHasHelperResult,
   onRespondToInterrupt,
   writeMode,
 }: {
   run: Run;
   threadId: string;
   turnStatus: Turn["status"];
-  turnHasHelperResult: boolean;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   writeMode: "direct" | "draft";
 }) {
@@ -333,7 +317,6 @@ const FoldRun = memo(function FoldRun({
         blocks={run.blocks}
         threadId={threadId}
         turnStatus={turnStatus}
-        turnHasHelperResult={turnHasHelperResult}
         mode="fold"
         onRespondToInterrupt={onRespondToInterrupt}
         writeMode={writeMode}
@@ -384,7 +367,6 @@ const DeliverySegments = memo(function DeliverySegments({
   blocks,
   threadId,
   turnStatus,
-  turnHasHelperResult,
   mode,
   onRespondToInterrupt,
   writeMode,
@@ -392,23 +374,14 @@ const DeliverySegments = memo(function DeliverySegments({
   blocks: Block[];
   threadId: string;
   turnStatus: Turn["status"];
-  turnHasHelperResult: boolean;
   mode: DeliveryMode;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   writeMode: "direct" | "draft";
 }) {
   const segments = useMemo(() => groupDeliverySegments(blocks), [blocks]);
-  const renderTool = (tool: ToolView) => {
-    // A spawn is the writer's door to the child chat. New turns replaced its
-    // protocol with a helper-result card, so render nothing; old turns have no
-    // card, so the parsed tool output is the card.
-    if (tool.toolName === "spawn") {
-      if (turnHasHelperResult) return null;
-      const report = spawnReportFromTool(tool);
-      return report ? <SpawnReportCard key={blockRenderKey(tool.keyBlock)} {...report} /> : null;
-    }
-    return <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} writeMode={writeMode} />;
-  };
+  const renderTool = (tool: ToolView) => (
+    <ToolRow key={blockRenderKey(tool.keyBlock)} tool={tool} writeMode={writeMode} />
+  );
   return (
     <>
       {segments.flatMap((segment) => {

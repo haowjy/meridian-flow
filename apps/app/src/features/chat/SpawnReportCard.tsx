@@ -2,24 +2,31 @@
  * SpawnReportCard — the writer-facing card for a child agent run: who ran, what
  * it reported, and a door into the child chat.
  *
- * Two surfaces share this card: the foreground `spawn` tool result parsed from
- * its output (`spawn-report.ts`), and the background `helper-result` component
- * block. It is a thin adapter over `TurnCard`: the shell owns the chrome, the
- * status maps to a tone, and the title names the agent. Cost and the raw status
- * field stay absent.
+ * Canonical surface is the `helper-result` custom block. It is a thin adapter
+ * over `TurnCard`: the shell owns the chrome, the status maps to a tone, and
+ * the title names the agent. Cost and the raw status field stay absent.
  */
 import { t } from "@lingui/core/macro";
 import { CheckCircle2, CircleAlert, LoaderCircle } from "lucide-react";
 import { Markdown } from "@/rich-content/Markdown";
 import { useOpenChatThread } from "./ChatThreadNavigation";
-import type { SpawnReportView } from "./spawn-report";
 import { TurnCard, type TurnCardTone } from "./TurnCard";
+
+type SpawnReportStatus = "running" | "completed" | "failed";
+
+type SpawnReportCardProps = {
+  agentName: string;
+  title: string | null;
+  summary: string | null;
+  status: SpawnReportStatus;
+  childThreadId: string | null;
+};
 
 const statusPresentation = {
   running: { Icon: LoaderCircle, tone: "running" },
   completed: { Icon: CheckCircle2, tone: "resolved" },
   failed: { Icon: CircleAlert, tone: "failed" },
-} satisfies Record<SpawnReportView["status"], { Icon: typeof CheckCircle2; tone: TurnCardTone }>;
+} satisfies Record<SpawnReportStatus, { Icon: typeof CheckCircle2; tone: TurnCardTone }>;
 
 export function SpawnReportCard({
   agentName,
@@ -27,7 +34,7 @@ export function SpawnReportCard({
   summary,
   status,
   childThreadId,
-}: SpawnReportView) {
+}: SpawnReportCardProps) {
   const { Icon, tone } = statusPresentation[status];
   const hint = title && title !== agentName ? title : undefined;
 

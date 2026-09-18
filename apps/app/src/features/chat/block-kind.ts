@@ -30,11 +30,6 @@ export function isToolDeliveryBlock(block: Block): boolean {
   return block.blockType === "tool_use" || block.blockType === "tool_result";
 }
 
-/** Both halves of a `spawn` tool call: the protocol the helper-result card replaces. */
-export function isSpawnToolBlock(block: Block): boolean {
-  return isToolDeliveryBlock(block) && blockContentRecord(block).toolName === "spawn";
-}
-
 export function imageContentForBlock(block: Block): ImageBlockContent | null {
   if (block.blockType === "image") {
     return parseImageBlockContent(block.content);
