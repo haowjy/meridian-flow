@@ -38,7 +38,8 @@ back *above* it, and prose never rolls into a fold.
 3. **Hidden protocol** — a `tool_use`/`tool_result` whose row a custom card
    already surfaces (`ask_user`, `spawn`, `return_result`) — is dropped, not
    folded.
-4. **A `show_demo_image` tool result**, and any `image` block, is an artifact.
+4. **An image tool result** (`isImageBlock`), an `image` block, and a `file`
+   block are artifacts (`isArtifactBlock`).
 5. **Text** flushes the open run and emits a `text` item. Empty text is dropped.
 6. **Custom cards** flush the open run and emit an `artifact` item.
 7. `activity` blocks (AG-UI progress placeholders under a non-canonical
@@ -74,12 +75,12 @@ Notation: `r` = reasoning, `t` = process tool, `p` = prose, `c` = custom card,
 
 ### Digest contract
 
-The label summarizes only ToolViews actually inside that process item. Reads
-with document targets contribute unique explored documents; successful writes
-contribute edited/drafted documents; unknown, failed, and otherwise uncountable
-operations contribute steps. Clauses are ordered explore → edit → steps. The
-accessible name remains `Thinking` / `Thinking part N` regardless of the visible
-digest.
+The label summarizes only the `write` tools inside that process item: reads with
+document targets contribute unique explored documents, and successful writes
+contribute edited/drafted documents. Every other tool (`search`, `ls`, `work`)
+and failed tools contribute nothing, so a fold whose only tools are non-write
+shows `Thinking`. The accessible name remains `Thinking` / `Thinking part N`
+regardless of the visible digest.
 
 ## Cards are artifacts
 

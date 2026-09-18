@@ -177,4 +177,51 @@ describe("partitionTurn", () => {
   it("drops empty text blocks", () => {
     expect(partitionTurn([prose(0, "   ")])).toEqual([]);
   });
+
+  it("keeps the spawn card and drops both protocol halves across the production order", () => {
+    // Persisted order is tool_use, then the helper-result card, then tool_result.
+    const items = partitionTurn([spawnUse(1), spawnCard(2), spawnResult(3, 1), prose(4, "After.")]);
+
+    expect(kinds(items)).toEqual(["artifact", "text"]);
+    expect(items[0]).toMatchObject({ block: { sequence: 2 } });
+    expect(items[1]).toMatchObject({ block: { sequence: 4 } });
+  });
+
+  it("treats a thinking block as process and a file block as an artifact", () => {
+    const thinking = partitionTurn([
+      block({ blockType: "thinking", sequence: 0, textContent: "Pondering." }),
+    ]);
+    expect(kinds(thinking)).toEqual(["process"]);
+
+    const file = partitionTurn([block({ blockType: "file", sequence: 0, content: {} })]);
+    expect(kinds(file)).toEqual(["artifact"]);
+  });
+
+  it("drops activity placeholders", () => {
+    expect(
+      partitionTurn([block({ blockType: "activity" as Block["blockType"], sequence: 0 })]),
+    ).toEqual([]);
+  });
+
+  it("drops ask_user protocol and keeps the choice card", () => {
+    const askUse = block({
+      blockType: "tool_use",
+      sequence: 1,
+      content: { toolCallId: "ask-1", toolName: "ask_user", input: {} },
+    });
+    const askResult = block({
+      blockType: "tool_result",
+      sequence: 2,
+      content: { toolCallId: "ask-1" },
+    });
+    const choiceCard = block({
+      blockType: "custom",
+      sequence: 3,
+      content: { kind: "choice", props: {} },
+    });
+    const items = partitionTurn([askUse, askResult, choiceCard]);
+
+    expect(kinds(items)).toEqual(["artifact"]);
+    expect(items[0]).toMatchObject({ block: { sequence: 3 } });
+  });
 });

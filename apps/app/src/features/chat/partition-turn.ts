@@ -20,8 +20,9 @@
  * reads through the same visibility predicate.
  */
 import { type Block, blockContentRecord, blockPlainText } from "@meridian/contracts/protocol";
-import { isImageBlock, isToolDeliveryBlock } from "./block-kind";
+import { isToolDeliveryBlock } from "./block-kind";
 import { groupDeliverySegments } from "./group-delivery-segments";
+import { isArtifactBlock } from "./tool-kind";
 import { isToolViewVisible } from "./tool-view-visibility";
 
 export type Run = { kind: "reasoning"; blocks: Block[] } | { kind: "activity"; blocks: Block[] };
@@ -53,8 +54,8 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
 
   for (const block of blocks) {
     if (isToolDeliveryBlock(block)) {
-      // A `show_demo_image` result is an image, not a process row.
-      if (isImageBlock(block)) {
+      // A tool result that is an image is an artifact, not a process row.
+      if (isArtifactBlock(block)) {
         flushProcess();
         items.push({ kind: "artifact", block });
         continue;
@@ -81,6 +82,13 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
     // transport liveness, not deliverable content.
     if (block.blockType === ("activity" as Block["blockType"])) continue;
 
+    if (isArtifactBlock(block)) {
+      flushProcess();
+      items.push({ kind: "artifact", block });
+      continue;
+    }
+
+    // Unknown non-canonical block: keep it visible rather than folding it away.
     flushProcess();
     items.push({ kind: "artifact", block });
   }
