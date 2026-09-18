@@ -55,7 +55,7 @@ export function projectToolPolicy(metadata: CompiledToolFields): EffectiveToolPo
 
   // Host tools with no Mars name stay attached this slice.
   // spawn is always advertised: named targets come from the roster, and the
-  // generic helper stays available even when the roster is empty.
+  // generic subagent stays available even when the roster is empty.
   const tools = new Set<string>(["work", "skill", "spawn"]);
   if (writeCommands.size > 0) tools.add("write");
   if (read) {
