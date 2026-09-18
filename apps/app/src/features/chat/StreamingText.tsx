@@ -1,10 +1,10 @@
 /**
- * StreamingText — Zone 3 of the live turn: renders the streaming answer text
+ * StreamingText — renders a partial assistant text block as streaming prose
  * with a trailing animated caret via `Markdown`.
  *
  * In DEV with the playback knob set, wraps the view in a throttled replay
  * (`streaming-text-dev`). Owns only the streaming-text presentation. Reasoning
- * frontier text renders via `ProcessDisclosure` / `TurnBlockStep`, not here.
+ * renders via `TurnBlockStep` inside the process fold, not here.
  */
 import { Markdown } from "@/rich-content/Markdown";
 import { readDebugStreamPlaybackCps, useDebugStreamPlayback } from "./streaming-text-dev";

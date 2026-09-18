@@ -3204,7 +3204,7 @@ msgstr "Thinking"
 msgid "Thinking out loud?"
 msgstr "Thinking out loud?"
 
-#. placeholder {0}: segmentIndex + 1
+#. placeholder {0}: processIndex + 1
 #: src/features/chat/AssistantTurn.tsx
 msgid "Thinking part {0}"
 msgstr "Thinking part {0}"
