@@ -31,10 +31,9 @@ segment.
 - **activity** = everything else
 
 An empty reasoning block (no visible `textContent` or `content.text`) is a
-provider repair placeholder: it is dropped before grouping, so it neither opens
-an empty `Thinking` fold nor splits the activity runs on either side of it.
-A segment left with no blocks after the drop emits no segment, so empty
-reasoning never produces an empty `Thinking` or a blockless render.
+provider repair placeholder: the frontend drops it before grouping, so Thinking
+is not shown for it and it does not split the activity runs on either side.
+A segment left with no blocks after the drop emits no segment.
 
 Earlier activity runs and all remaining reasoning runs go into the fold. The
 last activity run is the frontier.
@@ -46,7 +45,7 @@ into that segment's fold in chronological position; frontier non-tool blocks
 remain visible. An image renders a preview and stays with the frontier.
 Turn-card protocol (`ask_user`, `spawn`, `return_result`) never folds: it stays
 on the frontier hidden behind its card. Nothing else is exempt. A fold
-with only hidden protocol renders no `Thinking`.
+with only hidden protocol does not show `Thinking`.
 
 The settlement input is the canonical `isTerminalTurnStatus` result. Partition
 never reads transient component liveness, partial-block shape, or stream buffers.

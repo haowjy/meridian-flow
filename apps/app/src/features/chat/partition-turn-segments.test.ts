@@ -158,7 +158,7 @@ describe("partitionTurnSegments durable settlement", () => {
     expect(segments[0]?.frontier.map((b) => b.sequence)).toEqual([3, 4, 6]);
   });
 
-  it("drops empty reasoning so it never opens an empty Thinking fold", () => {
+  it("drops empty reasoning so Thinking is not shown", () => {
     const emptyReasoning = block({ blockType: "reasoning", sequence: 0, content: { text: "" } });
     const running = block({
       blockType: "custom",

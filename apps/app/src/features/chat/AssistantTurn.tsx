@@ -271,7 +271,7 @@ function thinkingAriaLabel(segmentIndex: number, segmentCount: number): string |
 /**
  * A fold earns its disclosure only when it holds something the writer can read:
  * a reasoning run, or an activity run with a visible tool row. A fold of only
- * hidden turn-card protocol would otherwise open an empty Thinking.
+ * hidden turn-card protocol must not show Thinking.
  */
 function foldHasVisibleContent(runs: Run[]): boolean {
   return runs.some((run) => run.kind === "reasoning") || toolViewsInFold(runs).length > 0;
