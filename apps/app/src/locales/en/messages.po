@@ -1611,10 +1611,6 @@ msgstr "Heading 2"
 msgid "Heading 3"
 msgstr "Heading 3"
 
-#: src/features/chat/spawn-report.ts
-msgid "Helper"
-msgstr "Helper"
-
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Hide source"
 msgstr "Hide source"
