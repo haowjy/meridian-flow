@@ -11,6 +11,7 @@ import { ChevronDown, Pencil, Plus, Search } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 
 import { useThreadStore } from "@/client/stores";
+import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { Button } from "@/components/ui/button";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
@@ -267,6 +268,7 @@ function ThreadSwitchItem({
 }) {
   const title = displayThreadTitle(thread.title);
   const rel = relativeTime(thread.updatedAt, now);
+  const agentName = thread.agentName ?? "General";
   return (
     <li
       className={cn(
@@ -289,6 +291,12 @@ function ThreadSwitchItem({
         )}
       >
         <span className="min-w-0 flex-1 truncate">{title}</span>
+        <WorkIdentity
+          className="shrink-0"
+          name={thread.agentName}
+          unavailableLabel="General"
+          aria-label={t`Agent: ${agentName}`}
+        />
         {rel ? (
           <span className="shrink-0 text-meta font-normal tabular-nums text-ink-subtle">{rel}</span>
         ) : null}

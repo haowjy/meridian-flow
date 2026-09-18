@@ -17,7 +17,7 @@ borderless two-line row semantics in the shared, Home-neutral
 cursor-observer lifecycle in `HomeFeed`, date policy in `../chat-list/project-chat-activity-date`,
 and scroll/focus restoration in the favorite-movement hook. Do not duplicate
 any of those concerns in the screen orchestrator. Work detail renders that same
-row component; Work identity inside every list row is display-only.
+row component; bound Agent name inside every list row is display-only.
 
 Project Home Send mints a thread id, writes the local chat, replaces to
 `/p/{projectSlug}/chat/{uuid}`, and persists in the background. Failure stays
@@ -32,24 +32,26 @@ nothing; Send is the chat. Home uses the same content, with its own pane title.
 
 ## Row layout and feed behavior
 
-A Home row is a borderless resume-list entry, not a card: title and Work share
-line one; preview and activity date share line two; overflow owns Favorite and
-has no standing-star counterpart. Real and loading rows use the same two-line
-layout: a flexible title/preview lane, a right-side Work lane, and a trailing
-date/action slot. The Work lane has the same position and width in every row,
-and its text is right-aligned within that lane and vertically centered across
-the full two-line row. Its compact current-value treatment follows the Composer:
-the Work name is medium foreground text, while the Work label remains in its
-accessible name. Title and preview are 13 px;
-Work and both date presentations are 12 px. At 390 px, ordinary titles and Work
-labels fit while genuinely long titles, Work labels, and previews truncate without
-horizontal overflow. On fine pointers, the date and overflow share that trailing
-center; the action replaces the date on hover, focus-within, or an open menu
-without reflow. On coarse/no-hover inputs, the 44 × 44 px action remains in the
-trailing lane and the date follows the preview inline. Fine rows retain a 53.6 px
-rhythm and coarse rows a 56 px rhythm (plus any separator); loading must match it.
+A Home row is a borderless resume-list entry, not a card: title and bound Agent
+name share line one; preview and activity date share line two; overflow owns
+Favorite and has no standing-star counterpart. Work is not the row identity.
+Real and loading rows use the same two-line layout: a flexible title/preview
+lane, a right-side Agent lane (`data-project-chat-row-work` for geometry), and a
+trailing date/action slot. The Agent lane has the same position and width in
+every row, and its text is right-aligned within that lane and vertically
+centered across the full two-line row. Its compact current-value treatment
+follows the Composer: the Agent name is medium foreground text, while the Agent
+label remains in its accessible name. A null name displays as General. Title
+and preview are 13 px; Agent and both date presentations are 12 px. At 390 px,
+ordinary titles and Agent names fit while genuinely long titles, Agent names,
+and previews truncate without horizontal overflow. On fine pointers, the date
+and overflow share that trailing center; the action replaces the date on hover,
+focus-within, or an open menu without reflow. On coarse/no-hover inputs, the
+44 × 44 px action remains in the trailing lane and the date follows the preview
+inline. Fine rows retain a 53.6 px rhythm and coarse rows a 56 px rhythm (plus
+any separator); loading must match it.
 `e2e/home-row-component-geometry.pw.ts` protects the component fixture's stable
-right-side Work column, including loading parity. A fine-pointer menu assertion requires
+right-side Agent column, including loading parity. A fine-pointer menu assertion requires
 a focused browser page: a top-level `window.blur` closes the Radix menu normally,
 so the prior observed close was an automation artifact, not a Home defect. Home
 uses no colored attention dots: `actionRequired` remains semantic and accessible
