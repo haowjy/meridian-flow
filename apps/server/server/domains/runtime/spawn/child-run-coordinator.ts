@@ -187,20 +187,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           error: meridianErrorFromSystem("spawn_agent_not_found", "Generic helper is unavailable"),
         };
       }
-      const meta = parentAgent.definition.metadata;
-      // A generic parent carries its caller's execution on inheritedExecution;
-      // copy that before falling back to the bound definition's own metadata so
-      // the overlay survives across nested generic spawns.
-      configuration = {
-        ...parentAgent.configuration,
-        inheritedExecution: parentAgent.configuration.inheritedExecution ?? {
-          ...(meta.tools !== undefined ? { tools: meta.tools } : {}),
-          ...(meta["disallowed-tools"] !== undefined
-            ? { "disallowed-tools": meta["disallowed-tools"] }
-            : {}),
-          ...(meta.effort !== undefined ? { effort: meta.effort } : {}),
-        },
-      };
+      configuration = { ...parentAgent.configuration };
       revision = baseline;
       resolvedSlug = GENERIC_HELPER_SLUG;
       defaultTitle = GENERIC_HELPER_SLUG;

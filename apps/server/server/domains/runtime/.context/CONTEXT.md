@@ -65,8 +65,9 @@ represented by explicit adapters (for example no-op sinks), not by omitted deps.
 
 ## Bound Agent preparation
 
-`agent-thread-context.ts` reads the immutable thread binding for the persona,
-model, effort, and diagnostic Agent identity. Missing bindings fail before a
+`agent-thread-context.ts` reads the immutable thread binding for the persona
+and diagnostic Agent identity. Tools and effort come from the bound
+configuration, never definition metadata. Missing bindings fail before a
 gateway call. Catalog removal or advancement leaves continued execution on its
 retained revision. `turn-context-assembly.ts` supplies that persona to the initial
 host-prompt bake and reuses the frozen prompt on later turns; preview shares this
@@ -126,10 +127,11 @@ child-run coordinator can create subagent threads.
 Named targets resolve by name within the parent binding's roster; a target with
 `model-invocable: false` is refused, while a primary-mode target is spawnable.
 An omitted or empty `agent` selects the generic helper: the built-in General
-revision supplies body and identity, while the child binding inherits the
-caller's resolved configuration plus its effective execution — the caller's
-`inheritedExecution` when present (so a nested generic keeps an ancestor's
-tool/effort overlay), otherwise its bound definition's tool/effort metadata.
+revision supplies body and identity; the child binding copies the caller's
+resolved configuration, including `tools`, `disallowed-tools`, and `effort`.
+Named children resolve those fields from their own retained revision.
+A nested generic keeps the ancestor's write deny because it copies that
+record. Turn context reads tools and effort from configuration only.
 Max spawn depth
 defaults to 3, overridable only through operator env at tree creation. Child
 creation, Agent binding, and Work membership share one transaction. The child starts with an unfrozen
