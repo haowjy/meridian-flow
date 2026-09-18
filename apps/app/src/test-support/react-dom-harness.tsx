@@ -6,6 +6,7 @@
 import { createRequire } from "node:module";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { installJsdomLayoutFallbacks } from "./jsdom-layout";
 
 const require = createRequire(import.meta.url);
 const { JSDOM } = require("jsdom") as {
@@ -36,6 +37,10 @@ export async function withReactRoot(
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
     url: "https://app.meridian.test/",
   });
+  // A fresh JSDOM is its own realm: the ambient setup shim patched a different
+  // Element/Range, so nodes created here need the fallbacks applied to this
+  // window's prototypes.
+  installJsdomLayoutFallbacks(dom.window as unknown as typeof globalThis);
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
   const previousActEnvironment = (globalThis as ActGlobal).IS_REACT_ACT_ENVIRONMENT;
