@@ -54,12 +54,6 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
 
   for (const block of blocks) {
     if (isToolDeliveryBlock(block)) {
-      // A tool result that is an image is an artifact, not a process row.
-      if (isArtifactBlock(block)) {
-        flushProcess();
-        items.push({ kind: "artifact", block });
-        continue;
-      }
       const toolCallId = blockContentRecord(block).toolCallId;
       if (typeof toolCallId === "string" && hidden.has(toolCallId)) continue;
       pushProcessBlock("activity", block);
