@@ -6,7 +6,7 @@
  * runs and the visible activity frontier. Durable turn settlement is the only
  * lifecycle input: transient stream shape never changes the partition.
  */
-import { type Block, interruptIdForBlock } from "@meridian/contracts/protocol";
+import { type Block, blockPlainText, interruptIdForBlock } from "@meridian/contracts/protocol";
 import { isHelperResultBlock, isImageBlock, isToolDeliveryBlock } from "./block-kind";
 
 export type Run = { kind: "reasoning"; blocks: Block[] } | { kind: "activity"; blocks: Block[] };
@@ -91,6 +91,8 @@ function groupRuns(blocks: Block[]): Run[] {
   const runs: Run[] = [];
 
   for (const block of blocks) {
+    if (isReasoningBlock(block) && !hasVisibleReasoningText(block)) continue;
+
     const kind = isReasoningBlock(block) ? "reasoning" : "activity";
     const current = runs[runs.length - 1];
 
@@ -103,6 +105,16 @@ function groupRuns(blocks: Block[]): Run[] {
   }
 
   return runs;
+}
+
+/**
+ * Empty reasoning is a provider repair placeholder, not writer-facing thought.
+ * Dropping it here keeps a blank block from opening an empty Thinking fold or
+ * splitting the activity runs on either side of it.
+ */
+function hasVisibleReasoningText(block: Block): boolean {
+  const text = block.textContent?.trim() || blockPlainText(block.blockType, block.content)?.trim();
+  return Boolean(text);
 }
 
 function findLastActivityRunIndex(runs: Run[]): number {

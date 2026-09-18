@@ -22,6 +22,7 @@
 
 ### Fixed
 
+- Empty reasoning blocks no longer render an empty Thinking disclosure or split the activity runs around them.
 - A generic helper spawned by another generic helper now keeps the caller's inherited execution, so a Critic's missing write no longer opens to full mutation at the second generic level.
 - Allow a pickable primary (Critic) to remain a named child on Muse's roster. Child invocability is `model-invocable: false` only.
 - Deny unavailable write/work commands through the same permission-gate persist path as unknown tools. Dispatch only executes; the core catalogue stays policy-free.

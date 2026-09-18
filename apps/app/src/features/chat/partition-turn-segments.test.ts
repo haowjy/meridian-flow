@@ -61,7 +61,11 @@ const spawnCard = block({
 
 describe("partitionTurnSegments durable settlement", () => {
   it("splits at the spawn helper-result card like an interrupt", () => {
-    const reasoning = block({ blockType: "reasoning", sequence: 0 });
+    const reasoning = block({
+      blockType: "reasoning",
+      sequence: 0,
+      content: { text: "I should spawn a helper." },
+    });
     const after = block({ blockType: "text", sequence: 6 });
     const segments = partitionTurnSegments(
       [reasoning, writeUse, writeResult, spawnUse, spawnResult, spawnCard, after],
@@ -84,10 +88,52 @@ describe("partitionTurnSegments durable settlement", () => {
       content: { kind: "helper-result", props: { status: "running", agentName: "Helper" } },
     });
     const [segment] = partitionTurnSegments(
-      [block({ blockType: "reasoning", sequence: 0 }), running],
+      [
+        block({
+          blockType: "reasoning",
+          sequence: 0,
+          content: { text: "A helper would check this." },
+        }),
+        running,
+      ],
       false,
     );
     expect(segment?.frontier.map((b) => b.sequence)).toEqual([1]);
     expect(segment?.foldRuns.flatMap((run) => run.blocks).map((b) => b.sequence)).toEqual([0]);
+  });
+
+  it("drops empty reasoning so it never opens an empty Thinking fold", () => {
+    const emptyReasoning = block({ blockType: "reasoning", sequence: 0, content: { text: "" } });
+    const running = block({
+      blockType: "custom",
+      sequence: 1,
+      content: { kind: "helper-result", props: { status: "running", agentName: "Helper" } },
+    });
+    const [segment] = partitionTurnSegments([emptyReasoning, running], false);
+
+    expect(segment?.foldRuns).toEqual([]);
+    expect(segment?.frontier.map((b) => b.sequence)).toEqual([1]);
+  });
+
+  it("keeps empty reasoning from splitting the activity runs around it", () => {
+    const emptyReasoning = block({ blockType: "reasoning", sequence: 3, content: { text: "  " } });
+    const secondUse = block({
+      blockType: "tool_use",
+      sequence: 4,
+      content: { toolCallId: "write-2", toolName: "write", input: { command: "read" } },
+    });
+    const secondResult = block({
+      blockType: "tool_result",
+      sequence: 5,
+      content: { toolCallId: "write-2", output: "passage" },
+    });
+    const [segment] = partitionTurnSegments(
+      [writeUse, writeResult, emptyReasoning, secondUse, secondResult],
+      true,
+    );
+
+    expect(segment?.foldRuns).toHaveLength(1);
+    expect(segment?.foldRuns[0]?.kind).toBe("activity");
+    expect(segment?.foldRuns[0]?.blocks.map((b) => b.sequence)).toEqual([1, 2, 4, 5]);
   });
 });

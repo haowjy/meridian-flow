@@ -27,8 +27,12 @@ the interrupt is the final block of its segment.
 - **reasoning** = `reasoning` | `thinking`
 - **activity** = everything else
 
-Earlier activity runs and all reasoning runs go into the fold. The last activity
-run is the frontier.
+An empty reasoning block (no visible `textContent` or `content.text`) is a
+provider repair placeholder: it is dropped before grouping, so it neither opens
+an empty `Thinking` fold nor splits the activity runs on either side of it.
+
+Earlier activity runs and all remaining reasoning runs go into the fold. The
+last activity run is the frontier.
 
 **Step 3 — apply durable settlement.** For live statuses (`pending`, `streaming`,
 `waiting_interrupt`), the frontier stays whole and visible. For settled statuses
