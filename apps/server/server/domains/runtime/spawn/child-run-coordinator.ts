@@ -464,16 +464,15 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
   async function deliverHelperResult(
     input: SpawnChildInput,
-    child: Thread,
-    resolvedSlug: string,
+    prepared: PreparedChild,
     result: SpawnResult,
   ): Promise<void> {
     await deps.helperResultDelivery.deliverOrQueue({
       parentThread: input.parentThread,
       parentTurnId: input.parentTurnId,
-      agentSlug: resolvedSlug,
+      agentSlug: prepared.resolvedSlug,
       description: input.description,
-      childThreadId: child.id,
+      childThreadId: prepared.child.id,
       result,
     });
   }
@@ -549,7 +548,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
               error: result.status === "error" ? result.error.message : "Background run failed",
             });
           }
-          await deliverHelperResult(input, prepared.child, prepared.resolvedSlug, result);
+          await deliverHelperResult(input, prepared, result);
         })
         .catch(async (error: unknown) => {
           await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {

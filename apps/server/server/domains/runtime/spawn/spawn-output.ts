@@ -7,6 +7,7 @@
  */
 import type { HelperResultProps } from "@meridian/contracts/components";
 import type { JsonValue } from "@meridian/contracts/threads";
+import { GENERIC_SUBAGENT_SLUG } from "../../packages/index.js";
 
 export function spawnOutputForTranscript(output: JsonValue): JsonValue {
   if (!isRecord(output) || output.status !== "completed") return output;
@@ -24,15 +25,14 @@ export function spawnHelperCardProps(input: {
   childThreadId?: string;
   output?: JsonValue;
 }): HelperResultProps {
-  const slug = input.agent?.trim() || "helper";
+  const slug = input.agent?.trim() || GENERIC_SUBAGENT_SLUG;
   const base: HelperResultProps = {
     agentSlug: slug,
     agentName: helperAgentName(slug),
     status: "running",
-    summary: "",
-    childThreadId: input.childThreadId ?? "",
     parentTurnId: input.parentTurnId,
     ...(input.description !== undefined ? { title: input.description } : {}),
+    ...(input.childThreadId !== undefined ? { childThreadId: input.childThreadId } : {}),
   };
   const output = input.output;
   if (!isRecord(output)) return base;
@@ -40,9 +40,10 @@ export function spawnHelperCardProps(input: {
     return {
       ...base,
       status: "completed",
-      summary: typeof output.report.summary === "string" ? output.report.summary : "",
-      childThreadId:
-        typeof output.report.threadId === "string" ? output.report.threadId : base.childThreadId,
+      ...(typeof output.report.summary === "string" ? { summary: output.report.summary } : {}),
+      ...(typeof output.report.threadId === "string"
+        ? { childThreadId: output.report.threadId }
+        : {}),
       ...(output.report.payload !== undefined ? { payload: output.report.payload } : {}),
     };
   }
@@ -51,7 +52,7 @@ export function spawnHelperCardProps(input: {
     return {
       ...base,
       status: "failed",
-      summary: typeof error?.message === "string" ? error.message : "",
+      ...(typeof error?.message === "string" ? { summary: error.message } : {}),
     };
   }
   return base;
