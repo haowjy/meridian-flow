@@ -304,4 +304,35 @@ describe("ChildRunCoordinator spawn selection", () => {
     expect(binding?.configuration.effort).toBe("high");
     expect(binding?.configuration["disallowed-tools"]).toBeUndefined();
   });
+
+  it("omits spawned children from writer-facing lists while Open by id still works", async () => {
+    const { coordinator, parent, repos } = await fixture();
+    const result = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      budget,
+    });
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    const childId = result.report.threadId;
+    expect((await repos.threads.listByProject(parent.projectId)).map((row) => row.id)).toEqual([
+      parent.id,
+    ]);
+    const home = await repos.homeFeed.queryPage({
+      projectId: parent.projectId,
+      userId: parent.userId,
+      after: null,
+      recentLimit: 10,
+      includeFeatured: true,
+    });
+    expect(home.continueChat?.id).toBe(parent.id);
+    expect(home.recent.map((item) => item.id)).not.toContain(childId);
+    expect(home.favorites.map((item) => item.id)).not.toContain(childId);
+    await expect(repos.threads.findById(childId)).resolves.toMatchObject({
+      id: childId,
+      kind: "subagent",
+    });
+  });
 });

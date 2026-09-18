@@ -14,7 +14,8 @@ export function workAssociationCandidatesSql(input: {
     JOIN projects p ON p.id = t.project_id AND p.deleted_at IS NULL
     JOIN thread_works matched_tw
       ON matched_tw.thread_id = t.id AND matched_tw.work_id = ${input.workId}::uuid
-    WHERE t.project_id = ${input.projectId}::uuid AND t.deleted_at IS NULL
+    WHERE t.project_id = ${input.projectId}::uuid
+      AND t.kind = 'primary' AND t.deleted_at IS NULL
       AND (${input.afterSortAt}::text IS NULL OR
         (t.updated_at, t.id) < (${input.afterSortAt}::timestamptz, ${input.afterThreadId}::uuid))
     ORDER BY t.updated_at DESC, t.id DESC

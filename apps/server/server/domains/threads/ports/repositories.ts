@@ -130,9 +130,9 @@ export interface ThreadRepository {
   /** Locks and returns the thread lifecycle row, including soft-deleted threads. */
   lockByIdIncludingDeleted(id: ThreadId): Promise<Thread | null>;
   listByUser(userId: UserId): Promise<Thread[]>;
-  /** Threads in a project (excludes soft-deleted threads; caller must gate project access). */
+  /** Primary threads in a project (excludes subagents and soft-deleted threads; caller must gate project access). */
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
-  /** Hard-bounded model-facing summary of chats historically associated with a Work. */
+  /** Hard-bounded model-facing summary of primary chats historically associated with a Work. */
   listRecentByWork(
     projectId: ProjectId,
     workId: WorkId,
