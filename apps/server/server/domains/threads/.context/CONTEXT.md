@@ -219,6 +219,8 @@ contract shapes.
 - Work-associated chat pages use the same codec over thread update
   time plus thread ID. The association filter is M:N history among primary
   threads; row Work identity always comes from the current primary membership.
+  Bound Agent name is projected from the same binding join as thread list
+  (`metadata.name` or slug) and is the writer-facing row identity.
   Projection and serialization are bounded to 50 rows per page.
 - Project chat lists have no read/unread state. The user-state route and
   repository persist Favorite only; opening a chat performs no state mutation.

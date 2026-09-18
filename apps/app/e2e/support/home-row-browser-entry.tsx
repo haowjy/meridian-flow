@@ -11,6 +11,7 @@ const ordinary = Array.from(
     id: `ordinary-${index + 1}`,
     title: `Recent Chapter ${index + 1}`,
     work: { id: `work-${index + 1}`, title: index % 2 ? "Arc Two" : "Arc One" },
+    agentName: index % 2 ? "Writer" : "Muse",
     lastMessagePreview: "A normal preview remains readable beside its activity date.",
     lastActivityAt: "2026-08-24T12:00:00.000Z",
     actionRequired: false,
@@ -23,6 +24,7 @@ const long: ProjectChatItem = {
   id: "long",
   title: longValue,
   work: { id: "work-long", title: longValue },
+  agentName: longValue,
   lastMessagePreview: longValue,
 };
 const rowProps = {

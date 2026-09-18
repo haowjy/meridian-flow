@@ -349,6 +349,11 @@ msgstr ""
 msgid "Agent: {0}"
 msgstr ""
 
+#: src/features/chat/ThreadSwitcherPopover.tsx
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "Agent: {agentName}"
+msgstr ""
+
 #: src/features/editor/surfaces/peer-marks/PeerMarkPopover.tsx
 msgid "AI assistant"
 msgstr ""
@@ -390,8 +395,8 @@ msgid "Alt text"
 msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-msgid "Another chat needs your answer"
-msgstr ""
+#~ msgid "Another chat needs your answer"
+#~ msgstr ""
 
 #: src/features/chat/TextBlock.tsx
 msgid "Answer the question"
@@ -3117,7 +3122,6 @@ msgstr ""
 #~ msgid "The {skillName} skill isn't available in this chat."
 #~ msgstr ""
 
-#: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "The AI asked you a question"
 msgstr ""
@@ -3499,7 +3503,6 @@ msgid "workReceipt.unarchived"
 msgstr ""
 
 #: src/features/chat/ComposerWorkControl.tsx
-#: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Unavailable"
 msgstr ""
 
@@ -3689,13 +3692,13 @@ msgid "Work name is required"
 msgstr ""
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "Work unavailable"
-msgstr ""
+#~ msgid "Work unavailable"
+#~ msgstr ""
 
 #. placeholder {0}: item.work.title
 #: src/features/project/chat-list/ProjectChatRow.tsx
-msgid "Work: {0}"
-msgstr ""
+#~ msgid "Work: {0}"
+#~ msgstr ""
 
 #: src/features/project/lifecycle.ts
 msgid "Working…"

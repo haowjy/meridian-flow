@@ -87,6 +87,7 @@ export function createInMemoryProjectChatAdapter(
       id: thread.id,
       title: thread.title ?? "",
       work: workId && work && !work.deletedAt ? { id: workId, title: work.name } : null,
+      agentName: thread.agentName,
       lastMessagePreview: preview ? Array.from(preview).slice(0, 240).join("") : null,
       lastActivityAt: exactTimestamp(
         head ? (head.completedAt ?? head.createdAt) : thread.createdAt,
