@@ -41,8 +41,9 @@ instead of the N:1 `threads.workId` column.
   (thread + turns + blocks + responses + live state) for initial page load.
   Subagent snapshots include `parent: { id, title }` from a `findById` point
   lookup, not the parent's conversation.
-- **Thread lifecycle validation** — `normalizeThreadCreate` enforces Phase 1
-  constraints (primary root threads only; spawn/fork fields rejected).
+- **Thread lifecycle validation** — public create (`normalizeThreadCreate`)
+  accepts primary roots only and rejects spawn/fork fields. Subagent threads
+  are created only by `SubagentThreadFactory` from the child-run coordinator.
 - **Access control** — `requireThreadOwner` gates thread operations behind
   ownership + project ownership, returning 404 on any mismatch to avoid
   existence leaks.
@@ -202,8 +203,9 @@ contract shapes.
   non-primary additions lock their target Work before the thread. A changed
   primary snapshot retries the whole transaction. This prevents deletion races,
   opposite lock orders, and concurrent moves validating stale primary state.
-- Phase 1: only `kind: "primary"` threads with `spawnDepth: 0`.
+- Public create accepts only `kind: "primary"` with `spawnDepth: 0`.
   `normalizeThreadCreate` rejects all spawn/fork lifecycle fields.
+  Subagent rows are created only through `SubagentThreadFactory`.
 - Hot cache is bounded at 500 events; older events fall through to journal
   replay (capped at 10,000 entries).
 - Thread status is stored in DB using the domain vocabulary

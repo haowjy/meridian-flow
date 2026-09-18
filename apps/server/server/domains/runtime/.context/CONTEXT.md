@@ -89,9 +89,9 @@ guard prompt freezing. The model comes from conversation-owned resolved
 configuration, including a frozen default when source omits it. Nonempty
 `skills.available` does not refuse selection or turn preparation. A nonempty
 `subagents` roster no longer refuses selection. `spawn` is advertised to every
-Agent; named targets come from the binding's roster, baked into the frozen
-system prompt like available skills (not listed on the spawn tool), and an
-omitted or empty `agent` selects the generic helper.
+Agent; Mars `tools` cannot hide it. Named targets come from the binding's
+roster, baked into the frozen system prompt like available skills (not listed
+on the spawn tool), and an omitted or empty `agent` selects the generic helper.
 
 ## tools — registry, executor, and handlers
 

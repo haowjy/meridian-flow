@@ -11,6 +11,8 @@ screens. Chat, editor, and context domain behavior stays with those features.
   reparent, portal, or conditionally remove them to change layout.
 - Treat Work as catalog and chat binding as explicit composer-owned state;
   navigation and Work management never rebind a chat implicitly.
+- Path `/chat/{id}` is identity, not a primary-list lookup. Query `?chat=`
+  still drops missing primaries.
 
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) before changing project shell
 layout, routing, rails, headers, or project-scoped state.

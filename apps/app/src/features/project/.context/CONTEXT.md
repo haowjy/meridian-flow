@@ -307,9 +307,11 @@ shortcut targets that same landing; there is no separate `/chats/new` route.
 
 Chat switching lives in `features/chat/ThreadSwitcherPopover`; it filters by
 chat title, groups chats by Work when meaningful, and delegates actual
-navigation to the route owner. `ProjectView` resolves a chat once and passes its
-current Work to context hydration, Draft Review, the chat body, and headers.
-Descendants must not independently derive either value.
+navigation to the route owner. `ProjectView` resolves a primary-list chat once
+and passes its current Work to context hydration, Draft Review, the chat body,
+and headers. Descendants must not independently derive those listed-primary
+values. Path `/chat/{id}` is identity, so a subagent is not in that list and
+does not receive that Work projection.
 
 ## Don't
 
