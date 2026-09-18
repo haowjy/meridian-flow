@@ -49,10 +49,10 @@ export async function resolveAgentThreadTurnContext(
   if (reasons.length) throw new Error(reasons.join(" "));
 
   const policy = projectToolPolicy(revision.configuration);
-  const hasNamedTargets = revision.configuration.namedTargets.length > 0;
+  const namedTargets = revision.configuration.namedTargets.map((target) => target.name);
   let tools = advertiseTools(input.baseTools, policy).map((tool) =>
     tool.type === "function" && tool.name === "spawn"
-      ? { ...tool, description: spawnToolDescription(hasNamedTargets) }
+      ? { ...tool, description: spawnToolDescription(namedTargets) }
       : tool,
   );
   const report =

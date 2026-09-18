@@ -118,6 +118,6 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
     });
     expect(spawnDescription(empty.tools)).toContain("do not spawn unless the writer asks");
     expect(spawnDescription(rostered.tools)).not.toContain("do not spawn unless the writer asks");
-    expect(spawnDescription(rostered.tools)).toContain("Prefer a named specialist");
+    expect(spawnDescription(rostered.tools)).toContain("Named subagents: critic.");
   });
 });
