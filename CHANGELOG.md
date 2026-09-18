@@ -19,7 +19,7 @@
 - Snapshot `creative-writing-modes`, `writing-principles`, and `story-review` into launch-agents. Writer lists the first two as available skills.
 - Advertise the `spawn` tool to every Agent. Named children resolve from the caller's `subagents` roster; an omitted or empty `agent` selects the generic helper, which inherits the caller's model, tools, skills, effort, and roster while the built-in General revision supplies its body. Default max spawn depth is now 3, operator-overridable through `MERIDIAN_MAX_SPAWN_DEPTH`; a deeper spawn is a tool error before any child is created.
 - Parent transcript shows a spawn report card: who ran, the returned summary, and an Open door into the child chat. Spawn uses the same custom-card path as ask_user (tool protocol hidden, card splits Thinking). Neither the card nor the persisted model output carries spawn cost.
-- A subagent's `return_result` records its report, then completes the child turn instead of aborting it. The child transcript renders the summary as a `child-report` `TurnCard` titled Return, with the `return_result` protocol hidden.
+- A subagent's `return_result` records its report, then completes the child turn instead of aborting it. The child transcript renders the summary as a `child-report` `ArtifactCard` titled Return, with the `return_result` protocol hidden.
 
 ### Fixed
 
@@ -48,13 +48,15 @@
 - The chat switcher no longer shows an unlabeled warning dot for an unanswered `ask_user` on another chat.
 - Home Continue/Recent/Favorite, the chat switcher, and Work-associated chats list primary threads only.
 - First-turn bake lists named subagents (slug, name when it differs, description) in the frozen system prompt like available skills. The spawn tool description stays empty-vs-named and does not name them.
+- Assistant turns render as one ordered list of process, text, and artifact items. Reasoning and process tools fold into `Thinking` in place, live and settled alike; text and artifact cards never fold, so a later reasoning run no longer pulls already-written prose into the fold or remounts it. `partition-turn.ts` replaces `partition-turn-segments.ts`.
+- The two tool kinds are named in `tool-kind.ts`: an artifact result is writer-facing (custom card, image) and never folds; a process tool is scaffolding. `TurnCard` is renamed `ArtifactCard` to match.
 - Helper-result and child-report cards persist through one spawn-owned path; tool dispatch no longer stamps `toolName: "spawn"` on `tool_result`.
 - Generic and named child execution resolve onto the conversation configuration (`tools`, `disallowed-tools`, `effort`); the `inheritedExecution` overlay is gone.
 - Parent spawn cards render only from the helper-result custom block; spawn protocol is not a card.
 - Subagent chat renders its goal as a quiet `Goal` line and hides completely when no goal is set, replacing the always-on task card with icon, section label, and placeholder copy.
 - Subagent banner drops the Working/Idle status badge. Run state stays on the composer.
 
-- `TurnCard` is the shared shell for `ask_user`, `spawn`, and `child-report` turn cards, with a door slot, running/failed tones, and an optional title. `SpawnReportCard` is a thin adapter over it and drops its separate muted strip.
+- `ArtifactCard` is the shared shell for `ask_user`, `spawn`, and `child-report` artifact cards, with a door slot, running/failed tones, and an optional title. `SpawnReportCard` is a thin adapter over it and drops its separate muted strip.
 - The cancelled assistant turn no longer renders a visible `Stopped.` caption; the live-region announcement is unchanged.
 
 - Per-turn tool name gate is advertised names plus extraAllowed. Wildcard allow, millicredit cost cap, and unused permission profiles are gone.

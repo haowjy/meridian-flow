@@ -1,6 +1,6 @@
 /**
  * Deterministic, presentation-only summary of tool operations hidden by one
- * process fold. The digest never describes visible frontier rows.
+ * process fold. The digest never describes visible text or artifacts.
  */
 import { plural, t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";

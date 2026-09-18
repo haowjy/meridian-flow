@@ -18,24 +18,24 @@ the rebind adapter.
 
 ## Mental model
 
-An assistant turn renders as a **stack of segments**, one per interrupt or
-card boundary. Each segment has exactly two zones:
+An assistant turn renders as one **ordered list of render items** (see
+`partition-turn.ts`), in block order. Each item is one of three tiers:
 
-- **Process disclosure** (collapsed) — all reasoning, all completed activity
-  runs, and (once the durable turn settles) every frontier tool operation.
-  Its visible label becomes a deterministic digest when it contains tools.
-- **`ActivityBlock`** (visible) — the live last activity run. After settlement,
-  non-tool blocks remain visible (interrupt, helper-result, and child-report cards).
+- **Process** (collapsed) — a contiguous run of reasoning and process tools,
+  folded into one `Thinking` disclosure in place. Its visible label becomes a
+  deterministic digest when it contains tools.
+- **Text** (visible) — an assistant text block, always rendered as prose. Text
+  never folds and never remounts.
+- **Artifact** (visible) — a writer-facing block: a custom card (`ask_user`
+  interrupt, spawn `helper-result`, child `child-report`), an image, or a file.
 
-The partition keys off block order/type and the durable terminal-status
-predicate. It never reads transient stream state (`isLive`, partial blocks).
-At the durable status flip, tool rows move into the fold; the resulting final
-frame is identical to a reload.
-
-When a new activity run begins, the previous frontier **rolls up** into the
-process fold in chronological position. Interrupts, spawn results, and child
-reports end a segment; their cards remain visible after settlement even though
-other tool rows fold.
+Text and artifacts close the open process run, so a reasoning run that arrives
+after visible prose starts a fresh fold below it instead of merging back above
+it. Process tools fold live and settled alike; there is no frontier that waits
+for the durable status flip. The partition keys off block order/type only and
+never reads transient stream state (`isLive`, partial blocks). Hidden protocol
+(the `tool_use`/`tool_result` rows a card already surfaces) is dropped, not
+folded.
 
 The full model lives in
 [`.context/turn-composition.md`](.context/turn-composition.md); one row's
@@ -50,19 +50,15 @@ composer mode, and review state live in
 
 1. **Default-collapsed everywhere.** `Thinking` disclosures are closed by default
    whether streaming live or settled. No auto-open on streaming.
-2. **Durable settlement folds process-tool rows.** `complete`, `cancelled`, and
-   `error` put every segment's process-tool operations inside its fold, except
-   images and artifact protocol. Live statuses keep the last activity run
-   visible. Never key this decision off `isLive` or partial block content; use
-   the contracts terminal-status predicate.
-3. **Artifact cards stay visible.** Custom cards and segment
-   boundaries (`ask_user` interrupt, spawn `helper-result`, child
-   `child-report`) render through the shared `ArtifactCard` shell (`icon`/`tone`/
-   `title`/`door`/`hint`/children); process tools render as `ActivityRow`. Their
-   tool protocol is hidden. Later model prose is a new Thinking/Activity pair.
-   Artifact protocol never folds: hidden protocol stays on the frontier behind
-   the card. The two tool kinds are named in `tool-kind.ts`: an artifact's result
-   is writer-facing (custom card, image); a process tool is scaffolding.
+2. **Process folds live and settled alike.** Reasoning and process tools
+   collapse into their `Thinking` disclosure as they stream. There is no
+   settlement-time fold and no visible frontier. Text and artifacts never fold.
+3. **Artifact cards stay visible.** Custom cards (`ask_user` interrupt, spawn
+   `helper-result`, child `child-report`) render through the shared `ArtifactCard`
+   shell (`icon`/`tone`/`title`/`door`/`hint`/children); process tools render as
+   `ActivityRow`. Their tool protocol is dropped, not folded. The two tool kinds
+   are named in `tool-kind.ts`: an artifact's result is writer-facing (custom
+   card, image); a process tool is scaffolding.
 4. **Document names are doors.** `DocumentName.tsx` renders every
    writer-facing document name in the timeline and is the only place that
    decides whether one is a link. Don't add navigation to a renderer, and
@@ -70,21 +66,20 @@ composer mode, and review state live in
    navigates; never invert that, and never author the name button as a JSX
    child of the row button.
 5. **Block render keys are positional.** Use `blockRenderKey(block)` —
-   `turnId::sequence`. Never key by `block.id`. Blocks keep identity while they
-   remain in one zone; frontier prose, images, and custom cards therefore do not
-   remount at settlement. Tool views structurally move from the frontier into the
-   process fold at settlement and may remount at that boundary.
+   `turnId::sequence`. Never key by `block.id`. Prose, images, and custom cards
+   keep identity across streaming because they never change zone; a process fold
+   is keyed by its first block.
 
 ## Anti-patterns
 
-- **Don't branch on transient streaming state in partition logic.** Durable
-  terminal status is an input; `isLive`, partial-block shape, and component-local
-  stream state are not.
+- **Don't branch on transient streaming state in partition logic.** Partition
+  reads block order/type only; `isLive`, partial-block shape, and component-local
+  stream state are not inputs.
 - **Don't key by `block.id`.** ID spaces can drift between sources; positional
   identity cannot. Use `blockRenderKey`.
-- **Don't duplicate tool rendering between fold and activity zone.**
-  `DeliverySegments` normalizes tool protocol blocks into ToolViews for both folded
-  activity runs and visible frontiers. No raw tool block should reach `TurnBlockStep`.
+- **Don't duplicate tool rendering.** `DeliverySegments` normalizes tool protocol
+  blocks into ToolViews for the process fold. No raw tool block should reach
+  `TurnBlockStep`.
 - **Don't auto-open process disclosures during streaming.**
 
 ## Draft-review boundary
