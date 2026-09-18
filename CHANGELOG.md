@@ -35,6 +35,8 @@
 
 ### Changed
 
+- Subagent chat renders its goal as a quiet `Goal` line and hides completely when no goal is set, replacing the always-on task card with icon, section label, and placeholder copy.
+
 - `TurnCard` is the shared shell for `ask_user` and `spawn` turn cards, with a door slot and running/failed tones. `SpawnReportCard` is a thin adapter over it and drops its separate muted strip.
 
 - Per-turn tool name gate is advertised names plus extraAllowed. Wildcard allow, millicredit cost cap, and unused permission profiles are gone.
