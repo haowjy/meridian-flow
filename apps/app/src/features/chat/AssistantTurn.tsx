@@ -26,7 +26,12 @@ import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlock
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
 import { ProcessDisclosure } from "./ProcessDisclosure";
-import { hasVisibleReasoningText, partitionTurn, type RenderItem, type Run } from "./partition-turn";
+import {
+  hasVisibleReasoningText,
+  partitionTurn,
+  type RenderItem,
+  type Run,
+} from "./partition-turn";
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
@@ -187,6 +192,7 @@ const TurnItemView = memo(function TurnItemView({
   );
 
   if (item.kind === "process") {
+    if (!foldHasVisibleContent(item.runs)) return null;
     return (
       <div data-turn-item-kind="process">
         <ProcessDisclosure
@@ -229,15 +235,15 @@ function thinkingAriaLabel(processIndex: number, processCount: number): string |
 }
 
 /**
- * A fold earns its disclosure only when it holds something the writer can read:
- * a reasoning run, or an activity run with a visible tool row. A fold of only
- * hidden turn-card protocol must not show Thinking.
+ * A process item earns its disclosure only when it holds something the writer
+ * can read. Reasoning runs always qualify (empty ones are dropped in
+ * `partitionTurn`); an activity run qualifies with at least one visible tool
+ * row. The gate covers the one gap: a hidden protocol block whose provider
+ * omitted its `toolCallId` is not detected as hidden, and `ToolRow` renders
+ * nothing for it.
  */
 function foldHasVisibleContent(runs: Run[]): boolean {
-  return (
-    runs.some((run) => run.kind === "reasoning" && run.blocks.some(hasVisibleReasoningText)) ||
-    toolViewsInFold(runs).length > 0
-  );
+  return runs.some((run) => run.kind === "reasoning") || toolViewsInFold(runs).length > 0;
 }
 
 function toolViewsInFold(runs: Run[]) {
