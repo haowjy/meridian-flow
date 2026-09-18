@@ -123,7 +123,7 @@ async function bindPrimary(input: {
     projectId: project.id,
     title: `${input.agentSlug} chat`,
   });
-  await agentRevisions.bindThread(thread.id, definition.id, configuration);
+  await agentRevisions.bindThread(thread.id, definition.id, configuration, null);
   return { thread, agentRevisions, accountSkillInstalls, repos, definition };
 }
 
@@ -236,7 +236,7 @@ You are Writer.
       projectId: project.id,
       title: "Writer chat",
     });
-    await agentRevisions.bindThread(thread.id, writer.id, configuration);
+    await agentRevisions.bindThread(thread.id, writer.id, configuration, null);
 
     const userCatalog = await resolveThreadUserInvocableSkills({
       thread,
@@ -415,7 +415,7 @@ You are General.
       projectId: project.id,
       title: "General chat",
     });
-    await agentRevisions.bindThread(thread.id, definition.id, configuration);
+    await agentRevisions.bindThread(thread.id, definition.id, configuration, null);
 
     const userCatalog = await resolveThreadUserInvocableSkills({
       thread,
@@ -487,7 +487,7 @@ You are Alpha.
       projectId: project.id,
       title: "Alpha chat",
     });
-    await agentRevisions.bindThread(thread.id, definition.id, configuration);
+    await agentRevisions.bindThread(thread.id, definition.id, configuration, null);
 
     const userCatalog = await resolveThreadUserInvocableSkills({
       thread,

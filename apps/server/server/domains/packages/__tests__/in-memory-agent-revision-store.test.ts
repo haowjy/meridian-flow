@@ -36,12 +36,12 @@ describe("in-memory Agent revisions", () => {
     );
     expect(await store.readSelection("other", selected.entry.id, first.id)).toBeUndefined();
     expect(await store.readSelection("owner", selected.entry.id, secret.id)).toBeUndefined();
-    expect(await store.bindThread("thread", first.id, bindingConfiguration)).toBe(true);
-    expect(await store.bindThread("thread", next.id, bindingConfiguration)).toBe(false);
+    expect(await store.bindThread("thread", first.id, bindingConfiguration, null)).toBe(true);
+    expect(await store.bindThread("thread", next.id, bindingConfiguration, null)).toBe(false);
     expect(await store.removeOwnedEntry("other", selected.entry.id)).toBe(false);
     expect(await store.removeOwnedEntry("owner", selected.entry.id)).toBe(true);
     expect(await store.readSelection("owner", selected.entry.id, first.id)).toBeUndefined();
-    expect((await store.readThreadBinding("thread"))?.id).toBe(first.id);
+    expect((await store.readThreadBinding("thread"))?.revision?.id).toBe(first.id);
     expect(await store.restoreOwnedEntry("owner", selected.entry.id, next.id)).toBe(true);
     expect((await store.readSelection("owner", selected.entry.id, first.id))?.revision.id).toBe(
       first.id,
@@ -55,7 +55,7 @@ describe("in-memory Agent revisions", () => {
         await seedGeneralAgent(store, "model");
         const entry = await store.readCatalogEntry(null, "general");
         if (!entry) throw new Error("Missing General");
-        await store.bindThread("thread", entry.selectedRevisionId, bindingConfiguration);
+        await store.bindThread("thread", entry.selectedRevisionId, bindingConfiguration, null);
         throw new Error("rollback");
       }),
     ).rejects.toThrow("rollback");
@@ -64,11 +64,16 @@ describe("in-memory Agent revisions", () => {
     await seedGeneralAgent(store, "model");
     expect(await store.readCatalogEntry(null, "general")).toBeDefined();
     await expect(
-      store.bindThread("missing", "missing", {
-        model: "test-model",
-        skills: { load: [], available: [] },
-        namedTargets: [],
-      }),
+      store.bindThread(
+        "missing",
+        "missing",
+        {
+          model: "test-model",
+          skills: { load: [], available: [] },
+          namedTargets: [],
+        },
+        null,
+      ),
     ).rejects.toThrow("missing thread or revision");
   });
 
@@ -111,7 +116,7 @@ describe("in-memory Agent revisions", () => {
       store.transaction(async () => {
         const first = (await store.installSource(source("rolled back"))).definitions[0];
         escaped = store
-          .bindThread("thread", first.id, bindingConfiguration)
+          .bindThread("thread", first.id, bindingConfiguration, null)
           .catch((error) => error.message);
         throw new Error("rollback");
       }),
@@ -119,8 +124,8 @@ describe("in-memory Agent revisions", () => {
     release();
     expect(await escaped).toBe("In-memory transaction already completed");
     const valid = (await store.installSource(source("valid"))).definitions[0];
-    expect(await store.bindThread("thread", valid.id, bindingConfiguration)).toBe(true);
-    expect((await store.readThreadBinding("thread"))?.id).toBe(valid.id);
+    expect(await store.bindThread("thread", valid.id, bindingConfiguration, null)).toBe(true);
+    expect((await store.readThreadBinding("thread"))?.revision?.id).toBe(valid.id);
   });
 
   it("rejects user-invocation denial in both catalog listing and exact primary selection", async () => {

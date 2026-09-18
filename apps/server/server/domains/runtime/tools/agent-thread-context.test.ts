@@ -54,21 +54,24 @@ async function boundContext(metadata: {
       async readThreadBinding(threadId) {
         if (threadId !== thread.id) return undefined;
         return {
-          id: "rev",
-          packageRevisionId: "src",
-          slug: metadata.tools === CRITIC_MAP ? "critic" : "writer",
-          definitionDigest: "digest",
+          revision: {
+            id: "rev",
+            packageRevisionId: "src",
+            slug: metadata.tools === CRITIC_MAP ? "critic" : "writer",
+            definitionDigest: "digest",
+            definition: {
+              schemaVersion: 1,
+              systemPrompt: "You are an agent.",
+              metadata: { model: "fixture-model", tools: metadata.definitionTools },
+            },
+          },
           configuration: {
             model: "fixture-model",
             skills: { load: [], available: [] },
             namedTargets: metadata.namedTargets ?? [],
             ...(metadata.tools !== undefined ? { tools: metadata.tools } : {}),
           },
-          definition: {
-            schemaVersion: 1,
-            systemPrompt: "You are an agent.",
-            metadata: { model: "fixture-model", tools: metadata.definitionTools },
-          },
+          invocationOverlay: null,
         };
       },
     },

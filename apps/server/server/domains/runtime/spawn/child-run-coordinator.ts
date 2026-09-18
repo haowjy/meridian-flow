@@ -18,6 +18,7 @@ import {
   type AgentRevision,
   type AgentRevisionStore,
   type CompiledAgentDefinition,
+  GENERIC_SUBAGENT_SLUG,
   resolveAgentConfiguration,
 } from "../../packages/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
@@ -41,13 +42,10 @@ import type { HelperResultDelivery } from "./helper-result-delivery.js";
 import { persistSpawnHelperCard, type SpawnTranscript } from "./spawn-transcript.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
 
-/** Event/thread label for a generic helper child; never a specialist catalog slug. */
-const GENERIC_HELPER_SLUG = "helper";
-
 export interface SpawnChildInput {
   parentThread: Thread;
   parentTurnId: TurnId;
-  /** Named roster target; omitted or empty selects the generic helper baseline. */
+  /** Named roster target; omitted or empty selects the agent-less generic subagent. */
   agentSlug?: string;
   prompt: string;
   description?: string;
@@ -78,8 +76,6 @@ export interface ChildRunCoordinatorDeps {
     "readThreadBinding" | "readRevision" | "readSource" | "readPackageDefinitions" | "bindThread"
   >;
   defaultModel(): string | undefined;
-  /** Built-in generic baseline identity; execution config still comes from the caller. */
-  genericBaseline(): Promise<AgentRevision | undefined>;
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
   childRunRegistry: ChildRunRegistry;
   helperResultDelivery: HelperResultDelivery;
@@ -104,7 +100,7 @@ type ChildTerminal =
 
 type PreparedChild = {
   child: Thread;
-  /** Event/thread-visible slug; a named roster name or the generic helper label. */
+  /** Event/thread-visible slug; a named roster name or the generic subagent label. */
   resolvedSlug: string;
   childController: AbortController;
   childRegistered: boolean;
@@ -187,22 +183,15 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
 
     const requestedSlug = input.agentSlug?.trim() ?? "";
-    let revision: AgentRevision;
+    let revision: AgentRevision | null;
     let configuration: ResolvedAgentConfiguration;
     let resolvedSlug: string;
     let defaultTitle: string;
     if (requestedSlug === "") {
-      const baseline = await deps.genericBaseline();
-      if (!baseline) {
-        return {
-          status: "error",
-          error: meridianErrorFromSystem("spawn_agent_not_found", "Generic helper is unavailable"),
-        };
-      }
       configuration = { ...parentAgent.configuration };
-      revision = baseline;
-      resolvedSlug = GENERIC_HELPER_SLUG;
-      defaultTitle = GENERIC_HELPER_SLUG;
+      revision = null;
+      resolvedSlug = GENERIC_SUBAGENT_SLUG;
+      defaultTitle = GENERIC_SUBAGENT_SLUG;
     } else {
       const target = parentAgent.configuration.namedTargets.find(
         (item) => item.name === requestedSlug,
@@ -236,12 +225,14 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       defaultTitle = `${requestedSlug} subagent`;
     }
 
-    const unavailable = deps.unavailableReasons(revision.definition, configuration.model);
-    if (unavailable.length) {
-      return {
-        status: "error",
-        error: meridianErrorFromSystem("spawn_agent_unavailable", unavailable.join(" ")),
-      };
+    if (revision) {
+      const unavailable = deps.unavailableReasons(revision.definition, configuration.model);
+      if (unavailable.length) {
+        return {
+          status: "error",
+          error: meridianErrorFromSystem("spawn_agent_unavailable", unavailable.join(" ")),
+        };
+      }
     }
     const child = await deps.repos.transaction(async () => {
       const created = await createBoundConversation({

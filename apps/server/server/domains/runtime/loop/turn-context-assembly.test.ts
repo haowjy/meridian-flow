@@ -86,7 +86,7 @@ async function writerChat() {
       projectId: project.id,
       title: "Writer chat",
     });
-    await agentRevisions.bindThread(thread.id, writerId, configuration);
+    await agentRevisions.bindThread(thread.id, writerId, configuration, null);
     return thread;
   }
   async function assemble(threadId: string) {
@@ -200,7 +200,7 @@ describe("assembleNextTurnContext named subagent freeze", () => {
       projectId: project.id,
       title: "Muse chat",
     });
-    await agentRevisions.bindThread(thread.id, muse.id, configuration);
+    await agentRevisions.bindThread(thread.id, muse.id, configuration, null);
 
     const assemble = async (threadId: string) => {
       const current = await repos.threads.findById(threadId);

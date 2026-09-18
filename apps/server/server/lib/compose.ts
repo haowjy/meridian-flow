@@ -661,10 +661,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
     defaultModel: () => ports.gateway.getDefaultModel(),
-    genericBaseline: async () => {
-      const entry = await ports.agentRevisions.readCatalogEntry(null, "general");
-      return entry ? ports.agentRevisions.readRevision(entry.selectedRevisionId) : undefined;
-    },
     orchestrator: runTurnProxy,
     repos: {
       threads: ports.threadRepos.threads,
