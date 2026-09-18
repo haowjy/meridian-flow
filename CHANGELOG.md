@@ -41,6 +41,7 @@
 ### Changed
 
 - Subagent chat renders its goal as a quiet `Goal` line and hides completely when no goal is set, replacing the always-on task card with icon, section label, and placeholder copy.
+- Subagent banner drops the Working/Idle status badge. Run state stays on the composer.
 
 - `TurnCard` is the shared shell for `ask_user`, `spawn`, and `child-report` turn cards, with a door slot, running/failed tones, and an optional title. `SpawnReportCard` is a thin adapter over it and drops its separate muted strip.
 - The cancelled assistant turn no longer renders a visible `Stopped.` caption; the live-region announcement is unchanged.

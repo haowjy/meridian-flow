@@ -2,11 +2,6 @@ import { Trans } from "@lingui/react/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { ChevronLeft } from "lucide-react";
 
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-
-import { lifecycleDisplay, lifecycleFor } from "../lifecycle";
-
 export type SubagentBannerProps = {
   subagent: Thread;
   parent: Thread | null;
@@ -15,18 +10,11 @@ export type SubagentBannerProps = {
 
 /**
  * Sticky 36-44px banner above the subagent conversation. Surfaces the parent
- * thread link, the subagent's own title, and its lifecycle pill.
+ * thread link and the subagent's own title. Run state stays on the composer.
  */
 export function SubagentBanner({ subagent, parent, onOpenParent }: SubagentBannerProps) {
-  const lifecycle = lifecycleFor(subagent);
-  const display = lifecycleDisplay(lifecycle);
-
   return (
-    <div
-      className={cn(
-        "sticky top-0 z-10 flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2 text-xs",
-      )}
-    >
+    <div className="sticky top-0 z-10 flex min-h-9 shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-4 py-2 text-xs">
       {parent ? (
         <button
           type="button"
@@ -46,31 +34,12 @@ export function SubagentBanner({ subagent, parent, onOpenParent }: SubagentBanne
         </span>
       )}
 
-      <span className="text-ink-subtle">•</span>
       <span className="text-muted-foreground">
         <Trans>Subagent:</Trans>
       </span>
       <span className="font-medium text-prose-foreground">
         {subagent.title?.trim() || "Subtask"}
       </span>
-
-      <span className="text-ink-subtle">•</span>
-      <Badge variant="status" className={display.badgeClass}>
-        <span
-          className={cn(
-            "size-1.5 rounded-full",
-            lifecycle === "executing" || lifecycle === "grilling"
-              ? "bg-status-streaming"
-              : lifecycle === "interrupt"
-                ? "bg-destructive"
-                : lifecycle === "completed"
-                  ? "bg-status-done-foreground"
-                  : "bg-ink-subtle",
-          )}
-          aria-hidden
-        />
-        {display.label}
-      </Badge>
     </div>
   );
 }
