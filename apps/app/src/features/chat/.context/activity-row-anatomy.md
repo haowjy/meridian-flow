@@ -129,5 +129,6 @@ one lives in [tool-expands.md](tool-expands.md).
   `Array.isArray` and stops. Sections and the totals scan wait for the writer
   who opens the row — a settled turn holds a dozen closed rows, and none of
   them should be parsing search results.
-- **Open state is local to the row.** It resets when frontier rows fold at
-  settle. That is correct — the fold reopens calm — so do not hoist it.
+- **Open state is local to the row.** It resets when the row unmounts. Process
+  folds live and settled alike, so settlement is not a remount — do not hoist
+  it.

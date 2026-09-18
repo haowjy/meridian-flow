@@ -68,16 +68,21 @@ function AssistantTurnComponent({
   const items = useMemo(() => partitionTurn(sortedBlocks), [sortedBlocks]);
   // Progressive-disclosure label: "Thinking part N" for a turn with several
   // process folds (one per artifact/interrupt-delimited stretch).
+  // Ordinals count only visible folds: a process item whose runs have nothing
+  // to show renders nothing, so it must not advance "Thinking part N" or the
+  // total.
   const rows = useMemo(() => {
-    const result: { item: RenderItem; processOrdinal: number }[] = [];
+    const isVisibleFold = (item: RenderItem) =>
+      item.kind === "process" && foldHasVisibleContent(item.runs);
+    const processCount = items.filter(isVisibleFold).length;
+    const result: { item: RenderItem; processOrdinal: number; processCount: number }[] = [];
     let processOrdinal = 0;
     for (const item of items) {
-      if (item.kind === "process") processOrdinal += 1;
-      result.push({ item, processOrdinal: item.kind === "process" ? processOrdinal : 0 });
+      if (isVisibleFold(item)) processOrdinal += 1;
+      result.push({ item, processOrdinal, processCount });
     }
     return result;
   }, [items]);
-  const processCount = rows.filter((row) => row.item.kind === "process").length;
   const isErrored = turn.status === "error";
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
@@ -103,7 +108,7 @@ function AssistantTurnComponent({
       data-turn-role="assistant"
       data-turn-status={turn.status}
     >
-      {rows.map(({ item, processOrdinal }) => (
+      {rows.map(({ item, processOrdinal, processCount }) => (
         <TurnItemView
           key={itemRenderKey(item)}
           item={item}

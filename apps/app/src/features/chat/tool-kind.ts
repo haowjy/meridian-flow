@@ -14,15 +14,9 @@ import type { Block } from "@meridian/contracts/protocol";
 
 import { isImageBlock } from "./block-kind";
 
-export type ToolKind = "artifact" | "process";
-
 export function isArtifactBlock(block: Block): boolean {
   if (block.blockType === "custom" || block.blockType === "image" || block.blockType === "file") {
     return true;
   }
   return isImageBlock(block);
-}
-
-export function toolKindForBlock(block: Block): ToolKind {
-  return isArtifactBlock(block) ? "artifact" : "process";
 }

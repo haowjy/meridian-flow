@@ -57,8 +57,8 @@ composer mode, and review state live in
    `helper-result`, child `child-report`) render through the shared `ArtifactCard`
    shell (`icon`/`tone`/`title`/`door`/`hint`/children); process tools render as
    `ActivityRow`. Their tool protocol is dropped, not folded. The two tool kinds
-   are named in `tool-kind.ts`: an artifact's result is writer-facing (custom
-   card, image); a process tool is scaffolding.
+  are named in `tool-kind.ts`: an artifact's result is writer-facing (custom
+  card, image, file); a process tool is scaffolding.
 4. **Document names are doors.** `DocumentName.tsx` renders every
    writer-facing document name in the timeline and is the only place that
    decides whether one is a link. Don't add navigation to a renderer, and

@@ -4,9 +4,9 @@
  * In `streaming` mode we deliberately keep Streamdown's own block splitting
  * (one block per lexer token) so its per-block `memo` can hold: only the last,
  * unstable block re-parses per token. Merging blocks back into one (as an older
- * helper did) forced a full-document reparse on every token. Paragraph spacing
- * parity with `static` mode comes from the container gap being zero, so the
- * `.prose-tokens` block margins are the only spacing in both modes.
+ * helper did) forced a full-document reparse on every token. Streaming and
+ * `static` share Streamdown's container spacing, so nothing shifts when the
+ * stream settles.
  */
 
 import { remarkWikiLink } from "@meridian/markup";
@@ -118,14 +118,7 @@ export function Markdown({
         remarkPlugins={remarkPlugins}
         allowedTags={ALLOWED_TAGS}
         components={REFERENCE_COMPONENTS}
-        className={cn(
-          "prose-tokens",
-          variant === "compact" && "text-tier-compact",
-          // Zero gap: `.prose-tokens` block margins are the only vertical
-          // rhythm, matching `static` mode's single-tree spacing exactly.
-          streaming && "space-y-0",
-          className,
-        )}
+        className={cn("prose-tokens", variant === "compact" && "text-tier-compact", className)}
       >
         {children}
       </Streamdown>
