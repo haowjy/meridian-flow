@@ -89,7 +89,6 @@ function defaultThread(input: CreateThreadInput): Thread {
     status: "idle",
     title: normalized.title === "" ? null : normalized.title,
     ref: null,
-    systemPrompt: normalized.systemPrompt,
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
     workingState: input.workingState ?? null,
@@ -366,7 +365,6 @@ export function createInMemoryRepositories(
         ...thread,
         composedSystemPrompt: input.composedSystemPrompt,
         bakedSkillSlugs: input.bakedSkillSlugs,
-        systemPrompt: null,
         updatedAt: toIsoString(new Date()),
       };
       threads.set(id, updated);

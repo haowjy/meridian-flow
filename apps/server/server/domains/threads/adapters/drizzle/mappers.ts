@@ -44,7 +44,6 @@ export function mapThread(
     ref: row.ref,
     composedSystemPrompt: isFrozen ? (row.composedSystemPrompt ?? null) : null,
     bakedSkillSlugs: isFrozen ? (row.bakedSkillSlugs ?? []) : null,
-    systemPrompt: isFrozen ? null : row.composedSystemPrompt,
     workingState: row.workingState as Thread["workingState"],
     agentDefinitionRevisionId: row.agentDefinitionRevisionId ?? null,
     agentName: row.agentName ?? null,
