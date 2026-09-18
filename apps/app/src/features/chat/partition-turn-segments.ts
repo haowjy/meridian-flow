@@ -152,8 +152,8 @@ function groupRuns(blocks: Block[]): Run[] {
 
 /**
  * Empty reasoning is a provider repair placeholder, not writer-facing thought.
- * Dropping it here keeps a blank block from opening an empty Thinking fold or
- * splitting the activity runs on either side of it.
+ * Dropping it here means Thinking is never shown for it, and it does not split
+ * the activity runs on either side.
  */
 function hasVisibleReasoningText(block: Block): boolean {
   const text = block.textContent?.trim() || blockPlainText(block.blockType, block.content)?.trim();
