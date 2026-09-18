@@ -19,13 +19,13 @@ the rebind adapter.
 ## Mental model
 
 An assistant turn renders as a **stack of segments**, one per interrupt or
-spawn-result boundary. Each segment has exactly two zones:
+card boundary. Each segment has exactly two zones:
 
 - **Process disclosure** (collapsed) — all reasoning, all completed activity
   runs, and (once the durable turn settles) every frontier tool operation.
   Its visible label becomes a deterministic digest when it contains tools.
 - **`ActivityBlock`** (visible) — the live last activity run. After settlement,
-  non-tool blocks remain visible (interrupt cards, spawn helper-result cards).
+  non-tool blocks remain visible (interrupt, helper-result, and child-report cards).
 
 The partition keys off block order/type and the durable terminal-status
 predicate. It never reads transient stream state (`isLive`, partial blocks).
@@ -33,9 +33,9 @@ At the durable status flip, tool rows move into the fold; the resulting final
 frame is identical to a reload.
 
 When a new activity run begins, the previous frontier **rolls up** into the
-process fold in chronological position. Interrupts and spawn results end a
-segment; their cards remain visible after settlement even though other tool
-rows fold.
+process fold in chronological position. Interrupts, spawn results, and child
+reports end a segment; their cards remain visible after settlement even though
+other tool rows fold.
 
 The full model lives in
 [`.context/turn-composition.md`](.context/turn-composition.md); one row's
@@ -55,11 +55,13 @@ composer mode, and review state live in
    Live statuses keep the last activity run visible. Never key this decision off
    `isLive` or partial block content; use the contracts terminal-status
    predicate.
-3. **Interrupt and spawn cards stay visible.** Both are custom cards and
-   segment boundaries (`ask_user` interrupt, spawn `helper-result`). Both render
-   through the shared `TurnCard` shell (`icon`/`tone`/`title`/`door`/`hint`/
-   children); process tools render as `ActivityRow`. Their tool protocol is
-   hidden. Later model prose is a new Thinking/Activity pair.
+3. **Interrupt and turn cards stay visible.** Custom cards and segment
+   boundaries (`ask_user` interrupt, spawn `helper-result`, child
+   `child-report`) render through the shared `TurnCard` shell (`icon`/`tone`/
+   `title`/`door`/`hint`/children); process tools render as `ActivityRow`. Their
+   tool protocol is hidden. Later model prose is a new Thinking/Activity pair.
+   A turn with no helper-result keeps a spawn's tool protocol on the frontier as
+   its legacy card; a turn with one hides and folds it.
 4. **Document names are doors.** `DocumentName.tsx` renders every
    writer-facing document name in the timeline and is the only place that
    decides whether one is a link. Don't add navigation to a renderer, and

@@ -898,6 +898,15 @@ async function* generateEvents(
 
   yield* initialEvents;
 
+  // Every subagent run owns a return_result completer, even when the caller did
+  // not pass one (a writer sending a new message into a child chat). A primary
+  // writer turn has none, so return_result stays a failed tool_result there.
+  const returnResultCompleter =
+    input.returnResultCompleter ??
+    (thread.kind === "subagent"
+      ? deps.childRunCoordinator.createReturnResultCompleter(input.threadId)
+      : undefined);
+
   let currentAssistantTurn: Turn = assistantTurn;
   let activeResponseId: string | undefined;
 
@@ -916,6 +925,8 @@ async function* generateEvents(
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
+    // A successful return_result completes the turn after the current tool batch.
+    let endTurnRequested = false;
     let activatedSkillBodies:
       | Array<{ slug: string; description: string; body: string }>
       | undefined;
@@ -1333,7 +1344,7 @@ async function* generateEvents(
               interruptAutoResume,
               treeBudget,
               blockSeqRef: interruptState.blockSeqRef,
-              returnResultCompleter: input.returnResultCompleter,
+              returnResultCompleter,
               allTurns,
             },
           );
@@ -1368,6 +1379,7 @@ async function* generateEvents(
             yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
             return;
           }
+          if (dispatched.endTurn === true) endTurnRequested = true;
         }
         if (input.signal?.aborted) {
           await rollbackActiveResponse();
@@ -1438,6 +1450,20 @@ async function* generateEvents(
             };
           }
           yield* persistedBackfill.events;
+        }
+
+        if (endTurnRequested) {
+          // A child called return_result: the report is captured and persisted,
+          // so the turn ends here instead of looping into another model round.
+          const completed = await completeTurn({
+            deps,
+            threadId: input.threadId,
+            turn: currentAssistantTurn,
+            finishReason: "end_turn",
+          });
+          currentAssistantTurn = completed.turn;
+          yield* completed.events;
+          return;
         }
 
         continue;

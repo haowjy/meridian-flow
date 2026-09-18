@@ -17,7 +17,8 @@ export type TurnCardTone = "pending" | "running" | "resolved" | "failed" | "reve
 export type TurnCardProps = {
   icon: LucideIcon;
   tone: TurnCardTone;
-  title: ReactNode;
+  /** Omitted for body-only cards such as the child report. */
+  title?: ReactNode;
   door?: ReactNode;
   hint?: ReactNode;
   children?: ReactNode;
@@ -59,7 +60,11 @@ export function TurnCard({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <p className="min-w-0 text-sm font-medium text-foreground">{title}</p>
+            {title ? (
+              <p className="min-w-0 text-sm font-medium text-foreground">{title}</p>
+            ) : (
+              <span />
+            )}
             {door ? <div className="shrink-0">{door}</div> : null}
           </div>
           {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}

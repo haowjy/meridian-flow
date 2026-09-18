@@ -4,7 +4,7 @@
  * pre-create depth refusal.
  */
 import type { InheritedExecutionMetadata } from "@meridian/contracts/agents";
-import type { TurnId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture } from "@meridian/contracts/spawn";
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import { describe, expect, it } from "vitest";
@@ -105,6 +105,7 @@ async function fixture() {
   await revisions.bindThread(parent.id, parentRevision.id, parentConfiguration);
 
   const journal: Array<{ type: string; childThreadId?: string }> = [];
+  const abortedChildren: string[] = [];
   const eventWriter: EventJournalWriter = {
     async appendEvent(_threadId, event) {
       journal.push(event as unknown as { type: string; childThreadId?: string });
@@ -133,7 +134,9 @@ async function fixture() {
       registerBackgroundChild() {},
       unregisterChild() {},
       markChildTurn() {},
-      abortChild() {},
+      abortChild(childThreadId) {
+        abortedChildren.push(childThreadId as string);
+      },
       abortChildrenOf() {},
     },
     helperResultDelivery: {
@@ -159,6 +162,7 @@ async function fixture() {
     parentConfiguration,
     critic: critic as AgentRevision,
     journal,
+    abortedChildren,
   };
 }
 
@@ -166,6 +170,20 @@ const prompt = "do the thing";
 const budget = createDefaultTreeBudget();
 
 describe("ChildRunCoordinator spawn selection", () => {
+  it("records one report without aborting; a second return is refused", async () => {
+    const { coordinator, abortedChildren } = await fixture();
+    const completer = coordinator.createReturnResultCompleter("child-thread" as ThreadId);
+
+    const first = await completer({ summary: "done" });
+    expect(first).toEqual({ ok: true });
+
+    const second = await completer({ summary: "again" });
+    expect(second.ok).toBe(false);
+    if (!second.ok) expect(second.message.length).toBeGreaterThan(0);
+
+    expect(abortedChildren).toEqual([]);
+  });
+
   it("refuses depth 4 before creating a child; depth 3 still spawns", async () => {
     const { coordinator, parent, journal } = await fixture();
     const refused = await coordinator.spawnChild({

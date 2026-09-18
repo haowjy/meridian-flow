@@ -17,6 +17,9 @@ export type ReturnResultCapture = {
   artifacts?: AgentReport["artifacts"];
 };
 
+/** A run accepts one report; a second return_result is refused, not thrown. */
+export type ReturnResultOutcome = { ok: true } | { ok: false; message: string };
+
 /** Child agent terminal hand-back (execution-model §4.1). */
 export type AgentReport = {
   threadId: string;

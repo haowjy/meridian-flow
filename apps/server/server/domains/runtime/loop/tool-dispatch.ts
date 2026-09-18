@@ -8,7 +8,10 @@
  * tool handler is awaited.
  */
 
-import { buildHelperResultComponentContent } from "@meridian/contracts/components";
+import {
+  buildChildReportComponentContent,
+  buildHelperResultComponentContent,
+} from "@meridian/contracts/components";
 import type { TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
@@ -22,7 +25,7 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../../observab
 import type { WorkContextDelivery } from "../../projects/index.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { spawnHelperCardProps, spawnOutputForTranscript } from "../spawn/spawn-output.js";
-import type { ToolCallInput, ToolExecutor } from "../tools/index.js";
+import type { ToolCallInput, ToolExecutionResult, ToolExecutor } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
@@ -58,6 +61,8 @@ export type ToolDispatchResult =
       block: Block;
       metadata?: Record<string, unknown>;
       cancelled?: false;
+      /** Successful return_result asks the orchestrator to complete the turn after this batch. */
+      endTurn?: true;
     }
   | { events: OrchestratorEvent[]; cancelled: true };
 
@@ -197,8 +202,21 @@ export async function dispatchToolCall(
   }
 
   const stagedWrite = execResult.metadata?.stagedWrite === true && execResult.isError !== true;
-  const persistedOutput =
-    call.name === "spawn" ? spawnOutputForTranscript(execResult.output) : execResult.output;
+  const isReturnResult = call.name === "return_result";
+  // A return_result turn always answers with a normalized completion envelope:
+  // `{ ok: true }` or `{ ok: false, message }`. Anything else (missing completer,
+  // already returned, handler throw) is a model-facing failure.
+  const returnResultError = isReturnResult
+    ? returnResultErrorFor(execResult, Boolean(returnResultCompleter))
+    : null;
+  const persistedOutput: JsonValue = isReturnResult
+    ? returnResultError === null
+      ? { ok: true }
+      : { ok: false, message: returnResultError }
+    : call.name === "spawn"
+      ? spawnOutputForTranscript(execResult.output)
+      : execResult.output;
+  const persistedIsError = isReturnResult ? returnResultError !== null : execResult.isError;
   const persistedMetadata = execResult.metadata;
   // A settled spawn stays on the frontier, so the durable result must name its
   // tool for `block-kind.ts` to find it without pairing back to the tool_use.
@@ -218,7 +236,7 @@ export async function dispatchToolCall(
           toolCallId: execResult.toolCallId,
           ...persistedToolName,
           output: persistedOutput,
-          ...(execResult.isError !== undefined ? { isError: execResult.isError } : {}),
+          ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
           ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
         },
         status: "complete",
@@ -231,7 +249,7 @@ export async function dispatchToolCall(
             type: "tool.result",
             toolCallId: execResult.toolCallId,
             output: persistedOutput,
-            isError: execResult.isError,
+            isError: persistedIsError,
             ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
           },
         ],
@@ -240,6 +258,11 @@ export async function dispatchToolCall(
   );
   ctx.state.allBlocks.push(persistedToolResult.result);
   events.push(...persistedToolResult.events);
+  if (isReturnResult && returnResultError === null) {
+    await persistChildReportCard(deps, ctx, events, {
+      summary: returnResultSummary(call.arguments),
+    });
+  }
   if (spawnCardOnTurn && spawnCard) {
     await persistSpawnHelperCard(
       deps,
@@ -284,7 +307,7 @@ export async function dispatchToolCall(
             content: {
               toolCallId: execResult.toolCallId,
               output,
-              ...(execResult.isError !== undefined ? { isError: execResult.isError } : {}),
+              ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
               metadata,
             },
             status: "complete",
@@ -297,7 +320,7 @@ export async function dispatchToolCall(
                 type: "tool.result" as const,
                 toolCallId: execResult.toolCallId,
                 output,
-                isError: execResult.isError,
+                isError: persistedIsError,
                 metadata,
               },
             ],
@@ -321,7 +344,62 @@ export async function dispatchToolCall(
           },
         }
       : {}),
+    ...(isReturnResult && returnResultError === null ? { endTurn: true as const } : {}),
   };
+}
+
+/** Resolves the model-facing failure message for a return_result dispatch, or null on success. */
+function returnResultErrorFor(result: ToolExecutionResult, hasCompleter: boolean): string | null {
+  if (!hasCompleter) return "return_result is not available on this run.";
+  if (result.isError === true) {
+    return errorMessage(result.output) ?? "return_result failed.";
+  }
+  const output = result.output;
+  if (output && typeof output === "object" && !Array.isArray(output)) {
+    const record = output as Record<string, unknown>;
+    if (record.ok === false) {
+      return typeof record.message === "string" ? record.message : "return_result failed.";
+    }
+  }
+  return null;
+}
+
+function errorMessage(output: JsonValue): string | null {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return null;
+  const message = (output as Record<string, unknown>).message;
+  return typeof message === "string" && message.length > 0 ? message : null;
+}
+
+function returnResultSummary(args: Record<string, unknown>): string {
+  return typeof args.summary === "string" ? args.summary : "";
+}
+
+async function persistChildReportCard(
+  deps: ToolDispatchDeps,
+  ctx: ToolDispatchContext,
+  events: OrchestratorEvent[],
+  input: { summary: string },
+): Promise<Block> {
+  const persisted = await persistAndAppendEvents(
+    deps.persistenceDeps,
+    ctx.state.threadId,
+    async () => {
+      const block = contentForBlockInput({
+        turnId: ctx.state.currentTurn.id,
+        blockType: "custom",
+        sequence: ctx.blockSeqRef.value++,
+        content: buildChildReportComponentContent(input),
+        status: "complete",
+      });
+      return {
+        result: localBlockFromEvent(block),
+        events: [{ type: "block.upserted" as const, block }],
+      };
+    },
+  );
+  ctx.state.allBlocks.push(persisted.result);
+  events.push(...persisted.events);
+  return persisted.result;
 }
 
 async function persistSpawnHelperCard(
