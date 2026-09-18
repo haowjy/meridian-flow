@@ -15,6 +15,27 @@ const SPAWN_DESCRIPTION =
   "Run a subagent in its own thread to delegate a task. Prefer a named specialist from your subagents roster when one fits; use the generic helper (omit agent or pass an empty string) sparingly. Use mode=background for non-blocking helper checks.";
 const SPAWN_DESCRIPTION_EMPTY_ROSTER = `${SPAWN_DESCRIPTION} You have no named subagents; do not spawn unless the writer asks.`;
 
+export type SpawnToolArgs = {
+  agent?: string;
+  prompt: string;
+  description?: string;
+  mode: "foreground" | "background";
+};
+
+/** One parse for spawn tool arguments. */
+export function parseSpawnToolArgs(input: unknown): SpawnToolArgs {
+  const rec =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? (input as Record<string, unknown>)
+      : {};
+  return {
+    ...(typeof rec.agent === "string" ? { agent: rec.agent } : {}),
+    prompt: typeof rec.prompt === "string" ? rec.prompt : "",
+    ...(typeof rec.description === "string" ? { description: rec.description } : {}),
+    mode: rec.mode === "background" ? "background" : "foreground",
+  };
+}
+
 /** Roster-aware spawn description; the caller's binding supplies whether it has named targets. */
 export function spawnToolDescription(hasNamedTargets: boolean): string {
   return hasNamedTargets ? SPAWN_DESCRIPTION : SPAWN_DESCRIPTION_EMPTY_ROSTER;
@@ -52,18 +73,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: SpawnToolHandlerContext) => {
-          const args = input as {
-            agent?: string;
-            prompt: string;
-            description?: string;
-            mode?: "foreground" | "background";
-          };
-          return ctx.spawn({
-            agent: args.agent,
-            prompt: args.prompt,
-            description: args.description,
-            mode: args.mode ?? "foreground",
-          });
+          return ctx.spawn(parseSpawnToolArgs(input));
         },
       },
       sequential: true,

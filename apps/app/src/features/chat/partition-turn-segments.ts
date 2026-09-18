@@ -115,9 +115,8 @@ function isFoldableToolBlock(block: Block, hiddenCalls: ReadonlySet<string>): bo
 
 /**
  * toolCallIds whose tool rows a turn card hides, read through the same
- * visibility policy the render path uses. `tool_result` blocks carry
- * `toolName` only for `spawn`, so an unnamed result is matched to its
- * `tool_use` by pairing before classification.
+ * visibility policy the render path uses. `tool_result` does not stamp
+ * `toolName`; pairing with `tool_use` supplies the name before classification.
  */
 function hiddenToolCallIds(blocks: Block[]): Set<string> {
   const hidden = new Set<string>();

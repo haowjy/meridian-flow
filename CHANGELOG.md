@@ -39,6 +39,7 @@
 
 ### Changed
 
+- Helper-result and child-report cards persist through one spawn-owned path; tool dispatch no longer stamps `toolName: "spawn"` on `tool_result`.
 - Generic and named child execution resolve onto the conversation configuration (`tools`, `disallowed-tools`, `effort`); the `inheritedExecution` overlay is gone.
 - Parent spawn cards render only from the helper-result custom block; spawn protocol is not a card.
 - Subagent chat renders its goal as a quiet `Goal` line and hides completely when no goal is set, replacing the always-on task card with icon, section label, and placeholder copy.

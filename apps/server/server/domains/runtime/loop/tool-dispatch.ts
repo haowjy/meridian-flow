@@ -2,16 +2,13 @@
  * Stateless tool dispatch step for the runtime loop.
  *
  * The orchestrator owns permission. This module runs the allowed call: live
- * output journal appends, spawn and return-result bridges, interrupt callback
- * wiring, and durable tool_result persistence. The caller supplies mutable
- * turn/block state so interrupt callbacks can update the active turn while the
- * tool handler is awaited.
+ * output journal appends, spawn/returnResult callback wiring, interrupt
+ * callback wiring, and durable tool_result persistence. Writer-facing
+ * helper-result and child-report cards belong to spawn. The caller supplies
+ * mutable turn/block state so interrupt callbacks can update the active turn
+ * while the tool handler is awaited.
  */
 
-import {
-  buildChildReportComponentContent,
-  buildHelperResultComponentContent,
-} from "@meridian/contracts/components";
 import type { TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
@@ -24,7 +21,8 @@ import type {
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
-import { spawnHelperCardProps, spawnOutputForTranscript } from "../spawn/spawn-output.js";
+import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
+import { persistChildReportCard, type SpawnTranscript } from "../spawn/spawn-transcript.js";
 import type { ToolCallInput, ToolExecutionResult, ToolExecutor } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
@@ -137,6 +135,15 @@ export async function dispatchToolCall(
       });
   };
 
+  const transcript: SpawnTranscript = {
+    persistence: deps.persistenceDeps,
+    threadId: ctx.state.threadId,
+    turnId: ctx.state.currentTurn.id,
+    blockSeqRef: ctx.blockSeqRef,
+    allBlocks: ctx.state.allBlocks,
+    events,
+  };
+
   const spawn =
     call.name === "spawn"
       ? async (spawnInput: {
@@ -144,10 +151,8 @@ export async function dispatchToolCall(
           prompt: string;
           description?: string;
           mode?: "foreground" | "background";
-        }) =>
-          deps.childRunCoordinator[
-            spawnInput.mode === "background" ? "spawnChildBackground" : "spawnChild"
-          ]({
+        }) => {
+          const childInput = {
             parentThread: ctx.thread,
             parentTurnId: ctx.state.currentTurn.id,
             agentSlug: spawnInput.agent,
@@ -155,24 +160,18 @@ export async function dispatchToolCall(
             description: spawnInput.description,
             budget: ctx.treeBudget,
             signal: ctx.state.signal,
-          })
+          };
+          if (spawnInput.mode === "background") {
+            return deps.childRunCoordinator.spawnChildBackground(childInput);
+          }
+          return deps.childRunCoordinator.spawnChild({ ...childInput, transcript });
+        }
       : undefined;
 
   const returnResultCompleter = ctx.returnResultCompleter;
   const returnResult = returnResultCompleter
     ? async (capture: Parameters<ReturnResultCompleter>[0]) => returnResultCompleter(capture)
     : undefined;
-
-  const spawnArgs = spawnCallFields(call.arguments);
-  const spawnCardOnTurn = call.name === "spawn" && spawnArgs.mode !== "background";
-  let spawnCard: Block | null = null;
-  if (spawnCardOnTurn) {
-    spawnCard = await persistSpawnHelperCard(deps, ctx, events, {
-      agent: spawnArgs.agent,
-      description: spawnArgs.description,
-      parentTurnId: ctx.state.currentTurn.id,
-    });
-  }
 
   const execResult = await deps.toolExecutor.executeTool(
     {
@@ -218,10 +217,6 @@ export async function dispatchToolCall(
       : execResult.output;
   const persistedIsError = isReturnResult ? returnResultError !== null : execResult.isError;
   const persistedMetadata = execResult.metadata;
-  // A settled spawn stays on the frontier, so the durable result must name its
-  // tool for `block-kind.ts` to find it without pairing back to the tool_use.
-  const persistedToolName: Record<string, JsonValue> =
-    call.name === "spawn" ? { toolName: call.name } : {};
 
   const persistedToolResult = await persistAndAppendEvents(
     deps.persistenceDeps,
@@ -234,7 +229,6 @@ export async function dispatchToolCall(
         sequence: ctx.blockSeqRef.value++,
         content: {
           toolCallId: execResult.toolCallId,
-          ...persistedToolName,
           output: persistedOutput,
           ...(persistedIsError !== undefined ? { isError: persistedIsError } : {}),
           ...(persistedMetadata ? { metadata: persistedMetadata } : {}),
@@ -259,23 +253,9 @@ export async function dispatchToolCall(
   ctx.state.allBlocks.push(persistedToolResult.result);
   events.push(...persistedToolResult.events);
   if (isReturnResult && returnResultError === null) {
-    await persistChildReportCard(deps, ctx, events, {
+    await persistChildReportCard(transcript, {
       summary: returnResultSummary(call.arguments),
     });
-  }
-  if (spawnCardOnTurn && spawnCard) {
-    await persistSpawnHelperCard(
-      deps,
-      ctx,
-      events,
-      {
-        agent: spawnArgs.agent,
-        description: spawnArgs.description,
-        parentTurnId: ctx.state.currentTurn.id,
-        output: persistedOutput,
-      },
-      spawnCard,
-    );
   }
   let resultBlock = persistedToolResult.result;
   let resultMetadata = execResult.metadata;
@@ -372,82 +352,4 @@ function errorMessage(output: JsonValue): string | null {
 
 function returnResultSummary(args: Record<string, unknown>): string {
   return typeof args.summary === "string" ? args.summary : "";
-}
-
-async function persistChildReportCard(
-  deps: ToolDispatchDeps,
-  ctx: ToolDispatchContext,
-  events: OrchestratorEvent[],
-  input: { summary: string },
-): Promise<Block> {
-  const persisted = await persistAndAppendEvents(
-    deps.persistenceDeps,
-    ctx.state.threadId,
-    async () => {
-      const block = contentForBlockInput({
-        turnId: ctx.state.currentTurn.id,
-        blockType: "custom",
-        sequence: ctx.blockSeqRef.value++,
-        content: buildChildReportComponentContent(input),
-        status: "complete",
-      });
-      return {
-        result: localBlockFromEvent(block),
-        events: [{ type: "block.upserted" as const, block }],
-      };
-    },
-  );
-  ctx.state.allBlocks.push(persisted.result);
-  events.push(...persisted.events);
-  return persisted.result;
-}
-
-async function persistSpawnHelperCard(
-  deps: ToolDispatchDeps,
-  ctx: ToolDispatchContext,
-  events: OrchestratorEvent[],
-  input: Parameters<typeof spawnHelperCardProps>[0],
-  existing?: Block | null,
-): Promise<Block> {
-  const persisted = await persistAndAppendEvents(
-    deps.persistenceDeps,
-    ctx.state.threadId,
-    async () => {
-      const block = contentForBlockInput({
-        ...(existing ? { id: existing.id } : {}),
-        turnId: ctx.state.currentTurn.id,
-        blockType: "custom",
-        sequence: existing?.sequence ?? ctx.blockSeqRef.value++,
-        content: buildHelperResultComponentContent(spawnHelperCardProps(input)),
-        status: "complete",
-      });
-      return {
-        result: localBlockFromEvent(block),
-        events: [{ type: "block.upserted" as const, block }],
-      };
-    },
-  );
-  if (existing) {
-    const index = ctx.state.allBlocks.findIndex((block) => block.id === existing.id);
-    if (index >= 0) ctx.state.allBlocks[index] = persisted.result;
-    else ctx.state.allBlocks.push(persisted.result);
-  } else {
-    ctx.state.allBlocks.push(persisted.result);
-  }
-  events.push(...persisted.events);
-  return persisted.result;
-}
-
-function spawnCallFields(value: unknown): {
-  agent?: string;
-  description?: string;
-  mode?: string;
-} {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const rec = value as Record<string, unknown>;
-  return {
-    ...(typeof rec.agent === "string" ? { agent: rec.agent } : {}),
-    ...(typeof rec.description === "string" ? { description: rec.description } : {}),
-    ...(typeof rec.mode === "string" ? { mode: rec.mode } : {}),
-  };
 }

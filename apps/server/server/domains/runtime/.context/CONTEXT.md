@@ -40,7 +40,7 @@ skeleton and delegates the moving parts.
 | `block-helpers.ts` | Content block conversion and local accumulator helpers. |
 | `turn-accounting.ts` | Credit ledger checks/debits and cumulative usage events. |
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
-| `tool-dispatch.ts` | Live output, spawn/return-result bridges, and durable tool_result persistence. Dispatch does not apply policy. |
+| `tool-dispatch.ts` | Live output, spawn/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy and does not own helper-result or child-report cards. |
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. |
@@ -122,7 +122,11 @@ behavior; schema-only stubs are not advertised.
 `RunTurnPort`, `ChildRunRegistry` from the turn runner, the billing spend reader,
 immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. Route-facing
 thread creation still goes through public thread creation normalization; only the
-child-run coordinator can create subagent threads.
+child-run coordinator can create subagent threads. Writer-facing helper-result and
+child-report cards persist through `spawn/spawn-transcript.ts` (one
+`spawnHelperCardProps` builder). Foreground spawn upserts a running card before
+the child runs and patches it on completion; background delivery posts the same
+card on a later system turn. Dispatch persists `tool_result` only.
 
 Named targets resolve by name within the parent binding's roster; a target with
 `model-invocable: false` is refused, while a primary-mode target is spawnable.

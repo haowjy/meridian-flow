@@ -41,7 +41,12 @@ describe("spawnOutputForTranscript", () => {
       parentTurnId: "turn-1",
       output: {
         status: "completed",
-        report: { threadId: "child-1", summary: "Holds.", costMillicredits: 9 },
+        report: {
+          threadId: "child-1",
+          summary: "Holds.",
+          payload: { verdict: "ok" },
+          costMillicredits: 9,
+        },
       },
     });
     expect(done).toMatchObject({
@@ -49,8 +54,26 @@ describe("spawnOutputForTranscript", () => {
       status: "completed",
       summary: "Holds.",
       childThreadId: "child-1",
+      payload: { verdict: "ok" },
     });
     expect(JSON.stringify(done)).not.toContain("cost");
+  });
+
+  it("keeps childThreadId on a failed card and titles from description", () => {
+    const failed = spawnHelperCardProps({
+      agent: "helper",
+      description: "Check continuity",
+      parentTurnId: "turn-1",
+      childThreadId: "child-9",
+      output: { status: "error", error: { message: "Child run failed" } },
+    });
+    expect(failed).toMatchObject({
+      agentName: "Helper",
+      status: "failed",
+      summary: "Child run failed",
+      childThreadId: "child-9",
+      title: "Check continuity",
+    });
   });
 
   it("leaves error and background outputs untouched", () => {
