@@ -130,32 +130,17 @@ function AssistantTurnComponent({
           onRetry={isLatestAssistant ? onRetry : undefined}
         />
       ) : null}
-      {showsInkDrop ? <InkDrop indented={lastVisibleItemIsTool(items)} /> : null}
+      {showsInkDrop ? <InkDrop /> : null}
     </div>
   );
 }
 
-function InkDrop({ indented }: { indented: boolean }) {
+function InkDrop() {
   return (
-    <div
-      className={
-        indented
-          ? "mt-[7px] flex min-h-5 items-center pl-[3.5px]"
-          : "mt-[7px] flex min-h-5 items-center"
-      }
-      data-live-turn-ink
-    >
+    <div className="mt-[7px] flex min-h-5 items-center" data-live-turn-ink>
       <span className="ink-drop" aria-hidden />
     </div>
   );
-}
-
-function lastVisibleItemIsTool(items: RenderItem[]): boolean {
-  const last = items.at(-1);
-  if (last?.kind !== "process") return false;
-  const lastRun = last.runs.at(-1);
-  if (lastRun?.kind !== "activity") return false;
-  return toolViewsInFold([lastRun]).length > 0;
 }
 
 /**
