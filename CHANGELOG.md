@@ -39,6 +39,7 @@
 
 ### Changed
 
+- The chat switcher no longer shows an unlabeled warning dot for an unanswered `ask_user` on another chat.
 - Home Continue/Recent/Favorite, the chat switcher, and Work-associated chats list primary threads only.
 - First-turn bake lists named subagents (slug, name when it differs, description) in the frozen system prompt like available skills. The spawn tool description stays empty-vs-named and does not name them.
 - Helper-result and child-report cards persist through one spawn-owned path; tool dispatch no longer stamps `toolName: "spawn"` on `tool_result`.
