@@ -53,7 +53,7 @@ skeleton and delegates the moving parts.
 | `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, serialized persistence/provenance/upload consumption, lookup, and retirement. |
 | `reference-context.ts` | Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads. |
 | `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission, read-deduplicated, occurrence-budgeted, and quietly omitted without losing writer text. |
-| `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow names and write/work commands. Advertise and the per-turn permission gate (name + write/work command) use that policy. Dispatch does not apply policy. The core catalogue stays policy-free. |
+| `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow names and write/work commands. Advertise and the per-turn permission gate (name + write/work command) use that policy. `invocation-authority` validates that an invocation patch never grants the child more than the caller holds, applied only to the patch delta. Dispatch does not apply policy. The core catalogue stays policy-free. |
 
 `OrchestratorDeps` is fully required: gateway, repos, retained Agent revision reader, tool
 registry/executor, project preferences, credit ledger,
@@ -67,7 +67,9 @@ represented by explicit adapters (for example no-op sinks), not by omitted deps.
 
 `agent-thread-context.ts` reads the immutable thread binding for the persona
 and diagnostic Agent identity. Tools and effort come from the bound
-configuration, never definition metadata. Missing bindings fail before a
+configuration, never definition metadata. `mapAgentEffortToReasoning` (with
+`EFFORT_TO_REASONING`) is the single bridge from canonical `AgentEffort` to the
+gateway's provider-neutral `GenerateRequest.reasoning`. Missing bindings fail before a
 gateway call. Catalog removal or advancement leaves continued execution on its
 retained revision. `turn-context-assembly.ts` supplies that persona to the initial
 host-prompt bake and reuses the frozen prompt on later turns; preview shares this
@@ -91,7 +93,7 @@ configuration, including a frozen default when source omits it. Nonempty
 `subagents` roster no longer refuses selection. `spawn` is advertised to every
 Agent; Mars `tools` cannot hide it. Named targets come from the binding's
 roster, baked into the frozen system prompt like available skills (not listed
-on the spawn tool), and an omitted or empty `agent` selects the generic helper.
+on the spawn tool), and an omitted or empty `agent` selects the agent-less generic subagent.
 
 ## tools — registry, executor, and handlers
 
@@ -121,7 +123,7 @@ behavior; schema-only stubs are not advertised.
 
 `spawn/child-run-coordinator.ts` supervises nested agent execution. It consumes
 `RunTurnPort`, `ChildRunRegistry` from the turn runner, the billing spend reader,
-immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. Route-facing
+immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key; `tools` and `disallowed-tools` are coupled and each returns the full `patchTools` result so a map `allow` lifts the baseline denial. Overrides fold tool-name aliases like authoring. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. Route-facing
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads. Writer-facing helper-result cards persist through `spawn/spawn-transcript.ts`
 (one `spawnHelperCardProps` builder). Foreground spawn upserts a running card
@@ -133,12 +135,13 @@ completer.
 
 Named targets resolve by name within the parent binding's roster; a target with
 `model-invocable: false` is refused, while a primary-mode target is spawnable.
-An omitted or empty `agent` selects the generic helper: the built-in General
-revision supplies body and identity; the child binding copies the caller's
-resolved configuration, including `tools`, `disallowed-tools`, and `effort`.
-Named children resolve those fields from their own retained revision.
-A nested generic keeps the ancestor's write deny because it copies that
-record. Turn context reads tools and effort from configuration only.
+An omitted or empty `agent` creates an agent-less child: the binding has no
+Agent revision (`definitionRevisionId` null), the body is the host-owned empty
+`GENERIC_AGENT_BODY`, and the child copies the caller's resolved configuration,
+including `tools`, `disallowed-tools`, and `effort`. Named children resolve
+those fields from their own retained revision. A nested generic keeps the
+ancestor's write deny because it copies that configuration. Turn context reads
+tools and effort from configuration only.
 Max spawn depth
 defaults to 3, overridable only through operator env at tree creation. Child
 creation, Agent binding, and Work membership share one transaction. The child starts with an unfrozen

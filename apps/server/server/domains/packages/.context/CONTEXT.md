@@ -19,6 +19,12 @@ over retained source revisions. It is not a fifth content or execution owner.
 - `domain/agent-definition-compiler.ts` validates declared configuration and emits
   a presence-sensitive definition with a versioned digest. Flat skills normalize
   to `skills.load`. Agent-specific body text becomes `systemPrompt`.
+- The canonical execution-knob schemas (effort value set + `max→xhigh` alias,
+  tool policy, tool-name alias fold, tools representation) live in
+  `@meridian/contracts/agents` (`execution-knobs.ts`). The compiler imports them
+  rather than re-declaring; authoring accepts the canonical effort set including
+  `xhigh`/`none`. `domain/agent-gateway-meta.ts` sources its accepted effort set
+  from the same constants and keeps only a private normalize helper.
 - Compilation accepts canonical frontmatter tools as lists or allow/deny maps.
   TOML overlays use `tools.allowed` and `tools.disallowed`; explicit empty lists
   clear that channel. A disallowed-list overlay replaces all baseline denials,
@@ -38,7 +44,7 @@ file snapshot and TOML overlays. Source identity includes supporting files;
 compiled identity describes the Agent configuration. Binary/NUL-containing
 supporting files use base64 for JSONB storage.
 
-`domain/agent-configuration.ts` resolves the configured default model, skill/named-target identities, and presence-sensitive `tools` / `disallowed-tools` / `effort` over the retained package dependency graph. `retainedPackageSkillMaps` is the graph walk for every `skills/<slug>/SKILL.md` in that closure; runtime slash listing reuses it. Missing or ambiguous Agent `load`/`available` references refuse binding; it never consults mutable package installs or account rows. Named-target resolution refuses `model-invocable: false` only; a pickable primary may also be a child spawn target. The picker still uses `mode`.
+`domain/agent-configuration.ts` resolves the configured default model, skill/named-target identities, and presence-sensitive `tools` / `disallowed-tools` / `effort` over the retained package dependency graph. `retainedPackageSkillMaps` is the graph walk for every `skills/<slug>/SKILL.md` in that closure; runtime slash listing reuses it. `buildRetainedSkillResolver` re-exposes name-to-reference skill resolution over one package root's closure for invocation patches, which never consult mutable package installs or account rows. Missing or ambiguous Agent `load`/`available` references refuse binding; it never consults mutable package installs or account rows. Named-target resolution refuses `model-invocable: false` only; a pickable primary may also be a child spawn target. The picker still uses `mode`.
 
 `ports/agent-revision-store.ts` owns immutable source/definition records,
 account/system catalog pointers, and fixed thread bindings.
@@ -60,7 +66,7 @@ is reserved for trusted system seeding. App services expose the revision port as
 owner in app composition. Either entry point commits or rolls back both stores;
 completed transaction frames reject escaped writes. Root creation resolves exact
 account/system selections and binds atomically. Shared runtime preparation reads
-the retained binding. Child creation consumes exact targets from the parent binding. Root, child and derived-primary creation use the threads domain's atomic bound-conversation operation.
+the retained binding. Child creation consumes exact targets from the parent binding; an agent-less generic child (omitted or empty target) binds a null `definitionRevisionId` and no Agent revision. The generic identity vocabulary (`GENERIC_SUBAGENT_SLUG`, `GENERIC_SUBAGENT_NAME`, `GENERIC_AGENT_BODY`) lives in `@meridian/contracts/agents`. Root, child and derived-primary creation use the threads domain's atomic bound-conversation operation.
 
 `domain/bound-agent-catalog.ts` resolves exact primary selections and builds
 catalog pages from immutable revisions. Listing and resolution share the supplied

@@ -21,10 +21,19 @@ export function agentExecutionUnavailableReasons(
   resolvedModel: string,
 ): string[] {
   const reasons = agentDefinitionUnsupportedReasons(definition);
-  if (!gateway.listModels?.().some((model) => model.id === resolvedModel)) {
-    reasons.push("The Agent's configured model is unavailable.");
-  }
+  reasons.push(...agentModelUnavailableReasons(gateway, resolvedModel));
   return reasons;
+}
+
+/** Host-availability check for a model id, independent of any Agent definition. */
+export function agentModelUnavailableReasons(
+  gateway: Pick<Gateway, "listModels">,
+  model: string,
+): string[] {
+  if (!gateway.listModels?.().some((item) => item.id === model)) {
+    return ["The Agent's configured model is unavailable."];
+  }
+  return [];
 }
 
 export function agentDefinitionUnsupportedReasons(definition: CompiledAgentDefinition): string[] {

@@ -17,12 +17,15 @@
 - First-turn bake lists Agent `skills.available` slugs (and name when it differs) with descriptions and persists those slugs. An account install after freeze does not rewrite the prompt and does not notify the model.
 - Persist account-scoped skill installs. Debug overlay can add a packaged skill (including `story-review`) or a paste, and delete by slug.
 - Snapshot `creative-writing-modes`, `writing-principles`, and `story-review` into launch-agents. Writer lists the first two as available skills.
-- Advertise the `spawn` tool to every Agent. Named children resolve from the caller's `subagents` roster; an omitted or empty `agent` selects the generic helper, which inherits the caller's model, tools, skills, effort, and roster while the built-in General revision supplies its body. Default max spawn depth is now 3, operator-overridable through `MERIDIAN_MAX_SPAWN_DEPTH`; a deeper spawn is a tool error before any child is created.
+- Advertise the `spawn` tool to every Agent. Named children resolve from the caller's `subagents` roster; an omitted or empty `agent` selects the generic child, which binds no Agent revision and inherits the caller's model, tools, skills, effort, and roster with a host-owned default body. Default max spawn depth is now 3, operator-overridable through `MERIDIAN_MAX_SPAWN_DEPTH`; a deeper spawn is a tool error before any child is created.
+- `spawn` accepts a per-invocation `system_prompt` and `overrides` patch (model, effort, tools, disallowed-tools, subagents, skills). The child's effective configuration is patched for that run only, validated so a patch can never grant authority the caller lacks, and persisted with the raw overlay so later turns reuse it. The saved Agent is unchanged.
+- Generic subagents are agent-less: a generic child binds no Agent revision and inherits the caller's configuration, presented as Subagent. The General baseline sentinel and the helper slug are retired. Agent-less children still get host model-availability checks.
 - Parent transcript shows a spawn report card: who ran, the returned summary, and an Open door into the child chat. Spawn uses the same custom-card path as ask_user (tool protocol hidden, card splits Thinking). Neither the card nor the persisted model output carries spawn cost.
 - A subagent's `return_result` records its report, then completes the child turn instead of aborting it. The child transcript renders the summary as a `child-report` `ArtifactCard` titled Return, with the `return_result` protocol hidden.
 
 ### Fixed
 
+- A spawn override that names a tool by alias (for example `shell`) folds to its canonical name before the merge, matching authoring. Canonical `xhigh`/`none` effort authored in Mars frontmatter also survives source normalization instead of being dropped.
 - Opening `/chat/{id}` for a subagent no longer shows "This destination is unavailable." Path chat is identity; the primary list is not a lookup. Snapshot miss stays ChatScreen's error. Query `?chat=` still drops missing primaries.
 - Nested subagent Parent back resolves the parent by id on the child snapshot, not the primary-only list.
 - `return_result` persists the protocol result and child-report card in one transaction.
@@ -44,6 +47,7 @@
 
 ### Changed
 
+- Agent execution configuration has one canonical contract in `@meridian/contracts/agents` (`execution-knobs.ts`): effort value set and `max→xhigh` alias, tool policy, tool-name alias fold, resolved shape, and presence-sensitive patch. The compiler, resolver, invocation patch, and gateway effort mapping are projections, and the patch merge table is compile-time exhaustive so an accepted key cannot be silently dropped.
 - `return_result` records the report and ends this turn; the child chat stays open.
 - Home/Work chat rows and the chat switcher show the bound Agent name; Work is no longer the row identity.
 - The chat switcher no longer shows an unlabeled warning dot for an unanswered `ask_user` on another chat.

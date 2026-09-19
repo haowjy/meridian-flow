@@ -3,7 +3,12 @@
  * terminal state, captures return_result, and persists spawnStatus/spawnResult.
  * The sole caller allowed through the thread-create spawn gate.
  */
-import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
+import {
+  GENERIC_SUBAGENT_SLUG,
+  type InvocationOverlay,
+  type InvocationPatch,
+  type ResolvedAgentConfiguration,
+} from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
@@ -30,6 +35,7 @@ import type {
   TurnRepository,
 } from "../../threads/index.js";
 import { createBoundConversation } from "../../threads/index.js";
+import { validateInvocationAuthority } from "../loop/permissions/invocation-authority.js";
 import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
 import {
   createInMemoryThreadRunOwnership,
@@ -37,20 +43,22 @@ import {
   type ThreadRunOwnership,
 } from "../loop/thread-run-ownership.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
+import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
 import type { HelperResultDelivery } from "./helper-result-delivery.js";
 import { persistSpawnHelperCard, type SpawnTranscript } from "./spawn-transcript.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
 
-/** Event/thread label for a generic helper child; never a specialist catalog slug. */
-const GENERIC_HELPER_SLUG = "helper";
-
 export interface SpawnChildInput {
   parentThread: Thread;
   parentTurnId: TurnId;
-  /** Named roster target; omitted or empty selects the generic helper baseline. */
+  /** Named roster target; omitted or empty selects the agent-less generic subagent. */
   agentSlug?: string;
   prompt: string;
   description?: string;
+  /** Per-invocation system prompt replacement; omitted inherits the child's saved prompt. */
+  systemPrompt?: string;
+  /** Per-invocation execution patch, applied over the resolved baseline. */
+  overrides?: InvocationPatch;
   budget: TreeBudget;
   signal?: AbortSignal;
   /** Parent-turn card writer; foreground spawn upserts running then completed. */
@@ -78,9 +86,9 @@ export interface ChildRunCoordinatorDeps {
     "readThreadBinding" | "readRevision" | "readSource" | "readPackageDefinitions" | "bindThread"
   >;
   defaultModel(): string | undefined;
-  /** Built-in generic baseline identity; execution config still comes from the caller. */
-  genericBaseline(): Promise<AgentRevision | undefined>;
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
+  /** Host-availability check for a model id, used when the child has no definition. */
+  modelUnavailable(model: string): string[];
   childRunRegistry: ChildRunRegistry;
   helperResultDelivery: HelperResultDelivery;
   workContextDelivery: Pick<WorkContextDelivery, "flushOwned">;
@@ -104,7 +112,7 @@ type ChildTerminal =
 
 type PreparedChild = {
   child: Thread;
-  /** Event/thread-visible slug; a named roster name or the generic helper label. */
+  /** Event/thread-visible slug; a named roster name or the generic subagent label. */
   resolvedSlug: string;
   childController: AbortController;
   childRegistered: boolean;
@@ -187,22 +195,17 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
 
     const requestedSlug = input.agentSlug?.trim() ?? "";
-    let revision: AgentRevision;
+    let revision: AgentRevision | null;
     let configuration: ResolvedAgentConfiguration;
     let resolvedSlug: string;
     let defaultTitle: string;
+    let patchPackageRoot: string | null;
     if (requestedSlug === "") {
-      const baseline = await deps.genericBaseline();
-      if (!baseline) {
-        return {
-          status: "error",
-          error: meridianErrorFromSystem("spawn_agent_not_found", "Generic helper is unavailable"),
-        };
-      }
       configuration = { ...parentAgent.configuration };
-      revision = baseline;
-      resolvedSlug = GENERIC_HELPER_SLUG;
-      defaultTitle = GENERIC_HELPER_SLUG;
+      revision = null;
+      resolvedSlug = GENERIC_SUBAGENT_SLUG;
+      defaultTitle = GENERIC_SUBAGENT_SLUG;
+      patchPackageRoot = parentAgent.revision?.packageRevisionId ?? null;
     } else {
       const target = parentAgent.configuration.namedTargets.find(
         (item) => item.name === requestedSlug,
@@ -234,21 +237,75 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       });
       resolvedSlug = requestedSlug;
       defaultTitle = `${requestedSlug} subagent`;
+      patchPackageRoot = childAgent.packageRevisionId;
     }
 
-    const unavailable = deps.unavailableReasons(revision.definition, configuration.model);
-    if (unavailable.length) {
-      return {
-        status: "error",
-        error: meridianErrorFromSystem("spawn_agent_unavailable", unavailable.join(" ")),
-      };
+    if (input.overrides !== undefined) {
+      let patched: ResolvedAgentConfiguration;
+      try {
+        patched = await applyInvocationPatch({
+          baseline: configuration,
+          patch: input.overrides,
+          caller: parentAgent.configuration,
+          store: deps.agentRevisions,
+          packageRevisionId: patchPackageRoot,
+        });
+      } catch (error) {
+        if (error instanceof InvocationPatchError) {
+          return {
+            status: "error",
+            error: meridianErrorFromSystem("spawn_invocation_patch_invalid", error.message),
+          };
+        }
+        throw error;
+      }
+      const reasons = validateInvocationAuthority({
+        baseline: configuration,
+        patched,
+        caller: parentAgent.configuration,
+      });
+      if (reasons.length) {
+        return {
+          status: "error",
+          error: meridianErrorFromSystem("spawn_invocation_authority_denied", reasons.join(" ")),
+        };
+      }
+      configuration = patched;
     }
+
+    if (revision) {
+      const unavailable = deps.unavailableReasons(revision.definition, configuration.model);
+      if (unavailable.length) {
+        return {
+          status: "error",
+          error: meridianErrorFromSystem("spawn_agent_unavailable", unavailable.join(" ")),
+        };
+      }
+    } else {
+      const unavailable = deps.modelUnavailable(configuration.model);
+      if (unavailable.length) {
+        return {
+          status: "error",
+          error: meridianErrorFromSystem("spawn_agent_unavailable", unavailable.join(" ")),
+        };
+      }
+    }
+
+    const invocationOverlay: InvocationOverlay | null =
+      input.systemPrompt !== undefined || input.overrides !== undefined
+        ? {
+            ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
+            ...(input.overrides !== undefined ? { overrides: input.overrides } : {}),
+          }
+        : null;
+
     const child = await deps.repos.transaction(async () => {
       const created = await createBoundConversation({
         transaction: deps.repos.transaction,
         agentRevisions: deps.agentRevisions,
         revision,
         configuration,
+        invocationOverlay,
         createThread: () =>
           deps.repos.subagentThreads.createSubagent({
             userId: input.parentThread.userId,
@@ -473,16 +530,15 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
   async function deliverHelperResult(
     input: SpawnChildInput,
-    child: Thread,
-    resolvedSlug: string,
+    prepared: PreparedChild,
     result: SpawnResult,
   ): Promise<void> {
     await deps.helperResultDelivery.deliverOrQueue({
       parentThread: input.parentThread,
       parentTurnId: input.parentTurnId,
-      agentSlug: resolvedSlug,
+      agentSlug: prepared.resolvedSlug,
       description: input.description,
-      childThreadId: child.id,
+      childThreadId: prepared.child.id,
       result,
     });
   }
@@ -558,7 +614,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
               error: result.status === "error" ? result.error.message : "Background run failed",
             });
           }
-          await deliverHelperResult(input, prepared.child, prepared.resolvedSlug, result);
+          await deliverHelperResult(input, prepared, result);
         })
         .catch(async (error: unknown) => {
           await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {

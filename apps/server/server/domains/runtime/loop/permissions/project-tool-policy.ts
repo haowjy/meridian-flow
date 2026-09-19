@@ -1,4 +1,5 @@
 /** Projects compiled Mars tool policy onto Flow advertise and dispatch policy. */
+import type { ToolPolicy } from "@meridian/contracts/agents";
 
 export type WriteCommandName =
   | "read"
@@ -35,7 +36,7 @@ const WORK_MUTATE_COMMANDS = [
 ] as const satisfies readonly WorkCommandName[];
 
 type CompiledToolFields = {
-  tools?: string[] | Record<string, "allow" | "deny">;
+  tools?: string[] | Record<string, ToolPolicy>;
   "disallowed-tools"?: string[];
 };
 
@@ -55,7 +56,7 @@ export function projectToolPolicy(metadata: CompiledToolFields): EffectiveToolPo
 
   // Host tools with no Mars name stay attached this slice.
   // spawn is always advertised: named targets come from the roster, and the
-  // generic helper stays available even when the roster is empty.
+  // generic subagent stays available even when the roster is empty.
   const tools = new Set<string>(["work", "skill", "spawn"]);
   if (writeCommands.size > 0) tools.add("write");
   if (read) {

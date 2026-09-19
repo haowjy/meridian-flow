@@ -56,6 +56,42 @@ export async function resolveAgentConfiguration(input: {
   return { model, ...(await resolveAgentDependencies({ revision, store })) };
 }
 
+function uniqueReference<T>(reference: string, kind: string, candidates: T[]): T {
+  if (candidates.length !== 1) {
+    throw new AgentConfigurationError(
+      `${kind} "${reference}" is ${candidates.length ? "ambiguous" : "missing"} in the retained package dependencies.`,
+    );
+  }
+  return candidates[0];
+}
+
+function resolveSkillFromMaps(
+  skillMaps: Map<string, Map<string, RetainedSkillReference>>,
+  reference: string,
+): RetainedSkillReference {
+  return uniqueReference(
+    reference,
+    "Skill",
+    [...skillMaps.values()].flatMap((skills) => {
+      const skill = skills.get(reference);
+      return skill ? [skill] : [];
+    }),
+  );
+}
+
+export interface RetainedSkillResolver {
+  resolve(reference: string): RetainedSkillReference;
+}
+
+/** Resolves retained skill names against one package root's dependency closure. */
+export async function buildRetainedSkillResolver(input: {
+  packageRevisionId: string;
+  store: Pick<AgentRevisionStore, "readSource">;
+}): Promise<RetainedSkillResolver> {
+  const skillMaps = await retainedPackageSkillMaps(input.packageRevisionId, input.store);
+  return { resolve: (reference) => resolveSkillFromMaps(skillMaps, reference) };
+}
+
 /** Publication validates retained references without choosing a conversation's model default. */
 export async function resolveAgentDependencies(input: {
   revision: AgentRevision;
@@ -74,23 +110,8 @@ export async function resolveAgentDependencies(input: {
     packages.set(id, { skills, agents: await store.readPackageDefinitions(id) });
   }
 
-  function unique<T>(reference: string, kind: string, candidates: T[]): T {
-    if (candidates.length !== 1) {
-      throw new AgentConfigurationError(
-        `${kind} "${reference}" is ${candidates.length ? "ambiguous" : "missing"} in the retained package dependencies.`,
-      );
-    }
-    return candidates[0];
-  }
   const resolveSkill = (reference: string): RetainedSkillReference =>
-    unique(
-      reference,
-      "Skill",
-      [...packages.values()].flatMap((pkg) => {
-        const skill = pkg.skills.get(reference);
-        return skill ? [skill] : [];
-      }),
-    );
+    resolveSkillFromMaps(skillMaps, reference);
   const meta = revision.definition.metadata;
   return {
     skills: {
@@ -101,7 +122,7 @@ export async function resolveAgentDependencies(input: {
       ).map(resolveSkill),
     },
     namedTargets: (meta.subagents ?? []).map((name) => {
-      const target = unique(
+      const target = uniqueReference(
         name,
         "Agent",
         [...packages.values()].flatMap((pkg) => pkg.agents.filter((agent) => agent.slug === name)),

@@ -7,17 +7,6 @@ export const ProjectSettings = z.object({
 });
 export type ProjectSettings = z.infer<typeof ProjectSettings>;
 
-export const AgentConfig = z.object({
-  model: z.string().optional(),
-  systemPrompt: z.string().optional(),
-  tools: z.array(z.string()).optional(),
-  disallowedTools: z.array(z.string()).optional(),
-  temperature: z.number().min(0).max(1).optional(),
-  maxTokens: z.number().optional(),
-  reasoning: z.enum(["off", "low", "medium", "high"]).optional(),
-});
-export type AgentConfig = z.infer<typeof AgentConfig>;
-
 export const UserPreferences = z.object({
   ui: z
     .object({

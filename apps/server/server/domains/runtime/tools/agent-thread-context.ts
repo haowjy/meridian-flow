@@ -1,5 +1,10 @@
 /** Next-turn Agent configuration comes exclusively from the retained thread binding. */
-import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
+import {
+  type AgentEffort,
+  GENERIC_AGENT_BODY,
+  GENERIC_SUBAGENT_SLUG,
+  type ResolvedAgentConfiguration,
+} from "@meridian/contracts/agents";
 import type { Thread } from "@meridian/contracts/threads";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";
@@ -27,33 +32,53 @@ export interface ResolveAgentThreadTurnContextInput {
   baseTools: Tool[] | undefined;
 }
 
+/**
+ * Exhaustive bridge from canonical effort to `GenerateRequest.reasoning`. The
+ * record makes a new canonical effort value demand an explicit provider mapping.
+ */
+const EFFORT_TO_REASONING: Record<AgentEffort, GenerateRequest["reasoning"]> = {
+  low: { effort: "low" },
+  medium: { effort: "medium" },
+  high: { effort: "high" },
+  xhigh: { effort: "max" },
+  none: "disabled",
+  disabled: "disabled",
+  adaptive: "adaptive",
+};
+
+export function mapAgentEffortToReasoning(
+  effort: AgentEffort | undefined,
+): GenerateRequest["reasoning"] {
+  return effort === undefined ? undefined : EFFORT_TO_REASONING[effort];
+}
+
 /** Translate canonical Mars effort names into the gateway's provider-neutral contract. */
 export function agentGatewayMetaToGenerateParams(
   meta: Pick<ResolvedAgentConfiguration, "model" | "effort">,
 ): Pick<GenerateRequest, "model" | "reasoning"> {
   const params: Pick<GenerateRequest, "model" | "reasoning"> = {};
   if (meta.model) params.model = meta.model;
-  if (meta.effort === "disabled" || meta.effort === "none") params.reasoning = "disabled";
-  else if (meta.effort === "adaptive") params.reasoning = "adaptive";
-  else if (meta.effort)
-    params.reasoning = { effort: meta.effort === "xhigh" ? "max" : meta.effort };
+  const reasoning = mapAgentEffortToReasoning(meta.effort);
+  if (reasoning !== undefined) params.reasoning = reasoning;
   return params;
 }
 
 export async function resolveAgentThreadTurnContext(
   input: ResolveAgentThreadTurnContextInput,
 ): Promise<AgentThreadTurnContext> {
-  const revision = await input.agentRevisions.readThreadBinding(input.thread.id);
-  if (!revision) throw new Error("Conversation has no retained Agent binding");
-  const reasons = agentDefinitionUnsupportedReasons(revision.definition);
-  if (reasons.length) throw new Error(reasons.join(" "));
+  const binding = await input.agentRevisions.readThreadBinding(input.thread.id);
+  if (!binding) throw new Error("Conversation has no retained Agent binding");
+  if (binding.revision) {
+    const reasons = agentDefinitionUnsupportedReasons(binding.revision.definition);
+    if (reasons.length) throw new Error(reasons.join(" "));
+  }
 
-  const policy = projectToolPolicy(revision.configuration);
+  const policy = projectToolPolicy(binding.configuration);
   let tools = advertiseTools(input.baseTools, policy).map((tool) =>
     tool.type === "function" && tool.name === "spawn"
       ? {
           ...tool,
-          description: spawnToolDescription(revision.configuration.namedTargets.length > 0),
+          description: spawnToolDescription(binding.configuration.namedTargets.length > 0),
         }
       : tool,
   );
@@ -62,18 +87,22 @@ export async function resolveAgentThreadTurnContext(
       ? input.toolRegistry.getRegistration("return_result")?.definition
       : undefined;
   if (report && !tools.some((tool) => toolName(tool) === report.name)) tools = [...tools, report];
+  const baseBody =
+    binding.invocationOverlay?.systemPrompt ??
+    binding.revision?.definition.systemPrompt ??
+    GENERIC_AGENT_BODY;
   return {
-    agentSlug: revision.slug,
+    agentSlug: binding.revision?.slug ?? GENERIC_SUBAGENT_SLUG,
     gatewayParams: agentGatewayMetaToGenerateParams({
-      model: revision.configuration.model,
-      effort: revision.configuration.effort,
+      model: binding.configuration.model,
+      effort: binding.configuration.effort,
     }),
     tools,
     policy,
     agentBody:
       input.thread.kind === "subagent"
-        ? `${revision.definition.systemPrompt}\n\nYou are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.`
-        : revision.definition.systemPrompt,
+        ? `${baseBody}\n\nYou are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.`
+        : baseBody,
   };
 }
 

@@ -84,7 +84,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         "name: Retained Name",
       );
       const first = (await store.installSource(original)).definitions[0];
-      await store.bindThread(THREAD, first.id, bindingConfiguration);
+      await store.bindThread(THREAD, first.id, bindingConfiguration, null);
       expect((await threads.findById(THREAD))?.agentDefinitionRevisionId).toBe(first.id);
       expect((await threads.listByUser(USER))[0]?.agentDefinitionRevisionId).toBe(first.id);
       const updated = await threads.updateStatus(THREAD, "active");
@@ -92,6 +92,32 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(updated?.agentName).toBe("Retained Name");
       expect((await threads.findById(THREAD))?.agentName).toBe("Retained Name");
       expect((await threads.listByUser(USER))[0]?.agentName).toBe("Retained Name");
+    });
+
+    it("labels an agent-less binding as the generic subagent through thread reads", async () => {
+      const threads = createDrizzleThreadRepository(db);
+      await store.bindThread(THREAD, null, bindingConfiguration, null);
+      expect((await threads.findById(THREAD))?.agentDefinitionRevisionId).toBeNull();
+      expect((await threads.findById(THREAD))?.agentName).toBe("Subagent");
+      expect((await threads.listByUser(USER))[0]?.agentName).toBe("Subagent");
+      const updated = await threads.updateStatus(THREAD, "active");
+      expect(updated?.agentName).toBe("Subagent");
+    });
+
+    it("projects the generic subagent name into the home chat feed for an agent-less binding", async () => {
+      const { createDrizzleRepositoriesForTest } = await import(
+        "../../threads/adapters/drizzle/repositories.js"
+      );
+      const repos = createDrizzleRepositoriesForTest(db);
+      await store.bindThread(THREAD, null, bindingConfiguration, null);
+      const home = await repos.homeFeed.queryPage({
+        projectId: PROJECT,
+        userId: USER,
+        after: null,
+        recentLimit: 10,
+        includeFeatured: true,
+      });
+      expect(home.continueChat?.agentName).toBe("Subagent");
     });
 
     it("chooses one complete prompt-freeze winner across independent connections", async () => {
@@ -168,9 +194,9 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         revisionId: first.id,
       });
       expect(entry.ok).toBe(true);
-      expect(await store.bindThread(THREAD, first.id, bindingConfiguration)).toBe(true);
-      expect(await store.bindThread(THREAD, first.id, bindingConfiguration)).toBe(true);
-      expect(await store.bindThread(THREAD, second.id, bindingConfiguration)).toBe(false);
+      expect(await store.bindThread(THREAD, first.id, bindingConfiguration, null)).toBe(true);
+      expect(await store.bindThread(THREAD, first.id, bindingConfiguration, null)).toBe(true);
+      expect(await store.bindThread(THREAD, second.id, bindingConfiguration, null)).toBe(false);
       expect(
         await store.selectRevision({
           ownerUserId: USER,
@@ -193,15 +219,43 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect(await store.removeOwnedEntry(USER, entry.entry.id)).toBe(true);
       expect(await store.listCatalog({ userId: USER, limit: 100 })).toEqual([]);
       const configuration = bindingConfiguration;
-      expect(await store.readThreadBinding(THREAD)).toEqual({ ...first, configuration });
+      expect(await store.readThreadBinding(THREAD)).toEqual({
+        revision: first,
+        configuration,
+        invocationOverlay: null,
+      });
       expect(
-        await store.bindThread(THREAD, first.id, { ...configuration, model: "replacement-model" }),
+        await store.bindThread(
+          THREAD,
+          first.id,
+          { ...configuration, model: "replacement-model" },
+          null,
+        ),
       ).toBe(false);
       await expect(
         db
           .delete(schema.agentDefinitionRevisions)
           .where(eq(schema.agentDefinitionRevisions.id, first.id)),
       ).rejects.toThrow();
+    });
+
+    it("round-trips an agent-less binding with a retained invocation overlay", async () => {
+      const configuration = {
+        model: "fixture-model",
+        skills: { load: [], available: [] },
+        namedTargets: [] as Array<{ name: string; definitionRevisionId: string }>,
+        tools: { read: "allow" as const },
+      };
+      const invocationOverlay = {
+        systemPrompt: "Replacement body.",
+        overrides: { effort: "high" as const },
+      };
+      expect(await store.bindThread(THREAD, null, configuration, invocationOverlay)).toBe(true);
+      expect(await store.readThreadBinding(THREAD)).toEqual({
+        revision: null,
+        configuration,
+        invocationOverlay,
+      });
     });
 
     it("restores a removed entry explicitly while stale saves leave it removed", async () => {
@@ -367,7 +421,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
             logicalKey: "general",
             revisionId: installed.definitions[0].id,
           });
-          await store.bindThread(THREAD, installed.definitions[0].id, bindingConfiguration);
+          await store.bindThread(THREAD, installed.definitions[0].id, bindingConfiguration, null);
           throw new Error("Injected admission failure");
         }),
       ).rejects.toThrow("Injected admission failure");

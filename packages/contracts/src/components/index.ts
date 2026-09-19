@@ -34,8 +34,8 @@ export type HelperResultProps = JsonObject & {
   agentSlug: string;
   agentName: string;
   status: HelperResultStatus;
-  summary: string;
-  childThreadId: string;
+  summary?: string;
+  childThreadId?: string;
   parentTurnId: string;
   title?: string;
   payload?: JsonValue;
