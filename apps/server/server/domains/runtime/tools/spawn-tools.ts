@@ -81,6 +81,45 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
               type: "object",
               description:
                 "Per-invocation execution patch: model, effort, tools, disallowed-tools, subagents, skills. Omitted fields inherit the child's saved configuration.",
+              properties: {
+                model: { type: "string", description: "Model id for this invocation only." },
+                effort: {
+                  type: "string",
+                  enum: ["low", "medium", "high", "xhigh", "none", "disabled", "adaptive"],
+                  description: "Reasoning effort for this invocation only.",
+                },
+                tools: {
+                  description:
+                    "Tool allow-list (empty array means full tools) or a per-name allow/deny map.",
+                  oneOf: [
+                    { type: "array", items: { type: "string" } },
+                    {
+                      type: "object",
+                      additionalProperties: { type: "string", enum: ["allow", "deny"] },
+                    },
+                  ],
+                },
+                "disallowed-tools": {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Tool names denied for this invocation.",
+                },
+                subagents: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "Replacement subagent roster; an empty array clears it.",
+                },
+                skills: {
+                  type: "object",
+                  description: "Replacement skill lists; omitted fields inherit.",
+                  properties: {
+                    load: { type: "array", items: { type: "string" } },
+                    available: { type: "array", items: { type: "string" } },
+                  },
+                  additionalProperties: false,
+                },
+              },
+              additionalProperties: false,
             },
           },
           required: ["prompt"],
