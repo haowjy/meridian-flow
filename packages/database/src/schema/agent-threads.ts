@@ -51,6 +51,7 @@ export const threads = pgTable(
     workingState: jsonb("working_state"),
     composedSystemPrompt: text("composed_system_prompt"),
     bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[] | null>(),
+    systemPromptHash: text("system_prompt_hash"),
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
     rootThreadId: uuid("root_thread_id").$type<ThreadId>(),
     originTurnId: uuid("origin_turn_id").$type<TurnId>(),

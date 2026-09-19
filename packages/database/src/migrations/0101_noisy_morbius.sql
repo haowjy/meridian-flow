@@ -1,1 +1,0 @@
-ALTER TABLE "threads" DROP COLUMN "system_prompt_hash";

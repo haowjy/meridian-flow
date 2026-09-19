@@ -1,0 +1,6 @@
+# TODO
+
+- `threads.system_prompt_hash` is now unused (reads/writes were removed in the
+  agents milestone 3b work). The column is deliberately kept in `0000`/`0100`
+  state so no deploy still reads it; drop it in a follow-up migration once no
+  deploy references the column.
