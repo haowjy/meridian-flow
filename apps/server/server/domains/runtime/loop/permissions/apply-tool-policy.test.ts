@@ -5,7 +5,6 @@ import { projectToolPolicy } from "./project-tool-policy.js";
 
 const CRITIC_MAP = {
   read: "allow",
-  write: "deny",
   edit: "deny",
   ask_user: "allow",
 } as const;

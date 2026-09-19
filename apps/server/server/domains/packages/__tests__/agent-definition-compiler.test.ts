@@ -23,12 +23,12 @@ describe("Agent definition compiler", () => {
   it("retains a replacement grant when the same overlay clears baseline denials", () => {
     expect(
       compile(
-        { tools: { write: "deny" } },
+        { tools: { edit: "deny" } },
         {
-          tools: { allowed: ["write"], disallowed: [] },
+          tools: { allowed: ["edit"], disallowed: [] },
         },
       ).definition.metadata,
-    ).toEqual({ tools: ["write"], "disallowed-tools": [] });
+    ).toEqual({ tools: ["edit"], "disallowed-tools": [] });
   });
 
   it("canonicalizes Mars tool and effort aliases before hashing", () => {
@@ -46,8 +46,8 @@ describe("Agent definition compiler", () => {
 
   it("rejects map-key collisions instead of changing policy with key order", () => {
     for (const tools of [
-      { write: "allow", " write ": "deny" },
-      { " write ": "deny", write: "allow" },
+      { edit: "allow", " edit ": "deny" },
+      { " edit ": "deny", edit: "allow" },
     ]) {
       expect(compileAgentDefinition({ body: "", meta: { tools } }).ok).toBe(false);
     }
@@ -100,7 +100,7 @@ describe("Agent definition compiler", () => {
 
   it("applies Mars overlay replacement to the effective allowed and denied channels", () => {
     const result = compile(
-      { model: "a", tools: { read: "allow", write: "deny" }, "disallowed-tools": ["spawn"] },
+      { model: "a", tools: { read: "allow", edit: "deny" }, "disallowed-tools": ["spawn"] },
       { model: "b", tools: { allowed: ["search"], disallowed: [] } },
     );
     expect(result.definition.metadata).toEqual({
@@ -117,7 +117,7 @@ describe("Agent definition compiler", () => {
     { effort: "maximum" },
     { model: "" },
     { skills: { load: [1] } },
-    { tools: { write: "ask" } },
+    { tools: { edit: "ask" } },
     { subagents: null },
     { approval: "yolo" },
     { autocompact: -1 },
@@ -128,6 +128,51 @@ describe("Agent definition compiler", () => {
     const result = compileAgentDefinition({ body: "", meta });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.diagnostics.length).toBeGreaterThan(0);
+  });
+
+  it('rejects "write" as an authoring permission name', () => {
+    for (const meta of [
+      { tools: { write: "deny" } },
+      { tools: ["write"] },
+      { "disallowed-tools": ["write"] },
+    ]) {
+      const result = compileAgentDefinition({ body: "", meta });
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(
+        result.diagnostics.some((diagnostic) => diagnostic.message.includes('use "edit"')),
+      ).toBe(true);
+    }
+  });
+
+  it("folds file_write and apply_patch to edit and rejects edit-with-disallowed-read", () => {
+    expect(compile({ tools: ["file_write", "apply_patch"] }).definition.metadata.tools).toEqual([
+      "edit",
+    ]);
+    expect(compile({ tools: ["edit"] }).ok).toBe(true);
+    // A map-form `read` denial is not the contradiction; the policy auto-enables
+    // document read from `edit`, matching `marsAllowed`.
+    expect(compile({ tools: { read: "deny", edit: "allow" } }).ok).toBe(true);
+    for (const meta of [
+      { tools: { edit: "allow" }, "disallowed-tools": ["read"] },
+      { tools: ["edit"], "disallowed-tools": ["read"] },
+      // An empty array is Mars full-allow, so `edit` is allowed there too.
+      { tools: [], "disallowed-tools": ["read"] },
+    ]) {
+      const result = compileAgentDefinition({ body: "", meta });
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(
+        result.diagnostics.some((diagnostic) => diagnostic.message.includes('implies "read"')),
+      ).toBe(true);
+    }
+    expect(
+      compileAgentDefinition({
+        body: "",
+        meta: {},
+        config: { tools: { allowed: [], disallowed: ["read"] } },
+      }).ok,
+    ).toBe(false);
   });
 
   it("validates both layers instead of falling back on invalid overrides", () => {

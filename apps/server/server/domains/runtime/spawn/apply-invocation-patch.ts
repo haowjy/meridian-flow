@@ -1,5 +1,6 @@
 /** Applies a presence-sensitive per-invocation patch to a fully-resolved baseline configuration. */
 import {
+  authoringToolContradiction,
   type InvocationPatch,
   invocationPatchSchema,
   type ResolvedAgentConfiguration,
@@ -79,6 +80,9 @@ export async function applyInvocationPatch(
     const merge = PATCH_MERGES[key] as PatchMerge<keyof InvocationPatch>;
     Object.assign(result, await merge(patch[key] as never, effective));
   }
+
+  const contradiction = authoringToolContradiction(result);
+  if (contradiction) throw new InvocationPatchError(contradiction);
 
   return result;
 }

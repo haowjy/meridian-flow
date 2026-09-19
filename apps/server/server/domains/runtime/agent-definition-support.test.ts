@@ -40,7 +40,7 @@ describe("agent definition support", () => {
     expect(
       agentDefinitionUnsupportedReasons(
         definition({
-          tools: { read: "allow", write: "deny", edit: "deny", ask_user: "allow" },
+          tools: { read: "allow", edit: "deny", ask_user: "allow" },
           "disallowed-tools": ["bash"],
         }),
       ),

@@ -1,6 +1,7 @@
 /** Compiles preserved Mars source into presence-sensitive, content-addressed definitions. */
 import {
   agentEffortAuthoringSchema,
+  authoringToolContradiction,
   type ToolPolicy,
   toolReferencesSchema,
   toolRepresentationSchema,
@@ -107,6 +108,11 @@ export function compileAgentDefinition(source: {
         Object.entries(merged.tools).filter(([, policy]) => policy === "allow"),
       );
     }
+  }
+  const contradiction = authoringToolContradiction(merged);
+  if (contradiction) {
+    diagnostics.push({ field: "tools", message: contradiction });
+    return { ok: false, diagnostics };
   }
   const definition: CompiledAgentDefinition = {
     schemaVersion: 1,

@@ -29,7 +29,7 @@ describe("one definition across all four surfaces", () => {
             model: "muse-model",
             effort: "max",
             mode: "primary",
-            tools: { read: "allow", write: "deny", edit: "deny" },
+            tools: { read: "allow", edit: "deny" },
             "disallowed-tools": ["bash"],
             subagents: ["critic"],
             skills: { load: ["outline"], available: ["proofread"] },
@@ -70,7 +70,7 @@ describe("one definition across all four surfaces", () => {
         ],
       },
       namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
-      tools: { read: "allow", write: "deny", edit: "deny" },
+      tools: { read: "allow", edit: "deny" },
       "disallowed-tools": ["bash"],
       effort: "xhigh",
     });
@@ -103,7 +103,7 @@ describe("one definition across all four surfaces", () => {
         available: [],
       },
       namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
-      tools: { read: "deny", write: "deny", edit: "deny", bash: "allow" },
+      tools: { read: "deny", edit: "deny", bash: "allow" },
       "disallowed-tools": ["edit"],
       effort: "none",
     });
