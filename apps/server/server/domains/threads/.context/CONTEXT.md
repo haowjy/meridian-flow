@@ -34,7 +34,11 @@ instead of the N:1 `threads.workId` column.
 - **Event journal** — append-only log of `OrchestratorEvent` payloads per
   thread, used for replay and real-time fan-out. Model-response and block rows
   are now projected from durable journal facts, not authored directly by the
-  runtime loop.
+  runtime loop. Delivery cursors use `threads.next_seq` and
+  `event_journal.seq` (unique `(thread_id, seq)`). `seq` is event-delivery
+  cursoring for `readAfter`, the writer increment, and hub resume math — not
+  turn ordering. The turn tree (`parent_turn_id`, `active_leaf_turn_id`) remains
+  the ordering model. Turns have no `seq` column.
 - **ThreadEventHub** — in-memory pub/sub + hot cache that sits on top of the
   journal. Subscribers get live events; late joiners get catchup via hot cache
   or journal replay. Eviction on idle (grace period, default 60 s).
@@ -175,10 +179,18 @@ contract shapes.
   locks `threads.id`, verifies the expected active leaf did not advance, then
   holds that lock through orphaned-write reconciliation, next-parent reads,
   user/assistant turn projection, active-leaf updates, and journal append.
-  Cross-instance losers receive `TurnStartConflictError`, never a raw unique
-  violation. A pre-existing nonterminal leaf is not mistaken for a live owner
-  after restart. Standalone turn creation also locks the thread so root
-  insertion and active-leaf advancement commit atomically.
+  Cross-instance losers receive `TurnStartConflictError` (`already_exists` or
+  `already_running`), mapped to HTTP 409, never a raw unique violation. A
+  pre-existing nonterminal leaf is not mistaken for a live owner after restart.
+  Standalone turn creation also locks the thread so root insertion and
+  active-leaf advancement commit atomically. Do not map `23505` to 409: the
+  unique constraint is a post-hoc signal after stale snapshot reads, and it
+  does not cover two concurrent starts against a non-empty thread. The
+  in-memory adapter serializes every snapshot transaction on a process-wide
+  `transactionTail` chain (with an `AsyncLocalStorage` reentrancy guard);
+  per-transaction snapshots that interleaved across threads could erase winner
+  state on loser rollback. Durable live-run ownership across the cluster is a
+  separate problem ([#365](https://github.com/haowjy/meridian-flow/issues/365)).
 - A thread's `totalCostUsd` is the sum of all model response costs for its turns,
   recomputed by the read-model projector from `model_responses`. `updateCost`
   remains only for direct lifecycle/counter writes such as `turnCount`.

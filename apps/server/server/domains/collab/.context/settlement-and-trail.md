@@ -1,7 +1,12 @@
 # Collab — push settlement and change trail
 
-- **Sorted push locks**: `BranchCriticalSections` acquires branch locks in
-  branch-id order, then live coordinator locks in document-id order.
+- **Sorted push locks**: `BranchCriticalSections` is the only owner of the
+  branch `KeyedMutex`. It deduplicates and sorts branch IDs, produces an opaque
+  lease, and is constructed once in `composition.ts`. The mutex does not live on
+  `BranchStore`. Do not make the mutex reentrant (that conceals lock-order
+  cycles) and do not split push/coordinator mutexes (that creates inversion).
+  Callers acquire branch locks in branch-id order, then live coordinator locks
+  in document-id order.
 - **One push commit seam**: whole-content and manifest-companion builders
   produce a `CandidateBatch` consumed by the single pipeline in
   `branch-push.ts`. Content candidates always materialize the whole current
@@ -63,9 +68,12 @@
   document plus earlier selected branch rows, and recipient/change elevations
   are unioned across candidates. Apply writes current branch rows into the live
   journal with their original attribution, then appends the complete push update
-  as a `reconcile` row so cold replay includes causal dependencies omitted from
-  active rows. Active agent handles materialize against their corresponding
-  authored rows; reconciliation coverage is not a later semantic dependency.
+  as a `system:reconcile` row so cold replay includes causal dependencies omitted
+  from active rows. The row is same-admission causal coverage, not a new author:
+  first-birth attribution stays with earlier authored rows, dependency evaluation
+  ignores `system:reconcile`, and the row is not a reversal target. Active agent
+  handles materialize against their corresponding authored rows; reconciliation
+  coverage is not a later semantic dependency.
   Handles eliminated by Work-draft write reversal remain absent. A later writer row can
   therefore make producing-turn Undo unavailable through the canonical
   dependency predicate.

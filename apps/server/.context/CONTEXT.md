@@ -178,10 +178,20 @@ In dev, the repository `logs/` tree is generated observability output, not sourc
 Values backed by Postgres `uuid` columns use the request-ID grammar in
 `server/shared/uuid.ts`: canonical 36-character hyphenated hexadecimal, any UUID
 version/variant bits, case-insensitive on input and lowercase below the parsing
-boundary. The primitive stays dependency-neutral because domain ports and
-adapters use the same grammar; `server/lib/request-id.ts` wraps it with HTTP
-error mapping. Malformed HTTP IDs become 400 responses before any repository
-call; thread WebSocket messages deliberately report not-found.
+boundary. Reject braces, omitted hyphens, `urn:uuid:` prefixes, surrounding
+whitespace, and non-hex input. Parsing is not generation policy: version and
+variant nibbles are data Postgres already accepts, so a client-minted v7 or a
+non-RFC variant must not fail the wire grammar. `parseRequestId` returns a
+branded `ParsedRequestId` or `null`; `isUuid` delegates to it.
+
+The primitive stays dependency-neutral because domain ports and adapters use the
+same grammar; `server/lib/request-id.ts` wraps it with HTTP error mapping.
+Malformed HTTP IDs become 400 responses before any repository call; thread
+WebSocket messages deliberately report not-found.
+
+`UUID_SHAPE_PATTERN` in `context/uri.ts` is a URI disambiguator for UUID-shaped
+typos, not a second DB-UUID grammar. Actual acceptance still goes through
+`parseRequestId`.
 
 ### Route-core handlers
 

@@ -8,13 +8,18 @@ resolver contract.
 
 ## Minimal serialization
 
-A picture takes the minimal wire spelling that preserves it, the way a table
-does. `width: null` — a picture at the size of its own file — is
-`![alt](path)`, byte for byte, and that is nearly every picture. A picture the
-writer resized escalates to `<img src alt title width />` and de-escalates the
-moment the width is cleared. `markdown/blocks/image-html.ts` owns both
-directions; `markdown/html-tag.ts` holds the raw-tag reader and the MDX-strict
-attribute escaper that the table escalation shares.
+A picture takes the minimal wire spelling that preserves it. `width: null` — a
+picture at the size of its own file — is `![alt](path)`, byte for byte, and
+that is nearly every picture. A picture the writer resized escalates to
+`<img src alt title width />` and de-escalates the moment the width is
+cleared. Tables serialize as HTML unconditionally; images keep this
+minimal-spelling rule. Width is whole positive CSS pixels; zero, negative,
+percentage, and fractional values are rejected on both sides. The tag carries
+exactly `src`, `alt`, `title`, `width` in a fixed order.
+
+`markdown/blocks/image-html.ts` owns both directions; `markdown/html-tag.ts`
+holds the raw-tag reader and the MDX-strict attribute escaper that the table
+path shares.
 
 ## Recognized ingress forms
 
