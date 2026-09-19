@@ -53,7 +53,7 @@ skeleton and delegates the moving parts.
 | `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, serialized persistence/provenance/upload consumption, lookup, and retirement. |
 | `reference-context.ts` | Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads. |
 | `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission, read-deduplicated, occurrence-budgeted, and quietly omitted without losing writer text. |
-| `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow names and write/work commands. Advertise and the per-turn permission gate (name + write/work command) use that policy. Dispatch does not apply policy. The core catalogue stays policy-free. |
+| `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow names and write/work commands. Advertise and the per-turn permission gate (name + write/work command) use that policy. `invocation-authority` validates that an invocation patch never grants the child more than the caller holds, applied only to the patch delta. Dispatch does not apply policy. The core catalogue stays policy-free. |
 
 `OrchestratorDeps` is fully required: gateway, repos, retained Agent revision reader, tool
 registry/executor, project preferences, credit ledger,
@@ -121,7 +121,7 @@ behavior; schema-only stubs are not advertised.
 
 `spawn/child-run-coordinator.ts` supervises nested agent execution. It consumes
 `RunTurnPort`, `ChildRunRegistry` from the turn runner, the billing spend reader,
-immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. Route-facing
+immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace); added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. Route-facing
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads. Writer-facing helper-result cards persist through `spawn/spawn-transcript.ts`
 (one `spawnHelperCardProps` builder). Foreground spawn upserts a running card
