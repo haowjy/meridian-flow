@@ -183,6 +183,31 @@ describe("in-memory Agent revisions", () => {
     const secondPage = await store.listCatalog({ userId: "owner", limit: 1, after: firstPage[0] });
     expect([...firstPage, ...secondPage]).toEqual(entries);
   });
+
+  it("round-trips an agent-less binding and treats a differing overlay as a conflict", async () => {
+    const store = fixture();
+    const configuration = {
+      model: "test-model",
+      skills: { load: [], available: [] },
+      namedTargets: [],
+      tools: { read: "allow" as const },
+    };
+    const overlay = { systemPrompt: "Child prompt.", overrides: { effort: "low" as const } };
+    expect(await store.bindThread("thread", null, configuration, overlay)).toBe(true);
+    expect(await store.readThreadBinding("thread")).toEqual({
+      revision: null,
+      configuration,
+      invocationOverlay: overlay,
+    });
+    expect(
+      await store.bindThread("thread", null, configuration, { systemPrompt: "Different." }),
+    ).toBe(false);
+    expect(await store.readThreadBinding("thread")).toEqual({
+      revision: null,
+      configuration,
+      invocationOverlay: overlay,
+    });
+  });
 });
 
 const bindingConfiguration = {
