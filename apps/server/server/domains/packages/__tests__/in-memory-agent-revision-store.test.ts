@@ -208,6 +208,16 @@ describe("in-memory Agent revisions", () => {
       invocationOverlay: overlay,
     });
   });
+
+  it("labels an agent-less binding as the generic subagent and leaves no binding unnamed", async () => {
+    const store = fixture();
+    expect(store.boundAgent("thread")).toBeNull();
+    await store.bindThread("thread", null, bindingConfiguration, null);
+    expect(store.boundAgent("thread")).toEqual({
+      agentDefinitionRevisionId: null,
+      agentName: "Subagent",
+    });
+  });
 });
 
 const bindingConfiguration = {

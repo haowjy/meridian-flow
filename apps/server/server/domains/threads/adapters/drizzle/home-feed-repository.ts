@@ -1,5 +1,6 @@
 /** One-statement PostgreSQL projection for Continue, Favorite, and Recent Home chats. */
 import { sql } from "drizzle-orm";
+import { GENERIC_SUBAGENT_NAME } from "../../../packages/index.js";
 import type { HomeChatFeedRepository } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 import {
@@ -25,7 +26,11 @@ export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeCh
           SELECT t.id AS thread_id, t.title,
             t.created_at AS thread_created_at, t.active_leaf_turn_id,
             tw.work_id, w.name AS work_title,
-            COALESCE(adr.definition->'metadata'->>'name', adr.slug) AS agent_name,
+            CASE
+              WHEN tab.thread_id IS NULL THEN NULL
+              WHEN tab.definition_revision_id IS NULL THEN ${GENERIC_SUBAGENT_NAME}
+              ELSE COALESCE(adr.definition->'metadata'->>'name', adr.slug)
+            END AS agent_name,
             COALESCE(tus.is_favorite, false) AS is_favorite
           FROM threads t
           JOIN projects p ON p.id = t.project_id AND p.deleted_at IS NULL

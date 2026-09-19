@@ -8,6 +8,7 @@ import {
   type AgentSourceSnapshot,
   prepareAgentSourceRevision,
 } from "../domain/agent-source-revision.js";
+import { GENERIC_SUBAGENT_NAME } from "../domain/generic-subagent.js";
 import type {
   AgentCatalogEntry,
   AgentPackageHistoryEntry,
@@ -35,7 +36,7 @@ type State = {
 };
 export interface InMemoryAgentRevisionStore extends AgentRevisionStore {
   boundAgent(threadId: string): {
-    agentDefinitionRevisionId: string;
+    agentDefinitionRevisionId: string | null;
     agentName: string;
   } | null;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
@@ -104,8 +105,12 @@ export function createInMemoryAgentRevisionStore(input: {
       });
     },
     boundAgent(id) {
-      const revisionId = state().bindings.get(id)?.revisionId;
-      const revision = revisionId ? state().revisions.get(revisionId) : undefined;
+      const binding = state().bindings.get(id);
+      if (!binding) return null;
+      if (binding.revisionId === null) {
+        return { agentDefinitionRevisionId: null, agentName: GENERIC_SUBAGENT_NAME };
+      }
+      const revision = state().revisions.get(binding.revisionId);
       return revision
         ? {
             agentDefinitionRevisionId: revision.id,
