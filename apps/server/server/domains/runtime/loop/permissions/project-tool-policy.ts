@@ -1,4 +1,5 @@
 /** Projects compiled Mars tool policy onto Flow advertise and dispatch policy. */
+import type { ToolPolicy } from "@meridian/contracts/agents";
 
 export type WriteCommandName =
   | "read"
@@ -35,7 +36,7 @@ const WORK_MUTATE_COMMANDS = [
 ] as const satisfies readonly WorkCommandName[];
 
 type CompiledToolFields = {
-  tools?: string[] | Record<string, "allow" | "deny">;
+  tools?: string[] | Record<string, ToolPolicy>;
   "disallowed-tools"?: string[];
 };
 
