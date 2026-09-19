@@ -39,10 +39,23 @@ project-relative path on serialize and back on parse, so an asset's identity
 survives a rename while markdown keeps a readable path.
 
 **Durable whole-document projections route through this engine.** Push
-completion derives the projection at settlement through
-`DurableProjectionSerializer`; `PreparedPushCommit` must not carry a prepared
-markdown projection or live snapshot. This keeps serialization inside the
-fenced settlement cut and preserves verbatim code-document output.
+completion and trail forward actions inject `DurableProjectionSerializer`
+(`Pick<MarkdownDocumentEngine, "serializeDocument">` in
+`domain/ports/durable-projection.ts`). They never accept a schema-blind
+`{model, codec}` bag. `PreparedPushCommit` must not carry a prepared markdown
+projection or live snapshot; settlement derives the projection from the durable
+journal at completion time. This keeps serialization inside the fenced
+settlement cut and preserves verbatim code-document output.
+
+Trail forward actions serialize from a **scratch** `Y.Doc` they apply the
+committed update to, before mutating the shared live document — never from the
+live doc, which a WebSocket mutation may change mid-serialize (LOCK-WS).
+
+`isCorruptDurableProjectionError` is the single narrowing predicate:
+`DocumentSyncError` with `code: "corrupt_state"` (a registered non-tracked
+filetype on a tracked journal) permanently blocks live settlement via
+`PendingSettlementStore.block`. Any other throw is transient: the settlement
+stays pending and retryable. Do not block on every projection throw.
 
 **Projection effects preserve caller-specific ordering.** Ordinary durable
 writes start document activity and markdown projection together and settle both

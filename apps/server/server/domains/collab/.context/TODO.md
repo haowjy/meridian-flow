@@ -26,3 +26,23 @@ block-0 serializer are deleted.
 **Affected paths:** app editor `config.ts`, collab
 `domain/markdown-document.ts`, context filetype moves, and their schema and
 round-trip tests.
+
+## Cold-start concurrent journal scan
+
+`listConcurrentJournalRows` has no lower bound when a branch has no previous
+watermark. Production promotion advances the watermark after the first
+interaction, but a simple max-id floor is unsound because journal-id order is
+not push order. The unbounded pushed-row scan is the same hole. Tracked at the
+query site in `branch-pulls.ts`.
+
+## Thread-peer vs Work-draft generation split
+
+Thread-peer branches and Work-draft branches have independent generation
+counters. A reset bumps the Work-draft generation; thread peers must be
+individually evicted. Missing one invalidation path reintroduces stale state.
+A unified generation scheme or tiered invalidation API is the long-term shape.
+
+## N+1 manifest resolution
+
+Tree-level membership operations (recursive `ls`, `grep`) perform N+1 manifest
+resolution lookups. Memoized per walk; the cursor-based root cause is unfixed.

@@ -120,6 +120,40 @@ the renumbered entries while a fresh database applies them normally. A
 monotonic-order regression test (`fresh-migrations.db.test.ts`) covers the
 changed tail after any renumber.
 
+### Works columns that must not return
+
+`works` lives in [`../src/schema/content.ts`](../src/schema/content.ts)
+(`src/schema/works.ts` re-exports it). `visibility` and `persistence` were
+speculative columns that no code read. They are dropped. If multi-writer
+sharing or ephemeral-work GC returns, design fresh columns; do not resurrect
+those shapes. Works are archived (visibility) or soft-deleted with a 30-day
+window; nothing is discarded on a timer. No Work is a locked Work, not a
+sharing preference.
+
+## Focused DB test resets and semantic reads
+
+Focused DB test resets treat requested tables as scope anchors, derive the
+complete referencing-table closure from live `pg_catalog.pg_constraint`, lock
+the closure in deterministic schema-qualified name order, and DELETE
+child-first in one transaction. The anchor list is scope, not an exhaustive
+delete order; a newly applied FK is included automatically. Reject missing
+anchors and cross-table cycles. Self-referencing FKs do not affect ordering.
+Broad suites may still `TRUNCATE ... CASCADE`; focused suites use catalog
+DELETE so unrelated tables survive.
+
+Do not hand-maintain child lists, defer constraints, or treat Drizzle metadata
+as the live catalog.
+
+History assertions and membership assertions are different reads. Raw SELECT
+return order is never a history contract:
+
+| Helper | Semantics |
+|---|---|
+| `trailEventSequence` | Outbox events ordered by trail, version, and event kind |
+| `trailRowMembership` | Shell, detail, and outbox snapshots in deterministic identity order with no lifecycle meaning |
+
+Do not sort assertion inputs after an unordered read.
+
 ## Transaction model (lives in apps/server)
 
 This package exposes no ambient transaction context. Cross-cutting transaction

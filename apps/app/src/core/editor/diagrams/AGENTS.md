@@ -61,6 +61,7 @@ Everything downstream is generated or provider-neutral:
 - Rendering source in the page. The one exception (a caret inside the fence)
   belongs to the node view.
 
+→ [`.context/CONTEXT.md`](.context/CONTEXT.md) — mermaid token measurement
 → [`../objects/AGENTS.md`](../objects/AGENTS.md) — the physics a row generates
 → [`../../../features/editor/surfaces/objects/AGENTS.md`](../../../features/editor/surfaces/objects/AGENTS.md)
   — the verbs a row is read for
