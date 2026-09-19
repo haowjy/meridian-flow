@@ -93,7 +93,10 @@ import {
   type WorkRepository as ProjectWorkRepository,
   type UserRepository,
 } from "../domains/projects/index.js";
-import { agentExecutionUnavailableReasons } from "../domains/runtime/agent-definition-support.js";
+import {
+  agentExecutionUnavailableReasons,
+  agentModelUnavailableReasons,
+} from "../domains/runtime/agent-definition-support.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
   createAdmissionTurnStarter,
@@ -660,6 +663,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const childRunCoordinator = createChildRunCoordinator({
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
+    modelUnavailable: (model) => agentModelUnavailableReasons(ports.gateway, model),
     defaultModel: () => ports.gateway.getDefaultModel(),
     orchestrator: runTurnProxy,
     repos: {

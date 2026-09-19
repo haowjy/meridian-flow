@@ -54,7 +54,12 @@ async function fixture() {
     files: {
       "mars.toml": '[package]\nname = "test-agents"\n',
       "agents/critic.md": serializeMarkdownDefinition(
-        { name: "Critic", model: "critic-model", mode: "primary" },
+        {
+          name: "Critic",
+          model: "critic-model",
+          mode: "primary",
+          tools: { read: "allow", write: "deny", edit: "deny", ask_user: "allow" },
+        },
         "",
       ),
       "agents/hidden.md": serializeMarkdownDefinition(
@@ -125,6 +130,8 @@ async function fixture() {
     agentRevisions: revisions,
     defaultModel: () => "parent-model",
     unavailableReasons: () => [],
+    modelUnavailable: (model) =>
+      model === "parent-model" ? [] : ["The Agent's configured model is unavailable."],
     childRunRegistry: {
       registerChild() {},
       registerBackgroundChild() {},
@@ -429,6 +436,56 @@ describe("ChildRunCoordinator invocation overlay", () => {
     expect(result.status).toBe("error");
     if (result.status === "error") {
       expect(result.error.code).toBe("spawn_invocation_patch_invalid");
+    }
+    expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
+  });
+
+  it("persists an in-scope named grant when the caller holds the tool", async () => {
+    const { coordinator, revisions, repos, critic } = await fixture();
+    const writerParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    await revisions.bindThread(
+      writerParent.id,
+      null,
+      {
+        model: "parent-model",
+        skills: { load: [], available: [] },
+        namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
+        tools: { read: "allow", write: "allow", edit: "allow", ask_user: "allow" },
+      },
+      null,
+    );
+    const result = await coordinator.spawnChild({
+      parentThread: writerParent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "critic",
+      prompt,
+      overrides: { tools: { edit: "allow" } },
+      budget,
+    });
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    const binding = await revisions.readThreadBinding(result.report.threadId);
+    expect(binding?.configuration.tools).toEqual({
+      read: "allow",
+      write: "deny",
+      edit: "allow",
+      ask_user: "allow",
+    });
+  });
+
+  it("rejects an agentless child whose overridden model is unavailable", async () => {
+    const { coordinator, parent, journal } = await fixture();
+    const result = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      overrides: { model: "bogus-model" },
+      budget,
+    });
+    expect(result.status).toBe("error");
+    if (result.status === "error") {
+      expect(result.error.code).toBe("spawn_agent_unavailable");
     }
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
   });

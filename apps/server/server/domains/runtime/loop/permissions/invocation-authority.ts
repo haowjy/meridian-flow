@@ -34,13 +34,5 @@ export function validateInvocationAuthority(input: ValidateInvocationAuthorityIn
     }
   }
 
-  const baselineNames = new Set(input.baseline.namedTargets.map((target) => target.name));
-  const callerNames = new Set(input.caller.namedTargets.map((target) => target.name));
-  for (const target of input.patched.namedTargets) {
-    if (!baselineNames.has(target.name) && !callerNames.has(target.name)) {
-      reasons.push(`Subagent "${target.name}" is not in the caller's roster.`);
-    }
-  }
-
   return reasons;
 }
