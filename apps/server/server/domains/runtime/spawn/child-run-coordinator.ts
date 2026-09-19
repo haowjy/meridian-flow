@@ -87,6 +87,8 @@ export interface ChildRunCoordinatorDeps {
   >;
   defaultModel(): string | undefined;
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
+  /** Host-availability check for a model id, used when the child has no definition. */
+  modelUnavailable(model: string): string[];
   childRunRegistry: ChildRunRegistry;
   helperResultDelivery: HelperResultDelivery;
   workContextDelivery: Pick<WorkContextDelivery, "flushOwned">;
@@ -273,6 +275,14 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
     if (revision) {
       const unavailable = deps.unavailableReasons(revision.definition, configuration.model);
+      if (unavailable.length) {
+        return {
+          status: "error",
+          error: meridianErrorFromSystem("spawn_agent_unavailable", unavailable.join(" ")),
+        };
+      }
+    } else {
+      const unavailable = deps.modelUnavailable(configuration.model);
       if (unavailable.length) {
         return {
           status: "error",

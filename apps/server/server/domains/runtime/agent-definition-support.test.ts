@@ -4,6 +4,7 @@ import type { CompiledAgentDefinition } from "../packages/index.js";
 import {
   agentDefinitionUnsupportedReasons,
   agentExecutionUnavailableReasons,
+  agentModelUnavailableReasons,
 } from "./agent-definition-support.js";
 import type { Gateway } from "./gateway/index.js";
 
@@ -58,5 +59,12 @@ describe("agent definition support", () => {
         "model-a",
       ),
     ).toEqual([]);
+  });
+
+  it("checks a model id against the host model list independent of a definition", () => {
+    expect(agentModelUnavailableReasons(gateway, "model-a")).toEqual([]);
+    expect(agentModelUnavailableReasons(gateway, "missing-model")).toEqual([
+      "The Agent's configured model is unavailable.",
+    ]);
   });
 });

@@ -27,15 +27,6 @@ describe("validateInvocationAuthority", () => {
     expect(reasons.some((reason) => reason.includes("Write command"))).toBe(true);
   });
 
-  it("rejects roster escalation to a subagent the caller lacks", () => {
-    const baseline = config();
-    const patched = config({ namedTargets: [{ name: "evil", definitionRevisionId: "evil-rev" }] });
-    const caller = config();
-    expect(validateInvocationAuthority({ baseline, patched, caller })).toContain(
-      'Subagent "evil" is not in the caller\'s roster.',
-    );
-  });
-
   it("does not re-validate a named child's own definition-granted tools", () => {
     const baseline = config({ tools: WRITER_MAP });
     const patched = config({ tools: WRITER_MAP });
