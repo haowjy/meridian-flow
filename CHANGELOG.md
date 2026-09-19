@@ -25,6 +25,7 @@
 
 ### Fixed
 
+- A spawn override that names a tool by alias (for example `shell`) folds to its canonical name before the merge, matching authoring. Canonical `xhigh`/`none` effort authored in Mars frontmatter also survives source normalization instead of being dropped.
 - Opening `/chat/{id}` for a subagent no longer shows "This destination is unavailable." Path chat is identity; the primary list is not a lookup. Snapshot miss stays ChatScreen's error. Query `?chat=` still drops missing primaries.
 - Nested subagent Parent back resolves the parent by id on the child snapshot, not the primary-only list.
 - `return_result` persists the protocol result and child-report card in one transaction.
@@ -46,6 +47,7 @@
 
 ### Changed
 
+- Agent execution configuration has one canonical contract in `@meridian/contracts/agents` (`execution-knobs.ts`): effort value set and `max→xhigh` alias, tool policy, tool-name alias fold, resolved shape, and presence-sensitive patch. The compiler, resolver, invocation patch, and gateway effort mapping are projections, and the patch merge table is compile-time exhaustive so an accepted key cannot be silently dropped.
 - `return_result` records the report and ends this turn; the child chat stays open.
 - Home/Work chat rows and the chat switcher show the bound Agent name; Work is no longer the row identity.
 - The chat switcher no longer shows an unlabeled warning dot for an unanswered `ask_user` on another chat.

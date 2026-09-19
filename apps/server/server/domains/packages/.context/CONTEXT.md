@@ -19,6 +19,12 @@ over retained source revisions. It is not a fifth content or execution owner.
 - `domain/agent-definition-compiler.ts` validates declared configuration and emits
   a presence-sensitive definition with a versioned digest. Flat skills normalize
   to `skills.load`. Agent-specific body text becomes `systemPrompt`.
+- The canonical execution-knob schemas (effort value set + `max→xhigh` alias,
+  tool policy, tool-name alias fold, tools representation) live in
+  `@meridian/contracts/agents` (`execution-knobs.ts`). The compiler imports them
+  rather than re-declaring; authoring accepts the canonical effort set including
+  `xhigh`/`none`. `domain/agent-gateway-meta.ts` sources its accepted effort set
+  from the same constants and keeps only a private normalize helper.
 - Compilation accepts canonical frontmatter tools as lists or allow/deny maps.
   TOML overlays use `tools.allowed` and `tools.disallowed`; explicit empty lists
   clear that channel. A disallowed-list overlay replaces all baseline denials,
