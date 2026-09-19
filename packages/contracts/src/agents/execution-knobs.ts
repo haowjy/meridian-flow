@@ -55,9 +55,8 @@ export const toolAliases: Record<string, string> = {
   cat: "read",
   view: "read",
   file_read: "read",
-  write: "write",
-  file_write: "write",
-  apply_patch: "write",
+  file_write: "edit",
+  apply_patch: "edit",
   edit: "edit",
   sed: "edit",
   str_replace: "edit",
@@ -111,6 +110,14 @@ export const toolAliases: Record<string, string> = {
   toolsearch: "tool_search",
 };
 
+/** Authoring capability names are `read` and `edit`; `write` is only the model tool. */
+export const WRITE_IS_MODEL_TOOL_ERROR =
+  '"write" is the model tool name; use "edit" for the document-edit capability';
+
+/** `edit` implies `read`; an explicit `disallowed-tools` read denial contradicts it. */
+export const EDIT_IMPLIES_READ_ERROR =
+  '"edit" implies "read"; remove "read" from "disallowed-tools" or drop "edit"';
+
 export const toolReferenceSchema = z
   .string()
   .trim()
@@ -119,6 +126,10 @@ export const toolReferenceSchema = z
     const name = normalizeToolName(value);
     if (name === null) {
       context.addIssue({ code: "custom", message: "Invalid Mars tool reference" });
+      return z.NEVER;
+    }
+    if (name === "write") {
+      context.addIssue({ code: "custom", message: WRITE_IS_MODEL_TOOL_ERROR });
       return z.NEVER;
     }
     return name;
@@ -140,6 +151,10 @@ export const toolMapSchema = z
   .superRefine((folded, context) => {
     const names = new Map<string, string>();
     for (const [name, policy] of folded) {
+      if (name === "write") {
+        context.addIssue({ code: "custom", message: WRITE_IS_MODEL_TOOL_ERROR });
+        continue;
+      }
       if (!name || (names.has(name) && names.get(name) !== policy)) {
         context.addIssue({ code: "custom", message: "Empty or duplicate normalized tool name" });
       }
@@ -148,13 +163,45 @@ export const toolMapSchema = z
   })
   .transform((folded) => Object.fromEntries(folded as Array<readonly [string, ToolPolicy]>));
 
-/** Authoring/patch tool representation; folds tool-name aliases on parse. */
-export const toolRepresentationSchema = z.union([toolReferencesSchema, toolMapSchema]);
+/**
+ * Authoring/patch tool representation; folds tool-name aliases on parse.
+ * Array vs map is exclusive: a union collapses inner custom issues to "Invalid input".
+ */
+export const toolRepresentationSchema = z.unknown().transform((value, context) => {
+  const parsed = Array.isArray(value)
+    ? toolReferencesSchema.safeParse(value)
+    : toolMapSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  for (const issue of parsed.error.issues) {
+    context.addIssue({ code: "custom", message: issue.message, path: issue.path });
+  }
+  return z.NEVER;
+});
 /** Resolved config stores canonical names already, so it is the plain union. */
 export const resolvedToolsSchema = z.union([
   z.array(z.string()),
   z.record(z.string(), toolPolicySchema),
 ]);
+
+/** Authoring tool selection; resolved configurations are already canonical. */
+export interface AuthoringToolSelection {
+  tools?: string[] | Record<string, ToolPolicy>;
+  "disallowed-tools"?: string[];
+}
+
+/**
+ * `edit` implies `read`. Only the explicit `disallowed-tools` denial is a
+ * contradiction: a mere absence of `read` stays a policy-projected auto-enable.
+ */
+export function authoringToolContradiction(selection: AuthoringToolSelection): string | null {
+  const disallowed = selection["disallowed-tools"] ?? [];
+  if (!disallowed.includes("read") || disallowed.includes("edit")) return null;
+  const tools = selection.tools;
+  const editAllowed =
+    tools === undefined ||
+    (Array.isArray(tools) ? tools.length === 0 || tools.includes("edit") : tools.edit !== "deny");
+  return editAllowed ? EDIT_IMPLIES_READ_ERROR : null;
+}
 
 export const retainedSkillReferenceSchema = z.object({
   packageRevisionId: z.string(),

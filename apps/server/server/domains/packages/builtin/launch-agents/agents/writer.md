@@ -4,7 +4,6 @@ description: All-in-one fiction-writing workhorse for drafting, editing, brainst
 mode: primary
 tools:
   read: allow
-  write: allow
   edit: allow
   ask_user: allow
 skills:

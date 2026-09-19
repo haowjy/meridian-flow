@@ -21,14 +21,12 @@ const ALL_FLOW_TOOLS = ["ask_user", "ls", "read", "search", "skill", "spawn", "w
 
 const WRITER_MAP = {
   read: "allow",
-  write: "allow",
   edit: "allow",
   ask_user: "allow",
 } as const;
 
 const CRITIC_MAP = {
   read: "allow",
-  write: "deny",
   edit: "deny",
   ask_user: "allow",
 } as const;
@@ -66,8 +64,8 @@ describe("projectToolPolicy", () => {
     });
   });
 
-  it("keeps document read when only write is allowed", () => {
-    const policy = projectToolPolicy({ tools: { read: "deny", write: "allow" } });
+  it("keeps document read when only edit is allowed", () => {
+    const policy = projectToolPolicy({ tools: { read: "deny", edit: "allow" } });
     expect(policy.tools.has("read")).toBe(true);
     expect(policy.tools.has("write")).toBe(true);
     expect([...policy.readCommands].sort()).toEqual(WRITE_READ);

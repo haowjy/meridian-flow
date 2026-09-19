@@ -16,14 +16,12 @@ import { createToolRegistry } from "./tool-registry.js";
 
 const WRITER_MAP = {
   read: "allow",
-  write: "allow",
   edit: "allow",
   ask_user: "allow",
 } as const;
 
 const CRITIC_MAP = {
   read: "allow",
-  write: "deny",
   edit: "deny",
   ask_user: "allow",
 } as const;

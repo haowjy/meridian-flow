@@ -29,6 +29,9 @@ over retained source revisions. It is not a fifth content or execution owner.
   TOML overlays use `tools.allowed` and `tools.disallowed`; explicit empty lists
   clear that channel. A disallowed-list overlay replaces all baseline denials,
   including map-form denials; an allowed-list-only overlay retains them.
+  Authoring capability names are `read`/`edit`; `write` is the model tool name
+  and is rejected as a permission, `edit` implies `read`, and only an explicit
+  `disallowed-tools` read denial contradicts it.
 - Compilation is syntax validation. Runtime support, resource authorization,
   model resolution, and dependency binding belong to the retained configuration resolver before conversation creation.
   Unknown metadata is retained; acceptance does not establish its execution.

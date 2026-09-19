@@ -43,7 +43,7 @@ type CompiledToolFields = {
 
 export function projectToolPolicy(metadata: CompiledToolFields): EffectiveToolPolicy {
   const read = marsAllowed("read", metadata);
-  const mutate = marsAllowed("write", metadata) || marsAllowed("edit", metadata);
+  const mutate = marsAllowed("edit", metadata);
   const documentRead = read || mutate;
   const askUser = marsAllowed("ask_user", metadata);
 

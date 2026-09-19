@@ -7,8 +7,8 @@ function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentC
   return { model: "m", skills: { load: [], available: [] }, namedTargets: [], ...input };
 }
 
-const WRITER_MAP = { read: "allow", write: "allow", edit: "allow", ask_user: "allow" } as const;
-const CRITIC_MAP = { read: "allow", write: "deny", edit: "deny", ask_user: "allow" } as const;
+const WRITER_MAP = { read: "allow", edit: "allow", ask_user: "allow" } as const;
+const CRITIC_MAP = { read: "allow", edit: "deny", ask_user: "allow" } as const;
 
 describe("validateInvocationAuthority", () => {
   it("rejects a deny-removal the caller cannot itself perform", () => {

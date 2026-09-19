@@ -71,7 +71,7 @@ describe("applyInvocationPatch", () => {
 
   it("deep-copies baseline arrays, objects, and retained skill references", async () => {
     const baseline = config({
-      tools: { read: "allow", write: "deny" },
+      tools: { read: "allow", edit: "deny" },
       "disallowed-tools": ["edit"],
       namedTargets: [{ name: "critic", definitionRevisionId: "critic-rev" }],
       skills: { load: [dummyRef("load-a")], available: [dummyRef("avail-a")] },
@@ -85,14 +85,14 @@ describe("applyInvocationPatch", () => {
       store: revisions,
       packageRevisionId,
     });
-    if (result.tools !== undefined && !Array.isArray(result.tools)) result.tools.write = "allow";
+    if (result.tools !== undefined && !Array.isArray(result.tools)) result.tools.edit = "allow";
     result["disallowed-tools"]?.push("mutate");
     const firstTarget = result.namedTargets[0];
     if (firstTarget) firstTarget.name = "mutated";
     result.skills.load[0].path = "mutated";
     result.skills.available[0].contentDigest = "mutated";
     result.skills.load.push(dummyRef("mutated"));
-    expect(baseline.tools).toEqual({ read: "allow", write: "deny" });
+    expect(baseline.tools).toEqual({ read: "allow", edit: "deny" });
     expect(baseline["disallowed-tools"]).toEqual(["edit"]);
     expect(baseline.namedTargets[0]?.name).toBe("critic");
     expect(baseline.skills.load[0]?.path).toBe("skills/load-a/SKILL.md");
@@ -101,17 +101,17 @@ describe("applyInvocationPatch", () => {
   });
 
   it("patches one tool-map entry and leaves unmentioned entries intact", async () => {
-    const baseline = config({ tools: { read: "allow", write: "deny", edit: "deny" } });
+    const baseline = config({ tools: { read: "allow", edit: "deny" } });
     const caller = config();
     const { revisions, packageRevisionId } = await installSkills("t/map", []);
     const result = await applyInvocationPatch({
       baseline,
-      patch: { tools: { write: "allow" } },
+      patch: { tools: { edit: "allow" } },
       caller,
       store: revisions,
       packageRevisionId,
     });
-    expect(result.tools).toEqual({ read: "allow", write: "allow", edit: "deny" });
+    expect(result.tools).toEqual({ read: "allow", edit: "allow" });
   });
 
   it("keeps list-baseline allow-list semantics across map deny and allow patches", async () => {
@@ -219,6 +219,9 @@ describe("applyInvocationPatch", () => {
       { bogus: true },
       { skills: { load: "proofread" } },
       { "disallowed-tools": "edit" },
+      { tools: { write: "allow" } },
+      { tools: ["write"] },
+      { "disallowed-tools": ["write"] },
     ];
     for (const patch of malformed) {
       await expect(
@@ -231,5 +234,29 @@ describe("applyInvocationPatch", () => {
         }),
       ).rejects.toThrow(InvocationPatchError);
     }
+  });
+
+  it("rejects edit allowed together with a disallowed-tools read denial", async () => {
+    const { revisions, packageRevisionId } = await installSkills("t/contradict", []);
+    // Contradiction introduced by the patch itself.
+    await expect(
+      applyInvocationPatch({
+        baseline: config(),
+        patch: { tools: { edit: "allow" }, "disallowed-tools": ["read"] },
+        caller: config(),
+        store: revisions,
+        packageRevisionId,
+      }),
+    ).rejects.toThrow(/implies "read"/);
+    // Contradiction that only appears in the merged result, not the raw patch.
+    await expect(
+      applyInvocationPatch({
+        baseline: config({ tools: { edit: "allow" } }),
+        patch: { "disallowed-tools": ["read"] },
+        caller: config(),
+        store: revisions,
+        packageRevisionId,
+      }),
+    ).rejects.toThrow(/implies "read"/);
   });
 });

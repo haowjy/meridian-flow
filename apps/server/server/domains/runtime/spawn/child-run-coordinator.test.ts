@@ -60,7 +60,7 @@ async function fixture() {
           name: "Critic",
           model: "critic-model",
           mode: "primary",
-          tools: { read: "allow", write: "deny", edit: "deny", ask_user: "allow" },
+          tools: { read: "allow", edit: "deny", ask_user: "allow" },
         },
         "You are Critic.",
       ),
@@ -84,7 +84,7 @@ async function fixture() {
           name: "Parent",
           model: "parent-model",
           effort: "high",
-          tools: { read: "allow", write: "deny" },
+          tools: { read: "allow", edit: "deny" },
         },
         "",
       ),
@@ -103,7 +103,7 @@ async function fixture() {
     model: "parent-model",
     skills: { load: [], available: [] },
     namedTargets,
-    tools: { read: "allow", write: "deny" } as const,
+    tools: { read: "allow", edit: "deny" } as const,
     effort: "high" as const,
   };
   await revisions.bindThread(parent.id, parentRevision.id, parentConfiguration, null);
@@ -284,7 +284,7 @@ describe("ChildRunCoordinator spawn selection", () => {
       expect(binding?.revision).toBeNull();
       expect(binding?.configuration.model).toBe("parent-model");
       expect(binding?.configuration.namedTargets).toEqual(parentConfiguration.namedTargets);
-      expect(binding?.configuration.tools).toEqual({ read: "allow", write: "deny" });
+      expect(binding?.configuration.tools).toEqual({ read: "allow", edit: "deny" });
       expect(binding?.configuration.effort).toBe("high");
     }
   });
@@ -299,7 +299,7 @@ describe("ChildRunCoordinator spawn selection", () => {
       model: "parent-model",
       skills: { load: [], available: [] },
       namedTargets: [] as Array<{ name: string; definitionRevisionId: string }>,
-      tools: { read: "allow", write: "deny", edit: "deny" } as const,
+      tools: { read: "allow", edit: "deny" } as const,
       effort: "high" as const,
     };
     const genericParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
@@ -423,7 +423,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
         model: "parent-model",
         skills: { load: [], available: [] },
         namedTargets: [],
-        tools: { read: "allow", write: "deny", edit: "deny" },
+        tools: { read: "allow", edit: "deny" },
       },
       null,
     );
@@ -444,7 +444,12 @@ describe("ChildRunCoordinator invocation overlay", () => {
 
   it("rejects patch-invalid overrides before creating a child", async () => {
     const { coordinator, parent, journal } = await fixture();
-    const invalidOverrides = [{ subagents: ["ghost"] }, { bogus: true }, { effort: "bananas" }];
+    const invalidOverrides = [
+      { subagents: ["ghost"] },
+      { bogus: true },
+      { effort: "bananas" },
+      { tools: { write: "allow" } },
+    ];
     for (const overrides of invalidOverrides) {
       const result = await coordinator.spawnChild({
         parentThread: parent,
@@ -472,7 +477,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
         model: "parent-model",
         skills: { load: [], available: [] },
         namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
-        tools: { read: "allow", write: "allow", edit: "allow", ask_user: "allow" },
+        tools: { read: "allow", edit: "allow", ask_user: "allow" },
       },
       null,
     );
@@ -489,7 +494,6 @@ describe("ChildRunCoordinator invocation overlay", () => {
     const binding = await revisions.readThreadBinding(result.report.threadId);
     expect(binding?.configuration.tools).toEqual({
       read: "allow",
-      write: "deny",
       edit: "allow",
       ask_user: "allow",
     });
