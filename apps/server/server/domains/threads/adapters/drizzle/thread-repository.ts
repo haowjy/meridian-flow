@@ -8,6 +8,7 @@ import type { ThreadStatus, TurnRole, TurnStatus } from "@meridian/contracts/thr
 import * as schema from "@meridian/database/schema";
 import { and, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
+import { GENERIC_SUBAGENT_NAME } from "../../../packages/index.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
@@ -33,9 +34,17 @@ const agentDefinitionRevisionId = sql<string | null>`(
 )`;
 
 const agentName = sql<string | null>`(
-  SELECT COALESCE(${schema.agentDefinitionRevisions.definition}->'metadata'->>'name', ${schema.agentDefinitionRevisions.slug})
+  SELECT
+    CASE
+      WHEN ${schema.threadAgentBindings.definitionRevisionId} IS NULL
+        THEN ${GENERIC_SUBAGENT_NAME}
+      ELSE COALESCE(
+        ${schema.agentDefinitionRevisions.definition}->'metadata'->>'name',
+        ${schema.agentDefinitionRevisions.slug}
+      )
+    END
   FROM ${schema.threadAgentBindings}
-  JOIN ${schema.agentDefinitionRevisions}
+  LEFT JOIN ${schema.agentDefinitionRevisions}
     ON ${schema.agentDefinitionRevisions.id} = ${schema.threadAgentBindings.definitionRevisionId}
   WHERE ${schema.threadAgentBindings.threadId} = ${schema.threads}.${sql.identifier("id")}
 )`;

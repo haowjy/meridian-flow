@@ -1,5 +1,6 @@
 /** Bounded Work-associated Project-chat projection with current primary-Work identity. */
 import { sql } from "drizzle-orm";
+import { GENERIC_SUBAGENT_NAME } from "../../../packages/index.js";
 import type { WorkChatFeedRepository, WorkChatFeedRow } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 import {
@@ -27,7 +28,11 @@ export function createDrizzleWorkChatFeedRepository(db: DrizzleDatabase): WorkCh
         })})
         SELECT t.id AS thread_id, COALESCE(t.title, '') AS title,
           primary_tw.work_id, primary_work.name AS work_title,
-          COALESCE(adr.definition->'metadata'->>'name', adr.slug) AS agent_name,
+          CASE
+            WHEN tab.thread_id IS NULL THEN NULL
+            WHEN tab.definition_revision_id IS NULL THEN ${GENERIC_SUBAGENT_NAME}
+            ELSE COALESCE(adr.definition->'metadata'->>'name', adr.slug)
+          END AS agent_name,
           conversation_preview.last_message_preview,
           ${exactUtcTimestampSql(sql`COALESCE(conversational_head.activity_at, t.created_at)`)}
             AS last_activity_at_exact,
