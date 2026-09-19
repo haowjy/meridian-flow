@@ -352,9 +352,9 @@ describe("ChildRunCoordinator spawn selection", () => {
 });
 
 describe("ChildRunCoordinator invocation overlay", () => {
-  it("applies and persists a system prompt and effort override on a generic child", async () => {
+  it("persists only the provided overlay fields for generic and named children", async () => {
     const { coordinator, parent, revisions } = await fixture();
-    const result = await coordinator.spawnChild({
+    const generic = await coordinator.spawnChild({
       parentThread: parent,
       parentTurnId: "turn-1" as TurnId,
       agentSlug: "",
@@ -363,20 +363,17 @@ describe("ChildRunCoordinator invocation overlay", () => {
       overrides: { effort: "low" },
       budget,
     });
-    expect(result.status).toBe("completed");
-    if (result.status !== "completed") return;
-    const binding = await revisions.readThreadBinding(result.report.threadId);
-    expect(binding?.revision).toBeNull();
-    expect(binding?.invocationOverlay).toEqual({
+    expect(generic.status).toBe("completed");
+    if (generic.status !== "completed") return;
+    const genericBinding = await revisions.readThreadBinding(generic.report.threadId);
+    expect(genericBinding?.revision).toBeNull();
+    expect(genericBinding?.invocationOverlay).toEqual({
       systemPrompt: "Custom child prompt",
       overrides: { effort: "low" },
     });
-    expect(binding?.configuration.effort).toBe("low");
-  });
+    expect(genericBinding?.configuration.effort).toBe("low");
 
-  it("persists only the provided overlay fields on a named child", async () => {
-    const { coordinator, parent, revisions } = await fixture();
-    const result = await coordinator.spawnChild({
+    const named = await coordinator.spawnChild({
       parentThread: parent,
       parentTurnId: "turn-1" as TurnId,
       agentSlug: "critic",
@@ -384,11 +381,11 @@ describe("ChildRunCoordinator invocation overlay", () => {
       overrides: { model: "critic-model" },
       budget,
     });
-    expect(result.status).toBe("completed");
-    if (result.status !== "completed") return;
-    const binding = await revisions.readThreadBinding(result.report.threadId);
-    expect(binding?.revision?.id).toBeDefined();
-    expect(binding?.invocationOverlay).toEqual({ overrides: { model: "critic-model" } });
+    expect(named.status).toBe("completed");
+    if (named.status !== "completed") return;
+    const namedBinding = await revisions.readThreadBinding(named.report.threadId);
+    expect(namedBinding?.revision?.id).toBeDefined();
+    expect(namedBinding?.invocationOverlay).toEqual({ overrides: { model: "critic-model" } });
   });
 
   it("rejects an out-of-scope tool grant before creating the child", async () => {
@@ -423,53 +420,22 @@ describe("ChildRunCoordinator invocation overlay", () => {
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
   });
 
-  it("rejects an unresolvable subagent escalation with a patch-invalid error", async () => {
+  it("rejects patch-invalid overrides before creating a child", async () => {
     const { coordinator, parent, journal } = await fixture();
-    const result = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      overrides: { subagents: ["ghost"] },
-      budget,
-    });
-    expect(result.status).toBe("error");
-    if (result.status === "error") {
-      expect(result.error.code).toBe("spawn_invocation_patch_invalid");
-    }
-    expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
-  });
-
-  it("rejects an unknown override key as patch-invalid before creating a child", async () => {
-    const { coordinator, parent, journal } = await fixture();
-    const result = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      overrides: { bogus: true } as never,
-      budget,
-    });
-    expect(result.status).toBe("error");
-    if (result.status === "error") {
-      expect(result.error.code).toBe("spawn_invocation_patch_invalid");
-    }
-    expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
-  });
-
-  it("rejects a malformed override effort value as patch-invalid", async () => {
-    const { coordinator, parent, journal } = await fixture();
-    const result = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      overrides: { effort: "bananas" } as never,
-      budget,
-    });
-    expect(result.status).toBe("error");
-    if (result.status === "error") {
-      expect(result.error.code).toBe("spawn_invocation_patch_invalid");
+    const invalidOverrides = [{ subagents: ["ghost"] }, { bogus: true }, { effort: "bananas" }];
+    for (const overrides of invalidOverrides) {
+      const result = await coordinator.spawnChild({
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        overrides: overrides as never,
+        budget,
+      });
+      expect(result.status).toBe("error");
+      if (result.status === "error") {
+        expect(result.error.code).toBe("spawn_invocation_patch_invalid");
+      }
     }
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
   });

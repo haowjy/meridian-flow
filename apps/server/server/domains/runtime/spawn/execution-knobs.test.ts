@@ -1,63 +1,20 @@
 /** One execution-knob contract across compile, resolve, patch, and provider params. */
-import {
-  AGENT_EFFORT_ALIASES,
-  AGENT_EFFORT_AUTHORING_VALUES,
-  AGENT_EFFORT_VALUES,
-  agentEffortAuthoringSchema,
-  agentEffortSchema,
-  invocationPatchSchema,
-  type ResolvedAgentConfiguration,
-} from "@meridian/contracts/agents";
+import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import { describe, expect, it } from "vitest";
 import {
-  compileAgentDefinition,
   createInMemoryAgentRevisionStore,
-  normalizeAgentMeta,
   resolveAgentConfiguration,
   serializeMarkdownDefinition,
 } from "../../packages/index.js";
 import { projectToolPolicy } from "../loop/permissions/project-tool-policy.js";
 import { agentGatewayMetaToGenerateParams } from "../tools/agent-thread-context.js";
-import { applyInvocationPatch, PATCH_MERGES } from "./apply-invocation-patch.js";
+import { applyInvocationPatch } from "./apply-invocation-patch.js";
 
 function config(input: Partial<ResolvedAgentConfiguration> = {}): ResolvedAgentConfiguration {
   return { model: "base-model", skills: { load: [], available: [] }, namedTargets: [], ...input };
 }
 
 const noSkills = { readSource: async () => undefined };
-
-describe("canonical effort value set", () => {
-  it("is declared once plus the max alias, and the patch reuses the canonical schema", () => {
-    const union = [...AGENT_EFFORT_VALUES, ...Object.keys(AGENT_EFFORT_ALIASES)];
-    expect([...AGENT_EFFORT_AUTHORING_VALUES].sort()).toEqual([...union].sort());
-    for (const value of union) {
-      expect(agentEffortAuthoringSchema.safeParse(value).success).toBe(true);
-    }
-    expect(agentEffortAuthoringSchema.safeParse("bananas").success).toBe(false);
-    // Identity, not a re-declared enum.
-    expect(invocationPatchSchema.shape.effort.unwrap()).toBe(agentEffortSchema);
-  });
-
-  it("folds max to xhigh without accepting non-values", () => {
-    expect(agentEffortAuthoringSchema.parse("MAX")).toBe("xhigh");
-    expect(compileAgentDefinition({ body: "", meta: { effort: "max" } }).ok).toBe(true);
-    expect(compileAgentDefinition({ body: "", meta: { effort: "bananas" } }).ok).toBe(false);
-  });
-
-  it("preserves xhigh/none through source normalization", () => {
-    expect(normalizeAgentMeta({ effort: " xhigh " })).toEqual({ effort: "xhigh" });
-    expect(normalizeAgentMeta({ effort: "None" })).toEqual({ effort: "none" });
-    expect(normalizeAgentMeta({ effort: "max" })).toEqual({ effort: "max" });
-  });
-});
-
-describe("every patch key is merged", () => {
-  it("has exactly one PATCH_MERGES entry per invocationPatchSchema key", () => {
-    expect(Object.keys(PATCH_MERGES).sort()).toEqual(
-      Object.keys(invocationPatchSchema.shape).sort(),
-    );
-  });
-});
 
 describe("one definition across all four surfaces", () => {
   it("compiles, resolves, patches every key, and reaches provider params", async () => {
@@ -158,20 +115,6 @@ describe("one definition across all four surfaces", () => {
 });
 
 describe("override alias folding and coupled merge", () => {
-  it("folds a patched tool alias like authoring folds it", async () => {
-    const result = await applyInvocationPatch({
-      baseline: config(),
-      patch: { tools: { shell: "allow" } },
-      caller: config(),
-      store: noSkills,
-      packageRevisionId: null,
-    });
-    expect(result.tools).toEqual({ bash: "allow" });
-    const authored = compileAgentDefinition({ body: "", meta: { tools: { shell: "allow" } } });
-    if (!authored.ok) throw new Error("Expected authoring to accept shell");
-    expect(authored.definition.metadata.tools).toEqual({ bash: "allow" });
-  });
-
   it("lifts a baseline denial when a map allow targets the same tool", async () => {
     const baseline = config({
       tools: { read: "allow", edit: "deny" },

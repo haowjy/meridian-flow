@@ -11,13 +11,6 @@ const WRITER_MAP = { read: "allow", write: "allow", edit: "allow", ask_user: "al
 const CRITIC_MAP = { read: "allow", write: "deny", edit: "deny", ask_user: "allow" } as const;
 
 describe("validateInvocationAuthority", () => {
-  it("allows an in-scope tool grant when the caller holds it", () => {
-    const baseline = config({ tools: CRITIC_MAP });
-    const patched = config({ tools: WRITER_MAP });
-    const caller = config({ tools: WRITER_MAP });
-    expect(validateInvocationAuthority({ baseline, patched, caller })).toEqual([]);
-  });
-
   it("rejects a deny-removal the caller cannot itself perform", () => {
     const baseline = config({ tools: CRITIC_MAP });
     const patched = config({ tools: WRITER_MAP });

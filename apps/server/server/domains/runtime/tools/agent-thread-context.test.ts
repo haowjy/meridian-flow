@@ -148,7 +148,7 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
     expect(spawnDescription(rostered.tools)).not.toContain("critic");
   });
 
-  it("prefers the invocation overlay system prompt over the revision prompt", async () => {
+  it("resolves the agent body from overlay, then revision, then the generic default", async () => {
     const overridden = await boundContext({
       tools: WRITER_MAP,
       invocationOverlay: { systemPrompt: "Overridden prompt." },
@@ -157,26 +157,22 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
 
     const inherited = await boundContext({ tools: WRITER_MAP });
     expect(inherited.agentBody).toBe("You are an agent.");
-  });
 
-  it("resolves a null revision to the generic body, slug, and subagent suffix", async () => {
-    const context = await boundContext({ revision: null, kind: "subagent", tools: CRITIC_MAP });
-    expect(context.agentSlug).toBe(GENERIC_SUBAGENT_SLUG);
-    expect(context.agentBody).toBe(
+    const generic = await boundContext({ revision: null, kind: "subagent", tools: CRITIC_MAP });
+    expect(generic.agentSlug).toBe(GENERIC_SUBAGENT_SLUG);
+    expect(generic.agentBody).toBe(
       `${GENERIC_AGENT_BODY}\n\nYou are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.`,
     );
-  });
 
-  it("applies the overlay system prompt and subagent suffix to a null revision", async () => {
-    const context = await boundContext({
+    const overriddenGeneric = await boundContext({
       revision: null,
       kind: "subagent",
       tools: CRITIC_MAP,
       invocationOverlay: { systemPrompt: "Overridden child prompt." },
     });
-    expect(context.agentSlug).toBe(GENERIC_SUBAGENT_SLUG);
-    expect(context.agentBody).toContain("Overridden child prompt.");
-    expect(context.agentBody).toContain("You are a subagent.");
-    expect(context.agentBody.startsWith("Overridden child prompt.")).toBe(true);
+    expect(overriddenGeneric.agentSlug).toBe(GENERIC_SUBAGENT_SLUG);
+    expect(overriddenGeneric.agentBody).toContain("Overridden child prompt.");
+    expect(overriddenGeneric.agentBody).toContain("You are a subagent.");
+    expect(overriddenGeneric.agentBody.startsWith("Overridden child prompt.")).toBe(true);
   });
 });
