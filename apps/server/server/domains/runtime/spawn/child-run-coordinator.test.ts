@@ -343,3 +343,93 @@ describe("ChildRunCoordinator spawn selection", () => {
     });
   });
 });
+
+describe("ChildRunCoordinator invocation overlay", () => {
+  it("applies and persists a system prompt and effort override on a generic child", async () => {
+    const { coordinator, parent, revisions } = await fixture();
+    const result = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      systemPrompt: "Custom child prompt",
+      overrides: { effort: "low" },
+      budget,
+    });
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    const binding = await revisions.readThreadBinding(result.report.threadId);
+    expect(binding?.revision).toBeNull();
+    expect(binding?.invocationOverlay).toEqual({
+      systemPrompt: "Custom child prompt",
+      overrides: { effort: "low" },
+    });
+    expect(binding?.configuration.effort).toBe("low");
+  });
+
+  it("persists only the provided overlay fields on a named child", async () => {
+    const { coordinator, parent, revisions } = await fixture();
+    const result = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "critic",
+      prompt,
+      overrides: { model: "critic-model" },
+      budget,
+    });
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    const binding = await revisions.readThreadBinding(result.report.threadId);
+    expect(binding?.revision?.id).toBeDefined();
+    expect(binding?.invocationOverlay).toEqual({ overrides: { model: "critic-model" } });
+  });
+
+  it("rejects an out-of-scope tool grant before creating the child", async () => {
+    const { coordinator, revisions, repos, journal } = await fixture();
+    const restrictedParent = await repos.threads.create({
+      userId: "user-1",
+      projectId: "project-1",
+    });
+    await revisions.bindThread(
+      restrictedParent.id,
+      null,
+      {
+        model: "parent-model",
+        skills: { load: [], available: [] },
+        namedTargets: [],
+        tools: { read: "allow", write: "deny", edit: "deny" },
+      },
+      null,
+    );
+    const result = await coordinator.spawnChild({
+      parentThread: restrictedParent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      overrides: { tools: { edit: "allow" } },
+      budget,
+    });
+    expect(result.status).toBe("error");
+    if (result.status === "error") {
+      expect(result.error.code).toBe("spawn_invocation_authority_denied");
+    }
+    expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
+  });
+
+  it("rejects an unresolvable subagent escalation with a patch-invalid error", async () => {
+    const { coordinator, parent, journal } = await fixture();
+    const result = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      overrides: { subagents: ["ghost"] },
+      budget,
+    });
+    expect(result.status).toBe("error");
+    if (result.status === "error") {
+      expect(result.error.code).toBe("spawn_invocation_patch_invalid");
+    }
+    expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
+  });
+});

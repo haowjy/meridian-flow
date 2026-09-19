@@ -1,4 +1,5 @@
 /** Writer vs Critic metadata advertise different write schemas. */
+import type { InvocationOverlay } from "@meridian/contracts/agents";
 import { describe, expect, it } from "vitest";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
 import { createInMemoryRepositories } from "../../threads/index.js";
@@ -37,6 +38,7 @@ async function boundContext(metadata: {
   tools?: typeof WRITER_MAP | typeof CRITIC_MAP;
   definitionTools?: typeof WRITER_MAP | typeof CRITIC_MAP;
   namedTargets?: Array<{ name: string; definitionRevisionId: string }>;
+  invocationOverlay?: InvocationOverlay | null;
 }) {
   const projects = createInMemoryProjectRepository();
   const project = await projects.create({ userId: "user-1", title: "Serial" });
@@ -71,7 +73,7 @@ async function boundContext(metadata: {
             namedTargets: metadata.namedTargets ?? [],
             ...(metadata.tools !== undefined ? { tools: metadata.tools } : {}),
           },
-          invocationOverlay: null,
+          invocationOverlay: metadata.invocationOverlay ?? null,
         };
       },
     },
@@ -124,5 +126,16 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
     expect(spawnDescription(rostered.tools)).toContain("Prefer a named specialist");
     expect(spawnDescription(rostered.tools)).not.toContain("Named subagents: critic.");
     expect(spawnDescription(rostered.tools)).not.toContain("critic");
+  });
+
+  it("prefers the invocation overlay system prompt over the revision prompt", async () => {
+    const overridden = await boundContext({
+      tools: WRITER_MAP,
+      invocationOverlay: { systemPrompt: "Overridden prompt." },
+    });
+    expect(overridden.agentBody).toBe("Overridden prompt.");
+
+    const inherited = await boundContext({ tools: WRITER_MAP });
+    expect(inherited.agentBody).toBe("You are an agent.");
   });
 });
