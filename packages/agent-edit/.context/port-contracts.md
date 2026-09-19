@@ -150,9 +150,8 @@ intentionally share one model-facing reversal handle.
 The Drizzle journal adapter commits a buffered response in one multi-row INSERT
 via `appendBatch` (per-update
 `appendMutation` was deleted). The in-memory test journal implements the same
-batch API. See the [performance reference][perf] for measured numbers.
-
-[perf]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/wiki/architecture/agent-edit-performance.md
+batch API. `src/perf.snapshot.bench.test.ts` is a baseline harness, not a
+regression gate (`*.bench.test.ts` is excluded from the normal vitest run).
 
 ### ActorSessionStore (`src/ports/actor-session-store.ts`)
 Stable identity for external callers. Maps transport-level IDs to persistent

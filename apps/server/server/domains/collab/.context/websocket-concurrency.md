@@ -21,3 +21,11 @@ Do not treat the coordinator mutex as coverage for WebSocket mutations.
   durable post-cut delta; warm execution reloads the row and uses the same
   final-pre-push materializer as cold recovery. Rechecks compare complete updates,
   never state vectors, so delete-only divergence is visible.
+
+## Live writer-admission close
+
+Live writer-admission failure closes with `1013 writer-journal-admission-failed`
+(retryable). Drive the close through the raw crossws peer
+(`closeWriterTransport` → `wsPeer.close`). Do not rely on throwing
+`permissionDenied`: Hocuspocus swallows a thrown error's `.code`, so only the
+direct peer close preserves the declared code and reason.

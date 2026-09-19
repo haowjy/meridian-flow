@@ -3,6 +3,12 @@
 How the frontend is structured, why the seams exist, and what conventions
 govern visual and interaction work.
 
+## Frontend performance
+
+Recurring traps (layout `shouldReload`, relative-time clocks, editor vendor
+chunks, streaming memo/coalesce) live in [frontend-perf.md](frontend-perf.md).
+`EditorView` is a static host dependency; do not lazy-load it.
+
 ## Project Home
 
 The Home client boundary, feed/row layout contract, interaction ownership, and

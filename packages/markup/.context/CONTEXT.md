@@ -31,6 +31,22 @@ package root. Tests or preset internals that need them import from sibling
 `serializeBlocks`. `serializeBlock`/`serializeBlocks` return normalized block
 bodies without hash prefixes. Agent-edit owns any hash-prefixed adapter layer.
 
+## Round-trip guarantees
+
+These concern supported durable document semantics, not CRDT identity or history.
+A newly parsed document cannot replace an existing Yjs replica without losing
+that replica's identities and merge lineage. Arbitrary accepted Markdown may
+normalize on first parse; canonical wire spelling then stabilizes.
+
+- **Structural stability:** parsing serialized document blocks produces the same
+  ProseMirror document semantics.
+- **Canonical bytes:** `serialize(parse(canonicalWire))` reproduces the canonical
+  wire spelling with the codec's trailing newline.
+- **Deterministic serialization:** the same valid block input produces the same
+  wire string.
+- **Prose safety:** literal `<` and `{` in prose round-trip (escaped on ingress,
+  no double-escape).
+
 ## Builder semantics
 
 `MarkupPlugin` can provide `blocks`, `marks`, `remarkPlugins`, `preprocess`,

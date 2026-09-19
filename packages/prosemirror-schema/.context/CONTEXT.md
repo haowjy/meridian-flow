@@ -53,7 +53,7 @@ Nodes:
 | `paragraph`, `heading` | Basic nodes plus the `align` attr. |
 | `table`, `table_row`, `table_header`, `table_cell` | Table structure. `table` carries `align`; cells contain `block+` and carry `alignment`, `colspan`, `rowspan`, and `colwidth` for prosemirror-tables editing. |
 | `code_block` | Adds nullable `language` attr so fenced code survives markdown projection. |
-| `image` | Inline image with `src`, `alt`, `title`, `uploadToken`, and `width` attrs. `src` defaults to an empty string. `uploadToken` (nullable, 0.3.0) is the ephemeral upload identity; `width` (nullable, 0.4.0) is the writer-chosen display width in CSS pixels. |
+| `image` | Inline image with `src`, `alt`, `title`, `uploadToken`, and `width` attrs. `image.marks = ""` so marks cannot attach (MDAST has no inline-image marks). `src` defaults to an empty string. `uploadToken` (nullable, 0.3.0) is ephemeral Yjs-only upload identity and is absent from Markdown/MDX; `width` (nullable, 0.4.0) is the writer-chosen display width in CSS pixels and survives the wire. |
 | `bullet_list`, `ordered_list`, `list_item` | List structure with `tight`/`order` attrs for markdown round-tripping. |
 | `horizontal_rule` | Scene break / thematic break node for markdown `---` round-tripping. |
 | `jsx_leaf`, `jsx_container` | MDX component blocks with `name` and `props` attrs; leaf components contain `text*`, containers contain `block+`. |
