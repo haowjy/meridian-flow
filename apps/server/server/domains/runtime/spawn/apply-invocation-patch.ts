@@ -1,9 +1,11 @@
 /** Applies a presence-sensitive per-invocation patch to a fully-resolved baseline configuration. */
-import type {
-  InvocationPatch,
-  ResolvedAgentConfiguration,
-  RetainedSkillReference,
+import {
+  type InvocationPatch,
+  invocationPatchSchema,
+  type ResolvedAgentConfiguration,
+  type RetainedSkillReference,
 } from "@meridian/contracts/agents";
+import { ZodError } from "zod";
 import {
   AgentConfigurationError,
   type AgentRevisionStore,
@@ -13,12 +15,6 @@ import {
 
 /** Unresolvable or malformed patch reference (skill name, roster name, or value shape). */
 export class InvocationPatchError extends Error {}
-
-const PATCH_KEYS = new Set(["model", "effort", "tools", "disallowed-tools", "subagents", "skills"]);
-
-const EFFORTS = new Set(["low", "medium", "high", "xhigh", "none", "disabled", "adaptive"]);
-
-const TOOL_POLICIES = new Set(["allow", "deny"]);
 
 export interface ApplyInvocationPatchInput {
   baseline: ResolvedAgentConfiguration;
@@ -33,29 +29,78 @@ export interface ApplyInvocationPatchInput {
   packageRevisionId: string | null;
 }
 
+type PatchMerge<K extends keyof InvocationPatch> = (
+  value: NonNullable<InvocationPatch[K]>,
+  input: ApplyInvocationPatchInput,
+) => Partial<ResolvedAgentConfiguration> | Promise<Partial<ResolvedAgentConfiguration>>;
+
+/**
+ * One merge per patch key. The mapped type makes a knob added to
+ * `invocationPatchSchema` without a merge a compile error.
+ *
+ * Test-visible: the coverage test iterates `invocationPatchSchema.shape` and
+ * asserts every key has an entry here.
+ */
+export const PATCH_MERGES: { [K in keyof InvocationPatch]-?: PatchMerge<K> } = {
+  model: (value) => ({ model: value }),
+  effort: (value) => ({ effort: value }),
+  // tools and disallowed-tools are coupled: a map `allow` lifts the name from the
+  // baseline denial list. Each entry returns the full patchTools result so either
+  // key present alone still applies the lift; patchTools is pure in
+  // (baseline, patch), so this is idempotent and order-independent.
+  tools: (_value, input) => patchTools(input.baseline, input.patch),
+  "disallowed-tools": (_value, input) => patchTools(input.baseline, input.patch),
+  subagents: (_value, input) => ({
+    namedTargets: patchSubagents(input.baseline, input.patch, input.caller),
+  }),
+  skills: async (_value, input) => ({ skills: await patchSkills(input) }),
+};
+
 export async function applyInvocationPatch(
   input: ApplyInvocationPatchInput,
 ): Promise<ResolvedAgentConfiguration> {
-  const { baseline, patch, caller } = input;
-
-  assertValidPatchShape(patch);
+  const patch = parseInvocationPatch(input.patch);
+  const effective: ApplyInvocationPatchInput = { ...input, patch };
+  const { baseline } = effective;
 
   const result: ResolvedAgentConfiguration = {
-    model: patch.model !== undefined ? patch.model : baseline.model,
-    skills: await patchSkills(input),
-    namedTargets: patchSubagents(baseline, patch, caller),
+    model: baseline.model,
+    skills: copySkills(baseline.skills),
+    namedTargets: copyNamedTargets(baseline.namedTargets),
   };
+  if (baseline.tools !== undefined) result.tools = copyTools(baseline.tools);
+  if (baseline["disallowed-tools"] !== undefined) {
+    result["disallowed-tools"] = [...baseline["disallowed-tools"]];
+  }
+  if (baseline.effort !== undefined) result.effort = baseline.effort;
 
-  const tools = patchTools(baseline, patch);
-  if (tools.tools !== undefined) result.tools = tools.tools;
-  if (tools["disallowed-tools"] !== undefined) {
-    result["disallowed-tools"] = tools["disallowed-tools"];
+  for (const key of Object.keys(patch) as Array<keyof InvocationPatch>) {
+    if (patch[key] === undefined) continue;
+    const merge = PATCH_MERGES[key] as PatchMerge<keyof InvocationPatch>;
+    Object.assign(result, await merge(patch[key] as never, effective));
   }
 
-  if (baseline.effort !== undefined) result.effort = baseline.effort;
-  if (patch.effort !== undefined) result.effort = patch.effort;
-
   return result;
+}
+
+/**
+ * The schema is the allow-list; this replaces the old hand-rolled shape guard.
+ * A `ZodError` becomes the typed error the spawn path already routes to
+ * `spawn_invocation_patch_invalid` before any child row is created.
+ */
+function parseInvocationPatch(patch: unknown): InvocationPatch {
+  try {
+    return invocationPatchSchema.parse(patch);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      throw new InvocationPatchError(
+        error.issues
+          .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+          .join("; "),
+      );
+    }
+    throw error;
+  }
 }
 
 interface PatchedTools {
@@ -174,58 +219,6 @@ async function patchSkills(
         ? copySkillReferences(baseline.skills.available)
         : availableNames.map(resolve),
   };
-}
-
-/** Rejects unknown keys and wrong value shapes before any baseline merge. */
-function assertValidPatchShape(patch: InvocationPatch): void {
-  for (const key of Object.keys(patch)) {
-    if (!PATCH_KEYS.has(key)) throw new InvocationPatchError(`Unknown override field: ${key}`);
-  }
-  if (patch.model !== undefined && typeof patch.model !== "string") {
-    throw new InvocationPatchError("override model must be a string");
-  }
-  if (patch.effort !== undefined && !EFFORTS.has(patch.effort)) {
-    throw new InvocationPatchError(`Unknown effort: ${patch.effort}`);
-  }
-  if (patch.tools !== undefined && !Array.isArray(patch.tools)) {
-    if (typeof patch.tools !== "object" || patch.tools === null) {
-      throw new InvocationPatchError("override tools must be an array or a map");
-    }
-    for (const [name, policy] of Object.entries(patch.tools)) {
-      if (!TOOL_POLICIES.has(policy)) {
-        throw new InvocationPatchError(`Unknown tool policy for "${name}": ${policy}`);
-      }
-    }
-  }
-  if (patch.tools !== undefined && Array.isArray(patch.tools) && !isStringArray(patch.tools)) {
-    throw new InvocationPatchError("override tools must be a string array");
-  }
-  if (patch["disallowed-tools"] !== undefined && !isStringArray(patch["disallowed-tools"])) {
-    throw new InvocationPatchError("override disallowed-tools must be a string array");
-  }
-  if (patch.subagents !== undefined && !isStringArray(patch.subagents)) {
-    throw new InvocationPatchError("override subagents must be a string array");
-  }
-  if (patch.skills !== undefined) {
-    if (typeof patch.skills !== "object" || patch.skills === null || Array.isArray(patch.skills)) {
-      throw new InvocationPatchError("override skills must be an object");
-    }
-    for (const key of Object.keys(patch.skills)) {
-      if (key !== "load" && key !== "available") {
-        throw new InvocationPatchError(`Unknown skills override field: ${key}`);
-      }
-    }
-    if (patch.skills.load !== undefined && !isStringArray(patch.skills.load)) {
-      throw new InvocationPatchError("override skills.load must be a string array");
-    }
-    if (patch.skills.available !== undefined && !isStringArray(patch.skills.available)) {
-      throw new InvocationPatchError("override skills.available must be a string array");
-    }
-  }
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 function copyTools(
