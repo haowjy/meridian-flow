@@ -94,22 +94,18 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect((await threads.listByUser(USER))[0]?.agentName).toBe("Retained Name");
     });
 
-    it("labels an agent-less binding as the generic subagent through thread reads", async () => {
+    it("labels an agent-less binding as the generic subagent through thread reads and home feed", async () => {
       const threads = createDrizzleThreadRepository(db);
+      const { createDrizzleRepositoriesForTest } = await import(
+        "../../threads/adapters/drizzle/repositories.js"
+      );
+      const repos = createDrizzleRepositoriesForTest(db);
       await store.bindThread(THREAD, null, bindingConfiguration, null);
       expect((await threads.findById(THREAD))?.agentDefinitionRevisionId).toBeNull();
       expect((await threads.findById(THREAD))?.agentName).toBe("Subagent");
       expect((await threads.listByUser(USER))[0]?.agentName).toBe("Subagent");
       const updated = await threads.updateStatus(THREAD, "active");
       expect(updated?.agentName).toBe("Subagent");
-    });
-
-    it("projects the generic subagent name into the home chat feed for an agent-less binding", async () => {
-      const { createDrizzleRepositoriesForTest } = await import(
-        "../../threads/adapters/drizzle/repositories.js"
-      );
-      const repos = createDrizzleRepositoriesForTest(db);
-      await store.bindThread(THREAD, null, bindingConfiguration, null);
       const home = await repos.homeFeed.queryPage({
         projectId: PROJECT,
         userId: USER,
