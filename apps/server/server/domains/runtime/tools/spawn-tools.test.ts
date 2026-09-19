@@ -102,22 +102,13 @@ describe("spawn tool input schema", () => {
     expect(schema.required).toEqual(["prompt"]);
   });
 
-  it("types the overrides patch with properties and enums for model guidance", () => {
+  it("advertises overrides as a shallow open object", () => {
     const schema = spawnSchema();
-    const overrides = schema.properties.overrides;
-    expect(overrides).toMatchObject({
+    expect(schema.properties.overrides).toEqual({
       type: "object",
-      additionalProperties: false,
+      description: expect.stringContaining("model"),
     });
-    expect(overrides.properties).toMatchObject({
-      model: { type: "string" },
-      effort: {
-        type: "string",
-        enum: ["low", "medium", "high", "xhigh", "none", "disabled", "adaptive"],
-      },
-      "disallowed-tools": { type: "array" },
-      subagents: { type: "array" },
-      skills: { type: "object" },
-    });
+    expect(schema.properties.overrides).not.toHaveProperty("properties");
+    expect(schema.properties.overrides).not.toHaveProperty("additionalProperties");
   });
 });
