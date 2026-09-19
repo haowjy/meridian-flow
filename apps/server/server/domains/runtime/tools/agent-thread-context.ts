@@ -36,7 +36,7 @@ export interface ResolveAgentThreadTurnContextInput {
  * Exhaustive bridge from canonical effort to `GenerateRequest.reasoning`. The
  * record makes a new canonical effort value demand an explicit provider mapping.
  */
-export const EFFORT_TO_REASONING: Record<AgentEffort, GenerateRequest["reasoning"]> = {
+const EFFORT_TO_REASONING: Record<AgentEffort, GenerateRequest["reasoning"]> = {
   low: { effort: "low" },
   medium: { effort: "medium" },
   high: { effort: "high" },
