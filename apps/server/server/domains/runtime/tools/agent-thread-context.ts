@@ -1,5 +1,6 @@
 /** Next-turn Agent configuration comes exclusively from the retained thread binding. */
 import {
+  type AgentEffort,
   GENERIC_AGENT_BODY,
   GENERIC_SUBAGENT_SLUG,
   type ResolvedAgentConfiguration,
@@ -31,16 +32,34 @@ export interface ResolveAgentThreadTurnContextInput {
   baseTools: Tool[] | undefined;
 }
 
+/**
+ * Exhaustive bridge from canonical effort to `GenerateRequest.reasoning`. The
+ * record makes a new canonical effort value demand an explicit provider mapping.
+ */
+export const EFFORT_TO_REASONING: Record<AgentEffort, GenerateRequest["reasoning"]> = {
+  low: { effort: "low" },
+  medium: { effort: "medium" },
+  high: { effort: "high" },
+  xhigh: { effort: "max" },
+  none: "disabled",
+  disabled: "disabled",
+  adaptive: "adaptive",
+};
+
+export function mapAgentEffortToReasoning(
+  effort: AgentEffort | undefined,
+): GenerateRequest["reasoning"] {
+  return effort === undefined ? undefined : EFFORT_TO_REASONING[effort];
+}
+
 /** Translate canonical Mars effort names into the gateway's provider-neutral contract. */
 export function agentGatewayMetaToGenerateParams(
   meta: Pick<ResolvedAgentConfiguration, "model" | "effort">,
 ): Pick<GenerateRequest, "model" | "reasoning"> {
   const params: Pick<GenerateRequest, "model" | "reasoning"> = {};
   if (meta.model) params.model = meta.model;
-  if (meta.effort === "disabled" || meta.effort === "none") params.reasoning = "disabled";
-  else if (meta.effort === "adaptive") params.reasoning = "adaptive";
-  else if (meta.effort)
-    params.reasoning = { effort: meta.effort === "xhigh" ? "max" : meta.effort };
+  const reasoning = mapAgentEffortToReasoning(meta.effort);
+  if (reasoning !== undefined) params.reasoning = reasoning;
   return params;
 }
 
