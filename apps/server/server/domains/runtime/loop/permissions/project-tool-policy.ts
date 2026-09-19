@@ -15,11 +15,15 @@ export type WorkCommandName = "list" | "show" | "switch" | "create" | "update" |
 
 export interface EffectiveToolPolicy {
   tools: ReadonlySet<string>;
+  readCommands: ReadonlySet<WriteCommandName>;
   writeCommands: ReadonlySet<WriteCommandName>;
   workCommands: ReadonlySet<WorkCommandName>;
 }
 
-const WRITE_READ_COMMANDS = ["read", "diff"] as const satisfies readonly WriteCommandName[];
+export const DOCUMENT_READ_COMMANDS = [
+  "read",
+  "diff",
+] as const satisfies readonly WriteCommandName[];
 const WRITE_MUTATE_COMMANDS = [
   "create",
   "insert",
@@ -43,12 +47,11 @@ type CompiledToolFields = {
 export function projectToolPolicy(metadata: CompiledToolFields): EffectiveToolPolicy {
   const read = marsAllowed("read", metadata);
   const mutate = marsAllowed("write", metadata) || marsAllowed("edit", metadata);
+  const documentRead = read || mutate;
   const askUser = marsAllowed("ask_user", metadata);
 
-  const writeCommands = new Set<WriteCommandName>([
-    ...(read ? WRITE_READ_COMMANDS : []),
-    ...(mutate ? WRITE_MUTATE_COMMANDS : []),
-  ]);
+  const readCommands = new Set<WriteCommandName>(documentRead ? DOCUMENT_READ_COMMANDS : []);
+  const writeCommands = new Set<WriteCommandName>(mutate ? WRITE_MUTATE_COMMANDS : []);
   const workCommands = new Set<WorkCommandName>([
     ...WORK_NAV_COMMANDS,
     ...(mutate ? WORK_MUTATE_COMMANDS : []),
@@ -58,14 +61,26 @@ export function projectToolPolicy(metadata: CompiledToolFields): EffectiveToolPo
   // spawn is always advertised: named targets come from the roster, and the
   // generic subagent stays available even when the roster is empty.
   const tools = new Set<string>(["work", "skill", "spawn"]);
-  if (writeCommands.size > 0) tools.add("write");
-  if (read) {
+  if (documentRead) tools.add("read");
+  if (mutate) tools.add("write");
+  if (documentRead) {
     tools.add("ls");
     tools.add("search");
   }
   if (askUser) tools.add("ask_user");
 
-  return { tools, writeCommands, workCommands };
+  return { tools, readCommands, writeCommands, workCommands };
+}
+
+/** Single per-tool command mapping; callers must not duplicate these lists. */
+export function commandSetForTool(
+  policy: EffectiveToolPolicy,
+  toolName: string,
+): ReadonlySet<string> | undefined {
+  if (toolName === "read") return policy.readCommands;
+  if (toolName === "write") return policy.writeCommands;
+  if (toolName === "work") return policy.workCommands;
+  return undefined;
 }
 
 function marsAllowed(name: string, metadata: CompiledToolFields): boolean {

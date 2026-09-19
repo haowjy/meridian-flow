@@ -44,6 +44,7 @@
 - User bubbles render picked `/slug` with the same hover name and description as the composer.
 - Composer `/` menu matches the composer shell width. Picked skills stay visible as `/slug` atoms with a hover name and description, and Send copies that `/slug` into the user message.
 - Proxy Home `GET /api/skills` to the API server so composer `/` can list skills before a thread exists.
+- A read-only Agent now advertises a first-class `read` tool, so Critic reads instead of reporting it cannot. Allowing `write` or `edit` implies document read. Mutating Agents advertise both `read` and `write`, and the `write` tool no longer carries `read`/`diff`.
 
 ### Changed
 

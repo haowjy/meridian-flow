@@ -31,6 +31,7 @@ const CRITIC_MAP = {
 function stubHandlers(): CoreToolHandlers {
   const noop = async () => ({ ok: true });
   return {
+    read: noop,
     write: noop,
     work: noop,
     ls: noop,
@@ -102,16 +103,20 @@ async function boundContext(metadata: {
   });
 }
 
-function writeCommandConsts(tools: Tool[]) {
-  const write = tools.find((tool) => tool.type === "function" && tool.name === "write");
-  const oneOf = write?.type === "function" ? write.inputSchema.oneOf : undefined;
-  if (!Array.isArray(oneOf)) throw new Error("write tool missing oneOf");
+function commandConsts(tools: Tool[], name: string) {
+  const tool = tools.find((candidate) => candidate.type === "function" && candidate.name === name);
+  const oneOf = tool?.type === "function" ? tool.inputSchema.oneOf : undefined;
+  if (!Array.isArray(oneOf)) throw new Error(`${name} tool missing oneOf`);
   return oneOf.map((branch) => {
     const command = (branch as { properties?: { command?: { const?: unknown } } }).properties
       ?.command?.const;
-    if (typeof command !== "string") throw new Error("write branch missing command.const");
+    if (typeof command !== "string") throw new Error(`${name} branch missing command.const`);
     return command;
   });
+}
+
+function hasTool(tools: Tool[], name: string): boolean {
+  return tools.some((tool) => "name" in tool && tool.name === name);
 }
 
 function spawnDescription(tools: Tool[]): string {
@@ -121,18 +126,22 @@ function spawnDescription(tools: Tool[]): string {
 }
 
 describe("resolveAgentThreadTurnContext tool policy", () => {
-  it("advertises Critic write as diff/read, Writer replace, and spawn for both", async () => {
+  it("advertises Critic read only and Writer read plus mutate write", async () => {
     const critic = await boundContext({ tools: CRITIC_MAP });
     const writer = await boundContext({ tools: WRITER_MAP });
-    expect([...writeCommandConsts(critic.tools)].sort()).toEqual(["diff", "read"]);
-    expect(writeCommandConsts(writer.tools)).toContain("replace");
-    expect(critic.tools.some((tool) => "name" in tool && tool.name === "spawn")).toBe(true);
-    expect(writer.tools.some((tool) => "name" in tool && tool.name === "spawn")).toBe(true);
+    expect([...commandConsts(critic.tools, "read")].sort()).toEqual(["diff", "read"]);
+    expect(hasTool(critic.tools, "write")).toBe(false);
+    expect(commandConsts(writer.tools, "write")).toContain("replace");
+    expect(commandConsts(writer.tools, "write")).not.toContain("read");
+    expect([...commandConsts(writer.tools, "read")].sort()).toEqual(["diff", "read"]);
+    expect(hasTool(critic.tools, "spawn")).toBe(true);
+    expect(hasTool(writer.tools, "spawn")).toBe(true);
   });
 
   it("advertises a generic child's inherited Critic execution, not General's absent tools", async () => {
     const generic = await boundContext({ tools: CRITIC_MAP, definitionTools: WRITER_MAP });
-    expect([...writeCommandConsts(generic.tools)].sort()).toEqual(["diff", "read"]);
+    expect([...commandConsts(generic.tools, "read")].sort()).toEqual(["diff", "read"]);
+    expect(hasTool(generic.tools, "write")).toBe(false);
   });
 
   it("tells an empty-roster caller not to spawn, and a rostered caller to prefer named", async () => {

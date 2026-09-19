@@ -53,13 +53,13 @@ skeleton and delegates the moving parts.
 | `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, serialized persistence/provenance/upload consumption, lookup, and retirement. |
 | `reference-context.ts` | Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads. |
 | `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission, read-deduplicated, occurrence-budgeted, and quietly omitted without losing writer text. |
-| `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow names and write/work commands. Advertise and the per-turn permission gate (name + write/work command) use that policy. `invocation-authority` validates that an invocation patch never grants the child more than the caller holds, applied only to the patch delta. Dispatch does not apply policy. The core catalogue stays policy-free. |
+| `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow tool names and per-tool command sets (`read`, `write`, `work`). `commandSetForTool` is the single per-tool command mapping. Advertise and the per-turn permission gate (name + command) use that policy. `invocation-authority` validates that an invocation patch never grants the child more than the caller holds, applied only to the patch delta. Dispatch does not apply policy. The core catalogue stays policy-free. |
 
 `OrchestratorDeps` is fully required: gateway, repos, retained Agent revision reader, tool
 registry/executor, project preferences, credit ledger,
 interrupt artifact flush, child-run coordinator, interrupt registry, and
 `EventSink` are all explicit dependencies. Do not re-add a global permission
-gate here; names and write/work commands are gated per turn from advertised policy. Provider-specific
+gate here; names and per-tool command sets are gated per turn from advertised policy. Provider-specific
 model-call behavior stays behind the gateway port. Disabled behavior is
 represented by explicit adapters (for example no-op sinks), not by omitted deps.
 
@@ -105,7 +105,7 @@ on the spawn tool), and an omitted or empty `agent` selects the agent-less gener
 | `ToolRegistry` | Name-keyed map. Duplicate names throw immediately. `getDefinitions()` advertises only server-executable registrations whose `advertise !== false`. |
 | `ToolExecutor` | Dispatches `ToolCallInput` to registered handlers with timeout, abort, sequential execution, and capability-gated context injection. |
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
-| Core handlers | The strict six-branch `work` union and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
+| Core handlers | The strict six-branch `work` union, the shared read/write document definitions, and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
 | Skills | References are retained at binding. `createSkillToolRegistrations` registers the `skill` tool (`source: "skill"`); invoke loads a SKILL.md body only when the slug is in Agent `skills.available` and `model-invocable` is not false. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn` and `return_result` with explicit privileged capabilities. |
 
@@ -113,7 +113,7 @@ Handler-owned `{ isError: true, output }` results already define their
 model-facing protocol, so the executor preserves their output by definition.
 Parse, timeout, abort, and thrown failures belong to the executor; it delegates
 those to the registration's `formatExecutionError` when present and otherwise
-uses the generic Meridian error format. The `write` registration owns such a
+uses the generic Meridian error format. The `read` and `write` registrations own such a
 formatter so every executor-owned write failure still returns
 `meridian.agent-edit.v1` without teaching the generic executor about agent-edit.
 
@@ -164,7 +164,7 @@ facet.
 ## Cost, billing, and permissions
 
 - Tool permissions are per-turn: `projectToolPolicy` → permission gate
-  (`check` name + write/work command) → `persistPermissionDenial`. Dispatch
+  (`check` name + per-tool command set) → `persistPermissionDenial`. Dispatch
   does not apply policy. Direct `toolExecutor.executeTool` does not apply policy.
 - Model-call cost gating is not a `PermissionGate` method. The runtime uses
   `CreditLedger` plus `TreeBudget` (for spawn trees) through `turn-accounting.ts`
