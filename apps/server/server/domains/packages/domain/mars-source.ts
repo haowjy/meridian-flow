@@ -232,14 +232,6 @@ export function normalizeAgentMeta(meta: JsonObject): JsonObject {
   return normalizeAgentMetaFields(meta);
 }
 
-/** Canonical agent mode derived from normalized meta — also persisted to `agent_definitions.mode`. */
-export function agentModeFromMeta(meta: JsonObject): "primary" | "subagent" {
-  const mode = stringAt(meta.mode);
-  if (mode === "subagent") return "subagent";
-  if (mode === "primary") return "primary";
-  return "primary";
-}
-
 /**
  * Normalize skill YAML frontmatter from kebab-case (Mars format) to
  * camelCase (domain types). This is the canonical normal form — all

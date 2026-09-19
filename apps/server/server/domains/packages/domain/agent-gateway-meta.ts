@@ -1,27 +1,21 @@
 /**
  * Presence-preserving Mars model/effort normalization before immutable compilation.
  */
+import { AGENT_EFFORT_ALIASES, AGENT_EFFORT_VALUES } from "@meridian/contracts/agents";
 import { stringAt } from "./helpers.js";
 import type { JsonObject } from "./types.js";
 
-export type AgentEffortLevel = "low" | "medium" | "high" | "max";
-export type AgentEffort = AgentEffortLevel | "disabled" | "adaptive";
-
-const EFFORT_LEVELS = new Set<AgentEffortLevel>(["low", "medium", "high", "max"]);
-const EFFORT_VALUES = new Set<AgentEffort>([
-  "low",
-  "medium",
-  "high",
-  "max",
-  "disabled",
-  "adaptive",
+// Authoring accepts canonical values plus alias keys; the compiler folds aliases.
+const ACCEPTED_EFFORTS = new Set<string>([
+  ...AGENT_EFFORT_VALUES,
+  ...Object.keys(AGENT_EFFORT_ALIASES),
 ]);
 
 /** Normalize Mars effort strings from frontmatter or mars.toml overlays. */
-export function normalizeAgentEffort(value: unknown): AgentEffort | undefined {
+function normalizeAgentEffort(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const normalized = value.trim().toLowerCase();
-  return EFFORT_VALUES.has(normalized as AgentEffort) ? (normalized as AgentEffort) : undefined;
+  return ACCEPTED_EFFORTS.has(normalized) ? normalized : undefined;
 }
 
 /** Preserve invalid source values so compilation can diagnose them without silent fallback. */
@@ -33,8 +27,4 @@ export function normalizeAgentMetaFields(meta: JsonObject): JsonObject {
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
   };
-}
-
-export function isAgentEffortLevel(value: AgentEffort): value is AgentEffortLevel {
-  return EFFORT_LEVELS.has(value as AgentEffortLevel);
 }
