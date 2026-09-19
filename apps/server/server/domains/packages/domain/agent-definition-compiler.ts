@@ -1,130 +1,32 @@
 /** Compiles preserved Mars source into presence-sensitive, content-addressed definitions. */
+import {
+  agentEffortAuthoringSchema,
+  toolReferencesSchema,
+  toolRepresentationSchema,
+} from "@meridian/contracts/agents";
 import { z } from "zod";
 import { sha256 } from "./helpers.js";
 import { canonicalizeJsonObject } from "./mars-source.js";
 import type { JsonObject } from "./types.js";
 
+// Skill and subagent names are plain references; only tools carry alias folding.
 const reference = z.string().trim().min(1);
 const references = z.array(reference);
 const skills = z.union([
   references.transform((load) => ({ load })),
   z.strictObject({ load: references.optional(), available: references.optional() }),
 ]);
-const toolAliases: Record<string, string> = {
-  bash: "bash",
-  shell: "bash",
-  terminal: "bash",
-  exec_command: "bash",
-  shell_command: "bash",
-  read: "read",
-  cat: "read",
-  view: "read",
-  file_read: "read",
-  write: "write",
-  file_write: "write",
-  apply_patch: "write",
-  edit: "edit",
-  sed: "edit",
-  str_replace: "edit",
-  agent: "agent",
-  subagent: "agent",
-  spawn_agent: "agent",
-  task: "agent",
-  skill: "skill",
-  workflow: "workflow",
-  glob: "glob",
-  find: "glob",
-  grep: "grep",
-  rg: "grep",
-  search: "grep",
-  ripgrep: "grep",
-  notebook: "notebook",
-  jupyter: "notebook",
-  web_search: "web_search",
-  websearch: "web_search",
-  web: "web_search",
-  web_fetch: "web_fetch",
-  webfetch: "web_fetch",
-  fetch: "web_fetch",
-  curl: "web_fetch",
-  ask_user: "ask_user",
-  askuser: "ask_user",
-  request_user_input: "ask_user",
-  ask_question: "ask_user",
-  todo_read: "todo_read",
-  todoread: "todo_read",
-  todo_write: "todo_write",
-  todowrite: "todo_write",
-  cron: "cron",
-  notifications: "notifications",
-  pushnotification: "notifications",
-  push_notification: "notifications",
-  plan_mode: "plan_mode",
-  planmode: "plan_mode",
-  update_plan: "plan_mode",
-  switch_mode: "plan_mode",
-  worktree: "worktree",
-  lsp: "lsp",
-  monitor: "monitor",
-  send_user_file: "send_user_file",
-  senduserfile: "send_user_file",
-  schedule_wakeup: "schedule_wakeup",
-  schedulewakeup: "schedule_wakeup",
-  remote_trigger: "remote_trigger",
-  remotetrigger: "remote_trigger",
-  tool_search: "tool_search",
-  toolsearch: "tool_search",
-};
-const toolReference = reference.transform((value, context) => {
-  const name = normalizeToolName(value);
-  if (name === null) {
-    context.addIssue({ code: "custom", message: "Invalid Mars tool reference" });
-    return z.NEVER;
-  }
-  return name;
-});
-const toolReferences = z.array(toolReference).transform((values) => [...new Set(values)]);
-const toolMap = z
-  .record(z.string(), z.enum(["allow", "deny"]))
-  .superRefine((value, context) => {
-    const names = new Map<string, string>();
-    for (const [key, policy] of Object.entries(value)) {
-      const name = normalizeToolName(key.trim());
-      if (!name || (names.has(name) && names.get(name) !== policy)) {
-        context.addIssue({
-          code: "custom",
-          path: [key],
-          message: "Empty or duplicate normalized tool name",
-        });
-      }
-      if (name) names.set(name, policy);
-    }
-  })
-  .transform((value) =>
-    Object.fromEntries(
-      Object.entries(value).map(([key, policy]) => [
-        normalizeToolName(key.trim()) as string,
-        policy,
-      ]),
-    ),
-  );
-const tools = z.union([toolReferences, toolMap]);
+
 const metadata = z.looseObject({
   name: reference.optional(),
   description: z.string().optional(),
   model: reference.optional(),
-  effort: z
-    .string()
-    .trim()
-    .toLowerCase()
-    .pipe(z.enum(["low", "medium", "high", "xhigh", "none", "max", "disabled", "adaptive"]))
-    .transform((value) => (value === "max" ? ("xhigh" as const) : value))
-    .optional(),
+  effort: agentEffortAuthoringSchema.optional(),
   mode: z.enum(["primary", "subagent"]).optional(),
   "model-invocable": z.boolean().optional(),
   "user-invocable": z.boolean().optional(),
-  tools: tools.optional(),
-  "disallowed-tools": toolReferences.optional(),
+  tools: toolRepresentationSchema.optional(),
+  "disallowed-tools": toolReferencesSchema.optional(),
   subagents: references.optional(),
   skills: skills.optional(),
   approval: z.enum(["default", "auto", "confirm", "never"]).optional(),
@@ -135,8 +37,8 @@ const metadata = z.looseObject({
 const overlayMetadata = metadata.extend({
   tools: z
     .strictObject({
-      allowed: toolReferences.optional(),
-      disallowed: toolReferences.optional(),
+      allowed: toolReferencesSchema.optional(),
+      disallowed: toolReferencesSchema.optional(),
     })
     .optional(),
 });
@@ -278,29 +180,4 @@ function validateJson(
     }
   }
   ancestors.delete(value);
-}
-
-// Mars canonical names retain scoped payloads and case-sensitive MCP identities.
-function normalizeToolName(value: string): string | null {
-  const open = value.indexOf("(");
-  const head = (open < 0 ? value : value.slice(0, open)).trim();
-  const payload = open < 0 ? "" : value.slice(open);
-  if (!head) return null;
-  const lower = head.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
-  if (lower === "__proto__") return null;
-  if (lower === "mcp" && payload) {
-    if (!payload.endsWith(")")) return null;
-    const segments = payload.slice(1, -1).split("/");
-    if (segments.length > 2 || segments.some((segment) => !segment.trim())) return null;
-    return value;
-  }
-  if (lower.startsWith("mcp__")) return value;
-  const alias = Object.hasOwn(toolAliases, lower) ? toolAliases[lower] : undefined;
-  if (alias) return alias + payload;
-  if (head.includes("_") || !/[a-z]/.test(head)) return lower + payload;
-  const snake = head.replace(
-    /[A-Z]/g,
-    (letter, offset) => `${offset ? "_" : ""}${letter.toLowerCase()}`,
-  );
-  return (Object.hasOwn(toolAliases, snake) ? toolAliases[snake] : snake) + payload;
 }
