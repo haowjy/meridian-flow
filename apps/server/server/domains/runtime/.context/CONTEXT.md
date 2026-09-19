@@ -91,7 +91,7 @@ configuration, including a frozen default when source omits it. Nonempty
 `subagents` roster no longer refuses selection. `spawn` is advertised to every
 Agent; Mars `tools` cannot hide it. Named targets come from the binding's
 roster, baked into the frozen system prompt like available skills (not listed
-on the spawn tool), and an omitted or empty `agent` selects the generic helper.
+on the spawn tool), and an omitted or empty `agent` selects the agent-less generic subagent.
 
 ## tools — registry, executor, and handlers
 
@@ -121,7 +121,7 @@ behavior; schema-only stubs are not advertised.
 
 `spawn/child-run-coordinator.ts` supervises nested agent execution. It consumes
 `RunTurnPort`, `ChildRunRegistry` from the turn runner, the billing spend reader,
-immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace); added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. Route-facing
+immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace); added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. Route-facing
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads. Writer-facing helper-result cards persist through `spawn/spawn-transcript.ts`
 (one `spawnHelperCardProps` builder). Foreground spawn upserts a running card
@@ -133,12 +133,13 @@ completer.
 
 Named targets resolve by name within the parent binding's roster; a target with
 `model-invocable: false` is refused, while a primary-mode target is spawnable.
-An omitted or empty `agent` selects the generic helper: the built-in General
-revision supplies body and identity; the child binding copies the caller's
-resolved configuration, including `tools`, `disallowed-tools`, and `effort`.
-Named children resolve those fields from their own retained revision.
-A nested generic keeps the ancestor's write deny because it copies that
-record. Turn context reads tools and effort from configuration only.
+An omitted or empty `agent` creates an agent-less child: the binding has no
+Agent revision (`definitionRevisionId` null), the body is the host-owned empty
+`GENERIC_AGENT_BODY`, and the child copies the caller's resolved configuration,
+including `tools`, `disallowed-tools`, and `effort`. Named children resolve
+those fields from their own retained revision. A nested generic keeps the
+ancestor's write deny because it copies that configuration. Turn context reads
+tools and effort from configuration only.
 Max spawn depth
 defaults to 3, overridable only through operator env at tree creation. Child
 creation, Agent binding, and Work membership share one transaction. The child starts with an unfrozen

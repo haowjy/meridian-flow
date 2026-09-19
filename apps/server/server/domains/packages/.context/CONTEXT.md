@@ -60,7 +60,7 @@ is reserved for trusted system seeding. App services expose the revision port as
 owner in app composition. Either entry point commits or rolls back both stores;
 completed transaction frames reject escaped writes. Root creation resolves exact
 account/system selections and binds atomically. Shared runtime preparation reads
-the retained binding. Child creation consumes exact targets from the parent binding. Root, child and derived-primary creation use the threads domain's atomic bound-conversation operation.
+the retained binding. Child creation consumes exact targets from the parent binding; an agent-less generic child (omitted or empty target) binds a null `definitionRevisionId` and no Agent revision. The generic identity vocabulary (`GENERIC_SUBAGENT_SLUG`, `GENERIC_SUBAGENT_NAME`, `GENERIC_AGENT_BODY`) lives in `@meridian/contracts/agents`. Root, child and derived-primary creation use the threads domain's atomic bound-conversation operation.
 
 `domain/bound-agent-catalog.ts` resolves exact primary selections and builds
 catalog pages from immutable revisions. Listing and resolution share the supplied
