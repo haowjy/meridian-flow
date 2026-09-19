@@ -249,7 +249,7 @@ describe("assembleNextTurnContext agentless overlay freeze", () => {
       child.id,
       null,
       { model: "fixture-model", skills: { load: [], available: [] }, namedTargets: [] },
-      { systemPrompt: "Overridden child prompt." },
+      { appendSystemPrompt: "Overridden child prompt." },
     );
 
     const assemble = async (threadId: string) => {

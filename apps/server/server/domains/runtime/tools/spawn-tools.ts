@@ -21,7 +21,7 @@ export type SpawnToolArgs = {
   prompt: string;
   description?: string;
   mode: "foreground" | "background";
-  system_prompt?: string;
+  append_system_prompt?: string;
   overrides?: InvocationPatch;
 };
 
@@ -36,7 +36,9 @@ export function parseSpawnToolArgs(input: unknown): SpawnToolArgs {
     prompt: typeof rec.prompt === "string" ? rec.prompt : "",
     ...(typeof rec.description === "string" ? { description: rec.description } : {}),
     mode: rec.mode === "background" ? "background" : "foreground",
-    ...(typeof rec.system_prompt === "string" ? { system_prompt: rec.system_prompt } : {}),
+    ...(typeof rec.append_system_prompt === "string"
+      ? { append_system_prompt: rec.append_system_prompt }
+      : {}),
     ...(rec.overrides !== null && typeof rec.overrides === "object" && !Array.isArray(rec.overrides)
       ? { overrides: rec.overrides as InvocationPatch }
       : {}),
@@ -72,10 +74,10 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
               description:
                 "foreground waits for return_result; background returns immediately and posts an inline helper result when done.",
             },
-            system_prompt: {
+            append_system_prompt: {
               type: "string",
               description:
-                "Replaces this child's system prompt for this invocation only; omit to inherit.",
+                "Appends to this child's system prompt for this invocation only; omit to add nothing.",
             },
             overrides: {
               type: "object",

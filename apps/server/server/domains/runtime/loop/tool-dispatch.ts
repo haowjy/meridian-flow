@@ -154,8 +154,8 @@ export async function dispatchToolCall(
             agentSlug: spawnInput.agent,
             prompt: spawnInput.prompt,
             description: spawnInput.description,
-            ...(spawnInput.system_prompt !== undefined
-              ? { systemPrompt: spawnInput.system_prompt }
+            ...(spawnInput.append_system_prompt !== undefined
+              ? { appendSystemPrompt: spawnInput.append_system_prompt }
               : {}),
             ...(spawnInput.overrides !== undefined ? { overrides: spawnInput.overrides } : {}),
             budget: ctx.treeBudget,

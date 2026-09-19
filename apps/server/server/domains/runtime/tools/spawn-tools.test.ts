@@ -20,19 +20,19 @@ function spawnSchema(): {
 }
 
 describe("parseSpawnToolArgs", () => {
-  it("keeps system_prompt and overrides when present and drops malformed values", () => {
+  it("keeps append_system_prompt and overrides when present and drops malformed values", () => {
     const args = parseSpawnToolArgs({
       agent: "critic",
       prompt: "review",
       description: "crit",
       mode: "foreground",
-      system_prompt: "You are a harsh critic.",
+      append_system_prompt: "You are a harsh critic.",
       overrides: { tools: { edit: "allow" }, effort: "high" },
     });
-    expect(args.system_prompt).toBe("You are a harsh critic.");
+    expect(args.append_system_prompt).toBe("You are a harsh critic.");
     expect(args.overrides).toEqual({ tools: { edit: "allow" }, effort: "high" });
-    expect(parseSpawnToolArgs({ prompt: "go", system_prompt: 42 })).not.toHaveProperty(
-      "system_prompt",
+    expect(parseSpawnToolArgs({ prompt: "go", append_system_prompt: 42 })).not.toHaveProperty(
+      "append_system_prompt",
     );
     expect(parseSpawnToolArgs({ prompt: "go", overrides: "nope" })).not.toHaveProperty("overrides");
     expect(parseSpawnToolArgs({ prompt: "go", overrides: null })).not.toHaveProperty("overrides");
@@ -40,11 +40,11 @@ describe("parseSpawnToolArgs", () => {
 });
 
 describe("spawn tool input schema", () => {
-  it("advertises system_prompt and overrides while rejecting extra properties", () => {
+  it("advertises append_system_prompt and overrides while rejecting extra properties", () => {
     const schema = spawnSchema();
-    expect(schema.properties.system_prompt).toEqual({
+    expect(schema.properties.append_system_prompt).toEqual({
       type: "string",
-      description: expect.any(String),
+      description: expect.stringContaining("Appends"),
     });
     expect(schema.additionalProperties).toBe(false);
     expect(schema.required).toEqual(["prompt"]);
