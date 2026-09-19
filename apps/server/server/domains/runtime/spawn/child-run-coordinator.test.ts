@@ -18,8 +18,7 @@ import { createInMemoryRepositories, type EventJournalWriter } from "../../threa
 import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { RunTurnPort } from "../loop/run-turn-port.js";
 import { createInMemoryThreadRunOwnership } from "../loop/thread-run-ownership.js";
-import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
-import { createToolRegistry } from "../tools/tool-registry.js";
+import { createToolRegistry, resolveAgentThreadTurnContext } from "../tools/index.js";
 import { createChildRunCoordinator } from "./child-run-coordinator.js";
 
 function stubOrchestrator(): RunTurnPort {

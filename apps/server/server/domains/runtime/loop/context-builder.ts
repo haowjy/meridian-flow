@@ -19,11 +19,12 @@
  *   message format where tool results are distinct messages, not inline
  *   content parts of the assistant message.
  *
- * - **Frozen system prompt**: on first attempt the orchestrator bakes agent body,
- *   available skill names and descriptions, named subagent slug/name/description,
- *   document dialect, and URI guidance into `composedSystemPrompt`. Later turns
- *   send that string verbatim (byte-identical). Autoprune is the only future
- *   re-bake trigger.
+ * - **Frozen system prompt**: on first attempt the orchestrator bakes the
+ *   immutable agent body, the spawn-time append layer, available skill names and
+ *   descriptions, named subagent slug/name/description, document dialect, URI
+ *   guidance, and (subagent threads only) the closing report instruction into
+ *   `composedSystemPrompt`. Later turns send that string verbatim
+ *   (byte-identical). Autoprune is the only future re-bake trigger.
  *
  * - **Runtime URI guidance**: the server appends storage-scheme instructions
  *   to every thread prompt so the model chooses `kb://` for knowledge-base
