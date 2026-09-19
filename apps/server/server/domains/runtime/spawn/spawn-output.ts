@@ -5,9 +5,9 @@
  * The writer-facing surface is a helper-result custom block, same family as
  * ask_user's custom card: the spawn tool_use/tool_result stay protocol-only.
  */
+import { GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
 import type { HelperResultProps } from "@meridian/contracts/components";
 import type { JsonValue } from "@meridian/contracts/threads";
-import { GENERIC_SUBAGENT_SLUG } from "../../packages/index.js";
 
 export function spawnOutputForTranscript(output: JsonValue): JsonValue {
   if (!isRecord(output) || output.status !== "completed") return output;
