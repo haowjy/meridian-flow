@@ -3,7 +3,11 @@
  * terminal state, captures return_result, and persists spawnStatus/spawnResult.
  * The sole caller allowed through the thread-create spawn gate.
  */
-import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
+import type {
+  InvocationOverlay,
+  InvocationPatch,
+  ResolvedAgentConfiguration,
+} from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
@@ -31,6 +35,7 @@ import type {
   TurnRepository,
 } from "../../threads/index.js";
 import { createBoundConversation } from "../../threads/index.js";
+import { validateInvocationAuthority } from "../loop/permissions/invocation-authority.js";
 import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
 import {
   createInMemoryThreadRunOwnership,
@@ -38,6 +43,7 @@ import {
   type ThreadRunOwnership,
 } from "../loop/thread-run-ownership.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
+import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
 import type { HelperResultDelivery } from "./helper-result-delivery.js";
 import { persistSpawnHelperCard, type SpawnTranscript } from "./spawn-transcript.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
@@ -49,6 +55,10 @@ export interface SpawnChildInput {
   agentSlug?: string;
   prompt: string;
   description?: string;
+  /** Per-invocation system prompt replacement; omitted inherits the child's saved prompt. */
+  systemPrompt?: string;
+  /** Per-invocation execution patch, applied over the resolved baseline. */
+  overrides?: InvocationPatch;
   budget: TreeBudget;
   signal?: AbortSignal;
   /** Parent-turn card writer; foreground spawn upserts running then completed. */
@@ -187,11 +197,13 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     let configuration: ResolvedAgentConfiguration;
     let resolvedSlug: string;
     let defaultTitle: string;
+    let patchPackageRoot: string | null;
     if (requestedSlug === "") {
       configuration = { ...parentAgent.configuration };
       revision = null;
       resolvedSlug = GENERIC_SUBAGENT_SLUG;
       defaultTitle = GENERIC_SUBAGENT_SLUG;
+      patchPackageRoot = parentAgent.revision?.packageRevisionId ?? null;
     } else {
       const target = parentAgent.configuration.namedTargets.find(
         (item) => item.name === requestedSlug,
@@ -223,6 +235,40 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       });
       resolvedSlug = requestedSlug;
       defaultTitle = `${requestedSlug} subagent`;
+      patchPackageRoot = childAgent.packageRevisionId;
+    }
+
+    if (input.overrides !== undefined) {
+      let patched: ResolvedAgentConfiguration;
+      try {
+        patched = await applyInvocationPatch({
+          baseline: configuration,
+          patch: input.overrides,
+          caller: parentAgent.configuration,
+          store: deps.agentRevisions,
+          packageRevisionId: patchPackageRoot,
+        });
+      } catch (error) {
+        if (error instanceof InvocationPatchError) {
+          return {
+            status: "error",
+            error: meridianErrorFromSystem("spawn_invocation_patch_invalid", error.message),
+          };
+        }
+        throw error;
+      }
+      const reasons = validateInvocationAuthority({
+        baseline: configuration,
+        patched,
+        caller: parentAgent.configuration,
+      });
+      if (reasons.length) {
+        return {
+          status: "error",
+          error: meridianErrorFromSystem("spawn_invocation_authority_denied", reasons.join(" ")),
+        };
+      }
+      configuration = patched;
     }
 
     if (revision) {
@@ -234,12 +280,22 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         };
       }
     }
+
+    const invocationOverlay: InvocationOverlay | null =
+      input.systemPrompt !== undefined || input.overrides !== undefined
+        ? {
+            ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
+            ...(input.overrides !== undefined ? { overrides: input.overrides } : {}),
+          }
+        : null;
+
     const child = await deps.repos.transaction(async () => {
       const created = await createBoundConversation({
         transaction: deps.repos.transaction,
         agentRevisions: deps.agentRevisions,
         revision,
         configuration,
+        invocationOverlay,
         createThread: () =>
           deps.repos.subagentThreads.createSubagent({
             userId: input.parentThread.userId,

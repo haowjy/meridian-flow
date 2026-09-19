@@ -2,6 +2,7 @@
  * Spawn primitive tools: spawn (parent-side) and return_result (child-side).
  * Handlers are thin — ChildRunCoordinator owns lifecycle; these only validate input.
  */
+import type { InvocationPatch } from "@meridian/contracts/agents";
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { SpawnResult } from "@meridian/contracts/spawn";
 import type { JsonValue } from "@meridian/contracts/threads";
@@ -20,6 +21,8 @@ export type SpawnToolArgs = {
   prompt: string;
   description?: string;
   mode: "foreground" | "background";
+  system_prompt?: string;
+  overrides?: InvocationPatch;
 };
 
 /** One parse for spawn tool arguments. */
@@ -33,6 +36,10 @@ export function parseSpawnToolArgs(input: unknown): SpawnToolArgs {
     prompt: typeof rec.prompt === "string" ? rec.prompt : "",
     ...(typeof rec.description === "string" ? { description: rec.description } : {}),
     mode: rec.mode === "background" ? "background" : "foreground",
+    ...(typeof rec.system_prompt === "string" ? { system_prompt: rec.system_prompt } : {}),
+    ...(rec.overrides !== null && typeof rec.overrides === "object" && !Array.isArray(rec.overrides)
+      ? { overrides: rec.overrides as InvocationPatch }
+      : {}),
   };
 }
 
@@ -64,6 +71,16 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
               enum: ["foreground", "background"],
               description:
                 "foreground waits for return_result; background returns immediately and posts an inline helper result when done.",
+            },
+            system_prompt: {
+              type: "string",
+              description:
+                "Replaces this child's system prompt for this invocation only; omit to inherit.",
+            },
+            overrides: {
+              type: "object",
+              description:
+                "Per-invocation execution patch: model, effort, tools, disallowed-tools, subagents, skills. Omitted fields inherit the child's saved configuration.",
             },
           },
           required: ["prompt"],
