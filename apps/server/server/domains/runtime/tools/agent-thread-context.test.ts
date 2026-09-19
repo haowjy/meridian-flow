@@ -5,7 +5,7 @@ import {
   type InvocationOverlay,
 } from "@meridian/contracts/agents";
 import { describe, expect, it } from "vitest";
-import { type AgentRevision } from "../../packages/index.js";
+import type { AgentRevision } from "../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
 import { createInMemoryRepositories } from "../../threads/index.js";
 import type { Tool } from "../gateway/index.js";
