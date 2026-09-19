@@ -1,9 +1,11 @@
 /** Spawn tool argument parsing and the advertised JSON schema. */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createSpawnToolRegistrations, parseSpawnToolArgs } from "./spawn-tools.js";
+import { createToolExecutor } from "./tool-executor.js";
+import { createToolRegistry } from "./tool-registry.js";
 
 function spawnSchema(): {
-  properties: Record<string, { type?: string; enum?: string[] }>;
+  properties: Record<string, Record<string, unknown>>;
   additionalProperties: boolean;
   required?: string[];
 } {
@@ -13,7 +15,7 @@ function spawnSchema(): {
     throw new Error("spawn registration missing");
   }
   return definition.inputSchema as {
-    properties: Record<string, { type?: string; enum?: string[] }>;
+    properties: Record<string, Record<string, unknown>>;
     additionalProperties: boolean;
     required?: string[];
   };
@@ -51,6 +53,42 @@ describe("parseSpawnToolArgs", () => {
     expect(parseSpawnToolArgs({ prompt: "go", overrides: "nope" })).not.toHaveProperty("overrides");
     expect(parseSpawnToolArgs({ prompt: "go", overrides: null })).not.toHaveProperty("overrides");
   });
+
+  it("routes system_prompt and overrides through the spawn handler without dropping them", async () => {
+    const spawn = vi.fn(async () => ({
+      status: "background" as const,
+      threadId: "child" as never,
+      agentSlug: "subagent",
+      description: "d",
+    }));
+    const executor = createToolExecutor(
+      createToolRegistry({ registrations: createSpawnToolRegistrations() }),
+    );
+    await executor.executeTool(
+      {
+        id: "call-spawn",
+        name: "spawn",
+        arguments: {
+          prompt: "go",
+          mode: "foreground",
+          system_prompt: "Custom child prompt",
+          overrides: { effort: "low" },
+        },
+      },
+      {
+        threadId: "parent" as never,
+        turnId: "turn" as never,
+        agentSlug: "writer",
+        spawn,
+      },
+    );
+    expect(spawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        system_prompt: "Custom child prompt",
+        overrides: { effort: "low" },
+      }),
+    );
+  });
 });
 
 describe("spawn tool input schema", () => {
@@ -60,11 +98,26 @@ describe("spawn tool input schema", () => {
       type: "string",
       description: expect.any(String),
     });
-    expect(schema.properties.overrides).toEqual({
-      type: "object",
-      description: expect.any(String),
-    });
     expect(schema.additionalProperties).toBe(false);
     expect(schema.required).toEqual(["prompt"]);
+  });
+
+  it("types the overrides patch with properties and enums for model guidance", () => {
+    const schema = spawnSchema();
+    const overrides = schema.properties.overrides;
+    expect(overrides).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+    });
+    expect(overrides.properties).toMatchObject({
+      model: { type: "string" },
+      effort: {
+        type: "string",
+        enum: ["low", "medium", "high", "xhigh", "none", "disabled", "adaptive"],
+      },
+      "disallowed-tools": { type: "array" },
+      subagents: { type: "array" },
+      skills: { type: "object" },
+    });
   });
 });
