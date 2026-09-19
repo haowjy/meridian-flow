@@ -1,11 +1,11 @@
 /** Next-turn Agent configuration comes exclusively from the retained thread binding. */
-import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
-import type { Thread } from "@meridian/contracts/threads";
 import {
-  type AgentRevisionStore,
   GENERIC_AGENT_BODY,
   GENERIC_SUBAGENT_SLUG,
-} from "../../packages/index.js";
+  type ResolvedAgentConfiguration,
+} from "@meridian/contracts/agents";
+import type { Thread } from "@meridian/contracts/threads";
+import type { AgentRevisionStore } from "../../packages/index.js";
 import { agentDefinitionUnsupportedReasons } from "../agent-definition-support.js";
 import type { GenerateRequest, Tool } from "../gateway/index.js";
 import { advertiseTools } from "../loop/permissions/apply-tool-policy.js";

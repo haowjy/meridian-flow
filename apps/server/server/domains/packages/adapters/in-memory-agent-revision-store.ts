@@ -2,13 +2,16 @@
 
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import type { InvocationOverlay, ResolvedAgentConfiguration } from "@meridian/contracts/agents";
+import {
+  GENERIC_SUBAGENT_NAME,
+  type InvocationOverlay,
+  type ResolvedAgentConfiguration,
+} from "@meridian/contracts/agents";
 import { InMemoryTransactionOwner } from "../../../shared/in-memory-transaction.js";
 import {
   type AgentSourceSnapshot,
   prepareAgentSourceRevision,
 } from "../domain/agent-source-revision.js";
-import { GENERIC_SUBAGENT_NAME } from "../domain/generic-subagent.js";
 import type {
   AgentCatalogEntry,
   AgentPackageHistoryEntry,

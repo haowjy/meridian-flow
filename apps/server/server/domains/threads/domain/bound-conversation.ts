@@ -1,11 +1,11 @@
 /** Atomically establish usable conversation identity, retained execution configuration and Work membership. */
-import type { InvocationOverlay, ResolvedAgentConfiguration } from "@meridian/contracts/agents";
-import type { Thread } from "@meridian/contracts/threads";
 import {
-  type AgentRevision,
-  type AgentRevisionStore,
   GENERIC_SUBAGENT_NAME,
-} from "../../packages/index.js";
+  type InvocationOverlay,
+  type ResolvedAgentConfiguration,
+} from "@meridian/contracts/agents";
+import type { Thread } from "@meridian/contracts/threads";
+import type { AgentRevision, AgentRevisionStore } from "../../packages/index.js";
 import type { ThreadRepositories } from "../ports/repositories.js";
 
 export async function createBoundConversation(input: {

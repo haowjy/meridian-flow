@@ -1,6 +1,6 @@
 /** Bounded Work-associated Project-chat projection with current primary-Work identity. */
+import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import { sql } from "drizzle-orm";
-import { GENERIC_SUBAGENT_NAME } from "../../../packages/index.js";
 import type { WorkChatFeedRepository, WorkChatFeedRow } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 import {

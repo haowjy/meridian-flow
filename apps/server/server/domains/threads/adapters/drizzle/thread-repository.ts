@@ -3,12 +3,12 @@
  * list/get, soft-delete, and cost recomputation). Thread.workId is projected from
  * the primary thread_works row, not stored on threads.
  */
+import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { ThreadStatus, TurnRole, TurnStatus } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { and, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
-import { GENERIC_SUBAGENT_NAME } from "../../../packages/index.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";

@@ -74,11 +74,6 @@ export {
   resolveCatalogSource,
 } from "./domain/first-party-catalog.js";
 export {
-  GENERIC_AGENT_BODY,
-  GENERIC_SUBAGENT_NAME,
-  GENERIC_SUBAGENT_SLUG,
-} from "./domain/generic-subagent.js";
-export {
   agentDefinitionContentChecksum,
   agentModeFromMeta,
   canonicalizeJsonObject,

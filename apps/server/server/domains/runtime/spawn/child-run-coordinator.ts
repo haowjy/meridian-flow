@@ -3,10 +3,11 @@
  * terminal state, captures return_result, and persists spawnStatus/spawnResult.
  * The sole caller allowed through the thread-create spawn gate.
  */
-import type {
-  InvocationOverlay,
-  InvocationPatch,
-  ResolvedAgentConfiguration,
+import {
+  GENERIC_SUBAGENT_SLUG,
+  type InvocationOverlay,
+  type InvocationPatch,
+  type ResolvedAgentConfiguration,
 } from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -22,7 +23,6 @@ import {
   type AgentRevision,
   type AgentRevisionStore,
   type CompiledAgentDefinition,
-  GENERIC_SUBAGENT_SLUG,
   resolveAgentConfiguration,
 } from "../../packages/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
