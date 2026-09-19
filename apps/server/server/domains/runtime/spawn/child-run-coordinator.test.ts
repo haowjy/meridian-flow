@@ -15,8 +15,11 @@ import {
   serializeMarkdownDefinition,
 } from "../../packages/index.js";
 import { createInMemoryRepositories, type EventJournalWriter } from "../../threads/index.js";
+import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { RunTurnPort } from "../loop/run-turn-port.js";
 import { createInMemoryThreadRunOwnership } from "../loop/thread-run-ownership.js";
+import { resolveAgentThreadTurnContext } from "../tools/agent-thread-context.js";
+import { createToolRegistry } from "../tools/tool-registry.js";
 import { createChildRunCoordinator } from "./child-run-coordinator.js";
 
 function stubOrchestrator(): RunTurnPort {
@@ -60,7 +63,7 @@ async function fixture() {
           mode: "primary",
           tools: { read: "allow", write: "deny", edit: "deny", ask_user: "allow" },
         },
-        "",
+        "You are Critic.",
       ),
       "agents/hidden.md": serializeMarkdownDefinition(
         { name: "Hidden", model: "hidden-model", "model-invocable": false },
@@ -353,13 +356,13 @@ describe("ChildRunCoordinator spawn selection", () => {
 
 describe("ChildRunCoordinator invocation overlay", () => {
   it("persists only the provided overlay fields for generic and named children", async () => {
-    const { coordinator, parent, revisions } = await fixture();
+    const { coordinator, parent, revisions, repos } = await fixture();
     const generic = await coordinator.spawnChild({
       parentThread: parent,
       parentTurnId: "turn-1" as TurnId,
       agentSlug: "",
       prompt,
-      systemPrompt: "Custom child prompt",
+      appendSystemPrompt: "Custom child prompt",
       overrides: { effort: "low" },
       budget,
     });
@@ -368,7 +371,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
     const genericBinding = await revisions.readThreadBinding(generic.report.threadId);
     expect(genericBinding?.revision).toBeNull();
     expect(genericBinding?.invocationOverlay).toEqual({
-      systemPrompt: "Custom child prompt",
+      appendSystemPrompt: "Custom child prompt",
       overrides: { effort: "low" },
     });
     expect(genericBinding?.configuration.effort).toBe("low");
@@ -378,6 +381,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
       parentTurnId: "turn-1" as TurnId,
       agentSlug: "critic",
       prompt,
+      appendSystemPrompt: "Custom child prompt",
       overrides: { model: "critic-model" },
       budget,
     });
@@ -385,7 +389,26 @@ describe("ChildRunCoordinator invocation overlay", () => {
     if (named.status !== "completed") return;
     const namedBinding = await revisions.readThreadBinding(named.report.threadId);
     expect(namedBinding?.revision?.id).toBeDefined();
-    expect(namedBinding?.invocationOverlay).toEqual({ overrides: { model: "critic-model" } });
+    expect(namedBinding?.invocationOverlay).toEqual({
+      appendSystemPrompt: "Custom child prompt",
+      overrides: { model: "critic-model" },
+    });
+
+    const childThread = await repos.threads.findById(named.report.threadId);
+    if (!childThread) throw new Error("Missing spawned child thread");
+    const context = await resolveAgentThreadTurnContext({
+      thread: childThread,
+      agentRevisions: revisions,
+      toolRegistry: createToolRegistry(),
+      baseTools: undefined,
+    });
+    const composed = assembleComposedSystemPrompt({
+      basePrompt: context.agentBody,
+      appendPrompt: context.appendPrompt,
+      subagentGuidance: context.subagentGuidance,
+    });
+    expect(composed).toContain("You are Critic.");
+    expect(composed).toContain("Custom child prompt");
   });
 
   it("rejects an out-of-scope tool grant before creating the child", async () => {

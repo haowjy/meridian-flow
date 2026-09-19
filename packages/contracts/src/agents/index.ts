@@ -28,7 +28,7 @@ export interface AgentCatalogPage {
 
 /** Raw overlay retained for inspection/export; effective values live in `configuration`. */
 export interface InvocationOverlay {
-  systemPrompt?: string;
+  appendSystemPrompt?: string;
   overrides?: InvocationPatch;
 }
 

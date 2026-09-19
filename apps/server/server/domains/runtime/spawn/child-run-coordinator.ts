@@ -55,8 +55,8 @@ export interface SpawnChildInput {
   agentSlug?: string;
   prompt: string;
   description?: string;
-  /** Per-invocation system prompt replacement; omitted inherits the child's saved prompt. */
-  systemPrompt?: string;
+  /** Per-invocation additive prompt layer; omitted appends nothing. */
+  appendSystemPrompt?: string;
   /** Per-invocation execution patch, applied over the resolved baseline. */
   overrides?: InvocationPatch;
   budget: TreeBudget;
@@ -292,9 +292,11 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
 
     const invocationOverlay: InvocationOverlay | null =
-      input.systemPrompt !== undefined || input.overrides !== undefined
+      input.appendSystemPrompt !== undefined || input.overrides !== undefined
         ? {
-            ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
+            ...(input.appendSystemPrompt !== undefined
+              ? { appendSystemPrompt: input.appendSystemPrompt }
+              : {}),
             ...(input.overrides !== undefined ? { overrides: input.overrides } : {}),
           }
         : null;

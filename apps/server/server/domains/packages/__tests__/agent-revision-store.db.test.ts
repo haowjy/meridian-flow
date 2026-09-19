@@ -243,7 +243,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
         tools: { read: "allow" as const },
       };
       const invocationOverlay = {
-        systemPrompt: "Replacement body.",
+        appendSystemPrompt: "Replacement body.",
         overrides: { effort: "high" as const },
       };
       expect(await store.bindThread(THREAD, null, configuration, invocationOverlay)).toBe(true);

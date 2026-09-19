@@ -18,20 +18,24 @@ export type PromptInventoryListing = { slug: string; name: string; description: 
 
 export interface AssembleComposedSystemPromptInput {
   basePrompt?: string | null;
+  appendPrompt?: string | null;
   workContext?: string;
   availableSkills?: readonly PromptInventoryListing[];
   namedSubagents?: readonly PromptInventoryListing[];
+  subagentGuidance?: string | null;
 }
 
 /** Compose the full system prompt exactly as context-builder sends it pre-freeze. */
 export function assembleComposedSystemPrompt(input: AssembleComposedSystemPromptInput): string {
   return [
     input.basePrompt,
+    input.appendPrompt,
     input.workContext,
     inventorySection("Available skills", input.availableSkills),
     inventorySection("Named subagents", input.namedSubagents),
     DOCUMENT_DIALECT_CORE_INSTRUCTION,
     RUNTIME_URI_SYSTEM_INSTRUCTION,
+    input.subagentGuidance,
   ]
     .filter(Boolean)
     .join("\n\n");

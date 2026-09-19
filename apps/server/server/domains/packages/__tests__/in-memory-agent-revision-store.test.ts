@@ -192,7 +192,7 @@ describe("in-memory Agent revisions", () => {
       namedTargets: [],
       tools: { read: "allow" as const },
     };
-    const overlay = { systemPrompt: "Child prompt.", overrides: { effort: "low" as const } };
+    const overlay = { appendSystemPrompt: "Child prompt.", overrides: { effort: "low" as const } };
     expect(await store.bindThread("thread", null, configuration, overlay)).toBe(true);
     expect(await store.readThreadBinding("thread")).toEqual({
       revision: null,
@@ -200,7 +200,7 @@ describe("in-memory Agent revisions", () => {
       invocationOverlay: overlay,
     });
     expect(
-      await store.bindThread("thread", null, configuration, { systemPrompt: "Different." }),
+      await store.bindThread("thread", null, configuration, { appendSystemPrompt: "Different." }),
     ).toBe(false);
     expect(await store.readThreadBinding("thread")).toEqual({
       revision: null,

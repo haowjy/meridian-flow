@@ -22,6 +22,8 @@ export interface AgentThreadTurnContext {
   gatewayParams: Pick<GenerateRequest, "model" | "reasoning">;
   tools: Tool[];
   agentBody: string;
+  appendPrompt: string | undefined;
+  subagentGuidance: string | undefined;
   policy: EffectiveToolPolicy;
 }
 
@@ -31,6 +33,10 @@ export interface ResolveAgentThreadTurnContextInput {
   toolRegistry: ToolRegistry;
   baseTools: Tool[] | undefined;
 }
+
+/** Mandatory closing instruction for subagent threads; owns the prompt's last layer. */
+export const SUBAGENT_GUIDANCE =
+  "You are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.";
 
 /**
  * Exhaustive bridge from canonical effort to `GenerateRequest.reasoning`. The
@@ -87,10 +93,7 @@ export async function resolveAgentThreadTurnContext(
       ? input.toolRegistry.getRegistration("return_result")?.definition
       : undefined;
   if (report && !tools.some((tool) => toolName(tool) === report.name)) tools = [...tools, report];
-  const baseBody =
-    binding.invocationOverlay?.systemPrompt ??
-    binding.revision?.definition.systemPrompt ??
-    GENERIC_AGENT_BODY;
+  const agentBody = binding.revision?.definition.systemPrompt ?? GENERIC_AGENT_BODY;
   return {
     agentSlug: binding.revision?.slug ?? GENERIC_SUBAGENT_SLUG,
     gatewayParams: agentGatewayMetaToGenerateParams({
@@ -99,10 +102,9 @@ export async function resolveAgentThreadTurnContext(
     }),
     tools,
     policy,
-    agentBody:
-      input.thread.kind === "subagent"
-        ? `${baseBody}\n\nYou are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.`
-        : baseBody,
+    agentBody,
+    appendPrompt: binding.invocationOverlay?.appendSystemPrompt,
+    subagentGuidance: input.thread.kind === "subagent" ? SUBAGENT_GUIDANCE : undefined,
   };
 }
 

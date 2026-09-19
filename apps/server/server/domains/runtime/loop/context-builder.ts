@@ -64,6 +64,8 @@ export interface BuildContextInput {
   tools?: Tool[];
   /** Raw agent/project prompt used only while the thread prompt is not frozen. */
   unfrozenBasePrompt?: string | null;
+  /** Additive per-invocation prompt layer, pre-freeze only. */
+  appendPrompt?: string | null;
   /**
    * Available skill listings for pre-freeze assembly only.
    * Ignored when the thread prompt is already frozen.
@@ -76,6 +78,8 @@ export interface BuildContextInput {
   namedSubagents?: readonly { slug: string; name: string; description: string }[];
   /** Frozen Work section for a would-be first bake. */
   workContext?: string;
+  /** Subagent closing instruction; pre-freeze only, owns the prompt's last layer. */
+  subagentGuidance?: string | null;
 }
 
 export function buildContext(input: BuildContextInput): {
@@ -94,9 +98,11 @@ export function buildContext(input: BuildContextInput): {
       system(
         assembleComposedSystemPrompt({
           basePrompt: systemPrompt,
+          appendPrompt: input.appendPrompt,
           workContext: input.workContext,
           availableSkills: input.availableSkills,
           namedSubagents: input.namedSubagents,
+          subagentGuidance: input.subagentGuidance,
         }),
       ),
     );
