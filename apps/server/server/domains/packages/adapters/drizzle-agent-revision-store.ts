@@ -351,7 +351,8 @@ export function createDrizzleAgentRevisionStore(database: Database): AgentRevisi
         .where(eq(threadAgentBindings.threadId, threadId));
       return (
         binding.definitionRevisionId === definitionRevisionId &&
-        isDeepStrictEqual(binding.configuration, configuration)
+        isDeepStrictEqual(binding.configuration, configuration) &&
+        isDeepStrictEqual(binding.invocationOverlay, invocationOverlay)
       );
     },
     async readThreadBinding(threadId) {

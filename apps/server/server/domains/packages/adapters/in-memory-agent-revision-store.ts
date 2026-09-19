@@ -279,7 +279,8 @@ export function createInMemoryAgentRevisionStore(input: {
         if (existing)
           return (
             existing.revisionId === revisionId &&
-            isDeepStrictEqual(existing.configuration, configuration)
+            isDeepStrictEqual(existing.configuration, configuration) &&
+            isDeepStrictEqual(existing.invocationOverlay, invocationOverlay)
           );
         state().bindings.set(threadId, { revisionId, configuration, invocationOverlay });
         return true;
