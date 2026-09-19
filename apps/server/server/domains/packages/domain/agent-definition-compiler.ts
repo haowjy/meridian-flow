@@ -1,6 +1,7 @@
 /** Compiles preserved Mars source into presence-sensitive, content-addressed definitions. */
 import {
   agentEffortAuthoringSchema,
+  type ToolPolicy,
   toolReferencesSchema,
   toolRepresentationSchema,
 } from "@meridian/contracts/agents";
@@ -96,7 +97,7 @@ export function compileAgentDefinition(source: {
       ? (Object.fromEntries([
           ...overlayTools.allowed.map((tool) => [tool, "allow"] as const),
           ...denials,
-        ]) as Record<string, "allow" | "deny">)
+        ]) as Record<string, ToolPolicy>)
       : overlayTools.allowed;
   }
   if (overlayTools?.disallowed !== undefined) {
