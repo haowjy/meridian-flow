@@ -440,6 +440,40 @@ describe("ChildRunCoordinator invocation overlay", () => {
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
   });
 
+  it("rejects an unknown override key as patch-invalid before creating a child", async () => {
+    const { coordinator, parent, journal } = await fixture();
+    const result = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      overrides: { bogus: true } as never,
+      budget,
+    });
+    expect(result.status).toBe("error");
+    if (result.status === "error") {
+      expect(result.error.code).toBe("spawn_invocation_patch_invalid");
+    }
+    expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
+  });
+
+  it("rejects a malformed override effort value as patch-invalid", async () => {
+    const { coordinator, parent, journal } = await fixture();
+    const result = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      overrides: { effort: "bananas" } as never,
+      budget,
+    });
+    expect(result.status).toBe("error");
+    if (result.status === "error") {
+      expect(result.error.code).toBe("spawn_invocation_patch_invalid");
+    }
+    expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
+  });
+
   it("persists an in-scope named grant when the caller holds the tool", async () => {
     const { coordinator, revisions, repos, critic } = await fixture();
     const writerParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
