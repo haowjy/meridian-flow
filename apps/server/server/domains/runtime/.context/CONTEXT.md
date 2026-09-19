@@ -67,7 +67,9 @@ represented by explicit adapters (for example no-op sinks), not by omitted deps.
 
 `agent-thread-context.ts` reads the immutable thread binding for the persona
 and diagnostic Agent identity. Tools and effort come from the bound
-configuration, never definition metadata. Missing bindings fail before a
+configuration, never definition metadata. `mapAgentEffortToReasoning` (with
+`EFFORT_TO_REASONING`) is the single bridge from canonical `AgentEffort` to the
+gateway's provider-neutral `GenerateRequest.reasoning`. Missing bindings fail before a
 gateway call. Catalog removal or advancement leaves continued execution on its
 retained revision. `turn-context-assembly.ts` supplies that persona to the initial
 host-prompt bake and reuses the frozen prompt on later turns; preview shares this
@@ -121,7 +123,7 @@ behavior; schema-only stubs are not advertised.
 
 `spawn/child-run-coordinator.ts` supervises nested agent execution. It consumes
 `RunTurnPort`, `ChildRunRegistry` from the turn runner, the billing spend reader,
-immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace); added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. Route-facing
+immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key; `tools` and `disallowed-tools` are coupled and each returns the full `patchTools` result so a map `allow` lifts the baseline denial. Overrides fold tool-name aliases like authoring. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. Route-facing
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads. Writer-facing helper-result cards persist through `spawn/spawn-transcript.ts`
 (one `spawnHelperCardProps` builder). Foreground spawn upserts a running card
