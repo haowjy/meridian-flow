@@ -47,6 +47,11 @@ durable, pull deltas use the branch coordinator's existing update publisher so l
 Hocuspocus branch rooms converge and broadcast normally; unloaded branches remain
 persistence-only.
 
+Live checkpoints are a separate cadence from those pulls: auto every 100 updates
+appended to the log (`reason: "auto"`), and Hocuspocus `onStoreDocument` at
+`debounce: 2000` / `maxDebounce: 10000` plus last-client disconnect
+(`reason: "store"`).
+
 **Branch mutations are durable before they reach a Hocuspocus room.** A draft
 branch room is a collaborative room: writer frames from a review editor are
 admitted like any other peer's, alongside server-side agent and disposition

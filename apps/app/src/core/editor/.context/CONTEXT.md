@@ -93,9 +93,17 @@ they do not own resource or namespace lifetime.
   - `EditorView.lifetime.test.tsx` is the enforcement: it proves a thread-query
     refetch and a live surface change keep the same editor and UndoManager while
     a room change replaces them.
+- `DocumentSession` status is derived from local persistence and transport
+  together: `detached` (proven local Y.Doc, no authorized transport), `syncing`,
+  `synced`, `offline`, `access-lost`, `destroyed`. `schemaFence` is orthogonal,
+  never a status value.
 - Live sessions may use versioned IndexedDB persistence. Review sessions do not:
   the branch room is server-persisted and generation-fenced, and a local cache
-  risks recovering state into the wrong review generation.
+  risks recovering state into the wrong review generation. Every session receives
+  either a qualified IndexedDB key or `none`. Admitted live keys include the
+  authoritative generation; local resource keys include account and an exact
+  persistence identity; branch/review sessions use `none`. A room-derived default
+  key is not permitted.
 - `local-content-initialization.ts` records exact-cache initialization in the
   existing y-indexeddb `custom` store. Its marker names the database and schema;
   the snapshot and marker append in one `updates` + `custom` transaction whose
