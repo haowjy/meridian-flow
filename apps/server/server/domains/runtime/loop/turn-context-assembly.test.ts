@@ -227,3 +227,52 @@ describe("assembleNextTurnContext named subagent freeze", () => {
     expect(second.systemPrompt).toBe(first.systemPrompt);
   });
 });
+
+describe("assembleNextTurnContext agentless overlay freeze", () => {
+  it("keeps a spawn-time overlay in a later frozen turn", async () => {
+    const projects = createInMemoryProjectRepository();
+    const project = await projects.create({ userId: "user-1", title: "Serial" });
+    const repos = createInMemoryRepositories({ projects });
+    const agentRevisions = createInMemoryAgentRevisionStore({
+      threadExists: async (id) => Boolean(await repos.threads.findById(id)),
+    });
+    const parent = await repos.threads.create({ userId: "user-1", projectId: project.id });
+    const child = await repos.threads.createSubagent({
+      userId: "user-1",
+      projectId: project.id,
+      parentThreadId: parent.id,
+      rootThreadId: parent.id,
+      spawnDepth: 1,
+      title: "Child",
+    });
+    await agentRevisions.bindThread(
+      child.id,
+      null,
+      { model: "fixture-model", skills: { load: [], available: [] }, namedTargets: [] },
+      { systemPrompt: "Overridden child prompt." },
+    );
+
+    const assemble = async (threadId: string) => {
+      const current = await repos.threads.findById(threadId);
+      if (!current) throw new Error("Thread missing");
+      return assembleNextTurnContext({
+        thread: current,
+        turns: [],
+        blocks: [],
+        agentRevisions,
+        toolRegistry: createToolRegistry(),
+        persistBake: true,
+        bakeComposedSystemPrompt: repos.threads.bakeComposedSystemPrompt.bind(repos.threads),
+        workContext: emptyWorkContext(project.id),
+      });
+    };
+
+    const first = await assemble(child.id);
+    expect(first.systemPrompt).toContain("Overridden child prompt.");
+    expect(first.systemPrompt).toContain("You are a subagent.");
+
+    const second = await assemble(child.id);
+    expect(second.systemPrompt).toBe(first.systemPrompt);
+    expect(second.systemPrompt).toContain("Overridden child prompt.");
+  });
+});

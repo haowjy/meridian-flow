@@ -1,6 +1,11 @@
 /** Writer vs Critic metadata advertise different write schemas. */
 import type { InvocationOverlay } from "@meridian/contracts/agents";
 import { describe, expect, it } from "vitest";
+import {
+  type AgentRevision,
+  GENERIC_AGENT_BODY,
+  GENERIC_SUBAGENT_SLUG,
+} from "../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
 import { createInMemoryRepositories } from "../../threads/index.js";
 import type { Tool } from "../gateway/index.js";
@@ -34,11 +39,25 @@ function stubHandlers(): CoreToolHandlers {
   };
 }
 
+const fixtureRevision: AgentRevision = {
+  id: "rev",
+  packageRevisionId: "src",
+  slug: "writer",
+  definitionDigest: "digest",
+  definition: {
+    schemaVersion: 1,
+    systemPrompt: "You are an agent.",
+    metadata: { model: "fixture-model" },
+  },
+};
+
 async function boundContext(metadata: {
   tools?: typeof WRITER_MAP | typeof CRITIC_MAP;
   definitionTools?: typeof WRITER_MAP | typeof CRITIC_MAP;
   namedTargets?: Array<{ name: string; definitionRevisionId: string }>;
   invocationOverlay?: InvocationOverlay | null;
+  revision?: AgentRevision | null;
+  kind?: "primary" | "subagent";
 }) {
   const projects = createInMemoryProjectRepository();
   const project = await projects.create({ userId: "user-1", title: "Serial" });
@@ -50,23 +69,24 @@ async function boundContext(metadata: {
       ...createSpawnToolRegistrations(),
     ],
   });
+  const revision =
+    metadata.revision === undefined
+      ? {
+          ...fixtureRevision,
+          slug: metadata.tools === CRITIC_MAP ? "critic" : "writer",
+          definition: {
+            ...fixtureRevision.definition,
+            metadata: { model: "fixture-model", tools: metadata.definitionTools },
+          },
+        }
+      : metadata.revision;
   return resolveAgentThreadTurnContext({
-    thread,
+    thread: { ...thread, kind: metadata.kind ?? "primary" },
     agentRevisions: {
       async readThreadBinding(threadId) {
         if (threadId !== thread.id) return undefined;
         return {
-          revision: {
-            id: "rev",
-            packageRevisionId: "src",
-            slug: metadata.tools === CRITIC_MAP ? "critic" : "writer",
-            definitionDigest: "digest",
-            definition: {
-              schemaVersion: 1,
-              systemPrompt: "You are an agent.",
-              metadata: { model: "fixture-model", tools: metadata.definitionTools },
-            },
-          },
+          revision,
           configuration: {
             model: "fixture-model",
             skills: { load: [], available: [] },
@@ -137,5 +157,26 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
 
     const inherited = await boundContext({ tools: WRITER_MAP });
     expect(inherited.agentBody).toBe("You are an agent.");
+  });
+
+  it("resolves a null revision to the generic body, slug, and subagent suffix", async () => {
+    const context = await boundContext({ revision: null, kind: "subagent", tools: CRITIC_MAP });
+    expect(context.agentSlug).toBe(GENERIC_SUBAGENT_SLUG);
+    expect(context.agentBody).toBe(
+      `${GENERIC_AGENT_BODY}\n\nYou are a subagent. Finish by calling return_result with a report for your parent. If blocked or you need an answer, report that to your parent.`,
+    );
+  });
+
+  it("applies the overlay system prompt and subagent suffix to a null revision", async () => {
+    const context = await boundContext({
+      revision: null,
+      kind: "subagent",
+      tools: CRITIC_MAP,
+      invocationOverlay: { systemPrompt: "Overridden child prompt." },
+    });
+    expect(context.agentSlug).toBe(GENERIC_SUBAGENT_SLUG);
+    expect(context.agentBody).toContain("Overridden child prompt.");
+    expect(context.agentBody).toContain("You are a subagent.");
+    expect(context.agentBody.startsWith("Overridden child prompt.")).toBe(true);
   });
 });
