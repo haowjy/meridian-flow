@@ -83,6 +83,25 @@ describe("applyInvocationPatch", () => {
     expect(policy.tools.has("ask_user")).toBe(true);
   });
 
+  it("deep-copies retained skill references instead of aliasing them", async () => {
+    const baseline = config({
+      skills: { load: [dummyRef("load-a")], available: [dummyRef("avail-a")] },
+    });
+    const caller = config();
+    const { revisions, packageRevisionId } = await installSkills("t/skillrefs", []);
+    const result = await applyInvocationPatch({
+      baseline,
+      patch: {},
+      caller,
+      store: revisions,
+      packageRevisionId,
+    });
+    result.skills.load[0].path = "mutated";
+    result.skills.available[0].contentDigest = "mutated";
+    expect(baseline.skills.load[0]?.path).toBe("skills/load-a/SKILL.md");
+    expect(baseline.skills.available[0]?.contentDigest).toBe("digest-avail-a");
+  });
+
   it("does not alias baseline arrays or objects into the result", async () => {
     const baseline = config({
       tools: { read: "allow", write: "deny" },

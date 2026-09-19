@@ -167,9 +167,12 @@ async function patchSkills(
   };
 
   return {
-    load: loadNames === undefined ? [...baseline.skills.load] : loadNames.map(resolve),
+    load:
+      loadNames === undefined ? copySkillReferences(baseline.skills.load) : loadNames.map(resolve),
     available:
-      availableNames === undefined ? [...baseline.skills.available] : availableNames.map(resolve),
+      availableNames === undefined
+        ? copySkillReferences(baseline.skills.available)
+        : availableNames.map(resolve),
   };
 }
 
@@ -242,5 +245,12 @@ function copyNamedTargets(
 function copySkills(
   skills: ResolvedAgentConfiguration["skills"],
 ): ResolvedAgentConfiguration["skills"] {
-  return { load: [...skills.load], available: [...skills.available] };
+  return {
+    load: copySkillReferences(skills.load),
+    available: copySkillReferences(skills.available),
+  };
+}
+
+function copySkillReferences(references: RetainedSkillReference[]): RetainedSkillReference[] {
+  return references.map((reference) => ({ ...reference }));
 }
