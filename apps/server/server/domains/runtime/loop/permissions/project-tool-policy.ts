@@ -20,10 +20,7 @@ export interface EffectiveToolPolicy {
   workCommands: ReadonlySet<WorkCommandName>;
 }
 
-export const DOCUMENT_READ_COMMANDS = [
-  "read",
-  "diff",
-] as const satisfies readonly WriteCommandName[];
+const DOCUMENT_READ_COMMANDS = ["read", "diff"] as const satisfies readonly WriteCommandName[];
 const WRITE_MUTATE_COMMANDS = [
   "create",
   "insert",

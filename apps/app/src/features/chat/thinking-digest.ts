@@ -27,15 +27,15 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
     const input = inputObject(tool);
     const command = stringField(input, "command");
     const path = stringField(input, "path");
-    const isWrite = tool.toolName === "write";
+    const isDocument = tool.toolName === "read" || tool.toolName === "write";
 
-    if (!tool.isError && isWrite && path) {
+    if (!tool.isError && isDocument && path) {
       if (command === "read") readDocuments.add(documentIdentity(path));
       else editedDocuments.add(documentIdentity(path));
       continue;
     }
-    // Failed, non-write (`search`, `ls`, `work`), and pathless operations are
-    // uncountable: they contribute a step instead of a document.
+    // Failed, non-document (`search`, `ls`, `work`), and pathless operations
+    // are uncountable: they contribute a step instead of a document.
     steps += 1;
   }
 

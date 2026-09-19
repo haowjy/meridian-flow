@@ -29,7 +29,7 @@ export type OutlineHeading = { level: number; text: string };
  * The locator an outline read prints under each heading so the model can read
  * that section next. Machinery, never shown.
  */
-const LOCATOR_LINE = /^write\(command="read"/;
+const LOCATOR_LINE = /^read\(command="read"/;
 
 const HEADING_LINE = /^(#{1,6})\s+(.*)$/;
 

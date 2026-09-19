@@ -462,7 +462,7 @@ describe("write tool dispatch", () => {
     );
     expect(outcomeText(missing)).toContain("status: not_found");
     expectOutcome(missing, "not_found", true);
-    expect(outcomeText(missing)).toContain('write(command="read", file="chapter.md")');
+    expect(outcomeText(missing)).toContain('read(command="read", path="chapter.md")');
 
     const ambiguous = await ctx.core.write(
       { command: "replace", file: "chapter.md", content: "blade", find: "sword" },

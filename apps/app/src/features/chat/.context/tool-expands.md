@@ -17,8 +17,8 @@ rendering tiers and the expand contents.
 titles, listing rows, quoted previews, terminal tails. Raw payloads are a
 debugging concern and belong behind a dev-only setting, never in chat.
 
-Tier 2 is keyed by **tool name**, but one `write` tool carries reading,
-skimming, creating, editing, reverting and reviewing. Which of those a row is
+Tier 2 is keyed by **tool name**, but the document tools (`read` and `write`)
+together carry reading, skimming, creating, editing, reverting and reviewing. Which of those a row is
 comes from `tool-command.ts`, and what to do about it comes from
 `command-descriptor.ts`, including the expand's shape. A renderer never
 switches on a command itself.
@@ -74,7 +74,7 @@ the UI says neither "intent" nor "outcome".
 | `ls` | Listing rows: name plus glyph | The listing cap, with a count | Each document; folders are inert |
 | unknown | Nothing | — | — |
 
-A **failed `write`** always shows why it failed, in place of whatever the
+A **failed document tool** always shows why it failed, in place of whatever the
 command would otherwise have opened onto. No other tool has a general failure
 expand: a failed `search` or `ls` opens onto nothing at all. Whether every
 failure deserves an expand is an open design question; do not invent an answer
