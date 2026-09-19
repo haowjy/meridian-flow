@@ -1,4 +1,4 @@
-/** Writer vs Critic metadata advertise different write schemas. */
+/** Writer vs Critic metadata advertise different read/write document tool schemas. */
 import {
   GENERIC_AGENT_BODY,
   GENERIC_SUBAGENT_SLUG,

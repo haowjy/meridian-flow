@@ -2,9 +2,10 @@
  * tool-command — reads a `ToolView` and answers one question: which command is
  * this, in the writer's terms?
  *
- * The writer cares about the command, not the tool that carried it: `write`
- * covers reading, creating, editing, reverting and reviewing, and those are
- * five different things to someone watching their manuscript. Classifying once
+ * The writer cares about the command, not the tool that carried it: the
+ * document tools (`read` and `write`) carry reading, creating, editing,
+ * reverting and reviewing, and those are five different things to someone
+ * watching their manuscript. Classifying once
  * here means the glyph, the chip tone, the visible verb and the announced verb
  * all derive from one decision and cannot drift apart.
  *
@@ -43,8 +44,9 @@ export type ToolCommand =
 
 export function toolCommand(tool: ToolView): ToolCommand {
   switch (tool.toolName) {
+    case "read":
     case "write":
-      return writeCommand(toolInputObject(tool));
+      return documentCommand(toolInputObject(tool));
     case "search":
       return "search";
     case "ls":
@@ -123,7 +125,7 @@ function workCategoryFromInput(
   }
 }
 
-function writeCommand(input: Record<string, JsonValue>): ToolCommand {
+function documentCommand(input: Record<string, JsonValue>): ToolCommand {
   switch (stringInput(input, "command")) {
     case "read":
       return stringInput(input, "format") === "outline" ? "skim" : "read";

@@ -114,7 +114,7 @@ model-facing protocol, so the executor preserves their output by definition.
 Parse, timeout, abort, and thrown failures belong to the executor; it delegates
 those to the registration's `formatExecutionError` when present and otherwise
 uses the generic Meridian error format. The `read` and `write` registrations own such a
-formatter so every executor-owned write failure still returns
+formatter so every executor-owned document failure still returns
 `meridian.agent-edit.v1` without teaching the generic executor about agent-edit.
 
 The core-tool publication boundary lives in `tools/core-tools.ts`: definitions,

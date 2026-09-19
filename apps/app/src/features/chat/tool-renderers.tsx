@@ -287,7 +287,7 @@ function ListingRows({ results }: { results: ToolResultRows }) {
   );
 }
 
-function writeFailureStatus(output: JsonValue | null): string | null {
+function documentFailureStatus(output: JsonValue | null): string | null {
   if (output == null) return null;
   if (typeof output === "object" && !Array.isArray(output)) {
     const status = asString((output as Record<string, JsonValue>).status);
@@ -298,16 +298,16 @@ function writeFailureStatus(output: JsonValue | null): string | null {
   return /^status:\s*([a-z_]+)/i.exec(message.trim())?.[1]?.toLowerCase() ?? null;
 }
 
-function writeFailureDocumentName(tool: ToolView): string | null {
+function documentFailureDocumentName(tool: ToolView): string | null {
   const path = asString(inputObject(tool).path);
   if (!path) return null;
   return documentDisplayName(path);
 }
 
 /** Writer copy is derived from failure shape; machine messages remain diagnostics only. */
-export function writeToolFailureCopy(tool: ToolView): string {
-  const name = writeFailureDocumentName(tool);
-  switch (writeFailureStatus(tool.output)) {
+export function documentToolFailureCopy(tool: ToolView): string {
+  const name = documentFailureDocumentName(tool);
+  switch (documentFailureStatus(tool.output)) {
     case "not_found":
     case "document_not_found":
       return name ? t`Couldn't find ${name}.` : t`That document couldn't be found.`;
@@ -330,7 +330,7 @@ export function writeToolFailureCopy(tool: ToolView): string {
   }
 }
 
-function WriteToolTitle({ tool, context }: { tool: ToolView; context?: ToolRenderContext }) {
+function DocumentToolTitle({ tool, context }: { tool: ToolView; context?: ToolRenderContext }) {
   const writeMode = context?.writeMode ?? "direct";
   const path = asString(inputObject(tool).path);
   const descriptor = descriptorFor(tool);
@@ -349,7 +349,7 @@ function WriteToolTitle({ tool, context }: { tool: ToolView; context?: ToolRende
 }
 
 /**
- * What a `write` row opens onto, by command. A failure always wins: the most
+ * What a document row opens onto, by command. A failure always wins: the most
  * useful thing a failed write can say is why it failed.
  */
 const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | null> = {
@@ -360,9 +360,11 @@ const COMMAND_EXPANDS: Record<CommandExpand, (tool: ToolView) => ToolExpand | nu
   "submitted-content": submittedContent,
 };
 
-function writeExpand(tool: ToolView): ToolExpand | null {
+function documentExpand(tool: ToolView): ToolExpand | null {
   if (tool.isError) {
-    return () => <div className="text-compact text-destructive">{writeToolFailureCopy(tool)}</div>;
+    return () => (
+      <div className="text-compact text-destructive">{documentToolFailureCopy(tool)}</div>
+    );
   }
   return COMMAND_EXPANDS[descriptorFor(tool).expand](tool);
 }
@@ -528,11 +530,14 @@ const DEFAULT_RENDERER: ToolRenderer = {
   title: (tool) => humanizeToolName(tool.toolName),
 };
 
+const DOCUMENT_TOOL_RENDERER: ToolRenderer = {
+  title: (tool, context) => <DocumentToolTitle tool={tool} context={context} />,
+  expand: documentExpand,
+};
+
 const RENDERERS: Record<string, ToolRenderer> = {
-  write: {
-    title: (tool, context) => <WriteToolTitle tool={tool} context={context} />,
-    expand: writeExpand,
-  },
+  read: DOCUMENT_TOOL_RENDERER,
+  write: DOCUMENT_TOOL_RENDERER,
   ls: {
     title: phraseTitle,
     expand: listingOrNothing,

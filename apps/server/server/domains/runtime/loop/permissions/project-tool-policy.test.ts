@@ -1,4 +1,4 @@
-/** Mars tools / disallowed-tools projected onto Flow names and write/work commands. */
+/** Mars tools / disallowed-tools projected onto Flow names and read/write document commands. */
 import { describe, expect, it } from "vitest";
 import {
   type EffectiveToolPolicy,
