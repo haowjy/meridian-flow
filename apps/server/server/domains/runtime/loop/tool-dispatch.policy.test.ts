@@ -14,6 +14,7 @@ function coreExecutor() {
     tools: createToolExecutor(
       createToolRegistry({
         registrations: createCoreToolRegistrations({
+          read: noop,
           write,
           work: noop,
           ls: noop,

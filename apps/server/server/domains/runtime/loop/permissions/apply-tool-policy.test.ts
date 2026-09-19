@@ -11,11 +11,23 @@ const CRITIC_MAP = {
 } as const;
 
 describe("permissionGateFromToolPolicy", () => {
-  it("refuses Critic replace", () => {
-    const gate = permissionGateFromToolPolicy(projectToolPolicy({ tools: CRITIC_MAP }));
-    expect(gate.check("write", { command: "replace" })).toEqual({
+  const criticGate = () => permissionGateFromToolPolicy(projectToolPolicy({ tools: CRITIC_MAP }));
+
+  it("allows Critic read with command read", () => {
+    expect(criticGate().check("read", { command: "read" })).toEqual({ allowed: true });
+  });
+
+  it("refuses Critic replace on the read tool", () => {
+    expect(criticGate().check("read", { command: "replace" })).toEqual({
       allowed: false,
-      reason: 'Command "replace" is not enabled for write.',
+      reason: 'Command "replace" is not enabled for read.',
+    });
+  });
+
+  it("refuses Critic write because the tool is not enabled", () => {
+    expect(criticGate().check("write", { command: "replace" })).toEqual({
+      allowed: false,
+      reason: 'Tool "write" is not enabled.',
     });
   });
 });

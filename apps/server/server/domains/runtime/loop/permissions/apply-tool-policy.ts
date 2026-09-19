@@ -1,7 +1,7 @@
 /** Applies EffectiveToolPolicy to advertisement and the name+command permission gate. */
 
 import type { Tool } from "../../gateway/index.js";
-import type { EffectiveToolPolicy } from "./project-tool-policy.js";
+import { commandSetForTool, type EffectiveToolPolicy } from "./project-tool-policy.js";
 import type { PermissionGate } from "./types.js";
 
 export function permissionGateFromToolPolicy(
@@ -9,15 +9,13 @@ export function permissionGateFromToolPolicy(
   extraAllowed: Iterable<string> = [],
 ): PermissionGate {
   const allowed = new Set([...policy.tools, ...extraAllowed]);
-  const writeCommands: ReadonlySet<string> = policy.writeCommands;
-  const workCommands: ReadonlySet<string> = policy.workCommands;
   return {
     check(toolName, input) {
       if (!allowed.has(toolName)) {
         return { allowed: false, reason: `Tool "${toolName}" is not enabled.` };
       }
-      if (toolName === "write" || toolName === "work") {
-        const commands = toolName === "write" ? writeCommands : workCommands;
+      const commands = commandSetForTool(policy, toolName);
+      if (commands) {
         const command = commandName(input);
         if (command === undefined || !commands.has(command)) {
           return {
@@ -39,19 +37,9 @@ export function advertiseTools(baseTools: Tool[] | undefined, policy: EffectiveT
     .filter((tool) => policy.tools.has(toolName(tool)))
     .map((tool) => {
       if (tool.type !== "function") return tool;
-      if (tool.name === "write") {
-        return {
-          ...tool,
-          inputSchema: narrowCommandSchema(tool.inputSchema, policy.writeCommands),
-        };
-      }
-      if (tool.name === "work") {
-        return {
-          ...tool,
-          inputSchema: narrowCommandSchema(tool.inputSchema, policy.workCommands),
-        };
-      }
-      return tool;
+      const commands = commandSetForTool(policy, tool.name);
+      if (!commands) return tool;
+      return { ...tool, inputSchema: narrowCommandSchema(tool.inputSchema, commands) };
     });
 }
 

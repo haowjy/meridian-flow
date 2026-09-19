@@ -1,5 +1,5 @@
 /**
- * read-payload — turns what `write(command="read")` returned into what the
+ * read-payload — turns what the `read` tool returned into what the
  * writer sees.
  *
  * The payload is the model's view of a document: one hashline per block, or,

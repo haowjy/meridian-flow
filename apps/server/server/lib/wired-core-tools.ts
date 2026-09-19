@@ -650,7 +650,121 @@ export function createReferenceReader(deps: ToolWiringDeps): ReferenceReader {
 }
 
 export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegistration[] {
+  const documentToolHandler = async (input: unknown, ctx: ToolHandlerContext) => {
+    const parsed = parseWriteToolInput(input);
+    if (isToolError(parsed)) return parsed;
+
+    const execution = await resolveExecutionContext(deps, ctx.threadId);
+    if ("isError" in execution) return execution;
+
+    if (parsed.command === "diff") {
+      try {
+        requireWorkDraftOwner(execution, "write.diff");
+      } catch (error) {
+        if (error instanceof WorkRequiredError) {
+          return toolError({
+            code: error.code,
+            operation: error.operation,
+            message: error.message,
+          });
+        }
+        throw error;
+      }
+      const outcome = await deps.documentSync.agentEdit(execution).write(parsed, {
+        sessionId: ctx.threadId,
+        threadId: ctx.threadId,
+        turnId: ctx.turnId,
+        responseId: ctx.responseId,
+        tool_use_id: ctx.toolCallId,
+      });
+      return outcome.isError
+        ? { isError: true, output: outcome.result }
+        : { output: outcome.result };
+    }
+
+    const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
+    if ("isError" in portOrError) {
+      return writeToolError(parsed.command, portOrError.output.message);
+    }
+
+    const address = await resolveDocumentAddress(portOrError, parsed, {
+      deferTrackedDocumentSync: parsed.command === "create" && ctx.responseId !== undefined,
+    });
+    if (isToolError(address)) return address;
+
+    const outcome = await deps.documentSync
+      .agentEdit(execution)
+      .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId), {
+        sessionId: ctx.threadId,
+        threadId: ctx.threadId,
+        turnId: ctx.turnId,
+        responseId: ctx.responseId,
+        tool_use_id: ctx.toolCallId,
+        createdDocument: address.created === true,
+      });
+    const stagedCreate =
+      parsed.command === "create" && ctx.responseId !== undefined && address.created === true;
+    if (outcome.isError) {
+      if (stagedCreate) {
+        try {
+          await deleteCreatedTrackedDocument({
+            port: portOrError.port,
+            path: parsed.path,
+            documentId: address.documentId,
+          });
+        } catch (error) {
+          return writeToolError(
+            parsed.command,
+            `Failed to discard staged create for ${parsed.path}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+            "internal_error",
+          );
+        }
+      }
+      return { isError: true, output: outcome.result };
+    }
+    if (stagedCreate) {
+      const responseId = ctx.responseId;
+      if (responseId === undefined) {
+        return writeToolError(parsed.command, "Missing staged response id", "internal_error");
+      }
+      deps.responseWrites.trackStagedCreate({
+        responseId,
+        port: portOrError.port,
+        path: parsed.path,
+        documentId: address.documentId,
+      });
+    }
+
+    recordTouchInBackground(deps, address.documentId, ctx);
+    const stagedWrite =
+      ctx.responseId !== undefined &&
+      (parsed.command === "create" ||
+        parsed.command === "insert" ||
+        parsed.command === "replace" ||
+        parsed.command === "delete");
+    if (PROJECTION_REFRESH_COMMANDS.has(parsed.command) && !stagedWrite) {
+      await refreshProjectionAfterToolWrite(deps, address.documentId, ctx);
+    }
+    return {
+      output: outcome.result,
+      ...(stagedWrite
+        ? {
+            metadata: {
+              documentId: address.documentId,
+              stagedWrite: true,
+              ...(outcome.writeId ? { writeId: outcome.writeId } : {}),
+              ...(outcome.settlementId ? { settlementId: outcome.settlementId } : {}),
+            },
+          }
+        : {}),
+    };
+  };
+
   return createCoreToolRegistrations({
+    read: documentToolHandler,
+    write: documentToolHandler,
     work: async (input: unknown, ctx: ToolHandlerContext) => {
       const parsed = WorkCommandSchema.safeParse(input);
       if (!parsed.success) return toolError({ message: schemaError(parsed.error) });
@@ -843,117 +957,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
         }
         return toolError({ message: error instanceof Error ? error.message : String(error) });
       }
-    },
-    write: async (input: unknown, ctx: ToolHandlerContext) => {
-      const parsed = parseWriteToolInput(input);
-      if (isToolError(parsed)) return parsed;
-
-      const execution = await resolveExecutionContext(deps, ctx.threadId);
-      if ("isError" in execution) return execution;
-
-      if (parsed.command === "diff") {
-        try {
-          requireWorkDraftOwner(execution, "write.diff");
-        } catch (error) {
-          if (error instanceof WorkRequiredError) {
-            return toolError({
-              code: error.code,
-              operation: error.operation,
-              message: error.message,
-            });
-          }
-          throw error;
-        }
-        const outcome = await deps.documentSync.agentEdit(execution).write(parsed, {
-          sessionId: ctx.threadId,
-          threadId: ctx.threadId,
-          turnId: ctx.turnId,
-          responseId: ctx.responseId,
-          tool_use_id: ctx.toolCallId,
-        });
-        return outcome.isError
-          ? { isError: true, output: outcome.result }
-          : { output: outcome.result };
-      }
-
-      const portOrError = await resolveContextPort(deps, ctx.threadId, ctx.responseId);
-      if ("isError" in portOrError) {
-        return writeToolError(parsed.command, portOrError.output.message);
-      }
-
-      const address = await resolveDocumentAddress(portOrError, parsed, {
-        deferTrackedDocumentSync: parsed.command === "create" && ctx.responseId !== undefined,
-      });
-      if (isToolError(address)) return address;
-
-      const outcome = await deps.documentSync
-        .agentEdit(execution)
-        .write(buildAgentWriteCommand(parsed, address, ctx.toolCallId), {
-          sessionId: ctx.threadId,
-          threadId: ctx.threadId,
-          turnId: ctx.turnId,
-          responseId: ctx.responseId,
-          tool_use_id: ctx.toolCallId,
-          createdDocument: address.created === true,
-        });
-      const stagedCreate =
-        parsed.command === "create" && ctx.responseId !== undefined && address.created === true;
-      if (outcome.isError) {
-        if (stagedCreate) {
-          try {
-            await deleteCreatedTrackedDocument({
-              port: portOrError.port,
-              path: parsed.path,
-              documentId: address.documentId,
-            });
-          } catch (error) {
-            return writeToolError(
-              parsed.command,
-              `Failed to discard staged create for ${parsed.path}: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-              "internal_error",
-            );
-          }
-        }
-        return { isError: true, output: outcome.result };
-      }
-      if (stagedCreate) {
-        const responseId = ctx.responseId;
-        if (responseId === undefined) {
-          return writeToolError(parsed.command, "Missing staged response id", "internal_error");
-        }
-        deps.responseWrites.trackStagedCreate({
-          responseId,
-          port: portOrError.port,
-          path: parsed.path,
-          documentId: address.documentId,
-        });
-      }
-
-      recordTouchInBackground(deps, address.documentId, ctx);
-      const stagedWrite =
-        ctx.responseId !== undefined &&
-        (parsed.command === "create" ||
-          parsed.command === "insert" ||
-          parsed.command === "replace" ||
-          parsed.command === "delete");
-      if (PROJECTION_REFRESH_COMMANDS.has(parsed.command) && !stagedWrite) {
-        await refreshProjectionAfterToolWrite(deps, address.documentId, ctx);
-      }
-      return {
-        output: outcome.result,
-        ...(stagedWrite
-          ? {
-              metadata: {
-                documentId: address.documentId,
-                stagedWrite: true,
-                ...(outcome.writeId ? { writeId: outcome.writeId } : {}),
-                ...(outcome.settlementId ? { settlementId: outcome.settlementId } : {}),
-              },
-            }
-          : {}),
-      };
     },
     ls: async (input: unknown, ctx: ToolHandlerContext) => {
       const { path } = (input ?? {}) as { path?: string };
