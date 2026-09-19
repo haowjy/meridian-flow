@@ -8,6 +8,7 @@ import {
   AgentConfigurationError,
   type AgentRevisionStore,
   buildRetainedSkillResolver,
+  type RetainedSkillResolver,
 } from "../../packages/index.js";
 
 /** Unresolvable patch reference (skill name or caller roster name). */
@@ -18,8 +19,12 @@ export interface ApplyInvocationPatchInput {
   patch: InvocationPatch;
   caller: ResolvedAgentConfiguration;
   store: Pick<AgentRevisionStore, "readSource">;
-  /** Retained graph root used to resolve newly-added skill names. */
-  packageRevisionId: string;
+  /**
+   * Retained graph root used to resolve newly-added skill names. Null for an
+   * agent-less child whose caller has no retained package; skill patching then
+   * fails with {@link InvocationPatchError} only when new names are requested.
+   */
+  packageRevisionId: string | null;
 }
 
 export async function applyInvocationPatch(
@@ -93,9 +98,15 @@ async function patchSkills(
   const needsResolver =
     (loadNames !== undefined && loadNames.length > 0) ||
     (availableNames !== undefined && availableNames.length > 0);
-  const resolver = needsResolver
-    ? await buildRetainedSkillResolver({ packageRevisionId, store })
-    : null;
+  if (needsResolver && !packageRevisionId) {
+    throw new InvocationPatchError(
+      "Cannot resolve patched skills without a retained package root.",
+    );
+  }
+  const resolver: RetainedSkillResolver | null =
+    needsResolver && packageRevisionId
+      ? await buildRetainedSkillResolver({ packageRevisionId, store })
+      : null;
 
   const resolve = (reference: string): RetainedSkillReference => {
     if (!resolver) throw new InvocationPatchError(`Cannot resolve skill "${reference}".`);

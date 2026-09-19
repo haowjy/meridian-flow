@@ -24,7 +24,11 @@ export {
   workCommandCategory,
 } from "./core-tools.js";
 export { createSkillToolRegistrations } from "./skill-tool.js";
-export { createSpawnToolRegistrations } from "./spawn-tools.js";
+export {
+  createSpawnToolRegistrations,
+  parseSpawnToolArgs,
+  type SpawnToolArgs,
+} from "./spawn-tools.js";
 export { createToolExecutor, type ToolExecutorWithBatch } from "./tool-executor.js";
 export { createToolRegistry } from "./tool-registry.js";
 export type {

@@ -21,10 +21,10 @@ import type {
 } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
-import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
+import type { ChildRunCoordinator, SpawnChildInput } from "../spawn/child-run-coordinator.js";
 import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
 import { persistReturnResult, type SpawnTranscript } from "../spawn/spawn-transcript.js";
-import type { ToolCallInput, ToolExecutor } from "../tools/index.js";
+import type { SpawnToolArgs, ToolCallInput, ToolExecutor } from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
@@ -147,18 +147,17 @@ export async function dispatchToolCall(
 
   const spawn =
     call.name === "spawn"
-      ? async (spawnInput: {
-          agent?: string;
-          prompt: string;
-          description?: string;
-          mode?: "foreground" | "background";
-        }) => {
-          const childInput = {
+      ? async (spawnInput: SpawnToolArgs) => {
+          const childInput: SpawnChildInput = {
             parentThread: ctx.thread,
             parentTurnId: ctx.state.currentTurn.id,
             agentSlug: spawnInput.agent,
             prompt: spawnInput.prompt,
             description: spawnInput.description,
+            ...(spawnInput.system_prompt !== undefined
+              ? { systemPrompt: spawnInput.system_prompt }
+              : {}),
+            ...(spawnInput.overrides !== undefined ? { overrides: spawnInput.overrides } : {}),
             budget: ctx.treeBudget,
             signal: ctx.state.signal,
           };
