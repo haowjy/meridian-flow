@@ -5,6 +5,7 @@
  * its callers.
  */
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import { isUuid } from "@meridian/contracts/request-id";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { ThreadRepository } from "../../threads/index.js";
@@ -30,6 +31,9 @@ export async function authorizeContinueTarget(input: {
   targetThreadId: ThreadId;
   threads: Pick<ThreadRepository, "findById">;
 }): Promise<ContinueTargetOutcome> {
+  // Reject malformed ids before the DB, whose uuid cast would otherwise leak a
+  // Postgres syntax error instead of the uniform not-found answer.
+  if (!isUuid(input.targetThreadId)) return notFound();
   const target = await input.threads.findById(input.targetThreadId);
   if (!target) return notFound();
   if (

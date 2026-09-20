@@ -370,6 +370,7 @@ export interface ChildReportDeliveryRepository {
   enqueue(input: EnqueueChildReportDeliveryInput): Promise<void>;
   listPendingParentThreadIds(): Promise<ThreadId[]>;
   listPendingByParent(parentThreadId: ThreadId): Promise<ChildReportDeliveryObligation[]>;
+  findByReportId(reportId: TurnId): Promise<ChildReportDeliveryObligation | null>;
   /** Records the card's system-turn container once; later calls are no-ops. */
   setSystemTurnId(reportId: TurnId, systemTurnId: TurnId): Promise<void>;
   /** Advances the attempt epoch after the current submission id terminally rejected. */

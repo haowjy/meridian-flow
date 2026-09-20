@@ -864,6 +864,9 @@ export function createInMemoryRepositories(
           (row) => row.parentThreadId === parentThreadId,
         );
       },
+      async findByReportId(reportId) {
+        return childReportDeliveries.get(reportId as string) ?? null;
+      },
       async setSystemTurnId(reportId, systemTurnId) {
         const row = childReportDeliveries.get(reportId as string);
         if (row) row.systemTurnId = systemTurnId;

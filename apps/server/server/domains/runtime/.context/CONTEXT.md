@@ -134,8 +134,13 @@ child-run coordinator can create subagent threads. Writer-facing helper-result c
 before the child runs and patches it on completion; background delivery posts
 the same card on a later system turn. Successful `return_result` persists
 `tool_result` and the child-report card in one `persistAndAppendEvents` (card
-last). `pendingReports` is `driveChild` only; writer-continue uses a settle-only
-completer.
+last) and durably records the background delivery obligation at the same
+moment, so a crash before the run's terminal write cannot lose the report.
+`spawn_status`/`spawn_result` are spawn-owned: a continue run's outcome lives on
+its per-execution card and never overwrites a prior report. Background card
+delivery holds the parent's shared run claim, so a card write cannot race or
+re-parent a live writer turn. `pendingReports` is `driveChild` only;
+writer-continue uses a settle-only completer.
 
 Named targets resolve by name within the parent binding's roster; a target with
 `model-invocable: false` is refused, while a primary-mode target is spawnable.
