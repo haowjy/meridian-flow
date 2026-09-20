@@ -10,6 +10,7 @@
  * while the tool handler is awaited.
  */
 
+import type { ThreadId } from "@meridian/contracts/runtime";
 import type { TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
@@ -21,10 +22,19 @@ import type {
 } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
-import type { ChildRunCoordinator, SpawnChildInput } from "../spawn/child-run-coordinator.js";
+import type {
+  ChildRunCoordinator,
+  ContinueChildInput,
+  SpawnChildInput,
+} from "../spawn/child-run-coordinator.js";
 import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
 import { persistReturnResult, type SpawnTranscript } from "../spawn/spawn-transcript.js";
-import type { SpawnToolArgs, ToolCallInput, ToolExecutor } from "../tools/index.js";
+import type {
+  ContinueToolArgs,
+  SpawnToolArgs,
+  ToolCallInput,
+  ToolExecutor,
+} from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
@@ -168,6 +178,24 @@ export async function dispatchToolCall(
         }
       : undefined;
 
+  const continueChild =
+    call.name === "continue"
+      ? async (continueInput: ContinueToolArgs) => {
+          const childInput: ContinueChildInput = {
+            parentThread: ctx.thread,
+            parentTurnId: ctx.state.currentTurn.id,
+            childThreadId: continueInput.conversation_id as ThreadId,
+            prompt: continueInput.prompt,
+            budget: ctx.treeBudget,
+            signal: ctx.state.signal,
+          };
+          if (continueInput.mode === "background") {
+            return deps.childRunCoordinator.continueChildBackground(childInput);
+          }
+          return deps.childRunCoordinator.continueChild({ ...childInput, transcript });
+        }
+      : undefined;
+
   const returnResultCompleter = ctx.returnResultCompleter;
   let returnResultSummary = "";
   const returnResult = async (capture: Parameters<ReturnResultCompleter>[0]) => {
@@ -197,6 +225,7 @@ export async function dispatchToolCall(
       interrupt: ctx.interruptSession.interrupt,
       updateComponentBlock: ctx.interruptSession.updateComponentBlock,
       spawn,
+      continue: continueChild,
       returnResult,
     },
   );
@@ -220,7 +249,9 @@ export async function dispatchToolCall(
     };
   }
   const persistedOutput: JsonValue =
-    call.name === "spawn" ? spawnOutputForTranscript(execResult.output) : execResult.output;
+    call.name === "spawn" || call.name === "continue"
+      ? spawnOutputForTranscript(execResult.output)
+      : execResult.output;
   const persistedIsError = execResult.isError;
   const persistedMetadata = execResult.metadata;
 
