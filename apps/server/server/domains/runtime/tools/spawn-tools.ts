@@ -1,12 +1,14 @@
 /**
- * Spawn primitive tools: spawn (parent-side) and return_result (child-side).
- * Handlers are thin — ChildRunCoordinator owns lifecycle; these only validate input.
+ * Spawn primitive tools: spawn (create a child), continue (run an existing
+ * child again), and return_result (child-side). Handlers are thin —
+ * ChildRunCoordinator owns lifecycle; these only validate input.
  */
 import type { InvocationPatch } from "@meridian/contracts/agents";
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { SpawnResult } from "@meridian/contracts/spawn";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type {
+  ContinueToolHandlerContext,
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
   ToolRegistration,
@@ -48,6 +50,29 @@ export function parseSpawnToolArgs(input: unknown): SpawnToolArgs {
 /** Roster-aware spawn description; the caller's binding supplies whether it has named targets. */
 export function spawnToolDescription(hasNamedTargets: boolean): string {
   return hasNamedTargets ? SPAWN_DESCRIPTION : SPAWN_DESCRIPTION_EMPTY_ROSTER;
+}
+
+const CONTINUE_DESCRIPTION =
+  "Run an existing subagent again with a new prompt. Pass the handle (for example p3) returned by spawn. The child keeps its configuration and history. Use mode=background for non-blocking follow-ups.";
+
+export type ContinueToolArgs = {
+  /** Short server-assigned handle (`pN`/`cN`) from a spawn/continue result. */
+  handle: string;
+  prompt: string;
+  mode: "foreground" | "background";
+};
+
+/** One parse for continue tool arguments; omitted mode is foreground. */
+export function parseContinueToolArgs(input: unknown): ContinueToolArgs {
+  const rec =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? (input as Record<string, unknown>)
+      : {};
+  return {
+    handle: typeof rec.handle === "string" ? rec.handle : "",
+    prompt: typeof rec.prompt === "string" ? rec.prompt : "",
+    mode: rec.mode === "background" ? "background" : "foreground",
+  };
 }
 
 export function createSpawnToolRegistrations(): ToolRegistration[] {
@@ -97,6 +122,41 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       },
       sequential: true,
       capability: "spawn",
+      advertise: true,
+    },
+    {
+      source: "spawn",
+      definition: {
+        type: "function",
+        name: "continue",
+        description: CONTINUE_DESCRIPTION,
+        inputSchema: {
+          type: "object",
+          properties: {
+            handle: {
+              type: "string",
+              description: "Short handle returned by spawn, for example p3.",
+            },
+            prompt: { type: "string", description: "Next task message for the child." },
+            mode: {
+              type: "string",
+              enum: ["foreground", "background"],
+              description:
+                "foreground waits for return_result; background returns immediately and posts an inline helper result when done.",
+            },
+          },
+          required: ["handle", "prompt"],
+          additionalProperties: false,
+        },
+      },
+      execution: {
+        type: "server",
+        handler: async (input: unknown, ctx: ContinueToolHandlerContext) => {
+          return ctx.continue(parseContinueToolArgs(input));
+        },
+      },
+      sequential: true,
+      capability: "continue",
       advertise: true,
     },
     {

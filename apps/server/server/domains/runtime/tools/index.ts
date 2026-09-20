@@ -25,7 +25,9 @@ export {
 } from "./core-tools.js";
 export { createSkillToolRegistrations } from "./skill-tool.js";
 export {
+  type ContinueToolArgs,
   createSpawnToolRegistrations,
+  parseContinueToolArgs,
   parseSpawnToolArgs,
   type SpawnToolArgs,
 } from "./spawn-tools.js";

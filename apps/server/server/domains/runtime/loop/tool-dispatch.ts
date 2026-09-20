@@ -10,6 +10,7 @@
  * while the tool handler is awaited.
  */
 
+import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
@@ -21,10 +22,15 @@ import type {
 } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
-import type { ChildRunCoordinator, SpawnChildInput } from "../spawn/child-run-coordinator.js";
+import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
 import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
 import { persistReturnResult, type SpawnTranscript } from "../spawn/spawn-transcript.js";
-import type { SpawnToolArgs, ToolCallInput, ToolExecutor } from "../tools/index.js";
+import type {
+  ContinueToolArgs,
+  SpawnToolArgs,
+  ToolCallInput,
+  ToolExecutor,
+} from "../tools/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
@@ -148,7 +154,8 @@ export async function dispatchToolCall(
   const spawn =
     call.name === "spawn"
       ? async (spawnInput: SpawnToolArgs) => {
-          const childInput: SpawnChildInput = {
+          const request: ChildRunRequest = {
+            kind: "spawn",
             parentThread: ctx.thread,
             parentTurnId: ctx.state.currentTurn.id,
             agentSlug: spawnInput.agent,
@@ -161,21 +168,42 @@ export async function dispatchToolCall(
             budget: ctx.treeBudget,
             signal: ctx.state.signal,
           };
-          if (spawnInput.mode === "background") {
-            return deps.childRunCoordinator.spawnChildBackground(childInput);
-          }
-          return deps.childRunCoordinator.spawnChild({ ...childInput, transcript });
+          return deps.childRunCoordinator.runChild(request, {
+            mode: spawnInput.mode,
+            ...(spawnInput.mode === "foreground" ? { transcript } : {}),
+          });
+        }
+      : undefined;
+
+  const continueChild =
+    call.name === "continue"
+      ? async (continueInput: ContinueToolArgs) => {
+          const request: ChildRunRequest = {
+            kind: "continue",
+            parentThread: ctx.thread,
+            parentTurnId: ctx.state.currentTurn.id,
+            handle: continueInput.handle,
+            prompt: continueInput.prompt,
+            budget: ctx.treeBudget,
+            signal: ctx.state.signal,
+          };
+          return deps.childRunCoordinator.runChild(request, {
+            mode: continueInput.mode,
+            ...(continueInput.mode === "foreground" ? { transcript } : {}),
+          });
         }
       : undefined;
 
   const returnResultCompleter = ctx.returnResultCompleter;
   let returnResultSummary = "";
+  let returnResultArtifacts: ArtifactRef[] | undefined;
   const returnResult = async (capture: Parameters<ReturnResultCompleter>[0]) => {
     if (!returnResultCompleter) {
       return { ok: false as const, message: "return_result is not available on this run." };
     }
     const outcome = await returnResultCompleter(capture);
     returnResultSummary = capture.summary;
+    returnResultArtifacts = capture.artifacts;
     return outcome;
   };
 
@@ -197,6 +225,7 @@ export async function dispatchToolCall(
       interrupt: ctx.interruptSession.interrupt,
       updateComponentBlock: ctx.interruptSession.updateComponentBlock,
       spawn,
+      continue: continueChild,
       returnResult,
     },
   );
@@ -212,6 +241,7 @@ export async function dispatchToolCall(
       toolCallId: execResult.toolCallId,
       outcome: execResult.returnResult,
       summary: returnResultSummary,
+      artifacts: returnResultArtifacts,
     });
     return {
       events,
@@ -220,7 +250,9 @@ export async function dispatchToolCall(
     };
   }
   const persistedOutput: JsonValue =
-    call.name === "spawn" ? spawnOutputForTranscript(execResult.output) : execResult.output;
+    call.name === "spawn" || call.name === "continue"
+      ? spawnOutputForTranscript(execResult.output)
+      : execResult.output;
   const persistedIsError = execResult.isError;
   const persistedMetadata = execResult.metadata;
 

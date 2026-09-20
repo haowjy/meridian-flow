@@ -101,7 +101,6 @@ import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
-import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { loadUserSkillBody } from "./available-skills.js";
@@ -180,7 +179,6 @@ export interface OrchestratorDeps {
   /** Interrupt-boundary artifact flush; explicit noop adapter means disabled. */
   interruptArtifacts: InterruptArtifactFlushPort;
   childRunCoordinator: ChildRunCoordinator;
-  helperResultDelivery?: HelperResultDelivery;
   workContextDelivery: Pick<WorkContextDelivery, "deliverNow">;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
@@ -413,6 +411,7 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
         prevTurnId: lastTurn?.id ?? null,
         role: "user",
         status: "complete",
+        metadata: input.userTurnMetadata ?? null,
       });
       const userBlocks = (input.userBlocks ?? [{ type: "text", text: input.userText }]).map(
         (block: UserMessageBlock, sequence) =>
@@ -900,12 +899,12 @@ async function* generateEvents(
 
   // Every subagent run owns a return_result completer, even when the caller did
   // not pass one (a writer sending a new message into a child chat). Writer
-  // continue is settle-only: pendingReports is driveChild's waiter. A primary
-  // writer turn has none, so return_result stays a failed tool_result there.
+  // continue is settle-only: the child-run driver owns the per-run capture. A
+  // primary writer turn has none, so return_result stays a failed tool_result.
   const returnResultCompleter =
     input.returnResultCompleter ??
     (thread.kind === "subagent"
-      ? deps.childRunCoordinator.createReturnResultCompleter(input.threadId, { capture: false })
+      ? deps.childRunCoordinator.createReturnResultCompleter()
       : undefined);
 
   let currentAssistantTurn: Turn = assistantTurn;

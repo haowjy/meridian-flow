@@ -6,6 +6,7 @@
 
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { SpawnResult } from "@meridian/contracts/spawn";
 import type {
   Block,
   BlockStatus,
@@ -123,7 +124,7 @@ export interface ThreadRepository {
   create(input: CreateThreadInput): Promise<Thread>;
   updateSpawnLifecycle(id: ThreadId, input: UpdateSpawnLifecycleInput): Promise<Thread>;
   findById(id: ThreadId): Promise<Thread | null>;
-  /** Exact live handle lookup by server-assigned `cN` ref; caller must authorize the project. */
+  /** Exact live handle lookup by server-assigned `cN`/`pN` ref; caller must authorize the project. */
   findLiveByProjectRef(projectId: ProjectId, ref: string): Promise<Thread | null>;
   /** Returns the owning project even when the thread is soft-deleted. */
   findProjectIdByIdIncludingDeleted(id: ThreadId): Promise<ProjectId | null>;
@@ -342,6 +343,41 @@ export interface WorkContextDeliveryRepository {
   acknowledge(threadId: ThreadId): Promise<void>;
 }
 
+export interface ChildReportDeliveryObligation {
+  reportId: TurnId;
+  parentThreadId: ThreadId;
+  childThreadId: ThreadId;
+  agentSlug: string;
+  description: string | null;
+  result: SpawnResult;
+  systemTurnId: TurnId | null;
+  submissionEpoch: number;
+}
+
+export interface EnqueueChildReportDeliveryInput {
+  reportId: TurnId;
+  parentThreadId: ThreadId;
+  childThreadId: ThreadId;
+  agentSlug: string;
+  description?: string | null;
+  result: SpawnResult;
+  systemTurnId?: TurnId | null;
+}
+
+/** Durable exactly-once delivery facts for a background child's terminal report. */
+export interface ChildReportDeliveryRepository {
+  /** Inserts the obligation if absent; enlists in the ambient transaction. */
+  enqueue(input: EnqueueChildReportDeliveryInput): Promise<void>;
+  listPendingParentThreadIds(): Promise<ThreadId[]>;
+  listPendingByParent(parentThreadId: ThreadId): Promise<ChildReportDeliveryObligation[]>;
+  findByReportId(reportId: TurnId): Promise<ChildReportDeliveryObligation | null>;
+  /** Records the card's system-turn container once; later calls are no-ops. */
+  setSystemTurnId(reportId: TurnId, systemTurnId: TurnId): Promise<void>;
+  /** Advances the attempt epoch after the current submission id terminally rejected. */
+  advanceEpoch(reportId: TurnId): Promise<void>;
+  acknowledge(reportId: TurnId): Promise<void>;
+}
+
 export type ThreadRepositories = {
   threads: ThreadRepository;
   homeFeed: HomeChatFeedRepository;
@@ -354,6 +390,7 @@ export type ThreadRepositories = {
   threadDocuments: ThreadDocumentRepository;
   documentTouches: TurnDocumentTouchRepository;
   workContextDeliveries: WorkContextDeliveryRepository;
+  childReportDeliveries: ChildReportDeliveryRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   /**
    * Serializes a complete turn-start transition on the thread and rejects

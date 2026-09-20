@@ -1,5 +1,10 @@
 # FUTURE — nice-to-have follow-ups (chat)
 
+- Spawn/agent UI follow-ups stay tracked in the docs work item
+  ([`complete-implementation-todo.md`](https://github.com/haowjy/meridian-flow-docs/blob/main/work/implement-agents/design/complete-implementation-todo.md#milestone-3)),
+  not duplicated here: `GET /api/threads` primary-only, Home/switcher Agent
+  lane, live status pill, and the spawn-card visual redesign.
+
 - Chat-focused document viewing is outside the readable project-route cutover.
   When it is designed, give it its own project/Work authority and route contract;
   do not reuse the Editor's retained-document controller implicitly.

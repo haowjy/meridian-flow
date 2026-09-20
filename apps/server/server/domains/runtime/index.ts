@@ -11,7 +11,10 @@ export {
 } from "./admission/drizzle-admission-records.js";
 export {
   AdmissionConflictError,
+  createHostTurnAdmission,
   createUserTurnAdmission,
+  type HostTurnAdmission,
+  type HostTurnAdmissionInput,
   InvalidAdmissionError,
   type UserTurnAdmission,
 } from "./admission/user-turn-admission.js";
@@ -55,11 +58,28 @@ export { createWorkContextDelivery } from "./loop/work-context-delivery.js";
 export type { ImageAssetPort } from "./ports/image-asset.js";
 export { unavailableImageAssetPort } from "./ports/image-asset.js";
 export {
+  authorizeContinueTarget,
+  type ContinueTargetOutcome,
+} from "./spawn/authorize-continue-target.js";
+export {
+  type ChildReportDelivery,
+  type ChildReportDeliveryDeps,
+  type ChildReportEnqueue,
+  createChildReportDelivery,
+} from "./spawn/child-report-delivery.js";
+export {
   type ChildRunCoordinator,
+  type ChildRunCoordinatorDeps,
+  type ChildRunOptions,
+  type ChildRunRequest,
+  type ContinueChildInput,
   createChildRunCoordinator,
+  type SpawnChildInput,
 } from "./spawn/child-run-coordinator.js";
 export {
-  createHelperResultDelivery,
-  type HelperResultDelivery,
-} from "./spawn/helper-result-delivery.js";
+  type ChildDriveInput,
+  type ChildRunDriver,
+  type ChildRunDriverDeps,
+  createChildRunDriver,
+} from "./spawn/child-run-driver.js";
 export * from "./tools/index.js";

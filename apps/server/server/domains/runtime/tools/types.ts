@@ -20,7 +20,7 @@ import type {
 } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type { FunctionTool } from "../gateway/index.js";
-import type { SpawnToolArgs } from "./spawn-tools.js";
+import type { ContinueToolArgs, SpawnToolArgs } from "./spawn-tools.js";
 
 // ── Payload types (tool call → execution) ──
 
@@ -73,6 +73,7 @@ export interface ToolExecutionContext {
   interrupt?: InterruptToolHandlerContext["interrupt"];
   updateComponentBlock?: InterruptToolHandlerContext["updateComponentBlock"];
   spawn?: SpawnToolHandlerContext["spawn"];
+  continue?: ContinueToolHandlerContext["continue"];
   returnResult?: ReturnResultToolHandlerContext["returnResult"];
 }
 
@@ -123,9 +124,10 @@ export interface ToolExecutor {
  * stdout/stderr streaming sink. Interactive or orchestrator-adjacent powers are
  * explicit registration-declared capabilities: `interrupt` receives the
  * user-input suspend/resume callbacks, `spawn` receives the nested-agent
- * launcher, and `return_result` receives the child-to-parent completion hook.
- * The executor enforces that capability declaration before injecting those
- * extensions, so ordinary handlers never see channels they did not request.
+ * launcher, `continue` receives the existing-child relauncher, and
+ * `return_result` receives the child-to-parent completion hook. The executor
+ * enforces that capability declaration before injecting those extensions, so
+ * ordinary handlers never see channels they did not request.
  */
 export interface ToolHandlerContext {
   signal: AbortSignal;
@@ -153,6 +155,10 @@ export type InterruptResponse = InterruptAnswerEnvelope;
  */
 export interface SpawnToolHandlerContext extends ToolHandlerContext {
   spawn(input: SpawnToolArgs): Promise<SpawnResult>;
+}
+
+export interface ContinueToolHandlerContext extends ToolHandlerContext {
+  continue(input: ContinueToolArgs): Promise<SpawnResult>;
 }
 
 export interface ReturnResultToolHandlerContext extends ToolHandlerContext {
@@ -239,12 +245,13 @@ export interface ToolRegistration {
           | ToolHandler
           | ToolHandler<InterruptToolHandlerContext>
           | ToolHandler<SpawnToolHandlerContext>
+          | ToolHandler<ContinueToolHandlerContext>
           | ToolHandler<ReturnResultToolHandlerContext>;
       }
     | { type: "client" };
   timeoutMs?: number;
   sequential?: boolean;
-  capability?: "interrupt" | "spawn" | "return_result";
+  capability?: "interrupt" | "spawn" | "continue" | "return_result";
   /** Maps executor-owned failures into a tool's model-facing result protocol. */
   formatExecutionError?: (error: ToolExecutionError) => unknown;
 }

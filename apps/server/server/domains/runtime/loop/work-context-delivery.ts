@@ -9,10 +9,12 @@ import {
   TurnStartConflictError,
 } from "../../threads/index.js";
 import { contentForBlockInput, isJsonObject, localBlockFromEvent } from "./block-helpers.js";
+import { createDeliveryPump } from "./delivery-pump.js";
 import { persistAndAppendTurnStartEvents } from "./persistence.js";
 import {
   createInMemoryThreadRunOwnership,
   type ThreadRunOwnership,
+  withRunClaim,
 } from "./thread-run-ownership.js";
 import type { WorkContextReader } from "./work-context.js";
 
@@ -78,7 +80,6 @@ export function createWorkContextDelivery(deps: {
   schedulePostCommit(task: () => Promise<void>): void;
 }): WorkContextDelivery {
   const runOwnership = deps.runOwnership ?? createInMemoryThreadRunOwnership();
-  const flushChains = new Map<string, Promise<void>>();
 
   function pendingPresentationBlocks(blocks: Block[]): Block[] {
     return blocks.filter((block) => {
@@ -202,39 +203,29 @@ export function createWorkContextDelivery(deps: {
     return block ? { turn, block, events: [] as OrchestratorEvent[] } : null;
   }
 
-  async function flushUnlocked(threadId: ThreadId): Promise<void> {
-    if (deps.isThreadRunning(threadId)) return;
-    const claim = await runOwnership.tryAcquire(threadId);
-    if (!claim) return;
-    try {
-      await append(threadId);
-    } finally {
-      await claim.release();
-    }
-  }
-
-  async function flush(threadId: ThreadId): Promise<void> {
-    const key = threadId as string;
-    const previous = flushChains.get(key) ?? Promise.resolve();
-    const next = previous.then(() => flushUnlocked(threadId));
-    const settled = next.catch(() => undefined);
-    flushChains.set(key, settled);
-    try {
-      await next;
-    } finally {
-      if (flushChains.get(key) === settled) flushChains.delete(key);
-    }
-  }
+  const pump = createDeliveryPump({
+    isThreadRunning: (threadId) => deps.isThreadRunning(threadId),
+    listPendingThreadIds: () => deps.repos.workContextDeliveries.listPendingThreadIds(),
+    deliver: async (threadId) => {
+      await withRunClaim(runOwnership, threadId, async () => {
+        await append(threadId);
+      });
+    },
+  });
 
   const delivery: WorkContextDelivery = {
     async threadChanged(threadId) {
       const threadIds = await deps.repos.workContextDeliveries.enqueueThread(threadId);
-      deps.schedulePostCommit(() => Promise.all(threadIds.map(flush)).then(() => undefined));
+      deps.schedulePostCommit(() =>
+        Promise.all(threadIds.map((id) => pump.flush(id))).then(() => undefined),
+      );
     },
 
     async projectChanged(projectId) {
       const threadIds = await deps.repos.workContextDeliveries.enqueueProject(projectId);
-      deps.schedulePostCommit(() => Promise.all(threadIds.map(flush)).then(() => undefined));
+      deps.schedulePostCommit(() =>
+        Promise.all(threadIds.map((id) => pump.flush(id))).then(() => undefined),
+      );
     },
 
     async deliverNow(threadId) {
@@ -251,7 +242,7 @@ export function createWorkContextDelivery(deps: {
 
     async deliverAfterCommit(threadId) {
       try {
-        await flush(threadId);
+        await pump.flush(threadId);
         return (await deps.repos.workContextDeliveries.isPending(threadId))
           ? "pending"
           : "delivered";
@@ -265,8 +256,7 @@ export function createWorkContextDelivery(deps: {
     },
 
     async sweep() {
-      const threadIds = await deps.repos.workContextDeliveries.listPendingThreadIds();
-      await Promise.all(threadIds.map(flush));
+      await pump.sweep();
     },
   };
   return delivery;

@@ -8,6 +8,8 @@ export type {
 } from "./event-journal.js";
 export type {
   BlockRepository,
+  ChildReportDeliveryObligation,
+  ChildReportDeliveryRepository,
   CreateBlockInput,
   CreateModelResponseInput,
   CreateThreadInput,

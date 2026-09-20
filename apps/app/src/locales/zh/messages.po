@@ -779,7 +779,7 @@ msgstr ""
 msgid "Close {0}"
 msgstr ""
 
-#: src/features/chat/FormBlock.tsx
+#: src/features/chat/ArtifactGrid.tsx
 msgid "Close artifact preview"
 msgstr ""
 
@@ -1459,7 +1459,7 @@ msgid "Expand sidebar"
 msgstr ""
 
 #. placeholder {0}: artifact.expiresAt
-#: src/features/chat/FormBlock.tsx
+#: src/features/chat/ArtifactGrid.tsx
 msgid "expires {0}"
 msgstr ""
 
@@ -1664,7 +1664,7 @@ msgstr ""
 msgid "Image"
 msgstr ""
 
-#: src/features/chat/FormBlock.tsx
+#: src/features/chat/ArtifactGrid.tsx
 msgid "Image artifact"
 msgstr ""
 
@@ -1835,11 +1835,11 @@ msgstr ""
 msgid "litrpg"
 msgstr ""
 
-#: src/features/chat/FormBlock.tsx
+#: src/features/chat/ArtifactGrid.tsx
 msgid "Live artifact view"
 msgstr ""
 
-#: src/features/chat/FormBlock.tsx
+#: src/features/chat/ArtifactGrid.tsx
 msgid "Live view"
 msgstr ""
 
@@ -2252,7 +2252,7 @@ msgstr "刚刚"
 msgid "Numbered list"
 msgstr ""
 
-#: src/features/chat/FormBlock.tsx
+#: src/features/chat/ArtifactGrid.tsx
 msgid "Object"
 msgstr ""
 
