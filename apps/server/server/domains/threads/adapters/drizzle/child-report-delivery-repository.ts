@@ -2,7 +2,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SpawnResult } from "@meridian/contracts/spawn";
 import * as schema from "@meridian/database/schema";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import type {
   ChildReportDeliveryObligation,
   ChildReportDeliveryRepository,
@@ -73,7 +73,12 @@ export function createDrizzleChildReportDeliveryRepository(
       await currentDrizzleDb(db)
         .update(schema.childReportDeliveries)
         .set({ systemTurnId })
-        .where(eq(schema.childReportDeliveries.reportId, reportId));
+        .where(
+          and(
+            eq(schema.childReportDeliveries.reportId, reportId),
+            isNull(schema.childReportDeliveries.systemTurnId),
+          ),
+        );
     },
 
     async advanceEpoch(reportId) {
