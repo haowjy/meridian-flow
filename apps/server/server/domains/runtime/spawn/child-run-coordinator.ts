@@ -398,7 +398,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           spawnResult: result,
         });
         await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-          type: "agent.spawn_completed",
+          type: "agent.run_completed",
           parentThreadId: input.parentThread.id,
           parentTurnId: input.parentTurnId as string,
           childThreadId: child.id,
@@ -634,7 +634,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             });
           }
           await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-            type: "agent.spawn_completed",
+            type: "agent.run_completed",
             parentThreadId: input.parentThread.id,
             parentTurnId: input.parentTurnId as string,
             childThreadId: prepared.child.id,

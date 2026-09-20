@@ -638,7 +638,7 @@ describe("ChildRunCoordinator continue", () => {
     if (spawned.status !== "completed") throw new Error("spawn failed");
     const childId = spawned.report.threadId as ThreadId;
     const before = await repos.threads.findById(childId);
-    const completions = journal.filter((event) => event.type === "agent.spawn_completed").length;
+    const completions = journal.filter((event) => event.type === "agent.run_completed").length;
 
     const claim = await runOwnership.tryAcquire(childId);
     expect(claim).not.toBeNull();
@@ -659,7 +659,7 @@ describe("ChildRunCoordinator continue", () => {
     const after = await repos.threads.findById(childId);
     expect(after?.spawnStatus).toBe(before?.spawnStatus);
     expect(after?.spawnResult).toEqual(before?.spawnResult);
-    expect(journal.filter((event) => event.type === "agent.spawn_completed").length).toBe(
+    expect(journal.filter((event) => event.type === "agent.run_completed").length).toBe(
       completions,
     );
   });

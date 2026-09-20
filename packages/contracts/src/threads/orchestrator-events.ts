@@ -131,7 +131,7 @@ export type OrchestratorEvent =
       prompt: string;
     }
   | {
-      type: "agent.spawn_completed";
+      type: "agent.run_completed";
       parentThreadId: string;
       parentTurnId: string;
       childThreadId: string;
