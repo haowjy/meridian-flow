@@ -33,7 +33,7 @@
 
 import type { AcceptedAdmission, UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { isTerminalTurnStatus } from "@meridian/contracts/threads";
+import { isTerminalTurnStatus, type JsonValue } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import {
@@ -41,7 +41,7 @@ import {
   type TurnRepository,
   TurnStartConflictError,
 } from "../../threads/index.js";
-import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
+import type { ChildReportDelivery } from "../spawn/child-report-delivery.js";
 import type { RunTurnPort } from "./run-turn-port.js";
 import {
   createInMemoryThreadRunOwnership,
@@ -92,7 +92,7 @@ export function createTurnRunner(deps: {
   hub: ThreadEventHub;
   repos: { turns: TurnRepository };
   eventSink: EventSink;
-  helperResultDelivery?: Pick<HelperResultDelivery, "flush">;
+  childReportDelivery?: Pick<ChildReportDelivery, "flush">;
   workContextDelivery: Pick<WorkContextDelivery, "beforeTurn" | "flushOwned">;
   runOwnership?: ThreadRunOwnership;
 }) {
@@ -171,6 +171,7 @@ export function createTurnRunner(deps: {
       connectionToken?: string;
       userBlocks?: readonly UserMessageBlock[];
       activatedSkillSlugs?: readonly string[];
+      userTurnMetadata?: JsonValue | null;
       admissionIdentity?: {
         submissionId: string;
         onAccepted(response: AcceptedAdmission): Promise<void>;
@@ -207,6 +208,7 @@ export function createTurnRunner(deps: {
           userText: input.userText,
           userBlocks: input.userBlocks,
           activatedSkillSlugs: input.activatedSkillSlugs,
+          userTurnMetadata: input.userTurnMetadata,
           signal: controller.signal,
           onStartPersisted: input.admissionIdentity
             ? async ({ userTurnId, assistantTurnId }) =>
@@ -264,13 +266,15 @@ export function createTurnRunner(deps: {
           } finally {
             running.delete(input.threadId);
             try {
-              await deps.helperResultDelivery?.flush(input.threadId);
+              await deps.workContextDelivery.flushOwned(input.threadId);
             } finally {
               try {
-                await deps.workContextDelivery.flushOwned(input.threadId);
-              } finally {
                 await claim.release();
                 childRunRegistry.abortChildrenOf(input.threadId);
+              } finally {
+                // After release: a pending report's continuation must not contend
+                // for the claim this finishing turn still held.
+                await deps.childReportDelivery?.flush(input.threadId);
               }
             }
           }
