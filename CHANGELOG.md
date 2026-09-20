@@ -22,8 +22,14 @@
 - Generic subagents are agent-less: a generic child binds no Agent revision and inherits the caller's configuration, presented as Subagent. The General baseline sentinel and the helper slug are retired. Agent-less children still get host model-availability checks.
 - Parent transcript shows a spawn report card: who ran, the returned summary, and an Open door into the child chat. Spawn uses the same custom-card path as ask_user (tool protocol hidden, card splits Thinking). Neither the card nor the persisted model output carries spawn cost.
 - A subagent's `return_result` records its report, then completes the child turn instead of aborting it. The child transcript renders the summary as a `child-report` `ArtifactCard` titled Return, with the `return_result` protocol hidden.
+- The parent model can continue an existing child with a `continue` tool (`conversation_id`, `prompt`, `mode`). The child keeps its frozen definition, system prompt, configuration, and history, and returns a second report under a new execution identity. `continue` cannot change the child's model, tools, prompt, or overlay.
+- A background child's report reaches the parent model, not just the writer's card. The report is a system message the model reads; the hidden continuation turn is not a writer message.
+- Durable child-report delivery: the obligation commits the instant `return_result` settles, the card write holds the parent run claim, and a 1s sweep delivers exactly once across crash, restart, replay, and claim-recovery epoch advance.
+- `return_result.artifacts[]` renders on the child Return card and the parent helper card.
 
 ### Fixed
+
+- Child completion emits `agent.run_completed` instead of the spawn-named `agent.spawn_completed`; a continue is not a spawn.
 
 - Reject `write` (including case variants and payload-scoped forms like `write(x)`) as an authoring permission name; use `edit` for the document-edit capability. `edit` implies `read`; an explicit `disallowed-tools` read denial is a contradiction.
 - The chat `read`/`skim` expand renders the `meridian.agent-edit.v1` result envelope's block bodies, so a read row opens onto its prose or outline instead of offering no chevron.
