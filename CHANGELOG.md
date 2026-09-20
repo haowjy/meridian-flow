@@ -27,6 +27,7 @@
 
 - Reject `write` (including case variants and payload-scoped forms like `write(x)`) as an authoring permission name; use `edit` for the document-edit capability. `edit` implies `read`; an explicit `disallowed-tools` read denial is a contradiction.
 - The chat `read`/`skim` expand renders the `meridian.agent-edit.v1` result envelope's block bodies, so a read row opens onto its prose or outline instead of offering no chevron.
+- A collapsed Thinking digest no longer reports a `read(command:"diff")` review as an edited document.
 - A spawn override that names a tool by alias (for example `shell`) folds to its canonical name before the merge, matching authoring. Canonical `xhigh`/`none` effort authored in Mars frontmatter also survives source normalization instead of being dropped.
 - Opening `/chat/{id}` for a subagent no longer shows "This destination is unavailable." Path chat is identity; the primary list is not a lookup. Snapshot miss stays ChatScreen's error. Query `?chat=` still drops missing primaries.
 - Nested subagent Parent back resolves the parent by id on the child snapshot, not the primary-only list.
