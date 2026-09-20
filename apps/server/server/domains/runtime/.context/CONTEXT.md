@@ -40,7 +40,7 @@ skeleton and delegates the moving parts.
 | `block-helpers.ts` | Content block conversion and local accumulator helpers. |
 | `turn-accounting.ts` | Credit ledger checks/debits and cumulative usage events. |
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
-| `tool-dispatch.ts` | Live output, spawn/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy. return_result settlement is spawn-owned: dispatch honors the typed `ReturnResultOutcome` and does not parse arguments or reconstruct the envelope from JSON. |
+| `tool-dispatch.ts` | Live output, spawn/continue/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy. return_result settlement is spawn-owned: dispatch honors the typed `ReturnResultOutcome` and does not parse arguments or reconstruct the envelope from JSON. |
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. |
@@ -93,10 +93,11 @@ verbatim. Skills that join slash after freeze do not rewrite the prompt or
 guard prompt freezing. The model comes from conversation-owned resolved
 configuration, including a frozen default when source omits it. Nonempty
 `skills.available` does not refuse selection or turn preparation. A nonempty
-`subagents` roster no longer refuses selection. `spawn` is advertised to every
-Agent; Mars `tools` cannot hide it. Named targets come from the binding's
-roster, baked into the frozen system prompt like available skills (not listed
-on the spawn tool), and an omitted or empty `agent` selects the agent-less generic subagent.
+`subagents` roster no longer refuses selection. `spawn` and `continue` are
+advertised to every Agent; Mars `tools` cannot hide them. Named targets come
+from the binding's roster, baked into the frozen system prompt like available
+skills (not listed on the spawn tool), and an omitted or empty `agent` selects
+the agent-less generic subagent.
 
 ## tools — registry, executor, and handlers
 
@@ -107,7 +108,7 @@ on the spawn tool), and an omitted or empty `agent` selects the agent-less gener
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
 | Core handlers | The strict six-branch `work` union, the shared read/write document definitions, and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
 | Skills | References are retained at binding. `createSkillToolRegistrations` registers the `skill` tool (`source: "skill"`); invoke loads a SKILL.md body only when the slug is in Agent `skills.available` and `model-invocable` is not false. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
-| Spawn tools | `tools/spawn-tools.ts` registers `spawn` and `return_result` with explicit privileged capabilities. |
+| Spawn tools | `tools/spawn-tools.ts` registers `spawn`, `continue`, and `return_result` with explicit privileged capabilities. `continue` runs an existing child again from its frozen binding and carries no prompt or override args. |
 
 Handler-owned `{ isError: true, output }` results already define their
 model-facing protocol, so the executor preserves their output by definition.
