@@ -22,6 +22,10 @@ import type {
 import type { HostTurnAdmission } from "../admission/user-turn-admission.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
+import {
+  createInMemoryThreadRunOwnership,
+  type ThreadRunOwnership,
+} from "../loop/thread-run-ownership.js";
 import { spawnHelperCardProps } from "./spawn-output.js";
 
 export interface ChildReportEnqueue {
@@ -54,6 +58,7 @@ export interface ChildReportDeliveryDeps {
   eventWriter: EventJournalWriter;
   admission: HostTurnAdmission;
   isThreadRunning(threadId: ThreadId): boolean;
+  runOwnership?: ThreadRunOwnership;
   /** Schedule a non-blocking wake after the caller's business transaction commits. */
   schedulePostCommit(task: () => Promise<void>): void;
 }
@@ -109,58 +114,75 @@ function createLocalSystemTurn(input: { threadId: ThreadId; parentTurnId: TurnId
 }
 
 export function createChildReportDelivery(deps: ChildReportDeliveryDeps): ChildReportDelivery {
+  const runOwnership = deps.runOwnership ?? createInMemoryThreadRunOwnership();
   const flushChains = new Map<string, Promise<void>>();
 
-  async function ensureCard(obligation: ChildReportDeliveryObligation): Promise<void> {
-    const leaf = await deps.repos.turns.getLatestByThread(obligation.parentThreadId);
-    const parentTurnId = leaf?.id ?? null;
-    const cardProps = spawnHelperCardProps({
-      agent: obligation.agentSlug,
-      description: obligation.description ?? undefined,
-      parentTurnId: (parentTurnId ?? obligation.reportId) as string,
-      childThreadId: obligation.childThreadId,
-      output: obligation.result,
-    });
-    const card = (turnId: TurnId) =>
-      contentForBlockInput({
-        id: obligation.reportId,
-        turnId,
-        blockType: "custom",
-        sequence: 0,
-        content: buildHelperResultComponentContent(cardProps),
-        status: "complete",
+  async function ensureCard(obligation: ChildReportDeliveryObligation): Promise<boolean> {
+    // Creating the card's system turn advances the parent's active leaf, so it
+    // must not race a writer turn. Hold the shared run claim across the write,
+    // exactly as WorkContextDelivery does; the parent is left pending when a
+    // writer already owns it.
+    const claim = await runOwnership.tryAcquire(obligation.parentThreadId);
+    if (!claim) return false;
+    try {
+      // Re-read under the claim: another process may have written the container
+      // between the sweep's list snapshot and this claim. Reuse its turn rather
+      // than orphaning it with a second container.
+      const current =
+        (await deps.repos.childReportDeliveries.findByReportId(obligation.reportId)) ?? obligation;
+      const leaf = await deps.repos.turns.getLatestByThread(current.parentThreadId);
+      const parentTurnId = leaf?.id ?? null;
+      const cardProps = spawnHelperCardProps({
+        agent: current.agentSlug,
+        description: current.description ?? undefined,
+        parentTurnId: (parentTurnId ?? current.reportId) as string,
+        childThreadId: current.childThreadId,
+        output: current.result,
       });
+      const card = (turnId: TurnId) =>
+        contentForBlockInput({
+          id: current.reportId,
+          turnId,
+          blockType: "custom",
+          sequence: 0,
+          content: buildHelperResultComponentContent(cardProps),
+          status: "complete",
+        });
 
-    const existingContainer =
-      obligation.systemTurnId && (await deps.repos.turns.findById(obligation.systemTurnId));
-    if (existingContainer) {
-      await persistAndAppendEvents(deps, obligation.parentThreadId, async () => ({
-        result: null,
-        events: [
-          { type: "block.upserted", block: card(obligation.systemTurnId as TurnId) },
-        ] as OrchestratorEvent[],
-      }));
-      return;
+      const existingContainer =
+        current.systemTurnId && (await deps.repos.turns.findById(current.systemTurnId));
+      if (existingContainer) {
+        await persistAndAppendEvents(deps, current.parentThreadId, async () => ({
+          result: null,
+          events: [
+            { type: "block.upserted", block: card(current.systemTurnId as TurnId) },
+          ] as OrchestratorEvent[],
+        }));
+        return true;
+      }
+
+      const systemTurn = createLocalSystemTurn({
+        threadId: current.parentThreadId,
+        parentTurnId: parentTurnId as TurnId | null,
+      });
+      await persistAndAppendEvents(deps, current.parentThreadId, async () => {
+        // Atomic with the container it names, so a re-drive reuses the same turn.
+        await deps.repos.childReportDeliveries.setSystemTurnId(
+          current.reportId,
+          systemTurn.id as TurnId,
+        );
+        return {
+          result: null,
+          events: [
+            { type: "turn.created", turn: systemTurn },
+            { type: "block.upserted", block: card(systemTurn.id as TurnId) },
+          ] as OrchestratorEvent[],
+        };
+      });
+      return true;
+    } finally {
+      await claim.release();
     }
-
-    const systemTurn = createLocalSystemTurn({
-      threadId: obligation.parentThreadId,
-      parentTurnId: parentTurnId as TurnId | null,
-    });
-    await persistAndAppendEvents(deps, obligation.parentThreadId, async () => {
-      // Atomic with the container it names, so a re-drive reuses the same turn.
-      await deps.repos.childReportDeliveries.setSystemTurnId(
-        obligation.reportId,
-        systemTurn.id as TurnId,
-      );
-      return {
-        result: null,
-        events: [
-          { type: "turn.created", turn: systemTurn },
-          { type: "block.upserted", block: card(systemTurn.id as TurnId) },
-        ] as OrchestratorEvent[],
-      };
-    });
   }
 
   async function deliverOne(obligation: ChildReportDeliveryObligation): Promise<void> {
@@ -190,7 +212,7 @@ export function createChildReportDelivery(deps: ChildReportDeliveryDeps): ChildR
         continue;
       }
 
-      await ensureCard(obligation);
+      if (!(await ensureCard(obligation))) return;
       const admitted = await deps.admission.admit({
         actorUserId: parent.userId,
         threadId: obligation.parentThreadId,

@@ -113,7 +113,11 @@ export interface ChildRunCoordinator {
   continueChildBackground(input: ContinueChildInput): Promise<SpawnResult>;
   createReturnResultCompleter(
     childThreadId: ThreadId,
-    options?: { capture?: boolean },
+    options?: {
+      capture?: boolean;
+      /** Durable side-effect for a captured report; runs before the turn settles. */
+      onCapture?: (capture: ReturnResultCapture) => Promise<void>;
+    },
   ): ReturnResultCompleter;
 }
 
@@ -132,6 +136,8 @@ type PreparedChild = {
   childRegistered: boolean;
   runClaim: ThreadRunClaim;
   background: boolean;
+  /** Spawn creates the child lifecycle; continue never rewrites it. */
+  origin: "spawn" | "continue";
 };
 
 async function synthesizeIncompleteReport(
@@ -170,10 +176,14 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
   function createReturnResultCompleter(
     childThreadId: ThreadId,
-    options?: { capture?: boolean },
+    options?: {
+      capture?: boolean;
+      onCapture?: (capture: ReturnResultCapture) => Promise<void>;
+    },
   ): ReturnResultCompleter {
     let used = false;
     const captureReport = options?.capture !== false;
+    const onCapture = options?.onCapture;
     return async (capture: ReturnResultCapture) => {
       if (used) {
         return { ok: false as const, message: "return_result already called for this run" };
@@ -187,6 +197,9 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           artifacts: capture.artifacts,
           costMillicredits: 0,
         });
+        // Runs at the moment the report is produced, before the child turn
+        // settles and before driveChild can continue.
+        if (onCapture) await onCapture(capture);
       }
       return { ok: true as const };
     };
@@ -368,6 +381,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       const prepared = await registerPreparedChild(child, resolvedSlug, {
         background: options.background,
         signal: input.signal,
+        origin: "spawn",
       });
       return { ...prepared, description: input.description };
     } catch (error) {
@@ -418,6 +432,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       return await registerPreparedChild(target.thread, resolvedSlug, {
         background: options.background,
         signal: input.signal,
+        origin: "continue",
       });
     } catch (error) {
       return {
@@ -433,7 +448,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   async function registerPreparedChild(
     child: Thread,
     resolvedSlug: string,
-    options: { background?: boolean; signal?: AbortSignal } = {},
+    options: { background?: boolean; signal?: AbortSignal; origin: "spawn" | "continue" },
   ): Promise<PreparedChild> {
     const parentThreadId = child.parentThreadId as ThreadId;
     const childThreadId = child.id as ThreadId;
@@ -466,11 +481,33 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         childRegistered: true,
         runClaim,
         background: options.background ?? false,
+        origin: options.origin,
       };
     } catch (error) {
       childController.abort();
       deps.childRunRegistry.unregisterChild(childThreadId);
       await runClaim?.release();
+      throw error;
+    }
+  }
+
+  /** Releases a prepared child that never entered driveChild (e.g. a card write failed). */
+  async function releasePreparedChild(prepared: PreparedChild): Promise<void> {
+    prepared.childController.abort();
+    deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
+    await prepared.runClaim.release();
+  }
+
+  /** Persists the running card; a write failure releases the prepared child's claim. */
+  async function persistRunningCard(
+    transcript: SpawnTranscript | undefined,
+    fields: Parameters<typeof persistHelperCard>[1],
+    prepared: PreparedChild,
+  ): Promise<Block | null> {
+    try {
+      return await persistHelperCard(transcript, fields);
+    } catch (error) {
+      await releasePreparedChild(prepared);
       throw error;
     }
   }
@@ -483,6 +520,21 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     };
     let reportId: TurnId | null = null;
 
+    // Background reports are recorded durably the moment return_result settles,
+    // not only in driveChild's terminal transaction, so a crash between the two
+    // cannot lose the payload/artifacts; `enqueue` is idempotent on reportId.
+    const enqueueBackgroundReport = async (result: SpawnResult) => {
+      if (!prepared.background) return;
+      await deps.childReportDelivery.enqueue({
+        reportId: reportId ?? (crypto.randomUUID() as TurnId),
+        parentThreadId: input.parentThread.id as ThreadId,
+        childThreadId: prepared.child.id as ThreadId,
+        agentSlug: prepared.resolvedSlug,
+        ...(prepared.description !== undefined ? { description: prepared.description } : {}),
+        result,
+      });
+    };
+
     try {
       const handle = await deps.orchestrator.runTurn({
         threadId: prepared.child.id as ThreadId,
@@ -490,7 +542,21 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         signal: prepared.childController.signal,
         treeBudget: input.budget,
         isSubagentThread: true,
-        returnResultCompleter: createReturnResultCompleter(prepared.child.id as ThreadId),
+        returnResultCompleter: createReturnResultCompleter(prepared.child.id as ThreadId, {
+          onCapture: async (capture) => {
+            if (!reportId) return;
+            await enqueueBackgroundReport({
+              status: "completed",
+              report: {
+                threadId: prepared.child.id,
+                summary: capture.summary,
+                ...(capture.payload !== undefined ? { payload: capture.payload } : {}),
+                ...(capture.artifacts !== undefined ? { artifacts: capture.artifacts } : {}),
+                costMillicredits: 0,
+              },
+            });
+          },
+        }),
       });
       reportId = handle.assistantTurnId;
       deps.childRunRegistry.markChildTurn(
@@ -559,10 +625,14 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     } finally {
       try {
         await deps.repos.transaction(async () => {
-          await deps.repos.threads.updateSpawnLifecycle(prepared.child.id as ThreadId, {
-            spawnStatus: terminalStatus,
-            spawnResult,
-          });
+          // spawn_status/spawn_result record the spawn; a continue run's outcome
+          // lives on its per-execution card and events and never erases it.
+          if (prepared.origin === "spawn") {
+            await deps.repos.threads.updateSpawnLifecycle(prepared.child.id as ThreadId, {
+              spawnStatus: terminalStatus,
+              spawnResult,
+            });
+          }
           await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
             type: "agent.spawn_completed",
             parentThreadId: input.parentThread.id,
@@ -570,16 +640,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             childThreadId: prepared.child.id,
             result: spawnResult,
           });
-          if (prepared.background) {
-            await deps.childReportDelivery.enqueue({
-              reportId: reportId ?? (crypto.randomUUID() as TurnId),
-              parentThreadId: input.parentThread.id as ThreadId,
-              childThreadId: prepared.child.id as ThreadId,
-              agentSlug: prepared.resolvedSlug,
-              ...(prepared.description !== undefined ? { description: prepared.description } : {}),
-              result: spawnResult,
-            });
-          }
+          await enqueueBackgroundReport(spawnResult);
         });
       } finally {
         deps.childRunRegistry.abortChildrenOf(prepared.child.id as ThreadId, {
@@ -653,10 +714,14 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           await persistHelperCard(input.transcript, { ...cardFields, output: prepared });
           return prepared;
         }
-        runningCard = await persistHelperCard(input.transcript, {
-          ...cardFields,
-          childThreadId: prepared.child.id,
-        });
+        runningCard = await persistRunningCard(
+          input.transcript,
+          {
+            ...cardFields,
+            childThreadId: prepared.child.id,
+          },
+          prepared,
+        );
         const result = await driveChild(input, prepared);
         await persistHelperCard(
           input.transcript,
@@ -715,7 +780,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       };
       let runningCard: Block | null = null;
       try {
-        runningCard = await persistHelperCard(input.transcript, cardFields);
+        runningCard = await persistRunningCard(input.transcript, cardFields, prepared);
         const result = await driveChild(input, prepared);
         await persistHelperCard(input.transcript, { ...cardFields, output: result }, runningCard);
         return result;

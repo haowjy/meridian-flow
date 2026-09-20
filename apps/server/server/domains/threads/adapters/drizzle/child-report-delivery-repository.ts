@@ -10,6 +10,21 @@ import type {
 } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 
+function toObligation(
+  row: typeof schema.childReportDeliveries.$inferSelect,
+): ChildReportDeliveryObligation {
+  return {
+    reportId: row.reportId as TurnId,
+    parentThreadId: row.parentThreadId as ThreadId,
+    childThreadId: row.childThreadId as ThreadId,
+    agentSlug: row.agentSlug,
+    description: row.description,
+    result: row.result as SpawnResult,
+    systemTurnId: row.systemTurnId as TurnId | null,
+    submissionEpoch: row.submissionEpoch,
+  };
+}
+
 export function createDrizzleChildReportDeliveryRepository(
   db: DrizzleDatabase,
 ): ChildReportDeliveryRepository {
@@ -42,18 +57,16 @@ export function createDrizzleChildReportDeliveryRepository(
         .from(schema.childReportDeliveries)
         .where(eq(schema.childReportDeliveries.parentThreadId, parentThreadId))
         .orderBy(asc(schema.childReportDeliveries.createdAt));
-      return rows.map(
-        (row): ChildReportDeliveryObligation => ({
-          reportId: row.reportId as TurnId,
-          parentThreadId: row.parentThreadId as ThreadId,
-          childThreadId: row.childThreadId as ThreadId,
-          agentSlug: row.agentSlug,
-          description: row.description,
-          result: row.result as SpawnResult,
-          systemTurnId: row.systemTurnId as TurnId | null,
-          submissionEpoch: row.submissionEpoch,
-        }),
-      );
+      return rows.map(toObligation);
+    },
+
+    async findByReportId(reportId) {
+      const [row] = await currentDrizzleDb(db)
+        .select()
+        .from(schema.childReportDeliveries)
+        .where(eq(schema.childReportDeliveries.reportId, reportId))
+        .limit(1);
+      return row ? toObligation(row) : null;
     },
 
     async setSystemTurnId(reportId, systemTurnId) {

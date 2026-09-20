@@ -670,6 +670,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventWriter: threadEventHub,
     admission: hostTurnAdmission,
     isThreadRunning: (threadId) => runner.isThreadRunning(threadId),
+    runOwnership: ports.runOwnership,
     schedulePostCommit(task) {
       runAfterDrizzleCommit(() => {
         void task().catch((cause) => {

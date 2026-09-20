@@ -158,6 +158,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         eventWriter: createDrizzleEventJournalWriter(db),
         admission,
         isThreadRunning: () => false,
+        runOwnership,
         schedulePostCommit: () => {},
       });
       return { delivery, admission, runOwnership };
@@ -281,25 +282,85 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(db.select().from(schema.childReportDeliveries)).resolves.toHaveLength(0);
     });
 
-    it("leaves the obligation pending under a live writer claim without corrupting history", async () => {
-      const { delivery } = composeDelivery();
+    it("leaves the obligation pending while a live writer owns the run claim, then delivers", async () => {
+      const { delivery, runOwnership } = composeDelivery();
       await enqueueReport(delivery);
-      await records.reserve({
-        threadId: PARENT_ID as never,
-        submissionId: `child-report:${REPORT_ID}:0`,
-        actorUserId: USER_ID as never,
-        fingerprint: "writer-in-flight",
-        claimExpiresAt: new Date(Date.now() + 5 * 60_000),
+      const writerClaim = await runOwnership.tryAcquire(PARENT_ID as never);
+      expect(writerClaim).not.toBeNull();
+
+      try {
+        await delivery.flush(PARENT_ID as never);
+        // The card write is refused, so no system turn or block is created.
+        await expect(db.select().from(schema.childReportDeliveries)).resolves.toMatchObject([
+          { reportId: REPORT_ID, submissionEpoch: 0, systemTurnId: null },
+        ]);
+        await expect(parentTurns()).resolves.toHaveLength(0);
+        await expect(db.select().from(schema.turnBlocks)).resolves.toHaveLength(0);
+      } finally {
+        await writerClaim?.release();
+      }
+
+      await delivery.flush(PARENT_ID as never);
+      await expect(db.select().from(schema.childReportDeliveries)).resolves.toHaveLength(0);
+      expect(await parentTurns()).toHaveLength(3);
+      await expect(db.select().from(schema.turnBlocks)).resolves.toHaveLength(1);
+    });
+
+    it("lands the card, then defers to a writer that takes the claim before admission", async () => {
+      const runOwnership = createInMemoryThreadRunOwnership();
+      const writer: { claim: { release(): Promise<void> } | null } = { claim: null };
+      let writerWon = false;
+      const realAdmission = createHostTurnAdmission({
+        records,
+        runOwnership,
+        starter: acceptingStarter([]) as never,
       });
+      const admission = {
+        async lookup(request: Parameters<typeof realAdmission.lookup>[0]) {
+          return realAdmission.lookup(request);
+        },
+        async admit(input: Parameters<typeof realAdmission.admit>[0]) {
+          if (!writerWon) {
+            // The writer acquires the claim after ensureCard released it and
+            // before the delivery can admit.
+            writerWon = true;
+            writer.claim = await runOwnership.tryAcquire(input.threadId);
+            return { kind: "pending" as const, submissionId: input.submissionId };
+          }
+          return realAdmission.admit(input);
+        },
+      };
+      const delivery = createChildReportDelivery({
+        repos,
+        eventWriter: createDrizzleEventJournalWriter(db),
+        admission: admission as never,
+        isThreadRunning: () => false,
+        runOwnership,
+        schedulePostCommit: () => {},
+      });
+      await enqueueReport(delivery);
 
       await delivery.flush(PARENT_ID as never);
 
+      // The card lands on the parent; the writer now owns the run claim.
+      const blocks = await db.select().from(schema.turnBlocks);
+      expect(blocks).toHaveLength(1);
+      expect(blocks[0]).toMatchObject({ id: REPORT_ID, blockType: "custom" });
       await expect(db.select().from(schema.childReportDeliveries)).resolves.toMatchObject([
-        { reportId: REPORT_ID, submissionEpoch: 0, systemTurnId: null },
+        { reportId: REPORT_ID, systemTurnId: expect.any(String) },
       ]);
-      await expect(parentTurns()).resolves.toHaveLength(0);
-      await expect(db.select().from(schema.turnBlocks)).resolves.toHaveLength(0);
-      await expect(db.select().from(schema.userTurnAdmissions)).resolves.toHaveLength(1);
+
+      // A flush while the writer holds the claim does not append a second card.
+      await delivery.flush(PARENT_ID as never);
+      await expect(db.select().from(schema.turnBlocks)).resolves.toHaveLength(1);
+
+      await writer.claim?.release();
+      // With the writer gone the obligation delivers and disappears.
+      await delivery.flush(PARENT_ID as never);
+      await expect(db.select().from(schema.childReportDeliveries)).resolves.toHaveLength(0);
+      await expect(db.select().from(schema.userTurnAdmissions)).resolves.toMatchObject([
+        { submissionId: `child-report:${REPORT_ID}:0`, state: "accepted" },
+      ]);
     });
   });
 }

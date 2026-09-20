@@ -6,6 +6,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture } from "@meridian/contracts/spawn";
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
+import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryTransactionOwner } from "../../../shared/in-memory-transaction.js";
 import {
@@ -36,20 +37,24 @@ function stubOrchestrator(records: RecordedTurn[]): RunTurnPort {
       counter += 1;
       const assistantTurnId = `assistant-turn-${counter}` as TurnId;
       records.push({ threadId: input.threadId, userText: input.userText, assistantTurnId });
-      await input.returnResultCompleter?.({
-        summary: `child report ${counter}`,
-      } satisfies ReturnResultCapture);
+      // return_result settles while the child's event generator runs, after
+      // runTurn has already returned the assistant turn id.
       return {
         userTurnId: `user-turn-${counter}` as TurnId,
         assistantTurnId,
-        events: (async function* () {})(),
+        events: (async function* () {
+          yield* [] as OrchestratorEvent[];
+          await input.returnResultCompleter?.({
+            summary: `child report ${counter}`,
+          } satisfies ReturnResultCapture);
+        })(),
       };
     },
     async finalizeGeneratorFailure() {},
   };
 }
 
-async function fixture() {
+async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
   const transactionOwner = new InMemoryTransactionOwner();
   let repos: ReturnType<typeof createInMemoryRepositories>;
   const revisions = createInMemoryAgentRevisionStore({
@@ -133,7 +138,7 @@ async function fixture() {
   };
 
   const coordinator = createChildRunCoordinator({
-    orchestrator: stubOrchestrator(turns),
+    orchestrator: options.orchestrator ?? stubOrchestrator(turns),
     repos: {
       threads: repos.threads,
       subagentThreads: repos.threads,
@@ -161,6 +166,8 @@ async function fixture() {
     },
     childReportDelivery: {
       async enqueue(input) {
+        // Mirrors the repository's INSERT ... ON CONFLICT (report_id) DO NOTHING.
+        if (deliveries.some((delivery) => delivery.reportId === input.reportId)) return;
         deliveries.push(input);
       },
     },
@@ -762,5 +769,107 @@ describe("ChildRunCoordinator continue", () => {
     });
     expect(continued.status).toBe("completed");
     expect(deliveries).toHaveLength(0);
+  });
+
+  it("records the background report durably when return_result settles, before the run ends", async () => {
+    const orchestrator: RunTurnPort = {
+      async runTurn(input) {
+        return {
+          userTurnId: "user-turn-1" as TurnId,
+          assistantTurnId: "assistant-turn-1" as TurnId,
+          events: (async function* () {
+            yield* [] as OrchestratorEvent[];
+            await input.returnResultCompleter?.({
+              summary: "durable report",
+              payload: { saved: true },
+            } satisfies ReturnResultCapture);
+            // A crash after return_result must not erase the obligation.
+            throw new Error("run died after return_result");
+          })(),
+        };
+      },
+      async finalizeGeneratorFailure() {},
+    };
+    const { coordinator, parent, deliveries } = await fixture({ orchestrator });
+
+    const background = await coordinator.spawnChildBackground({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      budget,
+    });
+    expect(background.status).toBe("background");
+
+    await vi.waitFor(() => expect(deliveries).toHaveLength(1));
+    expect(deliveries[0]).toMatchObject({
+      reportId: "assistant-turn-1",
+      result: {
+        status: "completed",
+        report: { summary: "durable report", payload: { saved: true } },
+      },
+    });
+  });
+
+  it("does not rewrite the child's stored report when a continue run fails", async () => {
+    let calls = 0;
+    const orchestrator: RunTurnPort = {
+      async runTurn(input) {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            userTurnId: "user-turn-1" as TurnId,
+            assistantTurnId: "assistant-turn-1" as TurnId,
+            events: (async function* () {
+              yield* [] as OrchestratorEvent[];
+              await input.returnResultCompleter?.({
+                summary: "first report",
+              } satisfies ReturnResultCapture);
+            })(),
+          };
+        }
+        throw new Error("continue run crashed");
+      },
+      async finalizeGeneratorFailure() {},
+    };
+    const { coordinator, parent, repos } = await fixture({ orchestrator });
+
+    const spawned = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      budget,
+    });
+    if (spawned.status !== "completed") throw new Error("spawn failed");
+    const childId = spawned.report.threadId as ThreadId;
+    const before = await repos.threads.findById(childId);
+    expect(before?.spawnStatus).toBe("succeeded");
+
+    const continued = await coordinator.continueChild({
+      parentThread: parent,
+      parentTurnId: "turn-2" as TurnId,
+      childThreadId: childId,
+      prompt: "again",
+      budget,
+    });
+    expect(continued.status).toBe("error");
+
+    const after = await repos.threads.findById(childId);
+    expect(after?.spawnStatus).toBe("succeeded");
+    expect(after?.spawnResult).toEqual(before?.spawnResult);
+  });
+
+  it("returns continue_target_not_found for a malformed conversation id", async () => {
+    const { coordinator, parent } = await fixture();
+    const result = await coordinator.continueChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      childThreadId: "not-a-uuid" as ThreadId,
+      prompt,
+      budget,
+    });
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.error.code).toBe("continue_target_not_found");
   });
 });
