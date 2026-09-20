@@ -13,7 +13,6 @@ export {
   createInMemoryInbox,
   createInMemoryRunAuthority,
   createInMemoryRunStarter,
-  type InMemoryRunAuthority,
   type InMemoryRunAuthorityOptions,
   type InMemoryRunStarter,
 } from "./adapters/in-memory/loop-ports.js";

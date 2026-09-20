@@ -1,5 +1,5 @@
 {
-  "id": "4ec840cf-44f9-4110-9ab7-0d86602372eb",
+  "id": "0d7737e4-87eb-43c6-8787-ecb6d0ba0de1",
   "prevId": "81330d5a-3adf-44f6-9233-e6dfcc8d979b",
   "version": "7",
   "dialect": "postgresql",
@@ -1633,6 +1633,7 @@
           "name": "thread_inbox_messages_idem_unique",
           "nullsNotDistinct": false,
           "columns": [
+            "thread_id",
             "idempotency_key"
           ]
         }
@@ -1647,9 +1648,17 @@
           "name": "thread_inbox_messages_provenance_valid",
           "value": "\"thread_inbox_messages\".\"provenance_kind\" IN ('writer','agent','child','system')"
         },
+        "thread_inbox_messages_provenance_kind_matches": {
+          "name": "thread_inbox_messages_provenance_kind_matches",
+          "value": "\"thread_inbox_messages\".\"provenance\"->>'kind' = \"thread_inbox_messages\".\"provenance_kind\""
+        },
         "thread_inbox_messages_body_valid": {
           "name": "thread_inbox_messages_body_valid",
           "value": "\"thread_inbox_messages\".\"body_kind\" IN ('text','report','context')"
+        },
+        "thread_inbox_messages_body_kind_matches": {
+          "name": "thread_inbox_messages_body_kind_matches",
+          "value": "\"thread_inbox_messages\".\"body\"->>'kind' = \"thread_inbox_messages\".\"body_kind\""
         }
       },
       "isRLSEnabled": false

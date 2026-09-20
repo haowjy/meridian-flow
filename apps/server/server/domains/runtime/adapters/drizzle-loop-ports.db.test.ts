@@ -88,7 +88,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await inbox.enqueue(steer("b1", THREAD_B));
       await inbox.enqueue(steer("a2", THREAD_A));
 
-      const claimed = await inbox.claimPending(THREAD_A, "run-1");
+      const claimed = await inbox.claimPending(THREAD_A);
       expect(claimed.map((message) => message.idempotencyKey)).toEqual(["a1", "a2"]);
       expect(claimed.map((message) => message.provenance.kind)).toEqual(["writer", "writer"]);
       expect(claimed.map((message) => message.body.kind)).toEqual(["text", "text"]);
@@ -99,8 +99,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const first = await inbox.enqueue(steer("a1"));
       await inbox.enqueue(steer("a2"));
 
-      await inbox.ack(THREAD_A, [first.id], "run-1");
-      const redelivered = await inbox.claimPending(THREAD_A, "run-1");
+      await inbox.ack(THREAD_A, [first.id]);
+      const redelivered = await inbox.claimPending(THREAD_A);
       expect(redelivered.map((message) => message.idempotencyKey)).toEqual(["a2"]);
     });
 
@@ -111,7 +111,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(second.id).toBe(first.id);
       expect(second.seq).toBe(first.seq);
-      expect(await inbox.claimPending(THREAD_A, "run-1")).toHaveLength(1);
+      expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
+    });
+
+    it("keeps the same idempotency key distinct across threads", async () => {
+      const inbox = createDrizzleInbox(db);
+      const first = await inbox.enqueue(steer("shared-key", THREAD_A));
+      const second = await inbox.enqueue(steer("shared-key", THREAD_B));
+
+      expect(second.id).not.toBe(first.id);
+      expect(second.threadId).toBe(THREAD_B);
+      expect(await inbox.claimPending(THREAD_B)).toHaveLength(1);
     });
 
     it("lists distinct pending-steer threads oldest first and excludes system messages", async () => {
@@ -131,10 +141,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const lease = required(await first.acquire(THREAD_A, "run-1"));
       expect(await second.acquire(THREAD_A, "run-2")).toBeNull();
       expect(await first.holder(THREAD_A)).toBe("run-1");
-      expect(await first.read(THREAD_A)).toEqual({ kind: "awake", phase: "generating" });
+      expect(await first.read(THREAD_A)).toEqual({
+        kind: "awake",
+        phase: "generating",
+        cancelRequested: false,
+      });
 
       await first.publish(lease, "waiting");
-      expect(await first.read(THREAD_A)).toEqual({ kind: "awake", phase: "waiting" });
+      expect(await first.read(THREAD_A)).toEqual({
+        kind: "awake",
+        phase: "waiting",
+        cancelRequested: false,
+      });
 
       await first.release(lease);
       expect(await first.holder(THREAD_A)).toBeNull();
@@ -142,6 +160,55 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const secondLease = required(await second.acquire(THREAD_A, "run-3"));
       await second.release(secondLease);
+    });
+
+    it("binds release to its run so a superseded release keeps the newer lock", async () => {
+      const first = createDrizzleRunAuthority(db, { holderId: "holder-1" });
+      const second = createDrizzleRunAuthority(db, { holderId: "holder-2" });
+
+      const runOne = required(await first.acquire(THREAD_A, "run-1"));
+      await first.release(runOne);
+
+      const runTwo = required(await first.acquire(THREAD_A, "run-2"));
+      await first.release(runOne);
+      await first.release(runOne);
+
+      expect(await first.holder(THREAD_A)).toBe("run-2");
+      expect(await first.read(THREAD_A)).toEqual({
+        kind: "awake",
+        phase: "generating",
+        cancelRequested: false,
+      });
+      expect(await second.acquire(THREAD_A, "run-3")).toBeNull();
+
+      await first.release(runTwo);
+      expect(await first.holder(THREAD_A)).toBeNull();
+      const runThree = required(await second.acquire(THREAD_A, "run-3"));
+      await second.release(runThree);
+    });
+
+    it("observes the cancel flag through read and keeps cancel idempotent", async () => {
+      const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
+      const lease = required(await authority.acquire(THREAD_A, "run-1"));
+
+      await authority.cancel(THREAD_A);
+      await authority.cancel(THREAD_A);
+      expect(await authority.read(THREAD_A)).toEqual({
+        kind: "awake",
+        phase: "generating",
+        cancelRequested: true,
+      });
+      await authority.release(lease);
+    });
+
+    it("reports whether renew kept ownership", async () => {
+      const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
+
+      const lease = required(await authority.acquire(THREAD_A, "run-1"));
+      expect(await authority.renew(lease)).toBe(true);
+
+      await authority.release(lease);
+      expect(await authority.renew(lease)).toBe(false);
     });
 
     it("reports an expired lease as asleep", async () => {

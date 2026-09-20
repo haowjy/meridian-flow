@@ -43,11 +43,10 @@ describe("Inbox", () => {
     await inbox.enqueue(steer("b1", THREAD_B));
     await inbox.enqueue(steer("a2", THREAD_A));
 
-    const claimedA = await inbox.claimPending(THREAD_A, "run-1");
-    const claimedB = await inbox.claimPending(THREAD_B, "run-1");
+    const claimedA = await inbox.claimPending(THREAD_A);
+    const claimedB = await inbox.claimPending(THREAD_B);
 
     expect(claimedA.map((message) => message.idempotencyKey)).toEqual(["a1", "a2"]);
-    expect(claimedA.map((message) => message.seq)).toEqual([1, 3]);
     expect(claimedB.map((message) => message.idempotencyKey)).toEqual(["b1"]);
   });
 
@@ -56,9 +55,9 @@ describe("Inbox", () => {
     const first = await inbox.enqueue(steer("a1"));
     await inbox.enqueue(steer("a2"));
 
-    await inbox.ack(THREAD_A, [first.id], "run-1");
+    await inbox.ack(THREAD_A, [first.id]);
 
-    const pending = await inbox.claimPending(THREAD_A, "run-1");
+    const pending = await inbox.claimPending(THREAD_A);
     expect(pending.map((message) => message.idempotencyKey)).toEqual(["a2"]);
   });
 
@@ -66,8 +65,8 @@ describe("Inbox", () => {
     const inbox = createInMemoryInbox();
     await inbox.enqueue(steer("a1"));
 
-    const firstClaim = await inbox.claimPending(THREAD_A, "run-1");
-    const secondClaim = await inbox.claimPending(THREAD_A, "run-1");
+    const firstClaim = await inbox.claimPending(THREAD_A);
+    const secondClaim = await inbox.claimPending(THREAD_A);
 
     expect(secondClaim.map((message) => message.id)).toEqual(
       firstClaim.map((message) => message.id),
@@ -82,7 +81,17 @@ describe("Inbox", () => {
 
     expect(second.id).toBe(first.id);
     expect(second.seq).toBe(first.seq);
-    expect(await inbox.claimPending(THREAD_A, "run-1")).toHaveLength(1);
+    expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
+  });
+
+  it("keeps the same idempotency key distinct across threads", async () => {
+    const inbox = createInMemoryInbox();
+    const first = await inbox.enqueue(steer("shared-key", THREAD_A));
+    const second = await inbox.enqueue(steer("shared-key", THREAD_B));
+
+    expect(second.id).not.toBe(first.id);
+    expect(second.threadId).toBe(THREAD_B);
+    expect(await inbox.claimPending(THREAD_B)).toHaveLength(1);
   });
 
   it("lists distinct pending-steer threads oldest first and excludes system messages", async () => {
@@ -100,7 +109,7 @@ describe("Inbox", () => {
   it("drops a thread from pending steers once its steer is acked", async () => {
     const inbox = createInMemoryInbox();
     const message = await inbox.enqueue(steer("a1"));
-    await inbox.ack(THREAD_A, [message.id], "run-1");
+    await inbox.ack(THREAD_A, [message.id]);
 
     expect(await inbox.pendingSteerThreads(10)).toEqual([]);
   });
@@ -132,10 +141,18 @@ describe("RunAuthority", () => {
 
     const lease = required(await authority.acquire(THREAD_A, "run-1"));
     expect(await authority.holder(THREAD_A)).toBe("run-1");
-    expect(await authority.read(THREAD_A)).toEqual({ kind: "awake", phase: "generating" });
+    expect(await authority.read(THREAD_A)).toEqual({
+      kind: "awake",
+      phase: "generating",
+      cancelRequested: false,
+    });
 
     await authority.publish(lease, "waiting");
-    expect(await authority.read(THREAD_A)).toEqual({ kind: "awake", phase: "waiting" });
+    expect(await authority.read(THREAD_A)).toEqual({
+      kind: "awake",
+      phase: "waiting",
+      cancelRequested: false,
+    });
   });
 
   it("treats an expired lease as no holder and lets a new run steal it", async () => {
@@ -155,21 +172,41 @@ describe("RunAuthority", () => {
     const lease = required(await authority.acquire(THREAD_A, "run-1"));
 
     clock.now = 900;
-    await authority.renew(lease);
+    expect(await authority.renew(lease)).toBe(true);
 
     clock.now = 1_500;
     expect(await authority.holder(THREAD_A)).toBe("run-1");
-    expect(await authority.read(THREAD_A)).toEqual({ kind: "awake", phase: "generating" });
+    expect(await authority.read(THREAD_A)).toEqual({
+      kind: "awake",
+      phase: "generating",
+      cancelRequested: false,
+    });
   });
 
-  it("sets the cancel flag once and keeps it idempotent", async () => {
+  it("reports a lost lease from renew", async () => {
+    const authority = authorityAt({ now: 0 });
+    const lease = required(await authority.acquire(THREAD_A, "run-1"));
+    await authority.release(lease);
+
+    expect(await authority.renew(lease)).toBe(false);
+  });
+
+  it("sets the cancel flag once and reads it back idempotently", async () => {
     const authority = authorityAt({ now: 0 });
     await authority.acquire(THREAD_A, "run-1");
-    expect(authority.isCancelRequested(THREAD_A)).toBe(false);
+    expect(await authority.read(THREAD_A)).toEqual({
+      kind: "awake",
+      phase: "generating",
+      cancelRequested: false,
+    });
 
     await authority.cancel(THREAD_A);
     await authority.cancel(THREAD_A);
-    expect(authority.isCancelRequested(THREAD_A)).toBe(true);
+    expect(await authority.read(THREAD_A)).toEqual({
+      kind: "awake",
+      phase: "generating",
+      cancelRequested: true,
+    });
   });
 
   it("ignores a release from a superseded run", async () => {
@@ -180,7 +217,11 @@ describe("RunAuthority", () => {
 
     await authority.release(first);
     expect(await authority.holder(THREAD_A)).toBe("run-2");
-    expect(await authority.read(THREAD_A)).toEqual({ kind: "awake", phase: "generating" });
+    expect(await authority.read(THREAD_A)).toEqual({
+      kind: "awake",
+      phase: "generating",
+      cancelRequested: false,
+    });
     await authority.release(second);
   });
 });

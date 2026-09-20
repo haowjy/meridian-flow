@@ -3,7 +3,8 @@
  * implementation: while a lease is held the adapter renews it at `ttl / 3`, and
  * `release` clears the interval before delegating. A failed renew is reported to
  * the `EventSink` and swallowed — the lease simply expires rather than crashing
- * the running turn.
+ * the running turn. A renew that reports the lease lost (`false`) is reported
+ * once and stops the heartbeat: the loop's signal to exit through `closeRun`.
  */
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { DEFAULT_LEASE_TTL_MS, type Lease, type RunAuthority } from "./ports.js";
@@ -21,10 +22,21 @@ export function createHeartbeatRunAuthority(
   const leaseTtlMs = options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;
   const renewIntervalMs = Math.max(1, Math.floor(leaseTtlMs / 3));
   const timers = new Map<Lease, ReturnType<typeof setInterval>>();
+  const lost = new Set<Lease>();
+
+  function stopRenewing(lease: Lease): void {
+    const timer = timers.get(lease);
+    if (timer) {
+      clearInterval(timer);
+      timers.delete(lease);
+    }
+  }
 
   async function renew(lease: Lease): Promise<void> {
+    if (lost.has(lease)) return;
+    let held: boolean;
     try {
-      await authority.renew(lease);
+      held = await authority.renew(lease);
     } catch (error) {
       emitEvent(options.eventSink, {
         level: "warn",
@@ -33,7 +45,18 @@ export function createHeartbeatRunAuthority(
         correlation: { threadId: lease.threadId, runId: lease.runId },
         payload: unknownToEventPayload(error),
       });
+      return;
     }
+    if (held) return;
+    lost.add(lease);
+    stopRenewing(lease);
+    emitEvent(options.eventSink, {
+      level: "warn",
+      source: "runtime.run-lease",
+      name: "lease.lost",
+      correlation: { threadId: lease.threadId, runId: lease.runId },
+      payload: {},
+    });
   }
 
   return {
@@ -47,11 +70,8 @@ export function createHeartbeatRunAuthority(
     },
 
     async release(lease) {
-      const timer = timers.get(lease);
-      if (timer) {
-        clearInterval(timer);
-        timers.delete(lease);
-      }
+      stopRenewing(lease);
+      lost.delete(lease);
       await authority.release(lease);
     },
 

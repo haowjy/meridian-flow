@@ -19,7 +19,10 @@ export function createInMemoryInbox(): Inbox {
   let nextSeq = 0;
   return {
     async enqueue(draft) {
-      const existing = messages.find((message) => message.idempotencyKey === draft.idempotencyKey);
+      const existing = messages.find(
+        (message) =>
+          message.threadId === draft.threadId && message.idempotencyKey === draft.idempotencyKey,
+      );
       if (existing) return existing;
       nextSeq += 1;
       const message: InboxMessage = {
@@ -33,13 +36,13 @@ export function createInMemoryInbox(): Inbox {
       return message;
     },
 
-    async claimPending(threadId, _runId) {
+    async claimPending(threadId) {
       return messages
         .filter((message) => message.threadId === threadId && message.deliveredAt === null)
         .sort((left, right) => left.seq - right.seq);
     },
 
-    async ack(threadId, ids, _runId) {
+    async ack(threadId, ids) {
       const deliveredAt = new Date().toISOString();
       const targets = new Set(ids);
       for (const message of messages) {
@@ -84,14 +87,9 @@ export interface InMemoryRunAuthorityOptions {
   now?: () => number;
 }
 
-export interface InMemoryRunAuthority extends RunAuthority {
-  /** Test-only inspection; the cancel flag has no port read until the loop checks it. */
-  isCancelRequested(threadId: ThreadId): boolean;
-}
-
 export function createInMemoryRunAuthority(
   options: InMemoryRunAuthorityOptions = {},
-): InMemoryRunAuthority {
+): RunAuthority {
   const holderId = options.holderId ?? crypto.randomUUID();
   const leaseTtlMs = options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;
   const now = options.now ?? (() => Date.now());
@@ -118,8 +116,9 @@ export function createInMemoryRunAuthority(
 
     async renew(lease) {
       const row = leases.get(lease.threadId);
-      if (!row || row.runId !== lease.runId) return;
+      if (!row || row.runId !== lease.runId) return false;
       row.expiresAt = now() + leaseTtlMs;
+      return true;
     },
 
     async holder(threadId) {
@@ -135,7 +134,7 @@ export function createInMemoryRunAuthority(
     async read(threadId) {
       const row = liveLease(threadId);
       if (!row) return { kind: "asleep" };
-      return { kind: "awake", phase: row.phase };
+      return { kind: "awake", phase: row.phase, cancelRequested: row.cancelRequested };
     },
 
     async cancel(threadId) {
@@ -146,10 +145,6 @@ export function createInMemoryRunAuthority(
     async release(lease) {
       const row = leases.get(lease.threadId);
       if (row && row.runId === lease.runId) leases.delete(lease.threadId);
-    },
-
-    isCancelRequested(threadId) {
-      return liveLease(threadId)?.cancelRequested ?? false;
     },
   };
 }

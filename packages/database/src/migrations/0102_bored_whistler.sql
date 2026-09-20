@@ -10,10 +10,12 @@ CREATE TABLE "thread_inbox_messages" (
 	"idempotency_key" text NOT NULL,
 	"enqueued_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"delivered_at" timestamp with time zone,
-	CONSTRAINT "thread_inbox_messages_idem_unique" UNIQUE("idempotency_key"),
+	CONSTRAINT "thread_inbox_messages_idem_unique" UNIQUE("thread_id","idempotency_key"),
 	CONSTRAINT "thread_inbox_messages_intent_valid" CHECK ("thread_inbox_messages"."intent" IN ('steer','system')),
 	CONSTRAINT "thread_inbox_messages_provenance_valid" CHECK ("thread_inbox_messages"."provenance_kind" IN ('writer','agent','child','system')),
-	CONSTRAINT "thread_inbox_messages_body_valid" CHECK ("thread_inbox_messages"."body_kind" IN ('text','report','context'))
+	CONSTRAINT "thread_inbox_messages_provenance_kind_matches" CHECK ("thread_inbox_messages"."provenance"->>'kind' = "thread_inbox_messages"."provenance_kind"),
+	CONSTRAINT "thread_inbox_messages_body_valid" CHECK ("thread_inbox_messages"."body_kind" IN ('text','report','context')),
+	CONSTRAINT "thread_inbox_messages_body_kind_matches" CHECK ("thread_inbox_messages"."body"->>'kind' = "thread_inbox_messages"."body_kind")
 );
 --> statement-breakpoint
 CREATE TABLE "thread_run_leases" (

@@ -10,7 +10,12 @@ import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
 import { and, eq, gt } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import { DEFAULT_LEASE_TTL_MS, type RunAuthority, type ThreadPhase } from "../loop/ports.js";
+import {
+  DEFAULT_LEASE_TTL_MS,
+  type RunAuthority,
+  type RunId,
+  type ThreadPhase,
+} from "../loop/ports.js";
 import type { ThreadRunOwnership } from "../loop/thread-run-ownership.js";
 
 const THREAD_RUN_LOCK_SEED = 81n;
@@ -127,7 +132,7 @@ export function createDrizzleRunAuthority(
   const lock = createThreadRunLock(db);
   const holderId = options.holderId ?? crypto.randomUUID();
   const leaseTtlMs = options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;
-  const held = new Map<ThreadId, ThreadRunLockClaim>();
+  const held = new Map<ThreadId, { runId: RunId; claim: ThreadRunLockClaim }>();
 
   const nextExpiry = () => new Date(Date.now() + leaseTtlMs);
   const db_ = () => currentDrizzleDb(db);
@@ -166,12 +171,12 @@ export function createDrizzleRunAuthority(
         await claim.release();
         throw cause;
       }
-      held.set(threadId, claim);
+      held.set(threadId, { runId, claim });
       return { threadId, runId, holderId };
     },
 
     async renew(lease) {
-      await db_()
+      const updated = await db_()
         .update(schema.threadRunLeases)
         .set({ renewedAt: new Date(), expiresAt: nextExpiry() })
         .where(
@@ -180,7 +185,9 @@ export function createDrizzleRunAuthority(
             eq(schema.threadRunLeases.runId, lease.runId),
             eq(schema.threadRunLeases.holderId, lease.holderId),
           ),
-        );
+        )
+        .returning({ threadId: schema.threadRunLeases.threadId });
+      return updated.length > 0;
     },
 
     async holder(threadId) {
@@ -212,7 +219,10 @@ export function createDrizzleRunAuthority(
 
     async read(threadId) {
       const [row] = await db_()
-        .select({ phase: schema.threadRunLeases.phase })
+        .select({
+          phase: schema.threadRunLeases.phase,
+          cancelRequested: schema.threadRunLeases.cancelRequested,
+        })
         .from(schema.threadRunLeases)
         .where(
           and(
@@ -222,7 +232,11 @@ export function createDrizzleRunAuthority(
         )
         .limit(1);
       if (!row) return { kind: "asleep" };
-      return { kind: "awake", phase: row.phase as ThreadPhase };
+      return {
+        kind: "awake",
+        phase: row.phase as ThreadPhase,
+        cancelRequested: row.cancelRequested,
+      };
     },
 
     async cancel(threadId) {
@@ -239,7 +253,8 @@ export function createDrizzleRunAuthority(
     },
 
     async release(lease) {
-      const claim = held.get(lease.threadId);
+      const entry = held.get(lease.threadId);
+      const ownsLock = entry?.runId === lease.runId;
       try {
         await db_()
           .delete(schema.threadRunLeases)
@@ -251,9 +266,11 @@ export function createDrizzleRunAuthority(
             ),
           );
       } finally {
-        if (claim) {
+        // A stale/double release from a superseded run must not free the
+        // advisory lock now held by a newer run's lease.
+        if (ownsLock && entry) {
           held.delete(lease.threadId);
-          await claim.release();
+          await entry.claim.release();
         }
       }
     },
