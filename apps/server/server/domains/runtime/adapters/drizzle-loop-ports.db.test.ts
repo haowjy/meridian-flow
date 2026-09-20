@@ -30,6 +30,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleInbox } = await import("./drizzle-inbox.js");
     const { createDrizzleThreadLock } = await import("./drizzle-thread-lock.js");
     const { closeRun } = await import("../loop/close-run.js");
+    const { createThreadedInbox } = await import("../loop/threaded-inbox.js");
+    const { createInMemoryRunStarter } = await import("./in-memory/loop-ports.js");
     const { createDrizzleRunAuthority, createDrizzleThreadRunOwnership } = await import(
       "./drizzle-thread-run-ownership.js"
     );
@@ -273,6 +275,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           runAuthority: authority,
           threadId: THREAD_A,
           lease,
+          continueOnPending: true,
           complete: async () => {
             completed = true;
             return "terminal";
@@ -303,6 +306,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             runAuthority: authority,
             threadId: THREAD_A,
             lease,
+            continueOnPending: true,
             complete: async () => "terminal",
           }),
         ).toEqual({ kind: "completed", completion: "terminal" });
@@ -330,6 +334,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           runAuthority: authority,
           threadId: THREAD_A,
           lease,
+          continueOnPending: true,
           complete: async () => {
             completeEntered.resolve();
             await allowComplete.promise;
@@ -349,10 +354,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await second.release(runTwo);
       });
 
-      it("serializes enqueue against the final claim so a racing steer is never stranded", async () => {
+      it("serializes the producer enqueue against the final claim so a racing steer is never stranded", async () => {
         const inbox = createDrizzleInbox(db);
         const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
         const threadLock = createDrizzleThreadLock(db);
+        const threadedInbox = createThreadedInbox({
+          inbox,
+          threadLock,
+          runStarter: createInMemoryRunStarter(),
+        });
 
         for (let attempt = 0; attempt < 24; attempt++) {
           await clearInbox();
@@ -364,9 +374,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               runAuthority: authority,
               threadId: THREAD_A,
               lease,
+              continueOnPending: true,
               complete: async () => "terminal",
             }),
-            threadLock.withThreadLock(THREAD_A, () => inbox.enqueue(steer(`race-${attempt}`))),
+            threadedInbox.enqueue(steer(`race-${attempt}`)),
           ]);
 
           const holder = await authority.holder(THREAD_A);
@@ -377,6 +388,31 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
           if (holder !== null) await authority.release(lease);
         }
+      });
+
+      it("commits an inbox ack only with the transaction that carries it", async () => {
+        const inbox = createDrizzleInbox(db);
+        const { createDrizzleRepositoriesForTest } = await import(
+          "../../threads/adapters/drizzle/index.js"
+        );
+        const repos = createDrizzleRepositoriesForTest(db);
+        const message = await inbox.enqueue(steer("ack-with-response"));
+
+        await expect(
+          repos.transaction(async () => {
+            await inbox.ack(THREAD_A, [message.id]);
+            throw new Error("response persist failed");
+          }),
+        ).rejects.toThrow("response persist failed");
+        // The ack rolled back with the transaction that failed.
+        expect((await inbox.claimPending(THREAD_A)).map((m) => m.idempotencyKey)).toEqual([
+          "ack-with-response",
+        ]);
+
+        await repos.transaction(async () => {
+          await inbox.ack(THREAD_A, [message.id]);
+        });
+        expect(await inbox.claimPending(THREAD_A)).toEqual([]);
       });
     });
   });

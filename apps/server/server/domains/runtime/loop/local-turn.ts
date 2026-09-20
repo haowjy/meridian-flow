@@ -17,6 +17,8 @@ export function createLocalTurn(input: {
   status: Turn["status"];
   writeMode?: Turn["writeMode"];
   metadata?: Turn["metadata"];
+  /** Durable origin time; a drained steer passes its inbox `enqueuedAt`. */
+  createdAt?: string;
 }): Turn {
   return {
     id: input.id ?? crypto.randomUUID(),
@@ -42,7 +44,7 @@ export function createLocalTurn(input: {
     requestParams: null,
     responseMetadata: null,
     metadata: input.metadata ?? null,
-    createdAt: toIsoString(new Date()),
+    createdAt: input.createdAt ?? toIsoString(new Date()),
     completedAt: null,
     blocks: [],
     siblingIds: [],

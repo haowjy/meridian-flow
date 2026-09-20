@@ -5,14 +5,15 @@
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import type { Notice, NoticePort } from "../../notices/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
 import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
 } from "../../threads/index.js";
 import { createInMemoryInbox } from "../adapters/in-memory/loop-ports.js";
-import { persistInboxSteers, renderInboxBatch } from "./inbox-context.js";
+import { drainInbox, persistInboxSteers, renderInboxBatch } from "./inbox-context.js";
 import type { MessageDraft } from "./ports.js";
 
 const USER_ID = "user-1";
@@ -97,5 +98,90 @@ describe("persistInboxSteers", () => {
     expect(turns[0].id).toBe(message.id);
     expect(turns[0].role).toBe("user");
     expect(await repos.blocks.listByTurn(message.id)).toHaveLength(1);
+  });
+
+  it("persists a whole batch in one turn-start transition, chaining each turn", async () => {
+    const { repos, eventWriter, inbox, thread } = await seed();
+    await inbox.enqueue(steer("one", thread.id));
+    await inbox.enqueue(steer("two", thread.id));
+    const batch = await inbox.claimPending(thread.id);
+
+    const transition = vi.spyOn(repos, "runTurnStartTransition");
+    const persisted = await persistInboxSteers({
+      deps: { repos, eventWriter },
+      threadId: thread.id,
+      expectedLeafTurnId: null,
+      batch,
+    });
+
+    expect(transition).toHaveBeenCalledTimes(1);
+    transition.mockRestore();
+    expect(persisted.turns).toHaveLength(2);
+    expect(persisted.turns[1]?.prevTurnId).toBe(persisted.turns[0]?.id);
+    expect(persisted.events.map((event) => event.type)).toEqual([
+      "turn.created",
+      "block.upserted",
+      "turn.created",
+      "block.upserted",
+    ]);
+  });
+
+  it("stamps a steer turn with the message enqueuedAt, not persist time", async () => {
+    const { repos, eventWriter, inbox, thread } = await seed();
+    await inbox.enqueue(steer("timed", thread.id));
+    const [message] = await inbox.claimPending(thread.id);
+    const enqueuedAt = "2020-01-02T03:04:05.000Z";
+
+    const persisted = await persistInboxSteers({
+      deps: { repos, eventWriter },
+      threadId: thread.id,
+      expectedLeafTurnId: null,
+      batch: [{ ...(message as NonNullable<typeof message>), enqueuedAt }],
+    });
+
+    expect(persisted.turns[0]?.createdAt).toBe(enqueuedAt);
+    const turns = await repos.turns.listByThread(thread.id);
+    expect(turns[0]?.createdAt).toBe(enqueuedAt);
+  });
+});
+
+describe("drainInbox", () => {
+  function noopNotices(rows: Notice[] = []): NoticePort {
+    return {
+      async record() {},
+      async drainForModelContext() {
+        return [...rows];
+      },
+    };
+  }
+
+  it("skips a redelivered steer already in knownTurnIds and still returns its ack id", async () => {
+    const { repos, eventWriter, inbox, thread } = await seed();
+    await inbox.enqueue(steer("crash then retry", thread.id));
+    const [message] = await inbox.claimPending(thread.id);
+    if (!message) throw new Error("expected a claimed message");
+    // Persist once, leaving the message unacked (crash before ack).
+    const first = await persistInboxSteers({
+      deps: { repos, eventWriter },
+      threadId: thread.id,
+      expectedLeafTurnId: null,
+      batch: [message],
+    });
+
+    // The same unacked message is redelivered; its turn is already durable.
+    const drain = await drainInbox({
+      persistence: { repos, eventWriter },
+      inbox,
+      notices: noopNotices(),
+      threadId: thread.id,
+      messages: [],
+      knownTurnIds: new Set(first.turns.map((turn) => turn.id)),
+      expectedLeafTurnId: first.turns[0]?.id ?? null,
+    });
+
+    expect(drain.turns).toEqual([]);
+    expect(drain.persistedEvents).toEqual([]);
+    expect(drain.ackIds).toEqual([message.id]);
+    expect(await repos.turns.listByThread(thread.id)).toHaveLength(1);
   });
 });

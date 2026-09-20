@@ -260,6 +260,7 @@ describe("closeRun", () => {
       runAuthority: authority,
       threadId: THREAD_A,
       lease,
+      continueOnPending: true,
       complete: async () => {
         completeEntered.resolve();
         await allowComplete.promise;
@@ -293,6 +294,7 @@ describe("closeRun", () => {
       runAuthority: authority,
       threadId: THREAD_A,
       lease,
+      continueOnPending: true,
       complete: async () => {
         completed = true;
         return "terminal";
@@ -302,5 +304,28 @@ describe("closeRun", () => {
     expect(outcome.kind).toBe("continue");
     expect(completed).toBe(false);
     expect(await authority.holder(THREAD_A)).toBe("run-1");
+  });
+
+  it("completes and releases despite a pending batch when continueOnPending is false", async () => {
+    const inbox = createInMemoryInbox();
+    const authority = createInMemoryRunAuthority({ holderId: "holder-1" });
+    const threadLock = createInMemoryThreadLock();
+    const lease = required(await authority.acquire(THREAD_A, "run-1"));
+    await inbox.enqueue(steer("unrecoverable here"));
+
+    const outcome = await closeRun({
+      threadLock,
+      inbox,
+      runAuthority: authority,
+      threadId: THREAD_A,
+      lease,
+      continueOnPending: false,
+      complete: async () => "terminal",
+    });
+
+    expect(outcome).toEqual({ kind: "completed", completion: "terminal" });
+    expect(await authority.holder(THREAD_A)).toBeNull();
+    // The pending steer is left for the wake sweep, not acked.
+    expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
   });
 });

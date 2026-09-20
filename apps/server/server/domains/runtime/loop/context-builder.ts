@@ -335,15 +335,22 @@ function blockToContentPart(block: Block): ContentPart | null {
   }
 }
 
+/**
+ * Appends to the last user message by default. Callers that have already
+ * appended other user messages (a drained steer) pass `targetIndex` to pin the
+ * attachment to the writer's triggering message instead.
+ */
 export function attachSkillBodiesToLatestUserMessage(
   messages: readonly Message[],
   skills: readonly { slug: string; description: string; body: string }[],
+  targetIndex?: number,
 ): Message[] {
   if (skills.length === 0) return [...messages];
-  return appendTextToLatestUserMessage(
+  return appendTextToUserMessage(
     messages,
     skills.map(formatInvokedSkill).join("\n\n"),
     "skill bodies",
+    targetIndex,
   );
 }
 
@@ -360,34 +367,49 @@ function formatInvokedSkill(skill: { slug: string; description: string; body: st
 export function attachNoticesToLatestUserMessage(
   messages: readonly Message[],
   notices: readonly Notice[],
+  targetIndex?: number,
 ): Message[] {
   const content = formatNotices(notices);
   if (!content) return [...messages];
-  return appendTextToLatestUserMessage(
+  return appendTextToUserMessage(
     messages,
     `\n\nMeridian context for this message:\n${content}`,
     "pre-turn notices",
+    targetIndex,
   );
 }
 
-function appendTextToLatestUserMessage(
+/** Index of the last user-role message, or undefined when there is none. */
+export function lastUserMessageIndex(messages: readonly Message[]): number | undefined {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (messages[index]?.role === "user") return index;
+  }
+  return undefined;
+}
+
+function appendTextToUserMessage(
   messages: readonly Message[],
   value: string,
   label: string,
+  targetIndex?: number,
 ): Message[] {
   const updated = [...messages];
   const part = text(value);
-  for (let index = updated.length - 1; index >= 0; index--) {
-    const message = updated[index];
-    if (message?.role !== "user") continue;
-    updated[index] = {
-      ...message,
-      content: [...message.content, part],
-    };
+  if (targetIndex !== undefined) {
+    const message = updated[targetIndex];
+    if (message?.role !== "user") {
+      throw new Error(`Cannot attach ${label}: message ${targetIndex} is not a writer message`);
+    }
+    updated[targetIndex] = { ...message, content: [...message.content, part] };
     return updated;
   }
-
-  throw new Error(`Cannot attach ${label} without a writer message`);
+  const index = lastUserMessageIndex(updated);
+  if (index === undefined) {
+    throw new Error(`Cannot attach ${label} without a writer message`);
+  }
+  const message = updated[index] as Message;
+  updated[index] = { ...message, content: [...message.content, part] };
+  return updated;
 }
 
 export function insertPostToolNotices(

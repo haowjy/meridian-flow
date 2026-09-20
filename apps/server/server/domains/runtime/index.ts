@@ -83,6 +83,7 @@ export {
   type ThreadRunClaim,
   type ThreadRunOwnership,
 } from "./loop/thread-run-ownership.js";
+export { createThreadedInbox, type ThreadedInbox } from "./loop/threaded-inbox.js";
 export {
   type ChildRunRegistry,
   createTurnRunner,
