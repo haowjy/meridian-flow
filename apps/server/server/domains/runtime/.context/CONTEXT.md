@@ -36,9 +36,9 @@ skeleton and delegates the moving parts.
 
 | File | Role |
 |---|---|
-| `orchestrator.ts` | `createOrchestrator` / `runTurn` skeleton, user/assistant turn creation, iteration control, final yield of events. Before each model request it claims the thread's pending inbox batch and merges it into the request (steers as trailing user messages, system messages as request-only notices); the batch is acked inside `persistModelResponse`'s transaction, and the terminal branch runs the final claim through `closeRun` so a message that lands in the exit window keeps the run alive. |
-| `inbox-context.ts` | Pure batch renderer: `renderInboxBatch` appends a `steer` as a user-role message at the tail and converts a `system` message into a request-only `Notice` (never a persisted turn). Producers are not special-cased; intent and body decide the rendering. |
-| `thread-lock.ts` / `close-run.ts` | The per-thread serialization lock (`ThreadLock`, `threadLockKey`) shared by `enqueue` and the run's final claim, and `closeRun`: under that lock, claim the inbox once more; a pending batch returns `continue`, an empty batch releases the lease. Drizzle adapter `adapters/drizzle-thread-lock.ts` uses a `pg_advisory_xact_lock` on `threadLockKey`; the in-memory fake uses a promise-chain mutex. |
+| `orchestrator.ts` | `createOrchestrator` / `runTurn` skeleton, user/assistant turn creation, iteration control, final yield of events. Before each model request it claims the thread's pending inbox batch and merges it into the request (steers as trailing user messages, system messages as request-only notices) while `persistInboxSteers` appends each steer as a user turn at the tail; the batch is acked inside `persistModelResponse`'s transaction, and the terminal branch runs the final claim, terminal-turn completion, and lease release through `closeRun` so a message that lands in the exit window keeps the run alive. |
+| `inbox-context.ts` | `renderInboxBatch` appends a `steer` as a user-role message at the request tail and converts a `system` message into a request-only `Notice`; `persistInboxSteers` appends each steer as a user-role turn at the thread tail through the same thread-head transition Work-context delivery uses. A steer is history, not transient context, so later iterations of the same run keep seeing it. Producers are not special-cased; intent and body decide the rendering. |
+| `thread-lock.ts` / `close-run.ts` | The per-thread serialization lock (`ThreadLock`, `threadLockKey`) shared by `enqueue` and the run's final claim, and `closeRun`: under that lock, claim the inbox once more; a pending batch returns `continue` before any terminal work, an empty batch runs the caller's terminal completion **and then** releases the lease. Holding the lock across completion and release means a steer cannot start a second run while the terminal turn is still persisting. Drizzle adapter `adapters/drizzle-thread-lock.ts` uses a `pg_advisory_xact_lock` on `threadLockKey`; the in-memory fake uses a promise-chain mutex. |
 | `block-helpers.ts` | Content block conversion and local accumulator helpers. |
 | `turn-accounting.ts` | Credit ledger checks/debits and cumulative usage events. |
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
@@ -252,15 +252,20 @@ facet.
   iterations. This keeps the already-sent request prefix stable without
   changing the frozen system prompt or persisting notices into the turn graph.
 - **Inbox drain is batch-atomic and the exit is dead-check-atomic** — before every
-  request the loop claims the whole pending batch in one `claimPending`, renders
-  steers as trailing user messages and system messages as request-only notices,
-  and carries the batch ids into `persistModelResponse`, which acks them in the
-  same transaction that persists the model response (a crash redelivers; the
-  idempotency key collapses the duplicate). At the terminal no-tool-call branch,
-  `closeRun` takes the same per-thread lock `enqueue` uses, claims once more, and
-  releases the lease only on an empty batch; a pending batch continues the run
-  into the next iteration. The run owner's `finally` release remains the
-  idempotent safety net and still flushes the legacy transports.
+  request the loop claims the whole pending batch in one `claimPending`, persists
+  each steer as a user-role turn at the tail (its turn and block ids are the
+  durable inbox message ids, so redelivery after a crash between the steer append
+  and the ack reuses the rows instead of duplicating), renders steers as trailing
+  user messages and system messages as request-only notices, and carries the
+  batch ids into `persistModelResponse`, which acks them in the same transaction
+  that persists the model response (a crash redelivers; the idempotency key
+  collapses the duplicate). At the terminal no-tool-call branch, `closeRun` takes
+  the same per-thread lock `enqueue` uses, claims once more, and—only on an empty
+  batch—completes the terminal turn and then releases the lease, all inside the
+  lock, so no steer can start a second run while the terminal turn is still
+  persisting; a pending batch continues the run into the next iteration. The run
+  owner's `finally` release remains the idempotent safety net and still flushes
+  the legacy transports.
 - **Model response lifecycle** — `persistModelResponse` mints the response id
   used by tool handlers. After all tool results for that response are persisted,
   the orchestrator commits response-scoped agent-edit writes. Staged tool results
