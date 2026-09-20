@@ -26,7 +26,7 @@
 - A background child's report reaches the parent model, not just the writer's card. The report is a system message the model reads; the hidden continuation turn is not a writer message.
 - Durable child-report delivery: the obligation commits the instant `return_result` settles, the card write holds the parent run claim, and a 1s sweep delivers exactly once across crash, restart, replay, and claim-recovery epoch advance.
 - `return_result.artifacts[]` renders on the child Return card and the parent helper card.
-- Every conversation gets a short server-assigned handle from the project's one counter: `cN` for primary chats, `sN` for subagents (one project may read `c1`, `s2`, `s3`). The model addresses a child by its handle (`continue` takes `handle`), so the `spawn`/`continue` tool traffic it re-reads every turn carries `s3` instead of a 36-character UUID. The handle is not the id: the chat URL, local store key, and Open door stay on the client-minted UUID. No writer-facing surface changes.
+- Every conversation gets a short server-assigned handle from the project's one counter: `cN` for primary chats, `pN` for subagents (one project may read `c1`, `p2`, `p3`). The model addresses a child by its handle (`continue` takes `handle`), so the `spawn`/`continue` tool traffic it re-reads every turn carries `p3` instead of a 36-character UUID. The handle is not the id: the chat URL, local store key, and Open door stay on the client-minted UUID. No writer-facing surface changes.
 
 ### Fixed
 

@@ -203,9 +203,11 @@ contract shapes.
   primary remains associated but non-primary after restore binds No Work.
 - A thread receives a project-scoped `ref` in the create transaction:
   primaries take `c1`, `c2`, … and subagents take `p1`, `p2`, … from one
-  shared per-project counter, so every live handle is project-unique. Title is
-  not an identifier and is not unique. Chat URLs use the client-minted thread
-  `id`, not `ref`.
+  shared per-project counter, so every live handle is project-unique. The
+  handle grammar (`cN`/`pN`) lives in `domain/thread-ref.ts`
+  (`formatThreadRef`/`parseThreadRef`); allocation stays with the repository
+  adapters. Title is not an identifier and is not unique. Chat URLs use the
+  client-minted thread `id`, not `ref`.
   Create-or-get matches ownership only. A same-user same-project retry of a
   deleted thread conflicts; persist must not resurrect the tombstone.
 - **Work membership mutation is serialized.** Primary additions and rebinds lock
