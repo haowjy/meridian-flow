@@ -166,7 +166,7 @@ export function createChildReportDelivery(deps: ChildReportDeliveryDeps): ChildR
   async function deliverOne(obligation: ChildReportDeliveryObligation): Promise<void> {
     const parent = await deps.repos.threads.findById(obligation.parentThreadId);
     if (!parent) {
-      await deps.repos.childReportDeliveries.acknowledge(obligation.reportId);
+      // A soft-deleted parent parks: the row is retained so a restore resumes.
       return;
     }
 
