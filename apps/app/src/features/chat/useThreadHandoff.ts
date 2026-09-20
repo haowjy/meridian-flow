@@ -221,7 +221,6 @@ export function useThreadHandoff(
       return;
     }
 
-    if (handoffStartedRef.current) return;
     const liveState = snapshotResume?.liveState;
     if (!liveState) return;
 
@@ -233,6 +232,15 @@ export function useThreadHandoff(
     // — would never get a subscriber to apply its deltas.
     const runKey = liveState.runningTurnId ?? after;
     if (resumedRunRef.current === runKey) return;
+
+    if (handoffStartedRef.current && resumedRunRef.current === null) {
+      // The send this mount started already owns this run's stream (submit
+      // attached a controller). Record it so we do not attach a second one,
+      // while still allowing a later run to resume.
+      resumedRunRef.current = runKey;
+      return;
+    }
+
     resumedRunRef.current = runKey;
     pendingResumeRef.current = true;
     startResume(after, liveState.runningTurnId ?? undefined);
