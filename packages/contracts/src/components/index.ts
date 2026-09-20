@@ -2,6 +2,7 @@
  * Purpose: Defines the shared custom component-block and interrupt-answer contracts used by server persistence and client renderers.
  * Key decisions: component block content stays JSON-natural and generic at the envelope, while the MVP `ask_user` component props are typed here so server builders, reducers, and renderers do not re-spell per-kind schemas.
  */
+import type { ArtifactRef } from "../interrupt/index.js";
 import type { JsonObject, JsonValue } from "../threads/index.js";
 
 /** Registry key for a renderer/tool-owned custom component. */
@@ -39,6 +40,7 @@ export type HelperResultProps = JsonObject & {
   parentTurnId: string;
   title?: string;
   payload?: JsonValue;
+  artifacts?: ArtifactRef[];
 };
 
 export type HelperResultComponentContent = ComponentBlockContent & {
@@ -58,6 +60,7 @@ export function buildHelperResultComponentContent(
 /** The child's returned report, rendered as an `ArtifactCard` in the child transcript. */
 export type ChildReportProps = JsonObject & {
   summary: string;
+  artifacts?: ArtifactRef[];
 };
 
 export type ChildReportComponentContent = ComponentBlockContent & {

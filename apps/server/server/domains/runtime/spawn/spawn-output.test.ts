@@ -59,6 +59,39 @@ describe("spawnOutputForTranscript", () => {
     expect(JSON.stringify(done)).not.toContain("cost");
   });
 
+  it("carries report artifacts onto the completed card without cost", () => {
+    const done = spawnHelperCardProps({
+      agent: "critic",
+      parentTurnId: "turn-1",
+      output: {
+        status: "completed",
+        report: {
+          threadId: "child-1",
+          summary: "Wrote the outline.",
+          artifacts: [{ type: "object", uri: "scratch://outline.md", label: "Outline" }],
+          costMillicredits: 5,
+        },
+      },
+    });
+
+    expect(done.artifacts).toEqual([
+      { type: "object", uri: "scratch://outline.md", label: "Outline" },
+    ]);
+    expect(JSON.stringify(done)).not.toContain("cost");
+  });
+
+  it("omits artifacts when the completed report has none", () => {
+    const done = spawnHelperCardProps({
+      parentTurnId: "turn-1",
+      output: {
+        status: "completed",
+        report: { threadId: "child-1", summary: "No files.", costMillicredits: 2 },
+      },
+    });
+
+    expect(done.artifacts).toBeUndefined();
+  });
+
   it("keeps childThreadId on a failed card and titles from description", () => {
     const failed = spawnHelperCardProps({
       agent: "subagent",

@@ -6,6 +6,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 vi.mock("@lingui/core/macro", () => ({
   t: (strings: TemplateStringsArray) => strings[0],
 }));
+vi.mock("@lingui/react/macro", () => ({
+  Trans: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
 vi.mock("@/rich-content/Markdown", () => ({
   Markdown: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -77,6 +80,25 @@ describe("SpawnReportCard", () => {
 
     expect(document.querySelector("button")).toBeNull();
     expect(document.body.textContent).toContain("Open");
+  });
+
+  it("renders returned artifacts alongside the summary", async () => {
+    await act(async () =>
+      root.render(
+        <SpawnReportCard
+          agentName="Critic"
+          title={null}
+          summary="Wrote the outline."
+          status="completed"
+          childThreadId={null}
+          artifacts={[{ type: "object", uri: "scratch://outline.md", label: "Outline" }]}
+        />,
+      ),
+    );
+
+    const link = document.querySelector("a[href='scratch://outline.md']");
+    expect(link).not.toBeNull();
+    expect(document.body.textContent).toContain("Outline");
   });
 
   it("hides the door when no child thread exists", async () => {
