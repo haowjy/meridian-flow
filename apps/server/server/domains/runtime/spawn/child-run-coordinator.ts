@@ -44,7 +44,7 @@ import {
 } from "../loop/thread-run-ownership.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
 import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
-import { authorizeContinueTarget, type ContinueTarget } from "./authorize-continue-target.js";
+import { authorizeContinueTarget } from "./authorize-continue-target.js";
 import type { ChildReportDelivery } from "./child-report-delivery.js";
 import { persistHelperCard, type SpawnTranscript } from "./spawn-transcript.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
@@ -413,13 +413,13 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
   async function prepareExistingChild(
     input: ContinueChildInput,
-    target: ContinueTarget,
+    target: Thread,
     options: { background?: boolean } = {},
   ): Promise<PreparedChild | SpawnResult> {
     const turnError = assertTurnBudget(input.budget);
     if (turnError) return { status: "error", error: turnError };
 
-    const binding = await deps.agentRevisions.readThreadBinding(target.thread.id);
+    const binding = await deps.agentRevisions.readThreadBinding(target.id);
     if (!binding) {
       return {
         status: "error",
@@ -431,7 +431,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
     const resolvedSlug = binding.revision?.slug ?? GENERIC_SUBAGENT_SLUG;
     try {
-      return await registerPreparedChild(target.thread, resolvedSlug, {
+      return await registerPreparedChild(target, resolvedSlug, {
         background: options.background,
         signal: input.signal,
         origin: "continue",

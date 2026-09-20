@@ -124,13 +124,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         rootThreadId: first.id,
         spawnDepth: 1,
       });
-      expect(child.ref).toBe("s4");
-      expect(await chats.findLiveByProjectRef(project.id, "s4")).toMatchObject({
+      expect(child.ref).toBe("p4");
+      expect(await chats.findLiveByProjectRef(project.id, "p4")).toMatchObject({
         id: child.id,
       });
       await repo.softDelete(project.id);
       expect(await chats.findLiveByProjectRef(project.id, "c1")).toBeNull();
-      expect(await chats.findLiveByProjectRef(project.id, "s4")).toBeNull();
+      expect(await chats.findLiveByProjectRef(project.id, "p4")).toBeNull();
     });
 
     it("work findById on a non-UUID slug resolves to null", async () => {

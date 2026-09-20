@@ -53,10 +53,10 @@ export function spawnToolDescription(hasNamedTargets: boolean): string {
 }
 
 const CONTINUE_DESCRIPTION =
-  "Run an existing subagent again with a new prompt. Pass the handle (for example s3) returned by spawn. The child keeps its configuration and history. Use mode=background for non-blocking follow-ups.";
+  "Run an existing subagent again with a new prompt. Pass the handle (for example p3) returned by spawn. The child keeps its configuration and history. Use mode=background for non-blocking follow-ups.";
 
 export type ContinueToolArgs = {
-  /** Short server-assigned handle (`sN`/`cN`) from a spawn/continue result. */
+  /** Short server-assigned handle (`pN`/`cN`) from a spawn/continue result. */
   handle: string;
   prompt: string;
   mode: "foreground" | "background";
@@ -135,7 +135,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
           properties: {
             handle: {
               type: "string",
-              description: "Short handle returned by spawn, for example s3.",
+              description: "Short handle returned by spawn, for example p3.",
             },
             prompt: { type: "string", description: "Next task message for the child." },
             mode: {

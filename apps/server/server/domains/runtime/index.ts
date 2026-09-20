@@ -59,7 +59,6 @@ export type { ImageAssetPort } from "./ports/image-asset.js";
 export { unavailableImageAssetPort } from "./ports/image-asset.js";
 export {
   authorizeContinueTarget,
-  type ContinueTarget,
   type ContinueTargetOutcome,
 } from "./spawn/authorize-continue-target.js";
 export {

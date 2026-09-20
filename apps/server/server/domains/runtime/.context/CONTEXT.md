@@ -134,7 +134,7 @@ thread creation still goes through public thread creation normalization; only th
 child-run coordinator can create subagent threads.
 Continue drives an existing child instead of creating one: `continueChild` /
 `continueChildBackground` authorize through `spawn/authorize-continue-target.ts`,
-which resolves the model's `sN`/`cN` handle with the project-scoped
+which resolves the model's `pN`/`cN` handle with the project-scoped
 `findLiveByProjectRef` (same project and user, `kind === "subagent"`,
 `parentThreadId === caller.id`; a malformed or missing handle →
 `continue_target_not_found`, a non-child → `continue_target_not_authorized`),

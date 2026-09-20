@@ -7,7 +7,7 @@ describe("spawnOutputForTranscript", () => {
     const output = spawnOutputForTranscript({
       status: "completed",
       report: {
-        handle: "s1",
+        handle: "p1",
         threadId: "child-1",
         summary: "Stated that 2+2=4.",
         payload: { answer: 4 },
@@ -18,7 +18,7 @@ describe("spawnOutputForTranscript", () => {
     expect(output).toEqual({
       status: "completed",
       report: {
-        handle: "s1",
+        handle: "p1",
         summary: "Stated that 2+2=4.",
         payload: { answer: 4 },
       },
@@ -115,7 +115,7 @@ describe("spawnOutputForTranscript", () => {
     const error = { status: "error", error: { code: "spawn_depth_exceeded" } };
     const background = {
       status: "background",
-      handle: "s2",
+      handle: "p2",
       threadId: "child-2",
       agentSlug: "general",
     };
@@ -123,7 +123,7 @@ describe("spawnOutputForTranscript", () => {
     expect(spawnOutputForTranscript(error)).toBe(error);
     expect(spawnOutputForTranscript(background)).toEqual({
       status: "background",
-      handle: "s2",
+      handle: "p2",
       agentSlug: "general",
     });
   });

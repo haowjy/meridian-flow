@@ -29,7 +29,7 @@ export function isReturnResultOutcome(value: unknown): value is ReturnResultOutc
 
 /** Child agent terminal hand-back (execution-model §4.1). */
 export type AgentReport = {
-  /** Short model-facing handle (`sN`); the model's currency for continue. */
+  /** Short model-facing handle (`pN`); the model's currency for continue. */
   handle: string;
   /** Internal UUID for UI navigation; never sent to the model. */
   threadId: string;

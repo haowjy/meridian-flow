@@ -82,16 +82,16 @@ describe("spawn tool input schema", () => {
 
 describe("parseContinueToolArgs", () => {
   it("keeps handle and prompt and defaults mode to foreground", () => {
-    const args = parseContinueToolArgs({ handle: "s1", prompt: "keep going" });
+    const args = parseContinueToolArgs({ handle: "p1", prompt: "keep going" });
     expect(args).toEqual({
-      handle: "s1",
+      handle: "p1",
       prompt: "keep going",
       mode: "foreground",
     });
-    expect(parseContinueToolArgs({ handle: "s1", prompt: "x", mode: "background" }).mode).toBe(
+    expect(parseContinueToolArgs({ handle: "p1", prompt: "x", mode: "background" }).mode).toBe(
       "background",
     );
-    expect(parseContinueToolArgs({ handle: "s1", prompt: "x", mode: "sideways" }).mode).toBe(
+    expect(parseContinueToolArgs({ handle: "p1", prompt: "x", mode: "sideways" }).mode).toBe(
       "foreground",
     );
   });
