@@ -186,6 +186,37 @@ export const workContextDeliveryObligations = pgTable("work_context_delivery_obl
   requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * Durable obligation to surface a background child's terminal report to its
+ * parent exactly once: one row per report execution, written atomically with the
+ * child's terminal lifecycle and deleted once the parent continuation is
+ * durably admitted.
+ */
+export const childReportDeliveries = pgTable(
+  "child_report_deliveries",
+  {
+    reportId: uuid("report_id").$type<TurnId>().primaryKey(),
+    parentThreadId: uuid("parent_thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    childThreadId: uuid("child_thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    agentSlug: text("agent_slug").notNull(),
+    description: text("description"),
+    result: jsonb("result").notNull(),
+    systemTurnId: uuid("system_turn_id").$type<TurnId>(),
+    submissionEpoch: integer("submission_epoch").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    index("child_report_deliveries_parent_idx").on(table.parentThreadId),
+    check("child_report_deliveries_epoch_nonneg", sql`${table.submissionEpoch} >= 0`),
+  ],
+);
+
 export const turns = pgTable(
   "turns",
   {

@@ -413,6 +413,7 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
         prevTurnId: lastTurn?.id ?? null,
         role: "user",
         status: "complete",
+        metadata: input.userTurnMetadata ?? null,
       });
       const userBlocks = (input.userBlocks ?? [{ type: "text", text: input.userText }]).map(
         (block: UserMessageBlock, sequence) =>
