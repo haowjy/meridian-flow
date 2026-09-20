@@ -13,6 +13,7 @@ import {
   type RunStarter,
   type ThreadPhase,
 } from "../../loop/ports.js";
+import type { ThreadLock } from "../../loop/thread-lock.js";
 
 export function createInMemoryInbox(): Inbox {
   const messages: InboxMessage[] = [];
@@ -159,6 +160,24 @@ export function createInMemoryRunStarter(): InMemoryRunStarter {
     started,
     async start(threadId) {
       started.push(threadId);
+    },
+  };
+}
+
+export function createInMemoryThreadLock(): ThreadLock {
+  const chains = new Map<ThreadId, Promise<unknown>>();
+  return {
+    withThreadLock<T>(threadId: ThreadId, operation: () => Promise<T>): Promise<T> {
+      const previous = chains.get(threadId) ?? Promise.resolve();
+      const result = previous.then(operation, operation);
+      chains.set(
+        threadId,
+        result.then(
+          () => undefined,
+          () => undefined,
+        ),
+      );
+      return result;
     },
   };
 }

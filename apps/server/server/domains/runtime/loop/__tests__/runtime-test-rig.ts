@@ -15,11 +15,16 @@ import {
   createThreadEventHub,
   type SequencedEventInternal,
 } from "../../../threads/index.js";
-import { createInMemoryRunAuthority } from "../../adapters/in-memory/loop-ports.js";
+import {
+  createInMemoryInbox,
+  createInMemoryRunAuthority,
+  createInMemoryThreadLock,
+} from "../../adapters/in-memory/loop-ports.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
+import type { Inbox } from "../ports.js";
 import { createTurnRunner } from "../turn-runner.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
@@ -59,6 +64,7 @@ export class RuntimeTestRig {
   readonly orchestrator;
   readonly runner;
   readonly gateway;
+  readonly inbox;
 
   private readonly eventWaiters = new Set<{
     predicate: (event: AGUIEvent) => boolean;
@@ -76,6 +82,7 @@ export class RuntimeTestRig {
     hub: ReturnType<typeof createThreadEventHub>;
     orchestrator: ReturnType<typeof createOrchestrator>;
     runner: ReturnType<typeof createTurnRunner>;
+    inbox: Inbox;
   }) {
     Object.assign(this, state);
     this.userId = state.userId;
@@ -88,6 +95,7 @@ export class RuntimeTestRig {
     this.hub = state.hub;
     this.orchestrator = state.orchestrator;
     this.runner = state.runner;
+    this.inbox = state.inbox;
     this.hub.subscribe(this.thread.id, (entry) => {
       this.projectedEvents.push(entry);
       for (const waiter of this.eventWaiters) {
@@ -133,6 +141,9 @@ export class RuntimeTestRig {
       journalReader: eventWriter,
       eventSink,
     });
+    const runAuthority = createInMemoryRunAuthority();
+    const inbox = createInMemoryInbox();
+    const threadLock = createInMemoryThreadLock();
     const orchestrator = createOrchestrator(
       createTestOrchestratorDeps({
         boundThreads: () => [thread.id],
@@ -143,6 +154,9 @@ export class RuntimeTestRig {
         interruptRegistry,
         creditLedger,
         eventSink,
+        inbox,
+        threadLock,
+        runAuthority,
       }),
     );
     const runner = createTurnRunner({
@@ -151,7 +165,7 @@ export class RuntimeTestRig {
       hub,
       repos: { turns: repos.turns },
       eventSink,
-      runAuthority: createInMemoryRunAuthority(),
+      runAuthority,
     });
     const thread = await repos.threads.create({ userId, projectId: project.id });
     await creditLedger.grant({
@@ -171,6 +185,7 @@ export class RuntimeTestRig {
       hub,
       orchestrator,
       runner,
+      inbox,
     });
     return rig;
   }

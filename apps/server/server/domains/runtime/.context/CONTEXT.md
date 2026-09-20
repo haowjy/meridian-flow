@@ -36,7 +36,9 @@ skeleton and delegates the moving parts.
 
 | File | Role |
 |---|---|
-| `orchestrator.ts` | `createOrchestrator` / `runTurn` skeleton, user/assistant turn creation, iteration control, final yield of events. |
+| `orchestrator.ts` | `createOrchestrator` / `runTurn` skeleton, user/assistant turn creation, iteration control, final yield of events. Before each model request it claims the thread's pending inbox batch and merges it into the request (steers as trailing user messages, system messages as request-only notices); the batch is acked inside `persistModelResponse`'s transaction, and the terminal branch runs the final claim through `closeRun` so a message that lands in the exit window keeps the run alive. |
+| `inbox-context.ts` | Pure batch renderer: `renderInboxBatch` appends a `steer` as a user-role message at the tail and converts a `system` message into a request-only `Notice` (never a persisted turn). Producers are not special-cased; intent and body decide the rendering. |
+| `thread-lock.ts` / `close-run.ts` | The per-thread serialization lock (`ThreadLock`, `threadLockKey`) shared by `enqueue` and the run's final claim, and `closeRun`: under that lock, claim the inbox once more; a pending batch returns `continue`, an empty batch releases the lease. Drizzle adapter `adapters/drizzle-thread-lock.ts` uses a `pg_advisory_xact_lock` on `threadLockKey`; the in-memory fake uses a promise-chain mutex. |
 | `block-helpers.ts` | Content block conversion and local accumulator helpers. |
 | `turn-accounting.ts` | Credit ledger checks/debits and cumulative usage events. |
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
@@ -59,8 +61,10 @@ skeleton and delegates the moving parts.
 | `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow tool names and per-tool command sets (`read`, `write`, `work`). `commandSetForTool` is the single per-tool command mapping. Advertise and the per-turn permission gate (name + command) use that policy. `invocation-authority` validates that an invocation patch never grants the child more than the caller holds, applied only to the patch delta. Dispatch does not apply policy. The core catalogue stays policy-free. |
 
 `OrchestratorDeps` is fully required: gateway, repos, retained Agent revision reader, tool
-registry/executor, project preferences, credit ledger,
-interrupt artifact flush, child-run coordinator, interrupt registry, and
+registry/executor, project preferences, credit ledger, the `Inbox` queue, the
+`ThreadLock`, the `RunAuthority` (used to release the held lease through
+`closeRun`), interrupt artifact flush, child-run coordinator, interrupt
+registry, and
 `EventSink` are all explicit dependencies. Do not re-add a global permission
 gate here; names and per-tool command sets are gated per turn from advertised policy. Provider-specific
 model-call behavior stays behind the gateway port. Disabled behavior is
@@ -247,6 +251,16 @@ facet.
   exchange that caused them and retain that causal position on later
   iterations. This keeps the already-sent request prefix stable without
   changing the frozen system prompt or persisting notices into the turn graph.
+- **Inbox drain is batch-atomic and the exit is dead-check-atomic** — before every
+  request the loop claims the whole pending batch in one `claimPending`, renders
+  steers as trailing user messages and system messages as request-only notices,
+  and carries the batch ids into `persistModelResponse`, which acks them in the
+  same transaction that persists the model response (a crash redelivers; the
+  idempotency key collapses the duplicate). At the terminal no-tool-call branch,
+  `closeRun` takes the same per-thread lock `enqueue` uses, claims once more, and
+  releases the lease only on an empty batch; a pending batch continues the run
+  into the next iteration. The run owner's `finally` release remains the
+  idempotent safety net and still flushes the legacy transports.
 - **Model response lifecycle** — `persistModelResponse` mints the response id
   used by tool handlers. After all tool results for that response are persisted,
   the orchestrator commits response-scoped agent-edit writes. Staged tool results

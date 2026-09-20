@@ -28,6 +28,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleInbox } = await import("./drizzle-inbox.js");
+    const { createDrizzleThreadLock } = await import("./drizzle-thread-lock.js");
+    const { closeRun } = await import("../loop/close-run.js");
     const { createDrizzleRunAuthority, createDrizzleThreadRunOwnership } = await import(
       "./drizzle-thread-run-ownership.js"
     );
@@ -234,6 +236,100 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const relocked = required(await authority.acquire(THREAD_A, "run-final"));
       await authority.release(relocked);
+    });
+
+    describe("closeRun final claim", () => {
+      function deferred() {
+        let resolve!: () => void;
+        const promise = new Promise<void>((r) => {
+          resolve = r;
+        });
+        return { promise, resolve };
+      }
+
+      async function clearInbox() {
+        await db.delete(schema.threadInboxMessages);
+      }
+
+      it("keeps the run alive when a steer commits before the final claim", async () => {
+        const inbox = createDrizzleInbox(db);
+        const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
+        const threadLock = createDrizzleThreadLock(db);
+        const lease = required(await authority.acquire(THREAD_A, "run-1"));
+
+        const enqueueHeld = deferred();
+        const releaseEnqueue = deferred();
+        const enqueue = threadLock.withThreadLock(THREAD_A, async () => {
+          await inbox.enqueue(steer("in-window"));
+          enqueueHeld.resolve();
+          await releaseEnqueue.promise;
+        });
+        await enqueueHeld.promise;
+
+        const closing = closeRun({
+          threadLock,
+          inbox,
+          runAuthority: authority,
+          threadId: THREAD_A,
+          lease,
+        });
+        releaseEnqueue.resolve();
+        await enqueue;
+
+        expect(await closing).toBe("continue");
+        expect(await authority.holder(THREAD_A)).toBe("run-1");
+        expect((await inbox.claimPending(THREAD_A)).map((m) => m.idempotencyKey)).toEqual([
+          "in-window",
+        ]);
+        await authority.release(lease);
+      });
+
+      it("releases only on an empty claim so a later steer finds no live lease", async () => {
+        const inbox = createDrizzleInbox(db);
+        const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
+        const threadLock = createDrizzleThreadLock(db);
+        const lease = required(await authority.acquire(THREAD_A, "run-1"));
+
+        expect(
+          await closeRun({
+            threadLock,
+            inbox,
+            runAuthority: authority,
+            threadId: THREAD_A,
+            lease,
+          }),
+        ).toBe("released");
+        expect(await authority.holder(THREAD_A)).toBeNull();
+
+        await threadLock.withThreadLock(THREAD_A, () => inbox.enqueue(steer("after-release")));
+        expect(await authority.holder(THREAD_A)).toBeNull();
+        expect((await inbox.claimPending(THREAD_A)).map((m) => m.idempotencyKey)).toEqual([
+          "after-release",
+        ]);
+      });
+
+      it("serializes enqueue against the final claim so a racing steer is never stranded", async () => {
+        const inbox = createDrizzleInbox(db);
+        const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
+        const threadLock = createDrizzleThreadLock(db);
+
+        for (let attempt = 0; attempt < 24; attempt++) {
+          await clearInbox();
+          const lease = required(await authority.acquire(THREAD_A, `run-${attempt}`));
+          const [outcome] = await Promise.all([
+            closeRun({ threadLock, inbox, runAuthority: authority, threadId: THREAD_A, lease }),
+            threadLock.withThreadLock(THREAD_A, () => inbox.enqueue(steer(`race-${attempt}`))),
+          ]);
+
+          const holder = await authority.holder(THREAD_A);
+          // The lock makes the two outcomes exhaustive: the run either saw the
+          // steer and kept its lease, or released first and the steer is pending
+          // for the wake sweep. Never released with the steer already claimed.
+          expect(outcome === "continue").toBe(holder !== null);
+          expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
+          if (holder !== null) await authority.release(lease);
+        }
+      });
     });
   });
 }

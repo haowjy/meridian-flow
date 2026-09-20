@@ -341,6 +341,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
         treeBudget: input.budget,
         isSubagentThread: true,
         returnResultCompleter,
+        lease: prepared.runLease,
       });
       reportId = handle.assistantTurnId;
       deps.childRunRegistry.markChildTurn(

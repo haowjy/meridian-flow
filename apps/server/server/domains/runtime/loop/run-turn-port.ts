@@ -13,6 +13,7 @@ import type {
 } from "@meridian/contracts/spawn";
 import type { JsonValue, OrchestratorEvent } from "@meridian/contracts/threads";
 import type { Tool } from "../gateway/index.js";
+import type { Lease } from "./ports.js";
 
 export type ReturnResultCompleter = (capture: ReturnResultCapture) => Promise<ReturnResultOutcome>;
 
@@ -29,6 +30,8 @@ export interface RunTurnInput {
   treeBudget?: TreeBudget;
   isSubagentThread?: boolean;
   returnResultCompleter?: ReturnResultCompleter;
+  /** The run's held lease; the loop releases it through closeRun when it exits. */
+  lease?: Lease;
 }
 
 export interface RunTurnHandle {

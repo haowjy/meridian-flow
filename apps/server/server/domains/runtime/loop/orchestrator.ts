@@ -105,6 +105,7 @@ import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
+import { closeRun } from "./close-run.js";
 import {
   attachNoticesToLatestUserMessage,
   attachSkillBodiesToLatestUserMessage,
@@ -116,6 +117,7 @@ import {
   finalizeTurnOnGeneratorFailure,
 } from "./finalization.js";
 import { loadThreadConversationContext } from "./fork-thread-context.js";
+import { renderInboxBatch } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
   defaultInterruptAutoResumePolicy,
@@ -128,6 +130,7 @@ import {
   persistAndAppendEvents,
   persistAndAppendTurnStartEvents,
 } from "./persistence.js";
+import type { Inbox, RunAuthority } from "./ports.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
 import type { RunTurnHandle, RunTurnInput, RunTurnPort } from "./run-turn-port.js";
 import {
@@ -136,6 +139,7 @@ import {
   mapStreamEvent,
   toJsonValue,
 } from "./streaming.js";
+import type { ThreadLock } from "./thread-lock.js";
 import { dispatchToolCall } from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
@@ -184,6 +188,12 @@ export interface OrchestratorDeps {
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
   notices: NoticePort;
+  /** Durable per-thread message queue drained into each model request. */
+  inbox: Inbox;
+  /** The per-thread serialization lock shared with `enqueue`. */
+  threadLock: ThreadLock;
+  /** Releases the run's lease through `closeRun` when the queue is empty. */
+  runAuthority: RunAuthority;
   activeDocuments: ActiveDocumentResolver;
   imageAssets: ImageAssetPort;
   /** Aggregate concurrent-edit rendering allowance derived from the selected registry model. */
@@ -526,6 +536,8 @@ async function persistModelResponse(input: {
   treeBudget: TreeBudget;
   turnAccounting: TurnAccounting;
   blockSeq: number;
+  /** Ids of the inbox batch this response carries; acked in the persist transaction. */
+  inboxAckIds: string[];
 }): Promise<{
   responseId: string;
   updatedTurn: Turn;
@@ -624,6 +636,10 @@ async function persistModelResponse(input: {
       provider: result.provider,
     });
 
+    // Ack the batch in the same transaction that persists the response carrying
+    // it; a crash before commit redelivers and the idempotency key collapses.
+    await deps.inbox.ack(runInput.threadId, input.inboxAckIds);
+
     return {
       result: { responseId, updatedTurn, createdBlocks },
       events,
@@ -672,6 +688,8 @@ async function* settleAndFinalizeCancelled(input: {
       treeBudget: input.treeBudget,
       turnAccounting: input.turnAccounting,
       blockSeq,
+      // A cancelled run leaves its drained batch unacked so it redelivers.
+      inboxAckIds: [],
     });
     currentAssistantTurn = persistedResponse.updatedTurn;
     blockSeq = persistedResponse.nextBlockSeq;
@@ -920,6 +938,19 @@ async function* generateEvents(
     });
   }
 
+  // The run's exit check: claim the inbox under the same lock `enqueue` uses. A
+  // pending batch keeps this run alive into the next iteration; an empty batch
+  // releases the lease inside the lock, closing the lost-wakeup window.
+  function claimPendingAtExit() {
+    return closeRun({
+      threadLock: deps.threadLock,
+      inbox: deps.inbox,
+      runAuthority: deps.runAuthority,
+      threadId: input.threadId,
+      lease: input.lease ?? null,
+    });
+  }
+
   try {
     const allTurns: Turn[] = [...inheritedTurns, ...priorTurns, userTurn, assistantTurn];
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
@@ -1029,9 +1060,17 @@ async function* generateEvents(
         ...(built.agentSlug ? { agentSlug: built.agentSlug } : {}),
       };
 
+      let inboxAckIds: string[] = [];
       {
         const baseMessageCount = request.messages.length;
-        const notices = await deps.notices.drainForModelContext(input.threadId);
+        const batch = await deps.inbox.claimPending(input.threadId);
+        inboxAckIds = batch.map((message) => message.id);
+        const rendered = renderInboxBatch(request.messages, batch);
+        request.messages = rendered.messages;
+        const notices = [
+          ...(await deps.notices.drainForModelContext(input.threadId)),
+          ...rendered.notices,
+        ];
         if (iteration === 1) {
           preTurnNotices.push(...notices);
         } else if (notices.length > 0) {
@@ -1175,6 +1214,7 @@ async function* generateEvents(
         treeBudget,
         turnAccounting,
         blockSeq,
+        inboxAckIds,
       });
       currentAssistantTurn = persistedResponse.updatedTurn;
       blockSeq = persistedResponse.nextBlockSeq;
@@ -1455,6 +1495,8 @@ async function* generateEvents(
         if (endTurnRequested) {
           // A child called return_result: the report is captured and persisted,
           // so the turn ends here instead of looping into another model round.
+          // A message that landed in the exit window keeps the run going.
+          if ((await claimPendingAtExit()) === "continue") continue;
           const completed = await completeTurn({
             deps,
             threadId: input.threadId,
@@ -1469,6 +1511,7 @@ async function* generateEvents(
         continue;
       }
 
+      if ((await claimPendingAtExit()) === "continue") continue;
       const completed = await completeTurn({
         deps,
         threadId: input.threadId,
