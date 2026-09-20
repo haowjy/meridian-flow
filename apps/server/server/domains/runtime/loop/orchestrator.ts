@@ -117,13 +117,14 @@ import {
   finalizeTurnOnGeneratorFailure,
 } from "./finalization.js";
 import { loadThreadConversationContext } from "./fork-thread-context.js";
-import { renderInboxBatch } from "./inbox-context.js";
+import { persistInboxSteers, renderInboxBatch } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
   defaultInterruptAutoResumePolicy,
   type InterruptAutoResumePolicy,
   type InterruptRegistry,
 } from "./interrupts.js";
+import { createLocalTurn } from "./local-turn.js";
 import { type PermissionGate, permissionGateFromToolPolicy } from "./permissions/index.js";
 import {
   appendEvent,
@@ -303,59 +304,6 @@ async function resolveInterruptAutoResumePolicy(
 ): Promise<InterruptAutoResumePolicy> {
   const preferences = await deps.projectPreferences.read(thread.userId, thread.projectId);
   return preferences.autoResume ?? defaultInterruptAutoResumePolicy();
-}
-
-function emptyTurnUsage(): NonNullable<Turn["usage"]> {
-  return {
-    inputTokens: 0,
-    outputTokens: 0,
-    reasoningTokens: null,
-    cacheReadTokens: null,
-    cacheWriteTokens: null,
-    totalCostUsd: "0",
-    totalMillicredits: "0",
-    responseCount: 0,
-  };
-}
-
-function createLocalTurn(input: {
-  threadId: ThreadId;
-  prevTurnId: TurnId | null;
-  role: Turn["role"];
-  status: Turn["status"];
-  writeMode?: Turn["writeMode"];
-  metadata?: Turn["metadata"];
-}): Turn {
-  return {
-    id: crypto.randomUUID(),
-    threadId: input.threadId,
-    prevTurnId: input.prevTurnId,
-    parentTurnId: input.prevTurnId,
-    role: input.role,
-    writeMode: input.writeMode ?? null,
-    status: input.status,
-    finishReason: null,
-    model: null,
-    provider: null,
-    inputTokens: 0,
-    outputTokens: 0,
-    reasoningTokens: null,
-    cacheReadTokens: null,
-    cacheWriteTokens: null,
-    totalCostUsd: "0",
-    totalMillicredits: "0",
-    responseCount: 0,
-    usage: emptyTurnUsage(),
-    error: null,
-    requestParams: null,
-    responseMetadata: null,
-    metadata: input.metadata ?? null,
-    createdAt: toIsoString(new Date()),
-    completedAt: null,
-    blocks: [],
-    siblingIds: [],
-    responses: [],
-  };
 }
 
 // This direct append path is limited to ephemeral transport facts that do not
@@ -938,16 +886,24 @@ async function* generateEvents(
     });
   }
 
-  // The run's exit check: claim the inbox under the same lock `enqueue` uses. A
-  // pending batch keeps this run alive into the next iteration; an empty batch
-  // releases the lease inside the lock, closing the lost-wakeup window.
-  function claimPendingAtExit() {
+  // The run's exit: claim the inbox, complete the terminal turn, and release the
+  // lease under one hold of the per-thread lock. A pending batch keeps this run
+  // alive into the next iteration; otherwise the terminal turn is durable before
+  // the lease is released, so a steer cannot start a second run mid-terminal.
+  function completeAtExit(finishReason: GenerateResult["finishReason"]) {
     return closeRun({
       threadLock: deps.threadLock,
       inbox: deps.inbox,
       runAuthority: deps.runAuthority,
       threadId: input.threadId,
       lease: input.lease ?? null,
+      complete: () =>
+        completeTurn({
+          deps,
+          threadId: input.threadId,
+          turn: currentAssistantTurn,
+          finishReason,
+        }),
     });
   }
 
@@ -1065,8 +1021,27 @@ async function* generateEvents(
         const baseMessageCount = request.messages.length;
         const batch = await deps.inbox.claimPending(input.threadId);
         inboxAckIds = batch.map((message) => message.id);
-        const rendered = renderInboxBatch(request.messages, batch);
+        // A steer already persisted by a crashed run is redelivered; the context
+        // build already carried it from `allTurns`, so skip re-rendering and
+        // re-appending it here. Its id is the durable inbox message id.
+        const knownTurnIds = new Set(allTurns.map((turn) => turn.id));
+        const freshBatch = batch.filter(
+          (message) => message.intent !== "steer" || !knownTurnIds.has(message.id),
+        );
+        const rendered = renderInboxBatch(request.messages, freshBatch);
         request.messages = rendered.messages;
+        // A steer is history, not transient context: persist each as a user turn
+        // at the tail so later iterations of this same run keep seeing it, then
+        // fold it into the accumulator the next request is built from.
+        const persistedSteers = await persistInboxSteers({
+          deps,
+          threadId: input.threadId,
+          expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
+          batch: freshBatch,
+        });
+        for (const turn of persistedSteers.turns) allTurns.push(turn);
+        for (const block of persistedSteers.blocks) allBlocks.push(block);
+        yield* persistedSteers.events;
         const notices = [
           ...(await deps.notices.drainForModelContext(input.threadId)),
           ...rendered.notices,
@@ -1496,30 +1471,20 @@ async function* generateEvents(
           // A child called return_result: the report is captured and persisted,
           // so the turn ends here instead of looping into another model round.
           // A message that landed in the exit window keeps the run going.
-          if ((await claimPendingAtExit()) === "continue") continue;
-          const completed = await completeTurn({
-            deps,
-            threadId: input.threadId,
-            turn: currentAssistantTurn,
-            finishReason: "end_turn",
-          });
-          currentAssistantTurn = completed.turn;
-          yield* completed.events;
+          const outcome = await completeAtExit("end_turn");
+          if (outcome.kind === "continue") continue;
+          currentAssistantTurn = outcome.completion.turn;
+          yield* outcome.completion.events;
           return;
         }
 
         continue;
       }
 
-      if ((await claimPendingAtExit()) === "continue") continue;
-      const completed = await completeTurn({
-        deps,
-        threadId: input.threadId,
-        turn: currentAssistantTurn,
-        finishReason: result.finishReason,
-      });
-      currentAssistantTurn = completed.turn;
-      yield* completed.events;
+      const outcome = await completeAtExit(result.finishReason);
+      if (outcome.kind === "continue") continue;
+      currentAssistantTurn = outcome.completion.turn;
+      yield* outcome.completion.events;
       return;
     }
   } catch (err) {

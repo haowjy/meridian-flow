@@ -35,6 +35,17 @@ function textResult(text = "done"): GenerateResult {
   };
 }
 
+function toolCallResult(toolName: string, toolCallId: string): GenerateResult {
+  return {
+    content: [{ type: "tool_use", toolCallId, toolName, input: {} }],
+    toolCalls: [],
+    finishReason: "tool_use",
+    usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
+    model: "gpt-4.1-mini",
+    provider: "openai",
+  };
+}
+
 function steer(key: string, threadId: ThreadId): MessageDraft {
   return {
     threadId,
@@ -61,7 +72,9 @@ function messageTexts(messages: readonly Message[]): string[] {
   );
 }
 
-async function setup(onStream?: (call: number) => Promise<void>) {
+async function setup(
+  options: { onStream?: (call: number) => Promise<void>; results?: GenerateResult[] } = {},
+) {
   const projectRepo = createInMemoryProjectRepository();
   const repos = createInMemoryRepositories({ projects: projectRepo });
   const project = await projectRepo.create({ userId: USER_ID, title: "Inbox" });
@@ -81,8 +94,8 @@ async function setup(onStream?: (call: number) => Promise<void>) {
     async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
       call += 1;
       requests.push(request);
-      await onStream?.(call);
-      yield { type: "end", result: textResult() };
+      await options.onStream?.(call);
+      yield { type: "end", result: options.results?.[call - 1] ?? textResult() };
     },
     async generate() {
       throw new Error("not used");
@@ -137,14 +150,41 @@ describe("inbox drain", () => {
   });
 
   it("keeps the run alive when a message lands in the final-claim window", async () => {
-    const { thread, inbox, requests, orchestrator } = await setup(async (call) => {
-      if (call === 1) await inbox.enqueue(steer("late steer", thread.id));
+    const { thread, inbox, requests, orchestrator } = await setup({
+      onStream: async (call) => {
+        if (call === 1) await inbox.enqueue(steer("late steer", thread.id));
+      },
     });
 
     await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "hello" }));
 
     expect(requests).toHaveLength(2);
     expect(messageTexts(requests[1].messages)).toContain("late steer");
+    expect(await inbox.claimPending(thread.id)).toEqual([]);
+  });
+
+  it("persists a drained steer as a user turn the next iteration still sees", async () => {
+    const { thread, inbox, requests, orchestrator, repos } = await setup({
+      results: [toolCallResult("ask_user", "call-1"), textResult("done")],
+    });
+    await inbox.enqueue(steer("carry me", thread.id));
+
+    await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "hello" }));
+
+    expect(requests).toHaveLength(2);
+    expect(messageTexts(requests[0].messages)).toContain("carry me");
+    // The steer was acked at the end of iteration 1; iteration 2 only sees it
+    // because it persisted as a user-role turn, not as a request-only render.
+    expect(messageTexts(requests[1].messages)).toContain("carry me");
+
+    const turns = await repos.turns.listByThread(thread.id);
+    const steerTurn = turns.find(
+      (turn) =>
+        turn.role === "user" && (turn.metadata as { kind?: string } | null)?.kind === "steer",
+    );
+    expect(steerTurn).toBeDefined();
+    const blocks = await repos.blocks.listByTurn(steerTurn?.id as string);
+    expect(blocks.some((block) => block.textContent === "carry me")).toBe(true);
     expect(await inbox.claimPending(thread.id)).toEqual([]);
   });
 });

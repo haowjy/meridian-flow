@@ -239,9 +239,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     describe("closeRun final claim", () => {
-      function deferred() {
-        let resolve!: () => void;
-        const promise = new Promise<void>((r) => {
+      function deferred<T>() {
+        let resolve!: (value: T) => void;
+        const promise = new Promise<T>((r) => {
           resolve = r;
         });
         return { promise, resolve };
@@ -257,8 +257,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const threadLock = createDrizzleThreadLock(db);
         const lease = required(await authority.acquire(THREAD_A, "run-1"));
 
-        const enqueueHeld = deferred();
-        const releaseEnqueue = deferred();
+        const enqueueHeld = deferred<void>();
+        const releaseEnqueue = deferred<void>();
         const enqueue = threadLock.withThreadLock(THREAD_A, async () => {
           await inbox.enqueue(steer("in-window"));
           enqueueHeld.resolve();
@@ -266,17 +266,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         await enqueueHeld.promise;
 
+        let completed = false;
         const closing = closeRun({
           threadLock,
           inbox,
           runAuthority: authority,
           threadId: THREAD_A,
           lease,
+          complete: async () => {
+            completed = true;
+            return "terminal";
+          },
         });
         releaseEnqueue.resolve();
         await enqueue;
 
-        expect(await closing).toBe("continue");
+        expect(await closing).toMatchObject({ kind: "continue" });
+        expect(completed).toBe(false);
         expect(await authority.holder(THREAD_A)).toBe("run-1");
         expect((await inbox.claimPending(THREAD_A)).map((m) => m.idempotencyKey)).toEqual([
           "in-window",
@@ -284,7 +290,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await authority.release(lease);
       });
 
-      it("releases only on an empty claim so a later steer finds no live lease", async () => {
+      it("completes then releases on an empty claim so a later steer finds no live lease", async () => {
         const inbox = createDrizzleInbox(db);
         const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
         const threadLock = createDrizzleThreadLock(db);
@@ -297,8 +303,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             runAuthority: authority,
             threadId: THREAD_A,
             lease,
+            complete: async () => "terminal",
           }),
-        ).toBe("released");
+        ).toEqual({ kind: "completed", completion: "terminal" });
         expect(await authority.holder(THREAD_A)).toBeNull();
 
         await threadLock.withThreadLock(THREAD_A, () => inbox.enqueue(steer("after-release")));
@@ -306,6 +313,40 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         expect((await inbox.claimPending(THREAD_A)).map((m) => m.idempotencyKey)).toEqual([
           "after-release",
         ]);
+      });
+
+      it("holds the lease across the terminal completion so no second acquire can interleave", async () => {
+        const inbox = createDrizzleInbox(db);
+        const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
+        const second = createDrizzleRunAuthority(db, { holderId: "holder-2" });
+        const threadLock = createDrizzleThreadLock(db);
+        const lease = required(await authority.acquire(THREAD_A, "run-1"));
+
+        const completeEntered = deferred<void>();
+        const allowComplete = deferred<void>();
+        const closing = closeRun({
+          threadLock,
+          inbox,
+          runAuthority: authority,
+          threadId: THREAD_A,
+          lease,
+          complete: async () => {
+            completeEntered.resolve();
+            await allowComplete.promise;
+            return "terminal";
+          },
+        });
+
+        await completeEntered.promise;
+        // The terminal write is in flight; the lease must still block a new run.
+        expect(await second.acquire(THREAD_A, "run-2")).toBeNull();
+        expect(await authority.holder(THREAD_A)).toBe("run-1");
+
+        allowComplete.resolve();
+        expect(await closing).toEqual({ kind: "completed", completion: "terminal" });
+        expect(await authority.holder(THREAD_A)).toBeNull();
+        const runTwo = required(await second.acquire(THREAD_A, "run-2"));
+        await second.release(runTwo);
       });
 
       it("serializes enqueue against the final claim so a racing steer is never stranded", async () => {
@@ -317,7 +358,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           await clearInbox();
           const lease = required(await authority.acquire(THREAD_A, `run-${attempt}`));
           const [outcome] = await Promise.all([
-            closeRun({ threadLock, inbox, runAuthority: authority, threadId: THREAD_A, lease }),
+            closeRun({
+              threadLock,
+              inbox,
+              runAuthority: authority,
+              threadId: THREAD_A,
+              lease,
+              complete: async () => "terminal",
+            }),
             threadLock.withThreadLock(THREAD_A, () => inbox.enqueue(steer(`race-${attempt}`))),
           ]);
 
@@ -325,7 +373,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           // The lock makes the two outcomes exhaustive: the run either saw the
           // steer and kept its lease, or released first and the steer is pending
           // for the wake sweep. Never released with the steer already claimed.
-          expect(outcome === "continue").toBe(holder !== null);
+          expect(outcome.kind === "continue").toBe(holder !== null);
           expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
           if (holder !== null) await authority.release(lease);
         }
