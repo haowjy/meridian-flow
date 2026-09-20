@@ -110,7 +110,7 @@ the agent-less generic subagent.
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
 | Core handlers | The strict six-branch `work` union, the shared read/write document definitions, and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
 | Skills | References are retained at binding. `createSkillToolRegistrations` registers the `skill` tool (`source: "skill"`); invoke loads a SKILL.md body only when the slug is in Agent `skills.available` and `model-invocable` is not false. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
-| Spawn tools | `tools/spawn-tools.ts` registers `spawn`, `continue`, and `return_result` with explicit privileged capabilities. `continue` runs an existing child again from its frozen binding and carries no prompt or override args. |
+| Spawn tools | `tools/spawn-tools.ts` registers `spawn`, `continue`, and `return_result` with explicit privileged capabilities. `continue` runs an existing child again with a new prompt; the child keeps its frozen binding and accepts no `append_system_prompt` or `overrides`. |
 
 Handler-owned `{ isError: true, output }` results already define their
 model-facing protocol, so the executor preserves their output by definition.
@@ -149,8 +149,8 @@ which resolves the model's `pN`/`cN` handle with the project-scoped
 `continue_target_not_found`, a non-child → `continue_target_not_authorized`),
 then the coordinator's `prepareContinue` loads the child's
 frozen binding for `resolvedSlug` only and never re-resolves configuration — so
-`continue` carries no prompt override and cannot escalate model, tools, prompt,
-or overlay. A binding-less target fails `continue_target_unavailable`; a live
+`continue` carries no configuration patch and cannot escalate the child's model,
+tools, system prompt, or overlay. A binding-less target fails `continue_target_unavailable`; a live
 writer turn or overlapping continue fails `continue_target_busy`.
 The driver's `register` owns only the claim/controller/registry, so a failed
 continue never writes the child's lifecycle; the caller owns the failure policy.
