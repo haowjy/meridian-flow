@@ -869,7 +869,7 @@ export function createInMemoryRepositories(
       },
       async setSystemTurnId(reportId, systemTurnId) {
         const row = childReportDeliveries.get(reportId as string);
-        if (row) row.systemTurnId = systemTurnId;
+        if (row && row.systemTurnId === null) row.systemTurnId = systemTurnId;
       },
       async advanceEpoch(reportId) {
         const row = childReportDeliveries.get(reportId as string);

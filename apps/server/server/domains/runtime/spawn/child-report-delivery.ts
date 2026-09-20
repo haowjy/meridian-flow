@@ -21,10 +21,12 @@ import type {
 } from "../../threads/index.js";
 import type { HostTurnAdmission } from "../admission/user-turn-admission.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
+import { createDeliveryPump } from "../loop/delivery-pump.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import {
   createInMemoryThreadRunOwnership,
   type ThreadRunOwnership,
+  withRunClaim,
 } from "../loop/thread-run-ownership.js";
 import { spawnHelperCardProps } from "./spawn-output.js";
 
@@ -115,16 +117,13 @@ function createLocalSystemTurn(input: { threadId: ThreadId; parentTurnId: TurnId
 
 export function createChildReportDelivery(deps: ChildReportDeliveryDeps): ChildReportDelivery {
   const runOwnership = deps.runOwnership ?? createInMemoryThreadRunOwnership();
-  const flushChains = new Map<string, Promise<void>>();
 
   async function ensureCard(obligation: ChildReportDeliveryObligation): Promise<boolean> {
     // Creating the card's system turn advances the parent's active leaf, so it
     // must not race a writer turn. Hold the shared run claim across the write,
     // exactly as WorkContextDelivery does; the parent is left pending when a
     // writer already owns it.
-    const claim = await runOwnership.tryAcquire(obligation.parentThreadId);
-    if (!claim) return false;
-    try {
+    return withRunClaim(runOwnership, obligation.parentThreadId, async () => {
       // Re-read under the claim: another process may have written the container
       // between the sweep's list snapshot and this claim. Reuse its turn rather
       // than orphaning it with a second container.
@@ -158,7 +157,7 @@ export function createChildReportDelivery(deps: ChildReportDeliveryDeps): ChildR
             { type: "block.upserted", block: card(current.systemTurnId as TurnId) },
           ] as OrchestratorEvent[],
         }));
-        return true;
+        return;
       }
 
       const systemTurn = createLocalSystemTurn({
@@ -179,10 +178,7 @@ export function createChildReportDelivery(deps: ChildReportDeliveryDeps): ChildR
           ] as OrchestratorEvent[],
         };
       });
-      return true;
-    } finally {
-      await claim.release();
-    }
+    });
   }
 
   async function deliverOne(obligation: ChildReportDeliveryObligation): Promise<void> {
@@ -230,26 +226,18 @@ export function createChildReportDelivery(deps: ChildReportDeliveryDeps): ChildR
     }
   }
 
-  async function flushUnlocked(parentThreadId: ThreadId): Promise<void> {
-    if (deps.isThreadRunning(parentThreadId)) return;
+  async function deliver(parentThreadId: ThreadId): Promise<void> {
     const obligations = await deps.repos.childReportDeliveries.listPendingByParent(parentThreadId);
     for (const obligation of obligations) {
       await deliverOne(obligation);
     }
   }
 
-  async function flush(parentThreadId: ThreadId): Promise<void> {
-    const key = parentThreadId as string;
-    const previous = flushChains.get(key) ?? Promise.resolve();
-    const next = previous.then(() => flushUnlocked(parentThreadId));
-    const settled = next.catch(() => undefined);
-    flushChains.set(key, settled);
-    try {
-      await next;
-    } finally {
-      if (flushChains.get(key) === settled) flushChains.delete(key);
-    }
-  }
+  const pump = createDeliveryPump({
+    isThreadRunning: (threadId) => deps.isThreadRunning(threadId),
+    listPendingThreadIds: () => deps.repos.childReportDeliveries.listPendingParentThreadIds(),
+    deliver,
+  });
 
   return {
     async enqueue(input) {
@@ -262,14 +250,11 @@ export function createChildReportDelivery(deps: ChildReportDeliveryDeps): ChildR
         result: input.result,
         systemTurnId: input.systemTurnId ?? null,
       });
-      deps.schedulePostCommit(() => flush(input.parentThreadId));
+      deps.schedulePostCommit(() => pump.flush(input.parentThreadId));
     },
 
-    flush,
+    flush: pump.flush,
 
-    async sweep() {
-      const parentThreadIds = await deps.repos.childReportDeliveries.listPendingParentThreadIds();
-      await Promise.all(parentThreadIds.map(flush));
-    },
+    sweep: pump.sweep,
   };
 }

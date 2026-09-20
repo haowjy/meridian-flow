@@ -27,3 +27,24 @@ export function createInMemoryThreadRunOwnership(): ThreadRunOwnership {
     },
   };
 }
+
+/**
+ * Runs `task` under the thread's run claim, or returns false when another owner
+ * holds it. Delivery cardinality depends on this being the only claim path: the
+ * task must finish before the claim is released so a racing writer or a second
+ * process cannot interleave.
+ */
+export async function withRunClaim(
+  ownership: ThreadRunOwnership,
+  threadId: ThreadId,
+  task: () => Promise<void>,
+): Promise<boolean> {
+  const claim = await ownership.tryAcquire(threadId);
+  if (!claim) return false;
+  try {
+    await task();
+    return true;
+  } finally {
+    await claim.release();
+  }
+}
