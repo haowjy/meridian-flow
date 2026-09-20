@@ -9,6 +9,7 @@ import { plural, t } from "@lingui/core/macro";
 import { parseContextUri } from "@meridian/contracts/context-uri";
 import type { JsonValue } from "@meridian/contracts/protocol";
 import type { ToolView } from "./group-delivery-segments";
+import { type ToolCommand, toolCommand } from "./tool-command";
 
 export type ThinkingDigestWriteMode = "direct" | "draft";
 
@@ -24,22 +25,36 @@ export function countFoldTools(tools: readonly ToolView[]): FoldToolCounts {
   let steps = 0;
 
   for (const tool of tools) {
-    const input = inputObject(tool);
-    const command = stringField(input, "command");
-    const path = stringField(input, "path");
-    const isWrite = tool.toolName === "write";
+    const path = stringField(inputObject(tool), "path");
+    // The writer-facing command, not the raw tool name, decides the bucket: a
+    // `read(command:"diff")` is a review of changes, not an edit or a document
+    // read, and must not be summarized as one.
+    const command = toolCommand(tool);
 
-    if (!tool.isError && isWrite && path) {
-      if (command === "read") readDocuments.add(documentIdentity(path));
-      else editedDocuments.add(documentIdentity(path));
+    if (!tool.isError && path && isReadCommand(command)) {
+      readDocuments.add(documentIdentity(path));
       continue;
     }
-    // Failed, non-write (`search`, `ls`, `work`), and pathless operations are
-    // uncountable: they contribute a step instead of a document.
+    if (!tool.isError && path && isEditCommand(command)) {
+      editedDocuments.add(documentIdentity(path));
+      continue;
+    }
+    // Failed, non-document (`search`, `ls`, `work`), read-only reviews, and
+    // pathless operations are uncountable: they contribute a step instead.
     steps += 1;
   }
 
   return { readDocuments, editedDocuments, steps };
+}
+
+/** A command that only looked at a document. */
+function isReadCommand(command: ToolCommand): boolean {
+  return command === "read" || command === "skim";
+}
+
+/** A command that changed a document, including putting a change back. */
+function isEditCommand(command: ToolCommand): boolean {
+  return command === "create" || command === "edit" || command === "undo" || command === "redo";
 }
 
 export function thinkingDigest(

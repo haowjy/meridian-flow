@@ -145,7 +145,7 @@ describe("exact thread creation", () => {
     ]);
     expect(second).toEqual(first);
     expect((await app.repos.threads.listByProject(args.projectId)).length).toBe(1);
-    expect((await app.agentRevisions.readThreadBinding(args.id))?.id).toBe(
+    expect((await app.agentRevisions.readThreadBinding(args.id))?.revision?.id).toBe(
       args.agentSelection.definitionRevisionId,
     );
   });
@@ -179,8 +179,8 @@ describe("exact thread creation", () => {
           ...deps,
           agentRevisions: {
             ...app.agentRevisions,
-            async bindThread(id, revision, configuration) {
-              await app.agentRevisions.bindThread(id, revision, configuration);
+            async bindThread(id, revision, configuration, invocationOverlay) {
+              await app.agentRevisions.bindThread(id, revision, configuration, invocationOverlay);
               throw new Error("after binding");
             },
           },

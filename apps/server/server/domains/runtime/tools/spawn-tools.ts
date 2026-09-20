@@ -2,6 +2,7 @@
  * Spawn primitive tools: spawn (parent-side) and return_result (child-side).
  * Handlers are thin — ChildRunCoordinator owns lifecycle; these only validate input.
  */
+import type { InvocationPatch } from "@meridian/contracts/agents";
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { SpawnResult } from "@meridian/contracts/spawn";
 import type { JsonValue } from "@meridian/contracts/threads";
@@ -12,7 +13,7 @@ import type {
 } from "./types.js";
 
 const SPAWN_DESCRIPTION =
-  "Run a subagent in its own thread to delegate a task. Prefer a named specialist from your subagents roster when one fits; use the generic helper (omit agent or pass an empty string) sparingly. Use mode=background for non-blocking helper checks.";
+  "Run a subagent in its own thread to delegate a task. Prefer a named specialist from your subagents roster when one fits; use the generic subagent (omit agent or pass an empty string) sparingly. Use mode=background for non-blocking subagent checks.";
 const SPAWN_DESCRIPTION_EMPTY_ROSTER = `${SPAWN_DESCRIPTION} You have no named subagents; do not spawn unless the writer asks.`;
 
 export type SpawnToolArgs = {
@@ -20,6 +21,8 @@ export type SpawnToolArgs = {
   prompt: string;
   description?: string;
   mode: "foreground" | "background";
+  append_system_prompt?: string;
+  overrides?: InvocationPatch;
 };
 
 /** One parse for spawn tool arguments. */
@@ -33,6 +36,12 @@ export function parseSpawnToolArgs(input: unknown): SpawnToolArgs {
     prompt: typeof rec.prompt === "string" ? rec.prompt : "",
     ...(typeof rec.description === "string" ? { description: rec.description } : {}),
     mode: rec.mode === "background" ? "background" : "foreground",
+    ...(typeof rec.append_system_prompt === "string"
+      ? { append_system_prompt: rec.append_system_prompt }
+      : {}),
+    ...(rec.overrides !== null && typeof rec.overrides === "object" && !Array.isArray(rec.overrides)
+      ? { overrides: rec.overrides as InvocationPatch }
+      : {}),
   };
 }
 
@@ -55,7 +64,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
             agent: {
               type: "string",
               description:
-                "Named subagent from your subagents roster. Omit or pass an empty string for the generic helper.",
+                "Named subagent from your subagents roster. Omit or pass an empty string for the generic subagent.",
             },
             prompt: { type: "string", description: "Task prompt for the child agent." },
             description: { type: "string", description: "Short label for the subagent thread." },
@@ -64,6 +73,16 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
               enum: ["foreground", "background"],
               description:
                 "foreground waits for return_result; background returns immediately and posts an inline helper result when done.",
+            },
+            append_system_prompt: {
+              type: "string",
+              description:
+                "Appends to this child's system prompt for this invocation only; omit to add nothing.",
+            },
+            overrides: {
+              type: "object",
+              description:
+                "Per-invocation execution patch: model, effort, tools, disallowed-tools, subagents, skills. Omitted fields inherit the child's saved configuration.",
             },
           },
           required: ["prompt"],

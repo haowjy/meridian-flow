@@ -31,11 +31,11 @@ describe("spawnOutputForTranscript", () => {
       description: "Continuity",
     });
     expect(running).toMatchObject({
-      agentName: "Helper",
+      agentName: "Subagent",
       status: "running",
-      childThreadId: "",
       title: "Continuity",
     });
+    expect(running.childThreadId).toBeUndefined();
     const done = spawnHelperCardProps({
       agent: "critic",
       parentTurnId: "turn-1",
@@ -61,14 +61,14 @@ describe("spawnOutputForTranscript", () => {
 
   it("keeps childThreadId on a failed card and titles from description", () => {
     const failed = spawnHelperCardProps({
-      agent: "helper",
+      agent: "subagent",
       description: "Check continuity",
       parentTurnId: "turn-1",
       childThreadId: "child-9",
       output: { status: "error", error: { message: "Child run failed" } },
     });
     expect(failed).toMatchObject({
-      agentName: "Helper",
+      agentName: "Subagent",
       status: "failed",
       summary: "Child run failed",
       childThreadId: "child-9",

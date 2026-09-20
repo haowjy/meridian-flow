@@ -20,6 +20,7 @@ import type {
 } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type { FunctionTool } from "../gateway/index.js";
+import type { SpawnToolArgs } from "./spawn-tools.js";
 
 // ── Payload types (tool call → execution) ──
 
@@ -151,13 +152,7 @@ export type InterruptResponse = InterruptAnswerEnvelope;
  * narrow suspend/resume seam the orchestrator owns.
  */
 export interface SpawnToolHandlerContext extends ToolHandlerContext {
-  spawn(input: {
-    /** Named roster target; omitted or empty selects the generic helper. */
-    agent?: string;
-    prompt: string;
-    description?: string;
-    mode?: "foreground" | "background";
-  }): Promise<SpawnResult>;
+  spawn(input: SpawnToolArgs): Promise<SpawnResult>;
 }
 
 export interface ReturnResultToolHandlerContext extends ToolHandlerContext {

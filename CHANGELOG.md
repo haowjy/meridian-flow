@@ -17,12 +17,18 @@
 - First-turn bake lists Agent `skills.available` slugs (and name when it differs) with descriptions and persists those slugs. An account install after freeze does not rewrite the prompt and does not notify the model.
 - Persist account-scoped skill installs. Debug overlay can add a packaged skill (including `story-review`) or a paste, and delete by slug.
 - Snapshot `creative-writing-modes`, `writing-principles`, and `story-review` into launch-agents. Writer lists the first two as available skills.
-- Advertise the `spawn` tool to every Agent. Named children resolve from the caller's `subagents` roster; an omitted or empty `agent` selects the generic helper, which inherits the caller's model, tools, skills, effort, and roster while the built-in General revision supplies its body. Default max spawn depth is now 3, operator-overridable through `MERIDIAN_MAX_SPAWN_DEPTH`; a deeper spawn is a tool error before any child is created.
+- Advertise the `spawn` tool to every Agent. Named children resolve from the caller's `subagents` roster; an omitted or empty `agent` selects the generic child, which binds no Agent revision and inherits the caller's model, tools, skills, effort, and roster with a host-owned default body. Default max spawn depth is now 3, operator-overridable through `MERIDIAN_MAX_SPAWN_DEPTH`; a deeper spawn is a tool error before any child is created.
+- `spawn` accepts a per-invocation `append_system_prompt` and `overrides` patch (model, effort, tools, disallowed-tools, subagents, skills). `append_system_prompt` appends to the child's system prompt as an additive layer after its immutable Agent body for that run only. The child's effective configuration is patched for that run only, validated so a patch can never grant authority the caller lacks, and persisted with the raw overlay so later turns reuse it. The saved Agent is unchanged.
+- Generic subagents are agent-less: a generic child binds no Agent revision and inherits the caller's configuration, presented as Subagent. The General baseline sentinel and the helper slug are retired. Agent-less children still get host model-availability checks.
 - Parent transcript shows a spawn report card: who ran, the returned summary, and an Open door into the child chat. Spawn uses the same custom-card path as ask_user (tool protocol hidden, card splits Thinking). Neither the card nor the persisted model output carries spawn cost.
 - A subagent's `return_result` records its report, then completes the child turn instead of aborting it. The child transcript renders the summary as a `child-report` `ArtifactCard` titled Return, with the `return_result` protocol hidden.
 
 ### Fixed
 
+- Reject `write` (including case variants and payload-scoped forms like `write(x)`) as an authoring permission name; use `edit` for the document-edit capability. `edit` implies `read`; an explicit `disallowed-tools` read denial is a contradiction.
+- The chat `read`/`skim` expand renders the `meridian.agent-edit.v1` result envelope's block bodies, so a read row opens onto its prose or outline instead of offering no chevron.
+- A collapsed Thinking digest no longer reports a `read(command:"diff")` review as an edited document.
+- A spawn override that names a tool by alias (for example `shell`) folds to its canonical name before the merge, matching authoring. Canonical `xhigh`/`none` effort authored in Mars frontmatter also survives source normalization instead of being dropped.
 - Opening `/chat/{id}` for a subagent no longer shows "This destination is unavailable." Path chat is identity; the primary list is not a lookup. Snapshot miss stays ChatScreen's error. Query `?chat=` still drops missing primaries.
 - Nested subagent Parent back resolves the parent by id on the child snapshot, not the primary-only list.
 - `return_result` persists the protocol result and child-report card in one transaction.
@@ -41,9 +47,11 @@
 - User bubbles render picked `/slug` with the same hover name and description as the composer.
 - Composer `/` menu matches the composer shell width. Picked skills stay visible as `/slug` atoms with a hover name and description, and Send copies that `/slug` into the user message.
 - Proxy Home `GET /api/skills` to the API server so composer `/` can list skills before a thread exists.
+- A read-only Agent now advertises a first-class `read` tool, so Critic reads instead of reporting it cannot. Allowing `write` or `edit` implies document read. Mutating Agents advertise both `read` and `write`, and the `write` tool no longer carries `read`/`diff`. The transcript classifies and renders the `read` tool, and agent-edit outline and resync hints now point at `read(command="read", path=...)`.
 
 ### Changed
 
+- Agent execution configuration has one canonical contract in `@meridian/contracts/agents` (`execution-knobs.ts`): effort value set and `max→xhigh` alias, tool policy, tool-name alias fold, resolved shape, and presence-sensitive patch. The compiler, resolver, invocation patch, and gateway effort mapping are projections, and the patch merge table is compile-time exhaustive so an accepted key cannot be silently dropped.
 - `return_result` records the report and ends this turn; the child chat stays open.
 - Home/Work chat rows and the chat switcher show the bound Agent name; Work is no longer the row identity.
 - The chat switcher no longer shows an unlabeled warning dot for an unanswered `ask_user` on another chat.

@@ -1,5 +1,5 @@
 /** Immutable Agent content and future-chat catalog selection. Callers own resource authorization. */
-import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
+import type { InvocationOverlay, ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import type { CompiledAgentDefinition } from "../domain/agent-definition-compiler.js";
 import type { AgentSourceSnapshot } from "../domain/agent-source-revision.js";
 
@@ -10,8 +10,11 @@ export interface AgentRevision {
   definition: CompiledAgentDefinition;
   definitionDigest: string;
 }
-export interface BoundAgentRevision extends AgentRevision {
+/** Retained per-thread binding; `revision` is null for an agent-less generic subagent. */
+export interface AgentRevisionBinding {
+  revision: AgentRevision | null;
   configuration: ResolvedAgentConfiguration;
+  invocationOverlay: InvocationOverlay | null;
 }
 export interface AgentCatalogEntry {
   id: string;
@@ -87,8 +90,9 @@ export interface AgentRevisionStore {
   restoreOwnedEntry(userId: string, entryId: string, expectedRevisionId: string): Promise<boolean>;
   bindThread(
     threadId: string,
-    revisionId: string,
+    revisionId: string | null,
     configuration: ResolvedAgentConfiguration,
+    invocationOverlay: InvocationOverlay | null,
   ): Promise<boolean>;
-  readThreadBinding(threadId: string): Promise<BoundAgentRevision | undefined>;
+  readThreadBinding(threadId: string): Promise<AgentRevisionBinding | undefined>;
 }

@@ -117,7 +117,7 @@ Meridian Flow's Postgres schema. Key column mappings:
 |---|---|---|
 | `threads.projectId` | `threads.projectId` | Foreign key into Meridian `projects` |
 | `threads.createdBy` | `threads.createdByUserId` | Explicit user-ID column name |
-| `threads.agentName` | **binding join** (`thread_agent_bindings` → `agent_definition_revisions`) | Display name (`metadata.name` or slug); never a threads column |
+| `threads.agentName` | **binding join** (`thread_agent_bindings` → `agent_definition_revisions`) | Display name (`metadata.name` or slug), or `Subagent` when the binding has no revision; never a threads column |
 | `threads.rootThreadId` | `threads.rootThreadId` | Persisted spawn-tree root; primary threads use their own ID |
 | `threads.totalCostUsd` | `threads.totalCostUsd` | Persisted aggregate maintained by repository/projector recompute |
 | `threads.bakedSkillSlugs` | `threads.bakedSkillSlugs` | `null` means not baked; array means first-attempt bake won |
@@ -224,7 +224,8 @@ contract shapes.
   time plus thread ID. The association filter is M:N history among primary
   threads; row Work identity always comes from the current primary membership.
   Bound Agent name is projected from the same binding join as thread list
-  (`metadata.name` or slug) and is the writer-facing row identity.
+  (`metadata.name` or slug, or `Subagent` when the binding has no revision) and
+  is the writer-facing row identity.
   Projection and serialization are bounded to 50 rows per page.
 - Project chat lists have no read/unread state. The user-state route and
   repository persist Favorite only; opening a chat performs no state mutation.

@@ -701,6 +701,13 @@
       "when": 1789667162482,
       "tag": "0099_military_ultragirl",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1789773732885,
+      "tag": "0100_colossal_pride",
+      "breakpoints": true
     }
   ]
 }

@@ -136,7 +136,7 @@ function outlineFromSerialized(
 ): string {
   return serialized
     .flatMap((line, index) => {
-      return [line, `write(command="read", file="${filePath}#${items[index]?.hash ?? line}")`];
+      return [line, `read(command="read", path="${filePath}#${items[index]?.hash ?? line}")`];
     })
     .join("\n");
 }

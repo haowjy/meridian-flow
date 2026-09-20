@@ -3,6 +3,7 @@
  * list/get, soft-delete, and cost recomputation). Thread.workId is projected from
  * the primary thread_works row, not stored on threads.
  */
+import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type { ThreadStatus, TurnRole, TurnStatus } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
@@ -33,9 +34,17 @@ const agentDefinitionRevisionId = sql<string | null>`(
 )`;
 
 const agentName = sql<string | null>`(
-  SELECT COALESCE(${schema.agentDefinitionRevisions.definition}->'metadata'->>'name', ${schema.agentDefinitionRevisions.slug})
+  SELECT
+    CASE
+      WHEN ${schema.threadAgentBindings.definitionRevisionId} IS NULL
+        THEN ${GENERIC_SUBAGENT_NAME}
+      ELSE COALESCE(
+        ${schema.agentDefinitionRevisions.definition}->'metadata'->>'name',
+        ${schema.agentDefinitionRevisions.slug}
+      )
+    END
   FROM ${schema.threadAgentBindings}
-  JOIN ${schema.agentDefinitionRevisions}
+  LEFT JOIN ${schema.agentDefinitionRevisions}
     ON ${schema.agentDefinitionRevisions.id} = ${schema.threadAgentBindings.definitionRevisionId}
   WHERE ${schema.threadAgentBindings.threadId} = ${schema.threads}.${sql.identifier("id")}
 )`;
@@ -190,7 +199,6 @@ export function createDrizzleThreadRepository(
         title: thread.title ?? "",
         composedSystemPrompt: thread.composedSystemPrompt,
         bakedSkillSlugs: thread.bakedSkillSlugs,
-        systemPromptHash: null,
         parentThreadId: thread.parentThreadId,
         rootThreadId: thread.kind === "subagent" ? thread.rootThreadId : null,
         originTurnId: input.originTurnId ?? thread.id,
@@ -210,7 +218,7 @@ export function createDrizzleThreadRepository(
         createdByUserId: thread.userId,
         kind: "primary",
         title: thread.title ?? "",
-        composedSystemPrompt: thread.systemPrompt,
+        composedSystemPrompt: thread.composedSystemPrompt,
         parentThreadId: input.parentThreadId,
         originTurnId: input.originTurnId ?? null,
         originType: input.originType,
@@ -398,7 +406,6 @@ export function createDrizzleThreadRepository(
         .set({
           composedSystemPrompt: input.composedSystemPrompt,
           bakedSkillSlugs: input.bakedSkillSlugs,
-          systemPromptHash: "baked",
           updatedAt: new Date(),
         })
         .where(and(eq(schema.threads.id, id), isNull(schema.threads.bakedSkillSlugs)))
