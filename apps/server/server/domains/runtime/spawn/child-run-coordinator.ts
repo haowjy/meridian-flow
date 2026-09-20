@@ -83,7 +83,6 @@ export interface ChildRunCoordinatorDeps {
     turns: TurnRepository;
     blocks: BlockRepository;
     transaction: ThreadRepositories["transaction"];
-    threadWorks: ThreadRepositories["threadWorks"];
   };
   resolveWorkMembership(input: {
     threadId: ThreadId;
@@ -128,6 +127,8 @@ type ChildTerminal =
 
 type PreparedChild = {
   child: Thread;
+  /** Server-assigned project handle (`pN`); guaranteed non-null once prepared. */
+  handle: string;
   /** Event/thread-visible slug; a named roster name or the generic subagent label. */
   resolvedSlug: string;
   /** Delivery-card title for a background spawn; omitted for continue. */
@@ -453,6 +454,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   ): Promise<PreparedChild> {
     const parentThreadId = child.parentThreadId as ThreadId;
     const childThreadId = child.id as ThreadId;
+    const handle = child.ref;
+    if (handle === null) throw new Error("Prepared child has no concurrency handle");
     const childController = new AbortController();
     let runClaim: ThreadRunClaim | null = null;
     try {
@@ -479,6 +482,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       }
       return {
         child,
+        handle,
         resolvedSlug,
         childController,
         childRegistered: true,
@@ -551,7 +555,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             await enqueueBackgroundReport({
               status: "completed",
               report: {
-                handle: prepared.child.ref ?? "",
+                handle: prepared.handle,
                 threadId: prepared.child.id,
                 summary: capture.summary,
                 ...(capture.payload !== undefined ? { payload: capture.payload } : {}),
@@ -591,7 +595,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           status: "completed",
           report: {
             ...captured,
-            handle: prepared.child.ref ?? "",
+            handle: prepared.handle,
             costMillicredits: childCostMillicredits,
           },
         };
@@ -616,7 +620,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           report: await synthesizeIncompleteReport(
             deps.repos,
             prepared.child.id as ThreadId,
-            prepared.child.ref ?? "",
+            prepared.handle,
             childCostMillicredits,
           ),
         };
@@ -765,7 +769,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
       return {
         status: "background",
-        handle: prepared.child.ref ?? "",
+        handle: prepared.handle,
         threadId: prepared.child.id,
         agentSlug: prepared.resolvedSlug,
         description: input.description,
@@ -828,7 +832,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
       return {
         status: "background",
-        handle: prepared.child.ref ?? "",
+        handle: prepared.handle,
         threadId: prepared.child.id,
         agentSlug: prepared.resolvedSlug,
       };

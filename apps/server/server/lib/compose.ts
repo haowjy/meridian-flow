@@ -697,7 +697,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       turns: ports.threadRepos.turns,
       blocks: ports.threadRepos.blocks,
       transaction: ports.threadRepos.transaction,
-      threadWorks: ports.threadRepos.threadWorks,
     },
     resolveWorkMembership: async (input) => {
       const { resolveWorkMembership } = await import("./work-attachment.js");
