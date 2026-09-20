@@ -4,7 +4,7 @@
  * Tool dispatch runs handlers and durable tool_result rows. This module upserts
  * helper-result custom cards onto the active turn and owns return_result
  * settlement (tool_result + child-report in one persist). Background
- * helper-result-delivery uses the same HelperResultProps builder.
+ * child-report-delivery uses the same HelperResultProps builder.
  */
 import {
   buildChildReportComponentContent,

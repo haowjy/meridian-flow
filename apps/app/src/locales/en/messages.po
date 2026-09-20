@@ -779,7 +779,7 @@ msgstr "Close"
 msgid "Close {0}"
 msgstr "Close {0}"
 
-#: src/features/chat/FormBlock.tsx
+#: src/features/chat/ArtifactGrid.tsx
 msgid "Close artifact preview"
 msgstr "Close artifact preview"
 
@@ -1459,7 +1459,7 @@ msgid "Expand sidebar"
 msgstr "Expand sidebar"
 
 #. placeholder {0}: artifact.expiresAt
-#: src/features/chat/FormBlock.tsx
+#: src/features/chat/ArtifactGrid.tsx
 msgid "expires {0}"
 msgstr "expires {0}"
 
@@ -1664,7 +1664,7 @@ msgstr "Identity"
 msgid "Image"
 msgstr "Image"
 
-#: src/features/chat/FormBlock.tsx
+#: src/features/chat/ArtifactGrid.tsx
 msgid "Image artifact"
 msgstr "Image artifact"
 
@@ -1835,11 +1835,11 @@ msgstr "list"
 msgid "litrpg"
 msgstr "litrpg"
 
-#: src/features/chat/FormBlock.tsx
+#: src/features/chat/ArtifactGrid.tsx
 msgid "Live artifact view"
 msgstr "Live artifact view"
 
-#: src/features/chat/FormBlock.tsx
+#: src/features/chat/ArtifactGrid.tsx
 msgid "Live view"
 msgstr "Live view"
 
@@ -2252,7 +2252,7 @@ msgstr "now"
 msgid "Numbered list"
 msgstr "Numbered list"
 
-#: src/features/chat/FormBlock.tsx
+#: src/features/chat/ArtifactGrid.tsx
 msgid "Object"
 msgstr "Object"
 

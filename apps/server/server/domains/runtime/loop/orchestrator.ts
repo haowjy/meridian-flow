@@ -101,7 +101,6 @@ import type { GenerateRequest, GenerateResult, Gateway as LlmGateway } from "../
 import type { ModelRequestDebugStore } from "../model-request-debug/index.js";
 import type { ImageAssetPort } from "../ports/image-asset.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
-import type { HelperResultDelivery } from "../spawn/helper-result-delivery.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
 import { loadUserSkillBody } from "./available-skills.js";
@@ -180,7 +179,6 @@ export interface OrchestratorDeps {
   /** Interrupt-boundary artifact flush; explicit noop adapter means disabled. */
   interruptArtifacts: InterruptArtifactFlushPort;
   childRunCoordinator: ChildRunCoordinator;
-  helperResultDelivery?: HelperResultDelivery;
   workContextDelivery: Pick<WorkContextDelivery, "deliverNow">;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;

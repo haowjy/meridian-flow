@@ -51,6 +51,15 @@ async function createAppServices(): Promise<AppServices> {
         payload: unknownToEventPayload(cause),
       });
     });
+  const sweepChildReports = () =>
+    void app.childReportDelivery.sweep().catch((cause) => {
+      emitEvent(eventSink, {
+        level: "error",
+        source: "runtime.child-report-delivery",
+        name: "sweep.failed",
+        payload: unknownToEventPayload(cause),
+      });
+    });
   await listenForThreadEvents({
     db,
     journalReader: app.journalReader,
@@ -59,10 +68,12 @@ async function createAppServices(): Promise<AppServices> {
   });
   drain();
   sweepWorkContext();
+  sweepChildReports();
   // Polling is the recovery mechanism as well as the trigger: committed pushes need
   // no in-process callback to survive a crash or a different server process.
   setInterval(drain, CHANGE_TRAIL_POLL_MS).unref();
   setInterval(sweepWorkContext, SYSTEM_UPDATE_SWEEP_MS).unref();
+  setInterval(sweepChildReports, SYSTEM_UPDATE_SWEEP_MS).unref();
   return app;
 }
 
