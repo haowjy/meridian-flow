@@ -99,13 +99,15 @@ import {
 } from "../domains/runtime/agent-definition-support.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
+  type ChildReportDelivery,
   createAdmissionTurnStarter,
+  createChildReportDelivery,
   createChildRunCoordinator,
   createContextImageAssetPort,
   createDrizzleAdmissionRecords,
   createDrizzleThreadRunOwnership,
   createGatewayFromEnv,
-  createHelperResultDelivery,
+  createHostTurnAdmission,
   createInMemoryThreadRunOwnership,
   createInstrumentedGateway,
   createLateBindRunTurnPort,
@@ -119,6 +121,7 @@ import {
   createWorkContextDelivery,
   createWorkContextReader,
   type Gateway,
+  type HostTurnAdmission,
   InvalidAdmissionError,
   type RunTurnPort,
   type ThreadRunOwnership,
@@ -209,6 +212,7 @@ export type AppServices = {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContext: WorkContextReader;
   workContextDelivery: WorkContextDelivery;
+  childReportDelivery: ChildReportDelivery;
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
@@ -604,16 +608,16 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   }
   const toolExecutor = createToolExecutor(toolRegistry);
   const runTurnProxy = createLateBindRunTurnPort();
-  let helperResultDelivery: ReturnType<typeof createHelperResultDelivery> | undefined;
+  let childReportDelivery: ChildReportDelivery | undefined;
   runner = createTurnRunner({
     orchestrator: runTurnProxy,
     hub: threadEventHub,
     repos: { turns: ports.threadRepos.turns },
     eventSink: ports.eventSink,
     runOwnership: ports.runOwnership,
-    helperResultDelivery: {
+    childReportDelivery: {
       async flush(threadId) {
-        await helperResultDelivery?.flush(threadId);
+        await childReportDelivery?.flush(threadId);
       },
     },
     workContextDelivery,
@@ -624,6 +628,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     availability: ports.projectContextAvailability,
     objects: ports.objectStore,
     eventSink: ports.eventSink,
+  });
+  const admissionStarter = createAdmissionTurnStarter({
+    runner,
+    records: admissionRecords,
+    consumeUploads: (documentIds) => ports.uploadIntake.consume(documentIds),
+    attachDocument: (threadId, documentId, relationship) =>
+      ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
   });
   const userTurnAdmission = createUserTurnAdmission({
     runOwnership: ports.runOwnership,
@@ -647,19 +658,32 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       const missing = unavailableActivatedSkillSlugs(available, slugs);
       if (missing[0]) throw new InvalidAdmissionError(`Skill "${missing[0]}" is not available`);
     },
-    starter: createAdmissionTurnStarter({
-      runner,
-      records: admissionRecords,
-      consumeUploads: (documentIds) => ports.uploadIntake.consume(documentIds),
-      attachDocument: (threadId, documentId, relationship) =>
-        ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
-    }),
+    starter: admissionStarter,
   });
-  helperResultDelivery = createHelperResultDelivery({
+  const hostTurnAdmission: HostTurnAdmission = createHostTurnAdmission({
+    records: admissionRecords,
+    runOwnership: ports.runOwnership,
+    starter: admissionStarter,
+  });
+  const childReportDeliveryInstance = createChildReportDelivery({
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
-    getRunningTurnId: (threadId) => runner.getRunningTurnId(threadId),
+    admission: hostTurnAdmission,
+    isThreadRunning: (threadId) => runner.isThreadRunning(threadId),
+    schedulePostCommit(task) {
+      runAfterDrizzleCommit(() => {
+        void task().catch((cause) => {
+          emitEvent(ports.eventSink, {
+            level: "error",
+            source: "runtime.child-report-delivery",
+            name: "delivery.failed",
+            payload: unknownToEventPayload(cause),
+          });
+        });
+      });
+    },
   });
+  childReportDelivery = childReportDeliveryInstance;
   const childRunCoordinator = createChildRunCoordinator({
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
@@ -687,7 +711,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventWriter: ports.journalWriter,
     agentRevisions: ports.agentRevisions,
     childRunRegistry: runner.childRunRegistry,
-    helperResultDelivery,
+    childReportDelivery: childReportDeliveryInstance,
     workContextDelivery: workContextDelivery,
     runOwnership: ports.runOwnership,
     billingSpendReader: ports.billingSpendReader,
@@ -711,7 +735,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     workContext,
     childRunCoordinator,
-    helperResultDelivery,
     workContextDelivery: workContextDelivery,
     interruptRegistry,
     billingUsage: ports.billingUsage,
@@ -754,6 +777,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workAuthorityResolver: ports.workAuthorityResolver,
     workContext,
     workContextDelivery,
+    childReportDelivery: childReportDeliveryInstance,
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
     agentCatalog: createBoundAgentCatalog({
@@ -832,6 +856,11 @@ export function createInMemoryAppServices(): AppServices {
     async deliverNow() {
       throw new Error("in-memory Work context is not configured");
     },
+  };
+  const noopChildReportDelivery: ChildReportDelivery = {
+    async enqueue() {},
+    async flush() {},
+    async sweep() {},
   };
 
   const inMemoryThreadEventHub: ThreadEventHub = {
@@ -1118,6 +1147,7 @@ export function createInMemoryAppServices(): AppServices {
     workAuthorityResolver,
     workContext: unavailableWorkContext,
     workContextDelivery: noopWorkContextDelivery,
+    childReportDelivery: noopChildReportDelivery,
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog: createBoundAgentCatalog({
