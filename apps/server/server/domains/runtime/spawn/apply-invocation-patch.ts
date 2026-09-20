@@ -38,9 +38,6 @@ type PatchMerge<K extends keyof InvocationPatch> = (
 /**
  * One merge per patch key. The mapped type makes a knob added to
  * `invocationPatchSchema` without a merge a compile error.
- *
- * Test-visible: the coverage test iterates `invocationPatchSchema.shape` and
- * asserts every key has an entry here.
  */
 export const PATCH_MERGES: { [K in keyof InvocationPatch]-?: PatchMerge<K> } = {
   model: (value) => ({ model: value }),
