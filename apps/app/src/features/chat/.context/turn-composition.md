@@ -164,11 +164,16 @@ AssistantTurn.tsx
 `tool-renderers.tsx` is the registry for tool-name-specific presentation. Registry
 keys must be real runtime tool names from
 `apps/server/server/domains/runtime/tools/`. The current runtime surface is
-`write`, `work`, `ls`, `search`, `ask_user`, `spawn`, and `return_result`.
-`ask_user`, `spawn`, and `return_result` render through custom cards
-(`choice`/`form`/`free-text`, `helper-result` → `SpawnReportCard`, and
+`write`, `work`, `ls`, `search`, `ask_user`, `spawn`, `continue`, and
+`return_result`. `ask_user`, `spawn`, and `return_result` render through custom
+cards (`choice`/`form`/`free-text`, `helper-result` → `SpawnReportCard`, and
 `child-report` → `ChildReportBlock`), all built on the shared `ArtifactCard` shell
 (`icon`/`tone`/`title`/`door`/`hint`/children). Their tool rows are hidden.
+`continue` reuses the `helper-result` card, but `tool-view-visibility.ts` does
+not yet hide its protocol rows, so it currently falls through to the bare-name
+process row (tracked in `.context/TODO.md`). Card `artifacts[]` render through
+the shared `ArtifactGrid` (`ArtifactGrid.tsx`), reused by `FormBlock`,
+`SpawnReportCard`, and `ChildReportBlock`.
 Process tools (`write`, `work`, `ls`, `search`) render as `ActivityRow`.
 `tool-kind.ts` names the split: an **artifact** result is writer-facing
 (custom card, image) and never folds; a **process** tool is scaffolding.
