@@ -81,29 +81,29 @@ describe("spawn tool input schema", () => {
 });
 
 describe("parseContinueToolArgs", () => {
-  it("keeps conversation_id and prompt and defaults mode to foreground", () => {
-    const args = parseContinueToolArgs({ conversation_id: "child-1", prompt: "keep going" });
+  it("keeps handle and prompt and defaults mode to foreground", () => {
+    const args = parseContinueToolArgs({ handle: "s1", prompt: "keep going" });
     expect(args).toEqual({
-      conversation_id: "child-1",
+      handle: "s1",
       prompt: "keep going",
       mode: "foreground",
     });
-    expect(
-      parseContinueToolArgs({ conversation_id: "child-1", prompt: "x", mode: "background" }).mode,
-    ).toBe("background");
-    expect(
-      parseContinueToolArgs({ conversation_id: "child-1", prompt: "x", mode: "sideways" }).mode,
-    ).toBe("foreground");
+    expect(parseContinueToolArgs({ handle: "s1", prompt: "x", mode: "background" }).mode).toBe(
+      "background",
+    );
+    expect(parseContinueToolArgs({ handle: "s1", prompt: "x", mode: "sideways" }).mode).toBe(
+      "foreground",
+    );
   });
 
   it("drops malformed non-string fields", () => {
-    expect(parseContinueToolArgs({ conversation_id: 7, prompt: 42 })).toEqual({
-      conversation_id: "",
+    expect(parseContinueToolArgs({ handle: 7, prompt: 42 })).toEqual({
+      handle: "",
       prompt: "",
       mode: "foreground",
     });
     expect(parseContinueToolArgs(null)).toEqual({
-      conversation_id: "",
+      handle: "",
       prompt: "",
       mode: "foreground",
     });
@@ -111,9 +111,13 @@ describe("parseContinueToolArgs", () => {
 });
 
 describe("continue tool input schema", () => {
-  it("requires conversation_id and prompt, defaults unstated mode, and rejects escalation fields", () => {
+  it("requires handle and prompt, defaults unstated mode, and rejects escalation fields", () => {
     const schema = continueSchema();
-    expect(schema.required).toEqual(["conversation_id", "prompt"]);
+    expect(schema.required).toEqual(["handle", "prompt"]);
+    expect(schema.properties.handle).toEqual({
+      type: "string",
+      description: expect.any(String),
+    });
     expect(schema.additionalProperties).toBe(false);
     expect(schema.properties.mode).toEqual({
       type: "string",

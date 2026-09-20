@@ -5,8 +5,6 @@
  * its callers.
  */
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
-import { isUuid } from "@meridian/contracts/request-id";
-import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Thread } from "@meridian/contracts/threads";
 import type { ThreadRepository } from "../../threads/index.js";
 
@@ -19,6 +17,8 @@ export type ContinueTargetOutcome =
   | { ok: true; target: ContinueTarget }
   | { ok: false; error: MeridianError };
 
+const HANDLE_PATTERN = /^[cs][1-9]\d*$/;
+
 function notFound(): ContinueTargetOutcome {
   return {
     ok: false,
@@ -28,13 +28,16 @@ function notFound(): ContinueTargetOutcome {
 
 export async function authorizeContinueTarget(input: {
   callerThread: Thread;
-  targetThreadId: ThreadId;
-  threads: Pick<ThreadRepository, "findById">;
+  targetHandle: string;
+  threads: Pick<ThreadRepository, "findLiveByProjectRef">;
 }): Promise<ContinueTargetOutcome> {
-  // Reject malformed ids before the DB, whose uuid cast would otherwise leak a
-  // Postgres syntax error instead of the uniform not-found answer.
-  if (!isUuid(input.targetThreadId)) return notFound();
-  const target = await input.threads.findById(input.targetThreadId);
+  // Reject a malformed handle before the DB, so an unknown value stays a
+  // uniform not-found rather than a low-level lookup error.
+  if (!HANDLE_PATTERN.test(input.targetHandle)) return notFound();
+  const target = await input.threads.findLiveByProjectRef(
+    input.callerThread.projectId,
+    input.targetHandle,
+  );
   if (!target) return notFound();
   if (
     target.projectId !== input.callerThread.projectId ||

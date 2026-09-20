@@ -70,7 +70,7 @@ export interface SpawnChildInput extends ChildDriveInput {
 }
 
 export interface ContinueChildInput extends ChildDriveInput {
-  childThreadId: ThreadId;
+  handle: string;
   /** Parent-turn card writer; foreground continue upserts running then completed. */
   transcript?: SpawnTranscript;
 }
@@ -78,7 +78,7 @@ export interface ContinueChildInput extends ChildDriveInput {
 export interface ChildRunCoordinatorDeps {
   orchestrator: RunTurnPort;
   repos: {
-    threads: Pick<ThreadRepository, "updateSpawnLifecycle" | "findById">;
+    threads: Pick<ThreadRepository, "updateSpawnLifecycle" | "findLiveByProjectRef">;
     subagentThreads: SubagentThreadFactory;
     turns: TurnRepository;
     blocks: BlockRepository;
@@ -143,6 +143,7 @@ type PreparedChild = {
 async function synthesizeIncompleteReport(
   repos: ChildRunCoordinatorDeps["repos"],
   childThreadId: ThreadId,
+  handle: string,
   costMillicredits: number,
 ): Promise<AgentReport> {
   const turns = await repos.turns.listByThread(childThreadId);
@@ -163,6 +164,7 @@ async function synthesizeIncompleteReport(
     break;
   }
   return {
+    handle,
     threadId: childThreadId as string,
     summary,
     costMillicredits,
@@ -172,7 +174,7 @@ async function synthesizeIncompleteReport(
 
 export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildRunCoordinator {
   const runOwnership = deps.runOwnership ?? createInMemoryThreadRunOwnership();
-  const pendingReports = new Map<string, AgentReport>();
+  const pendingReports = new Map<string, Omit<AgentReport, "handle" | "costMillicredits">>();
 
   function createReturnResultCompleter(
     childThreadId: ThreadId,
@@ -195,7 +197,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           summary: capture.summary,
           payload: capture.payload,
           artifacts: capture.artifacts,
-          costMillicredits: 0,
         });
         // Runs at the moment the report is produced, before the child turn
         // settles and before driveChild can continue.
@@ -548,6 +549,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             await enqueueBackgroundReport({
               status: "completed",
               report: {
+                handle: prepared.child.ref ?? "",
                 threadId: prepared.child.id,
                 summary: capture.summary,
                 ...(capture.payload !== undefined ? { payload: capture.payload } : {}),
@@ -585,7 +587,11 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       if (captured) {
         spawnResult = {
           status: "completed",
-          report: { ...captured, costMillicredits: childCostMillicredits },
+          report: {
+            ...captured,
+            handle: prepared.child.ref ?? "",
+            costMillicredits: childCostMillicredits,
+          },
         };
       } else if (childTerminal?.type === "cancelled") {
         terminalStatus = "cancelled";
@@ -608,6 +614,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
           report: await synthesizeIncompleteReport(
             deps.repos,
             prepared.child.id as ThreadId,
+            prepared.child.ref ?? "",
             childCostMillicredits,
           ),
         };
@@ -756,6 +763,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
       return {
         status: "background",
+        handle: prepared.child.ref ?? "",
         threadId: prepared.child.id,
         agentSlug: prepared.resolvedSlug,
         description: input.description,
@@ -765,7 +773,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     async continueChild(input: ContinueChildInput): Promise<SpawnResult> {
       const authorized = await authorizeContinueTarget({
         callerThread: input.parentThread,
-        targetThreadId: input.childThreadId,
+        targetHandle: input.handle,
         threads: deps.repos.threads,
       });
       if (!authorized.ok) return { status: "error", error: authorized.error };
@@ -806,7 +814,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     async continueChildBackground(input: ContinueChildInput): Promise<SpawnResult> {
       const authorized = await authorizeContinueTarget({
         callerThread: input.parentThread,
-        targetThreadId: input.childThreadId,
+        targetHandle: input.handle,
         threads: deps.repos.threads,
       });
       if (!authorized.ok) return { status: "error", error: authorized.error };
@@ -818,6 +826,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
       return {
         status: "background",
+        handle: prepared.child.ref ?? "",
         threadId: prepared.child.id,
         agentSlug: prepared.resolvedSlug,
       };

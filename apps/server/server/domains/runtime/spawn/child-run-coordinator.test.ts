@@ -360,6 +360,23 @@ describe("ChildRunCoordinator spawn selection", () => {
     expect(binding?.configuration["disallowed-tools"]).toBeUndefined();
   });
 
+  it("allocates cN for primaries and sN for subagents from one project counter", async () => {
+    const { coordinator, parent, repos } = await fixture();
+    expect(parent.ref).toBe("c1");
+    const result = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      budget,
+    });
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    expect(result.report.handle).toBe("s2");
+    const child = await repos.threads.findById(result.report.threadId);
+    expect(child?.ref).toBe("s2");
+  });
+
   it("omits spawned children from writer-facing lists while Open by id still works", async () => {
     const { coordinator, parent, repos } = await fixture();
     const result = await coordinator.spawnChild({
@@ -570,6 +587,8 @@ describe("ChildRunCoordinator continue", () => {
     expect(spawned.status).toBe("completed");
     if (spawned.status !== "completed") return;
     const childId = spawned.report.threadId as ThreadId;
+    const childHandle = spawned.report.handle;
+    expect(childHandle).toMatch(/^s[1-9]\d*$/);
     const before = await revisions.readThreadBinding(childId);
     expect(before?.revision?.slug).toBe("critic");
     expect(before?.invocationOverlay).toEqual({ appendSystemPrompt: "child guidance" });
@@ -577,13 +596,14 @@ describe("ChildRunCoordinator continue", () => {
     const continued = await coordinator.continueChild({
       parentThread: parent,
       parentTurnId: "turn-2" as TurnId,
-      childThreadId: childId,
+      handle: childHandle,
       prompt: "keep going",
       budget,
     });
     expect(continued.status).toBe("completed");
     if (continued.status !== "completed") return;
     expect(continued.report.threadId).toBe(childId);
+    expect(continued.report.handle).toBe(childHandle);
     expect(continued.report.summary).not.toBe(spawned.report.summary);
 
     const last = turns[turns.length - 1];
@@ -603,18 +623,19 @@ describe("ChildRunCoordinator continue", () => {
     });
     if (spawned.status !== "completed") throw new Error("spawn failed");
     const childId = spawned.report.threadId as ThreadId;
+    const childHandle = spawned.report.handle;
 
     const first = await coordinator.continueChild({
       parentThread: parent,
       parentTurnId: "turn-2" as TurnId,
-      childThreadId: childId,
+      handle: childHandle,
       prompt: "first follow-up",
       budget,
     });
     const second = await coordinator.continueChild({
       parentThread: parent,
       parentTurnId: "turn-3" as TurnId,
-      childThreadId: childId,
+      handle: childHandle,
       prompt: "second follow-up",
       budget,
     });
@@ -646,7 +667,7 @@ describe("ChildRunCoordinator continue", () => {
       const busy = await coordinator.continueChild({
         parentThread: parent,
         parentTurnId: "turn-2" as TurnId,
-        childThreadId: childId,
+        handle: spawned.report.handle,
         prompt: "again",
         budget,
       });
@@ -678,7 +699,7 @@ describe("ChildRunCoordinator continue", () => {
     const result = await coordinator.continueChild({
       parentThread: parent,
       parentTurnId: "turn-2" as TurnId,
-      childThreadId: child.id as ThreadId,
+      handle: child.ref ?? "",
       prompt: "keep going",
       budget,
     });
@@ -731,12 +752,13 @@ describe("ChildRunCoordinator continue", () => {
     const background = await coordinator.continueChildBackground({
       parentThread: parent,
       parentTurnId: "turn-2" as TurnId,
-      childThreadId: childId,
+      handle: spawned.report.handle,
       prompt: "run in the background",
       budget,
     });
     expect(background.status).toBe("background");
     if (background.status !== "background") return;
+    expect(background.handle).toBe(spawned.report.handle);
 
     await vi.waitFor(() => expect(deliveries).toHaveLength(1));
     expect(deliveries[0]).toMatchObject({
@@ -758,12 +780,11 @@ describe("ChildRunCoordinator continue", () => {
       budget,
     });
     if (spawned.status !== "completed") throw new Error("spawn failed");
-    const childId = spawned.report.threadId as ThreadId;
 
     const continued = await coordinator.continueChild({
       parentThread: parent,
       parentTurnId: "turn-2" as TurnId,
-      childThreadId: childId,
+      handle: spawned.report.handle,
       prompt: "keep going",
       budget,
     });
@@ -849,7 +870,7 @@ describe("ChildRunCoordinator continue", () => {
     const continued = await coordinator.continueChild({
       parentThread: parent,
       parentTurnId: "turn-2" as TurnId,
-      childThreadId: childId,
+      handle: spawned.report.handle,
       prompt: "again",
       budget,
     });
@@ -860,12 +881,12 @@ describe("ChildRunCoordinator continue", () => {
     expect(after?.spawnResult).toEqual(before?.spawnResult);
   });
 
-  it("returns continue_target_not_found for a malformed conversation id", async () => {
+  it("returns continue_target_not_found for a malformed handle", async () => {
     const { coordinator, parent } = await fixture();
     const result = await coordinator.continueChild({
       parentThread: parent,
       parentTurnId: "turn-1" as TurnId,
-      childThreadId: "not-a-uuid" as ThreadId,
+      handle: "not-a-handle",
       prompt,
       budget,
     });

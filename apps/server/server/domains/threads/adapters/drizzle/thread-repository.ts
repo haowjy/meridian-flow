@@ -145,19 +145,16 @@ async function insertThreadRow(
 ) {
   return runInDrizzleTransaction(db, async () => {
     const activeDb = currentDrizzleDb(db);
-    let ref: string | null = null;
-    if (values.kind !== "subagent") {
-      const [counter] = await activeDb
-        .insert(schema.projectThreadCounters)
-        .values({ projectId: values.projectId as ProjectId, n: 1 })
-        .onConflictDoUpdate({
-          target: schema.projectThreadCounters.projectId,
-          set: { n: sql`${schema.projectThreadCounters.n} + 1` },
-        })
-        .returning({ n: schema.projectThreadCounters.n });
-      if (!counter) throw new Error("Failed to allocate thread ref");
-      ref = `c${counter.n}`;
-    }
+    const [counter] = await activeDb
+      .insert(schema.projectThreadCounters)
+      .values({ projectId: values.projectId as ProjectId, n: 1 })
+      .onConflictDoUpdate({
+        target: schema.projectThreadCounters.projectId,
+        set: { n: sql`${schema.projectThreadCounters.n} + 1` },
+      })
+      .returning({ n: schema.projectThreadCounters.n });
+    if (!counter) throw new Error("Failed to allocate thread ref");
+    const ref = `${values.kind === "subagent" ? "s" : "c"}${counter.n}`;
     const [created] = await activeDb
       .insert(schema.threads)
       .values({ ...values, ref })
