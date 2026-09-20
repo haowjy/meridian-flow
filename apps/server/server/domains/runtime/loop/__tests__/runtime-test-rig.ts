@@ -15,6 +15,7 @@ import {
   createThreadEventHub,
   type SequencedEventInternal,
 } from "../../../threads/index.js";
+import { createInMemoryRunAuthority } from "../../adapters/in-memory/loop-ports.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
 import { createInterruptRegistry } from "../interrupts.js";
@@ -150,6 +151,7 @@ export class RuntimeTestRig {
       hub,
       repos: { turns: repos.turns },
       eventSink,
+      runAuthority: createInMemoryRunAuthority(),
     });
     const thread = await repos.threads.create({ userId, projectId: project.id });
     await creditLedger.grant({

@@ -35,7 +35,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createWorkContextDelivery } = await import("./work-context-delivery.js");
     const { createTurnRunner } = await import("./turn-runner.js");
-    const { createDrizzleThreadRunOwnership } = await import(
+    const { createDrizzleRunAuthority, createDrizzleThreadRunOwnership } = await import(
       "../adapters/drizzle-thread-run-ownership.js"
     );
     const { createInMemoryEventSink } = await import("../../observability/index.js");
@@ -258,7 +258,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           eventSink: createInMemoryEventSink(),
         }),
         repos: { turns: createDrizzleRepositoriesForTest(db).turns },
-        runOwnership: createDrizzleThreadRunOwnership(db),
+        runAuthority: createDrizzleRunAuthority(db),
       });
 
       const starts = await Promise.allSettled([

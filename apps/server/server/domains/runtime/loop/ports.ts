@@ -10,6 +10,9 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 
 export type RunId = string;
 
+/** Lease lifetime; a held lease is renewed at a third of this interval. */
+export const DEFAULT_LEASE_TTL_MS = 30_000;
+
 export type ThreadPhase = "generating" | "waiting";
 
 /** `awake` means a live lease exists; `phase` is what its holder published. */

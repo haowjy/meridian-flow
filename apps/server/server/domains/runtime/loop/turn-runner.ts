@@ -42,12 +42,8 @@ import {
   TurnStartConflictError,
 } from "../../threads/index.js";
 import type { ChildReportDelivery } from "../spawn/child-report-delivery.js";
+import type { Lease, RunAuthority } from "./ports.js";
 import type { RunTurnPort } from "./run-turn-port.js";
-import {
-  createInMemoryThreadRunOwnership,
-  type ThreadRunClaim,
-  type ThreadRunOwnership,
-} from "./thread-run-ownership.js";
 
 export type TurnRunner = ReturnType<typeof createTurnRunner>;
 
@@ -71,7 +67,6 @@ export interface ChildRunRegistry {
 type RunningTurn = {
   controller: AbortController;
   assistantTurnId?: TurnId;
-  claim?: ThreadRunClaim;
 };
 
 type ChildRun = {
@@ -94,10 +89,10 @@ export function createTurnRunner(deps: {
   eventSink: EventSink;
   childReportDelivery?: Pick<ChildReportDelivery, "flush">;
   workContextDelivery: Pick<WorkContextDelivery, "beforeTurn" | "flushOwned">;
-  runOwnership?: ThreadRunOwnership;
+  runAuthority: RunAuthority;
 }) {
   const eventSink = deps.eventSink;
-  const runOwnership = deps.runOwnership ?? createInMemoryThreadRunOwnership();
+  const runAuthority = deps.runAuthority;
   const running = new Map<ThreadId, RunningTurn>();
   /** WS peers currently connected; a token not in this set cannot authorize a new turn start. */
   const liveConnectionTokens = new Set<string>();
@@ -192,11 +187,11 @@ export function createTurnRunner(deps: {
       running.set(input.threadId, {
         controller,
       });
-      let claim: ThreadRunClaim | null = null;
+      let lease: Lease | null = null;
       try {
-        claim = await runOwnership.tryAcquire(input.threadId);
-        if (!claim) throw new TurnStartConflictError(input.threadId, "already_running");
-        running.set(input.threadId, { controller, claim });
+        lease = await runAuthority.acquire(input.threadId, crypto.randomUUID());
+        if (!lease) throw new TurnStartConflictError(input.threadId, "already_running");
+        const heldLease: Lease = lease;
 
         assertConnectionTokenLive(input.connectionToken);
 
@@ -232,7 +227,6 @@ export function createTurnRunner(deps: {
         running.set(input.threadId, {
           controller,
           assistantTurnId: handle.assistantTurnId,
-          claim,
         });
 
         void (async () => {
@@ -269,7 +263,7 @@ export function createTurnRunner(deps: {
               await deps.workContextDelivery.flushOwned(input.threadId);
             } finally {
               try {
-                await claim.release();
+                await runAuthority.release(heldLease);
                 childRunRegistry.abortChildrenOf(input.threadId);
               } finally {
                 // After release: a pending report's continuation must not contend
@@ -288,7 +282,7 @@ export function createTurnRunner(deps: {
         };
       } catch (error) {
         running.delete(input.threadId);
-        await claim?.release();
+        if (lease) await runAuthority.release(lease);
         throw error;
       }
     },

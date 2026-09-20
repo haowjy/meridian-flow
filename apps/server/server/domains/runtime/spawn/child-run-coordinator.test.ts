@@ -16,9 +16,9 @@ import {
   serializeMarkdownDefinition,
 } from "../../packages/index.js";
 import { createInMemoryRepositories, type EventJournalWriter } from "../../threads/index.js";
+import { createInMemoryRunAuthority } from "../adapters/in-memory/loop-ports.js";
 import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { RunTurnPort } from "../loop/run-turn-port.js";
-import { createInMemoryThreadRunOwnership } from "../loop/thread-run-ownership.js";
 import { createToolRegistry, resolveAgentThreadTurnContext } from "../tools/index.js";
 import type { ChildReportEnqueue } from "./child-report-delivery.js";
 import { createChildRunCoordinator } from "./child-run-coordinator.js";
@@ -130,7 +130,7 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
   const abortedChildren: string[] = [];
   const turns: RecordedTurn[] = [];
   const deliveries: ChildReportEnqueue[] = [];
-  const runOwnership = createInMemoryThreadRunOwnership();
+  const runAuthority = createInMemoryRunAuthority();
   const eventWriter: EventJournalWriter = {
     async appendEvent(_threadId, event) {
       journal.push(event as unknown as { type: string; childThreadId?: string });
@@ -165,7 +165,7 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
       },
     },
     workContextDelivery: { async flushOwned() {} },
-    runOwnership,
+    runAuthority,
     billingSpendReader: {
       async getThreadDebitTotal() {
         return "0";
@@ -199,7 +199,7 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
     abortedChildren,
     turns,
     deliveries,
-    runOwnership,
+    runAuthority,
     eventWriter,
   };
 }
@@ -724,7 +724,7 @@ describe("ChildRunCoordinator continue", () => {
   });
 
   it("returns continue_target_busy without touching the child lifecycle or events", async () => {
-    const { coordinator, parent, repos, journal, runOwnership } = await fixture();
+    const { coordinator, parent, repos, journal, runAuthority } = await fixture();
     const spawned = await coordinator.runChild(
       {
         kind: "spawn",
@@ -741,8 +741,8 @@ describe("ChildRunCoordinator continue", () => {
     const before = await repos.threads.findById(childId);
     const completions = journal.filter((event) => event.type === "agent.run_completed").length;
 
-    const claim = await runOwnership.tryAcquire(childId);
-    expect(claim).not.toBeNull();
+    const heldLease = await runAuthority.acquire(childId, "blocking-run");
+    expect(heldLease).not.toBeNull();
     try {
       const busy = await coordinator.runChild(
         {
@@ -763,7 +763,7 @@ describe("ChildRunCoordinator continue", () => {
         expect(busy.error.message).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
       }
     } finally {
-      await claim?.release();
+      if (heldLease) await runAuthority.release(heldLease);
     }
 
     const after = await repos.threads.findById(childId);

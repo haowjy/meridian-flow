@@ -10,11 +10,10 @@ import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
 import { and, eq, gt } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
-import type { RunAuthority, ThreadPhase } from "../loop/ports.js";
+import { DEFAULT_LEASE_TTL_MS, type RunAuthority, type ThreadPhase } from "../loop/ports.js";
 import type { ThreadRunOwnership } from "../loop/thread-run-ownership.js";
 
 const THREAD_RUN_LOCK_SEED = 81n;
-const DEFAULT_LEASE_TTL_MS = 30_000;
 
 interface ThreadRunLockClaim {
   release(): Promise<void>;
