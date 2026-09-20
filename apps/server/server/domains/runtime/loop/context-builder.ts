@@ -34,10 +34,12 @@
  *   injected as a separate system message containing JSON-serialized state.
  *   This gives the model persistent scratch space across turns.
  *
- * - **Custom block filtering**: custom blocks are UI surfaces only. Interrupt
- *   Q&A already travels through the ask_user tool_use input and tool_result
- *   output; projecting the UI block into the assistant message would break
- *   Anthropic's required tool_use→tool_result adjacency.
+ * - **Custom block filtering**: custom blocks are UI surfaces. Interrupt Q&A
+ *   already travels through the ask_user tool_use input and tool_result output;
+ *   projecting the UI block into the assistant message would break Anthropic's
+ *   required tool_use→tool_result adjacency. System turns are the one exception:
+ *   a completed `helper-result` card projects as text so the parent model reads
+ *   a background child's report, while the writer keeps the card.
  *
  * - **User turns**: all blocks of allowed types (text, image, file)
  *   are merged into a single user message's content[] array.
@@ -51,6 +53,7 @@
  *   content, not as turn-structured data.
  */
 
+import type { ComponentBlockContent, HelperResultProps } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
 import { formatWorkSwitchedNotice, type Notice } from "../../notices/index.js";
@@ -149,7 +152,15 @@ export function buildContext(input: BuildContextInput): {
     }
     if (turn.role === "system") {
       const textParts = turnBlocks
-        .flatMap((b) => (b.blockType === "text" && b.textContent ? [b.textContent] : []))
+        .flatMap((b) =>
+          b.blockType === "text" && b.textContent
+            ? [b.textContent]
+            : b.blockType === "custom"
+              ? [componentModelText(b.content as ComponentBlockContent)].filter(
+                  (v): v is string => !!v,
+                )
+              : [],
+        )
         .join("\n");
       if (textParts) messages.push(system(textParts));
       continue;
@@ -240,6 +251,21 @@ function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]
     if (part) parts.push(part);
   }
   return parts;
+}
+
+// Projects a system-turn custom card into the model-facing text. Only the
+// delivered background report (`helper-result`) has model meaning; the card
+// itself stays in the writer transcript. A running card has nothing to report.
+function componentModelText(content: ComponentBlockContent): string | null {
+  if (content.kind !== "helper-result") return null;
+  const props = content.props as HelperResultProps;
+  if (props.status === "running") return null;
+  const lines = [
+    `Background subagent "${props.agentName}" ${props.status === "failed" ? "failed" : "reported"}.`,
+    props.summary ?? "",
+    props.payload !== undefined ? JSON.stringify(props.payload) : "",
+  ].filter(Boolean);
+  return lines.join("\n");
 }
 
 // Converts a single block into a gateway ContentPart.
