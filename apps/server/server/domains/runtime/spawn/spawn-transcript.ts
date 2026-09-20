@@ -74,7 +74,7 @@ export async function persistCustomCard(
   return persisted.result;
 }
 
-export async function persistSpawnHelperCard(
+export async function persistHelperCard(
   transcript: SpawnTranscript | undefined,
   input: Parameters<typeof spawnHelperCardProps>[0],
   existing?: Block | null,

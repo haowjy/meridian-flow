@@ -6,7 +6,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture } from "@meridian/contracts/spawn";
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { InMemoryTransactionOwner } from "../../../shared/in-memory-transaction.js";
 import {
   type AgentRevision,
@@ -19,17 +19,29 @@ import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js"
 import type { RunTurnPort } from "../loop/run-turn-port.js";
 import { createInMemoryThreadRunOwnership } from "../loop/thread-run-ownership.js";
 import { createToolRegistry, resolveAgentThreadTurnContext } from "../tools/index.js";
+import type { ChildReportEnqueue } from "./child-report-delivery.js";
 import { createChildRunCoordinator } from "./child-run-coordinator.js";
+import type { SpawnTranscript } from "./spawn-transcript.js";
 
-function stubOrchestrator(): RunTurnPort {
+type RecordedTurn = {
+  threadId: ThreadId;
+  userText: string;
+  assistantTurnId: TurnId;
+};
+
+function stubOrchestrator(records: RecordedTurn[]): RunTurnPort {
+  let counter = 0;
   return {
     async runTurn(input) {
+      counter += 1;
+      const assistantTurnId = `assistant-turn-${counter}` as TurnId;
+      records.push({ threadId: input.threadId, userText: input.userText, assistantTurnId });
       await input.returnResultCompleter?.({
-        summary: "child report",
+        summary: `child report ${counter}`,
       } satisfies ReturnResultCapture);
       return {
-        userTurnId: "user-turn" as TurnId,
-        assistantTurnId: "assistant-turn" as TurnId,
+        userTurnId: `user-turn-${counter}` as TurnId,
+        assistantTurnId,
         events: (async function* () {})(),
       };
     },
@@ -110,6 +122,9 @@ async function fixture() {
 
   const journal: Array<{ type: string; childThreadId?: string }> = [];
   const abortedChildren: string[] = [];
+  const turns: RecordedTurn[] = [];
+  const deliveries: ChildReportEnqueue[] = [];
+  const runOwnership = createInMemoryThreadRunOwnership();
   const eventWriter: EventJournalWriter = {
     async appendEvent(_threadId, event) {
       journal.push(event as unknown as { type: string; childThreadId?: string });
@@ -118,7 +133,7 @@ async function fixture() {
   };
 
   const coordinator = createChildRunCoordinator({
-    orchestrator: stubOrchestrator(),
+    orchestrator: stubOrchestrator(turns),
     repos: {
       threads: repos.threads,
       subagentThreads: repos.threads,
@@ -144,14 +159,13 @@ async function fixture() {
       },
       abortChildrenOf() {},
     },
-    helperResultDelivery: {
-      async deliverOrQueue() {},
-      async flush() {},
-      markRunning() {},
-      async markIdleAndFlush() {},
+    childReportDelivery: {
+      async enqueue(input) {
+        deliveries.push(input);
+      },
     },
     workContextDelivery: { async flushOwned() {} },
-    runOwnership: createInMemoryThreadRunOwnership(),
+    runOwnership,
     billingSpendReader: {
       async getThreadDebitTotal() {
         return "0";
@@ -168,11 +182,29 @@ async function fixture() {
     critic: critic as AgentRevision,
     journal,
     abortedChildren,
+    turns,
+    deliveries,
+    runOwnership,
+    eventWriter,
   };
 }
 
 const prompt = "do the thing";
 const budget = createDefaultTreeBudget();
+
+function transcriptFor(
+  threadId: ThreadId,
+  deps: { repos: ReturnType<typeof createInMemoryRepositories>; eventWriter: EventJournalWriter },
+): SpawnTranscript {
+  return {
+    persistence: { repos: deps.repos, eventWriter: deps.eventWriter },
+    threadId,
+    turnId: "card-turn",
+    blockSeqRef: { value: 0 },
+    allBlocks: [],
+    events: [],
+  };
+}
 
 describe("ChildRunCoordinator spawn selection", () => {
   it("records one report without aborting; a second return is refused", async () => {
@@ -514,5 +546,221 @@ describe("ChildRunCoordinator invocation overlay", () => {
       expect(result.error.code).toBe("spawn_agent_unavailable");
     }
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
+  });
+});
+
+describe("ChildRunCoordinator continue", () => {
+  it("runs one more turn against the frozen binding", async () => {
+    const { coordinator, parent, revisions, turns } = await fixture();
+    const spawned = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "critic",
+      prompt,
+      appendSystemPrompt: "child guidance",
+      budget,
+    });
+    expect(spawned.status).toBe("completed");
+    if (spawned.status !== "completed") return;
+    const childId = spawned.report.threadId as ThreadId;
+    const before = await revisions.readThreadBinding(childId);
+    expect(before?.revision?.slug).toBe("critic");
+    expect(before?.invocationOverlay).toEqual({ appendSystemPrompt: "child guidance" });
+
+    const continued = await coordinator.continueChild({
+      parentThread: parent,
+      parentTurnId: "turn-2" as TurnId,
+      childThreadId: childId,
+      prompt: "keep going",
+      budget,
+    });
+    expect(continued.status).toBe("completed");
+    if (continued.status !== "completed") return;
+    expect(continued.report.threadId).toBe(childId);
+    expect(continued.report.summary).not.toBe(spawned.report.summary);
+
+    const last = turns[turns.length - 1];
+    expect(last?.threadId).toBe(childId);
+    expect(last?.userText).toBe("keep going");
+    expect(await revisions.readThreadBinding(childId)).toEqual(before);
+  });
+
+  it("captures a distinct report per continuation", async () => {
+    const { coordinator, parent } = await fixture();
+    const spawned = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      budget,
+    });
+    if (spawned.status !== "completed") throw new Error("spawn failed");
+    const childId = spawned.report.threadId as ThreadId;
+
+    const first = await coordinator.continueChild({
+      parentThread: parent,
+      parentTurnId: "turn-2" as TurnId,
+      childThreadId: childId,
+      prompt: "first follow-up",
+      budget,
+    });
+    const second = await coordinator.continueChild({
+      parentThread: parent,
+      parentTurnId: "turn-3" as TurnId,
+      childThreadId: childId,
+      prompt: "second follow-up",
+      budget,
+    });
+    expect(first.status).toBe("completed");
+    expect(second.status).toBe("completed");
+    if (first.status !== "completed" || second.status !== "completed") return;
+    expect(first.report.threadId).toBe(childId);
+    expect(second.report.threadId).toBe(childId);
+    expect(first.report.summary).not.toBe(second.report.summary);
+  });
+
+  it("returns continue_target_busy without touching the child lifecycle or events", async () => {
+    const { coordinator, parent, repos, journal, runOwnership } = await fixture();
+    const spawned = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      budget,
+    });
+    if (spawned.status !== "completed") throw new Error("spawn failed");
+    const childId = spawned.report.threadId as ThreadId;
+    const before = await repos.threads.findById(childId);
+    const completions = journal.filter((event) => event.type === "agent.spawn_completed").length;
+
+    const claim = await runOwnership.tryAcquire(childId);
+    expect(claim).not.toBeNull();
+    try {
+      const busy = await coordinator.continueChild({
+        parentThread: parent,
+        parentTurnId: "turn-2" as TurnId,
+        childThreadId: childId,
+        prompt: "again",
+        budget,
+      });
+      expect(busy.status).toBe("error");
+      if (busy.status === "error") expect(busy.error.code).toBe("continue_target_busy");
+    } finally {
+      await claim?.release();
+    }
+
+    const after = await repos.threads.findById(childId);
+    expect(after?.spawnStatus).toBe(before?.spawnStatus);
+    expect(after?.spawnResult).toEqual(before?.spawnResult);
+    expect(journal.filter((event) => event.type === "agent.spawn_completed").length).toBe(
+      completions,
+    );
+  });
+
+  it("returns continue_target_unavailable when the child has no retained binding", async () => {
+    const { coordinator, parent, repos, revisions } = await fixture();
+    const child = await repos.threads.createSubagent({
+      userId: parent.userId,
+      projectId: parent.projectId,
+      parentThreadId: parent.id as ThreadId,
+      rootThreadId: parent.id as ThreadId,
+      spawnDepth: 1,
+    });
+    expect(await revisions.readThreadBinding(child.id)).toBeUndefined();
+
+    const result = await coordinator.continueChild({
+      parentThread: parent,
+      parentTurnId: "turn-2" as TurnId,
+      childThreadId: child.id as ThreadId,
+      prompt: "keep going",
+      budget,
+    });
+    expect(result.status).toBe("error");
+    if (result.status === "error") {
+      expect(result.error.code).toBe("continue_target_unavailable");
+    }
+  });
+
+  it("persists the running card with the pre-minted childThreadId", async () => {
+    const { coordinator, parent, repos, eventWriter } = await fixture();
+    const transcript = transcriptFor(parent.id as ThreadId, { repos, eventWriter });
+    const spawned = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      budget,
+      transcript,
+    });
+    expect(spawned.status).toBe("completed");
+    if (spawned.status !== "completed") return;
+
+    const customBlocks = transcript.events.flatMap((event) =>
+      event.type === "block.upserted" && event.block.blockType === "custom" ? [event.block] : [],
+    );
+    expect(customBlocks.length).toBe(2);
+    expect(customBlocks[0]?.content).toMatchObject({
+      kind: "helper-result",
+      props: { status: "running", childThreadId: spawned.report.threadId },
+    });
+    expect(customBlocks[1]?.content).toMatchObject({
+      kind: "helper-result",
+      props: { status: "completed", childThreadId: spawned.report.threadId },
+    });
+  });
+
+  it("enqueues exactly one background report keyed by the child execution", async () => {
+    const { coordinator, parent, deliveries } = await fixture();
+    const spawned = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "critic",
+      prompt,
+      budget,
+    });
+    if (spawned.status !== "completed") throw new Error("spawn failed");
+    const childId = spawned.report.threadId as ThreadId;
+
+    const background = await coordinator.continueChildBackground({
+      parentThread: parent,
+      parentTurnId: "turn-2" as TurnId,
+      childThreadId: childId,
+      prompt: "run in the background",
+      budget,
+    });
+    expect(background.status).toBe("background");
+    if (background.status !== "background") return;
+
+    await vi.waitFor(() => expect(deliveries).toHaveLength(1));
+    expect(deliveries[0]).toMatchObject({
+      parentThreadId: parent.id,
+      childThreadId: childId,
+      agentSlug: "critic",
+      reportId: "assistant-turn-2",
+      result: { status: "completed" },
+    });
+  });
+
+  it("does not enqueue anything for a foreground continue", async () => {
+    const { coordinator, parent, deliveries } = await fixture();
+    const spawned = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      budget,
+    });
+    if (spawned.status !== "completed") throw new Error("spawn failed");
+    const childId = spawned.report.threadId as ThreadId;
+
+    const continued = await coordinator.continueChild({
+      parentThread: parent,
+      parentTurnId: "turn-2" as TurnId,
+      childThreadId: childId,
+      prompt: "keep going",
+      budget,
+    });
+    expect(continued.status).toBe("completed");
+    expect(deliveries).toHaveLength(0);
   });
 });
