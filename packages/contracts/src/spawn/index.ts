@@ -29,6 +29,9 @@ export function isReturnResultOutcome(value: unknown): value is ReturnResultOutc
 
 /** Child agent terminal hand-back (execution-model §4.1). */
 export type AgentReport = {
+  /** Short model-facing handle (`sN`); the model's currency for continue. */
+  handle: string;
+  /** Internal UUID for UI navigation; never sent to the model. */
   threadId: string;
   summary: string;
   payload?: JsonValue;
@@ -40,7 +43,13 @@ export type AgentReport = {
 
 export type SpawnResult =
   | { status: "completed"; report: AgentReport }
-  | { status: "background"; threadId: string; agentSlug: string; description?: string }
+  | {
+      status: "background";
+      handle: string;
+      threadId: string;
+      agentSlug: string;
+      description?: string;
+    }
   | { status: "error"; error: MeridianError };
 // DEFERRED(interrupt-bubbling): add { status: "interrupt" } arm when a deep worker must reach the human without parent mediation — no pilot case
 

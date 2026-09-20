@@ -194,10 +194,10 @@ export function createInMemoryRepositories(
     );
   }
 
-  function nextRef(projectId: string): string {
+  function nextRef(projectId: string, kind: Thread["kind"]): string {
     const n = (threadCounters.get(projectId) ?? 0) + 1;
     threadCounters.set(projectId, n);
-    return `c${n}`;
+    return `${kind === "subagent" ? "s" : "c"}${n}`;
   }
 
   function membershipKey(threadId: ThreadId, workId: WorkId): string {
@@ -255,7 +255,7 @@ export function createInMemoryRepositories(
     const row = {
       ...thread,
       workId: null,
-      ref: thread.kind === "subagent" ? null : nextRef(thread.projectId),
+      ref: nextRef(thread.projectId, thread.kind),
     };
     threads.set(row.id, row);
     return projectThread(row);

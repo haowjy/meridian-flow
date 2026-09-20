@@ -133,10 +133,12 @@ immutable Agent revisions, and the threads repository's `SubagentThreadFactory` 
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads.
 Continue drives an existing child instead of creating one: `continueChild` /
-`continueChildBackground` authorize through `spawn/authorize-continue-target.ts`
-(same project and user, `kind === "subagent"`, `parentThreadId === caller.id`;
-missing or concealed → `continue_target_not_found`, a non-child →
-`continue_target_not_authorized`), then `prepareExistingChild` loads the child's
+`continueChildBackground` authorize through `spawn/authorize-continue-target.ts`,
+which resolves the model's `sN`/`cN` handle with the project-scoped
+`findLiveByProjectRef` (same project and user, `kind === "subagent"`,
+`parentThreadId === caller.id`; a malformed or missing handle →
+`continue_target_not_found`, a non-child → `continue_target_not_authorized`),
+then `prepareExistingChild` loads the child's
 frozen binding for `resolvedSlug` only and never re-resolves configuration — so
 `continue` carries no prompt override and cannot escalate model, tools, prompt,
 or overlay. A binding-less target fails `continue_target_unavailable`; a live

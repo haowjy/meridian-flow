@@ -11,7 +11,6 @@
  */
 
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
-import type { ThreadId } from "@meridian/contracts/runtime";
 import type { TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
@@ -185,7 +184,7 @@ export async function dispatchToolCall(
           const childInput: ContinueChildInput = {
             parentThread: ctx.thread,
             parentTurnId: ctx.state.currentTurn.id,
-            childThreadId: continueInput.conversation_id as ThreadId,
+            handle: continueInput.handle,
             prompt: continueInput.prompt,
             budget: ctx.treeBudget,
             signal: ctx.state.signal,
