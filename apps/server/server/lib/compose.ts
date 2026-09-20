@@ -103,6 +103,7 @@ import {
   createAdmissionTurnStarter,
   createChildReportDelivery,
   createChildRunCoordinator,
+  createChildRunDriver,
   createContextImageAssetPort,
   createDrizzleAdmissionRecords,
   createDrizzleThreadRunOwnership,
@@ -685,17 +686,30 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
   });
   childReportDelivery = childReportDeliveryInstance;
+  const childRunDriver = createChildRunDriver({
+    orchestrator: runTurnProxy,
+    repos: {
+      threads: ports.threadRepos.threads,
+      turns: ports.threadRepos.turns,
+      blocks: ports.threadRepos.blocks,
+      transaction: ports.threadRepos.transaction,
+    },
+    eventWriter: ports.journalWriter,
+    childRunRegistry: runner.childRunRegistry,
+    childReportDelivery: childReportDeliveryInstance,
+    workContextDelivery: workContextDelivery,
+    runOwnership: ports.runOwnership,
+    billingSpendReader: ports.billingSpendReader,
+  });
   const childRunCoordinator = createChildRunCoordinator({
+    driver: childRunDriver,
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
     modelUnavailable: (model) => agentModelUnavailableReasons(ports.gateway, model),
     defaultModel: () => ports.gateway.getDefaultModel(),
-    orchestrator: runTurnProxy,
     repos: {
       threads: ports.threadRepos.threads,
       subagentThreads: ports.threadRepos.threads,
-      turns: ports.threadRepos.turns,
-      blocks: ports.threadRepos.blocks,
       transaction: ports.threadRepos.transaction,
     },
     resolveWorkMembership: async (input) => {
@@ -710,11 +724,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     eventWriter: ports.journalWriter,
     agentRevisions: ports.agentRevisions,
-    childRunRegistry: runner.childRunRegistry,
-    childReportDelivery: childReportDeliveryInstance,
-    workContextDelivery: workContextDelivery,
-    runOwnership: ports.runOwnership,
-    billingSpendReader: ports.billingSpendReader,
   });
   const orchestrator = createOrchestrator({
     gateway: ports.gateway,
