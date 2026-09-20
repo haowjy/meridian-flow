@@ -33,10 +33,10 @@ export function errorResponse(
   message: string,
   filePath: string,
 ): InternalWriteResult {
-  const needsRead = code === "not_found" && !message.includes('write(command="read"');
+  const needsRead = code === "not_found" && !message.includes('read(command="read"');
   return status(
     code,
-    needsRead ? `${message}. Run write(command="read", file="${filePath}") to re-sync.` : message,
+    needsRead ? `${message}. Run read(command="read", path="${filePath}") to re-sync.` : message,
   );
 }
 

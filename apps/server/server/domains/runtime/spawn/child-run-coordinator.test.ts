@@ -1,6 +1,6 @@
 /**
  * Spawn selection contracts: named roster targets (including primary mode),
- * the generic omitted/empty-agent helper inheriting caller config, and the
+ * the generic omitted/empty-agent subagent inheriting caller config, and the
  * pre-create depth refusal.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -15,8 +15,10 @@ import {
   serializeMarkdownDefinition,
 } from "../../packages/index.js";
 import { createInMemoryRepositories, type EventJournalWriter } from "../../threads/index.js";
+import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { RunTurnPort } from "../loop/run-turn-port.js";
 import { createInMemoryThreadRunOwnership } from "../loop/thread-run-ownership.js";
+import { createToolRegistry, resolveAgentThreadTurnContext } from "../tools/index.js";
 import { createChildRunCoordinator } from "./child-run-coordinator.js";
 
 function stubOrchestrator(): RunTurnPort {
@@ -48,18 +50,19 @@ async function fixture() {
   });
 
   await seedGeneralAgent(revisions, "general-model");
-  const generalEntry = await revisions.readCatalogEntry(null, "general");
-  if (!generalEntry) throw new Error("Missing General");
-  const general = await revisions.readRevision(generalEntry.selectedRevisionId);
-  if (!general) throw new Error("Missing General revision");
 
   const installed = await revisions.installSource({
     coordinate: "test/agents",
     files: {
       "mars.toml": '[package]\nname = "test-agents"\n',
       "agents/critic.md": serializeMarkdownDefinition(
-        { name: "Critic", model: "critic-model", mode: "primary" },
-        "",
+        {
+          name: "Critic",
+          model: "critic-model",
+          mode: "primary",
+          tools: { read: "allow", edit: "deny", ask_user: "allow" },
+        },
+        "You are Critic.",
       ),
       "agents/hidden.md": serializeMarkdownDefinition(
         { name: "Hidden", model: "hidden-model", "model-invocable": false },
@@ -81,7 +84,7 @@ async function fixture() {
           name: "Parent",
           model: "parent-model",
           effort: "high",
-          tools: { read: "allow", write: "deny" },
+          tools: { read: "allow", edit: "deny" },
         },
         "",
       ),
@@ -100,10 +103,10 @@ async function fixture() {
     model: "parent-model",
     skills: { load: [], available: [] },
     namedTargets,
-    tools: { read: "allow", write: "deny" } as const,
+    tools: { read: "allow", edit: "deny" } as const,
     effort: "high" as const,
   };
-  await revisions.bindThread(parent.id, parentRevision.id, parentConfiguration);
+  await revisions.bindThread(parent.id, parentRevision.id, parentConfiguration, null);
 
   const journal: Array<{ type: string; childThreadId?: string }> = [];
   const abortedChildren: string[] = [];
@@ -128,8 +131,9 @@ async function fixture() {
     eventWriter,
     agentRevisions: revisions,
     defaultModel: () => "parent-model",
-    genericBaseline: async () => general,
     unavailableReasons: () => [],
+    modelUnavailable: (model) =>
+      model === "parent-model" ? [] : ["The Agent's configured model is unavailable."],
     childRunRegistry: {
       registerChild() {},
       registerBackgroundChild() {},
@@ -232,8 +236,8 @@ describe("ChildRunCoordinator spawn selection", () => {
     expect(result.status).toBe("completed");
     if (result.status !== "completed") return;
     const binding = await revisions.readThreadBinding(result.report.threadId);
-    expect(binding?.id).toBe(critic.id);
-    expect(binding?.definition.metadata.name).toBe("Critic");
+    expect(binding?.revision?.id).toBe(critic.id);
+    expect(binding?.revision?.definition.metadata.name).toBe("Critic");
     expect(binding?.configuration.model).toBe("critic-model");
   });
 
@@ -277,10 +281,10 @@ describe("ChildRunCoordinator spawn selection", () => {
       expect(result.status).toBe("completed");
       if (result.status !== "completed") continue;
       const binding = await revisions.readThreadBinding(result.report.threadId);
-      expect(binding?.definition.metadata.name).toBe("General");
+      expect(binding?.revision).toBeNull();
       expect(binding?.configuration.model).toBe("parent-model");
       expect(binding?.configuration.namedTargets).toEqual(parentConfiguration.namedTargets);
-      expect(binding?.configuration.tools).toEqual({ read: "allow", write: "deny" });
+      expect(binding?.configuration.tools).toEqual({ read: "allow", edit: "deny" });
       expect(binding?.configuration.effort).toBe("high");
     }
   });
@@ -295,11 +299,11 @@ describe("ChildRunCoordinator spawn selection", () => {
       model: "parent-model",
       skills: { load: [], available: [] },
       namedTargets: [] as Array<{ name: string; definitionRevisionId: string }>,
-      tools: { read: "allow", write: "deny", edit: "deny" } as const,
+      tools: { read: "allow", edit: "deny" } as const,
       effort: "high" as const,
     };
     const genericParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
-    await revisions.bindThread(genericParent.id, general.id, parentConfiguration);
+    await revisions.bindThread(genericParent.id, general.id, parentConfiguration, null);
 
     const result = await coordinator.spawnChild({
       parentThread: genericParent,
@@ -311,7 +315,7 @@ describe("ChildRunCoordinator spawn selection", () => {
     expect(result.status).toBe("completed");
     if (result.status !== "completed") return;
     const binding = await revisions.readThreadBinding(result.report.threadId);
-    expect(binding?.definition.metadata.name).toBe("General");
+    expect(binding?.revision).toBeNull();
     expect(binding?.configuration.tools).toEqual(parentConfiguration.tools);
     expect(binding?.configuration.effort).toBe("high");
     expect(binding?.configuration["disallowed-tools"]).toBeUndefined();
@@ -346,5 +350,169 @@ describe("ChildRunCoordinator spawn selection", () => {
       id: childId,
       kind: "subagent",
     });
+  });
+});
+
+describe("ChildRunCoordinator invocation overlay", () => {
+  it("persists only the provided overlay fields for generic and named children", async () => {
+    const { coordinator, parent, revisions, repos } = await fixture();
+    const generic = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      appendSystemPrompt: "Custom child prompt",
+      overrides: { effort: "low" },
+      budget,
+    });
+    expect(generic.status).toBe("completed");
+    if (generic.status !== "completed") return;
+    const genericBinding = await revisions.readThreadBinding(generic.report.threadId);
+    expect(genericBinding?.revision).toBeNull();
+    expect(genericBinding?.invocationOverlay).toEqual({
+      appendSystemPrompt: "Custom child prompt",
+      overrides: { effort: "low" },
+    });
+    expect(genericBinding?.configuration.effort).toBe("low");
+
+    const named = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "critic",
+      prompt,
+      appendSystemPrompt: "Custom child prompt",
+      overrides: { model: "critic-model" },
+      budget,
+    });
+    expect(named.status).toBe("completed");
+    if (named.status !== "completed") return;
+    const namedBinding = await revisions.readThreadBinding(named.report.threadId);
+    expect(namedBinding?.revision?.id).toBeDefined();
+    expect(namedBinding?.invocationOverlay).toEqual({
+      appendSystemPrompt: "Custom child prompt",
+      overrides: { model: "critic-model" },
+    });
+
+    const childThread = await repos.threads.findById(named.report.threadId);
+    if (!childThread) throw new Error("Missing spawned child thread");
+    const context = await resolveAgentThreadTurnContext({
+      thread: childThread,
+      agentRevisions: revisions,
+      toolRegistry: createToolRegistry(),
+      baseTools: undefined,
+    });
+    const composed = assembleComposedSystemPrompt({
+      basePrompt: context.agentBody,
+      appendPrompt: context.appendPrompt,
+      subagentGuidance: context.subagentGuidance,
+    });
+    expect(composed).toContain("You are Critic.");
+    expect(composed).toContain("Custom child prompt");
+  });
+
+  it("rejects an out-of-scope tool grant before creating the child", async () => {
+    const { coordinator, revisions, repos, journal } = await fixture();
+    const restrictedParent = await repos.threads.create({
+      userId: "user-1",
+      projectId: "project-1",
+    });
+    await revisions.bindThread(
+      restrictedParent.id,
+      null,
+      {
+        model: "parent-model",
+        skills: { load: [], available: [] },
+        namedTargets: [],
+        tools: { read: "allow", edit: "deny" },
+      },
+      null,
+    );
+    const result = await coordinator.spawnChild({
+      parentThread: restrictedParent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      overrides: { tools: { edit: "allow" } },
+      budget,
+    });
+    expect(result.status).toBe("error");
+    if (result.status === "error") {
+      expect(result.error.code).toBe("spawn_invocation_authority_denied");
+    }
+    expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
+  });
+
+  it("rejects patch-invalid overrides before creating a child", async () => {
+    const { coordinator, parent, journal } = await fixture();
+    const invalidOverrides = [
+      { subagents: ["ghost"] },
+      { bogus: true },
+      { effort: "bananas" },
+      { tools: { write: "allow" } },
+    ];
+    for (const overrides of invalidOverrides) {
+      const result = await coordinator.spawnChild({
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        overrides: overrides as never,
+        budget,
+      });
+      expect(result.status).toBe("error");
+      if (result.status === "error") {
+        expect(result.error.code).toBe("spawn_invocation_patch_invalid");
+      }
+    }
+    expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
+  });
+
+  it("persists an in-scope named grant when the caller holds the tool", async () => {
+    const { coordinator, revisions, repos, critic } = await fixture();
+    const writerParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+    await revisions.bindThread(
+      writerParent.id,
+      null,
+      {
+        model: "parent-model",
+        skills: { load: [], available: [] },
+        namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
+        tools: { read: "allow", edit: "allow", ask_user: "allow" },
+      },
+      null,
+    );
+    const result = await coordinator.spawnChild({
+      parentThread: writerParent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "critic",
+      prompt,
+      overrides: { tools: { edit: "allow" } },
+      budget,
+    });
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    const binding = await revisions.readThreadBinding(result.report.threadId);
+    expect(binding?.configuration.tools).toEqual({
+      read: "allow",
+      edit: "allow",
+      ask_user: "allow",
+    });
+  });
+
+  it("rejects an agentless child whose overridden model is unavailable", async () => {
+    const { coordinator, parent, journal } = await fixture();
+    const result = await coordinator.spawnChild({
+      parentThread: parent,
+      parentTurnId: "turn-1" as TurnId,
+      agentSlug: "",
+      prompt,
+      overrides: { model: "bogus-model" },
+      budget,
+    });
+    expect(result.status).toBe("error");
+    if (result.status === "error") {
+      expect(result.error.code).toBe("spawn_agent_unavailable");
+    }
+    expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
   });
 });

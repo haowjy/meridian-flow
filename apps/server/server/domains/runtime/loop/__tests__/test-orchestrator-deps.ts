@@ -71,16 +71,19 @@ export function createTestAgentBinding(
     async readThreadBinding(threadId) {
       if (!boundThreads().includes(threadId)) return undefined;
       return {
-        id: "fixture-definition",
-        packageRevisionId: "fixture-source",
-        slug: "general",
-        definitionDigest: "fixture-digest",
-        configuration: { model, skills: { load: [], available: [] }, namedTargets: [] },
-        definition: {
-          schemaVersion: 1,
-          systemPrompt,
-          metadata: { model },
+        revision: {
+          id: "fixture-definition",
+          packageRevisionId: "fixture-source",
+          slug: "general",
+          definitionDigest: "fixture-digest",
+          definition: {
+            schemaVersion: 1,
+            systemPrompt,
+            metadata: { model },
+          },
         },
+        configuration: { model, skills: { load: [], available: [] }, namedTargets: [] },
+        invocationOverlay: null,
       };
     },
     async listInstallations() {

@@ -2,7 +2,11 @@
 
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
+import {
+  GENERIC_SUBAGENT_NAME,
+  type InvocationOverlay,
+  type ResolvedAgentConfiguration,
+} from "@meridian/contracts/agents";
 import { InMemoryTransactionOwner } from "../../../shared/in-memory-transaction.js";
 import {
   type AgentSourceSnapshot,
@@ -24,11 +28,18 @@ type State = {
   revisions: Map<string, AgentRevision>;
   catalog: Map<string, AgentCatalogEntry>;
   history: Map<string, Set<string>>;
-  bindings: Map<string, { revisionId: string; configuration: ResolvedAgentConfiguration }>;
+  bindings: Map<
+    string,
+    {
+      revisionId: string | null;
+      configuration: ResolvedAgentConfiguration;
+      invocationOverlay: InvocationOverlay | null;
+    }
+  >;
 };
 export interface InMemoryAgentRevisionStore extends AgentRevisionStore {
   boundAgent(threadId: string): {
-    agentDefinitionRevisionId: string;
+    agentDefinitionRevisionId: string | null;
     agentName: string;
   } | null;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
@@ -97,8 +108,12 @@ export function createInMemoryAgentRevisionStore(input: {
       });
     },
     boundAgent(id) {
-      const revisionId = state().bindings.get(id)?.revisionId;
-      const revision = revisionId ? state().revisions.get(revisionId) : undefined;
+      const binding = state().bindings.get(id);
+      if (!binding) return null;
+      if (binding.revisionId === null) {
+        return { agentDefinitionRevisionId: null, agentName: GENERIC_SUBAGENT_NAME };
+      }
+      const revision = state().revisions.get(binding.revisionId);
       return revision
         ? {
             agentDefinitionRevisionId: revision.id,
@@ -261,24 +276,34 @@ export function createInMemoryAgentRevisionStore(input: {
         return true;
       });
     },
-    bindThread(threadId, revisionId, configuration) {
+    bindThread(threadId, revisionId, configuration, invocationOverlay) {
       return store.transaction(async () => {
-        if (!state().revisions.has(revisionId) || !(await input.threadExists(threadId)))
+        if (
+          (revisionId !== null && !state().revisions.has(revisionId)) ||
+          !(await input.threadExists(threadId))
+        )
           throw new Error("Agent binding references a missing thread or revision");
         const existing = state().bindings.get(threadId);
         if (existing)
           return (
             existing.revisionId === revisionId &&
-            isDeepStrictEqual(existing.configuration, configuration)
+            isDeepStrictEqual(existing.configuration, configuration) &&
+            isDeepStrictEqual(existing.invocationOverlay, invocationOverlay)
           );
-        state().bindings.set(threadId, { revisionId, configuration });
+        state().bindings.set(threadId, { revisionId, configuration, invocationOverlay });
         return true;
       });
     },
     async readThreadBinding(threadId) {
       const binding = state().bindings.get(threadId);
-      const revision = binding && state().revisions.get(binding.revisionId);
-      return revision ? copy({ ...revision, configuration: binding.configuration }) : undefined;
+      if (!binding) return undefined;
+      const revision =
+        binding.revisionId !== null ? state().revisions.get(binding.revisionId) : undefined;
+      return copy({
+        revision: revision ?? null,
+        configuration: binding.configuration,
+        invocationOverlay: binding.invocationOverlay ?? null,
+      });
     },
   };
   return store;

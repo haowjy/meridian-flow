@@ -1,23 +1,27 @@
-/** Writer vs Critic metadata advertise different write schemas. */
+/** Writer vs Critic metadata advertise different read/write document tool schemas. */
+import {
+  GENERIC_AGENT_BODY,
+  GENERIC_SUBAGENT_SLUG,
+  type InvocationOverlay,
+} from "@meridian/contracts/agents";
 import { describe, expect, it } from "vitest";
+import type { AgentRevision } from "../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
 import { createInMemoryRepositories } from "../../threads/index.js";
 import type { Tool } from "../gateway/index.js";
-import { resolveAgentThreadTurnContext } from "./agent-thread-context.js";
+import { resolveAgentThreadTurnContext, SUBAGENT_GUIDANCE } from "./agent-thread-context.js";
 import { type CoreToolHandlers, createCoreToolRegistrations } from "./core-tools.js";
 import { createSpawnToolRegistrations } from "./spawn-tools.js";
 import { createToolRegistry } from "./tool-registry.js";
 
 const WRITER_MAP = {
   read: "allow",
-  write: "allow",
   edit: "allow",
   ask_user: "allow",
 } as const;
 
 const CRITIC_MAP = {
   read: "allow",
-  write: "deny",
   edit: "deny",
   ask_user: "allow",
 } as const;
@@ -25,6 +29,7 @@ const CRITIC_MAP = {
 function stubHandlers(): CoreToolHandlers {
   const noop = async () => ({ ok: true });
   return {
+    read: noop,
     write: noop,
     work: noop,
     ls: noop,
@@ -33,10 +38,25 @@ function stubHandlers(): CoreToolHandlers {
   };
 }
 
+const fixtureRevision: AgentRevision = {
+  id: "rev",
+  packageRevisionId: "src",
+  slug: "writer",
+  definitionDigest: "digest",
+  definition: {
+    schemaVersion: 1,
+    systemPrompt: "You are an agent.",
+    metadata: { model: "fixture-model" },
+  },
+};
+
 async function boundContext(metadata: {
   tools?: typeof WRITER_MAP | typeof CRITIC_MAP;
   definitionTools?: typeof WRITER_MAP | typeof CRITIC_MAP;
   namedTargets?: Array<{ name: string; definitionRevisionId: string }>;
+  invocationOverlay?: InvocationOverlay | null;
+  revision?: AgentRevision | null;
+  kind?: "primary" | "subagent";
 }) {
   const projects = createInMemoryProjectRepository();
   const project = await projects.create({ userId: "user-1", title: "Serial" });
@@ -48,27 +68,31 @@ async function boundContext(metadata: {
       ...createSpawnToolRegistrations(),
     ],
   });
+  const revision =
+    metadata.revision === undefined
+      ? {
+          ...fixtureRevision,
+          slug: metadata.tools === CRITIC_MAP ? "critic" : "writer",
+          definition: {
+            ...fixtureRevision.definition,
+            metadata: { model: "fixture-model", tools: metadata.definitionTools },
+          },
+        }
+      : metadata.revision;
   return resolveAgentThreadTurnContext({
-    thread,
+    thread: { ...thread, kind: metadata.kind ?? "primary" },
     agentRevisions: {
       async readThreadBinding(threadId) {
         if (threadId !== thread.id) return undefined;
         return {
-          id: "rev",
-          packageRevisionId: "src",
-          slug: metadata.tools === CRITIC_MAP ? "critic" : "writer",
-          definitionDigest: "digest",
+          revision,
           configuration: {
             model: "fixture-model",
             skills: { load: [], available: [] },
             namedTargets: metadata.namedTargets ?? [],
             ...(metadata.tools !== undefined ? { tools: metadata.tools } : {}),
           },
-          definition: {
-            schemaVersion: 1,
-            systemPrompt: "You are an agent.",
-            metadata: { model: "fixture-model", tools: metadata.definitionTools },
-          },
+          invocationOverlay: metadata.invocationOverlay ?? null,
         };
       },
     },
@@ -77,16 +101,20 @@ async function boundContext(metadata: {
   });
 }
 
-function writeCommandConsts(tools: Tool[]) {
-  const write = tools.find((tool) => tool.type === "function" && tool.name === "write");
-  const oneOf = write?.type === "function" ? write.inputSchema.oneOf : undefined;
-  if (!Array.isArray(oneOf)) throw new Error("write tool missing oneOf");
+function commandConsts(tools: Tool[], name: string) {
+  const tool = tools.find((candidate) => candidate.type === "function" && candidate.name === name);
+  const oneOf = tool?.type === "function" ? tool.inputSchema.oneOf : undefined;
+  if (!Array.isArray(oneOf)) throw new Error(`${name} tool missing oneOf`);
   return oneOf.map((branch) => {
     const command = (branch as { properties?: { command?: { const?: unknown } } }).properties
       ?.command?.const;
-    if (typeof command !== "string") throw new Error("write branch missing command.const");
+    if (typeof command !== "string") throw new Error(`${name} branch missing command.const`);
     return command;
   });
+}
+
+function hasTool(tools: Tool[], name: string): boolean {
+  return tools.some((tool) => "name" in tool && tool.name === name);
 }
 
 function spawnDescription(tools: Tool[]): string {
@@ -96,18 +124,22 @@ function spawnDescription(tools: Tool[]): string {
 }
 
 describe("resolveAgentThreadTurnContext tool policy", () => {
-  it("advertises Critic write as diff/read, Writer replace, and spawn for both", async () => {
+  it("advertises Critic read only and Writer read plus mutate write", async () => {
     const critic = await boundContext({ tools: CRITIC_MAP });
     const writer = await boundContext({ tools: WRITER_MAP });
-    expect([...writeCommandConsts(critic.tools)].sort()).toEqual(["diff", "read"]);
-    expect(writeCommandConsts(writer.tools)).toContain("replace");
-    expect(critic.tools.some((tool) => "name" in tool && tool.name === "spawn")).toBe(true);
-    expect(writer.tools.some((tool) => "name" in tool && tool.name === "spawn")).toBe(true);
+    expect([...commandConsts(critic.tools, "read")].sort()).toEqual(["diff", "read"]);
+    expect(hasTool(critic.tools, "write")).toBe(false);
+    expect(commandConsts(writer.tools, "write")).toContain("replace");
+    expect(commandConsts(writer.tools, "write")).not.toContain("read");
+    expect([...commandConsts(writer.tools, "read")].sort()).toEqual(["diff", "read"]);
+    expect(hasTool(critic.tools, "spawn")).toBe(true);
+    expect(hasTool(writer.tools, "spawn")).toBe(true);
   });
 
   it("advertises a generic child's inherited Critic execution, not General's absent tools", async () => {
     const generic = await boundContext({ tools: CRITIC_MAP, definitionTools: WRITER_MAP });
-    expect([...writeCommandConsts(generic.tools)].sort()).toEqual(["diff", "read"]);
+    expect([...commandConsts(generic.tools, "read")].sort()).toEqual(["diff", "read"]);
+    expect(hasTool(generic.tools, "write")).toBe(false);
   });
 
   it("tells an empty-roster caller not to spawn, and a rostered caller to prefer named", async () => {
@@ -121,5 +153,34 @@ describe("resolveAgentThreadTurnContext tool policy", () => {
     expect(spawnDescription(rostered.tools)).toContain("Prefer a named specialist");
     expect(spawnDescription(rostered.tools)).not.toContain("Named subagents: critic.");
     expect(spawnDescription(rostered.tools)).not.toContain("critic");
+  });
+
+  it("keeps the agent body immutable and exposes the overlay as an additive layer", async () => {
+    const overridden = await boundContext({
+      tools: WRITER_MAP,
+      invocationOverlay: { appendSystemPrompt: "Appended prompt." },
+    });
+    expect(overridden.agentBody).toBe("You are an agent.");
+    expect(overridden.appendPrompt).toBe("Appended prompt.");
+
+    const inherited = await boundContext({ tools: WRITER_MAP });
+    expect(inherited.agentBody).toBe("You are an agent.");
+    expect(inherited.appendPrompt).toBeUndefined();
+    expect(inherited.subagentGuidance).toBeUndefined();
+
+    const generic = await boundContext({ revision: null, kind: "subagent", tools: CRITIC_MAP });
+    expect(generic.agentSlug).toBe(GENERIC_SUBAGENT_SLUG);
+    expect(generic.agentBody).toBe(GENERIC_AGENT_BODY);
+    expect(generic.subagentGuidance).toBe(SUBAGENT_GUIDANCE);
+
+    const overriddenGeneric = await boundContext({
+      revision: null,
+      kind: "subagent",
+      tools: CRITIC_MAP,
+      invocationOverlay: { appendSystemPrompt: "Appended child prompt." },
+    });
+    expect(overriddenGeneric.agentSlug).toBe(GENERIC_SUBAGENT_SLUG);
+    expect(overriddenGeneric.agentBody).toBe(GENERIC_AGENT_BODY);
+    expect(overriddenGeneric.appendPrompt).toBe("Appended child prompt.");
   });
 });

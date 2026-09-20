@@ -1,4 +1,4 @@
-/** Mars tools / disallowed-tools projected onto Flow names and write/work commands. */
+/** Mars tools / disallowed-tools projected onto Flow names and read/write document commands. */
 import { describe, expect, it } from "vitest";
 import {
   type EffectiveToolPolicy,
@@ -17,18 +17,16 @@ const WRITE_MUTATE = [
 ] as const satisfies readonly WriteCommandName[];
 const WORK_NAV = ["list", "show", "switch"] as const;
 const WORK_MUTATE = ["create", "delete", "update"] as const;
-const ALL_FLOW_TOOLS = ["ask_user", "ls", "search", "skill", "spawn", "work", "write"];
+const ALL_FLOW_TOOLS = ["ask_user", "ls", "read", "search", "skill", "spawn", "work", "write"];
 
 const WRITER_MAP = {
   read: "allow",
-  write: "allow",
   edit: "allow",
   ask_user: "allow",
 } as const;
 
 const CRITIC_MAP = {
   read: "allow",
-  write: "deny",
   edit: "deny",
   ask_user: "allow",
 } as const;
@@ -36,6 +34,7 @@ const CRITIC_MAP = {
 function snapshot(policy: EffectiveToolPolicy) {
   return {
     tools: [...policy.tools].sort(),
+    readCommands: [...policy.readCommands].sort(),
     writeCommands: [...policy.writeCommands].sort(),
     workCommands: [...policy.workCommands].sort(),
   };
@@ -46,20 +45,30 @@ describe("projectToolPolicy", () => {
     const omitted = snapshot(projectToolPolicy({}));
     expect(omitted).toEqual({
       tools: ALL_FLOW_TOOLS,
-      writeCommands: [...WRITE_READ, ...WRITE_MUTATE].sort(),
+      readCommands: WRITE_READ,
+      writeCommands: [...WRITE_MUTATE].sort(),
       workCommands: [...WORK_NAV, ...WORK_MUTATE].sort(),
     });
     expect(snapshot(projectToolPolicy({ tools: [] }))).toEqual(omitted);
   });
 
-  it("maps Writer to full mutate and Critic to write read/diff with work nav", () => {
+  it("maps Writer to full mutate and Critic to read/diff with work nav", () => {
     expect(snapshot(projectToolPolicy({ tools: WRITER_MAP }))).toEqual(
       snapshot(projectToolPolicy({})),
     );
     expect(snapshot(projectToolPolicy({ tools: CRITIC_MAP }))).toEqual({
-      tools: ALL_FLOW_TOOLS,
-      writeCommands: WRITE_READ,
+      tools: ALL_FLOW_TOOLS.filter((tool) => tool !== "write"),
+      readCommands: WRITE_READ,
+      writeCommands: [],
       workCommands: WORK_NAV,
     });
+  });
+
+  it("keeps document read when only edit is allowed", () => {
+    const policy = projectToolPolicy({ tools: { read: "deny", edit: "allow" } });
+    expect(policy.tools.has("read")).toBe(true);
+    expect(policy.tools.has("write")).toBe(true);
+    expect([...policy.readCommands].sort()).toEqual(WRITE_READ);
+    expect([...policy.writeCommands].sort()).toEqual([...WRITE_MUTATE].sort());
   });
 });

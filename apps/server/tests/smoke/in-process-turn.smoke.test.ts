@@ -60,14 +60,14 @@ async function collectEvents(
 }
 
 describe("smoke: in-process turn", () => {
-  it("runs write read through wired ContextPort tools and persists the turn lifecycle", async () => {
+  it("runs read through wired ContextPort tools and persists the turn lifecycle", async () => {
     const gateway = createScriptedGateway([
       {
         content: [
           {
             type: "tool_use",
             toolCallId: "call-read-smoke",
-            toolName: "write",
+            toolName: "read",
             input: { command: "read", path: FILE_URI },
           },
         ],

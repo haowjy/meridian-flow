@@ -9,9 +9,9 @@ export function HelperResultBlock({ content }: ComponentBlockProps) {
     <SpawnReportCard
       agentName={props.agentName}
       title={props.title ?? null}
-      summary={props.summary}
+      summary={props.summary ?? null}
       status={props.status}
-      childThreadId={props.childThreadId}
+      childThreadId={props.childThreadId ?? null}
     />
   );
 }

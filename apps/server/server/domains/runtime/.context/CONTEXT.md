@@ -44,7 +44,7 @@ skeleton and delegates the moving parts.
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. |
-| `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt from the agent body, available skill slugs (name when it differs) and descriptions, named subagent slug/name/description from the bound roster, frozen Work context, core document dialect, and runtime URI instruction; freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
+| `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt in a fixed layer order: immutable agent body (revision body or the host-owned empty default), the invocation overlay's additive `appendSystemPrompt`, frozen Work context, available skill slugs (name when it differs) and descriptions, named subagent slug/name/description from the bound roster, core document dialect, runtime URI instruction, and, for subagent threads only, the mandatory closing report instruction as the last layer. An empty or absent append adds nothing, and the guidance string is a module constant (`SUBAGENT_GUIDANCE`). Freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
 | `work-context.ts` / `work-context-delivery.ts` | Reads authoritative Work identity with rendered context and owns durable delivery/recovery behind the deep `WorkContextDelivery` port. Every Work-list change queues eligible live threads. Post-commit wakes drain idle threads, running threads flush at completion, and a startup/poll sweep recovers obligations across process recreation. |
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
@@ -53,21 +53,26 @@ skeleton and delegates the moving parts.
 | `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, serialized persistence/provenance/upload consumption, lookup, and retirement. |
 | `reference-context.ts` | Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads. |
 | `image-context.ts` / `ports/image-asset.ts` | Late image bytes are identity-resolved after admission, read-deduplicated, occurrence-budgeted, and quietly omitted without losing writer text. |
-| `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow names and write/work commands. Advertise and the per-turn permission gate (name + write/work command) use that policy. Dispatch does not apply policy. The core catalogue stays policy-free. |
+| `permissions/` | `projectToolPolicy` projects compiled Mars `tools` / `disallowed-tools` onto Flow tool names and per-tool command sets (`read`, `write`, `work`). `commandSetForTool` is the single per-tool command mapping. Advertise and the per-turn permission gate (name + command) use that policy. `invocation-authority` validates that an invocation patch never grants the child more than the caller holds, applied only to the patch delta. Dispatch does not apply policy. The core catalogue stays policy-free. |
 
 `OrchestratorDeps` is fully required: gateway, repos, retained Agent revision reader, tool
 registry/executor, project preferences, credit ledger,
 interrupt artifact flush, child-run coordinator, interrupt registry, and
 `EventSink` are all explicit dependencies. Do not re-add a global permission
-gate here; names and write/work commands are gated per turn from advertised policy. Provider-specific
+gate here; names and per-tool command sets are gated per turn from advertised policy. Provider-specific
 model-call behavior stays behind the gateway port. Disabled behavior is
 represented by explicit adapters (for example no-op sinks), not by omitted deps.
 
 ## Bound Agent preparation
 
 `agent-thread-context.ts` reads the immutable thread binding for the persona
-and diagnostic Agent identity. Tools and effort come from the bound
-configuration, never definition metadata. Missing bindings fail before a
+and diagnostic Agent identity. The Agent body is always the retained revision's
+`systemPrompt` (or the host-owned empty default for an agent-less child); a
+spawn-time `appendSystemPrompt` is a separate additive layer, never a
+replacement. Tools and effort come from the bound
+configuration, never definition metadata. `mapAgentEffortToReasoning` (with
+`EFFORT_TO_REASONING`) is the single bridge from canonical `AgentEffort` to the
+gateway's provider-neutral `GenerateRequest.reasoning`. Missing bindings fail before a
 gateway call. Catalog removal or advancement leaves continued execution on its
 retained revision. `turn-context-assembly.ts` supplies that persona to the initial
 host-prompt bake and reuses the frozen prompt on later turns; preview shares this
@@ -91,7 +96,7 @@ configuration, including a frozen default when source omits it. Nonempty
 `subagents` roster no longer refuses selection. `spawn` is advertised to every
 Agent; Mars `tools` cannot hide it. Named targets come from the binding's
 roster, baked into the frozen system prompt like available skills (not listed
-on the spawn tool), and an omitted or empty `agent` selects the generic helper.
+on the spawn tool), and an omitted or empty `agent` selects the agent-less generic subagent.
 
 ## tools — registry, executor, and handlers
 
@@ -100,7 +105,7 @@ on the spawn tool), and an omitted or empty `agent` selects the generic helper.
 | `ToolRegistry` | Name-keyed map. Duplicate names throw immediately. `getDefinitions()` advertises only server-executable registrations whose `advertise !== false`. |
 | `ToolExecutor` | Dispatches `ToolCallInput` to registered handlers with timeout, abort, sequential execution, and capability-gated context injection. |
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
-| Core handlers | The strict six-branch `work` union and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
+| Core handlers | The strict six-branch `work` union, the shared read/write document definitions, and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
 | Skills | References are retained at binding. `createSkillToolRegistrations` registers the `skill` tool (`source: "skill"`); invoke loads a SKILL.md body only when the slug is in Agent `skills.available` and `model-invocable` is not false. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn` and `return_result` with explicit privileged capabilities. |
 
@@ -108,8 +113,8 @@ Handler-owned `{ isError: true, output }` results already define their
 model-facing protocol, so the executor preserves their output by definition.
 Parse, timeout, abort, and thrown failures belong to the executor; it delegates
 those to the registration's `formatExecutionError` when present and otherwise
-uses the generic Meridian error format. The `write` registration owns such a
-formatter so every executor-owned write failure still returns
+uses the generic Meridian error format. The `read` and `write` registrations own such a
+formatter so every executor-owned document failure still returns
 `meridian.agent-edit.v1` without teaching the generic executor about agent-edit.
 
 The core-tool publication boundary lives in `tools/core-tools.ts`: definitions,
@@ -121,7 +126,7 @@ behavior; schema-only stubs are not advertised.
 
 `spawn/child-run-coordinator.ts` supervises nested agent execution. It consumes
 `RunTurnPort`, `ChildRunRegistry` from the turn runner, the billing spend reader,
-immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. Route-facing
+immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key; `tools` and `disallowed-tools` are coupled and each returns the full `patchTools` result so a map `allow` lifts the baseline denial. Overrides fold tool-name aliases like authoring. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. A spawn-time `append_system_prompt` is an additive overlay layer appended after the immutable Agent body; spawn never replaces the body. Route-facing
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads. Writer-facing helper-result cards persist through `spawn/spawn-transcript.ts`
 (one `spawnHelperCardProps` builder). Foreground spawn upserts a running card
@@ -133,12 +138,13 @@ completer.
 
 Named targets resolve by name within the parent binding's roster; a target with
 `model-invocable: false` is refused, while a primary-mode target is spawnable.
-An omitted or empty `agent` selects the generic helper: the built-in General
-revision supplies body and identity; the child binding copies the caller's
-resolved configuration, including `tools`, `disallowed-tools`, and `effort`.
-Named children resolve those fields from their own retained revision.
-A nested generic keeps the ancestor's write deny because it copies that
-record. Turn context reads tools and effort from configuration only.
+An omitted or empty `agent` creates an agent-less child: the binding has no
+Agent revision (`definitionRevisionId` null), the body is the host-owned empty
+`GENERIC_AGENT_BODY`, and the child copies the caller's resolved configuration,
+including `tools`, `disallowed-tools`, and `effort`. Named children resolve
+those fields from their own retained revision. A nested generic keeps the
+ancestor's write deny because it copies that configuration. Turn context reads
+tools and effort from configuration only.
 Max spawn depth
 defaults to 3, overridable only through operator env at tree creation. Child
 creation, Agent binding, and Work membership share one transaction. The child starts with an unfrozen
@@ -158,7 +164,7 @@ facet.
 ## Cost, billing, and permissions
 
 - Tool permissions are per-turn: `projectToolPolicy` → permission gate
-  (`check` name + write/work command) → `persistPermissionDenial`. Dispatch
+  (`check` name + per-tool command set) → `persistPermissionDenial`. Dispatch
   does not apply policy. Direct `toolExecutor.executeTool` does not apply policy.
 - Model-call cost gating is not a `PermissionGate` method. The runtime uses
   `CreditLedger` plus `TreeBudget` (for spawn trees) through `turn-accounting.ts`

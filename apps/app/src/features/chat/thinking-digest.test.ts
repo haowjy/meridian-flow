@@ -34,10 +34,10 @@ function tool(args: {
 }
 
 describe("countFoldTools", () => {
-  it("counts write reads and edits as documents", () => {
+  it("counts document reads and edits as documents", () => {
     const counts = countFoldTools([
-      tool({ toolName: "write", input: { command: "read", path: "ch1.md" } }),
-      tool({ toolName: "write", input: { path: "ch2.md" } }),
+      tool({ toolName: "read", input: { command: "read", path: "ch1.md" } }),
+      tool({ toolName: "write", input: { command: "insert", path: "ch2.md" } }),
     ]);
 
     expect(counts.readDocuments.size).toBe(1);
@@ -45,21 +45,47 @@ describe("countFoldTools", () => {
     expect(counts.steps).toBe(0);
   });
 
+  it("counts a read tool call as a read document and a write mutate as an edit", () => {
+    const counts = countFoldTools([
+      tool({ toolName: "read", input: { command: "read", path: "ch1.md" } }),
+      tool({ toolName: "write", input: { command: "replace", path: "ch1.md" } }),
+    ]);
+
+    expect(counts.readDocuments.size).toBe(1);
+    expect(counts.editedDocuments.size).toBe(1);
+    expect([...counts.readDocuments]).toEqual([...counts.editedDocuments]);
+    expect(counts.steps).toBe(0);
+  });
+
   it("dedupes repeated documents", () => {
     const counts = countFoldTools([
-      tool({ toolName: "write", input: { command: "read", path: "ch1.md" } }),
-      tool({ toolName: "write", input: { command: "read", path: "ch1.md" } }),
+      tool({ toolName: "read", input: { command: "read", path: "ch1.md" } }),
+      tool({ toolName: "read", input: { command: "read", path: "ch1.md" } }),
     ]);
 
     expect(counts.readDocuments.size).toBe(1);
   });
 
-  it("counts non-write tools and failed operations as steps", () => {
+  it("does not count a diff review as an edit", () => {
+    const counts = countFoldTools([
+      // A diff carries no `path` on the wire; the writer-facing classification
+      // must hold regardless, including the document identity the old branch
+      // consumed.
+      tool({ toolName: "read", input: { command: "diff", document_id: "ch1.md" } }),
+      tool({ toolName: "write", input: { command: "diff", path: "ch1.md" } }),
+    ]);
+
+    expect(counts.editedDocuments.size).toBe(0);
+    expect(counts.readDocuments.size).toBe(0);
+    expect(counts.steps).toBe(2);
+  });
+
+  it("counts non-document tools and failed operations as steps", () => {
     const counts = countFoldTools([
       tool({ toolName: "search" }),
       tool({ toolName: "ls" }),
       tool({ toolName: "work" }),
-      tool({ toolName: "write", input: { command: "read", path: "ch1.md" }, isError: true }),
+      tool({ toolName: "read", input: { command: "read", path: "ch1.md" }, isError: true }),
     ]);
 
     expect(counts.steps).toBe(4);

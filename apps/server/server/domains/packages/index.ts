@@ -18,6 +18,8 @@ export {
 } from "./domain/account-skill-install.js";
 export {
   AgentConfigurationError,
+  buildRetainedSkillResolver,
+  type RetainedSkillResolver,
   resolveAgentConfiguration,
   resolveAgentDependencies,
   retainedPackageSkillMaps,
@@ -29,12 +31,7 @@ export {
   compileAgentDefinition,
   type NormalizedAgentMetadata,
 } from "./domain/agent-definition-compiler.js";
-export {
-  type AgentEffort,
-  type AgentEffortLevel,
-  normalizeAgentEffort,
-  normalizeAgentMetaFields,
-} from "./domain/agent-gateway-meta.js";
+export { normalizeAgentMetaFields } from "./domain/agent-gateway-meta.js";
 export {
   AgentSourceError,
   type AgentSourceSnapshot,
@@ -73,7 +70,6 @@ export {
 } from "./domain/first-party-catalog.js";
 export {
   agentDefinitionContentChecksum,
-  agentModeFromMeta,
   canonicalizeJsonObject,
   definitionContentChecksum,
   loadAgentDefinitions,
@@ -131,8 +127,8 @@ export type {
   AgentCatalogEntry,
   AgentCatalogSelectionResult,
   AgentRevision,
+  AgentRevisionBinding,
   AgentRevisionStore,
-  BoundAgentRevision,
 } from "./ports/agent-revision-store.js";
 export type {
   FetchedMarsSource,

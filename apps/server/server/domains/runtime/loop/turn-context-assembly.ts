@@ -84,8 +84,10 @@ export async function assembleNextTurnContext(
   const tools = agentContext.tools;
   let workContextSection: string | undefined;
   let unfrozenBasePrompt: string | null | undefined;
+  let appendPromptForUnfrozen: string | undefined;
   let availableSkillsForUnfrozen: AvailableSkillListing[] | undefined;
   let namedSubagentsForUnfrozen: PromptInventoryListing[] | undefined;
+  let subagentGuidanceForUnfrozen: string | undefined;
   let systemPrompt: string;
   const baked = thread.bakedSkillSlugs != null;
 
@@ -103,9 +105,11 @@ export async function assembleNextTurnContext(
     const workContext = (await input.workContext.renderForThread(thread.id as ThreadId)).text;
     const bakedPrompt = rebakeComposedSystemPrompt({
       basePrompt: agentContext.agentBody,
+      appendPrompt: agentContext.appendPrompt,
       workContext,
       availableSkills,
       namedSubagents,
+      subagentGuidance: agentContext.subagentGuidance,
     });
 
     if (input.persistBake && input.bakeComposedSystemPrompt) {
@@ -119,9 +123,11 @@ export async function assembleNextTurnContext(
     } else {
       systemPrompt = bakedPrompt;
       unfrozenBasePrompt = agentContext.agentBody;
+      appendPromptForUnfrozen = agentContext.appendPrompt;
       workContextSection = workContext;
       availableSkillsForUnfrozen = availableSkills;
       namedSubagentsForUnfrozen = namedSubagents;
+      subagentGuidanceForUnfrozen = agentContext.subagentGuidance;
     }
   }
 
@@ -148,9 +154,11 @@ export async function assembleNextTurnContext(
     blocks,
     tools,
     unfrozenBasePrompt,
+    appendPrompt: appendPromptForUnfrozen,
     workContext: workContextSection,
     availableSkills: availableSkillsForUnfrozen,
     namedSubagents: namedSubagentsForUnfrozen,
+    subagentGuidance: subagentGuidanceForUnfrozen,
   });
 
   return {

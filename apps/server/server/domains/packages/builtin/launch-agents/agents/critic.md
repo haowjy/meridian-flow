@@ -4,7 +4,6 @@ description: Adversarial craft critique. Reads the manuscript; does not edit it.
 mode: primary
 tools:
   read: allow
-  write: deny
   edit: deny
   ask_user: allow
 skills: []
