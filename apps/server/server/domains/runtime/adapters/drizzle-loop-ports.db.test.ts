@@ -28,7 +28,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleInbox } = await import("./drizzle-inbox.js");
-    const { createDrizzleRunAuthority } = await import("./drizzle-thread-run-ownership.js");
+    const { createDrizzleRunAuthority, createDrizzleThreadRunOwnership } = await import(
+      "./drizzle-thread-run-ownership.js"
+    );
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 6 });
@@ -148,6 +150,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await authority.holder(THREAD_A)).toBeNull();
       expect(await authority.read(THREAD_A)).toEqual({ kind: "asleep" });
       await authority.release(lease);
+    });
+
+    it("keeps the lease and the legacy claim mutually exclusive on one thread", async () => {
+      const authority = createDrizzleRunAuthority(db, { holderId: "holder-lease" });
+      const legacy = createDrizzleThreadRunOwnership(db);
+
+      const lease = required(await authority.acquire(THREAD_A, "run-lease"));
+      expect(await legacy.tryAcquire(THREAD_A)).toBeNull();
+      await authority.release(lease);
+      expect(await authority.holder(THREAD_A)).toBeNull();
+
+      const claim = required(await legacy.tryAcquire(THREAD_A));
+      expect(await authority.acquire(THREAD_A, "run-after")).toBeNull();
+      await claim.release();
+
+      const relocked = required(await authority.acquire(THREAD_A, "run-final"));
+      await authority.release(relocked);
     });
   });
 }

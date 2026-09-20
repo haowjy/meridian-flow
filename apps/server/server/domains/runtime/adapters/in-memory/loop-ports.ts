@@ -4,13 +4,14 @@
  * injected clock so lease expiry and renewal are deterministic.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type {
-  Inbox,
-  InboxMessage,
-  RunAuthority,
-  RunId,
-  RunStarter,
-  ThreadPhase,
+import {
+  DEFAULT_LEASE_TTL_MS,
+  type Inbox,
+  type InboxMessage,
+  type RunAuthority,
+  type RunId,
+  type RunStarter,
+  type ThreadPhase,
 } from "../../loop/ports.js";
 
 export function createInMemoryInbox(): Inbox {
@@ -92,7 +93,7 @@ export function createInMemoryRunAuthority(
   options: InMemoryRunAuthorityOptions = {},
 ): InMemoryRunAuthority {
   const holderId = options.holderId ?? crypto.randomUUID();
-  const leaseTtlMs = options.leaseTtlMs ?? 30_000;
+  const leaseTtlMs = options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;
   const now = options.now ?? (() => Date.now());
   const leases = new Map<ThreadId, InMemoryLease>();
 

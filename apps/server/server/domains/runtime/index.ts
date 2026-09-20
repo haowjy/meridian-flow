@@ -41,6 +41,10 @@ export {
   createInterruptRegistry,
   EXPIRED_INTERRUPT_VALUE,
 } from "./loop/interrupts.js";
+export {
+  createHeartbeatRunAuthority,
+  type HeartbeatRunAuthorityOptions,
+} from "./loop/lease-heartbeat.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
 export * from "./loop/permissions/index.js";
 export type {
@@ -58,6 +62,7 @@ export type {
   ThreadPhase,
   ThreadStatus,
 } from "./loop/ports.js";
+export { DEFAULT_LEASE_TTL_MS } from "./loop/ports.js";
 export type { ReferenceReader } from "./loop/reference-context.js";
 export {
   createLateBindRunTurnPort,

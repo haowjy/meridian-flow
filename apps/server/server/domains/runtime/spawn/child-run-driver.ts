@@ -23,12 +23,8 @@ import type {
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
+import type { Lease, RunAuthority } from "../loop/ports.js";
 import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
-import {
-  createInMemoryThreadRunOwnership,
-  type ThreadRunClaim,
-  type ThreadRunOwnership,
-} from "../loop/thread-run-ownership.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
 import type { ChildReportDelivery } from "./child-report-delivery.js";
 
@@ -49,7 +45,7 @@ export type PreparedChild = {
   description?: string;
   childController: AbortController;
   childRegistered: boolean;
-  runClaim: ThreadRunClaim;
+  runLease: Lease;
   background: boolean;
   /** Spawn creates the child lifecycle; continue never rewrites it. */
   origin: "spawn" | "continue";
@@ -72,7 +68,7 @@ export interface ChildRunDriverDeps {
   childRunRegistry: ChildRunRegistry;
   childReportDelivery: Pick<ChildReportDelivery, "enqueue">;
   workContextDelivery: Pick<WorkContextDelivery, "flushOwned">;
-  runOwnership?: ThreadRunOwnership;
+  runAuthority: RunAuthority;
   billingSpendReader: BillingSpendReader;
 }
 
@@ -206,7 +202,7 @@ async function synthesizeIncompleteReport(
 }
 
 export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
-  const runOwnership = deps.runOwnership ?? createInMemoryThreadRunOwnership();
+  const runAuthority = deps.runAuthority;
 
   async function register(
     child: Thread,
@@ -218,12 +214,12 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     const handle = child.ref;
     if (handle === null) throw new Error("Prepared child has no concurrency handle");
     const childController = new AbortController();
-    let runClaim: ThreadRunClaim | null = null;
+    let runLease: Lease | null = null;
     try {
-      runClaim = await runOwnership.tryAcquire(childThreadId);
+      runLease = await runAuthority.acquire(childThreadId, crypto.randomUUID());
       // Keep the id out: this message reaches the model as a tool error and
       // would put the child UUID back into re-emitted context.
-      if (!runClaim) throw new Error("Child thread already has an active run");
+      if (!runLease) throw new Error("Child thread already has an active run");
       if (options.background) {
         deps.childRunRegistry.registerBackgroundChild(
           parentThreadId,
@@ -247,14 +243,14 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
         resolvedSlug,
         childController,
         childRegistered: true,
-        runClaim,
+        runLease,
         background: options.background ?? false,
         origin: options.origin,
       };
     } catch (error) {
       childController.abort();
       deps.childRunRegistry.unregisterChild(childThreadId);
-      await runClaim?.release();
+      if (runLease) await runAuthority.release(runLease);
       throw error;
     }
   }
@@ -263,7 +259,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
   async function release(prepared: PreparedChild): Promise<void> {
     prepared.childController.abort();
     deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
-    await prepared.runClaim.release();
+    await runAuthority.release(prepared.runLease);
   }
 
   function appendBackgroundTerminal(
@@ -423,7 +419,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
             }
           }
         } finally {
-          await prepared.runClaim.release();
+          await runAuthority.release(prepared.runLease);
         }
       }
     }

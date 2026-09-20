@@ -111,8 +111,10 @@ import {
   createChildRunDriver,
   createContextImageAssetPort,
   createDrizzleAdmissionRecords,
+  createDrizzleRunAuthority,
   createDrizzleThreadRunOwnership,
   createGatewayFromEnv,
+  createHeartbeatRunAuthority,
   createHostTurnAdmission,
   createInMemoryThreadRunOwnership,
   createInstrumentedGateway,
@@ -126,9 +128,11 @@ import {
   createUserTurnAdmission,
   createWorkContextDelivery,
   createWorkContextReader,
+  DEFAULT_LEASE_TTL_MS,
   type Gateway,
   type HostTurnAdmission,
   InvalidAdmissionError,
+  type RunAuthority,
   type RunTurnPort,
   type ThreadRunOwnership,
   type ToolExecutor,
@@ -294,6 +298,7 @@ export type ProductionAppPorts = {
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
   runOwnership: ThreadRunOwnership;
+  runAuthority: RunAuthority;
 };
 
 const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
@@ -369,6 +374,10 @@ export async function createProductionAppPorts(input: {
   });
   const threadRepos = createDrizzleRepositories(db, workProjectionMutation);
   const runOwnership = createDrizzleThreadRunOwnership(db);
+  const runAuthority = createHeartbeatRunAuthority(
+    createDrizzleRunAuthority(db, { holderId: `${process.pid}-${crypto.randomUUID()}` }),
+    { eventSink, leaseTtlMs: DEFAULT_LEASE_TTL_MS },
+  );
   const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
@@ -490,6 +499,7 @@ export async function createProductionAppPorts(input: {
   return {
     db,
     runOwnership,
+    runAuthority,
     gateway,
     threadRepos,
     journalReader,
@@ -624,7 +634,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     hub: threadEventHub,
     repos: { turns: ports.threadRepos.turns },
     eventSink: ports.eventSink,
-    runOwnership: ports.runOwnership,
+    runAuthority: ports.runAuthority,
     childReportDelivery: {
       async flush(threadId) {
         await childReportDelivery?.flush(threadId);
@@ -707,7 +717,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     childRunRegistry: runner.childRunRegistry,
     childReportDelivery: childReportDeliveryInstance,
     workContextDelivery: workContextDelivery,
-    runOwnership: ports.runOwnership,
+    runAuthority: ports.runAuthority,
     billingSpendReader: ports.billingSpendReader,
   });
   const childRunCoordinator = createChildRunCoordinator({

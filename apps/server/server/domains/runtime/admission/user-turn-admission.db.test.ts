@@ -1,6 +1,7 @@
 /** PostgreSQL proof that admission and explicit retirement choose one serialized winner. */
 
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RunAuthority } from "../loop/ports.js";
 import type { ThreadRunOwnership } from "../loop/thread-run-ownership.js";
 
 function barrier() {
@@ -49,6 +50,7 @@ if (!RUN) {
     const { createAdmissionTurnStarter } = await import("./admission-turn-starter.js");
     const { createUserTurnAdmission } = await import("./user-turn-admission.js");
     const { createInMemoryThreadRunOwnership } = await import("../loop/thread-run-ownership.js");
+    const { createInMemoryRunAuthority } = await import("../adapters/in-memory/loop-ports.js");
     const { createTurnRunner } = await import("../loop/turn-runner.js");
     const { createOrchestrator } = await import("../loop/orchestrator.js");
     const { createTestOrchestratorDeps } = await import(
@@ -125,10 +127,12 @@ if (!RUN) {
       uri: string;
       failAfterProvenance?: boolean;
       runOwnership?: ThreadRunOwnership;
+      runAuthority?: RunAuthority;
       beforeTurn?: () => Promise<void>;
       finishRun?: Promise<void>;
     }) {
       const runOwnership = input.runOwnership ?? createInMemoryThreadRunOwnership();
+      const runAuthority = input.runAuthority ?? createInMemoryRunAuthority();
       const creditLedger = createInMemoryCreditLedger();
       await creditLedger.grant({
         userId: USER,
@@ -161,7 +165,7 @@ if (!RUN) {
         },
       });
       const runner = createTurnRunner({
-        runOwnership,
+        runAuthority,
         orchestrator: createOrchestrator(deps),
         hub,
         repos: { turns: repos.turns },
@@ -408,6 +412,7 @@ if (!RUN) {
         repos: { turns: {} as never },
         eventSink: {} as never,
         workContextDelivery: {} as never,
+        runAuthority: createInMemoryRunAuthority(),
       });
       const service = createUserTurnAdmission({
         runOwnership: createInMemoryThreadRunOwnership(),
@@ -576,7 +581,7 @@ if (!RUN) {
     });
 
     it("keeps a claimed original live through expiry and accepts its one settlement", async () => {
-      const { createDrizzleThreadRunOwnership } = await import(
+      const { createDrizzleRunAuthority, createDrizzleThreadRunOwnership } = await import(
         "../adapters/drizzle-thread-run-ownership.js"
       );
       const { eq } = await import("drizzle-orm");
@@ -590,6 +595,7 @@ if (!RUN) {
         documentId: DOCUMENT,
         uri: "",
         runOwnership: originalOwnership,
+        runAuthority: createDrizzleRunAuthority(firstDb),
         beforeTurn: async () => {
           claimed.resolve();
           await continueOriginal.promise;
@@ -650,7 +656,7 @@ if (!RUN) {
     });
 
     it("holds recovery ownership through commit against a delayed original runner", async () => {
-      const { createDrizzleThreadRunOwnership } = await import(
+      const { createDrizzleRunAuthority, createDrizzleThreadRunOwnership } = await import(
         "../adapters/drizzle-thread-run-ownership.js"
       );
       const { currentDrizzleDb, runInDrizzleTransaction } = await import(
@@ -675,7 +681,7 @@ if (!RUN) {
       const consumeUploads = vi.fn();
       const attachDocument = vi.fn();
       const runner = createTurnRunner({
-        runOwnership: originalOwnership,
+        runAuthority: createDrizzleRunAuthority(secondDb),
         orchestrator: {
           async runTurn() {
             started++;
