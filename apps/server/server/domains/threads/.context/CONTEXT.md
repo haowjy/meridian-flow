@@ -13,6 +13,12 @@ instead of the N:1 `threads.workId` column.
   conversation data model. A thread contains turns; a turn contains blocks
   (text, reasoning, tool_use, tool_result, image, file, custom) and model
   responses with token/cost rollups.
+- **Notification and steering tables** — `thread_inbox_messages` is the durable
+  per-thread message queue (global `bigserial` `seq` for per-thread FIFO, unique
+  `idempotency_key`, nullable `delivered_at`), drained by the runtime's `Inbox`
+  port. `thread_run_leases` is the queryable run lease paired with the runtime's
+  session advisory lock (`phase`, `cancel_requested`, `expires_at`). Both cascade
+  from `threads`.
 - **Child-report delivery obligations** — `child_report_deliveries` (schema in
   `agent-threads.ts`) is the durable "undelivered background report" marker,
   one row per child execution keyed by the child run's assistant turn id

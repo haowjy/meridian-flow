@@ -3,7 +3,20 @@ export type { OrchestratorEvent } from "@meridian/contracts/threads";
 export { MANUSCRIPT_URI as UNIFIED_MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 export type { WorkContextDelivery } from "../projects/index.js";
 export { createContextImageAssetPort } from "./adapters/context-image-assets.js";
-export { createDrizzleThreadRunOwnership } from "./adapters/drizzle-thread-run-ownership.js";
+export { createDrizzleInbox } from "./adapters/drizzle-inbox.js";
+export {
+  createDrizzleRunAuthority,
+  createDrizzleThreadRunOwnership,
+  type DrizzleRunAuthorityOptions,
+} from "./adapters/drizzle-thread-run-ownership.js";
+export {
+  createInMemoryInbox,
+  createInMemoryRunAuthority,
+  createInMemoryRunStarter,
+  type InMemoryRunAuthority,
+  type InMemoryRunAuthorityOptions,
+  type InMemoryRunStarter,
+} from "./adapters/in-memory/loop-ports.js";
 export { createAdmissionTurnStarter } from "./admission/admission-turn-starter.js";
 export {
   type AdmissionPersistencePort,
@@ -30,6 +43,21 @@ export {
 } from "./loop/interrupts.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
 export * from "./loop/permissions/index.js";
+export type {
+  ContextPart,
+  Inbox,
+  InboxMessage,
+  Lease,
+  MessageBody,
+  MessageDraft,
+  MessageIntent,
+  MessageProvenance,
+  RunAuthority,
+  RunId,
+  RunStarter,
+  ThreadPhase,
+  ThreadStatus,
+} from "./loop/ports.js";
 export type { ReferenceReader } from "./loop/reference-context.js";
 export {
   createLateBindRunTurnPort,
