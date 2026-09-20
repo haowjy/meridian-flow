@@ -10,6 +10,7 @@
  * while the tool handler is awaited.
  */
 
+import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { TreeBudget } from "@meridian/contracts/spawn";
 import type {
@@ -198,12 +199,14 @@ export async function dispatchToolCall(
 
   const returnResultCompleter = ctx.returnResultCompleter;
   let returnResultSummary = "";
+  let returnResultArtifacts: ArtifactRef[] | undefined;
   const returnResult = async (capture: Parameters<ReturnResultCompleter>[0]) => {
     if (!returnResultCompleter) {
       return { ok: false as const, message: "return_result is not available on this run." };
     }
     const outcome = await returnResultCompleter(capture);
     returnResultSummary = capture.summary;
+    returnResultArtifacts = capture.artifacts;
     return outcome;
   };
 
@@ -241,6 +244,7 @@ export async function dispatchToolCall(
       toolCallId: execResult.toolCallId,
       outcome: execResult.returnResult,
       summary: returnResultSummary,
+      artifacts: returnResultArtifacts,
     });
     return {
       events,
