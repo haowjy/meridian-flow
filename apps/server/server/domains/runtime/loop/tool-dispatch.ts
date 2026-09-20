@@ -22,11 +22,7 @@ import type {
 } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
-import type {
-  ChildRunCoordinator,
-  ContinueChildInput,
-  SpawnChildInput,
-} from "../spawn/child-run-coordinator.js";
+import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
 import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
 import { persistReturnResult, type SpawnTranscript } from "../spawn/spawn-transcript.js";
 import type {
@@ -158,7 +154,8 @@ export async function dispatchToolCall(
   const spawn =
     call.name === "spawn"
       ? async (spawnInput: SpawnToolArgs) => {
-          const childInput: SpawnChildInput = {
+          const request: ChildRunRequest = {
+            kind: "spawn",
             parentThread: ctx.thread,
             parentTurnId: ctx.state.currentTurn.id,
             agentSlug: spawnInput.agent,
@@ -171,17 +168,18 @@ export async function dispatchToolCall(
             budget: ctx.treeBudget,
             signal: ctx.state.signal,
           };
-          if (spawnInput.mode === "background") {
-            return deps.childRunCoordinator.spawnChildBackground(childInput);
-          }
-          return deps.childRunCoordinator.spawnChild({ ...childInput, transcript });
+          return deps.childRunCoordinator.runChild(request, {
+            mode: spawnInput.mode,
+            ...(spawnInput.mode === "foreground" ? { transcript } : {}),
+          });
         }
       : undefined;
 
   const continueChild =
     call.name === "continue"
       ? async (continueInput: ContinueToolArgs) => {
-          const childInput: ContinueChildInput = {
+          const request: ChildRunRequest = {
+            kind: "continue",
             parentThread: ctx.thread,
             parentTurnId: ctx.state.currentTurn.id,
             handle: continueInput.handle,
@@ -189,10 +187,10 @@ export async function dispatchToolCall(
             budget: ctx.treeBudget,
             signal: ctx.state.signal,
           };
-          if (continueInput.mode === "background") {
-            return deps.childRunCoordinator.continueChildBackground(childInput);
-          }
-          return deps.childRunCoordinator.continueChild({ ...childInput, transcript });
+          return deps.childRunCoordinator.runChild(request, {
+            mode: continueInput.mode,
+            ...(continueInput.mode === "foreground" ? { transcript } : {}),
+          });
         }
       : undefined;
 

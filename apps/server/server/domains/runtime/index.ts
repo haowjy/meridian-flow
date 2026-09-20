@@ -68,11 +68,13 @@ export {
   createChildReportDelivery,
 } from "./spawn/child-report-delivery.js";
 export {
-  type ChildDriveInput,
   type ChildRunCoordinator,
   type ChildRunCoordinatorDeps,
+  type ChildRunOptions,
+  type ChildRunRequest,
   type ContinueChildInput,
   createChildRunCoordinator,
   type SpawnChildInput,
 } from "./spawn/child-run-coordinator.js";
+export type { ChildDriveInput } from "./spawn/child-run-driver.js";
 export * from "./tools/index.js";
