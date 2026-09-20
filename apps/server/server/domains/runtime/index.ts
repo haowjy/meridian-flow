@@ -4,6 +4,7 @@ export { MANUSCRIPT_URI as UNIFIED_MANUSCRIPT_URI } from "../context/manuscript-
 export type { WorkContextDelivery } from "../projects/index.js";
 export { createContextImageAssetPort } from "./adapters/context-image-assets.js";
 export { createDrizzleInbox } from "./adapters/drizzle-inbox.js";
+export { createDrizzleThreadLock } from "./adapters/drizzle-thread-lock.js";
 export {
   createDrizzleRunAuthority,
   createDrizzleThreadRunOwnership,
@@ -13,6 +14,7 @@ export {
   createInMemoryInbox,
   createInMemoryRunAuthority,
   createInMemoryRunStarter,
+  createInMemoryThreadLock,
   type InMemoryRunAuthorityOptions,
   type InMemoryRunStarter,
 } from "./adapters/in-memory/loop-ports.js";
@@ -31,6 +33,7 @@ export {
   type UserTurnAdmission,
 } from "./admission/user-turn-admission.js";
 export * from "./gateway/index.js";
+export { type CloseRunOutcome, closeRun } from "./loop/close-run.js";
 export {
   createNoopInterruptArtifactFlushPort,
   type InterruptArtifactFlushPort,
@@ -70,6 +73,11 @@ export {
   type RunTurnInput,
   type RunTurnPort,
 } from "./loop/run-turn-port.js";
+export {
+  THREAD_LOCK_SEED,
+  type ThreadLock,
+  threadLockKey,
+} from "./loop/thread-lock.js";
 export {
   createInMemoryThreadRunOwnership,
   type ThreadRunClaim,

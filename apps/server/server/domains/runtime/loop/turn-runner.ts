@@ -205,6 +205,7 @@ export function createTurnRunner(deps: {
           activatedSkillSlugs: input.activatedSkillSlugs,
           userTurnMetadata: input.userTurnMetadata,
           signal: controller.signal,
+          lease: heldLease,
           onStartPersisted: input.admissionIdentity
             ? async ({ userTurnId, assistantTurnId }) =>
                 input.admissionIdentity?.onAccepted({

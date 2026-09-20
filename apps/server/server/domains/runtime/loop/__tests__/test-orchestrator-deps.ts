@@ -25,6 +25,11 @@ import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
 } from "../../../threads/index.js";
+import {
+  createInMemoryInbox,
+  createInMemoryRunAuthority,
+  createInMemoryThreadLock,
+} from "../../adapters/in-memory/loop-ports.js";
 import type { Gateway } from "../../gateway/index.js";
 import { createInMemoryModelRequestDebugStore } from "../../model-request-debug/index.js";
 import type { ChildRunCoordinator } from "../../spawn/child-run-coordinator.js";
@@ -145,6 +150,9 @@ export function createTestOrchestratorDeps(
     eventSink: createInMemoryEventSink(),
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
     notices: createTestNoticePort(),
+    inbox: createInMemoryInbox(),
+    threadLock: createInMemoryThreadLock(),
+    runAuthority: createInMemoryRunAuthority(),
     activeDocuments,
     imageAssets: overrides.imageAssets ?? {
       async resolve() {
