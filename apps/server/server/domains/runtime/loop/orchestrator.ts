@@ -70,7 +70,11 @@ import {
   modelResult,
   type ResponseCommitWriteReceipt,
 } from "@meridian/agent-edit/integration";
-import { meridianErrorFromGateway, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
+import {
+  type MeridianError,
+  meridianErrorFromGateway,
+  meridianErrorFromSystem,
+} from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
@@ -110,6 +114,7 @@ import {
   attachNoticesToLatestUserMessage,
   attachSkillBodiesToLatestUserMessage,
   insertPostToolNotices,
+  lastUserMessageIndex,
 } from "./context-builder.js";
 import {
   finalizeCancelled,
@@ -117,7 +122,7 @@ import {
   finalizeTurnOnGeneratorFailure,
 } from "./finalization.js";
 import { loadThreadConversationContext } from "./fork-thread-context.js";
-import { persistInboxSteers, renderInboxBatch } from "./inbox-context.js";
+import { drainInbox } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
   defaultInterruptAutoResumePolicy,
@@ -191,7 +196,7 @@ export interface OrchestratorDeps {
   notices: NoticePort;
   /** Durable per-thread message queue drained into each model request. */
   inbox: Inbox;
-  /** The per-thread serialization lock shared with `enqueue`. */
+  /** The per-thread serialization lock the producer `ThreadedInbox` also takes. */
   threadLock: ThreadLock;
   /** Releases the run's lease through `closeRun` when the queue is empty. */
   runAuthority: RunAuthority;
@@ -211,6 +216,9 @@ export interface OrchestratorDeps {
     ): Promise<void>;
   };
 }
+
+/** The terminal write a run exit runs under the thread lock before releasing. */
+type TerminalOutcome = { turn?: Turn; events: OrchestratorEvent[] };
 
 type ResponseWriteCommitOutcome =
   | {
@@ -360,13 +368,17 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
       const inheritedBlocks = conversation.blocks.filter((block) =>
         inheritedTurnIds.has(block.turnId),
       );
-      const lastTurn = priorTurns.at(-1) ?? inheritedTurns.at(-1) ?? null;
+      const sortedLeaf = priorTurns.at(-1) ?? inheritedTurns.at(-1) ?? null;
+      // Chain from the durable leaf when present: `priorTurns` sorts by
+      // `createdAt`, which can disagree with `activeLeafTurnId` after a restart
+      // or an equal-timestamp batch, which would fork the turn chain.
+      const prevTurnId = thread.activeLeafTurnId ?? sortedLeaf?.id ?? null;
       // Read inside the setup transaction so the turn's durable write vocabulary
       // matches the mode in effect at the moment the turn was minted.
       const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
       const userTurn = createLocalTurn({
         threadId: input.threadId,
-        prevTurnId: lastTurn?.id ?? null,
+        prevTurnId,
         role: "user",
         status: "complete",
         metadata: input.userTurnMetadata ?? null,
@@ -604,7 +616,13 @@ async function persistModelResponse(input: {
   };
 }
 
-async function* settleAndFinalizeCancelled(input: {
+/**
+ * Persists the partial usage a cancelled stream produced before the terminal
+ * cancel write. Kept separate from `finalizeCancelled` so a pending steer at
+ * the exit still settles the aborted response, then continues the run; only the
+ * cancel write itself is gated by `closeRun`.
+ */
+async function settleCancelledResponse(input: {
   deps: OrchestratorDeps;
   runInput: RunTurnInput;
   thread: Thread;
@@ -615,9 +633,7 @@ async function* settleAndFinalizeCancelled(input: {
   allBlocks: Block[];
   result: GenerateResult | undefined;
   model: string;
-}): AsyncGenerator<OrchestratorEvent> {
-  let currentAssistantTurn = input.currentAssistantTurn;
-  let blockSeq = input.blockSeq;
+}): Promise<{ events: OrchestratorEvent[]; turn: Turn }> {
   const settlement = await input.deps.gateway.settleCancelledResult?.({
     model: input.model,
     ...(input.result ? { result: input.result } : {}),
@@ -626,6 +642,8 @@ async function* settleAndFinalizeCancelled(input: {
       : {}),
   });
 
+  let currentAssistantTurn = input.currentAssistantTurn;
+  const events: OrchestratorEvent[] = [];
   if (settlement?.persist) {
     const persistedResponse = await persistModelResponse({
       deps: input.deps,
@@ -635,21 +653,19 @@ async function* settleAndFinalizeCancelled(input: {
       result: settlement.result,
       treeBudget: input.treeBudget,
       turnAccounting: input.turnAccounting,
-      blockSeq,
+      blockSeq: input.blockSeq,
       // A cancelled run leaves its drained batch unacked so it redelivers.
       inboxAckIds: [],
     });
     currentAssistantTurn = persistedResponse.updatedTurn;
-    blockSeq = persistedResponse.nextBlockSeq;
     input.allBlocks.push(...persistedResponse.createdBlocks);
-    yield* persistedResponse.events;
+    events.push(...persistedResponse.events);
     await input.deps.responseWrites.rollbackResponse(persistedResponse.responseId, {
       threadId: input.runInput.threadId,
       turnId: currentAssistantTurn.id,
     });
   }
-
-  yield* await finalizeCancelled(input.deps, input.runInput.threadId, currentAssistantTurn);
+  return { events, turn: currentAssistantTurn };
 }
 
 async function persistPermissionDenial(input: {
@@ -886,26 +902,52 @@ async function* generateEvents(
     });
   }
 
-  // The run's exit: claim the inbox, complete the terminal turn, and release the
-  // lease under one hold of the per-thread lock. A pending batch keeps this run
-  // alive into the next iteration; otherwise the terminal turn is durable before
-  // the lease is released, so a steer cannot start a second run mid-terminal.
-  function completeAtExit(finishReason: GenerateResult["finishReason"]) {
-    return closeRun({
+  // The run's single terminal exit. Every terminal route funnels through here so
+  // the final claim is uniform: `closeRun` takes the per-thread lock, claims the
+  // inbox once more, and either continues the run into a pending batch or runs
+  // `complete` and releases the lease under the same lock. Returns true when the
+  // caller must continue the loop; false when the terminal events were yielded.
+  //
+  // `continueOnPending` encodes the interrupt policy: true for cancel and for
+  // normal completion (endTurnRequested / clean finish), where a pending steer
+  // becomes the next turn of the same run; false for hard error, budget cap, and
+  // max-iteration, which complete and release and let the S4 wake sweep recover
+  // any pending steer.
+  async function* exitRun(
+    continueOnPending: boolean,
+    complete: () => Promise<TerminalOutcome>,
+  ): AsyncGenerator<OrchestratorEvent, boolean> {
+    const outcome = await closeRun({
       threadLock: deps.threadLock,
       inbox: deps.inbox,
       runAuthority: deps.runAuthority,
       threadId: input.threadId,
       lease: input.lease ?? null,
-      complete: () =>
-        completeTurn({
-          deps,
-          threadId: input.threadId,
-          turn: currentAssistantTurn,
-          finishReason,
-        }),
+      continueOnPending,
+      complete,
     });
+    if (outcome.kind === "continue") return true;
+    currentAssistantTurn = outcome.completion.turn ?? currentAssistantTurn;
+    yield* outcome.completion.events;
+    return false;
   }
+
+  const cancelTerminal = async (): Promise<TerminalOutcome> => ({
+    events: await finalizeCancelled(deps, input.threadId, currentAssistantTurn),
+  });
+  const errorTerminal = (error: MeridianError | string) => async (): Promise<TerminalOutcome> => ({
+    events: await finalizeError(deps, input.threadId, currentAssistantTurn, error),
+  });
+  const completeTerminal =
+    (finishReason: GenerateResult["finishReason"]) => async (): Promise<TerminalOutcome> => {
+      const completion = await completeTurn({
+        deps,
+        threadId: input.threadId,
+        turn: currentAssistantTurn,
+        finishReason,
+      });
+      return { turn: completion.turn, events: completion.events };
+    };
 
   try {
     const allTurns: Turn[] = [...inheritedTurns, ...priorTurns, userTurn, assistantTurn];
@@ -914,6 +956,13 @@ async function* generateEvents(
     let iteration = 0;
     // A successful return_result completes the turn after the current tool batch.
     let endTurnRequested = false;
+    // An abort consumed by a pending-steer continuation must not cancel the
+    // resumed turn: the interrupt handled its boundary, the run lives on.
+    let cancelConsumed = false;
+    const isCancelled = () => !cancelConsumed && (input.signal?.aborted ?? false);
+    // Pinned once before the first drain appends steers, so notices and skill
+    // bodies attach to the writer's triggering message, never a drained steer.
+    let writerMessageIndex: number | undefined;
     let activatedSkillBodies:
       | Array<{ slug: string; description: string; body: string }>
       | undefined;
@@ -926,34 +975,32 @@ async function* generateEvents(
 
     // Every cancellation/error path must yield terminal events, not just
     // return/throw, so subscribers see the turn lifecycle closure.
-    while (true) {
+    runLoop: while (true) {
       iteration += 1;
       if (iteration > MAX_TURN_ITERATIONS) {
-        yield* await finalizeError(
-          deps,
-          input.threadId,
-          currentAssistantTurn,
-          "exceeded max tool iterations",
-        );
+        yield* exitRun(false, errorTerminal("exceeded max tool iterations"));
         return;
       }
 
-      if (input.signal?.aborted) {
-        yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
+      if (isCancelled()) {
+        if (yield* exitRun(true, cancelTerminal)) {
+          cancelConsumed = true;
+          continue;
+        }
         return;
       }
 
       const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
       if (budgetError) {
-        yield* await finalizeError(deps, input.threadId, currentAssistantTurn, budgetError);
+        yield* exitRun(false, errorTerminal(budgetError));
         return;
       }
 
       turnAccounting.recordIterationSpend(treeBudget);
 
       const gatewayAbort = new AbortController();
-      let cancelRequested = input.signal?.aborted ?? false;
-      if (input.signal) {
+      let cancelRequested = isCancelled();
+      if (input.signal && !cancelConsumed) {
         input.signal.addEventListener(
           "abort",
           () => {
@@ -1016,74 +1063,70 @@ async function* generateEvents(
         ...(built.agentSlug ? { agentSlug: built.agentSlug } : {}),
       };
 
+      // The writer's triggering message is pinned before the drain appends
+      // steers; notices and skill bodies must land there, not on a drained steer.
+      writerMessageIndex ??= lastUserMessageIndex(request.messages);
+      const baseMessageCount = request.messages.length;
       let inboxAckIds: string[] = [];
-      {
-        const baseMessageCount = request.messages.length;
-        const batch = await deps.inbox.claimPending(input.threadId);
-        inboxAckIds = batch.map((message) => message.id);
-        // A steer already persisted by a crashed run is redelivered; the context
-        // build already carried it from `allTurns`, so skip re-rendering and
-        // re-appending it here. Its id is the durable inbox message id.
-        const knownTurnIds = new Set(allTurns.map((turn) => turn.id));
-        const freshBatch = batch.filter(
-          (message) => message.intent !== "steer" || !knownTurnIds.has(message.id),
-        );
-        const rendered = renderInboxBatch(request.messages, freshBatch);
-        request.messages = rendered.messages;
-        // A steer is history, not transient context: persist each as a user turn
-        // at the tail so later iterations of this same run keep seeing it, then
-        // fold it into the accumulator the next request is built from.
-        const persistedSteers = await persistInboxSteers({
-          deps,
-          threadId: input.threadId,
-          expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
-          batch: freshBatch,
-        });
-        for (const turn of persistedSteers.turns) allTurns.push(turn);
-        for (const block of persistedSteers.blocks) allBlocks.push(block);
-        yield* persistedSteers.events;
-        const notices = [
-          ...(await deps.notices.drainForModelContext(input.threadId)),
-          ...rendered.notices,
-        ];
-        if (iteration === 1) {
-          preTurnNotices.push(...notices);
-        } else if (notices.length > 0) {
-          postToolNoticeBatches.push({ afterMessageCount: baseMessageCount, notices });
-        }
-
-        if (input.activatedSkillSlugs?.length) {
-          activatedSkillBodies ??= await Promise.all(
-            input.activatedSkillSlugs.map((slug) =>
-              loadUserSkillBody({
-                thread,
-                slug,
-                agentRevisions: deps.agentRevisions,
-                accountSkillInstalls: deps.accountSkillInstalls,
-              }),
-            ),
-          );
-          request.messages = attachSkillBodiesToLatestUserMessage(
-            request.messages,
-            activatedSkillBodies,
-          );
-        }
-        if (preTurnNotices.length > 0) {
-          request.messages = attachNoticesToLatestUserMessage(request.messages, preTurnNotices);
-        }
-        let insertedNoticeMessages = 0;
-        for (const batch of postToolNoticeBatches) {
-          const beforeInsert = request.messages.length;
-          request.messages = insertPostToolNotices(
-            request.messages,
-            batch.notices,
-            batch.afterMessageCount + insertedNoticeMessages,
-          );
-          insertedNoticeMessages += request.messages.length - beforeInsert;
-        }
-        // After this point the drain is durable. If the provider stream throws before
-        // returning a result, the notice is lost, matching the model-call boundary.
+      // A steer is history, not transient context: the drain persists each at
+      // the thread tail so later iterations of this same run keep seeing it,
+      // chained from the durable `activeLeafTurnId`, not the `createdAt` order.
+      const drain = await drainInbox({
+        persistence: deps,
+        inbox: deps.inbox,
+        notices: deps.notices,
+        threadId: input.threadId,
+        messages: request.messages,
+        knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
+        expectedLeafTurnId: thread.activeLeafTurnId ?? allTurns.at(-1)?.id ?? null,
+      });
+      request.messages = drain.rendered;
+      inboxAckIds = drain.ackIds;
+      for (const turn of drain.turns) allTurns.push(turn);
+      for (const block of drain.blocks) allBlocks.push(block);
+      yield* drain.persistedEvents;
+      if (iteration === 1) {
+        preTurnNotices.push(...drain.notices);
+      } else if (drain.notices.length > 0) {
+        postToolNoticeBatches.push({ afterMessageCount: baseMessageCount, notices: drain.notices });
       }
+
+      if (input.activatedSkillSlugs?.length) {
+        activatedSkillBodies ??= await Promise.all(
+          input.activatedSkillSlugs.map((slug) =>
+            loadUserSkillBody({
+              thread,
+              slug,
+              agentRevisions: deps.agentRevisions,
+              accountSkillInstalls: deps.accountSkillInstalls,
+            }),
+          ),
+        );
+        request.messages = attachSkillBodiesToLatestUserMessage(
+          request.messages,
+          activatedSkillBodies,
+          writerMessageIndex,
+        );
+      }
+      if (preTurnNotices.length > 0) {
+        request.messages = attachNoticesToLatestUserMessage(
+          request.messages,
+          preTurnNotices,
+          writerMessageIndex,
+        );
+      }
+      let insertedNoticeMessages = 0;
+      for (const batch of postToolNoticeBatches) {
+        const beforeInsert = request.messages.length;
+        request.messages = insertPostToolNotices(
+          request.messages,
+          batch.notices,
+          batch.afterMessageCount + insertedNoticeMessages,
+        );
+        insertedNoticeMessages += request.messages.length - beforeInsert;
+      }
+      // After this point the drain is durable. If the provider stream throws before
+      // returning a result, the notice is lost, matching the model-call boundary.
 
       try {
         deps.modelRequestDebug.capture({
@@ -1116,7 +1159,7 @@ async function* generateEvents(
       let result: GenerateResult | undefined;
       let streamModel = request.model ?? "unknown";
       for await (const event of gateway.stream(request)) {
-        if (input.signal?.aborted) {
+        if (isCancelled()) {
           cancelRequested = true;
         }
 
@@ -1136,18 +1179,16 @@ async function* generateEvents(
           if (cancelRequested) {
             break;
           }
-          yield* await finalizeError(
-            deps,
-            input.threadId,
-            currentAssistantTurn,
-            meridianErrorFromGateway(event.code, event.message, event.retryable),
+          yield* exitRun(
+            false,
+            errorTerminal(meridianErrorFromGateway(event.code, event.message, event.retryable)),
           );
           return;
         }
       }
 
       if (cancelRequested) {
-        yield* settleAndFinalizeCancelled({
+        const settled = await settleCancelledResponse({
           deps,
           runInput: input,
           thread,
@@ -1161,16 +1202,17 @@ async function* generateEvents(
           result,
           model: result?.model ?? streamModel,
         });
+        yield* settled.events;
+        currentAssistantTurn = settled.turn;
+        if (yield* exitRun(true, cancelTerminal)) {
+          cancelConsumed = true;
+          continue;
+        }
         return;
       }
 
       if (!result) {
-        yield* await finalizeError(
-          deps,
-          input.threadId,
-          currentAssistantTurn,
-          "Stream ended without result",
-        );
+        yield* exitRun(false, errorTerminal("Stream ended without result"));
         return;
       }
 
@@ -1199,12 +1241,7 @@ async function* generateEvents(
       yield* persistedResponse.events;
 
       if (result.finishReason === "error") {
-        yield* await finalizeError(
-          deps,
-          input.threadId,
-          currentAssistantTurn,
-          "Model returned error finish reason",
-        );
+        yield* exitRun(false, errorTerminal("Model returned error finish reason"));
         return;
       }
 
@@ -1213,9 +1250,12 @@ async function* generateEvents(
       // created them.
       if (result.finishReason === "tool_use" && toolCallsFromResult.length > 0) {
         activeResponseId = responseId;
-        if (input.signal?.aborted) {
+        if (isCancelled()) {
           await rollbackActiveResponse();
-          yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
+          if (yield* exitRun(true, cancelTerminal)) {
+            cancelConsumed = true;
+            continue;
+          }
           return;
         }
 
@@ -1275,9 +1315,12 @@ async function* generateEvents(
         // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
         // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
         for (const call of toolCallsFromResult) {
-          if (input.signal?.aborted) {
+          if (isCancelled()) {
             await rollbackActiveResponse();
-            yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
+            if (yield* exitRun(true, cancelTerminal)) {
+              cancelConsumed = true;
+              continue runLoop;
+            }
             return;
           }
 
@@ -1293,7 +1336,10 @@ async function* generateEvents(
             activeResponseId = undefined;
             yield* boundary.events;
             if (boundary.outcome.status === "draft_closed") {
-              yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
+              if (yield* exitRun(true, cancelTerminal)) {
+                cancelConsumed = true;
+                continue runLoop;
+              }
               return;
             }
             writeBlocksByDocument.clear();
@@ -1389,16 +1435,22 @@ async function* generateEvents(
             });
             writeBlocksByDocument.set(dispatched.metadata.documentId, blocks);
           }
-          if (dispatched.cancelled || input.signal?.aborted) {
+          if (dispatched.cancelled || isCancelled()) {
             await rollbackActiveResponse();
-            yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
+            if (yield* exitRun(true, cancelTerminal)) {
+              cancelConsumed = true;
+              continue runLoop;
+            }
             return;
           }
           if (dispatched.endTurn === true) endTurnRequested = true;
         }
-        if (input.signal?.aborted) {
+        if (isCancelled()) {
           await rollbackActiveResponse();
-          yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
+          if (yield* exitRun(true, cancelTerminal)) {
+            cancelConsumed = true;
+            continue;
+          }
           return;
         }
         const settledScope = await settleWriteScope();
@@ -1406,7 +1458,10 @@ async function* generateEvents(
         activeResponseId = undefined;
         yield* settledScope.events;
         if (concurrentEdits.status === "draft_closed") {
-          yield* await finalizeCancelled(deps, input.threadId, currentAssistantTurn);
+          if (yield* exitRun(true, cancelTerminal)) {
+            cancelConsumed = true;
+            continue;
+          }
           return;
         }
 
@@ -1471,20 +1526,14 @@ async function* generateEvents(
           // A child called return_result: the report is captured and persisted,
           // so the turn ends here instead of looping into another model round.
           // A message that landed in the exit window keeps the run going.
-          const outcome = await completeAtExit("end_turn");
-          if (outcome.kind === "continue") continue;
-          currentAssistantTurn = outcome.completion.turn;
-          yield* outcome.completion.events;
+          if (yield* exitRun(true, completeTerminal("end_turn"))) continue;
           return;
         }
 
         continue;
       }
 
-      const outcome = await completeAtExit(result.finishReason);
-      if (outcome.kind === "continue") continue;
-      currentAssistantTurn = outcome.completion.turn;
-      yield* outcome.completion.events;
+      if (yield* exitRun(true, completeTerminal(result.finishReason))) continue;
       return;
     }
   } catch (err) {

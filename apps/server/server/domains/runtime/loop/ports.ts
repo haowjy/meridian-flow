@@ -54,8 +54,11 @@ export interface InboxMessage extends MessageDraft {
 export interface Inbox {
   /**
    * Durably appends a message, collapsing a duplicate on `(threadId, idempotencyKey)`.
-   * The domain `enqueue` serializes per thread (it holds the per-thread lock), so the
-   * global `seq` orders commits within a thread and the batch preserves enqueue order.
+   * Raw storage: it does not serialize with `closeRun`'s final claim. Producers
+   * must go through `ThreadedInbox` (`loop/threaded-inbox.ts`), which holds the
+   * per-thread lock around this call so the global `seq` orders commits within a
+   * thread and the batch preserves enqueue order. Only the drain and `closeRun`
+   * (the consumer side) hold the raw `Inbox`.
    */
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   claimPending(threadId: ThreadId): Promise<InboxMessage[]>;
@@ -79,6 +82,13 @@ export interface RunAuthority {
   publish(lease: Lease, phase: ThreadPhase): Promise<void>;
   read(threadId: ThreadId): Promise<ThreadStatus>;
   cancel(threadId: ThreadId): Promise<void>;
+  /**
+   * Releases the held lease. Guarded: an already-released or superseded lease is
+   * a no-op and must never free a newer run's lock. `closeRun` releases under
+   * the thread lock after the terminal write commits; the run owner's `finally`
+   * releases again as the cancel/error backstop when the generator throws
+   * before reaching `closeRun`. The guard is what makes that double release safe.
+   */
   release(lease: Lease): Promise<void>;
 }
 
