@@ -457,7 +457,9 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     let runClaim: ThreadRunClaim | null = null;
     try {
       runClaim = await runOwnership.tryAcquire(childThreadId);
-      if (!runClaim) throw new Error(`Child thread already has an active run: ${child.id}`);
+      // Keep the id out: this message reaches the model as a tool error and
+      // would put the child UUID back into re-emitted context.
+      if (!runClaim) throw new Error("Child thread already has an active run");
       if (options.background) {
         deps.childRunRegistry.registerBackgroundChild(
           parentThreadId,

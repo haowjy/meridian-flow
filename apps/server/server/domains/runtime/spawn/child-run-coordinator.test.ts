@@ -672,7 +672,12 @@ describe("ChildRunCoordinator continue", () => {
         budget,
       });
       expect(busy.status).toBe("error");
-      if (busy.status === "error") expect(busy.error.code).toBe("continue_target_busy");
+      if (busy.status === "error") {
+        expect(busy.error.code).toBe("continue_target_busy");
+        // The error reaches the model; it must not carry the child UUID.
+        expect(busy.error.message).not.toContain(childId);
+        expect(busy.error.message).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+      }
     } finally {
       await claim?.release();
     }
