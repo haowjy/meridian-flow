@@ -15,8 +15,10 @@ export const DEFAULT_LEASE_TTL_MS = 30_000;
 
 export type ThreadPhase = "generating" | "waiting";
 
-/** `awake` means a live lease exists; `phase` is what its holder published. */
-export type ThreadStatus = { kind: "asleep" } | { kind: "awake"; phase: ThreadPhase };
+/** `awake` means a live lease exists; `phase` and `cancelRequested` come from the lease row. */
+export type ThreadStatus =
+  | { kind: "asleep" }
+  | { kind: "awake"; phase: ThreadPhase; cancelRequested: boolean };
 
 export type MessageIntent = "steer" | "system";
 
@@ -50,9 +52,14 @@ export interface InboxMessage extends MessageDraft {
 }
 
 export interface Inbox {
+  /**
+   * Durably appends a message, collapsing a duplicate on `(threadId, idempotencyKey)`.
+   * The domain `enqueue` serializes per thread (it holds the per-thread lock), so the
+   * global `seq` orders commits within a thread and the batch preserves enqueue order.
+   */
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
-  claimPending(threadId: ThreadId, runId: RunId): Promise<InboxMessage[]>;
-  ack(threadId: ThreadId, ids: string[], runId: RunId): Promise<void>;
+  claimPending(threadId: ThreadId): Promise<InboxMessage[]>;
+  ack(threadId: ThreadId, ids: string[]): Promise<void>;
   /** Threads with at least one pending undelivered steer, oldest first; the wake sweep's input. */
   pendingSteerThreads(limit: number): Promise<ThreadId[]>;
 }
@@ -66,7 +73,8 @@ export interface Lease {
 
 export interface RunAuthority {
   acquire(threadId: ThreadId, runId: RunId): Promise<Lease | null>;
-  renew(lease: Lease): Promise<void>;
+  /** Returns `false` when the lease row is gone or owned by another run; the holder has lost it. */
+  renew(lease: Lease): Promise<boolean>;
   holder(threadId: ThreadId): Promise<RunId | null>;
   publish(lease: Lease, phase: ThreadPhase): Promise<void>;
   read(threadId: ThreadId): Promise<ThreadStatus>;

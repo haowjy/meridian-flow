@@ -221,9 +221,10 @@ export const childReportDeliveries = pgTable(
 /**
  * Durable per-thread message queue drained in a batch at the next delivery
  * boundary. Rows are marked delivered rather than deleted so the idempotency
- * key and replay facts survive. `seq` is a global bigserial: a globally
- * monotonic value is also per-thread monotonic, which yields FIFO order without
- * a per-thread counter row.
+ * key and replay facts survive. `seq` is a global bigserial; sequences order
+ * allocation, not commit, so FIFO within a thread rests on the domain `enqueue`
+ * serializing per thread (it holds the per-thread lock): with commits serialized,
+ * `seq` orders them within the thread without a per-thread counter row.
  */
 export const threadInboxMessages = pgTable(
   "thread_inbox_messages",
@@ -244,7 +245,7 @@ export const threadInboxMessages = pgTable(
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
   },
   (table) => [
-    unique("thread_inbox_messages_idem_unique").on(table.idempotencyKey),
+    unique("thread_inbox_messages_idem_unique").on(table.threadId, table.idempotencyKey),
     index("thread_inbox_messages_pending")
       .on(table.threadId, table.seq)
       .where(sql`${table.deliveredAt} IS NULL`),
@@ -254,8 +255,16 @@ export const threadInboxMessages = pgTable(
       sql`${table.provenanceKind} IN ('writer','agent','child','system')`,
     ),
     check(
+      "thread_inbox_messages_provenance_kind_matches",
+      sql`${table.provenance}->>'kind' = ${table.provenanceKind}`,
+    ),
+    check(
       "thread_inbox_messages_body_valid",
       sql`${table.bodyKind} IN ('text','report','context')`,
+    ),
+    check(
+      "thread_inbox_messages_body_kind_matches",
+      sql`${table.body}->>'kind' = ${table.bodyKind}`,
     ),
   ],
 );

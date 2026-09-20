@@ -1,4 +1,8 @@
-/** PostgreSQL adapter for the durable per-thread message queue (`Inbox`). */
+/**
+ * PostgreSQL adapter for the durable per-thread message queue (`Inbox`). The
+ * `provenance`/`body` jsonb reads trust the stored shape via `as unknown as`;
+ * this adapter performs no runtime validation at the storage boundary.
+ */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { and, asc, eq, inArray, isNull, min } from "drizzle-orm";
@@ -45,14 +49,21 @@ export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
           body: draft.body,
           idempotencyKey: draft.idempotencyKey,
         })
-        .onConflictDoNothing({ target: schema.threadInboxMessages.idempotencyKey })
+        .onConflictDoNothing({
+          target: [schema.threadInboxMessages.threadId, schema.threadInboxMessages.idempotencyKey],
+        })
         .returning();
       if (inserted) return toInboxMessage(inserted);
 
       const [existing] = await db_()
         .select()
         .from(schema.threadInboxMessages)
-        .where(eq(schema.threadInboxMessages.idempotencyKey, draft.idempotencyKey))
+        .where(
+          and(
+            eq(schema.threadInboxMessages.threadId, draft.threadId),
+            eq(schema.threadInboxMessages.idempotencyKey, draft.idempotencyKey),
+          ),
+        )
         .limit(1);
       if (!existing) {
         throw new Error(`Inbox enqueue lost its row: ${draft.idempotencyKey}`);
@@ -60,7 +71,7 @@ export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
       return toInboxMessage(existing);
     },
 
-    async claimPending(threadId, _runId) {
+    async claimPending(threadId) {
       const rows = await db_()
         .select()
         .from(schema.threadInboxMessages)
@@ -74,7 +85,7 @@ export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
       return rows.map(toInboxMessage);
     },
 
-    async ack(threadId, ids, _runId) {
+    async ack(threadId, ids) {
       if (ids.length === 0) return;
       await db_()
         .update(schema.threadInboxMessages)
@@ -90,10 +101,7 @@ export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
 
     async pendingSteerThreads(limit) {
       const rows = await db_()
-        .select({
-          threadId: schema.threadInboxMessages.threadId,
-          firstSeq: min(schema.threadInboxMessages.seq),
-        })
+        .select({ threadId: schema.threadInboxMessages.threadId })
         .from(schema.threadInboxMessages)
         .where(
           and(

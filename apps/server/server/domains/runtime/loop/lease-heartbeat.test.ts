@@ -23,6 +23,7 @@ function recordingAuthority(): {
     },
     async renew() {
       state.renewals += 1;
+      return true;
     },
     async holder() {
       return null;
@@ -75,6 +76,7 @@ describe("RunAuthority heartbeat", () => {
       },
       async renew() {
         renewals.push(1);
+        return true;
       },
       async holder() {
         return null;
@@ -126,6 +128,45 @@ describe("RunAuthority heartbeat", () => {
 
     expect(eventSink.events.map((event) => event.name)).toEqual(["lease.renew_failed"]);
     expect(eventSink.events[0]?.level).toBe("warn");
+    await heartbeat.release(lease);
+  });
+
+  it("reports a lost lease once and stops renewing", async () => {
+    vi.useFakeTimers();
+    const eventSink = createInMemoryEventSink();
+    let renewals = 0;
+    const authority: RunAuthority = {
+      async acquire(threadId, runId) {
+        return { threadId, runId, holderId: "holder-1" };
+      },
+      async renew() {
+        renewals += 1;
+        return false;
+      },
+      async holder() {
+        return null;
+      },
+      async publish() {},
+      async read() {
+        return { kind: "asleep" };
+      },
+      async cancel() {},
+      async release() {},
+    };
+    const heartbeat = createHeartbeatRunAuthority(authority, {
+      eventSink,
+      leaseTtlMs: 3_000,
+    });
+    const lease = required(await heartbeat.acquire(THREAD_A, "run-1"));
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(renewals).toBe(1);
+    expect(eventSink.events.map((event) => event.name)).toEqual(["lease.lost"]);
+    expect(eventSink.events[0]?.level).toBe("warn");
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(renewals).toBe(1);
+    expect(eventSink.events.map((event) => event.name)).toEqual(["lease.lost"]);
     await heartbeat.release(lease);
   });
 });
