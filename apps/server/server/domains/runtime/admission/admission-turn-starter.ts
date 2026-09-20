@@ -47,6 +47,7 @@ export function createAdmissionTurnStarter(deps: {
           userBlocks: input.blocks,
           activatedSkillSlugs: input.admission.activatedSkillSlugs,
           connectionToken: input.admission.connectionToken,
+          userTurnMetadata: input.userTurnMetadata,
           admissionIdentity: {
             submissionId: input.admission.submissionId,
             async onAccepted(response) {

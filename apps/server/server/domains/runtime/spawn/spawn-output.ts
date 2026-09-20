@@ -2,20 +2,31 @@
  * spawn-output — transcript-facing spawn payloads.
  *
  * Cost stays on the internal report / tree budget, never on the tool output.
+ * The model copy keeps the short `handle` but drops the internal UUID
+ * (`threadId`); UI navigation reads the UUID off the helper card, not here.
  * The writer-facing surface is a helper-result custom block, same family as
  * ask_user's custom card: the spawn tool_use/tool_result stay protocol-only.
  */
 import { GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
 import type { HelperResultProps } from "@meridian/contracts/components";
+import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
 
 export function spawnOutputForTranscript(output: JsonValue): JsonValue {
-  if (!isRecord(output) || output.status !== "completed") return output;
-  const report = output.report;
-  if (!isRecord(report)) return output;
-  const reportWithoutCost = { ...report };
-  delete reportWithoutCost.costMillicredits;
-  return { ...output, report: reportWithoutCost };
+  if (!isRecord(output)) return output;
+  if (output.status === "completed") {
+    const report = output.report;
+    if (!isRecord(report)) return output;
+    const reportWithoutCost = { ...report };
+    delete reportWithoutCost.costMillicredits;
+    delete reportWithoutCost.threadId;
+    return { ...output, report: reportWithoutCost };
+  }
+  if (output.status === "background") {
+    const { threadId: _threadId, ...rest } = output;
+    return rest;
+  }
+  return output;
 }
 
 export function spawnHelperCardProps(input: {
@@ -37,6 +48,7 @@ export function spawnHelperCardProps(input: {
   const output = input.output;
   if (!isRecord(output)) return base;
   if (output.status === "completed" && isRecord(output.report)) {
+    const artifacts = output.report.artifacts;
     return {
       ...base,
       status: "completed",
@@ -45,6 +57,7 @@ export function spawnHelperCardProps(input: {
         ? { childThreadId: output.report.threadId }
         : {}),
       ...(output.report.payload !== undefined ? { payload: output.report.payload } : {}),
+      ...(Array.isArray(artifacts) ? { artifacts: artifacts as ArtifactRef[] } : {}),
     };
   }
   if (output.status === "error") {

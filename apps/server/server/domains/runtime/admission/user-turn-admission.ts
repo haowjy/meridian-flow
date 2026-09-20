@@ -14,6 +14,8 @@ import type {
   UserTurnAdmissionResult,
 } from "@meridian/contracts/protocol";
 import { parseRequestId } from "@meridian/contracts/request-id";
+import type { ThreadId, UserId } from "@meridian/contracts/runtime";
+import type { JsonValue } from "@meridian/contracts/threads";
 import type { ProjectContextAvailabilityPort } from "../../context/index.js";
 import type { ThreadRunOwnership } from "../loop/thread-run-ownership.js";
 
@@ -72,9 +74,30 @@ export interface AdmissionTurnStarter {
     fingerprint: AdmissionFingerprint;
     blocks: readonly UserMessageBlock[];
     references: readonly AuthorizedReference[];
+    /** Hidden turn metadata; never part of the replay fingerprint. */
+    userTurnMetadata?: JsonValue | null;
   }): Promise<
     AcceptedAdmission | { kind: "pending" | "rejected"; submissionId: string; code?: string }
   >;
+}
+
+export type HostTurnAdmissionInput = {
+  actorUserId: UserId;
+  threadId: ThreadId;
+  submissionId: string;
+  text: string;
+  /** Hidden turn metadata; never part of the replay fingerprint. */
+  userTurnMetadata?: JsonValue | null;
+};
+
+/**
+ * Host-facing admission entry: a trusted, fully-formed turn (no writer parsing)
+ * that still settles through the same admission record and starter, so replay,
+ * claim-expiry recovery, and turn-start serialization are identical to a Send.
+ */
+export interface HostTurnAdmission {
+  lookup(request: AdmissionLookupRequest): Promise<AdmissionLookup>;
+  admit(input: HostTurnAdmissionInput): Promise<UserTurnAdmissionResult>;
 }
 
 export interface UserTurnAdmission {
@@ -308,6 +331,40 @@ function assertMatchingFingerprint(record: AdmissionRecord, fingerprint: string)
   }
 }
 
+/**
+ * Turns an expired `pending` record into `rejected` only after holding the run
+ * claim so a live writer/runner cannot be reclaimed under it.
+ */
+async function recoverAdmission(
+  deps: {
+    records: AdmissionRecordPort;
+    runOwnership: ThreadRunOwnership;
+    now?: () => Date;
+  },
+  threadId: string,
+  submissionId: string,
+  record: AdmissionRecord | null,
+): Promise<AdmissionRecord | null> {
+  const now = deps.now?.() ?? new Date();
+  if (record?.state !== "pending" || !record.claimExpiresAt || record.claimExpiresAt > now)
+    return record;
+  // Match runner ordering and keep the claim until the recovery transaction commits.
+  const claim = await deps.runOwnership.tryAcquire(threadId as never);
+  if (!claim) return deps.records.lookup(threadId, submissionId);
+  try {
+    return await deps.records.recoverExpiredPending({
+      threadId,
+      submissionId,
+      now,
+      async hasLiveClaim() {
+        return false;
+      },
+    });
+  } finally {
+    await claim.release();
+  }
+}
+
 export function createUserTurnAdmission(deps: {
   records: AdmissionRecordPort;
   runOwnership: ThreadRunOwnership;
@@ -318,30 +375,11 @@ export function createUserTurnAdmission(deps: {
   starter: AdmissionTurnStarter;
   now?: () => Date;
 }): UserTurnAdmission {
-  const recover = async (
+  const recover = (
     threadId: string,
     submissionId: string,
     record: AdmissionRecord | null,
-  ) => {
-    const now = deps.now?.() ?? new Date();
-    if (record?.state !== "pending" || !record.claimExpiresAt || record.claimExpiresAt > now)
-      return record;
-    // Match runner ordering and keep the claim until the recovery transaction commits.
-    const claim = await deps.runOwnership.tryAcquire(threadId as never);
-    if (!claim) return deps.records.lookup(threadId, submissionId);
-    try {
-      return await deps.records.recoverExpiredPending({
-        threadId,
-        submissionId,
-        now,
-        async hasLiveClaim() {
-          return false;
-        },
-      });
-    } finally {
-      await claim.release();
-    }
-  };
+  ): Promise<AdmissionRecord | null> => recoverAdmission(deps, threadId, submissionId, record);
   return {
     async lookup(request) {
       return lookupProjection(
@@ -455,6 +493,84 @@ export function createUserTurnAdmission(deps: {
         blocks: admittedBlocks,
         references: admittedReferences,
       }) as Promise<UserTurnAdmissionResult>;
+    },
+  };
+}
+
+export function createHostTurnAdmission(deps: {
+  records: AdmissionRecordPort;
+  runOwnership: ThreadRunOwnership;
+  starter: AdmissionTurnStarter;
+  now?: () => Date;
+}): HostTurnAdmission {
+  const settlement = async (input: HostTurnAdmissionInput): Promise<UserTurnAdmissionResult> => {
+    const blocks: UserMessageBlock[] = [{ type: "text", text: input.text }];
+    const references: AuthorizedReference[] = [];
+    const fingerprint = canonicalAdmissionFingerprint({
+      actorUserId: input.actorUserId,
+      threadId: input.threadId,
+      text: input.text,
+      blocks,
+      references,
+      activatedSkillSlugs: [],
+    });
+
+    const existing = await deps.records.lookup(input.threadId, input.submissionId);
+    if (existing) {
+      assertMatchingFingerprint(existing, fingerprint);
+      return lookupProjection(
+        await recoverAdmission(deps, input.threadId, input.submissionId, existing),
+        input.submissionId,
+      ) as UserTurnAdmissionResult;
+    }
+
+    const now = deps.now?.() ?? new Date();
+    const reservation = await deps.records.reserve({
+      threadId: input.threadId,
+      submissionId: input.submissionId,
+      actorUserId: input.actorUserId,
+      fingerprint,
+      claimExpiresAt: new Date(now.getTime() + 5 * 60_000),
+    });
+    if (reservation.kind === "winner") {
+      assertMatchingFingerprint(reservation.record, fingerprint);
+      return lookupProjection(
+        await recoverAdmission(deps, input.threadId, input.submissionId, reservation.record),
+        input.submissionId,
+      ) as UserTurnAdmissionResult;
+    }
+
+    return deps.starter.start({
+      admission: {
+        actorUserId: input.actorUserId,
+        threadId: input.threadId,
+        submissionId: input.submissionId,
+        text: input.text,
+        blocks,
+        references,
+        activatedSkillSlugs: [],
+      },
+      fingerprint,
+      blocks,
+      references,
+      userTurnMetadata: input.userTurnMetadata ?? null,
+    }) as Promise<UserTurnAdmissionResult>;
+  };
+
+  return {
+    async lookup(request) {
+      return lookupProjection(
+        await recoverAdmission(
+          deps,
+          request.threadId,
+          request.submissionId,
+          await deps.records.lookup(request.threadId, request.submissionId),
+        ),
+        request.submissionId,
+      );
+    },
+    async admit(input) {
+      return settlement(input);
     },
   };
 }

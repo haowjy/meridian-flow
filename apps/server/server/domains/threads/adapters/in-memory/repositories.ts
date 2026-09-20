@@ -14,14 +14,17 @@ import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
+import { formatThreadRef } from "../../domain/thread-ref.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type {
   BlockRepository,
+  ChildReportDeliveryObligation,
   CreateBlockInput,
   CreateModelResponseInput,
   CreateThreadInput,
   CreateTurnInput,
   DerivedPrimaryThreadFactory,
+  EnqueueChildReportDeliveryInput,
   InternalThreadRepositories,
   ModelResponseRepository,
   SubagentThreadFactory,
@@ -179,6 +182,7 @@ export function createInMemoryRepositories(
     { threadId: ThreadId; workId: WorkId; isPrimary: boolean }
   >();
   const workContextDeliveries = transactionOwner.set<string>();
+  const childReportDeliveries = transactionOwner.map<string, ChildReportDeliveryObligation>();
   const userStateByThreadUser = transactionOwner.map<string, { isFavorite: boolean }>();
   const threadCounters = transactionOwner.map<string, number>();
 
@@ -191,10 +195,10 @@ export function createInMemoryRepositories(
     );
   }
 
-  function nextRef(projectId: string): string {
+  function nextRef(projectId: string, kind: Thread["kind"]): string {
     const n = (threadCounters.get(projectId) ?? 0) + 1;
     threadCounters.set(projectId, n);
-    return `c${n}`;
+    return formatThreadRef(kind, n);
   }
 
   function membershipKey(threadId: ThreadId, workId: WorkId): string {
@@ -252,7 +256,7 @@ export function createInMemoryRepositories(
     const row = {
       ...thread,
       workId: null,
-      ref: thread.kind === "subagent" ? null : nextRef(thread.projectId),
+      ref: nextRef(thread.projectId, thread.kind),
     };
     threads.set(row.id, row);
     return projectThread(row);
@@ -836,6 +840,44 @@ export function createInMemoryRepositories(
       },
       async acknowledge(threadId) {
         workContextDeliveries.delete(threadId);
+      },
+    },
+    childReportDeliveries: {
+      async enqueue(input: EnqueueChildReportDeliveryInput) {
+        const key = input.reportId as string;
+        if (childReportDeliveries.has(key)) return;
+        childReportDeliveries.set(key, {
+          reportId: input.reportId,
+          parentThreadId: input.parentThreadId,
+          childThreadId: input.childThreadId,
+          agentSlug: input.agentSlug,
+          description: input.description ?? null,
+          result: input.result,
+          systemTurnId: input.systemTurnId ?? null,
+          submissionEpoch: 0,
+        });
+      },
+      async listPendingParentThreadIds() {
+        return [...new Set([...childReportDeliveries.values()].map((row) => row.parentThreadId))];
+      },
+      async listPendingByParent(parentThreadId) {
+        return [...childReportDeliveries.values()].filter(
+          (row) => row.parentThreadId === parentThreadId,
+        );
+      },
+      async findByReportId(reportId) {
+        return childReportDeliveries.get(reportId as string) ?? null;
+      },
+      async setSystemTurnId(reportId, systemTurnId) {
+        const row = childReportDeliveries.get(reportId as string);
+        if (row && row.systemTurnId === null) row.systemTurnId = systemTurnId;
+      },
+      async advanceEpoch(reportId) {
+        const row = childReportDeliveries.get(reportId as string);
+        if (row) row.submissionEpoch += 1;
+      },
+      async acknowledge(reportId) {
+        childReportDeliveries.delete(reportId as string);
       },
     },
     transaction: (operation) => transactionOwner.run(operation),

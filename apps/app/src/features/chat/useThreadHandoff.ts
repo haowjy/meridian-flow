@@ -61,7 +61,7 @@ export function useThreadHandoff(
 ): FailedSendRetry | null {
   const pendingResumeRef = useRef(false);
   const handoffStartedRef = useRef(false);
-  const snapshotEvaluatedRef = useRef(false);
+  const resumedRunRef = useRef<string | null>(null);
   const creationRef = useRef<Creation | undefined>(undefined);
   const persistRef = useRef<(creation: Creation) => void>(() => undefined);
   const sendSucceededRef = useRef(false);
@@ -71,7 +71,7 @@ export function useThreadHandoff(
   useEffect(() => {
     pendingResumeRef.current = false;
     handoffStartedRef.current = false;
-    snapshotEvaluatedRef.current = false;
+    resumedRunRef.current = null;
     creationRef.current = undefined;
     sendSucceededRef.current = false;
     setFailedTurnId(null);
@@ -221,14 +221,27 @@ export function useThreadHandoff(
       return;
     }
 
-    if (snapshotEvaluatedRef.current || handoffStartedRef.current) return;
     const liveState = snapshotResume?.liveState;
     if (!liveState) return;
 
-    snapshotEvaluatedRef.current = true;
     const after = activeSnapshotResumeAfterSeq(liveState);
     if (after === null) return;
 
+    // Attach a controller per distinct active run. Do not latch while idle, or a
+    // later server-initiated run — a background child's report waking the parent
+    // — would never get a subscriber to apply its deltas.
+    const runKey = liveState.runningTurnId ?? after;
+    if (resumedRunRef.current === runKey) return;
+
+    if (handoffStartedRef.current && resumedRunRef.current === null) {
+      // The send this mount started already owns this run's stream (submit
+      // attached a controller). Record it so we do not attach a second one,
+      // while still allowing a later run to resume.
+      resumedRunRef.current = runKey;
+      return;
+    }
+
+    resumedRunRef.current = runKey;
     pendingResumeRef.current = true;
     startResume(after, liveState.runningTurnId ?? undefined);
   }, [actions, controller, projectId, queryClient, snapshotResume?.liveState, threadId]);

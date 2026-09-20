@@ -18,7 +18,7 @@ export function isVisibleChatTurn(turn: Turn): boolean {
       typeof metadata === "object" &&
       !Array.isArray(metadata) &&
       metadata.kind === "system_update" &&
-      metadata.section === "work_context"
+      (metadata.section === "work_context" || metadata.section === "child_report")
     ) {
       return false;
     }

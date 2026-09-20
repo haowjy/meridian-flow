@@ -4,13 +4,14 @@
  * Tool dispatch runs handlers and durable tool_result rows. This module upserts
  * helper-result custom cards onto the active turn and owns return_result
  * settlement (tool_result + child-report in one persist). Background
- * helper-result-delivery uses the same HelperResultProps builder.
+ * child-report-delivery uses the same HelperResultProps builder.
  */
 import {
   buildChildReportComponentContent,
   buildHelperResultComponentContent,
   type ComponentBlockContent,
 } from "@meridian/contracts/components";
+import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ReturnResultOutcome } from "@meridian/contracts/spawn";
 import type { Block, OrchestratorEvent } from "@meridian/contracts/threads";
@@ -74,7 +75,7 @@ export async function persistCustomCard(
   return persisted.result;
 }
 
-export async function persistSpawnHelperCard(
+export async function persistHelperCard(
   transcript: SpawnTranscript | undefined,
   input: Parameters<typeof spawnHelperCardProps>[0],
   existing?: Block | null,
@@ -93,6 +94,7 @@ export async function persistReturnResult(
     toolCallId: string;
     outcome: ReturnResultOutcome;
     summary: string;
+    artifacts?: ArtifactRef[];
   },
 ): Promise<{ block: Block; endTurn: boolean }> {
   const persisted = await persistAndAppendEvents(
@@ -127,7 +129,10 @@ export async function persistReturnResult(
       if (input.outcome.ok) {
         const report = customCardBlock(
           transcript,
-          buildChildReportComponentContent({ summary: input.summary }),
+          buildChildReportComponentContent({
+            summary: input.summary,
+            ...(input.artifacts !== undefined ? { artifacts: input.artifacts } : {}),
+          }),
         );
         events.push({ type: "block.upserted" as const, block: report.row });
         card = report.local;

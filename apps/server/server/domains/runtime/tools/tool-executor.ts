@@ -54,6 +54,7 @@ import {
 import { isReturnResultOutcome } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type {
+  ContinueToolHandlerContext,
   InterruptToolHandlerContext,
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
@@ -277,6 +278,7 @@ function handlerContextForRegistration(
   | ToolHandlerContext
   | InterruptToolHandlerContext
   | SpawnToolHandlerContext
+  | ContinueToolHandlerContext
   | ReturnResultToolHandlerContext {
   switch (registration.capability) {
     case undefined:
@@ -286,6 +288,11 @@ function handlerContextForRegistration(
         throw new Error(`Spawn tool ${registration.definition.name} missing spawn context`);
       }
       return { ...baseContext, spawn: executionContext.spawn };
+    case "continue":
+      if (!executionContext.continue) {
+        throw new Error(`Continue tool ${registration.definition.name} missing continue context`);
+      }
+      return { ...baseContext, continue: executionContext.continue };
     case "return_result":
       if (!executionContext.returnResult) {
         throw new Error(

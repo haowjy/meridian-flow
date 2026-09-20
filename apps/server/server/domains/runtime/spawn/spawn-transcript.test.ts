@@ -56,6 +56,26 @@ describe("persistReturnResult", () => {
     });
   });
 
+  it("threads captured artifacts onto the child-report card", async () => {
+    const active = transcript();
+    const artifacts = [
+      { type: "object", uri: "https://example.com/one.pdf", label: "One" },
+      { type: "image", url: "https://example.com/two.png", label: "Two" },
+    ] as const;
+    await persistReturnResult(active, {
+      toolCallId: "call-1",
+      outcome: { ok: true },
+      summary: "done",
+      artifacts: [...artifacts],
+    });
+
+    const card = active.allBlocks.at(-1);
+    expect(card?.content).toMatchObject({
+      kind: "child-report",
+      props: { summary: "done", artifacts },
+    });
+  });
+
   it("persists a failed envelope without a card or endTurn", async () => {
     const active = transcript();
     const settled = await persistReturnResult(active, {
