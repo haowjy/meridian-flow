@@ -145,7 +145,6 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
       turns: repos.turns,
       blocks: repos.blocks,
       transaction: repos.transaction,
-      threadWorks: repos.threadWorks,
     },
     resolveWorkMembership: async () => "no-work",
     eventWriter,
