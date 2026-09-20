@@ -11,7 +11,7 @@ import type {
   ReturnResultOutcome,
   TreeBudget,
 } from "@meridian/contracts/spawn";
-import type { OrchestratorEvent } from "@meridian/contracts/threads";
+import type { JsonValue, OrchestratorEvent } from "@meridian/contracts/threads";
 import type { Tool } from "../gateway/index.js";
 
 export type ReturnResultCompleter = (capture: ReturnResultCapture) => Promise<ReturnResultOutcome>;
@@ -21,6 +21,8 @@ export interface RunTurnInput {
   userText: string;
   userBlocks?: readonly UserMessageBlock[];
   activatedSkillSlugs?: readonly string[];
+  /** Hidden metadata stamped on the user turn; never model-facing here. */
+  userTurnMetadata?: JsonValue | null;
   onStartPersisted?: (turns: { userTurnId: TurnId; assistantTurnId: TurnId }) => Promise<void>;
   tools?: Tool[];
   signal?: AbortSignal;

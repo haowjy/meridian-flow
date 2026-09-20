@@ -10,7 +10,8 @@ export function isVisibleConversationalTurn(input: {
   if (input.role === "system") return input.hasCustomBlock;
   if (input.role !== "user") return false;
   const metadata = input.metadata as Record<string, unknown> | null;
-  return !(metadata?.kind === "system_update" && metadata.section === "work_context");
+  if (metadata?.kind !== "system_update") return true;
+  return metadata.section !== "work_context" && metadata.section !== "child_report";
 }
 
 export function isThreadActionRequired(input: {
