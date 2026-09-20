@@ -9,10 +9,11 @@ import type {
   UserId,
   WorkId,
 } from "@meridian/contracts";
-import type { PriceSource } from "@meridian/contracts/threads";
+import type { JsonValue, PriceSource } from "@meridian/contracts/threads";
 import { sql } from "drizzle-orm";
 import {
   bigint,
+  bigserial,
   boolean,
   check,
   foreignKey,
@@ -214,6 +215,74 @@ export const childReportDeliveries = pgTable(
   (table) => [
     index("child_report_deliveries_parent_idx").on(table.parentThreadId),
     check("child_report_deliveries_epoch_nonneg", sql`${table.submissionEpoch} >= 0`),
+  ],
+);
+
+/**
+ * Durable per-thread message queue drained in a batch at the next delivery
+ * boundary. Rows are marked delivered rather than deleted so the idempotency
+ * key and replay facts survive. `seq` is a global bigserial: a globally
+ * monotonic value is also per-thread monotonic, which yields FIFO order without
+ * a per-thread counter row.
+ */
+export const threadInboxMessages = pgTable(
+  "thread_inbox_messages",
+  {
+    id: idColumn<string>(),
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    seq: bigserial("seq", { mode: "number" }).notNull(),
+    intent: text("intent").notNull(),
+    provenanceKind: text("provenance_kind").notNull(),
+    provenance: jsonb("provenance").$type<JsonValue>().notNull(),
+    bodyKind: text("body_kind").notNull(),
+    body: jsonb("body").$type<JsonValue>().notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    enqueuedAt: timestamp("enqueued_at", { withTimezone: true }).notNull().defaultNow(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  },
+  (table) => [
+    unique("thread_inbox_messages_idem_unique").on(table.idempotencyKey),
+    index("thread_inbox_messages_pending")
+      .on(table.threadId, table.seq)
+      .where(sql`${table.deliveredAt} IS NULL`),
+    check("thread_inbox_messages_intent_valid", sql`${table.intent} IN ('steer','system')`),
+    check(
+      "thread_inbox_messages_provenance_valid",
+      sql`${table.provenanceKind} IN ('writer','agent','child','system')`,
+    ),
+    check(
+      "thread_inbox_messages_body_valid",
+      sql`${table.bodyKind} IN ('text','report','context')`,
+    ),
+  ],
+);
+
+/**
+ * Queryable run lease paired with the cross-process advisory lock. The lock is
+ * the atomic mutex (crash-safe because the DB session dies); this expiring row
+ * is what `holder()` and derived status can read from another process.
+ */
+export const threadRunLeases = pgTable(
+  "thread_run_leases",
+  {
+    threadId: uuid("thread_id")
+      .$type<ThreadId>()
+      .primaryKey()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    runId: text("run_id").notNull(),
+    holderId: text("holder_id").notNull(),
+    phase: text("phase").notNull().default("generating"),
+    cancelRequested: boolean("cancel_requested").notNull().default(false),
+    acquiredAt: timestamp("acquired_at", { withTimezone: true }).notNull().defaultNow(),
+    renewedAt: timestamp("renewed_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    check("thread_run_leases_phase_valid", sql`${table.phase} IN ('generating','waiting')`),
+    index("thread_run_leases_expiry").on(table.expiresAt),
   ],
 );
 
