@@ -76,5 +76,10 @@ export {
   createChildRunCoordinator,
   type SpawnChildInput,
 } from "./spawn/child-run-coordinator.js";
-export type { ChildDriveInput } from "./spawn/child-run-driver.js";
+export {
+  type ChildDriveInput,
+  type ChildRunDriver,
+  type ChildRunDriverDeps,
+  createChildRunDriver,
+} from "./spawn/child-run-driver.js";
 export * from "./tools/index.js";

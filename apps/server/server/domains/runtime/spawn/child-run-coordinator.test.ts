@@ -22,6 +22,7 @@ import { createInMemoryThreadRunOwnership } from "../loop/thread-run-ownership.j
 import { createToolRegistry, resolveAgentThreadTurnContext } from "../tools/index.js";
 import type { ChildReportEnqueue } from "./child-report-delivery.js";
 import { createChildRunCoordinator } from "./child-run-coordinator.js";
+import { createChildRunDriver } from "./child-run-driver.js";
 import type { SpawnTranscript } from "./spawn-transcript.js";
 
 type RecordedTurn = {
@@ -137,22 +138,15 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
     },
   };
 
-  const coordinator = createChildRunCoordinator({
+  const driver = createChildRunDriver({
     orchestrator: options.orchestrator ?? stubOrchestrator(turns),
     repos: {
       threads: repos.threads,
-      subagentThreads: repos.threads,
       turns: repos.turns,
       blocks: repos.blocks,
       transaction: repos.transaction,
     },
-    resolveWorkMembership: async () => "no-work",
     eventWriter,
-    agentRevisions: revisions,
-    defaultModel: () => "parent-model",
-    unavailableReasons: () => [],
-    modelUnavailable: (model) =>
-      model === "parent-model" ? [] : ["The Agent's configured model is unavailable."],
     childRunRegistry: {
       registerChild() {},
       registerBackgroundChild() {},
@@ -177,6 +171,21 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
         return "0";
       },
     },
+  });
+  const coordinator = createChildRunCoordinator({
+    driver,
+    repos: {
+      threads: repos.threads,
+      subagentThreads: repos.threads,
+      transaction: repos.transaction,
+    },
+    resolveWorkMembership: async () => "no-work",
+    eventWriter,
+    agentRevisions: revisions,
+    defaultModel: () => "parent-model",
+    unavailableReasons: () => [],
+    modelUnavailable: (model) =>
+      model === "parent-model" ? [] : ["The Agent's configured model is unavailable."],
   });
 
   return {

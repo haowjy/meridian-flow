@@ -9,28 +9,17 @@ import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { SpawnResult } from "@meridian/contracts/spawn";
 import type { Block, Thread } from "@meridian/contracts/threads";
-import type { BillingSpendReader } from "../../billing/index.js";
 import type { AgentRevisionStore, CompiledAgentDefinition } from "../../packages/index.js";
-import type { WorkContextDelivery } from "../../projects/index.js";
 import type {
-  BlockRepository,
   EventJournalWriter,
   SubagentThreadFactory,
   ThreadRepositories,
   ThreadRepository,
-  TurnRepository,
 } from "../../threads/index.js";
 import { createBoundConversation } from "../../threads/index.js";
-import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
-import type { ThreadRunOwnership } from "../loop/thread-run-ownership.js";
-import type { ChildRunRegistry } from "../loop/turn-runner.js";
+import type { ReturnResultCompleter } from "../loop/run-turn-port.js";
 import { authorizeContinueTarget } from "./authorize-continue-target.js";
-import type { ChildReportDelivery } from "./child-report-delivery.js";
-import {
-  type ChildDriveInput,
-  createChildRunDriver,
-  type PreparedChild,
-} from "./child-run-driver.js";
+import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
 import { resolveChildInvocation } from "./resolve-child-invocation.js";
 import { persistHelperCard, type SpawnTranscript } from "./spawn-transcript.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
@@ -62,12 +51,11 @@ export interface ChildRunOptions {
 }
 
 export interface ChildRunCoordinatorDeps {
-  orchestrator: RunTurnPort;
+  /** Run lifecycle: claim, registry, stream, capture, terminal persistence. */
+  driver: ChildRunDriver;
   repos: {
     threads: Pick<ThreadRepository, "updateSpawnLifecycle" | "findLiveByProjectRef">;
     subagentThreads: SubagentThreadFactory;
-    turns: TurnRepository;
-    blocks: BlockRepository;
     transaction: ThreadRepositories["transaction"];
   };
   resolveWorkMembership(input: {
@@ -84,11 +72,6 @@ export interface ChildRunCoordinatorDeps {
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
   /** Host-availability check for a model id, used when the child has no definition. */
   modelUnavailable(model: string): string[];
-  childRunRegistry: ChildRunRegistry;
-  childReportDelivery: Pick<ChildReportDelivery, "enqueue">;
-  workContextDelivery: Pick<WorkContextDelivery, "flushOwned">;
-  runOwnership?: ThreadRunOwnership;
-  billingSpendReader: BillingSpendReader;
 }
 
 export interface ChildRunCoordinator {
@@ -101,21 +84,7 @@ export interface ChildRunCoordinator {
 }
 
 export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildRunCoordinator {
-  const driver = createChildRunDriver({
-    orchestrator: deps.orchestrator,
-    repos: {
-      threads: deps.repos.threads,
-      turns: deps.repos.turns,
-      blocks: deps.repos.blocks,
-      transaction: deps.repos.transaction,
-    },
-    eventWriter: deps.eventWriter,
-    childRunRegistry: deps.childRunRegistry,
-    childReportDelivery: deps.childReportDelivery,
-    workContextDelivery: deps.workContextDelivery,
-    runOwnership: deps.runOwnership,
-    billingSpendReader: deps.billingSpendReader,
-  });
+  const driver = deps.driver;
 
   function createReturnResultCompleter(): ReturnResultCompleter {
     let used = false;
