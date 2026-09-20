@@ -144,6 +144,16 @@ async function collect(handle: { events: AsyncIterable<unknown> }): Promise<void
   }
 }
 
+async function collectEvents(handle: {
+  events: AsyncIterable<{ type: string }>;
+}): Promise<Array<{ type: string }>> {
+  const events: Array<{ type: string }> = [];
+  for await (const event of handle.events) {
+    events.push(event);
+  }
+  return events;
+}
+
 describe("inbox drain", () => {
   it("delivers a claimed batch in one request and acks it with the persisted turn", async () => {
     const { thread, inbox, requests, orchestrator } = await setup();
@@ -234,6 +244,27 @@ describe("inbox drain", () => {
       (text) => text === "crash safe",
     ).length;
     expect(renderCount).toBe(1);
+    expect(await inbox.claimPending(thread.id)).toEqual([]);
+  });
+
+  it("persists a steer on a second run of an already-baked thread", async () => {
+    const { thread, inbox, orchestrator, repos } = await setup();
+
+    // First run freezes the prompt (`bakedSkillSlugs` becomes non-null), so the
+    // second run's assembly reuses the stale thread loaded at run start instead
+    // of refreshing it from the bake.
+    await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "first" }));
+    expect((await repos.threads.findById(thread.id))?.bakedSkillSlugs).not.toBeNull();
+
+    await inbox.enqueue(steer("baked steer", thread.id));
+
+    const events = await collectEvents(
+      await orchestrator.runTurn({ threadId: thread.id, userText: "second" }),
+    );
+
+    expect(events.some((event) => event.type === "turn.error")).toBe(false);
+    const turns = await repos.turns.listByThread(thread.id);
+    expect(steerTurns(turns)).toHaveLength(1);
     expect(await inbox.claimPending(thread.id)).toEqual([]);
   });
 
