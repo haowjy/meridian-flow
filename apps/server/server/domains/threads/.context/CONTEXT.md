@@ -202,7 +202,7 @@ contract shapes.
   thread has no active scope. Restore never substitutes a same-name Work: membership follows Work ID, and a missing/deleted historical
   primary remains associated but non-primary after restore binds No Work.
 - A thread receives a project-scoped `ref` in the create transaction:
-  primaries take `c1`, `c2`, … and subagents take `s1`, `s2`, … from one
+  primaries take `c1`, `c2`, … and subagents take `p1`, `p2`, … from one
   shared per-project counter, so every live handle is project-unique. Title is
   not an identifier and is not unique. Chat URLs use the client-minted thread
   `id`, not `ref`.

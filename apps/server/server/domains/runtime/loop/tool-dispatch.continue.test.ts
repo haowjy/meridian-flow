@@ -27,7 +27,7 @@ const PARENT_THREAD_ID = "parent-thread" as ThreadId;
 const completedResult = {
   status: "completed",
   report: {
-    handle: "s1",
+    handle: "p1",
     threadId: "child-1",
     summary: "second report",
     costMillicredits: 42,
@@ -35,7 +35,7 @@ const completedResult = {
 } as unknown as SpawnResult;
 const backgroundResult = {
   status: "background",
-  handle: "s1",
+  handle: "p1",
   threadId: "child-1",
   agentSlug: "general",
 } as unknown as SpawnResult;
@@ -101,7 +101,7 @@ describe("dispatchToolCall continue routing", () => {
     const { deps, ctx, continueChild, continueChildBackground } = harness();
     const result = await dispatchToolCall(
       deps,
-      continueCall({ handle: "s1", prompt: "keep going" }),
+      continueCall({ handle: "p1", prompt: "keep going" }),
       ctx,
     );
     if ("cancelled" in result) throw new Error("unexpected cancel");
@@ -109,7 +109,7 @@ describe("dispatchToolCall continue routing", () => {
     expect(continueChildBackground).not.toHaveBeenCalled();
     expect(continueChild).toHaveBeenCalledOnce();
     const input = continueChild.mock.calls[0]?.[0];
-    expect(input).toMatchObject({ handle: "s1", prompt: "keep going" });
+    expect(input).toMatchObject({ handle: "p1", prompt: "keep going" });
     expect(input?.transcript).toBeDefined();
   });
 
@@ -117,7 +117,7 @@ describe("dispatchToolCall continue routing", () => {
     const { deps, ctx, continueChild, continueChildBackground } = harness();
     const result = await dispatchToolCall(
       deps,
-      continueCall({ handle: "s1", prompt: "check later", mode: "background" }),
+      continueCall({ handle: "p1", prompt: "check later", mode: "background" }),
       ctx,
     );
     if ("cancelled" in result) throw new Error("unexpected cancel");
@@ -131,7 +131,7 @@ describe("dispatchToolCall continue routing", () => {
     const { deps, ctx } = harness();
     const result = await dispatchToolCall(
       deps,
-      continueCall({ handle: "s1", prompt: "keep going" }),
+      continueCall({ handle: "p1", prompt: "keep going" }),
       ctx,
     );
     if ("cancelled" in result) throw new Error("unexpected cancel");
@@ -143,7 +143,7 @@ describe("dispatchToolCall continue routing", () => {
     };
     expect(output.report).not.toHaveProperty("costMillicredits");
     expect(output.report).not.toHaveProperty("threadId");
-    expect(output.report.handle).toBe("s1");
+    expect(output.report.handle).toBe("p1");
     expect(output.report.summary).toBe("second report");
   });
 });

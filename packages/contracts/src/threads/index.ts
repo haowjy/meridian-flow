@@ -135,7 +135,7 @@ export interface Thread {
   kind: ThreadKind;
   status: ThreadStatus;
   title: string | null;
-  /** Server-assigned handle: `cN` for primaries, `sN` for subagents; null before persist. */
+  /** Server-assigned handle: `cN` for primaries, `pN` for subagents; null before persist. */
   ref: string | null;
   /** Baked system prompt output — set only by first-attempt bake or subagent creation. */
   composedSystemPrompt?: string | null;

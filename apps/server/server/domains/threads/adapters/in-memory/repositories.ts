@@ -14,6 +14,7 @@ import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
 import { buildSubagentThreadRow } from "../../domain/thread-create-subagent.js";
 import { toThreadListItem } from "../../domain/thread-list-projection.js";
+import { formatThreadRef } from "../../domain/thread-ref.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type {
   BlockRepository,
@@ -197,7 +198,7 @@ export function createInMemoryRepositories(
   function nextRef(projectId: string, kind: Thread["kind"]): string {
     const n = (threadCounters.get(projectId) ?? 0) + 1;
     threadCounters.set(projectId, n);
-    return `${kind === "subagent" ? "s" : "c"}${n}`;
+    return formatThreadRef(kind, n);
   }
 
   function membershipKey(threadId: ThreadId, workId: WorkId): string {

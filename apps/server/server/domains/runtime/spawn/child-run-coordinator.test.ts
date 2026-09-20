@@ -359,7 +359,7 @@ describe("ChildRunCoordinator spawn selection", () => {
     expect(binding?.configuration["disallowed-tools"]).toBeUndefined();
   });
 
-  it("allocates cN for primaries and sN for subagents from one project counter", async () => {
+  it("allocates cN for primaries and pN for subagents from one project counter", async () => {
     const { coordinator, parent, repos } = await fixture();
     expect(parent.ref).toBe("c1");
     const result = await coordinator.spawnChild({
@@ -371,9 +371,9 @@ describe("ChildRunCoordinator spawn selection", () => {
     });
     expect(result.status).toBe("completed");
     if (result.status !== "completed") return;
-    expect(result.report.handle).toBe("s2");
+    expect(result.report.handle).toBe("p2");
     const child = await repos.threads.findById(result.report.threadId);
-    expect(child?.ref).toBe("s2");
+    expect(child?.ref).toBe("p2");
   });
 
   it("omits spawned children from writer-facing lists while Open by id still works", async () => {
@@ -587,7 +587,7 @@ describe("ChildRunCoordinator continue", () => {
     if (spawned.status !== "completed") return;
     const childId = spawned.report.threadId as ThreadId;
     const childHandle = spawned.report.handle;
-    expect(childHandle).toMatch(/^s[1-9]\d*$/);
+    expect(childHandle).toMatch(/^p[1-9]\d*$/);
     const before = await revisions.readThreadBinding(childId);
     expect(before?.revision?.slug).toBe("critic");
     expect(before?.invocationOverlay).toEqual({ appendSystemPrompt: "child guidance" });

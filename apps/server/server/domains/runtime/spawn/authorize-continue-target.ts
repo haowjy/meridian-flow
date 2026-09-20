@@ -6,18 +6,11 @@
  */
 import { type MeridianError, meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { Thread } from "@meridian/contracts/threads";
-import type { ThreadRepository } from "../../threads/index.js";
-
-export interface ContinueTarget {
-  kind: "child";
-  thread: Thread;
-}
+import { parseThreadRef, type ThreadRepository } from "../../threads/index.js";
 
 export type ContinueTargetOutcome =
-  | { ok: true; target: ContinueTarget }
+  | { ok: true; target: Thread }
   | { ok: false; error: MeridianError };
-
-const HANDLE_PATTERN = /^[cs][1-9]\d*$/;
 
 function notFound(): ContinueTargetOutcome {
   return {
@@ -33,16 +26,14 @@ export async function authorizeContinueTarget(input: {
 }): Promise<ContinueTargetOutcome> {
   // Reject a malformed handle before the DB, so an unknown value stays a
   // uniform not-found rather than a low-level lookup error.
-  if (!HANDLE_PATTERN.test(input.targetHandle)) return notFound();
+  if (parseThreadRef(input.targetHandle) === null) return notFound();
   const target = await input.threads.findLiveByProjectRef(
     input.callerThread.projectId,
     input.targetHandle,
   );
   if (!target) return notFound();
-  if (
-    target.projectId !== input.callerThread.projectId ||
-    target.userId !== input.callerThread.userId
-  ) {
+  // findLiveByProjectRef is already project-scoped, so only ownership remains.
+  if (target.userId !== input.callerThread.userId) {
     return notFound();
   }
   if (target.kind !== "subagent" || target.parentThreadId !== input.callerThread.id) {
@@ -54,5 +45,5 @@ export async function authorizeContinueTarget(input: {
       ),
     };
   }
-  return { ok: true, target: { kind: "child", thread: target } };
+  return { ok: true, target };
 }
