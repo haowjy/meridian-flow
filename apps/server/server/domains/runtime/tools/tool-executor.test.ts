@@ -36,11 +36,11 @@ describe("continue capability plumbing", () => {
     );
 
     const result = await executor.executeTool(
-      { id: "call-1", name: "continue", arguments: { conversation_id: "c", prompt: "p" } },
+      { id: "call-1", name: "continue", arguments: { handle: "p1", prompt: "p" } },
       { ...executionBase, agentSlug: null, continue: continueFn },
     );
 
-    expect(continueFn).toHaveBeenCalledWith({ conversation_id: "c", prompt: "p" });
+    expect(continueFn).toHaveBeenCalledWith({ handle: "p1", prompt: "p" });
     expect(result.isError).toBeUndefined();
     expect(result.output).toEqual({ status: "completed" });
   });
@@ -51,7 +51,7 @@ describe("continue capability plumbing", () => {
     );
 
     const result = await executor.executeTool(
-      { id: "call-1", name: "continue", arguments: { conversation_id: "c", prompt: "p" } },
+      { id: "call-1", name: "continue", arguments: { handle: "p1", prompt: "p" } },
       { ...executionBase, agentSlug: null },
     );
 

@@ -127,21 +127,32 @@ behavior; schema-only stubs are not advertised.
 
 ## spawn / child runs
 
-`spawn/child-run-coordinator.ts` supervises nested agent execution. It consumes
-`RunTurnPort`, `ChildRunRegistry` from the turn runner, the billing spend reader,
-immutable Agent revisions, and the threads repository's `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key; `tools` and `disallowed-tools` are coupled and each returns the full `patchTools` result so a map `allow` lifts the baseline denial. Overrides fold tool-name aliases like authoring. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. A spawn-time `append_system_prompt` is an additive overlay layer appended after the immutable Agent body; spawn never replaces the body. Route-facing
+`spawn/child-run-coordinator.ts` owns nested-agent policy and exposes one
+`runChild(request, { mode, transcript })` entrypoint, where `request.kind`
+discriminates spawn from continue. It authorizes, resolves the invocation,
+creates and binds the child thread, and persists writer cards. `spawn/resolve-child-invocation.ts`
+is the pure resolution/validation half (no thread, turn, or repository
+dependency); `spawn/child-run-driver.ts` owns the run lifecycle behind
+`drive`/`driveBackground` — register/release the prepared child (run claim,
+abort controller, registry), stream to terminal, capture `return_result` in a
+per-run closure, and persist the terminal lifecycle and event. The coordinator
+consumes `RunTurnPort`, `ChildRunRegistry` from the turn runner, the billing
+spend reader, immutable Agent revisions, and the threads repository's
+`SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key; `tools` and `disallowed-tools` are coupled and each returns the full `patchTools` result so a map `allow` lifts the baseline denial. Overrides fold tool-name aliases like authoring. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. A spawn-time `append_system_prompt` is an additive overlay layer appended after the immutable Agent body; spawn never replaces the body. Route-facing
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads.
-Continue drives an existing child instead of creating one: `continueChild` /
-`continueChildBackground` authorize through `spawn/authorize-continue-target.ts`
-(same project and user, `kind === "subagent"`, `parentThreadId === caller.id`;
-missing or concealed → `continue_target_not_found`, a non-child →
-`continue_target_not_authorized`), then `prepareExistingChild` loads the child's
+Continue drives an existing child instead of creating one: `runChild` with
+`kind: "continue"` authorizes through `spawn/authorize-continue-target.ts`,
+which resolves the model's `pN`/`cN` handle with the project-scoped
+`findLiveByProjectRef` (same project and user, `kind === "subagent"`,
+`parentThreadId === caller.id`; a malformed or missing handle →
+`continue_target_not_found`, a non-child → `continue_target_not_authorized`),
+then the coordinator's `prepareContinue` loads the child's
 frozen binding for `resolvedSlug` only and never re-resolves configuration — so
 `continue` carries no prompt override and cannot escalate model, tools, prompt,
 or overlay. A binding-less target fails `continue_target_unavailable`; a live
 writer turn or overlapping continue fails `continue_target_busy`.
-`registerPreparedChild` owns only the claim/controller/registry, so a failed
+The driver's `register` owns only the claim/controller/registry, so a failed
 continue never writes the child's lifecycle; the caller owns the failure policy.
 The single authority function stays child-scoped in 3c so a later peer slice
 widens it without changing the addressing field or its callers. Writer-facing helper-result cards persist through `spawn/spawn-transcript.ts`
@@ -162,8 +173,9 @@ behind the `ChildReportDelivery` port, backed by the threads
 `child_report_deliveries` obligation (keyed by the child run's assistant turn id
 as `report_id`, with `submission_epoch` and a reused `system_turn_id`) and the
 shared `createDeliveryPump`. The card write holds the parent's shared run claim,
-so it cannot race or re-parent a live writer turn. `pendingReports` is
-`driveChild` only; writer-continue uses a settle-only completer.
+so it cannot race or re-parent a live writer turn. The per-run capture lives in
+the driver's `drive` closure; writer-continue uses the coordinator's settle-only
+`createReturnResultCompleter`.
 
 Named targets resolve by name within the parent binding's roster; a target with
 `model-invocable: false` is refused, while a primary-mode target is spawnable.

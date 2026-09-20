@@ -59,7 +59,6 @@ export type { ImageAssetPort } from "./ports/image-asset.js";
 export { unavailableImageAssetPort } from "./ports/image-asset.js";
 export {
   authorizeContinueTarget,
-  type ContinueTarget,
   type ContinueTargetOutcome,
 } from "./spawn/authorize-continue-target.js";
 export {
@@ -69,11 +68,18 @@ export {
   createChildReportDelivery,
 } from "./spawn/child-report-delivery.js";
 export {
-  type ChildDriveInput,
   type ChildRunCoordinator,
   type ChildRunCoordinatorDeps,
+  type ChildRunOptions,
+  type ChildRunRequest,
   type ContinueChildInput,
   createChildRunCoordinator,
   type SpawnChildInput,
 } from "./spawn/child-run-coordinator.js";
+export {
+  type ChildDriveInput,
+  type ChildRunDriver,
+  type ChildRunDriverDeps,
+  createChildRunDriver,
+} from "./spawn/child-run-driver.js";
 export * from "./tools/index.js";

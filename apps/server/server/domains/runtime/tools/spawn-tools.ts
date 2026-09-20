@@ -53,11 +53,11 @@ export function spawnToolDescription(hasNamedTargets: boolean): string {
 }
 
 const CONTINUE_DESCRIPTION =
-  "Run an existing subagent again with a new prompt. Pass the conversation_id returned by spawn. The child keeps its configuration and history. Use mode=background for non-blocking follow-ups.";
+  "Run an existing subagent again with a new prompt. Pass the handle (for example p3) returned by spawn. The child keeps its configuration and history. Use mode=background for non-blocking follow-ups.";
 
 export type ContinueToolArgs = {
-  /** Child thread id from a spawn/continue result. */
-  conversation_id: string;
+  /** Short server-assigned handle (`pN`/`cN`) from a spawn/continue result. */
+  handle: string;
   prompt: string;
   mode: "foreground" | "background";
 };
@@ -69,7 +69,7 @@ export function parseContinueToolArgs(input: unknown): ContinueToolArgs {
       ? (input as Record<string, unknown>)
       : {};
   return {
-    conversation_id: typeof rec.conversation_id === "string" ? rec.conversation_id : "",
+    handle: typeof rec.handle === "string" ? rec.handle : "",
     prompt: typeof rec.prompt === "string" ? rec.prompt : "",
     mode: rec.mode === "background" ? "background" : "foreground",
   };
@@ -133,9 +133,9 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
         inputSchema: {
           type: "object",
           properties: {
-            conversation_id: {
+            handle: {
               type: "string",
-              description: "Child thread id returned by spawn or continue.",
+              description: "Short handle returned by spawn, for example p3.",
             },
             prompt: { type: "string", description: "Next task message for the child." },
             mode: {
@@ -145,7 +145,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
                 "foreground waits for return_result; background returns immediately and posts an inline helper result when done.",
             },
           },
-          required: ["conversation_id", "prompt"],
+          required: ["handle", "prompt"],
           additionalProperties: false,
         },
       },

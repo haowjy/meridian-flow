@@ -1,7 +1,7 @@
 /**
  * Spawn selection contracts: named roster targets (including primary mode),
  * the generic omitted/empty-agent subagent inheriting caller config, and the
- * pre-create depth refusal.
+ * pre-create depth refusal. Runs exercise the unified `runChild` entrypoint.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture } from "@meridian/contracts/spawn";
@@ -22,6 +22,7 @@ import { createInMemoryThreadRunOwnership } from "../loop/thread-run-ownership.j
 import { createToolRegistry, resolveAgentThreadTurnContext } from "../tools/index.js";
 import type { ChildReportEnqueue } from "./child-report-delivery.js";
 import { createChildRunCoordinator } from "./child-run-coordinator.js";
+import { createChildRunDriver } from "./child-run-driver.js";
 import type { SpawnTranscript } from "./spawn-transcript.js";
 
 type RecordedTurn = {
@@ -137,23 +138,15 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
     },
   };
 
-  const coordinator = createChildRunCoordinator({
+  const driver = createChildRunDriver({
     orchestrator: options.orchestrator ?? stubOrchestrator(turns),
     repos: {
       threads: repos.threads,
-      subagentThreads: repos.threads,
       turns: repos.turns,
       blocks: repos.blocks,
       transaction: repos.transaction,
-      threadWorks: repos.threadWorks,
     },
-    resolveWorkMembership: async () => "no-work",
     eventWriter,
-    agentRevisions: revisions,
-    defaultModel: () => "parent-model",
-    unavailableReasons: () => [],
-    modelUnavailable: (model) =>
-      model === "parent-model" ? [] : ["The Agent's configured model is unavailable."],
     childRunRegistry: {
       registerChild() {},
       registerBackgroundChild() {},
@@ -178,6 +171,21 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
         return "0";
       },
     },
+  });
+  const coordinator = createChildRunCoordinator({
+    driver,
+    repos: {
+      threads: repos.threads,
+      subagentThreads: repos.threads,
+      transaction: repos.transaction,
+    },
+    resolveWorkMembership: async () => "no-work",
+    eventWriter,
+    agentRevisions: revisions,
+    defaultModel: () => "parent-model",
+    unavailableReasons: () => [],
+    modelUnavailable: (model) =>
+      model === "parent-model" ? [] : ["The Agent's configured model is unavailable."],
   });
 
   return {
@@ -214,9 +222,9 @@ function transcriptFor(
 }
 
 describe("ChildRunCoordinator spawn selection", () => {
-  it("records one report without aborting; a second return is refused", async () => {
+  it("settle-only completer refuses a second return and never aborts", async () => {
     const { coordinator, abortedChildren } = await fixture();
-    const completer = coordinator.createReturnResultCompleter("child-thread" as ThreadId);
+    const completer = coordinator.createReturnResultCompleter();
 
     const first = await completer({ summary: "done" });
     expect(first).toEqual({ ok: true });
@@ -228,50 +236,50 @@ describe("ChildRunCoordinator spawn selection", () => {
     expect(abortedChildren).toEqual([]);
   });
 
-  it("settle-only completer records one report without capturing for driveChild", async () => {
-    const { coordinator } = await fixture();
-    const completer = coordinator.createReturnResultCompleter("child-thread" as ThreadId, {
-      capture: false,
-    });
-
-    expect(await completer({ summary: "done" })).toEqual({ ok: true });
-    const second = await completer({ summary: "again" });
-    expect(second.ok).toBe(false);
-    if (!second.ok) expect(second.message.length).toBeGreaterThan(0);
-  });
-
   it("refuses depth 4 before creating a child; depth 3 still spawns", async () => {
     const { coordinator, parent, journal } = await fixture();
-    const refused = await coordinator.spawnChild({
-      parentThread: { ...parent, spawnDepth: 3 },
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      budget,
-    });
+    const refused = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: { ...parent, spawnDepth: 3 },
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(refused.status).toBe("error");
     if (refused.status === "error") expect(refused.error.code).toBe("spawn_depth_exceeded");
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
 
-    const allowed = await coordinator.spawnChild({
-      parentThread: { ...parent, spawnDepth: 2 },
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      budget,
-    });
+    const allowed = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: { ...parent, spawnDepth: 2 },
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(allowed.status).toBe("completed");
   });
 
   it("spawns a rostered named target even when it is a primary", async () => {
     const { coordinator, parent, revisions, critic } = await fixture();
-    const result = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "critic",
-      prompt,
-      budget,
-    });
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "critic",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(result.status).toBe("completed");
     if (result.status !== "completed") return;
     const binding = await revisions.readThreadBinding(result.report.threadId);
@@ -282,13 +290,17 @@ describe("ChildRunCoordinator spawn selection", () => {
 
   it("refuses a slug that is not on the roster without creating a child", async () => {
     const { coordinator, parent, journal } = await fixture();
-    const result = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "writer-helper",
-      prompt,
-      budget,
-    });
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "writer-helper",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(result.status).toBe("error");
     if (result.status === "error") expect(result.error.code).toBe("spawn_agent_not_allowed");
     expect(journal.some((event) => event.type === "agent.spawn")).toBe(false);
@@ -296,13 +308,17 @@ describe("ChildRunCoordinator spawn selection", () => {
 
   it("refuses a rostered target that is not model-invocable", async () => {
     const { coordinator, parent } = await fixture();
-    const result = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "hidden",
-      prompt,
-      budget,
-    });
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "hidden",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(result.status).toBe("error");
     if (result.status === "error") expect(result.error.code).toBe("spawn_agent_not_found");
   });
@@ -310,13 +326,17 @@ describe("ChildRunCoordinator spawn selection", () => {
   it("treats omitted and empty agent as a generic child that inherits caller config", async () => {
     const { coordinator, parent, revisions, parentConfiguration } = await fixture();
     for (const agentSlug of [undefined, ""]) {
-      const result = await coordinator.spawnChild({
-        parentThread: parent,
-        parentTurnId: "turn-1" as TurnId,
-        agentSlug,
-        prompt,
-        budget,
-      });
+      const result = await coordinator.runChild(
+        {
+          kind: "spawn",
+          parentThread: parent,
+          parentTurnId: "turn-1" as TurnId,
+          agentSlug,
+          prompt,
+          budget,
+        },
+        { mode: "foreground" },
+      );
       expect(result.status).toBe("completed");
       if (result.status !== "completed") continue;
       const binding = await revisions.readThreadBinding(result.report.threadId);
@@ -344,13 +364,17 @@ describe("ChildRunCoordinator spawn selection", () => {
     const genericParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
     await revisions.bindThread(genericParent.id, general.id, parentConfiguration, null);
 
-    const result = await coordinator.spawnChild({
-      parentThread: genericParent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      budget,
-    });
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: genericParent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(result.status).toBe("completed");
     if (result.status !== "completed") return;
     const binding = await revisions.readThreadBinding(result.report.threadId);
@@ -360,15 +384,40 @@ describe("ChildRunCoordinator spawn selection", () => {
     expect(binding?.configuration["disallowed-tools"]).toBeUndefined();
   });
 
+  it("allocates cN for primaries and pN for subagents from one project counter", async () => {
+    const { coordinator, parent, repos } = await fixture();
+    expect(parent.ref).toBe("c1");
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    expect(result.report.handle).toBe("p2");
+    const child = await repos.threads.findById(result.report.threadId);
+    expect(child?.ref).toBe("p2");
+  });
+
   it("omits spawned children from writer-facing lists while Open by id still works", async () => {
     const { coordinator, parent, repos } = await fixture();
-    const result = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      budget,
-    });
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(result.status).toBe("completed");
     if (result.status !== "completed") return;
     const childId = result.report.threadId;
@@ -395,15 +444,19 @@ describe("ChildRunCoordinator spawn selection", () => {
 describe("ChildRunCoordinator invocation overlay", () => {
   it("persists only the provided overlay fields for generic and named children", async () => {
     const { coordinator, parent, revisions, repos } = await fixture();
-    const generic = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      appendSystemPrompt: "Custom child prompt",
-      overrides: { effort: "low" },
-      budget,
-    });
+    const generic = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        appendSystemPrompt: "Custom child prompt",
+        overrides: { effort: "low" },
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(generic.status).toBe("completed");
     if (generic.status !== "completed") return;
     const genericBinding = await revisions.readThreadBinding(generic.report.threadId);
@@ -414,15 +467,19 @@ describe("ChildRunCoordinator invocation overlay", () => {
     });
     expect(genericBinding?.configuration.effort).toBe("low");
 
-    const named = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "critic",
-      prompt,
-      appendSystemPrompt: "Custom child prompt",
-      overrides: { model: "critic-model" },
-      budget,
-    });
+    const named = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "critic",
+        prompt,
+        appendSystemPrompt: "Custom child prompt",
+        overrides: { model: "critic-model" },
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(named.status).toBe("completed");
     if (named.status !== "completed") return;
     const namedBinding = await revisions.readThreadBinding(named.report.threadId);
@@ -466,14 +523,18 @@ describe("ChildRunCoordinator invocation overlay", () => {
       },
       null,
     );
-    const result = await coordinator.spawnChild({
-      parentThread: restrictedParent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      overrides: { tools: { edit: "allow" } },
-      budget,
-    });
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: restrictedParent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        overrides: { tools: { edit: "allow" } },
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(result.status).toBe("error");
     if (result.status === "error") {
       expect(result.error.code).toBe("spawn_invocation_authority_denied");
@@ -490,14 +551,18 @@ describe("ChildRunCoordinator invocation overlay", () => {
       { tools: { write: "allow" } },
     ];
     for (const overrides of invalidOverrides) {
-      const result = await coordinator.spawnChild({
-        parentThread: parent,
-        parentTurnId: "turn-1" as TurnId,
-        agentSlug: "",
-        prompt,
-        overrides: overrides as never,
-        budget,
-      });
+      const result = await coordinator.runChild(
+        {
+          kind: "spawn",
+          parentThread: parent,
+          parentTurnId: "turn-1" as TurnId,
+          agentSlug: "",
+          prompt,
+          overrides: overrides as never,
+          budget,
+        },
+        { mode: "foreground" },
+      );
       expect(result.status).toBe("error");
       if (result.status === "error") {
         expect(result.error.code).toBe("spawn_invocation_patch_invalid");
@@ -520,14 +585,18 @@ describe("ChildRunCoordinator invocation overlay", () => {
       },
       null,
     );
-    const result = await coordinator.spawnChild({
-      parentThread: writerParent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "critic",
-      prompt,
-      overrides: { tools: { edit: "allow" } },
-      budget,
-    });
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: writerParent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "critic",
+        prompt,
+        overrides: { tools: { edit: "allow" } },
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(result.status).toBe("completed");
     if (result.status !== "completed") return;
     const binding = await revisions.readThreadBinding(result.report.threadId);
@@ -540,14 +609,18 @@ describe("ChildRunCoordinator invocation overlay", () => {
 
   it("rejects an agentless child whose overridden model is unavailable", async () => {
     const { coordinator, parent, journal } = await fixture();
-    const result = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      overrides: { model: "bogus-model" },
-      budget,
-    });
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        overrides: { model: "bogus-model" },
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(result.status).toBe("error");
     if (result.status === "error") {
       expect(result.error.code).toBe("spawn_agent_unavailable");
@@ -559,31 +632,42 @@ describe("ChildRunCoordinator invocation overlay", () => {
 describe("ChildRunCoordinator continue", () => {
   it("runs one more turn against the frozen binding", async () => {
     const { coordinator, parent, revisions, turns } = await fixture();
-    const spawned = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "critic",
-      prompt,
-      appendSystemPrompt: "child guidance",
-      budget,
-    });
+    const spawned = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "critic",
+        prompt,
+        appendSystemPrompt: "child guidance",
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(spawned.status).toBe("completed");
     if (spawned.status !== "completed") return;
     const childId = spawned.report.threadId as ThreadId;
+    const childHandle = spawned.report.handle;
+    expect(childHandle).toMatch(/^p[1-9]\d*$/);
     const before = await revisions.readThreadBinding(childId);
     expect(before?.revision?.slug).toBe("critic");
     expect(before?.invocationOverlay).toEqual({ appendSystemPrompt: "child guidance" });
 
-    const continued = await coordinator.continueChild({
-      parentThread: parent,
-      parentTurnId: "turn-2" as TurnId,
-      childThreadId: childId,
-      prompt: "keep going",
-      budget,
-    });
+    const continued = await coordinator.runChild(
+      {
+        kind: "continue",
+        parentThread: parent,
+        parentTurnId: "turn-2" as TurnId,
+        handle: childHandle,
+        prompt: "keep going",
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(continued.status).toBe("completed");
     if (continued.status !== "completed") return;
     expect(continued.report.threadId).toBe(childId);
+    expect(continued.report.handle).toBe(childHandle);
     expect(continued.report.summary).not.toBe(spawned.report.summary);
 
     const last = turns[turns.length - 1];
@@ -594,30 +678,43 @@ describe("ChildRunCoordinator continue", () => {
 
   it("captures a distinct report per continuation", async () => {
     const { coordinator, parent } = await fixture();
-    const spawned = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      budget,
-    });
+    const spawned = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
     if (spawned.status !== "completed") throw new Error("spawn failed");
     const childId = spawned.report.threadId as ThreadId;
+    const childHandle = spawned.report.handle;
 
-    const first = await coordinator.continueChild({
-      parentThread: parent,
-      parentTurnId: "turn-2" as TurnId,
-      childThreadId: childId,
-      prompt: "first follow-up",
-      budget,
-    });
-    const second = await coordinator.continueChild({
-      parentThread: parent,
-      parentTurnId: "turn-3" as TurnId,
-      childThreadId: childId,
-      prompt: "second follow-up",
-      budget,
-    });
+    const first = await coordinator.runChild(
+      {
+        kind: "continue",
+        parentThread: parent,
+        parentTurnId: "turn-2" as TurnId,
+        handle: childHandle,
+        prompt: "first follow-up",
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    const second = await coordinator.runChild(
+      {
+        kind: "continue",
+        parentThread: parent,
+        parentTurnId: "turn-3" as TurnId,
+        handle: childHandle,
+        prompt: "second follow-up",
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(first.status).toBe("completed");
     expect(second.status).toBe("completed");
     if (first.status !== "completed" || second.status !== "completed") return;
@@ -628,13 +725,17 @@ describe("ChildRunCoordinator continue", () => {
 
   it("returns continue_target_busy without touching the child lifecycle or events", async () => {
     const { coordinator, parent, repos, journal, runOwnership } = await fixture();
-    const spawned = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      budget,
-    });
+    const spawned = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
     if (spawned.status !== "completed") throw new Error("spawn failed");
     const childId = spawned.report.threadId as ThreadId;
     const before = await repos.threads.findById(childId);
@@ -643,15 +744,24 @@ describe("ChildRunCoordinator continue", () => {
     const claim = await runOwnership.tryAcquire(childId);
     expect(claim).not.toBeNull();
     try {
-      const busy = await coordinator.continueChild({
-        parentThread: parent,
-        parentTurnId: "turn-2" as TurnId,
-        childThreadId: childId,
-        prompt: "again",
-        budget,
-      });
+      const busy = await coordinator.runChild(
+        {
+          kind: "continue",
+          parentThread: parent,
+          parentTurnId: "turn-2" as TurnId,
+          handle: spawned.report.handle,
+          prompt: "again",
+          budget,
+        },
+        { mode: "foreground" },
+      );
       expect(busy.status).toBe("error");
-      if (busy.status === "error") expect(busy.error.code).toBe("continue_target_busy");
+      if (busy.status === "error") {
+        expect(busy.error.code).toBe("continue_target_busy");
+        // The error reaches the model; it must not carry the child UUID.
+        expect(busy.error.message).not.toContain(childId);
+        expect(busy.error.message).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
+      }
     } finally {
       await claim?.release();
     }
@@ -675,13 +785,17 @@ describe("ChildRunCoordinator continue", () => {
     });
     expect(await revisions.readThreadBinding(child.id)).toBeUndefined();
 
-    const result = await coordinator.continueChild({
-      parentThread: parent,
-      parentTurnId: "turn-2" as TurnId,
-      childThreadId: child.id as ThreadId,
-      prompt: "keep going",
-      budget,
-    });
+    const result = await coordinator.runChild(
+      {
+        kind: "continue",
+        parentThread: parent,
+        parentTurnId: "turn-2" as TurnId,
+        handle: child.ref ?? "",
+        prompt: "keep going",
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(result.status).toBe("error");
     if (result.status === "error") {
       expect(result.error.code).toBe("continue_target_unavailable");
@@ -691,14 +805,17 @@ describe("ChildRunCoordinator continue", () => {
   it("persists the running card with the pre-minted childThreadId", async () => {
     const { coordinator, parent, repos, eventWriter } = await fixture();
     const transcript = transcriptFor(parent.id as ThreadId, { repos, eventWriter });
-    const spawned = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      budget,
-      transcript,
-    });
+    const spawned = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground", transcript },
+    );
     expect(spawned.status).toBe("completed");
     if (spawned.status !== "completed") return;
 
@@ -718,25 +835,34 @@ describe("ChildRunCoordinator continue", () => {
 
   it("enqueues exactly one background report keyed by the child execution", async () => {
     const { coordinator, parent, deliveries } = await fixture();
-    const spawned = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "critic",
-      prompt,
-      budget,
-    });
+    const spawned = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "critic",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
     if (spawned.status !== "completed") throw new Error("spawn failed");
     const childId = spawned.report.threadId as ThreadId;
 
-    const background = await coordinator.continueChildBackground({
-      parentThread: parent,
-      parentTurnId: "turn-2" as TurnId,
-      childThreadId: childId,
-      prompt: "run in the background",
-      budget,
-    });
+    const background = await coordinator.runChild(
+      {
+        kind: "continue",
+        parentThread: parent,
+        parentTurnId: "turn-2" as TurnId,
+        handle: spawned.report.handle,
+        prompt: "run in the background",
+        budget,
+      },
+      { mode: "background" },
+    );
     expect(background.status).toBe("background");
     if (background.status !== "background") return;
+    expect(background.handle).toBe(spawned.report.handle);
 
     await vi.waitFor(() => expect(deliveries).toHaveLength(1));
     expect(deliveries[0]).toMatchObject({
@@ -750,23 +876,30 @@ describe("ChildRunCoordinator continue", () => {
 
   it("does not enqueue anything for a foreground continue", async () => {
     const { coordinator, parent, deliveries } = await fixture();
-    const spawned = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      budget,
-    });
+    const spawned = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
     if (spawned.status !== "completed") throw new Error("spawn failed");
-    const childId = spawned.report.threadId as ThreadId;
 
-    const continued = await coordinator.continueChild({
-      parentThread: parent,
-      parentTurnId: "turn-2" as TurnId,
-      childThreadId: childId,
-      prompt: "keep going",
-      budget,
-    });
+    const continued = await coordinator.runChild(
+      {
+        kind: "continue",
+        parentThread: parent,
+        parentTurnId: "turn-2" as TurnId,
+        handle: spawned.report.handle,
+        prompt: "keep going",
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(continued.status).toBe("completed");
     expect(deliveries).toHaveLength(0);
   });
@@ -792,13 +925,17 @@ describe("ChildRunCoordinator continue", () => {
     };
     const { coordinator, parent, deliveries } = await fixture({ orchestrator });
 
-    const background = await coordinator.spawnChildBackground({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      budget,
-    });
+    const background = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "background" },
+    );
     expect(background.status).toBe("background");
 
     await vi.waitFor(() => expect(deliveries).toHaveLength(1));
@@ -834,25 +971,33 @@ describe("ChildRunCoordinator continue", () => {
     };
     const { coordinator, parent, repos } = await fixture({ orchestrator });
 
-    const spawned = await coordinator.spawnChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      agentSlug: "",
-      prompt,
-      budget,
-    });
+    const spawned = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
     if (spawned.status !== "completed") throw new Error("spawn failed");
     const childId = spawned.report.threadId as ThreadId;
     const before = await repos.threads.findById(childId);
     expect(before?.spawnStatus).toBe("succeeded");
 
-    const continued = await coordinator.continueChild({
-      parentThread: parent,
-      parentTurnId: "turn-2" as TurnId,
-      childThreadId: childId,
-      prompt: "again",
-      budget,
-    });
+    const continued = await coordinator.runChild(
+      {
+        kind: "continue",
+        parentThread: parent,
+        parentTurnId: "turn-2" as TurnId,
+        handle: spawned.report.handle,
+        prompt: "again",
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(continued.status).toBe("error");
 
     const after = await repos.threads.findById(childId);
@@ -860,15 +1005,19 @@ describe("ChildRunCoordinator continue", () => {
     expect(after?.spawnResult).toEqual(before?.spawnResult);
   });
 
-  it("returns continue_target_not_found for a malformed conversation id", async () => {
+  it("returns continue_target_not_found for a malformed handle", async () => {
     const { coordinator, parent } = await fixture();
-    const result = await coordinator.continueChild({
-      parentThread: parent,
-      parentTurnId: "turn-1" as TurnId,
-      childThreadId: "not-a-uuid" as ThreadId,
-      prompt,
-      budget,
-    });
+    const result = await coordinator.runChild(
+      {
+        kind: "continue",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        handle: "not-a-handle",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
     expect(result.status).toBe("error");
     if (result.status === "error") expect(result.error.code).toBe("continue_target_not_found");
   });

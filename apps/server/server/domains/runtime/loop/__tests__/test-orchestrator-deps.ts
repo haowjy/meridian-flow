@@ -46,19 +46,10 @@ function inertToolExecutor(): ToolExecutor {
 
 function noopChildRunCoordinator(): ChildRunCoordinator {
   return {
-    async spawnChild() {
+    async runChild() {
       throw new Error("Test child run coordinator not configured");
     },
-    async spawnChildBackground() {
-      throw new Error("Test child run coordinator not configured");
-    },
-    async continueChild() {
-      throw new Error("Test child run coordinator not configured");
-    },
-    async continueChildBackground() {
-      throw new Error("Test child run coordinator not configured");
-    },
-    createReturnResultCompleter(_childThreadId, _options) {
+    createReturnResultCompleter() {
       return async () => ({ ok: true as const });
     },
   };

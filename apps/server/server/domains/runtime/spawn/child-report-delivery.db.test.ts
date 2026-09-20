@@ -18,7 +18,7 @@ const REPORT_ID = "00000000-0000-4000-8000-0000000c1006";
 const SUBMISSION_TEXT = "A background subagent has reported. Continue from its report.";
 const REPORT_RESULT = {
   status: "completed" as const,
-  report: { threadId: CHILD_ID, summary: "Draft ready", costMillicredits: 0 },
+  report: { handle: "p1", threadId: CHILD_ID, summary: "Draft ready", costMillicredits: 0 },
 };
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {

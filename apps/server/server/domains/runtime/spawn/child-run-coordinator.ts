@@ -1,61 +1,28 @@
 /**
- * ChildRunCoordinator: owns subagent thread lifecycle, drives child runTurn to
- * terminal state, captures return_result, and persists spawnStatus/spawnResult.
- * The sole caller allowed through the thread-create spawn gate.
+ * ChildRunCoordinator: owns subagent thread lifecycle policy — authorize,
+ * resolve the invocation, create and bind the child, and persist writer-facing
+ * cards — and delegates the run lifecycle to the ChildRunDriver. The sole
+ * caller allowed through the thread-create spawn gate.
  */
-import {
-  GENERIC_SUBAGENT_SLUG,
-  type InvocationOverlay,
-  type InvocationPatch,
-  type ResolvedAgentConfiguration,
-} from "@meridian/contracts/agents";
+import { GENERIC_SUBAGENT_SLUG, type InvocationPatch } from "@meridian/contracts/agents";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
-import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { ThreadId } from "@meridian/contracts/runtime";
+import type { SpawnResult } from "@meridian/contracts/spawn";
+import type { Block, Thread } from "@meridian/contracts/threads";
+import type { AgentRevisionStore, CompiledAgentDefinition } from "../../packages/index.js";
 import type {
-  AgentReport,
-  ReturnResultCapture,
-  SpawnResult,
-  TreeBudget,
-} from "@meridian/contracts/spawn";
-import { type Block, blockPlainText, type Thread } from "@meridian/contracts/threads";
-import type { BillingSpendReader } from "../../billing/index.js";
-import {
-  type AgentRevision,
-  type AgentRevisionStore,
-  type CompiledAgentDefinition,
-  resolveAgentConfiguration,
-} from "../../packages/index.js";
-import type { WorkContextDelivery } from "../../projects/index.js";
-import type {
-  BlockRepository,
   EventJournalWriter,
   SubagentThreadFactory,
   ThreadRepositories,
   ThreadRepository,
-  TurnRepository,
 } from "../../threads/index.js";
 import { createBoundConversation } from "../../threads/index.js";
-import { validateInvocationAuthority } from "../loop/permissions/invocation-authority.js";
-import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
-import {
-  createInMemoryThreadRunOwnership,
-  type ThreadRunClaim,
-  type ThreadRunOwnership,
-} from "../loop/thread-run-ownership.js";
-import type { ChildRunRegistry } from "../loop/turn-runner.js";
-import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
-import { authorizeContinueTarget, type ContinueTarget } from "./authorize-continue-target.js";
-import type { ChildReportDelivery } from "./child-report-delivery.js";
+import type { ReturnResultCompleter } from "../loop/run-turn-port.js";
+import { authorizeContinueTarget } from "./authorize-continue-target.js";
+import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
+import { resolveChildInvocation } from "./resolve-child-invocation.js";
 import { persistHelperCard, type SpawnTranscript } from "./spawn-transcript.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
-
-export interface ChildDriveInput {
-  parentThread: Thread;
-  parentTurnId: TurnId;
-  prompt: string;
-  budget: TreeBudget;
-  signal?: AbortSignal;
-}
 
 export interface SpawnChildInput extends ChildDriveInput {
   /** Named roster target; omitted or empty selects the agent-less generic subagent. */
@@ -65,25 +32,31 @@ export interface SpawnChildInput extends ChildDriveInput {
   appendSystemPrompt?: string;
   /** Per-invocation execution patch, applied over the resolved baseline. */
   overrides?: InvocationPatch;
-  /** Parent-turn card writer; foreground spawn upserts running then completed. */
-  transcript?: SpawnTranscript;
+  signal?: AbortSignal;
 }
 
 export interface ContinueChildInput extends ChildDriveInput {
-  childThreadId: ThreadId;
-  /** Parent-turn card writer; foreground continue upserts running then completed. */
+  handle: string;
+  signal?: AbortSignal;
+}
+
+export type ChildRunRequest =
+  | ({ kind: "spawn" } & SpawnChildInput)
+  | ({ kind: "continue" } & ContinueChildInput);
+
+export interface ChildRunOptions {
+  mode: "foreground" | "background";
+  /** Parent-turn card writer; foreground spawn/continue upserts running then terminal. */
   transcript?: SpawnTranscript;
 }
 
 export interface ChildRunCoordinatorDeps {
-  orchestrator: RunTurnPort;
+  /** Run lifecycle: claim, registry, stream, capture, terminal persistence. */
+  driver: ChildRunDriver;
   repos: {
-    threads: Pick<ThreadRepository, "updateSpawnLifecycle" | "findById">;
+    threads: Pick<ThreadRepository, "updateSpawnLifecycle" | "findLiveByProjectRef">;
     subagentThreads: SubagentThreadFactory;
-    turns: TurnRepository;
-    blocks: BlockRepository;
     transaction: ThreadRepositories["transaction"];
-    threadWorks: ThreadRepositories["threadWorks"];
   };
   resolveWorkMembership(input: {
     threadId: ThreadId;
@@ -99,115 +72,34 @@ export interface ChildRunCoordinatorDeps {
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
   /** Host-availability check for a model id, used when the child has no definition. */
   modelUnavailable(model: string): string[];
-  childRunRegistry: ChildRunRegistry;
-  childReportDelivery: Pick<ChildReportDelivery, "enqueue">;
-  workContextDelivery: Pick<WorkContextDelivery, "flushOwned">;
-  runOwnership?: ThreadRunOwnership;
-  billingSpendReader: BillingSpendReader;
 }
 
 export interface ChildRunCoordinator {
-  spawnChild(input: SpawnChildInput): Promise<SpawnResult>;
-  spawnChildBackground(input: SpawnChildInput): Promise<SpawnResult>;
-  continueChild(input: ContinueChildInput): Promise<SpawnResult>;
-  continueChildBackground(input: ContinueChildInput): Promise<SpawnResult>;
-  createReturnResultCompleter(
-    childThreadId: ThreadId,
-    options?: {
-      capture?: boolean;
-      /** Durable side-effect for a captured report; runs before the turn settles. */
-      onCapture?: (capture: ReturnResultCapture) => Promise<void>;
-    },
-  ): ReturnResultCompleter;
-}
-
-type ChildTerminal =
-  | { type: "completed" }
-  | { type: "cancelled" }
-  | { type: "error"; message: string; code: string };
-
-type PreparedChild = {
-  child: Thread;
-  /** Event/thread-visible slug; a named roster name or the generic subagent label. */
-  resolvedSlug: string;
-  /** Delivery-card title for a background spawn; omitted for continue. */
-  description?: string;
-  childController: AbortController;
-  childRegistered: boolean;
-  runClaim: ThreadRunClaim;
-  background: boolean;
-  /** Spawn creates the child lifecycle; continue never rewrites it. */
-  origin: "spawn" | "continue";
-};
-
-async function synthesizeIncompleteReport(
-  repos: ChildRunCoordinatorDeps["repos"],
-  childThreadId: ThreadId,
-  costMillicredits: number,
-): Promise<AgentReport> {
-  const turns = await repos.turns.listByThread(childThreadId);
-  let summary = "Child run ended without return_result";
-  for (let index = turns.length - 1; index >= 0; index -= 1) {
-    const turn = turns[index];
-    if (turn?.role !== "assistant") continue;
-    const blocks = await repos.blocks.listByTurn(turn.id);
-    for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
-      const block = blocks[blockIndex];
-      if (block?.blockType !== "text") continue;
-      const text = blockPlainText(block.blockType, block.content)?.trim();
-      if (text) {
-        summary = text;
-        break;
-      }
-    }
-    break;
-  }
-  return {
-    threadId: childThreadId as string,
-    summary,
-    costMillicredits,
-    incomplete: true,
-  };
+  runChild(request: ChildRunRequest, options: ChildRunOptions): Promise<SpawnResult>;
+  /**
+   * One-shot return_result acknowledgement for a settle-only run (a writer
+   * driving a child chat): it records nothing and never captures a report.
+   */
+  createReturnResultCompleter(): ReturnResultCompleter;
 }
 
 export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildRunCoordinator {
-  const runOwnership = deps.runOwnership ?? createInMemoryThreadRunOwnership();
-  const pendingReports = new Map<string, AgentReport>();
+  const driver = deps.driver;
 
-  function createReturnResultCompleter(
-    childThreadId: ThreadId,
-    options?: {
-      capture?: boolean;
-      onCapture?: (capture: ReturnResultCapture) => Promise<void>;
-    },
-  ): ReturnResultCompleter {
+  function createReturnResultCompleter(): ReturnResultCompleter {
     let used = false;
-    const captureReport = options?.capture !== false;
-    const onCapture = options?.onCapture;
-    return async (capture: ReturnResultCapture) => {
+    return async () => {
       if (used) {
         return { ok: false as const, message: "return_result already called for this run" };
       }
       used = true;
-      if (captureReport) {
-        pendingReports.set(childThreadId as string, {
-          threadId: childThreadId as string,
-          summary: capture.summary,
-          payload: capture.payload,
-          artifacts: capture.artifacts,
-          costMillicredits: 0,
-        });
-        // Runs at the moment the report is produced, before the child turn
-        // settles and before driveChild can continue.
-        if (onCapture) await onCapture(capture);
-      }
       return { ok: true as const };
     };
   }
 
-  async function prepareChild(
+  async function prepareSpawn(
     input: SpawnChildInput,
-    options: { background?: boolean } = {},
+    background: boolean,
   ): Promise<PreparedChild | SpawnResult> {
     const depthError = assertSpawnDepthAllowed(input.budget, input.parentThread.spawnDepth);
     if (depthError) return { status: "error", error: depthError };
@@ -222,112 +114,19 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       };
     }
 
-    const requestedSlug = input.agentSlug?.trim() ?? "";
-    let revision: AgentRevision | null;
-    let configuration: ResolvedAgentConfiguration;
-    let resolvedSlug: string;
-    let defaultTitle: string;
-    let patchPackageRoot: string | null;
-    if (requestedSlug === "") {
-      configuration = { ...parentAgent.configuration };
-      revision = null;
-      resolvedSlug = GENERIC_SUBAGENT_SLUG;
-      defaultTitle = GENERIC_SUBAGENT_SLUG;
-      patchPackageRoot = parentAgent.revision?.packageRevisionId ?? null;
-    } else {
-      const target = parentAgent.configuration.namedTargets.find(
-        (item) => item.name === requestedSlug,
-      );
-      if (!target) {
-        return {
-          status: "error",
-          error: meridianErrorFromSystem(
-            "spawn_agent_not_allowed",
-            `Agent "${requestedSlug}" is not in caller subagents`,
-          ),
-        };
-      }
-      const childAgent = await deps.agentRevisions.readRevision(target.definitionRevisionId);
-      if (!childAgent || childAgent.definition.metadata["model-invocable"] === false) {
-        return {
-          status: "error",
-          error: meridianErrorFromSystem(
-            "spawn_agent_not_found",
-            `Agent "${requestedSlug}" is unavailable in the caller's retained package`,
-          ),
-        };
-      }
-      revision = childAgent;
-      configuration = await resolveAgentConfiguration({
-        revision: childAgent,
-        store: deps.agentRevisions,
-        defaultModel: deps.defaultModel(),
-      });
-      resolvedSlug = requestedSlug;
-      defaultTitle = `${requestedSlug} subagent`;
-      patchPackageRoot = childAgent.packageRevisionId;
-    }
-
-    if (input.overrides !== undefined) {
-      let patched: ResolvedAgentConfiguration;
-      try {
-        patched = await applyInvocationPatch({
-          baseline: configuration,
-          patch: input.overrides,
-          caller: parentAgent.configuration,
-          store: deps.agentRevisions,
-          packageRevisionId: patchPackageRoot,
-        });
-      } catch (error) {
-        if (error instanceof InvocationPatchError) {
-          return {
-            status: "error",
-            error: meridianErrorFromSystem("spawn_invocation_patch_invalid", error.message),
-          };
-        }
-        throw error;
-      }
-      const reasons = validateInvocationAuthority({
-        baseline: configuration,
-        patched,
-        caller: parentAgent.configuration,
-      });
-      if (reasons.length) {
-        return {
-          status: "error",
-          error: meridianErrorFromSystem("spawn_invocation_authority_denied", reasons.join(" ")),
-        };
-      }
-      configuration = patched;
-    }
-
-    if (revision) {
-      const unavailable = deps.unavailableReasons(revision.definition, configuration.model);
-      if (unavailable.length) {
-        return {
-          status: "error",
-          error: meridianErrorFromSystem("spawn_agent_unavailable", unavailable.join(" ")),
-        };
-      }
-    } else {
-      const unavailable = deps.modelUnavailable(configuration.model);
-      if (unavailable.length) {
-        return {
-          status: "error",
-          error: meridianErrorFromSystem("spawn_agent_unavailable", unavailable.join(" ")),
-        };
-      }
-    }
-
-    const invocationOverlay: InvocationOverlay | null =
-      input.appendSystemPrompt !== undefined || input.overrides !== undefined
-        ? {
-            ...(input.appendSystemPrompt !== undefined
-              ? { appendSystemPrompt: input.appendSystemPrompt }
-              : {}),
-            ...(input.overrides !== undefined ? { overrides: input.overrides } : {}),
-          }
-        : null;
+    const resolution = await resolveChildInvocation(
+      {
+        parentAgent,
+        requestedSlug: input.agentSlug?.trim() ?? "",
+        ...(input.overrides !== undefined ? { overrides: input.overrides } : {}),
+        ...(input.appendSystemPrompt !== undefined
+          ? { appendSystemPrompt: input.appendSystemPrompt }
+          : {}),
+      },
+      deps,
+    );
+    if (!resolution.ok) return { status: "error", error: resolution.error };
+    const { revision, configuration, resolvedSlug, defaultTitle, invocationOverlay } = resolution;
 
     const child = await deps.repos.transaction(async () => {
       const created = await createBoundConversation({
@@ -364,7 +163,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         agentSlug: resolvedSlug,
         prompt: input.prompt,
       });
-      if (options.background) {
+      if (background) {
         await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
           type: "background.started",
           parentThreadId: input.parentThread.id,
@@ -378,8 +177,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     });
 
     try {
-      const prepared = await registerPreparedChild(child, resolvedSlug, {
-        background: options.background,
+      const prepared = await driver.register(child, resolvedSlug, {
+        background,
         signal: input.signal,
         origin: "spawn",
       });
@@ -409,15 +208,15 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
   }
 
-  async function prepareExistingChild(
+  async function prepareContinue(
     input: ContinueChildInput,
-    target: ContinueTarget,
-    options: { background?: boolean } = {},
+    target: Thread,
+    background: boolean,
   ): Promise<PreparedChild | SpawnResult> {
     const turnError = assertTurnBudget(input.budget);
     if (turnError) return { status: "error", error: turnError };
 
-    const binding = await deps.agentRevisions.readThreadBinding(target.thread.id);
+    const binding = await deps.agentRevisions.readThreadBinding(target.id);
     if (!binding) {
       return {
         status: "error",
@@ -429,8 +228,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
     const resolvedSlug = binding.revision?.slug ?? GENERIC_SUBAGENT_SLUG;
     try {
-      return await registerPreparedChild(target.thread, resolvedSlug, {
-        background: options.background,
+      return await driver.register(target, resolvedSlug, {
+        background,
         signal: input.signal,
         origin: "continue",
       });
@@ -445,60 +244,35 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
   }
 
-  async function registerPreparedChild(
-    child: Thread,
-    resolvedSlug: string,
-    options: { background?: boolean; signal?: AbortSignal; origin: "spawn" | "continue" },
-  ): Promise<PreparedChild> {
-    const parentThreadId = child.parentThreadId as ThreadId;
-    const childThreadId = child.id as ThreadId;
-    const childController = new AbortController();
-    let runClaim: ThreadRunClaim | null = null;
-    try {
-      runClaim = await runOwnership.tryAcquire(childThreadId);
-      if (!runClaim) throw new Error(`Child thread already has an active run: ${child.id}`);
-      if (options.background) {
-        deps.childRunRegistry.registerBackgroundChild(
-          parentThreadId,
-          childThreadId,
-          childController,
-        );
-      } else {
-        const parentSignal = options.signal;
-        if (parentSignal) {
-          if (parentSignal.aborted) {
-            childController.abort();
-          } else {
-            parentSignal.addEventListener("abort", () => childController.abort(), { once: true });
-          }
-        }
-        deps.childRunRegistry.registerChild(parentThreadId, childThreadId, childController);
+  async function prepare(
+    request: ChildRunRequest,
+    background: boolean,
+    transcript: SpawnTranscript | undefined,
+  ): Promise<PreparedChild | SpawnResult> {
+    if (request.kind === "spawn") {
+      const outcome = await prepareSpawn(request, background);
+      // A failed spawn shows its error on the parent card; a background spawn
+      // has no parent-turn card writer, so it only returns the error.
+      if ("status" in outcome && !background) {
+        await persistHelperCard(transcript, {
+          agent: request.agentSlug,
+          description: request.description,
+          parentTurnId: request.parentTurnId as string,
+          output: outcome,
+        });
       }
-      return {
-        child,
-        resolvedSlug,
-        childController,
-        childRegistered: true,
-        runClaim,
-        background: options.background ?? false,
-        origin: options.origin,
-      };
-    } catch (error) {
-      childController.abort();
-      deps.childRunRegistry.unregisterChild(childThreadId);
-      await runClaim?.release();
-      throw error;
+      return outcome;
     }
+
+    const authorized = await authorizeContinueTarget({
+      callerThread: request.parentThread,
+      targetHandle: request.handle,
+      threads: deps.repos.threads,
+    });
+    if (!authorized.ok) return { status: "error", error: authorized.error };
+    return prepareContinue(request, authorized.target, background);
   }
 
-  /** Releases a prepared child that never entered driveChild (e.g. a card write failed). */
-  async function releasePreparedChild(prepared: PreparedChild): Promise<void> {
-    prepared.childController.abort();
-    deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
-    await prepared.runClaim.release();
-  }
-
-  /** Persists the running card; a write failure releases the prepared child's claim. */
   async function persistRunningCard(
     transcript: SpawnTranscript | undefined,
     fields: Parameters<typeof persistHelperCard>[1],
@@ -507,322 +281,75 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     try {
       return await persistHelperCard(transcript, fields);
     } catch (error) {
-      await releasePreparedChild(prepared);
+      await driver.release(prepared);
       throw error;
     }
   }
 
-  async function driveChild(input: ChildDriveInput, prepared: PreparedChild): Promise<SpawnResult> {
-    let terminalStatus: "succeeded" | "failed" | "cancelled" = "succeeded";
-    let spawnResult: SpawnResult = {
-      status: "error",
-      error: meridianErrorFromSystem("spawn_failed", "Child run did not produce a result"),
-    };
-    let reportId: TurnId | null = null;
-
-    // Background reports are recorded durably the moment return_result settles,
-    // not only in driveChild's terminal transaction, so a crash between the two
-    // cannot lose the payload/artifacts; `enqueue` is idempotent on reportId.
-    const enqueueBackgroundReport = async (result: SpawnResult) => {
-      if (!prepared.background) return;
-      await deps.childReportDelivery.enqueue({
-        reportId: reportId ?? (crypto.randomUUID() as TurnId),
-        parentThreadId: input.parentThread.id as ThreadId,
-        childThreadId: prepared.child.id as ThreadId,
-        agentSlug: prepared.resolvedSlug,
-        ...(prepared.description !== undefined ? { description: prepared.description } : {}),
-        result,
-      });
-    };
-
-    try {
-      const handle = await deps.orchestrator.runTurn({
-        threadId: prepared.child.id as ThreadId,
-        userText: input.prompt,
-        signal: prepared.childController.signal,
-        treeBudget: input.budget,
-        isSubagentThread: true,
-        returnResultCompleter: createReturnResultCompleter(prepared.child.id as ThreadId, {
-          onCapture: async (capture) => {
-            if (!reportId) return;
-            await enqueueBackgroundReport({
-              status: "completed",
-              report: {
-                threadId: prepared.child.id,
-                summary: capture.summary,
-                ...(capture.payload !== undefined ? { payload: capture.payload } : {}),
-                ...(capture.artifacts !== undefined ? { artifacts: capture.artifacts } : {}),
-                costMillicredits: 0,
-              },
-            });
-          },
-        }),
-      });
-      reportId = handle.assistantTurnId;
-      deps.childRunRegistry.markChildTurn(
-        prepared.child.id as ThreadId,
-        handle.assistantTurnId as TurnId,
-      );
-
-      let childTerminal: ChildTerminal | null = null;
-      for await (const event of handle.events) {
-        if (event.type === "turn.completed") childTerminal = { type: "completed" };
-        else if (event.type === "turn.cancelled") childTerminal = { type: "cancelled" };
-        else if (event.type === "turn.error") {
-          childTerminal = { type: "error", message: event.error.message, code: event.error.code };
-        }
-      }
-
-      const childCostMillicredits = Number(
-        await deps.billingSpendReader.getThreadDebitTotal({
-          userId: input.parentThread.userId,
-          threadId: prepared.child.id,
-        }),
-      );
-      const captured = pendingReports.get(prepared.child.id);
-      pendingReports.delete(prepared.child.id);
-
-      if (captured) {
-        spawnResult = {
-          status: "completed",
-          report: { ...captured, costMillicredits: childCostMillicredits },
-        };
-      } else if (childTerminal?.type === "cancelled") {
-        terminalStatus = "cancelled";
-        spawnResult = {
-          status: "error",
-          error: meridianErrorFromSystem("spawn_cancelled", "Child run was cancelled"),
-        };
-      } else if (childTerminal?.type === "error") {
-        terminalStatus = "failed";
-        spawnResult = {
-          status: "error",
-          error: meridianErrorFromSystem(
-            childTerminal.code || "spawn_failed",
-            childTerminal.message || "Child run failed",
-          ),
-        };
-      } else if (childTerminal?.type === "completed") {
-        spawnResult = {
-          status: "completed",
-          report: await synthesizeIncompleteReport(
-            deps.repos,
-            prepared.child.id as ThreadId,
-            childCostMillicredits,
-          ),
-        };
-      } else {
-        terminalStatus = "failed";
-        spawnResult = {
-          status: "error",
-          error: meridianErrorFromSystem("spawn_failed", "Child run ended without terminal event"),
-        };
-      }
-    } catch (error) {
-      terminalStatus = "failed";
-      const message = error instanceof Error ? error.message : String(error);
-      spawnResult = { status: "error", error: meridianErrorFromSystem("spawn_failed", message) };
-    } finally {
-      try {
-        await deps.repos.transaction(async () => {
-          // spawn_status/spawn_result record the spawn; a continue run's outcome
-          // lives on its per-execution card and events and never erases it.
-          if (prepared.origin === "spawn") {
-            await deps.repos.threads.updateSpawnLifecycle(prepared.child.id as ThreadId, {
-              spawnStatus: terminalStatus,
-              spawnResult,
-            });
-          }
-          await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-            type: "agent.run_completed",
-            parentThreadId: input.parentThread.id,
-            parentTurnId: input.parentTurnId as string,
-            childThreadId: prepared.child.id,
-            result: spawnResult,
-          });
-          await enqueueBackgroundReport(spawnResult);
-        });
-      } finally {
-        deps.childRunRegistry.abortChildrenOf(prepared.child.id as ThreadId, {
-          includeBackground: true,
-        });
-        try {
-          if (prepared.childRegistered) {
-            try {
-              await deps.workContextDelivery.flushOwned(prepared.child.id as ThreadId);
-            } finally {
-              deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
-            }
-          }
-        } finally {
-          await prepared.runClaim.release();
-        }
-      }
-    }
-
-    return spawnResult;
-  }
-
-  function driveBackground(input: ChildDriveInput, prepared: PreparedChild): void {
-    void driveChild(input, prepared)
-      .then(async (result) => {
-        if (result.status === "completed") {
-          await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-            type: "background.completed",
-            parentThreadId: input.parentThread.id,
-            parentTurnId: input.parentTurnId as string,
-            childThreadId: prepared.child.id,
-            agentSlug: prepared.resolvedSlug,
-            result,
-          });
-        } else {
-          await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-            type: "background.failed",
-            parentThreadId: input.parentThread.id,
-            parentTurnId: input.parentTurnId as string,
-            childThreadId: prepared.child.id,
-            agentSlug: prepared.resolvedSlug,
-            error: result.status === "error" ? result.error.message : "Background run failed",
-          });
-        }
-      })
-      .catch(async (error: unknown) => {
-        await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-          type: "background.failed",
-          parentThreadId: input.parentThread.id,
-          parentTurnId: input.parentTurnId as string,
-          childThreadId: prepared.child.id,
-          agentSlug: prepared.resolvedSlug,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-  }
-
-  const coordinator: ChildRunCoordinator = {
-    createReturnResultCompleter,
-
-    async spawnChild(input: SpawnChildInput): Promise<SpawnResult> {
-      const cardFields = {
-        agent: input.agentSlug,
-        description: input.description,
-        parentTurnId: input.parentTurnId as string,
-      };
-      let runningCard: Block | null = null;
-      try {
-        const prepared = await prepareChild(input);
-        if ("status" in prepared) {
-          await persistHelperCard(input.transcript, { ...cardFields, output: prepared });
-          return prepared;
-        }
-        runningCard = await persistRunningCard(
-          input.transcript,
-          {
-            ...cardFields,
-            childThreadId: prepared.child.id,
-          },
-          prepared,
-        );
-        const result = await driveChild(input, prepared);
-        await persistHelperCard(
-          input.transcript,
-          { ...cardFields, childThreadId: prepared.child.id, output: result },
-          runningCard,
-        );
-        return result;
-      } catch (error) {
-        await persistHelperCard(
-          input.transcript,
-          {
-            ...cardFields,
-            output: {
-              status: "error",
-              error: meridianErrorFromSystem(
-                "spawn_failed",
-                error instanceof Error ? error.message : String(error),
-              ),
-            },
-          },
-          runningCard,
-        );
-        throw error;
-      }
-    },
-
-    async spawnChildBackground(input: SpawnChildInput): Promise<SpawnResult> {
-      const prepared = await prepareChild(input, { background: true });
-      if ("status" in prepared) return prepared;
-
-      driveBackground(input, prepared);
-
+  function foregroundCardFields(
+    request: ChildRunRequest,
+    prepared: PreparedChild,
+  ): Parameters<typeof persistHelperCard>[1] {
+    if (request.kind === "spawn") {
       return {
-        status: "background",
-        threadId: prepared.child.id,
-        agentSlug: prepared.resolvedSlug,
-        description: input.description,
-      };
-    },
-
-    async continueChild(input: ContinueChildInput): Promise<SpawnResult> {
-      const authorized = await authorizeContinueTarget({
-        callerThread: input.parentThread,
-        targetThreadId: input.childThreadId,
-        threads: deps.repos.threads,
-      });
-      if (!authorized.ok) return { status: "error", error: authorized.error };
-
-      const prepared = await prepareExistingChild(input, authorized.target);
-      if ("status" in prepared) return prepared;
-
-      const cardFields = {
-        agent: prepared.resolvedSlug,
-        parentTurnId: input.parentTurnId as string,
+        agent: request.agentSlug,
+        description: request.description,
+        parentTurnId: request.parentTurnId as string,
         childThreadId: prepared.child.id,
       };
-      let runningCard: Block | null = null;
-      try {
-        runningCard = await persistRunningCard(input.transcript, cardFields, prepared);
-        const result = await driveChild(input, prepared);
-        await persistHelperCard(input.transcript, { ...cardFields, output: result }, runningCard);
-        return result;
-      } catch (error) {
-        await persistHelperCard(
-          input.transcript,
-          {
-            ...cardFields,
-            output: {
-              status: "error",
-              error: meridianErrorFromSystem(
-                "continue_failed",
-                error instanceof Error ? error.message : String(error),
-              ),
-            },
-          },
-          runningCard,
-        );
-        throw error;
-      }
-    },
+    }
+    return {
+      agent: prepared.resolvedSlug,
+      parentTurnId: request.parentTurnId as string,
+      childThreadId: prepared.child.id,
+    };
+  }
 
-    async continueChildBackground(input: ContinueChildInput): Promise<SpawnResult> {
-      const authorized = await authorizeContinueTarget({
-        callerThread: input.parentThread,
-        targetThreadId: input.childThreadId,
-        threads: deps.repos.threads,
-      });
-      if (!authorized.ok) return { status: "error", error: authorized.error };
+  async function runChild(
+    request: ChildRunRequest,
+    options: ChildRunOptions,
+  ): Promise<SpawnResult> {
+    const background = options.mode === "background";
+    const prepared = await prepare(request, background, options.transcript);
+    if ("status" in prepared) return prepared;
 
-      const prepared = await prepareExistingChild(input, authorized.target, { background: true });
-      if ("status" in prepared) return prepared;
-
-      driveBackground(input, prepared);
-
+    if (background) {
+      driver.driveBackground(prepared, request);
       return {
         status: "background",
+        handle: prepared.handle,
         threadId: prepared.child.id,
         agentSlug: prepared.resolvedSlug,
+        ...(prepared.description !== undefined ? { description: prepared.description } : {}),
       };
-    },
-  };
+    }
 
-  return coordinator;
+    const cardFields = foregroundCardFields(request, prepared);
+    const failureCode = request.kind === "spawn" ? "spawn_failed" : "continue_failed";
+    let runningCard: Block | null = null;
+    try {
+      runningCard = await persistRunningCard(options.transcript, cardFields, prepared);
+      const result = await driver.drive(prepared, request);
+      await persistHelperCard(options.transcript, { ...cardFields, output: result }, runningCard);
+      return result;
+    } catch (error) {
+      await persistHelperCard(
+        options.transcript,
+        {
+          ...cardFields,
+          output: {
+            status: "error",
+            error: meridianErrorFromSystem(
+              failureCode,
+              error instanceof Error ? error.message : String(error),
+            ),
+          },
+        },
+        runningCard,
+      );
+      throw error;
+    }
+  }
+
+  return { runChild, createReturnResultCompleter };
 }
