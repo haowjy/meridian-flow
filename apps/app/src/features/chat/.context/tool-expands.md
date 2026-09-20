@@ -85,14 +85,19 @@ states a count when cut. It gets no fade and no second door, because those
 belong to continuous prose, where the need to see the rest arrives only after
 reading. A clipped outline is already answered by the door in the row title.
 
-Read payloads arrive as hashlines, and outline reads interleave locator lines
-the model uses to read further. Both are addressing machinery and are stripped
-in `read-payload.ts` before any renderer sees them. That module reads through
-`splitHashline`, not the anchored stripper: this payload was serialized by this
-system, so the reader that inverts the writer is the correct one, and an empty
-hash would otherwise leak its separator into the writer's prose. Targeting is resolved
-server-side, so a scoped read's payload already *is* the region asked for: the
-preview rule is "show the top of what came back" for every read.
+Read payloads arrive in two shapes, and `read-payload.ts` accepts either so no
+renderer branches on it. The `read` tool returns the `meridian.agent-edit.v1`
+envelope, whose block items already separate `hash` from `body`; those bodies
+are taken verbatim. Any remaining caller hands back hashlines, and outline reads
+interleave locator lines the model uses to read further. Both are addressing
+machinery and are stripped before any renderer sees them. The serialized path
+reads through `splitHashline`, not the anchored stripper: this payload was
+serialized by this system, so the reader that inverts the writer is the correct
+one, and an empty hash would otherwise leak its separator into the writer's
+prose. Envelope bodies are already hash-free, so a `|` in the writer's prose is
+left alone. Targeting is resolved server-side, so a scoped read's payload
+already *is* the region asked for: the preview rule is "show the top of what
+came back" for every read.
 
 A search expand is **a card, not a run of rows.** The transcript is a column of
 the agent's actions; eight passages loose in it read as eight more actions. The

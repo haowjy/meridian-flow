@@ -374,7 +374,6 @@ function readPath(tool: ToolView): string | undefined {
 }
 
 function outputPreview(tool: ToolView): ToolExpand | null {
-  if (typeof tool.output !== "string") return null;
   const markup = readPayloadMarkup(tool.output);
   if (!markup) return null;
   const path = readPath(tool);
@@ -382,7 +381,6 @@ function outputPreview(tool: ToolView): ToolExpand | null {
 }
 
 function outputOutline(tool: ToolView): ToolExpand | null {
-  if (typeof tool.output !== "string") return null;
   const headings = readPayloadOutline(tool.output);
   // A document with no headings falls back to whole blocks server-side, so the
   // payload really is prose and the row should show it as prose.
