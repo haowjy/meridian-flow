@@ -130,11 +130,20 @@ describe("Agent definition compiler", () => {
     if (!result.ok) expect(result.diagnostics.length).toBeGreaterThan(0);
   });
 
-  it('rejects "write" as an authoring permission name', () => {
+  it('rejects "write" as an authoring permission name, in any case or payload scope', () => {
     for (const meta of [
       { tools: { write: "deny" } },
       { tools: ["write"] },
       { "disallowed-tools": ["write"] },
+      { tools: { Write: "deny" } },
+      { tools: { WRITE: "deny" } },
+      { tools: { " write ": "deny" } },
+      { tools: ["Write"] },
+      { tools: ["WRITE"] },
+      { tools: [" write "] },
+      { tools: { "write(x)": "deny" } },
+      { tools: ["write(x)"] },
+      { "disallowed-tools": ["write(x)"] },
     ]) {
       const result = compileAgentDefinition({ body: "", meta });
       expect(result.ok).toBe(false);

@@ -222,6 +222,9 @@ describe("applyInvocationPatch", () => {
       { tools: { write: "allow" } },
       { tools: ["write"] },
       { "disallowed-tools": ["write"] },
+      { tools: { "write(x)": "allow" } },
+      { tools: ["write(x)"] },
+      { "disallowed-tools": ["write(x)"] },
     ];
     for (const patch of malformed) {
       await expect(
