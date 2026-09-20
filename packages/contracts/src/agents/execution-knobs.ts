@@ -123,16 +123,16 @@ export const toolReferenceSchema = z
   .trim()
   .min(1)
   .transform((value, context) => {
-    const name = normalizeToolName(value);
-    if (name === null) {
+    const normalized = normalizeToolName(value);
+    if (normalized === null) {
       context.addIssue({ code: "custom", message: "Invalid Mars tool reference" });
       return z.NEVER;
     }
-    if (name === "write") {
+    if (normalized.head === "write") {
       context.addIssue({ code: "custom", message: WRITE_IS_MODEL_TOOL_ERROR });
       return z.NEVER;
     }
-    return name;
+    return normalized.name;
   });
 export const toolReferencesSchema = z
   .array(toolReferenceSchema)
@@ -150,18 +150,27 @@ export const toolMapSchema = z
   )
   .superRefine((folded, context) => {
     const names = new Map<string, string>();
-    for (const [name, policy] of folded) {
-      if (name === "write") {
+    for (const [normalized, policy] of folded) {
+      if (normalized?.head === "write") {
         context.addIssue({ code: "custom", message: WRITE_IS_MODEL_TOOL_ERROR });
         continue;
       }
+      const name = normalized?.name;
       if (!name || (names.has(name) && names.get(name) !== policy)) {
         context.addIssue({ code: "custom", message: "Empty or duplicate normalized tool name" });
       }
       if (name) names.set(name, policy);
     }
   })
-  .transform((folded) => Object.fromEntries(folded as Array<readonly [string, ToolPolicy]>));
+  .transform((folded) =>
+    Object.fromEntries(
+      folded.flatMap(([normalized, policy]) =>
+        normalized === null || normalized.head === "write"
+          ? []
+          : [[normalized.name, policy] as const],
+      ),
+    ),
+  );
 
 /**
  * Authoring/patch tool representation; folds tool-name aliases on parse.
@@ -242,8 +251,16 @@ export const invocationPatchSchema = z
   .strict();
 export type InvocationPatch = z.infer<typeof invocationPatchSchema>;
 
+/** A folded tool reference: the canonical name plus the capability head the alias fold resolved. */
+type NormalizedToolName = {
+  /** Canonical name, retaining any scoped `(...)` payload or MCP identity verbatim. */
+  name: string;
+  /** Canonical capability the head folds to, with the payload removed. */
+  head: string;
+};
+
 // Mars canonical names retain scoped payloads and case-sensitive MCP identities.
-function normalizeToolName(value: string): string | null {
+function normalizeToolName(value: string): NormalizedToolName | null {
   const open = value.indexOf("(");
   const head = (open < 0 ? value : value.slice(0, open)).trim();
   const payload = open < 0 ? "" : value.slice(open);
@@ -254,15 +271,16 @@ function normalizeToolName(value: string): string | null {
     if (!payload.endsWith(")")) return null;
     const segments = payload.slice(1, -1).split("/");
     if (segments.length > 2 || segments.some((segment) => !segment.trim())) return null;
-    return value;
+    return { name: value, head: lower };
   }
-  if (lower.startsWith("mcp__")) return value;
+  if (lower.startsWith("mcp__")) return { name: value, head: lower };
   const alias = Object.hasOwn(toolAliases, lower) ? toolAliases[lower] : undefined;
-  if (alias) return alias + payload;
-  if (head.includes("_") || !/[a-z]/.test(head)) return lower + payload;
+  if (alias) return { name: alias + payload, head: alias };
+  if (head.includes("_") || !/[a-z]/.test(head)) return { name: lower + payload, head: lower };
   const snake = head.replace(
     /[A-Z]/g,
     (letter, offset) => `${offset ? "_" : ""}${letter.toLowerCase()}`,
   );
-  return (Object.hasOwn(toolAliases, snake) ? toolAliases[snake] : snake) + payload;
+  const folded = Object.hasOwn(toolAliases, snake) ? toolAliases[snake] : snake;
+  return { name: folded + payload, head: folded };
 }
