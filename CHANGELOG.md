@@ -31,6 +31,7 @@
 ### Fixed
 
 - Child completion emits `agent.run_completed` instead of the spawn-named `agent.spawn_completed`; a continue is not a spawn.
+- A thread that advanced while the writer was elsewhere — a background child's report waking the parent — now appears on return without a manual reload: the snapshot revalidates on activation and refetches when a new run starts. A server-initiated run on a mounted idle thread also streams its continuation live.
 
 - Reject `write` (including case variants and payload-scoped forms like `write(x)`) as an authoring permission name; use `edit` for the document-edit capability. `edit` implies `read`; an explicit `disallowed-tools` read denial is a contradiction.
 - The chat `read`/`skim` expand renders the `meridian.agent-edit.v1` result envelope's block bodies, so a read row opens onto its prose or outline instead of offering no chevron.
