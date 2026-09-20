@@ -134,8 +134,9 @@ child-run coordinator can create subagent threads. Writer-facing helper-result c
 before the child runs and patches it on completion; background delivery posts
 the same card on a later system turn. Successful `return_result` persists
 `tool_result` and the child-report card in one `persistAndAppendEvents` (card
-last) and durably records the background delivery obligation at the same
-moment, so a crash before the run's terminal write cannot lose the report.
+last), carrying the captured summary and artifacts, and durably records the
+background delivery obligation at the same moment, so a crash before the run's
+terminal write cannot lose the report.
 `spawn_status`/`spawn_result` are spawn-owned: a continue run's outcome lives on
 its per-execution card and never overwrites a prior report. Background card
 delivery holds the parent's shared run claim, so a card write cannot race or
