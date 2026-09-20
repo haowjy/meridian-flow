@@ -7,6 +7,7 @@
  */
 import { GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
 import type { HelperResultProps } from "@meridian/contracts/components";
+import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
 
 export function spawnOutputForTranscript(output: JsonValue): JsonValue {
@@ -37,6 +38,7 @@ export function spawnHelperCardProps(input: {
   const output = input.output;
   if (!isRecord(output)) return base;
   if (output.status === "completed" && isRecord(output.report)) {
+    const artifacts = output.report.artifacts;
     return {
       ...base,
       status: "completed",
@@ -45,6 +47,7 @@ export function spawnHelperCardProps(input: {
         ? { childThreadId: output.report.threadId }
         : {}),
       ...(output.report.payload !== undefined ? { payload: output.report.payload } : {}),
+      ...(Array.isArray(artifacts) ? { artifacts: artifacts as ArtifactRef[] } : {}),
     };
   }
   if (output.status === "error") {

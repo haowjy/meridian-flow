@@ -7,9 +7,11 @@
  * the title names the agent. Cost and the raw status field stay absent.
  */
 import { t } from "@lingui/core/macro";
+import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import { CheckCircle2, CircleAlert, LoaderCircle } from "lucide-react";
 import { Markdown } from "@/rich-content/Markdown";
 import { ArtifactCard, type ArtifactCardTone } from "./ArtifactCard";
+import { ArtifactGrid } from "./ArtifactGrid";
 import { useOpenChatThread } from "./ChatThreadNavigation";
 
 type SpawnReportStatus = "running" | "completed" | "failed";
@@ -20,6 +22,7 @@ type SpawnReportCardProps = {
   summary: string | null;
   status: SpawnReportStatus;
   childThreadId: string | null;
+  artifacts?: ArtifactRef[];
 };
 
 const statusPresentation = {
@@ -34,6 +37,7 @@ export function SpawnReportCard({
   summary,
   status,
   childThreadId,
+  artifacts = [],
 }: SpawnReportCardProps) {
   const { Icon, tone } = statusPresentation[status];
   const hint = title && title !== agentName ? title : undefined;
@@ -47,6 +51,11 @@ export function SpawnReportCard({
       door={childThreadId ? <OpenChildThreadDoor threadId={childThreadId} /> : undefined}
     >
       {summary ? <Markdown variant="compact">{summary}</Markdown> : null}
+      {artifacts.length > 0 ? (
+        <div className={summary ? "mt-3" : undefined}>
+          <ArtifactGrid artifacts={artifacts} />
+        </div>
+      ) : null}
     </ArtifactCard>
   );
 }
