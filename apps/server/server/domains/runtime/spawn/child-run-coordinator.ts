@@ -17,7 +17,7 @@ import type {
   SpawnResult,
   TreeBudget,
 } from "@meridian/contracts/spawn";
-import { blockPlainText, type Thread } from "@meridian/contracts/threads";
+import { type Block, blockPlainText, type Thread } from "@meridian/contracts/threads";
 import type { BillingSpendReader } from "../../billing/index.js";
 import {
   type AgentRevision,
@@ -44,31 +44,41 @@ import {
 } from "../loop/thread-run-ownership.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
 import { applyInvocationPatch, InvocationPatchError } from "./apply-invocation-patch.js";
-import type { HelperResultDelivery } from "./helper-result-delivery.js";
-import { persistSpawnHelperCard, type SpawnTranscript } from "./spawn-transcript.js";
+import { authorizeContinueTarget, type ContinueTarget } from "./authorize-continue-target.js";
+import type { ChildReportDelivery } from "./child-report-delivery.js";
+import { persistHelperCard, type SpawnTranscript } from "./spawn-transcript.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
 
-export interface SpawnChildInput {
+export interface ChildDriveInput {
   parentThread: Thread;
   parentTurnId: TurnId;
+  prompt: string;
+  budget: TreeBudget;
+  signal?: AbortSignal;
+}
+
+export interface SpawnChildInput extends ChildDriveInput {
   /** Named roster target; omitted or empty selects the agent-less generic subagent. */
   agentSlug?: string;
-  prompt: string;
   description?: string;
   /** Per-invocation additive prompt layer; omitted appends nothing. */
   appendSystemPrompt?: string;
   /** Per-invocation execution patch, applied over the resolved baseline. */
   overrides?: InvocationPatch;
-  budget: TreeBudget;
-  signal?: AbortSignal;
   /** Parent-turn card writer; foreground spawn upserts running then completed. */
+  transcript?: SpawnTranscript;
+}
+
+export interface ContinueChildInput extends ChildDriveInput {
+  childThreadId: ThreadId;
+  /** Parent-turn card writer; foreground continue upserts running then completed. */
   transcript?: SpawnTranscript;
 }
 
 export interface ChildRunCoordinatorDeps {
   orchestrator: RunTurnPort;
   repos: {
-    threads: Pick<ThreadRepository, "updateSpawnLifecycle">;
+    threads: Pick<ThreadRepository, "updateSpawnLifecycle" | "findById">;
     subagentThreads: SubagentThreadFactory;
     turns: TurnRepository;
     blocks: BlockRepository;
@@ -90,7 +100,7 @@ export interface ChildRunCoordinatorDeps {
   /** Host-availability check for a model id, used when the child has no definition. */
   modelUnavailable(model: string): string[];
   childRunRegistry: ChildRunRegistry;
-  helperResultDelivery: HelperResultDelivery;
+  childReportDelivery: Pick<ChildReportDelivery, "enqueue">;
   workContextDelivery: Pick<WorkContextDelivery, "flushOwned">;
   runOwnership?: ThreadRunOwnership;
   billingSpendReader: BillingSpendReader;
@@ -99,6 +109,8 @@ export interface ChildRunCoordinatorDeps {
 export interface ChildRunCoordinator {
   spawnChild(input: SpawnChildInput): Promise<SpawnResult>;
   spawnChildBackground(input: SpawnChildInput): Promise<SpawnResult>;
+  continueChild(input: ContinueChildInput): Promise<SpawnResult>;
+  continueChildBackground(input: ContinueChildInput): Promise<SpawnResult>;
   createReturnResultCompleter(
     childThreadId: ThreadId,
     options?: { capture?: boolean },
@@ -114,9 +126,12 @@ type PreparedChild = {
   child: Thread;
   /** Event/thread-visible slug; a named roster name or the generic subagent label. */
   resolvedSlug: string;
+  /** Delivery-card title for a background spawn; omitted for continue. */
+  description?: string;
   childController: AbortController;
   childRegistered: boolean;
   runClaim: ThreadRunClaim;
+  background: boolean;
 };
 
 async function synthesizeIncompleteReport(
@@ -310,6 +325,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         invocationOverlay,
         createThread: () =>
           deps.repos.subagentThreads.createSubagent({
+            id: crypto.randomUUID() as ThreadId,
             userId: input.parentThread.userId,
             projectId: input.parentThread.projectId,
             parentThreadId: input.parentThread.id as ThreadId,
@@ -348,21 +364,92 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       return created;
     });
 
+    try {
+      const prepared = await registerPreparedChild(child, resolvedSlug, {
+        background: options.background,
+        signal: input.signal,
+      });
+      return { ...prepared, description: input.description };
+    } catch (error) {
+      const result: SpawnResult = {
+        status: "error",
+        error: meridianErrorFromSystem(
+          "spawn_failed",
+          error instanceof Error ? error.message : String(error),
+        ),
+      };
+      await deps.repos.transaction(async () => {
+        await deps.repos.threads.updateSpawnLifecycle(child.id as ThreadId, {
+          spawnStatus: "failed",
+          spawnResult: result,
+        });
+        await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
+          type: "agent.spawn_completed",
+          parentThreadId: input.parentThread.id,
+          parentTurnId: input.parentTurnId as string,
+          childThreadId: child.id,
+          result,
+        });
+      });
+      throw error;
+    }
+  }
+
+  async function prepareExistingChild(
+    input: ContinueChildInput,
+    target: ContinueTarget,
+    options: { background?: boolean } = {},
+  ): Promise<PreparedChild | SpawnResult> {
+    const turnError = assertTurnBudget(input.budget);
+    if (turnError) return { status: "error", error: turnError };
+
+    const binding = await deps.agentRevisions.readThreadBinding(target.thread.id);
+    if (!binding) {
+      return {
+        status: "error",
+        error: meridianErrorFromSystem(
+          "continue_target_unavailable",
+          "Continue target has no retained Agent binding",
+        ),
+      };
+    }
+    const resolvedSlug = binding.revision?.slug ?? GENERIC_SUBAGENT_SLUG;
+    try {
+      return await registerPreparedChild(target.thread, resolvedSlug, {
+        background: options.background,
+        signal: input.signal,
+      });
+    } catch (error) {
+      return {
+        status: "error",
+        error: meridianErrorFromSystem(
+          "continue_target_busy",
+          error instanceof Error ? error.message : String(error),
+        ),
+      };
+    }
+  }
+
+  async function registerPreparedChild(
+    child: Thread,
+    resolvedSlug: string,
+    options: { background?: boolean; signal?: AbortSignal } = {},
+  ): Promise<PreparedChild> {
+    const parentThreadId = child.parentThreadId as ThreadId;
+    const childThreadId = child.id as ThreadId;
     const childController = new AbortController();
     let runClaim: ThreadRunClaim | null = null;
     try {
-      runClaim = await runOwnership.tryAcquire(child.id as ThreadId);
+      runClaim = await runOwnership.tryAcquire(childThreadId);
       if (!runClaim) throw new Error(`Child thread already has an active run: ${child.id}`);
-      let childRegistered = false;
       if (options.background) {
         deps.childRunRegistry.registerBackgroundChild(
-          input.parentThread.id as ThreadId,
-          child.id as ThreadId,
+          parentThreadId,
+          childThreadId,
           childController,
         );
-        childRegistered = true;
       } else {
-        const parentSignal = input.signal;
+        const parentSignal = options.signal;
         if (parentSignal) {
           if (parentSignal.aborted) {
             childController.abort();
@@ -370,51 +457,31 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             parentSignal.addEventListener("abort", () => childController.abort(), { once: true });
           }
         }
-        deps.childRunRegistry.registerChild(
-          input.parentThread.id as ThreadId,
-          child.id as ThreadId,
-          childController,
-        );
-        childRegistered = true;
+        deps.childRunRegistry.registerChild(parentThreadId, childThreadId, childController);
       }
-      return { child, resolvedSlug, childController, childRegistered, runClaim };
+      return {
+        child,
+        resolvedSlug,
+        childController,
+        childRegistered: true,
+        runClaim,
+        background: options.background ?? false,
+      };
     } catch (error) {
       childController.abort();
-      deps.childRunRegistry.unregisterChild(child.id as ThreadId);
-      try {
-        const result: SpawnResult = {
-          status: "error",
-          error: meridianErrorFromSystem(
-            "spawn_failed",
-            error instanceof Error ? error.message : String(error),
-          ),
-        };
-        await deps.repos.transaction(async () => {
-          await deps.repos.threads.updateSpawnLifecycle(child.id as ThreadId, {
-            spawnStatus: "failed",
-            spawnResult: result,
-          });
-          await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-            type: "agent.spawn_completed",
-            parentThreadId: input.parentThread.id,
-            parentTurnId: input.parentTurnId as string,
-            childThreadId: child.id,
-            result,
-          });
-        });
-      } finally {
-        await runClaim?.release();
-      }
+      deps.childRunRegistry.unregisterChild(childThreadId);
+      await runClaim?.release();
       throw error;
     }
   }
 
-  async function driveChild(input: SpawnChildInput, prepared: PreparedChild): Promise<SpawnResult> {
+  async function driveChild(input: ChildDriveInput, prepared: PreparedChild): Promise<SpawnResult> {
     let terminalStatus: "succeeded" | "failed" | "cancelled" = "succeeded";
     let spawnResult: SpawnResult = {
       status: "error",
       error: meridianErrorFromSystem("spawn_failed", "Child run did not produce a result"),
     };
+    let reportId: TurnId | null = null;
 
     try {
       const handle = await deps.orchestrator.runTurn({
@@ -425,10 +492,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         isSubagentThread: true,
         returnResultCompleter: createReturnResultCompleter(prepared.child.id as ThreadId),
       });
-      deps.helperResultDelivery.markRunning(
-        prepared.child.id as ThreadId,
-        handle.assistantTurnId as TurnId,
-      );
+      reportId = handle.assistantTurnId;
       deps.childRunRegistry.markChildTurn(
         prepared.child.id as ThreadId,
         handle.assistantTurnId as TurnId,
@@ -494,35 +558,43 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       spawnResult = { status: "error", error: meridianErrorFromSystem("spawn_failed", message) };
     } finally {
       try {
-        await deps.repos.threads.updateSpawnLifecycle(prepared.child.id as ThreadId, {
-          spawnStatus: terminalStatus,
-          spawnResult,
-        });
-        await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-          type: "agent.spawn_completed",
-          parentThreadId: input.parentThread.id,
-          parentTurnId: input.parentTurnId as string,
-          childThreadId: prepared.child.id,
-          result: spawnResult,
+        await deps.repos.transaction(async () => {
+          await deps.repos.threads.updateSpawnLifecycle(prepared.child.id as ThreadId, {
+            spawnStatus: terminalStatus,
+            spawnResult,
+          });
+          await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
+            type: "agent.spawn_completed",
+            parentThreadId: input.parentThread.id,
+            parentTurnId: input.parentTurnId as string,
+            childThreadId: prepared.child.id,
+            result: spawnResult,
+          });
+          if (prepared.background) {
+            await deps.childReportDelivery.enqueue({
+              reportId: reportId ?? (crypto.randomUUID() as TurnId),
+              parentThreadId: input.parentThread.id as ThreadId,
+              childThreadId: prepared.child.id as ThreadId,
+              agentSlug: prepared.resolvedSlug,
+              ...(prepared.description !== undefined ? { description: prepared.description } : {}),
+              result: spawnResult,
+            });
+          }
         });
       } finally {
         deps.childRunRegistry.abortChildrenOf(prepared.child.id as ThreadId, {
           includeBackground: true,
         });
         try {
-          await deps.helperResultDelivery.markIdleAndFlush(prepared.child.id as ThreadId);
-        } finally {
-          try {
-            if (prepared.childRegistered) {
-              try {
-                await deps.workContextDelivery.flushOwned(prepared.child.id as ThreadId);
-              } finally {
-                deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
-              }
+          if (prepared.childRegistered) {
+            try {
+              await deps.workContextDelivery.flushOwned(prepared.child.id as ThreadId);
+            } finally {
+              deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
             }
-          } finally {
-            await prepared.runClaim.release();
           }
+        } finally {
+          await prepared.runClaim.release();
         }
       }
     }
@@ -530,19 +602,39 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     return spawnResult;
   }
 
-  async function deliverHelperResult(
-    input: SpawnChildInput,
-    prepared: PreparedChild,
-    result: SpawnResult,
-  ): Promise<void> {
-    await deps.helperResultDelivery.deliverOrQueue({
-      parentThread: input.parentThread,
-      parentTurnId: input.parentTurnId,
-      agentSlug: prepared.resolvedSlug,
-      description: input.description,
-      childThreadId: prepared.child.id,
-      result,
-    });
+  function driveBackground(input: ChildDriveInput, prepared: PreparedChild): void {
+    void driveChild(input, prepared)
+      .then(async (result) => {
+        if (result.status === "completed") {
+          await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
+            type: "background.completed",
+            parentThreadId: input.parentThread.id,
+            parentTurnId: input.parentTurnId as string,
+            childThreadId: prepared.child.id,
+            agentSlug: prepared.resolvedSlug,
+            result,
+          });
+        } else {
+          await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
+            type: "background.failed",
+            parentThreadId: input.parentThread.id,
+            parentTurnId: input.parentTurnId as string,
+            childThreadId: prepared.child.id,
+            agentSlug: prepared.resolvedSlug,
+            error: result.status === "error" ? result.error.message : "Background run failed",
+          });
+        }
+      })
+      .catch(async (error: unknown) => {
+        await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
+          type: "background.failed",
+          parentThreadId: input.parentThread.id,
+          parentTurnId: input.parentTurnId as string,
+          childThreadId: prepared.child.id,
+          agentSlug: prepared.resolvedSlug,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
 
   const coordinator: ChildRunCoordinator = {
@@ -554,26 +646,26 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         description: input.description,
         parentTurnId: input.parentTurnId as string,
       };
-      const runningCard = await persistSpawnHelperCard(input.transcript, cardFields);
+      let runningCard: Block | null = null;
       try {
         const prepared = await prepareChild(input);
         if ("status" in prepared) {
-          await persistSpawnHelperCard(
-            input.transcript,
-            { ...cardFields, output: prepared },
-            runningCard,
-          );
+          await persistHelperCard(input.transcript, { ...cardFields, output: prepared });
           return prepared;
         }
+        runningCard = await persistHelperCard(input.transcript, {
+          ...cardFields,
+          childThreadId: prepared.child.id,
+        });
         const result = await driveChild(input, prepared);
-        await persistSpawnHelperCard(
+        await persistHelperCard(
           input.transcript,
           { ...cardFields, childThreadId: prepared.child.id, output: result },
           runningCard,
         );
         return result;
       } catch (error) {
-        await persistSpawnHelperCard(
+        await persistHelperCard(
           input.transcript,
           {
             ...cardFields,
@@ -595,45 +687,74 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       const prepared = await prepareChild(input, { background: true });
       if ("status" in prepared) return prepared;
 
-      void driveChild(input, prepared)
-        .then(async (result) => {
-          if (result.status === "completed") {
-            await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-              type: "background.completed",
-              parentThreadId: input.parentThread.id,
-              parentTurnId: input.parentTurnId as string,
-              childThreadId: prepared.child.id,
-              agentSlug: prepared.resolvedSlug,
-              result,
-            });
-          } else {
-            await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-              type: "background.failed",
-              parentThreadId: input.parentThread.id,
-              parentTurnId: input.parentTurnId as string,
-              childThreadId: prepared.child.id,
-              agentSlug: prepared.resolvedSlug,
-              error: result.status === "error" ? result.error.message : "Background run failed",
-            });
-          }
-          await deliverHelperResult(input, prepared, result);
-        })
-        .catch(async (error: unknown) => {
-          await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-            type: "background.failed",
-            parentThreadId: input.parentThread.id,
-            parentTurnId: input.parentTurnId as string,
-            childThreadId: prepared.child.id,
-            agentSlug: prepared.resolvedSlug,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
+      driveBackground(input, prepared);
 
       return {
         status: "background",
         threadId: prepared.child.id,
         agentSlug: prepared.resolvedSlug,
         description: input.description,
+      };
+    },
+
+    async continueChild(input: ContinueChildInput): Promise<SpawnResult> {
+      const authorized = await authorizeContinueTarget({
+        callerThread: input.parentThread,
+        targetThreadId: input.childThreadId,
+        threads: deps.repos.threads,
+      });
+      if (!authorized.ok) return { status: "error", error: authorized.error };
+
+      const prepared = await prepareExistingChild(input, authorized.target);
+      if ("status" in prepared) return prepared;
+
+      const cardFields = {
+        agent: prepared.resolvedSlug,
+        parentTurnId: input.parentTurnId as string,
+        childThreadId: prepared.child.id,
+      };
+      let runningCard: Block | null = null;
+      try {
+        runningCard = await persistHelperCard(input.transcript, cardFields);
+        const result = await driveChild(input, prepared);
+        await persistHelperCard(input.transcript, { ...cardFields, output: result }, runningCard);
+        return result;
+      } catch (error) {
+        await persistHelperCard(
+          input.transcript,
+          {
+            ...cardFields,
+            output: {
+              status: "error",
+              error: meridianErrorFromSystem(
+                "continue_failed",
+                error instanceof Error ? error.message : String(error),
+              ),
+            },
+          },
+          runningCard,
+        );
+        throw error;
+      }
+    },
+
+    async continueChildBackground(input: ContinueChildInput): Promise<SpawnResult> {
+      const authorized = await authorizeContinueTarget({
+        callerThread: input.parentThread,
+        targetThreadId: input.childThreadId,
+        threads: deps.repos.threads,
+      });
+      if (!authorized.ok) return { status: "error", error: authorized.error };
+
+      const prepared = await prepareExistingChild(input, authorized.target, { background: true });
+      if ("status" in prepared) return prepared;
+
+      driveBackground(input, prepared);
+
+      return {
+        status: "background",
+        threadId: prepared.child.id,
+        agentSlug: prepared.resolvedSlug,
       };
     },
   };
