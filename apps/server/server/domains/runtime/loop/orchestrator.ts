@@ -1070,7 +1070,10 @@ async function* generateEvents(
       let inboxAckIds: string[] = [];
       // A steer is history, not transient context: the drain persists each at
       // the thread tail so later iterations of this same run keep seeing it,
-      // chained from the durable `activeLeafTurnId`, not the `createdAt` order.
+      // chained from the run's own accumulated tail. The thread loaded at run
+      // start is stale for an already-baked prompt (assembly does not refresh
+      // it), so `thread.activeLeafTurnId` would point behind this run's own
+      // setup turns and the transition would conflict.
       const drain = await drainInbox({
         persistence: deps,
         inbox: deps.inbox,
@@ -1078,7 +1081,7 @@ async function* generateEvents(
         threadId: input.threadId,
         messages: request.messages,
         knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
-        expectedLeafTurnId: thread.activeLeafTurnId ?? allTurns.at(-1)?.id ?? null,
+        expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
       });
       request.messages = drain.rendered;
       inboxAckIds = drain.ackIds;
