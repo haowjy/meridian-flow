@@ -163,6 +163,11 @@ msgstr ""
 msgid "{0} source copied"
 msgstr ""
 
+#. placeholder {0}: descendants.length
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "{0} subagents running"
+msgstr ""
+
 #. placeholder {0}: work.name
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "{0}, Archived"
@@ -240,6 +245,10 @@ msgstr ""
 #. placeholder {0}: target?.name
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "<0>{0}</0> will be permanently deleted."
+msgstr ""
+
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "1 subagent running"
 msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
@@ -452,6 +461,10 @@ msgstr ""
 #: src/features/home/HomeHero.tsx
 msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
 msgstr "用日常语言描述你的数据、方法或下一步即可。"
+
+#: src/features/chat/ThreadStatusLabel.tsx
+msgid "Asleep"
+msgstr ""
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
@@ -1564,6 +1577,10 @@ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Form payload is malformed."
+msgstr ""
+
+#: src/features/chat/ThreadStatusLabel.tsx
+msgid "Generating"
 msgstr ""
 
 #: src/components/app/composer/placeholders.ts
@@ -2965,6 +2982,10 @@ msgstr "流式输出中"
 msgid "Strikethrough"
 msgstr ""
 
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "Subagent"
+msgstr ""
+
 #: src/features/project/chat/SubagentBanner.tsx
 msgid "Subagent:"
 msgstr ""
@@ -3637,6 +3658,10 @@ msgstr ""
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Wait for this response to finish, then try again."
+msgstr ""
+
+#: src/features/chat/ThreadStatusLabel.tsx
+msgid "Waiting"
 msgstr ""
 
 #: src/features/home/HomeHero.tsx

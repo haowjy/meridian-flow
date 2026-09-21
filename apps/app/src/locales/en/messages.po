@@ -163,6 +163,11 @@ msgstr "{0} saved"
 msgid "{0} source copied"
 msgstr "{0} source copied"
 
+#. placeholder {0}: descendants.length
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "{0} subagents running"
+msgstr "{0} subagents running"
+
 #. placeholder {0}: work.name
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "{0}, Archived"
@@ -241,6 +246,10 @@ msgstr "<0>{0}</0> and all its contents will be permanently deleted."
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
+
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "1 subagent running"
+msgstr "1 subagent running"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "3 by 3, header row"
@@ -452,6 +461,10 @@ msgstr "Archived Work {name}"
 #: src/features/home/HomeHero.tsx
 msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
 msgstr "Ask about your data, methods, or the next step in your work—plain language is enough."
+
+#: src/features/chat/ThreadStatusLabel.tsx
+msgid "Asleep"
+msgstr "Asleep"
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
@@ -1565,6 +1578,10 @@ msgstr "Folder name"
 #: src/features/chat/FormBlock.tsx
 msgid "Form payload is malformed."
 msgstr "Form payload is malformed."
+
+#: src/features/chat/ThreadStatusLabel.tsx
+msgid "Generating"
+msgstr "Generating"
 
 #: src/components/app/composer/placeholders.ts
 msgid "Go ahead"
@@ -2965,6 +2982,10 @@ msgstr "Streaming"
 msgid "Strikethrough"
 msgstr "Strikethrough"
 
+#: src/features/chat/RunningSubagentsStrip.tsx
+msgid "Subagent"
+msgstr "Subagent"
+
 #: src/features/project/chat/SubagentBanner.tsx
 msgid "Subagent:"
 msgstr "Subagent:"
@@ -3638,6 +3659,10 @@ msgstr "Viewing chat resources is not available yet. These files remain availabl
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Wait for this response to finish, then try again."
 msgstr "Wait for this response to finish, then try again."
+
+#: src/features/chat/ThreadStatusLabel.tsx
+msgid "Waiting"
+msgstr "Waiting"
 
 #: src/features/home/HomeHero.tsx
 msgid "What are you working on?"
