@@ -7,7 +7,6 @@
  */
 import type { Block, JsonValue, ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import {
   isThreadActionRequired,
   isVisibleConversationalTurn,
@@ -27,10 +26,6 @@ export interface ThreadSnapshotRepositories {
   turns: TurnRepository;
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
-}
-
-export interface RunningTurnQuery {
-  getRunningTurnId(threadId: ThreadId): TurnId | null;
 }
 
 function isObjectContent(content: JsonValue): content is Record<string, JsonValue> {
@@ -60,7 +55,6 @@ function siblingIdsFor(turn: Turn, turns: Turn[]): string[] {
 export async function buildThreadSnapshot(
   repos: ThreadSnapshotRepositories,
   hub: ThreadEventHub,
-  runner: RunningTurnQuery,
   statusReader: ThreadStatusReader,
   threadId: ThreadId,
 ): Promise<ThreadSnapshotResponse> {
@@ -72,8 +66,10 @@ export async function buildThreadSnapshot(
     ? await repos.threads.findById(thread.parentThreadId as ThreadId)
     : null;
 
-  // Capture liveness BEFORE reading the durable turn list (ordering matters — see below).
-  const runnerTurnId = runner.getRunningTurnId(threadId);
+  // Liveness is the live lease's bound turn. Read it before the durable payload:
+  // the lease only names a turn after its setup transaction committed, so a
+  // turn named here is guaranteed to be in the `listByThread` projection below.
+  const runningTurnId = await statusReader.readRunningTurnId(threadId);
 
   // Capture the head before any payload reads: the advertised sequence must
   // never be newer than the payload, or a client can accept a torn snapshot.
@@ -95,25 +91,6 @@ export async function buildThreadSnapshot(
 
   const nextSeq = (headSeq + 1n).toString();
   const resumeAfterSeq = (await hub.readModelProjectionWatermark(threadId)).toString();
-  // runningTurnId is liveness; durable turn status is its single source of truth.
-  // (1) The runner map is cleared lazily (only in the generator's finally) and NOT by
-  //     finalizeError, so it can still name a turn that already reached a terminal
-  //     durable status — advertise a running turn only when the durable turn exists
-  //     AND is non-terminal.
-  // (2) runnerTurnId is captured above, before the turn-list read: the runner publishes
-  //     the id only after runTurn's setup transaction commits the assistant turn row
-  //     (persistAndAppendEvents projects it in-transaction), so reading the id first
-  //     guarantees this listByThread already includes that turn. This closes the
-  //     turn-start race where a stale list would drop a genuinely-active turn.
-  const runningTurn = runnerTurnId
-    ? threadTurns.find((turn) => turn.id === runnerTurnId)
-    : undefined;
-  const runningTurnId =
-    runningTurn &&
-    runningTurn.status !== "waiting_interrupt" &&
-    !isTerminalTurnStatus(runningTurn.status)
-      ? runningTurn.id
-      : null;
 
   return {
     threadId,

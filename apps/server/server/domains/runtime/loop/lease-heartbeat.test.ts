@@ -29,8 +29,12 @@ function recordingAuthority(): {
       return null;
     },
     async publish() {},
+    async bindTurn() {},
     async read(): Promise<ThreadStatus> {
       return { kind: "asleep" };
+    },
+    async readRunningTurnId() {
+      return null;
     },
     async cancel() {},
     async release() {
@@ -82,8 +86,12 @@ describe("RunAuthority heartbeat", () => {
         return null;
       },
       async publish() {},
+      async bindTurn() {},
       async read() {
         return { kind: "asleep" };
+      },
+      async readRunningTurnId() {
+        return null;
       },
       async cancel() {},
       async release() {},
@@ -112,8 +120,12 @@ describe("RunAuthority heartbeat", () => {
         return null;
       },
       async publish() {},
+      async bindTurn() {},
       async read() {
         return { kind: "asleep" };
+      },
+      async readRunningTurnId() {
+        return null;
       },
       async cancel() {},
       async release() {},
@@ -147,8 +159,12 @@ describe("RunAuthority heartbeat", () => {
         return null;
       },
       async publish() {},
+      async bindTurn() {},
       async read() {
         return { kind: "asleep" };
+      },
+      async readRunningTurnId() {
+        return null;
       },
       async cancel() {},
       async release() {},
@@ -190,8 +206,12 @@ describe("RunAuthority heartbeat", () => {
         return null;
       },
       async publish() {},
+      async bindTurn() {},
       async read() {
         return { kind: "asleep" };
+      },
+      async readRunningTurnId() {
+        return null;
       },
       async cancel() {},
       async release() {},

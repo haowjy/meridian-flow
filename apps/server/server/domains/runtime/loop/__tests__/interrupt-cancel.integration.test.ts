@@ -1,11 +1,13 @@
 /**
  * Interrupt integration: cancel travels on the durable lease so it is visible
  * cross-process, the interrupted turn finalizes as `cancelled` and releases, and
- * a pending message starts the next turn as its own drain run.
+ * a pending message starts the next turn as its own drain run. The same lease is
+ * the one liveness truth the WS `subscribed` frame carries.
  */
 import { EventType } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
+import { createThreadWebSocketSession, type WsPeer } from "../../../../lib/ws-thread-handler.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import type { MessageDraft } from "../ports.js";
 import { RuntimeTestRig, runtimeGate } from "./runtime-test-rig.js";
@@ -96,7 +98,7 @@ describe("interrupt cancel", () => {
 
     await rig.runner.startTurn({ threadId: rig.thread.id, userText: "no pending" });
     await rig.gatewaySignal.promise;
-    const turnId = rig.runner.getRunningTurnId(rig.thread.id);
+    const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
     expect(turnId).not.toBeNull();
 
     await rig.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
@@ -117,7 +119,7 @@ describe("interrupt cancel", () => {
 
     await rig.runner.startTurn({ threadId: rig.thread.id, userText: "interrupt me" });
     await rig.gatewaySignal.promise;
-    const turnId = rig.runner.getRunningTurnId(rig.thread.id);
+    const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
     expect(turnId).not.toBeNull();
     const pending = await rig.inbox.enqueue(message("after interrupt", rig.thread.id));
 
@@ -143,5 +145,41 @@ describe("interrupt cancel", () => {
     expect(successor?.status).toBe("complete");
     expect(await rig.inbox.claimPending(rig.thread.id)).toEqual([]);
     expect(control.calls()).toBe(2);
+  });
+
+  it("carries the lease's running turn in the subscribed WS frame", async () => {
+    const control = gatedPartialGateway();
+    const rig = await RuntimeTestRig.create({ gateway: control.gateway });
+    const app = rig.createAppServices();
+
+    await rig.runner.startTurn({ threadId: rig.thread.id, userText: "subscribe liveness" });
+    await rig.gatewaySignal.promise;
+    const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
+    expect(turnId).not.toBeNull();
+
+    type SubscribedFrame = {
+      type?: string;
+      state?: { runningTurnId?: string | null; status?: { kind?: string } };
+    };
+    const frames: SubscribedFrame[] = [];
+    const peer: WsPeer = {
+      request: new Request("https://app.localhost/ws-subscribe"),
+      context: { app, userId: rig.userId, traceId: "test-ws-trace" },
+      send: (data) => frames.push(JSON.parse(data) as SubscribedFrame),
+      close: () => {},
+    };
+    const session = createThreadWebSocketSession(peer);
+    session.open();
+    await session.onMessage(
+      JSON.stringify({ type: "subscribe", threadId: rig.thread.id, lastSeq: "0" }),
+    );
+
+    const subscribed = frames.find((frame) => frame.type === "subscribed");
+    expect(subscribed?.state?.runningTurnId).toBe(turnId);
+    expect(subscribed?.state?.status).toMatchObject({ kind: "awake" });
+
+    await rig.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
+    control.release();
+    await rig.awaitEvent(EventType.RUN_FINISHED);
   });
 });

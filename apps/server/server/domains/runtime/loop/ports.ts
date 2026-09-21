@@ -6,7 +6,7 @@
  * stays at the composition root.
  */
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue, ThreadPhase, ThreadStatus } from "@meridian/contracts/threads";
 
 export type RunId = string;
@@ -93,7 +93,19 @@ export interface RunAuthority {
   renew(lease: Lease): Promise<boolean>;
   holder(threadId: ThreadId): Promise<RunId | null>;
   publish(lease: Lease, phase: ThreadPhase): Promise<void>;
+  /**
+   * Binds the run's assistant turn to the live lease. Run liveness is the lease,
+   * and this is the one place its running turn becomes observable to other
+   * processes; call it after the turn-start setup transaction commits.
+   */
+  bindTurn(lease: Lease, turnId: TurnId): Promise<void>;
   read(threadId: ThreadId): Promise<ThreadStatus>;
+  /**
+   * The assistant turn bound to the live lease, or null when the thread is
+   * asleep or a run has not yet bound its turn. Derived from the same row as
+   * {@link read}, never from the turns table.
+   */
+  readRunningTurnId(threadId: ThreadId): Promise<TurnId | null>;
   /** Sets the live lease's durable cancel flag; idempotent, and the only cross-process cancel channel. */
   cancel(threadId: ThreadId): Promise<void>;
   /**

@@ -1009,6 +1009,9 @@ export function createInMemoryAppServices(): AppServices {
       async read() {
         return { kind: "asleep" as const };
       },
+      async readRunningTurnId() {
+        return null;
+      },
       async journalEvents() {
         return [];
       },
@@ -1220,9 +1223,6 @@ export function createInMemoryAppServices(): AppServices {
         markChildTurn() {},
         abortChild() {},
         abortChildrenOf() {},
-      },
-      getRunningTurnId() {
-        return null;
       },
       isThreadRunning() {
         return false;

@@ -230,21 +230,16 @@ export function createInMemoryRepositories(
     const projected = projectThread(thread);
     const work =
       projected.workId && options.works ? await options.works.findById(projected.workId) : null;
-    const threadTurns = [...turns.values()].filter((turn) => turn.threadId === thread.id);
     const latestTurn = conversationalHead(projected);
-    const runningTurn = [...threadTurns]
-      .reverse()
-      .find(
-        (turn) =>
-          turn.role === "assistant" && (turn.status === "pending" || turn.status === "streaming"),
-      );
 
     return toThreadListItem({
       thread: projected,
       workTitle: work && !work.deletedAt ? work.name : null,
       lastTurnRole: latestTurn?.role ?? null,
       lastTurnStatus: latestTurn?.status ?? null,
-      runningTurnId: runningTurn?.id ?? null,
+      // Run liveness is the live lease, which this durable fake does not model;
+      // tests read it through the in-memory RunAuthority instead.
+      runningTurnId: null,
     });
   }
 

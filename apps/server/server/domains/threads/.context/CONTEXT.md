@@ -17,7 +17,11 @@ instead of the N:1 `threads.workId` column.
   per-thread message queue (global `bigserial` `seq` for per-thread FIFO, unique
   `idempotency_key`, nullable `delivered_at`), drained by the runtime's `Inbox`
   port. `thread_run_leases` is the queryable run lease paired with the runtime's
-  session advisory lock (`phase`, `cancel_requested`, `expires_at`). Both cascade
+  session advisory lock (`phase`, `cancel_requested`, `expires_at`, and the
+  run's bound `turn_id`). Run liveness is read from the lease alone: the project
+  list and `ThreadLiveState.runningTurnId` (snapshot and WS `subscribed`) both
+  surface the lease's bound turn, and the orchestrator binds it after the
+  turn-start setup commits (`RunAuthority.bindTurn`). Both cascade
   from `threads`.
 - **Thread↔Work membership** — `thread_works` join table (exactly one primary per live thread; No Work is a real row). `threads.workId` column is **dropped**. Membership is organizational;
   same-project Work-authority URIs do not require membership.

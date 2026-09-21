@@ -12,7 +12,7 @@ import type {
   TurnStatus,
 } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import { and, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, gt, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
@@ -61,16 +61,6 @@ const threadColumns = {
   agentName,
 };
 
-const runningTurnId = sql<string | null>`(
-  SELECT ${schema.turns.id}
-  FROM ${schema.turns}
-  WHERE ${schema.turns.threadId} = ${schema.threads.id}
-    AND ${schema.turns.role} = 'assistant'
-    AND ${schema.turns.status} IN ('pending', 'streaming')
-  ORDER BY ${schema.turns.createdAt} DESC
-  LIMIT 1
-)`;
-
 type ThreadListRow = typeof schema.threads.$inferSelect & {
   workId: string | null;
   workTitle: string | null;
@@ -96,7 +86,8 @@ function threadListSelect() {
     workTitle: schema.works.name,
     lastTurnRole: sql<TurnRole | null>`conversational_head.role`,
     lastTurnStatus: sql<TurnStatus | null>`conversational_head.status`,
-    runningTurnId,
+    // Liveness is the live lease's bound turn, not a turns-table status scan.
+    runningTurnId: schema.threadRunLeases.turnId,
   };
 }
 
@@ -344,6 +335,13 @@ export function createDrizzleThreadRepository(
         .innerJoin(schema.projects, eq(schema.threads.projectId, schema.projects.id))
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .leftJoin(schema.works, eq(schema.threadWorks.workId, schema.works.id))
+        .leftJoin(
+          schema.threadRunLeases,
+          and(
+            eq(schema.threadRunLeases.threadId, schema.threads.id),
+            gt(schema.threadRunLeases.expiresAt, new Date()),
+          ),
+        )
         .leftJoin(
           visibleConversationalHeadLateral(sql`${schema.threads.activeLeafTurnId}`),
           sql`true`,

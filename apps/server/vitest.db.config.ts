@@ -58,6 +58,7 @@ const expectedSuites = [
   "apps/server/server/domains/runtime/adapters/drizzle-loop-ports.db.test.ts",
   "apps/server/server/domains/runtime/admission/user-turn-admission.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/thread-repository-root.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/thread-liveness.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/thread-work-membership-races.db.test.ts",
   "apps/server/server/domains/threads/domain/rebind-thread-work.db.test.ts",
   "apps/server/server/lib/thread-work-rebind-route.db.test.ts",

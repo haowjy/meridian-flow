@@ -148,6 +148,7 @@ export function createDrizzleRunAuthority(
           .values({
             threadId,
             runId,
+            turnId: null,
             holderId,
             phase: "generating",
             cancelRequested: false,
@@ -159,6 +160,7 @@ export function createDrizzleRunAuthority(
             target: schema.threadRunLeases.threadId,
             set: {
               runId,
+              turnId: null,
               holderId,
               phase: "generating",
               cancelRequested: false,
@@ -204,6 +206,19 @@ export function createDrizzleRunAuthority(
       return row?.runId ?? null;
     },
 
+    async bindTurn(lease, turnId) {
+      await db_()
+        .update(schema.threadRunLeases)
+        .set({ turnId })
+        .where(
+          and(
+            eq(schema.threadRunLeases.threadId, lease.threadId),
+            eq(schema.threadRunLeases.runId, lease.runId),
+            eq(schema.threadRunLeases.holderId, lease.holderId),
+          ),
+        );
+    },
+
     async publish(lease, phase) {
       await db_()
         .update(schema.threadRunLeases)
@@ -237,6 +252,20 @@ export function createDrizzleRunAuthority(
         phase: row.phase as ThreadPhase,
         cancelRequested: row.cancelRequested,
       };
+    },
+
+    async readRunningTurnId(threadId) {
+      const [row] = await db_()
+        .select({ turnId: schema.threadRunLeases.turnId })
+        .from(schema.threadRunLeases)
+        .where(
+          and(
+            eq(schema.threadRunLeases.threadId, threadId),
+            gt(schema.threadRunLeases.expiresAt, new Date()),
+          ),
+        )
+        .limit(1);
+      return row?.turnId ?? null;
     },
 
     async cancel(threadId) {
