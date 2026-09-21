@@ -32,10 +32,21 @@ import { system, user } from "../gateway/helpers/messages.js";
 import type { Message } from "../gateway/index.js";
 import { spawnHelperCardProps } from "../spawn/spawn-output.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { componentModelText, userTurnContentParts } from "./context-builder.js";
+import {
+  attachSkillBodiesToLatestUserMessage,
+  componentModelText,
+  userTurnContentParts,
+} from "./context-builder.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { Inbox, InboxMessage } from "./ports.js";
+
+/** A request-only skill body inlined onto the activating writer message. */
+export interface ActivatedSkillBody {
+  slug: string;
+  description: string;
+  body: string;
+}
 
 /** The loop's view of one drained batch: request and notices plus durable writes. */
 export interface InboxDrain {
@@ -68,6 +79,12 @@ export async function drainInbox(input: {
   messages: readonly Message[];
   knownTurnIds: ReadonlySet<TurnId>;
   expectedLeafTurnId: TurnId | null;
+  /**
+   * Resolves the request-only skill bodies a writer turn activated, read back
+   * off its persisted metadata. Applied to the adopted message the turn renders,
+   * so a mid-run `/skill` send carries its instructions like a fresh drain does.
+   */
+  loadActivatedSkillBodies?: (turn: Turn) => Promise<readonly ActivatedSkillBody[]>;
 }): Promise<InboxDrain> {
   const batch = await input.inbox.claimPending(input.threadId);
   const renderable: InboxMessage[] = [];
@@ -75,6 +92,7 @@ export async function drainInbox(input: {
   const adoptedTurns: Turn[] = [];
   const adoptedBlocks: Block[] = [];
   const adoptedBlocksByMessageId = new Map<string, Block[]>();
+  const skillBodiesByMessageId = new Map<string, readonly ActivatedSkillBody[]>();
   for (const message of batch) {
     if (message.intent !== "message") {
       renderable.push(message);
@@ -91,6 +109,8 @@ export async function drainInbox(input: {
     const existing = await input.persistence.repos.turns.findById(message.id as TurnId);
     if (existing) {
       const blocks = await input.persistence.repos.blocks.listByTurn(existing.id);
+      const skillBodies = await input.loadActivatedSkillBodies?.(existing);
+      if (skillBodies?.length) skillBodiesByMessageId.set(message.id, skillBodies);
       adoptedTurns.push(existing);
       adoptedBlocks.push(...blocks);
       adoptedBlocksByMessageId.set(message.id, blocks);
@@ -100,7 +120,12 @@ export async function drainInbox(input: {
     renderable.push(message);
     fresh.push(message);
   }
-  const rendered = renderInboxBatch(input.messages, renderable, adoptedBlocksByMessageId);
+  const rendered = renderInboxBatch(
+    input.messages,
+    renderable,
+    adoptedBlocksByMessageId,
+    skillBodiesByMessageId,
+  );
   // Chain fresh messages from the durable leaf so a pre-persisted writer turn
   // (adopted above) is not forked past.
   const persistLeafTurnId = fresh.some((message) => message.intent === "message")
@@ -131,6 +156,7 @@ export function renderInboxBatch(
   messages: readonly Message[],
   batch: readonly InboxMessage[],
   adoptedBlocksByMessageId: ReadonlyMap<string, readonly Block[]> = new Map(),
+  skillBodiesByMessageId: ReadonlyMap<string, readonly ActivatedSkillBody[]> = new Map(),
 ): { messages: Message[]; notices: Notice[] } {
   const rendered = [...messages];
   const notices: Notice[] = [];
@@ -147,11 +173,20 @@ export function renderInboxBatch(
       continue;
     }
     // A message whose turn is already durable renders that turn's projection;
-    // the plain body would drop images and persisted reference reads.
+    // the plain body would drop images, persisted reference reads, and the
+    // request-only bodies of the skills the writer activated on it.
     const adopted = adoptedBlocksByMessageId.get(message.id);
     if (adopted) {
       const parts = userTurnContentParts(adopted);
-      if (parts.length > 0) rendered.push({ role: "user", content: parts });
+      if (parts.length > 0) {
+        const skillBodies = skillBodiesByMessageId.get(message.id);
+        const entry: Message = { role: "user", content: parts };
+        rendered.push(
+          skillBodies?.length
+            ? (attachSkillBodiesToLatestUserMessage([entry], skillBodies)[0] as Message)
+            : entry,
+        );
+      }
     } else {
       rendered.push(user(inboxMessageText(message)));
     }

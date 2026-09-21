@@ -125,6 +125,20 @@ describe("createWriterTurnProducer", () => {
     expect(runStarter.started).toEqual([thread.id]);
   });
 
+  it("stamps activated skill slugs on the writer turn so the drain can inline them", async () => {
+    const { producer, repos, thread } = await harness();
+    const base = input(thread.id);
+
+    const result = await producer.enqueue({
+      ...base,
+      admission: { ...base.admission, activatedSkillSlugs: ["writing-principles"] },
+    });
+
+    if (!("userTurnId" in result)) throw new Error("expected accepted admission");
+    const turn = await repos.turns.findById(result.userTurnId);
+    expect(turn?.metadata).toEqual({ activatedSkillSlugs: ["writing-principles"] });
+  });
+
   it("merges a mid-run send onto the live assistant turn instead of conflicting", async () => {
     const { producer, repos, runStarter, runner, thread } = await harness();
     const running = await repos.turns.create({

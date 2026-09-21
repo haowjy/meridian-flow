@@ -106,6 +106,7 @@ import type { ImageAssetPort } from "../ports/image-asset.js";
 import type { ChildRunCoordinator } from "../spawn/child-run-coordinator.js";
 import { resolveMaxSpawnDepth } from "../spawn/tree-budget.js";
 import type { ToolExecutor, ToolRegistry } from "../tools/index.js";
+import { readActivatedSkillSlugs } from "./activated-skills.js";
 import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import { closeRun } from "./close-run.js";
@@ -419,6 +420,7 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
       inheritedBlocks,
       setup.events,
       input.treeBudget ?? createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
+      input.activatedSkillSlugs,
     ),
   };
 }
@@ -457,6 +459,21 @@ async function runDrainTurn(
       // drains the last message first must leave no phantom assistant turn behind.
       if (messages.length === 0) throw new NoPendingWakeError(input.threadId);
 
+      // A writer send persisted its turn at enqueue with its activated skill
+      // slugs stamped on the turn; read them back so the drain inlines the
+      // bodies into the writer's message. A fresh non-writer message carries none.
+      const turnById = new Map(
+        [...inheritedTurns, ...priorTurns].map((turn) => [turn.id as string, turn]),
+      );
+      const activatedSkillSlugs = [
+        ...new Set(
+          messages.flatMap((message) => {
+            const turn = turnById.get(message.id);
+            return turn ? readActivatedSkillSlugs(turn) : [];
+          }),
+        ),
+      ];
+
       const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
       const events: OrchestratorEvent[] = [];
       const messageTurns: Turn[] = [];
@@ -486,6 +503,7 @@ async function runDrainTurn(
           priorTurns,
           inheritedTurns,
           inheritedBlocks,
+          activatedSkillSlugs,
         },
         events,
       };
@@ -499,6 +517,7 @@ async function runDrainTurn(
     priorTurns,
     inheritedTurns,
     inheritedBlocks,
+    activatedSkillSlugs,
   } = setup.result;
   return {
     userTurnId: referenceUserTurnId,
@@ -513,6 +532,7 @@ async function runDrainTurn(
       inheritedBlocks,
       setup.events,
       input.treeBudget ?? createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
+      activatedSkillSlugs.length > 0 ? activatedSkillSlugs : undefined,
     ),
   };
 }
@@ -960,6 +980,12 @@ async function* generateEvents(
   inheritedBlocks: Block[],
   initialEvents: OrchestratorEvent[],
   treeBudget: TreeBudget,
+  /**
+   * Writer-activated skill slugs for this run's triggering turn. A writer start
+   * carries them on its input; a drain start reads them back off the persisted
+   * writer turn it serves. `undefined` when the run activated none.
+   */
+  activatedSkillSlugs: readonly string[] | undefined,
 ): AsyncGenerator<OrchestratorEvent> {
   const { gateway, repos, eventWriter } = deps;
   const eventSink = deps.eventSink;
@@ -983,9 +1009,6 @@ async function* generateEvents(
       });
     }
   }
-
-  // A drain start has no writer message, so no writer-activated skills attach.
-  const activatedSkillSlugs = isDrainRun(input) ? undefined : input.activatedSkillSlugs;
 
   yield* initialEvents;
 
@@ -1058,6 +1081,21 @@ async function* generateEvents(
       });
       return { turn: completion.turn, events: completion.events };
     };
+
+  // One loader for request-only skill bodies: a writer start passes its
+  // activated slugs on the input; a drained or mid-run adopted writer turn
+  // reads them back off its persisted metadata.
+  const loadSkillBodies = (slugs: readonly string[]) =>
+    Promise.all(
+      slugs.map((slug) =>
+        loadUserSkillBody({
+          thread,
+          slug,
+          agentRevisions: deps.agentRevisions,
+          accountSkillInstalls: deps.accountSkillInstalls,
+        }),
+      ),
+    );
 
   try {
     const allTurns: Turn[] = [...initialTurns, assistantTurn];
@@ -1192,6 +1230,10 @@ async function* generateEvents(
         messages: request.messages,
         knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
         expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
+        loadActivatedSkillBodies: async (turn) => {
+          const slugs = readActivatedSkillSlugs(turn);
+          return slugs.length > 0 ? loadSkillBodies(slugs) : [];
+        },
       });
       request.messages = drain.rendered;
       inboxAckIds = drain.ackIds;
@@ -1205,16 +1247,7 @@ async function* generateEvents(
       }
 
       if (activatedSkillSlugs?.length) {
-        activatedSkillBodies ??= await Promise.all(
-          activatedSkillSlugs.map((slug) =>
-            loadUserSkillBody({
-              thread,
-              slug,
-              agentRevisions: deps.agentRevisions,
-              accountSkillInstalls: deps.accountSkillInstalls,
-            }),
-          ),
-        );
+        activatedSkillBodies ??= await loadSkillBodies(activatedSkillSlugs);
         request.messages = attachSkillBodiesToLatestUserMessage(
           request.messages,
           activatedSkillBodies,
