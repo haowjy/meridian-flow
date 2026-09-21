@@ -16,6 +16,7 @@ import {
   defaultGatewayOptions,
   type GatewayEnvInput,
   mockProviderConfig,
+  parseEnvMs,
 } from "./providers.js";
 
 export interface GatewayFromEnv {
@@ -102,7 +103,8 @@ export async function createGatewayFromEnv(
   const gateway = createGateway({
     providers,
     ...gatewayOptions,
-    attemptTimeoutMs: env.MODEL_CALL_TIMEOUT_MS,
+    attemptStallMs: parseEnvMs(env.MODEL_CALL_STALL_MS) ?? gatewayOptions.attemptStallMs,
+    attemptCeilingMs: parseEnvMs(env.MODEL_CALL_TIMEOUT_MS) ?? gatewayOptions.attemptCeilingMs,
     onWarning: options?.onWarning,
   });
 

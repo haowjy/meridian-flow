@@ -35,6 +35,10 @@ export interface RegisteredModel {
   capabilities: readonly Capability[];
   /** Provider-side tools that Meridian advertises but does not execute itself. */
   hostedTools?: readonly string[];
+  /** Per-model inactivity window override in ms. 0 disables the stall guard. */
+  stallTimeoutMs?: number;
+  /** Per-model absolute ceiling override in ms. 0 disables the ceiling backstop. */
+  ceilingTimeoutMs?: number;
   pricing: ModelPricing;
 }
 
@@ -391,6 +395,8 @@ function toModelInfo(provider: RegisteredProvider, model: RegisteredModel): Mode
     maxOutputTokens: model.maxOutputTokens,
     capabilities: new Set(model.capabilities),
     hostedTools: model.hostedTools ? new Set(model.hostedTools) : undefined,
+    stallTimeoutMs: model.stallTimeoutMs,
+    ceilingTimeoutMs: model.ceilingTimeoutMs,
   };
 }
 

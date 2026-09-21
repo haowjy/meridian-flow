@@ -14,9 +14,9 @@ streaming `Gateway` port.
 | `Gateway` port | `stream(request) -> AsyncIterable<StreamEvent>`, `generate(request) -> GenerateResult`, optional `settleCancelledResult()` and `listModels()` |
 | `ProviderAdapter` port | per-provider streaming implementation (Anthropic, OpenAI Responses, OpenAI-compatible) |
 | Routing | `ProviderRegistry` maps model IDs to adapters; `resolveRoute` picks adapter + model for a request |
-| Retry/fallback | exponential back-off and optional ordered fallback only before output has been emitted |
-| Deadline | per-attempt wall-clock timeout (`GatewayConfig.attemptTimeoutMs`, env `MODEL_CALL_TIMEOUT_MS`, default 120s), enforced with a derived `AbortSignal` |
-| Config | `GatewayConfig` with provider list, default model, retry/fallback/`attemptTimeoutMs` policy; `createGatewayFromEnv` for env-driven setup |
+| Retry/fallback | exponential back-off and optional ordered fallback only before **committed** output has been emitted. Committed output is visible text or a tool call; reasoning deltas and usage are process-only, so a reasoning-only abort is retryable |
+| Deadline | per attempt, two timers on one derived `AbortSignal`: an inactivity (stall) timer re-armed by every stream event (`GatewayConfig.attemptStallMs`, env `MODEL_CALL_STALL_MS`, default 120s; never kills a slow-but-streaming model) and an absolute ceiling backstop (`GatewayConfig.attemptCeilingMs`, env `MODEL_CALL_TIMEOUT_MS`, default 600s, 0 disables). Per-model `stallTimeoutMs`/`ceilingTimeoutMs` override the gateway values. Retry/deadline driver lives in `attempt-stream.ts`; the signal lives in `deadline.ts` |
+| Config | `GatewayConfig` with provider list, default model, retry/fallback/`attemptStallMs`/`attemptCeilingMs` policy; `createGatewayFromEnv` for env-driven setup |
 | Registry | `MODEL_REGISTRY` in `config/registry.ts` — single-source for config + pinned pricing. `buildFromRegistry` composes providers. Flat `MODEL_TOKEN_RATES` table is **deleted**. |
 | Collision warning | `onWarning` callback on registry construction warns on duplicate model IDs (was last-writer-wins silently). |
 | Usage normalization | Adapters own the conversion into canonical `Usage` and call `assertValidUsage` before returning. Providers disagree on what `inputTokens` counts: OpenAI reports an inclusive total, Anthropic reports uncached input and each cache counter as separate additive categories. An adapter that passes additive counters through unchanged underbills every cached turn — see issue [#356](https://github.com/haowjy/meridian-flow/issues/356). |
