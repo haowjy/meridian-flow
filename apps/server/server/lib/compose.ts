@@ -717,7 +717,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       blocks: ports.threadRepos.blocks,
       transaction: ports.threadRepos.transaction,
     },
-    eventWriter: ports.journalWriter,
+    // The live hub, not the bare journal writer: background lifecycle must reach
+    // subscribers at append time, in append order. A notifier-relayed write lands
+    // after later in-process appends and is dropped as stale by the WS cursor.
+    eventWriter: threadEventHub,
     childRunRegistry: runner.childRunRegistry,
     threadedInbox,
     workContextDelivery: workContextDelivery,
@@ -746,7 +749,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         input,
       );
     },
-    eventWriter: ports.journalWriter,
+    eventWriter: threadEventHub,
     agentRevisions: ports.agentRevisions,
   });
   const orchestrator = createOrchestrator({
