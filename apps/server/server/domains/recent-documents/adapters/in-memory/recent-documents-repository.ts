@@ -1,4 +1,4 @@
-/** Map-backed recents repository. List cannot join document identity without a catalog. */
+/** Map-backed recents stub. No catalog, so record does not owner-gate and list returns []. */
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import {
   type RecentDocumentsRepository,

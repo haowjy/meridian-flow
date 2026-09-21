@@ -4,9 +4,11 @@
  */
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
+import { useQueryClient } from "@tanstack/react-query";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
 import { recordRecentDocument } from "@/client/api/recent-documents-api";
+import { accountQueryKeys } from "@/client/query/account-query-keys";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
@@ -90,10 +92,28 @@ export function ContextViewer({
   // the intent to open: a freshly created document has no row yet, so recording
   // at open time raced document persistence and lost the write.
   const accountId = useAccountId();
-  const openedDocumentId = activeTab?.kind === "tracked" ? activeTab.documentId : null;
+  const queryClient = useQueryClient();
+  // Any document in front of the writer counts, editable or not (binaries too).
+  const openedDocumentId =
+    activeTab && (activeTab.kind === "tracked" || activeTab.kind === "viewer")
+      ? activeTab.documentId
+      : null;
+  // Record only while this pane is the active destination: the editor surface
+  // stays mounted across destinations, and a restored tab nobody is looking at
+  // is not an open. A successful record refreshes the list so a just-opened
+  // document is not missing from the landing when the writer returns to it.
   useEffect(() => {
-    if (openedDocumentId) recordRecentDocument(openedDocumentId, accountId);
-  }, [openedDocumentId, accountId]);
+    if (!active || !openedDocumentId) return;
+    let cancelled = false;
+    void recordRecentDocument(openedDocumentId, accountId).then((recorded) => {
+      if (recorded && !cancelled) {
+        void queryClient.invalidateQueries({ queryKey: accountQueryKeys.recentDocuments() });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, openedDocumentId, accountId, queryClient]);
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const activeTabId = activeTab?.documentId ?? null;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
