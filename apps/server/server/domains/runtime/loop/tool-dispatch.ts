@@ -190,7 +190,7 @@ export async function dispatchToolCall(
           };
           return deps.childRunCoordinator.runChild(request, {
             mode: messageInput.mode,
-            transcript,
+            ...(messageInput.mode === "foreground" ? { transcript } : {}),
           });
         }
       : undefined;

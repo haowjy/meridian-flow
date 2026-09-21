@@ -98,6 +98,10 @@ function threadMessageCall(arguments_: Record<string, unknown>) {
   return { id: "call-1", name: "thread_message", arguments: arguments_ };
 }
 
+function spawnCall(arguments_: Record<string, unknown>) {
+  return { id: "call-2", name: "spawn", arguments: arguments_ };
+}
+
 describe("dispatchToolCall thread_message routing", () => {
   it("defaults to background and routes through runChild without a transcript", async () => {
     const { deps, ctx, runChild } = harness();
@@ -133,6 +137,23 @@ describe("dispatchToolCall thread_message routing", () => {
     const [request, options] = runChild.mock.calls[0] ?? [];
     expect(request).toMatchObject({ kind: "message", ref: "p1" });
     expect(options).toMatchObject({ mode: "foreground" });
+    expect((options as ChildRunOptions).transcript).toBeDefined();
+  });
+
+  it("routes a background spawn through runChild with the parent transcript", async () => {
+    const { deps, ctx, runChild } = harness();
+    const result = await dispatchToolCall(
+      deps,
+      spawnCall({ agent: "", prompt: "go", mode: "background" }),
+      ctx,
+    );
+    if ("cancelled" in result) throw new Error("unexpected cancel");
+
+    expect(runChild).toHaveBeenCalledOnce();
+    const [request, options] = runChild.mock.calls[0] ?? [];
+    expect(request).toMatchObject({ kind: "spawn", prompt: "go" });
+    expect(options).toMatchObject({ mode: "background" });
+    // The durable parent-turn run card is written from this transcript.
     expect((options as ChildRunOptions).transcript).toBeDefined();
   });
 
