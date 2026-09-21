@@ -250,7 +250,7 @@ export class RuntimeTestRig {
       },
       liveState: async () => ({
         threadId: this.thread.id,
-        status: { kind: "asleep" as const },
+        status: await this.runAuthority.read(this.thread.id),
         runningTurnId: this.runner.getRunningTurnId(this.thread.id),
         resumeAfterSeq: "0",
       }),

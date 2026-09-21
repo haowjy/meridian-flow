@@ -200,6 +200,7 @@ export async function startSmokeServer(options?: { port?: number }): Promise<Smo
   const { gateway, cleanup } = await createGatewayFromEnv({
     MODEL_PROVIDER: process.env.MODEL_PROVIDER,
     MODEL_CALL_TIMEOUT_MS: process.env.MODEL_CALL_TIMEOUT_MS,
+    MODEL_CALL_STALL_MS: process.env.MODEL_CALL_STALL_MS,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
