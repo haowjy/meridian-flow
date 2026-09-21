@@ -94,6 +94,11 @@ import {
   type UserRepository,
 } from "../domains/projects/index.js";
 import {
+  createDrizzleRecentDocumentsRepository,
+  createInMemoryRecentDocumentsRepository,
+  type RecentDocumentsRepository,
+} from "../domains/recent-documents/index.js";
+import {
   agentExecutionUnavailableReasons,
   agentModelUnavailableReasons,
 } from "../domains/runtime/agent-definition-support.js";
@@ -223,6 +228,7 @@ export type AppServices = {
   marsPackageFetcher: MarsPackageFetcher;
   preferences: ProjectPreferencesRepository;
   workingSet: WorkingSetRepository;
+  recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
   runner: TurnRunner;
   userTurnAdmission: UserTurnAdmission;
@@ -275,6 +281,7 @@ export type ProductionAppPorts = {
   marsPackageFetcher: MarsPackageFetcher;
   preferences: ProjectPreferencesRepository;
   workingSet: WorkingSetRepository;
+  recentDocuments: RecentDocumentsRepository;
   modelRequestDebug: ModelRequestDebugStore;
   objectStore: ObjectStorePort;
   localObjectStore: LocalObjectStoreAdapter | null;
@@ -378,6 +385,7 @@ export async function createProductionAppPorts(input: {
   let contextPorts: UnifiedContextPortFactory;
   const preferences = createDrizzleProjectPreferencesRepository({ db });
   const workingSet = createDrizzleWorkingSetRepository({ db });
+  const recentDocuments = createDrizzleRecentDocumentsRepository({ db });
   const assetPathResolver = await createDrizzleAssetPathResolver(db);
   const documentSync = createCollabDomain({
     db,
@@ -512,6 +520,7 @@ export async function createProductionAppPorts(input: {
     marsPackageFetcher,
     preferences,
     workingSet,
+    recentDocuments,
     modelRequestDebug: createModelRequestDebugStoreFromEnv(eventSink),
     objectStore,
     localObjectStore,
@@ -801,6 +810,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     marsPackageFetcher: ports.marsPackageFetcher,
     preferences: ports.preferences,
     workingSet: ports.workingSet,
+    recentDocuments: ports.recentDocuments,
     orchestrator,
     runner,
     userTurnAdmission,
@@ -834,6 +844,7 @@ export function createInMemoryAppServices(): AppServices {
   });
   const preferences = createInMemoryProjectPreferencesRepository();
   const workingSet = createInMemoryWorkingSetRepository();
+  const recentDocuments = createInMemoryRecentDocumentsRepository();
   const modelRequestDebug = createInMemoryModelRequestDebugStore();
   const notices = createInMemoryNoticePort();
   const creditLedger = createInMemoryCreditLedger();
@@ -1174,6 +1185,7 @@ export function createInMemoryAppServices(): AppServices {
     },
     preferences,
     workingSet,
+    recentDocuments,
     orchestrator: {
       async runTurn() {
         throw new Error("in-memory orchestrator is not implemented");
