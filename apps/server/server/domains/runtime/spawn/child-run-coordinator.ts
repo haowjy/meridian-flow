@@ -313,7 +313,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
   /**
    * Background thread_message is a queue producer only: authorize, enqueue a
-   * durable steer, return. The target's own run (woken by the inbox) drains it;
+   * durable message, return. The target's own run (woken by the inbox) drains it;
    * nothing is driven in the caller's process.
    */
   async function sendBackgroundMessage(
@@ -332,7 +332,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     const target = authorized.target;
     await deps.threadedInbox.enqueue({
       threadId: target.id as ThreadId,
-      intent: "steer",
+      intent: "message",
       provenance: { kind: "agent", threadId: request.parentThread.id as ThreadId },
       body: { kind: "text", text: request.prompt },
       idempotencyKey: `thread-message:${request.toolCallId}`,

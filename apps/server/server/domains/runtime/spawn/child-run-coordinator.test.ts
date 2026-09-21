@@ -850,7 +850,7 @@ describe("ChildRunCoordinator thread_message", () => {
     });
   });
 
-  it("enqueues one agent steer for a background message and wakes the target", async () => {
+  it("enqueues one agent message for a background message and wakes the target", async () => {
     const { coordinator, parent, inbox, runStarter, turns } = await fixture();
     const spawned = await coordinator.runChild(
       {
@@ -887,12 +887,12 @@ describe("ChildRunCoordinator thread_message", () => {
     expect(pending).toHaveLength(1);
     expect(pending[0]).toMatchObject({
       threadId: childId,
-      intent: "steer",
+      intent: "message",
       provenance: { kind: "agent", threadId: parent.id },
       body: { kind: "text", text: "run in the background" },
       idempotencyKey: "thread-message:call-bg",
     });
-    // A steer wakes the (asleep) target; the caller drives nothing here.
+    // A message wakes the (asleep) target; the caller drives nothing here.
     expect(runStarter.started).toContain(childId);
     expect(turns.length).toBe(turnsBefore);
   });
@@ -925,7 +925,7 @@ describe("ChildRunCoordinator thread_message", () => {
       { mode: "foreground" },
     );
     expect(continued.status).toBe("completed");
-    // Foreground drives in-process; it never enqueues a steer on the target.
+    // Foreground drives in-process; it never enqueues a message on the target.
     expect(runStarter.started).not.toContain(spawned.report.threadId);
   });
 
@@ -968,7 +968,7 @@ describe("ChildRunCoordinator thread_message", () => {
     });
     const [report] = await inbox.claimPending(parent.id);
     expect(report).toMatchObject({
-      intent: "steer",
+      intent: "message",
       provenance: { kind: "child", reportId: "assistant-turn-1" },
       body: { kind: "report", text: "durable report", payload: { saved: true } },
       idempotencyKey: "child-report:assistant-turn-1",

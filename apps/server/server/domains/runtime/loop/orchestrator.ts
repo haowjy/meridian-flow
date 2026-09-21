@@ -122,7 +122,7 @@ import {
   finalizeTurnOnGeneratorFailure,
 } from "./finalization.js";
 import { loadThreadConversationContext } from "./fork-thread-context.js";
-import { drainInbox, steerTurnFor } from "./inbox-context.js";
+import { drainInbox, messageTurnFor } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
   defaultInterruptAutoResumePolicy,
@@ -461,12 +461,12 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
 
 /**
  * Drain-only start: a wake begins with no new writer turn. In one transition it
- * claims the pending inbox batch, persists each fresh steer as a user-role turn
+ * claims the pending inbox batch, persists each fresh message as a user-role turn
  * chained from the thread leaf, then mints the assistant container chained from
- * the last steer. The durable chain is `leaf → steer(user) → assistant(streaming)`
+ * the last message. The durable chain is `leaf → message(user) → assistant(streaming)`
  * and the generator's request is built over exactly the drained batch. A redelivered
- * steer already persisted by a crashed run is not re-appended; its existing turn
- * rides in `priorTurns`. No durable pending steer means no turn to generate.
+ * message already persisted by a crashed run is not re-appended; its existing turn
+ * rides in `priorTurns`. No durable pending message means no turn to generate.
  */
 async function runDrainTurn(
   deps: OrchestratorDeps,
@@ -488,19 +488,19 @@ async function runDrainTurn(
       ]);
 
       const batch = await deps.inbox.claimPending(input.threadId);
-      const steers = batch.filter((message) => message.intent === "steer");
+      const messages = batch.filter((message) => message.intent === "message");
       // The wake sweep only starts a thread with a derived wake need; a race that
-      // drains the last steer first must leave no phantom assistant turn behind.
-      if (steers.length === 0) throw new NoPendingWakeError(input.threadId);
+      // drains the last message first must leave no phantom assistant turn behind.
+      if (messages.length === 0) throw new NoPendingWakeError(input.threadId);
 
       const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
       const events: OrchestratorEvent[] = [];
-      const steerTurns: Turn[] = [];
+      const messageTurns: Turn[] = [];
       let leafTurnId = prevTurnId;
-      for (const message of steers) {
+      for (const message of messages) {
         if (knownTurnIds.has(message.id)) continue;
-        const { turn, block } = steerTurnFor(message, leafTurnId);
-        steerTurns.push(turn);
+        const { turn, block } = messageTurnFor(message, leafTurnId);
+        messageTurns.push(turn);
         events.push({ type: "turn.created", turn }, { type: "block.upserted", block });
         leafTurnId = turn.id;
       }
@@ -518,7 +518,7 @@ async function runDrainTurn(
         result: {
           assistantTurn,
           referenceUserTurnId: leafTurnId ?? assistantTurn.id,
-          steerTurns,
+          messageTurns,
           priorTurns,
           inheritedTurns,
           inheritedBlocks,
@@ -531,7 +531,7 @@ async function runDrainTurn(
   const {
     assistantTurn,
     referenceUserTurnId,
-    steerTurns,
+    messageTurns,
     priorTurns,
     inheritedTurns,
     inheritedBlocks,
@@ -545,7 +545,7 @@ async function runDrainTurn(
       thread,
       referenceUserTurnId,
       assistantTurn,
-      [...inheritedTurns, ...priorTurns, ...steerTurns],
+      [...inheritedTurns, ...priorTurns, ...messageTurns],
       inheritedBlocks,
       setup.events,
       input.treeBudget ?? createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
@@ -742,7 +742,7 @@ async function persistModelResponse(input: {
 
 /**
  * Persists the partial usage a cancelled stream produced before the terminal
- * cancel write. Kept separate from `finalizeCancelled` so a pending steer at
+ * cancel write. Kept separate from `finalizeCancelled` so a pending message at
  * the exit still settles the aborted response, then continues the run; only the
  * cancel write itself is gated by `closeRun`.
  */
@@ -991,7 +991,7 @@ async function* generateEvents(
   /** The user turn whose admitted references load before the first request. */
   referenceUserTurnId: TurnId,
   assistantTurn: Turn,
-  /** Full ordered history before the assistant container, including drained steers. */
+  /** Full ordered history before the assistant container, including drained messages. */
   initialTurns: Turn[],
   inheritedBlocks: Block[],
   initialEvents: OrchestratorEvent[],
@@ -1055,10 +1055,10 @@ async function* generateEvents(
   // caller must continue the loop; false when the terminal events were yielded.
   //
   // `continueOnPending` encodes the interrupt policy: true for cancel and for
-  // normal completion (endTurnRequested / clean finish), where a pending steer
+  // normal completion (endTurnRequested / clean finish), where a pending message
   // becomes the next turn of the same run; false for hard error, budget cap, and
   // max-iteration, which complete and release and let the S4 wake sweep recover
-  // any pending steer.
+  // any pending message.
   async function* exitRun(
     continueOnPending: boolean,
     complete: () => Promise<TerminalOutcome>,
@@ -1102,12 +1102,12 @@ async function* generateEvents(
     let iteration = 0;
     // A successful return_result completes the turn after the current tool batch.
     let endTurnRequested = false;
-    // An abort consumed by a pending-steer continuation must not cancel the
+    // An abort consumed by a pending-message continuation must not cancel the
     // resumed turn: the interrupt handled its boundary, the run lives on.
     let cancelConsumed = false;
     const isCancelled = () => !cancelConsumed && (input.signal?.aborted ?? false);
-    // Pinned once before the first drain appends steers, so notices and skill
-    // bodies attach to the writer's triggering message, never a drained steer.
+    // Pinned once before the first drain appends messages, so notices and skill
+    // bodies attach to the writer's triggering message, never a drained message.
     let writerMessageIndex: number | undefined;
     let activatedSkillBodies:
       | Array<{ slug: string; description: string; body: string }>
@@ -1210,11 +1210,11 @@ async function* generateEvents(
       };
 
       // The writer's triggering message is pinned before the drain appends
-      // steers; notices and skill bodies must land there, not on a drained steer.
+      // messages; notices and skill bodies must land there, not on a drained one.
       writerMessageIndex ??= lastUserMessageIndex(request.messages);
       const baseMessageCount = request.messages.length;
       let inboxAckIds: string[] = [];
-      // A steer is history, not transient context: the drain persists each at
+      // A message is history, not transient context: the drain persists each at
       // the thread tail so later iterations of this same run keep seeing it,
       // chained from the run's own accumulated tail. The thread loaded at run
       // start is stale for an already-baked prompt (assembly does not refresh

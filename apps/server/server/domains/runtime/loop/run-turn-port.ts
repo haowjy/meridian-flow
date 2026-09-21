@@ -40,7 +40,7 @@ export interface WriterRunTurnInput extends RunTurnBase {
 
 /**
  * A drain-only start (a wake): there is no new writer message. The first
- * drained steer becomes the run's first user turn, ahead of the assistant
+ * drained message becomes the run's first user turn, ahead of the assistant
  * container, and the model sees exactly the drained batch.
  */
 export interface DrainRunTurnInput extends RunTurnBase {
@@ -54,7 +54,7 @@ export function isDrainRun(input: RunTurnInput): input is DrainRunTurnInput {
 }
 
 /**
- * The drain start found no durable pending steer to serve. The drain mints no
+ * The drain start found no durable pending message to serve. The drain mints no
  * assistant turn; a preceding `WorkContextDelivery.beforeTurn` may already have
  * persisted a `system_update` turn, which the next run reads as history. The
  * invariant is "no phantom assistant turn", not "no write".

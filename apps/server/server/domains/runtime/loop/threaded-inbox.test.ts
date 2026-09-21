@@ -1,7 +1,7 @@
 /**
  * The locked producer enqueue: it holds the per-thread lock across the insert
  * (so it serializes with `closeRun`'s final claim) and fires a best-effort
- * `RunStarter.start` only for steers.
+ * `RunStarter.start` only for messages.
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
@@ -17,20 +17,20 @@ import { createThreadedInbox } from "./threaded-inbox.js";
 
 const THREAD_A = "00000000-0000-4000-8000-0000000000a1" as ThreadId;
 
-function steer(key: string, threadId: ThreadId = THREAD_A): MessageDraft {
+function message(key: string, threadId: ThreadId = THREAD_A): MessageDraft {
   return {
     threadId,
-    intent: "steer",
+    intent: "message",
     provenance: { kind: "writer", actorId: "user-1" },
     body: { kind: "text", text: key },
     idempotencyKey: key,
   };
 }
 
-function systemMessage(key: string, threadId: ThreadId = THREAD_A): MessageDraft {
+function notice(key: string, threadId: ThreadId = THREAD_A): MessageDraft {
   return {
     threadId,
-    intent: "system",
+    intent: "notice",
     provenance: { kind: "system", source: "work" },
     body: { kind: "context", parts: [{ source: "work", text: key }] },
     idempotencyKey: key,
@@ -46,7 +46,7 @@ function deferred<T>() {
 }
 
 describe("createThreadedInbox", () => {
-  it("enqueues under the draft thread's lock and wakes on a steer", async () => {
+  it("enqueues under the draft thread's lock and wakes on a message", async () => {
     const lockedThreads: ThreadId[] = [];
     const threadLock: ThreadLock = {
       async withThreadLock(threadId, operation) {
@@ -63,15 +63,15 @@ describe("createThreadedInbox", () => {
       schedulePostCommit: (task) => task(),
     });
 
-    const message = await threaded.enqueue(steer("locked steer"));
+    const inboxMessage = await threaded.enqueue(message("locked steer"));
 
     expect(lockedThreads).toEqual([THREAD_A]);
-    expect(message.intent).toBe("steer");
+    expect(inboxMessage.intent).toBe("message");
     expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
     expect(runStarter.started).toEqual([THREAD_A]);
   });
 
-  it("does not wake on a system message", async () => {
+  it("does not wake on a notice", async () => {
     const runStarter = createInMemoryRunStarter();
     const threaded = createThreadedInbox({
       inbox: createInMemoryInbox(),
@@ -80,7 +80,7 @@ describe("createThreadedInbox", () => {
       schedulePostCommit: (task) => task(),
     });
 
-    await threaded.enqueue(systemMessage("context note"));
+    await threaded.enqueue(notice("context note"));
 
     expect(runStarter.started).toEqual([]);
   });
@@ -110,7 +110,7 @@ describe("createThreadedInbox", () => {
         return [];
       },
       async ack() {},
-      async pendingSteerThreads() {
+      async pendingMessageThreads() {
         return [];
       },
     };
@@ -121,10 +121,10 @@ describe("createThreadedInbox", () => {
       schedulePostCommit: (task) => task(),
     });
 
-    const first = threaded.enqueue(steer("first"));
+    const first = threaded.enqueue(message("first"));
     await firstEntered.promise;
     let secondDone = false;
-    const second = threaded.enqueue(steer("second")).then((message) => {
+    const second = threaded.enqueue(message("second")).then((message) => {
       secondDone = true;
       return message;
     });
@@ -155,9 +155,9 @@ describe("createThreadedInbox", () => {
       schedulePostCommit: (task) => task(),
     });
 
-    const message = await threaded.enqueue(steer("wake fails"));
+    const inboxMessage = await threaded.enqueue(message("wake fails"));
 
-    expect(message.intent).toBe("steer");
+    expect(inboxMessage.intent).toBe("message");
     expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
   });
 
@@ -173,7 +173,7 @@ describe("createThreadedInbox", () => {
       },
     });
 
-    await threaded.enqueue(steer("deferred wake"));
+    await threaded.enqueue(message("deferred wake"));
 
     // The wake must not resolve the caller's still-open transaction.
     expect(runStarter.started).toEqual([]);

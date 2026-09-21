@@ -1,6 +1,6 @@
 /**
- * Inbox batch rendering and steer-turn persistence: system messages stay
- * request-only, and a redelivered steer reuses its durable message id instead
+ * Inbox batch rendering and message-turn persistence: notices stay
+ * request-only, and a redelivered message reuses its durable id instead
  * of appending a second turn.
  */
 
@@ -13,25 +13,25 @@ import {
   createInMemoryRepositories,
 } from "../../threads/index.js";
 import { createInMemoryInbox } from "../adapters/in-memory/loop-ports.js";
-import { drainInbox, persistInboxSteers, renderInboxBatch } from "./inbox-context.js";
+import { drainInbox, persistInboxMessages, renderInboxBatch } from "./inbox-context.js";
 import type { MessageDraft } from "./ports.js";
 
 const USER_ID = "user-1";
 
-function steer(key: string, threadId: ThreadId): MessageDraft {
+function message(key: string, threadId: ThreadId): MessageDraft {
   return {
     threadId,
-    intent: "steer",
+    intent: "message",
     provenance: { kind: "writer", actorId: USER_ID },
     body: { kind: "text", text: key },
     idempotencyKey: key,
   };
 }
 
-function systemMessage(key: string, threadId: ThreadId): MessageDraft {
+function notice(key: string, threadId: ThreadId): MessageDraft {
   return {
     threadId,
-    intent: "system",
+    intent: "notice",
     provenance: { kind: "system", source: "work" },
     body: { kind: "context", parts: [{ source: "work", text: key }] },
     idempotencyKey: key,
@@ -41,7 +41,7 @@ function systemMessage(key: string, threadId: ThreadId): MessageDraft {
 function childReport(reportId: string, threadId: ThreadId): MessageDraft {
   return {
     threadId,
-    intent: "steer",
+    intent: "message",
     provenance: { kind: "child", threadId: "child-thread" as ThreadId, reportId },
     body: {
       kind: "report",
@@ -69,10 +69,10 @@ async function seed() {
 }
 
 describe("renderInboxBatch", () => {
-  it("renders a steer as a user message and a system message as a notice", async () => {
+  it("renders a message as a user message and a notice as a request-only notice", async () => {
     const { inbox, thread } = await seed();
-    await inbox.enqueue(steer("steer body", thread.id));
-    await inbox.enqueue(systemMessage("context note", thread.id));
+    await inbox.enqueue(message("steer body", thread.id));
+    await inbox.enqueue(notice("context note", thread.id));
     const batch = await inbox.claimPending(thread.id);
 
     const rendered = renderInboxBatch([], batch);
@@ -101,47 +101,47 @@ describe("renderInboxBatch", () => {
   });
 });
 
-describe("persistInboxSteers", () => {
+describe("persistInboxMessages", () => {
   it("reuses the durable message id so a redelivery appends no second turn", async () => {
     const { repos, eventWriter, inbox, thread } = await seed();
-    await inbox.enqueue(steer("keep me", thread.id));
-    const [message] = await inbox.claimPending(thread.id);
+    await inbox.enqueue(message("keep me", thread.id));
+    const [claimedMessage] = await inbox.claimPending(thread.id);
 
     const deps = { repos, eventWriter };
-    const first = await persistInboxSteers({
+    const first = await persistInboxMessages({
       deps,
       threadId: thread.id,
       expectedLeafTurnId: null,
-      batch: [message],
+      batch: [claimedMessage],
     });
     expect(first.turns).toHaveLength(1);
-    expect(first.turns[0].id).toBe(message.id);
+    expect(first.turns[0].id).toBe(claimedMessage.id);
 
-    // A crash between the steer-turn persist and the ack redelivers the same
+    // A crash between the message-turn persist and the ack redelivers the same
     // message; the id-keyed turn create and block upsert make it a no-op.
-    const redelivered = await persistInboxSteers({
+    const redelivered = await persistInboxMessages({
       deps,
       threadId: thread.id,
       expectedLeafTurnId: first.turns[0].id,
-      batch: [message],
+      batch: [claimedMessage],
     });
     expect(redelivered.turns).toHaveLength(1);
 
     const turns = await repos.turns.listByThread(thread.id);
     expect(turns).toHaveLength(1);
-    expect(turns[0].id).toBe(message.id);
+    expect(turns[0].id).toBe(claimedMessage.id);
     expect(turns[0].role).toBe("user");
-    expect(await repos.blocks.listByTurn(message.id)).toHaveLength(1);
+    expect(await repos.blocks.listByTurn(claimedMessage.id)).toHaveLength(1);
   });
 
   it("persists a whole batch in one turn-start transition, chaining each turn", async () => {
     const { repos, eventWriter, inbox, thread } = await seed();
-    await inbox.enqueue(steer("one", thread.id));
-    await inbox.enqueue(steer("two", thread.id));
+    await inbox.enqueue(message("one", thread.id));
+    await inbox.enqueue(message("two", thread.id));
     const batch = await inbox.claimPending(thread.id);
 
     const transition = vi.spyOn(repos, "runTurnStartTransition");
-    const persisted = await persistInboxSteers({
+    const persisted = await persistInboxMessages({
       deps: { repos, eventWriter },
       threadId: thread.id,
       expectedLeafTurnId: null,
@@ -165,7 +165,7 @@ describe("persistInboxSteers", () => {
     await inbox.enqueue(childReport("report-2", thread.id));
     const [message] = await inbox.claimPending(thread.id);
 
-    const persisted = await persistInboxSteers({
+    const persisted = await persistInboxMessages({
       deps: { repos, eventWriter },
       threadId: thread.id,
       expectedLeafTurnId: null,
@@ -188,17 +188,17 @@ describe("persistInboxSteers", () => {
     });
   });
 
-  it("stamps a steer turn with the message enqueuedAt, not persist time", async () => {
+  it("stamps a message turn with the inbox enqueuedAt, not persist time", async () => {
     const { repos, eventWriter, inbox, thread } = await seed();
-    await inbox.enqueue(steer("timed", thread.id));
-    const [message] = await inbox.claimPending(thread.id);
+    await inbox.enqueue(message("timed", thread.id));
+    const [claimedMessage] = await inbox.claimPending(thread.id);
     const enqueuedAt = "2020-01-02T03:04:05.000Z";
 
-    const persisted = await persistInboxSteers({
+    const persisted = await persistInboxMessages({
       deps: { repos, eventWriter },
       threadId: thread.id,
       expectedLeafTurnId: null,
-      batch: [{ ...(message as NonNullable<typeof message>), enqueuedAt }],
+      batch: [{ ...(claimedMessage as NonNullable<typeof claimedMessage>), enqueuedAt }],
     });
 
     expect(persisted.turns[0]?.createdAt).toBe(enqueuedAt);
@@ -217,17 +217,17 @@ describe("drainInbox", () => {
     };
   }
 
-  it("skips a redelivered steer already in knownTurnIds and still returns its ack id", async () => {
+  it("skips a redelivered message already in knownTurnIds and still returns its ack id", async () => {
     const { repos, eventWriter, inbox, thread } = await seed();
-    await inbox.enqueue(steer("crash then retry", thread.id));
-    const [message] = await inbox.claimPending(thread.id);
-    if (!message) throw new Error("expected a claimed message");
+    await inbox.enqueue(message("crash then retry", thread.id));
+    const [claimedMessage] = await inbox.claimPending(thread.id);
+    if (!claimedMessage) throw new Error("expected a claimed message");
     // Persist once, leaving the message unacked (crash before ack).
-    const first = await persistInboxSteers({
+    const first = await persistInboxMessages({
       deps: { repos, eventWriter },
       threadId: thread.id,
       expectedLeafTurnId: null,
-      batch: [message],
+      batch: [claimedMessage],
     });
 
     // The same unacked message is redelivered; its turn is already durable.
@@ -243,7 +243,7 @@ describe("drainInbox", () => {
 
     expect(drain.turns).toEqual([]);
     expect(drain.persistedEvents).toEqual([]);
-    expect(drain.ackIds).toEqual([message.id]);
+    expect(drain.ackIds).toEqual([claimedMessage.id]);
     expect(await repos.turns.listByThread(thread.id)).toHaveLength(1);
   });
 });

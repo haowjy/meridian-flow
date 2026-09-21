@@ -18,20 +18,20 @@ function required<T>(value: T | null): T {
   return value;
 }
 
-function steer(key: string, threadId: ThreadId = THREAD_A): MessageDraft {
+function message(key: string, threadId: ThreadId = THREAD_A): MessageDraft {
   return {
     threadId,
-    intent: "steer",
+    intent: "message",
     provenance: { kind: "writer", actorId: "user-1" },
     body: { kind: "text", text: key },
     idempotencyKey: key,
   };
 }
 
-function systemMessage(key: string, threadId: ThreadId = THREAD_A): MessageDraft {
+function notice(key: string, threadId: ThreadId = THREAD_A): MessageDraft {
   return {
     threadId,
-    intent: "system",
+    intent: "notice",
     provenance: { kind: "system", source: "work" },
     body: { kind: "context", parts: [{ source: "work", text: key }] },
     idempotencyKey: key,
@@ -41,9 +41,9 @@ function systemMessage(key: string, threadId: ThreadId = THREAD_A): MessageDraft
 describe("Inbox", () => {
   it("claims pending messages in per-thread enqueue order", async () => {
     const inbox = createInMemoryInbox();
-    await inbox.enqueue(steer("a1", THREAD_A));
-    await inbox.enqueue(steer("b1", THREAD_B));
-    await inbox.enqueue(steer("a2", THREAD_A));
+    await inbox.enqueue(message("a1", THREAD_A));
+    await inbox.enqueue(message("b1", THREAD_B));
+    await inbox.enqueue(message("a2", THREAD_A));
 
     const claimedA = await inbox.claimPending(THREAD_A);
     const claimedB = await inbox.claimPending(THREAD_B);
@@ -54,8 +54,8 @@ describe("Inbox", () => {
 
   it("marks acked messages delivered and stops redelivering them", async () => {
     const inbox = createInMemoryInbox();
-    const first = await inbox.enqueue(steer("a1"));
-    await inbox.enqueue(steer("a2"));
+    const first = await inbox.enqueue(message("a1"));
+    await inbox.enqueue(message("a2"));
 
     await inbox.ack(THREAD_A, [first.id]);
 
@@ -65,7 +65,7 @@ describe("Inbox", () => {
 
   it("redelivers unacked messages to the next claim", async () => {
     const inbox = createInMemoryInbox();
-    await inbox.enqueue(steer("a1"));
+    await inbox.enqueue(message("a1"));
 
     const firstClaim = await inbox.claimPending(THREAD_A);
     const secondClaim = await inbox.claimPending(THREAD_A);
@@ -78,8 +78,8 @@ describe("Inbox", () => {
 
   it("collapses a duplicate enqueue on the idempotency key", async () => {
     const inbox = createInMemoryInbox();
-    const first = await inbox.enqueue(steer("same-key"));
-    const second = await inbox.enqueue(steer("same-key"));
+    const first = await inbox.enqueue(message("same-key"));
+    const second = await inbox.enqueue(message("same-key"));
 
     expect(second.id).toBe(first.id);
     expect(second.seq).toBe(first.seq);
@@ -88,32 +88,32 @@ describe("Inbox", () => {
 
   it("keeps the same idempotency key distinct across threads", async () => {
     const inbox = createInMemoryInbox();
-    const first = await inbox.enqueue(steer("shared-key", THREAD_A));
-    const second = await inbox.enqueue(steer("shared-key", THREAD_B));
+    const first = await inbox.enqueue(message("shared-key", THREAD_A));
+    const second = await inbox.enqueue(message("shared-key", THREAD_B));
 
     expect(second.id).not.toBe(first.id);
     expect(second.threadId).toBe(THREAD_B);
     expect(await inbox.claimPending(THREAD_B)).toHaveLength(1);
   });
 
-  it("lists distinct pending-steer threads oldest first and excludes system messages", async () => {
+  it("lists distinct pending-message threads oldest first and excludes notices", async () => {
     const inbox = createInMemoryInbox();
-    await inbox.enqueue(systemMessage("s1", THREAD_A));
-    await inbox.enqueue(steer("a1", THREAD_A));
-    await inbox.enqueue(steer("b1", THREAD_B));
-    await inbox.enqueue(systemMessage("s2", THREAD_B));
-    await inbox.enqueue(steer("a2", THREAD_A));
+    await inbox.enqueue(notice("s1", THREAD_A));
+    await inbox.enqueue(message("a1", THREAD_A));
+    await inbox.enqueue(message("b1", THREAD_B));
+    await inbox.enqueue(notice("s2", THREAD_B));
+    await inbox.enqueue(message("a2", THREAD_A));
 
-    expect(await inbox.pendingSteerThreads(10)).toEqual([THREAD_A, THREAD_B]);
-    expect(await inbox.pendingSteerThreads(1)).toEqual([THREAD_A]);
+    expect(await inbox.pendingMessageThreads(10)).toEqual([THREAD_A, THREAD_B]);
+    expect(await inbox.pendingMessageThreads(1)).toEqual([THREAD_A]);
   });
 
-  it("drops a thread from pending steers once its steer is acked", async () => {
+  it("drops a thread from pending messages once its message is acked", async () => {
     const inbox = createInMemoryInbox();
-    const message = await inbox.enqueue(steer("a1"));
-    await inbox.ack(THREAD_A, [message.id]);
+    const inboxMessage = await inbox.enqueue(message("a1"));
+    await inbox.ack(THREAD_A, [inboxMessage.id]);
 
-    expect(await inbox.pendingSteerThreads(10)).toEqual([]);
+    expect(await inbox.pendingMessageThreads(10)).toEqual([]);
   });
 });
 
@@ -280,12 +280,12 @@ describe("closeRun", () => {
     expect(await authority.acquire(THREAD_A, "run-2")).not.toBeNull();
   });
 
-  it("keeps the run alive and skips completion when the final claim finds a steer", async () => {
+  it("keeps the run alive and skips completion when the final claim finds a message", async () => {
     const inbox = createInMemoryInbox();
     const authority = createInMemoryRunAuthority({ holderId: "holder-1" });
     const threadLock = createInMemoryThreadLock();
     const lease = required(await authority.acquire(THREAD_A, "run-1"));
-    await inbox.enqueue(steer("late steer"));
+    await inbox.enqueue(message("late steer"));
 
     let completed = false;
     const outcome = await closeRun({
@@ -311,7 +311,7 @@ describe("closeRun", () => {
     const authority = createInMemoryRunAuthority({ holderId: "holder-1" });
     const threadLock = createInMemoryThreadLock();
     const lease = required(await authority.acquire(THREAD_A, "run-1"));
-    await inbox.enqueue(steer("unrecoverable here"));
+    await inbox.enqueue(message("unrecoverable here"));
 
     const outcome = await closeRun({
       threadLock,
@@ -325,7 +325,7 @@ describe("closeRun", () => {
 
     expect(outcome).toEqual({ kind: "completed", completion: "terminal" });
     expect(await authority.holder(THREAD_A)).toBeNull();
-    // The pending steer is left for the wake sweep, not acked.
+    // The pending message is left for the wake sweep, not acked.
     expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
   });
 });

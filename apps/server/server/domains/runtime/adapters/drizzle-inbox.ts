@@ -99,13 +99,13 @@ export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
         );
     },
 
-    async pendingSteerThreads(limit) {
+    async pendingMessageThreads(limit) {
       const rows = await db_()
         .select({ threadId: schema.threadInboxMessages.threadId })
         .from(schema.threadInboxMessages)
         .where(
           and(
-            eq(schema.threadInboxMessages.intent, "steer"),
+            eq(schema.threadInboxMessages.intent, "message"),
             isNull(schema.threadInboxMessages.deliveredAt),
           ),
         )

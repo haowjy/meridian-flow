@@ -57,11 +57,11 @@ export function createInMemoryInbox(): Inbox {
       }
     },
 
-    async pendingSteerThreads(limit) {
+    async pendingMessageThreads(limit) {
       const threads: ThreadId[] = [];
       const seen = new Set<ThreadId>();
       for (const message of [...messages].sort((left, right) => left.seq - right.seq)) {
-        if (message.intent !== "steer" || message.deliveredAt !== null) continue;
+        if (message.intent !== "message" || message.deliveredAt !== null) continue;
         if (seen.has(message.threadId)) continue;
         seen.add(message.threadId);
         threads.push(message.threadId);
