@@ -1,9 +1,9 @@
-/** Spawn/continue tool argument parsing and the advertised JSON schema. */
+/** Spawn/thread_message tool argument parsing and the advertised JSON schema. */
 import { describe, expect, it } from "vitest";
 import {
   createSpawnToolRegistrations,
-  parseContinueToolArgs,
   parseSpawnToolArgs,
+  parseThreadMessageArgs,
 } from "./spawn-tools.js";
 
 function spawnSchema(): {
@@ -23,17 +23,17 @@ function spawnSchema(): {
   };
 }
 
-function continueSchema(): {
+function threadMessageSchema(): {
   properties: Record<string, Record<string, unknown>>;
   additionalProperties: boolean;
   required?: string[];
 } {
   const registration = createSpawnToolRegistrations().find(
-    (entry) => entry.definition.name === "continue",
+    (entry) => entry.definition.name === "thread_message",
   );
   const definition = registration?.definition;
-  if (definition?.type !== "function" || definition.name !== "continue") {
-    throw new Error("continue registration missing");
+  if (definition?.type !== "function" || definition.name !== "thread_message") {
+    throw new Error("thread_message registration missing");
   }
   return definition.inputSchema as {
     properties: Record<string, Record<string, unknown>>;
@@ -80,41 +80,41 @@ describe("spawn tool input schema", () => {
   });
 });
 
-describe("parseContinueToolArgs", () => {
-  it("keeps handle and prompt and defaults mode to foreground", () => {
-    const args = parseContinueToolArgs({ handle: "p1", prompt: "keep going" });
+describe("parseThreadMessageArgs", () => {
+  it("keeps ref and message and defaults mode to background", () => {
+    const args = parseThreadMessageArgs({ ref: "p1", message: "keep going" });
     expect(args).toEqual({
-      handle: "p1",
-      prompt: "keep going",
-      mode: "foreground",
+      ref: "p1",
+      message: "keep going",
+      mode: "background",
     });
-    expect(parseContinueToolArgs({ handle: "p1", prompt: "x", mode: "background" }).mode).toBe(
-      "background",
-    );
-    expect(parseContinueToolArgs({ handle: "p1", prompt: "x", mode: "sideways" }).mode).toBe(
+    expect(parseThreadMessageArgs({ ref: "p1", message: "x", mode: "foreground" }).mode).toBe(
       "foreground",
+    );
+    expect(parseThreadMessageArgs({ ref: "p1", message: "x", mode: "sideways" }).mode).toBe(
+      "background",
     );
   });
 
   it("drops malformed non-string fields", () => {
-    expect(parseContinueToolArgs({ handle: 7, prompt: 42 })).toEqual({
-      handle: "",
-      prompt: "",
-      mode: "foreground",
+    expect(parseThreadMessageArgs({ ref: 7, message: 42 })).toEqual({
+      ref: "",
+      message: "",
+      mode: "background",
     });
-    expect(parseContinueToolArgs(null)).toEqual({
-      handle: "",
-      prompt: "",
-      mode: "foreground",
+    expect(parseThreadMessageArgs(null)).toEqual({
+      ref: "",
+      message: "",
+      mode: "background",
     });
   });
 });
 
-describe("continue tool input schema", () => {
-  it("requires handle and prompt, defaults unstated mode, and rejects escalation fields", () => {
-    const schema = continueSchema();
-    expect(schema.required).toEqual(["handle", "prompt"]);
-    expect(schema.properties.handle).toEqual({
+describe("thread_message tool input schema", () => {
+  it("requires ref and message, defaults unstated mode, and rejects escalation fields", () => {
+    const schema = threadMessageSchema();
+    expect(schema.required).toEqual(["ref", "message"]);
+    expect(schema.properties.ref).toEqual({
       type: "string",
       description: expect.any(String),
     });

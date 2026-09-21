@@ -26,8 +26,8 @@ import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-co
 import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
 import { persistReturnResult, type SpawnTranscript } from "../spawn/spawn-transcript.js";
 import type {
-  ContinueToolArgs,
   SpawnToolArgs,
+  ThreadMessageArgs,
   ToolCallInput,
   ToolExecutor,
 } from "../tools/index.js";
@@ -175,21 +175,22 @@ export async function dispatchToolCall(
         }
       : undefined;
 
-  const continueChild =
-    call.name === "continue"
-      ? async (continueInput: ContinueToolArgs) => {
+  const threadMessage =
+    call.name === "thread_message"
+      ? async (messageInput: ThreadMessageArgs) => {
           const request: ChildRunRequest = {
-            kind: "continue",
+            kind: "message",
             parentThread: ctx.thread,
             parentTurnId: ctx.state.currentTurn.id,
-            handle: continueInput.handle,
-            prompt: continueInput.prompt,
+            ref: messageInput.ref,
+            prompt: messageInput.message,
+            toolCallId: call.id,
             budget: ctx.treeBudget,
             signal: ctx.state.signal,
           };
           return deps.childRunCoordinator.runChild(request, {
-            mode: continueInput.mode,
-            ...(continueInput.mode === "foreground" ? { transcript } : {}),
+            mode: messageInput.mode,
+            ...(messageInput.mode === "foreground" ? { transcript } : {}),
           });
         }
       : undefined;
@@ -225,7 +226,7 @@ export async function dispatchToolCall(
       interrupt: ctx.interruptSession.interrupt,
       updateComponentBlock: ctx.interruptSession.updateComponentBlock,
       spawn,
-      continue: continueChild,
+      threadMessage,
       returnResult,
     },
   );
@@ -250,7 +251,7 @@ export async function dispatchToolCall(
     };
   }
   const persistedOutput: JsonValue =
-    call.name === "spawn" || call.name === "continue"
+    call.name === "spawn" || call.name === "thread_message"
       ? spawnOutputForTranscript(execResult.output)
       : execResult.output;
   const persistedIsError = execResult.isError;

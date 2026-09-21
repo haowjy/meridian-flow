@@ -25,11 +25,12 @@ export {
 } from "./core-tools.js";
 export { createSkillToolRegistrations } from "./skill-tool.js";
 export {
-  type ContinueToolArgs,
   createSpawnToolRegistrations,
-  parseContinueToolArgs,
   parseSpawnToolArgs,
+  parseThreadMessageArgs,
   type SpawnToolArgs,
+  type ThreadMessageArgs,
+  type ThreadMessageMode,
 } from "./spawn-tools.js";
 export { createToolExecutor, type ToolExecutorWithBatch } from "./tool-executor.js";
 export { createToolRegistry } from "./tool-registry.js";

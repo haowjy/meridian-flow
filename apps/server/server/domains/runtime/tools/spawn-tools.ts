@@ -1,6 +1,6 @@
 /**
- * Spawn primitive tools: spawn (create a child), continue (run an existing
- * child again), and return_result (child-side). Handlers are thin —
+ * Spawn primitive tools: spawn (create a child), thread_message (put a message
+ * into a thread), and return_result (child-side). Handlers are thin —
  * ChildRunCoordinator owns lifecycle; these only validate input.
  */
 import type { InvocationPatch } from "@meridian/contracts/agents";
@@ -8,9 +8,9 @@ import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { SpawnResult } from "@meridian/contracts/spawn";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type {
-  ContinueToolHandlerContext,
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
+  ThreadMessageToolHandlerContext,
   ToolRegistration,
 } from "./types.js";
 
@@ -52,26 +52,28 @@ export function spawnToolDescription(hasNamedTargets: boolean): string {
   return hasNamedTargets ? SPAWN_DESCRIPTION : SPAWN_DESCRIPTION_EMPTY_ROSTER;
 }
 
-const CONTINUE_DESCRIPTION =
-  "Run an existing subagent again with a new prompt. Pass the handle (for example p3) returned by spawn. The child keeps its configuration and history. Use mode=background for non-blocking follow-ups.";
+const THREAD_MESSAGE_DESCRIPTION =
+  "Send a message to a thread. ref is the thread handle (for example p3 for a subagent, c1 for a primary) from a spawn/thread_message result. Omitted mode is background: the message is queued and returns immediately. Use mode=foreground to wait for a subagent in your subtree to finish and return its report.";
 
-export type ContinueToolArgs = {
-  /** Short server-assigned handle (`pN`/`cN`) from a spawn/continue result. */
-  handle: string;
-  prompt: string;
-  mode: "foreground" | "background";
+export type ThreadMessageMode = "foreground" | "background";
+
+export type ThreadMessageArgs = {
+  /** Thread handle (`pN`/`cN`); never an internal id. */
+  ref: string;
+  message: string;
+  mode: ThreadMessageMode;
 };
 
-/** One parse for continue tool arguments; omitted mode is foreground. */
-export function parseContinueToolArgs(input: unknown): ContinueToolArgs {
+/** One parse for thread_message arguments; omitted mode is background. */
+export function parseThreadMessageArgs(input: unknown): ThreadMessageArgs {
   const rec =
     input && typeof input === "object" && !Array.isArray(input)
       ? (input as Record<string, unknown>)
       : {};
   return {
-    handle: typeof rec.handle === "string" ? rec.handle : "",
-    prompt: typeof rec.prompt === "string" ? rec.prompt : "",
-    mode: rec.mode === "background" ? "background" : "foreground",
+    ref: typeof rec.ref === "string" ? rec.ref : "",
+    message: typeof rec.message === "string" ? rec.message : "",
+    mode: rec.mode === "foreground" ? "foreground" : "background",
   };
 }
 
@@ -128,35 +130,36 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       source: "spawn",
       definition: {
         type: "function",
-        name: "continue",
-        description: CONTINUE_DESCRIPTION,
+        name: "thread_message",
+        description: THREAD_MESSAGE_DESCRIPTION,
         inputSchema: {
           type: "object",
           properties: {
-            handle: {
+            ref: {
               type: "string",
-              description: "Short handle returned by spawn, for example p3.",
+              description:
+                "Thread handle from a spawn/thread_message result, for example p3 or c1.",
             },
-            prompt: { type: "string", description: "Next task message for the child." },
+            message: { type: "string", description: "Message to deliver to the thread." },
             mode: {
               type: "string",
               enum: ["foreground", "background"],
               description:
-                "foreground waits for return_result; background returns immediately and posts an inline helper result when done.",
+                "background (default) queues the message and returns immediately; foreground waits for a subagent in your subtree and returns its report.",
             },
           },
-          required: ["handle", "prompt"],
+          required: ["ref", "message"],
           additionalProperties: false,
         },
       },
       execution: {
         type: "server",
-        handler: async (input: unknown, ctx: ContinueToolHandlerContext) => {
-          return ctx.continue(parseContinueToolArgs(input));
+        handler: async (input: unknown, ctx: ThreadMessageToolHandlerContext) => {
+          return ctx.threadMessage(parseThreadMessageArgs(input));
         },
       },
       sequential: true,
-      capability: "continue",
+      capability: "thread_message",
       advertise: true,
     },
     {

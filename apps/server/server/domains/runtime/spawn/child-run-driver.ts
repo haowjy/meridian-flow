@@ -47,8 +47,8 @@ export type PreparedChild = {
   childRegistered: boolean;
   runLease: Lease;
   background: boolean;
-  /** Spawn creates the child lifecycle; continue never rewrites it. */
-  origin: "spawn" | "continue";
+  /** Spawn creates the child lifecycle; a message never rewrites it. */
+  origin: "spawn" | "message";
 };
 
 export type ChildTerminal =
@@ -76,7 +76,7 @@ export interface ChildRunDriver {
   register(
     child: Thread,
     resolvedSlug: string,
-    options: { background?: boolean; signal?: AbortSignal; origin: "spawn" | "continue" },
+    options: { background?: boolean; signal?: AbortSignal; origin: "spawn" | "message" },
   ): Promise<PreparedChild>;
   release(prepared: PreparedChild): Promise<void>;
   drive(prepared: PreparedChild, input: ChildDriveInput): Promise<SpawnResult>;
@@ -207,7 +207,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
   async function register(
     child: Thread,
     resolvedSlug: string,
-    options: { background?: boolean; signal?: AbortSignal; origin: "spawn" | "continue" },
+    options: { background?: boolean; signal?: AbortSignal; origin: "spawn" | "message" },
   ): Promise<PreparedChild> {
     const parentThreadId = child.parentThreadId as ThreadId;
     const childThreadId = child.id as ThreadId;

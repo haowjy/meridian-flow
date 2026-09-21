@@ -755,6 +755,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const childRunCoordinator = createChildRunCoordinator({
     driver: childRunDriver,
+    threadedInbox,
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
     modelUnavailable: (model) => agentModelUnavailableReasons(ports.gateway, model),
