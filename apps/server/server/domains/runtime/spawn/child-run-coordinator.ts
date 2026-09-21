@@ -8,7 +8,7 @@ import { GENERIC_SUBAGENT_SLUG, type InvocationPatch } from "@meridian/contracts
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { SpawnResult } from "@meridian/contracts/spawn";
-import type { Block, Thread } from "@meridian/contracts/threads";
+import type { Block, Thread, ThreadActivity } from "@meridian/contracts/threads";
 import type { AgentRevisionStore, CompiledAgentDefinition } from "../../packages/index.js";
 import type {
   EventJournalWriter,
@@ -19,6 +19,7 @@ import type {
 import { createBoundConversation } from "../../threads/index.js";
 import type { ReturnResultCompleter } from "../loop/run-turn-port.js";
 import type { ThreadedInbox } from "../loop/threaded-inbox.js";
+import { appendSubagentActivity } from "./activity-event.js";
 import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
 import { resolveChildInvocation } from "./resolve-child-invocation.js";
@@ -68,6 +69,8 @@ export interface ChildRunCoordinatorDeps {
     parentThreadId?: string | null;
   }): Promise<string>;
   eventWriter: EventJournalWriter;
+  /** Recomputes a run tree's activity; feeds the root-journal `subagent.activity` fact. */
+  readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   /** Producer-facing inbox: background thread_message enqueues here. */
   threadedInbox: Pick<ThreadedInbox, "enqueue">;
   agentRevisions: Pick<
@@ -188,6 +191,17 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
         signal: input.signal,
         origin: "spawn",
       });
+      try {
+        await appendSubagentActivity({
+          eventWriter: deps.eventWriter,
+          readActivity: deps.readActivity,
+          rootThreadId: input.parentThread.rootThreadId as ThreadId,
+          childThreadId: child.id,
+        });
+      } catch (error) {
+        await driver.release(prepared);
+        throw error;
+      }
       return { ...prepared, description: input.description };
     } catch (error) {
       const result: SpawnResult = {

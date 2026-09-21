@@ -1,11 +1,11 @@
 /**
  * Live-delivery contract for the thread event hub: appending a persisted
  * orchestrator event must publish its projected AG-UI frames to subscribers at
- * append time, not only on journal replay. Background lifecycle events are
- * journal-only: they persist but project no frame until R5 defines a consumer.
+ * append time, not only on journal replay. Background lifecycle events remain
+ * journal-only; `subagent.activity` projects the full recomputed activity tree.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { OrchestratorEvent } from "@meridian/contracts/threads";
+import type { OrchestratorEvent, ThreadActivity } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
 import { createNoopEventSink } from "../observability/index.js";
 import {
@@ -80,5 +80,43 @@ describe("thread event hub background journaling", () => {
 
     const rows = await journal.readAfter(THREAD_ID, 0n);
     expect(rows.map((row) => row.payload)).toEqual([event]);
+  });
+});
+
+describe("thread event hub subagent activity", () => {
+  it("projects the full recomputed activity as one custom frame", async () => {
+    const { hub } = createHub();
+    const received: SequencedEventInternal[] = [];
+    hub.subscribe(THREAD_ID, (entry) => received.push(entry));
+
+    const activity: ThreadActivity = {
+      descendants: [
+        {
+          threadId: "child-1",
+          parentThreadId: THREAD_ID,
+          rootThreadId: THREAD_ID,
+          depth: 1,
+          ref: "p1",
+          title: "Review the chapter",
+          agentName: "Critic",
+          spawnStatus: "running",
+          status: { kind: "awake", phase: "generating", cancelRequested: false },
+          originTurnId: PARENT_TURN_ID,
+        },
+      ],
+    };
+    await hub.appendEvent(THREAD_ID, {
+      type: "subagent.activity",
+      rootThreadId: THREAD_ID,
+      childThreadId: "child-1",
+      activity,
+    });
+
+    expect(received).toHaveLength(1);
+    expect(received[0]?.event).toMatchObject({
+      type: "CUSTOM",
+      name: "meridian.subagent.activity",
+      value: activity,
+    });
   });
 });

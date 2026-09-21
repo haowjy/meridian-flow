@@ -168,6 +168,7 @@ import { createDrizzleEventJournalReader } from "../domains/threads/adapters/dri
 import { createDrizzleEventJournalWriter } from "../domains/threads/adapters/drizzle/event-writer.js";
 import { createDrizzleRepositories } from "../domains/threads/adapters/drizzle/index.js";
 import { createInMemoryRepositories } from "../domains/threads/adapters/in-memory/index.js";
+import { readThreadActivity } from "../domains/threads/domain/thread-activity.js";
 import {
   type ActiveDocumentResolver,
   createActiveDocumentResolver,
@@ -721,6 +722,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     // subscribers at append time, in append order. A notifier-relayed write lands
     // after later in-process appends and is dropped as stale by the WS cursor.
     eventWriter: threadEventHub,
+    readActivity: (threadId) =>
+      readThreadActivity(
+        { threads: ports.threadRepos.threads, statusReader: ports.runAuthority },
+        threadId,
+      ),
     childRunRegistry: runner.childRunRegistry,
     threadedInbox,
     workContextDelivery: workContextDelivery,
@@ -750,6 +756,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       );
     },
     eventWriter: threadEventHub,
+    readActivity: (threadId) =>
+      readThreadActivity(
+        { threads: ports.threadRepos.threads, statusReader: ports.runAuthority },
+        threadId,
+      ),
     agentRevisions: ports.agentRevisions,
   });
   const orchestrator = createOrchestrator({

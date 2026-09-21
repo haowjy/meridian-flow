@@ -13,7 +13,7 @@ import type {
   SpawnResult,
   TreeBudget,
 } from "@meridian/contracts/spawn";
-import { blockPlainText, type Thread } from "@meridian/contracts/threads";
+import { blockPlainText, type Thread, type ThreadActivity } from "@meridian/contracts/threads";
 import type { BillingSpendReader } from "../../billing/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import type {
@@ -27,6 +27,7 @@ import type { Lease, RunAuthority } from "../loop/ports.js";
 import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
 import type { ThreadedInbox } from "../loop/threaded-inbox.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
+import { appendSubagentActivity } from "./activity-event.js";
 
 export interface ChildDriveInput {
   parentThread: Thread;
@@ -65,6 +66,8 @@ export interface ChildRunDriverDeps {
     transaction: ThreadRepositories["transaction"];
   };
   eventWriter: EventJournalWriter;
+  /** Recomputes a run tree's activity; feeds the root-journal `subagent.activity` fact. */
+  readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   childRunRegistry: ChildRunRegistry;
   /** Producer-facing inbox: a background child's report is enqueued as a message. */
   threadedInbox: Pick<ThreadedInbox, "enqueue">;
@@ -440,6 +443,14 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
         }
       }
     }
+
+    // After the lease release so the node reads terminal/asleep, not awake.
+    await appendSubagentActivity({
+      eventWriter: deps.eventWriter,
+      readActivity: deps.readActivity,
+      rootThreadId: input.parentThread.rootThreadId as ThreadId,
+      childThreadId: prepared.child.id,
+    });
 
     return spawnResult;
   }

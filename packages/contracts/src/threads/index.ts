@@ -152,6 +152,7 @@ export type JournalEventType =
   | "agent.fork"
   | "agent.spawn" // PRODUCED NOW — ChildRunCoordinator
   | "agent.run_completed" // PRODUCED NOW — ChildRunCoordinator (spawn or thread_message)
+  | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (root journal, full recomputed activity)
   | "context.assembled"
   | "context.compacted"
   | "context.skill_loaded"

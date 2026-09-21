@@ -422,6 +422,17 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
+      // The producer recomputed the full subtree, so the frame is a bounded
+      // replace of the client's activity state with no refetch race.
+      case "subagent.activity":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.subagent.activity",
+            value: event.activity,
+          }),
+        ];
+
       case "turn.completed":
         return finalizeRun();
 
