@@ -142,6 +142,11 @@ msgstr ""
 msgid "{0} isn't in {section}."
 msgstr ""
 
+#. placeholder {0}: pending.items.length
+#: src/features/chat/PendingInboxTray.tsx
+msgid "{0} messages queued"
+msgstr ""
+
 #. placeholder {0}: item.title
 #: src/features/project/chat-landing/ChatLandingScreen.tsx
 msgid "{0} moved to Favorite chats"
@@ -250,6 +255,10 @@ msgstr ""
 #. placeholder {0}: target?.name
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "<0>{0}</0> will be permanently deleted."
+msgstr ""
+
+#: src/features/chat/PendingInboxTray.tsx
+msgid "1 message queued"
 msgstr ""
 
 #: src/features/chat/RunningSubagentsStrip.tsx
@@ -3227,6 +3236,7 @@ msgstr "已取消"
 msgid "Strikethrough"
 msgstr ""
 
+#: src/features/chat/PendingInboxTray.tsx
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "Subagent"
 msgstr ""
@@ -3277,9 +3287,9 @@ msgstr ""
 msgid "Switching Work…"
 msgstr ""
 
-#: src/features/agents/AgentPicker.tsx
-#~ msgid "System"
-#~ msgstr ""
+#: src/features/chat/PendingInboxTray.tsx
+msgid "System"
+msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -4038,6 +4048,10 @@ msgstr ""
 #: src/lib/date-groups.ts
 msgid "Yesterday"
 msgstr "昨天"
+
+#: src/features/chat/PendingInboxTray.tsx
+msgid "You"
+msgstr ""
 
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx

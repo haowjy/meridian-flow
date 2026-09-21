@@ -142,6 +142,11 @@ msgstr "{0} is not an image. Drop a PNG, JPEG, GIF, WEBP, AVIF, or SVG."
 msgid "{0} isn't in {section}."
 msgstr "{0} isn't in {section}."
 
+#. placeholder {0}: pending.items.length
+#: src/features/chat/PendingInboxTray.tsx
+msgid "{0} messages queued"
+msgstr "{0} messages queued"
+
 #. placeholder {0}: item.title
 #: src/features/project/chat-landing/ChatLandingScreen.tsx
 msgid "{0} moved to Favorite chats"
@@ -251,6 +256,10 @@ msgstr "<0>{0}</0> and all its contents will be permanently deleted."
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
+
+#: src/features/chat/PendingInboxTray.tsx
+msgid "1 message queued"
+msgstr "1 message queued"
 
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "1 subagent running"
@@ -3227,6 +3236,7 @@ msgstr "Stopped"
 msgid "Strikethrough"
 msgstr "Strikethrough"
 
+#: src/features/chat/PendingInboxTray.tsx
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "Subagent"
 msgstr "Subagent"
@@ -3277,9 +3287,9 @@ msgstr "Switched Work"
 msgid "Switching Work…"
 msgstr "Switching Work…"
 
-#: src/features/agents/AgentPicker.tsx
-#~ msgid "System"
-#~ msgstr "System"
+#: src/features/chat/PendingInboxTray.tsx
+msgid "System"
+msgstr "System"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -4038,6 +4048,10 @@ msgstr "Wrote file"
 #: src/lib/date-groups.ts
 msgid "Yesterday"
 msgstr "Yesterday"
+
+#: src/features/chat/PendingInboxTray.tsx
+msgid "You"
+msgstr "You"
 
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx
