@@ -36,11 +36,11 @@ skeleton and delegates the moving parts.
 
 | File | Role |
 |---|---|
-| `orchestrator.ts` | `createOrchestrator` / `runTurn` skeleton, user/assistant turn creation, iteration control, final yield of events. Before each model request it calls `drainInbox` and merges the batch into the request (steers as trailing user messages, system messages as request-only notices); the batch is acked inside `persistModelResponse`'s transaction. Every terminal route — cancel, gateway error, no-result, error finish, budget, max-iteration, return_result, clean completion — funnels through one `exitRun` helper that runs its terminal write through `closeRun` under the lock, so the final claim is uniform. `continueOnPending` is true for cancel and normal completion (a pending steer becomes the next turn of the same run, which consumes the run's one abort) and false for hard error/budget/max-iteration (complete and release; the wake sweep recovers the steer). `RunTurnInput` is a union: a writer start mints `userText`'s user turn in setup; a **drain-only start** (`drain: true`, a wake) instead claims the pending inbox in its setup transaction, persists each fresh steer as the run's first user turn, then mints the assistant container after it (`leaf → steer(user) → assistant(streaming)`), so the model sees exactly the drained batch. A drain start with no durable pending steer throws `NoPendingWakeError` and mints no assistant turn; a preceding work-context `beforeTurn` write, if any, is durable history the next run reads (the invariant is no phantom assistant, not no write). |
-| `inbox-context.ts` | The drain seam. `renderInboxBatch` appends a text `steer` as a user-role message at the request tail, renders a `report` steer as a system-role helper-result projection, and converts a `system` message into a request-only `Notice`; `steerTurnFor` builds one steer's durable turn + block (inbox message id reused as turn/block id, `createdAt` from `enqueuedAt`): a user turn + text block for text, a system turn + `helper-result` custom block for a report (childThreadId from the `child` provenance). Shared by `persistInboxSteers` (the loop's mid-run batch) and the orchestrator's drain-only start. `drainInbox` is the loop's only claim: claim, drop redelivered steers already in the known-turn set, render, persist, and combine durable notices with request-only inbox notices. A steer is history, not transient context, so later iterations of the same run keep seeing it. Producers are not special-cased; intent and body decide the rendering. |
-| `threaded-inbox.ts` | The one producer-facing enqueue. `createThreadedInbox` wraps the raw `Inbox` in `ThreadLock.withThreadLock` (so the insert commits before `closeRun`'s final claim and per-thread `seq` order holds) and fires a best-effort `RunStarter.start` for a steer. Producers depend on this port; the drain and `closeRun` keep the raw `Inbox`. |
-| `run-starter.ts` / `sweep-wakes.ts` | The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn runner's `startDrain`, swallowing `TurnStartConflictError` because a wake is best-effort. `sweepWakes` is the durable recovery: for each `inbox.pendingSteerThreads(limit)` with no live `authority.holder`, it starts a drain run; one thread's failure never strands the rest. `app.ts` runs the sweep on startup and on `WAKE_SWEEP_INTERVAL_MS` (default 30s). The `enqueue` wake is the latency path; the sweep is the guarantee. |
-| `thread-lock.ts` / `close-run.ts` | The per-thread serialization lock (`ThreadLock`, `threadLockKey`) shared by the producer `ThreadedInbox` and the run's final claim, and `closeRun`: under that lock, claim the inbox once more; with `continueOnPending` a pending batch returns `continue` before any terminal work, otherwise the terminal completion runs **and then** the lease is released. Holding the lock across completion and release means a steer cannot start a second run while the terminal turn is still persisting. `release` is idempotent and guarded, so the run owner's `finally` release (the cancel/error backstop for a generator throw) never frees a newer run's lock. Drizzle adapter `adapters/drizzle-thread-lock.ts` uses a `pg_advisory_xact_lock` on `threadLockKey`; the in-memory fake uses a promise-chain mutex. |
+| `orchestrator.ts` | `createOrchestrator` / `runTurn` skeleton, user/assistant turn creation, iteration control, final yield of events. Before each model request it calls `drainInbox` and merges the batch into the request (`message`s as trailing user messages, `notice`s as request-only attachments); the batch is acked inside `persistModelResponse`'s transaction. Every terminal route — cancel, gateway error, no-result, error finish, budget, max-iteration, return_result, clean completion — funnels through one `exitRun` helper that runs its terminal write through `closeRun` under the lock, so the final claim is uniform. `continueOnPending` is true for cancel and normal completion (a pending `message` becomes the next turn of the same run, which consumes the run's one abort) and false for hard error/budget/max-iteration (complete and release; the wake sweep recovers the `message`). `RunTurnInput` is a union: a writer start mints `userText`'s user turn in setup; a **drain-only start** (`drain: true`, a wake) instead claims the pending inbox in its setup transaction, persists each fresh `message` as the run's first user turn, then mints the assistant container after it (`leaf → message(user) → assistant(streaming)`), so the model sees exactly the drained batch. A drain start with no durable pending `message` throws `NoPendingWakeError` and mints no assistant turn; a preceding work-context `beforeTurn` write, if any, is durable history the next run reads (the invariant is no phantom assistant, not no write). |
+| `inbox-context.ts` | The drain seam. `renderInboxBatch` appends a text `message` as a user-role message at the request tail, renders a `report` `message` as a system-role helper-result projection, and converts a `notice` into a request-only `Notice`; `messageTurnFor` builds one `message`'s durable turn + block (inbox message id reused as turn/block id, `createdAt` from `enqueuedAt`): a user turn + text block for text, a system turn + `helper-result` custom block for a report (childThreadId from the `child` provenance). Shared by `persistInboxMessages` (the loop's mid-run batch) and the orchestrator's drain-only start. `drainInbox` is the loop's only claim: claim, drop redelivered `message`s already in the known-turn set, render, persist, and combine durable notices with request-only inbox notices. A `message` is history, not transient context, so later iterations of the same run keep seeing it. Producers are not special-cased; intent and body decide the rendering. |
+| `threaded-inbox.ts` | The one producer-facing enqueue. `createThreadedInbox` wraps the raw `Inbox` in `ThreadLock.withThreadLock` (so the insert commits before `closeRun`'s final claim and per-thread `seq` order holds) and fires a best-effort `RunStarter.start` for a `message`. Producers depend on this port; the drain and `closeRun` keep the raw `Inbox`. |
+| `run-starter.ts` / `sweep-wakes.ts` | The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn runner's `startDrain`, swallowing `TurnStartConflictError` because a wake is best-effort. `sweepWakes` is the durable recovery: for each `inbox.pendingMessageThreads(limit)` with no live `authority.holder`, it starts a drain run; one thread's failure never strands the rest. `app.ts` runs the sweep on startup and on `WAKE_SWEEP_INTERVAL_MS` (default 30s). The `enqueue` wake is the latency path; the sweep is the guarantee. |
+| `thread-lock.ts` / `close-run.ts` | The per-thread serialization lock (`ThreadLock`, `threadLockKey`) shared by the producer `ThreadedInbox` and the run's final claim, and `closeRun`: under that lock, claim the inbox once more; with `continueOnPending` a pending batch returns `continue` before any terminal work, otherwise the terminal completion runs **and then** the lease is released. Holding the lock across completion and release means a `message` cannot start a second run while the terminal turn is still persisting. `release` is idempotent and guarded, so the run owner's `finally` release (the cancel/error backstop for a generator throw) never frees a newer run's lock. Drizzle adapter `adapters/drizzle-thread-lock.ts` uses a `pg_advisory_xact_lock` on `threadLockKey`; the in-memory fake uses a promise-chain mutex. |
 | `block-helpers.ts` | Content block conversion and local accumulator helpers. |
 | `turn-accounting.ts` | Credit ledger checks/debits and cumulative usage events. |
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
@@ -158,7 +158,7 @@ project and `rootThreadId`, forks included), **foreground** requires
 `parentThreadId`) so a wait cannot cycle on an ancestor. A malformed or missing
 ref → `thread_message_target_not_found`; an out-of-lineage/out-of-subtree ref →
 `thread_message_not_authorized`. Background delivery is a queue producer only:
-the coordinator enqueues one `agent`-provenance steer through the
+the coordinator enqueues one `agent`-provenance `message` through the
 producer-facing `ThreadedInbox` (idempotency key `thread-message:<toolCallId>`)
 and returns `{ status: "background" }` without driving anything — the target's
 own run drains it and wakes if asleep. Foreground is the existing child wait
@@ -172,11 +172,11 @@ claim/controller/registry, so a failed foreground message never writes the
 child's lifecycle; the caller owns the failure policy. Writer-facing helper-result cards persist through `spawn/spawn-transcript.ts`
 (one `spawnHelperCardProps` builder). Foreground spawn upserts a running card
 before the child runs and patches it on completion. A background child's
-terminal report is one producer on the same queue as any steer: the driver's
+terminal report is one producer on the same queue as any `message`: the driver's
 `enqueueBackgroundReport` calls `ThreadedInbox.enqueue` with `child` provenance
 and a `report` body (`text`, `artifacts`, `payload`, `agentSlug`, `description`,
 `failed`), idempotency key `child-report:<reportId>`, so the parent is woken and
-drains it like any steer. The per-run capture hook enqueues the moment
+drains it like any `message`. The per-run capture hook enqueues the moment
 `return_result` settles; the terminal `finally` enqueues again with the same key
 and the idempotent insert collapses it, so a crash before the run's terminal
 write cannot lose the report. The drain persists it as a system-role
@@ -262,16 +262,16 @@ facet.
   changing the frozen system prompt or persisting notices into the turn graph.
 - **Inbox drain is batch-atomic and the exit is dead-check-atomic** — before every
   request the loop claims the whole pending batch in one `claimPending`, persists
-  each steer as a user-role turn at the tail (its turn and block ids are the
-  durable inbox message ids, so redelivery after a crash between the steer append
-  and the ack reuses the rows instead of duplicating), renders steers as trailing
-  user messages and system messages as request-only notices, and carries the
+  each `message` as a user-role turn at the tail (its turn and block ids are the
+  durable inbox message ids, so redelivery after a crash between the `message` append
+  and the ack reuses the rows instead of duplicating), renders `message`s as trailing
+  user messages and `notice`s as request-only attachments, and carries the
   batch ids into `persistModelResponse`, which acks them in the same transaction
   that persists the model response (a crash redelivers; the idempotency key
   collapses the duplicate). At the terminal no-tool-call branch, `closeRun` takes
   the same per-thread lock `enqueue` uses, claims once more, and—only on an empty
   batch—completes the terminal turn and then releases the lease, all inside the
-  lock, so no steer can start a second run while the terminal turn is still
+  lock, so no `message` can start a second run while the terminal turn is still
   persisting; a pending batch continues the run into the next iteration. The run
   owner's `finally` release remains the idempotent safety net and still flushes
   the legacy transports.
