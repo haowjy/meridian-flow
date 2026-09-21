@@ -253,6 +253,7 @@ export class RuntimeTestRig {
         threadId: this.thread.id,
         status: await this.runAuthority.read(this.thread.id),
         runningTurnId: await this.runAuthority.readRunningTurnId(this.thread.id),
+        activity: { descendants: [] },
         resumeAfterSeq: "0",
       }),
       read: (threadId: ThreadId) => this.runAuthority.read(threadId),

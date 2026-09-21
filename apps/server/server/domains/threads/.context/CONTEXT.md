@@ -16,7 +16,15 @@ instead of the N:1 `threads.workId` column.
   thread's own spawn subtree breadth-first on `parent_thread_id` (served by
   `threads_parent_created_active`, excluding soft-deleted rows), returning the
   fields the recursive activity read needs: id, parent, root, depth, ref, title,
-  agent name, spawn status.
+  agent name, spawn status, and origin turn.
+- **Thread activity read** — `domain/thread-activity.ts` composes
+  `listDescendants` (the *viewed* thread's own subtree, walked down
+  `parent_thread_id`, never `rootThreadId` alone) with the batch lease read
+  (`ThreadStatusReader.readMany`) into the pure `projectThreadActivity`
+  projection. It is the one server-truth "what subagents are running in this
+  thread", attached to `ThreadLiveState.activity` in both the snapshot and the WS
+  `subscribed` state, and live-updated by the root-journal `subagent.activity`
+  event. Never a turn block.
 - **Notification and steering tables** — `thread_inbox_messages` is the durable
   per-thread message queue (global `bigserial` `seq` for per-thread FIFO, unique
   `idempotency_key`, nullable `delivered_at`), drained by the runtime's `Inbox`
@@ -51,7 +59,10 @@ instead of the N:1 `threads.workId` column.
   or journal replay. Eviction on idle (grace period, default 60 s).
 - **Orchestrator event projector** — stateful transform from
   `OrchestratorEvent` to AG-UI events (run lifecycle, text/reasoning
-  streaming, tool call lifecycle, usage, permissions).
+  streaming, tool call lifecycle, usage, permissions). `subagent.activity`
+  maps to the `meridian.subagent.activity` custom frame carrying the event's
+  recomputed `ThreadActivity`; the producer computed it at emit time so the
+  projector stays a pure function of the journal.
 - **Read-model projector** — synchronous in-transaction transform from durable
   `turn.created` / `model.response_received` / `block.upserted` events to
   `turns`, `model_responses`, `turn_blocks`, and recomputed token/cost rollups.

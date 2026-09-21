@@ -7,6 +7,7 @@
  */
 import type { Block, JsonValue, ThreadSnapshotResponse, Turn } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import { readThreadActivity } from "./domain/thread-activity.js";
 import {
   isThreadActionRequired,
   isVisibleConversationalTurn,
@@ -91,6 +92,7 @@ export async function buildThreadSnapshot(
 
   const nextSeq = (headSeq + 1n).toString();
   const resumeAfterSeq = (await hub.readModelProjectionWatermark(threadId)).toString();
+  const activity = await readThreadActivity({ threads: repos.threads, statusReader }, threadId);
 
   return {
     threadId,
@@ -101,6 +103,7 @@ export async function buildThreadSnapshot(
       threadId,
       status: await statusReader.read(threadId),
       runningTurnId,
+      activity,
       // During an active run,
       // stream.delta rows can sit between that head and the last read-model
       // projection, so resume from the projection cursor and replay only the

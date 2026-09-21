@@ -793,6 +793,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     threadRuntime: createThreadRuntimeService({
       db: ports.db,
       statusReader: ports.runAuthority,
+      threads: ports.threadRepos.threads,
     }),
     documentSync: ports.documentSync,
     contextPorts: ports.contextPorts,

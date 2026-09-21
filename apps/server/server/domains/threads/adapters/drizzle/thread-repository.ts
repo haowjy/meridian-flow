@@ -378,6 +378,7 @@ export function createDrizzleThreadRepository(
             title: schema.threads.title,
             agentName,
             spawnStatus: schema.threads.spawnStatus,
+            originTurnId: schema.threads.originTurnId,
           })
           .from(schema.threads)
           .where(
@@ -397,6 +398,7 @@ export function createDrizzleThreadRepository(
             title: row.title === "" ? null : row.title,
             agentName: row.agentName ?? null,
             spawnStatus: row.spawnStatus as SpawnStatus | null,
+            originTurnId: row.originTurnId ?? null,
           });
           frontier.push(row.id);
         }

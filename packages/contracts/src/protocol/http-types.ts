@@ -21,6 +21,7 @@ import type {
   ModelRequestDebugRetention,
   ModelResponse,
   Thread,
+  ThreadActivity,
   ThreadListItem,
   ThreadStatus,
   Turn,
@@ -52,6 +53,8 @@ export type ThreadLiveState = {
   /** Derived from the live lease, not the durable thread row. */
   status: ThreadStatus;
   runningTurnId: string | null;
+  /** Recursive subagent activity for this thread's own subtree; derived, never a turn block. */
+  activity: ThreadActivity;
   /** Last event already materialized in snapshot rows; WS replay resumes strictly after it. */
   resumeAfterSeq: string;
 };

@@ -30,6 +30,11 @@ export {
   rebindThreadWork,
 } from "./domain/rebind-thread-work.js";
 export {
+  projectThreadActivity,
+  readThreadActivity,
+  type ThreadActivityReadDeps,
+} from "./domain/thread-activity.js";
+export {
   requireWorkDraftOwner,
   threadExecutionContext,
   WorkRequiredError,

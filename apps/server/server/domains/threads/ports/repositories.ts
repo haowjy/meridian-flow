@@ -184,6 +184,7 @@ export type ThreadDescendant = Pick<
   | "title"
   | "agentName"
   | "spawnStatus"
+  | "originTurnId"
 >;
 
 /**
