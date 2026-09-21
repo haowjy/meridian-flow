@@ -254,11 +254,13 @@ export class RuntimeTestRig {
         status: await this.runAuthority.read(this.thread.id),
         runningTurnId: await this.runAuthority.readRunningTurnId(this.thread.id),
         activity: { descendants: [] },
+        pending: { items: [] },
         resumeAfterSeq: "0",
       }),
       read: (threadId: ThreadId) => this.runAuthority.read(threadId),
       readMany: (threadIds: readonly ThreadId[]) => this.runAuthority.readMany(threadIds),
       readRunningTurnId: (threadId: ThreadId) => this.runAuthority.readRunningTurnId(threadId),
+      readPending: async () => ({ items: [] }),
       journalEvents: async () => [],
     };
     return app;

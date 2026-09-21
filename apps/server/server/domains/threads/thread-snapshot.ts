@@ -16,8 +16,8 @@ import { orderTurnsCausally } from "./order-turns.js";
 import type {
   BlockRepository,
   ModelResponseRepository,
+  ThreadLiveReaders,
   ThreadRepository,
-  ThreadStatusReader,
   TurnRepository,
 } from "./ports/index.js";
 import type { ThreadEventHub } from "./thread-event-hub.js";
@@ -56,7 +56,7 @@ function siblingIdsFor(turn: Turn, turns: Turn[]): string[] {
 export async function buildThreadSnapshot(
   repos: ThreadSnapshotRepositories,
   hub: ThreadEventHub,
-  statusReader: ThreadStatusReader,
+  statusReader: ThreadLiveReaders,
   threadId: ThreadId,
 ): Promise<ThreadSnapshotResponse> {
   const thread = await repos.threads.findById(threadId);
@@ -97,6 +97,7 @@ export async function buildThreadSnapshot(
   const nextSeq = (headSeq + 1n).toString();
   const resumeAfterSeq = (await hub.readModelProjectionWatermark(threadId)).toString();
   const activity = await readThreadActivity({ threads: repos.threads, statusReader }, threadId);
+  const pending = await statusReader.readPending(threadId);
 
   return {
     threadId,
@@ -108,6 +109,7 @@ export async function buildThreadSnapshot(
       status: await statusReader.read(threadId),
       runningTurnId,
       activity,
+      pending,
       // During an active run,
       // stream.delta rows can sit between that head and the last read-model
       // projection, so resume from the projection cursor and replay only the

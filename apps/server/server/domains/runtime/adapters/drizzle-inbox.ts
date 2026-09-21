@@ -4,16 +4,11 @@
  * this adapter performs no runtime validation at the storage boundary.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
+import type { MessageIntent, MessageProvenance } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { and, asc, eq, inArray, isNull, min } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDatabase } from "../../../shared/drizzle-transaction.js";
-import type {
-  Inbox,
-  InboxMessage,
-  MessageBody,
-  MessageIntent,
-  MessageProvenance,
-} from "../loop/ports.js";
+import type { Inbox, InboxMessage, MessageBody } from "../loop/ports.js";
 
 function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -35,6 +30,24 @@ function toInboxMessage(row: typeof schema.threadInboxMessages.$inferSelect): In
 
 export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
   const db_ = () => currentDrizzleDb(db);
+
+  // One pending read implementation shared by the consumer's `claimPending` and
+  // the writer-facing `listPending`; the partial index
+  // `thread_inbox_messages_pending` serves it. `listPending` stays distinct at
+  // the port so a future mutating claim cannot leak into the read-only path.
+  async function selectPending(threadId: ThreadId): Promise<InboxMessage[]> {
+    const rows = await db_()
+      .select()
+      .from(schema.threadInboxMessages)
+      .where(
+        and(
+          eq(schema.threadInboxMessages.threadId, threadId),
+          isNull(schema.threadInboxMessages.deliveredAt),
+        ),
+      )
+      .orderBy(asc(schema.threadInboxMessages.seq));
+    return rows.map(toInboxMessage);
+  }
 
   return {
     async enqueue(draft) {
@@ -73,17 +86,11 @@ export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
     },
 
     async claimPending(threadId) {
-      const rows = await db_()
-        .select()
-        .from(schema.threadInboxMessages)
-        .where(
-          and(
-            eq(schema.threadInboxMessages.threadId, threadId),
-            isNull(schema.threadInboxMessages.deliveredAt),
-          ),
-        )
-        .orderBy(asc(schema.threadInboxMessages.seq));
-      return rows.map(toInboxMessage);
+      return selectPending(threadId);
+    },
+
+    async listPending(threadId) {
+      return selectPending(threadId);
     },
 
     async ack(threadId, ids) {

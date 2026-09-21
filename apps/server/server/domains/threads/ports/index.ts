@@ -22,6 +22,8 @@ export type {
   ThreadDescendant,
   ThreadDocument,
   ThreadDocumentRepository,
+  ThreadLiveReaders,
+  ThreadPendingInboxReader,
   ThreadRepositories,
   ThreadRepository,
   ThreadStatusReader,

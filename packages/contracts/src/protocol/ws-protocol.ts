@@ -131,11 +131,39 @@ const threadActivitySchema: z.ZodType<import("../threads/index.js").ThreadActivi
   descendants: z.array(threadActivityNodeSchema),
 });
 
+const messageProvenanceSchema: z.ZodType<import("../threads/index.js").MessageProvenance> = z.union(
+  [
+    z.object({ kind: z.literal("writer"), actorId: z.string().min(1) }),
+    z.object({ kind: z.literal("agent"), threadId: z.string().min(1) }),
+    z.object({
+      kind: z.literal("child"),
+      threadId: z.string().min(1),
+      reportId: z.string().min(1),
+    }),
+    z.object({ kind: z.literal("system"), source: z.string().min(1) }),
+  ],
+);
+
+const pendingInboxItemSchema: z.ZodType<import("../threads/index.js").PendingInboxItem> = z.object({
+  id: z.string().min(1),
+  seq: z.number().int(),
+  intent: z.enum(["message", "notice"]),
+  provenance: messageProvenanceSchema,
+  summary: z.string(),
+  enqueuedAt: z.string().min(1),
+});
+
+const threadPendingInboxSchema: z.ZodType<import("../threads/index.js").ThreadPendingInbox> =
+  z.object({
+    items: z.array(pendingInboxItemSchema),
+  });
+
 const threadLiveStateSchema: z.ZodType<ThreadLiveState> = z.object({
   threadId: z.string().min(1),
   status: threadStatusSchema,
   runningTurnId: z.string().min(1).nullable(),
   activity: threadActivitySchema,
+  pending: threadPendingInboxSchema,
   resumeAfterSeq: wsEventSeqSchema,
 });
 

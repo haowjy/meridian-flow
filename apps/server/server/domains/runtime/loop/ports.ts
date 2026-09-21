@@ -9,6 +9,8 @@ import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   JsonValue,
+  MessageIntent,
+  MessageProvenance,
   ThreadLeaseState,
   ThreadPhase,
   ThreadStatus,
@@ -25,14 +27,6 @@ export const DEFAULT_LEASE_TTL_MS = 30_000;
  * client live state cannot drift.
  */
 export type { ThreadPhase, ThreadStatus };
-
-export type MessageIntent = "message" | "notice";
-
-export type MessageProvenance =
-  | { kind: "writer"; actorId: string }
-  | { kind: "agent"; threadId: ThreadId }
-  | { kind: "child"; threadId: ThreadId; reportId: string }
-  | { kind: "system"; source: string };
 
 /** A named fragment of model-visible context carried by a `context` body. */
 export type ContextPart = { source: string; text: string };
@@ -86,6 +80,12 @@ export interface Inbox {
    */
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   claimPending(threadId: ThreadId): Promise<InboxMessage[]>;
+  /**
+   * Read-only view of the undelivered rows, ordered by `seq`. Unlike
+   * `claimPending` it has no side effect and does not serialize with the run's
+   * final claim: the writer-facing pending tray reads here.
+   */
+  listPending(threadId: ThreadId): Promise<InboxMessage[]>;
   ack(threadId: ThreadId, ids: string[]): Promise<void>;
   /** Threads with at least one pending undelivered message, oldest first; the wake sweep's input. */
   pendingMessageThreads(limit: number): Promise<ThreadId[]>;
