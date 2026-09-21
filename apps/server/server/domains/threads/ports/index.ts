@@ -19,6 +19,7 @@ export type {
   RecordModelResponseUsageInput,
   RecordModelResponseUsageResult,
   SubagentThreadFactory,
+  ThreadDescendant,
   ThreadDocument,
   ThreadDocumentRepository,
   ThreadRepositories,

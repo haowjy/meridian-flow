@@ -133,6 +133,13 @@ export interface ThreadRepository {
   listByUser(userId: UserId): Promise<Thread[]>;
   /** Primary threads in a project (excludes subagents and soft-deleted threads; caller must gate project access). */
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
+  /**
+   * Every live descendant of `threadId` in its spawn subtree, breadth-first by
+   * `(spawnDepth, createdAt, id)`. Walks `parent_thread_id` from the viewed
+   * thread (so a sibling branch sharing the root is excluded), skips soft-deleted
+   * rows, and never includes the thread itself. Feeds the recursive activity read.
+   */
+  listDescendants(threadId: ThreadId): Promise<ThreadDescendant[]>;
   /** Hard-bounded model-facing summary of primary chats historically associated with a Work. */
   listRecentByWork(
     projectId: ProjectId,
@@ -166,6 +173,19 @@ export interface WorkThreadSummary {
   updatedAt: string;
   status: ThreadLifecycleStatus;
 }
+
+/** One descendant in a thread's spawn subtree, as the activity read needs it. */
+export type ThreadDescendant = Pick<
+  Thread,
+  | "id"
+  | "parentThreadId"
+  | "rootThreadId"
+  | "spawnDepth"
+  | "ref"
+  | "title"
+  | "agentName"
+  | "spawnStatus"
+>;
 
 /**
  * Read seam for the derived run status. The runtime's lease authority

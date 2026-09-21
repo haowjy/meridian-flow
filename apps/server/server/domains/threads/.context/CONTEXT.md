@@ -12,7 +12,11 @@ instead of the N:1 `threads.workId` column.
 - **Thread / Turn / Block / ModelResponse repositories** — CRUD for the
   conversation data model. A thread contains turns; a turn contains blocks
   (text, reasoning, tool_use, tool_result, image, file, custom) and model
-  responses with token/cost rollups.
+  responses with token/cost rollups. `ThreadRepository.listDescendants` walks a
+  thread's own spawn subtree breadth-first on `parent_thread_id` (served by
+  `threads_parent_created_active`, excluding soft-deleted rows), returning the
+  fields the recursive activity read needs: id, parent, root, depth, ref, title,
+  agent name, spawn status.
 - **Notification and steering tables** — `thread_inbox_messages` is the durable
   per-thread message queue (global `bigserial` `seq` for per-thread FIFO, unique
   `idempotency_key`, nullable `delivered_at`), drained by the runtime's `Inbox`
