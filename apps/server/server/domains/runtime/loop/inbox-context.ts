@@ -118,6 +118,39 @@ export function renderInboxBatch(
 }
 
 /**
+ * The one planner for "an inbox batch becomes durable message turns": filters
+ * `knownTurnIds`, chains each fresh `message` from the previous turn, and emits
+ * the `turn.created` + `block.upserted` pair that advances the leaf. Pure, so
+ * both the drain start (`runDrainTurn`) and the mid-run drain
+ * (`persistInboxMessages`) share one home for chain and idempotency semantics.
+ */
+export function planMessageTurns(input: {
+  batch: readonly InboxMessage[];
+  prevTurnId: TurnId | null;
+  knownTurnIds: ReadonlySet<TurnId>;
+}): {
+  turns: Turn[];
+  blocks: BlockUpsertedRow[];
+  events: OrchestratorEvent[];
+  leafTurnId: TurnId | null;
+} {
+  const turns: Turn[] = [];
+  const blocks: BlockUpsertedRow[] = [];
+  const events: OrchestratorEvent[] = [];
+  let leafTurnId = input.prevTurnId;
+  for (const message of input.batch) {
+    if (message.intent !== "message") continue;
+    if (input.knownTurnIds.has(message.id)) continue;
+    const { turn, block } = messageTurnFor(message, leafTurnId);
+    turns.push(turn);
+    blocks.push(block);
+    events.push({ type: "turn.created", turn }, { type: "block.upserted", block });
+    leafTurnId = turn.id;
+  }
+  return { turns, blocks, events, leafTurnId };
+}
+
+/**
  * Persists each directed `message` in a claimed batch as a user-role turn at the
  * thread tail. Returns the appended turns/blocks for the loop's in-memory
  * accumulator plus the durable events; `notice` entries are skipped
@@ -130,8 +163,9 @@ export async function persistInboxMessages(input: {
   expectedLeafTurnId: TurnId | null;
   batch: readonly InboxMessage[];
 }): Promise<{ turns: Turn[]; blocks: Block[]; events: OrchestratorEvent[] }> {
-  const messages = input.batch.filter((message) => message.intent === "message");
-  if (messages.length === 0) return { turns: [], blocks: [], events: [] };
+  if (!input.batch.some((message) => message.intent === "message")) {
+    return { turns: [], blocks: [], events: [] };
+  }
   // One transition for the whole batch: a mid-batch failure cannot leave a
   // half-persisted batch, and the chain links each message to the previous within
   // the same transaction.
@@ -140,18 +174,15 @@ export async function persistInboxMessages(input: {
     input.threadId,
     input.expectedLeafTurnId,
     async () => {
-      const turns: Turn[] = [];
-      const blocks: Block[] = [];
-      const events: OrchestratorEvent[] = [];
-      let leafTurnId = input.expectedLeafTurnId;
-      for (const message of messages) {
-        const { turn, block } = messageTurnFor(message, leafTurnId);
-        turns.push(turn);
-        blocks.push(localBlockFromEvent(block));
-        events.push({ type: "turn.created", turn }, { type: "block.upserted", block });
-        leafTurnId = turn.id;
-      }
-      return { result: { turns, blocks }, events };
+      const plan = planMessageTurns({
+        batch: input.batch,
+        prevTurnId: input.expectedLeafTurnId,
+        knownTurnIds: new Set(),
+      });
+      return {
+        result: { turns: plan.turns, blocks: plan.blocks.map(localBlockFromEvent) },
+        events: plan.events,
+      };
     },
   );
   return {

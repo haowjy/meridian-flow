@@ -122,7 +122,7 @@ import {
   finalizeTurnOnGeneratorFailure,
 } from "./finalization.js";
 import { loadThreadConversationContext } from "./fork-thread-context.js";
-import { drainInbox, messageTurnFor } from "./inbox-context.js";
+import { drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
   defaultInterruptAutoResumePolicy,
@@ -491,42 +491,33 @@ async function runDrainTurn(
       ]);
 
       const batch = await deps.inbox.claimPending(input.threadId);
-      const messages = batch.filter((message) => message.intent === "message");
       // The wake sweep only starts a thread with a derived wake need; a race that
       // drains the last message first must leave no phantom assistant turn behind.
-      if (messages.length === 0) throw new NoPendingWakeError(input.threadId);
+      if (!batch.some((message) => message.intent === "message")) {
+        throw new NoPendingWakeError(input.threadId);
+      }
 
       const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
-      const events: OrchestratorEvent[] = [];
-      const messageTurns: Turn[] = [];
-      let leafTurnId = prevTurnId;
-      for (const message of messages) {
-        if (knownTurnIds.has(message.id)) continue;
-        const { turn, block } = messageTurnFor(message, leafTurnId);
-        messageTurns.push(turn);
-        events.push({ type: "turn.created", turn }, { type: "block.upserted", block });
-        leafTurnId = turn.id;
-      }
+      const plan = planMessageTurns({ batch, prevTurnId, knownTurnIds });
 
       const assistantTurn = createLocalTurn({
         threadId: input.threadId,
-        prevTurnId: leafTurnId,
+        prevTurnId: plan.leafTurnId,
         role: "assistant",
         status: "streaming",
         writeMode,
       });
-      events.push({ type: "turn.created", turn: assistantTurn });
 
       return {
         result: {
           assistantTurn,
-          referenceUserTurnId: leafTurnId ?? assistantTurn.id,
-          messageTurns,
+          referenceUserTurnId: plan.leafTurnId ?? assistantTurn.id,
+          messageTurns: plan.turns,
           priorTurns,
           inheritedTurns,
           inheritedBlocks,
         },
-        events,
+        events: [...plan.events, { type: "turn.created", turn: assistantTurn }],
       };
     },
   );
