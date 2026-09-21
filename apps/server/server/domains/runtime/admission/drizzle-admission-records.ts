@@ -12,7 +12,6 @@ function map(row: typeof userTurnAdmissions.$inferSelect): AdmissionRecord {
     if (
       !row.fingerprint ||
       !row.userTurnId ||
-      !row.assistantTurnId ||
       row.resumeAfterSeq === null ||
       row.snapshotFloorNextSeq === null
     ) {
@@ -26,7 +25,7 @@ function map(row: typeof userTurnAdmissions.$inferSelect): AdmissionRecord {
         threadId: row.threadId,
         submissionId: row.submissionId,
         userTurnId: row.userTurnId,
-        assistantTurnId: row.assistantTurnId,
+        assistantTurnId: row.assistantTurnId ?? null,
         resumeAfterSeq: row.resumeAfterSeq,
         snapshotFloorNextSeq: row.snapshotFloorNextSeq,
       },

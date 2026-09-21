@@ -41,6 +41,7 @@ export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
       const [inserted] = await db_()
         .insert(schema.threadInboxMessages)
         .values({
+          ...(draft.id !== undefined ? { id: draft.id } : {}),
           threadId: draft.threadId,
           intent: draft.intent,
           provenanceKind: draft.provenance.kind,

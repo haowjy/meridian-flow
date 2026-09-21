@@ -60,6 +60,12 @@ export interface MessageDraft {
   provenance: MessageProvenance;
   body: MessageBody;
   idempotencyKey: string;
+  /**
+   * Producer-supplied durable id. The writer producer sets it to the user turn it
+   * persisted at enqueue so the drain reuses the same turn id and skips the
+   * re-persist; every other producer lets storage mint one.
+   */
+  id?: string;
 }
 
 export interface InboxMessage extends MessageDraft {

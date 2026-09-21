@@ -29,7 +29,7 @@ export function createInMemoryInbox(): Inbox {
       nextSeq += 1;
       const message: InboxMessage = {
         ...draft,
-        id: crypto.randomUUID(),
+        id: draft.id ?? crypto.randomUUID(),
         seq: nextSeq,
         enqueuedAt: new Date().toISOString(),
         deliveredAt: null,

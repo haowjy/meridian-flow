@@ -262,8 +262,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       const starts = await Promise.allSettled([
-        runner.startTurn({ threadId: THREAD_ID, userText: "first" }),
-        runner.startTurn({ threadId: THREAD_ID, userText: "second" }),
+        runner.startDrain(THREAD_ID),
+        runner.startDrain(THREAD_ID),
       ]);
 
       expect(starts.map(({ status }) => status).sort()).toEqual(["fulfilled", "rejected"]);

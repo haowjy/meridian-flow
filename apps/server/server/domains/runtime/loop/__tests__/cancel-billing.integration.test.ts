@@ -1,7 +1,6 @@
 /**
- * Cancel billing integration tests: soft-cancel drain debits consumed usage through
- * the real createGateway path, explicit cancel remains idempotent, and WS
- * disconnects do not cancel in-flight turns.
+ * Cancel billing integration tests: soft-cancel debits consumed usage through
+ * the real createGateway path and explicit cancel remains idempotent.
  */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -88,108 +87,25 @@ describe("cancel billing", () => {
     expect(balanceAfterSecondAbort).toBe(balanceAfterCancel);
   });
 
-  it("does not cancel the in-flight turn when the owning WebSocket disconnects before subscribe", async () => {
+  it("does not cancel a running turn when a subscribed WebSocket disconnects", async () => {
     const rig = await RuntimeTestRig.create({ gateway: createMockGateway(mock) });
     const app = rig.createAppServices();
 
-    let ownerConnectionToken = "";
-    const ownerPeer: WsPeer = {
-      request: new Request("https://app.localhost/ws"),
-      context: { app, userId: "user-1", traceId: "test-ws-trace" },
-      send: (data) => {
-        const frame = JSON.parse(data) as { type?: string; connectionToken?: string };
-        if (frame.type === "connected" && frame.connectionToken) {
-          ownerConnectionToken = frame.connectionToken;
-        }
-      },
-      close: () => {},
-    };
-    const ownerSession = createThreadWebSocketSession(ownerPeer);
-    ownerSession.open();
-    expect(ownerConnectionToken.length).toBeGreaterThan(0);
-
-    await rig.runner.startTurn({
+    await rig.inbox.enqueue({
       threadId: rig.thread.id,
-      userText: "cancel billing",
-      connectionToken: ownerConnectionToken,
+      intent: "message",
+      provenance: { kind: "writer", actorId: rig.userId },
+      body: { kind: "text", text: "cancel billing" },
+      idempotencyKey: "cancel-billing-ws-disconnect",
     });
-    await rig.gatewaySignal.promise;
-    const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
-    expect(turnId).not.toBeNull();
-
-    ownerSession.onClose();
-    expect(await rig.runAuthority.readRunningTurnId(rig.thread.id)).toBe(turnId);
-
-    await app.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
-    await rig.awaitCancelled(turnId as NonNullable<typeof turnId>);
-
-    const balance = await rig.balance();
-    expect(BigInt(balance)).toBeLessThan(1_200_000n);
-    const assistantTurn = turnId ? await rig.turn(turnId) : null;
-    expect(assistantTurn?.status).toBe("cancelled");
-  });
-
-  it("does not cancel turns when another subscribed WebSocket disconnects", async () => {
-    const rig = await RuntimeTestRig.create({ gateway: createMockGateway(mock) });
-    const app = rig.createAppServices();
-
-    let ownerConnectionToken = "";
-    const ownerPeer: WsPeer = {
-      request: new Request("https://app.localhost/ws-owner"),
-      context: { app, userId: "user-1", traceId: "test-ws-trace" },
-      send: (data) => {
-        const frame = JSON.parse(data) as { type?: string; connectionToken?: string };
-        if (frame.type === "connected" && frame.connectionToken) {
-          ownerConnectionToken = frame.connectionToken;
-        }
-      },
-      close: () => {},
-    };
-    createThreadWebSocketSession(ownerPeer).open();
-
-    await rig.runner.startTurn({
-      threadId: rig.thread.id,
-      userText: "cancel billing",
-      connectionToken: ownerConnectionToken,
-    });
-    await rig.gatewaySignal.promise;
-    const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
-    expect(turnId).not.toBeNull();
-
-    const spectatorPeer: WsPeer = {
-      request: new Request("https://app.localhost/ws-spectator"),
-      context: { app, userId: "user-1", traceId: "test-ws-trace" },
-      send: () => {},
-      close: () => {},
-    };
-    const spectatorSession = createThreadWebSocketSession(spectatorPeer);
-    spectatorSession.open();
-    await spectatorSession.onMessage(
-      JSON.stringify({ type: "subscribe", threadId: rig.thread.id, lastSeq: "0" }),
-    );
-    spectatorSession.onClose();
-
-    expect(await rig.runAuthority.readRunningTurnId(rig.thread.id)).toBe(turnId);
-
-    await app.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
-    await rig.awaitCancelled(turnId as NonNullable<typeof turnId>);
-  });
-
-  it("does not cancel tokenless runs when a subscribed WebSocket disconnects", async () => {
-    const rig = await RuntimeTestRig.create({ gateway: createMockGateway(mock) });
-    const app = rig.createAppServices();
-
-    await rig.runner.startTurn({
-      threadId: rig.thread.id,
-      userText: "cancel billing",
-    });
+    await rig.runner.startDrain(rig.thread.id);
     await rig.gatewaySignal.promise;
     const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
     expect(turnId).not.toBeNull();
 
     const peer: WsPeer = {
       request: new Request("https://app.localhost/ws-unrelated"),
-      context: { app, userId: "user-1", traceId: "test-ws-trace" },
+      context: { app, userId: rig.userId, traceId: "test-ws-trace" },
       send: () => {},
       close: () => {},
     };

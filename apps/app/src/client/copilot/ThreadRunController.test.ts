@@ -1,25 +1,13 @@
-/**
- * Write-outcome classification at the controller boundary: a durable journal
- * entry may be retired only on a proved rejection. A connection-token failure
- * stays ambiguous, and a recovery retire that settles after its session ends
- * must not acknowledge or subscribe. Recovery's own file owns the rest of the
- * ambiguous-vs-rejected outcomes.
- */
-import type { RetireAdmissionResult } from "@meridian/contracts/protocol";
+/** Controller recovery fences and mid-run queue admission subscription continuity. */
+import { EventType, type RetireAdmissionResult } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
-import { scenarioGate, ThreadRunScenario } from "./test-support/ThreadRunScenario";
+import {
+  defaultSendResponse,
+  scenarioGate,
+  ThreadRunScenario,
+} from "./test-support/ThreadRunScenario";
 
 describe("ThreadRunController write outcomes", () => {
-  it("keeps a connection-token failure ambiguous", async () => {
-    const scenario = new ThreadRunScenario();
-    scenario.disconnectAdmission();
-
-    const pending = scenario.submit("Hello");
-    scenario.rejectConnection(new Error("socket offline"));
-
-    await expect(pending).resolves.toMatchObject({ kind: "ambiguous" });
-  });
-
   it("does not acknowledge or start a run when a recovery retire settles after its session ends", async () => {
     const gate = scenarioGate<RetireAdmissionResult>();
     const scenario = new ThreadRunScenario({ retire: () => gate.promise });
@@ -93,5 +81,40 @@ describe("ThreadRunController write outcomes", () => {
       expect.objectContaining({ id: endedRow.id, status: "pending" }),
       expect.objectContaining({ id: "turn-sub-sibling", status: "complete" }),
     ]);
+  });
+});
+
+function runStarted(runId: string) {
+  return { type: EventType.RUN_STARTED, threadId: "thread_1", runId } as never;
+}
+
+describe("ThreadRunController mid-run merge", () => {
+  it("keeps the live subscription instead of rewinding on a merge", async () => {
+    const scenario = new ThreadRunScenario({
+      append: async () => defaultSendResponse({ assistantTurnId: null, resumeAfterSeq: "10" }),
+    });
+    await scenario.submit("hello");
+    expect(scenario.transport.subscriptions).toHaveLength(1);
+    scenario.emit(runStarted("run-1"), "11");
+
+    scenario.setAppend(async () =>
+      defaultSendResponse({ assistantTurnId: "run-1", resumeAfterSeq: "11" }),
+    );
+    await scenario.submit("steer");
+
+    expect(scenario.transport.subscriptions).toHaveLength(1);
+    expect(scenario.transport.activeSubscription()?.active).toBe(true);
+  });
+
+  it("starts a fresh subscription for a fresh run", async () => {
+    const scenario = new ThreadRunScenario({
+      append: async () => defaultSendResponse({ assistantTurnId: null, resumeAfterSeq: "10" }),
+    });
+    await scenario.submit("hello");
+    scenario.emit(runStarted("run-1"), "11");
+
+    await scenario.submit("again");
+
+    expect(scenario.transport.subscriptions).toHaveLength(2);
   });
 });
