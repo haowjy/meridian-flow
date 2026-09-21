@@ -390,6 +390,22 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
+      // The app reducer (reduce-background-event.ts) runs the parent-turn
+      // background-run card off these payloads; the journal payload passes
+      // through verbatim so server and app read the same fields.
+      case "background.started":
+      case "background.completed":
+      case "background.failed": {
+        const { type, ...value } = event;
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: `meridian.${type}`,
+            value,
+          }),
+        ];
+      }
+
       case "turn.change_trail_updated":
         return [
           parseAguiEvent({
