@@ -1,0 +1,2 @@
+ALTER TABLE "thread_inbox_messages" DROP CONSTRAINT "thread_inbox_messages_intent_valid";--> statement-breakpoint
+ALTER TABLE "thread_inbox_messages" ADD CONSTRAINT "thread_inbox_messages_intent_valid" CHECK ("thread_inbox_messages"."intent" IN ('message','notice'));
