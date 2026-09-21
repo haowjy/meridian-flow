@@ -162,6 +162,7 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     removeOptimisticUserTurn: state.removeOptimisticUserTurn,
     ensureAssistantTurn: state.ensureAssistantTurn,
     upsertAssistantBlock: state.upsertAssistantBlock,
+    removeAssistantBlock: state.removeAssistantBlock,
     patchTurnStatus: state.patchTurnStatus,
     pruneStaleAssistantTurns: state.pruneStaleAssistantTurns,
     bumpEventsApplied: state.bumpEventsApplied,
@@ -367,6 +368,24 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             );
             const turnsByThread = { ...state.turnsByThread, [threadId]: nextTurns };
             return { turnsByThread };
+          });
+        },
+
+        removeAssistantBlock(threadId, turnId, blockId) {
+          set((state) => {
+            const turns = state.turnsByThread[threadId] ?? [];
+            const turnIndex = turns.findIndex((turn) => turn.id === turnId);
+            if (turnIndex < 0) return state;
+
+            const turn = turns[turnIndex];
+            if (!turn) return state;
+            const blocks = turn.blocks.filter((block) => block.id !== blockId);
+            if (blocks.length === turn.blocks.length) return state;
+
+            const nextTurns = turns.map((existingTurn, index) =>
+              index === turnIndex ? { ...existingTurn, blocks } : existingTurn,
+            );
+            return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
           });
         },
 
