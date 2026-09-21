@@ -105,7 +105,9 @@ export function useCreateEntryForm({
         void recordRecentDocument(reservation.content.handle.documentId, resources.accountId).then(
           (recorded) => {
             if (recorded) {
-              void queryClient.invalidateQueries({ queryKey: accountQueryKeys.recentDocuments() });
+              void queryClient.invalidateQueries({
+                queryKey: accountQueryKeys.recentDocumentsRoot,
+              });
             }
           },
         );

@@ -79,10 +79,14 @@ export function RecentDocumentsLanding({
   }, []);
 
   const documents = recent.documents ?? [];
+  // A cached empty list with a refetch in flight is not yet known to be empty.
+  // Showing "Nothing opened yet" here is the lie B1 was about.
+  const settling = recent.status === "empty" && recent.isFetching;
+  const loading = recent.status === "loading" || settling;
 
   // No history: the heading promises a list that does not exist, so the
   // first-run state stands alone rather than sitting under it.
-  if (recent.status === "empty") {
+  if (recent.status === "empty" && !settling) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 text-center">
         <LandingEmpty onNewDocument={onNewDocument} />
@@ -108,7 +112,7 @@ export function RecentDocumentsLanding({
           </Button>
         </div>
 
-        {recent.status === "loading" ? (
+        {loading ? (
           <LandingLoading />
         ) : (
           <>
