@@ -116,6 +116,7 @@ import {
   createInMemoryThreadRunOwnership,
   createInstrumentedGateway,
   createLateBindRunTurnPort,
+  createNotifyingThreadedInbox,
   createOrchestrator,
   createRunStarter,
   createSkillToolRegistrations,
@@ -132,6 +133,7 @@ import {
   emitSettledRunActivityBestEffort,
   type Gateway,
   InvalidAdmissionError,
+  projectPendingInbox,
   type RunAuthority,
   type RunStarter,
   type RunTurnPort,
@@ -665,13 +667,26 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const inbox = createDrizzleInbox(ports.db);
   const threadLock = createDrizzleThreadLock(ports.db);
   const runStarter = createRunStarter(runner);
-  const threadedInbox = createThreadedInbox({
-    inbox,
-    threadLock,
-    runStarter,
+  const readPending = async (threadId: ThreadId) =>
+    projectPendingInbox(await inbox.listPending(threadId));
+  // Decorate the producer's locked enqueue with the post-commit `inbox.changed`
+  // signal, so a queued message reaches the tray before delivery. Consumers take
+  // the notifying port; the raw `Inbox` stays the drain's (consumer side).
+  const threadedInbox = createNotifyingThreadedInbox({
+    threadedInbox: createThreadedInbox({
+      inbox,
+      threadLock,
+      runStarter,
+      schedulePostCommit(task) {
+        runAfterDrizzleCommit(task);
+      },
+    }),
+    eventWriter: threadEventHub,
+    readPending,
     schedulePostCommit(task) {
       runAfterDrizzleCommit(task);
     },
+    eventSink: ports.eventSink,
   });
   const wakeSweep = {
     sweep: () =>
@@ -823,6 +838,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       db: ports.db,
       statusReader: ports.runAuthority,
       threads: ports.threadRepos.threads,
+      readPending,
     }),
     documentSync: ports.documentSync,
     contextPorts: ports.contextPorts,
@@ -1044,6 +1060,9 @@ export function createInMemoryAppServices(): AppServices {
       },
       async readRunningTurnId() {
         return null;
+      },
+      async readPending() {
+        return { items: [] };
       },
       async journalEvents() {
         return [];

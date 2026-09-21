@@ -109,6 +109,9 @@ describe("createThreadedInbox", () => {
       async claimPending() {
         return [];
       },
+      async listPending() {
+        return [];
+      },
       async ack() {},
       async pendingMessageThreads() {
         return [];

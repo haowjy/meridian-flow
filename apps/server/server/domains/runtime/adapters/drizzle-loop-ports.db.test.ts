@@ -129,6 +129,25 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await inbox.claimPending(THREAD_B)).toHaveLength(1);
     });
 
+    it("lists pending rows read-only, excluding delivered and ordered by seq", async () => {
+      const inbox = createDrizzleInbox(db);
+      const first = await inbox.enqueue(message("a1", THREAD_A));
+      await inbox.enqueue(message("b1", THREAD_B));
+      const second = await inbox.enqueue(notice("a2", THREAD_A));
+      const third = await inbox.enqueue(message("a3", THREAD_A));
+
+      const pending = await inbox.listPending(THREAD_A);
+      expect(pending.map((row) => row.idempotencyKey)).toEqual(["a1", "a2", "a3"]);
+      expect(pending.map((row) => row.seq)).toEqual([first.seq, second.seq, third.seq]);
+      // The read has no claim side effect: the rows stay claimable.
+      expect(await inbox.claimPending(THREAD_A)).toHaveLength(3);
+
+      await inbox.ack(THREAD_A, [first.id]);
+      const afterAck = await inbox.listPending(THREAD_A);
+      expect(afterAck.map((row) => row.idempotencyKey)).toEqual(["a2", "a3"]);
+      expect(afterAck.map((row) => row.seq)).toEqual([second.seq, third.seq]);
+    });
+
     it("lists distinct pending-message threads oldest first and excludes notices", async () => {
       const inbox = createDrizzleInbox(db);
       await inbox.enqueue(notice("s1", THREAD_A));

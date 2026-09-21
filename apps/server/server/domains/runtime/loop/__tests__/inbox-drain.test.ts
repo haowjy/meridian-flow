@@ -230,13 +230,19 @@ describe("inbox drain", () => {
     await inbox.enqueue(message("first steer", thread.id));
     await inbox.enqueue(message("second steer", thread.id));
 
-    await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "hello" }));
+    const events = (await collectEvents(
+      await orchestrator.runTurn({ threadId: thread.id, userText: "hello" }),
+    )) as Array<{ type: string; pending?: { items: unknown[] } }>;
 
     expect(requests).toHaveLength(1);
     const texts = messageTexts(requests[0].messages);
     expect(texts).toContain("first steer");
     expect(texts).toContain("second steer");
     expect(await inbox.claimPending(thread.id)).toEqual([]);
+    // The ack transaction carries the full-replace pending signal, now empty.
+    const pendingEvents = events.filter((event) => event.type === "inbox.changed");
+    expect(pendingEvents).toHaveLength(1);
+    expect(pendingEvents[0].pending?.items).toEqual([]);
   });
 
   it("renders a notice as a request-only notice without persisting a turn", async () => {

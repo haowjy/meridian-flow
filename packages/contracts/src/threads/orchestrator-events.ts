@@ -15,6 +15,7 @@ import type {
   JsonValue,
   PriceSource,
   ThreadActivity,
+  ThreadPendingInbox,
   Turn,
 } from "./index.js";
 
@@ -146,6 +147,13 @@ export type OrchestratorEvent =
       childThreadId: string;
       /** Full recomputed subtree, so the client replaces state with no refetch race. */
       activity: ThreadActivity;
+    }
+  | {
+      type: "inbox.changed";
+      /** Thread whose pending inbox changed. */
+      threadId: string;
+      /** Full recomputed pending inbox, so the client replaces the tray state wholesale. */
+      pending: ThreadPendingInbox;
     }
   | {
       type: "background.started";

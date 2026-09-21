@@ -44,6 +44,12 @@ export function createInMemoryInbox(): Inbox {
         .sort((left, right) => left.seq - right.seq);
     },
 
+    async listPending(threadId) {
+      return messages
+        .filter((message) => message.threadId === threadId && message.deliveredAt === null)
+        .sort((left, right) => left.seq - right.seq);
+    },
+
     async ack(threadId, ids) {
       const deliveredAt = new Date().toISOString();
       const targets = new Set(ids);

@@ -442,6 +442,17 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
+      // Same full-replace contract as activity: the producer read the current
+      // pending rows, so the tray state is replaced wholesale.
+      case "inbox.changed":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.inbox.changed",
+            value: event.pending,
+          }),
+        ];
+
       case "turn.completed":
         return finalizeRun();
 

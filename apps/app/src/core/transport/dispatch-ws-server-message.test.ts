@@ -18,6 +18,7 @@ function subscribedMessage(): WsServerMessage {
       status: { kind: "asleep" },
       runningTurnId: null,
       activity: { descendants: [] },
+      pending: { items: [] },
       resumeAfterSeq: "1",
     },
     nextSeq: "2",

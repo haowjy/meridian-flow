@@ -22,6 +22,7 @@ import type {
   ThreadLeaseState,
   ThreadLifecycleStatus,
   ThreadListItem,
+  ThreadPendingInbox,
   ThreadStatus,
   Turn,
   TurnRole,
@@ -203,6 +204,19 @@ export interface ThreadStatusReader {
    */
   readMany(threadIds: readonly ThreadId[]): Promise<Map<ThreadId, ThreadLeaseState>>;
 }
+
+/**
+ * Read seam for a thread's undelivered inbox rows as the writer-facing
+ * `ThreadPendingInbox`. The runtime composition supplies a projection over the
+ * raw `Inbox`; the threads domain depends on this narrow port, not the runtime
+ * domain, so pending stays a pure read.
+ */
+export interface ThreadPendingInboxReader {
+  readPending(threadId: ThreadId): Promise<ThreadPendingInbox>;
+}
+
+/** The derived live reads the snapshot builder and WS `subscribed` state share. */
+export interface ThreadLiveReaders extends ThreadStatusReader, ThreadPendingInboxReader {}
 
 export interface ProjectChatCursorKey {
   sortAt: string;

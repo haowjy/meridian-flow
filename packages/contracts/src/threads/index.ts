@@ -112,6 +112,38 @@ export type ThreadActivity = {
 };
 
 /**
+ * Durable inbox message intent. A directed `message` wakes the thread; a
+ * `notice` supplies context without starting a run.
+ */
+export type MessageIntent = "message" | "notice";
+
+/** Who authored a durable inbox message. JSON-natural; ids are plain strings at the wire. */
+export type MessageProvenance =
+  | { kind: "writer"; actorId: string }
+  | { kind: "agent"; threadId: string }
+  | { kind: "child"; threadId: string; reportId: string }
+  | { kind: "system"; source: string };
+
+/**
+ * One undelivered inbox row as the writer's pending tray sees it. Derived from
+ * durable rows with no claim side effect; never persisted as a turn block.
+ */
+export type PendingInboxItem = {
+  id: string;
+  seq: number;
+  intent: MessageIntent;
+  provenance: MessageProvenance;
+  /** Body text, or a report/notice summary. */
+  summary: string;
+  enqueuedAt: string;
+};
+
+/** A thread's undelivered inbox, ordered by `seq`; the tray state is replaced wholesale. */
+export type ThreadPendingInbox = {
+  items: PendingInboxItem[];
+};
+
+/**
  * Canonical event-name registry for the thread journal and live event hub.
  *
  * OrchestratorEvent provides typed payloads for the produced durable payload union;
@@ -152,6 +184,7 @@ export type JournalEventType =
   | "agent.spawn" // PRODUCED NOW — ChildRunCoordinator
   | "agent.run_completed" // PRODUCED NOW — ChildRunCoordinator (spawn or thread_message)
   | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (root journal, full recomputed activity)
+  | "inbox.changed" // PRODUCED NOW — ThreadedInbox enqueue + orchestrator ack (full recomputed pending inbox)
   | "block.pruned" // PRODUCED NOW — ChildRunDriver (retires a settled run card)
   | "context.assembled"
   | "context.compacted"

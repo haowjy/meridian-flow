@@ -1,5 +1,9 @@
 /** Barrel: re-exports the runtime domain's public surface — the gateway, the orchestrator loop, the permission model, the turn runner, and the tool registry/executor. */
-export type { OrchestratorEvent } from "@meridian/contracts/threads";
+export type {
+  MessageIntent,
+  MessageProvenance,
+  OrchestratorEvent,
+} from "@meridian/contracts/threads";
 export { MANUSCRIPT_URI as UNIFIED_MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 export type { WorkContextDelivery } from "../projects/index.js";
 export { createContextImageAssetPort } from "./adapters/context-image-assets.js";
@@ -45,6 +49,11 @@ export {
   type HeartbeatRunAuthorityOptions,
 } from "./loop/lease-heartbeat.js";
 export { createOrchestrator } from "./loop/orchestrator.js";
+export {
+  createNotifyingThreadedInbox,
+  pendingInboxChangedEvent,
+  projectPendingInbox,
+} from "./loop/pending-inbox.js";
 export * from "./loop/permissions/index.js";
 export type {
   ContextPart,
@@ -53,8 +62,6 @@ export type {
   Lease,
   MessageBody,
   MessageDraft,
-  MessageIntent,
-  MessageProvenance,
   RunAuthority,
   RunId,
   RunStarter,

@@ -130,6 +130,7 @@ import {
   type InterruptRegistry,
 } from "./interrupts.js";
 import { createLocalTurn } from "./local-turn.js";
+import { pendingInboxChangedEvent } from "./pending-inbox.js";
 import { type PermissionGate, permissionGateFromToolPolicy } from "./permissions/index.js";
 import {
   appendEvent,
@@ -702,6 +703,17 @@ async function persistModelResponse(input: {
     // Ack the batch in the same transaction that persists the response carrying
     // it; a crash before commit redelivers and the idempotency key collapses.
     await deps.inbox.ack(runInput.threadId, input.inboxAckIds);
+    // The ack is the moment a queued message leaves the pending tray. Read the
+    // remaining rows inside the same transaction and fold the full-replace
+    // signal into the response's events, so the tray cannot see a half-ack.
+    if (input.inboxAckIds.length > 0) {
+      events.push(
+        pendingInboxChangedEvent(
+          runInput.threadId,
+          await deps.inbox.listPending(runInput.threadId),
+        ),
+      );
+    }
 
     return {
       result: { responseId, updatedTurn, createdBlocks },

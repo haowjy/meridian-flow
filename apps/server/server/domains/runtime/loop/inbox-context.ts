@@ -368,7 +368,7 @@ function reportCardContent(message: InboxMessage, turnId: TurnId): HelperResultC
   );
 }
 
-function inboxMessageText(message: InboxMessage): string {
+export function inboxMessageText(message: InboxMessage): string {
   switch (message.body.kind) {
     case "text":
     case "report":

@@ -1,6 +1,7 @@
 /** Thread runtime reads used by HTTP and WebSocket transport boundaries. */
 import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import { eventJournal, projects, threads, threadWorks } from "@meridian/database";
 import { and, eq, isNull } from "drizzle-orm";
@@ -24,6 +25,8 @@ export function createThreadRuntimeService(deps: {
   statusReader: ThreadStatusReader;
   /** Supplies the descendant walk for the per-thread activity read. */
   threads: Pick<ThreadRepository, "listDescendants">;
+  /** Reads the thread's undelivered inbox as the writer-facing pending shape. */
+  readPending: (threadId: ThreadId) => Promise<ThreadPendingInbox>;
 }) {
   async function requireOwnedThread(threadId: ThreadId, userId: UserId): Promise<OwnedThread> {
     const [thread] = await deps.db
@@ -65,6 +68,7 @@ export function createThreadRuntimeService(deps: {
         { threads: deps.threads, statusReader: deps.statusReader },
         threadId,
       ),
+      pending: await deps.readPending(threadId),
       resumeAfterSeq: headSeq.toString(),
     };
   }
@@ -78,6 +82,8 @@ export function createThreadRuntimeService(deps: {
     readMany: (threadIds: readonly ThreadId[]) => deps.statusReader.readMany(threadIds),
     /** The lease's bound running turn, exposed so snapshot reads share one truth. */
     readRunningTurnId: (threadId: ThreadId) => deps.statusReader.readRunningTurnId(threadId),
+    /** The undelivered inbox read, exposed so snapshot reads share one projection. */
+    readPending: (threadId: ThreadId) => deps.readPending(threadId),
     async journalEvents(threadId: ThreadId) {
       return deps.db.select().from(eventJournal).where(eq(eventJournal.threadId, threadId));
     },
