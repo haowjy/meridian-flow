@@ -1055,10 +1055,19 @@ async function* generateEvents(
   // pass false: they always finalize and release. Cancel's pending message is a
   // distinct next turn, started by the run owner's post-cancel wake (see
   // `turn-runner.cancel`).
+  // Private control-flow signal from the single terminal exit. `runLoop` catches
+  // it once at the loop boundary: `continueRun` means the final claim found a
+  // pending batch and this run's next iteration must proceed, otherwise the
+  // terminal events were yielded and the run stops. Throwing keeps "continue vs
+  // stop" out of every call site instead of threading a boolean through `yield*`.
+  class RunExit {
+    constructor(readonly continueRun: boolean) {}
+  }
+
   async function* exitRun(
     continueOnPending: boolean,
     complete: () => Promise<TerminalOutcome>,
-  ): AsyncGenerator<OrchestratorEvent, boolean> {
+  ): AsyncGenerator<OrchestratorEvent, never> {
     const outcome = await closeRun({
       threadLock: deps.threadLock,
       inbox: deps.inbox,
@@ -1068,10 +1077,10 @@ async function* generateEvents(
       continueOnPending,
       complete,
     });
-    if (outcome.kind === "continue") return true;
+    if (outcome.kind === "continue") throw new RunExit(true);
     currentAssistantTurn = outcome.completion.turn ?? currentAssistantTurn;
     yield* outcome.completion.events;
-    return false;
+    throw new RunExit(false);
   }
 
   const cancelTerminal = async (): Promise<TerminalOutcome> => ({
@@ -1090,6 +1099,15 @@ async function* generateEvents(
       });
       return { turn: completion.turn, events: completion.events };
     };
+
+  // The one cancel exit: discard an in-flight response, then finalize through
+  // `exitRun`. Every cancel site calls this so the rollback+cancel sequence
+  // cannot diverge. It never returns at runtime; `exitRun` always throws
+  // `RunExit`.
+  async function* cancelExit(): AsyncGenerator<OrchestratorEvent> {
+    await rollbackActiveResponse();
+    yield* exitRun(false, cancelTerminal);
+  }
 
   try {
     const allTurns: Turn[] = [...initialTurns, assistantTurn];
@@ -1118,554 +1136,549 @@ async function* generateEvents(
 
     // Every cancellation/error path must yield terminal events, not just
     // return/throw, so subscribers see the turn lifecycle closure.
-    runLoop: while (true) {
-      iteration += 1;
-      if (iteration > MAX_TURN_ITERATIONS) {
-        yield* exitRun(false, errorTerminal("exceeded max tool iterations"));
-        return;
-      }
-
-      // A cancel from another process has no local abort; the lease flag is the
-      // only signal. Read it before acting so the interrupt's next turn starts
-      // from a clean, already-released run.
-      if (input.lease) {
-        const status = await deps.runAuthority.read(input.threadId);
-        if (status.kind === "awake" && status.cancelRequested) leaseCancelled = true;
-      }
-      if (isCancelled()) {
-        yield* exitRun(false, cancelTerminal);
-        return;
-      }
-
-      const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
-      if (budgetError) {
-        yield* exitRun(false, errorTerminal(budgetError));
-        return;
-      }
-
-      turnAccounting.recordIterationSpend(treeBudget);
-
-      const gatewayAbort = new AbortController();
-      let cancelRequested = isCancelled();
-      if (input.signal) {
-        input.signal.addEventListener(
-          "abort",
-          () => {
-            cancelRequested = true;
-            gatewayAbort.abort();
-          },
-          { once: true },
-        );
-      }
-
-      if (iteration === 1) {
-        const loaded = await loadReferenceReads({
-          blocks: allBlocks,
-          userTurnId: referenceUserTurnId,
-          threadId: input.threadId,
-          assistantTurnId: currentAssistantTurn.id,
-          reader: deps.referenceReader,
-          signal: input.signal,
-        });
-        if (loaded.length > 0) {
-          const persisted = await persistAndAppendEvents(deps, input.threadId, async () => ({
-            result: loaded,
-            events: loaded.map((block) => ({
-              type: "block.upserted" as const,
-              block: contentForBlockInput({
-                id: block.id,
-                turnId: block.turnId,
-                responseId: block.responseId,
-                blockType: block.blockType,
-                sequence: block.sequence,
-                content: block.content,
-                status: "complete",
-              }),
-            })),
-          }));
-          for (const block of persisted.result) {
-            const index = allBlocks.findIndex((existing) => existing.id === block.id);
-            allBlocks[index] = block;
-          }
-          yield* persisted.events;
-        }
-      }
-
-      const built = await buildGenerateRequest({
-        deps,
-        runInput: input,
-        thread,
-        turns: allTurns,
-        blocks: allBlocks,
-        gatewaySignal: gatewayAbort.signal,
-      });
-      thread = built.thread;
-      const request = built.request;
-      const gatewayCallId = crypto.randomUUID();
-      request.correlation = {
-        gatewayCallId,
-        threadId: input.threadId,
-        turnId: currentAssistantTurn.id,
-        iteration: iteration - 1,
-        ...(built.agentSlug ? { agentSlug: built.agentSlug } : {}),
-      };
-
-      // The writer's triggering message is pinned before the drain appends
-      // messages; notices and skill bodies must land there, not on a drained one.
-      writerMessageIndex ??= lastUserMessageIndex(request.messages);
-      const baseMessageCount = request.messages.length;
-      let inboxAckIds: string[] = [];
-      // A message is history, not transient context: the drain persists each at
-      // the thread tail so later iterations of this same run keep seeing it,
-      // chained from the run's own accumulated tail. The thread loaded at run
-      // start is stale for an already-baked prompt (assembly does not refresh
-      // it), so `thread.activeLeafTurnId` would point behind this run's own
-      // setup turns and the transition would conflict.
-      const drain = await drainInbox({
-        persistence: deps,
-        inbox: deps.inbox,
-        notices: deps.notices,
-        threadId: input.threadId,
-        messages: request.messages,
-        knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
-        expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
-      });
-      request.messages = drain.rendered;
-      inboxAckIds = drain.ackIds;
-      for (const turn of drain.turns) allTurns.push(turn);
-      for (const block of drain.blocks) allBlocks.push(block);
-      yield* drain.persistedEvents;
-      if (iteration === 1) {
-        preTurnNotices.push(...drain.notices);
-      } else if (drain.notices.length > 0) {
-        postToolNoticeBatches.push({ afterMessageCount: baseMessageCount, notices: drain.notices });
-      }
-
-      if (activatedSkillSlugs?.length) {
-        activatedSkillBodies ??= await Promise.all(
-          activatedSkillSlugs.map((slug) =>
-            loadUserSkillBody({
-              thread,
-              slug,
-              agentRevisions: deps.agentRevisions,
-              accountSkillInstalls: deps.accountSkillInstalls,
-            }),
-          ),
-        );
-        request.messages = attachSkillBodiesToLatestUserMessage(
-          request.messages,
-          activatedSkillBodies,
-          writerMessageIndex,
-        );
-      }
-      if (preTurnNotices.length > 0) {
-        request.messages = attachNoticesToLatestUserMessage(
-          request.messages,
-          preTurnNotices,
-          writerMessageIndex,
-        );
-      }
-      let insertedNoticeMessages = 0;
-      for (const batch of postToolNoticeBatches) {
-        const beforeInsert = request.messages.length;
-        request.messages = insertPostToolNotices(
-          request.messages,
-          batch.notices,
-          batch.afterMessageCount + insertedNoticeMessages,
-        );
-        insertedNoticeMessages += request.messages.length - beforeInsert;
-      }
-      // After this point the drain is durable. If the provider stream throws before
-      // returning a result, the notice is lost, matching the model-call boundary.
-
+    while (true) {
       try {
-        deps.modelRequestDebug.capture({
+        iteration += 1;
+        if (iteration > MAX_TURN_ITERATIONS) {
+          yield* exitRun(false, errorTerminal("exceeded max tool iterations"));
+        }
+
+        // A cancel from another process has no local abort; the lease flag is the
+        // only signal. Read it before acting so the interrupt's next turn starts
+        // from a clean, already-released run.
+        if (input.lease) {
+          const status = await deps.runAuthority.read(input.threadId);
+          if (status.kind === "awake" && status.cancelRequested) leaseCancelled = true;
+        }
+        if (isCancelled()) {
+          yield* cancelExit();
+        }
+
+        const budgetError = await turnAccounting.assertPreIterationBudget(treeBudget, thread);
+        if (budgetError) {
+          yield* exitRun(false, errorTerminal(budgetError));
+        }
+
+        turnAccounting.recordIterationSpend(treeBudget);
+
+        const gatewayAbort = new AbortController();
+        let cancelRequested = isCancelled();
+        if (input.signal) {
+          input.signal.addEventListener(
+            "abort",
+            () => {
+              cancelRequested = true;
+              gatewayAbort.abort();
+            },
+            { once: true },
+          );
+        }
+
+        if (iteration === 1) {
+          const loaded = await loadReferenceReads({
+            blocks: allBlocks,
+            userTurnId: referenceUserTurnId,
+            threadId: input.threadId,
+            assistantTurnId: currentAssistantTurn.id,
+            reader: deps.referenceReader,
+            signal: input.signal,
+          });
+          if (loaded.length > 0) {
+            const persisted = await persistAndAppendEvents(deps, input.threadId, async () => ({
+              result: loaded,
+              events: loaded.map((block) => ({
+                type: "block.upserted" as const,
+                block: contentForBlockInput({
+                  id: block.id,
+                  turnId: block.turnId,
+                  responseId: block.responseId,
+                  blockType: block.blockType,
+                  sequence: block.sequence,
+                  content: block.content,
+                  status: "complete",
+                }),
+              })),
+            }));
+            for (const block of persisted.result) {
+              const index = allBlocks.findIndex((existing) => existing.id === block.id);
+              allBlocks[index] = block;
+            }
+            yield* persisted.events;
+          }
+        }
+
+        const built = await buildGenerateRequest({
+          deps,
+          runInput: input,
+          thread,
+          turns: allTurns,
+          blocks: allBlocks,
+          gatewaySignal: gatewayAbort.signal,
+        });
+        thread = built.thread;
+        const request = built.request;
+        const gatewayCallId = crypto.randomUUID();
+        request.correlation = {
           gatewayCallId,
           threadId: input.threadId,
           turnId: currentAssistantTurn.id,
           iteration: iteration - 1,
-          agentSlug: built.agentSlug,
-          request,
+          ...(built.agentSlug ? { agentSlug: built.agentSlug } : {}),
+        };
 
-          toolRegistry: deps.toolRegistry,
+        // The writer's triggering message is pinned before the drain appends
+        // messages; notices and skill bodies must land there, not on a drained one.
+        writerMessageIndex ??= lastUserMessageIndex(request.messages);
+        const baseMessageCount = request.messages.length;
+        let inboxAckIds: string[] = [];
+        // A message is history, not transient context: the drain persists each at
+        // the thread tail so later iterations of this same run keep seeing it,
+        // chained from the run's own accumulated tail. The thread loaded at run
+        // start is stale for an already-baked prompt (assembly does not refresh
+        // it), so `thread.activeLeafTurnId` would point behind this run's own
+        // setup turns and the transition would conflict.
+        const drain = await drainInbox({
+          persistence: deps,
+          inbox: deps.inbox,
+          notices: deps.notices,
+          threadId: input.threadId,
+          messages: request.messages,
+          knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
+          expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
         });
-      } catch (cause) {
-        eventSink.emit({
-          timestamp: new Date().toISOString(),
-          level: "warn",
-          source: "runtime.orchestrator",
-          name: "model_request_debug.capture_failed",
-          sensitivity: "safe",
-          correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
-          payload: unknownToEventPayload(cause),
-        });
-      }
-
-      // The gateway yields a self-terminating stream: a sequence of
-      // text/reasoning/tool_call deltas followed by exactly one 'end'
-      // (with the assembled GenerateResult) or one 'error'.
-      // On cancel, abort the gateway call and drain through 'end' so partial
-      // usage can be persisted before turn.cancelled.
-      await publishPhase("generating");
-      let result: GenerateResult | undefined;
-      let streamModel = request.model ?? "unknown";
-      for await (const event of gateway.stream(request)) {
-        if (isCancelled()) {
-          cancelRequested = true;
+        request.messages = drain.rendered;
+        inboxAckIds = drain.ackIds;
+        for (const turn of drain.turns) allTurns.push(turn);
+        for (const block of drain.blocks) allBlocks.push(block);
+        yield* drain.persistedEvents;
+        if (iteration === 1) {
+          preTurnNotices.push(...drain.notices);
+        } else if (drain.notices.length > 0) {
+          postToolNoticeBatches.push({
+            afterMessageCount: baseMessageCount,
+            notices: drain.notices,
+          });
         }
 
-        if (event.type === "start") {
-          streamModel = event.model;
-        }
-
-        const mapped = mapStreamEvent(event);
-        if (mapped) {
-          yield* emit(eventWriter, input.threadId, mapped);
-        }
-
-        if (event.type === "end") {
-          result = event.result;
-        }
-        if (event.type === "error") {
-          if (cancelRequested) {
-            break;
-          }
-          yield* exitRun(
-            false,
-            errorTerminal(meridianErrorFromGateway(event.code, event.message, event.retryable)),
+        if (activatedSkillSlugs?.length) {
+          activatedSkillBodies ??= await Promise.all(
+            activatedSkillSlugs.map((slug) =>
+              loadUserSkillBody({
+                thread,
+                slug,
+                agentRevisions: deps.agentRevisions,
+                accountSkillInstalls: deps.accountSkillInstalls,
+              }),
+            ),
           );
+          request.messages = attachSkillBodiesToLatestUserMessage(
+            request.messages,
+            activatedSkillBodies,
+            writerMessageIndex,
+          );
+        }
+        if (preTurnNotices.length > 0) {
+          request.messages = attachNoticesToLatestUserMessage(
+            request.messages,
+            preTurnNotices,
+            writerMessageIndex,
+          );
+        }
+        let insertedNoticeMessages = 0;
+        for (const batch of postToolNoticeBatches) {
+          const beforeInsert = request.messages.length;
+          request.messages = insertPostToolNotices(
+            request.messages,
+            batch.notices,
+            batch.afterMessageCount + insertedNoticeMessages,
+          );
+          insertedNoticeMessages += request.messages.length - beforeInsert;
+        }
+        // After this point the drain is durable. If the provider stream throws before
+        // returning a result, the notice is lost, matching the model-call boundary.
+
+        try {
+          deps.modelRequestDebug.capture({
+            gatewayCallId,
+            threadId: input.threadId,
+            turnId: currentAssistantTurn.id,
+            iteration: iteration - 1,
+            agentSlug: built.agentSlug,
+            request,
+
+            toolRegistry: deps.toolRegistry,
+          });
+        } catch (cause) {
+          eventSink.emit({
+            timestamp: new Date().toISOString(),
+            level: "warn",
+            source: "runtime.orchestrator",
+            name: "model_request_debug.capture_failed",
+            sensitivity: "safe",
+            correlation: { threadId: input.threadId, turnId: currentAssistantTurn.id },
+            payload: unknownToEventPayload(cause),
+          });
+        }
+
+        // The gateway yields a self-terminating stream: a sequence of
+        // text/reasoning/tool_call deltas followed by exactly one 'end'
+        // (with the assembled GenerateResult) or one 'error'.
+        // On cancel, abort the gateway call and drain through 'end' so partial
+        // usage can be persisted before turn.cancelled.
+        await publishPhase("generating");
+        let result: GenerateResult | undefined;
+        let streamModel = request.model ?? "unknown";
+        for await (const event of gateway.stream(request)) {
+          if (isCancelled()) {
+            cancelRequested = true;
+          }
+
+          if (event.type === "start") {
+            streamModel = event.model;
+          }
+
+          const mapped = mapStreamEvent(event);
+          if (mapped) {
+            yield* emit(eventWriter, input.threadId, mapped);
+          }
+
+          if (event.type === "end") {
+            result = event.result;
+          }
+          if (event.type === "error") {
+            if (cancelRequested) {
+              break;
+            }
+            yield* exitRun(
+              false,
+              errorTerminal(meridianErrorFromGateway(event.code, event.message, event.retryable)),
+            );
+          }
+        }
+
+        if (cancelRequested) {
+          const settled = await settleCancelledResponse({
+            deps,
+            runInput: input,
+            thread,
+            currentAssistantTurn,
+            treeBudget,
+            turnAccounting,
+            blockSeq: allBlocks.filter(
+              (b) => (b.turnId as string) === (currentAssistantTurn.id as string),
+            ).length,
+            allBlocks,
+            result,
+            model: result?.model ?? streamModel,
+          });
+          yield* settled.events;
+          currentAssistantTurn = settled.turn;
+          yield* exitRun(false, cancelTerminal);
+        }
+
+        if (!result) {
+          yield* exitRun(false, errorTerminal("Stream ended without result"));
           return;
         }
-      }
 
-      if (cancelRequested) {
-        const settled = await settleCancelledResponse({
+        // blockSeq is the turn-scoped display order. It starts at the blocks
+        // already stored for this assistant turn and is handed to interrupt/tool
+        // collaborators so later blocks remain contiguous.
+        let blockSeq = allBlocks.filter(
+          (b) => (b.turnId as string) === (currentAssistantTurn.id as string),
+        ).length;
+        const persistedResponse = await persistModelResponse({
           deps,
           runInput: input,
           thread,
           currentAssistantTurn,
+          result,
           treeBudget,
           turnAccounting,
-          blockSeq: allBlocks.filter(
-            (b) => (b.turnId as string) === (currentAssistantTurn.id as string),
-          ).length,
-          allBlocks,
-          result,
-          model: result?.model ?? streamModel,
+          blockSeq,
+          inboxAckIds,
         });
-        yield* settled.events;
-        currentAssistantTurn = settled.turn;
-        yield* exitRun(false, cancelTerminal);
-        return;
-      }
+        currentAssistantTurn = persistedResponse.updatedTurn;
+        blockSeq = persistedResponse.nextBlockSeq;
+        const responseId = persistedResponse.responseId;
+        const toolCallsFromResult = persistedResponse.toolCalls;
+        allBlocks.push(...persistedResponse.createdBlocks);
+        yield* persistedResponse.events;
 
-      if (!result) {
-        yield* exitRun(false, errorTerminal("Stream ended without result"));
-        return;
-      }
-
-      // blockSeq is the turn-scoped display order. It starts at the blocks
-      // already stored for this assistant turn and is handed to interrupt/tool
-      // collaborators so later blocks remain contiguous.
-      let blockSeq = allBlocks.filter(
-        (b) => (b.turnId as string) === (currentAssistantTurn.id as string),
-      ).length;
-      const persistedResponse = await persistModelResponse({
-        deps,
-        runInput: input,
-        thread,
-        currentAssistantTurn,
-        result,
-        treeBudget,
-        turnAccounting,
-        blockSeq,
-        inboxAckIds,
-      });
-      currentAssistantTurn = persistedResponse.updatedTurn;
-      blockSeq = persistedResponse.nextBlockSeq;
-      const responseId = persistedResponse.responseId;
-      const toolCallsFromResult = persistedResponse.toolCalls;
-      allBlocks.push(...persistedResponse.createdBlocks);
-      yield* persistedResponse.events;
-
-      if (result.finishReason === "error") {
-        yield* exitRun(false, errorTerminal("Model returned error finish reason"));
-        return;
-      }
-
-      // blockSeq continues across tool_result blocks so all blocks for this
-      // turn are numbered contiguously regardless of which iteration
-      // created them.
-      if (result.finishReason === "tool_use" && toolCallsFromResult.length > 0) {
-        activeResponseId = responseId;
-        if (isCancelled()) {
-          await rollbackActiveResponse();
-          yield* exitRun(false, cancelTerminal);
-          return;
+        if (result.finishReason === "error") {
+          yield* exitRun(false, errorTerminal("Model returned error finish reason"));
         }
 
-        const writeBlocksByDocument = new Map<
-          string,
-          Array<{ block: Block; writeId: string; settlementId: string }>
-        >();
-        let editResponseId = responseId;
-
-        async function settleWriteScope() {
-          const finalizedWrites: Array<{
-            documentId: string;
-            index: number;
-            block: Block;
-            events: OrchestratorEvent[];
-          }> = [];
-          const outcome = await deps.responseWrites.commitResponse(
-            editResponseId,
-            { threadId: input.threadId, turnId: currentAssistantTurn.id },
-            async (settled) => {
-              for (const [documentId, blocks] of writeBlocksByDocument) {
-                for (const [index, write] of blocks.entries()) {
-                  const finalized =
-                    settled.status === "committed"
-                      ? await persistCommittedWriteResult({
-                          deps,
-                          threadId: input.threadId,
-                          block: write.block,
-                          output: settledReceipt(settled.receipts, documentId, write.settlementId)
-                            .result,
-                        })
-                      : await persistUncommittedWriteResult({
-                          deps,
-                          threadId: input.threadId,
-                          block: write.block,
-                          text: "The response closed before its staged write could commit. Re-read and retry.",
-                        });
-                  finalizedWrites.push({ documentId, index, ...finalized });
-                }
-              }
-            },
-          );
-          const events: OrchestratorEvent[] = [];
-          for (const finalized of finalizedWrites) {
-            const writes = writeBlocksByDocument.get(finalized.documentId);
-            const write = writes?.[finalized.index];
-            if (writes && write) writes[finalized.index] = { ...write, block: finalized.block };
-            const blockIndex = allBlocks.findIndex(
-              (existing) => existing.id === finalized.block.id,
-            );
-            if (blockIndex >= 0) allBlocks[blockIndex] = finalized.block;
-            events.push(...finalized.events);
-          }
-          return { outcome, events };
-        }
-
-        // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
-        // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
-        for (const call of toolCallsFromResult) {
+        // blockSeq continues across tool_result blocks so all blocks for this
+        // turn are numbered contiguously regardless of which iteration
+        // created them.
+        if (result.finishReason === "tool_use" && toolCallsFromResult.length > 0) {
+          activeResponseId = responseId;
           if (isCancelled()) {
-            await rollbackActiveResponse();
-            yield* exitRun(false, cancelTerminal);
-            return;
+            yield* cancelExit();
           }
 
-          if (
-            call.name === "work" &&
-            call.arguments &&
-            typeof call.arguments === "object" &&
-            "command" in call.arguments &&
-            call.arguments.command === "switch" &&
-            writeBlocksByDocument.size > 0
-          ) {
-            const boundary = await settleWriteScope();
-            activeResponseId = undefined;
-            yield* boundary.events;
-            if (boundary.outcome.status === "draft_closed") {
-              if (yield* exitRun(true, cancelTerminal)) continue runLoop;
+          const writeBlocksByDocument = new Map<
+            string,
+            Array<{ block: Block; writeId: string; settlementId: string }>
+          >();
+          let editResponseId = responseId;
+
+          async function settleWriteScope() {
+            const finalizedWrites: Array<{
+              documentId: string;
+              index: number;
+              block: Block;
+              events: OrchestratorEvent[];
+            }> = [];
+            const outcome = await deps.responseWrites.commitResponse(
+              editResponseId,
+              { threadId: input.threadId, turnId: currentAssistantTurn.id },
+              async (settled) => {
+                for (const [documentId, blocks] of writeBlocksByDocument) {
+                  for (const [index, write] of blocks.entries()) {
+                    const finalized =
+                      settled.status === "committed"
+                        ? await persistCommittedWriteResult({
+                            deps,
+                            threadId: input.threadId,
+                            block: write.block,
+                            output: settledReceipt(settled.receipts, documentId, write.settlementId)
+                              .result,
+                          })
+                        : await persistUncommittedWriteResult({
+                            deps,
+                            threadId: input.threadId,
+                            block: write.block,
+                            text: "The response closed before its staged write could commit. Re-read and retry.",
+                          });
+                    finalizedWrites.push({ documentId, index, ...finalized });
+                  }
+                }
+              },
+            );
+            const events: OrchestratorEvent[] = [];
+            for (const finalized of finalizedWrites) {
+              const writes = writeBlocksByDocument.get(finalized.documentId);
+              const write = writes?.[finalized.index];
+              if (writes && write) writes[finalized.index] = { ...write, block: finalized.block };
+              const blockIndex = allBlocks.findIndex(
+                (existing) => existing.id === finalized.block.id,
+              );
+              if (blockIndex >= 0) allBlocks[blockIndex] = finalized.block;
+              events.push(...finalized.events);
+            }
+            return { outcome, events };
+          }
+
+          // Sequential dispatch is load-bearing: agent writes resolve against the runtime doc one
+          // at a time, so overlapping self-writes compose or no_match instead of self-mangling.
+          for (const call of toolCallsFromResult) {
+            if (isCancelled()) {
+              yield* cancelExit();
+            }
+
+            if (
+              call.name === "work" &&
+              call.arguments &&
+              typeof call.arguments === "object" &&
+              "command" in call.arguments &&
+              call.arguments.command === "switch" &&
+              writeBlocksByDocument.size > 0
+            ) {
+              const boundary = await settleWriteScope();
+              activeResponseId = undefined;
+              yield* boundary.events;
+              if (boundary.outcome.status === "draft_closed") {
+                yield* exitRun(true, cancelTerminal);
+              }
+              writeBlocksByDocument.clear();
+              // A closed response fingerprint cannot accept post-switch writes.
+              // Rotate only the agent-edit lifecycle identity; durable tool blocks
+              // remain attached to the provider's model response.
+              editResponseId = crypto.randomUUID();
+              activeResponseId = editResponseId;
+            }
+
+            // If denied, we still persist a tool_result block (with isError: true)
+            // so the model sees the rejection in the next turn's context build.
+            const decision = built.permissionGate.check(call.name, call.arguments);
+            if (!decision.allowed) {
+              const persistedDenial = await persistPermissionDenial({
+                deps,
+                threadId: input.threadId,
+                turn: currentAssistantTurn,
+                call,
+                decision: { ...decision, category: "tool_denied" },
+                blockSeq,
+              });
+              blockSeq = persistedDenial.nextBlockSeq;
+              allBlocks.push(persistedDenial.block);
+              yield* persistedDenial.events;
+              continue;
+            }
+
+            await publishPhase("waiting");
+            const interruptState = {
+              thread,
+              threadId: input.threadId,
+              currentTurn: currentAssistantTurn,
+              autoResume: interruptAutoResume,
+              signal: input.signal,
+              blockSeqRef: { value: blockSeq },
+              allBlocks,
+            };
+            const interruptSession = createInterruptSession(
+              {
+                interruptRegistry: deps.interruptRegistry,
+                interruptArtifacts: deps.interruptArtifacts,
+                persistenceDeps: deps,
+                eventSink,
+              },
+              interruptState,
+            );
+            const dispatched = await dispatchToolCall(
+              {
+                toolExecutor: deps.toolExecutor,
+                childRunCoordinator: deps.childRunCoordinator,
+                eventSink,
+                persistenceDeps: deps,
+                workContextDelivery: deps.workContextDelivery,
+              },
+              call,
+              {
+                thread,
+                agentSlug: built.agentSlug,
+                responseId,
+                editResponseId,
+                state: interruptState,
+                interruptSession,
+                interruptAutoResume,
+                treeBudget,
+                blockSeqRef: interruptState.blockSeqRef,
+                returnResultCompleter,
+                allTurns,
+              },
+            );
+            currentAssistantTurn = interruptState.currentTurn;
+            blockSeq = interruptState.blockSeqRef.value;
+            yield* dispatched.events;
+            if (
+              !dispatched.cancelled &&
+              dispatched.metadata?.stagedWrite === true &&
+              typeof dispatched.metadata.documentId === "string"
+            ) {
+              if (typeof dispatched.metadata.writeId !== "string") {
+                throw new Error(
+                  `Staged write result missing write id for ${dispatched.metadata.documentId}.`,
+                );
+              }
+              if (typeof dispatched.metadata.settlementId !== "string") {
+                throw new Error(
+                  `Staged write result missing settlement id for ${dispatched.metadata.documentId}.`,
+                );
+              }
+              const blocks = writeBlocksByDocument.get(dispatched.metadata.documentId) ?? [];
+              blocks.push({
+                block: dispatched.block,
+                writeId: dispatched.metadata.writeId,
+                settlementId: dispatched.metadata.settlementId,
+              });
+              writeBlocksByDocument.set(dispatched.metadata.documentId, blocks);
+            }
+            if (dispatched.cancelled || isCancelled()) {
+              yield* cancelExit();
               return;
             }
-            writeBlocksByDocument.clear();
-            // A closed response fingerprint cannot accept post-switch writes.
-            // Rotate only the agent-edit lifecycle identity; durable tool blocks
-            // remain attached to the provider's model response.
-            editResponseId = crypto.randomUUID();
-            activeResponseId = editResponseId;
+            if (dispatched.endTurn === true) endTurnRequested = true;
           }
-
-          // If denied, we still persist a tool_result block (with isError: true)
-          // so the model sees the rejection in the next turn's context build.
-          const decision = built.permissionGate.check(call.name, call.arguments);
-          if (!decision.allowed) {
-            const persistedDenial = await persistPermissionDenial({
-              deps,
-              threadId: input.threadId,
-              turn: currentAssistantTurn,
-              call,
-              decision: { ...decision, category: "tool_denied" },
-              blockSeq,
-            });
-            blockSeq = persistedDenial.nextBlockSeq;
-            allBlocks.push(persistedDenial.block);
-            yield* persistedDenial.events;
-            continue;
+          if (isCancelled()) {
+            yield* cancelExit();
           }
-
-          await publishPhase("waiting");
-          const interruptState = {
-            thread,
-            threadId: input.threadId,
-            currentTurn: currentAssistantTurn,
-            autoResume: interruptAutoResume,
-            signal: input.signal,
-            blockSeqRef: { value: blockSeq },
-            allBlocks,
-          };
-          const interruptSession = createInterruptSession(
-            {
-              interruptRegistry: deps.interruptRegistry,
-              interruptArtifacts: deps.interruptArtifacts,
-              persistenceDeps: deps,
-              eventSink,
-            },
-            interruptState,
-          );
-          const dispatched = await dispatchToolCall(
-            {
-              toolExecutor: deps.toolExecutor,
-              childRunCoordinator: deps.childRunCoordinator,
-              eventSink,
-              persistenceDeps: deps,
-              workContextDelivery: deps.workContextDelivery,
-            },
-            call,
-            {
-              thread,
-              agentSlug: built.agentSlug,
-              responseId,
-              editResponseId,
-              state: interruptState,
-              interruptSession,
-              interruptAutoResume,
-              treeBudget,
-              blockSeqRef: interruptState.blockSeqRef,
-              returnResultCompleter,
-              allTurns,
-            },
-          );
-          currentAssistantTurn = interruptState.currentTurn;
-          blockSeq = interruptState.blockSeqRef.value;
-          yield* dispatched.events;
-          if (
-            !dispatched.cancelled &&
-            dispatched.metadata?.stagedWrite === true &&
-            typeof dispatched.metadata.documentId === "string"
-          ) {
-            if (typeof dispatched.metadata.writeId !== "string") {
-              throw new Error(
-                `Staged write result missing write id for ${dispatched.metadata.documentId}.`,
-              );
-            }
-            if (typeof dispatched.metadata.settlementId !== "string") {
-              throw new Error(
-                `Staged write result missing settlement id for ${dispatched.metadata.documentId}.`,
-              );
-            }
-            const blocks = writeBlocksByDocument.get(dispatched.metadata.documentId) ?? [];
-            blocks.push({
-              block: dispatched.block,
-              writeId: dispatched.metadata.writeId,
-              settlementId: dispatched.metadata.settlementId,
-            });
-            writeBlocksByDocument.set(dispatched.metadata.documentId, blocks);
-          }
-          if (dispatched.cancelled || isCancelled()) {
-            await rollbackActiveResponse();
-            yield* exitRun(false, cancelTerminal);
+          const settledScope = await settleWriteScope();
+          const concurrentEdits = settledScope.outcome;
+          activeResponseId = undefined;
+          yield* settledScope.events;
+          if (concurrentEdits.status === "draft_closed") {
+            yield* exitRun(true, cancelTerminal);
             return;
           }
-          if (dispatched.endTurn === true) endTurnRequested = true;
-        }
-        if (isCancelled()) {
-          await rollbackActiveResponse();
-          yield* exitRun(false, cancelTerminal);
-          return;
-        }
-        const settledScope = await settleWriteScope();
-        const concurrentEdits = settledScope.outcome;
-        activeResponseId = undefined;
-        yield* settledScope.events;
-        if (concurrentEdits.status === "draft_closed") {
-          if (yield* exitRun(true, cancelTerminal)) continue;
-          return;
-        }
 
-        const renderBudget = {
-          remainingBytes: deps.concurrentRenderBudgetBytes?.(request) ?? Number.MAX_SAFE_INTEGER,
-        };
-        // Backfill body-complete concurrent runs into the last write result per document.
-        for (const { documentId, concurrentEdits: edits } of concurrentEdits.concurrentEdits) {
-          const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
-          const block = writeBlocksByDocument.get(documentId)?.at(-1)?.block;
-          if (!block) continue;
-          const content = block.content as {
-            toolCallId?: string;
-            output?: unknown;
-            isError?: boolean;
-          } | null;
-          if (!content?.output) continue;
-
-          const output = content.output;
-          if (!isAgentEditResultEnvelope(output)) continue;
-
-          const updatedOutput = {
-            ...output,
-            concurrent: modelConcurrentResult(boundedEdits),
+          const renderBudget = {
+            remainingBytes: deps.concurrentRenderBudgetBytes?.(request) ?? Number.MAX_SAFE_INTEGER,
           };
-          const updatedContent = {
-            ...content,
-            output: updatedOutput,
-          };
-          const updatedBlockRow = contentForBlockInput({
-            id: block.id,
-            turnId: block.turnId,
-            responseId: block.responseId,
-            blockType: "tool_result",
-            sequence: block.sequence,
-            content: toJsonValue(updatedContent),
-            provider: block.provider,
-            status: "complete",
-          });
-          const persistedBackfill = await persistAndAppendEvents(
-            deps,
-            input.threadId,
-            async () => ({
-              result: localBlockFromEvent(updatedBlockRow),
-              events: [{ type: "block.upserted", block: updatedBlockRow }],
-            }),
-          );
-          const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
-          if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
-          const documentBlocks = writeBlocksByDocument.get(documentId) ?? [];
-          const lastWrite = documentBlocks.at(-1);
-          if (lastWrite) {
-            documentBlocks[documentBlocks.length - 1] = {
-              ...lastWrite,
-              block: persistedBackfill.result,
+          // Backfill body-complete concurrent runs into the last write result per document.
+          for (const { documentId, concurrentEdits: edits } of concurrentEdits.concurrentEdits) {
+            const boundedEdits = applyConcurrentRenderBudget(edits, renderBudget);
+            const block = writeBlocksByDocument.get(documentId)?.at(-1)?.block;
+            if (!block) continue;
+            const content = block.content as {
+              toolCallId?: string;
+              output?: unknown;
+              isError?: boolean;
+            } | null;
+            if (!content?.output) continue;
+
+            const output = content.output;
+            if (!isAgentEditResultEnvelope(output)) continue;
+
+            const updatedOutput = {
+              ...output,
+              concurrent: modelConcurrentResult(boundedEdits),
             };
+            const updatedContent = {
+              ...content,
+              output: updatedOutput,
+            };
+            const updatedBlockRow = contentForBlockInput({
+              id: block.id,
+              turnId: block.turnId,
+              responseId: block.responseId,
+              blockType: "tool_result",
+              sequence: block.sequence,
+              content: toJsonValue(updatedContent),
+              provider: block.provider,
+              status: "complete",
+            });
+            const persistedBackfill = await persistAndAppendEvents(
+              deps,
+              input.threadId,
+              async () => ({
+                result: localBlockFromEvent(updatedBlockRow),
+                events: [{ type: "block.upserted", block: updatedBlockRow }],
+              }),
+            );
+            const blockIndex = allBlocks.findIndex((existing) => existing.id === block.id);
+            if (blockIndex >= 0) allBlocks[blockIndex] = persistedBackfill.result;
+            const documentBlocks = writeBlocksByDocument.get(documentId) ?? [];
+            const lastWrite = documentBlocks.at(-1);
+            if (lastWrite) {
+              documentBlocks[documentBlocks.length - 1] = {
+                ...lastWrite,
+                block: persistedBackfill.result,
+              };
+            }
+            yield* persistedBackfill.events;
           }
-          yield* persistedBackfill.events;
+
+          if (endTurnRequested) {
+            // A child called return_result: the report is captured and persisted,
+            // so the turn ends here instead of looping into another model round.
+            // A message that landed in the exit window keeps the run going.
+            yield* exitRun(true, completeTerminal("end_turn"));
+          }
+
+          continue;
         }
 
-        if (endTurnRequested) {
-          // A child called return_result: the report is captured and persisted,
-          // so the turn ends here instead of looping into another model round.
-          // A message that landed in the exit window keeps the run going.
-          if (yield* exitRun(true, completeTerminal("end_turn"))) continue;
+        yield* exitRun(true, completeTerminal(result.finishReason));
+      } catch (exit) {
+        if (exit instanceof RunExit) {
+          if (exit.continueRun) continue;
           return;
         }
-
-        continue;
+        throw exit;
       }
-
-      if (yield* exitRun(true, completeTerminal(result.finishReason))) continue;
-      return;
     }
   } catch (err) {
     try {
