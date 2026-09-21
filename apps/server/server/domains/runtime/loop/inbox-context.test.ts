@@ -38,6 +38,23 @@ function systemMessage(key: string, threadId: ThreadId): MessageDraft {
   };
 }
 
+function childReport(reportId: string, threadId: ThreadId): MessageDraft {
+  return {
+    threadId,
+    intent: "steer",
+    provenance: { kind: "child", threadId: "child-thread" as ThreadId, reportId },
+    body: {
+      kind: "report",
+      text: "Two chapter breaks sag.",
+      artifacts: [{ type: "object", uri: "outline.md" }],
+      payload: { chapter: 3 },
+      agentSlug: "critic",
+      description: "Review the chapter",
+    },
+    idempotencyKey: `child-report:${reportId}`,
+  };
+}
+
 async function seed() {
   const projects = createInMemoryProjectRepository();
   const repos = createInMemoryRepositories({ projects });
@@ -64,6 +81,23 @@ describe("renderInboxBatch", () => {
     expect(rendered.messages[0].role).toBe("user");
     expect(rendered.notices).toHaveLength(1);
     expect(rendered.notices[0].message).toBe("context note");
+  });
+
+  it("renders a child report as a system message carrying its artifacts", async () => {
+    const { inbox, thread } = await seed();
+    await inbox.enqueue(childReport("report-1", thread.id));
+    const batch = await inbox.claimPending(thread.id);
+
+    const rendered = renderInboxBatch([], batch);
+
+    expect(rendered.messages).toHaveLength(1);
+    expect(rendered.messages[0].role).toBe("system");
+    const text = rendered.messages[0].content.flatMap((part) =>
+      part.type === "text" ? [part.text] : [],
+    );
+    expect(text.join("\n")).toContain('Background subagent "Critic" reported.');
+    expect(text.join("\n")).toContain("Two chapter breaks sag.");
+    expect(text.join("\n")).toContain("outline.md");
   });
 });
 
@@ -124,6 +158,34 @@ describe("persistInboxSteers", () => {
       "turn.created",
       "block.upserted",
     ]);
+  });
+
+  it("persists a report as a system turn carrying a helper-result card", async () => {
+    const { repos, eventWriter, inbox, thread } = await seed();
+    await inbox.enqueue(childReport("report-2", thread.id));
+    const [message] = await inbox.claimPending(thread.id);
+
+    const persisted = await persistInboxSteers({
+      deps: { repos, eventWriter },
+      threadId: thread.id,
+      expectedLeafTurnId: null,
+      batch: [message],
+    });
+
+    expect(persisted.turns[0]?.role).toBe("system");
+    const [block] = await repos.blocks.listByTurn(message.id);
+    expect(block?.blockType).toBe("custom");
+    expect(block?.content).toMatchObject({
+      kind: "helper-result",
+      props: {
+        agentSlug: "critic",
+        title: "Review the chapter",
+        status: "completed",
+        childThreadId: "child-thread",
+        summary: "Two chapter breaks sag.",
+        artifacts: [{ type: "object", uri: "outline.md" }],
+      },
+    });
   });
 
   it("stamps a steer turn with the message enqueuedAt, not persist time", async () => {

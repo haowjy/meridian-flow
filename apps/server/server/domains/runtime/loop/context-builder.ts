@@ -256,7 +256,8 @@ function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]
 // Projects a system-turn custom card into the model-facing text. Only the
 // delivered background report (`helper-result`) has model meaning; the card
 // itself stays in the writer transcript. A running card has nothing to report.
-function componentModelText(content: ComponentBlockContent): string | null {
+// Artifact refs are included so a report never loses what it produced.
+export function componentModelText(content: ComponentBlockContent): string | null {
   if (content.kind !== "helper-result") return null;
   const props = content.props as HelperResultProps;
   if (props.status === "running") return null;
@@ -264,6 +265,9 @@ function componentModelText(content: ComponentBlockContent): string | null {
     `Background subagent "${props.agentName}" ${props.status === "failed" ? "failed" : "reported"}.`,
     props.summary ?? "",
     props.payload !== undefined ? JSON.stringify(props.payload) : "",
+    props.artifacts !== undefined && props.artifacts.length > 0
+      ? JSON.stringify(props.artifacts)
+      : "",
   ].filter(Boolean);
   return lines.join("\n");
 }

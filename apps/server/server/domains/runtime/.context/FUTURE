@@ -2,15 +2,7 @@
   auto-starts a parent turn with no writer action (design open q2). No
   budget/billing numeric assertion records what bounds that turn; measure
   `assertTurnBudget` / `canStartTurn` / ledger behavior for it
-  (`apps/server/server/domains/runtime/spawn/child-report-delivery.ts`).
-
-- The two durable delivery obligation stores stay separate even though
-  `createDeliveryPump` + `withRunClaim` are shared: the child-report store is
-  keyed by report id with `submission_epoch`, the Work-context store by thread.
-  If a third delivery mechanism appears, extract one obligation-store port
-  rather than copy a third transport
-  (`apps/server/server/domains/runtime/spawn/child-report-delivery.ts`,
-  `apps/server/server/domains/runtime/loop/work-context-delivery.ts`).
+  (`apps/server/server/domains/runtime/spawn/child-run-driver.ts`).
 
 - The in-memory thread repository's `nextRef` counter increments outside a
   transaction, so a rolled-back test create leaves a handle gap the Drizzle

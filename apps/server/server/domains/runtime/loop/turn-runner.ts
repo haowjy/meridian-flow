@@ -41,7 +41,6 @@ import {
   type TurnRepository,
   TurnStartConflictError,
 } from "../../threads/index.js";
-import type { ChildReportDelivery } from "../spawn/child-report-delivery.js";
 import type { Lease, RunAuthority } from "./ports.js";
 import { NoPendingWakeError, type RunTurnInput, type RunTurnPort } from "./run-turn-port.js";
 
@@ -87,7 +86,6 @@ export function createTurnRunner(deps: {
   hub: ThreadEventHub;
   repos: { turns: TurnRepository };
   eventSink: EventSink;
-  childReportDelivery?: Pick<ChildReportDelivery, "flush">;
   workContextDelivery: Pick<WorkContextDelivery, "beforeTurn" | "flushOwned">;
   runAuthority: RunAuthority;
 }) {
@@ -275,14 +273,8 @@ export function createTurnRunner(deps: {
           try {
             await deps.workContextDelivery.flushOwned(input.threadId);
           } finally {
-            try {
-              await runAuthority.release(heldLease);
-              childRunRegistry.abortChildrenOf(input.threadId);
-            } finally {
-              // After release: a pending report's continuation must not contend
-              // for the claim this finishing turn still held.
-              await deps.childReportDelivery?.flush(input.threadId);
-            }
+            await runAuthority.release(heldLease);
+            childRunRegistry.abortChildrenOf(input.threadId);
           }
         }
       })();

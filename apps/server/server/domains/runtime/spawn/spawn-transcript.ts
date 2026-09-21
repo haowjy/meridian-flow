@@ -3,8 +3,9 @@
  *
  * Tool dispatch runs handlers and durable tool_result rows. This module upserts
  * helper-result custom cards onto the active turn and owns return_result
- * settlement (tool_result + child-report in one persist). Background
- * child-report-delivery uses the same HelperResultProps builder.
+ * settlement (tool_result + child-report in one persist). The inbox drain's
+ * report branch uses the same HelperResultProps builder for a background
+ * child's terminal card.
  */
 import {
   buildChildReportComponentContent,

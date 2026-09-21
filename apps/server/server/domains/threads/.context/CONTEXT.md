@@ -19,13 +19,6 @@ instead of the N:1 `threads.workId` column.
   port. `thread_run_leases` is the queryable run lease paired with the runtime's
   session advisory lock (`phase`, `cancel_requested`, `expires_at`). Both cascade
   from `threads`.
-- **Child-report delivery obligations** — `child_report_deliveries` (schema in
-  `agent-threads.ts`) is the durable "undelivered background report" marker,
-  one row per child execution keyed by the child run's assistant turn id
-  (`report_id`), carrying `submission_epoch` and a reused nullable
-  `system_turn_id`. Enqueued atomically with the child's terminal lifecycle and
-  deleted once the parent continuation is durably admitted. Delivered by
-  `domains/runtime/spawn/child-report-delivery.ts`.
 - **Thread↔Work membership** — `thread_works` join table (exactly one primary per live thread; No Work is a real row). `threads.workId` column is **dropped**. Membership is organizational;
   same-project Work-authority URIs do not require membership.
 - **Thread Work rebind** — `rebindThreadWork` is the canonical mutation for
@@ -101,7 +94,6 @@ instead of the N:1 `threads.workId` column.
 | `restoreOwnedThreadFromTrash` | Authenticated restore boundary; revalidates historical primary Work then thread under Work-before-thread locks. It restores the exact available Work, or rebinds an unavailable historical primary to No Work. |
 | `EventJournalWriter` | `appendEvent(threadId, event) -> bigint seq` |
 | `EventJournalReader` | `readAfter / headSeq / listByThread / listByType / listSince / listByTimeRange` |
-| `ChildReportDeliveryRepository` | Durable exactly-once delivery facts for a background child's terminal report: `enqueue` (idempotent on `report_id`, enlists in the ambient transaction), pending-parent listing, `findByReportId`, one-time `setSystemTurnId`, `advanceEpoch` after a terminally rejected attempt, and `acknowledge`. |
 
 Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
 (`OrchestratorEvent`) live in `@meridian/contracts/threads`. All are JSON-natural.

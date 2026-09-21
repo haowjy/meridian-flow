@@ -99,9 +99,7 @@ import {
 } from "../domains/runtime/agent-definition-support.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
-  type ChildReportDelivery,
   createAdmissionTurnStarter,
-  createChildReportDelivery,
   createChildRunCoordinator,
   createChildRunDriver,
   createContextImageAssetPort,
@@ -112,7 +110,6 @@ import {
   createDrizzleThreadRunOwnership,
   createGatewayFromEnv,
   createHeartbeatRunAuthority,
-  createHostTurnAdmission,
   createInMemoryInbox,
   createInMemoryRunStarter,
   createInMemoryThreadLock,
@@ -132,7 +129,6 @@ import {
   createWorkContextReader,
   DEFAULT_LEASE_TTL_MS,
   type Gateway,
-  type HostTurnAdmission,
   InvalidAdmissionError,
   type RunAuthority,
   type RunStarter,
@@ -227,7 +223,6 @@ export type AppServices = {
   workAuthorityResolver: ProjectWorkAuthorityResolver;
   workContext: WorkContextReader;
   workContextDelivery: WorkContextDelivery;
-  childReportDelivery: ChildReportDelivery;
   billing: BillingService;
   agentRevisions: AgentRevisionStore;
   agentCatalog: BoundAgentCatalog;
@@ -636,18 +631,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   }
   const toolExecutor = createToolExecutor(toolRegistry);
   const runTurnProxy = createLateBindRunTurnPort();
-  let childReportDelivery: ChildReportDelivery | undefined;
   runner = createTurnRunner({
     orchestrator: runTurnProxy,
     hub: threadEventHub,
     repos: { turns: ports.threadRepos.turns },
     eventSink: ports.eventSink,
     runAuthority: ports.runAuthority,
-    childReportDelivery: {
-      async flush(threadId) {
-        await childReportDelivery?.flush(threadId);
-      },
-    },
     workContextDelivery,
   });
   // One durable inbox and lock shared by the loop (consumer) and the producer
@@ -704,31 +693,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     starter: admissionStarter,
   });
-  const hostTurnAdmission: HostTurnAdmission = createHostTurnAdmission({
-    records: admissionRecords,
-    runOwnership: ports.runOwnership,
-    starter: admissionStarter,
-  });
-  const childReportDeliveryInstance = createChildReportDelivery({
-    repos: ports.threadRepos,
-    eventWriter: threadEventHub,
-    admission: hostTurnAdmission,
-    isThreadRunning: (threadId) => runner.isThreadRunning(threadId),
-    runOwnership: ports.runOwnership,
-    schedulePostCommit(task) {
-      runAfterDrizzleCommit(() => {
-        void task().catch((cause) => {
-          emitEvent(ports.eventSink, {
-            level: "error",
-            source: "runtime.child-report-delivery",
-            name: "delivery.failed",
-            payload: unknownToEventPayload(cause),
-          });
-        });
-      });
-    },
-  });
-  childReportDelivery = childReportDeliveryInstance;
   const childRunDriver = createChildRunDriver({
     orchestrator: runTurnProxy,
     repos: {
@@ -739,7 +703,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     eventWriter: ports.journalWriter,
     childRunRegistry: runner.childRunRegistry,
-    childReportDelivery: childReportDeliveryInstance,
+    threadedInbox,
     workContextDelivery: workContextDelivery,
     runAuthority: ports.runAuthority,
     billingSpendReader: ports.billingSpendReader,
@@ -833,7 +797,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workAuthorityResolver: ports.workAuthorityResolver,
     workContext,
     workContextDelivery,
-    childReportDelivery: childReportDeliveryInstance,
     billing: ports.billing,
     agentRevisions: ports.agentRevisions,
     agentCatalog: createBoundAgentCatalog({
@@ -923,12 +886,6 @@ export function createInMemoryAppServices(): AppServices {
       throw new Error("in-memory Work context is not configured");
     },
   };
-  const noopChildReportDelivery: ChildReportDelivery = {
-    async enqueue() {},
-    async flush() {},
-    async sweep() {},
-  };
-
   const inMemoryThreadEventHub: ThreadEventHub = {
     publishPersistedEvent() {},
     async appendEvent() {
@@ -1213,7 +1170,6 @@ export function createInMemoryAppServices(): AppServices {
     workAuthorityResolver,
     workContext: unavailableWorkContext,
     workContextDelivery: noopWorkContextDelivery,
-    childReportDelivery: noopChildReportDelivery,
     billing: billingDomain.service,
     agentRevisions,
     agentCatalog: createBoundAgentCatalog({

@@ -18,13 +18,11 @@ import { formatThreadRef } from "../../domain/thread-ref.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type {
   BlockRepository,
-  ChildReportDeliveryObligation,
   CreateBlockInput,
   CreateModelResponseInput,
   CreateThreadInput,
   CreateTurnInput,
   DerivedPrimaryThreadFactory,
-  EnqueueChildReportDeliveryInput,
   InternalThreadRepositories,
   ModelResponseRepository,
   SubagentThreadFactory,
@@ -182,7 +180,6 @@ export function createInMemoryRepositories(
     { threadId: ThreadId; workId: WorkId; isPrimary: boolean }
   >();
   const workContextDeliveries = transactionOwner.set<string>();
-  const childReportDeliveries = transactionOwner.map<string, ChildReportDeliveryObligation>();
   const userStateByThreadUser = transactionOwner.map<string, { isFavorite: boolean }>();
   const threadCounters = transactionOwner.map<string, number>();
 
@@ -840,44 +837,6 @@ export function createInMemoryRepositories(
       },
       async acknowledge(threadId) {
         workContextDeliveries.delete(threadId);
-      },
-    },
-    childReportDeliveries: {
-      async enqueue(input: EnqueueChildReportDeliveryInput) {
-        const key = input.reportId as string;
-        if (childReportDeliveries.has(key)) return;
-        childReportDeliveries.set(key, {
-          reportId: input.reportId,
-          parentThreadId: input.parentThreadId,
-          childThreadId: input.childThreadId,
-          agentSlug: input.agentSlug,
-          description: input.description ?? null,
-          result: input.result,
-          systemTurnId: input.systemTurnId ?? null,
-          submissionEpoch: 0,
-        });
-      },
-      async listPendingParentThreadIds() {
-        return [...new Set([...childReportDeliveries.values()].map((row) => row.parentThreadId))];
-      },
-      async listPendingByParent(parentThreadId) {
-        return [...childReportDeliveries.values()].filter(
-          (row) => row.parentThreadId === parentThreadId,
-        );
-      },
-      async findByReportId(reportId) {
-        return childReportDeliveries.get(reportId as string) ?? null;
-      },
-      async setSystemTurnId(reportId, systemTurnId) {
-        const row = childReportDeliveries.get(reportId as string);
-        if (row && row.systemTurnId === null) row.systemTurnId = systemTurnId;
-      },
-      async advanceEpoch(reportId) {
-        const row = childReportDeliveries.get(reportId as string);
-        if (row) row.submissionEpoch += 1;
-      },
-      async acknowledge(reportId) {
-        childReportDeliveries.delete(reportId as string);
       },
     },
     transaction: (operation) => transactionOwner.run(operation),

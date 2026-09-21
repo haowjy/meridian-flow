@@ -16,7 +16,6 @@ import type { WorkProjectionMutation } from "../../../projects/adapters/work-pro
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type { InternalThreadRepositories } from "../../ports/repositories.js";
 import { createDrizzleBlockRepository } from "./block-repository.js";
-import { createDrizzleChildReportDeliveryRepository } from "./child-report-delivery-repository.js";
 import { createDrizzleHomeChatFeedRepository } from "./home-feed-repository.js";
 import { createDrizzleModelResponseRepository } from "./model-response-repository.js";
 import { createDrizzleThreadDocumentRepository } from "./thread-document-repository.js";
@@ -48,7 +47,6 @@ function composeDrizzleRepositories(
     threadDocuments: createDrizzleThreadDocumentRepository(db),
     documentTouches: createDrizzleTurnDocumentTouchRepository(db),
     workContextDeliveries: createDrizzleWorkContextDeliveryRepository(db),
-    childReportDeliveries: createDrizzleChildReportDeliveryRepository(db),
     transaction(operation) {
       return runInDrizzleTransaction(db, operation);
     },

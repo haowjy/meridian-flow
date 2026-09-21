@@ -26,7 +26,6 @@ import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js"
 import type { RunTurnPort } from "../loop/run-turn-port.js";
 import { createThreadedInbox } from "../loop/threaded-inbox.js";
 import { createToolRegistry, resolveAgentThreadTurnContext } from "../tools/index.js";
-import type { ChildReportEnqueue } from "./child-report-delivery.js";
 import { createChildRunCoordinator } from "./child-run-coordinator.js";
 import { createChildRunDriver } from "./child-run-driver.js";
 import type { SpawnTranscript } from "./spawn-transcript.js";
@@ -139,7 +138,6 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
   const journal: Array<{ type: string; childThreadId?: string }> = [];
   const abortedChildren: string[] = [];
   const turns: RecordedTurn[] = [];
-  const deliveries: ChildReportEnqueue[] = [];
   const runAuthority = createInMemoryRunAuthority();
   const eventWriter: EventJournalWriter = {
     async appendEvent(_threadId, event) {
@@ -147,6 +145,13 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
       return BigInt(journal.length);
     },
   };
+  const inbox = createInMemoryInbox();
+  const runStarter = createInMemoryRunStarter();
+  const threadedInbox = createThreadedInbox({
+    inbox,
+    threadLock: createInMemoryThreadLock(),
+    runStarter,
+  });
 
   const driver = createChildRunDriver({
     orchestrator: options.orchestrator ?? stubOrchestrator(turns),
@@ -167,13 +172,7 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
       },
       abortChildrenOf() {},
     },
-    childReportDelivery: {
-      async enqueue(input) {
-        // Mirrors the repository's INSERT ... ON CONFLICT (report_id) DO NOTHING.
-        if (deliveries.some((delivery) => delivery.reportId === input.reportId)) return;
-        deliveries.push(input);
-      },
-    },
+    threadedInbox,
     workContextDelivery: { async flushOwned() {} },
     runAuthority,
     billingSpendReader: {
@@ -181,13 +180,6 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
         return "0";
       },
     },
-  });
-  const inbox = createInMemoryInbox();
-  const runStarter = createInMemoryRunStarter();
-  const threadedInbox = createThreadedInbox({
-    inbox,
-    threadLock: createInMemoryThreadLock(),
-    runStarter,
   });
   const coordinator = createChildRunCoordinator({
     driver,
@@ -216,7 +208,6 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
     journal,
     abortedChildren,
     turns,
-    deliveries,
     inbox,
     runStarter,
     runAuthority,
@@ -649,7 +640,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
   });
 });
 
-describe("ChildRunCoordinator continue", () => {
+describe("ChildRunCoordinator thread_message", () => {
   it("runs one more turn against the frozen binding", async () => {
     const { coordinator, parent, revisions, turns } = await fixture();
     const spawned = await coordinator.runChild(
@@ -859,7 +850,7 @@ describe("ChildRunCoordinator continue", () => {
   });
 
   it("enqueues one agent steer for a background message and wakes the target", async () => {
-    const { coordinator, parent, deliveries, inbox, runStarter, turns } = await fixture();
+    const { coordinator, parent, inbox, runStarter, turns } = await fixture();
     const spawned = await coordinator.runChild(
       {
         kind: "spawn",
@@ -903,7 +894,6 @@ describe("ChildRunCoordinator continue", () => {
     // A steer wakes the (asleep) target; the caller drives nothing here.
     expect(runStarter.started).toContain(childId);
     expect(turns.length).toBe(turnsBefore);
-    expect(deliveries).toHaveLength(0);
   });
 
   it("does not enqueue anything for a foreground message", async () => {
@@ -957,7 +947,7 @@ describe("ChildRunCoordinator continue", () => {
       },
       async finalizeGeneratorFailure() {},
     };
-    const { coordinator, parent, deliveries } = await fixture({ orchestrator });
+    const { coordinator, parent, inbox } = await fixture({ orchestrator });
 
     const background = await coordinator.runChild(
       {
@@ -972,17 +962,19 @@ describe("ChildRunCoordinator continue", () => {
     );
     expect(background.status).toBe("background");
 
-    await vi.waitFor(() => expect(deliveries).toHaveLength(1));
-    expect(deliveries[0]).toMatchObject({
-      reportId: "assistant-turn-1",
-      result: {
-        status: "completed",
-        report: { summary: "durable report", payload: { saved: true } },
-      },
+    await vi.waitFor(async () => {
+      expect(await inbox.claimPending(parent.id)).toHaveLength(1);
+    });
+    const [report] = await inbox.claimPending(parent.id);
+    expect(report).toMatchObject({
+      intent: "steer",
+      provenance: { kind: "child", reportId: "assistant-turn-1" },
+      body: { kind: "report", text: "durable report", payload: { saved: true } },
+      idempotencyKey: "child-report:assistant-turn-1",
     });
   });
 
-  it("does not rewrite the child's stored report when a continue run fails", async () => {
+  it("does not rewrite the child's stored report when a thread_message run fails", async () => {
     let calls = 0;
     const orchestrator: RunTurnPort = {
       async runTurn(input) {

@@ -1,10 +1,12 @@
 /**
  * The inbox drain seam: renders a claimed batch into a model request and
- * persists its steers as user-role turns. A `steer` becomes a user-role message
- * at the request tail and, because a steer is history (not transient context),
- * a persisted user-role turn at the thread tail; a `system` message becomes a
- * request-only notice that never persists a turn. Producers are not
- * special-cased — the body decides.
+ * persists its steers as durable history. A text `steer` becomes a user-role
+ * message at the request tail and a persisted user-role turn; a `system`
+ * message becomes a request-only notice that never persists a turn. A `report`
+ * steer (a child's terminal report) persists as a system-role turn carrying a
+ * `helper-result` card — the writer's run card — and reaches the model through
+ * the shared `componentModelText` projection. Producers are not special-cased;
+ * the body decides.
  *
  * The persisted steer turn reuses the durable inbox message id as its turn and
  * block id. The inbox collapses `(threadId, idempotencyKey)` to one row, so a
@@ -13,12 +15,24 @@
  * upsert. `drainInbox` is the only consumer of the claim; the loop deals in
  * request messages, notices, and persisted events, not inbox rows.
  */
+import {
+  buildHelperResultComponentContent,
+  type HelperResultComponentContent,
+} from "@meridian/contracts/components";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { Block, BlockUpsertedRow, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
+import type {
+  Block,
+  BlockUpsertedRow,
+  JsonObject,
+  OrchestratorEvent,
+  Turn,
+} from "@meridian/contracts/threads";
 import type { Notice, NoticePort } from "../../notices/index.js";
-import { user } from "../gateway/helpers/messages.js";
+import { system, user } from "../gateway/helpers/messages.js";
 import type { Message } from "../gateway/index.js";
+import { spawnHelperCardProps } from "../spawn/spawn-output.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
+import { componentModelText } from "./context-builder.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { Inbox, InboxMessage } from "./ports.js";
@@ -86,10 +100,17 @@ export function renderInboxBatch(
   const rendered = [...messages];
   const notices: Notice[] = [];
   for (const message of batch) {
-    if (message.intent === "steer") {
-      rendered.push(user(inboxMessageText(message)));
-    } else {
+    if (message.intent !== "steer") {
       notices.push(inboxMessageNotice(message));
+      continue;
+    }
+    // A report is a system-role card; render it in the same model-facing form
+    // the persisted system turn projects, so mid-run delivery matches history.
+    if (message.body.kind === "report") {
+      const modelText = componentModelText(reportCardContent(message, message.id as TurnId));
+      if (modelText) rendered.push(system(modelText));
+    } else {
+      rendered.push(user(inboxMessageText(message)));
     }
   }
   return { messages: rendered, notices };
@@ -147,11 +168,14 @@ export function steerTurnFor(
   message: InboxMessage,
   prevTurnId: TurnId | null,
 ): { turn: Turn; block: BlockUpsertedRow; text: string } {
+  const isReport = message.body.kind === "report";
   const turn = createLocalTurn({
     id: message.id,
     threadId: message.threadId,
     prevTurnId,
-    role: "user",
+    // A report is writer-facing card history the model reads as a system turn;
+    // a text steer is a user-role message.
+    role: isReport ? "system" : "user",
     status: "complete",
     metadata: { kind: "steer" },
     createdAt: message.enqueuedAt,
@@ -160,12 +184,51 @@ export function steerTurnFor(
   const block = contentForBlockInput({
     id: message.id,
     turnId: turn.id,
-    blockType: "text",
+    ...(isReport
+      ? {
+          blockType: "custom" as const,
+          content: reportCardContent(message, turn.id as TurnId),
+        }
+      : { blockType: "text" as const, textContent: text }),
     sequence: 0,
-    textContent: text,
     status: "complete",
   });
   return { turn, block, text };
+}
+
+/**
+ * The writer-facing `helper-result` card for a drained report, built through the
+ * same `spawnHelperCardProps` seam every spawn/child card uses. `childThreadId`
+ * comes from the `child` provenance; the steer turn is the door's parent.
+ */
+function reportCardContent(message: InboxMessage, turnId: TurnId): HelperResultComponentContent {
+  if (message.body.kind !== "report") {
+    throw new Error("reportCardContent requires a report body");
+  }
+  const body = message.body;
+  const childThreadId =
+    message.provenance.kind === "child" ? (message.provenance.threadId as string) : undefined;
+  const output: JsonObject = body.failed
+    ? { status: "error", error: { code: "child_report_failed", message: body.text } }
+    : {
+        status: "completed",
+        report: {
+          handle: "",
+          threadId: childThreadId ?? "",
+          summary: body.text,
+          ...(body.artifacts !== undefined ? { artifacts: body.artifacts } : {}),
+          ...(body.payload !== undefined ? { payload: body.payload } : {}),
+        },
+      };
+  return buildHelperResultComponentContent(
+    spawnHelperCardProps({
+      ...(body.agentSlug !== undefined ? { agent: body.agentSlug } : {}),
+      ...(body.description !== undefined ? { description: body.description } : {}),
+      parentTurnId: turnId,
+      ...(childThreadId !== undefined ? { childThreadId } : {}),
+      output,
+    }),
+  );
 }
 
 function inboxMessageText(message: InboxMessage): string {
