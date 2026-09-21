@@ -117,12 +117,6 @@ export type ThreadStoreActions = {
   removeOptimisticUserTurn(threadId: string, optimisticTurnId: string): void;
   ensureAssistantTurn(threadId: string, turnId: string, opts?: EnsureAssistantTurnOptions): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
-  /**
-   * Drop one block from a turn. Used by the background-run reducer to clear its
-   * transient running card when the child settles; the durable report arrives as
-   * its own block, so a merge is never correct here.
-   */
-  removeAssistantBlock(threadId: string, turnId: string, blockId: string): void;
   patchTurnStatus(
     threadId: string,
     turnId: string,

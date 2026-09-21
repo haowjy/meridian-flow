@@ -38,10 +38,12 @@ never reads transient stream state (`isLive`, partial blocks). Hidden protocol
 (the `tool_use`/`tool_result` rows a card already surfaces) is dropped, not
 folded.
 
-A background child's live indicator is one more custom block: the
-`meridian.background.*` reducer (`core/session/reduce-background-event.ts`)
-synthesizes a running `helper-result` card on the parent turn and removes it
-when the child settles, so the writer sees the run without opening the fold.
+Run liveness is never a turn block. The `meridian.background.*` frames used to
+synthesize a running `helper-result` card on the parent turn; that client-only
+block was removed because a terminal parent turn reconciles local blocks away,
+so the card flashed and vanished. The durable report still arrives as its own
+`helper-result` system-turn block. A live subagent surface is server truth
+(leases + lineage), landing separately.
 
 The full model lives in
 [`.context/turn-composition.md`](.context/turn-composition.md); one row's
