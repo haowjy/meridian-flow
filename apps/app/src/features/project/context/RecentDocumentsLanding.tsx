@@ -75,6 +75,16 @@ export function RecentDocumentsLanding({
     return () => window.clearInterval(timer);
   }, []);
 
+  // No history: the heading promises a list that does not exist, so the
+  // first-run state stands alone rather than sitting under it.
+  if (recent.status === "empty") {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 text-center">
+        <LandingEmpty onNewDocument={onNewDocument} />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className={cn(editorColumnChrome, "pt-16 pb-24")}>
@@ -102,8 +112,6 @@ export function RecentDocumentsLanding({
               onRetry={recent.refetch}
             />
           </div>
-        ) : recent.status === "empty" ? (
-          <LandingEmpty onNewDocument={onNewDocument} />
         ) : (
           <div className="mt-7 flex flex-col">
             {GROUPS.map((group) => {
@@ -183,7 +191,7 @@ function LandingLoading() {
 
 function LandingEmpty({ onNewDocument }: { onNewDocument?: () => void }) {
   return (
-    <div className="flex flex-col items-center px-6 pt-24 pb-8 text-center">
+    <>
       <p className="font-medium text-foreground">
         <Trans>Nothing opened yet</Trans>
       </p>
@@ -194,6 +202,6 @@ function LandingEmpty({ onNewDocument }: { onNewDocument?: () => void }) {
         <FilePlus aria-hidden />
         <Trans>New document</Trans>
       </Button>
-    </div>
+    </>
   );
 }
