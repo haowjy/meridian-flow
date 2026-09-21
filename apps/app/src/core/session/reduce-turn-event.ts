@@ -43,6 +43,10 @@ type CustomBlockUpsertPayload = {
   };
 };
 
+type BlockPrunedPayload = {
+  blockId: string;
+};
+
 type PositionalBlockIdentity = {
   id: string;
   turnId: string;
@@ -57,6 +61,7 @@ type StoreEventTarget = {
     opts?: { createdAt?: string; writeMode?: Turn["writeMode"] },
   ): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
+  removeAssistantBlock(threadId: string, blockId: string): void;
   patchTurnStatus(
     threadId: string,
     turnId: string,
@@ -374,6 +379,13 @@ function parseCustomBlockUpsertPayload(value: unknown): CustomBlockUpsertPayload
       status: candidate.status === "partial" ? "partial" : "complete",
     },
   };
+}
+
+function parseBlockPrunedPayload(value: unknown): BlockPrunedPayload | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const blockId = (value as Record<string, unknown>).blockId;
+  if (typeof blockId !== "string" || blockId.length === 0) return null;
+  return { blockId };
 }
 
 function blockFromCustomUpsertPayload(payload: CustomBlockUpsertPayload): Block {
@@ -988,6 +1000,11 @@ export function applyAguiEventToStore(
       if (event.name === "meridian.block.upserted") {
         const payload = parseCustomBlockUpsertPayload(event.value);
         if (payload) applyCustomBlockUpsertEvent(store, threadId, payload);
+        return;
+      }
+      if (event.name === "meridian.block.pruned") {
+        const payload = parseBlockPrunedPayload(event.value);
+        if (payload) store.removeAssistantBlock(threadId, payload.blockId);
         return;
       }
       if (event.name === "meridian.interrupt") {

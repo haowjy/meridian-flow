@@ -106,6 +106,7 @@ export type ThreadStoreActions = {
   removeOptimisticUserTurn(threadId: string, optimisticTurnId: string): void;
   ensureAssistantTurn(threadId: string, turnId: string, opts?: EnsureAssistantTurnOptions): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
+  removeAssistantBlock(threadId: string, blockId: string): void;
   patchTurnStatus(
     threadId: string,
     turnId: string,

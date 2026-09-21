@@ -244,6 +244,15 @@ export function createOrchestratorEventProjector() {
         return events;
       }
 
+      case "block.pruned":
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.block.pruned",
+            value: { blockId: event.blockId },
+          }),
+        ];
+
       case "tool.executing":
         return [
           parseAguiEvent({

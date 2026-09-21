@@ -79,7 +79,11 @@ export async function buildThreadSnapshot(
   const turns = orderTurnsCausally(await repos.turns.listByThread(threadId));
   const threadTurns = await Promise.all(
     turns.map(async (turn): Promise<Turn> => {
-      const blocks = (await repos.blocks.listByTurn(turn.id)).map(toClientSafeBlock);
+      // Pruned rows are retired from the transcript (e.g. a settled background
+      // run card replaced by its report card); reload must not resurrect them.
+      const blocks = (await repos.blocks.listByTurn(turn.id))
+        .filter((block) => block.pruned !== true)
+        .map(toClientSafeBlock);
       const responses = await repos.modelResponses.listByTurn(turn.id);
       return {
         ...turn,
