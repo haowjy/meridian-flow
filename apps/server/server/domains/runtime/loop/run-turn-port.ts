@@ -53,7 +53,12 @@ export function isDrainRun(input: RunTurnInput): input is DrainRunTurnInput {
   return "drain" in input && input.drain === true;
 }
 
-/** The drain start found no durable pending steer to serve; nothing was written. */
+/**
+ * The drain start found no durable pending steer to serve. The drain mints no
+ * assistant turn; a preceding `WorkContextDelivery.beforeTurn` may already have
+ * persisted a `system_update` turn, which the next run reads as history. The
+ * invariant is "no phantom assistant turn", not "no write".
+ */
 export class NoPendingWakeError extends Error {
   constructor(readonly threadId: ThreadId) {
     super("no_pending_wake");

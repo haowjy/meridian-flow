@@ -367,23 +367,10 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
     input.threadId,
     thread.activeLeafTurnId,
     async () => {
-      await reconcileOrphanedPendingWrites(deps, input.threadId);
-      const priorTurns = await repos.turns.listByThread(input.threadId);
-      const conversation = await loadThreadConversationContext(
-        { threads: repos.threads, turns: repos.turns, blocks: repos.blocks },
+      const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = await loadRunStartContext(
+        deps,
         thread,
       );
-      const inheritedTurnCount = Math.max(0, conversation.turns.length - priorTurns.length);
-      const inheritedTurns = conversation.turns.slice(0, inheritedTurnCount);
-      const inheritedTurnIds = new Set(inheritedTurns.map((turn) => turn.id));
-      const inheritedBlocks = conversation.blocks.filter((block) =>
-        inheritedTurnIds.has(block.turnId),
-      );
-      const sortedLeaf = priorTurns.at(-1) ?? inheritedTurns.at(-1) ?? null;
-      // Chain from the durable leaf when present: `priorTurns` sorts by
-      // `createdAt`, which can disagree with `activeLeafTurnId` after a restart
-      // or an equal-timestamp batch, which would fork the turn chain.
-      const prevTurnId = thread.activeLeafTurnId ?? sortedLeaf?.id ?? null;
       // Read inside the setup transaction so the turn's durable write vocabulary
       // matches the mode in effect at the moment the turn was minted.
       const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
@@ -494,20 +481,10 @@ async function runDrainTurn(
     input.threadId,
     thread.activeLeafTurnId,
     async () => {
-      await reconcileOrphanedPendingWrites(deps, input.threadId);
-      const priorTurns = await repos.turns.listByThread(input.threadId);
-      const conversation = await loadThreadConversationContext(
-        { threads: repos.threads, turns: repos.turns, blocks: repos.blocks },
+      const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = await loadRunStartContext(
+        deps,
         thread,
       );
-      const inheritedTurnCount = Math.max(0, conversation.turns.length - priorTurns.length);
-      const inheritedTurns = conversation.turns.slice(0, inheritedTurnCount);
-      const inheritedTurnIds = new Set(inheritedTurns.map((turn) => turn.id));
-      const inheritedBlocks = conversation.blocks.filter((block) =>
-        inheritedTurnIds.has(block.turnId),
-      );
-      const sortedLeaf = priorTurns.at(-1) ?? inheritedTurns.at(-1) ?? null;
-      const prevTurnId = thread.activeLeafTurnId ?? sortedLeaf?.id ?? null;
       const knownTurnIds = new Set<string>([
         ...inheritedTurns.map((turn) => turn.id),
         ...priorTurns.map((turn) => turn.id),
@@ -516,7 +493,7 @@ async function runDrainTurn(
       const batch = await deps.inbox.claimPending(input.threadId);
       const steers = batch.filter((message) => message.intent === "steer");
       // The wake sweep only starts a thread with a derived wake need; a race that
-      // drains the last steer first must leave no phantom turn behind.
+      // drains the last steer first must leave no phantom assistant turn behind.
       if (steers.length === 0) throw new NoPendingWakeError(input.threadId);
 
       const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
@@ -578,6 +555,40 @@ async function runDrainTurn(
       input.treeBudget ?? createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
     ),
   };
+}
+
+/**
+ * The shared run-start prelude: reconcile interrupted staged writes, load the
+ * thread's prior turns and inherited (fork) conversation, and resolve the turn
+ * to chain from. Both writer and drain starts run this inside their run-start
+ * transition; they differ only in the user-turn source they mint afterward.
+ */
+async function loadRunStartContext(
+  deps: OrchestratorDeps,
+  thread: Thread,
+): Promise<{
+  priorTurns: Turn[];
+  inheritedTurns: Turn[];
+  inheritedBlocks: Block[];
+  prevTurnId: TurnId | null;
+}> {
+  const { repos } = deps;
+  await reconcileOrphanedPendingWrites(deps, thread.id);
+  const priorTurns = await repos.turns.listByThread(thread.id);
+  const conversation = await loadThreadConversationContext(
+    { threads: repos.threads, turns: repos.turns, blocks: repos.blocks },
+    thread,
+  );
+  const inheritedTurnCount = Math.max(0, conversation.turns.length - priorTurns.length);
+  const inheritedTurns = conversation.turns.slice(0, inheritedTurnCount);
+  const inheritedTurnIds = new Set(inheritedTurns.map((turn) => turn.id));
+  const inheritedBlocks = conversation.blocks.filter((block) => inheritedTurnIds.has(block.turnId));
+  const sortedLeaf = priorTurns.at(-1) ?? inheritedTurns.at(-1) ?? null;
+  // Chain from the durable leaf when present: `priorTurns` sorts by `createdAt`,
+  // which can disagree with `activeLeafTurnId` after a restart or an
+  // equal-timestamp batch, which would fork the turn chain.
+  const prevTurnId = thread.activeLeafTurnId ?? sortedLeaf?.id ?? null;
+  return { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId };
 }
 
 async function reconcileOrphanedPendingWrites(

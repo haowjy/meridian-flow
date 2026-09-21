@@ -65,6 +65,7 @@ export class RuntimeTestRig {
   readonly runner;
   readonly gateway;
   readonly inbox;
+  readonly runAuthority;
 
   private readonly eventWaiters = new Set<{
     predicate: (event: AGUIEvent) => boolean;
@@ -83,6 +84,7 @@ export class RuntimeTestRig {
     orchestrator: ReturnType<typeof createOrchestrator>;
     runner: ReturnType<typeof createTurnRunner>;
     inbox: Inbox;
+    runAuthority: ReturnType<typeof createInMemoryRunAuthority>;
   }) {
     Object.assign(this, state);
     this.userId = state.userId;
@@ -96,6 +98,7 @@ export class RuntimeTestRig {
     this.orchestrator = state.orchestrator;
     this.runner = state.runner;
     this.inbox = state.inbox;
+    this.runAuthority = state.runAuthority;
     this.hub.subscribe(this.thread.id, (entry) => {
       this.projectedEvents.push(entry);
       for (const waiter of this.eventWaiters) {
@@ -186,6 +189,7 @@ export class RuntimeTestRig {
       orchestrator,
       runner,
       inbox,
+      runAuthority,
     });
     return rig;
   }

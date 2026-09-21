@@ -94,4 +94,12 @@ describe("wake run", () => {
     await rig.awaitEvent(EventType.RUN_FINISHED);
     expect(await rig.repos.turns.listByThread(rig.thread.id)).toHaveLength(2);
   });
+
+  it("swallows a wake with no pending steer and releases the acquired lease", async () => {
+    const rig = await RuntimeTestRig.create({ gateway: textGateway() });
+
+    await expect(rig.runner.startDrain(rig.thread.id)).resolves.toBeUndefined();
+    expect(await rig.runAuthority.holder(rig.thread.id)).toBeNull();
+    expect(await rig.repos.turns.listByThread(rig.thread.id)).toEqual([]);
+  });
 });
