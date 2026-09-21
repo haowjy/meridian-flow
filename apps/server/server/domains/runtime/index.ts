@@ -102,6 +102,11 @@ export { createWorkContextDelivery } from "./loop/work-context-delivery.js";
 export type { ImageAssetPort } from "./ports/image-asset.js";
 export { unavailableImageAssetPort } from "./ports/image-asset.js";
 export {
+  appendSubagentActivity,
+  appendSubagentActivityBestEffort,
+  emitSettledRunActivityBestEffort,
+} from "./spawn/activity-event.js";
+export {
   authorizeThreadMessage,
   type ThreadMessageTargetOutcome,
 } from "./spawn/authorize-thread-message.js";

@@ -1179,6 +1179,35 @@ describe("ChildRunCoordinator root activity journal", () => {
     expect(journal.some((entry) => entry.type === "agent.spawn")).toBe(true);
   });
 
+  it("emits the terminal activity frame asleep after the lease is released", async () => {
+    const { coordinator, parent, journal } = await fixture();
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    const childThreadId = result.report.threadId;
+
+    const activityEvents = journal.filter((entry) => entry.type === "subagent.activity");
+    expect(activityEvents).toHaveLength(2);
+    const terminal = activityEvents[1] as unknown as {
+      activity: {
+        descendants: Array<{ threadId: string; status: { kind: string }; spawnStatus: string }>;
+      };
+    };
+    const node = terminal.activity.descendants.find((entry) => entry.threadId === childThreadId);
+    expect(node?.spawnStatus).toBe("succeeded");
+    expect(node?.status.kind).toBe("asleep");
+  });
+
   it("keeps a successful foreground run successful when the terminal activity append throws", async () => {
     const appended: Array<{ type: string; result?: unknown }> = [];
     let activityAppends = 0;

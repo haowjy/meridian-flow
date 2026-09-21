@@ -101,6 +101,12 @@ export function createTurnRunner(deps: {
   eventSink: EventSink;
   workContextDelivery: Pick<WorkContextDelivery, "beforeTurn" | "flushOwned">;
   runAuthority: RunAuthority;
+  /**
+   * Best-effort notification that a drain run settled and released its lease.
+   * Lets a visibility read model refresh after a run the child-run driver did
+   * not drive (a child report or `thread_message` waking the thread).
+   */
+  onRunSettled?: (threadId: ThreadId) => void;
 }) {
   const eventSink = deps.eventSink;
   const runAuthority = deps.runAuthority;
@@ -243,6 +249,7 @@ export function createTurnRunner(deps: {
               await runAuthority.release(heldLease);
               childRunRegistry.abortChildrenOf(input.threadId);
             } finally {
+              deps.onRunSettled?.(input.threadId);
               markRunComplete();
             }
           }
