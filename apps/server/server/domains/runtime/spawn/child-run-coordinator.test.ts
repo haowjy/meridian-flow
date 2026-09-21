@@ -70,7 +70,11 @@ function stubOrchestrator(records: RecordedTurn[]): RunTurnPort {
 }
 
 async function fixture(
-  options: { orchestrator?: RunTurnPort; eventWriter?: EventJournalWriter } = {},
+  options: {
+    orchestrator?: RunTurnPort;
+    eventWriter?: EventJournalWriter;
+    updatePruned?: (id: string, pruned: boolean) => Promise<null>;
+  } = {},
 ) {
   const transactionOwner = new InMemoryTransactionOwner();
   let repos: ReturnType<typeof createInMemoryRepositories>;
@@ -172,7 +176,9 @@ async function fixture(
     repos: {
       threads: repos.threads,
       turns: repos.turns,
-      blocks: repos.blocks,
+      blocks: options.updatePruned
+        ? { ...repos.blocks, updatePruned: options.updatePruned }
+        : repos.blocks,
       transaction: repos.transaction,
     },
     eventWriter,
@@ -900,6 +906,39 @@ describe("ChildRunCoordinator thread_message", () => {
       expect((await repos.blocks.findById(cardId))?.pruned).toBe(true);
     });
     expect(journal.some((entry) => entry.type === "block.pruned")).toBe(true);
+  });
+
+  it("keeps a background run successful when retiring its run card throws", async () => {
+    const { coordinator, parent, repos, eventWriter, journal, eventSink } = await fixture({
+      updatePruned: async () => {
+        throw new Error("prune exploded");
+      },
+    });
+    const transcript = transcriptFor(parent.id as ThreadId, { repos, eventWriter });
+
+    const spawned = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "background", transcript },
+    );
+    expect(spawned.status).toBe("background");
+
+    await vi.waitFor(() => {
+      expect(journal.some((entry) => entry.type === "background.completed")).toBe(true);
+    });
+    // A read-model prune failure is not a run failure: no contradictory terminal fact.
+    expect(journal.some((entry) => entry.type === "background.failed")).toBe(false);
+    const terminal = journal.filter((entry) => entry.type === "agent.run_completed");
+    expect(terminal).toHaveLength(1);
+    expect(eventSink.events.some((event) => event.name === "subagent.run_card_prune_failed")).toBe(
+      true,
+    );
   });
 
   it("enqueues one agent message for a background message and wakes the target", async () => {

@@ -707,7 +707,7 @@ export function createInMemoryRepositories(
     },
     async updatePruned(id, pruned) {
       const block = blocks.get(id);
-      if (!block) throw new Error(`Block not found: ${id}`);
+      if (!block) return null;
       const updated = { ...block, pruned };
       blocks.set(id, updated);
       return updated;
