@@ -18,7 +18,8 @@ import type {
 } from "../../threads/index.js";
 import { createBoundConversation } from "../../threads/index.js";
 import type { ReturnResultCompleter } from "../loop/run-turn-port.js";
-import { authorizeContinueTarget } from "./authorize-continue-target.js";
+import type { ThreadedInbox } from "../loop/threaded-inbox.js";
+import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
 import { resolveChildInvocation } from "./resolve-child-invocation.js";
 import { persistHelperCard, type SpawnTranscript } from "./spawn-transcript.js";
@@ -35,14 +36,17 @@ export interface SpawnChildInput extends ChildDriveInput {
   signal?: AbortSignal;
 }
 
-export interface ContinueChildInput extends ChildDriveInput {
-  handle: string;
+export interface ThreadMessageChildInput extends ChildDriveInput {
+  /** Model-facing thread handle (`pN`/`cN`). */
+  ref: string;
+  /** Tool-call id; scopes the background enqueue's idempotency key. */
+  toolCallId: string;
   signal?: AbortSignal;
 }
 
 export type ChildRunRequest =
   | ({ kind: "spawn" } & SpawnChildInput)
-  | ({ kind: "continue" } & ContinueChildInput);
+  | ({ kind: "message" } & ThreadMessageChildInput);
 
 export interface ChildRunOptions {
   mode: "foreground" | "background";
@@ -54,7 +58,7 @@ export interface ChildRunCoordinatorDeps {
   /** Run lifecycle: claim, registry, stream, capture, terminal persistence. */
   driver: ChildRunDriver;
   repos: {
-    threads: Pick<ThreadRepository, "updateSpawnLifecycle" | "findLiveByProjectRef">;
+    threads: Pick<ThreadRepository, "updateSpawnLifecycle" | "findLiveByProjectRef" | "findById">;
     subagentThreads: SubagentThreadFactory;
     transaction: ThreadRepositories["transaction"];
   };
@@ -64,6 +68,8 @@ export interface ChildRunCoordinatorDeps {
     parentThreadId?: string | null;
   }): Promise<string>;
   eventWriter: EventJournalWriter;
+  /** Producer-facing inbox: background thread_message enqueues here. */
+  threadedInbox: Pick<ThreadedInbox, "enqueue">;
   agentRevisions: Pick<
     AgentRevisionStore,
     "readThreadBinding" | "readRevision" | "readSource" | "readPackageDefinitions" | "bindThread"
@@ -208,10 +214,9 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
   }
 
-  async function prepareContinue(
-    input: ContinueChildInput,
+  async function prepareForegroundMessage(
+    input: ThreadMessageChildInput,
     target: Thread,
-    background: boolean,
   ): Promise<PreparedChild | SpawnResult> {
     const turnError = assertTurnBudget(input.budget);
     if (turnError) return { status: "error", error: turnError };
@@ -221,23 +226,23 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       return {
         status: "error",
         error: meridianErrorFromSystem(
-          "continue_target_unavailable",
-          "Continue target has no retained Agent binding",
+          "thread_message_target_unavailable",
+          "Thread has no retained Agent binding",
         ),
       };
     }
     const resolvedSlug = binding.revision?.slug ?? GENERIC_SUBAGENT_SLUG;
     try {
       return await driver.register(target, resolvedSlug, {
-        background,
+        background: false,
         signal: input.signal,
-        origin: "continue",
+        origin: "message",
       });
     } catch (error) {
       return {
         status: "error",
         error: meridianErrorFromSystem(
-          "continue_target_busy",
+          "thread_message_target_busy",
           error instanceof Error ? error.message : String(error),
         ),
       };
@@ -264,13 +269,14 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       return outcome;
     }
 
-    const authorized = await authorizeContinueTarget({
+    const authorized = await authorizeThreadMessage({
       callerThread: request.parentThread,
-      targetHandle: request.handle,
+      targetRef: request.ref,
+      mode: background ? "background" : "foreground",
       threads: deps.repos.threads,
     });
     if (!authorized.ok) return { status: "error", error: authorized.error };
-    return prepareContinue(request, authorized.target, background);
+    return prepareForegroundMessage(request, authorized.target);
   }
 
   async function persistRunningCard(
@@ -305,11 +311,49 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     };
   }
 
+  /**
+   * Background thread_message is a queue producer only: authorize, enqueue a
+   * durable steer, return. The target's own run (woken by the inbox) drains it;
+   * nothing is driven in the caller's process.
+   */
+  async function sendBackgroundMessage(
+    request: {
+      kind: "message";
+    } & ThreadMessageChildInput,
+  ): Promise<SpawnResult> {
+    const authorized = await authorizeThreadMessage({
+      callerThread: request.parentThread,
+      targetRef: request.ref,
+      mode: "background",
+      threads: deps.repos.threads,
+    });
+    if (!authorized.ok) return { status: "error", error: authorized.error };
+
+    const target = authorized.target;
+    await deps.threadedInbox.enqueue({
+      threadId: target.id as ThreadId,
+      intent: "steer",
+      provenance: { kind: "agent", threadId: request.parentThread.id as ThreadId },
+      body: { kind: "text", text: request.prompt },
+      idempotencyKey: `thread-message:${request.toolCallId}`,
+    });
+    return {
+      status: "background",
+      handle: target.ref ?? "",
+      threadId: target.id,
+      agentSlug: target.kind === "subagent" ? GENERIC_SUBAGENT_SLUG : target.kind,
+    };
+  }
+
   async function runChild(
     request: ChildRunRequest,
     options: ChildRunOptions,
   ): Promise<SpawnResult> {
     const background = options.mode === "background";
+    if (request.kind === "message" && background) {
+      return sendBackgroundMessage(request);
+    }
+
     const prepared = await prepare(request, background, options.transcript);
     if ("status" in prepared) return prepared;
 
@@ -325,7 +369,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
 
     const cardFields = foregroundCardFields(request, prepared);
-    const failureCode = request.kind === "spawn" ? "spawn_failed" : "continue_failed";
+    const failureCode = request.kind === "spawn" ? "spawn_failed" : "thread_message_failed";
     let runningCard: Block | null = null;
     try {
       runningCard = await persistRunningCard(options.transcript, cardFields, prepared);

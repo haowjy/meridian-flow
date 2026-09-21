@@ -44,7 +44,7 @@ skeleton and delegates the moving parts.
 | `block-helpers.ts` | Content block conversion and local accumulator helpers. |
 | `turn-accounting.ts` | Credit ledger checks/debits and cumulative usage events. |
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
-| `tool-dispatch.ts` | Live output, spawn/continue/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy. return_result settlement is spawn-owned: dispatch honors the typed `ReturnResultOutcome` and does not parse arguments or reconstruct the envelope from JSON. |
+| `tool-dispatch.ts` | Live output, spawn/thread_message/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy. return_result settlement is spawn-owned: dispatch honors the typed `ReturnResultOutcome` and does not parse arguments or reconstruct the envelope from JSON. |
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. On **system** turns it also projects a completed `helper-result` custom card as model text (`componentModelText`), so the parent model reads a background child's report while the writer keeps the card. Assistant custom blocks stay UI-only to preserve tool_use→tool_result adjacency. |
@@ -102,7 +102,7 @@ verbatim. Skills that join slash after freeze do not rewrite the prompt or
 guard prompt freezing. The model comes from conversation-owned resolved
 configuration, including a frozen default when source omits it. Nonempty
 `skills.available` does not refuse selection or turn preparation. A nonempty
-`subagents` roster no longer refuses selection. `spawn` and `continue` are
+`subagents` roster no longer refuses selection. `spawn` and `thread_message` are
 advertised to every Agent; Mars `tools` cannot hide them. Named targets come
 from the binding's roster, baked into the frozen system prompt like available
 skills (not listed on the spawn tool), and an omitted or empty `agent` selects
@@ -117,7 +117,7 @@ the agent-less generic subagent.
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
 | Core handlers | The strict six-branch `work` union, the shared read/write document definitions, and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
 | Skills | References are retained at binding. `createSkillToolRegistrations` registers the `skill` tool (`source: "skill"`); invoke loads a SKILL.md body only when the slug is in Agent `skills.available` and `model-invocable` is not false. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
-| Spawn tools | `tools/spawn-tools.ts` registers `spawn`, `continue`, and `return_result` with explicit privileged capabilities. `continue` runs an existing child again with a new prompt; the child keeps its frozen binding and accepts no `append_system_prompt` or `overrides`. |
+| Spawn tools | `tools/spawn-tools.ts` registers `spawn`, `thread_message`, and `return_result` with explicit privileged capabilities. `thread_message` `{ ref, message, mode }` puts a message into a thread (default `mode: background`); foreground targets a subagent in the caller's subtree and returns its report. Neither spawn nor thread_message accepts an escalation patch. |
 
 Handler-owned `{ isError: true, output }` results already define their
 model-facing protocol, so the executor preserves their output by definition.
@@ -136,7 +136,7 @@ behavior; schema-only stubs are not advertised.
 
 `spawn/child-run-coordinator.ts` owns nested-agent policy and exposes one
 `runChild(request, { mode, transcript })` entrypoint, where `request.kind`
-discriminates spawn from continue. It authorizes, resolves the invocation,
+discriminates spawn from message. It authorizes, resolves the invocation,
 creates and binds the child thread, and persists writer cards. `spawn/resolve-child-invocation.ts`
 is the pure resolution/validation half (no thread, turn, or repository
 dependency); `spawn/child-run-driver.ts` owns the run lifecycle behind
@@ -148,21 +148,28 @@ spend reader, immutable Agent revisions, and the threads repository's
 `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key; `tools` and `disallowed-tools` are coupled and each returns the full `patchTools` result so a map `allow` lifts the baseline denial. Overrides fold tool-name aliases like authoring. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. A spawn-time `append_system_prompt` is an additive overlay layer appended after the immutable Agent body; spawn never replaces the body. Route-facing
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads.
-Continue drives an existing child instead of creating one: `runChild` with
-`kind: "continue"` authorizes through `spawn/authorize-continue-target.ts`,
-which resolves the model's `pN`/`cN` handle with the project-scoped
-`findLiveByProjectRef` (same project and user, `kind === "subagent"`,
-`parentThreadId === caller.id`; a malformed or missing handle →
-`continue_target_not_found`, a non-child → `continue_target_not_authorized`),
-then the coordinator's `prepareContinue` loads the child's
-frozen binding for `resolvedSlug` only and never re-resolves configuration — so
-`continue` carries no configuration patch and cannot escalate the child's model,
-tools, system prompt, or overlay. A binding-less target fails `continue_target_unavailable`; a live
-writer turn or overlapping continue fails `continue_target_busy`.
-The driver's `register` owns only the claim/controller/registry, so a failed
-continue never writes the child's lifecycle; the caller owns the failure policy.
-The single authority function stays child-scoped in 3c so a later peer slice
-widens it without changing the addressing field or its callers. Writer-facing helper-result cards persist through `spawn/spawn-transcript.ts`
+`thread_message` puts a message into an existing thread instead of creating one:
+`runChild` with `kind: "message"` authorizes through
+`spawn/authorize-thread-message.ts`, which resolves the model's `pN`/`cN` ref
+with the project-scoped `findLiveByProjectRef` (same project and user) and then
+checks `threads/domain/lineage.ts` — **background** requires `sameLineage` (same
+project and `rootThreadId`, forks included), **foreground** requires
+`isInSubtree` (the target is the caller or a descendant, walking
+`parentThreadId`) so a wait cannot cycle on an ancestor. A malformed or missing
+ref → `thread_message_target_not_found`; an out-of-lineage/out-of-subtree ref →
+`thread_message_not_authorized`. Background delivery is a queue producer only:
+the coordinator enqueues one `agent`-provenance steer through the
+producer-facing `ThreadedInbox` (idempotency key `thread-message:<toolCallId>`)
+and returns `{ status: "background" }` without driving anything — the target's
+own run drains it and wakes if asleep. Foreground is the existing child wait
+path: the coordinator's `prepareForegroundMessage` loads the target's frozen
+binding for `resolvedSlug` only and never re-resolves configuration — so
+`thread_message` carries no configuration patch and cannot escalate the target's
+model, tools, system prompt, or overlay. A binding-less target fails
+`thread_message_target_unavailable`; a live writer turn or overlapping run fails
+`thread_message_target_busy`. The driver's `register` owns only the
+claim/controller/registry, so a failed foreground message never writes the
+child's lifecycle; the caller owns the failure policy. Writer-facing helper-result cards persist through `spawn/spawn-transcript.ts`
 (one `spawnHelperCardProps` builder). Foreground spawn upserts a running card
 before the child runs and patches it on completion; background delivery posts
 the same card on a later system turn. The background delivery obligation is
@@ -172,17 +179,17 @@ fallback, so a crash before the run's terminal write cannot lose the report.
 `persistReturnResult` then writes `tool_result` and the child-report card in one
 `persistAndAppendEvents` (card last), carrying the captured summary and
 artifacts.
-`spawn_status`/`spawn_result` are spawn-owned: a continue run's outcome lives on
-its per-execution card and never overwrites a prior report. Every child run
-emits the continue-neutral `agent.run_completed`; there is no spawn-named
-completion event. Background report delivery is `spawn/child-report-delivery.ts`
+`spawn_status`/`spawn_result` are spawn-owned: a thread_message run's outcome
+lives on its per-execution card and never overwrites a prior report. Every child
+run emits the neutral `agent.run_completed`; there is no spawn-named completion
+event. Background report delivery is `spawn/child-report-delivery.ts`
 behind the `ChildReportDelivery` port, backed by the threads
 `child_report_deliveries` obligation (keyed by the child run's assistant turn id
 as `report_id`, with `submission_epoch` and a reused `system_turn_id`) and the
 shared `createDeliveryPump`. The card write holds the parent's shared run claim,
 so it cannot race or re-parent a live writer turn. The per-run capture lives in
-the driver's `drive` closure; writer-continue uses the coordinator's settle-only
-`createReturnResultCompleter`.
+the driver's `drive` closure; the writer-driven settle path uses the
+coordinator's settle-only `createReturnResultCompleter`.
 
 Named targets resolve by name within the parent binding's roster; a target with
 `model-invocable: false` is refused, while a primary-mode target is spawnable.

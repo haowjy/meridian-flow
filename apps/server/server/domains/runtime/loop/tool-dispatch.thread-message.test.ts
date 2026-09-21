@@ -1,5 +1,5 @@
 /**
- * `continue` dispatch wiring: the tool callback builds a continue request,
+ * `thread_message` dispatch wiring: the tool callback builds a message request,
  * routes foreground/background through the coordinator's single entrypoint,
  * and strips report cost from the transcript tool_result exactly as `spawn`.
  */
@@ -94,48 +94,53 @@ function harness() {
   return { deps, ctx, runChild };
 }
 
-function continueCall(arguments_: Record<string, unknown>) {
-  return { id: "call-1", name: "continue", arguments: arguments_ };
+function threadMessageCall(arguments_: Record<string, unknown>) {
+  return { id: "call-1", name: "thread_message", arguments: arguments_ };
 }
 
-describe("dispatchToolCall continue routing", () => {
-  it("routes the default foreground mode through runChild with the parent transcript", async () => {
+describe("dispatchToolCall thread_message routing", () => {
+  it("defaults to background and routes through runChild without a transcript", async () => {
     const { deps, ctx, runChild } = harness();
     const result = await dispatchToolCall(
       deps,
-      continueCall({ handle: "p1", prompt: "keep going" }),
+      threadMessageCall({ ref: "p1", message: "keep going" }),
       ctx,
     );
     if ("cancelled" in result) throw new Error("unexpected cancel");
 
     expect(runChild).toHaveBeenCalledOnce();
     const [request, options] = runChild.mock.calls[0] ?? [];
-    expect(request).toMatchObject({ kind: "continue", handle: "p1", prompt: "keep going" });
-    expect(options).toMatchObject({ mode: "foreground" });
-    expect((options as ChildRunOptions).transcript).toBeDefined();
-  });
-
-  it("routes background mode through runChild without a transcript", async () => {
-    const { deps, ctx, runChild } = harness();
-    const result = await dispatchToolCall(
-      deps,
-      continueCall({ handle: "p1", prompt: "check later", mode: "background" }),
-      ctx,
-    );
-    if ("cancelled" in result) throw new Error("unexpected cancel");
-
-    expect(runChild).toHaveBeenCalledOnce();
-    const [request, options] = runChild.mock.calls[0] ?? [];
-    expect(request).toMatchObject({ kind: "continue", handle: "p1" });
+    expect(request).toMatchObject({
+      kind: "message",
+      ref: "p1",
+      prompt: "keep going",
+      toolCallId: "call-1",
+    });
     expect(options).toMatchObject({ mode: "background" });
     expect(options).not.toHaveProperty("transcript");
+  });
+
+  it("routes foreground through runChild with the parent transcript", async () => {
+    const { deps, ctx, runChild } = harness();
+    const result = await dispatchToolCall(
+      deps,
+      threadMessageCall({ ref: "p1", message: "keep going", mode: "foreground" }),
+      ctx,
+    );
+    if ("cancelled" in result) throw new Error("unexpected cancel");
+
+    expect(runChild).toHaveBeenCalledOnce();
+    const [request, options] = runChild.mock.calls[0] ?? [];
+    expect(request).toMatchObject({ kind: "message", ref: "p1" });
+    expect(options).toMatchObject({ mode: "foreground" });
+    expect((options as ChildRunOptions).transcript).toBeDefined();
   });
 
   it("strips report cost and threadId, keeping the handle, from the persisted tool_result", async () => {
     const { deps, ctx } = harness();
     const result = await dispatchToolCall(
       deps,
-      continueCall({ handle: "p1", prompt: "keep going" }),
+      threadMessageCall({ ref: "p1", message: "keep going", mode: "foreground" }),
       ctx,
     );
     if ("cancelled" in result) throw new Error("unexpected cancel");

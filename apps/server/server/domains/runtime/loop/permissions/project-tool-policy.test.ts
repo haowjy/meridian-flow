@@ -19,12 +19,12 @@ const WORK_NAV = ["list", "show", "switch"] as const;
 const WORK_MUTATE = ["create", "delete", "update"] as const;
 const ALL_FLOW_TOOLS = [
   "ask_user",
-  "continue",
   "ls",
   "read",
   "search",
   "skill",
   "spawn",
+  "thread_message",
   "work",
   "write",
 ];

@@ -105,9 +105,9 @@ export { createWorkContextDelivery } from "./loop/work-context-delivery.js";
 export type { ImageAssetPort } from "./ports/image-asset.js";
 export { unavailableImageAssetPort } from "./ports/image-asset.js";
 export {
-  authorizeContinueTarget,
-  type ContinueTargetOutcome,
-} from "./spawn/authorize-continue-target.js";
+  authorizeThreadMessage,
+  type ThreadMessageTargetOutcome,
+} from "./spawn/authorize-thread-message.js";
 export {
   type ChildReportDelivery,
   type ChildReportDeliveryDeps,
@@ -119,9 +119,9 @@ export {
   type ChildRunCoordinatorDeps,
   type ChildRunOptions,
   type ChildRunRequest,
-  type ContinueChildInput,
   createChildRunCoordinator,
   type SpawnChildInput,
+  type ThreadMessageChildInput,
 } from "./spawn/child-run-coordinator.js";
 export {
   type ChildDriveInput,
