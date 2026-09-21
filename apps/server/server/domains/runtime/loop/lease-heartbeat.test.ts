@@ -169,4 +169,51 @@ describe("RunAuthority heartbeat", () => {
     expect(eventSink.events.map((event) => event.name)).toEqual(["lease.lost"]);
     await heartbeat.release(lease);
   });
+
+  it("keeps a lease alive across a call longer than its TTL", async () => {
+    vi.useFakeTimers();
+    const eventSink = createInMemoryEventSink();
+    let renewals = 0;
+    let expiresAt = 0;
+    const authority: RunAuthority = {
+      async acquire(threadId, runId) {
+        expiresAt = Date.now() + 30_000;
+        return { threadId, runId, holderId: "holder-1" };
+      },
+      async renew() {
+        renewals += 1;
+        if (Date.now() > expiresAt) return false;
+        expiresAt = Date.now() + 30_000;
+        return true;
+      },
+      async holder() {
+        return null;
+      },
+      async publish() {},
+      async read() {
+        return { kind: "asleep" };
+      },
+      async cancel() {},
+      async release() {},
+    };
+    const heartbeat = createHeartbeatRunAuthority(authority, {
+      eventSink,
+      leaseTtlMs: 30_000,
+    });
+    const lease = required(await heartbeat.acquire(THREAD_A, "run-1"));
+
+    // A model call that streams for 45s (> TTL) while the heartbeat stays live.
+    const inFlightCall = (async () => {
+      for (let i = 0; i < 45; i++) await new Promise((resolve) => setTimeout(resolve, 1_000));
+      return "finished";
+    })();
+
+    await vi.advanceTimersByTimeAsync(45_000);
+
+    expect(await inFlightCall).toBe("finished");
+    expect(renewals).toBeGreaterThanOrEqual(4);
+    expect(Date.now()).toBeLessThan(expiresAt);
+    expect(eventSink.events.map((event) => event.name)).not.toContain("lease.lost");
+    await heartbeat.release(lease);
+  });
 });

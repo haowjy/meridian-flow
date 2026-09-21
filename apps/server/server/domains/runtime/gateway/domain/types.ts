@@ -50,6 +50,10 @@ export interface ModelInfo {
   maxOutputTokens: number;
   capabilities: Set<Capability>;
   hostedTools?: Set<string>;
+  /** Per-model inactivity window override. 0 disables the stall guard. */
+  stallTimeoutMs?: number;
+  /** Per-model absolute ceiling override. 0 disables the ceiling backstop. */
+  ceilingTimeoutMs?: number;
 }
 
 /**
@@ -376,20 +380,28 @@ export interface ProviderConfig {
  * Gateway configuration — the single input to createGateway().
  *
  * Policy knobs:
- * - `attemptTimeoutMs`: per-call wall-clock timeout (default 120s). Enforced
- *   by the deadline helper, which derives an AbortSignal that aborts the
- *   in-flight provider stream. Timeouts are retryable.
+ * - `attemptStallMs`: inactivity (stall) timeout for one provider attempt
+ *   (default 120s). Enforced by the deadline helper, which aborts the in-flight
+ *   provider stream when no progress arrives within the window. Every stream
+ *   event re-arms it, so a slow-but-streaming model is never killed. 0 disables.
+ * - `attemptCeilingMs`: absolute backstop for one provider attempt (default
+ *   10 min), fixed from attempt start. Not the normal terminator; 0 disables it
+ *   for self-hosted models. Per-model `stallTimeoutMs`/`ceilingTimeoutMs`
+ *   override these. Timeouts are retryable.
  * - `retry`: controls per-provider retry with exponential backoff. Only
- *   retries before any output has been emitted to the caller.
+ *   retries before committed output (visible text or a tool call) has been
+ *   emitted to the caller; reasoning-only attempts are retryable.
  * - `fallback`: when enabled, tries providers in order; fails over on
- *   retryable errors (including timeouts) before output.
+ *   retryable errors (including timeouts) before committed output.
  * - `onTrace`/`onError`: observability hooks; called per provider attempt.
  */
 export interface GatewayConfig {
   providers: ProviderConfig[];
   defaultModel?: string;
-  /** Wall-clock deadline for one provider attempt. Retry/backoff is outside this window. */
-  attemptTimeoutMs?: number;
+  /** Inactivity window for one provider attempt; re-armed on every event. 0 disables. */
+  attemptStallMs?: number;
+  /** Absolute ceiling for one provider attempt. 0 disables. Retry/backoff is outside this window. */
+  attemptCeilingMs?: number;
   retry?: { maxAttempts: number; initialDelayMs: number; maxDelayMs: number };
   fallback?: { enabled: boolean; order?: string[] };
   /** Registry build warnings (e.g. duplicate model IDs skipped). */
