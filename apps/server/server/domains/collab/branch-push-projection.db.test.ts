@@ -114,7 +114,7 @@ describe("branch-push durable projection", () => {
       createdByUserId: userId,
       title: "Projection thread",
       kind: "primary",
-      status: "active",
+      status: "idle",
     });
     await db.insert(turns).values({
       id: turnId,
@@ -321,7 +321,7 @@ describe("branch-push durable projection", () => {
       createdByUserId: userId,
       title: "Recovery thread",
       kind: "primary",
-      status: "active",
+      status: "idle",
     });
     await db.insert(turns).values({
       id: turnId,
@@ -510,7 +510,7 @@ describe("branch-push durable projection", () => {
       createdByUserId: userId,
       title: "Retry rollback thread",
       kind: "primary",
-      status: "active",
+      status: "idle",
     });
     await db.insert(threadDocuments).values({
       threadId,

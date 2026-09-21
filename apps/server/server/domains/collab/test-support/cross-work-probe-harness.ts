@@ -94,7 +94,7 @@ export async function runCrossWorkProbe(
     createdByUserId: USER_ID,
     title: "Work B primary chat",
     kind: "primary",
-    status: "active",
+    status: "idle",
   });
   await db.insert(schema.turns).values({
     id: TURN_B_ID,

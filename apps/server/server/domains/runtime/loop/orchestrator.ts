@@ -89,7 +89,7 @@ import type {
 import type { AiWriteMode } from "@meridian/contracts/works";
 import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { Notice, NoticePort } from "../../notices/index.js";
-import { type EventSink, unknownToEventPayload } from "../../observability/index.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AccountSkillInstallStore, AgentRevisionStore } from "../../packages/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
@@ -136,7 +136,7 @@ import {
   persistAndAppendEvents,
   persistAndAppendTurnStartEvents,
 } from "./persistence.js";
-import type { Inbox, RunAuthority } from "./ports.js";
+import type { Inbox, RunAuthority, ThreadPhase } from "./ports.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
 import {
   type DrainRunTurnInput,
@@ -419,7 +419,6 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
         status: "streaming",
         writeMode,
       });
-      await repos.threads.updateStatus(input.threadId, "active");
 
       return {
         result: { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks },
@@ -474,8 +473,6 @@ async function runDrainTurn(
   input: DrainRunTurnInput,
   thread: Thread,
 ): Promise<RunTurnHandle> {
-  const { repos } = deps;
-
   const setup = await persistAndAppendTurnStartEvents(
     deps,
     input.threadId,
@@ -515,7 +512,6 @@ async function runDrainTurn(
         status: "streaming",
         writeMode,
       });
-      await repos.threads.updateStatus(input.threadId, "active");
       events.push({ type: "turn.created", turn: assistantTurn });
 
       return {
@@ -934,7 +930,6 @@ async function completeTurn(input: {
       finishReason: input.finishReason,
       completedAt: toIsoString(new Date()),
     };
-    await input.deps.repos.threads.updateStatus(input.threadId, "idle");
     // updateCost is a simple increment of the turn counter; the actual cost is
     // already reflected via model.response_received and projector rollups.
     await input.deps.repos.threads.updateCost(input.threadId, "0", 1);
@@ -1005,6 +1000,26 @@ async function* generateEvents(
   const { gateway, repos, eventWriter } = deps;
   const eventSink = deps.eventSink;
   const turnAccounting = createTurnAccounting({ billingUsage: deps.billingUsage });
+
+  // The loop is the only writer of the lease phase, so `authority.read` cannot
+  // split-brain. Publishing is observational: a failure must not fail the turn,
+  // it only leaves the phase briefly stale until the next boundary.
+  async function publishPhase(phase: ThreadPhase): Promise<void> {
+    const lease = input.lease;
+    if (!lease) return;
+    try {
+      await deps.runAuthority.publish(lease, phase);
+    } catch (error) {
+      emitEvent(eventSink, {
+        level: "warn",
+        source: "runtime.run-lease",
+        name: "lease.publish_failed",
+        correlation: { threadId: input.threadId, runId: lease.runId },
+        payload: unknownToEventPayload(error),
+      });
+    }
+  }
+
   // A drain start has no writer message, so no writer-activated skills attach.
   const activatedSkillSlugs = isDrainRun(input) ? undefined : input.activatedSkillSlugs;
 
@@ -1290,6 +1305,7 @@ async function* generateEvents(
       // (with the assembled GenerateResult) or one 'error'.
       // On cancel, abort the gateway call and drain through 'end' so partial
       // usage can be persisted before turn.cancelled.
+      await publishPhase("generating");
       let result: GenerateResult | undefined;
       let streamModel = request.model ?? "unknown";
       for await (const event of gateway.stream(request)) {
@@ -1502,6 +1518,7 @@ async function* generateEvents(
             continue;
           }
 
+          await publishPhase("waiting");
           const interruptState = {
             thread,
             threadId: input.threadId,

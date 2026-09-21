@@ -7,19 +7,19 @@
  */
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { JsonValue } from "@meridian/contracts/threads";
+import type { JsonValue, ThreadPhase, ThreadStatus } from "@meridian/contracts/threads";
 
 export type RunId = string;
 
 /** Lease lifetime; a held lease is renewed at a third of this interval. */
 export const DEFAULT_LEASE_TTL_MS = 30_000;
 
-export type ThreadPhase = "generating" | "waiting";
-
-/** `awake` means a live lease exists; `phase` and `cancelRequested` come from the lease row. */
-export type ThreadStatus =
-  | { kind: "asleep" }
-  | { kind: "awake"; phase: ThreadPhase; cancelRequested: boolean };
+/**
+ * `awake` means a live lease exists; `phase` and `cancelRequested` come from the
+ * lease row. The shape is the wire contract's `ThreadStatus`, so lease reads and
+ * client live state cannot drift.
+ */
+export type { ThreadPhase, ThreadStatus };
 
 export type MessageIntent = "steer" | "system";
 

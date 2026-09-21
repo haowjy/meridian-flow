@@ -19,6 +19,7 @@ import type {
   SpawnStatus,
   Thread,
   ThreadKind,
+  ThreadLifecycleStatus,
   ThreadListItem,
   ThreadStatus,
   Turn,
@@ -138,7 +139,7 @@ export interface ThreadRepository {
     workId: WorkId,
     limit: number,
   ): Promise<WorkThreadSummary[]>;
-  updateStatus(id: ThreadId, status: ThreadStatus): Promise<Thread>;
+  updateStatus(id: ThreadId, status: ThreadLifecycleStatus): Promise<Thread>;
   /** Persists a writer-authored title and refreshes `updatedAt`; returns the authoritative row. */
   updateTitle(id: ThreadId, title: string): Promise<Thread>;
   /**
@@ -163,7 +164,16 @@ export interface ThreadRepository {
 export interface WorkThreadSummary {
   title: string | null;
   updatedAt: string;
-  status: ThreadStatus;
+  status: ThreadLifecycleStatus;
+}
+
+/**
+ * Read seam for the derived run status. The runtime's lease authority
+ * (`RunAuthority.read`) satisfies it; the threads domain depends on this narrow
+ * port rather than the runtime domain, so status stays a pure lease function.
+ */
+export interface ThreadStatusReader {
+  read(threadId: ThreadId): Promise<ThreadStatus>;
 }
 
 export interface ProjectChatCursorKey {

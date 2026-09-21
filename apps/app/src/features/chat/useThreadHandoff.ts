@@ -43,7 +43,7 @@ type SnapshotResumeState = {
 };
 
 function isActiveSnapshot(liveState: ThreadLiveState): boolean {
-  return liveState.runningTurnId !== null || liveState.status === "active";
+  return liveState.runningTurnId !== null || liveState.status.kind === "awake";
 }
 
 export function activeSnapshotResumeAfterSeq(liveState: ThreadLiveState): string | null {

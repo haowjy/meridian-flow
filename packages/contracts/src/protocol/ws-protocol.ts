@@ -104,9 +104,18 @@ export const wsGapCauseSchema = z.enum(["replay_limit_exceeded", "server_restart
 
 export type WsGapCause = z.infer<typeof wsGapCauseSchema>;
 
+const threadStatusSchema: z.ZodType<import("../threads/index.js").ThreadStatus> = z.union([
+  z.object({ kind: z.literal("asleep") }),
+  z.object({
+    kind: z.literal("awake"),
+    phase: z.enum(["generating", "waiting"]),
+    cancelRequested: z.boolean(),
+  }),
+]);
+
 const threadLiveStateSchema: z.ZodType<ThreadLiveState> = z.object({
   threadId: z.string().min(1),
-  status: z.enum(["idle", "active", "blocked", "error", "archived"]),
+  status: threadStatusSchema,
   runningTurnId: z.string().min(1).nullable(),
   resumeAfterSeq: wsEventSeqSchema,
 });

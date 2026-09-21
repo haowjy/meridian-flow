@@ -40,7 +40,23 @@ export type WorkingState = {
 //             browsable in an "Archived" view (unarchive returns it to idle)
 //   delete  → deletedAt tombstone → trashed, excluded from every list
 // Wire archive/unarchive mutations + a user-facing delete; keep them distinct.
-export type ThreadStatus = "idle" | "active" | "blocked" | "error" | "archived";
+/**
+ * Durable thread lifecycle. Run state (`active`/`idle`/`error`) is no longer
+ * stored here; it is derived from the live lease. See {@link ThreadStatus}.
+ */
+export type ThreadLifecycleStatus = "idle" | "archived";
+
+/** Lease phase published by the running loop; `generating` around the model call, `waiting` between tool waits. */
+export type ThreadPhase = "generating" | "waiting";
+
+/**
+ * Derived run status: awake iff a live lease exists, with the phase the holder
+ * last published. Never a second durable truth — a dead process expires its
+ * lease and reads `asleep`.
+ */
+export type ThreadStatus =
+  | { kind: "asleep" }
+  | { kind: "awake"; phase: ThreadPhase; cancelRequested: boolean };
 export type TurnRole = "user" | "assistant" | "system" | "compaction";
 export type BlockType =
   | "text"
@@ -133,7 +149,7 @@ export interface Thread {
   workId: string | null;
   userId: string;
   kind: ThreadKind;
-  status: ThreadStatus;
+  status: ThreadLifecycleStatus;
   title: string | null;
   /** Server-assigned handle: `cN` for primaries, `pN` for subagents; null before persist. */
   ref: string | null;

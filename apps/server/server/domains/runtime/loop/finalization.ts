@@ -3,18 +3,14 @@
  * appends them through the persistence seam.
  *
  * Both `finalizeCancelled` and `finalizeError` produce a turn lifecycle
- * event (turn.cancelled / turn.error), set the turn's `completedAt`
- * timestamp, and transition the thread status:
- * - cancelled → thread status "idle" (the user can retry)
- * - error → thread status "error" (the thread is blocked until the user
- *   sends a new message, which clears the error banner via
- *   `clearPreviousAssistantErrorIfUserTurn` in the read-model projector)
+ * event (turn.cancelled / turn.error) and set the turn's `completedAt`
+ * timestamp. Thread run state is not written here: it is derived from the
+ * live lease, so the thread reads `asleep` once the run releases it. The
+ * next user turn clears the error banner via
+ * `clearPreviousAssistantErrorIfUserTurn` in the read-model projector.
  *
  * These functions use `persistAndAppendEvents` so the turn status update
  * and journal append happen atomically with the read-model projection.
- * Thread status update (`repos.threads.updateStatus`) is executed inside
- * the transaction as a direct repository call — it is not yet projected
- * from an event.
  */
 import type { MeridianError } from "@meridian/contracts/interrupt";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
@@ -39,9 +35,6 @@ export async function finalizeCancelled(
       status: "cancelled",
       completedAt: toIsoString(new Date()),
     };
-    // Thread returns to idle so the user can immediately send another
-    // message — cancellation is not an error state.
-    await deps.repos.threads.updateStatus(threadId, "idle");
     return { result: null, events: [{ type: "turn.cancelled", turn: updatedTurn }] };
   });
   return events;
@@ -63,10 +56,6 @@ export async function finalizeError(
       error: meridianError.message,
       completedAt: toIsoString(new Date()),
     };
-    // Thread enters error state; the next user turn.created event will
-    // trigger clearPreviousAssistantErrorIfUserTurn in the read-model
-    // projector to clear the error banner without erasing the journal fact.
-    await deps.repos.threads.updateStatus(threadId, "error");
     return {
       result: null,
       events: [{ type: "turn.error", turn: updatedTurn, error: meridianError }],

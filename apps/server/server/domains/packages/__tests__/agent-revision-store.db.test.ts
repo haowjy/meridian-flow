@@ -87,7 +87,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       await store.bindThread(THREAD, first.id, bindingConfiguration, null);
       expect((await threads.findById(THREAD))?.agentDefinitionRevisionId).toBe(first.id);
       expect((await threads.listByUser(USER))[0]?.agentDefinitionRevisionId).toBe(first.id);
-      const updated = await threads.updateStatus(THREAD, "active");
+      const updated = await threads.updateStatus(THREAD, "idle");
       expect(updated?.agentDefinitionRevisionId).toBe(first.id);
       expect(updated?.agentName).toBe("Retained Name");
       expect((await threads.findById(THREAD))?.agentName).toBe("Retained Name");
@@ -104,7 +104,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect((await threads.findById(THREAD))?.agentDefinitionRevisionId).toBeNull();
       expect((await threads.findById(THREAD))?.agentName).toBe("Subagent");
       expect((await threads.listByUser(USER))[0]?.agentName).toBe("Subagent");
-      const updated = await threads.updateStatus(THREAD, "active");
+      const updated = await threads.updateStatus(THREAD, "idle");
       expect(updated?.agentName).toBe("Subagent");
       const home = await repos.homeFeed.queryPage({
         projectId: PROJECT,

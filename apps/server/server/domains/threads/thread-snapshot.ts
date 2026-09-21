@@ -17,6 +17,7 @@ import type {
   BlockRepository,
   ModelResponseRepository,
   ThreadRepository,
+  ThreadStatusReader,
   TurnRepository,
 } from "./ports/index.js";
 import type { ThreadEventHub } from "./thread-event-hub.js";
@@ -60,6 +61,7 @@ export async function buildThreadSnapshot(
   repos: ThreadSnapshotRepositories,
   hub: ThreadEventHub,
   runner: RunningTurnQuery,
+  statusReader: ThreadStatusReader,
   threadId: ThreadId,
 ): Promise<ThreadSnapshotResponse> {
   const thread = await repos.threads.findById(threadId);
@@ -120,7 +122,7 @@ export async function buildThreadSnapshot(
     turns: threadTurns,
     liveState: {
       threadId,
-      status: thread.status,
+      status: await statusReader.read(threadId),
       runningTurnId,
       // During an active run,
       // stream.delta rows can sit between that head and the last read-model
