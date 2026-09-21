@@ -1,4 +1,4 @@
-/** Loads explicit references once before the first model call; history replays saved results. */
+/** Loads explicit references for a turn the run will send; history replays saved results. */
 import { type ReferenceOccurrence, referenceOccurrenceContent } from "@meridian/contracts/protocol";
 import type { Block, JsonValue } from "@meridian/contracts/threads";
 

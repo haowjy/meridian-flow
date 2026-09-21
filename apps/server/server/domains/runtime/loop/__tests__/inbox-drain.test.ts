@@ -80,6 +80,7 @@ async function persistWriterSend(input: {
   threadId: ThreadId;
   text: string;
   activatedSkillSlugs?: readonly string[];
+  reference?: { documentId: string; uri: string; text: string };
 }): Promise<TurnId> {
   const turnId = crypto.randomUUID() as TurnId;
   const leafTurnId = (await input.repos.threads.findById(input.threadId))?.activeLeafTurnId ?? null;
@@ -98,6 +99,22 @@ async function persistWriterSend(input: {
     sequence: 0,
     textContent: input.text,
   });
+  if (input.reference) {
+    await input.repos.blocks.create({
+      id: `${turnId}:1`,
+      turnId,
+      blockType: "text",
+      sequence: 1,
+      textContent: input.reference.text,
+      // No `read` result: the run must read it when the message is adopted.
+      content: {
+        type: "reference",
+        text: input.reference.text,
+        documentId: input.reference.documentId,
+        uri: input.reference.uri,
+      },
+    });
+  }
   await input.inbox.enqueue({
     id: turnId,
     threadId: input.threadId,
@@ -277,6 +294,42 @@ describe("inbox drain", () => {
     expect(texts.some((text) => text.includes("also tighten the dialogue"))).toBe(true);
     expect(texts.some((text) => text.includes("skill invoked: writing-principles"))).toBe(true);
     expect(texts.some((text) => text.includes("Show, do not tell."))).toBe(true);
+  });
+
+  it("reads a mid-run adopted message's references into the request and the turn", async () => {
+    const documentId = "33333333-3333-4333-8333-333333333333";
+    const uri = "uploads://@/gate-map.png";
+    let adoptedTurnId: TurnId | undefined;
+    const { thread, inbox, requests, orchestrator, repos } = await setup({
+      referenceReader: {
+        async read(reference) {
+          return { uri: reference.uri, pages: [1] };
+        },
+      },
+      onStream: async (call) => {
+        if (call === 1) {
+          adoptedTurnId = await persistWriterSend({
+            repos,
+            inbox,
+            threadId: thread.id,
+            text: "compare with [[Gate Map]]",
+            reference: { documentId, uri, text: "[[Gate Map]]" },
+          });
+        }
+      },
+    });
+
+    await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "hello" }));
+
+    expect(requests).toHaveLength(2);
+    const texts = messageTexts(requests[1]?.messages ?? []);
+    expect(texts.some((text) => text.includes(`Reference read result for ${uri}`))).toBe(true);
+
+    const blocks = await repos.blocks.listByTurn(adoptedTurnId as TurnId);
+    const referenceBlock = blocks.find(
+      (block) => (block.content as { type?: string } | null)?.type === "reference",
+    );
+    expect(referenceBlock?.content).toMatchObject({ read: { result: { uri, pages: [1] } } });
   });
 
   it("persists a drained message as a user turn the next iteration still sees", async () => {
