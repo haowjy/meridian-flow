@@ -6,13 +6,25 @@
 import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
 import type {
+  SpawnStatus,
   ThreadKind,
   ThreadLifecycleStatus,
   TurnRole,
   TurnStatus,
 } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import { and, desc, eq, getTableColumns, gt, isNotNull, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  sql,
+} from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
@@ -23,6 +35,7 @@ import type {
   CreateThreadInput,
   DerivedPrimaryThreadFactory,
   SubagentThreadFactory,
+  ThreadDescendant,
   ThreadRepository,
   UpdateSpawnLifecycleInput,
 } from "../../ports/repositories.js";
@@ -356,6 +369,49 @@ export function createDrizzleThreadRepository(
         )
         .orderBy(desc(schema.threads.updatedAt));
       return rows.map(mapThreadListRow);
+    },
+    async listDescendants(threadId: ThreadId) {
+      const activeDb = currentDrizzleDb(db);
+      const descendants: ThreadDescendant[] = [];
+      const seen = new Set<string>([threadId]);
+      let frontier: ThreadId[] = [threadId];
+      // Level-by-level BFS so each hop is an index lookup on
+      // `threads_parent_created_active` (parent_thread_id, created_at DESC).
+      while (frontier.length > 0) {
+        const rows = await activeDb
+          .select({
+            id: schema.threads.id,
+            parentThreadId: schema.threads.parentThreadId,
+            rootThreadId: schema.threads.rootThreadId,
+            spawnDepth: schema.threads.spawnDepth,
+            ref: schema.threads.ref,
+            title: schema.threads.title,
+            agentName,
+            spawnStatus: schema.threads.spawnStatus,
+          })
+          .from(schema.threads)
+          .where(
+            and(inArray(schema.threads.parentThreadId, frontier), isNull(schema.threads.deletedAt)),
+          )
+          .orderBy(asc(schema.threads.createdAt), asc(schema.threads.id));
+        frontier = [];
+        for (const row of rows) {
+          if (seen.has(row.id)) continue;
+          seen.add(row.id);
+          descendants.push({
+            id: row.id,
+            parentThreadId: row.parentThreadId,
+            rootThreadId: row.rootThreadId ?? row.id,
+            spawnDepth: row.spawnDepth,
+            ref: row.ref,
+            title: row.title === "" ? null : row.title,
+            agentName: row.agentName ?? null,
+            spawnStatus: row.spawnStatus as SpawnStatus | null,
+          });
+          frontier.push(row.id);
+        }
+      }
+      return descendants;
     },
     async listRecentByWork(projectId: ProjectId, workId: WorkId, limit: number) {
       const boundedLimit = Math.max(0, Math.min(Math.trunc(limit), 50));

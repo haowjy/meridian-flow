@@ -26,6 +26,7 @@ import type {
   InternalThreadRepositories,
   ModelResponseRepository,
   SubagentThreadFactory,
+  ThreadDescendant,
   ThreadDocument,
   ThreadDocumentRepository,
   ThreadRepository,
@@ -322,6 +323,33 @@ export function createInMemoryRepositories(
       }
       const ordered = visible.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       return Promise.all(ordered.map(toListItem));
+    },
+    async listDescendants(threadId) {
+      const descendants: ThreadDescendant[] = [];
+      const seen = new Set<string>([threadId]);
+      let frontier = [threadId as string];
+      while (frontier.length > 0) {
+        const level = [...threads.values()]
+          .filter((thread) => !thread.deletedAt && frontier.includes(thread.parentThreadId ?? ""))
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+        frontier = [];
+        for (const thread of level) {
+          if (seen.has(thread.id)) continue;
+          seen.add(thread.id);
+          descendants.push({
+            id: thread.id,
+            parentThreadId: thread.parentThreadId,
+            rootThreadId: thread.rootThreadId,
+            spawnDepth: thread.spawnDepth,
+            ref: thread.ref,
+            title: thread.title,
+            agentName: projectThread(thread).agentName ?? null,
+            spawnStatus: thread.spawnStatus,
+          });
+          frontier.push(thread.id);
+        }
+      }
+      return descendants;
     },
     async listRecentByWork(projectId, workId, limit) {
       const boundedLimit = Math.max(0, Math.min(Math.trunc(limit), 50));
