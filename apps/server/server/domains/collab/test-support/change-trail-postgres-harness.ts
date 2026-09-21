@@ -192,7 +192,7 @@ export async function resetDatabase(): Promise<void> {
     createdByUserId: USER_ID,
     title: "Thread",
     kind: "primary",
-    status: "active",
+    status: "idle",
   });
   await db.insert(schema.turns).values({
     id: TURN_ID,

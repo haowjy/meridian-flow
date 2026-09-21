@@ -22,6 +22,7 @@ import type {
   ModelResponse,
   Thread,
   ThreadListItem,
+  ThreadStatus,
   Turn,
   TurnContextPreview,
   TurnRole,
@@ -48,7 +49,8 @@ export type {
 
 export type ThreadLiveState = {
   threadId: string;
-  status: Thread["status"];
+  /** Derived from the live lease, not the durable thread row. */
+  status: ThreadStatus;
   runningTurnId: string | null;
   /** Last event already materialized in snapshot rows; WS replay resumes strictly after it. */
   resumeAfterSeq: string;

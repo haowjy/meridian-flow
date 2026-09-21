@@ -171,7 +171,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         title: "Projection thread",
         kind: "primary",
-        status: "active",
+        status: "idle",
       });
       await db.insert(threadWorks).values({
         threadId: THREAD_ID,

@@ -787,7 +787,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     threadEventHub,
     hub: threadEventHub,
-    threadRuntime: createThreadRuntimeService({ db: ports.db }),
+    threadRuntime: createThreadRuntimeService({
+      db: ports.db,
+      statusReader: ports.runAuthority,
+    }),
     documentSync: ports.documentSync,
     contextPorts: ports.contextPorts,
     contextCatalog: ports.contextCatalog,
@@ -999,6 +1002,9 @@ export function createInMemoryAppServices(): AppServices {
       },
       async liveState() {
         throw new Error("in-memory thread runtime is not implemented");
+      },
+      async read() {
+        return { kind: "asleep" as const };
       },
       async journalEvents() {
         return [];

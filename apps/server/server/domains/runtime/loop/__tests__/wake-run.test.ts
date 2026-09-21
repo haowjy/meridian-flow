@@ -102,4 +102,23 @@ describe("wake run", () => {
     expect(await rig.runAuthority.holder(rig.thread.id)).toBeNull();
     expect(await rig.repos.turns.listByThread(rig.thread.id)).toEqual([]);
   });
+
+  it("derives awake while a run streams and asleep once it releases", async () => {
+    const gate = runtimeGate();
+    const rig = await RuntimeTestRig.create({ gateway: gatedGateway(gate) });
+    await rig.inbox.enqueue(steer("status", rig.thread.id));
+
+    await createRunStarter(rig.runner).start(rig.thread.id);
+    // The run owns a live lease and is blocked in its provider stream.
+    expect(await rig.runAuthority.read(rig.thread.id)).toEqual({
+      kind: "awake",
+      phase: "generating",
+      cancelRequested: false,
+    });
+
+    gate.open();
+    await rig.awaitEvent(EventType.RUN_FINISHED);
+    // Release trails the terminal event; status is a pure function of the lease.
+    await expect.poll(() => rig.runAuthority.read(rig.thread.id)).toEqual({ kind: "asleep" });
+  });
 });

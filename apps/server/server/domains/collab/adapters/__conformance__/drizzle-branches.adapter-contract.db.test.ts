@@ -200,7 +200,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         createdByUserId: USER_ID,
         title: "Thread",
         kind: "primary",
-        status: "active",
+        status: "idle",
       });
       await db.insert(turns).values({
         id: TURN_ID as never,

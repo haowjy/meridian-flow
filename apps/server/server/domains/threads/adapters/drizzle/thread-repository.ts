@@ -5,7 +5,12 @@
  */
 import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import type { ProjectId, ThreadId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { ThreadKind, ThreadStatus, TurnRole, TurnStatus } from "@meridian/contracts/threads";
+import type {
+  ThreadKind,
+  ThreadLifecycleStatus,
+  TurnRole,
+  TurnStatus,
+} from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
 import { and, desc, eq, getTableColumns, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
@@ -374,7 +379,7 @@ export function createDrizzleThreadRepository(
       return Array.from(
         rows as unknown as Iterable<{
           title: string | null;
-          status: ThreadStatus;
+          status: ThreadLifecycleStatus;
           updated_at_exact: string;
         }>,
       ).map((row) => ({

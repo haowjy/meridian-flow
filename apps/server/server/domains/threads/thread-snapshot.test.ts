@@ -47,6 +47,7 @@ describe("buildThreadSnapshot parent", () => {
       repos,
       stubHub(),
       { getRunningTurnId: () => null },
+      { read: async () => ({ kind: "asleep" as const }) },
       nested.id as ThreadId,
     );
 

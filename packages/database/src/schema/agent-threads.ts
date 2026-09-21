@@ -95,10 +95,8 @@ export const threads = pgTable(
     check("threads_spawn_depth_nonneg", sql`${table.spawnDepth} >= 0`),
     check("threads_next_seq_nonneg", sql`${table.nextSeq} >= 0`),
     check("threads_kind_valid", sql`${table.kind} IN ('primary', 'subagent')`),
-    check(
-      "threads_status_valid",
-      sql`${table.status} IN ('idle', 'active', 'blocked', 'error', 'archived')`,
-    ),
+    // Lifecycle only. Run state is derived from the lease, never stored here.
+    check("threads_status_valid", sql`${table.status} IN ('idle', 'archived')`),
     check(
       "threads_origin_type_valid",
       sql`${table.originType} IS NULL OR ${table.originType} IN ('spawn', 'handoff', 'fork')`,

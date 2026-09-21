@@ -246,15 +246,15 @@ export class RuntimeTestRig {
           workId: "work-1",
           activeLeafTurnId: null,
           nextSeq: 0n,
-          status: "active" as const,
         };
       },
       liveState: async () => ({
         threadId: this.thread.id,
-        status: "idle" as const,
+        status: { kind: "asleep" as const },
         runningTurnId: this.runner.getRunningTurnId(this.thread.id),
         resumeAfterSeq: "0",
       }),
+      read: async () => ({ kind: "asleep" as const }),
       journalEvents: async () => [],
     };
     return app;

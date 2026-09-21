@@ -23,6 +23,7 @@ export type {
   ThreadDocumentRepository,
   ThreadRepositories,
   ThreadRepository,
+  ThreadStatusReader,
   ThreadUserStateRepository,
   ThreadWorksRepository,
   TurnDocumentTouch,

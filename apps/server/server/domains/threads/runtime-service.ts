@@ -5,6 +5,7 @@ import type { Database } from "@meridian/database";
 import { eventJournal, projects, threads, threadWorks } from "@meridian/database";
 import { and, eq, isNull } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
+import type { ThreadStatusReader } from "./ports/index.js";
 
 export type ThreadRuntimeService = ReturnType<typeof createThreadRuntimeService>;
 
@@ -14,10 +15,13 @@ type OwnedThread = {
   workId: WorkId | null;
   activeLeafTurnId: TurnId | null;
   nextSeq: bigint;
-  status: string;
 };
 
-export function createThreadRuntimeService(deps: { db: Database }) {
+export function createThreadRuntimeService(deps: {
+  db: Database;
+  /** Supplies the lease-derived run status; the runtime authority satisfies it. */
+  statusReader: ThreadStatusReader;
+}) {
   async function requireOwnedThread(threadId: ThreadId, userId: UserId): Promise<OwnedThread> {
     const [thread] = await deps.db
       .select({
@@ -26,7 +30,6 @@ export function createThreadRuntimeService(deps: { db: Database }) {
         workId: threadWorks.workId,
         activeLeafTurnId: threads.activeLeafTurnId,
         nextSeq: threads.nextSeq,
-        status: threads.status,
       })
       .from(threads)
       .innerJoin(projects, eq(projects.id, threads.projectId))
@@ -53,7 +56,7 @@ export function createThreadRuntimeService(deps: { db: Database }) {
     const headSeq = thread.nextSeq;
     return {
       threadId,
-      status: thread.status === "archived" ? "archived" : "idle",
+      status: await deps.statusReader.read(threadId),
       runningTurnId: null,
       resumeAfterSeq: headSeq.toString(),
     };
@@ -62,6 +65,8 @@ export function createThreadRuntimeService(deps: { db: Database }) {
   return {
     requireOwnedThread,
     liveState,
+    /** The lease-derived status seam, exposed so snapshot reads share it. */
+    read: (threadId: ThreadId) => deps.statusReader.read(threadId),
     async journalEvents(threadId: ThreadId) {
       return deps.db.select().from(eventJournal).where(eq(eventJournal.threadId, threadId));
     },
