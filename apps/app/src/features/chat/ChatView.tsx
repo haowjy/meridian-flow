@@ -39,11 +39,13 @@ import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToo
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
+import { PendingInboxTray } from "./PendingInboxTray";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { TurnList } from "./TurnList";
 import { activeDescendants } from "./thread-activity";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
+import { usePendingInbox } from "./usePendingInbox";
 import { useThreadActivity } from "./useThreadActivity";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
 import { useThreadHandoff } from "./useThreadHandoff";
@@ -104,6 +106,7 @@ export function ChatView({
     seed: snapshotLiveState,
   });
   const runningSubagents = activeDescendants(activity.activity);
+  const pendingInbox = usePendingInbox({ threadId, seed: snapshotLiveState });
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
@@ -229,6 +232,7 @@ export function ChatView({
         }
         footer={
           <div data-debug-composer={threadId}>
+            <PendingInboxTray pending={pendingInbox} />
             {/* The dock strip sits BEHIND (below) the composer — narrower via
               mx-2, top corners rounded, jade-tinted background. The composer
               always keeps its own border and overlaps the strip's edge. */}
