@@ -122,7 +122,7 @@ import {
   finalizeTurnOnGeneratorFailure,
 } from "./finalization.js";
 import { loadThreadConversationContext } from "./fork-thread-context.js";
-import { drainInbox } from "./inbox-context.js";
+import { drainInbox, steerTurnFor } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
 import {
   defaultInterruptAutoResumePolicy,
@@ -138,7 +138,14 @@ import {
 } from "./persistence.js";
 import type { Inbox, RunAuthority } from "./ports.js";
 import { loadReferenceReads, type ReferenceReader } from "./reference-context.js";
-import type { RunTurnHandle, RunTurnInput, RunTurnPort } from "./run-turn-port.js";
+import {
+  type DrainRunTurnInput,
+  isDrainRun,
+  NoPendingWakeError,
+  type RunTurnHandle,
+  type RunTurnInput,
+  type RunTurnPort,
+} from "./run-turn-port.js";
 import {
   collectToolCalls,
   contentPartToBlockInput,
@@ -351,6 +358,10 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
     );
   }
 
+  if (isDrainRun(input)) {
+    return runDrainTurn(deps, input, thread);
+  }
+
   const setup = await persistAndAppendTurnStartEvents(
     deps,
     input.threadId,
@@ -452,10 +463,116 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
       deps,
       input,
       thread,
-      userTurn,
+      userTurn.id,
       assistantTurn,
-      priorTurns,
-      inheritedTurns,
+      [...inheritedTurns, ...priorTurns, userTurn],
+      inheritedBlocks,
+      setup.events,
+      input.treeBudget ?? createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
+    ),
+  };
+}
+
+/**
+ * Drain-only start: a wake begins with no new writer turn. In one transition it
+ * claims the pending inbox batch, persists each fresh steer as a user-role turn
+ * chained from the thread leaf, then mints the assistant container chained from
+ * the last steer. The durable chain is `leaf → steer(user) → assistant(streaming)`
+ * and the generator's request is built over exactly the drained batch. A redelivered
+ * steer already persisted by a crashed run is not re-appended; its existing turn
+ * rides in `priorTurns`. No durable pending steer means no turn to generate.
+ */
+async function runDrainTurn(
+  deps: OrchestratorDeps,
+  input: DrainRunTurnInput,
+  thread: Thread,
+): Promise<RunTurnHandle> {
+  const { repos } = deps;
+
+  const setup = await persistAndAppendTurnStartEvents(
+    deps,
+    input.threadId,
+    thread.activeLeafTurnId,
+    async () => {
+      await reconcileOrphanedPendingWrites(deps, input.threadId);
+      const priorTurns = await repos.turns.listByThread(input.threadId);
+      const conversation = await loadThreadConversationContext(
+        { threads: repos.threads, turns: repos.turns, blocks: repos.blocks },
+        thread,
+      );
+      const inheritedTurnCount = Math.max(0, conversation.turns.length - priorTurns.length);
+      const inheritedTurns = conversation.turns.slice(0, inheritedTurnCount);
+      const inheritedTurnIds = new Set(inheritedTurns.map((turn) => turn.id));
+      const inheritedBlocks = conversation.blocks.filter((block) =>
+        inheritedTurnIds.has(block.turnId),
+      );
+      const sortedLeaf = priorTurns.at(-1) ?? inheritedTurns.at(-1) ?? null;
+      const prevTurnId = thread.activeLeafTurnId ?? sortedLeaf?.id ?? null;
+      const knownTurnIds = new Set<string>([
+        ...inheritedTurns.map((turn) => turn.id),
+        ...priorTurns.map((turn) => turn.id),
+      ]);
+
+      const batch = await deps.inbox.claimPending(input.threadId);
+      const steers = batch.filter((message) => message.intent === "steer");
+      // The wake sweep only starts a thread with a derived wake need; a race that
+      // drains the last steer first must leave no phantom turn behind.
+      if (steers.length === 0) throw new NoPendingWakeError(input.threadId);
+
+      const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
+      const events: OrchestratorEvent[] = [];
+      const steerTurns: Turn[] = [];
+      let leafTurnId = prevTurnId;
+      for (const message of steers) {
+        if (knownTurnIds.has(message.id)) continue;
+        const { turn, block } = steerTurnFor(message, leafTurnId);
+        steerTurns.push(turn);
+        events.push({ type: "turn.created", turn }, { type: "block.upserted", block });
+        leafTurnId = turn.id;
+      }
+
+      const assistantTurn = createLocalTurn({
+        threadId: input.threadId,
+        prevTurnId: leafTurnId,
+        role: "assistant",
+        status: "streaming",
+        writeMode,
+      });
+      await repos.threads.updateStatus(input.threadId, "active");
+      events.push({ type: "turn.created", turn: assistantTurn });
+
+      return {
+        result: {
+          assistantTurn,
+          referenceUserTurnId: leafTurnId ?? assistantTurn.id,
+          steerTurns,
+          priorTurns,
+          inheritedTurns,
+          inheritedBlocks,
+        },
+        events,
+      };
+    },
+  );
+
+  const {
+    assistantTurn,
+    referenceUserTurnId,
+    steerTurns,
+    priorTurns,
+    inheritedTurns,
+    inheritedBlocks,
+  } = setup.result;
+  return {
+    userTurnId: referenceUserTurnId,
+    assistantTurnId: assistantTurn.id,
+    events: generateEvents(
+      deps,
+      input,
+      thread,
+      referenceUserTurnId,
+      assistantTurn,
+      [...inheritedTurns, ...priorTurns, ...steerTurns],
       inheritedBlocks,
       setup.events,
       input.treeBudget ?? createDefaultTreeBudget({ maxDepth: resolveMaxSpawnDepth(process.env) }),
@@ -865,10 +982,11 @@ async function* generateEvents(
   deps: OrchestratorDeps,
   input: RunTurnInput,
   thread: Thread,
-  userTurn: Turn,
+  /** The user turn whose admitted references load before the first request. */
+  referenceUserTurnId: TurnId,
   assistantTurn: Turn,
-  priorTurns: Turn[],
-  inheritedTurns: Turn[],
+  /** Full ordered history before the assistant container, including drained steers. */
+  initialTurns: Turn[],
   inheritedBlocks: Block[],
   initialEvents: OrchestratorEvent[],
   treeBudget: TreeBudget,
@@ -876,6 +994,8 @@ async function* generateEvents(
   const { gateway, repos, eventWriter } = deps;
   const eventSink = deps.eventSink;
   const turnAccounting = createTurnAccounting({ billingUsage: deps.billingUsage });
+  // A drain start has no writer message, so no writer-activated skills attach.
+  const activatedSkillSlugs = isDrainRun(input) ? undefined : input.activatedSkillSlugs;
 
   yield* initialEvents;
 
@@ -950,7 +1070,7 @@ async function* generateEvents(
     };
 
   try {
-    const allTurns: Turn[] = [...inheritedTurns, ...priorTurns, userTurn, assistantTurn];
+    const allTurns: Turn[] = [...initialTurns, assistantTurn];
     const localBlocks: Block[] = await repos.blocks.listByThread(input.threadId);
     const allBlocks: Block[] = [...inheritedBlocks, ...localBlocks];
     let iteration = 0;
@@ -1014,7 +1134,7 @@ async function* generateEvents(
       if (iteration === 1) {
         const loaded = await loadReferenceReads({
           blocks: allBlocks,
-          userTurnId: userTurn.id,
+          userTurnId: referenceUserTurnId,
           threadId: input.threadId,
           assistantTurnId: currentAssistantTurn.id,
           reader: deps.referenceReader,
@@ -1094,9 +1214,9 @@ async function* generateEvents(
         postToolNoticeBatches.push({ afterMessageCount: baseMessageCount, notices: drain.notices });
       }
 
-      if (input.activatedSkillSlugs?.length) {
+      if (activatedSkillSlugs?.length) {
         activatedSkillBodies ??= await Promise.all(
-          input.activatedSkillSlugs.map((slug) =>
+          activatedSkillSlugs.map((slug) =>
             loadUserSkillBody({
               thread,
               slug,

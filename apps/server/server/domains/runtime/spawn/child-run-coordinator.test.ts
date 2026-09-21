@@ -37,7 +37,11 @@ function stubOrchestrator(records: RecordedTurn[]): RunTurnPort {
     async runTurn(input) {
       counter += 1;
       const assistantTurnId = `assistant-turn-${counter}` as TurnId;
-      records.push({ threadId: input.threadId, userText: input.userText, assistantTurnId });
+      records.push({
+        threadId: input.threadId,
+        userText: "userText" in input ? input.userText : "",
+        assistantTurnId,
+      });
       // return_result settles while the child's event generator runs, after
       // runTurn has already returned the assistant turn id.
       return {

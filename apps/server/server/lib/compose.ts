@@ -118,12 +118,17 @@ import {
   createGatewayFromEnv,
   createHeartbeatRunAuthority,
   createHostTurnAdmission,
+  createInMemoryInbox,
+  createInMemoryRunStarter,
+  createInMemoryThreadLock,
   createInMemoryThreadRunOwnership,
   createInstrumentedGateway,
   createLateBindRunTurnPort,
   createOrchestrator,
+  createRunStarter,
   createSkillToolRegistrations,
   createSpawnToolRegistrations,
+  createThreadedInbox,
   createToolExecutor,
   createToolRegistry,
   createTurnRunner,
@@ -135,7 +140,10 @@ import {
   type HostTurnAdmission,
   InvalidAdmissionError,
   type RunAuthority,
+  type RunStarter,
   type RunTurnPort,
+  sweepWakes,
+  type ThreadedInbox,
   type ThreadRunOwnership,
   type ToolExecutor,
   type ToolRegistry,
@@ -237,6 +245,10 @@ export type AppServices = {
   recentDocuments: RecentDocumentsRepository;
   orchestrator: RunTurnPort;
   runner: TurnRunner;
+  runStarter: RunStarter;
+  threadedInbox: ThreadedInbox;
+  /** Startup/interval recovery for threads with a pending steer and no live run. */
+  wakeSweep: { sweep(): Promise<void> };
   userTurnAdmission: UserTurnAdmission;
   runOwnership: ThreadRunOwnership;
   toolRegistry: ToolRegistry;
@@ -304,6 +316,9 @@ export type ProductionAppPorts = {
 };
 
 const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
+
+/** Max threads one wake sweep starts; the sweep repeats on its interval. */
+const WAKE_SWEEP_LIMIT = 100;
 
 function concurrentRenderBudgetBytes(request: {
   model?: string;
@@ -644,6 +659,22 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     workContextDelivery,
   });
+  // One durable inbox and lock shared by the loop (consumer) and the producer
+  // `ThreadedInbox`. The `RunStarter` wakes a thread from a pending steer; the
+  // sweep is the durable recovery for a missed wake.
+  const inbox = createDrizzleInbox(ports.db);
+  const threadLock = createDrizzleThreadLock(ports.db);
+  const runStarter = createRunStarter(runner);
+  const threadedInbox = createThreadedInbox({ inbox, threadLock, runStarter });
+  const wakeSweep = {
+    sweep: () =>
+      sweepWakes({
+        inbox,
+        authority: ports.runAuthority,
+        runStarter,
+        limit: WAKE_SWEEP_LIMIT,
+      }),
+  };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
     identities: ports.uploadIdentity,
@@ -776,8 +807,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     modelRequestDebug: ports.modelRequestDebug,
     responseWrites,
     notices: ports.notices,
-    inbox: createDrizzleInbox(ports.db),
-    threadLock: createDrizzleThreadLock(ports.db),
+    inbox,
+    threadLock,
     runAuthority: ports.runAuthority,
     activeDocuments: ports.activeDocuments,
     imageAssets,
@@ -828,6 +859,9 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     recentDocuments: ports.recentDocuments,
     orchestrator,
     runner,
+    runStarter,
+    threadedInbox,
+    wakeSweep,
     userTurnAdmission,
     runOwnership: ports.runOwnership,
     toolRegistry,
@@ -872,6 +906,13 @@ export function createInMemoryAppServices(): AppServices {
     env: {},
   });
   const runOwnership = createInMemoryThreadRunOwnership();
+  const runStarter = createInMemoryRunStarter();
+  const threadedInbox = createThreadedInbox({
+    inbox: createInMemoryInbox(),
+    threadLock: createInMemoryThreadLock(),
+    runStarter,
+  });
+  const wakeSweep = { async sweep() {} };
 
   const documentSync: CollabDomain = createInMemoryCollabDomain();
   const unavailableWorkContext: WorkContextReader = {
@@ -1220,10 +1261,16 @@ export function createInMemoryAppServices(): AppServices {
       async startTurn() {
         throw new Error("in-memory turn runner is not implemented");
       },
+      async startDrain() {
+        throw new Error("in-memory turn runner is not implemented");
+      },
       async cancel() {
         return "not_found" as const;
       },
     },
+    runStarter,
+    threadedInbox,
+    wakeSweep,
     userTurnAdmission: {
       async admit(input) {
         return { kind: "rejected", submissionId: input.submissionId, code: "already_running" };

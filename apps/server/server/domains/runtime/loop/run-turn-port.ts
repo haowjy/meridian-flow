@@ -17,14 +17,8 @@ import type { Lease } from "./ports.js";
 
 export type ReturnResultCompleter = (capture: ReturnResultCapture) => Promise<ReturnResultOutcome>;
 
-export interface RunTurnInput {
+interface RunTurnBase {
   threadId: ThreadId;
-  userText: string;
-  userBlocks?: readonly UserMessageBlock[];
-  activatedSkillSlugs?: readonly string[];
-  /** Hidden metadata stamped on the user turn; never model-facing here. */
-  userTurnMetadata?: JsonValue | null;
-  onStartPersisted?: (turns: { userTurnId: TurnId; assistantTurnId: TurnId }) => Promise<void>;
   tools?: Tool[];
   signal?: AbortSignal;
   treeBudget?: TreeBudget;
@@ -32,6 +26,39 @@ export interface RunTurnInput {
   returnResultCompleter?: ReturnResultCompleter;
   /** The run's held lease; the loop releases it through closeRun when it exits. */
   lease?: Lease;
+}
+
+/** A run born from a new writer message: the setup mints the writer's user turn. */
+export interface WriterRunTurnInput extends RunTurnBase {
+  userText: string;
+  userBlocks?: readonly UserMessageBlock[];
+  activatedSkillSlugs?: readonly string[];
+  /** Hidden metadata stamped on the user turn; never model-facing here. */
+  userTurnMetadata?: JsonValue | null;
+  onStartPersisted?: (turns: { userTurnId: TurnId; assistantTurnId: TurnId }) => Promise<void>;
+}
+
+/**
+ * A drain-only start (a wake): there is no new writer message. The first
+ * drained steer becomes the run's first user turn, ahead of the assistant
+ * container, and the model sees exactly the drained batch.
+ */
+export interface DrainRunTurnInput extends RunTurnBase {
+  drain: true;
+}
+
+export type RunTurnInput = WriterRunTurnInput | DrainRunTurnInput;
+
+export function isDrainRun(input: RunTurnInput): input is DrainRunTurnInput {
+  return "drain" in input && input.drain === true;
+}
+
+/** The drain start found no durable pending steer to serve; nothing was written. */
+export class NoPendingWakeError extends Error {
+  constructor(readonly threadId: ThreadId) {
+    super("no_pending_wake");
+    this.name = "NoPendingWakeError";
+  }
 }
 
 export interface RunTurnHandle {

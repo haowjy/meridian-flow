@@ -30,6 +30,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleInbox } = await import("./drizzle-inbox.js");
     const { createDrizzleThreadLock } = await import("./drizzle-thread-lock.js");
     const { closeRun } = await import("../loop/close-run.js");
+    const { sweepWakes } = await import("../loop/sweep-wakes.js");
     const { createThreadedInbox } = await import("../loop/threaded-inbox.js");
     const { createInMemoryRunStarter } = await import("./in-memory/loop-ports.js");
     const { createDrizzleRunAuthority, createDrizzleThreadRunOwnership } = await import(
@@ -136,6 +137,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await inbox.enqueue(systemMessage("s2", THREAD_B));
 
       expect(await inbox.pendingSteerThreads(10)).toEqual([THREAD_A, THREAD_B]);
+    });
+
+    it("wakes a pending-steer thread and skips one with a live lease", async () => {
+      const inbox = createDrizzleInbox(db);
+      const authority = createDrizzleRunAuthority(db, { holderId: "holder-sweep" });
+      await inbox.enqueue(steer("sweep-a", THREAD_A));
+      await inbox.enqueue(steer("sweep-b", THREAD_B));
+      const leaseA = required(await authority.acquire(THREAD_A, "run-a"));
+
+      const started: ThreadId[] = [];
+      await sweepWakes({
+        inbox,
+        authority,
+        runStarter: {
+          async start(threadId) {
+            started.push(threadId);
+          },
+        },
+        limit: 10,
+      });
+
+      expect(started).toEqual([THREAD_B]);
+      await authority.release(leaseA);
     });
 
     it("gives a single winner on acquire and reflects the live lease in holder/read", async () => {
