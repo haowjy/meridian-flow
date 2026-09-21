@@ -13,7 +13,12 @@ import {
   createInMemoryRepositories,
 } from "../../threads/index.js";
 import { createInMemoryInbox } from "../adapters/in-memory/loop-ports.js";
-import { drainInbox, persistInboxMessages, renderInboxBatch } from "./inbox-context.js";
+import {
+  drainInbox,
+  persistInboxMessages,
+  planMessageTurns,
+  renderInboxBatch,
+} from "./inbox-context.js";
 import type { MessageDraft } from "./ports.js";
 
 const USER_ID = "user-1";
@@ -98,6 +103,76 @@ describe("renderInboxBatch", () => {
     expect(text.join("\n")).toContain('Background subagent "Critic" reported.');
     expect(text.join("\n")).toContain("Two chapter breaks sag.");
     expect(text.join("\n")).toContain("outline.md");
+  });
+});
+
+describe("planMessageTurns", () => {
+  it("chains each fresh message from the previous turn and reports the leaf", async () => {
+    const { inbox, thread } = await seed();
+    await inbox.enqueue(message("one", thread.id));
+    await inbox.enqueue(message("two", thread.id));
+    const batch = await inbox.claimPending(thread.id);
+
+    const plan = planMessageTurns({ batch, prevTurnId: null, knownTurnIds: new Set() });
+
+    expect(plan.turns.map((turn) => turn.id)).toEqual(batch.map((entry) => entry.id));
+    expect(plan.turns[0]?.prevTurnId).toBeNull();
+    expect(plan.turns[1]?.prevTurnId).toBe(batch[0]?.id);
+    expect(plan.leafTurnId).toBe(batch[1]?.id);
+    expect(plan.events.map((event) => event.type)).toEqual([
+      "turn.created",
+      "block.upserted",
+      "turn.created",
+      "block.upserted",
+    ]);
+  });
+
+  it("skips a known turn id and re-chains the next fresh message from the durable leaf", async () => {
+    const { inbox, thread } = await seed();
+    await inbox.enqueue(message("first", thread.id));
+    await inbox.enqueue(message("second", thread.id));
+    const batch = await inbox.claimPending(thread.id);
+    const firstId = batch[0]?.id ?? "";
+    const secondId = batch[1]?.id ?? "";
+
+    const plan = planMessageTurns({
+      batch,
+      prevTurnId: firstId,
+      knownTurnIds: new Set([firstId]),
+    });
+
+    expect(plan.turns.map((turn) => turn.id)).toEqual([secondId]);
+    expect(plan.turns[0]?.prevTurnId).toBe(firstId);
+    expect(plan.leafTurnId).toBe(secondId);
+  });
+
+  it("skips notice entries without shifting the chain", async () => {
+    const { inbox, thread } = await seed();
+    await inbox.enqueue(notice("ambient", thread.id));
+    await inbox.enqueue(message("direct", thread.id));
+    const batch = await inbox.claimPending(thread.id);
+
+    const plan = planMessageTurns({ batch, prevTurnId: null, knownTurnIds: new Set() });
+
+    expect(plan.turns).toHaveLength(1);
+    expect(plan.leafTurnId).toBe(plan.turns[0]?.id);
+  });
+
+  it("returns the previous leaf unchanged when nothing fresh remains", async () => {
+    const { inbox, thread } = await seed();
+    await inbox.enqueue(message("known", thread.id));
+    const batch = await inbox.claimPending(thread.id);
+    const knownId = batch[0]?.id ?? "";
+
+    const plan = planMessageTurns({
+      batch,
+      prevTurnId: knownId,
+      knownTurnIds: new Set([knownId]),
+    });
+
+    expect(plan.turns).toEqual([]);
+    expect(plan.events).toEqual([]);
+    expect(plan.leafTurnId).toBe(knownId);
   });
 });
 
