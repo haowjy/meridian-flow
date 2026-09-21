@@ -15,7 +15,7 @@ import type {
 } from "@meridian/contracts/spawn";
 import { blockPlainText, type Thread, type ThreadActivity } from "@meridian/contracts/threads";
 import type { BillingSpendReader } from "../../billing/index.js";
-import type { EventSink } from "../../observability/index.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import type {
   BlockRepository,
@@ -275,6 +275,45 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     await runAuthority.release(prepared.runLease);
   }
 
+  /**
+   * Retire a settled run's parent-turn card. The prune and its journal fact are
+   * read-model side effects, never part of the run result: a missing row is a
+   * no-op and any failure is reported to the `EventSink` and swallowed, so the
+   * terminal transaction can still commit the run's success.
+   */
+  async function retireRunCard(input: ChildDriveInput, runCard: RunCardRef): Promise<void> {
+    try {
+      const pruned = await deps.repos.blocks.updatePruned(runCard.blockId, true);
+      if (!pruned) {
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "runtime.spawn",
+          name: "subagent.run_card_prune_missing",
+          correlation: {
+            threadId: input.parentThread.id,
+            turnId: input.parentTurnId as string,
+          },
+          payload: { blockId: runCard.blockId },
+        });
+      }
+      await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
+        type: "block.pruned",
+        blockId: runCard.blockId,
+      });
+    } catch (error) {
+      emitEvent(deps.eventSink, {
+        level: "warn",
+        source: "runtime.spawn",
+        name: "subagent.run_card_prune_failed",
+        correlation: {
+          threadId: input.parentThread.id,
+          turnId: input.parentTurnId as string,
+        },
+        payload: { blockId: runCard.blockId, ...unknownToEventPayload(error) },
+      });
+    }
+  }
+
   function appendBackgroundTerminal(
     prepared: PreparedChild,
     input: ChildDriveInput,
@@ -440,13 +479,11 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
           await enqueueBackgroundReport(spawnResult);
           // Retire the parent-turn running card in the same terminal transaction
           // as the report enqueue: exactly one card per run is visible (run card
-          // during, report after), and a crash cannot leave both.
+          // during, report after), and a crash cannot leave both. Best-effort: a
+          // read-model side effect must never roll back the run's terminal facts
+          // and turn a successful run into a reported failure.
           if (runCard) {
-            await deps.repos.blocks.updatePruned(runCard.blockId, true);
-            await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-              type: "block.pruned",
-              blockId: runCard.blockId,
-            });
+            await retireRunCard(input, runCard);
           }
         });
       } finally {

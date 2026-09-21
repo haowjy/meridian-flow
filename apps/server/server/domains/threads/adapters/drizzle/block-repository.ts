@@ -92,8 +92,7 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
         .set({ pruned })
         .where(eq(schema.turnBlocks.id, id))
         .returning();
-      if (!row) throw new Error(`Block not found: ${id}`);
-      return mapBlock(row);
+      return row ? mapBlock(row) : null;
     },
   };
 }
