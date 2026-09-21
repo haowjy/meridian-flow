@@ -104,15 +104,14 @@ export function ContextViewer({
   // document is not missing from the landing when the writer returns to it.
   useEffect(() => {
     if (!active || !openedDocumentId) return;
-    let cancelled = false;
+    // Invalidate even if this effect cleans up first: the writer may close the
+    // document before the POST settles, and the landing they return to still
+    // needs the fresh row. The query client outlives this effect.
     void recordRecentDocument(openedDocumentId, accountId).then((recorded) => {
-      if (recorded && !cancelled) {
-        void queryClient.invalidateQueries({ queryKey: accountQueryKeys.recentDocuments() });
+      if (recorded) {
+        void queryClient.invalidateQueries({ queryKey: accountQueryKeys.recentDocumentsRoot });
       }
     });
-    return () => {
-      cancelled = true;
-    };
   }, [active, openedDocumentId, accountId, queryClient]);
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const activeTabId = activeTab?.documentId ?? null;
