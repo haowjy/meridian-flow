@@ -723,6 +723,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workContextDelivery: workContextDelivery,
     runAuthority: ports.runAuthority,
     billingSpendReader: ports.billingSpendReader,
+    eventSink: ports.eventSink,
   });
   const childRunCoordinator = createChildRunCoordinator({
     driver: childRunDriver,
@@ -753,6 +754,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
         threadId,
       ),
     agentRevisions: ports.agentRevisions,
+    eventSink: ports.eventSink,
   });
   const orchestrator = createOrchestrator({
     gateway: ports.gateway,

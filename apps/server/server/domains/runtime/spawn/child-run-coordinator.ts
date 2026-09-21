@@ -9,6 +9,7 @@ import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { SpawnResult } from "@meridian/contracts/spawn";
 import type { Block, Thread, ThreadActivity } from "@meridian/contracts/threads";
+import type { EventSink } from "../../observability/index.js";
 import type { AgentRevisionStore, CompiledAgentDefinition } from "../../packages/index.js";
 import type {
   EventJournalWriter,
@@ -19,7 +20,7 @@ import type {
 import { createBoundConversation } from "../../threads/index.js";
 import type { ReturnResultCompleter } from "../loop/run-turn-port.js";
 import type { ThreadedInbox } from "../loop/threaded-inbox.js";
-import { appendSubagentActivity } from "./activity-event.js";
+import { appendSubagentActivity, appendSubagentActivityBestEffort } from "./activity-event.js";
 import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
 import { resolveChildInvocation } from "./resolve-child-invocation.js";
@@ -81,6 +82,7 @@ export interface ChildRunCoordinatorDeps {
   unavailableReasons(definition: CompiledAgentDefinition, model: string): string[];
   /** Host-availability check for a model id, used when the child has no definition. */
   modelUnavailable(model: string): string[];
+  eventSink: EventSink;
 }
 
 export interface ChildRunCoordinator {
@@ -247,11 +249,21 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
     const resolvedSlug = binding.revision?.slug ?? GENERIC_SUBAGENT_SLUG;
     try {
-      return await driver.register(target, resolvedSlug, {
+      const prepared = await driver.register(target, resolvedSlug, {
         background: false,
         signal: input.signal,
         origin: "message",
       });
+      // A wake changes the read model the moment the lease is held, before the
+      // first turn event; best-effort so it never gates the run.
+      await appendSubagentActivityBestEffort({
+        eventWriter: deps.eventWriter,
+        readActivity: deps.readActivity,
+        rootThreadId: target.rootThreadId as ThreadId,
+        childThreadId: target.id,
+        eventSink: deps.eventSink,
+      });
+      return prepared;
     } catch (error) {
       return {
         status: "error",
