@@ -78,6 +78,12 @@ export function dispatchWsServerMessage(
         );
       }
 
+      // After catch-up: a replayed frame is frozen at emit time, so the
+      // server-computed live state wins over any stale replayed value.
+      for (const handler of subscription.handlers) {
+        handler.onLiveState?.(message.state);
+      }
+
       // Do NOT advance lastSeq from nextSeq — it's "head + 1", not a delivered event seq.
       return;
     }

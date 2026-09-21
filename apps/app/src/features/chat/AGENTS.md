@@ -38,12 +38,13 @@ never reads transient stream state (`isLive`, partial blocks). Hidden protocol
 (the `tool_use`/`tool_result` rows a card already surfaces) is dropped, not
 folded.
 
-Run liveness is never a turn block. The `meridian.background.*` frames used to
-synthesize a running `helper-result` card on the parent turn; that client-only
-block was removed because a terminal parent turn reconciles local blocks away,
-so the card flashed and vanished. The durable report still arrives as its own
-`helper-result` system-turn block. A live subagent surface is server truth
-(leases + lineage), landing separately.
+Run liveness is never a turn block. A background spawn's running card is now a
+durable server block on the parent turn (retired at child settle); the durable
+report still arrives as its own `helper-result` system-turn block. The live
+subagent surface is server truth: `ThreadActivity` from live state (snapshot +
+`meridian.subagent.activity`), rendered recursively by `RunningSubagentsStrip`
+mounted in `ChatView`'s header. It is anchored to the thread, so a terminal
+turn cannot erase it.
 
 The full model lives in
 [`.context/turn-composition.md`](.context/turn-composition.md); one row's

@@ -9,6 +9,7 @@ import type {
   CancelTurnResponse,
   CatalogWakeHint,
   SequencedEvent,
+  ThreadLiveState,
   WsClientMessage,
   WsGapCause,
 } from "@meridian/contracts/protocol";
@@ -46,6 +47,12 @@ export type ThreadGapEvent = {
  */
 export interface ThreadTransportHandlers {
   onEvent: (event: SequencedEvent) => void;
+  /**
+   * Server-authoritative live state delivered on `subscribed`, after catch-up
+   * frames. A replayed activity frame is frozen at emit time, so this is the
+   * reconciliation point after a reconnect: prefer it over replayed frames.
+   */
+  onLiveState?: (state: ThreadLiveState) => void;
   onGap?: (event: ThreadGapEvent) => void;
   onConnectionState?: (state: ConnectionState) => void;
   onClose?: (event: CloseEvent) => void;
