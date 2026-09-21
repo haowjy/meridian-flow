@@ -8,14 +8,15 @@
  * second run mid-terminal. The completion is bookkeeping only; keep it free of
  * model calls and tool execution.
  *
- * `continueOnPending` is the interrupt/exit policy, set by the caller:
- *   - `true` for cancel and normal completion. A pending batch means the run
- *     keeps going into the next iteration; nothing is completed or released.
- *     This is the `specs.md` "Interrupt" path: a pending message becomes the next
- *     turn of the same run.
- *   - `false` for hard error, budget cap, and max-iteration. The terminal
- *     completion runs and the lease releases even with a pending batch, which
- *     the wake sweep (S4) recovers.
+ * `continueOnPending` is the exit policy, set by the caller:
+ *   - `true` for normal completion (and the `end_turn`/steer exits). A pending
+ *     batch means the run keeps going into the next iteration; nothing is
+ *     completed or released, so a mid-run steer stays on the same turn.
+ *   - `false` for cancel, hard error, budget cap, and max-iteration. The terminal
+ *     completion runs and the lease releases even with a pending batch. For
+ *     cancel that is the interrupt: the in-flight turn finalizes as `cancelled`,
+ *     and the run owner starts the pending message as a distinct next turn. For
+ *     the error exits the wake sweep (S4) recovers it.
  *
  * Release ownership: `closeRun` releases the lease exactly once, under the
  * lock, after `complete` commits. The run owner also releases in its `finally`

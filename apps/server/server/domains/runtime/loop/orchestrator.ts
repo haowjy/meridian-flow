@@ -1054,11 +1054,12 @@ async function* generateEvents(
   // `complete` and releases the lease under the same lock. Returns true when the
   // caller must continue the loop; false when the terminal events were yielded.
   //
-  // `continueOnPending` encodes the interrupt policy: true for cancel and for
-  // normal completion (endTurnRequested / clean finish), where a pending message
-  // becomes the next turn of the same run; false for hard error, budget cap, and
-  // max-iteration, which complete and release and let the S4 wake sweep recover
-  // any pending message.
+  // `continueOnPending` encodes the exit policy: true for normal completion
+  // (endTurnRequested / clean finish), where a pending message steers into the
+  // same run's next iteration. Cancel, hard error, budget cap, and max-iteration
+  // pass false: they always finalize and release. Cancel's pending message is a
+  // distinct next turn, started by the run owner's post-cancel wake (see
+  // `turn-runner.cancel`).
   async function* exitRun(
     continueOnPending: boolean,
     complete: () => Promise<TerminalOutcome>,
@@ -1102,10 +1103,11 @@ async function* generateEvents(
     let iteration = 0;
     // A successful return_result completes the turn after the current tool batch.
     let endTurnRequested = false;
-    // An abort consumed by a pending-message continuation must not cancel the
-    // resumed turn: the interrupt handled its boundary, the run lives on.
-    let cancelConsumed = false;
-    const isCancelled = () => !cancelConsumed && (input.signal?.aborted ?? false);
+    // The in-process abort is the fast cancel path; the durable lease flag is the
+    // cross-process one, read at each iteration's safe boundary. Either set means
+    // the run exits, so no suppression state is needed.
+    let leaseCancelled = false;
+    const isCancelled = () => (input.signal?.aborted ?? false) || leaseCancelled;
     // Pinned once before the first drain appends messages, so notices and skill
     // bodies attach to the writer's triggering message, never a drained message.
     let writerMessageIndex: number | undefined;
@@ -1128,11 +1130,15 @@ async function* generateEvents(
         return;
       }
 
+      // A cancel from another process has no local abort; the lease flag is the
+      // only signal. Read it before acting so the interrupt's next turn starts
+      // from a clean, already-released run.
+      if (input.lease) {
+        const status = await deps.runAuthority.read(input.threadId);
+        if (status.kind === "awake" && status.cancelRequested) leaseCancelled = true;
+      }
       if (isCancelled()) {
-        if (yield* exitRun(true, cancelTerminal)) {
-          cancelConsumed = true;
-          continue;
-        }
+        yield* exitRun(false, cancelTerminal);
         return;
       }
 
@@ -1146,7 +1152,7 @@ async function* generateEvents(
 
       const gatewayAbort = new AbortController();
       let cancelRequested = isCancelled();
-      if (input.signal && !cancelConsumed) {
+      if (input.signal) {
         input.signal.addEventListener(
           "abort",
           () => {
@@ -1354,10 +1360,7 @@ async function* generateEvents(
         });
         yield* settled.events;
         currentAssistantTurn = settled.turn;
-        if (yield* exitRun(true, cancelTerminal)) {
-          cancelConsumed = true;
-          continue;
-        }
+        yield* exitRun(false, cancelTerminal);
         return;
       }
 
@@ -1402,10 +1405,7 @@ async function* generateEvents(
         activeResponseId = responseId;
         if (isCancelled()) {
           await rollbackActiveResponse();
-          if (yield* exitRun(true, cancelTerminal)) {
-            cancelConsumed = true;
-            continue;
-          }
+          yield* exitRun(false, cancelTerminal);
           return;
         }
 
@@ -1467,10 +1467,7 @@ async function* generateEvents(
         for (const call of toolCallsFromResult) {
           if (isCancelled()) {
             await rollbackActiveResponse();
-            if (yield* exitRun(true, cancelTerminal)) {
-              cancelConsumed = true;
-              continue runLoop;
-            }
+            yield* exitRun(false, cancelTerminal);
             return;
           }
 
@@ -1486,10 +1483,7 @@ async function* generateEvents(
             activeResponseId = undefined;
             yield* boundary.events;
             if (boundary.outcome.status === "draft_closed") {
-              if (yield* exitRun(true, cancelTerminal)) {
-                cancelConsumed = true;
-                continue runLoop;
-              }
+              if (yield* exitRun(true, cancelTerminal)) continue runLoop;
               return;
             }
             writeBlocksByDocument.clear();
@@ -1588,20 +1582,14 @@ async function* generateEvents(
           }
           if (dispatched.cancelled || isCancelled()) {
             await rollbackActiveResponse();
-            if (yield* exitRun(true, cancelTerminal)) {
-              cancelConsumed = true;
-              continue runLoop;
-            }
+            yield* exitRun(false, cancelTerminal);
             return;
           }
           if (dispatched.endTurn === true) endTurnRequested = true;
         }
         if (isCancelled()) {
           await rollbackActiveResponse();
-          if (yield* exitRun(true, cancelTerminal)) {
-            cancelConsumed = true;
-            continue;
-          }
+          yield* exitRun(false, cancelTerminal);
           return;
         }
         const settledScope = await settleWriteScope();
@@ -1609,10 +1597,7 @@ async function* generateEvents(
         activeResponseId = undefined;
         yield* settledScope.events;
         if (concurrentEdits.status === "draft_closed") {
-          if (yield* exitRun(true, cancelTerminal)) {
-            cancelConsumed = true;
-            continue;
-          }
+          if (yield* exitRun(true, cancelTerminal)) continue;
           return;
         }
 
