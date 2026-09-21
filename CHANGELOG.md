@@ -9,6 +9,7 @@
 
 ### Added
 
+- Editor empty state lists the writer's recently opened documents, account-global across projects and grouped by age (Today / Yesterday / Earlier). Opening a document records it to an account-scoped recents list (`user_recent_documents`); the landing replaces the old "New document / pick a file from the tree" dead end.
 - Seed Writer with full write/edit allow and promote Critic to a pickable primary that may read but not mutate.
 - Advertise Agent turns from the bound revision's projected tool policy: filtered tools, narrowed write/work command schemas, and a per-turn permission gate that denies unknown names and unavailable write/work commands.
 - Project compiled Agent Mars `tools` / `disallowed-tools` onto Flow write/work command policy.

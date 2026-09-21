@@ -4,11 +4,10 @@
  */
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { FilePlus, PanelLeftOpen, PanelRightOpen } from "lucide-react";
+import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import type { ReactNode } from "react";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
-import { Button } from "@/components/ui/button";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { PassageNotice } from "@/features/editor/PassageNotice";
@@ -20,6 +19,7 @@ import { ContextViewerHost } from "./ContextViewerHost";
 import type { ContextPaneState, MissingDestination } from "./context-pane-state";
 import { schemeLabel } from "./context-schemes";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
+import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 
 function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { kind: "tracked" | "new" }> {
@@ -176,9 +176,13 @@ export function ContextViewer({
         {paneState.kind === "dead-route" ? (
           <MissingDocumentState destination={paneState.destination} />
         ) : null}
-        {paneState.kind === "empty-workspace" || paneState.kind === "route-error" ? (
-          <EditorEmptyState onNewDocument={onNewDocument} />
+        {paneState.kind === "empty-workspace" ? (
+          <RecentDocumentsLanding
+            onNewDocument={onNewDocument}
+            onBrowseTree={sidebarToggle?.open ? undefined : sidebarToggle?.onExpand}
+          />
         ) : null}
+        {paneState.kind === "route-error" ? <RouteErrorState /> : null}
       </div>
     </div>
   );
@@ -234,28 +238,20 @@ function railToggleNode(
   return <PanelToggleButton icon={Icon} label={toggle.label} onClick={toggle.onExpand} />;
 }
 
-function EditorEmptyState({
-  onNewDocument,
-}: {
-  /**
-   * Starts a local document that autosaves to project Unfiled storage.
-   * Deliberately NOT the sidebar inline-create: that flow is scheme-targeted
-   * and happens off-pane, which reads as a dead button from the empty state.
-   */
-  layoutSaveFailed?: boolean;
-  onNewDocument?: () => void;
-}) {
+/**
+ * Where an Editor route that could not resolve lands. Not the empty state: the
+ * writer asked for a specific destination and it failed, so this says so
+ * rather than offering to start something new.
+ */
+function RouteErrorState() {
   return (
     <div className="grid h-full place-items-center px-6 text-center">
-      <div className="flex max-w-sm flex-col items-center gap-3">
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <Button size="sm" onClick={onNewDocument} disabled={!onNewDocument}>
-            <FilePlus aria-hidden />
-            <Trans>New document</Trans>
-          </Button>
-        </div>
+      <div className="flex max-w-sm flex-col gap-2">
+        <p className="font-medium text-prose-foreground">
+          <Trans>This destination couldn't load.</Trans>
+        </p>
         <p className="text-xs text-muted-foreground">
-          <Trans>Or pick a file from the tree.</Trans>
+          <Trans>Refresh to try again.</Trans>
         </p>
       </div>
     </div>

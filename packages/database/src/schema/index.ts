@@ -7,6 +7,7 @@ export * from "./context-catalog";
 export * from "./context-operation-receipts";
 export * from "./preferences";
 export * from "./provenance";
+export * from "./recent-documents";
 export * from "./results";
 export * from "./user";
 export * from "./users";
@@ -23,6 +24,7 @@ import * as contextCatalog from "./context-catalog";
 import * as contextOperations from "./context-operation-receipts";
 import * as preferences from "./preferences";
 import * as provenance from "./provenance";
+import * as recentDocuments from "./recent-documents";
 import * as results from "./results";
 import * as user from "./user";
 import { users } from "./users";
@@ -41,6 +43,7 @@ export const schema = {
   ...agentThreads,
   ...agentDefinitionRevisions,
   ...provenance,
+  ...recentDocuments,
   ...preferences,
   ...results,
   ...user,

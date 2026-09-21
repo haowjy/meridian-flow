@@ -78,7 +78,7 @@ type IdentityClassification =
 
 const WORK_SCHEMES = new Set<ContextUriScheme>(["scratch", "uploads"]);
 
-function classifyAuthoritativeIdentity(input: {
+export function classifyAuthoritativeIdentity(input: {
   row: AvailabilityRow;
   requestProjectId: string;
   actorUserId: string;

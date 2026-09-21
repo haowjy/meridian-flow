@@ -39,6 +39,7 @@ import {
   useEffect,
   useMemo,
 } from "react";
+import { recordRecentDocument } from "@/client/api/recent-documents-api";
 import type { CatalogFile } from "@/client/query/context-catalog-projection";
 import {
   accessibleResourceCatalogView,
@@ -48,7 +49,7 @@ import {
 } from "@/client/query/useContextCatalog";
 import { useContextTabsActions } from "@/client/stores";
 import { type OpenContextRoute, useOpenContextRoute } from "../routing/ProjectNavigationContext";
-import { useOptionalAccountResourceReplica } from "./account-feature-context";
+import { useAccountId, useOptionalAccountResourceReplica } from "./account-feature-context";
 import { contextTabFromFile } from "./context-tab-from-file";
 import { useProjectDocumentLiveOpener } from "./project-document-live-opener-context";
 
@@ -212,6 +213,7 @@ type NavigationAdapterDependencies = {
   ): import("@/client/stores").OpenEditorTabResult;
   openRoute: OpenContextRoute | null;
   captureNavigation?: () => () => boolean;
+  onDocumentOpened?: (documentId: string) => void;
   resources?: {
     readonly accountId: string;
     openKnownDocument(
@@ -416,18 +418,19 @@ export class ProjectDocumentNavigationAdapter {
         },
         { tab, isCurrent: input.isCurrent, canCommit: input.canCommit },
       );
-      return settlement.kind === "failed"
-        ? "failed"
-        : settlement.kind === "applied"
-          ? "applied"
-          : "cancelled";
+      if (settlement.kind === "failed") return "failed";
+      if (settlement.kind !== "applied") return "cancelled";
+      this.dependencies.onDocumentOpened?.(input.file.documentId);
+      return "applied";
     }
     if (tab) {
       const installed = this.dependencies.openTab(input.projectId, tab, input.isCurrent);
       if (installed.kind !== "opened")
         return installed.kind === "superseded" ? "cancelled" : "failed";
     }
-    return input.canCommit() ? "applied" : "cancelled";
+    if (!input.canCommit()) return "cancelled";
+    this.dependencies.onDocumentOpened?.(input.file.documentId);
+    return "applied";
   }
 }
 
@@ -456,6 +459,7 @@ export function ProjectDocumentNavigationProvider({
 }) {
   const opener = useProjectDocumentLiveOpener();
   const resources = useOptionalAccountResourceReplica();
+  const accountId = useAccountId();
   const openContextRoute = useOpenContextRoute();
   const { openTab } = useContextTabsActions();
   const owner = useMemo<ProjectDocumentNavigationOwner>(
@@ -467,9 +471,12 @@ export function ProjectDocumentNavigationProvider({
         openRoute: openContextRoute,
         captureNavigation,
         resources,
+        onDocumentOpened: (documentId) => {
+          recordRecentDocument(documentId, accountId);
+        },
       }),
     }),
-    [openContextRoute, openTab, opener, projectId, captureNavigation, resources],
+    [accountId, openContextRoute, openTab, opener, projectId, captureNavigation, resources],
   );
   useEffect(() => () => owner.adapter.dispose(), [owner]);
 

@@ -11,6 +11,7 @@ export * from "./context-catalog";
 export * from "./context-operation-receipts";
 export * from "./preferences";
 export * from "./provenance";
+export * from "./recent-documents";
 export * from "./results";
 export * from "./user";
 export * from "./users";
