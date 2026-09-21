@@ -94,6 +94,7 @@ export interface RunAuthority {
   holder(threadId: ThreadId): Promise<RunId | null>;
   publish(lease: Lease, phase: ThreadPhase): Promise<void>;
   read(threadId: ThreadId): Promise<ThreadStatus>;
+  /** Sets the live lease's durable cancel flag; idempotent, and the only cross-process cancel channel. */
   cancel(threadId: ThreadId): Promise<void>;
   /**
    * Releases the held lease. Guarded: an already-released or superseded lease is

@@ -21,11 +21,13 @@
  *   `RUN_STARTED` AG-UI event projected from the assistant turn.created.
  *   If we read after, the client might miss the first event.
  *
- * - **Cancel**: calls `AbortController.abort()`, which the orchestrator
- *   checks at every yield point. If no running turn is found, falls back
- *   to checking the persisted turn status (handles crash recovery: a
- *   running map is empty after restart, but a turn in "streaming" state
- *   may still need cancellation cleanup).
+ * - **Cancel**: sets the durable lease flag through `RunAuthority.cancel` (the
+ *   only cross-process channel) and aborts the local `AbortController` as the
+ *   fast path. The orchestrator observes either at its next boundary, finalizes
+ *   the turn as cancelled, and releases. Once the run lets go, a pending message
+ *   starts the next turn as a drain run; the wake is best-effort and the sweep
+ *   is the durable backstop. A cancel for a turn owned by another process only
+ *   sets the flag, since no local abort is possible.
  *
  * - **Child runs**: spawn-driven child turns register under their parent so
  *   parent cancel propagates parent→child.
@@ -66,6 +68,12 @@ export interface ChildRunRegistry {
 type RunningTurn = {
   controller: AbortController;
   assistantTurnId?: TurnId;
+  /**
+   * Resolves after the background drive clears `running` and releases the lease.
+   * Cancel chains the post-interrupt wake on it so the successor drain run starts
+   * only once this run no longer holds the thread.
+   */
+  completion?: Promise<void>;
 };
 
 type ChildRun = {
@@ -176,8 +184,13 @@ export function createTurnRunner(deps: {
     assertConnectionTokenLive(input.connectionToken);
 
     const controller = new AbortController();
+    let markRunComplete!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      markRunComplete = resolve;
+    });
     running.set(input.threadId, {
       controller,
+      completion,
     });
     let lease: Lease | null = null;
     try {
@@ -243,6 +256,7 @@ export function createTurnRunner(deps: {
       running.set(input.threadId, {
         controller,
         assistantTurnId: handle.assistantTurnId,
+        completion,
       });
 
       void (async () => {
@@ -278,8 +292,12 @@ export function createTurnRunner(deps: {
           try {
             await deps.workContextDelivery.flushOwned(input.threadId);
           } finally {
-            await runAuthority.release(heldLease);
-            childRunRegistry.abortChildrenOf(input.threadId);
+            try {
+              await runAuthority.release(heldLease);
+              childRunRegistry.abortChildrenOf(input.threadId);
+            } finally {
+              markRunComplete();
+            }
           }
         }
       })();
@@ -293,6 +311,23 @@ export function createTurnRunner(deps: {
     } catch (error) {
       running.delete(input.threadId);
       if (lease) await runAuthority.release(lease);
+      throw error;
+    }
+  }
+
+  /**
+   * Starts a drain-only run for a wake. There is no admission to settle; a
+   * durable pending message makes the run, and a drained-away message is a no-op.
+   * A lost race (a concurrent run already live) is also a no-op.
+   */
+  async function startDrain(threadId: ThreadId): Promise<void> {
+    try {
+      await startRun({ threadId, spec: { kind: "drain" } });
+    } catch (error) {
+      // A lost race: a concurrent run acked the last message first. This drain
+      // minted no assistant turn; any work-context update persisted by
+      // `beforeTurn` is history the next run reads.
+      if (error instanceof NoPendingWakeError) return;
       throw error;
     }
   }
@@ -347,21 +382,7 @@ export function createTurnRunner(deps: {
       });
     },
 
-    /**
-     * Starts a drain-only run for a wake. There is no admission to settle; a
-     * durable pending message makes the run, and a drained-away message is a no-op.
-     */
-    async startDrain(threadId: ThreadId): Promise<void> {
-      try {
-        await startRun({ threadId, spec: { kind: "drain" } });
-      } catch (error) {
-        // A lost race: a concurrent run acked the last message first. This drain
-        // minted no assistant turn; any work-context update persisted by
-        // `beforeTurn` is history the next run reads.
-        if (error instanceof NoPendingWakeError) return;
-        throw error;
-      }
-    },
+    startDrain,
 
     async cancel(
       threadId: ThreadId,
@@ -369,8 +390,18 @@ export function createTurnRunner(deps: {
     ): Promise<"cancelled" | "already_finished" | "not_found"> {
       const active = running.get(threadId);
       if (active?.assistantTurnId === turnId) {
+        // Set the durable flag before aborting: it is the cross-process cancel
+        // channel and the truthful `ThreadStatus.cancelRequested`. The local
+        // abort is only the fast path.
+        await runAuthority.cancel(threadId);
         childRunRegistry.abortChildrenOf(threadId, { includeBackground: true });
         active.controller.abort();
+        if (active.completion) {
+          // After this run finalizes as cancelled and releases, the pending
+          // message starts the next turn as a drain run. Best-effort; the wake
+          // sweep is the durable backstop.
+          void active.completion.then(() => startDrain(threadId)).catch(() => undefined);
+        }
         return "cancelled";
       }
 
@@ -385,6 +416,13 @@ export function createTurnRunner(deps: {
 
       if (active) {
         return "already_finished";
+      }
+
+      // No local run owns this turn. A live lease can still belong to another
+      // process, where the durable flag is the only cancel channel.
+      if (await runAuthority.holder(threadId)) {
+        await runAuthority.cancel(threadId);
+        return "cancelled";
       }
 
       return "not_found";
