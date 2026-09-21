@@ -76,7 +76,6 @@ import {
   meridianErrorFromSystem,
 } from "@meridian/contracts/interrupt";
 import type { ProjectPreferences } from "@meridian/contracts/preferences";
-import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { createDefaultTreeBudget, type TreeBudget } from "@meridian/contracts/spawn";
 import type {
@@ -156,6 +155,7 @@ import type { ThreadLock } from "./thread-lock.js";
 import { dispatchToolCall } from "./tool-dispatch.js";
 import { createTurnAccounting, type TurnAccounting } from "./turn-accounting.js";
 import { assembleNextTurnContext } from "./turn-context-assembly.js";
+import { writerUserTurnBlocks } from "./user-turn-blocks.js";
 import type { WorkContextReader } from "./work-context.js";
 
 const MAX_TURN_ITERATIONS = 32;
@@ -381,35 +381,9 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
         status: "complete",
         metadata: input.userTurnMetadata ?? null,
       });
-      const userBlocks = (input.userBlocks ?? [{ type: "text", text: input.userText }]).map(
-        (block: UserMessageBlock, sequence) =>
-          block.type === "text"
-            ? contentForBlockInput({
-                turnId: userTurn.id,
-                blockType: "text",
-                sequence,
-                textContent: block.text,
-                status: "complete",
-              })
-            : block.type === "image"
-              ? contentForBlockInput({
-                  turnId: userTurn.id,
-                  blockType: "image",
-                  sequence,
-                  content: {
-                    type: "image_reference",
-                    documentId: block.documentId,
-                    uri: block.uri,
-                  },
-                  status: "complete",
-                })
-              : contentForBlockInput({
-                  turnId: userTurn.id,
-                  blockType: "text",
-                  sequence,
-                  content: block,
-                  status: "complete",
-                }),
+      const userBlocks = writerUserTurnBlocks(
+        userTurn.id,
+        input.userBlocks ?? [{ type: "text", text: input.userText }],
       );
 
       const assistantTurn = createLocalTurn({
@@ -429,16 +403,6 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
         ],
       };
     },
-    input.onStartPersisted
-      ? {
-          afterEvents: async ({ userTurn, assistantTurn }) => {
-            await input.onStartPersisted?.({
-              userTurnId: userTurn.id,
-              assistantTurnId: assistantTurn.id,
-            });
-          },
-        }
-      : undefined,
   );
 
   const { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks } = setup.result;

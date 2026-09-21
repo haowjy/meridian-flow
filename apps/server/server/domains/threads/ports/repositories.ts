@@ -255,6 +255,8 @@ export interface TurnRepository {
   findById(id: TurnId): Promise<Turn | null>;
   listByThread(threadId: ThreadId): Promise<Turn[]>;
   getLatestByThread(threadId: ThreadId): Promise<Turn | null>;
+  /** The live run's assistant container (non-terminal), or null when none. */
+  findRunningAssistantId(threadId: ThreadId): Promise<TurnId | null>;
   updateStatus(id: TurnId, input: UpdateTurnStatusInput): Promise<Turn>;
   /** Recomputes usage rollups from this turn's model_responses rows. */
   recomputeRollups(id: TurnId): Promise<Turn>;

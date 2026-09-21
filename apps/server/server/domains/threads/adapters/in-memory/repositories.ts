@@ -520,6 +520,16 @@ export function createInMemoryRepositories(
       const threadTurns = await this.listByThread(threadId);
       return threadTurns.at(-1) ?? null;
     },
+    async findRunningAssistantId(threadId) {
+      const threadTurns = await this.listByThread(threadId);
+      const running = [...threadTurns]
+        .reverse()
+        .find(
+          (turn) =>
+            turn.role === "assistant" && (turn.status === "pending" || turn.status === "streaming"),
+        );
+      return running?.id ?? null;
+    },
     async updateStatus(id, input: UpdateTurnStatusInput) {
       const turn = turns.get(id);
       if (!turn) throw new Error(`Turn not found: ${id}`);

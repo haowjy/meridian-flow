@@ -70,15 +70,43 @@ export async function drainInbox(input: {
   expectedLeafTurnId: TurnId | null;
 }): Promise<InboxDrain> {
   const batch = await input.inbox.claimPending(input.threadId);
-  const freshBatch = batch.filter(
-    (message) => message.intent !== "message" || !input.knownTurnIds.has(message.id),
-  );
-  const rendered = renderInboxBatch(input.messages, freshBatch);
+  const renderable: InboxMessage[] = [];
+  const fresh: InboxMessage[] = [];
+  const adoptedTurns: Turn[] = [];
+  const adoptedBlocks: Block[] = [];
+  for (const message of batch) {
+    if (message.intent !== "message") {
+      renderable.push(message);
+      fresh.push(message);
+      continue;
+    }
+    if (input.knownTurnIds.has(message.id)) continue;
+    // A message whose turn is already durable was persisted by the writer
+    // producer at enqueue. The drain start sees it through `knownTurnIds`; a
+    // mid-run drain does not, so it recognizes the existing turn here, skips the
+    // second append, and carries the turn into the run's accumulator.
+    const existing = await input.persistence.repos.turns.findById(message.id as TurnId);
+    if (existing) {
+      adoptedTurns.push(existing);
+      adoptedBlocks.push(...(await input.persistence.repos.blocks.listByTurn(existing.id)));
+      renderable.push(message);
+      continue;
+    }
+    renderable.push(message);
+    fresh.push(message);
+  }
+  const rendered = renderInboxBatch(input.messages, renderable);
+  // Chain fresh messages from the durable leaf so a pre-persisted writer turn
+  // (adopted above) is not forked past.
+  const persistLeafTurnId = fresh.some((message) => message.intent === "message")
+    ? ((await input.persistence.repos.threads.findById(input.threadId))?.activeLeafTurnId ??
+      input.expectedLeafTurnId)
+    : input.expectedLeafTurnId;
   const persisted = await persistInboxMessages({
     deps: input.persistence,
     threadId: input.threadId,
-    expectedLeafTurnId: input.expectedLeafTurnId,
-    batch: freshBatch,
+    expectedLeafTurnId: persistLeafTurnId,
+    batch: fresh,
   });
   const notices = [
     ...(await input.notices.drainForModelContext(input.threadId)),
@@ -88,8 +116,8 @@ export async function drainInbox(input: {
     rendered: rendered.messages,
     notices,
     persistedEvents: persisted.events,
-    turns: persisted.turns,
-    blocks: persisted.blocks,
+    turns: [...adoptedTurns, ...persisted.turns],
+    blocks: [...adoptedBlocks, ...persisted.blocks],
     ackIds: batch.map((message) => message.id),
   };
 }

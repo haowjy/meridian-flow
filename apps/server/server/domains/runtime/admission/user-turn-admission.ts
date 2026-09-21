@@ -67,8 +67,8 @@ export type AdmissionRecord =
   | { state: "rejected" | "retired"; fingerprint: AdmissionFingerprint | null; code: string }
   | { state: "accepted"; fingerprint: AdmissionFingerprint; response: AcceptedAdmission };
 
-export interface AdmissionTurnStarter {
-  start(input: {
+export interface AdmissionWriterProducer {
+  enqueue(input: {
     admission: UserTurnAdmissionInput;
     fingerprint: AdmissionFingerprint;
     blocks: readonly UserMessageBlock[];
@@ -352,7 +352,7 @@ export function createUserTurnAdmission(deps: {
   threadProject(threadId: string): Promise<string | null>;
   verifyDraftUpload?(reference: SubmittedReference & { intakeId: string }): Promise<boolean>;
   authorizeActivatedSkills?(input: { threadId: string; slugs: readonly string[] }): Promise<void>;
-  starter: AdmissionTurnStarter;
+  producer: AdmissionWriterProducer;
   now?: () => Date;
 }): UserTurnAdmission {
   const recover = (
@@ -467,7 +467,7 @@ export function createUserTurnAdmission(deps: {
         if (admittedIdentities.has(referenceIdentity(block))) return [block];
         return block.type === "reference" ? [{ type: "text", text: block.text }] : [];
       });
-      return deps.starter.start({
+      return deps.producer.enqueue({
         admission: { ...input, activatedSkillSlugs },
         fingerprint,
         blocks: admittedBlocks,

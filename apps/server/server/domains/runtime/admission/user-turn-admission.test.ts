@@ -4,7 +4,7 @@ import type { UserTurnAdmissionInput } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import type { ProjectContextAvailabilityPort } from "../../context/index.js";
 import { createInMemoryThreadRunOwnership } from "../loop/thread-run-ownership.js";
-import type { AdmissionRecord, AdmissionTurnStarter } from "./user-turn-admission.js";
+import type { AdmissionRecord, AdmissionWriterProducer } from "./user-turn-admission.js";
 import {
   AdmissionConflictError,
   canonicalAdmissionFingerprint,
@@ -88,8 +88,8 @@ function harness(
 ) {
   const lookup = vi.fn(async () => existing);
   let reservedFingerprint = "";
-  let capturedStart: Parameters<AdmissionTurnStarter["start"]>[0] | null = null;
-  const starter: AdmissionTurnStarter["start"] = async (start) => {
+  let capturedStart: Parameters<AdmissionWriterProducer["enqueue"]>[0] | null = null;
+  const producer: AdmissionWriterProducer["enqueue"] = async (start) => {
     capturedStart = start;
     return accepted();
   };
@@ -128,12 +128,12 @@ function harness(
     threadProject,
     verifyDraftUpload: vi.fn(async () => draftUploadMatches),
     authorizeActivatedSkills,
-    starter: { start: starter },
+    producer: { enqueue: producer },
   });
   return {
     service,
     lookup,
-    starter,
+    producer,
     availability,
     threadProject,
     runOwnership,

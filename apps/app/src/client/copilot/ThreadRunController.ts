@@ -184,10 +184,12 @@ export class ThreadRunController {
           result.snapshotFloorNextSeq,
         );
       }
-      const token = this.startRun(threadId, { pruneAbandonedTurn: true });
+      const token = this.startRun(threadId, {
+        pruneAbandonedTurn: result.assistantTurnId == null,
+      });
       this.attachLiveSubscription(threadId, token, {
         after: result.resumeAfterSeq,
-        expectedTurnId: result.assistantTurnId,
+        ...(result.assistantTurnId ? { expectedTurnId: result.assistantTurnId } : {}),
       });
       return outcome("accepted");
     } finally {
@@ -247,10 +249,12 @@ export class ThreadRunController {
             result.snapshotFloorNextSeq,
           );
         }
-        const token = this.startRun(threadId, { pruneAbandonedTurn: true });
+        const token = this.startRun(threadId, {
+          pruneAbandonedTurn: result.assistantTurnId == null,
+        });
         this.attachLiveSubscription(threadId, token, {
           after: result.resumeAfterSeq,
-          expectedTurnId: result.assistantTurnId,
+          ...(result.assistantTurnId ? { expectedTurnId: result.assistantTurnId } : {}),
         });
         return outcome("accepted");
       }
