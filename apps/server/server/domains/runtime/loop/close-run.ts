@@ -2,7 +2,7 @@
  * The run's exit: under the same per-thread lock the producer `enqueue` takes
  * (`loop/threaded-inbox.ts`), claim the inbox once more, then complete the
  * terminal turn and release the lease. Holding the lock across both closes the
- * lost-wakeup window and—critically—the two-run window: a steer enqueued at any
+ * lost-wakeup window and—critically—the two-run window: a message enqueued at any
  * point either is seen by this final claim or waits on the lock until the
  * terminal turn is durable and the lease is gone, so it can never start a
  * second run mid-terminal. The completion is bookkeeping only; keep it free of
@@ -11,7 +11,7 @@
  * `continueOnPending` is the interrupt/exit policy, set by the caller:
  *   - `true` for cancel and normal completion. A pending batch means the run
  *     keeps going into the next iteration; nothing is completed or released.
- *     This is the `specs.md` "Interrupt" path: a pending steer becomes the next
+ *     This is the `specs.md` "Interrupt" path: a pending message becomes the next
  *     turn of the same run.
  *   - `false` for hard error, budget cap, and max-iteration. The terminal
  *     completion runs and the lease releases even with a pending batch, which

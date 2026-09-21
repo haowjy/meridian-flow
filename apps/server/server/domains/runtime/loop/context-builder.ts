@@ -341,7 +341,7 @@ function blockToContentPart(block: Block): ContentPart | null {
 
 /**
  * Appends to the last user message by default. Callers that have already
- * appended other user messages (a drained steer) pass `targetIndex` to pin the
+ * appended other user messages (a drained message) pass `targetIndex` to pin the
  * attachment to the writer's triggering message instead.
  */
 export function attachSkillBodiesToLatestUserMessage(

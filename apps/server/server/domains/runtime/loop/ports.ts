@@ -1,9 +1,9 @@
 /**
- * Loop ports for the notification and steering model: the message vocabulary
- * (intent + provenance + body), the durable `Inbox` queue, the `RunAuthority`
- * lease/lock, and the thin `RunStarter` actuation seam. Domain code depends on
- * these; adapters supply the durable store and the lock. Provider and transport
- * choice stays at the composition root.
+ * Loop ports for the inbox message model: the message vocabulary (intent +
+ * provenance + body), the durable `Inbox` queue, the `RunAuthority` lease/lock,
+ * and the thin `RunStarter` actuation seam. Domain code depends on these;
+ * adapters supply the durable store and the lock. Provider and transport choice
+ * stays at the composition root.
  */
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ThreadId } from "@meridian/contracts/runtime";
@@ -21,7 +21,7 @@ export const DEFAULT_LEASE_TTL_MS = 30_000;
  */
 export type { ThreadPhase, ThreadStatus };
 
-export type MessageIntent = "steer" | "system";
+export type MessageIntent = "message" | "notice";
 
 export type MessageProvenance =
   | { kind: "writer"; actorId: string }
@@ -76,8 +76,8 @@ export interface Inbox {
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
   claimPending(threadId: ThreadId): Promise<InboxMessage[]>;
   ack(threadId: ThreadId, ids: string[]): Promise<void>;
-  /** Threads with at least one pending undelivered steer, oldest first; the wake sweep's input. */
-  pendingSteerThreads(limit: number): Promise<ThreadId[]>;
+  /** Threads with at least one pending undelivered message, oldest first; the wake sweep's input. */
+  pendingMessageThreads(limit: number): Promise<ThreadId[]>;
 }
 
 /** Handle to a held lease; the row's expiry, phase, and cancel flag are server-owned. */

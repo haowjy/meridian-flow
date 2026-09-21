@@ -156,7 +156,7 @@ export function createTurnRunner(deps: {
   /**
    * The one run-start path. Writer and drain starts share the live-turn fence,
    * lease acquisition, cursor capture, background drive, and release machinery;
-   * only the orchestrator input differs. A drain start's first drained steer
+   * only the orchestrator input differs. A drain start's first drained message
    * becomes the run's user turn, so the writer fields are absent.
    */
   async function startRun(input: {
@@ -189,7 +189,7 @@ export function createTurnRunner(deps: {
 
       const resumeAfterSeqBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
       // `beforeTurn` persists any pending work-context `system_update` turn before
-      // the run's own turns. If a concurrent run then acks the last steer and this
+      // the run's own turns. If a concurrent run then acks the last message and this
       // drain throws `NoPendingWakeError`, that update turn stays durable with no
       // assistant continuation. It is real history the next run reads, so the
       // invariant is "no phantom assistant turn", not "no write".
@@ -349,13 +349,13 @@ export function createTurnRunner(deps: {
 
     /**
      * Starts a drain-only run for a wake. There is no admission to settle; a
-     * durable pending steer makes the run, and a drained-away steer is a no-op.
+     * durable pending message makes the run, and a drained-away message is a no-op.
      */
     async startDrain(threadId: ThreadId): Promise<void> {
       try {
         await startRun({ threadId, spec: { kind: "drain" } });
       } catch (error) {
-        // A lost race: a concurrent run acked the last steer first. This drain
+        // A lost race: a concurrent run acked the last message first. This drain
         // minted no assistant turn; any work-context update persisted by
         // `beforeTurn` is history the next run reads.
         if (error instanceof NoPendingWakeError) return;

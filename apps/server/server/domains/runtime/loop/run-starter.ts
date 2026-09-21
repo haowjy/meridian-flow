@@ -1,6 +1,6 @@
 /**
  * The production `RunStarter`: a best-effort wake that starts a drain-only run
- * for a thread. The wake is fired after a steer enqueues (latency) and by the
+ * for a thread. The wake is fired after a message enqueues (latency) and by the
  * sweep (durability); this adapter is the latency half. A conflict means a run
  * is already live (or another run won the lease), which is exactly the state a
  * wake wanted, so it is swallowed.

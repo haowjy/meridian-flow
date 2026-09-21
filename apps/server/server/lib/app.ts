@@ -70,7 +70,7 @@ async function createAppServices(): Promise<AppServices> {
   });
   drain();
   sweepWorkContext();
-  // Startup recovery: a steer committed before a crash has no in-memory wake, so
+  // Startup recovery: a message committed before a crash has no in-memory wake, so
   // the derived wake need is recovered here as well as on the interval.
   sweepWakes();
   // Polling is the recovery mechanism as well as the trigger: committed pushes need

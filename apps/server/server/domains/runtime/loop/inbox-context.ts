@@ -1,14 +1,14 @@
 /**
  * The inbox drain seam: renders a claimed batch into a model request and
- * persists its steers as durable history. A text `steer` becomes a user-role
- * message at the request tail and a persisted user-role turn; a `system`
- * message becomes a request-only notice that never persists a turn. A `report`
- * steer (a child's terminal report) persists as a system-role turn carrying a
+ * persists its `message` entries as durable history. A text `message` becomes a
+ * user-role message at the request tail and a persisted user-role turn; a
+ * `notice` becomes a request-only notice that never persists a turn. A `report`
+ * message (a child's terminal report) persists as a system-role turn carrying a
  * `helper-result` card — the writer's run card — and reaches the model through
  * the shared `componentModelText` projection. Producers are not special-cased;
  * the body decides.
  *
- * The persisted steer turn reuses the durable inbox message id as its turn and
+ * The persisted message turn reuses the durable inbox message id as its turn and
  * block id. The inbox collapses `(threadId, idempotencyKey)` to one row, so a
  * redelivered message reuses the same id and the append is idempotent: turn
  * creation returns the existing row and the block projects through an id-keyed
@@ -39,13 +39,13 @@ import type { Inbox, InboxMessage } from "./ports.js";
 
 /** The loop's view of one drained batch: request and notices plus durable writes. */
 export interface InboxDrain {
-  /** Request messages after steers are appended at the tail. */
+  /** The request messages, with drained `message` entries appended at the tail. */
   rendered: Message[];
-  /** Durable notices plus request-only inbox notices, in batch order. */
+  /** Durable notices plus request-only inbox `notice` entries, in batch order. */
   notices: Notice[];
-  /** Steer-turn persistence events, in batch order. */
+  /** Message-turn persistence events, in batch order. */
   persistedEvents: OrchestratorEvent[];
-  /** Persisted steer turns/blocks for the loop's in-memory accumulator. */
+  /** Persisted message turns/blocks for the loop's in-memory accumulator. */
   turns: Turn[];
   blocks: Block[];
   /** Ids of the whole claimed batch, acked with the response that carries it. */
@@ -54,10 +54,11 @@ export interface InboxDrain {
 
 /**
  * Claims the thread's pending inbox once and turns it into model-request
- * context: steers append as user messages and persist as user turns, system
- * messages become request-only notices. A steer already in `knownTurnIds` was
- * persisted by a crashed run and redelivered, so it is not rendered or appended
- * again. The whole steer batch persists in one turn-start transition.
+ * context: `message` entries append as user messages and persist as user turns,
+ * `notice` entries become request-only notices. A `message` already in
+ * `knownTurnIds` was persisted by a crashed run and redelivered, so it is not
+ * rendered or appended again. The whole `message` batch persists in one
+ * turn-start transition.
  */
 export async function drainInbox(input: {
   persistence: PersistenceDeps;
@@ -70,10 +71,10 @@ export async function drainInbox(input: {
 }): Promise<InboxDrain> {
   const batch = await input.inbox.claimPending(input.threadId);
   const freshBatch = batch.filter(
-    (message) => message.intent !== "steer" || !input.knownTurnIds.has(message.id),
+    (message) => message.intent !== "message" || !input.knownTurnIds.has(message.id),
   );
   const rendered = renderInboxBatch(input.messages, freshBatch);
-  const persisted = await persistInboxSteers({
+  const persisted = await persistInboxMessages({
     deps: input.persistence,
     threadId: input.threadId,
     expectedLeafTurnId: input.expectedLeafTurnId,
@@ -100,7 +101,7 @@ export function renderInboxBatch(
   const rendered = [...messages];
   const notices: Notice[] = [];
   for (const message of batch) {
-    if (message.intent !== "steer") {
+    if (message.intent !== "message") {
       notices.push(inboxMessageNotice(message));
       continue;
     }
@@ -117,21 +118,22 @@ export function renderInboxBatch(
 }
 
 /**
- * Persists each steer in a claimed batch as a user-role turn at the thread tail.
- * Returns the appended turns/blocks for the loop's in-memory accumulator plus
- * the durable events; system messages are skipped (request-only notices).
+ * Persists each directed `message` in a claimed batch as a user-role turn at the
+ * thread tail. Returns the appended turns/blocks for the loop's in-memory
+ * accumulator plus the durable events; `notice` entries are skipped
+ * (request-only).
  */
-export async function persistInboxSteers(input: {
+export async function persistInboxMessages(input: {
   deps: PersistenceDeps;
   threadId: ThreadId;
-  /** The turn the first steer follows; each later steer follows the previous. */
+  /** The turn the first `message` follows; each later one follows the previous. */
   expectedLeafTurnId: TurnId | null;
   batch: readonly InboxMessage[];
 }): Promise<{ turns: Turn[]; blocks: Block[]; events: OrchestratorEvent[] }> {
-  const steers = input.batch.filter((message) => message.intent === "steer");
-  if (steers.length === 0) return { turns: [], blocks: [], events: [] };
+  const messages = input.batch.filter((message) => message.intent === "message");
+  if (messages.length === 0) return { turns: [], blocks: [], events: [] };
   // One transition for the whole batch: a mid-batch failure cannot leave a
-  // half-persisted batch, and the chain links each steer to the previous within
+  // half-persisted batch, and the chain links each message to the previous within
   // the same transaction.
   const persisted = await persistAndAppendTurnStartEvents(
     input.deps,
@@ -142,8 +144,8 @@ export async function persistInboxSteers(input: {
       const blocks: Block[] = [];
       const events: OrchestratorEvent[] = [];
       let leafTurnId = input.expectedLeafTurnId;
-      for (const message of steers) {
-        const { turn, block } = steerTurnFor(message, leafTurnId);
+      for (const message of messages) {
+        const { turn, block } = messageTurnFor(message, leafTurnId);
         turns.push(turn);
         blocks.push(localBlockFromEvent(block));
         events.push({ type: "turn.created", turn }, { type: "block.upserted", block });
@@ -160,31 +162,31 @@ export async function persistInboxSteers(input: {
 }
 
 /**
- * Builds the durable user turn and text block for one drained steer. The inbox
- * message id is reused as the turn/block id so a redelivery is idempotent, and
- * `enqueuedAt` (not persist time) stamps the chain order.
+ * Builds the durable user turn and text block for one drained `message`. The
+ * inbox message id is reused as the turn/block id so a redelivery is idempotent,
+ * and `enqueuedAt` (not persist time) stamps the chain order.
  */
-export function steerTurnFor(
+export function messageTurnFor(
   message: InboxMessage,
   prevTurnId: TurnId | null,
 ): { turn: Turn; block: BlockUpsertedRow } {
-  const isReport = message.body.kind === "report";
+  const isReportBody = message.body.kind === "report";
   const turn = createLocalTurn({
     id: message.id,
     threadId: message.threadId,
     prevTurnId,
     // A report is writer-facing card history the model reads as a system turn;
-    // a text steer is a user-role message.
-    role: isReport ? "system" : "user",
+    // a text `message` is a user-role message.
+    role: isReportBody ? "system" : "user",
     status: "complete",
-    metadata: { kind: "steer" },
+    metadata: { kind: "message" },
     createdAt: message.enqueuedAt,
   });
   const text = inboxMessageText(message);
   const block = contentForBlockInput({
     id: message.id,
     turnId: turn.id,
-    ...(isReport
+    ...(isReportBody
       ? {
           blockType: "custom" as const,
           content: reportCardContent(message, turn.id as TurnId),
@@ -199,7 +201,7 @@ export function steerTurnFor(
 /**
  * The writer-facing `helper-result` card for a drained report, built through the
  * same `spawnHelperCardProps` seam every spawn/child card uses. `childThreadId`
- * comes from the `child` provenance; the steer turn is the door's parent.
+ * comes from the `child` provenance; the message turn is the door's parent.
  */
 function reportCardContent(message: InboxMessage, turnId: TurnId): HelperResultComponentContent {
   if (message.body.kind !== "report") {
@@ -244,7 +246,7 @@ function inboxMessageText(message: InboxMessage): string {
 function inboxMessageNotice(message: InboxMessage): Notice {
   return {
     id: message.seq,
-    kind: "inbox_system",
+    kind: "inbox_notice",
     scope: { kind: "thread", threadId: message.threadId },
     message: inboxMessageText(message),
     data: {},

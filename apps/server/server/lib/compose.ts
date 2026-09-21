@@ -242,7 +242,7 @@ export type AppServices = {
   runner: TurnRunner;
   runStarter: RunStarter;
   threadedInbox: ThreadedInbox;
-  /** Startup/interval recovery for threads with a pending steer and no live run. */
+  /** Startup/interval recovery for threads with a pending message and no live run. */
   wakeSweep: { sweep(): Promise<void> };
   userTurnAdmission: UserTurnAdmission;
   runOwnership: ThreadRunOwnership;
@@ -649,7 +649,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     workContextDelivery,
   });
   // One durable inbox and lock shared by the loop (consumer) and the producer
-  // `ThreadedInbox`. The `RunStarter` wakes a thread from a pending steer; the
+  // `ThreadedInbox`. The `RunStarter` wakes a thread from a pending message; the
   // sweep is the durable recovery for a missed wake.
   const inbox = createDrizzleInbox(ports.db);
   const threadLock = createDrizzleThreadLock(ports.db);

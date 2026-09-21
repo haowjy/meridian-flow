@@ -67,20 +67,20 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.close();
     });
 
-    function steer(key: string, threadId: ThreadId = THREAD_A): MessageDraft {
+    function message(key: string, threadId: ThreadId = THREAD_A): MessageDraft {
       return {
         threadId,
-        intent: "steer",
+        intent: "message",
         provenance: { kind: "writer", actorId: USER_ID },
         body: { kind: "text", text: key },
         idempotencyKey: key,
       };
     }
 
-    function systemMessage(key: string, threadId: ThreadId = THREAD_A): MessageDraft {
+    function notice(key: string, threadId: ThreadId = THREAD_A): MessageDraft {
       return {
         threadId,
-        intent: "system",
+        intent: "notice",
         provenance: { kind: "system", source: "work" },
         body: { kind: "context", parts: [{ source: "work", text: key }] },
         idempotencyKey: key,
@@ -89,9 +89,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("claims pending messages in per-thread enqueue order", async () => {
       const inbox = createDrizzleInbox(db);
-      await inbox.enqueue(steer("a1", THREAD_A));
-      await inbox.enqueue(steer("b1", THREAD_B));
-      await inbox.enqueue(steer("a2", THREAD_A));
+      await inbox.enqueue(message("a1", THREAD_A));
+      await inbox.enqueue(message("b1", THREAD_B));
+      await inbox.enqueue(message("a2", THREAD_A));
 
       const claimed = await inbox.claimPending(THREAD_A);
       expect(claimed.map((message) => message.idempotencyKey)).toEqual(["a1", "a2"]);
@@ -101,8 +101,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("acks delivered messages and redelivers the unacked", async () => {
       const inbox = createDrizzleInbox(db);
-      const first = await inbox.enqueue(steer("a1"));
-      await inbox.enqueue(steer("a2"));
+      const first = await inbox.enqueue(message("a1"));
+      await inbox.enqueue(message("a2"));
 
       await inbox.ack(THREAD_A, [first.id]);
       const redelivered = await inbox.claimPending(THREAD_A);
@@ -111,8 +111,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("collapses a duplicate enqueue on the idempotency key", async () => {
       const inbox = createDrizzleInbox(db);
-      const first = await inbox.enqueue(steer("same-key"));
-      const second = await inbox.enqueue(steer("same-key"));
+      const first = await inbox.enqueue(message("same-key"));
+      const second = await inbox.enqueue(message("same-key"));
 
       expect(second.id).toBe(first.id);
       expect(second.seq).toBe(first.seq);
@@ -121,29 +121,29 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("keeps the same idempotency key distinct across threads", async () => {
       const inbox = createDrizzleInbox(db);
-      const first = await inbox.enqueue(steer("shared-key", THREAD_A));
-      const second = await inbox.enqueue(steer("shared-key", THREAD_B));
+      const first = await inbox.enqueue(message("shared-key", THREAD_A));
+      const second = await inbox.enqueue(message("shared-key", THREAD_B));
 
       expect(second.id).not.toBe(first.id);
       expect(second.threadId).toBe(THREAD_B);
       expect(await inbox.claimPending(THREAD_B)).toHaveLength(1);
     });
 
-    it("lists distinct pending-steer threads oldest first and excludes system messages", async () => {
+    it("lists distinct pending-message threads oldest first and excludes notices", async () => {
       const inbox = createDrizzleInbox(db);
-      await inbox.enqueue(systemMessage("s1", THREAD_A));
-      await inbox.enqueue(steer("a1", THREAD_A));
-      await inbox.enqueue(steer("b1", THREAD_B));
-      await inbox.enqueue(systemMessage("s2", THREAD_B));
+      await inbox.enqueue(notice("s1", THREAD_A));
+      await inbox.enqueue(message("a1", THREAD_A));
+      await inbox.enqueue(message("b1", THREAD_B));
+      await inbox.enqueue(notice("s2", THREAD_B));
 
-      expect(await inbox.pendingSteerThreads(10)).toEqual([THREAD_A, THREAD_B]);
+      expect(await inbox.pendingMessageThreads(10)).toEqual([THREAD_A, THREAD_B]);
     });
 
-    it("wakes a pending-steer thread and skips one with a live lease", async () => {
+    it("wakes a pending-message thread and skips one with a live lease", async () => {
       const inbox = createDrizzleInbox(db);
       const authority = createDrizzleRunAuthority(db, { holderId: "holder-sweep" });
-      await inbox.enqueue(steer("sweep-a", THREAD_A));
-      await inbox.enqueue(steer("sweep-b", THREAD_B));
+      await inbox.enqueue(message("sweep-a", THREAD_A));
+      await inbox.enqueue(message("sweep-b", THREAD_B));
       const leaseA = required(await authority.acquire(THREAD_A, "run-a"));
 
       const started: ThreadId[] = [];
@@ -277,7 +277,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await db.delete(schema.threadInboxMessages);
       }
 
-      it("keeps the run alive when a steer commits before the final claim", async () => {
+      it("keeps the run alive when a message commits before the final claim", async () => {
         const inbox = createDrizzleInbox(db);
         const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
         const threadLock = createDrizzleThreadLock(db);
@@ -286,7 +286,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const enqueueHeld = deferred<void>();
         const releaseEnqueue = deferred<void>();
         const enqueue = threadLock.withThreadLock(THREAD_A, async () => {
-          await inbox.enqueue(steer("in-window"));
+          await inbox.enqueue(message("in-window"));
           enqueueHeld.resolve();
           await releaseEnqueue.promise;
         });
@@ -317,7 +317,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await authority.release(lease);
       });
 
-      it("completes then releases on an empty claim so a later steer finds no live lease", async () => {
+      it("completes then releases on an empty claim so a later message finds no live lease", async () => {
         const inbox = createDrizzleInbox(db);
         const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
         const threadLock = createDrizzleThreadLock(db);
@@ -336,7 +336,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ).toEqual({ kind: "completed", completion: "terminal" });
         expect(await authority.holder(THREAD_A)).toBeNull();
 
-        await threadLock.withThreadLock(THREAD_A, () => inbox.enqueue(steer("after-release")));
+        await threadLock.withThreadLock(THREAD_A, () => inbox.enqueue(message("after-release")));
         expect(await authority.holder(THREAD_A)).toBeNull();
         expect((await inbox.claimPending(THREAD_A)).map((m) => m.idempotencyKey)).toEqual([
           "after-release",
@@ -378,7 +378,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await second.release(runTwo);
       });
 
-      it("serializes the producer enqueue against the final claim so a racing steer is never stranded", async () => {
+      it("serializes the producer enqueue against the final claim so a racing message is never stranded", async () => {
         const inbox = createDrizzleInbox(db);
         const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
         const threadLock = createDrizzleThreadLock(db);
@@ -402,13 +402,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               continueOnPending: true,
               complete: async () => "terminal",
             }),
-            threadedInbox.enqueue(steer(`race-${attempt}`)),
+            threadedInbox.enqueue(message(`race-${attempt}`)),
           ]);
 
           const holder = await authority.holder(THREAD_A);
           // The lock makes the two outcomes exhaustive: the run either saw the
-          // steer and kept its lease, or released first and the steer is pending
-          // for the wake sweep. Never released with the steer already claimed.
+          // message and kept its lease, or released first and the message is pending
+          // for the wake sweep. Never released with the message already claimed.
           expect(outcome.kind === "continue").toBe(holder !== null);
           expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
           if (holder !== null) await authority.release(lease);
@@ -421,11 +421,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           "../../threads/adapters/drizzle/index.js"
         );
         const repos = createDrizzleRepositoriesForTest(db);
-        const message = await inbox.enqueue(steer("ack-with-response"));
+        const inboxMessage = await inbox.enqueue(message("ack-with-response"));
 
         await expect(
           repos.transaction(async () => {
-            await inbox.ack(THREAD_A, [message.id]);
+            await inbox.ack(THREAD_A, [inboxMessage.id]);
             throw new Error("response persist failed");
           }),
         ).rejects.toThrow("response persist failed");
@@ -435,7 +435,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ]);
 
         await repos.transaction(async () => {
-          await inbox.ack(THREAD_A, [message.id]);
+          await inbox.ack(THREAD_A, [inboxMessage.id]);
         });
         expect(await inbox.claimPending(THREAD_A)).toEqual([]);
       });

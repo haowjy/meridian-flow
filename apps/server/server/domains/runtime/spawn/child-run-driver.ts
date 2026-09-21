@@ -2,7 +2,7 @@
  * ChildRunDriver — the child-run lifecycle from claim to terminal persistence.
  * Registers a prepared child (run claim, registry, abort controller), drives its
  * runTurn to terminal state, captures return_result in a per-run closure, and
- * persists the terminal lifecycle, event, and background report steer.
+ * persists the terminal lifecycle, event, and background report message.
  * Invocation resolution and writer-card policy stay with the coordinator.
  */
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
@@ -66,7 +66,7 @@ export interface ChildRunDriverDeps {
   };
   eventWriter: EventJournalWriter;
   childRunRegistry: ChildRunRegistry;
-  /** Producer-facing inbox: a background child's report is enqueued as a steer. */
+  /** Producer-facing inbox: a background child's report is enqueued as a message. */
   threadedInbox: Pick<ThreadedInbox, "enqueue">;
   workContextDelivery: Pick<WorkContextDelivery, "flushOwned">;
   runAuthority: RunAuthority;
@@ -308,7 +308,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       const payload = result.status === "completed" ? result.report.payload : undefined;
       await deps.threadedInbox.enqueue({
         threadId: input.parentThread.id as ThreadId,
-        intent: "steer",
+        intent: "message",
         provenance: { kind: "child", threadId: prepared.child.id as ThreadId, reportId: id },
         body: {
           kind: "report",

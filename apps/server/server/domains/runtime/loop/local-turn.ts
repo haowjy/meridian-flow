@@ -1,6 +1,6 @@
 /**
  * The canonical local (non-provider) turn builder. Turns that carry no model
- * response — the run's user/assistant skeleton, a drained steer, and the inbox
+ * response — the run's user/assistant skeleton, a drained message, and the inbox
  * drain's persisted history — share one shape so the read model and context
  * projection see a single turn contract.
  */
@@ -17,7 +17,7 @@ export function createLocalTurn(input: {
   status: Turn["status"];
   writeMode?: Turn["writeMode"];
   metadata?: Turn["metadata"];
-  /** Durable origin time; a drained steer passes its inbox `enqueuedAt`. */
+  /** Durable origin time; a drained message passes its inbox `enqueuedAt`. */
   createdAt?: string;
 }): Turn {
   return {

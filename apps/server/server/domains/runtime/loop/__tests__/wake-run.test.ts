@@ -1,6 +1,6 @@
 /**
- * End-to-end wake: `RunStarter.start` on an asleep thread with a pending steer
- * claims the lease, drains the steer as the run's first user turn, and releases.
+ * End-to-end wake: `RunStarter.start` on an asleep thread with a pending message
+ * claims the lease, drains the message as the run's first user turn, and releases.
  * A second start while that run is live is swallowed and adds no turn.
  */
 import { EventType } from "@meridian/contracts/protocol";
@@ -50,10 +50,10 @@ function gatedGateway(gate: ReturnType<typeof runtimeGate>): Gateway {
   };
 }
 
-function steer(key: string, threadId: ThreadId): MessageDraft {
+function message(key: string, threadId: ThreadId): MessageDraft {
   return {
     threadId,
-    intent: "steer",
+    intent: "message",
     provenance: { kind: "writer", actorId: USER_ID },
     body: { kind: "text", text: key },
     idempotencyKey: key,
@@ -61,28 +61,28 @@ function steer(key: string, threadId: ThreadId): MessageDraft {
 }
 
 describe("wake run", () => {
-  it("starts and drains a run for a steer on an asleep thread", async () => {
+  it("starts and drains a run for a message on an asleep thread", async () => {
     const rig = await RuntimeTestRig.create({ gateway: textGateway() });
-    await rig.inbox.enqueue(steer("wake me", rig.thread.id));
+    await rig.inbox.enqueue(message("wake me", rig.thread.id));
 
     await createRunStarter(rig.runner).start(rig.thread.id);
     await rig.awaitEvent(EventType.RUN_FINISHED);
 
     const turns = await rig.repos.turns.listByThread(rig.thread.id);
-    const steerTurn = turns.find(
+    const messageTurn = turns.find(
       (turn) =>
-        turn.role === "user" && (turn.metadata as { kind?: string } | null)?.kind === "steer",
+        turn.role === "user" && (turn.metadata as { kind?: string } | null)?.kind === "message",
     );
     const assistantTurn = turns.find((turn) => turn.role === "assistant");
-    expect(steerTurn).toBeDefined();
-    expect(assistantTurn?.prevTurnId).toBe(steerTurn?.id);
+    expect(messageTurn).toBeDefined();
+    expect(assistantTurn?.prevTurnId).toBe(messageTurn?.id);
     expect(await rig.inbox.claimPending(rig.thread.id)).toEqual([]);
   });
 
   it("swallows a second start while a run is live without adding a turn", async () => {
     const gate = runtimeGate();
     const rig = await RuntimeTestRig.create({ gateway: gatedGateway(gate) });
-    await rig.inbox.enqueue(steer("wake me", rig.thread.id));
+    await rig.inbox.enqueue(message("wake me", rig.thread.id));
     const runStarter = createRunStarter(rig.runner);
 
     await runStarter.start(rig.thread.id);
@@ -95,7 +95,7 @@ describe("wake run", () => {
     expect(await rig.repos.turns.listByThread(rig.thread.id)).toHaveLength(2);
   });
 
-  it("swallows a wake with no pending steer and releases the acquired lease", async () => {
+  it("swallows a wake with no pending message and releases the acquired lease", async () => {
     const rig = await RuntimeTestRig.create({ gateway: textGateway() });
 
     await expect(rig.runner.startDrain(rig.thread.id)).resolves.toBeUndefined();
@@ -106,7 +106,7 @@ describe("wake run", () => {
   it("derives awake while a run streams and asleep once it releases", async () => {
     const gate = runtimeGate();
     const rig = await RuntimeTestRig.create({ gateway: gatedGateway(gate) });
-    await rig.inbox.enqueue(steer("status", rig.thread.id));
+    await rig.inbox.enqueue(message("status", rig.thread.id));
 
     await createRunStarter(rig.runner).start(rig.thread.id);
     // The run owns a live lease and is blocked in its provider stream.
