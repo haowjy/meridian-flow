@@ -21,6 +21,8 @@ import {
 } from "@/client/query/thread-work-binding-cache";
 import { convergeWorkProjection } from "@/client/query/work-projection-cache";
 import { repairWorksSnapshot } from "@/client/query/works-projection-acquisition";
+import { useThreadActions } from "@/client/stores";
+import { applyBackgroundRunEvent } from "@/core/session/reduce-background-event";
 
 type TrailEventValue = {
   threadId: string;
@@ -90,6 +92,7 @@ export function useThreadDurableProjections({
 }) {
   const transport = useThreadTransport();
   const queryClient = useQueryClient();
+  const actions = useThreadActions();
   const [state, setState] = useState(emptyTrailShellState);
   /**
    * Subscription identity, bumped when the thread changes or the hook unmounts.
@@ -156,6 +159,7 @@ export function useThreadDurableProjections({
     void reconcile(threadGeneration);
     const unsubscribe = transport.subscribe(threadId, {
       onEvent: ({ seq, event }) => {
+        if (applyBackgroundRunEvent(actions, threadId, event)) return;
         const receipt = decodeWorkReceipt(event);
         const receiptChanged =
           receipt?.category === "binding"
@@ -221,6 +225,6 @@ export function useThreadDurableProjections({
       unsubscribe();
       void queryClient.removeQueries({ queryKey: ["change-trail-detail", threadId] });
     };
-  }, [projectId, queryClient, reconcile, threadId, transport]);
+  }, [actions, projectId, queryClient, reconcile, threadId, transport]);
   return { changeTrails: state };
 }

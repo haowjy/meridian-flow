@@ -101,6 +101,26 @@ describe("SpawnReportCard", () => {
     expect(document.body.textContent).toContain("Outline");
   });
 
+  it("renders a running card while the child is still working", async () => {
+    await act(async () =>
+      root.render(
+        <ChatThreadNavigationProvider onOpenThread={vi.fn()}>
+          <SpawnReportCard
+            agentName="Critic"
+            title="Review the chapter"
+            summary={null}
+            status="running"
+            childThreadId="child-3"
+          />
+        </ChatThreadNavigationProvider>,
+      ),
+    );
+
+    expect(document.body.textContent).toContain("Critic");
+    expect(document.body.textContent).toContain("Review the chapter");
+    expect(findButton("Open")).toBeDefined();
+  });
+
   it("hides the door when no child thread exists", async () => {
     await act(async () =>
       root.render(

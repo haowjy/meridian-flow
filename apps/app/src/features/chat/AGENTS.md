@@ -27,7 +27,8 @@ An assistant turn renders as one **ordered list of render items** (see
 - **Text** (visible) — an assistant text block, always rendered as prose. Text
   never folds and never remounts.
 - **Artifact** (visible) — a writer-facing block: a custom card (`ask_user`
-  interrupt, spawn `helper-result`, child `child-report`), an image, or a file.
+  interrupt, spawn/`thread_message` `helper-result`, child `child-report`), an
+  image, or a file.
 
 Text and artifacts close the open process run, so a reasoning run that arrives
 after visible prose starts a fresh fold below it instead of merging back above
@@ -36,6 +37,11 @@ for the durable status flip. The partition keys off block order/type only and
 never reads transient stream state (`isLive`, partial blocks). Hidden protocol
 (the `tool_use`/`tool_result` rows a card already surfaces) is dropped, not
 folded.
+
+A background child's live indicator is one more custom block: the
+`meridian.background.*` reducer (`core/session/reduce-background-event.ts`)
+synthesizes a running `helper-result` card on the parent turn and removes it
+when the child settles, so the writer sees the run without opening the fold.
 
 The full model lives in
 [`.context/turn-composition.md`](.context/turn-composition.md); one row's
