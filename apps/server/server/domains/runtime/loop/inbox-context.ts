@@ -167,7 +167,7 @@ export async function persistInboxSteers(input: {
 export function steerTurnFor(
   message: InboxMessage,
   prevTurnId: TurnId | null,
-): { turn: Turn; block: BlockUpsertedRow; text: string } {
+): { turn: Turn; block: BlockUpsertedRow } {
   const isReport = message.body.kind === "report";
   const turn = createLocalTurn({
     id: message.id,
@@ -193,7 +193,7 @@ export function steerTurnFor(
     sequence: 0,
     status: "complete",
   });
-  return { turn, block, text };
+  return { turn, block };
 }
 
 /**

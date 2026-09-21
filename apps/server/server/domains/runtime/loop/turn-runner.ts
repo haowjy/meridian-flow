@@ -188,6 +188,11 @@ export function createTurnRunner(deps: {
       assertConnectionTokenLive(input.connectionToken);
 
       const resumeAfterSeqBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
+      // `beforeTurn` persists any pending work-context `system_update` turn before
+      // the run's own turns. If a concurrent run then acks the last steer and this
+      // drain throws `NoPendingWakeError`, that update turn stays durable with no
+      // assistant continuation. It is real history the next run reads, so the
+      // invariant is "no phantom assistant turn", not "no write".
       await deps.workContextDelivery.beforeTurn(input.threadId);
 
       const spec = input.spec;
@@ -350,6 +355,9 @@ export function createTurnRunner(deps: {
       try {
         await startRun({ threadId, spec: { kind: "drain" } });
       } catch (error) {
+        // A lost race: a concurrent run acked the last steer first. This drain
+        // minted no assistant turn; any work-context update persisted by
+        // `beforeTurn` is history the next run reads.
         if (error instanceof NoPendingWakeError) return;
         throw error;
       }
