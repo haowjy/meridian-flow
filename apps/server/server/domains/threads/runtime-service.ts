@@ -67,6 +67,8 @@ export function createThreadRuntimeService(deps: {
     liveState,
     /** The lease-derived status seam, exposed so snapshot reads share it. */
     read: (threadId: ThreadId) => deps.statusReader.read(threadId),
+    /** Batch status seam for list pages; same lease read as `read`. */
+    readMany: (threadIds: readonly ThreadId[]) => deps.statusReader.readMany(threadIds),
     /** The lease's bound running turn, exposed so snapshot reads share one truth. */
     readRunningTurnId: (threadId: ThreadId) => deps.statusReader.readRunningTurnId(threadId),
     async journalEvents(threadId: ThreadId) {

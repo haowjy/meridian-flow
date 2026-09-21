@@ -49,6 +49,7 @@ describe("buildThreadSnapshot parent", () => {
       {
         read: async () => ({ kind: "asleep" as const }),
         readRunningTurnId: async () => null,
+        readMany: async () => new Map(),
       },
       nested.id as ThreadId,
     );

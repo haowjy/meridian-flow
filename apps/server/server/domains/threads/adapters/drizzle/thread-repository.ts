@@ -13,18 +13,7 @@ import type {
   TurnStatus,
 } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  getTableColumns,
-  gt,
-  inArray,
-  isNotNull,
-  isNull,
-  sql,
-} from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import { normalizeThreadCreate } from "../../domain/thread-create.js";
 import { buildDerivedPrimaryThreadRow } from "../../domain/thread-create-derived-primary.js";
@@ -37,6 +26,7 @@ import type {
   SubagentThreadFactory,
   ThreadDescendant,
   ThreadRepository,
+  ThreadStatusReader,
   UpdateSpawnLifecycleInput,
 } from "../../ports/repositories.js";
 import { mapThread } from "./mappers.js";
@@ -79,16 +69,15 @@ type ThreadListRow = typeof schema.threads.$inferSelect & {
   workTitle: string | null;
   lastTurnRole: (typeof schema.turns.$inferSelect)["role"] | null;
   lastTurnStatus: (typeof schema.turns.$inferSelect)["status"] | null;
-  runningTurnId: string | null;
 };
 
-function mapThreadListRow(row: ThreadListRow) {
+function mapThreadListRow(row: ThreadListRow, runningTurnId: string | null) {
   return toThreadListItem({
     thread: mapThread(row),
     workTitle: row.workTitle,
     lastTurnRole: row.lastTurnRole as TurnRole | null,
     lastTurnStatus: row.lastTurnStatus as TurnStatus | null,
-    runningTurnId: row.runningTurnId,
+    runningTurnId,
   });
 }
 
@@ -99,8 +88,6 @@ function threadListSelect() {
     workTitle: schema.works.name,
     lastTurnRole: sql<TurnRole | null>`conversational_head.role`,
     lastTurnStatus: sql<TurnStatus | null>`conversational_head.status`,
-    // Liveness is the live lease's bound turn, not a turns-table status scan.
-    runningTurnId: schema.threadRunLeases.turnId,
   };
 }
 
@@ -175,7 +162,9 @@ async function insertThreadRow(
 
 export function createDrizzleThreadRepository(
   db: DrizzleDatabase,
+  options: { statusReader?: ThreadStatusReader } = {},
 ): ThreadRepository & SubagentThreadFactory & DerivedPrimaryThreadFactory {
+  const statusReader = options.statusReader;
   return {
     async create(input: CreateThreadInput) {
       const normalized = normalizeThreadCreate(input);
@@ -349,13 +338,6 @@ export function createDrizzleThreadRepository(
         .leftJoin(schema.threadWorks, primaryThreadWorksJoin())
         .leftJoin(schema.works, eq(schema.threadWorks.workId, schema.works.id))
         .leftJoin(
-          schema.threadRunLeases,
-          and(
-            eq(schema.threadRunLeases.threadId, schema.threads.id),
-            gt(schema.threadRunLeases.expiresAt, new Date()),
-          ),
-        )
-        .leftJoin(
           visibleConversationalHeadLateral(sql`${schema.threads.activeLeafTurnId}`),
           sql`true`,
         )
@@ -368,7 +350,15 @@ export function createDrizzleThreadRepository(
           ),
         )
         .orderBy(desc(schema.threads.updatedAt));
-      return rows.map(mapThreadListRow);
+      // Liveness comes from the lease port for the page, never a second SQL
+      // predicate: one implementation of "live" (the lease adapter).
+      const leaseStates =
+        statusReader && rows.length > 0
+          ? await statusReader.readMany(rows.map((row) => row.id as ThreadId))
+          : null;
+      return rows.map((row) =>
+        mapThreadListRow(row, leaseStates?.get(row.id as ThreadId)?.runningTurnId ?? null),
+      );
     },
     async listDescendants(threadId: ThreadId) {
       const activeDb = currentDrizzleDb(db);

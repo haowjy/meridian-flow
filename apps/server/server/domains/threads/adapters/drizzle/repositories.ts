@@ -14,7 +14,7 @@ import {
 } from "../../../../shared/drizzle-transaction.js";
 import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
-import type { InternalThreadRepositories } from "../../ports/repositories.js";
+import type { InternalThreadRepositories, ThreadStatusReader } from "../../ports/repositories.js";
 import { createDrizzleBlockRepository } from "./block-repository.js";
 import { createDrizzleHomeChatFeedRepository } from "./home-feed-repository.js";
 import { createDrizzleModelResponseRepository } from "./model-response-repository.js";
@@ -33,10 +33,11 @@ export { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb, type DrizzleTra
 function composeDrizzleRepositories(
   db: DrizzleDatabase,
   workActivity: Pick<WorkProjectionMutation, "touchWorks"> | null,
+  statusReader?: ThreadStatusReader,
 ): InternalThreadRepositories {
   const usageRecorder = createDrizzleUsageRecorder(db);
   return {
-    threads: createDrizzleThreadRepository(db),
+    threads: createDrizzleThreadRepository(db, { statusReader }),
     homeFeed: createDrizzleHomeChatFeedRepository(db),
     workChatFeed: createDrizzleWorkChatFeedRepository(db),
     threadUserState: createDrizzleThreadUserStateRepository(db),
@@ -66,8 +67,9 @@ function composeDrizzleRepositories(
 export function createDrizzleRepositories(
   db: DrizzleDatabase,
   workActivity: Pick<WorkProjectionMutation, "touchWorks">,
+  statusReader?: ThreadStatusReader,
 ): InternalThreadRepositories {
-  return composeDrizzleRepositories(db, workActivity);
+  return composeDrizzleRepositories(db, workActivity, statusReader);
 }
 
 /** Isolated adapter tests that do not compose cross-domain projection owners. */

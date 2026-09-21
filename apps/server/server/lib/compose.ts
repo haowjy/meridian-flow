@@ -377,12 +377,12 @@ export async function createProductionAppPorts(input: {
     availability: projectContextAvailability,
     catalog: contextCatalog,
   });
-  const threadRepos = createDrizzleRepositories(db, workProjectionMutation);
   const runOwnership = createDrizzleThreadRunOwnership(db);
   const runAuthority = createHeartbeatRunAuthority(
     createDrizzleRunAuthority(db, { holderId: `${process.pid}-${crypto.randomUUID()}` }),
     { eventSink, leaseTtlMs: DEFAULT_LEASE_TTL_MS },
   );
+  const threadRepos = createDrizzleRepositories(db, workProjectionMutation, runAuthority);
   const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
@@ -1008,6 +1008,9 @@ export function createInMemoryAppServices(): AppServices {
       },
       async read() {
         return { kind: "asleep" as const };
+      },
+      async readMany() {
+        return new Map();
       },
       async readRunningTurnId() {
         return null;
