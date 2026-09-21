@@ -104,7 +104,6 @@ import {
 } from "../domains/runtime/agent-definition-support.js";
 import { MODEL_REGISTRY } from "../domains/runtime/gateway/index.js";
 import {
-  createAdmissionTurnStarter,
   createChildRunCoordinator,
   createChildRunDriver,
   createContextImageAssetPort,
@@ -132,6 +131,7 @@ import {
   createUserTurnAdmission,
   createWorkContextDelivery,
   createWorkContextReader,
+  createWriterTurnProducer,
   DEFAULT_LEASE_TTL_MS,
   type Gateway,
   InvalidAdmissionError,
@@ -678,8 +678,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     objects: ports.objectStore,
     eventSink: ports.eventSink,
   });
-  const admissionStarter = createAdmissionTurnStarter({
-    runner,
+  const admissionProducer = createWriterTurnProducer({
+    persistence: { repos: ports.threadRepos, eventWriter: threadEventHub },
+    hub: threadEventHub,
+    turns: ports.threadRepos.turns,
+    threadedInbox,
+    workContextDelivery,
     records: admissionRecords,
     consumeUploads: (documentIds) => ports.uploadIntake.consume(documentIds),
     attachDocument: (threadId, documentId, relationship) =>
@@ -707,7 +711,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       const missing = unavailableActivatedSkillSlugs(available, slugs);
       if (missing[0]) throw new InvalidAdmissionError(`Skill "${missing[0]}" is not available`);
     },
-    starter: admissionStarter,
+    producer: admissionProducer,
   });
   const childRunDriver = createChildRunDriver({
     orchestrator: runTurnProxy,
@@ -1232,11 +1236,6 @@ export function createInMemoryAppServices(): AppServices {
       isThreadRunning() {
         return false;
       },
-      registerLiveConnectionToken() {},
-      unregisterLiveConnectionToken() {},
-      async startTurn() {
-        throw new Error("in-memory turn runner is not implemented");
-      },
       async startDrain() {
         throw new Error("in-memory turn runner is not implemented");
       },
@@ -1249,7 +1248,7 @@ export function createInMemoryAppServices(): AppServices {
     wakeSweep,
     userTurnAdmission: {
       async admit(input) {
-        return { kind: "rejected", submissionId: input.submissionId, code: "already_running" };
+        return { kind: "rejected", submissionId: input.submissionId, code: "invalid_message" };
       },
       async lookup(input) {
         return { kind: "not-seen", submissionId: input.submissionId };

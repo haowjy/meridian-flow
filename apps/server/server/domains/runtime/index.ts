@@ -18,7 +18,6 @@ export {
   type InMemoryRunAuthorityOptions,
   type InMemoryRunStarter,
 } from "./adapters/in-memory/loop-ports.js";
-export { createAdmissionTurnStarter } from "./admission/admission-turn-starter.js";
 export {
   type AdmissionPersistencePort,
   createDrizzleAdmissionRecords,
@@ -29,6 +28,7 @@ export {
   InvalidAdmissionError,
   type UserTurnAdmission,
 } from "./admission/user-turn-admission.js";
+export { createWriterTurnProducer } from "./admission/writer-turn-producer.js";
 export * from "./gateway/index.js";
 export { type CloseRunOutcome, closeRun } from "./loop/close-run.js";
 export {

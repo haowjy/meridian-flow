@@ -7,8 +7,9 @@
  * Design:
  *
  * - **One running turn per thread**: the `running` Map (ThreadId →
- *   RunningTurn) enforces mutual exclusion. `startTurn` rejects if a turn
- *   is already active for that thread.
+ *   RunningTurn) enforces mutual exclusion. `startDrain` rejects if a turn
+ *   is already active for that thread. Writer sends no longer start a turn;
+ *   the writer producer persists at enqueue and wakes a drain start.
  *
  * - **Background generator drive**: the orchestrator returns an
  *   `AsyncGenerator<OrchestratorEvent>` that is consumed in the background
@@ -31,9 +32,8 @@
  *   parent cancel propagates parent→child.
  */
 
-import type { AcceptedAdmission, UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { isTerminalTurnStatus, type JsonValue } from "@meridian/contracts/threads";
+import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import {
@@ -74,13 +74,6 @@ type ChildRun = {
   background: boolean;
 };
 
-export class StaleConnectionTokenError extends Error {
-  constructor() {
-    super("connection_token_not_live");
-    this.name = "StaleConnectionTokenError";
-  }
-}
-
 export function createTurnRunner(deps: {
   orchestrator: RunTurnPort;
   hub: ThreadEventHub;
@@ -92,16 +85,7 @@ export function createTurnRunner(deps: {
   const eventSink = deps.eventSink;
   const runAuthority = deps.runAuthority;
   const running = new Map<ThreadId, RunningTurn>();
-  /** WS peers currently connected; a token not in this set cannot authorize a new turn start. */
-  const liveConnectionTokens = new Set<string>();
   const childRuns = new Map<ThreadId, ChildRun>();
-
-  function assertConnectionTokenLive(connectionToken: string | undefined): void {
-    if (!connectionToken) return;
-    if (!liveConnectionTokens.has(connectionToken)) {
-      throw new StaleConnectionTokenError();
-    }
-  }
 
   const childRunRegistry: ChildRunRegistry = {
     registerChild(parentThreadId, childThreadId, controller) {
@@ -139,31 +123,13 @@ export function createTurnRunner(deps: {
     },
   };
 
-  type StartRunSpec =
-    | {
-        kind: "writer";
-        userText: string;
-        userBlocks?: readonly UserMessageBlock[];
-        activatedSkillSlugs?: readonly string[];
-        userTurnMetadata?: JsonValue | null;
-        admissionIdentity?: {
-          submissionId: string;
-          onAccepted(response: AcceptedAdmission): Promise<void>;
-        };
-      }
-    | { kind: "drain" };
-
   /**
-   * The one run-start path. Writer and drain starts share the live-turn fence,
-   * lease acquisition, cursor capture, background drive, and release machinery;
-   * only the orchestrator input differs. A drain start's first drained message
-   * becomes the run's user turn, so the writer fields are absent.
+   * The drain-only run-start path. The live-turn fence, lease acquisition,
+   * cursor capture, background drive, and release machinery. The run's first
+   * drained message becomes the run's user turn (a writer turn persisted at
+   * enqueue is already in the thread and skipped by the drain).
    */
-  async function startRun(input: {
-    threadId: ThreadId;
-    connectionToken?: string;
-    spec: StartRunSpec;
-  }): Promise<{
+  async function startRun(input: { threadId: ThreadId }): Promise<{
     userTurnId: string;
     assistantTurnId: string;
     resumeAfterSeq: string;
@@ -172,8 +138,6 @@ export function createTurnRunner(deps: {
     if (running.has(input.threadId)) {
       throw new TurnStartConflictError(input.threadId, "already_running");
     }
-
-    assertConnectionTokenLive(input.connectionToken);
 
     const controller = new AbortController();
     running.set(input.threadId, {
@@ -185,8 +149,6 @@ export function createTurnRunner(deps: {
       if (!lease) throw new TurnStartConflictError(input.threadId, "already_running");
       const heldLease: Lease = lease;
 
-      assertConnectionTokenLive(input.connectionToken);
-
       const resumeAfterSeqBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
       // `beforeTurn` persists any pending work-context `system_update` turn before
       // the run's own turns. If a concurrent run then acks the last message and this
@@ -195,43 +157,12 @@ export function createTurnRunner(deps: {
       // invariant is "no phantom assistant turn", not "no write".
       await deps.workContextDelivery.beforeTurn(input.threadId);
 
-      const spec = input.spec;
-      const admissionIdentity = spec.kind === "writer" ? spec.admissionIdentity : undefined;
-
-      const runInput: RunTurnInput =
-        spec.kind === "drain"
-          ? {
-              threadId: input.threadId,
-              drain: true,
-              signal: controller.signal,
-              lease: heldLease,
-            }
-          : {
-              threadId: input.threadId,
-              userText: spec.userText,
-              userBlocks: spec.userBlocks,
-              activatedSkillSlugs: spec.activatedSkillSlugs,
-              userTurnMetadata: spec.userTurnMetadata,
-              signal: controller.signal,
-              lease: heldLease,
-              ...(admissionIdentity
-                ? {
-                    onStartPersisted: async ({ userTurnId, assistantTurnId }) => {
-                      await admissionIdentity.onAccepted({
-                        kind: "accepted",
-                        threadId: input.threadId,
-                        submissionId: admissionIdentity.submissionId,
-                        userTurnId,
-                        assistantTurnId,
-                        resumeAfterSeq: resumeAfterSeqBeforeStart,
-                        snapshotFloorNextSeq: (
-                          (await deps.hub.headSeq(input.threadId)) + 1n
-                        ).toString(),
-                      });
-                    },
-                  }
-                : {}),
-            };
+      const runInput: RunTurnInput = {
+        threadId: input.threadId,
+        drain: true,
+        signal: controller.signal,
+        lease: heldLease,
+      };
 
       const handle = await deps.orchestrator.runTurn(runInput);
 
@@ -300,14 +231,6 @@ export function createTurnRunner(deps: {
   return {
     childRunRegistry,
 
-    registerLiveConnectionToken(connectionToken: string): void {
-      liveConnectionTokens.add(connectionToken);
-    },
-
-    unregisterLiveConnectionToken(connectionToken: string): void {
-      liveConnectionTokens.delete(connectionToken);
-    },
-
     getRunningTurnId(threadId: ThreadId): TurnId | null {
       return running.get(threadId)?.assistantTurnId ?? null;
     },
@@ -316,44 +239,13 @@ export function createTurnRunner(deps: {
       return running.has(threadId);
     },
 
-    async startTurn(input: {
-      threadId: ThreadId;
-      userText: string;
-      connectionToken?: string;
-      userBlocks?: readonly UserMessageBlock[];
-      activatedSkillSlugs?: readonly string[];
-      userTurnMetadata?: JsonValue | null;
-      admissionIdentity?: {
-        submissionId: string;
-        onAccepted(response: AcceptedAdmission): Promise<void>;
-      };
-    }): Promise<{
-      userTurnId: string;
-      assistantTurnId: string;
-      resumeAfterSeq: string;
-      snapshotFloorNextSeq: string;
-    }> {
-      return startRun({
-        threadId: input.threadId,
-        connectionToken: input.connectionToken,
-        spec: {
-          kind: "writer",
-          userText: input.userText,
-          userBlocks: input.userBlocks,
-          activatedSkillSlugs: input.activatedSkillSlugs,
-          userTurnMetadata: input.userTurnMetadata,
-          admissionIdentity: input.admissionIdentity,
-        },
-      });
-    },
-
     /**
      * Starts a drain-only run for a wake. There is no admission to settle; a
      * durable pending message makes the run, and a drained-away message is a no-op.
      */
     async startDrain(threadId: ThreadId): Promise<void> {
       try {
-        await startRun({ threadId, spec: { kind: "drain" } });
+        await startRun({ threadId });
       } catch (error) {
         // A lost race: a concurrent run acked the last message first. This drain
         // minted no assistant turn; any work-context update persisted by

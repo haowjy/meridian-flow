@@ -395,7 +395,8 @@ export type ThreadAvailableSkillsResponse = {
 export type SendMessageResponse = {
   threadId: string;
   userTurnId: string;
-  assistantTurnId: string;
+  /** The live run's assistant turn on a merged send; null for a fresh run. */
+  assistantTurnId: string | null;
   /** Pre-start event position; the client subscription replays events strictly after it. */
   resumeAfterSeq: string;
   /**
