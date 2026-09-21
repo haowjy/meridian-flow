@@ -868,6 +868,40 @@ describe("ChildRunCoordinator thread_message", () => {
     });
   });
 
+  it("persists one durable run card for a background spawn and retires it at settle", async () => {
+    const { coordinator, parent, repos, eventWriter, journal } = await fixture();
+    const transcript = transcriptFor(parent.id as ThreadId, { repos, eventWriter });
+    const spawned = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "background", transcript },
+    );
+    expect(spawned.status).toBe("background");
+    if (spawned.status !== "background") return;
+
+    const customBlocks = transcript.events.flatMap((event) =>
+      event.type === "block.upserted" && event.block.blockType === "custom" ? [event.block] : [],
+    );
+    expect(customBlocks).toHaveLength(1);
+    expect(customBlocks[0]?.content).toMatchObject({
+      kind: "helper-result",
+      props: { status: "running", childThreadId: spawned.threadId },
+    });
+    const cardId = customBlocks[0]?.id;
+    if (!cardId) throw new Error("missing running card id");
+
+    await vi.waitFor(async () => {
+      expect((await repos.blocks.findById(cardId))?.pruned).toBe(true);
+    });
+    expect(journal.some((entry) => entry.type === "block.pruned")).toBe(true);
+  });
+
   it("enqueues one agent message for a background message and wakes the target", async () => {
     const { coordinator, parent, inbox, runStarter, turns } = await fixture();
     const spawned = await coordinator.runChild(

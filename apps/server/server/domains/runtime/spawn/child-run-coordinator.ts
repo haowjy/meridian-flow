@@ -52,7 +52,11 @@ export type ChildRunRequest =
 
 export interface ChildRunOptions {
   mode: "foreground" | "background";
-  /** Parent-turn card writer; foreground spawn/continue upserts running then terminal. */
+  /**
+   * Parent-turn card writer. A foreground spawn/continue upserts the running
+   * card then transitions it in place; a background spawn persists the running
+   * card once and the driver retires it at settle.
+   */
   transcript?: SpawnTranscript;
 }
 
@@ -282,9 +286,9 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
   ): Promise<PreparedChild | SpawnResult> {
     if (request.kind === "spawn") {
       const outcome = await prepareSpawn(request, background);
-      // A failed spawn shows its error on the parent card; a background spawn
-      // has no parent-turn card writer, so it only returns the error.
-      if ("status" in outcome && !background) {
+      // A failed spawn shows its error on the parent-turn run card; foreground
+      // and background both have a card writer now.
+      if ("status" in outcome) {
         await persistHelperCard(transcript, {
           agent: request.agentSlug,
           description: request.description,
@@ -318,7 +322,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
   }
 
-  function foregroundCardFields(
+  function runCardFields(
     request: ChildRunRequest,
     prepared: PreparedChild,
   ): Parameters<typeof persistHelperCard>[1] {
@@ -383,8 +387,14 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     const prepared = await prepare(request, background, options.transcript);
     if ("status" in prepared) return prepared;
 
+    const cardFields = runCardFields(request, prepared);
+
     if (background) {
-      driver.driveBackground(prepared, request);
+      // The running card is durable server truth on the parent turn, so it
+      // survives the parent turn's terminal reconcile; the driver retires it
+      // when the child settles, leaving the report card as the only surface.
+      const runCard = await persistRunningCard(options.transcript, cardFields, prepared);
+      driver.driveBackground(prepared, request, runCard ? { blockId: runCard.id } : undefined);
       return {
         status: "background",
         handle: prepared.handle,
@@ -394,7 +404,6 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       };
     }
 
-    const cardFields = foregroundCardFields(request, prepared);
     const failureCode = request.kind === "spawn" ? "spawn_failed" : "thread_message_failed";
     let runningCard: Block | null = null;
     try {

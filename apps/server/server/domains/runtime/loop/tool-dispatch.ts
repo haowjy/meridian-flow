@@ -170,7 +170,7 @@ export async function dispatchToolCall(
           };
           return deps.childRunCoordinator.runChild(request, {
             mode: spawnInput.mode,
-            ...(spawnInput.mode === "foreground" ? { transcript } : {}),
+            transcript,
           });
         }
       : undefined;
@@ -190,7 +190,7 @@ export async function dispatchToolCall(
           };
           return deps.childRunCoordinator.runChild(request, {
             mode: messageInput.mode,
-            ...(messageInput.mode === "foreground" ? { transcript } : {}),
+            transcript,
           });
         }
       : undefined;

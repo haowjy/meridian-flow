@@ -53,6 +53,9 @@ export type PreparedChild = {
   origin: "spawn" | "message";
 };
 
+/** The parent-turn running card a background run retires when the child settles. */
+export type RunCardRef = { blockId: string };
+
 export type ChildTerminal =
   | { type: "completed" }
   | { type: "cancelled" }
@@ -63,7 +66,7 @@ export interface ChildRunDriverDeps {
   repos: {
     threads: Pick<ThreadRepository, "updateSpawnLifecycle">;
     turns: Pick<TurnRepository, "listByThread">;
-    blocks: Pick<BlockRepository, "listByTurn">;
+    blocks: Pick<BlockRepository, "listByTurn" | "updatePruned">;
     transaction: ThreadRepositories["transaction"];
   };
   eventWriter: EventJournalWriter;
@@ -85,8 +88,12 @@ export interface ChildRunDriver {
     options: { background?: boolean; signal?: AbortSignal; origin: "spawn" | "message" },
   ): Promise<PreparedChild>;
   release(prepared: PreparedChild): Promise<void>;
-  drive(prepared: PreparedChild, input: ChildDriveInput): Promise<SpawnResult>;
-  driveBackground(prepared: PreparedChild, input: ChildDriveInput): void;
+  drive(
+    prepared: PreparedChild,
+    input: ChildDriveInput,
+    runCard?: RunCardRef,
+  ): Promise<SpawnResult>;
+  driveBackground(prepared: PreparedChild, input: ChildDriveInput, runCard?: RunCardRef): void;
 }
 
 export type ResolvedSpawn = {
@@ -293,7 +300,11 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     });
   }
 
-  async function drive(prepared: PreparedChild, input: ChildDriveInput): Promise<SpawnResult> {
+  async function drive(
+    prepared: PreparedChild,
+    input: ChildDriveInput,
+    runCard?: RunCardRef,
+  ): Promise<SpawnResult> {
     let terminalStatus: "succeeded" | "failed" | "cancelled" = "succeeded";
     let spawnResult: SpawnResult = {
       status: "error",
@@ -427,6 +438,16 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
             result: spawnResult,
           });
           await enqueueBackgroundReport(spawnResult);
+          // Retire the parent-turn running card in the same terminal transaction
+          // as the report enqueue: exactly one card per run is visible (run card
+          // during, report after), and a crash cannot leave both.
+          if (runCard) {
+            await deps.repos.blocks.updatePruned(runCard.blockId, true);
+            await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
+              type: "block.pruned",
+              blockId: runCard.blockId,
+            });
+          }
         });
       } finally {
         deps.childRunRegistry.abortChildrenOf(prepared.child.id as ThreadId, {
@@ -460,8 +481,12 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     return spawnResult;
   }
 
-  function driveBackground(prepared: PreparedChild, input: ChildDriveInput): void {
-    void drive(prepared, input)
+  function driveBackground(
+    prepared: PreparedChild,
+    input: ChildDriveInput,
+    runCard?: RunCardRef,
+  ): void {
+    void drive(prepared, input, runCard)
       .then((result) => appendBackgroundTerminal(prepared, input, result))
       .catch((error: unknown) =>
         appendBackgroundTerminal(prepared, input, {
