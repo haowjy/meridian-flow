@@ -169,11 +169,13 @@ export interface WorkThreadSummary {
 
 /**
  * Read seam for the derived run status. The runtime's lease authority
- * (`RunAuthority.read`) satisfies it; the threads domain depends on this narrow
+ * (`RunAuthority`) satisfies it; the threads domain depends on this narrow
  * port rather than the runtime domain, so status stays a pure lease function.
  */
 export interface ThreadStatusReader {
   read(threadId: ThreadId): Promise<ThreadStatus>;
+  /** Assistant turn bound to the thread's live lease; null when asleep or unbound. */
+  readRunningTurnId(threadId: ThreadId): Promise<TurnId | null>;
 }
 
 export interface ProjectChatCursorKey {

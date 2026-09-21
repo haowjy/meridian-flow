@@ -442,6 +442,9 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
   );
 
   const { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks } = setup.result;
+  // The assistant turn is durable; bind it to the run lease so liveness reads
+  // (snapshot, WS subscribed, project list) observe it from the lease alone.
+  if (input.lease) await deps.runAuthority.bindTurn(input.lease, assistantTurn.id);
   return {
     userTurnId: userTurn.id,
     assistantTurnId: assistantTurn.id,
@@ -536,6 +539,7 @@ async function runDrainTurn(
     inheritedTurns,
     inheritedBlocks,
   } = setup.result;
+  if (input.lease) await deps.runAuthority.bindTurn(input.lease, assistantTurn.id);
   return {
     userTurnId: referenceUserTurnId,
     assistantTurnId: assistantTurn.id,

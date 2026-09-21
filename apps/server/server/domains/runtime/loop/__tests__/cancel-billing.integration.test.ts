@@ -114,11 +114,11 @@ describe("cancel billing", () => {
       connectionToken: ownerConnectionToken,
     });
     await rig.gatewaySignal.promise;
-    const turnId = rig.runner.getRunningTurnId(rig.thread.id);
+    const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
     expect(turnId).not.toBeNull();
 
     ownerSession.onClose();
-    expect(rig.runner.getRunningTurnId(rig.thread.id)).toBe(turnId);
+    expect(await rig.runAuthority.readRunningTurnId(rig.thread.id)).toBe(turnId);
 
     await app.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
     await rig.awaitCancelled(turnId as NonNullable<typeof turnId>);
@@ -153,7 +153,7 @@ describe("cancel billing", () => {
       connectionToken: ownerConnectionToken,
     });
     await rig.gatewaySignal.promise;
-    const turnId = rig.runner.getRunningTurnId(rig.thread.id);
+    const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
     expect(turnId).not.toBeNull();
 
     const spectatorPeer: WsPeer = {
@@ -169,7 +169,7 @@ describe("cancel billing", () => {
     );
     spectatorSession.onClose();
 
-    expect(rig.runner.getRunningTurnId(rig.thread.id)).toBe(turnId);
+    expect(await rig.runAuthority.readRunningTurnId(rig.thread.id)).toBe(turnId);
 
     await app.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
     await rig.awaitCancelled(turnId as NonNullable<typeof turnId>);
@@ -184,7 +184,7 @@ describe("cancel billing", () => {
       userText: "cancel billing",
     });
     await rig.gatewaySignal.promise;
-    const turnId = rig.runner.getRunningTurnId(rig.thread.id);
+    const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
     expect(turnId).not.toBeNull();
 
     const peer: WsPeer = {
@@ -200,7 +200,7 @@ describe("cancel billing", () => {
     );
     session.onClose();
 
-    expect(rig.runner.getRunningTurnId(rig.thread.id)).toBe(turnId);
+    expect(await rig.runAuthority.readRunningTurnId(rig.thread.id)).toBe(turnId);
 
     await app.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
     await rig.awaitCancelled(turnId as NonNullable<typeof turnId>);

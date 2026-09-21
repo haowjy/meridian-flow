@@ -239,7 +239,9 @@ export const threadInboxMessages = pgTable(
 /**
  * Queryable run lease paired with the cross-process advisory lock. The lock is
  * the atomic mutex (crash-safe because the DB session dies); this expiring row
- * is what `holder()` and derived status can read from another process.
+ * is what `holder()`, derived status, and the running-turn read can observe from
+ * another process. `turnId` is bound after the run's assistant turn commits, so
+ * it may be null while a run is mid-setup.
  */
 export const threadRunLeases = pgTable(
   "thread_run_leases",
@@ -249,6 +251,7 @@ export const threadRunLeases = pgTable(
       .primaryKey()
       .references(() => threads.id, { onDelete: "cascade" }),
     runId: text("run_id").notNull(),
+    turnId: uuid("turn_id").$type<TurnId>(),
     holderId: text("holder_id").notNull(),
     phase: text("phase").notNull().default("generating"),
     cancelRequested: boolean("cancel_requested").notNull().default(false),

@@ -343,10 +343,6 @@ export function createTurnRunner(deps: {
       liveConnectionTokens.delete(connectionToken);
     },
 
-    getRunningTurnId(threadId: ThreadId): TurnId | null {
-      return running.get(threadId)?.assistantTurnId ?? null;
-    },
-
     isThreadRunning(threadId: ThreadId): boolean {
       return running.has(threadId);
     },

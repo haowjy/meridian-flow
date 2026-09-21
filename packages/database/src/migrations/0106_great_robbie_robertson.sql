@@ -1,0 +1,1 @@
+ALTER TABLE "thread_run_leases" ADD COLUMN "turn_id" uuid;

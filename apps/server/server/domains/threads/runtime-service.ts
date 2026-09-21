@@ -57,7 +57,7 @@ export function createThreadRuntimeService(deps: {
     return {
       threadId,
       status: await deps.statusReader.read(threadId),
-      runningTurnId: null,
+      runningTurnId: await deps.statusReader.readRunningTurnId(threadId),
       resumeAfterSeq: headSeq.toString(),
     };
   }
@@ -67,6 +67,8 @@ export function createThreadRuntimeService(deps: {
     liveState,
     /** The lease-derived status seam, exposed so snapshot reads share it. */
     read: (threadId: ThreadId) => deps.statusReader.read(threadId),
+    /** The lease's bound running turn, exposed so snapshot reads share one truth. */
+    readRunningTurnId: (threadId: ThreadId) => deps.statusReader.readRunningTurnId(threadId),
     async journalEvents(threadId: ThreadId) {
       return deps.db.select().from(eventJournal).where(eq(eventJournal.threadId, threadId));
     },

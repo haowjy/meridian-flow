@@ -3,7 +3,7 @@
  * `RunAuthority` plus a recording `RunStarter`. The authority fake takes an
  * injected clock so lease expiry and renewal are deterministic.
  */
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import {
   DEFAULT_LEASE_TTL_MS,
   type Inbox,
@@ -74,6 +74,7 @@ export function createInMemoryInbox(): Inbox {
 
 interface InMemoryLease {
   runId: RunId;
+  turnId: TurnId | null;
   holderId: string;
   phase: ThreadPhase;
   cancelRequested: boolean;
@@ -107,6 +108,7 @@ export function createInMemoryRunAuthority(
       if (liveLease(threadId)) return null;
       leases.set(threadId, {
         runId,
+        turnId: null,
         holderId,
         phase: "generating",
         cancelRequested: false,
@@ -132,10 +134,20 @@ export function createInMemoryRunAuthority(
       row.phase = phase;
     },
 
+    async bindTurn(lease, turnId) {
+      const row = leases.get(lease.threadId);
+      if (!row || row.runId !== lease.runId) return;
+      row.turnId = turnId;
+    },
+
     async read(threadId) {
       const row = liveLease(threadId);
       if (!row) return { kind: "asleep" };
       return { kind: "awake", phase: row.phase, cancelRequested: row.cancelRequested };
+    },
+
+    async readRunningTurnId(threadId) {
+      return liveLease(threadId)?.turnId ?? null;
     },
 
     async cancel(threadId) {

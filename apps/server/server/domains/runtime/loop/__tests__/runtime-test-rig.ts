@@ -4,6 +4,7 @@
  */
 
 import { type AGUIEvent, EventType } from "@meridian/contracts/protocol";
+import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { createInMemoryAppServices } from "../../../../lib/compose.js";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
@@ -251,10 +252,11 @@ export class RuntimeTestRig {
       liveState: async () => ({
         threadId: this.thread.id,
         status: await this.runAuthority.read(this.thread.id),
-        runningTurnId: this.runner.getRunningTurnId(this.thread.id),
+        runningTurnId: await this.runAuthority.readRunningTurnId(this.thread.id),
         resumeAfterSeq: "0",
       }),
-      read: async () => ({ kind: "asleep" as const }),
+      read: (threadId: ThreadId) => this.runAuthority.read(threadId),
+      readRunningTurnId: (threadId: ThreadId) => this.runAuthority.readRunningTurnId(threadId),
       journalEvents: async () => [],
     };
     return app;
