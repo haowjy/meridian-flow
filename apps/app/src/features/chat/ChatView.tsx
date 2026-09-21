@@ -45,6 +45,7 @@ import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToo
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
+<<<<<<< HEAD
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { TurnList } from "./TurnList";
 import type { UserTurnRecovery } from "./UserTurn";
@@ -55,8 +56,14 @@ import {
   submissionTurnId,
   useChatSubmissionRecovery,
 } from "./useChatSubmissionRecovery";
+=======
+import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
+import { TurnList } from "./TurnList";
+import { activeDescendants } from "./thread-activity";
+>>>>>>> d5ee84994 (feat(app): live recursive running-subagents strip (3.5 F2))
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
+import { useThreadActivity } from "./useThreadActivity";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
 import { useThreadHandoff } from "./useThreadHandoff";
 import { useThreadNavigationAnnounce } from "./useThreadNavigationAnnounce";
@@ -110,6 +117,12 @@ export function ChatView({
     t`Reference a file`,
   );
   const availableSkills = useThreadAvailableSkills(threadId);
+  const activity = useThreadActivity({
+    threadId,
+    rootThreadId: activeThread?.rootThreadId ?? threadId,
+    seed: snapshotLiveState,
+  });
+  const runningSubagents = activeDescendants(activity.activity);
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
@@ -317,6 +330,11 @@ export function ChatView({
       <ChatSurface
         title={pageTitle}
         surfaceRef={chatSurfaceRef}
+        header={
+          runningSubagents.length > 0 ? (
+            <RunningSubagentsStrip descendants={runningSubagents} />
+          ) : null
+        }
         footer={
           <div data-debug-composer={threadId}>
             {/* The dock strip sits BEHIND (below) the composer — narrower via
