@@ -8,18 +8,21 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ThreadActivityNode } from "@meridian/contracts/threads";
+import type { ThreadActivityNode, ThreadStatus } from "@meridian/contracts/threads";
 import { ChevronRight, LoaderCircle } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useOpenChatThread } from "./ChatThreadNavigation";
+import { ThreadStatusLabel } from "./ThreadStatusLabel";
 
 export type RunningSubagentsStripProps = {
+  /** The viewed thread's own derived status. */
+  selfStatus: ThreadStatus;
   /** Active descendants of the viewed thread, ordered (depth, createdAt). */
   descendants: ThreadActivityNode[];
 };
 
-export function RunningSubagentsStrip({ descendants }: RunningSubagentsStripProps) {
+export function RunningSubagentsStrip({ selfStatus, descendants }: RunningSubagentsStripProps) {
   const [expanded, setExpanded] = useState(true);
 
   if (descendants.length === 0) return null;
@@ -53,6 +56,7 @@ export function RunningSubagentsStrip({ descendants }: RunningSubagentsStripProp
             )}
           </span>
         </button>
+        <ThreadStatusLabel status={selfStatus} className="shrink-0" />
       </div>
 
       {expanded ? (
@@ -88,6 +92,7 @@ function SubagentRow({ node, indent }: { node: ThreadActivityNode; indent: numbe
         <span className="font-medium text-foreground">{name}</span>
         {hint ? <span className="ml-1.5 text-ink-subtle">{hint}</span> : null}
       </span>
+      <ThreadStatusLabel status={node.status} className="shrink-0" />
     </>
   );
 
