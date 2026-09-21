@@ -544,6 +544,21 @@ export function createInMemoryRepositories(
       const threadTurns = await this.listByThread(threadId);
       return threadTurns.at(-1) ?? null;
     },
+    async findRunningAssistantId(threadId, options) {
+      const createdAfter = options?.createdAfter?.toISOString();
+      const threadTurns = await this.listByThread(threadId);
+      const running = [...threadTurns]
+        .reverse()
+        .find(
+          (turn) =>
+            turn.role === "assistant" &&
+            (turn.status === "pending" ||
+              turn.status === "streaming" ||
+              turn.status === "waiting_interrupt") &&
+            (createdAfter === undefined || turn.createdAt >= createdAfter),
+        );
+      return running?.id ?? null;
+    },
     async updateStatus(id, input: UpdateTurnStatusInput) {
       const turn = turns.get(id);
       if (!turn) throw new Error(`Turn not found: ${id}`);

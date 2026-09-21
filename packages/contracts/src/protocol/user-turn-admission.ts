@@ -39,7 +39,6 @@ export type UserTurnAdmissionInput = {
   actorUserId: UserId;
   threadId: ThreadId;
   submissionId: string;
-  connectionToken?: string;
   text: string;
   blocks: unknown;
   references: readonly SubmittedReference[];
@@ -52,7 +51,11 @@ export type AcceptedAdmission = {
   threadId: ThreadId;
   submissionId: string;
   userTurnId: TurnId;
-  assistantTurnId: TurnId;
+  /**
+   * The live run's assistant turn when the send merged into a running run; null
+   * for a fresh run, whose assistant turn the client learns from RUN_STARTED.
+   */
+  assistantTurnId: TurnId | null;
   resumeAfterSeq: string;
   snapshotFloorNextSeq: string;
 };
@@ -74,11 +77,7 @@ export type RetireAdmissionResult =
   | { kind: "pending"; submissionId: string }
   | { kind: "rejected"; submissionId: string; code: string };
 
-export type AdmissionErrorCode =
-  | "idempotency_conflict"
-  | "connection_token_not_live"
-  | "already_running"
-  | "invalid_message";
+export type AdmissionErrorCode = "idempotency_conflict" | "invalid_message";
 
 export type UserTurnAdmissionResult =
   | AcceptedAdmission

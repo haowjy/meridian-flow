@@ -73,11 +73,11 @@ describe("interrupt cancel", () => {
     const rig = await RuntimeTestRig.create({ gateway: control.gateway });
     const app = rig.createAppServices();
 
-    const { assistantTurnId } = await rig.runner.startTurn({
-      threadId: rig.thread.id,
-      userText: "long turn",
-    });
+    await rig.inbox.enqueue(message("long turn", rig.thread.id));
+    await rig.runner.startDrain(rig.thread.id);
     await rig.gatewaySignal.promise;
+    const assistantTurnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
+    if (!assistantTurnId) throw new Error("expected a running turn");
 
     const before = await app.threadRuntime.liveState(rig.thread.id, rig.userId);
     expect(before.status).toEqual({ kind: "awake", phase: "generating", cancelRequested: false });
@@ -96,10 +96,16 @@ describe("interrupt cancel", () => {
     const control = gatedPartialGateway();
     const rig = await RuntimeTestRig.create({ gateway: control.gateway });
 
-    await rig.runner.startTurn({ threadId: rig.thread.id, userText: "no pending" });
+    const trigger = await rig.inbox.enqueue(message("no pending", rig.thread.id));
+    await rig.runner.startDrain(rig.thread.id);
     await rig.gatewaySignal.promise;
     const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
     expect(turnId).not.toBeNull();
+
+    // A drain run acks its trigger message with the response that carries it; a
+    // cancel before that leaves the message pending. Ack it here to isolate the
+    // no-pending cancel path this case is about.
+    await rig.inbox.ack(rig.thread.id, [trigger.id]);
 
     await rig.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
     control.release();
@@ -117,7 +123,8 @@ describe("interrupt cancel", () => {
     const control = gatedPartialGateway();
     const rig = await RuntimeTestRig.create({ gateway: control.gateway });
 
-    await rig.runner.startTurn({ threadId: rig.thread.id, userText: "interrupt me" });
+    await rig.inbox.enqueue(message("interrupt me", rig.thread.id));
+    await rig.runner.startDrain(rig.thread.id);
     await rig.gatewaySignal.promise;
     const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
     expect(turnId).not.toBeNull();
@@ -152,7 +159,8 @@ describe("interrupt cancel", () => {
     const rig = await RuntimeTestRig.create({ gateway: control.gateway });
     const app = rig.createAppServices();
 
-    await rig.runner.startTurn({ threadId: rig.thread.id, userText: "subscribe liveness" });
+    await rig.inbox.enqueue(message("subscribe liveness", rig.thread.id));
+    await rig.runner.startDrain(rig.thread.id);
     await rig.gatewaySignal.promise;
     const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
     expect(turnId).not.toBeNull();

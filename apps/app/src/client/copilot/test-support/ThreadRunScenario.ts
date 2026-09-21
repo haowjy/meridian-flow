@@ -40,7 +40,6 @@ type AppendRequest = {
     text: string;
     blocks: readonly import("@meridian/contracts/protocol").UserMessageBlock[];
     references: readonly import("@meridian/contracts/protocol").SubmittedReference[];
-    connectionToken?: string;
   };
 };
 
@@ -61,7 +60,6 @@ export function scenarioGate<T>(): ScenarioGate<T> {
 }
 
 class ScenarioThreadTransport implements ThreadTransport {
-  connectionToken: string | undefined = "conn-test";
   subscriptions: Array<{
     threadId: string;
     handlers: ThreadTransportHandlers;
@@ -70,31 +68,6 @@ class ScenarioThreadTransport implements ThreadTransport {
   }> = [];
   cancelRequests: Array<{ threadId: string; turnId: string }> = [];
   interruptResponses: InterruptRespondInput[] = [];
-
-  private readonly connectionWaiters = new Set<{
-    resolve(token: string): void;
-    reject(reason?: unknown): void;
-  }>();
-
-  getConnectionToken(): string | undefined {
-    return this.connectionToken;
-  }
-
-  awaitConnectionToken(): Promise<string> {
-    if (this.connectionToken) return Promise.resolve(this.connectionToken);
-    return new Promise((resolve, reject) => this.connectionWaiters.add({ resolve, reject }));
-  }
-
-  connectWith(token: string): void {
-    this.connectionToken = token;
-    for (const waiter of this.connectionWaiters) waiter.resolve(token);
-    this.connectionWaiters.clear();
-  }
-
-  rejectConnection(reason: unknown): void {
-    for (const waiter of this.connectionWaiters) waiter.reject(reason);
-    this.connectionWaiters.clear();
-  }
 
   connect(): void {}
   subscribeCatalog(): () => void {
@@ -230,18 +203,6 @@ export class ThreadRunScenario {
 
   setSnapshot(handler: (threadId: string) => Promise<ThreadSnapshotResponse>): void {
     this.snapshot = handler;
-  }
-
-  disconnectAdmission(): void {
-    this.transport.connectionToken = undefined;
-  }
-
-  connect(token = "conn-test"): void {
-    this.transport.connectWith(token);
-  }
-
-  rejectConnection(reason: unknown): void {
-    this.transport.rejectConnection(reason);
   }
 
   submit(text: string, options: SubmitOptions = {}, threadId = "thread_1") {

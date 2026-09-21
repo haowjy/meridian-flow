@@ -6,7 +6,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../../shared/drizzle-transaction.js";
 import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
 import { toDate } from "../../domain/contract-serialization.js";
@@ -200,6 +200,22 @@ export function createDrizzleTurnRepository(
         .orderBy(desc(schema.turns.createdAt))
         .limit(1);
       return row ? mapTurn(row) : null;
+    },
+    async findRunningAssistantId(threadId, options) {
+      const [row] = await currentDrizzleDb(db)
+        .select({ id: schema.turns.id })
+        .from(schema.turns)
+        .where(
+          and(
+            eq(schema.turns.threadId, threadId),
+            eq(schema.turns.role, "assistant"),
+            inArray(schema.turns.status, ["pending", "streaming", "waiting_interrupt"]),
+            ...(options?.createdAfter ? [gte(schema.turns.createdAt, options.createdAfter)] : []),
+          ),
+        )
+        .orderBy(desc(schema.turns.createdAt))
+        .limit(1);
+      return (row?.id as TurnId | undefined) ?? null;
     },
     async updateStatus(id, input: UpdateTurnStatusInput) {
       const patch: {

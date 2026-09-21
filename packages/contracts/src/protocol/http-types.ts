@@ -379,8 +379,6 @@ export type SendMessageRequest = {
   text: string;
   blocks: unknown;
   references: SubmittedReference[];
-  /** Client connection token from the WebSocket `connected` frame; rejects starts from stale sockets. */
-  connectionToken?: string;
   /** Writer-picked skill slugs for this Send. Missing or empty means none. */
   activatedSkillSlugs?: string[];
 };
@@ -398,7 +396,8 @@ export type ThreadAvailableSkillsResponse = {
 export type SendMessageResponse = {
   threadId: string;
   userTurnId: string;
-  assistantTurnId: string;
+  /** The live run's assistant turn on a merged send; null for a fresh run. */
+  assistantTurnId: string | null;
   /** Pre-start event position; the client subscription replays events strictly after it. */
   resumeAfterSeq: string;
   /**

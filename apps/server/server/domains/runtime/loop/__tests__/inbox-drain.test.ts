@@ -1,8 +1,9 @@
 /** Loop-level inbox drain: batch delivery, request-only rendering, and the final-claim continuation. */
 
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
+import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.js";
 import { createInMemoryProjectRepository } from "../../../projects/index.js";
 import { createInMemoryRepositories } from "../../../threads/index.js";
 import {
@@ -17,8 +18,10 @@ import type {
   Message,
   StreamEvent,
 } from "../../gateway/index.js";
+import { activatedSkillMetadata } from "../activated-skills.js";
 import { createOrchestrator } from "../orchestrator.js";
 import type { MessageDraft } from "../ports.js";
+import type { ReferenceReader } from "../reference-context.js";
 import { NoPendingWakeError } from "../run-turn-port.js";
 import { gatewayStubDefaults } from "./test-gateway.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
@@ -67,6 +70,62 @@ function notice(key: string, threadId: ThreadId): MessageDraft {
   };
 }
 
+/**
+ * Mirrors the writer producer's persist-at-enqueue: the user turn with its
+ * activated-skill metadata, its blocks, and the inbox `message` all share one id.
+ */
+async function persistWriterSend(input: {
+  repos: ReturnType<typeof createInMemoryRepositories>;
+  inbox: ReturnType<typeof createInMemoryInbox>;
+  threadId: ThreadId;
+  text: string;
+  activatedSkillSlugs?: readonly string[];
+  reference?: { documentId: string; uri: string; text: string };
+}): Promise<TurnId> {
+  const turnId = crypto.randomUUID() as TurnId;
+  const leafTurnId = (await input.repos.threads.findById(input.threadId))?.activeLeafTurnId ?? null;
+  await input.repos.turns.create({
+    id: turnId,
+    threadId: input.threadId,
+    prevTurnId: leafTurnId,
+    role: "user",
+    status: "complete",
+    metadata: activatedSkillMetadata(input.activatedSkillSlugs ?? []),
+  });
+  await input.repos.blocks.create({
+    id: `${turnId}:0`,
+    turnId,
+    blockType: "text",
+    sequence: 0,
+    textContent: input.text,
+  });
+  if (input.reference) {
+    await input.repos.blocks.create({
+      id: `${turnId}:1`,
+      turnId,
+      blockType: "text",
+      sequence: 1,
+      textContent: input.reference.text,
+      // No `read` result: the run must read it when the message is adopted.
+      content: {
+        type: "reference",
+        text: input.reference.text,
+        documentId: input.reference.documentId,
+        uri: input.reference.uri,
+      },
+    });
+  }
+  await input.inbox.enqueue({
+    id: turnId,
+    threadId: input.threadId,
+    intent: "message",
+    provenance: { kind: "writer", actorId: USER_ID },
+    body: { kind: "text", text: input.text },
+    idempotencyKey: turnId,
+  });
+  return turnId;
+}
+
 function messageTexts(messages: readonly Message[]): string[] {
   return messages.flatMap((message) =>
     message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
@@ -89,6 +148,9 @@ async function setup(
     onStream?: (call: number) => Promise<void>;
     results?: GenerateResult[];
     errorAtCall?: number;
+    /** Seeds an account-installed skill so `/skill` activation can resolve a body. */
+    skill?: { slug: string; name: string; description: string; body: string };
+    referenceReader?: ReferenceReader;
   } = {},
 ) {
   const projectRepo = createInMemoryProjectRepository();
@@ -103,6 +165,10 @@ async function setup(
     reason: "inbox drain test",
   });
   const inbox = createInMemoryInbox();
+  const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
+  if (options.skill) {
+    await accountSkillInstalls.insert({ ownerUserId: USER_ID as never, ...options.skill });
+  }
   const requests: GenerateRequest[] = [];
   let call = 0;
   const gateway: Gateway = {
@@ -135,6 +201,8 @@ async function setup(
       inbox,
       threadLock: createInMemoryThreadLock(),
       runAuthority: createInMemoryRunAuthority(),
+      accountSkillInstalls,
+      ...(options.referenceReader ? { referenceReader: options.referenceReader } : {}),
     }),
   );
   return { thread, inbox, requests, orchestrator, repos };
@@ -196,6 +264,72 @@ describe("inbox drain", () => {
     expect(requests).toHaveLength(2);
     expect(messageTexts(requests[1].messages)).toContain("late steer");
     expect(await inbox.claimPending(thread.id)).toEqual([]);
+  });
+
+  it("inlines a mid-run writer-activated skill body on the adopted message", async () => {
+    const { thread, inbox, requests, orchestrator, repos } = await setup({
+      skill: {
+        slug: "writing-principles",
+        name: "Writing Principles",
+        description: "Craft rules for revision",
+        body: "Show, do not tell.",
+      },
+      onStream: async (call) => {
+        if (call === 1) {
+          await persistWriterSend({
+            repos,
+            inbox,
+            threadId: thread.id,
+            text: "also tighten the dialogue",
+            activatedSkillSlugs: ["writing-principles"],
+          });
+        }
+      },
+    });
+
+    await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "hello" }));
+
+    expect(requests).toHaveLength(2);
+    const texts = messageTexts(requests[1]?.messages ?? []);
+    expect(texts.some((text) => text.includes("also tighten the dialogue"))).toBe(true);
+    expect(texts.some((text) => text.includes("skill invoked: writing-principles"))).toBe(true);
+    expect(texts.some((text) => text.includes("Show, do not tell."))).toBe(true);
+  });
+
+  it("reads a mid-run adopted message's references into the request and the turn", async () => {
+    const documentId = "33333333-3333-4333-8333-333333333333";
+    const uri = "uploads://@/gate-map.png";
+    let adoptedTurnId: TurnId | undefined;
+    const { thread, inbox, requests, orchestrator, repos } = await setup({
+      referenceReader: {
+        async read(reference) {
+          return { uri: reference.uri, pages: [1] };
+        },
+      },
+      onStream: async (call) => {
+        if (call === 1) {
+          adoptedTurnId = await persistWriterSend({
+            repos,
+            inbox,
+            threadId: thread.id,
+            text: "compare with [[Gate Map]]",
+            reference: { documentId, uri, text: "[[Gate Map]]" },
+          });
+        }
+      },
+    });
+
+    await collect(await orchestrator.runTurn({ threadId: thread.id, userText: "hello" }));
+
+    expect(requests).toHaveLength(2);
+    const texts = messageTexts(requests[1]?.messages ?? []);
+    expect(texts.some((text) => text.includes(`Reference read result for ${uri}`))).toBe(true);
+
+    const blocks = await repos.blocks.listByTurn(adoptedTurnId as TurnId);
+    const referenceBlock = blocks.find(
+      (block) => (block.content as { type?: string } | null)?.type === "reference",
+    );
+    expect(referenceBlock?.content).toMatchObject({ read: { result: { uri, pages: [1] } } });
   });
 
   it("persists a drained message as a user turn the next iteration still sees", async () => {
@@ -365,5 +499,30 @@ describe("drain-only start", () => {
     const turns = await repos.turns.listByThread(thread.id);
     expect(turns.filter((turn) => turn.id === inboxMessage.id)).toHaveLength(1);
     expect(await inbox.claimPending(thread.id)).toEqual([]);
+  });
+
+  it("inlines the writer-activated skill body read back off the persisted turn", async () => {
+    const { thread, inbox, requests, orchestrator, repos } = await setup({
+      skill: {
+        slug: "writing-principles",
+        name: "Writing Principles",
+        description: "Craft rules for revision",
+        body: "Show, do not tell.",
+      },
+    });
+    await persistWriterSend({
+      repos,
+      inbox,
+      threadId: thread.id,
+      text: "help me revise this scene",
+      activatedSkillSlugs: ["writing-principles"],
+    });
+
+    await collect(await orchestrator.runTurn({ threadId: thread.id, drain: true }));
+
+    expect(requests).toHaveLength(1);
+    const texts = messageTexts(requests[0]?.messages ?? []);
+    expect(texts.some((text) => text.includes("skill invoked: writing-principles"))).toBe(true);
+    expect(texts.some((text) => text.includes("Show, do not tell."))).toBe(true);
   });
 });

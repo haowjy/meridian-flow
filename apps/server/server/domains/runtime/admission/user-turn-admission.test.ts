@@ -4,7 +4,7 @@ import type { UserTurnAdmissionInput } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import type { ProjectContextAvailabilityPort } from "../../context/index.js";
 import { createInMemoryThreadRunOwnership } from "../loop/thread-run-ownership.js";
-import type { AdmissionRecord, AdmissionTurnStarter } from "./user-turn-admission.js";
+import type { AdmissionRecord, AdmissionWriterProducer } from "./user-turn-admission.js";
 import {
   AdmissionConflictError,
   canonicalAdmissionFingerprint,
@@ -26,7 +26,6 @@ function input(overrides: Partial<UserTurnAdmissionInput> = {}): UserTurnAdmissi
     actorUserId: actor,
     threadId,
     submissionId: "submission-1",
-    connectionToken: "socket-a",
     text: `see ${occurrenceText}${occurrenceText}`,
     blocks: [
       { type: "text", text: "see " },
@@ -88,8 +87,8 @@ function harness(
 ) {
   const lookup = vi.fn(async () => existing);
   let reservedFingerprint = "";
-  let capturedStart: Parameters<AdmissionTurnStarter["start"]>[0] | null = null;
-  const starter: AdmissionTurnStarter["start"] = async (start) => {
+  let capturedStart: Parameters<AdmissionWriterProducer["enqueue"]>[0] | null = null;
+  const producer: AdmissionWriterProducer["enqueue"] = async (start) => {
     capturedStart = start;
     return accepted();
   };
@@ -128,12 +127,12 @@ function harness(
     threadProject,
     verifyDraftUpload: vi.fn(async () => draftUploadMatches),
     authorizeActivatedSkills,
-    starter: { start: starter },
+    producer: { enqueue: producer },
   });
   return {
     service,
     lookup,
-    starter,
+    producer,
     availability,
     threadProject,
     runOwnership,
@@ -224,16 +223,6 @@ describe("UserTurnAdmission", () => {
         { documentId, uri, purpose: "draft-upload", intakeId: "intake" },
       ]),
     ).toThrow(InvalidAdmissionError);
-  });
-
-  it("fingerprints canonical identity and excludes the connection token", () => {
-    const parsed = parseUserMessageBlocks(input().blocks, input().text);
-    const first = canonicalAdmissionFingerprint({ ...input(), blocks: parsed });
-    const second = canonicalAdmissionFingerprint({
-      ...input({ connectionToken: "socket-b" }),
-      blocks: parsed,
-    });
-    expect(first).toBe(second);
   });
 
   it("replays a complete accepted result before project, authorization, or busy work", async () => {

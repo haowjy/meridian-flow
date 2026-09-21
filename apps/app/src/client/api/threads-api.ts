@@ -47,7 +47,6 @@ export type AppendUserMessageInput = {
   text: string;
   blocks: readonly import("@meridian/contracts/protocol").UserMessageBlock[];
   references: readonly import("@meridian/contracts/protocol").SubmittedReference[];
-  connectionToken?: string;
   activatedSkillSlugs?: readonly string[];
 };
 

@@ -131,20 +131,7 @@ export function buildContext(input: BuildContextInput): {
   for (const turn of input.turns) {
     const turnBlocks = blocksByTurn.get(turn.id as string) ?? [];
     if (turn.role === "user") {
-      const parts = turnBlocksToContentParts(turnBlocks, ["text", "image", "file"]);
-      const included = new Set<string>();
-      for (const block of turnBlocks) {
-        const reference = referenceOccurrenceContent(block);
-        if (!reference?.read) continue;
-        const key = `${reference.documentId}\0${reference.uri}`;
-        if (included.has(key)) continue;
-        included.add(key);
-        parts.push(
-          text(
-            `\n\nReference read result for ${reference.uri}:\n${JSON.stringify(reference.read.result)}`,
-          ),
-        );
-      }
+      const parts = userTurnContentParts(turnBlocks);
       if (parts.length > 0) {
         messages.push({ role: "user", content: parts });
       }
@@ -249,6 +236,30 @@ function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]
     if (!allowed.includes(block.blockType)) continue;
     const part = blockToContentPart(block);
     if (part) parts.push(part);
+  }
+  return parts;
+}
+
+/**
+ * The model-facing content parts for one user turn: its allowed blocks plus any
+ * persisted reference read results. Shared by the history projection and the
+ * mid-run inbox adoption, so a writer message already persisted as a turn
+ * renders identically whether it is read from history or claimed live.
+ */
+export function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
+  const parts = turnBlocksToContentParts([...blocks], ["text", "image", "file"]);
+  const included = new Set<string>();
+  for (const block of blocks) {
+    const reference = referenceOccurrenceContent(block);
+    if (!reference?.read) continue;
+    const key = `${reference.documentId}\0${reference.uri}`;
+    if (included.has(key)) continue;
+    included.add(key);
+    parts.push(
+      text(
+        `\n\nReference read result for ${reference.uri}:\n${JSON.stringify(reference.read.result)}`,
+      ),
+    );
   }
   return parts;
 }

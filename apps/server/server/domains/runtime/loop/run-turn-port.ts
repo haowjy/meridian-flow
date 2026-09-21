@@ -35,7 +35,6 @@ export interface WriterRunTurnInput extends RunTurnBase {
   activatedSkillSlugs?: readonly string[];
   /** Hidden metadata stamped on the user turn; never model-facing here. */
   userTurnMetadata?: JsonValue | null;
-  onStartPersisted?: (turns: { userTurnId: TurnId; assistantTurnId: TurnId }) => Promise<void>;
 }
 
 /**
