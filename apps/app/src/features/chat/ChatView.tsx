@@ -224,7 +224,7 @@ export function ChatView({
         surfaceRef={chatSurfaceRef}
         header={
           runningSubagents.length > 0 ? (
-            <RunningSubagentsStrip descendants={runningSubagents} />
+            <RunningSubagentsStrip selfStatus={activity.status} descendants={runningSubagents} />
           ) : null
         }
         footer={

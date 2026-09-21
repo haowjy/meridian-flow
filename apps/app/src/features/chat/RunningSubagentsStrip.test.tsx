@@ -67,16 +67,19 @@ describe("RunningSubagentsStrip", () => {
   });
 
   it("renders nothing when there are no active descendants", async () => {
-    await act(async () => root.render(<RunningSubagentsStrip descendants={[]} />));
+    await act(async () =>
+      root.render(<RunningSubagentsStrip selfStatus={{ kind: "asleep" }} descendants={[]} />),
+    );
     expect(host.textContent?.trim()).toBe("");
   });
 
-  it("renders recursive rows and opens the clicked child", async () => {
+  it("renders recursive rows with live status and opens the clicked child", async () => {
     const openThread = vi.fn();
     await act(async () =>
       root.render(
         <ChatThreadNavigationProvider onOpenThread={openThread}>
           <RunningSubagentsStrip
+            selfStatus={{ kind: "asleep" }}
             descendants={[
               node({ threadId: "child-a", agentName: "Critic", title: "Review the chapter" }),
               node({
@@ -84,6 +87,7 @@ describe("RunningSubagentsStrip", () => {
                 parentThreadId: "child-a",
                 depth: 2,
                 agentName: "Reader",
+                status: { kind: "awake", phase: "waiting", cancelRequested: false },
               }),
             ]}
           />
@@ -94,6 +98,9 @@ describe("RunningSubagentsStrip", () => {
     expect(host.textContent).toContain("2 subagents running");
     expect(host.textContent).toContain("Critic");
     expect(host.textContent).toContain("Reader");
+    // The viewed thread is asleep while its children run; the grandchild waits.
+    expect(host.textContent).toContain("Asleep");
+    expect(host.textContent).toContain("Waiting");
 
     await act(async () => buttonContaining("Reader")?.click());
     expect(openThread).toHaveBeenCalledWith("grandchild");
@@ -103,6 +110,7 @@ describe("RunningSubagentsStrip", () => {
     await act(async () =>
       root.render(
         <RunningSubagentsStrip
+          selfStatus={{ kind: "asleep" }}
           descendants={[node({ threadId: "child-a", agentName: "Critic" })]}
         />,
       ),
