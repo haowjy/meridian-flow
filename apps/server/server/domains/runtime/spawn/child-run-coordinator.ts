@@ -367,6 +367,11 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       body: { kind: "text", text: request.prompt },
       idempotencyKey: `thread-message:${request.toolCallId}`,
     });
+    // The target drives its own run in its own process, so no lease is held here
+    // and no activity frame fires until the driver's terminal append. A viewer
+    // therefore cannot see the target `awake` at drive time; the strip surfaces
+    // it only once the run emits. Follow-up: have the woken process append
+    // activity when it acquires its lease.
     return {
       status: "background",
       handle: target.ref ?? "",
