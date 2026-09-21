@@ -20,6 +20,7 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
+import { activatedSkillMetadata } from "../loop/activated-skills.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
 import type { ThreadedInbox } from "../loop/threaded-inbox.js";
 import type { RunningTurnView } from "../loop/turn-runner.js";
@@ -100,7 +101,10 @@ export function createWriterTurnProducer(deps: {
           threadId,
           userTurnId,
           userBlocks: input.blocks,
-          userTurnMetadata: input.userTurnMetadata,
+          userTurnMetadata:
+            activatedSkillMetadata(input.admission.activatedSkillSlugs ?? []) ??
+            input.userTurnMetadata ??
+            null,
           enqueue: () =>
             deps.threadedInbox
               .enqueue({
