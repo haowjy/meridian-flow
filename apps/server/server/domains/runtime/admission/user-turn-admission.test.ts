@@ -26,7 +26,6 @@ function input(overrides: Partial<UserTurnAdmissionInput> = {}): UserTurnAdmissi
     actorUserId: actor,
     threadId,
     submissionId: "submission-1",
-    connectionToken: "socket-a",
     text: `see ${occurrenceText}${occurrenceText}`,
     blocks: [
       { type: "text", text: "see " },
@@ -224,16 +223,6 @@ describe("UserTurnAdmission", () => {
         { documentId, uri, purpose: "draft-upload", intakeId: "intake" },
       ]),
     ).toThrow(InvalidAdmissionError);
-  });
-
-  it("fingerprints canonical identity and excludes the connection token", () => {
-    const parsed = parseUserMessageBlocks(input().blocks, input().text);
-    const first = canonicalAdmissionFingerprint({ ...input(), blocks: parsed });
-    const second = canonicalAdmissionFingerprint({
-      ...input({ connectionToken: "socket-b" }),
-      blocks: parsed,
-    });
-    expect(first).toBe(second);
   });
 
   it("replays a complete accepted result before project, authorization, or busy work", async () => {

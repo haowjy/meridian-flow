@@ -4,7 +4,7 @@
  * of appending a second turn.
  */
 
-import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import type { Notice, NoticePort } from "../../notices/index.js";
 import { createInMemoryProjectRepository } from "../../projects/index.js";
@@ -245,5 +245,69 @@ describe("drainInbox", () => {
     expect(drain.persistedEvents).toEqual([]);
     expect(drain.ackIds).toEqual([claimedMessage.id]);
     expect(await repos.turns.listByThread(thread.id)).toHaveLength(1);
+  });
+
+  it("renders an adopted mid-run message from its persisted blocks, not the plain body", async () => {
+    const { repos, eventWriter, inbox, thread } = await seed();
+    const enqueued = await inbox.enqueue(message("steer body", thread.id));
+    // Simulate the writer producer: the turn and its rich blocks are durable at
+    // enqueue, but the live run's accumulator predates them, so `knownTurnIds`
+    // does not contain the turn.
+    await repos.turns.create({
+      id: enqueued.id as TurnId,
+      threadId: thread.id,
+      prevTurnId: null,
+      role: "user",
+      status: "complete",
+    });
+    await repos.blocks.create({
+      id: "block-reference",
+      turnId: enqueued.id,
+      blockType: "text",
+      sequence: 0,
+      textContent: "[[Gate Map]]",
+      content: {
+        type: "reference",
+        text: "[[Gate Map]]",
+        documentId: "33333333-3333-4333-8333-333333333333",
+        uri: "uploads://@/gate-map.png",
+        read: { result: { pages: [1] } },
+      },
+      status: "complete",
+    });
+    await repos.blocks.create({
+      id: "block-image",
+      turnId: enqueued.id,
+      blockType: "image",
+      sequence: 1,
+      content: {
+        type: "image_reference",
+        documentId: "33333333-3333-4333-8333-333333333333",
+        uri: "uploads://@/gate-map.png",
+      },
+      status: "complete",
+    });
+
+    const drain = await drainInbox({
+      persistence: { repos, eventWriter },
+      inbox,
+      notices: noopNotices(),
+      threadId: thread.id,
+      messages: [],
+      knownTurnIds: new Set(),
+      expectedLeafTurnId: enqueued.id as TurnId,
+    });
+
+    expect(drain.persistedEvents).toEqual([]);
+    expect(drain.turns.map((turn) => turn.id)).toEqual([enqueued.id]);
+    expect(drain.rendered).toHaveLength(1);
+    const parts = drain.rendered[0]?.content ?? [];
+    const texts = parts.flatMap((part) => (part.type === "text" ? [part.text] : []));
+    const modelText = texts.join("\n");
+    expect(modelText).toContain("[[Gate Map]]");
+    expect(modelText).toContain("Reference read result for uploads://@/gate-map.png");
+    expect(modelText).toContain('"pages":[1]');
+    expect(parts.some((part) => part.type !== "text")).toBe(true);
+    expect(modelText).not.toContain("steer body");
   });
 });

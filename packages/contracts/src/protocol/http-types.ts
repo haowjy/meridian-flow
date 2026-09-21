@@ -376,8 +376,6 @@ export type SendMessageRequest = {
   text: string;
   blocks: unknown;
   references: SubmittedReference[];
-  /** Client connection token from the WebSocket `connected` frame; rejects starts from stale sockets. */
-  connectionToken?: string;
   /** Writer-picked skill slugs for this Send. Missing or empty means none. */
   activatedSkillSlugs?: string[];
 };

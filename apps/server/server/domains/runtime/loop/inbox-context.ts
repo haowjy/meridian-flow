@@ -32,7 +32,7 @@ import { system, user } from "../gateway/helpers/messages.js";
 import type { Message } from "../gateway/index.js";
 import { spawnHelperCardProps } from "../spawn/spawn-output.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { componentModelText } from "./context-builder.js";
+import { componentModelText, userTurnContentParts } from "./context-builder.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { Inbox, InboxMessage } from "./ports.js";
@@ -74,6 +74,7 @@ export async function drainInbox(input: {
   const fresh: InboxMessage[] = [];
   const adoptedTurns: Turn[] = [];
   const adoptedBlocks: Block[] = [];
+  const adoptedBlocksByMessageId = new Map<string, Block[]>();
   for (const message of batch) {
     if (message.intent !== "message") {
       renderable.push(message);
@@ -84,18 +85,22 @@ export async function drainInbox(input: {
     // A message whose turn is already durable was persisted by the writer
     // producer at enqueue. The drain start sees it through `knownTurnIds`; a
     // mid-run drain does not, so it recognizes the existing turn here, skips the
-    // second append, and carries the turn into the run's accumulator.
+    // second append, and carries the turn into the run's accumulator. The
+    // adopted blocks render the request, not the plain inbox body: rich content
+    // (images, reference reads, skill anchors) lives on the persisted turn.
     const existing = await input.persistence.repos.turns.findById(message.id as TurnId);
     if (existing) {
+      const blocks = await input.persistence.repos.blocks.listByTurn(existing.id);
       adoptedTurns.push(existing);
-      adoptedBlocks.push(...(await input.persistence.repos.blocks.listByTurn(existing.id)));
+      adoptedBlocks.push(...blocks);
+      adoptedBlocksByMessageId.set(message.id, blocks);
       renderable.push(message);
       continue;
     }
     renderable.push(message);
     fresh.push(message);
   }
-  const rendered = renderInboxBatch(input.messages, renderable);
+  const rendered = renderInboxBatch(input.messages, renderable, adoptedBlocksByMessageId);
   // Chain fresh messages from the durable leaf so a pre-persisted writer turn
   // (adopted above) is not forked past.
   const persistLeafTurnId = fresh.some((message) => message.intent === "message")
@@ -125,6 +130,7 @@ export async function drainInbox(input: {
 export function renderInboxBatch(
   messages: readonly Message[],
   batch: readonly InboxMessage[],
+  adoptedBlocksByMessageId: ReadonlyMap<string, readonly Block[]> = new Map(),
 ): { messages: Message[]; notices: Notice[] } {
   const rendered = [...messages];
   const notices: Notice[] = [];
@@ -138,6 +144,14 @@ export function renderInboxBatch(
     if (message.body.kind === "report") {
       const modelText = componentModelText(reportCardContent(message, message.id as TurnId));
       if (modelText) rendered.push(system(modelText));
+      continue;
+    }
+    // A message whose turn is already durable renders that turn's projection;
+    // the plain body would drop images and persisted reference reads.
+    const adopted = adoptedBlocksByMessageId.get(message.id);
+    if (adopted) {
+      const parts = userTurnContentParts(adopted);
+      if (parts.length > 0) rendered.push({ role: "user", content: parts });
     } else {
       rendered.push(user(inboxMessageText(message)));
     }

@@ -39,7 +39,6 @@ export type UserTurnAdmissionInput = {
   actorUserId: UserId;
   threadId: ThreadId;
   submissionId: string;
-  connectionToken?: string;
   text: string;
   blocks: unknown;
   references: readonly SubmittedReference[];

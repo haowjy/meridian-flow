@@ -41,6 +41,7 @@ describe("writer enqueue through the drain", () => {
     const producer = createWriterTurnProducer({
       persistence: { repos: rig.repos, eventWriter: rig.hub },
       hub: rig.hub,
+      runner: rig.runner,
       turns: rig.repos.turns,
       threadedInbox: createThreadedInbox({
         inbox: rig.inbox,
