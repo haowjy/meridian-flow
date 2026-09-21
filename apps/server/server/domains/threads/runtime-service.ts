@@ -5,7 +5,8 @@ import type { Database } from "@meridian/database";
 import { eventJournal, projects, threads, threadWorks } from "@meridian/database";
 import { and, eq, isNull } from "drizzle-orm";
 import { HTTPError } from "nitro/h3";
-import type { ThreadStatusReader } from "./ports/index.js";
+import { readThreadActivity } from "./domain/thread-activity.js";
+import type { ThreadRepository, ThreadStatusReader } from "./ports/index.js";
 
 export type ThreadRuntimeService = ReturnType<typeof createThreadRuntimeService>;
 
@@ -21,6 +22,8 @@ export function createThreadRuntimeService(deps: {
   db: Database;
   /** Supplies the lease-derived run status; the runtime authority satisfies it. */
   statusReader: ThreadStatusReader;
+  /** Supplies the descendant walk for the per-thread activity read. */
+  threads: Pick<ThreadRepository, "listDescendants">;
 }) {
   async function requireOwnedThread(threadId: ThreadId, userId: UserId): Promise<OwnedThread> {
     const [thread] = await deps.db
@@ -58,6 +61,10 @@ export function createThreadRuntimeService(deps: {
       threadId,
       status: await deps.statusReader.read(threadId),
       runningTurnId: await deps.statusReader.readRunningTurnId(threadId),
+      activity: await readThreadActivity(
+        { threads: deps.threads, statusReader: deps.statusReader },
+        threadId,
+      ),
       resumeAfterSeq: headSeq.toString(),
     };
   }

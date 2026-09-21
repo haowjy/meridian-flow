@@ -85,6 +85,32 @@ export type ThreadOriginType = "spawn" | "handoff" | "fork";
 export type SpawnStatus = "running" | "succeeded" | "failed" | "cancelled";
 export type PriceSource = "computed" | "provider_reported" | "configured_rate" | "unknown";
 
+/** One live-or-recent descendant thread in a thread's spawn subtree. Derived; never persisted as a block. */
+export type ThreadActivityNode = {
+  threadId: string;
+  /** Immediate spawner in this subtree. */
+  parentThreadId: string | null;
+  rootThreadId: string;
+  /** threads.spawn_depth. */
+  depth: number;
+  /** Server-assigned `pN` handle. */
+  ref: string | null;
+  title: string | null;
+  /** Display name from the retained Agent definition. */
+  agentName: string | null;
+  /** Durable child lifecycle. */
+  spawnStatus: SpawnStatus | null;
+  /** Derived from the live lease; absent lease reads `asleep`. */
+  status: ThreadStatus;
+  /** Parent turn that spawned this thread (transcript anchor). */
+  originTurnId: string | null;
+};
+
+/** Recursive activity read: the full subtree of one viewed thread, ordered (depth, createdAt). */
+export type ThreadActivity = {
+  descendants: ThreadActivityNode[];
+};
+
 /**
  * Canonical event-name registry for the thread journal and live event hub.
  *

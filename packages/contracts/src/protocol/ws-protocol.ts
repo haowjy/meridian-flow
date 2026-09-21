@@ -113,10 +113,29 @@ const threadStatusSchema: z.ZodType<import("../threads/index.js").ThreadStatus> 
   }),
 ]);
 
+const threadActivityNodeSchema: z.ZodType<import("../threads/index.js").ThreadActivityNode> =
+  z.object({
+    threadId: z.string().min(1),
+    parentThreadId: z.string().min(1).nullable(),
+    rootThreadId: z.string().min(1),
+    depth: z.number().int(),
+    ref: z.string().min(1).nullable(),
+    title: z.string().nullable(),
+    agentName: z.string().nullable(),
+    spawnStatus: z.enum(["running", "succeeded", "failed", "cancelled"]).nullable(),
+    status: threadStatusSchema,
+    originTurnId: z.string().min(1).nullable(),
+  });
+
+const threadActivitySchema: z.ZodType<import("../threads/index.js").ThreadActivity> = z.object({
+  descendants: z.array(threadActivityNodeSchema),
+});
+
 const threadLiveStateSchema: z.ZodType<ThreadLiveState> = z.object({
   threadId: z.string().min(1),
   status: threadStatusSchema,
   runningTurnId: z.string().min(1).nullable(),
+  activity: threadActivitySchema,
   resumeAfterSeq: wsEventSeqSchema,
 });
 

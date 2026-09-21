@@ -345,6 +345,7 @@ export function createInMemoryRepositories(
             title: thread.title,
             agentName: projectThread(thread).agentName ?? null,
             spawnStatus: thread.spawnStatus,
+            originTurnId: thread.originTurnId ?? null,
           });
           frontier.push(thread.id);
         }
