@@ -66,6 +66,26 @@ const spawnCard = (sequence: number) =>
   });
 const childReport = (sequence: number) =>
   block({ blockType: "custom", sequence, content: { kind: "child-report", props: {} } });
+const threadMessageUse = (sequence: number) =>
+  block({
+    blockType: "tool_use",
+    sequence,
+    content: {
+      toolCallId: `thread-message-${sequence}`,
+      toolName: "thread_message",
+      input: { handle: "p3", prompt: "keep going" },
+    },
+  });
+const threadMessageResult = (sequence: number, useSequence: number) =>
+  block({
+    blockType: "tool_result",
+    sequence,
+    content: {
+      toolCallId: `thread-message-${useSequence}`,
+      toolName: "thread_message",
+      output: { status: "completed", report: { threadId: "child-1", summary: "Done." } },
+    },
+  });
 
 const kinds = (items: ReturnType<typeof partitionTurn>) => items.map((item) => item.kind);
 
@@ -145,6 +165,19 @@ describe("partitionTurn", () => {
 
     expect(kinds(items)).toEqual(["artifact"]);
     expect(items[0]).toMatchObject({ block: { sequence: 3 } });
+  });
+
+  it("drops hidden thread_message protocol and keeps only the card", () => {
+    const items = partitionTurn([
+      threadMessageUse(1),
+      threadMessageResult(2, 1),
+      spawnCard(3),
+      prose(4, "Continuing."),
+    ]);
+
+    expect(kinds(items)).toEqual(["artifact", "text"]);
+    expect(items[0]).toMatchObject({ block: { sequence: 3 } });
+    expect(items[1]).toMatchObject({ block: { sequence: 4 } });
   });
 
   it("drops empty reasoning and does not let it split a process run", () => {

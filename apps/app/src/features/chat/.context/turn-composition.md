@@ -36,8 +36,8 @@ back *above* it, and prose never rolls into a fold.
    to the open run as an `activity` run. Adjacent tools pair into ToolViews at
    render time.
 3. **Hidden protocol** — a `tool_use`/`tool_result` whose row a custom card
-   already surfaces (`ask_user`, `spawn`, `return_result`) — is dropped, not
-   folded.
+   already surfaces (`ask_user`, `spawn`, `thread_message`, `return_result`) — is
+   dropped, not folded.
 4. **An `image` block and a `file` block are artifacts** (`isArtifactBlock`).
 5. **Text** flushes the open run and emits a `text` item. Empty text is dropped.
 6. **Custom cards** flush the open run and emit an `artifact` item.
@@ -94,9 +94,11 @@ the model; the writer never sees their rows. Parent spawn cards render only from
 the helper-result custom block.
 
 Foreground persists a running helper-result card before the child runs, so it
-appears as soon as the parent turn holds the block. Background posts the card
-on a later system turn after the child completes; the parent shows nothing
-while that child runs.
+appears as soon as the parent turn holds the block. Background has no such
+persisted card while the child runs; the client synthesizes one from the
+`meridian.background.started` event (`reduce-background-event.ts`), attached to
+the parent turn as a running `helper-result` custom block, and removes it on
+`completed`/`failed`. The durable report then arrives on its own system turn.
 
 ### Interrupt response settlement
 
@@ -179,14 +181,12 @@ AssistantTurn.tsx
 `tool-renderers.tsx` is the registry for tool-name-specific presentation. Registry
 keys must be real runtime tool names from
 `apps/server/server/domains/runtime/tools/`. The current runtime surface is
-`write`, `work`, `ls`, `search`, `ask_user`, `spawn`, `continue`, and
-`return_result`. `ask_user`, `spawn`, and `return_result` render through custom
-cards (`choice`/`form`/`free-text`, `helper-result` → `SpawnReportCard`, and
-`child-report` → `ChildReportBlock`), all built on the shared `ArtifactCard` shell
-(`icon`/`tone`/`title`/`door`/`hint`/children). Their tool rows are hidden.
-`continue` reuses the `helper-result` card, but `tool-view-visibility.ts` does
-not yet hide its protocol rows, so it currently falls through to the bare-name
-process row (tracked in `.context/TODO.md`). Card `artifacts[]` render through
+`write`, `work`, `ls`, `search`, `ask_user`, `spawn`, `thread_message`, and
+`return_result`. `ask_user`, `spawn`, `thread_message`, and `return_result`
+render through custom cards (`choice`/`form`/`free-text`, `helper-result` →
+`SpawnReportCard`, and `child-report` → `ChildReportBlock`), all built on the
+shared `ArtifactCard` shell (`icon`/`tone`/`title`/`door`/`hint`/children). Their
+tool rows are hidden. Card `artifacts[]` render through
 the shared `ArtifactGrid` (`ArtifactGrid.tsx`), reused by `FormBlock`,
 `SpawnReportCard`, and `ChildReportBlock`.
 Process tools (`write`, `work`, `ls`, `search`) render as `ActivityRow`.
