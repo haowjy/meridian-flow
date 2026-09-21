@@ -174,6 +174,7 @@ if (!RUN) {
         producer: createWriterTurnProducer({
           persistence: { repos, eventWriter: hub },
           hub,
+          runner: { getRunningTurn: () => null },
           turns: repos.turns,
           threadedInbox,
           workContextDelivery: {
@@ -222,6 +223,67 @@ if (!RUN) {
         kind: "already-accepted",
         snapshotFloorNextSeq: accepted.snapshotFloorNextSeq,
       });
+    });
+
+    it("rolls the writer turn, inbox row, and journal back on an admission winner", async () => {
+      const hub = createThreadEventHub({
+        journalWriter: createDrizzleEventJournalWriter(firstDb),
+        journalReader: createDrizzleEventJournalReader(firstDb),
+        eventSink: createNoopEventSink(),
+      });
+      const producer = createWriterTurnProducer({
+        persistence: { repos, eventWriter: hub },
+        hub,
+        runner: { getRunningTurn: () => null },
+        turns: repos.turns,
+        threadedInbox: createThreadedInbox({
+          inbox: createDrizzleInbox(firstDb),
+          threadLock: createDrizzleThreadLock(firstDb),
+          runStarter: { async start() {} },
+          schedulePostCommit: (task) => void task(),
+        }),
+        workContextDelivery: { async beforeTurn() {} },
+        records: {
+          ...records,
+          async accept() {
+            return {
+              kind: "winner" as const,
+              record: {
+                state: "rejected" as const,
+                fingerprint: null,
+                code: "recovery_no_committed_turn",
+              },
+            };
+          },
+        },
+        consumeUploads: async () => undefined,
+        attachDocument: async () => undefined,
+      });
+
+      const result = await producer.enqueue({
+        admission: {
+          actorUserId: USER as never,
+          threadId: THREAD,
+          submissionId: "winner-rollback",
+          text: "late",
+          blocks: [{ type: "text" as const, text: "late" }],
+          references: [],
+        },
+        fingerprint: "fingerprint",
+        blocks: [{ type: "text" as const, text: "late" }],
+        references: [],
+      });
+
+      expect(result).toMatchObject({ kind: "rejected", code: "recovery_no_committed_turn" });
+      const turns = (await firstDb.select().from(schema.turns)).filter(
+        (turn) => turn.threadId === THREAD,
+      );
+      expect(turns).toHaveLength(0);
+      const inboxRows = (await firstDb.select().from(schema.threadInboxMessages)).filter(
+        (row) => row.threadId === THREAD,
+      );
+      expect(inboxRows).toHaveLength(0);
+      expect(await firstDb.select().from(schema.eventJournal)).toHaveLength(0);
     });
 
     it("persists ordered occurrences, replays their actual sparse cursor, and rolls the whole accepted settlement back together", async () => {

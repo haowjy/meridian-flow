@@ -66,6 +66,18 @@ export interface ChildRunRegistry {
 type RunningTurn = {
   controller: AbortController;
   assistantTurnId?: TurnId;
+  /**
+   * When ownership of the thread began. The admission producer scopes its
+   * setup-window assistant lookup to turns created at or after this instant, so
+   * a crash-orphaned non-terminal turn can never be mistaken for this run's.
+   */
+  startedAt: Date;
+};
+
+/** The liveness projection an admission producer may read: never durable status. */
+export type RunningTurnView = {
+  assistantTurnId: TurnId | null;
+  startedAt: Date;
 };
 
 type ChildRun = {
@@ -90,11 +102,11 @@ export function createTurnRunner(deps: {
   const childRunRegistry: ChildRunRegistry = {
     registerChild(parentThreadId, childThreadId, controller) {
       childRuns.set(childThreadId, { parentThreadId, controller, background: false });
-      running.set(childThreadId, { controller });
+      running.set(childThreadId, { controller, startedAt: new Date() });
     },
     registerBackgroundChild(parentThreadId, childThreadId, controller) {
       childRuns.set(childThreadId, { parentThreadId, controller, background: true });
-      running.set(childThreadId, { controller });
+      running.set(childThreadId, { controller, startedAt: new Date() });
     },
     unregisterChild(childThreadId) {
       childRuns.delete(childThreadId);
@@ -106,6 +118,7 @@ export function createTurnRunner(deps: {
         running.set(childThreadId, {
           controller: child.controller,
           assistantTurnId,
+          startedAt: running.get(childThreadId)?.startedAt ?? new Date(),
         });
       }
     },
@@ -140,8 +153,10 @@ export function createTurnRunner(deps: {
     }
 
     const controller = new AbortController();
+    const startedAt = new Date();
     running.set(input.threadId, {
       controller,
+      startedAt,
     });
     let lease: Lease | null = null;
     try {
@@ -174,6 +189,7 @@ export function createTurnRunner(deps: {
       running.set(input.threadId, {
         controller,
         assistantTurnId: handle.assistantTurnId,
+        startedAt,
       });
 
       void (async () => {
@@ -230,6 +246,18 @@ export function createTurnRunner(deps: {
 
   return {
     childRunRegistry,
+
+    /**
+     * The runner map is the single liveness authority for a thread run. Returns
+     * null when no run is owned here; `assistantTurnId` is null only during the
+     * setup window before the orchestrator publishes the container.
+     */
+    getRunningTurn(threadId: ThreadId): RunningTurnView | null {
+      const active = running.get(threadId);
+      return active
+        ? { assistantTurnId: active.assistantTurnId ?? null, startedAt: active.startedAt }
+        : null;
+    },
 
     getRunningTurnId(threadId: ThreadId): TurnId | null {
       return running.get(threadId)?.assistantTurnId ?? null;

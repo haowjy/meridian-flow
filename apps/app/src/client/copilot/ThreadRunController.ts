@@ -256,18 +256,6 @@ export class ThreadRunController {
     const lease = {};
     this.admissionLease = lease;
     try {
-      let connectionToken: string;
-      try {
-        connectionToken = await this.transport.awaitConnectionToken();
-      } catch (error) {
-        if (!fence()) return outcome("ambiguous");
-        // The POST never started: nothing was written, but the connection-token
-        // fetch can also fail after the user saw the row. Keep it recoverable.
-        announceError(errorMessage(error, "Failed to submit message"));
-        return outcome("ambiguous");
-      }
-      if (!fence()) return outcome("ambiguous");
-
       let result: Awaited<ReturnType<AppendUserMessageFn>>;
       try {
         result = await this.appendUserMessageFn({
@@ -277,7 +265,6 @@ export class ThreadRunController {
             text: envelope.text,
             blocks: envelope.blocks,
             references: envelope.references,
-            connectionToken,
             activatedSkillSlugs: envelope.activatedSkillSlugs,
           },
         });
@@ -324,13 +311,7 @@ export class ThreadRunController {
           result.snapshotFloorNextSeq,
         );
       }
-      const token = this.startRun(threadId, {
-        pruneAbandonedTurn: result.assistantTurnId == null,
-      });
-      this.attachLiveSubscription(threadId, token, {
-        after: result.resumeAfterSeq,
-        ...(result.assistantTurnId ? { expectedTurnId: result.assistantTurnId } : {}),
-      });
+      this.attachAcceptedRun(threadId, result);
       return outcome("accepted");
     } finally {
       // An old completion must not release a newer destination's admission lease.
@@ -441,13 +422,7 @@ export class ThreadRunController {
             result.snapshotFloorNextSeq,
           );
         }
-        const token = this.startRun(threadId, {
-          pruneAbandonedTurn: result.assistantTurnId == null,
-        });
-        this.attachLiveSubscription(threadId, token, {
-          after: result.resumeAfterSeq,
-          ...(result.assistantTurnId ? { expectedTurnId: result.assistantTurnId } : {}),
-        });
+        this.attachAcceptedRun(threadId, result);
         return outcome("accepted");
       }
       if (result.kind === "rejected" || result.kind === "retired") {
@@ -536,6 +511,34 @@ export class ThreadRunController {
     this.admissionLease = null;
     this.runToken += 1;
     this.cleanupActiveRun();
+  }
+
+  /**
+   * Attach after an accepted send. A merge (`assistantTurnId` non-null) continues
+   * the live run the client is already streaming: re-subscribing from the
+   * enqueue cursor would rewind past deltas the client has applied, so keep the
+   * running subscription. A fresh run (null) starts and resubscribes normally.
+   */
+  private attachAcceptedRun(
+    threadId: string,
+    result: { assistantTurnId: string | null; resumeAfterSeq: string },
+  ): void {
+    if (result.assistantTurnId && this.isAttachedToRun(threadId, result.assistantTurnId)) return;
+    const token = this.startRun(threadId, {
+      pruneAbandonedTurn: result.assistantTurnId == null,
+    });
+    this.attachLiveSubscription(threadId, token, {
+      after: result.resumeAfterSeq,
+      ...(result.assistantTurnId ? { expectedTurnId: result.assistantTurnId } : {}),
+    });
+  }
+
+  private isAttachedToRun(threadId: string, assistantTurnId: string): boolean {
+    const activeRun = this.activeRun;
+    if (!activeRun || activeRun.threadId !== threadId || !activeRun.unsubscribe) return false;
+    // Before RUN_STARTED the client's turn id is unknown; the subscription will
+    // publish it. Once known, it must match the run the server reports.
+    return activeRun.turnId === undefined || activeRun.turnId === assistantTurnId;
   }
 
   /** Release controller-lifetime subscriptions (provider unmount). */

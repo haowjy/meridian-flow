@@ -257,8 +257,17 @@ export interface TurnRepository {
   findById(id: TurnId): Promise<Turn | null>;
   listByThread(threadId: ThreadId): Promise<Turn[]>;
   getLatestByThread(threadId: ThreadId): Promise<Turn | null>;
-  /** The live run's assistant container (non-terminal), or null when none. */
-  findRunningAssistantId(threadId: ThreadId): Promise<TurnId | null>;
+  /**
+   * The assistant container of a run that the caller has already proven live
+   * (via the runner map), or null. Durable status is not a liveness authority:
+   * this is the setup-window fallback for when the runner owns the thread but
+   * has not published the assistant id yet, so `createdAfter` excludes older
+   * crash-orphaned non-terminal turns.
+   */
+  findRunningAssistantId(
+    threadId: ThreadId,
+    options?: { createdAfter?: Date },
+  ): Promise<TurnId | null>;
   updateStatus(id: TurnId, input: UpdateTurnStatusInput): Promise<Turn>;
   /** Recomputes usage rollups from this turn's model_responses rows. */
   recomputeRollups(id: TurnId): Promise<Turn>;

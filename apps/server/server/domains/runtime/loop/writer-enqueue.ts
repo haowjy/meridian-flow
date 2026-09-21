@@ -25,6 +25,19 @@ export interface WriterEnqueueSettlement {
   snapshotFloorNextSeq: string;
 }
 
+/**
+ * Signals that `settle` chose a winner other than this attempt while the
+ * writer turn and inbox message were already staged. Throwing rolls the
+ * turn-start transaction back; the carried projection is returned instead of
+ * committing a rejected or losing submission.
+ */
+export class WriterEnqueueRollback<T> extends Error {
+  constructor(readonly result: T) {
+    super("writer enqueue aborted by an admission winner");
+    this.name = "WriterEnqueueRollback";
+  }
+}
+
 export async function persistWriterEnqueue<T>(input: {
   persistence: PersistenceDeps;
   hub: { headSeq(threadId: ThreadId): Promise<bigint> };
@@ -84,6 +97,7 @@ export async function persistWriterEnqueue<T>(input: {
       if (settled === undefined) throw new Error("Writer enqueue did not settle");
       return settled;
     } catch (error) {
+      if (error instanceof WriterEnqueueRollback) return error.result as T;
       if (!(error instanceof TurnStartConflictError) || attempt >= 2) throw error;
     }
   }

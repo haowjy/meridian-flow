@@ -681,6 +681,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const admissionProducer = createWriterTurnProducer({
     persistence: { repos: ports.threadRepos, eventWriter: threadEventHub },
     hub: threadEventHub,
+    runner,
     turns: ports.threadRepos.turns,
     threadedInbox,
     workContextDelivery,
@@ -1229,6 +1230,9 @@ export function createInMemoryAppServices(): AppServices {
         markChildTurn() {},
         abortChild() {},
         abortChildrenOf() {},
+      },
+      getRunningTurn() {
+        return null;
       },
       getRunningTurnId() {
         return null;

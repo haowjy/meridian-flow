@@ -19,10 +19,11 @@ import type {
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { WorkContextDelivery } from "../../projects/index.js";
-import type { TurnRepository } from "../../threads/index.js";
+import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
 import type { ThreadedInbox } from "../loop/threaded-inbox.js";
-import { persistWriterEnqueue } from "../loop/writer-enqueue.js";
+import type { RunningTurnView } from "../loop/turn-runner.js";
+import { persistWriterEnqueue, WriterEnqueueRollback } from "../loop/writer-enqueue.js";
 import type { AdmissionPersistencePort } from "./drizzle-admission-records.js";
 import {
   AdmissionConflictError,
@@ -51,6 +52,9 @@ function winnerProjection(
 export function createWriterTurnProducer(deps: {
   persistence: PersistenceDeps;
   hub: { headSeq(threadId: ThreadId): Promise<bigint> };
+  /** Liveness authority: the runner owns which threads have a live run. */
+  runner: { getRunningTurn(threadId: ThreadId): RunningTurnView | null };
+  /** Setup-window fallback only; consulted while the runner owns the thread. */
   turns: Pick<TurnRepository, "findRunningAssistantId">;
   threadedInbox: ThreadedInbox;
   workContextDelivery: Pick<WorkContextDelivery, "beforeTurn">;
@@ -72,63 +76,88 @@ export function createWriterTurnProducer(deps: {
     }) {
       const threadId = input.admission.threadId;
       const userTurnId = crypto.randomUUID() as TurnId;
-      // A live run means this send merges at its next boundary; the client keeps
-      // the streaming assistant turn. A fresh run returns null.
-      const assistantTurnId = await deps.turns.findRunningAssistantId(threadId);
+      // Liveness comes from the runner map, never durable turn status: a
+      // crash-orphaned `streaming` turn is not a live run, and a run parked on
+      // `waiting_interrupt` is. Only once the runner owns the thread do we look
+      // at durable rows, and only for the setup window where the runner has not
+      // published the assistant id yet. `createdAfter` keeps an older orphan out.
+      const live = deps.runner.getRunningTurn(threadId);
+      const assistantTurnId = live
+        ? (live.assistantTurnId ??
+          (await deps.turns.findRunningAssistantId(threadId, {
+            createdAfter: live.startedAt,
+          })))
+        : null;
 
-      return persistWriterEnqueue<
-        AcceptedAdmission | { kind: "pending" | "rejected"; submissionId: string; code?: string }
-      >({
-        persistence: deps.persistence,
-        hub: deps.hub,
-        workContextDelivery: deps.workContextDelivery,
-        threadId,
-        userTurnId,
-        userBlocks: input.blocks,
-        userTurnMetadata: input.userTurnMetadata,
-        enqueue: () =>
-          deps.threadedInbox
-            .enqueue({
-              id: userTurnId,
-              threadId,
-              intent: "message",
-              provenance: { kind: "writer", actorId: input.admission.actorUserId },
-              body: { kind: "text", text: input.admission.text },
-              idempotencyKey: input.admission.submissionId,
-            })
-            .then(() => undefined),
-        settle: async ({ userTurnId: settledUserTurnId, resumeAfterSeq, snapshotFloorNextSeq }) => {
-          const response: AcceptedAdmission = {
-            kind: "accepted",
-            threadId,
-            submissionId: input.admission.submissionId,
+      type Projection =
+        | AcceptedAdmission
+        | { kind: "pending" | "rejected"; submissionId: string; code?: string };
+      try {
+        return await persistWriterEnqueue<Projection>({
+          persistence: deps.persistence,
+          hub: deps.hub,
+          workContextDelivery: deps.workContextDelivery,
+          threadId,
+          userTurnId,
+          userBlocks: input.blocks,
+          userTurnMetadata: input.userTurnMetadata,
+          enqueue: () =>
+            deps.threadedInbox
+              .enqueue({
+                id: userTurnId,
+                threadId,
+                intent: "message",
+                provenance: { kind: "writer", actorId: input.admission.actorUserId },
+                body: { kind: "text", text: input.admission.text },
+                idempotencyKey: input.admission.submissionId,
+              })
+              .then(() => undefined),
+          settle: async ({
             userTurnId: settledUserTurnId,
-            assistantTurnId,
             resumeAfterSeq,
             snapshotFloorNextSeq,
-          };
-          const accepted = await deps.records.accept({
-            response,
-            fingerprint: input.fingerprint,
-          });
-          if (accepted.kind === "winner") {
-            return winnerProjection(
-              accepted.record,
-              input.fingerprint,
-              input.admission.submissionId,
+          }) => {
+            const response: AcceptedAdmission = {
+              kind: "accepted",
+              threadId,
+              submissionId: input.admission.submissionId,
+              userTurnId: settledUserTurnId,
+              assistantTurnId,
+              resumeAfterSeq,
+              snapshotFloorNextSeq,
+            };
+            const accepted = await deps.records.accept({
+              response,
+              fingerprint: input.fingerprint,
+            });
+            if (accepted.kind === "winner") {
+              // A concurrent settlement won: the turn and inbox append already
+              // staged in this transaction must not commit. Throwing rolls the
+              // whole transition back and carries the winner projection out.
+              throw new WriterEnqueueRollback(
+                winnerProjection(accepted.record, input.fingerprint, input.admission.submissionId),
+              );
+            }
+            await deps.consumeUploads(
+              input.references
+                .filter((reference) => reference.purpose === "draft-upload")
+                .map((reference) => reference.documentId),
             );
-          }
-          await deps.consumeUploads(
-            input.references
-              .filter((reference) => reference.purpose === "draft-upload")
-              .map((reference) => reference.documentId),
-          );
-          for (const reference of input.references) {
-            await deps.attachDocument(threadId, reference.documentId, reference.relationship);
-          }
-          return accepted.response;
-        },
-      });
+            for (const reference of input.references) {
+              await deps.attachDocument(threadId, reference.documentId, reference.relationship);
+            }
+            return accepted.response;
+          },
+        });
+      } catch (error) {
+        // The retry budget for the thread's turn-start transition is exhausted: a
+        // concurrent turn start kept winning. Report the reservation as pending so
+        // the route maps it to 409 and the client reconciles, not a 500.
+        if (error instanceof TurnStartConflictError) {
+          return { kind: "pending", submissionId: input.admission.submissionId };
+        }
+        throw error;
+      }
     },
   };
 }
