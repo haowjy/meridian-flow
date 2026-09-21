@@ -116,6 +116,12 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
 
 ## Key domain logic
 
+- **Lineage predicates** — `domain/lineage.ts` owns `sameLineage` (same project
+  and `rootThreadId`: background authority) and `isInSubtree` (caller is the
+  target itself or a spawn ancestor, walking `parentThreadId`: foreground
+  authority). Both are pure over thread rows. `rootThreadId` is authoritative on
+  every create path — a primary roots itself, a subagent its spawn root — so the
+  column is never NULL; the `?? id` mapper fallback is a read guard only.
 - **ThreadEventHub sequencing** — journal `seq` is multiplied by 1000
   (`EVENT_SEQ_FACTOR`) to leave room for multiple AG-UI events projected from
   a single journal entry. Cursor arithmetic uses this factor.

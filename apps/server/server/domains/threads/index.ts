@@ -18,6 +18,7 @@ export {
   handoffThreadAgent,
   type ThreadAgentSwapDeps,
 } from "./domain/derive-conversation.js";
+export { isInSubtree, type LineageThread, sameLineage } from "./domain/lineage.js";
 export {
   createOrchestratorEventProjector,
   projectOrchestratorEvents,
