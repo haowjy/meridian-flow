@@ -151,6 +151,7 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
     inbox,
     threadLock: createInMemoryThreadLock(),
     runStarter,
+    schedulePostCommit: (task) => task(),
   });
 
   const driver = createChildRunDriver({
@@ -789,7 +790,7 @@ describe("ChildRunCoordinator thread_message", () => {
     );
   });
 
-  it("returns continue_target_unavailable when the child has no retained binding", async () => {
+  it("returns thread_message_target_unavailable when the child has no retained binding", async () => {
     const { coordinator, parent, repos, revisions } = await fixture();
     const child = await repos.threads.createSubagent({
       userId: parent.userId,

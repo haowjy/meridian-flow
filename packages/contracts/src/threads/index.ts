@@ -99,7 +99,7 @@ export type JournalEventType =
   | "agent.handoff"
   | "agent.fork"
   | "agent.spawn" // PRODUCED NOW — ChildRunCoordinator
-  | "agent.run_completed" // PRODUCED NOW — ChildRunCoordinator (spawn or continue)
+  | "agent.run_completed" // PRODUCED NOW — ChildRunCoordinator (spawn or thread_message)
   | "context.assembled"
   | "context.compacted"
   | "context.skill_loaded"

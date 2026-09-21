@@ -127,4 +127,20 @@ describe("spawnOutputForTranscript", () => {
       agentSlug: "general",
     });
   });
+
+  it("tells the model a queued thread_message has no pushed reply", () => {
+    const background = {
+      status: "background",
+      handle: "c1",
+      threadId: "primary-1",
+      agentSlug: "primary",
+    };
+
+    expect(spawnOutputForTranscript(background, { queuedNoReply: true })).toEqual({
+      status: "background",
+      handle: "c1",
+      agentSlug: "primary",
+      note: "Message queued. No reply is pushed back; the target's response is readable in its transcript.",
+    });
+  });
 });
