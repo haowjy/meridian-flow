@@ -925,6 +925,51 @@ async function completeTurn(input: {
   return { turn: completed.result, events: completed.events };
 }
 
+/**
+ * Loads and persists the text-reference reads for one user turn, returning the
+ * turn's blocks with the read results applied plus the events to emit. Used both
+ * at iteration 1 (the run's triggering turn) and when a mid-run drain adopts a
+ * writer turn whose references were never read.
+ */
+async function persistReferenceReads(input: {
+  deps: OrchestratorDeps;
+  threadId: ThreadId;
+  userTurnId: string;
+  assistantTurnId: string;
+  blocks: readonly Block[];
+  signal?: AbortSignal;
+}): Promise<{ blocks: Block[]; events: OrchestratorEvent[] }> {
+  const loaded = await loadReferenceReads({
+    blocks: input.blocks,
+    userTurnId: input.userTurnId,
+    threadId: input.threadId,
+    assistantTurnId: input.assistantTurnId,
+    reader: input.deps.referenceReader,
+    signal: input.signal,
+  });
+  if (loaded.length === 0) return { blocks: [...input.blocks], events: [] };
+  const persisted = await persistAndAppendEvents(input.deps, input.threadId, async () => ({
+    result: loaded,
+    events: loaded.map((block) => ({
+      type: "block.upserted" as const,
+      block: contentForBlockInput({
+        id: block.id,
+        turnId: block.turnId,
+        responseId: block.responseId,
+        blockType: block.blockType,
+        sequence: block.sequence,
+        content: block.content,
+        status: "complete",
+      }),
+    })),
+  }));
+  const updatedById = new Map(persisted.result.map((block) => [block.id, block]));
+  return {
+    blocks: input.blocks.map((block) => updatedById.get(block.id) ?? block),
+    events: persisted.events,
+  };
+}
+
 async function buildGenerateRequest(input: {
   deps: OrchestratorDeps;
   runInput: RunTurnInput;
@@ -1160,36 +1205,19 @@ async function* generateEvents(
       }
 
       if (iteration === 1) {
-        const loaded = await loadReferenceReads({
-          blocks: allBlocks,
-          userTurnId: referenceUserTurnId,
+        const prepared = await persistReferenceReads({
+          deps,
           threadId: input.threadId,
+          userTurnId: referenceUserTurnId,
           assistantTurnId: currentAssistantTurn.id,
-          reader: deps.referenceReader,
+          blocks: allBlocks,
           signal: input.signal,
         });
-        if (loaded.length > 0) {
-          const persisted = await persistAndAppendEvents(deps, input.threadId, async () => ({
-            result: loaded,
-            events: loaded.map((block) => ({
-              type: "block.upserted" as const,
-              block: contentForBlockInput({
-                id: block.id,
-                turnId: block.turnId,
-                responseId: block.responseId,
-                blockType: block.blockType,
-                sequence: block.sequence,
-                content: block.content,
-                status: "complete",
-              }),
-            })),
-          }));
-          for (const block of persisted.result) {
-            const index = allBlocks.findIndex((existing) => existing.id === block.id);
-            allBlocks[index] = block;
-          }
-          yield* persisted.events;
+        for (const block of prepared.blocks) {
+          const index = allBlocks.findIndex((existing) => existing.id === block.id);
+          if (index >= 0) allBlocks[index] = block;
         }
+        yield* prepared.events;
       }
 
       const built = await buildGenerateRequest({
@@ -1230,6 +1258,15 @@ async function* generateEvents(
         messages: request.messages,
         knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
         expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
+        prepareAdoptedTurn: (turn, blocks) =>
+          persistReferenceReads({
+            deps,
+            threadId: input.threadId,
+            userTurnId: turn.id,
+            assistantTurnId: currentAssistantTurn.id,
+            blocks,
+            signal: input.signal,
+          }),
         loadActivatedSkillBodies: async (turn) => {
           const slugs = readActivatedSkillSlugs(turn);
           return slugs.length > 0 ? loadSkillBodies(slugs) : [];

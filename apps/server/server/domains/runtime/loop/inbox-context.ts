@@ -14,6 +14,13 @@
  * creation returns the existing row and the block projects through an id-keyed
  * upsert. `drainInbox` is the only consumer of the claim; the loop deals in
  * request messages, notices, and persisted events, not inbox rows.
+ *
+ * A message whose turn is already durable (a writer send persisted at enqueue,
+ * then claimed mid-run) is adopted, not re-persisted. Adoption renders the
+ * turn's persisted blocks through the caller's `prepareAdoptedTurn` hook, which
+ * resolves any rich content the enqueue transaction could not (text-reference
+ * reads) and returns the events to emit, and through `loadActivatedSkillBodies`,
+ * which inlines the request-only skill bodies the writer activated on it.
  */
 import {
   buildHelperResultComponentContent,
@@ -48,6 +55,12 @@ export interface ActivatedSkillBody {
   body: string;
 }
 
+/** The rich blocks and persisted events an adopted turn's preparation resolved. */
+export interface AdoptedTurnPreparation {
+  blocks: Block[];
+  events: OrchestratorEvent[];
+}
+
 /** The loop's view of one drained batch: request and notices plus durable writes. */
 export interface InboxDrain {
   /** The request messages, with drained `message` entries appended at the tail. */
@@ -80,6 +93,14 @@ export async function drainInbox(input: {
   knownTurnIds: ReadonlySet<TurnId>;
   expectedLeafTurnId: TurnId | null;
   /**
+   * Resolves an adopted turn's rich model-facing blocks before it renders (for
+   * example, reads text-reference occurrences that lack a persisted result),
+   * returning the updated blocks plus the events to emit. A writer send
+   * persisted at enqueue has no run yet to read its references at first
+   * iteration, so adoption is where its reads land.
+   */
+  prepareAdoptedTurn?: (turn: Turn, blocks: Block[]) => Promise<AdoptedTurnPreparation>;
+  /**
    * Resolves the request-only skill bodies a writer turn activated, read back
    * off its persisted metadata. Applied to the adopted message the turn renders,
    * so a mid-run `/skill` send carries its instructions like a fresh drain does.
@@ -91,6 +112,7 @@ export async function drainInbox(input: {
   const fresh: InboxMessage[] = [];
   const adoptedTurns: Turn[] = [];
   const adoptedBlocks: Block[] = [];
+  const adoptedEvents: OrchestratorEvent[] = [];
   const adoptedBlocksByMessageId = new Map<string, Block[]>();
   const skillBodiesByMessageId = new Map<string, readonly ActivatedSkillBody[]>();
   for (const message of batch) {
@@ -108,7 +130,12 @@ export async function drainInbox(input: {
     // (images, reference reads, skill anchors) lives on the persisted turn.
     const existing = await input.persistence.repos.turns.findById(message.id as TurnId);
     if (existing) {
-      const blocks = await input.persistence.repos.blocks.listByTurn(existing.id);
+      let blocks = await input.persistence.repos.blocks.listByTurn(existing.id);
+      if (input.prepareAdoptedTurn) {
+        const prepared = await input.prepareAdoptedTurn(existing, blocks);
+        blocks = prepared.blocks;
+        adoptedEvents.push(...prepared.events);
+      }
       const skillBodies = await input.loadActivatedSkillBodies?.(existing);
       if (skillBodies?.length) skillBodiesByMessageId.set(message.id, skillBodies);
       adoptedTurns.push(existing);
@@ -145,7 +172,7 @@ export async function drainInbox(input: {
   return {
     rendered: rendered.messages,
     notices,
-    persistedEvents: persisted.events,
+    persistedEvents: [...adoptedEvents, ...persisted.events],
     turns: [...adoptedTurns, ...persisted.turns],
     blocks: [...adoptedBlocks, ...persisted.blocks],
     ackIds: batch.map((message) => message.id),
