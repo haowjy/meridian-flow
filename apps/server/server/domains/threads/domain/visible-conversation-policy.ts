@@ -11,7 +11,7 @@ export function isVisibleConversationalTurn(input: {
   if (input.role !== "user") return false;
   const metadata = input.metadata as Record<string, unknown> | null;
   if (metadata?.kind !== "system_update") return true;
-  return metadata.section !== "work_context" && metadata.section !== "child_report";
+  return metadata.section !== "work_context";
 }
 
 export function isThreadActionRequired(input: {
