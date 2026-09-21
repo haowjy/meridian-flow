@@ -53,7 +53,7 @@ export function spawnToolDescription(hasNamedTargets: boolean): string {
 }
 
 const THREAD_MESSAGE_DESCRIPTION =
-  "Send a message to a thread. ref is the thread handle (for example p3 for a subagent, c1 for a primary) from a spawn/thread_message result. Omitted mode is background: the message is queued and returns immediately. Use mode=foreground to wait for a subagent in your subtree to finish and return its report.";
+  "Send a message to a thread. ref is the thread handle (for example p3 for a subagent, c1 for a primary) from a spawn/thread_message result. Omitted mode is background: the message is queued and returns immediately, and no reply is pushed back; read the target's transcript to see its response. Use mode=foreground to wait for a subagent in your subtree to finish and return its report.";
 
 export type ThreadMessageMode = "foreground" | "background";
 
@@ -145,7 +145,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
               type: "string",
               enum: ["foreground", "background"],
               description:
-                "background (default) queues the message and returns immediately; foreground waits for a subagent in your subtree and returns its report.",
+                "background (default) queues the message and returns immediately with no pushed reply; foreground waits for a subagent in your subtree and returns its report.",
             },
           },
           required: ["ref", "message"],

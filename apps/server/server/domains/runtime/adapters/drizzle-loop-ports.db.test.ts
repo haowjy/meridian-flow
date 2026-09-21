@@ -386,6 +386,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           inbox,
           threadLock,
           runStarter: createInMemoryRunStarter(),
+          schedulePostCommit: (task) => task(),
         });
 
         for (let attempt = 0; attempt < 24; attempt++) {

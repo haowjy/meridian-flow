@@ -56,7 +56,12 @@ describe("createThreadedInbox", () => {
     };
     const inbox = createInMemoryInbox();
     const runStarter = createInMemoryRunStarter();
-    const threaded = createThreadedInbox({ inbox, threadLock, runStarter });
+    const threaded = createThreadedInbox({
+      inbox,
+      threadLock,
+      runStarter,
+      schedulePostCommit: (task) => task(),
+    });
 
     const message = await threaded.enqueue(steer("locked steer"));
 
@@ -72,6 +77,7 @@ describe("createThreadedInbox", () => {
       inbox: createInMemoryInbox(),
       threadLock: createInMemoryThreadLock(),
       runStarter,
+      schedulePostCommit: (task) => task(),
     });
 
     await threaded.enqueue(systemMessage("context note"));
@@ -112,6 +118,7 @@ describe("createThreadedInbox", () => {
       inbox,
       threadLock,
       runStarter: createInMemoryRunStarter(),
+      schedulePostCommit: (task) => task(),
     });
 
     const first = threaded.enqueue(steer("first"));
@@ -145,11 +152,33 @@ describe("createThreadedInbox", () => {
       inbox,
       threadLock: createInMemoryThreadLock(),
       runStarter,
+      schedulePostCommit: (task) => task(),
     });
 
     const message = await threaded.enqueue(steer("wake fails"));
 
     expect(message.intent).toBe("steer");
     expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
+  });
+
+  it("defers the wake to the post-commit scheduler instead of firing inline", async () => {
+    const runStarter = createInMemoryRunStarter();
+    const scheduled: Array<() => Promise<void>> = [];
+    const threaded = createThreadedInbox({
+      inbox: createInMemoryInbox(),
+      threadLock: createInMemoryThreadLock(),
+      runStarter,
+      schedulePostCommit(task) {
+        scheduled.push(task);
+      },
+    });
+
+    await threaded.enqueue(steer("deferred wake"));
+
+    // The wake must not resolve the caller's still-open transaction.
+    expect(runStarter.started).toEqual([]);
+    expect(scheduled).toHaveLength(1);
+    await scheduled[0]?.();
+    expect(runStarter.started).toEqual([THREAD_A]);
   });
 });

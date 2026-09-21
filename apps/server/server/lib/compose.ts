@@ -654,7 +654,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const inbox = createDrizzleInbox(ports.db);
   const threadLock = createDrizzleThreadLock(ports.db);
   const runStarter = createRunStarter(runner);
-  const threadedInbox = createThreadedInbox({ inbox, threadLock, runStarter });
+  const threadedInbox = createThreadedInbox({
+    inbox,
+    threadLock,
+    runStarter,
+    schedulePostCommit(task) {
+      runAfterDrizzleCommit(task);
+    },
+  });
   const wakeSweep = {
     sweep: () =>
       sweepWakes({
@@ -875,6 +882,9 @@ export function createInMemoryAppServices(): AppServices {
     inbox: createInMemoryInbox(),
     threadLock: createInMemoryThreadLock(),
     runStarter,
+    schedulePostCommit: (task) => {
+      void task();
+    },
   });
   const wakeSweep = { async sweep() {} };
 

@@ -6,13 +6,24 @@
  * (`threadId`); UI navigation reads the UUID off the helper card, not here.
  * The writer-facing surface is a helper-result custom block, same family as
  * ask_user's custom card: the spawn tool_use/tool_result stay protocol-only.
+ *
+ * `queuedNoReply` marks a `thread_message` background result: it pushes no
+ * reply back to the sender, unlike a background spawn child that reports on
+ * completion. The result says where the response lives instead of implying a
+ * reply is coming.
  */
 import { GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
 import type { HelperResultProps } from "@meridian/contracts/components";
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
 
-export function spawnOutputForTranscript(output: JsonValue): JsonValue {
+const QUEUED_NO_REPLY_NOTE =
+  "Message queued. No reply is pushed back; the target's response is readable in its transcript.";
+
+export function spawnOutputForTranscript(
+  output: JsonValue,
+  options: { queuedNoReply?: boolean } = {},
+): JsonValue {
   if (!isRecord(output)) return output;
   if (output.status === "completed") {
     const report = output.report;
@@ -24,7 +35,7 @@ export function spawnOutputForTranscript(output: JsonValue): JsonValue {
   }
   if (output.status === "background") {
     const { threadId: _threadId, ...rest } = output;
-    return rest;
+    return options.queuedNoReply ? { ...rest, note: QUEUED_NO_REPLY_NOTE } : rest;
   }
   return output;
 }
