@@ -1078,8 +1078,7 @@ async function* generateEvents(
   // The run's single terminal exit. Every terminal route funnels through here so
   // the final claim is uniform: `closeRun` takes the per-thread lock, claims the
   // inbox once more, and either continues the run into a pending batch or runs
-  // `complete` and releases the lease under the same lock. Returns true when the
-  // caller must continue the loop; false when the terminal events were yielded.
+  // `complete` and releases the lease under the same lock.
   //
   // `continueOnPending` encodes the exit policy: true for normal completion
   // (endTurnRequested / clean finish), where a pending message steers into the
@@ -1087,11 +1086,13 @@ async function* generateEvents(
   // pass false: they always finalize and release. Cancel's pending message is a
   // distinct next turn, started by the run owner's post-cancel wake (see
   // `turn-runner.cancel`).
-  // Private control-flow signal from the single terminal exit. `runLoop` catches
-  // it once at the loop boundary: `continueRun` means the final claim found a
-  // pending batch and this run's next iteration must proceed, otherwise the
-  // terminal events were yielded and the run stops. Throwing keeps "continue vs
-  // stop" out of every call site instead of threading a boolean through `yield*`.
+  //
+  // `exitRun` returns `never`: it throws `RunExit`, a private control-flow
+  // signal the `while (true)` loop catches once. `continueRun` means the final
+  // claim found a pending batch and the next iteration must proceed; otherwise
+  // the terminal events were yielded and the run stops. Throwing keeps "continue
+  // vs stop" out of every call site instead of threading a boolean through
+  // `yield*`.
   class RunExit {
     constructor(readonly continueRun: boolean) {}
   }
