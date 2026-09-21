@@ -6,7 +6,6 @@
 
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
-import type { SpawnResult } from "@meridian/contracts/spawn";
 import type {
   Block,
   BlockStatus,
@@ -345,41 +344,6 @@ export interface WorkContextDeliveryRepository {
   acknowledge(threadId: ThreadId): Promise<void>;
 }
 
-export interface ChildReportDeliveryObligation {
-  reportId: TurnId;
-  parentThreadId: ThreadId;
-  childThreadId: ThreadId;
-  agentSlug: string;
-  description: string | null;
-  result: SpawnResult;
-  systemTurnId: TurnId | null;
-  submissionEpoch: number;
-}
-
-export interface EnqueueChildReportDeliveryInput {
-  reportId: TurnId;
-  parentThreadId: ThreadId;
-  childThreadId: ThreadId;
-  agentSlug: string;
-  description?: string | null;
-  result: SpawnResult;
-  systemTurnId?: TurnId | null;
-}
-
-/** Durable exactly-once delivery facts for a background child's terminal report. */
-export interface ChildReportDeliveryRepository {
-  /** Inserts the obligation if absent; enlists in the ambient transaction. */
-  enqueue(input: EnqueueChildReportDeliveryInput): Promise<void>;
-  listPendingParentThreadIds(): Promise<ThreadId[]>;
-  listPendingByParent(parentThreadId: ThreadId): Promise<ChildReportDeliveryObligation[]>;
-  findByReportId(reportId: TurnId): Promise<ChildReportDeliveryObligation | null>;
-  /** Records the card's system-turn container once; later calls are no-ops. */
-  setSystemTurnId(reportId: TurnId, systemTurnId: TurnId): Promise<void>;
-  /** Advances the attempt epoch after the current submission id terminally rejected. */
-  advanceEpoch(reportId: TurnId): Promise<void>;
-  acknowledge(reportId: TurnId): Promise<void>;
-}
-
 export type ThreadRepositories = {
   threads: ThreadRepository;
   homeFeed: HomeChatFeedRepository;
@@ -392,7 +356,6 @@ export type ThreadRepositories = {
   threadDocuments: ThreadDocumentRepository;
   documentTouches: TurnDocumentTouchRepository;
   workContextDeliveries: WorkContextDeliveryRepository;
-  childReportDeliveries: ChildReportDeliveryRepository;
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   /**
    * Serializes a complete turn-start transition on the thread and rejects

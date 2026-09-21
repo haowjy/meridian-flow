@@ -7,6 +7,7 @@
  */
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ThreadId } from "@meridian/contracts/runtime";
+import type { JsonValue } from "@meridian/contracts/threads";
 
 export type RunId = string;
 
@@ -33,7 +34,19 @@ export type ContextPart = { source: string; text: string };
 
 export type MessageBody =
   | { kind: "text"; text: string }
-  | { kind: "report"; text: string; artifacts?: ArtifactRef[] }
+  | {
+      kind: "report";
+      text: string;
+      artifacts?: ArtifactRef[];
+      /** Structured return_result payload carried onto the card and model text. */
+      payload?: JsonValue;
+      /** Reporting child's slug; drives the writer-facing helper-result card. */
+      agentSlug?: string;
+      /** Spawn label carried onto the card's title. */
+      description?: string;
+      /** A failed run's report renders the card in its failed state. */
+      failed?: boolean;
+    }
   | { kind: "context"; parts: ContextPart[] };
 
 export interface MessageDraft {

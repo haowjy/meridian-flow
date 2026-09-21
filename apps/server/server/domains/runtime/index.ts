@@ -25,10 +25,7 @@ export {
 } from "./admission/drizzle-admission-records.js";
 export {
   AdmissionConflictError,
-  createHostTurnAdmission,
   createUserTurnAdmission,
-  type HostTurnAdmission,
-  type HostTurnAdmissionInput,
   InvalidAdmissionError,
   type UserTurnAdmission,
 } from "./admission/user-turn-admission.js";
@@ -108,12 +105,6 @@ export {
   authorizeThreadMessage,
   type ThreadMessageTargetOutcome,
 } from "./spawn/authorize-thread-message.js";
-export {
-  type ChildReportDelivery,
-  type ChildReportDeliveryDeps,
-  type ChildReportEnqueue,
-  createChildReportDelivery,
-} from "./spawn/child-report-delivery.js";
 export {
   type ChildRunCoordinator,
   type ChildRunCoordinatorDeps,

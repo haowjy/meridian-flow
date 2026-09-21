@@ -2,7 +2,7 @@
  * ChildRunDriver — the child-run lifecycle from claim to terminal persistence.
  * Registers a prepared child (run claim, registry, abort controller), drives its
  * runTurn to terminal state, captures return_result in a per-run closure, and
- * persists the terminal lifecycle, event, and background card obligation.
+ * persists the terminal lifecycle, event, and background report steer.
  * Invocation resolution and writer-card policy stay with the coordinator.
  */
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
@@ -25,8 +25,8 @@ import type {
 } from "../../threads/index.js";
 import type { Lease, RunAuthority } from "../loop/ports.js";
 import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
+import type { ThreadedInbox } from "../loop/threaded-inbox.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
-import type { ChildReportDelivery } from "./child-report-delivery.js";
 
 export interface ChildDriveInput {
   parentThread: Thread;
@@ -66,7 +66,8 @@ export interface ChildRunDriverDeps {
   };
   eventWriter: EventJournalWriter;
   childRunRegistry: ChildRunRegistry;
-  childReportDelivery: Pick<ChildReportDelivery, "enqueue">;
+  /** Producer-facing inbox: a background child's report is enqueued as a steer. */
+  threadedInbox: Pick<ThreadedInbox, "enqueue">;
   workContextDelivery: Pick<WorkContextDelivery, "flushOwned">;
   runAuthority: RunAuthority;
   billingSpendReader: BillingSpendReader;
@@ -302,13 +303,28 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     // cannot lose the payload/artifacts; `enqueue` is idempotent on reportId.
     const enqueueBackgroundReport = async (result: SpawnResult) => {
       if (!prepared.background) return;
-      await deps.childReportDelivery.enqueue({
-        reportId: reportId ?? (crypto.randomUUID() as TurnId),
-        parentThreadId: input.parentThread.id as ThreadId,
-        childThreadId: prepared.child.id as ThreadId,
-        agentSlug: prepared.resolvedSlug,
-        ...(prepared.description !== undefined ? { description: prepared.description } : {}),
-        result,
+      const id = (reportId ?? crypto.randomUUID()) as TurnId;
+      const artifacts = result.status === "completed" ? result.report.artifacts : undefined;
+      const payload = result.status === "completed" ? result.report.payload : undefined;
+      await deps.threadedInbox.enqueue({
+        threadId: input.parentThread.id as ThreadId,
+        intent: "steer",
+        provenance: { kind: "child", threadId: prepared.child.id as ThreadId, reportId: id },
+        body: {
+          kind: "report",
+          text:
+            result.status === "completed"
+              ? result.report.summary
+              : result.status === "error"
+                ? result.error.message
+                : "Background run finished.",
+          ...(artifacts !== undefined ? { artifacts } : {}),
+          ...(payload !== undefined ? { payload } : {}),
+          ...(prepared.resolvedSlug ? { agentSlug: prepared.resolvedSlug } : {}),
+          ...(prepared.description !== undefined ? { description: prepared.description } : {}),
+          ...(result.status === "error" ? { failed: true } : {}),
+        },
+        idempotencyKey: `child-report:${id}`,
       });
     };
 

@@ -53,15 +53,6 @@ async function createAppServices(): Promise<AppServices> {
         payload: unknownToEventPayload(cause),
       });
     });
-  const sweepChildReports = () =>
-    void app.childReportDelivery.sweep().catch((cause) => {
-      emitEvent(eventSink, {
-        level: "error",
-        source: "runtime.child-report-delivery",
-        name: "sweep.failed",
-        payload: unknownToEventPayload(cause),
-      });
-    });
   const sweepWakes = () =>
     void app.wakeSweep.sweep().catch((cause) => {
       emitEvent(eventSink, {
@@ -79,7 +70,6 @@ async function createAppServices(): Promise<AppServices> {
   });
   drain();
   sweepWorkContext();
-  sweepChildReports();
   // Startup recovery: a steer committed before a crash has no in-memory wake, so
   // the derived wake need is recovered here as well as on the interval.
   sweepWakes();
@@ -87,7 +77,6 @@ async function createAppServices(): Promise<AppServices> {
   // no in-process callback to survive a crash or a different server process.
   setInterval(drain, CHANGE_TRAIL_POLL_MS).unref();
   setInterval(sweepWorkContext, SYSTEM_UPDATE_SWEEP_MS).unref();
-  setInterval(sweepChildReports, SYSTEM_UPDATE_SWEEP_MS).unref();
   setInterval(sweepWakes, WAKE_SWEEP_INTERVAL_MS).unref();
   return app;
 }
