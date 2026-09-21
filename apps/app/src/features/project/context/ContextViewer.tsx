@@ -5,7 +5,8 @@
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
+import { recordRecentDocument } from "@/client/api/recent-documents-api";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
@@ -13,6 +14,7 @@ import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
+import { useAccountId } from "./account-feature-context";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
@@ -84,6 +86,14 @@ export function ContextViewer({
   // renderers + signed URLs don't benefit from pre-mounting).
   const trackedTabs = tabs.filter(isEditableTab);
   const activeTab = paneState.kind === "document" ? paneState.tab : null;
+  // Recency is recorded from the tab actually in front of the writer, not from
+  // the intent to open: a freshly created document has no row yet, so recording
+  // at open time raced document persistence and lost the write.
+  const accountId = useAccountId();
+  const openedDocumentId = activeTab?.kind === "tracked" ? activeTab.documentId : null;
+  useEffect(() => {
+    if (openedDocumentId) recordRecentDocument(openedDocumentId, accountId);
+  }, [openedDocumentId, accountId]);
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const activeTabId = activeTab?.documentId ?? null;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
