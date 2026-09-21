@@ -22,9 +22,9 @@
 const ATTEMPT_TIMEOUT_NAME = "ModelAttemptTimeoutError";
 
 /** Default inactivity window before an attempt with no stream progress is aborted. */
-export const DEFAULT_ATTEMPT_STALL_MS = 120_000;
+export const DEFAULT_ATTEMPT_STALL_MS = 60_000;
 /** Default absolute ceiling for one attempt. 0 disables it (e.g. self-hosted models). */
-export const DEFAULT_ATTEMPT_CEILING_MS = 600_000;
+export const DEFAULT_ATTEMPT_CEILING_MS = 900_000;
 
 export type ModelAttemptTimeoutKind = "stall" | "ceiling";
 

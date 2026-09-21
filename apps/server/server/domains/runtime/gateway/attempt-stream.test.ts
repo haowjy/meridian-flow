@@ -179,8 +179,8 @@ describe("streamWithRetry retry gate", () => {
 });
 
 describe("default timeouts", () => {
-  it("exposes a 120s stall and a 10m ceiling", () => {
-    expect(DEFAULT_ATTEMPT_STALL_MS).toBe(120_000);
-    expect(DEFAULT_ATTEMPT_CEILING_MS).toBe(600_000);
+  it("exposes a 60s stall and a 15m ceiling", () => {
+    expect(DEFAULT_ATTEMPT_STALL_MS).toBe(60_000);
+    expect(DEFAULT_ATTEMPT_CEILING_MS).toBe(900_000);
   });
 });
