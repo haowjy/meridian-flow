@@ -66,13 +66,19 @@ export type {
 } from "./loop/ports.js";
 export { DEFAULT_LEASE_TTL_MS } from "./loop/ports.js";
 export type { ReferenceReader } from "./loop/reference-context.js";
+export { createRunStarter } from "./loop/run-starter.js";
 export {
   createLateBindRunTurnPort,
+  type DrainRunTurnInput,
+  isDrainRun,
+  NoPendingWakeError,
   type ReturnResultCompleter,
   type RunTurnHandle,
   type RunTurnInput,
   type RunTurnPort,
+  type WriterRunTurnInput,
 } from "./loop/run-turn-port.js";
+export { sweepWakes } from "./loop/sweep-wakes.js";
 export {
   THREAD_LOCK_SEED,
   type ThreadLock,

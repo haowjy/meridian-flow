@@ -8,6 +8,7 @@ import { emitEvent, unknownToEventPayload } from "../domains/observability/index
 import { listenForThreadEvents } from "../domains/threads/adapters/drizzle/event-relay.js";
 import { type AppServices, composeAppServices, createProductionAppPorts } from "./compose.js";
 import { getDb } from "./db.js";
+import { resolveWakeSweepIntervalMs } from "./env.js";
 import { createEventSinkFromEnv } from "./event-sink-factory.js";
 import { getOrBindProcessObservability } from "./observability.js";
 
@@ -19,6 +20,7 @@ type AppGlobal = typeof globalThis & {
 
 const CHANGE_TRAIL_POLL_MS = 1_000;
 const SYSTEM_UPDATE_SWEEP_MS = 1_000;
+const WAKE_SWEEP_INTERVAL_MS = resolveWakeSweepIntervalMs(process.env.WAKE_SWEEP_INTERVAL_MS);
 
 let initPromise: Promise<AppServices> | undefined;
 
@@ -60,6 +62,15 @@ async function createAppServices(): Promise<AppServices> {
         payload: unknownToEventPayload(cause),
       });
     });
+  const sweepWakes = () =>
+    void app.wakeSweep.sweep().catch((cause) => {
+      emitEvent(eventSink, {
+        level: "error",
+        source: "runtime.wake-sweep",
+        name: "sweep.failed",
+        payload: unknownToEventPayload(cause),
+      });
+    });
   await listenForThreadEvents({
     db,
     journalReader: app.journalReader,
@@ -69,11 +80,15 @@ async function createAppServices(): Promise<AppServices> {
   drain();
   sweepWorkContext();
   sweepChildReports();
+  // Startup recovery: a steer committed before a crash has no in-memory wake, so
+  // the derived wake need is recovered here as well as on the interval.
+  sweepWakes();
   // Polling is the recovery mechanism as well as the trigger: committed pushes need
   // no in-process callback to survive a crash or a different server process.
   setInterval(drain, CHANGE_TRAIL_POLL_MS).unref();
   setInterval(sweepWorkContext, SYSTEM_UPDATE_SWEEP_MS).unref();
   setInterval(sweepChildReports, SYSTEM_UPDATE_SWEEP_MS).unref();
+  setInterval(sweepWakes, WAKE_SWEEP_INTERVAL_MS).unref();
   return app;
 }
 

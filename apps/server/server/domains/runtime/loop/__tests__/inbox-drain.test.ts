@@ -19,6 +19,7 @@ import type {
 } from "../../gateway/index.js";
 import { createOrchestrator } from "../orchestrator.js";
 import type { MessageDraft } from "../ports.js";
+import { NoPendingWakeError } from "../run-turn-port.js";
 import { gatewayStubDefaults } from "./test-gateway.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
@@ -286,5 +287,82 @@ describe("inbox drain", () => {
     expect(messageText(writer as Message)).toContain("work context note");
     expect(steerMessage).toBeDefined();
     expect(messageText(steerMessage as Message)).not.toContain("work context note");
+  });
+});
+
+describe("drain-only start", () => {
+  it("claims a pending steer as the run's first user turn, before the assistant", async () => {
+    const { thread, inbox, requests, orchestrator, repos } = await setup();
+    const message = await inbox.enqueue(steer("wake me", thread.id));
+
+    const events = await collectEvents(
+      await orchestrator.runTurn({ threadId: thread.id, drain: true }),
+    );
+
+    expect(events.some((event) => event.type === "turn.error")).toBe(false);
+    expect(requests).toHaveLength(1);
+    expect(messageTexts(requests[0]?.messages ?? [])).toContain("wake me");
+
+    const turns = await repos.turns.listByThread(thread.id);
+    const steerTurn = turns.find((turn) => turn.id === message.id);
+    const assistantTurn = turns.find((turn) => turn.role === "assistant");
+    expect(steerTurn?.role).toBe("user");
+    expect(assistantTurn?.prevTurnId).toBe(message.id);
+    expect(await inbox.claimPending(thread.id)).toEqual([]);
+  });
+
+  it("chains multiple drained steers before the assistant in enqueue order", async () => {
+    const { thread, inbox, orchestrator, repos } = await setup();
+    const first = await inbox.enqueue(steer("first", thread.id));
+    const second = await inbox.enqueue(steer("second", thread.id));
+
+    await collect(await orchestrator.runTurn({ threadId: thread.id, drain: true }));
+
+    const turns = await repos.turns.listByThread(thread.id);
+    expect(turns.find((turn) => turn.id === first.id)?.prevTurnId).toBeNull();
+    expect(turns.find((turn) => turn.id === second.id)?.prevTurnId).toBe(first.id);
+    expect(turns.find((turn) => turn.role === "assistant")?.prevTurnId).toBe(second.id);
+    expect(await inbox.claimPending(thread.id)).toEqual([]);
+  });
+
+  it("attaches a system message notice to the drained steer", async () => {
+    const { thread, inbox, requests, orchestrator } = await setup();
+    await inbox.enqueue(steer("wake me", thread.id));
+    await inbox.enqueue(systemMessage("work context note", thread.id));
+
+    await collect(await orchestrator.runTurn({ threadId: thread.id, drain: true }));
+
+    const messages = requests[0]?.messages ?? [];
+    const steerMessage = messages.find(
+      (message) => message.role === "user" && messageText(message).includes("wake me"),
+    );
+    expect(steerMessage).toBeDefined();
+    expect(messageText(steerMessage as Message)).toContain("work context note");
+  });
+
+  it("does nothing and writes no turn when no durable steer is pending", async () => {
+    const { thread, orchestrator, repos } = await setup();
+
+    await expect(orchestrator.runTurn({ threadId: thread.id, drain: true })).rejects.toBeInstanceOf(
+      NoPendingWakeError,
+    );
+    expect(await repos.turns.listByThread(thread.id)).toEqual([]);
+  });
+
+  it("does not re-append a redelivered steer already persisted by a crashed run", async () => {
+    const { thread, inbox, orchestrator, repos } = await setup({ errorAtCall: 1 });
+    const message = await inbox.enqueue(steer("crash safe", thread.id));
+
+    // First drain persists the steer, then the provider fails before the ack.
+    await collect(await orchestrator.runTurn({ threadId: thread.id, drain: true }));
+    expect(await inbox.claimPending(thread.id)).toHaveLength(1);
+
+    // Second drain re-claims the same steer, sees the known turn, continues from
+    // it, and acks it without a duplicate turn.
+    await collect(await orchestrator.runTurn({ threadId: thread.id, drain: true }));
+
+    const turns = await repos.turns.listByThread(thread.id);
+    expect(turns.filter((turn) => turn.id === message.id)).toHaveLength(1);
+    expect(await inbox.claimPending(thread.id)).toEqual([]);
   });
 });

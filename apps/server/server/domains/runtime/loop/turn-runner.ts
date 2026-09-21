@@ -43,7 +43,7 @@ import {
 } from "../../threads/index.js";
 import type { ChildReportDelivery } from "../spawn/child-report-delivery.js";
 import type { Lease, RunAuthority } from "./ports.js";
-import type { RunTurnPort } from "./run-turn-port.js";
+import { NoPendingWakeError, type RunTurnInput, type RunTurnPort } from "./run-turn-port.js";
 
 export type TurnRunner = ReturnType<typeof createTurnRunner>;
 
@@ -141,6 +141,165 @@ export function createTurnRunner(deps: {
     },
   };
 
+  type StartRunSpec =
+    | {
+        kind: "writer";
+        userText: string;
+        userBlocks?: readonly UserMessageBlock[];
+        activatedSkillSlugs?: readonly string[];
+        userTurnMetadata?: JsonValue | null;
+        admissionIdentity?: {
+          submissionId: string;
+          onAccepted(response: AcceptedAdmission): Promise<void>;
+        };
+      }
+    | { kind: "drain" };
+
+  /**
+   * The one run-start path. Writer and drain starts share the live-turn fence,
+   * lease acquisition, cursor capture, background drive, and release machinery;
+   * only the orchestrator input differs. A drain start's first drained steer
+   * becomes the run's user turn, so the writer fields are absent.
+   */
+  async function startRun(input: {
+    threadId: ThreadId;
+    connectionToken?: string;
+    spec: StartRunSpec;
+  }): Promise<{
+    userTurnId: string;
+    assistantTurnId: string;
+    resumeAfterSeq: string;
+    snapshotFloorNextSeq: string;
+  }> {
+    if (running.has(input.threadId)) {
+      throw new TurnStartConflictError(input.threadId, "already_running");
+    }
+
+    assertConnectionTokenLive(input.connectionToken);
+
+    const controller = new AbortController();
+    running.set(input.threadId, {
+      controller,
+    });
+    let lease: Lease | null = null;
+    try {
+      lease = await runAuthority.acquire(input.threadId, crypto.randomUUID());
+      if (!lease) throw new TurnStartConflictError(input.threadId, "already_running");
+      const heldLease: Lease = lease;
+
+      assertConnectionTokenLive(input.connectionToken);
+
+      const resumeAfterSeqBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
+      await deps.workContextDelivery.beforeTurn(input.threadId);
+
+      const spec = input.spec;
+      const admissionIdentity = spec.kind === "writer" ? spec.admissionIdentity : undefined;
+
+      const runInput: RunTurnInput =
+        spec.kind === "drain"
+          ? {
+              threadId: input.threadId,
+              drain: true,
+              signal: controller.signal,
+              lease: heldLease,
+            }
+          : {
+              threadId: input.threadId,
+              userText: spec.userText,
+              userBlocks: spec.userBlocks,
+              activatedSkillSlugs: spec.activatedSkillSlugs,
+              userTurnMetadata: spec.userTurnMetadata,
+              signal: controller.signal,
+              lease: heldLease,
+              ...(admissionIdentity
+                ? {
+                    onStartPersisted: async ({ userTurnId, assistantTurnId }) => {
+                      await admissionIdentity.onAccepted({
+                        kind: "accepted",
+                        threadId: input.threadId,
+                        submissionId: admissionIdentity.submissionId,
+                        userTurnId,
+                        assistantTurnId,
+                        resumeAfterSeq: resumeAfterSeqBeforeStart,
+                        snapshotFloorNextSeq: (
+                          (await deps.hub.headSeq(input.threadId)) + 1n
+                        ).toString(),
+                      });
+                    },
+                  }
+                : {}),
+            };
+
+      const handle = await deps.orchestrator.runTurn(runInput);
+
+      // runTurn only constructs a lazy async generator; no generator event can
+      // append until the background for-await below begins driving it. Capture
+      // the post-setup head now so the floor exactly covers the persisted turns.
+      const snapshotFloorNextSeq = ((await deps.hub.headSeq(input.threadId)) + 1n).toString();
+
+      running.set(input.threadId, {
+        controller,
+        assistantTurnId: handle.assistantTurnId,
+      });
+
+      void (async () => {
+        try {
+          for await (const _event of handle.events) {
+            // Events are written to the hub by the orchestrator's emit();
+            // the turn-runner just drives the generator.
+          }
+        } catch (error) {
+          emitEvent(eventSink, {
+            level: "error",
+            source: "runtime.turn-runner",
+            name: "generator.failed",
+            correlation: {
+              threadId: input.threadId,
+              turnId: handle.assistantTurnId,
+              runId: handle.assistantTurnId,
+            },
+            payload: {
+              threadId: input.threadId,
+              assistantTurnId: handle.assistantTurnId,
+              ...unknownToEventPayload(error),
+            },
+          });
+          await deps.orchestrator.finalizeGeneratorFailure({
+            threadId: input.threadId,
+            assistantTurnId: handle.assistantTurnId,
+            error,
+            signal: controller.signal,
+          });
+        } finally {
+          running.delete(input.threadId);
+          try {
+            await deps.workContextDelivery.flushOwned(input.threadId);
+          } finally {
+            try {
+              await runAuthority.release(heldLease);
+              childRunRegistry.abortChildrenOf(input.threadId);
+            } finally {
+              // After release: a pending report's continuation must not contend
+              // for the claim this finishing turn still held.
+              await deps.childReportDelivery?.flush(input.threadId);
+            }
+          }
+        }
+      })();
+
+      return {
+        userTurnId: handle.userTurnId,
+        assistantTurnId: handle.assistantTurnId,
+        resumeAfterSeq: resumeAfterSeqBeforeStart,
+        snapshotFloorNextSeq,
+      };
+    } catch (error) {
+      running.delete(input.threadId);
+      if (lease) await runAuthority.release(lease);
+      throw error;
+    }
+  }
+
   return {
     childRunRegistry,
 
@@ -177,113 +336,29 @@ export function createTurnRunner(deps: {
       resumeAfterSeq: string;
       snapshotFloorNextSeq: string;
     }> {
-      if (running.has(input.threadId)) {
-        throw new TurnStartConflictError(input.threadId, "already_running");
-      }
-
-      assertConnectionTokenLive(input.connectionToken);
-
-      const controller = new AbortController();
-      running.set(input.threadId, {
-        controller,
-      });
-      let lease: Lease | null = null;
-      try {
-        lease = await runAuthority.acquire(input.threadId, crypto.randomUUID());
-        if (!lease) throw new TurnStartConflictError(input.threadId, "already_running");
-        const heldLease: Lease = lease;
-
-        assertConnectionTokenLive(input.connectionToken);
-
-        const resumeAfterSeqBeforeStart = (await deps.hub.headSeq(input.threadId)).toString();
-        await deps.workContextDelivery.beforeTurn(input.threadId);
-
-        const handle = await deps.orchestrator.runTurn({
-          threadId: input.threadId,
+      return startRun({
+        threadId: input.threadId,
+        connectionToken: input.connectionToken,
+        spec: {
+          kind: "writer",
           userText: input.userText,
           userBlocks: input.userBlocks,
           activatedSkillSlugs: input.activatedSkillSlugs,
           userTurnMetadata: input.userTurnMetadata,
-          signal: controller.signal,
-          lease: heldLease,
-          onStartPersisted: input.admissionIdentity
-            ? async ({ userTurnId, assistantTurnId }) =>
-                input.admissionIdentity?.onAccepted({
-                  kind: "accepted",
-                  threadId: input.threadId,
-                  submissionId: input.admissionIdentity.submissionId,
-                  userTurnId,
-                  assistantTurnId,
-                  resumeAfterSeq: resumeAfterSeqBeforeStart,
-                  snapshotFloorNextSeq: ((await deps.hub.headSeq(input.threadId)) + 1n).toString(),
-                }) ?? Promise.resolve()
-            : undefined,
-        });
+          admissionIdentity: input.admissionIdentity,
+        },
+      });
+    },
 
-        // runTurn only constructs a lazy async generator; no generator event can
-        // append until the background for-await below begins driving it. Capture
-        // the post-setup head now so the floor exactly covers the persisted turns.
-        const snapshotFloorNextSeq = ((await deps.hub.headSeq(input.threadId)) + 1n).toString();
-
-        running.set(input.threadId, {
-          controller,
-          assistantTurnId: handle.assistantTurnId,
-        });
-
-        void (async () => {
-          try {
-            for await (const _event of handle.events) {
-              // Events are written to the hub by the orchestrator's emit();
-              // the turn-runner just drives the generator.
-            }
-          } catch (error) {
-            emitEvent(eventSink, {
-              level: "error",
-              source: "runtime.turn-runner",
-              name: "generator.failed",
-              correlation: {
-                threadId: input.threadId,
-                turnId: handle.assistantTurnId,
-                runId: handle.assistantTurnId,
-              },
-              payload: {
-                threadId: input.threadId,
-                assistantTurnId: handle.assistantTurnId,
-                ...unknownToEventPayload(error),
-              },
-            });
-            await deps.orchestrator.finalizeGeneratorFailure({
-              threadId: input.threadId,
-              assistantTurnId: handle.assistantTurnId,
-              error,
-              signal: controller.signal,
-            });
-          } finally {
-            running.delete(input.threadId);
-            try {
-              await deps.workContextDelivery.flushOwned(input.threadId);
-            } finally {
-              try {
-                await runAuthority.release(heldLease);
-                childRunRegistry.abortChildrenOf(input.threadId);
-              } finally {
-                // After release: a pending report's continuation must not contend
-                // for the claim this finishing turn still held.
-                await deps.childReportDelivery?.flush(input.threadId);
-              }
-            }
-          }
-        })();
-
-        return {
-          userTurnId: handle.userTurnId,
-          assistantTurnId: handle.assistantTurnId,
-          resumeAfterSeq: resumeAfterSeqBeforeStart,
-          snapshotFloorNextSeq,
-        };
+    /**
+     * Starts a drain-only run for a wake. There is no admission to settle; a
+     * durable pending steer makes the run, and a drained-away steer is a no-op.
+     */
+    async startDrain(threadId: ThreadId): Promise<void> {
+      try {
+        await startRun({ threadId, spec: { kind: "drain" } });
       } catch (error) {
-        running.delete(input.threadId);
-        if (lease) await runAuthority.release(lease);
+        if (error instanceof NoPendingWakeError) return;
         throw error;
       }
     },

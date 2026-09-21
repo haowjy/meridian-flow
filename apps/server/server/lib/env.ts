@@ -57,6 +57,12 @@ export function resolveRecentEventsEnabled(input: { rawNodeEnv?: string }): bool
   return input.rawNodeEnv === "development" || input.rawNodeEnv === "test";
 }
 
+/** Wake-sweep cadence; the recovery may also run on process startup. */
+export function resolveWakeSweepIntervalMs(raw: string | undefined): number {
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 30_000;
+}
+
 /** Verbose observability is an explicit opt-in that cannot be enabled in production. */
 export function resolveObsVerbose(input: {
   rawNodeEnv?: string;

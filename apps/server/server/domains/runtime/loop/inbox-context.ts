@@ -14,7 +14,7 @@
  * request messages, notices, and persisted events, not inbox rows.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { Block, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
+import type { Block, BlockUpsertedRow, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import type { Notice, NoticePort } from "../../notices/index.js";
 import { user } from "../gateway/helpers/messages.js";
 import type { Message } from "../gateway/index.js";
@@ -122,26 +122,7 @@ export async function persistInboxSteers(input: {
       const events: OrchestratorEvent[] = [];
       let leafTurnId = input.expectedLeafTurnId;
       for (const message of steers) {
-        const turn = createLocalTurn({
-          id: message.id,
-          threadId: input.threadId,
-          prevTurnId: leafTurnId,
-          role: "user",
-          status: "complete",
-          metadata: { kind: "steer" },
-          // Stamp the durable origin time, not persist time: several steers in
-          // one drain can share a millisecond, and `listByThread` sorts by
-          // `createdAt`, so persist time could invert the chain after a restart.
-          createdAt: message.enqueuedAt,
-        });
-        const block = contentForBlockInput({
-          id: message.id,
-          turnId: turn.id,
-          blockType: "text",
-          sequence: 0,
-          textContent: inboxMessageText(message),
-          status: "complete",
-        });
+        const { turn, block } = steerTurnFor(message, leafTurnId);
         turns.push(turn);
         blocks.push(localBlockFromEvent(block));
         events.push({ type: "turn.created", turn }, { type: "block.upserted", block });
@@ -155,6 +136,36 @@ export async function persistInboxSteers(input: {
     blocks: persisted.result.blocks,
     events: persisted.events,
   };
+}
+
+/**
+ * Builds the durable user turn and text block for one drained steer. The inbox
+ * message id is reused as the turn/block id so a redelivery is idempotent, and
+ * `enqueuedAt` (not persist time) stamps the chain order.
+ */
+export function steerTurnFor(
+  message: InboxMessage,
+  prevTurnId: TurnId | null,
+): { turn: Turn; block: BlockUpsertedRow; text: string } {
+  const turn = createLocalTurn({
+    id: message.id,
+    threadId: message.threadId,
+    prevTurnId,
+    role: "user",
+    status: "complete",
+    metadata: { kind: "steer" },
+    createdAt: message.enqueuedAt,
+  });
+  const text = inboxMessageText(message);
+  const block = contentForBlockInput({
+    id: message.id,
+    turnId: turn.id,
+    blockType: "text",
+    sequence: 0,
+    textContent: text,
+    status: "complete",
+  });
+  return { turn, block, text };
 }
 
 function inboxMessageText(message: InboxMessage): string {
