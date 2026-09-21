@@ -94,11 +94,11 @@ the model; the writer never sees their rows. Parent spawn cards render only from
 the helper-result custom block.
 
 Foreground persists a running helper-result card before the child runs, so it
-appears as soon as the parent turn holds the block. Background has no such
-persisted card while the child runs; the client synthesizes one from the
-`meridian.background.started` event (`reduce-background-event.ts`), attached to
-the parent turn as a running `helper-result` custom block, and removes it on
-`completed`/`failed`. The durable report then arrives on its own system turn.
+appears as soon as the parent turn holds the block. Background spawns no such
+card: run liveness is not history. The client used to synthesize a running
+`helper-result` block on the parent turn from `meridian.background.started`, but
+a terminal parent turn reconciles client-only blocks away, so the card flashed
+and vanished. Only the durable report arrives, on its own system turn.
 
 ## Vocabulary
 

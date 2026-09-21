@@ -390,9 +390,9 @@ export function createOrchestratorEventProjector() {
           }),
         ];
 
-      // The app reducer (reduce-background-event.ts) runs the parent-turn
-      // background-run card off these payloads; the journal payload passes
-      // through verbatim so server and app read the same fields.
+      // Lifecycle frames for a background child run. The journal payload passes
+      // through verbatim; the app ignores them today (liveness is read from the
+      // server, not a client turn block) and they drive the live activity read.
       case "background.started":
       case "background.completed":
       case "background.failed": {

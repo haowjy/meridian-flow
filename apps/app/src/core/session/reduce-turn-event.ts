@@ -13,7 +13,6 @@ import {
 import type { AGUIEvent, Block, BlockType, JsonValue, Turn } from "@meridian/contracts/protocol";
 import { blockContentRecord, EventType, interruptIdForBlock } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
-import { applyBackgroundRunEvent } from "./reduce-background-event";
 import {
   eventH,
   nextBlockSequence,
@@ -58,7 +57,6 @@ type StoreEventTarget = {
     opts?: { createdAt?: string; writeMode?: Turn["writeMode"] },
   ): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
-  removeAssistantBlock(threadId: string, turnId: string, blockId: string): void;
   patchTurnStatus(
     threadId: string,
     turnId: string,
@@ -987,10 +985,10 @@ export function applyAguiEventToStore(
     }
 
     case EventType.CUSTOM: {
-      if (event.name.startsWith("meridian.background.")) {
-        applyBackgroundRunEvent(store, threadId, event);
-        return;
-      }
+      // Subagent liveness is server truth (leases + lineage), never a turn
+      // block. Ignore the lifecycle frames here so they don't fall through to
+      // the opaque-custom fallback below as "Unknown component".
+      if (event.name.startsWith("meridian.background.")) return;
       if (event.name === "meridian.block.upserted") {
         const payload = parseCustomBlockUpsertPayload(event.value);
         if (payload) applyCustomBlockUpsertEvent(store, threadId, payload);
