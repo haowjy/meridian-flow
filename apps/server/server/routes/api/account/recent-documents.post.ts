@@ -2,6 +2,7 @@
 import type { DocumentId } from "@meridian/contracts";
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, readBody } from "nitro/h3";
+import { RecentDocumentUnavailableError } from "../../../domains/recent-documents/index.js";
 import { requireAppUser } from "../../../lib/auth-gate.js";
 import { requireRequestId } from "../../../lib/request-id.js";
 
@@ -15,10 +16,8 @@ export default defineEventHandler(async (event) => {
   try {
     await app.recentDocuments.record(user.userId, documentId as DocumentId);
   } catch (error) {
-    // A just-created document's row can lag the open by a beat, and a deleted
-    // document's row is gone. Answer 404 so the fire-and-forget caller retries a
-    // fresh miss instead of dropping the write; anything else is a real fault.
-    if ((error as { code?: string }).code === "23503") {
+    // Missing, soft-deleted, and not-owned are one 404. Do not sniff postgres codes.
+    if (error instanceof RecentDocumentUnavailableError) {
       throw createError({ statusCode: 404, message: "Document not found" });
     }
     throw error;

@@ -23,7 +23,9 @@ export function useRecentDocuments(options?: {
     useQuery({
       queryKey: accountQueryKeys.recentDocuments(options?.limit),
       queryFn: () => listRecentDocuments({ limit: options?.limit }),
-      staleTime: 15_000,
+      // Recents change as the writer opens things; never serve a stale list just
+      // because the landing remounted. Recording also invalidates this key.
+      staleTime: 0,
       enabled,
     }),
   );

@@ -1,57 +1,125 @@
-/** Drizzle recents repository: upsert opened_at, prune to the newest 50, list with identity. */
+/** Drizzle recents repository: owner-gated upsert, prune unlistable rows, list with identity. */
+import { CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { RecentDocumentItem } from "@meridian/contracts/protocol";
 import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import {
   contextSources,
+  DOCUMENT_KINDS,
   documents,
   folders,
   projects,
   userRecentDocuments,
   works,
 } from "@meridian/database/schema";
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, not, or, type SQL, sql } from "drizzle-orm";
+import {
+  currentDrizzleDb,
+  runInDrizzleTransaction,
+} from "../../../../shared/drizzle-transaction.js";
 import { mapAuthoritativeFile } from "../../../context/adapters/catalog-file-mapper.js";
 import { classifyAuthoritativeIdentity } from "../../../context/adapters/project-context-availability.js";
 import {
   type RecentDocumentsRepository,
+  RecentDocumentUnavailableError,
   USER_RECENT_DOCUMENTS_CAP,
 } from "../../ports/recent-documents-repository.js";
+
+const CONTENT_SCHEMES: string[] = [...CONTEXT_URI_SCHEMES];
+
+/** Rows the list will return. Record, list, and prune share this so cap slots are listable rows. */
+function visibleIdentity(userId: UserId): SQL {
+  const predicate = and(
+    eq(projects.userId, userId),
+    eq(documents.kind, DOCUMENT_KINDS.content),
+    inArray(contextSources.slug, CONTENT_SCHEMES),
+    isNull(documents.deletedAt),
+    isNull(contextSources.deletedAt),
+    isNull(projects.deletedAt),
+    or(isNull(works.id), and(isNull(works.deletedAt), ne(works.status, "archived"))),
+  );
+  if (!predicate) throw new Error("Recent document visibility predicate is empty");
+  return predicate;
+}
+
+type Db = ReturnType<typeof currentDrizzleDb>;
+
+function projectIdentity() {
+  return sql`${projects.id} = coalesce(${contextSources.projectId}, ${works.projectId})`;
+}
+
+async function prune(tx: Db, userId: UserId) {
+  // Delete unlistable rows first so a soft-deleted document cannot occupy a cap slot.
+  const stale = await tx
+    .select({ documentId: userRecentDocuments.documentId })
+    .from(userRecentDocuments)
+    .innerJoin(documents, eq(userRecentDocuments.documentId, documents.id))
+    .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+    .leftJoin(works, eq(contextSources.workId, works.id))
+    .innerJoin(projects, projectIdentity())
+    .where(and(eq(userRecentDocuments.userId, userId), not(visibleIdentity(userId))));
+  if (stale.length > 0) {
+    await tx.delete(userRecentDocuments).where(
+      and(
+        eq(userRecentDocuments.userId, userId),
+        inArray(
+          userRecentDocuments.documentId,
+          stale.map((row) => row.documentId),
+        ),
+      ),
+    );
+  }
+  const overflow = await tx
+    .select({ documentId: userRecentDocuments.documentId })
+    .from(userRecentDocuments)
+    .where(eq(userRecentDocuments.userId, userId))
+    .orderBy(desc(userRecentDocuments.openedAt), desc(userRecentDocuments.documentId))
+    .offset(USER_RECENT_DOCUMENTS_CAP);
+  const overflowIds = overflow.map((row) => row.documentId);
+  if (overflowIds.length === 0) return;
+  await tx
+    .delete(userRecentDocuments)
+    .where(
+      and(
+        eq(userRecentDocuments.userId, userId),
+        inArray(userRecentDocuments.documentId, overflowIds),
+      ),
+    );
+}
 
 export function createDrizzleRecentDocumentsRepository(deps: {
   db: Database;
 }): RecentDocumentsRepository {
+  const db = () => currentDrizzleDb(deps.db);
   return {
     async record(userId: UserId, documentId: DocumentId) {
-      const now = new Date();
-      await deps.db
-        .insert(userRecentDocuments)
-        .values({ userId, documentId, openedAt: now })
-        .onConflictDoUpdate({
-          target: [userRecentDocuments.userId, userRecentDocuments.documentId],
-          set: { openedAt: now },
-        });
-      const overflow = await deps.db
-        .select({ documentId: userRecentDocuments.documentId })
-        .from(userRecentDocuments)
-        .where(eq(userRecentDocuments.userId, userId))
-        .orderBy(desc(userRecentDocuments.openedAt))
-        .offset(USER_RECENT_DOCUMENTS_CAP);
-      const overflowIds = overflow.map((row) => row.documentId);
-      if (overflowIds.length === 0) return;
-      await deps.db
-        .delete(userRecentDocuments)
-        .where(
-          and(
-            eq(userRecentDocuments.userId, userId),
-            inArray(userRecentDocuments.documentId, overflowIds),
-          ),
-        );
+      await runInDrizzleTransaction(deps.db, async () => {
+        const tx = db();
+        const [visible] = await tx
+          .select({ id: documents.id })
+          .from(documents)
+          .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
+          .leftJoin(works, eq(contextSources.workId, works.id))
+          .innerJoin(projects, projectIdentity())
+          .where(and(eq(documents.id, documentId), visibleIdentity(userId)))
+          .limit(1);
+        if (!visible) throw new RecentDocumentUnavailableError(documentId);
+        const now = new Date();
+        await tx
+          .insert(userRecentDocuments)
+          .values({ userId, documentId, openedAt: now })
+          .onConflictDoUpdate({
+            target: [userRecentDocuments.userId, userRecentDocuments.documentId],
+            set: { openedAt: now },
+          });
+        await prune(tx, userId);
+      });
     },
     async listByUser(userId: UserId, limit = USER_RECENT_DOCUMENTS_CAP) {
       const capped = Math.min(Math.max(limit, 0), USER_RECENT_DOCUMENTS_CAP);
       if (capped === 0) return [];
-      const rows = await deps.db
+      const tx = db();
+      const rows = await tx
         .select({
           document: documents,
           source: contextSources,
@@ -63,25 +131,14 @@ export function createDrizzleRecentDocumentsRepository(deps: {
         .innerJoin(documents, eq(userRecentDocuments.documentId, documents.id))
         .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
         .leftJoin(works, eq(contextSources.workId, works.id))
-        .innerJoin(
-          projects,
-          sql`${projects.id} = coalesce(${contextSources.projectId}, ${works.projectId})`,
-        )
-        .where(
-          and(
-            eq(userRecentDocuments.userId, userId),
-            eq(projects.userId, userId),
-            isNull(documents.deletedAt),
-            isNull(projects.deletedAt),
-            isNull(contextSources.deletedAt),
-          ),
-        )
+        .innerJoin(projects, projectIdentity())
+        .where(and(eq(userRecentDocuments.userId, userId), visibleIdentity(userId)))
         .orderBy(desc(userRecentDocuments.openedAt))
         .limit(capped);
 
       const sourceIds = [...new Set(rows.flatMap((row) => (row.source ? [row.source.id] : [])))];
       const folderRows = sourceIds.length
-        ? await deps.db
+        ? await tx
             .select()
             .from(folders)
             .where(inArray(folders.contextSourceId, sourceIds as never))
@@ -91,8 +148,9 @@ export function createDrizzleRecentDocumentsRepository(deps: {
       const documentsOut: RecentDocumentItem[] = [];
       for (const row of rows) {
         const { document, source, sourceProject, work, openedAt } = row;
-        if (!source || !sourceProject) continue;
-        if (work?.deletedAt || work?.status === "archived") continue;
+        if (!source || !sourceProject) {
+          throw new Error(`Recent document ${document.id} is missing source identity`);
+        }
         const classification = classifyAuthoritativeIdentity({
           row: { document, source, sourceProject, work },
           requestProjectId: sourceProject.id,
@@ -101,29 +159,31 @@ export function createDrizzleRecentDocumentsRepository(deps: {
           checkedGeneration: "0",
           foldersById,
         });
-        if (classification.kind !== "valid") continue;
-        try {
-          const entry = mapAuthoritativeFile({
-            document,
-            scope: classification.identity.scope,
-            scheme: classification.identity.scheme,
-            workId: work?.id ?? null,
-            workSlug: work && !work.isNoWork ? work.slug : null,
-            parentPath: classification.identity.parentPath,
-          });
-          documentsOut.push({
-            documentId: document.id,
-            projectId: sourceProject.id,
-            projectName: sourceProject.name,
-            projectSlug: sourceProject.slug,
-            scheme: classification.identity.scheme,
-            path: `/${entry.path.join("/")}`,
-            name: entry.name,
-            filetype: document.fileType,
-            editable: entry.editable,
-            openedAt: openedAt.toISOString(),
-          });
-        } catch {}
+        if (classification.kind !== "valid") {
+          throw new Error(`Recent document ${document.id} has inconsistent identity`);
+        }
+        const workSlug = work && !work.isNoWork ? work.slug : null;
+        const entry = mapAuthoritativeFile({
+          document,
+          scope: classification.identity.scope,
+          scheme: classification.identity.scheme,
+          workId: work?.id ?? null,
+          workSlug,
+          parentPath: classification.identity.parentPath,
+        });
+        documentsOut.push({
+          documentId: document.id,
+          projectId: sourceProject.id,
+          projectName: sourceProject.name,
+          projectSlug: sourceProject.slug,
+          workSlug,
+          scheme: classification.identity.scheme,
+          path: `/${entry.path.join("/")}`,
+          name: entry.name,
+          filetype: document.fileType,
+          editable: entry.editable,
+          openedAt: openedAt.toISOString(),
+        });
       }
       return documentsOut;
     },

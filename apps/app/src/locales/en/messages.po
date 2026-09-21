@@ -1073,6 +1073,10 @@ msgstr "Couldn't read"
 msgid "Couldn't redo"
 msgstr "Couldn't redo"
 
+#: src/features/project/context/RecentDocumentsLanding.tsx
+msgid "Couldn't refresh recent documents."
+msgstr "Couldn't refresh recent documents."
+
 #: src/features/agents/AgentPicker.tsx
 #~ msgid "Couldn't remove agent from project."
 #~ msgstr "Couldn't remove agent from project."
@@ -1362,6 +1366,10 @@ msgstr "Drop image to insert it"
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Duplicate"
 msgstr "Duplicate"
+
+#: src/features/project/context/RecentDocumentsLanding.tsx
+msgid "Earlier"
+msgstr "Earlier"
 
 #. placeholder {0}: fieldLabel(next)
 #: src/features/project/work/WorkMetadata.tsx
@@ -2695,6 +2703,7 @@ msgstr "Resume where I left off on any device"
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/home/HomeFeed.tsx
 #: src/routes/_authenticated/p/$projectSlug.tsx
@@ -3499,6 +3508,7 @@ msgstr "This Work is unavailable."
 msgid "title"
 msgstr "title"
 
+#: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/lib/date-groups.ts
 msgid "Today"
 msgstr "Today"
@@ -3782,6 +3792,7 @@ msgstr "Wrote"
 msgid "Wrote file"
 msgstr "Wrote file"
 
+#: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/lib/date-groups.ts
 msgid "Yesterday"
 msgstr "Yesterday"

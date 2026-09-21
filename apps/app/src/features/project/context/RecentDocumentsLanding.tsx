@@ -9,9 +9,10 @@
  * Server-owned and cross-device; renders device-cached rows first and lets the
  * network improve them.
  */
-import { Trans, useLingui } from "@lingui/react/macro";
+import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import type { RecentDocumentItem } from "@meridian/contracts/protocol";
-import { Link } from "@tanstack/react-router";
+import { useRouter } from "@tanstack/react-router";
 import { FilePlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
@@ -22,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { cn } from "@/lib/utils";
 import { relativeTime } from "../relative-time";
+import { projectAddressHref } from "../routing/project-address";
 import { fileKindIcon } from "./context-file-icon";
 
 /** Age buckets the list groups under, oldest last. */
@@ -39,18 +41,20 @@ function groupFor(openedAt: string, nowMs: number): Group {
   if (Number.isNaN(opened)) return "earlier";
   const today = startOfDay(nowMs);
   if (opened >= today) return "today";
-  if (opened >= startOfDay(today - 86_400_000)) return "yesterday";
-  return "earlier";
+  // Day arithmetic, not a fixed 86400000: a DST day is not 24 hours long.
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  return opened >= yesterday.getTime() ? "yesterday" : "earlier";
 }
 
 function groupLabel(group: Group): string {
   switch (group) {
     case "today":
-      return "Today";
+      return t`Today`;
     case "yesterday":
-      return "Yesterday";
+      return t`Yesterday`;
     default:
-      return "Earlier";
+      return t`Earlier`;
   }
 }
 
@@ -66,7 +70,6 @@ export function RecentDocumentsLanding({
    */
   onBrowseTree?: () => void;
 }) {
-  const { t } = useLingui();
   const recent = useRecentDocuments();
   const [now, setNow] = useState(() => Date.now());
 
@@ -74,6 +77,8 @@ export function RecentDocumentsLanding({
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const documents = recent.documents ?? [];
 
   // No history: the heading promises a list that does not exist, so the
   // first-run state stands alone rather than sitting under it.
@@ -105,41 +110,53 @@ export function RecentDocumentsLanding({
 
         {recent.status === "loading" ? (
           <LandingLoading />
-        ) : recent.status === "error" ? (
-          <div className="mt-2">
-            <InlineErrorRow
-              message={<Trans>Couldn't load recent documents.</Trans>}
-              onRetry={recent.refetch}
-            />
-          </div>
         ) : (
-          <div className="mt-7 flex flex-col">
-            {GROUPS.map((group) => {
-              const rows = (recent.documents ?? []).filter(
-                (item) => groupFor(item.openedAt, now) === group,
-              );
-              if (rows.length === 0) return null;
-              return (
-                <section key={group} className="mt-7 first:mt-0">
-                  <SectionLabel variant="group">{groupLabel(group)}</SectionLabel>
-                  <ul className="mt-2 divide-y divide-border-subtle">
-                    {rows.map((item) => (
-                      <li key={item.documentId}>
-                        <RecentDocumentRow item={item} now={now} />
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              );
-            })}
-          </div>
+          <>
+            <div className="mt-7 flex flex-col">
+              {GROUPS.map((group) => {
+                const rows = documents.filter((item) => groupFor(item.openedAt, now) === group);
+                if (rows.length === 0) return null;
+                return (
+                  <section key={group} className="mt-7 first:mt-0">
+                    <SectionLabel variant="group">{groupLabel(group)}</SectionLabel>
+                    <ul className="mt-2 divide-y divide-border-subtle">
+                      {rows.map((item) => (
+                        <li key={item.documentId}>
+                          <RecentDocumentRow item={item} now={now} />
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                );
+              })}
+            </div>
+            {/* A failed refresh over cached rows keeps the list and offers a
+                quiet retry; a failed first load has nothing to show. */}
+            {recent.isError ? (
+              documents.length > 0 ? (
+                <p className="mt-5 text-xs text-muted-foreground">
+                  <Trans>Couldn't refresh recent documents.</Trans>{" "}
+                  <button type="button" onClick={recent.refetch} className="text-button text-xs">
+                    <Trans>Retry</Trans>
+                  </button>
+                </p>
+              ) : (
+                <div className="mt-2">
+                  <InlineErrorRow
+                    message={<Trans>Couldn't load recent documents.</Trans>}
+                    onRetry={recent.refetch}
+                  />
+                </div>
+              )
+            ) : null}
+          </>
         )}
 
         <p className="mt-8 text-xs text-muted-foreground">
           <Trans>Documents you open show up here.</Trans>{" "}
           {onBrowseTree ? (
             <button type="button" onClick={onBrowseTree} className="text-button text-xs">
-              {t`Browse the project tree`}
+              <Trans>Browse the project tree</Trans>
             </button>
           ) : (
             <Trans>Browse the project tree to open another.</Trans>
@@ -151,14 +168,42 @@ export function RecentDocumentsLanding({
 }
 
 function RecentDocumentRow({ item, now }: { item: RecentDocumentItem; now: number }) {
+  const router = useRouter();
   const Icon = fileKindIcon(item.name);
   const age = relativeTime(item.openedAt, now);
-  // The readable project address is path-based: /p/{slug}/{scheme}/{path}.
-  const splat = `${item.scheme}/${item.path.replace(/^\/+/, "")}`;
+  // The canonical readable address, not a hand-built path: it encodes segments
+  // and inserts the Work prefix a work-scoped document needs.
+  const href = projectAddressHref({
+    projectSlug: item.projectSlug,
+    destination: {
+      kind: "document",
+      scheme: item.scheme,
+      path: item.path.replace(/^\/+/, ""),
+      workSlug: item.workSlug,
+    },
+    chat: { kind: "absent" },
+    work: { kind: "absent" },
+    results: false,
+  });
   return (
-    <Link
-      to="/p/$projectSlug/$"
-      params={{ projectSlug: item.projectSlug, _splat: splat }}
+    <a
+      href={href}
+      onClick={(event) => {
+        // Plain left-click navigates in place; modified clicks keep their
+        // native new-tab/window behavior.
+        if (
+          event.defaultPrevented ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey ||
+          event.button !== 0
+        ) {
+          return;
+        }
+        event.preventDefault();
+        void router.navigate({ href });
+      }}
       className="focus-ring flex items-start gap-3.5 rounded-md py-2.5"
     >
       <span className="mt-0.5 grid size-[18px] shrink-0 place-items-center text-ink-subtle">
@@ -171,8 +216,10 @@ function RecentDocumentRow({ item, now }: { item: RecentDocumentItem; now: numbe
           <span className="truncate text-muted-foreground">{item.path}</span>
         </span>
       </span>
-      <span className="mt-0.5 shrink-0 text-xs tabular-nums text-ink-subtle">{age}</span>
-    </Link>
+      <span aria-hidden className="mt-0.5 shrink-0 text-xs tabular-nums text-ink-subtle">
+        {age}
+      </span>
+    </a>
   );
 }
 
