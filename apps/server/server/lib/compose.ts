@@ -4,6 +4,7 @@
  * chooses concrete server adapters and assembles domain services behind ports.
  */
 
+import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { createStripeCustomerProvisioner } from "../domains/billing/adapters/drizzle/stripe-customer-provisioner.js";
 import { createStripeBillingGateway } from "../domains/billing/adapters/stripe/stripe-gateway.js";
@@ -133,6 +134,7 @@ import {
   createWorkContextReader,
   createWriterTurnProducer,
   DEFAULT_LEASE_TTL_MS,
+  emitSettledRunActivityBestEffort,
   type Gateway,
   InvalidAdmissionError,
   type RunAuthority,
@@ -641,6 +643,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   }
   const toolExecutor = createToolExecutor(toolRegistry);
   const runTurnProxy = createLateBindRunTurnPort();
+  const readActivity = (threadId: ThreadId) =>
+    readThreadActivity(
+      { threads: ports.threadRepos.threads, statusReader: ports.runAuthority },
+      threadId,
+    );
   runner = createTurnRunner({
     orchestrator: runTurnProxy,
     hub: threadEventHub,
@@ -648,6 +655,18 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     runAuthority: ports.runAuthority,
     workContextDelivery,
+    // A drain-woken subagent run (a child report or thread_message) has no
+    // driver to emit its terminal frame; refresh the root's activity after its
+    // lease is released so the last frame cannot stay `awake`.
+    onRunSettled: (threadId) => {
+      void emitSettledRunActivityBestEffort({
+        findThread: (id) => ports.threadRepos.threads.findById(id),
+        threadId,
+        eventWriter: threadEventHub,
+        readActivity,
+        eventSink: ports.eventSink,
+      });
+    },
   });
   // One durable inbox and lock shared by the loop (consumer) and the producer
   // `ThreadedInbox`. The `RunStarter` wakes a thread from a pending message; the
@@ -727,11 +746,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     // subscribers at append time, in append order. A notifier-relayed write lands
     // after later in-process appends and is dropped as stale by the WS cursor.
     eventWriter: threadEventHub,
-    readActivity: (threadId) =>
-      readThreadActivity(
-        { threads: ports.threadRepos.threads, statusReader: ports.runAuthority },
-        threadId,
-      ),
+    readActivity,
     childRunRegistry: runner.childRunRegistry,
     threadedInbox,
     workContextDelivery: workContextDelivery,
@@ -762,11 +777,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       );
     },
     eventWriter: threadEventHub,
-    readActivity: (threadId) =>
-      readThreadActivity(
-        { threads: ports.threadRepos.threads, statusReader: ports.runAuthority },
-        threadId,
-      ),
+    readActivity,
     agentRevisions: ports.agentRevisions,
     eventSink: ports.eventSink,
   });

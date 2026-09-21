@@ -1,11 +1,11 @@
 /**
  * Pure helpers for the running-subagents surface: re-base a run-tree activity
- * onto one viewed thread, select live nodes, and describe a ThreadStatus.
+ * onto one viewed thread and select live nodes.
  *
  * No transport or React here — the live wiring lives in `useThreadActivity`,
  * so this logic is directly unit-testable.
  */
-import type { ThreadActivity, ThreadActivityNode, ThreadStatus } from "@meridian/contracts/threads";
+import type { ThreadActivity, ThreadActivityNode } from "@meridian/contracts/threads";
 
 export const EMPTY_THREAD_ACTIVITY: ThreadActivity = { descendants: [] };
 
@@ -37,18 +37,16 @@ export function subtreeOf(activity: ThreadActivity, viewedThreadId: string): Thr
   };
 }
 
-/** A node the strip shows: its process is live, or its spawn has not settled. */
+/**
+ * A node the strip shows: its lease is live. The durable `spawnStatus` cannot
+ * stand in — a settled child whose process died leaves `spawnStatus: "running"`
+ * with no lease, and the row already reads `Asleep`; trusting the lease keeps
+ * the header count and the per-node status in agreement.
+ */
 export function isActiveNode(node: ThreadActivityNode): boolean {
-  return node.status.kind === "awake" || node.spawnStatus === "running";
+  return node.status.kind === "awake";
 }
 
 export function activeDescendants(activity: ThreadActivity): ThreadActivityNode[] {
   return activity.descendants.filter(isActiveNode);
-}
-
-export type ThreadStatusText = "asleep" | "generating" | "waiting";
-
-export function threadStatusText(status: ThreadStatus): ThreadStatusText {
-  if (status.kind === "asleep") return "asleep";
-  return status.phase === "generating" ? "generating" : "waiting";
 }

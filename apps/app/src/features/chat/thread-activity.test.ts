@@ -1,11 +1,11 @@
 /**
  * The running-subagents view derives from the viewed thread's own subtree. These
- * pin the re-basing (a root frame filtered to a child view), the active filter,
- * and the status label mapping — no primary special case.
+ * pin the re-basing (a root frame filtered to a child view) and the lease-backed
+ * active filter — no primary special case.
  */
 import type { ThreadActivity, ThreadActivityNode } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { activeDescendants, isActiveNode, subtreeOf, threadStatusText } from "./thread-activity";
+import { activeDescendants, isActiveNode, subtreeOf } from "./thread-activity";
 
 function node(overrides: Partial<ThreadActivityNode> & { threadId: string }): ThreadActivityNode {
   return {
@@ -49,31 +49,18 @@ describe("subtreeOf", () => {
 });
 
 describe("active descendants", () => {
-  it("keeps a live process and an unsettled spawn", () => {
+  it("keeps only nodes with a live lease", () => {
     const nodes = [
       node({
         threadId: "live",
         status: { kind: "awake", phase: "generating", cancelRequested: false },
       }),
-      node({ threadId: "spawning", spawnStatus: "running" }),
+      // A durable `running` with no live lease is the dead-process case: the row
+      // reads Asleep, so the strip must not count it.
+      node({ threadId: "dead-process", spawnStatus: "running" }),
       node({ threadId: "done", spawnStatus: "succeeded" }),
     ];
-    expect(nodes.map(isActiveNode)).toEqual([true, true, false]);
-    expect(activeDescendants({ descendants: nodes }).map((n) => n.threadId)).toEqual([
-      "live",
-      "spawning",
-    ]);
-  });
-});
-
-describe("threadStatusText", () => {
-  it("names each derived status", () => {
-    expect(threadStatusText({ kind: "asleep" })).toBe("asleep");
-    expect(threadStatusText({ kind: "awake", phase: "generating", cancelRequested: false })).toBe(
-      "generating",
-    );
-    expect(threadStatusText({ kind: "awake", phase: "waiting", cancelRequested: false })).toBe(
-      "waiting",
-    );
+    expect(nodes.map(isActiveNode)).toEqual([true, false, false]);
+    expect(activeDescendants({ descendants: nodes }).map((n) => n.threadId)).toEqual(["live"]);
   });
 });
