@@ -57,6 +57,16 @@ export type ThreadPhase = "generating" | "waiting";
 export type ThreadStatus =
   | { kind: "asleep" }
   | { kind: "awake"; phase: ThreadPhase; cancelRequested: boolean };
+
+/**
+ * One thread's live-lease projection: the derived run status plus the assistant
+ * turn the lease is bound to. Batched lease reads (`readMany`) return this per
+ * thread; a thread absent from the map is asleep.
+ */
+export type ThreadLeaseState = {
+  status: ThreadStatus;
+  runningTurnId: string | null;
+};
 export type TurnRole = "user" | "assistant" | "system" | "compaction";
 export type BlockType =
   | "text"

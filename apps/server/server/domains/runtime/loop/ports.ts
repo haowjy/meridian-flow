@@ -7,7 +7,12 @@
  */
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { JsonValue, ThreadPhase, ThreadStatus } from "@meridian/contracts/threads";
+import type {
+  JsonValue,
+  ThreadLeaseState,
+  ThreadPhase,
+  ThreadStatus,
+} from "@meridian/contracts/threads";
 
 export type RunId = string;
 
@@ -100,6 +105,12 @@ export interface RunAuthority {
    */
   bindTurn(lease: Lease, turnId: TurnId): Promise<void>;
   read(threadId: ThreadId): Promise<ThreadStatus>;
+  /**
+   * Batch liveness read for a page of threads, one lease query. Only threads
+   * with a live lease appear; the value is the same projection `read` and
+   * `readRunningTurnId` derive, so list and snapshot cannot drift.
+   */
+  readMany(threadIds: readonly ThreadId[]): Promise<Map<ThreadId, ThreadLeaseState>>;
   /**
    * The assistant turn bound to the live lease, or null when the thread is
    * asleep or a run has not yet bound its turn. Derived from the same row as

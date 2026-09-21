@@ -256,6 +256,7 @@ export class RuntimeTestRig {
         resumeAfterSeq: "0",
       }),
       read: (threadId: ThreadId) => this.runAuthority.read(threadId),
+      readMany: (threadIds: readonly ThreadId[]) => this.runAuthority.readMany(threadIds),
       readRunningTurnId: (threadId: ThreadId) => this.runAuthority.readRunningTurnId(threadId),
       journalEvents: async () => [],
     };

@@ -60,7 +60,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("reads the running turn from the lease in both the list and live state", async () => {
       const authority = createDrizzleRunAuthority(db);
-      const repo = createDrizzleThreadRepository(db);
+      const repo = createDrizzleThreadRepository(db, { statusReader: authority });
       const runtime = createThreadRuntimeService({ db, statusReader: authority });
 
       const lease = await authority.acquire(THREAD_ID, "run-1");

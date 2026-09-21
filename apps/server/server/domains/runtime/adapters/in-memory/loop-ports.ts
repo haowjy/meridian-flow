@@ -4,6 +4,7 @@
  * injected clock so lease expiry and renewal are deterministic.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { ThreadLeaseState } from "@meridian/contracts/threads";
 import {
   DEFAULT_LEASE_TTL_MS,
   type Inbox,
@@ -144,6 +145,19 @@ export function createInMemoryRunAuthority(
       const row = liveLease(threadId);
       if (!row) return { kind: "asleep" };
       return { kind: "awake", phase: row.phase, cancelRequested: row.cancelRequested };
+    },
+
+    async readMany(threadIds) {
+      const states = new Map<ThreadId, ThreadLeaseState>();
+      for (const threadId of threadIds) {
+        const row = liveLease(threadId);
+        if (!row) continue;
+        states.set(threadId, {
+          status: { kind: "awake", phase: row.phase, cancelRequested: row.cancelRequested },
+          runningTurnId: row.turnId,
+        });
+      }
+      return states;
     },
 
     async readRunningTurnId(threadId) {

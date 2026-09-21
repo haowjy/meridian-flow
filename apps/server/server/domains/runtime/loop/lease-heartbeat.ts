@@ -80,6 +80,7 @@ export function createHeartbeatRunAuthority(
     publish: (lease, phase) => authority.publish(lease, phase),
     bindTurn: (lease, turnId) => authority.bindTurn(lease, turnId),
     read: (threadId) => authority.read(threadId),
+    readMany: (threadIds) => authority.readMany(threadIds),
     readRunningTurnId: (threadId) => authority.readRunningTurnId(threadId),
     cancel: (threadId) => authority.cancel(threadId),
   };

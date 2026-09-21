@@ -36,6 +36,9 @@ function recordingAuthority(): {
     async readRunningTurnId() {
       return null;
     },
+    async readMany() {
+      return new Map();
+    },
     async cancel() {},
     async release() {
       state.releases += 1;
@@ -93,6 +96,9 @@ describe("RunAuthority heartbeat", () => {
       async readRunningTurnId() {
         return null;
       },
+      async readMany() {
+        return new Map();
+      },
       async cancel() {},
       async release() {},
     };
@@ -126,6 +132,9 @@ describe("RunAuthority heartbeat", () => {
       },
       async readRunningTurnId() {
         return null;
+      },
+      async readMany() {
+        return new Map();
       },
       async cancel() {},
       async release() {},
@@ -165,6 +174,9 @@ describe("RunAuthority heartbeat", () => {
       },
       async readRunningTurnId() {
         return null;
+      },
+      async readMany() {
+        return new Map();
       },
       async cancel() {},
       async release() {},
@@ -212,6 +224,9 @@ describe("RunAuthority heartbeat", () => {
       },
       async readRunningTurnId() {
         return null;
+      },
+      async readMany() {
+        return new Map();
       },
       async cancel() {},
       async release() {},

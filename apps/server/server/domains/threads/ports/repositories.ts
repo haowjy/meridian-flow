@@ -19,6 +19,7 @@ import type {
   SpawnStatus,
   Thread,
   ThreadKind,
+  ThreadLeaseState,
   ThreadLifecycleStatus,
   ThreadListItem,
   ThreadStatus,
@@ -196,6 +197,11 @@ export interface ThreadStatusReader {
   read(threadId: ThreadId): Promise<ThreadStatus>;
   /** Assistant turn bound to the thread's live lease; null when asleep or unbound. */
   readRunningTurnId(threadId: ThreadId): Promise<TurnId | null>;
+  /**
+   * Batch lease read for a page of threads, so list reads do not re-derive
+   * liveness in SQL. Only live leases appear in the map.
+   */
+  readMany(threadIds: readonly ThreadId[]): Promise<Map<ThreadId, ThreadLeaseState>>;
 }
 
 export interface ProjectChatCursorKey {

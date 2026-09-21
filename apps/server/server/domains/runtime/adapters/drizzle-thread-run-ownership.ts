@@ -6,9 +6,10 @@
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
+import type { ThreadLeaseState, ThreadStatus } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
-import { and, eq, gt } from "drizzle-orm";
+import { and, eq, gt, inArray } from "drizzle-orm";
 import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
 import {
   DEFAULT_LEASE_TTL_MS,
@@ -137,6 +138,29 @@ export function createDrizzleRunAuthority(
   const nextExpiry = () => new Date(Date.now() + leaseTtlMs);
   const db_ = () => currentDrizzleDb(db);
 
+  // The one "live lease" predicate; every read and cancel derives from it.
+  const liveLeaseWhere = (threadId: ThreadId) =>
+    and(
+      eq(schema.threadRunLeases.threadId, threadId),
+      gt(schema.threadRunLeases.expiresAt, new Date()),
+    );
+
+  const toThreadStatus = (row: { phase: string; cancelRequested: boolean }): ThreadStatus => ({
+    kind: "awake",
+    phase: row.phase as ThreadPhase,
+    cancelRequested: row.cancelRequested,
+  });
+
+  const selectLiveLease = () =>
+    db_()
+      .select({
+        threadId: schema.threadRunLeases.threadId,
+        phase: schema.threadRunLeases.phase,
+        cancelRequested: schema.threadRunLeases.cancelRequested,
+        turnId: schema.threadRunLeases.turnId,
+      })
+      .from(schema.threadRunLeases);
+
   return {
     async acquire(threadId, runId) {
       const claim = await lock.tryAcquire(threadId);
@@ -196,12 +220,7 @@ export function createDrizzleRunAuthority(
       const [row] = await db_()
         .select({ runId: schema.threadRunLeases.runId })
         .from(schema.threadRunLeases)
-        .where(
-          and(
-            eq(schema.threadRunLeases.threadId, threadId),
-            gt(schema.threadRunLeases.expiresAt, new Date()),
-          ),
-        )
+        .where(liveLeaseWhere(threadId))
         .limit(1);
       return row?.runId ?? null;
     },
@@ -233,37 +252,32 @@ export function createDrizzleRunAuthority(
     },
 
     async read(threadId) {
-      const [row] = await db_()
-        .select({
-          phase: schema.threadRunLeases.phase,
-          cancelRequested: schema.threadRunLeases.cancelRequested,
-        })
-        .from(schema.threadRunLeases)
-        .where(
-          and(
-            eq(schema.threadRunLeases.threadId, threadId),
-            gt(schema.threadRunLeases.expiresAt, new Date()),
-          ),
-        )
-        .limit(1);
+      const [row] = await selectLiveLease().where(liveLeaseWhere(threadId)).limit(1);
       if (!row) return { kind: "asleep" };
-      return {
-        kind: "awake",
-        phase: row.phase as ThreadPhase,
-        cancelRequested: row.cancelRequested,
-      };
+      return toThreadStatus(row);
+    },
+
+    async readMany(threadIds) {
+      if (threadIds.length === 0) return new Map<ThreadId, ThreadLeaseState>();
+      const rows = await selectLiveLease().where(
+        and(
+          inArray(schema.threadRunLeases.threadId, threadIds as string[]),
+          gt(schema.threadRunLeases.expiresAt, new Date()),
+        ),
+      );
+      return new Map(
+        rows.map((row) => [
+          row.threadId as ThreadId,
+          { status: toThreadStatus(row), runningTurnId: row.turnId },
+        ]),
+      );
     },
 
     async readRunningTurnId(threadId) {
       const [row] = await db_()
         .select({ turnId: schema.threadRunLeases.turnId })
         .from(schema.threadRunLeases)
-        .where(
-          and(
-            eq(schema.threadRunLeases.threadId, threadId),
-            gt(schema.threadRunLeases.expiresAt, new Date()),
-          ),
-        )
+        .where(liveLeaseWhere(threadId))
         .limit(1);
       return row?.turnId ?? null;
     },
