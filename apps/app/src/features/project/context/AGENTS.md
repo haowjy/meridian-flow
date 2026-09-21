@@ -44,6 +44,14 @@ Shared across both shells:
 - Desktop tree: one scroll surface. The tree is a continuous flex-column; only
   the tree root scrolls.
 - Two triggers for entry actions (context menu + kebab), not three.
+- The empty Editor pane is a chooser (`RecentDocumentsLanding`): account
+  recently-opened documents, including viewers. A row navigates. It never
+  seeds a tab.
+- Record from the active editor tab and from file create, not from the open
+  intent. A parked restored tab is not an open, and a fresh create's row can
+  still be missing. `recordRecentDocument` owns retry and throttle. After a
+  successful record, invalidate `accountQueryKeys.recentDocumentsRoot`, not
+  the limit-suffixed key.
 
 ## File groups
 

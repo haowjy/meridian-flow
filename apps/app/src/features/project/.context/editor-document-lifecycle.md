@@ -22,7 +22,9 @@ flowchart TD
   workspace validation finishes, navigate to empty Editor without mutating persisted
   selection. No later mount effect restores a document or opens the first file.
 - **Bare `/editor` without a local-document history pointer:** explicitly empty
-  on direct entry, reload and Back/Forward.
+  on direct entry, reload and Back/Forward. Empty means no tab is opened. The
+  pane may offer the account's recently opened documents as a chooser; choosing
+  navigates, and entry itself still opens nothing.
   Closing every tab and switching screens cannot reopen a closed identity.
 
 - **Readable URL, reload, Back/Forward:** `ReadableProjectRoute` resolves the
