@@ -15,6 +15,7 @@ import type {
 } from "@meridian/contracts/spawn";
 import { blockPlainText, type Thread, type ThreadActivity } from "@meridian/contracts/threads";
 import type { BillingSpendReader } from "../../billing/index.js";
+import type { EventSink } from "../../observability/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import type {
   BlockRepository,
@@ -27,7 +28,7 @@ import type { Lease, RunAuthority } from "../loop/ports.js";
 import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
 import type { ThreadedInbox } from "../loop/threaded-inbox.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
-import { appendSubagentActivity } from "./activity-event.js";
+import { appendSubagentActivityBestEffort } from "./activity-event.js";
 
 export interface ChildDriveInput {
   parentThread: Thread;
@@ -74,6 +75,7 @@ export interface ChildRunDriverDeps {
   workContextDelivery: Pick<WorkContextDelivery, "flushOwned">;
   runAuthority: RunAuthority;
   billingSpendReader: BillingSpendReader;
+  eventSink: EventSink;
 }
 
 export interface ChildRunDriver {
@@ -445,11 +447,14 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     }
 
     // After the lease release so the node reads terminal/asleep, not awake.
-    await appendSubagentActivity({
+    // Best-effort: the run's outcome is already durable above; a read-model
+    // failure must not become a `background.failed` or a failed spawn result.
+    await appendSubagentActivityBestEffort({
       eventWriter: deps.eventWriter,
       readActivity: deps.readActivity,
       rootThreadId: input.parentThread.rootThreadId as ThreadId,
       childThreadId: prepared.child.id,
+      eventSink: deps.eventSink,
     });
 
     return spawnResult;

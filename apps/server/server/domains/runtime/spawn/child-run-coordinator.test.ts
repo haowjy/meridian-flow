@@ -9,6 +9,7 @@ import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
 import { InMemoryTransactionOwner } from "../../../shared/in-memory-transaction.js";
+import { createInMemoryEventSink } from "../../observability/index.js";
 import {
   type AgentRevision,
   createInMemoryAgentRevisionStore,
@@ -68,7 +69,9 @@ function stubOrchestrator(records: RecordedTurn[]): RunTurnPort {
   };
 }
 
-async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
+async function fixture(
+  options: { orchestrator?: RunTurnPort; eventWriter?: EventJournalWriter } = {},
+) {
   const transactionOwner = new InMemoryTransactionOwner();
   let repos: ReturnType<typeof createInMemoryRepositories>;
   const revisions = createInMemoryAgentRevisionStore({
@@ -143,7 +146,7 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
   const abortedChildren: string[] = [];
   const turns: RecordedTurn[] = [];
   const runAuthority = createInMemoryRunAuthority();
-  const eventWriter: EventJournalWriter = {
+  const eventWriter: EventJournalWriter = options.eventWriter ?? {
     async appendEvent(threadId, event) {
       journal.push({
         threadId,
@@ -152,6 +155,7 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
       return BigInt(journal.length);
     },
   };
+  const eventSink = createInMemoryEventSink();
   const readActivity = (threadId: ThreadId) =>
     readThreadActivity({ threads: repos.threads, statusReader: runAuthority }, threadId);
   const inbox = createInMemoryInbox();
@@ -191,6 +195,7 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
         return "0";
       },
     },
+    eventSink,
   });
   const coordinator = createChildRunCoordinator({
     driver,
@@ -208,6 +213,7 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
     unavailableReasons: () => [],
     modelUnavailable: (model) =>
       model === "parent-model" ? [] : ["The Agent's configured model is unavailable."],
+    eventSink,
   });
 
   return {
@@ -224,6 +230,7 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
     runStarter,
     runAuthority,
     eventWriter,
+    eventSink,
   };
 }
 
@@ -1097,5 +1104,119 @@ describe("ChildRunCoordinator root activity journal", () => {
     expect(activityEvents.every((entry) => entry.childThreadId === childThreadId)).toBe(true);
     // The other lifecycle facts still land on the immediate parent.
     expect(journal.some((entry) => entry.type === "agent.spawn")).toBe(true);
+  });
+
+  it("keeps a successful foreground run successful when the terminal activity append throws", async () => {
+    const appended: Array<{ type: string; result?: unknown }> = [];
+    let activityAppends = 0;
+    const eventWriter: EventJournalWriter = {
+      async appendEvent(_threadId, event) {
+        const typed = event as unknown as { type: string; result?: unknown };
+        if (typed.type === "subagent.activity") {
+          activityAppends += 1;
+          if (activityAppends === 2) throw new Error("terminal activity append exploded");
+        }
+        appended.push(typed);
+        return BigInt(appended.length);
+      },
+    };
+    const { coordinator, parent, eventSink } = await fixture({ eventWriter });
+
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
+
+    expect(result.status).toBe("completed");
+    // The create-side append landed; only the best-effort terminal append failed.
+    expect(appended.filter((entry) => entry.type === "subagent.activity")).toHaveLength(1);
+    // Exactly one terminal fact, and it records the run's success.
+    const terminal = appended.filter((entry) => entry.type === "agent.run_completed");
+    expect(terminal).toHaveLength(1);
+    expect((terminal[0]?.result as { status?: string } | undefined)?.status).toBe("completed");
+    // The swallowed failure is still observable.
+    expect(eventSink.events.some((event) => event.name === "subagent.activity.append_failed")).toBe(
+      true,
+    );
+  });
+
+  it("writes no contradictory terminal event when a background run's terminal append throws", async () => {
+    const appended: Array<{ type: string; result?: unknown }> = [];
+    let activityAppends = 0;
+    const eventWriter: EventJournalWriter = {
+      async appendEvent(_threadId, event) {
+        const typed = event as unknown as { type: string; result?: unknown };
+        if (typed.type === "subagent.activity") {
+          activityAppends += 1;
+          if (activityAppends === 2) throw new Error("terminal activity append exploded");
+        }
+        appended.push(typed);
+        return BigInt(appended.length);
+      },
+    };
+    const { coordinator, parent } = await fixture({ eventWriter });
+
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "background" },
+    );
+    expect(result.status).toBe("background");
+
+    await vi.waitFor(() => {
+      expect(appended.filter((entry) => entry.type === "background.completed")).toHaveLength(1);
+    });
+    // The durable success must not be joined by a second, contradictory failure.
+    expect(appended.some((entry) => entry.type === "background.failed")).toBe(false);
+    const terminal = appended.filter((entry) => entry.type === "agent.run_completed");
+    expect(terminal).toHaveLength(1);
+    expect((terminal[0]?.result as { status?: string } | undefined)?.status).toBe("completed");
+  });
+
+  it("appends subagent.activity when a foreground message wakes a thread", async () => {
+    const { coordinator, parent, journal } = await fixture();
+    const spawned = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    if (spawned.status !== "completed") throw new Error("spawn failed");
+    // Create + terminal for the spawn.
+    expect(journal.filter((entry) => entry.type === "subagent.activity")).toHaveLength(2);
+
+    const messaged = await coordinator.runChild(
+      {
+        kind: "message",
+        parentThread: parent,
+        parentTurnId: "turn-2" as TurnId,
+        ref: spawned.report.handle,
+        prompt: "keep going",
+        toolCallId: "call-1",
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    expect(messaged.status).toBe("completed");
+    // One on wake (lease held, node awake) and one on terminal.
+    expect(journal.filter((entry) => entry.type === "subagent.activity")).toHaveLength(4);
   });
 });
