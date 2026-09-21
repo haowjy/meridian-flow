@@ -14,6 +14,7 @@ import type {
   JournalEventType,
   JsonValue,
   PriceSource,
+  ThreadActivity,
   Turn,
 } from "./index.js";
 
@@ -136,6 +137,15 @@ export type OrchestratorEvent =
       parentTurnId: string;
       childThreadId: string;
       result: SpawnResult;
+    }
+  | {
+      type: "subagent.activity";
+      /** Run-tree root whose subtree changed; the event lands on this thread's journal. */
+      rootThreadId: string;
+      /** The descendant whose create/terminal changed the tree. */
+      childThreadId: string;
+      /** Full recomputed subtree, so the client replaces state with no refetch race. */
+      activity: ThreadActivity;
     }
   | {
       type: "background.started";

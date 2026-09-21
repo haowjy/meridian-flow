@@ -15,7 +15,11 @@ import {
   seedGeneralAgent,
   serializeMarkdownDefinition,
 } from "../../packages/index.js";
-import { createInMemoryRepositories, type EventJournalWriter } from "../../threads/index.js";
+import {
+  createInMemoryRepositories,
+  type EventJournalWriter,
+  readThreadActivity,
+} from "../../threads/index.js";
 import {
   createInMemoryInbox,
   createInMemoryRunAuthority,
@@ -135,16 +139,21 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
   };
   await revisions.bindThread(parent.id, parentRevision.id, parentConfiguration, null);
 
-  const journal: Array<{ type: string; childThreadId?: string }> = [];
+  const journal: Array<{ threadId: string; type: string; childThreadId?: string }> = [];
   const abortedChildren: string[] = [];
   const turns: RecordedTurn[] = [];
   const runAuthority = createInMemoryRunAuthority();
   const eventWriter: EventJournalWriter = {
-    async appendEvent(_threadId, event) {
-      journal.push(event as unknown as { type: string; childThreadId?: string });
+    async appendEvent(threadId, event) {
+      journal.push({
+        threadId,
+        ...(event as unknown as { type: string; childThreadId?: string }),
+      });
       return BigInt(journal.length);
     },
   };
+  const readActivity = (threadId: ThreadId) =>
+    readThreadActivity({ threads: repos.threads, statusReader: runAuthority }, threadId);
   const inbox = createInMemoryInbox();
   const runStarter = createInMemoryRunStarter();
   const threadedInbox = createThreadedInbox({
@@ -163,6 +172,7 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
       transaction: repos.transaction,
     },
     eventWriter,
+    readActivity,
     childRunRegistry: {
       registerChild() {},
       registerBackgroundChild() {},
@@ -192,6 +202,7 @@ async function fixture(options: { orchestrator?: RunTurnPort } = {}) {
     },
     resolveWorkMembership: async () => "no-work",
     eventWriter,
+    readActivity,
     agentRevisions: revisions,
     defaultModel: () => "parent-model",
     unavailableReasons: () => [],
@@ -1050,5 +1061,41 @@ describe("ChildRunCoordinator thread_message", () => {
     expect(result.status).toBe("error");
     if (result.status === "error")
       expect(result.error.code).toBe("thread_message_target_not_found");
+  });
+});
+
+describe("ChildRunCoordinator root activity journal", () => {
+  it("appends subagent.activity to the spawn root on create and terminal", async () => {
+    const { coordinator, parent, journal } = await fixture();
+    const rootThreadId = "root-thread-1" as ThreadId;
+    const nestedParent = {
+      ...parent,
+      parentThreadId: "outer-parent",
+      rootThreadId,
+      spawnDepth: 1,
+    };
+
+    const result = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: nestedParent,
+        parentTurnId: "turn-1" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed") return;
+    const childThreadId = result.report.threadId;
+
+    const activityEvents = journal.filter((entry) => entry.type === "subagent.activity");
+    // One on create (after the lease is acquired) and one on terminal.
+    expect(activityEvents).toHaveLength(2);
+    expect(activityEvents.every((entry) => entry.threadId === rootThreadId)).toBe(true);
+    expect(activityEvents.every((entry) => entry.childThreadId === childThreadId)).toBe(true);
+    // The other lifecycle facts still land on the immediate parent.
+    expect(journal.some((entry) => entry.type === "agent.spawn")).toBe(true);
   });
 });

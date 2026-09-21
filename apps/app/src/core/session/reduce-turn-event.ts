@@ -1056,6 +1056,9 @@ export function applyAguiEventToStore(
         return;
       }
       if (event.name === "meridian.usage" || event.name === "meridian.permission.denied") return;
+      // Subagent activity is live read-model state consumed via ThreadLiveState;
+      // it is not transcript content, so it never becomes a turn block.
+      if (event.name === "meridian.subagent.activity") return;
       // Durable custom projections are consumed by useThreadDurableProjections' event
       // listener; falling through here rendered each one as an "Unknown
       // component" note under the digest for the duration of the turn.
