@@ -1,9 +1,9 @@
 /**
  * Live-delivery contract for the thread event hub: appending a persisted
  * orchestrator event must publish its projected AG-UI frames to subscribers at
- * append time, not only on journal replay.
+ * append time, not only on journal replay. Background lifecycle events are
+ * journal-only: they persist but project no frame until R5 defines a consumer.
  */
-import { EventType } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
@@ -60,8 +60,8 @@ function backgroundEvents(): OrchestratorEvent[] {
   ];
 }
 
-describe("thread event hub background lifecycle", () => {
-  it("publishes each background.* append live as a CUSTOM frame", async () => {
+describe("thread event hub background journaling", () => {
+  it("journals background.* events without projecting a live frame", async () => {
     const { hub } = createHub();
     const received: SequencedEventInternal[] = [];
     hub.subscribe(THREAD_ID, (entry) => received.push(entry));
@@ -70,47 +70,10 @@ describe("thread event hub background lifecycle", () => {
       await hub.appendEvent(THREAD_ID, event);
     }
 
-    expect(received.map((entry) => entry.event)).toEqual([
-      {
-        type: EventType.CUSTOM,
-        name: "meridian.background.started",
-        value: {
-          parentThreadId: THREAD_ID,
-          parentTurnId: PARENT_TURN_ID,
-          childThreadId: "child-1",
-          agentSlug: "code-reviewer",
-          description: "Review the chapter",
-        },
-      },
-      {
-        type: EventType.CUSTOM,
-        name: "meridian.background.completed",
-        value: {
-          parentThreadId: THREAD_ID,
-          parentTurnId: PARENT_TURN_ID,
-          childThreadId: "child-1",
-          agentSlug: "code-reviewer",
-          result: {
-            status: "completed",
-            report: { handle: "p1", threadId: "child-1", summary: "Done", costMillicredits: 0 },
-          },
-        },
-      },
-      {
-        type: EventType.CUSTOM,
-        name: "meridian.background.failed",
-        value: {
-          parentThreadId: THREAD_ID,
-          parentTurnId: PARENT_TURN_ID,
-          childThreadId: "child-1",
-          agentSlug: "code-reviewer",
-          error: "boom",
-        },
-      },
-    ]);
+    expect(received).toEqual([]);
   });
 
-  it("persists the journal row in addition to publishing live", async () => {
+  it("persists the journal row without a projection", async () => {
     const { hub, journal } = createHub();
     const event = backgroundEvents()[0] as OrchestratorEvent;
     await hub.appendEvent(THREAD_ID, event);
