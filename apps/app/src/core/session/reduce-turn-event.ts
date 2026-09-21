@@ -985,10 +985,6 @@ export function applyAguiEventToStore(
     }
 
     case EventType.CUSTOM: {
-      // Subagent liveness is server truth (leases + lineage), never a turn
-      // block. Ignore the lifecycle frames here so they don't fall through to
-      // the opaque-custom fallback below as "Unknown component".
-      if (event.name.startsWith("meridian.background.")) return;
       if (event.name === "meridian.block.upserted") {
         const payload = parseCustomBlockUpsertPayload(event.value);
         if (payload) applyCustomBlockUpsertEvent(store, threadId, payload);
