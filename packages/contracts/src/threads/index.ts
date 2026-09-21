@@ -142,7 +142,6 @@ export type JournalEventType =
   | "block.created"
   | "block.upserted"
   | "block.delta"
-  | "block.pruned"
   | "tool.invoked"
   | "tool.denied"
   | "tool.corrected"
@@ -153,6 +152,7 @@ export type JournalEventType =
   | "agent.spawn" // PRODUCED NOW — ChildRunCoordinator
   | "agent.run_completed" // PRODUCED NOW — ChildRunCoordinator (spawn or thread_message)
   | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (root journal, full recomputed activity)
+  | "block.pruned" // PRODUCED NOW — ChildRunDriver (retires a settled run card)
   | "context.assembled"
   | "context.compacted"
   | "context.skill_loaded"
@@ -161,7 +161,7 @@ export type JournalEventType =
   | "model.request_sent"
   | "model.response_received"
   | "model.retried"
-  | "background.started"
+  | "background.started" // RETAINED — background-run lifecycle record for the notification lane; no reducer yet
   | "background.completed"
   | "background.failed"
   | "background.rearmed"
