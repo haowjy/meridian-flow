@@ -13,6 +13,7 @@ import {
 import type { AGUIEvent, Block, BlockType, JsonValue, Turn } from "@meridian/contracts/protocol";
 import { blockContentRecord, EventType, interruptIdForBlock } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
+import { WORK_CONTEXT_PROJECTION_EVENT } from "@meridian/contracts/works";
 import {
   eventH,
   nextBlockSequence,
@@ -1076,12 +1077,16 @@ export function applyAguiEventToStore(
       // Subagent activity is live read-model state consumed via ThreadLiveState;
       // it is not transcript content, so it never becomes a turn block.
       if (event.name === "meridian.subagent.activity") return;
-      // Durable custom projections are consumed by useThreadDurableProjections' event
-      // listener; falling through here rendered each one as an "Unknown
+      // Durable custom projections are consumed by live listeners — the
+      // useThreadDurableProjections trail/Work-binding listener and the
+      // pending-inbox projection (usePendingInbox) — so they are not transcript
+      // content. Falling through here rendered each one as an "Unknown
       // component" note under the digest for the duration of the turn.
       if (
         event.name === "meridian.turn_change_trail.updated" ||
-        event.name === "meridian.turn_change_trail.settled"
+        event.name === "meridian.turn_change_trail.settled" ||
+        event.name === WORK_CONTEXT_PROJECTION_EVENT ||
+        event.name === "meridian.inbox.changed"
       ) {
         return;
       }
