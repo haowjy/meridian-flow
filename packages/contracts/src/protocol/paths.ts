@@ -233,13 +233,8 @@ export function apiThreadRecentDocumentsPath(threadId: string, opts?: { limit?: 
   return `${API_THREADS_PATH}/${threadId}/recent-documents${query ? `?${query}` : ""}`;
 }
 
-export function apiAccountRecentDocumentsPath(opts?: { limit?: number }): string {
-  const search = new URLSearchParams();
-  if (opts?.limit != null) {
-    search.set("limit", String(opts.limit));
-  }
-  const query = search.toString();
-  return `${API_ACCOUNT_RECENT_DOCUMENTS_PATH}${query ? `?${query}` : ""}`;
+export function apiAccountRecentDocumentsPath(): string {
+  return API_ACCOUNT_RECENT_DOCUMENTS_PATH;
 }
 
 export function apiThreadContextReversePath(threadId: string): string {

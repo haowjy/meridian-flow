@@ -115,9 +115,7 @@ export function createDrizzleRecentDocumentsRepository(deps: {
         await prune(tx, userId);
       });
     },
-    async listByUser(userId: UserId, limit = USER_RECENT_DOCUMENTS_CAP) {
-      const capped = Math.min(Math.max(limit, 0), USER_RECENT_DOCUMENTS_CAP);
-      if (capped === 0) return [];
+    async listByUser(userId: UserId) {
       const tx = db();
       const rows = await tx
         .select({
@@ -134,7 +132,7 @@ export function createDrizzleRecentDocumentsRepository(deps: {
         .innerJoin(projects, projectIdentity())
         .where(and(eq(userRecentDocuments.userId, userId), visibleIdentity(userId)))
         .orderBy(desc(userRecentDocuments.openedAt))
-        .limit(capped);
+        .limit(USER_RECENT_DOCUMENTS_CAP);
 
       const sourceIds = [...new Set(rows.flatMap((row) => (row.source ? [row.source.id] : [])))];
       const folderRows = sourceIds.length

@@ -19,10 +19,8 @@ const RECORD_RETRY_MS = [1_500, 3_000, 6_000];
 const lastRecordedAt = new Map<string, number>();
 const inFlight = new Set<string>();
 
-export async function listRecentDocuments(opts?: {
-  limit?: number;
-}): Promise<RecentDocumentItem[]> {
-  const response = await getJson<ListRecentDocumentsResponse>(apiAccountRecentDocumentsPath(opts));
+export async function listRecentDocuments(): Promise<RecentDocumentItem[]> {
+  const response = await getJson<ListRecentDocumentsResponse>(apiAccountRecentDocumentsPath());
   return response.documents;
 }
 

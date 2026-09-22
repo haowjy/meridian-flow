@@ -4,11 +4,8 @@
  */
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
 import { type ReactNode, useEffect } from "react";
-import { recordRecentDocument } from "@/client/api/recent-documents-api";
-import { accountQueryKeys } from "@/client/query/account-query-keys";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
@@ -16,7 +13,6 @@ import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { PassageNotice } from "@/features/editor/PassageNotice";
 import type { PaneHeaderRailToggle } from "../shell/PaneHeader";
 import { PanelToggleButton } from "../shell/PanelToggleButton";
-import { useAccountId } from "./account-feature-context";
 import { ContextEditorMountHost } from "./ContextEditorMountHost";
 import { ContextTabBar } from "./ContextTabBar";
 import { ContextViewerHost } from "./ContextViewerHost";
@@ -25,6 +21,7 @@ import { schemeLabel } from "./context-schemes";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
+import { useRecordOpenedDocument } from "./use-record-opened-document";
 
 function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { kind: "tracked" | "new" }> {
   return tab.kind === "tracked" || tab.kind === "new";
@@ -94,28 +91,18 @@ export function ContextViewer({
   // Recency is recorded from the tab actually in front of the writer, not from
   // the intent to open: a freshly created document has no row yet, so recording
   // at open time raced document persistence and lost the write.
-  const accountId = useAccountId();
-  const queryClient = useQueryClient();
-  // Any document in front of the writer counts, editable or not (binaries too).
   const openedDocumentId =
     activeTab && (activeTab.kind === "tracked" || activeTab.kind === "viewer")
       ? activeTab.documentId
       : null;
+  const recordOpenedDocument = useRecordOpenedDocument();
   // Record only while this pane is the active destination: the editor surface
   // stays mounted across destinations, and a restored tab nobody is looking at
-  // is not an open. A successful record refreshes the list so a just-opened
-  // document is not missing from the landing when the writer returns to it.
+  // is not an open.
   useEffect(() => {
     if (!active || !openedDocumentId) return;
-    // Invalidate even if this effect cleans up first: the writer may close the
-    // document before the POST settles, and the landing they return to still
-    // needs the fresh row. The query client outlives this effect.
-    void recordRecentDocument(openedDocumentId, accountId).then((recorded) => {
-      if (recorded) {
-        void queryClient.invalidateQueries({ queryKey: accountQueryKeys.recentDocumentsRoot });
-      }
-    });
-  }, [active, openedDocumentId, accountId, queryClient]);
+    recordOpenedDocument(openedDocumentId);
+  }, [active, openedDocumentId, recordOpenedDocument]);
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const activeTabId = activeTab?.documentId ?? null;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";

@@ -71,12 +71,9 @@ export function installJsdomLayoutFallbacks(target: JsdomTarget = globalThis): v
   // methods. Streamdown's pinned code/table panes scroll themselves from a
   // passive effect; with nothing laid out there is nowhere to scroll, so a
   // no-op is the honest answer and keeps the absence from throwing.
-  // `scrollIntoView` is the same absence one step up the stack: the Editor tab
-  // strip brings the active chip into view from an effect.
   if (target.Element) {
     target.Element.prototype.scrollTo ??= () => {};
     target.Element.prototype.scrollBy ??= () => {};
-    target.Element.prototype.scrollIntoView ??= () => {};
   }
 }
 
