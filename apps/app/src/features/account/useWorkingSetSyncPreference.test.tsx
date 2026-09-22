@@ -77,14 +77,16 @@ async function waitFor(assertion: () => void) {
 type Harness = {
   read: () => WorkingSetSyncPreference;
   rerender: () => Promise<void>;
+  setServerValue: (value: boolean | null) => Promise<void>;
 };
 
 async function mount(
-  serverValue: boolean | null,
+  initialServerValue: boolean | null,
   run: (harness: Harness) => Promise<void> | void,
 ): Promise<void> {
   let latest!: WorkingSetSyncPreference;
   let force: (() => void) | null = null;
+  let serverValue = initialServerValue;
   function Probe() {
     const [, setTick] = useState(0);
     force = () => setTick((n) => n + 1);
@@ -110,6 +112,12 @@ async function mount(
           force?.();
         });
       },
+      setServerValue: async (value) => {
+        serverValue = value;
+        await act(async () => {
+          force?.();
+        });
+      },
     });
   } finally {
     await act(async () => root.unmount());
@@ -122,6 +130,7 @@ afterEach(() => {
   mocks.getAccountSettings.mockReset();
   mocks.invalidate.mockClear();
   mocks.account.id = "account-a";
+  mocks.account.controller = new AbortController();
 });
 
 describe("useWorkingSetSyncPreference", () => {
@@ -207,6 +216,25 @@ describe("useWorkingSetSyncPreference", () => {
     });
   });
 
+  it("propagates a GET-confirmed ambiguous write to the loader and driver", async () => {
+    const reconcile = deferred<AccountSettings>();
+    mocks.updateAccountSettings.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    mocks.getAccountSettings.mockReturnValueOnce(reconcile.promise);
+    await mount(false, async ({ read }) => {
+      await act(async () => read().change(true));
+      await waitFor(() => expect(read().error?.kind).toBe("ambiguous"));
+      expect(mocks.invalidate).not.toHaveBeenCalled();
+
+      await act(async () => reconcile.resolve({ workingSetSyncEnabled: true }));
+      await waitFor(() => expect(read().error).toBeNull());
+
+      expect(read().value).toBe(true);
+      // The confirming GET must refresh the loader so the layout re-runs
+      // `configureWorkingSetSync`; otherwise the driver keeps the old flag.
+      expect(mocks.invalidate).toHaveBeenCalled();
+    });
+  });
+
   it("ignores a stale reconciliation once a newer intent has confirmed", async () => {
     const failure = deferred<AccountSettings>();
     const success = deferred<AccountSettings>();
@@ -263,6 +291,39 @@ describe("useWorkingSetSyncPreference", () => {
       await waitFor(() => expect(read().pending).toBe(false));
       expect(read().value).toBe(false);
       expect(read().error).toBeNull();
+    });
+  });
+
+  it("does not let a late loader echo from an older write clobber the latest intent", async () => {
+    const first = deferred<AccountSettings>();
+    const second = deferred<AccountSettings>();
+    mocks.updateAccountSettings
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    await mount(false, async ({ read, setServerValue }) => {
+      await act(async () => read().change(true));
+      await act(async () => read().change(false));
+
+      // The older write confirms `true`; its invalidate races the newer `false`
+      // intent.
+      await act(async () => first.resolve({ workingSetSyncEnabled: true }));
+      await waitFor(() => expect(mocks.updateAccountSettings).toHaveBeenCalledTimes(2));
+
+      await act(async () => second.resolve({ workingSetSyncEnabled: false }));
+      await waitFor(() => expect(read().pending).toBe(false));
+      expect(read().value).toBe(false);
+
+      // The slower loader echo from the older write lands after the latest write
+      // settled and must not overwrite the newer confirmed value.
+      await setServerValue(true);
+      expect(read().value).toBe(false);
+
+      // A later 4xx reverts to the confirmed base. A poisoned base would revert
+      // to the stale `true`.
+      mocks.updateAccountSettings.mockRejectedValueOnce(new HttpResponseError("bad", 400, {}));
+      await act(async () => read().change(true));
+      await waitFor(() => expect(read().error?.kind).toBe("rejected"));
+      expect(read().value).toBe(false);
     });
   });
 
@@ -326,6 +387,86 @@ describe("useWorkingSetSyncPreference", () => {
       expect(read().value).toBe(true);
       expect(read().error).toBeNull();
       expect(mocks.invalidate).not.toHaveBeenCalled();
+    });
+  });
+
+  it("treats a non-AbortError epoch abort as abandoned, not ambiguous", async () => {
+    const epoch = mocks.account.controller;
+    const write = deferred<AccountSettings>();
+    mocks.updateAccountSettings.mockReturnValueOnce(write.promise);
+    await mount(false, async ({ read }) => {
+      await act(async () => read().change(true));
+      expect(read().pending).toBe(true);
+
+      // Account teardown aborts with a plain Error; the transport rejects with
+      // that same non-AbortError reason.
+      epoch.abort(new Error("Account document session runtime is closing"));
+      await act(async () => write.reject(new Error("Account document session runtime is closing")));
+      await flush();
+
+      expect(read().error).toBeNull();
+      expect(mocks.getAccountSettings).not.toHaveBeenCalled();
+    });
+  });
+
+  it("ignores a settle whose epoch closed when the account returns (A to B to A)", async () => {
+    const write = deferred<AccountSettings>();
+    mocks.updateAccountSettings.mockReturnValueOnce(write.promise);
+    await mount(false, async ({ read, rerender }) => {
+      const epochA = mocks.account.controller;
+      await act(async () => read().change(true));
+      expect(read().value).toBe(true);
+
+      // A closes: the runtime aborts its epoch with a plain Error.
+      mocks.account.id = "account-b";
+      mocks.account.controller = new AbortController();
+      epochA.abort(new Error("Account document session runtime is closing"));
+      await rerender();
+
+      // Back to A, but this is a new epoch/session, not the one that dispatched.
+      mocks.account.id = "account-a";
+      mocks.account.controller = new AbortController();
+      await rerender();
+
+      // The first write settles only now; its captured epoch is closed and stale.
+      await act(async () => write.resolve({ workingSetSyncEnabled: false }));
+      await flush();
+
+      expect(read().value).toBe(true);
+      expect(read().error).toBeNull();
+      expect(mocks.invalidate).not.toHaveBeenCalled();
+    });
+  });
+
+  it("keeps a queued write on the epoch it was dispatched under", async () => {
+    const first = deferred<AccountSettings>();
+    const second = deferred<AccountSettings>();
+    mocks.updateAccountSettings
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    await mount(false, async ({ read, rerender }) => {
+      const epochA = mocks.account.controller.signal;
+      await act(async () => read().change(true));
+      await act(async () => read().change(false));
+      // The second write is queued behind the first; both captured epoch A.
+      expect(mocks.updateAccountSettings).toHaveBeenCalledTimes(1);
+
+      // A newer epoch renders before the queued write starts. The queued write
+      // must keep the epoch it captured at dispatch, not adopt this one.
+      mocks.account.controller = new AbortController();
+      await rerender();
+
+      await act(async () => first.resolve({ workingSetSyncEnabled: true }));
+      await waitFor(() => expect(mocks.updateAccountSettings).toHaveBeenCalledTimes(2));
+
+      // The queued write must keep its captured epoch, not adopt the later one.
+      expect(mocks.updateAccountSettings).toHaveBeenLastCalledWith(
+        { workingSetSyncEnabled: false },
+        { signal: epochA },
+      );
+
+      await act(async () => second.resolve({ workingSetSyncEnabled: false }));
+      await flush();
     });
   });
 });
