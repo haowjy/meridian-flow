@@ -9,7 +9,9 @@
  */
 import { Trans } from "@lingui/react/macro";
 import type { PendingInboxItem, ThreadPendingInbox } from "@meridian/contracts/threads";
-import { Clock } from "lucide-react";
+import { ChevronRight, Clock } from "lucide-react";
+import { useState } from "react";
+import { cn } from "@/lib/utils";
 
 export type PendingInboxTrayProps = {
   pending: ThreadPendingInbox;
@@ -35,13 +37,46 @@ export function PendingInboxTray({ pending }: PendingInboxTrayProps) {
       </div>
       <ul className="mt-1 flex flex-col gap-0.5">
         {pending.items.map((item) => (
-          <li key={item.id} className="flex items-baseline gap-2 text-caption">
-            <PendingSource item={item} />
-            <span className="min-w-0 flex-1 truncate text-prose-foreground">{item.summary}</span>
-          </li>
+          <PendingItem key={item.id} item={item} />
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * One queued row. A long message is unreadable truncated, so the row toggles
+ * between the one-line summary and the full text; the summary stays in the DOM
+ * either way, so assistive tech always reads it in full.
+ */
+function PendingItem({ item }: { item: PendingInboxItem }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <li className="text-caption">
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        className="flex w-full items-baseline gap-2 text-left"
+      >
+        <PendingSource item={item} />
+        <span
+          className={cn(
+            "min-w-0 flex-1 text-prose-foreground",
+            expanded ? "whitespace-pre-wrap break-words" : "truncate",
+          )}
+        >
+          {item.summary}
+        </span>
+        <ChevronRight
+          className={cn(
+            "size-3 shrink-0 self-center text-ink-subtle transition-transform",
+            expanded && "rotate-90",
+          )}
+          aria-hidden
+        />
+      </button>
+    </li>
   );
 }
 

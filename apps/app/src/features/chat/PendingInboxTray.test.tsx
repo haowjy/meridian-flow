@@ -73,6 +73,15 @@ describe("PendingInboxTray", () => {
     expect(host.textContent).toContain("Work context changed");
   });
 
+  it("toggles a queued row to its full text", async () => {
+    await act(async () => root.render(<PendingInboxTray pending={pending} />));
+
+    const button = host.querySelector("button");
+    expect(button?.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => button?.click());
+    expect(host.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("clears when the pending set empties", async () => {
     await act(async () => root.render(<PendingInboxTray pending={pending} />));
     expect(host.querySelector("[data-pending-inbox]")).not.toBeNull();
