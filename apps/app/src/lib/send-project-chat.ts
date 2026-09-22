@@ -154,7 +154,7 @@ export function sendProjectChat({
   return { threadId, optimisticUserTurnId, workingTurnId };
 }
 
-/** Retire the durable first-send intent; called only on acknowledgement. */
+/** Retire the durable first-send intent on acknowledgement or a definitive outcome. */
 export function retireFirstSendSubmission(
   accountId: string,
   submissionId: string,
