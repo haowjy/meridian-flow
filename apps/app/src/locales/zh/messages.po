@@ -964,7 +964,7 @@ msgstr ""
 msgid "Couldn't check Work"
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t confirm this preference saved."
 msgstr ""
 
@@ -1105,7 +1105,7 @@ msgstr ""
 msgid "Couldn't save this document's home. Try again."
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Couldn’t save this preference."
 msgstr ""
 
@@ -2663,7 +2663,7 @@ msgstr ""
 msgid "Rendering diagram…"
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Reopens your last document and chat when you switch devices"
 msgstr ""
 
@@ -2701,14 +2701,14 @@ msgstr "回复完成"
 msgid "Results"
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Resume where I left off on any device"
 msgstr ""
 
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 #: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
@@ -3833,7 +3833,7 @@ msgstr ""
 msgid "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Your saved preference is unavailable. Sync is paused until retry succeeds."
 msgstr ""
 

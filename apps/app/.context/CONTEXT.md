@@ -247,10 +247,18 @@ rendering.
 
 `src/routes/_authenticated.tsx` mounts one unconditional route composition for
 every authenticated route (`AppQueryProvider` → `AccountFeatureComposition` →
-`DraftApplyRecoveryProvider` → `ProjectStoreProvider` → `ThreadStoreProvider` →
-`TransportProvider` → `MeridianCopilotProvider`). No
+`DraftApplyRecoveryProvider` → `WorkingSetSyncPreferenceProvider` →
+`ProjectStoreProvider` → `ThreadStoreProvider` → `TransportProvider` →
+`MeridianCopilotProvider`). No
 pathname-based provider gating — conditional light↔workspace branches previously
 dropped `ThreadStoreProvider` during transitions.
+
+The account-lifetime `WorkingSetSyncPreferenceProvider` owns the cross-device
+working-set preference: it runs the command hook once per account, seeds from
+the loader only before the first local revision, and drives both the Settings
+row and `configureWorkingSetSync` from the same confirmed value. A stale or
+`null` loader commit cannot hide the switch or move the driver once a local
+confirm exists; an account epoch reset clears the override.
 
 **Settings overlay:** `?settings=<section>` is layout-owned (`validateSearch` on
 `/_authenticated`) so the settings dialog is URL-addressable from any authenticated
