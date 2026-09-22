@@ -479,7 +479,7 @@ function PreferencesSection({
                 />
               )}
             </div>
-            {resumePreference.error ? (
+            {workingSetSyncEnabled !== null && resumePreference.error ? (
               <InlineErrorRow
                 message={
                   resumePreference.error.kind === "rejected"
