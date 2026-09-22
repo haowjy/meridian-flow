@@ -191,11 +191,15 @@ run emits the neutral `agent.run_completed`; there is no spawn-named completion
 event. Create and terminal also append a neutral `subagent.activity` fact to the
 **root** thread's journal (not the immediate parent), carrying the root's full
 recomputed `ThreadActivity` so every subscriber of the run tree shares one
-activity source; a foreground `thread_message` appends it once the wake lease is
-held so the node reads awake. The create-side append is strict (a failure fails
-the spawn), while terminal and wake appends are best-effort: a read-model
-failure is reported to the `EventSink` (`subagent.activity.append_failed`) and
-never gates the run or writes a contradictory terminal fact. The read-model
+activity source. A foreground `thread_message` appends it once the wake lease is
+held, and a drain-woken run (a child report or background `thread_message`) is
+driven by the turn runner, which appends at lease acquire and again at lease
+release so the strip reads awake for the whole run and asleep after. The
+create-side append is strict (a failure fails the spawn), while terminal and
+wake appends are best-effort: a read-model failure is reported to the
+`EventSink` (`subagent.activity.append_failed`, or
+`subagent.activity.emit_failed` for a failed thread lookup) and never gates the
+run or writes a contradictory terminal fact. The read-model
 projector ignores it; the orchestrator event
 projector maps it to the `meridian.subagent.activity` custom frame. The per-run
 capture lives in the driver's `drive` closure; the

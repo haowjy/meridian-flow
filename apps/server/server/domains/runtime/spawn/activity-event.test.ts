@@ -1,16 +1,14 @@
 /**
- * The settled-run activity emitter. Covers the drain-woken path: a subagent's
- * own run release must emit the root activity frame so the live strip cannot
- * stay frozen at `awake`; a non-subagent thread and any failure are no-ops.
+ * The drain-woken run activity emitter, used at both the start and settle of a
+ * subagent's own run: it must emit the root activity frame so the live strip
+ * reads `awake` during the run and never stays frozen there after release. A
+ * non-subagent thread and any failure are no-ops.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
 import type { EventJournalWriter } from "../../threads/index.js";
-import {
-  appendSubagentActivityBestEffort,
-  emitSettledRunActivityBestEffort,
-} from "./activity-event.js";
+import { appendSubagentActivityBestEffort, emitRunActivityBestEffort } from "./activity-event.js";
 
 const ROOT = "root-thread" as ThreadId;
 const CHILD = "child-thread" as ThreadId;
@@ -28,10 +26,10 @@ function recordingWriter() {
 
 const readActivity = async () => ({ descendants: [] });
 
-describe("emitSettledRunActivityBestEffort", () => {
-  it("emits the root frame after a subagent drain run settles", async () => {
+describe("emitRunActivityBestEffort", () => {
+  it("emits the root frame for a subagent drain run", async () => {
     const { appended, eventWriter } = recordingWriter();
-    await emitSettledRunActivityBestEffort({
+    await emitRunActivityBestEffort({
       findThread: async () => ({ id: CHILD, kind: "subagent", rootThreadId: ROOT }),
       threadId: CHILD,
       eventWriter,
@@ -45,7 +43,7 @@ describe("emitSettledRunActivityBestEffort", () => {
 
   it("does nothing for a non-subagent thread", async () => {
     const { appended, eventWriter } = recordingWriter();
-    await emitSettledRunActivityBestEffort({
+    await emitRunActivityBestEffort({
       findThread: async () => ({ id: ROOT, kind: "primary", rootThreadId: ROOT }),
       threadId: ROOT,
       eventWriter,
@@ -59,7 +57,7 @@ describe("emitSettledRunActivityBestEffort", () => {
     const eventSink = createInMemoryEventSink();
     const { eventWriter } = recordingWriter();
     await expect(
-      emitSettledRunActivityBestEffort({
+      emitRunActivityBestEffort({
         findThread: async () => {
           throw new Error("db down");
         },
@@ -69,9 +67,9 @@ describe("emitSettledRunActivityBestEffort", () => {
         eventSink,
       }),
     ).resolves.toBeUndefined();
-    expect(
-      eventSink.events.some((event) => event.name === "subagent.activity.settled_emit_failed"),
-    ).toBe(true);
+    expect(eventSink.events.some((event) => event.name === "subagent.activity.emit_failed")).toBe(
+      true,
+    );
   });
 });
 

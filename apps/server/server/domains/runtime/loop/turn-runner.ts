@@ -102,6 +102,13 @@ export function createTurnRunner(deps: {
   workContextDelivery: Pick<WorkContextDelivery, "beforeTurn" | "flushOwned">;
   runAuthority: RunAuthority;
   /**
+   * Best-effort notification that a drain run is live and holds its lease.
+   * Lets a visibility read model show a woken thread (e.g. a subagent woken by
+   * `thread_message`) as running before its first turn event; without it the
+   * strip reads `asleep` until the run terminates.
+   */
+  onRunStarted?: (threadId: ThreadId) => void;
+  /**
    * Best-effort notification that a drain run settled and released its lease.
    * Lets a visibility read model refresh after a run the child-run driver did
    * not drive (a child report or `thread_message` waking the thread).
@@ -211,6 +218,11 @@ export function createTurnRunner(deps: {
         completion,
         startedAt,
       });
+
+      // The run is live and the lease is held. Notify before driving the
+      // generator so a woken subagent reads `awake` from the start; a run whose
+      // setup throws above never reaches here, so no stale frame is left.
+      deps.onRunStarted?.(input.threadId);
 
       void (async () => {
         try {
