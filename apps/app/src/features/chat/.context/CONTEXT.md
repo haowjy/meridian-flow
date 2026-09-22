@@ -20,6 +20,11 @@ draft-control changes can be understood independently.
 - [Thread live updates](thread-live-updates.md) — snapshot revalidation on
   activation and on a new run, and the per-run resume that renders a
   server-initiated continuation live.
+- Durable acknowledged submissions — the account-stamped intent journal in
+  `client/chat-submissions` and the reload reconciliation in
+  `useChatSubmissionRecovery.ts` / `useThreadHandoff.ts`. The journal owns intent
+  identity only; the server owns outcome.
+  See [`client/chat-submissions/AGENTS.md`](../../../client/chat-submissions/AGENTS.md).
 
 Durable change detail renders only through the owning turn receipt; the
 transcript does not add a conversation-wide aggregate record.

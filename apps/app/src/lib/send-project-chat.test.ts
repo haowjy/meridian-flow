@@ -38,6 +38,7 @@ describe("sendProjectChat", () => {
       .mockReturnValue("11111111-1111-4111-8111-111111111111");
 
     const result = sendProjectChat({
+      accountId: "account",
       projectId: "project-1",
       projectSlug: "serial",
       text: "Draft the fight scene tonight",
@@ -67,6 +68,7 @@ describe("sendProjectChat", () => {
     const threadActions = actions();
     const replace = vi.fn();
     sendProjectChat({
+      accountId: "account",
       threadId: "550e8400-e29b-41d4-a716-446655440000",
       projectId: "project-1",
       projectSlug: "serial",

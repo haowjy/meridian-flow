@@ -21,6 +21,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
+import { recordChatSubmission, retireChatSubmission } from "@/client/chat-submissions";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
@@ -32,6 +33,7 @@ import {
 } from "@/components/app/composer";
 import { documentLinkTarget, type LinkTarget } from "@/core/editor/links";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
+import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
@@ -40,6 +42,7 @@ import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { TurnList } from "./TurnList";
+import { useChatSubmissionRecovery } from "./useChatSubmissionRecovery";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
@@ -82,6 +85,7 @@ export function ChatView({
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
 
   const controller = useMeridianAgent();
+  const accountId = useAccountId();
   const turns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
   const latestAssistantTurn =
     [...turns].reverse().find((turn) => turn.role === "assistant") ?? null;
@@ -106,7 +110,8 @@ export function ChatView({
     isStreaming,
   });
 
-  const failedSendRetry = useThreadHandoff(threadId, projectId, controller, actions, {
+  const submissionRecovery = useChatSubmissionRecovery(threadId, accountId, controller, actions);
+  const failedSendRetry = useThreadHandoff(threadId, projectId, accountId, controller, actions, {
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
   });
@@ -125,15 +130,31 @@ export function ChatView({
     requestTailFollow();
     const optimisticUserTurn = actions.appendUserTurn(threadId, text);
     optimisticBySubmission.current.set(envelope.submissionId, optimisticUserTurn.id);
+    // Durable witness before dispatch: the account-stamped journal entry keeps
+    // the identity and exact fingerprint payload for reload lookup/replay.
+    recordChatSubmission(accountId, {
+      kind: "existing-thread",
+      submissionId: envelope.submissionId,
+      threadId,
+      projectId: projectId ?? null,
+      createdAt: new Date().toISOString(),
+      text,
+      blocks: [...envelope.blocks],
+      references: [...envelope.references],
+      activatedSkillSlugs: [...envelope.activatedSkillSlugs],
+    });
     try {
       const outcome = await controller.submit(threadId, envelope, {
         optimisticUserTurnId: optimisticUserTurn.id,
       });
-      if (outcome.kind !== "ambiguous")
+      if (outcome.kind !== "ambiguous") {
         optimisticBySubmission.current.delete(envelope.submissionId);
+        retireChatSubmission(accountId, envelope.submissionId);
+      }
       return outcome;
     } catch (error) {
       actions.removeOptimisticUserTurn(threadId, optimisticUserTurn.id);
+      retireChatSubmission(accountId, envelope.submissionId);
       announceError(error instanceof Error ? error.message : "Failed to submit message");
       return {
         kind: "rejected" as const,
@@ -157,11 +178,13 @@ export function ChatView({
       const outcome = await (retire
         ? controller.retire(threadId, envelope, { optimisticUserTurnId })
         : controller.lookup(threadId, envelope, { optimisticUserTurnId }));
-      if (outcome.kind !== "ambiguous")
+      if (outcome.kind !== "ambiguous") {
         optimisticBySubmission.current.delete(envelope.submissionId);
+        retireChatSubmission(accountId, envelope.submissionId);
+      }
       return outcome;
     },
-    [controller, threadId],
+    [accountId, controller, threadId],
   );
 
   function handleStop() {
@@ -206,6 +229,16 @@ export function ChatView({
       }
     },
     [projectId, activeWork?.id, openReferenceDocument],
+  );
+
+  const submissionRecoveryByTurnId = new Map(
+    submissionRecovery.recovered.map((entry) => [
+      entry.optimisticTurnId,
+      {
+        onCheck: () => submissionRecovery.check(entry.submissionId),
+        onRetire: () => submissionRecovery.retire(entry.submissionId),
+      },
+    ]),
   );
 
   return (
@@ -272,6 +305,7 @@ export function ChatView({
           onRespondToInterrupt={handleRespondToInterrupt}
           failedSendRetry={failedSendRetry}
           changeTrails={changeTrails.byId}
+          submissionRecoveryByTurnId={submissionRecoveryByTurnId}
         />
       </ChatSurface>
     </TranscriptLinkNavigationContext.Provider>
