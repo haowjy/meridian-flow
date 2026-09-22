@@ -42,8 +42,6 @@ not ignore sibling paths merely sharing a prefix such as `logs-other`.
 
 ## State + transport seams
 
-Writer-initiated command lifecycle, profile selection, TanStack ownership, and the current interaction inventory are specified in [optimistic-interactions.md](optimistic-interactions.md).
-
 Writer-facing AI change reporting uses durable Trail evidence, receipt
 Undo/Redo, and session change marks. Trail evidence and peer marks are
 read-only; `DocumentSession` owns collaboration state only and does not retain
@@ -188,8 +186,6 @@ background child's continuation streams live; see
 [`features/chat/.context/thread-live-updates.md`](../src/features/chat/.context/thread-live-updates.md).
 Do not bounce to Home or show Check status, Start over, or saved-first-message recovery.
 
-New writer-initiated commands choose a profile from
-[`optimistic-interactions.md`](optimistic-interactions.md) before implementation.
 The dormant project-store rename and soft-delete reducers are not a precedent:
 connect them to one real command owner or delete them.
 
