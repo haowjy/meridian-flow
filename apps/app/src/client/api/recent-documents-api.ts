@@ -12,8 +12,11 @@ import { getJson, HttpResponseError, postJson } from "./http-client";
 /** Skip a repeat open of the same document within this window. */
 const RECORD_THROTTLE_MS = 5_000;
 /**
- * A freshly created document's row lands after its open, so the first write can
- * miss with a 404. Retry only that miss, with backoff.
+ * The client mints a document id when it reserves a resource, and the server
+ * writes the row when that reservation materializes. Opening the document
+ * between those two moments is normal, so the first write 404s and a retry is
+ * what lands the row. Measured, not assumed: opening a just-created file POSTs
+ * a 404 and, without this, the document never appears in recents.
  */
 const RECORD_RETRY_MS = [1_500, 3_000, 6_000];
 const lastRecordedAt = new Map<string, number>();
@@ -26,8 +29,9 @@ export async function listRecentDocuments(): Promise<RecentDocumentItem[]> {
 
 /**
  * Record that the writer opened a document. Resolves `true` once the server has
- * the row, `false` when it was throttled, skipped, or gave up. Callers use the
- * result to refresh the list; the open itself never waits on this.
+ * the row, `false` when it was throttled, the document is not the writer's, or
+ * it never materialized. Callers use the result to refresh the list; the open
+ * never waits on this.
  */
 export async function recordRecentDocument(
   documentId: string,
@@ -45,7 +49,8 @@ export async function recordRecentDocument(
         return true;
       } catch (error) {
         const delay = RECORD_RETRY_MS[attempt];
-        // Only a missing row is worth retrying; anything else is a real fault.
+        // Only a row that is not visible yet is worth retrying; anything else,
+        // including a document the writer cannot reach, is a real fault.
         if (!(error instanceof HttpResponseError) || error.status !== 404 || delay === undefined) {
           return false;
         }

@@ -49,11 +49,12 @@ Shared across both shells:
   seeds a tab. The strip's leading control reaches it with tabs still open:
   `routeCommands.showEditorRecents` clears the address and leaves the working
   set alone, so closing tabs is not the only way back.
-- Record from the active editor tab and from file create, not from the open
-  intent. A parked restored tab is not an open, and a fresh create's row can
-  still be missing. Both call sites go through `useRecordOpenedDocument`, which
-  owns the refresh and leaves retry and throttle to `recordRecentDocument`;
-  it invalidates `accountQueryKeys.recentDocuments`.
+- Record from the active editor tab, not from the open intent and not from the
+  create path. A parked restored tab is not an open, and a create that returns
+  before it materializes must not record from the create site: opening the new
+  document does that, once. `useRecordOpenedDocument` owns the refresh;
+  `recordRecentDocument` owns throttle and the retry that covers the window
+  between reserving a document id and the server writing its row.
 
 ## File groups
 

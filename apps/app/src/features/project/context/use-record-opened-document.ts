@@ -1,9 +1,9 @@
 /**
  * useRecordOpenedDocument — the one place an open is written to account recents.
  *
- * Every open lands here: the live editor tab, and a document the create path
- * materialized. Both used to carry their own copy of "record, then refresh the
- * list if it landed", which also meant two places had to know the throttle.
+ * The live editor tab is the only recorder. It is the only moment an open is
+ * both real and addressable: the document is in the catalog, so its row exists
+ * and the server can accept it. Recording earlier races the materializer.
  *
  * Fire-and-forget: the open never waits on the network, and a failed record is
  * not surfaced. Recents are a convenience; the document is already open.

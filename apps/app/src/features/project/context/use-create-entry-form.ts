@@ -24,7 +24,6 @@ import type { ContextCreateKind } from "./context-create-kind";
 import { joinContextEntryPath } from "./context-entry-name";
 import { fileKindIcon } from "./context-file-icon";
 import { type InlineNameForm, useInlineNameForm } from "./use-inline-name-form";
-import { useRecordOpenedDocument } from "./use-record-opened-document";
 
 export type UseCreateEntryFormOptions = {
   projectId: string;
@@ -66,7 +65,6 @@ export function useCreateEntryForm({
   const mutation = useCreateContextEntry(projectId);
   const queryClient = useQueryClient();
   const resources = useAccountResourceReplica();
-  const recordOpenedDocument = useRecordOpenedDocument();
 
   const handleSubmit = useCallback(
     async (trimmed: string) => {
@@ -98,27 +96,12 @@ export function useCreateEntryForm({
             isWorkScopedProjectContextScheme(scheme) ? workId : undefined,
           ),
         });
-        // A created document is opened, so it belongs in recents. The editor-tab
-        // seam cannot see it until the tab is projected from the catalog, so the
-        // create path records the reservation's document id itself.
-        recordOpenedDocument(reservation.content.handle.documentId);
       } else {
         await mutation.mutateAsync({ scheme, type: kind, path, workId });
       }
       onCreated?.(path);
     },
-    [
-      mutation,
-      queryClient,
-      projectId,
-      scheme,
-      kind,
-      parent,
-      onCreated,
-      resources,
-      workId,
-      recordOpenedDocument,
-    ],
+    [mutation, queryClient, projectId, scheme, kind, parent, onCreated, resources, workId],
   );
 
   const form = useInlineNameForm({
