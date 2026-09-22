@@ -13,6 +13,8 @@ export type ThreadUserStateCommandView = {
   pending: boolean;
   desiredValue?: boolean;
   error?: Error;
+  /** Exact failed intent for Retry; `!isFavorite` is unsafe under overlap. */
+  retryValue?: boolean;
 };
 
 type BaseState = Pick<ProjectChatItem, "isFavorite">;
@@ -22,7 +24,7 @@ export type ThreadUserStateRecord = {
   admittedAt: number;
   barrier?: number;
   favorite?: PendingFavorite;
-  favoriteError?: Error;
+  favoriteError?: { error: Error; desiredValue: boolean };
 };
 type QueuedCommand = {
   revision: number;
@@ -143,9 +145,14 @@ export function getFavoriteCommandView(record: ThreadUserStateRecord): ThreadUse
     ? {
         pending: true,
         desiredValue: record.favorite.desiredValue,
-        error: record.favoriteError,
+        error: record.favoriteError?.error,
+        retryValue: record.favoriteError?.desiredValue,
       }
-    : { pending: false, error: record.favoriteError };
+    : {
+        pending: false,
+        error: record.favoriteError?.error,
+        retryValue: record.favoriteError?.desiredValue,
+      };
 }
 
 function syncHome(client: QueryClient, projectId: string, threadId: string) {
@@ -242,7 +249,7 @@ async function advance(
       return {
         ...current,
         favorite: isLatest ? undefined : current.favorite,
-        favoriteError: isLatest ? error : current.favoriteError,
+        favoriteError: isLatest ? { error, desiredValue: entry.value } : current.favoriteError,
       };
     });
     outcome = { status: "error", error };

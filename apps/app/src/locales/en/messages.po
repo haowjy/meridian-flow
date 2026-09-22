@@ -964,6 +964,10 @@ msgstr "Couldn't check recent changes"
 msgid "Couldn't check Work"
 msgstr "Couldn't check Work"
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Couldn’t confirm this preference saved."
+msgstr "Couldn’t confirm this preference saved."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't create a Work"
 msgstr "Couldn't create a Work"
@@ -1100,6 +1104,10 @@ msgstr "Couldn't save the Editor tab layout. Reload may not restore your tabs."
 #: src/features/project/context/use-identity-commit.ts
 msgid "Couldn't save this document's home. Try again."
 msgstr "Couldn't save this document's home. Try again."
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Couldn’t save this preference."
+msgstr "Couldn’t save this preference."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't search"
@@ -1516,6 +1524,7 @@ msgstr "Failed to load image"
 msgid "Favorite"
 msgstr "Favorite"
 
+#: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Favorite wasn’t saved"
