@@ -32,9 +32,11 @@ import type {
   BillingPlanEntry,
   CreateCheckoutSessionRequest,
 } from "@meridian/contracts/protocol";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
+import { useCallback } from "react";
 
+import { getBillingBalance, getBillingTransactions } from "@/client/api/billing-api";
 import {
   useBillingProducts,
   useBillingTransactions,
@@ -43,6 +45,13 @@ import {
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { CheckoutReturnNotice } from "./CheckoutReturnNotice";
+import {
+  type CheckoutBaseline,
+  checkoutBaselineFrom,
+  checkoutStorage,
+  clearCheckoutBaseline,
+  writeCheckoutBaseline,
+} from "./checkout";
 import { ExtraUsagePicker } from "./ExtraUsagePicker";
 import { formatUsd } from "./format";
 import { UsageCard } from "./UsageCard";
@@ -64,8 +73,54 @@ function baseCheckoutRequest(entry: BillingCatalogEntry): CreateCheckoutSessionR
 export function BillingPage() {
   const products = useBillingProducts();
   const transactions = useBillingTransactions();
-  const checkout = useCreateCheckoutSession();
-  const checkoutReturn = useCheckoutReturn();
+  const navigate = useNavigate();
+
+  // Drop `?checkout=` through the router (not raw history) so router state and
+  // the browser URL agree, and only once the return notice has settled.
+  const clearReturnParam = useCallback(() => {
+    void navigate({
+      to: ".",
+      search: (prev: Record<string, unknown>) => {
+        const next = { ...prev };
+        delete next.checkout;
+        return next;
+      },
+      replace: true,
+    });
+  }, [navigate]);
+
+  const checkout = useCreateCheckoutSession({
+    onHandoff: async ({ session, request }, isCurrent) => {
+      // Capture the ledger from a fresh read before handing off. A stale cache
+      // read could miss a purchase already on the server and fake a delta on
+      // return; a failed read must leave no baseline (fail closed).
+      let baseline: CheckoutBaseline | null = null;
+      if (session.kind === "checkout") {
+        try {
+          const [balance, freshTransactions] = await Promise.all([
+            getBillingBalance(),
+            getBillingTransactions(),
+          ]);
+          baseline = checkoutBaselineFrom(
+            freshTransactions.transactions,
+            request,
+            "checkout",
+            balance.includedUsage.mode,
+          );
+        } catch {
+          baseline = null;
+        }
+      } else {
+        // Record the portal handoff so its return is not read as a cancellation.
+        baseline = checkoutBaselineFrom([], request, "portal");
+      }
+      if (!isCurrent()) return;
+      const storage = checkoutStorage();
+      if (baseline) writeCheckoutBaseline(storage, baseline);
+      else clearCheckoutBaseline(storage);
+    },
+  });
+  const checkoutReturn = useCheckoutReturn({ clearReturnParam });
   const stripeConfigured = products.data?.stripeConfigured ?? false;
   const entries = products.data?.entries ?? [];
 

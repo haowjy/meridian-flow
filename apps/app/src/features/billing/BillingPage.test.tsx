@@ -32,6 +32,7 @@ const state = vi.hoisted(() => ({
   products: undefined as unknown,
   transactions: undefined as unknown,
   checkout: undefined as unknown,
+  navigate: vi.fn(),
 }));
 
 vi.mock("@lingui/core/macro", () => ({
@@ -44,6 +45,7 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to: _to, ...rest }: { children: ReactNode; to: string }) => (
     <a {...rest}>{children}</a>
   ),
+  useNavigate: () => state.navigate,
 }));
 vi.mock("@/client/query/useBilling", () => ({
   useBillingProducts: () => state.products,
@@ -109,6 +111,7 @@ beforeEach(() => {
     data: { transactions: [], usage: { totalConsumedUsd: "0.00", transactionCount: 0 } },
   };
   state.checkout = checkout();
+  state.navigate = vi.fn();
   host = document.createElement("div");
   document.body.append(host);
   root = createRoot(host);
