@@ -1,6 +1,6 @@
 /**
  * useProjectList — React Query hook for the sidebar project list, merged with
- * optimistic and independent-project state and with soft-delete suppressions.
+ * optimistic and independent-project state.
  *
  * Exposes the loading/empty/ready/error list status plus the visible-project
  * derivation. The single read path for the project list across the shell.
@@ -10,11 +10,7 @@ import type { Project } from "@meridian/contracts/projects";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listProjects } from "@/client/api/projects-api";
-import {
-  getSuppressedProjectListIds,
-  mergeApiProjects,
-  useIndependentProjectIds,
-} from "@/client/stores";
+import { mergeApiProjects, useIndependentProjectIds } from "@/client/stores";
 
 import { unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
@@ -26,9 +22,7 @@ function useProjectListQuery() {
     queryFn: async () => {
       const apiProjects = await listProjects();
       const prev = queryClient.getQueryData<Project[] | null>(projectQueryKeys.list);
-      return mergeApiProjects(prev ?? null, apiProjects, {
-        excludeIds: getSuppressedProjectListIds(),
-      });
+      return mergeApiProjects(prev ?? null, apiProjects);
     },
     staleTime: 60_000,
   });

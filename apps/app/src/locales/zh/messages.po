@@ -1081,6 +1081,10 @@ msgstr ""
 #~ msgid "Couldn't remove agent from project."
 #~ msgstr ""
 
+#: src/features/chat/ChatThreadHeader.tsx
+msgid "Couldn't rename chat."
+msgstr ""
+
 #: src/features/project/context/ContextTreeRows.tsx
 msgid "Couldn't rename this document. Try again."
 msgstr ""
@@ -2647,8 +2651,12 @@ msgid "Rename this document or move it somewhere else in your project."
 msgstr ""
 
 #: src/features/chat/ChatThreadHeader.tsx
-msgid "Renamed to {trimmed}"
+msgid "Renamed to {confirmed}"
 msgstr ""
+
+#: src/features/chat/ChatThreadHeader.tsx
+#~ msgid "Renamed to {trimmed}"
+#~ msgstr ""
 
 #: src/core/editor/diagrams/DiagramBody.tsx
 msgid "Rendering diagram…"
@@ -2805,6 +2813,10 @@ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally (offline)"
+msgstr ""
+
+#: src/features/chat/ChatThreadHeader.tsx
+msgid "Saving chat title"
 msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx

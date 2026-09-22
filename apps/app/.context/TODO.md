@@ -5,7 +5,6 @@
 The `optimistic-updates` work item owns the profiles and verification specification.
 
 - **OPT-001: Design an honest immediate destination for account-Home project creation.** `src/features/chat/useCreationComposer.ts` waits for the server-assigned project slug before routing. Do not mount an unresolved `/p/` address and do not reuse standalone `/chat/:threadId`, whose contract excludes project-address creation. Keep this path P0 until a neutral pending destination or client-known public address can replace into the canonical project route without bouncing Home.
-- **OPT-002: Resolve dormant project optimism.** `src/client/stores/project-store/project-store.tsx` contains unwired rename and soft-delete projections with no complete UI/API owner. Connect them to real commands or delete them. Treat any failed independent-create cache residue as separate bounded hygiene unless a path that exposes it is demonstrated.
 - **OPT-003: Surface account-preference write failure on its row.** The cross-device working-set switch in `src/features/account/SettingsDialog.tsx` flips immediately but silently reverts when `updateAccountSettings` fails. Retain the P1 projection and add visible inline failure plus Retry.
 - **OPT-005: Complete billing's P0 pending and failure presentation.** Keep Stripe checkout server-confirmed. Add per-control pending and visible failure for checkout-session creation, then invalidate balance and transactions and show confirmation on `?checkout=success`.
 
