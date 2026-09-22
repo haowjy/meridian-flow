@@ -632,6 +632,9 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 dockToggle={surfaceToggle("chat", t`Expand chat`)}
                 onSelectContextPath={props.onSelectContextPath}
                 onOpenContextTarget={props.onOpenContextTarget}
+                onShowEditorRecents={(options) =>
+                  void props.routeCommands.showEditorRecents(options)
+                }
               />
             </DraftReviewBoundary>
           ) : null}

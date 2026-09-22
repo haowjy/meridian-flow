@@ -176,6 +176,7 @@ it("persists and admits the real New action without an empty working-set route",
           sidebarToggle={{ open: true, onExpand: vi.fn(), label: "Sidebar" }}
           dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
           onSelectContextPath={updateRoute}
+          onShowEditorRecents={vi.fn()}
           onOpenContextTarget={(target, options) =>
             new Promise((resolve) => {
               releaseLocalRoute = () => {
@@ -308,6 +309,7 @@ it("guarded-redirects a selected materialized local owner before admitting its s
           dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
           onSelectContextPath={vi.fn()}
           onOpenContextTarget={vi.fn()}
+          onShowEditorRecents={vi.fn()}
         />
       </AccountFeatureTestProvider>
     );
@@ -388,6 +390,7 @@ it("restores the exact older local owner across A to B to A through mounted cont
           dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
           onSelectContextPath={vi.fn()}
           onOpenContextTarget={vi.fn()}
+          onShowEditorRecents={vi.fn()}
         />
       </AccountFeatureTestProvider>
     );
@@ -460,6 +463,7 @@ it.each([
         dockToggle={{ open: true, onExpand: vi.fn(), label: "Dock" }}
         onSelectContextPath={vi.fn()}
         onOpenContextTarget={vi.fn()}
+        onShowEditorRecents={vi.fn()}
       />
     </AccountFeatureTestProvider>,
     () => {
@@ -489,6 +493,7 @@ it("does not admit an old bound document while its retained controller is inacti
           onSelectContextPath={() => {
             throw new Error("Inactive navigation");
           }}
+          onShowEditorRecents={vi.fn()}
           onOpenContextTarget={() => {
             throw new Error("Inactive navigation");
           }}

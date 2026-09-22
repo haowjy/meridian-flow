@@ -25,6 +25,7 @@ export const API_THREADS_PATH = "/api/threads";
 export const API_THREADS_WS_PATH = "/api/threads/ws";
 export const API_BILLING_PATH = "/api/billing";
 export const API_ACCOUNT_SETTINGS_PATH = "/api/account/settings";
+export const API_ACCOUNT_RECENT_DOCUMENTS_PATH = "/api/account/recent-documents";
 export const API_AUTH_ME_PATH = "/api/auth/me";
 export { YJS_WS_PATH_PREFIX, yjsWsPath } from "./yjs-ws.js";
 
@@ -34,6 +35,11 @@ export function apiProjectsHomePath(): string {
 
 export function apiProjectPath(projectId: string): string {
   return `${API_PROJECTS_PATH}/${projectId}`;
+}
+
+/** Recents are read inside a project: the landing that renders them is one. */
+export function apiProjectRecentDocumentsPath(projectId: string): string {
+  return `${apiProjectPath(projectId)}/recent-documents`;
 }
 
 export function apiProjectAddressPath(slug: string): string {
@@ -230,6 +236,10 @@ export function apiThreadRecentDocumentsPath(threadId: string, opts?: { limit?: 
   }
   const query = search.toString();
   return `${API_THREADS_PATH}/${threadId}/recent-documents${query ? `?${query}` : ""}`;
+}
+
+export function apiAccountRecentDocumentsPath(): string {
+  return API_ACCOUNT_RECENT_DOCUMENTS_PATH;
 }
 
 export function apiThreadContextReversePath(threadId: string): string {

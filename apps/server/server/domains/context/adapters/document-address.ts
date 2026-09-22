@@ -35,6 +35,9 @@ export function createDrizzleDocumentAddressStore(db: Database): DocumentAddress
         if (!project) return null;
         const workScoped = isWorkScopedProjectContextScheme(input.scheme);
         if (!workScoped && input.workId !== null) return null;
+        // Liveness facts (live source, live project, live work) are the same ones
+        // recent-documents' visibleIdentity filters on and project-context-availability
+        // explains as a reason; see visibleIdentity for why they are not shared.
         const [source] = await tx
           .select({ id: contextSources.id })
           .from(contextSources)

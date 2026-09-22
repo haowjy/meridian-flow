@@ -49,6 +49,7 @@ export * from "./filetype.js";
 export * from "./http-types.js";
 export * from "./paths.js";
 export * from "./projects.js";
+export * from "./recent-documents.js";
 export * from "./thread-documents.js";
 export * from "./transport-serializer.js";
 export * from "./upload-intake.js";

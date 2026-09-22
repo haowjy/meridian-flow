@@ -24,8 +24,9 @@ Key rules:
 - Build routes with `buildWorkingSetRoute`: every server route requires its
   stable document ID, and Work-capable schemes require explicit real-Work or
   no-Work authority. Never hand-assemble the union.
-- Do not grow this into a general sync engine — the narrowness is the
-  design. If a new state kind needs syncing, give it its own tier and
-  policy instead of widening this record.
+- Do not grow this into a general sync engine. The narrowness is the
+  design. A new state kind gets its own record and policy instead of
+  widening this one. Account recently-opened documents are a separate
+  Continuity record, not this store and not a new tier.
 
 Depth: [.context/CONTEXT.md](.context/CONTEXT.md) (contracts and protocol).

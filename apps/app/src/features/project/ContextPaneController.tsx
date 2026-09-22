@@ -37,6 +37,7 @@ import {
   type OpenContextRoute,
   useCaptureProjectNavigation,
 } from "./routing/ProjectNavigationContext";
+import type { NavigationOptions } from "./routing/project-route";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ContextViewerSurfaceControllerProps = {
@@ -52,6 +53,11 @@ export type ContextViewerSurfaceControllerProps = {
     options?: { replace?: boolean },
   ) => void;
   onOpenContextTarget: OpenContextRoute;
+  /**
+   * Clears the Editor's selected document without closing tabs, landing on the
+   * recently-opened chooser.
+   */
+  onShowEditorRecents: (options: NavigationOptions) => void;
   active: boolean;
   /** Project left-sidebar expand toggle, surfaced via the tab strip. */
   sidebarToggle: PaneHeaderRailToggle;
@@ -67,6 +73,7 @@ export function ContextViewerSurfaceController({
   activeContextScheme,
   activeContextPath,
   active,
+  onShowEditorRecents,
   sidebarToggle,
   dockToggle,
   onSelectContextPath,
@@ -452,6 +459,7 @@ export function ContextViewerSurfaceController({
       paneState={paneState}
       onSelectTab={handleSelectTab}
       onCloseTab={handleCloseTab}
+      onShowRecents={() => onShowEditorRecents({ replace: false })}
       sidebarToggle={sidebarToggle}
       dockToggle={dockToggle}
       active={active}

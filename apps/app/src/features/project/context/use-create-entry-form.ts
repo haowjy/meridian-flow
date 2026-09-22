@@ -12,10 +12,12 @@ import {
   filetypeForPath,
   isWorkScopedProjectContextScheme,
 } from "@meridian/contracts/protocol";
+import { useQueryClient } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import { Folder } from "lucide-react";
 import { useCallback } from "react";
 
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { useCreateContextEntry } from "@/client/query/useCreateContextEntry";
 import { useAccountResourceReplica } from "./account-feature-context";
 import type { ContextCreateKind } from "./context-create-kind";
@@ -61,6 +63,7 @@ export function useCreateEntryForm({
   onCreated,
 }: UseCreateEntryFormOptions): CreateEntryForm {
   const mutation = useCreateContextEntry(projectId);
+  const queryClient = useQueryClient();
   const resources = useAccountResourceReplica();
 
   const handleSubmit = useCallback(
@@ -83,12 +86,22 @@ export function useCreateEntryForm({
         } finally {
           reservation.content.handle.release();
         }
+        // This path bypasses the create mutation's own invalidation, so the new
+        // entry stays out of the cached catalog until we drop it here; without
+        // this, the tree and any catalog-driven open lag behind the create.
+        void queryClient.invalidateQueries({
+          queryKey: projectQueryKeys.contextCatalogView(
+            projectId,
+            scheme,
+            isWorkScopedProjectContextScheme(scheme) ? workId : undefined,
+          ),
+        });
       } else {
         await mutation.mutateAsync({ scheme, type: kind, path, workId });
       }
       onCreated?.(path);
     },
-    [mutation, scheme, kind, parent, onCreated, resources, workId],
+    [mutation, queryClient, projectId, scheme, kind, parent, onCreated, resources, workId],
   );
 
   const form = useInlineNameForm({

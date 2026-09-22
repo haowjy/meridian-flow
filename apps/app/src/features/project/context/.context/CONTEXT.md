@@ -64,9 +64,21 @@ ContextPaneController
               ├─ DraftReviewHeader (review strip, above the identity bar)
               ├─ DocumentIdentityBar (breadcrumb + chips, incl. DraftReviewChip)
               ├─ ContextEditorMountHost (warm tracked + local-resource Yjs editors)
-              └─ ContextViewerHost (active binary viewer)
+              ├─ ContextViewerHost (active binary viewer)
+              └─ RecentDocumentsLanding (empty workspace only)
 ```
 
+`RecentDocumentsLanding` is the empty pane. It lists this project's recently-opened
+documents and navigates on click. It does not open a tab on mount. The tab
+strip's leading control (`showEditorRecents`) reaches it without closing a tab:
+the address owns which document is visible, the store owns what stays open, so
+clearing the address leaves the working set intact. Recording
+is not the navigation adapter's job: the document row materializes after the
+open intent, so a write there races persistence and is lost. The active
+tracked or viewer tab records once the document is real. File create records
+the reservation's document id, because that tab does not exist until the
+catalog projects it. Scratch and uploads are not Editor tabs, so they are
+not recorded.
 
 ## Reference pages
 
