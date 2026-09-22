@@ -27,11 +27,11 @@ export type {
 export type AccountRecentsSnapshot = {
   bound: boolean;
   userId: string | null;
-  revision: number;
+  bindEpoch: number;
   items: readonly AccountRecentItem[];
 };
 
-const UNBOUND: AccountRecentsSnapshot = { bound: false, userId: null, revision: 0, items: [] };
+const UNBOUND: AccountRecentsSnapshot = { bound: false, userId: null, bindEpoch: 0, items: [] };
 
 let store: DeviceAccountRecentsStore | null = null;
 let snapshot: AccountRecentsSnapshot = UNBOUND;
@@ -49,7 +49,7 @@ function publish(): void {
     ? {
         bound: current.userId !== null,
         userId: current.userId,
-        revision: current.revision,
+        bindEpoch: current.epoch,
         items: current.items,
       }
     : UNBOUND;
@@ -76,40 +76,29 @@ export function bindAccountRecents(userId: string): void {
   snapshot = {
     bound: true,
     userId: current.userId,
-    revision: current.revision,
+    bindEpoch: current.epoch,
     items: current.items,
   };
   queueMicrotask(publish);
-}
-
-export function accountRecentsRevision(): number {
-  return browserStore()?.revision ?? 0;
 }
 
 export function readAccountRecents(projectId: string): readonly AccountRecentItem[] {
   return browserStore()?.forProject(projectId) ?? [];
 }
 
-export function touchAccountRecent(
-  accountId: string,
-  opening: RecentOpening,
-): { revision: number } | null {
-  const touched = browserStore()?.touch(accountId, opening) ?? null;
+export function touchAccountRecent(accountId: string, opening: RecentOpening): boolean {
+  const touched = browserStore()?.touch(accountId, opening) ?? false;
   if (touched) publish();
   return touched;
-}
-
-export function noteRecentServerRow(accountId: string, documentId: string): void {
-  if (browserStore()?.noteServerRow(accountId, documentId)) publish();
 }
 
 export function applyServerRecentList(
   accountId: string,
   projectId: string,
   rows: readonly ServerRecentRow[],
-  capturedRevision: number,
+  bindEpoch: number,
 ): void {
-  if (browserStore()?.applyServerList(accountId, projectId, rows, capturedRevision)) publish();
+  if (browserStore()?.applyServerList(accountId, projectId, rows, bindEpoch)) publish();
 }
 
 export function applyRecentAvailability(

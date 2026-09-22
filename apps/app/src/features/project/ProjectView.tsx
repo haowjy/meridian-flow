@@ -19,7 +19,6 @@ import {
 } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { isProjectContextCatalogKey } from "@/client/query/project-query-keys";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
@@ -207,20 +206,17 @@ export function ProjectView(props: ProjectViewProps) {
         props.projectId,
         tabs.flatMap((tab) => {
           const address = recentAddressFromTab(tab);
-          return address?.kind === "document"
-            ? [{ documentId: tab.documentId, name: tab.name, address }]
-            : [];
+          return address ? [{ documentId: tab.documentId, name: tab.name, address }] : [];
         }),
       );
       lease.watch(
         "account-recents",
         readAccountRecents(props.projectId).flatMap((item) =>
-          item.acknowledgedRevision !== null && item.address.kind === "document"
+          item.address.kind === "document"
             ? [
                 availabilityWatchRecord({
                   documentId: item.documentId,
                   scheme: item.address.scheme,
-                  workId: item.address.workId,
                 }),
               ]
             : [],
@@ -232,20 +228,11 @@ export function ProjectView(props: ProjectViewProps) {
     const stopSelection = removal.subscribe(props.projectId, reportWatches);
     const stopRecents = subscribeAccountRecents(reportWatches);
     const stopWorksObservation = observeWorksAvailability(queryClient, props.projectId);
-    const stopCatalog = queryClient.getQueryCache().subscribe((event) => {
-      if (event.type !== "updated") return;
-      if (!isProjectContextCatalogKey(event.query.queryKey, props.projectId)) return;
-      const ids = readAccountRecents(props.projectId)
-        .filter((item) => item.acknowledgedRevision !== null)
-        .map((item) => item.documentId);
-      if (ids.length > 0) void availability.recheck(props.projectId, ids);
-    });
     return () => {
       stopTabs();
       stopSelection();
       stopRecents();
       stopWorksObservation();
-      stopCatalog();
       lease.release();
     };
   }, [accountId, availability, props.projectId, queryClient, removal]);

@@ -47,8 +47,9 @@ Shared across both shells:
 - The empty Editor pane is a chooser (`RecentDocumentsLanding`): the project's
   recently-opened documents, including viewers. A row navigates. It never
   seeds a tab. The strip's leading control reaches it with tabs still open:
-  `routeCommands.showEditorRecents` clears the address and leaves the working
-  set alone, so closing tabs is not the only way back.
+  `routeCommands.showEditorRecents` clears the address, including a local-document
+  history pointer, and leaves the working set alone. Already on the chooser is a
+  no-op. Back returns to the document that was showing.
 - Record from the active editor tab, not from the open intent and not from the
   create path. A parked restored tab is not an open. Opening the new document
   records it, including a local draft, once that tab is in front of the writer.

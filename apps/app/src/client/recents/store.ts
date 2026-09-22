@@ -1,14 +1,14 @@
 /**
  * Device-local account recents. This record is the writer's own opening
- * history; the server list may add other devices and must not demote a newer
- * local opening.
+ * history. A server list may add other devices and a newer openedAt. It does
+ * not delete, overwrite a known locator, or clear a removal.
  */
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 
 export const ACCOUNT_RECENTS_CAP = 50;
 export const ACCOUNT_RECENTS_STORAGE_KEY = "meridian:account-recents";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const EDITOR_SCHEMES = new Set<string>(PROJECT_SCOPED_CONTEXT_URI_SCHEMES);
 
 export type RecentsStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -20,8 +20,6 @@ export type RecentAddress =
       scheme: ProjectContextTreeScheme;
       /** Leading-slash locator. Empty paths are not a document address. */
       path: string;
-      workId: string | null;
-      workSlug: string | null;
     };
 
 export type AccountRecentItem = {
@@ -30,13 +28,6 @@ export type AccountRecentItem = {
   name: string;
   openedAt: string;
   address: RecentAddress;
-  /** Store revision of the last local open or locator write. */
-  revision: number;
-  /**
-   * Store revision at which a response proved the server has this row.
-   * A list that started earlier cannot treat absence as deletion.
-   */
-  acknowledgedRevision: number | null;
 };
 
 export type RecentOpening = {
@@ -52,7 +43,6 @@ export type ServerRecentRow = {
   name: string;
   scheme: ProjectContextTreeScheme;
   path: string;
-  workSlug: string | null;
   openedAt: string;
 };
 
@@ -63,21 +53,19 @@ export type RecentIdentityUpdate = {
   name: string;
   scheme: ProjectContextTreeScheme;
   path: string;
-  workId: string | null;
 };
 
-type Tombstone = { documentId: string; projectId: string; revision: number };
+type Removal = { documentId: string; projectId: string };
 
 type PersistedRecents = {
   schemaVersion: typeof SCHEMA_VERSION;
   userId: string;
-  revision: number;
   items: AccountRecentItem[];
-  removed: Tombstone[];
+  removed: Removal[];
 };
 
 function emptyRecord(userId: string): PersistedRecents {
-  return { schemaVersion: SCHEMA_VERSION, userId, revision: 0, items: [], removed: [] };
+  return { schemaVersion: SCHEMA_VERSION, userId, items: [], removed: [] };
 }
 
 function isEditorScheme(scheme: string): scheme is ProjectContextTreeScheme {
@@ -89,19 +77,12 @@ export function readableRecentPath(path: string): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function documentAddress(
-  scheme: ProjectContextTreeScheme,
-  path: string,
-  workId: string | null,
-  workSlug: string | null,
-): RecentAddress | null {
+function documentAddress(scheme: string, path: string): RecentAddress | null {
   if (!isEditorScheme(scheme) || !readableRecentPath(path)) return null;
   return {
     kind: "document",
     scheme,
     path: path.startsWith("/") ? path : `/${path}`,
-    workId,
-    workSlug,
   };
 }
 
@@ -114,12 +95,7 @@ function sameAddress(left: RecentAddress, right: RecentAddress): boolean {
       left.resourceHandle === right.resourceHandle
     );
   }
-  return (
-    left.scheme === right.scheme &&
-    left.path === right.path &&
-    left.workId === right.workId &&
-    left.workSlug === right.workSlug
-  );
+  return left.scheme === right.scheme && left.path === right.path;
 }
 
 function byOpenedAt(left: AccountRecentItem, right: AccountRecentItem): number {
@@ -131,6 +107,14 @@ function capItems(items: AccountRecentItem[]): AccountRecentItem[] {
   return [...items].sort(byOpenedAt).slice(0, ACCOUNT_RECENTS_CAP);
 }
 
+/** Oldest removals fall off at the cap. A list never clears one. */
+function rememberRemovals(existing: readonly Removal[], next: readonly Removal[]): Removal[] {
+  const replaced = new Set(next.map((entry) => entry.documentId));
+  return [...existing.filter((entry) => !replaced.has(entry.documentId)), ...next].slice(
+    -ACCOUNT_RECENTS_CAP,
+  );
+}
+
 function parseItem(value: unknown): AccountRecentItem | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Partial<AccountRecentItem>;
@@ -139,7 +123,6 @@ function parseItem(value: unknown): AccountRecentItem | null {
     typeof item.projectId !== "string" ||
     typeof item.name !== "string" ||
     typeof item.openedAt !== "string" ||
-    typeof item.revision !== "number" ||
     !item.address ||
     typeof item.address !== "object"
   ) {
@@ -156,34 +139,22 @@ function parseItem(value: unknown): AccountRecentItem | null {
       projectId: item.projectId,
       name: item.name,
       openedAt: item.openedAt,
-      revision: item.revision,
-      acknowledgedRevision:
-        typeof item.acknowledgedRevision === "number" ? item.acknowledgedRevision : null,
       address: { kind: "local", resourceHandle: address.resourceHandle },
     };
   }
   if (
     address.kind === "document" &&
     typeof address.scheme === "string" &&
-    isEditorScheme(address.scheme) &&
-    typeof address.path === "string" &&
-    readableRecentPath(address.path)
+    typeof address.path === "string"
   ) {
+    const document = documentAddress(address.scheme, address.path);
+    if (!document) return null;
     return {
       documentId: item.documentId,
       projectId: item.projectId,
       name: item.name,
       openedAt: item.openedAt,
-      revision: item.revision,
-      acknowledgedRevision:
-        typeof item.acknowledgedRevision === "number" ? item.acknowledgedRevision : null,
-      address: {
-        kind: "document",
-        scheme: address.scheme,
-        path: address.path.startsWith("/") ? address.path : `/${address.path}`,
-        workId: typeof address.workId === "string" ? address.workId : null,
-        workSlug: typeof address.workSlug === "string" ? address.workSlug : null,
-      },
+      address: document,
     };
   }
   return null;
@@ -199,24 +170,15 @@ function parsePersisted(raw: string | null): PersistedRecents | null {
   const removed = Array.isArray(parsed.removed)
     ? parsed.removed.flatMap((entry) => {
         if (!entry || typeof entry !== "object") return [];
-        const tombstone = entry as Partial<Tombstone>;
-        return typeof tombstone.documentId === "string" &&
-          typeof tombstone.projectId === "string" &&
-          typeof tombstone.revision === "number"
-          ? [
-              {
-                documentId: tombstone.documentId,
-                projectId: tombstone.projectId,
-                revision: tombstone.revision,
-              },
-            ]
+        const removal = entry as Partial<Removal>;
+        return typeof removal.documentId === "string" && typeof removal.projectId === "string"
+          ? [{ documentId: removal.documentId, projectId: removal.projectId }]
           : [];
       })
     : [];
   return {
     schemaVersion: SCHEMA_VERSION,
     userId: parsed.userId,
-    revision: typeof parsed.revision === "number" ? parsed.revision : 0,
     items: capItems(items),
     removed: removed.slice(-ACCOUNT_RECENTS_CAP),
   };
@@ -224,6 +186,8 @@ function parsePersisted(raw: string | null): PersistedRecents | null {
 
 export class DeviceAccountRecentsStore {
   private state: PersistedRecents | null = null;
+  /** Session fence for a cached list. Not durable, and not an item revision. */
+  private bindEpoch = 0;
 
   constructor(private readonly storage: RecentsStorage) {}
 
@@ -231,8 +195,8 @@ export class DeviceAccountRecentsStore {
     return this.state?.userId ?? null;
   }
 
-  get revision(): number {
-    return this.state?.revision ?? 0;
+  get epoch(): number {
+    return this.bindEpoch;
   }
 
   get items(): readonly AccountRecentItem[] {
@@ -241,6 +205,7 @@ export class DeviceAccountRecentsStore {
 
   setUser(userId: string): void {
     if (this.state?.userId === userId) return;
+    this.bindEpoch += 1;
     let persisted: PersistedRecents | null = null;
     try {
       persisted = parsePersisted(this.storage.getItem(ACCOUNT_RECENTS_STORAGE_KEY));
@@ -263,31 +228,21 @@ export class DeviceAccountRecentsStore {
     return (this.state?.items ?? []).filter((item) => item.projectId === projectId);
   }
 
-  touch(accountId: string, opening: RecentOpening): { revision: number } | null {
+  touch(accountId: string, opening: RecentOpening): boolean {
     const state = this.bound(accountId);
-    if (!state) return null;
+    if (!state) return false;
     if (
       opening.address.kind === "document" &&
-      !documentAddress(
-        opening.address.scheme,
-        opening.address.path,
-        opening.address.workId,
-        opening.address.workSlug,
-      )
+      !documentAddress(opening.address.scheme, opening.address.path)
     ) {
-      return null;
+      return false;
     }
-    state.revision += 1;
-    const revision = state.revision;
-    const previous = state.items.find((item) => item.documentId === opening.documentId);
     const next: AccountRecentItem = {
       documentId: opening.documentId,
       projectId: opening.projectId,
       name: opening.name,
       openedAt: opening.openedAt,
       address: opening.address,
-      revision,
-      acknowledgedRevision: previous?.acknowledgedRevision ?? null,
     };
     state.items = capItems([
       next,
@@ -295,35 +250,25 @@ export class DeviceAccountRecentsStore {
     ]);
     state.removed = state.removed.filter((entry) => entry.documentId !== opening.documentId);
     this.persist();
-    return { revision };
-  }
-
-  /**
-   * The server has this row. Does not move rank: `recorded: false` is the
-   * five-second write interval, not a request to restore the server order.
-   */
-  noteServerRow(accountId: string, documentId: string): boolean {
-    const state = this.bound(accountId);
-    if (!state) return false;
-    const item = state.items.find((candidate) => candidate.documentId === documentId);
-    if (!item) return false;
-    state.revision += 1;
-    item.acknowledgedRevision = state.revision;
-    this.persist();
     return true;
   }
 
+  /**
+   * Add rows this device has not ranked, and adopt a newer openedAt.
+   * Never deletes, never overwrites a known locator, never clears a removal.
+   * A payload from another bind is ignored.
+   */
   applyServerList(
     accountId: string,
     projectId: string,
     rows: readonly ServerRecentRow[],
-    capturedRevision: number,
+    bindEpoch: number,
   ): boolean {
     const state = this.bound(accountId);
-    if (!state) return false;
+    if (!state || bindEpoch !== this.bindEpoch) return false;
     const serverById = new Map(
       rows.flatMap((row) => {
-        const address = documentAddress(row.scheme, row.path, null, row.workSlug);
+        const address = documentAddress(row.scheme, row.path);
         return address ? [[row.documentId, { row, address }] as const] : [];
       }),
     );
@@ -341,27 +286,14 @@ export class DeviceAccountRecentsStore {
       }
       const server = serverById.get(item.documentId);
       serverById.delete(item.documentId);
-      if (item.revision > capturedRevision) {
+      if (!server || server.row.openedAt <= item.openedAt) {
         kept.push(item);
         continue;
       }
-      if (!server) {
-        const provedAbsent =
-          item.acknowledgedRevision !== null && capturedRevision >= item.acknowledgedRevision;
-        if (provedAbsent) changed = true;
-        else kept.push(item);
-        continue;
-      }
-      const openedAt = server.row.openedAt > item.openedAt ? server.row.openedAt : item.openedAt;
-      if (openedAt !== item.openedAt) {
-        changed = true;
-        kept.push({ ...item, openedAt });
-      } else {
-        kept.push(item);
-      }
+      changed = true;
+      kept.push({ ...item, openedAt: server.row.openedAt });
     }
     for (const { row, address } of serverById.values()) {
-      // A removal is authoritative until a later list no longer contains the row.
       if (removed.has(row.documentId)) continue;
       changed = true;
       kept.push({
@@ -370,18 +302,10 @@ export class DeviceAccountRecentsStore {
         name: row.name,
         openedAt: row.openedAt,
         address,
-        revision: capturedRevision,
-        acknowledgedRevision: capturedRevision,
       });
     }
-    const removedAfter = state.removed.filter((entry) => {
-      if (entry.projectId !== projectId || entry.revision > capturedRevision) return true;
-      return rows.some((row) => row.documentId === entry.documentId);
-    });
-    if (removedAfter.length !== state.removed.length) changed = true;
     if (!changed) return false;
     state.items = capItems(kept);
-    state.removed = removedAfter.slice(-ACCOUNT_RECENTS_CAP);
     this.persist();
     return true;
   }
@@ -406,7 +330,7 @@ export class DeviceAccountRecentsStore {
         kept.push(item);
         continue;
       }
-      const address = documentAddress(update.scheme, update.path, update.workId, null);
+      const address = documentAddress(update.scheme, update.path);
       if (!address) {
         changed = true;
         removedIds.add(item.documentId);
@@ -416,31 +340,22 @@ export class DeviceAccountRecentsStore {
         kept.push(item);
         continue;
       }
-      state.revision += 1;
       changed = true;
-      kept.push({
-        ...item,
-        name: update.name,
-        address,
-        revision: state.revision,
-      });
+      kept.push({ ...item, name: update.name, address });
     }
-    if (!changed && removedIds.size === 0) return false;
+    if (!changed) return false;
     if (removedIds.size > 0) {
-      state.revision += 1;
-      const revision = state.revision;
       const projectOf = new Map([
         ...state.items.map((item) => [item.documentId, item.projectId] as const),
         ...input.removed.map((entry) => [entry.documentId, entry.projectId] as const),
       ]);
-      const tombstones = [...removedIds].flatMap((documentId) => {
-        const projectId = projectOf.get(documentId);
-        return projectId ? [{ documentId, projectId, revision }] : [];
-      });
-      state.removed = [
-        ...state.removed.filter((entry) => !removedIds.has(entry.documentId)),
-        ...tombstones,
-      ].slice(-ACCOUNT_RECENTS_CAP);
+      state.removed = rememberRemovals(
+        state.removed,
+        [...removedIds].flatMap((documentId) => {
+          const projectId = projectOf.get(documentId);
+          return projectId ? [{ documentId, projectId }] : [];
+        }),
+      );
     }
     state.items = capItems(kept);
     this.persist();
@@ -459,11 +374,16 @@ export class DeviceAccountRecentsStore {
     const items = state.items.map((item) => {
       if (item.projectId !== projectId) return item;
       const tab = byId.get(item.documentId);
-      if (tab?.address.kind !== "document") return item;
+      if (!tab) return item;
+      if (
+        tab.address.kind === "document" &&
+        !documentAddress(tab.address.scheme, tab.address.path)
+      ) {
+        return item;
+      }
       if (item.name === tab.name && sameAddress(item.address, tab.address)) return item;
-      state.revision += 1;
       changed = true;
-      return { ...item, name: tab.name, address: tab.address, revision: state.revision };
+      return { ...item, name: tab.name, address: tab.address };
     });
     if (!changed) return false;
     state.items = items;

@@ -2,15 +2,15 @@
  * useRecordOpenedDocument — the one place an open is written to account recents.
  *
  * The live editor tab is the recorder. The device record updates before the
- * POST, so the landing does not wait on the network. A failed record stays
- * local. An unchanged server row is the write interval, not a rank to restore.
+ * POST, so the landing does not wait on the network. A failed or unchanged
+ * record leaves that opening where the writer put it.
  */
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 
 import { recordRecentDocument } from "@/client/api/recent-documents-api";
 import { accountQueryKeys } from "@/client/query/account-query-keys";
-import { noteRecentServerRow, type RecentOpening, touchAccountRecent } from "@/client/recents";
+import { type RecentOpening, touchAccountRecent } from "@/client/recents";
 import { useAccountEpochSignal, useAccountId } from "./account-feature-context";
 
 export function useRecordOpenedDocument(): (opening: RecentOpening) => void {
@@ -22,13 +22,10 @@ export function useRecordOpenedDocument(): (opening: RecentOpening) => void {
       const touched = touchAccountRecent(accountId, opening);
       if (!touched) return;
       void recordRecentDocument(opening.documentId, epoch).then((result) => {
-        if (result.kind === "failed") return;
-        noteRecentServerRow(accountId, opening.documentId);
-        if (result.kind === "recorded") {
-          void queryClient.invalidateQueries({
-            queryKey: accountQueryKeys.recentDocumentsRoot(accountId),
-          });
-        }
+        if (result.kind !== "recorded") return;
+        void queryClient.invalidateQueries({
+          queryKey: accountQueryKeys.recentDocumentsRoot(accountId),
+        });
       });
     },
     [accountId, epoch, queryClient],

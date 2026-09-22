@@ -545,13 +545,17 @@ export function ReadableProjectRoute({
     workHref: (target) =>
       projectAddressHref(toDestination({ kind: "work", workSlug: workSlug(target.workId) })),
     closeWork: (options) => go(toDestination({ kind: "works" }), options),
-    // Selecting no document keeps every open tab: the address owns which one is
-    // visible, the store owns what stays open. Already on the chooser is a no-op
-    // so a second click cannot push a duplicate entry.
-    showEditorRecents: (options) =>
-      address.destination.kind === "editor"
-        ? Promise.resolve()
-        : go(toDestination({ kind: "editor" }), options),
+    // Selecting no document keeps every open tab. Already on the chooser is a
+    // no-op. A local draft is also `/editor`; its history pointer is the
+    // selection. Navigation clears that pointer. Departure freezes it, so Back
+    // returns to the draft.
+    showEditorRecents: (options) => {
+      const onChooser =
+        destination.kind === "editor" &&
+        (!("meridianProjectSelection" in location.state) ||
+          location.state.meridianProjectSelection == null);
+      return onChooser ? Promise.resolve() : go(toDestination({ kind: "editor" }), options);
+    },
     openWorkContext: (target, options) =>
       target.path !== undefined
         ? openContext(

@@ -22,14 +22,14 @@ export type RecentDocumentsStatus = {
 
 type RecentListFetch = {
   accountId: string;
-  capturedRevision: number;
+  bindEpoch: number;
   documents: RecentDocumentItem[];
 };
 
 /**
  * This project's recently opened documents. The device record paints first,
- * including after reload. The server list fills in other devices and cannot
- * demote an opening it did not see.
+ * including after reload. The server list adds other devices. A payload from
+ * another account bind is ignored.
  */
 export function useRecentDocuments(projectId: string): RecentDocumentsStatus {
   const local = useSyncExternalStore(
@@ -46,9 +46,10 @@ export function useRecentDocuments(projectId: string): RecentDocumentsStatus {
   });
   useEffect(() => {
     const fetched = query.data;
-    if (!fetched || fetched.accountId !== accountId) return;
-    applyServerRecentList(accountId, projectId, fetched.documents, fetched.capturedRevision);
-  }, [accountId, projectId, query.data]);
+    if (!fetched || fetched.accountId !== accountId || fetched.bindEpoch !== local.bindEpoch)
+      return;
+    applyServerRecentList(accountId, projectId, fetched.documents, fetched.bindEpoch);
+  }, [accountId, local.bindEpoch, projectId, query.data]);
 
   const documents = useMemo(
     () => (local.bound ? local.items.filter((item) => item.projectId === projectId) : []),
@@ -74,8 +75,8 @@ async function fetchRecentList(
   projectId: string,
   signal: AbortSignal,
 ): Promise<RecentListFetch> {
-  const capturedRevision = getAccountRecentsSnapshot().revision;
+  const bindEpoch = getAccountRecentsSnapshot().bindEpoch;
   const documents = await listRecentDocuments(projectId, signal);
   if (signal.aborted) throw new DOMException("The operation was aborted.", "AbortError");
-  return { accountId, capturedRevision, documents };
+  return { accountId, bindEpoch, documents };
 }
