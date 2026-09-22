@@ -102,33 +102,40 @@ export function ContextTabBar({
     >
       {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
       {onShowRecents ? (
-        <div className="flex shrink-0 items-center pl-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={onShowRecents}
-                aria-label={t`Recently opened`}
-                aria-current={recentsActive ? "page" : undefined}
-                className={cn(
-                  "focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-background/50",
-                  // On the chooser this is where the writer is, not just a way
-                  // back: same canvas pill an active tab wears.
-                  recentsActive
-                    ? "text-foreground before:bg-background/50"
-                    : "text-muted-foreground",
-                )}
-              >
-                <History className="size-3.5" aria-hidden />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={4}>
-              <Trans>Recently opened</Trans>
-            </TooltipContent>
-          </Tooltip>
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={onShowRecents}
+              aria-label={t`Recently opened`}
+              aria-current={recentsActive ? "page" : undefined}
+              // Chip grammar, like the tabs: on the chooser this is the place the
+              // page's top edge rises into, and off it the writer gets the same
+              // hover pill an inactive tab wears. Not `h-full` — items-stretch
+              // sizes the chip so the active margin subtracts from its height.
+              className={cn(
+                "focus-ring relative flex shrink-0 items-center gap-1.5 px-3",
+                recentsActive
+                  ? "tab-chip-active text-foreground"
+                  : "tab-chip-inactive text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <History className="size-3.5" aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={4}>
+            <Trans>Recently opened</Trans>
+          </TooltipContent>
+        </Tooltip>
       ) : null}
-      <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden pl-2">
+      {/* Flush against the door when it is there: the door is the first chip in
+          the row, not a control docked beside it. */}
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden",
+          onShowRecents ? "pl-0" : "pl-2",
+        )}
+      >
         {tabs.map((tab, index) => {
           const active = tab.documentId === activeTabId;
           const previous = tabs[index - 1];
