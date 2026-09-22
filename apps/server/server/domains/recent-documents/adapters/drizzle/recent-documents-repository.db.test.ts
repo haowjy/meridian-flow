@@ -205,6 +205,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(repo.record(userId(USER), documentId(OWNED))).resolves.toBe(false);
       expect(await storedOpenedAt()).toEqual(first);
 
+      // The interval is per document, not per account: another document opened in
+      // the same window is a different open and must still be recorded.
+      await expect(repo.record(userId(USER), documentId(PDF))).resolves.toBe(true);
+
       // Past the interval, the same open moves the row and reports the write.
       await db
         .update(userRecentDocuments)
