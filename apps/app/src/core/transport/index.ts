@@ -6,6 +6,7 @@ export type {
   ConnectionState,
   InterruptRespondInput,
   ThreadGapEvent,
+  ThreadInterruptResponseError,
   ThreadTransport,
   ThreadTransportHandlers,
   ThreadTransportSubscribeOptions,

@@ -13,6 +13,8 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { Block, TurnStatus } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
+import { useThreadStore } from "@/client/stores";
+import { interruptResponseKey } from "@/core/session/interrupt-response";
 import { componentBlockContent } from "./component-block-content";
 import { COMPONENT_REGISTRY } from "./component-registry";
 
@@ -39,13 +41,20 @@ export function CustomBlockRenderer({
   const content = componentBlockContent(block.content);
   const kind = content?.kind ?? null;
   const Component = kind ? COMPONENT_REGISTRY[kind] : undefined;
+  const interruptId = content?.interrupt?.id ?? null;
+  const responseEntry = useThreadStore((state) =>
+    interruptId
+      ? state.interruptResponses[
+          interruptResponseKey({ threadId, turnId: block.turnId, interruptId })
+        ]
+      : undefined,
+  );
 
   if (!content || !Component) {
     return <UnknownComponentFallback block={block} kind={kind} />;
   }
 
   const hasResolvedValue = Object.hasOwn(content.props, "resolvedValue");
-  const interruptId = content.interrupt?.id ?? null;
   const respond = (value: JsonValue) => {
     if (!interruptId) return;
     onRespondToInterrupt?.({
@@ -53,6 +62,16 @@ export function CustomBlockRenderer({
       turnId: block.turnId,
       interruptId,
       value,
+    });
+  };
+  // Retry replays the exact submitted value with the same correlation tuple.
+  const retry = () => {
+    if (!interruptId || !responseEntry) return;
+    onRespondToInterrupt?.({
+      threadId,
+      turnId: block.turnId,
+      interruptId,
+      value: responseEntry.value,
     });
   };
 
@@ -63,6 +82,8 @@ export function CustomBlockRenderer({
       isAwaitingResponse={Boolean(
         interruptId && !hasResolvedValue && turnStatus === "waiting_interrupt",
       )}
+      responseState={responseEntry ? { status: responseEntry.status } : null}
+      retry={retry}
     />
   );
 }

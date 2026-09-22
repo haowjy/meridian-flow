@@ -70,6 +70,12 @@ class ScenarioThreadTransport implements ThreadTransport {
   }> = [];
   cancelRequests: Array<{ threadId: string; turnId: string }> = [];
   interruptResponses: InterruptRespondInput[] = [];
+  /** When true, `respondInterrupt` reports that the frame was never sent. */
+  interruptSendFails = false;
+
+  private readonly interruptErrorListeners = new Set<{
+    listener: (event: { threadId: string; error: Error }) => void;
+  }>();
 
   private readonly connectionWaiters = new Set<{
     resolve(token: string): void;
@@ -118,8 +124,23 @@ class ScenarioThreadTransport implements ThreadTransport {
     };
   }
 
-  respondInterrupt(input: InterruptRespondInput): void {
+  respondInterrupt(input: InterruptRespondInput): boolean {
     this.interruptResponses.push(input);
+    return !this.interruptSendFails;
+  }
+
+  onInterruptResponseError(
+    listener: (event: { threadId: string; error: Error }) => void,
+  ): () => void {
+    const entry = { listener };
+    this.interruptErrorListeners.add(entry);
+    return () => {
+      this.interruptErrorListeners.delete(entry);
+    };
+  }
+
+  emitInterruptResponseError(threadId: string, error: Error): void {
+    for (const { listener } of this.interruptErrorListeners) listener({ threadId, error });
   }
 
   async cancel(threadId: string, turnId: string) {

@@ -17,6 +17,10 @@ import { createStore, type StoreApi, useStore } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
 import {
+  type InterruptResponseEntry,
+  interruptResponseKey,
+} from "@/core/session/interrupt-response";
+import {
   clearPendingInterruptPatchesForThread,
   clearPendingInterruptPatchesForTurn,
 } from "@/core/session/reduce-turn-event";
@@ -52,6 +56,7 @@ type ThreadStoreSliceState = ThreadStoreState & {
   handoffPendingThreadIds: Record<string, true>;
   pendingStreamByThreadId: Record<string, PendingStreamStart>;
   pendingCreation: PendingCreationState;
+  interruptResponses: Record<string, InterruptResponseEntry>;
   turnCounter: number;
 };
 
@@ -117,6 +122,18 @@ function isPrunableAssistantTransportTail(turn: Turn): boolean {
   return turn.role === "assistant" && turn.status === "streaming";
 }
 
+/** Drop every settlement whose key starts with `prefix`; null when none match. */
+function clearInterruptResponsesByPrefix(
+  responses: Record<string, InterruptResponseEntry>,
+  prefix: string,
+): Record<string, InterruptResponseEntry> | null {
+  const keys = Object.keys(responses).filter((key) => key.startsWith(prefix));
+  if (keys.length === 0) return null;
+  const next = { ...responses };
+  for (const key of keys) delete next[key];
+  return next;
+}
+
 function createAssistantTurn(
   threadId: string,
   turnId: string,
@@ -170,6 +187,10 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     consumePendingStream: state.consumePendingStream,
     markPendingCreation: state.markPendingCreation,
     clearPendingCreation: state.clearPendingCreation,
+    beginInterruptResponse: state.beginInterruptResponse,
+    failInterruptResponse: state.failInterruptResponse,
+    settleInterruptResponse: state.settleInterruptResponse,
+    pendingInterruptResponseForThread: state.pendingInterruptResponseForThread,
   };
 }
 
@@ -185,6 +206,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         handoffPendingThreadIds: {},
         pendingStreamByThreadId: {},
         pendingCreation: { projectIds: {}, threadIds: {} },
+        interruptResponses: {},
         streamingThreadId: null,
         streamingProjectId: null,
         turnCounter: 0,
@@ -394,6 +416,11 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             terminalProjectId =
               state.streamingThreadId === threadId ? state.streamingProjectId : null;
 
+            const remainingInterruptResponses = clearInterruptResponsesByPrefix(
+              state.interruptResponses,
+              `${threadId}\u0000${turnId}\u0000`,
+            );
+
             const meta = liveMetaFor(state.liveMeta, threadId);
             const isRunningTurn = meta.runningTurnId === turnId;
             return {
@@ -405,6 +432,9 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
                 },
               },
               turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns },
+              ...(remainingInterruptResponses
+                ? { interruptResponses: remainingInterruptResponses }
+                : {}),
             };
           });
 
@@ -577,6 +607,52 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             if (threadId) delete threadIds[threadId];
             return { pendingCreation: { projectIds, threadIds } };
           });
+        },
+
+        beginInterruptResponse(input) {
+          const key = interruptResponseKey(input);
+          set((state) => ({
+            interruptResponses: {
+              ...state.interruptResponses,
+              [key]: {
+                threadId: input.threadId,
+                turnId: input.turnId,
+                interruptId: input.interruptId,
+                status: "pending",
+                value: input.value,
+              },
+            },
+          }));
+        },
+
+        failInterruptResponse(identity, failure) {
+          const key = interruptResponseKey(identity);
+          set((state) => {
+            const existing = state.interruptResponses[key];
+            if (!existing) return state;
+            return {
+              interruptResponses: {
+                ...state.interruptResponses,
+                [key]: { ...existing, status: failure.status },
+              },
+            };
+          });
+        },
+
+        settleInterruptResponse(identity) {
+          const key = interruptResponseKey(identity);
+          set((state) => {
+            if (!(key in state.interruptResponses)) return state;
+            const { [key]: _removed, ...rest } = state.interruptResponses;
+            return { interruptResponses: rest };
+          });
+        },
+
+        pendingInterruptResponseForThread(threadId) {
+          for (const entry of Object.values(get().interruptResponses)) {
+            if (entry.threadId === threadId && entry.status === "pending") return entry;
+          }
+          return null;
         },
       }),
       { name: "thread-store", enabled: import.meta.env.DEV },

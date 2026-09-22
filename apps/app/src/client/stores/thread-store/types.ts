@@ -5,6 +5,12 @@
  */
 import type { AgentSelection } from "@meridian/contracts/agents";
 import type { Block, Thread, ThreadListItem, Turn, TurnStatus } from "@meridian/contracts/protocol";
+import type { JsonValue } from "@meridian/contracts/threads";
+import type {
+  InterruptResponseEntry,
+  InterruptResponseIdentity,
+  InterruptResponseState,
+} from "@/core/session/interrupt-response";
 
 export type PendingStreamStart = {
   after?: string;
@@ -81,6 +87,11 @@ export type ThreadStoreState = {
   liveMeta: Record<string, LiveTurnMeta>;
   streamingThreadId: string | null;
   streamingProjectId: string | null;
+  /**
+   * Local interrupt-response send state keyed by `(threadId, turnId, interruptId)`.
+   * Memory-only, cleared on the matching server resolution event or terminal turn.
+   */
+  interruptResponses: Record<string, InterruptResponseEntry>;
 };
 
 /**
@@ -133,4 +144,16 @@ export type ThreadStoreActions = {
    */
   markPendingCreation(args: { projectId?: string; threadId: string }): void;
   clearPendingCreation(args: { projectId?: string; threadId?: string }): void;
+
+  /**
+   * Record an interrupt response as pending on the wire and expose its state to
+   * the card. The value is retained so Retry can reuse the correlation tuple.
+   */
+  beginInterruptResponse(input: InterruptResponseIdentity & { value: JsonValue }): void;
+  /** Move a tracked response to a proven/ambiguous local failure state. */
+  failInterruptResponse(identity: InterruptResponseIdentity, failure: InterruptResponseState): void;
+  /** Clear the tracked response once the server resolves/expires the interrupt. */
+  settleInterruptResponse(identity: InterruptResponseIdentity): void;
+  /** The single pending response for a thread; used to correlate error frames. */
+  pendingInterruptResponseForThread(threadId: string): InterruptResponseEntry | null;
 };
