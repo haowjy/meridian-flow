@@ -5,11 +5,16 @@
  * `scope`); the optimistic projection, revision fence, and classified failure
  * live in `thread-rename-command`'s QueryClient-scoped record. Success is only
  * announced by the caller after the server confirms the write.
+ *
+ * The account epoch is stamped onto the mutation context and forwarded to
+ * `fetch`, so a result that arrives after an A→B→A replacement cannot confirm,
+ * announce, or write into the new account lifetime.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { renameThread } from "@/client/api/threads-api";
+import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 
 import { projectQueryKeys } from "./project-query-keys";
 import {
@@ -17,6 +22,7 @@ import {
   beginThreadRename,
   classifyThreadRenameFailure,
   confirmThreadRename,
+  discardThreadRename,
   readThreadRenameRecord,
   reconcileThreadRename,
   rejectThreadRename,
@@ -34,6 +40,8 @@ export type ThreadRenameView = {
   submit: (title: string) => void;
   retry: () => void;
 };
+
+type RenameMutationContext = ThreadRenameMutationContext & { accountSignal: AbortSignal | null };
 
 function useThreadRenameRecord(projectId: string, threadId: string): ThreadRenameRecord {
   const client = useQueryClient();
@@ -53,21 +61,35 @@ export function useRenameThread(
   onConfirmed?: (title: string) => void,
 ): ThreadRenameView {
   const client = useQueryClient();
+  const accountSignal = useOptionalAccountEpochSignal();
   const confirmedRef = useRef(onConfirmed);
   confirmedRef.current = onConfirmed;
+
+  // Account replacement drops the whole record and its optimistic projection.
+  useEffect(() => {
+    if (!accountSignal) return;
+    const onAbort = () => discardThreadRename(client, projectId, threadId);
+    accountSignal.addEventListener("abort", onAbort);
+    return () => accountSignal.removeEventListener("abort", onAbort);
+  }, [accountSignal, client, projectId, threadId]);
 
   const mutation = useMutation({
     mutationKey: ["thread-rename", threadId],
     scope: { id: `thread-rename:${threadId}` },
-    mutationFn: ({ title }: { title: string }) => renameThread(threadId, { title }),
-    onMutate: ({ title }) => beginThreadRename(client, projectId, threadId, title),
-    onSuccess: (response, _variables, context: ThreadRenameMutationContext) => {
+    mutationFn: ({ title }: { title: string }) =>
+      renameThread(threadId, { title }, { signal: accountSignal ?? undefined }),
+    onMutate: ({ title }): RenameMutationContext => ({
+      ...beginThreadRename(client, projectId, threadId, title),
+      accountSignal,
+    }),
+    onSuccess: (response, _variables, context: RenameMutationContext) => {
+      if (context.accountSignal?.aborted) return;
       if (confirmThreadRename(client, context, response.title)) {
         confirmedRef.current?.(response.title);
       }
     },
-    onError: (error, _variables, context?: ThreadRenameMutationContext) => {
-      if (!context) return;
+    onError: (error, _variables, context?: RenameMutationContext) => {
+      if (!context || context.accountSignal?.aborted) return;
       const normalized = error instanceof Error ? error : new Error(String(error));
       switch (classifyThreadRenameFailure(error)) {
         case "rejected":

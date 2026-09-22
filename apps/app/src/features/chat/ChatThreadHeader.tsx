@@ -6,6 +6,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { Thread } from "@meridian/contracts/protocol";
+import { THREAD_TITLE_MAX_LENGTH } from "@meridian/contracts/protocol";
 import { Loader2 } from "lucide-react";
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 
@@ -161,6 +162,7 @@ function RenameField({
       ref={inputRef}
       type="text"
       value={draft}
+      maxLength={THREAD_TITLE_MAX_LENGTH}
       aria-label={t`Rename chat`}
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={handleKeyDown}

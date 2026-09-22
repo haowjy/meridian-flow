@@ -145,8 +145,11 @@ export function updateThreadUserState(
 export function renameThread(
   threadId: string,
   request: RenameThreadRequest,
+  options?: { signal?: AbortSignal },
 ): Promise<RenameThreadResponse> {
-  return patchJson<RenameThreadResponse>(apiThreadTitlePath(threadId), request);
+  return patchJson<RenameThreadResponse>(apiThreadTitlePath(threadId), request, {
+    signal: options?.signal,
+  });
 }
 
 export function rebindThreadWork(
