@@ -211,10 +211,7 @@ export function ContextViewer({
           <MissingDocumentState destination={paneState.destination} />
         ) : null}
         {paneState.kind === "empty-workspace" ? (
-          <RecentDocumentsLanding
-            onNewDocument={onNewDocument}
-            onBrowseTree={sidebarToggle?.open ? undefined : sidebarToggle?.onExpand}
-          />
+          <RecentDocumentsLanding onNewDocument={onNewDocument} />
         ) : null}
         {paneState.kind === "route-error" ? <RouteErrorState /> : null}
       </div>

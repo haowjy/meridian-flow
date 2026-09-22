@@ -542,12 +542,12 @@ msgid "Breadcrumb"
 msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
-msgid "Browse the project tree"
-msgstr ""
+#~ msgid "Browse the project tree"
+#~ msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
-msgid "Browse the project tree to open another."
-msgstr ""
+#~ msgid "Browse the project tree to open another."
+#~ msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
 #~ msgid "Built-in"
@@ -1320,8 +1320,8 @@ msgid "Documents the AI reads in this chat appear here."
 msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
-msgid "Documents you open show up here."
-msgstr ""
+#~ msgid "Documents you open show up here."
+#~ msgstr ""
 
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Download {name}"

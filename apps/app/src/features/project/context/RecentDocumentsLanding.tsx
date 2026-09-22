@@ -60,15 +60,9 @@ function groupLabel(group: Group): string {
 
 export function RecentDocumentsLanding({
   onNewDocument,
-  onBrowseTree,
 }: {
   /** Starts a local document in the current project (Unfiled). */
   onNewDocument?: () => void;
-  /**
-   * Reveals the project tree. Omitted when the rail is already open, so the
-   * hint never offers a door to something the writer can already see.
-   */
-  onBrowseTree?: () => void;
 }) {
   const recent = useRecentDocuments();
   const [now, setNow] = useState(() => Date.now());
@@ -155,17 +149,6 @@ export function RecentDocumentsLanding({
             ) : null}
           </>
         )}
-
-        <p className="mt-8 text-xs text-muted-foreground">
-          <Trans>Documents you open show up here.</Trans>{" "}
-          {onBrowseTree ? (
-            <button type="button" onClick={onBrowseTree} className="text-button text-xs">
-              <Trans>Browse the project tree</Trans>
-            </button>
-          ) : (
-            <Trans>Browse the project tree to open another.</Trans>
-          )}
-        </p>
       </div>
     </div>
   );
