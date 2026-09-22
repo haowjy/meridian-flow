@@ -3,6 +3,7 @@
  */
 import {
   apiAccountRecentDocumentsPath,
+  apiProjectRecentDocumentsPath,
   type ListRecentDocumentsResponse,
   type RecentDocumentItem,
   type RecordRecentDocumentResponse,
@@ -19,8 +20,15 @@ import { getJson, HttpResponseError, postJson } from "./http-client";
  */
 const RECORD_RETRY_MS = [1_500, 3_000, 6_000];
 
-export async function listRecentDocuments(): Promise<RecentDocumentItem[]> {
-  const response = await getJson<ListRecentDocumentsResponse>(apiAccountRecentDocumentsPath());
+/**
+ * The writer's history inside one project. The read is project-scoped because
+ * the landing renders inside a project; the write below is not, because what an
+ * open records is that this writer touched this document.
+ */
+export async function listRecentDocuments(projectId: string): Promise<RecentDocumentItem[]> {
+  const response = await getJson<ListRecentDocumentsResponse>(
+    apiProjectRecentDocumentsPath(projectId),
+  );
   return response.documents;
 }
 

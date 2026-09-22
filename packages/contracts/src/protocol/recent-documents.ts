@@ -1,6 +1,6 @@
 /**
- * Purpose: JSON-natural DTOs for the account-global recently opened documents list.
- * Why independent: The empty-editor landing, Home, and later switchers share one wire shape.
+ * Purpose: JSON-natural DTOs for the recently opened documents list, read one project at a time.
+ * Why independent: The empty-editor landing and later in-project switchers share one wire shape.
  */
 import type { ProjectContextTreeScheme } from "./http-types.js";
 

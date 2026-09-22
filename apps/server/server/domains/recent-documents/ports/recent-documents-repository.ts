@@ -27,6 +27,11 @@ export interface RecentDocumentsRepository {
    * deleted, or not visible.
    */
   record(userId: UserId, documentId: DocumentId): Promise<boolean>;
-  /** Newest first, capped at {@link USER_RECENT_DOCUMENTS_CAP}. */
-  listByUser(userId: UserId): Promise<RecentDocumentItem[]>;
+  /**
+   * One project's slice of the account's history, newest first, capped at
+   * {@link USER_RECENT_DOCUMENTS_CAP}. The landing lives inside a project, so
+   * the read is scoped to it; the rows themselves stay account-keyed, because
+   * what an open records is that this writer touched this document.
+   */
+  listForProject(projectId: string, userId: UserId): Promise<RecentDocumentItem[]>;
 }

@@ -24,7 +24,9 @@ export function useRecordOpenedDocument(): (documentId: string) => void {
         // needs the fresh row. The query client outlives the caller. A skipped
         // open reports false and needs no refresh: the row did not move.
         if (recorded) {
-          void queryClient.invalidateQueries({ queryKey: accountQueryKeys.recentDocuments });
+          // Every project's list: the open may belong to a project whose landing
+          // is not mounted, and only one list is ever rendered at a time.
+          void queryClient.invalidateQueries({ queryKey: accountQueryKeys.recentDocumentsRoot });
         }
       });
     },

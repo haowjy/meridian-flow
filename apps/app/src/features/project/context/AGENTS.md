@@ -44,7 +44,7 @@ Shared across both shells:
 - Desktop tree: one scroll surface. The tree is a continuous flex-column; only
   the tree root scrolls.
 - Two triggers for entry actions (context menu + kebab), not three.
-- The empty Editor pane is a chooser (`RecentDocumentsLanding`): account
+- The empty Editor pane is a chooser (`RecentDocumentsLanding`): the project's
   recently-opened documents, including viewers. A row navigates. It never
   seeds a tab. The strip's leading control reaches it with tabs still open:
   `routeCommands.showEditorRecents` clears the address and leaves the working

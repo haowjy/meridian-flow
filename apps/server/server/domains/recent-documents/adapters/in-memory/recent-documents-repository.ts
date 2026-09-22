@@ -31,7 +31,7 @@ export function createInMemoryRecentDocumentsRepository(): RecentDocumentsReposi
       }
       return true;
     },
-    async listByUser() {
+    async listForProject() {
       return [];
     },
   };

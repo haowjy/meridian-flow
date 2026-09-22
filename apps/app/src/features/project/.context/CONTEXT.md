@@ -292,7 +292,8 @@ The **Editor** destination retains `ContextPaneController` as its implementation
 name. It owns address-admitted opens, temporary-tab projection, scroll
 restoration. Screen entry resolves a still-open identity before navigation;
 bare Editor routes remain empty. The empty Editor surface offers the
-account's recently opened documents as a chooser, global across projects;
+project's recently opened documents as a chooser, scoped to the project it
+renders inside because that pane is one project's surface;
 selecting one navigates, and the list never seeds a tab. Project-entry
 workspace validation checks only
 persisted browser-local members and never seeds them from server recents. It is
