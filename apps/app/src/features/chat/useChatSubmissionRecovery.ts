@@ -11,6 +11,10 @@
  *   the same `submissionId` so the displayed send is not lost;
  * - `pending`/unknown: keep both and expose Check submission status / Start
  *   over.
+ *
+ * `replaySubmission` shares that replay path for an in-session Check of a
+ * submission whose live optimistic row recovery has never tracked (the
+ * composer is still mounted, so its mount effect did not run for it).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -22,6 +26,7 @@ import {
 } from "@/client/chat-submissions";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import type { ThreadStoreActions } from "@/client/stores";
+import type { ComposerSubmitOutcome } from "@/components/app/composer";
 import { shouldRetireSubmission } from "./chat-submission-retirement";
 
 export type RecoveredChatSubmission = {
@@ -33,6 +38,15 @@ export type ChatSubmissionRecovery = {
   recovered: RecoveredChatSubmission[];
   check: (submissionId: string) => void;
   retire: (submissionId: string) => void;
+  /**
+   * In-session re-admission for a live optimistic row recovery has not tracked
+   * (the composer Check path). Replays the stored fingerprint through the same
+   * path as mount recovery with the caller's live optimistic turn id.
+   */
+  replaySubmission: (
+    submissionId: string,
+    optimisticTurnId: string,
+  ) => Promise<ComposerSubmitOutcome>;
 };
 
 function isExistingThreadFor(
@@ -107,10 +121,19 @@ export function useChatSubmissionRecovery(
    * The lookup proved the server never saw this submission. Re-issue the exact
    * stored fingerprint with the same `submissionId`; because the identity is
    * stable, a concurrent duplicate admission collapses instead of running twice.
+   * Returns the dispatch outcome so an in-session Check can settle the composer.
    */
   const replay = useCallback(
-    async (entry: ExistingThreadChatSubmission, optimisticTurnId: string): Promise<void> => {
-      if (replayingRef.current.has(entry.submissionId)) return;
+    async (
+      entry: ExistingThreadChatSubmission,
+      optimisticTurnId: string,
+    ): Promise<ComposerSubmitOutcome> => {
+      const ambiguous: ComposerSubmitOutcome = {
+        kind: "ambiguous",
+        submissionId: entry.submissionId,
+        acceptedRevision: 0,
+      };
+      if (replayingRef.current.has(entry.submissionId)) return ambiguous;
       replayingRef.current.add(entry.submissionId);
       const epoch = getChatSubmissionEpoch();
       try {
@@ -126,18 +149,19 @@ export function useChatSubmissionRecovery(
           },
           { optimisticUserTurnId: optimisticTurnId, keepOptimisticOnFailure: true },
         );
-        if (unmountedRef.current) return;
-        if (getChatSubmissionAccountId() !== accountId) return;
-        if (getChatSubmissionEpoch() !== epoch) return;
+        if (unmountedRef.current) return outcome;
+        if (getChatSubmissionAccountId() !== accountId) return outcome;
+        if (getChatSubmissionEpoch() !== epoch) return outcome;
         if (shouldRetireSubmission(outcome)) {
           retireChatSubmission(accountId, entry.submissionId, epoch);
           if (outcome.kind === "rejected") {
             actionsRef.current.patchTurnStatus(threadId, optimisticTurnId, "error");
           }
           forget(entry.submissionId);
-          return;
+          return outcome;
         }
         raiseRecovered(entry.submissionId, optimisticTurnId);
+        return outcome;
       } finally {
         replayingRef.current.delete(entry.submissionId);
       }
@@ -232,5 +256,22 @@ export function useChatSubmissionRecovery(
     [accountId, settle, threadId],
   );
 
-  return { recovered, check, retire };
+  const replaySubmission = useCallback(
+    (submissionId: string, optimisticTurnId: string): Promise<ComposerSubmitOutcome> => {
+      const entry = readChatSubmissions(accountId).find(
+        (candidate) => candidate.submissionId === submissionId,
+      );
+      if (!entry || !isExistingThreadFor(entry, threadId)) {
+        return Promise.resolve({
+          kind: "ambiguous",
+          submissionId,
+          acceptedRevision: 0,
+        });
+      }
+      return replay(entry, optimisticTurnId);
+    },
+    [accountId, replay, threadId],
+  );
+
+  return { recovered, check, retire, replaySubmission };
 }

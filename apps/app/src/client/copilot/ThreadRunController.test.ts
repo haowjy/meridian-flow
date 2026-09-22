@@ -41,16 +41,34 @@ describe("ThreadRunController write outcomes", () => {
     await expect(scenario.submit("Hello")).resolves.toMatchObject({ kind: "rejected" });
   });
 
-  it("does not acknowledge or retire when a POST completes after teardown", async () => {
+  it("bridges the app-scoped row but stays ambiguous when a POST completes after teardown", async () => {
     const scenario = new ThreadRunScenario();
     const gate = scenarioGate<SendMessageResponse>();
     scenario.setAppend(() => gate.promise);
 
-    const pending = scenario.submit("Hello");
+    const optimisticUserTurn = scenario.store.getState().appendUserTurn("thread_1", "Hello");
+    const pending = scenario.controller.submit(
+      "thread_1",
+      {
+        submissionId: "sub-1",
+        acceptedRevision: 0,
+        text: "Hello",
+        blocks: [{ type: "text", text: "Hello" }],
+        references: [],
+        activatedSkillSlugs: [],
+      },
+      { optimisticUserTurnId: optimisticUserTurn.id },
+    );
     await vi.waitFor(() => expect(scenario.appendRequests).toHaveLength(1));
     scenario.controller.teardown();
     gate.resolve(defaultSendResponse());
 
+    // The stale session stays ambiguous so the caller keeps the journal, but
+    // the app-scoped row is still bridged to the persisted turn: an unbridged
+    // row would make the returning session append a duplicate pending row.
     await expect(pending).resolves.toMatchObject({ kind: "ambiguous" });
+    expect(scenario.turns()).toEqual([
+      expect.objectContaining({ id: "turn-user", status: "complete" }),
+    ]);
   });
 });

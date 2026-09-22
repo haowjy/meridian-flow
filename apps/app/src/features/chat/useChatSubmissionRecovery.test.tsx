@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 /** Existing-thread reload recovery from the durable submission journal. */
+import type { SendMessageResponse } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,7 +11,11 @@ import {
   readChatSubmissions,
   recordChatSubmission,
 } from "@/client/chat-submissions";
-import { ThreadRunScenario } from "@/client/copilot/test-support/ThreadRunScenario";
+import {
+  defaultSendResponse,
+  scenarioGate,
+  ThreadRunScenario,
+} from "@/client/copilot/test-support/ThreadRunScenario";
 import {
   type ChatSubmissionRecovery,
   useChatSubmissionRecovery,
@@ -253,5 +258,99 @@ describe("useChatSubmissionRecovery", () => {
 
     expect(scenario.lookupRequests).toHaveLength(1);
     expect(scenario.turns()).toHaveLength(1);
+  });
+
+  it("collapses the recovery append onto the row bridged after an epoch mismatch", async () => {
+    const submission = entry({ submissionId: "sub-mismatch" });
+    recordChatSubmission(ACCOUNT, submission);
+    const scenario = new ThreadRunScenario({
+      lookup: async ({ submissionId }) => ({
+        kind: "already-accepted",
+        threadId: THREAD_ID,
+        submissionId,
+        userTurnId: "turn-user",
+        assistantTurnId: "turn-assistant",
+        resumeAfterSeq: "42",
+        snapshotFloorNextSeq: "43",
+      }),
+    });
+    const gate = scenarioGate<SendMessageResponse>();
+    scenario.setAppend(() => gate.promise);
+
+    // Simulate ChatView.handleSubmit: the live row is appended before the POST.
+    const liveTurn = scenario.store.getState().appendUserTurn(THREAD_ID, "Hello");
+    const pending = scenario.controller.submit(
+      THREAD_ID,
+      {
+        submissionId: submission.submissionId,
+        acceptedRevision: 0,
+        text: submission.text,
+        blocks: submission.blocks,
+        references: submission.references,
+        activatedSkillSlugs: submission.activatedSkillSlugs,
+      },
+      { optimisticUserTurnId: liveTurn.id },
+    );
+    await act(async () => {
+      await vi.waitFor(() => expect(scenario.appendRequests).toHaveLength(1));
+    });
+
+    // Leave the thread while the POST is held, then let it land.
+    scenario.controller.teardown();
+    gate.resolve(defaultSendResponse());
+    await act(async () => {
+      await expect(pending).resolves.toMatchObject({ kind: "ambiguous" });
+    });
+    expect(scenario.turns()).toEqual([
+      expect.objectContaining({ id: "turn-user", status: "complete" }),
+    ]);
+    expect(readChatSubmissions(ACCOUNT)).toHaveLength(1);
+
+    // Return to the thread: recovery must collapse its temporary append onto
+    // the bridged row, not leave a permanent pending duplicate.
+    await mount(ACCOUNT, scenario, () => undefined);
+    await act(async () => {
+      await vi.waitFor(() => expect(scenario.lookupRequests).toHaveLength(1));
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(readChatSubmissions(ACCOUNT)).toEqual([]));
+    });
+    expect(scenario.turns()).toHaveLength(1);
+    expect(scenario.turns()[0]).toMatchObject({ id: "turn-user", status: "complete" });
+  });
+
+  it("replays the stored fingerprint through the shared path on an in-session Check", async () => {
+    const scenario = new ThreadRunScenario({
+      lookup: async ({ submissionId }) => ({ kind: "not-seen", submissionId }),
+    });
+    const latest: { current: ChatSubmissionRecovery | null } = { current: null };
+    await mount(ACCOUNT, scenario, (value) => {
+      latest.current = value;
+    });
+
+    // Simulate ChatView.handleSubmit after mount: the journal witness and live
+    // row exist, but the mount effect already ran, so recovery has not tracked
+    // them. This is the composer Check path, not a remount.
+    const submission = entry({ submissionId: "sub-check" });
+    recordChatSubmission(ACCOUNT, submission);
+    const liveTurn = scenario.store.getState().appendUserTurn(THREAD_ID, "Hello");
+
+    const lookup = await scenario.controller.lookupSubmission(THREAD_ID, submission.submissionId, {
+      optimisticUserTurnId: liveTurn.id,
+      keepOptimisticOnFailure: true,
+    });
+    expect(lookup.kind).toBe("not-seen");
+
+    await act(async () => {
+      await latest.current?.replaySubmission(submission.submissionId, liveTurn.id);
+    });
+
+    expect(scenario.appendRequests).toHaveLength(1);
+    expect(scenario.appendRequests[0]).toMatchObject({
+      data: { threadId: THREAD_ID, submissionId: "sub-check", text: "Hello" },
+    });
+    expect(scenario.turns()).toHaveLength(1);
+    expect(scenario.turns()[0]).toMatchObject({ id: "turn-user", status: "complete" });
+    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
   });
 });
