@@ -42,6 +42,8 @@ not ignore sibling paths merely sharing a prefix such as `logs-other`.
 
 ## State + transport seams
 
+Writer-initiated command lifecycle, profile selection, TanStack ownership, and the current interaction inventory are specified in [optimistic-interactions.md](optimistic-interactions.md).
+
 Writer-facing AI change reporting uses durable Trail evidence, receipt
 Undo/Redo, and session change marks. Trail evidence and peer marks are
 read-only; `DocumentSession` owns collaboration state only and does not retain
@@ -57,27 +59,16 @@ Two interfaces are the only paths between the visual layer and the substrate:
   (Zustand vanilla store, one instance per `ThreadStoreProvider`, SSR-safe).
   **Public imports:** `@/client/stores` only — do not reach into store internals from features.
   UI reads via `useThreadStore(selector)`, `useThreadTurns(threadId)`; writes via
-  `useThreadActions()` only. Project Home first-message continuity lives in one
-  account-scoped IndexedDB owner, not Zustand. Home stages the immutable
-  Composer envelope before navigation; destination Chat atomically claims
-  `ready` as `dispatching`, while a remounted `dispatching` or `ambiguous`
-  record enters server-checked recovery (see Client-led creation patterns).
-  `ThreadRunController` joins append,
-  lookup, and explicit retirement to a typed settlement boundary. Definite rejection remains durable until
-  the matching shared Composer acknowledges an idempotent restoration; when a
-  newer draft exists, the failed first send is prepended with a blank-line
-  document separator so both writer-authored documents survive. Ambiguous admission stays
-  quarantined without blind retry. If a writer changes the Home draft while
-  creation or routing is pending, the immutable first message remains the
-  admitted turn and the latest authored revision transfers separately into the
-  destination Composer, even when that revision's text is byte-equal to the
-  submitted message. The shared Composer reports a monotonic authoring revision;
-  content equality is never a draft-version test.
-  Continuity survives route and reload but is not an outbox: it has no timer,
-  worker, polling, or blind retry. Deferred project-creation flows separately use
-  `markPendingCreation`, `clearPendingCreation`, and `removeOptimisticUserTurn`;
-  the last one is only rollback for a locally appended user turn that failed
-  before server acknowledgement.
+  `useThreadActions()` only. Project Home first-send handoff writes one
+  same-tab `sessionStorage` record through `inflight-chat.ts` before navigation.
+  It survives route remounts, not tab close or reload, and is not an offline
+  outbox. Destination Chat owns persistence and retry; ambiguous existing-thread
+  sends instead use `ThreadRunController` append, lookup, and explicit retirement.
+  `markPendingCreation`, `clearPendingCreation`, and
+  `removeOptimisticUserTurn` fence the deferred create. The last operation is
+  only rollback for a locally appended user turn that failed before server
+  acknowledgement. Durable first-send work belongs to an account-scoped
+  acknowledged-submission record, not to the thread replica or AI runtime.
 - **`ThreadCachePort`** (`src/client/stores/thread-store/thread-cache.ts`) —
   thin seam between thread-store lifecycle transitions and the React Query cache.
   The store depends on this port, not `QueryClient` directly — list/snapshot
@@ -114,8 +105,10 @@ Two interfaces are the only paths between the visual layer and the substrate:
   the working-set read as an explicit `row` / `absent` / `unavailable` result.
 - **Zustand (thread-store):** per-thread `turnsByThread`,
   `streamingThreadId`, pending stream metadata, snapshot reconciliation
-  watermark (`snapshotNextSeqFloorByThread`). Soft-delete undo lives in the
-  **project-store**, not here. See "Thread snapshot reconciliation" below.
+  watermark (`snapshotNextSeqFloorByThread`). The project-store defines
+  rename and soft-delete projections, but they have no live caller or complete
+  API owner; do not treat them as shipped behavior. See "Thread snapshot
+  reconciliation" below.
 - **`ThreadTransport`** (`src/core/transport/ThreadTransport.ts`) — the
   subscribe/cancel contract for live agent events. Runtime chat uses
   `WsThreadTransport`, which connects to `/api/threads/ws`.
@@ -195,9 +188,10 @@ background child's continuation streams live; see
 [`features/chat/.context/thread-live-updates.md`](../src/features/chat/.context/thread-live-updates.md).
 Do not bounce to Home or show Check status, Start over, or saved-first-message recovery.
 
-Future optimistic surfaces (rename, soft-delete, undo) follow the same
-shape: optimistic store update first, API call second (`threads-api.ts`),
-deterministic reconcile path on response or failure.
+New writer-initiated commands choose a profile from
+[`optimistic-interactions.md`](optimistic-interactions.md) before implementation.
+The dormant project-store rename and soft-delete reducers are not a precedent:
+connect them to one real command owner or delete them.
 
 ### Thread snapshot reconciliation
 
