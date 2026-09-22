@@ -255,8 +255,9 @@ contract shapes.
   Subagent rows are created only through `SubagentThreadFactory`.
 - Hot cache is bounded at 500 events; older events fall through to journal
   replay (capped at 10,000 entries).
-- Thread status is stored in DB using the domain vocabulary
-  (`idle`, `active`, `blocked`, `error`, `archived`) and mapped back unchanged.
+- `threads.status` is lifecycle only (`idle` | `archived`) and mapped back
+  unchanged. Run liveness is never stored there; it is derived from the live
+  lease (`ThreadStatus`).
 - `threads.active_leaf_turn_id` anchors one visible-conversational-head policy:
   projections walk its active lineage past hidden Work-context, compaction,
   child-report continuations, and non-custom system turns. Both visible-turn
