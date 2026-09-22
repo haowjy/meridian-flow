@@ -27,6 +27,6 @@ Key rules:
 - Do not grow this into a general sync engine. The narrowness is the
   design. A new state kind gets its own record and policy instead of
   widening this one. Account recently-opened documents are a separate
-  Continuity record, not this store and not a new tier.
+  Continuity record (`../recents/`), not this store and not a new tier.
 
 Depth: [.context/CONTEXT.md](.context/CONTEXT.md) (contracts and protocol).
