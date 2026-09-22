@@ -1,7 +1,8 @@
 # Project Home
 
-Home is the project entry surface: Send navigates first to `/chat/{uuid}` and
-resumes server-owned Continue, Favorite, and Recent chats. It owns Home
+Home is the project entry surface: Send navigates first to
+`/p/{projectSlug}/chat/{uuid}` and resumes server-owned Continue, Favorite, and
+Recent chats. It owns Home
 screen composition and feed presentation; project-shell routing remains in the
 parent feature.
 

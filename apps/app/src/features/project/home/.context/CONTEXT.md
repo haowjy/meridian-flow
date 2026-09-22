@@ -19,11 +19,12 @@ and scroll/focus restoration in the favorite-movement hook. Do not duplicate
 any of those concerns in the screen orchestrator. Work detail renders that same
 row component; bound Agent name inside every list row is display-only.
 
-Project Home Send mints a thread id, writes the local chat, replaces to
+Project Home Send mints a thread id, writes the local chat, stores one same-tab
+handoff record in `inflight-chat.ts`, replaces to
 `/p/{projectSlug}/chat/{uuid}`, and persists in the background. Failure stays
-on that chat. There is no first-send continuity slot, destination claim, or
-recovery banner. Favorite/feed state is independent from this creation
-lifecycle.
+on that chat. The handoff survives route remounts but not tab close or reload;
+it is not an offline outbox. Favorite/feed state is independent from this
+creation lifecycle.
 
 The Chats landing (`/p/:project/chats`) always composes the shared creation
 Composer above the existing chat feed, on desktop and phone. No button or

@@ -23,12 +23,18 @@ Authenticated writing workspace. Keep it a thin React/TanStack Start shell over 
   (Yjs + y-indexeddb); Editor tabs use browser-tab-local sessionStorage,
   account recents are a device-local continuity record, and
   resource metadata/catalog checkpoints use the account IndexedDB replica.
-  Works and threads do not yet have the same offline contract. Inherently-online
-  surfaces (AI runtime, billing, auth) are exempt: fail loud and honest instead
-  of faking offline. New persistent state must pick a tier (content / continuity /
+  Works and threads do not yet have the same offline contract. A displayed chat
+  submission still needs the acknowledged-submission witness required by the
+  optimistic interaction contract; that witness is not a thread replica and
+  does not make agent generation offline-capable. Inherently-online surfaces
+  (AI runtime, billing, auth) are exempt: fail loud and honest instead of faking
+  offline. New persistent state must pick a tier (content / continuity /
   workbench / preference / cache) before shipping.
-- **Navigate first.** Change the destination immediately. Create, persist, and
-  connect in the background. Fail on that screen. Never wait for the server
-  before navigation, and never bounce back because materialization lagged.
+- **Navigate first.** Change the destination immediately when its public address
+  is known. Create, persist, and connect in the background; fail on that screen
+  and never bounce back because materialization lagged. A server-assigned public
+  address stays P0 until a real neutral pending destination exists; never mount
+  a fabricated route merely to navigate early.
+- Writer-initiated commands follow the [optimistic interaction contract](.context/optimistic-interactions.md): use TanStack Query directly for server-authoritative lifecycles, choose an explicit interaction profile, and keep local-first owners outside the mutation cache.
 - `/_authenticated` mounts one unconditional provider tree (Query → project → thread → transport → copilot); do not gate providers by pathname.
 - Settings is a routed overlay via `?settings=` on any authenticated route (`SettingsDialog` in the layout shell).

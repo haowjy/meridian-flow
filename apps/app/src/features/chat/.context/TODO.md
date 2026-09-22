@@ -1,5 +1,12 @@
 # Chat TODO
 
+## Optimistic interaction contract
+
+- **CHAT-001: Give every displayed send a durable account-scoped witness.** Existing-thread sends are memory-only and new-thread first sends use same-tab `sessionStorage`; reload or tab close can lose a row whose server outcome is still ambiguous. Persist the intent before dispatch, retain `submissionId`, replay or look it up idempotently, and fence it by account.
+- **CHAT-002: Persist thread rename or stop announcing success.** `useRenameThread.ts` patches caches and announces completion without a server command, so reload restores the old title. Add a set-semantics title endpoint with P1 rejection handling, or remove the misleading committed-state treatment.
+- **CHAT-003: Align send classification while preserving each destination's recovery UI.** Mark optimistic user turns as pending until acknowledgement and attach definitive failure to the turn instead of only restoring the composer. Existing-thread ambiguity keeps Composer Check submission status / Start over; first-send ambiguity keeps Retry on the destination turn. Both must retain the row and must not present an unknown outcome as rejection.
+- **CHAT-004: Show interrupt-response settlement.** Keep agent resolution server-confirmed, but give the interrupt card an explicit pending state and a visible retryable failure when the fire-and-forget transport does not settle.
+
 ## `ls` chevron decision still parses eagerly
 
 `listingOrNothing` normalizes listing rows at render time to decide the

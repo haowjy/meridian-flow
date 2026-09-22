@@ -39,3 +39,8 @@ here is a known defect.
   that batch into the device record. An unfocused tab can keep a deleted or
   renamed row on the landing until one of those fires. Do not recheck the set
   on catalog cache writes to close that lag.
+- A local-draft recents row directly awaits `openKnownDocument`. A missing
+  handle returns silently, and this path does not use the by-ID opener's
+  abort/latest-attempt fence. Add a visible unavailable result and the shared
+  navigation fence only if the dead click or competing open appears in use;
+  preserve the empty-path local-draft route and Back behavior.
