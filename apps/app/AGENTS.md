@@ -35,6 +35,5 @@ Authenticated writing workspace. Keep it a thin React/TanStack Start shell over 
   and never bounce back because materialization lagged. A server-assigned public
   address stays P0 until a real neutral pending destination exists; never mount
   a fabricated route merely to navigate early.
-- Writer-initiated commands follow the [optimistic interaction contract](.context/optimistic-interactions.md): use TanStack Query directly for server-authoritative lifecycles, choose an explicit interaction profile, and keep local-first owners outside the mutation cache.
 - `/_authenticated` mounts one unconditional provider tree (Query → project → thread → transport → copilot); do not gate providers by pathname.
 - Settings is a routed overlay via `?settings=` on any authenticated route (`SettingsDialog` in the layout shell).
