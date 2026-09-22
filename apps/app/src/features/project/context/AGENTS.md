@@ -53,8 +53,11 @@ Shared across both shells:
   create path. A parked restored tab is not an open, and a create that returns
   before it materializes must not record from the create site: opening the new
   document does that, once. `useRecordOpenedDocument` owns the refresh;
-  `recordRecentDocument` owns throttle and the retry that covers the window
-  between reserving a document id and the server writing its row.
+  `recordRecentDocument` owns the retry that covers the window between reserving
+  a document id and the server writing its row. Whether two opens are the same
+  open is the server's rule (`USER_RECENT_DOCUMENTS_TOUCH_INTERVAL_MS`): the
+  record POST answers `recorded`, and the client refreshes only when the stored
+  row actually moved.
 
 ## File groups
 

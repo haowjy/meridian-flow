@@ -5,12 +5,11 @@ import {
   apiAccountRecentDocumentsPath,
   type ListRecentDocumentsResponse,
   type RecentDocumentItem,
+  type RecordRecentDocumentResponse,
 } from "@meridian/contracts/protocol";
 
 import { getJson, HttpResponseError, postJson } from "./http-client";
 
-/** Skip a repeat open of the same document within this window. */
-const RECORD_THROTTLE_MS = 5_000;
 /**
  * The client mints a document id when it reserves a resource, and the server
  * writes the row when that reservation materializes. Opening the document
@@ -19,8 +18,6 @@ const RECORD_THROTTLE_MS = 5_000;
  * a 404 and, without this, the document never appears in recents.
  */
 const RECORD_RETRY_MS = [1_500, 3_000, 6_000];
-const lastRecordedAt = new Map<string, number>();
-const inFlight = new Set<string>();
 
 export async function listRecentDocuments(): Promise<RecentDocumentItem[]> {
   const response = await getJson<ListRecentDocumentsResponse>(apiAccountRecentDocumentsPath());
@@ -28,36 +25,30 @@ export async function listRecentDocuments(): Promise<RecentDocumentItem[]> {
 }
 
 /**
- * Record that the writer opened a document. Resolves `true` once the server has
- * the row, `false` when it was throttled, the document is not the writer's, or
- * it never materialized. Callers use the result to refresh the list; the open
- * never waits on this.
+ * Record that the writer opened a document. Resolves `true` when the server
+ * moved the stored recency, `false` when this open was inside the interval the
+ * server already has, or when it failed. Callers use the result to refresh the
+ * list; the open never waits on this.
+ *
+ * Whether two opens are the same open is the server's rule, so the interval
+ * lives with the row it governs and every device shares one clock.
  */
-export async function recordRecentDocument(
-  documentId: string,
-  accountId?: string,
-): Promise<boolean> {
-  const key = accountId ? `${accountId}:${documentId}` : documentId;
-  if (inFlight.has(key)) return false;
-  if (Date.now() - (lastRecordedAt.get(key) ?? 0) < RECORD_THROTTLE_MS) return false;
-  inFlight.add(key);
-  try {
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        await postJson(apiAccountRecentDocumentsPath(), { documentId });
-        lastRecordedAt.set(key, Date.now());
-        return true;
-      } catch (error) {
-        const delay = RECORD_RETRY_MS[attempt];
-        // Only a row that is not visible yet is worth retrying; anything else,
-        // including a document the writer cannot reach, is a real fault.
-        if (!(error instanceof HttpResponseError) || error.status !== 404 || delay === undefined) {
-          return false;
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, delay));
+export async function recordRecentDocument(documentId: string): Promise<boolean> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const response = await postJson<RecordRecentDocumentResponse>(
+        apiAccountRecentDocumentsPath(),
+        { documentId },
+      );
+      return response.recorded;
+    } catch (error) {
+      const delay = RECORD_RETRY_MS[attempt];
+      // Only a row that is not visible yet is worth retrying; anything else,
+      // including a document the writer cannot reach, is a real fault.
+      if (!(error instanceof HttpResponseError) || error.status !== 404 || delay === undefined) {
+        return false;
       }
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
-  } finally {
-    inFlight.delete(key);
   }
 }

@@ -14,22 +14,20 @@ import { useCallback } from "react";
 import { recordRecentDocument } from "@/client/api/recent-documents-api";
 import { accountQueryKeys } from "@/client/query/account-query-keys";
 
-import { useAccountId } from "./account-feature-context";
-
 export function useRecordOpenedDocument(): (documentId: string) => void {
-  const accountId = useAccountId();
   const queryClient = useQueryClient();
   return useCallback(
     (documentId: string) => {
-      void recordRecentDocument(documentId, accountId).then((recorded) => {
+      void recordRecentDocument(documentId).then((recorded) => {
         // Refresh even if the caller is gone by then: a writer can close the
         // document before the POST settles, and the landing they return to still
-        // needs the fresh row. The query client outlives the caller.
+        // needs the fresh row. The query client outlives the caller. A skipped
+        // open reports false and needs no refresh: the row did not move.
         if (recorded) {
           void queryClient.invalidateQueries({ queryKey: accountQueryKeys.recentDocuments });
         }
       });
     },
-    [accountId, queryClient],
+    [queryClient],
   );
 }
