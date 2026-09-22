@@ -25,3 +25,6 @@ export type RecentDocumentItem = {
 export type ListRecentDocumentsResponse = { documents: RecentDocumentItem[] };
 
 export type RecordRecentDocumentRequest = { documentId: string };
+
+/** `recorded` is false when this open landed inside the recency interval: the row was already there and did not move. */
+export type RecordRecentDocumentResponse = { recorded: boolean };

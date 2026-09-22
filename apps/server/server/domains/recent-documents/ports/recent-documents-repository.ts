@@ -4,6 +4,13 @@ import type { DocumentId, UserId } from "@meridian/contracts/runtime";
 
 export const USER_RECENT_DOCUMENTS_CAP = 50;
 
+/**
+ * How close two opens of one document must be to count as the same open. The
+ * stored row is the record, so the rule lives with it: a repeat inside the
+ * interval leaves `openedAt` alone instead of rewriting it.
+ */
+export const USER_RECENT_DOCUMENTS_TOUCH_INTERVAL_MS = 5_000;
+
 /** Missing, soft-deleted, or not visible to this user. One outcome, so the route cannot leak existence. */
 export class RecentDocumentUnavailableError extends Error {
   constructor(readonly documentId: DocumentId) {
@@ -13,8 +20,13 @@ export class RecentDocumentUnavailableError extends Error {
 }
 
 export interface RecentDocumentsRepository {
-  /** Throws RecentDocumentUnavailableError when the document is missing, deleted, or not visible. */
-  record(userId: UserId, documentId: DocumentId): Promise<void>;
+  /**
+   * Records an open. Returns whether the stored recency moved: false when the
+   * document was already recorded inside the interval, so no write was needed.
+   * Throws RecentDocumentUnavailableError when the document is missing,
+   * deleted, or not visible.
+   */
+  record(userId: UserId, documentId: DocumentId): Promise<boolean>;
   /** Newest first, capped at {@link USER_RECENT_DOCUMENTS_CAP}. */
   listByUser(userId: UserId): Promise<RecentDocumentItem[]>;
 }

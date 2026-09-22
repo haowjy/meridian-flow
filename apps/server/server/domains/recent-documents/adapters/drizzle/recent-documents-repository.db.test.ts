@@ -12,7 +12,7 @@ import {
   users,
   works,
 } from "@meridian/database/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 import { truncateDrizzleTables } from "../../../../test-support/drizzle-reset.js";
 import { useRollbackTestDatabase } from "../../../../test-support/rollback-test-database.js";
@@ -179,6 +179,37 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }),
         ]),
       );
+    });
+
+    it("keeps one open per interval, then moves the row on a later open", async () => {
+      const { db, repo } = await seed();
+      const storedOpenedAt = async () =>
+        (
+          await db
+            .select({ openedAt: userRecentDocuments.openedAt })
+            .from(userRecentDocuments)
+            .where(
+              and(eq(userRecentDocuments.userId, USER), eq(userRecentDocuments.documentId, OWNED)),
+            )
+        )[0]?.openedAt;
+
+      await expect(repo.record(userId(USER), documentId(OWNED))).resolves.toBe(true);
+      const first = await storedOpenedAt();
+      expect(first).toBeInstanceOf(Date);
+
+      // A repeat open inside the interval is the same open: the row does not move.
+      await expect(repo.record(userId(USER), documentId(OWNED))).resolves.toBe(false);
+      expect(await storedOpenedAt()).toEqual(first);
+
+      // Past the interval, the same open moves the row and reports the write.
+      await db
+        .update(userRecentDocuments)
+        .set({ openedAt: new Date(Date.now() - 60_000) })
+        .where(
+          and(eq(userRecentDocuments.userId, USER), eq(userRecentDocuments.documentId, OWNED)),
+        );
+      await expect(repo.record(userId(USER), documentId(OWNED))).resolves.toBe(true);
+      expect((await storedOpenedAt())?.getTime()).toBeGreaterThan(Date.now() - 5_000);
     });
 
     it("omits a soft-deleted document and does not let it occupy a cap slot", async () => {

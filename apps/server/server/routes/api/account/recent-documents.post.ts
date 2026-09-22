@@ -13,8 +13,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: "Request body must be an object" });
   }
   const documentId = requireRequestId((raw as { documentId?: unknown }).documentId, "documentId");
+  let recorded = false;
   try {
-    await app.recentDocuments.record(user.userId, documentId as DocumentId);
+    recorded = await app.recentDocuments.record(user.userId, documentId as DocumentId);
   } catch (error) {
     // Missing, soft-deleted, and not-owned are one 404. Do not sniff postgres codes.
     if (error instanceof RecentDocumentUnavailableError) {
@@ -22,5 +23,5 @@ export default defineEventHandler(async (event) => {
     }
     throw error;
   }
-  return serializeTransport({});
+  return serializeTransport({ recorded });
 });

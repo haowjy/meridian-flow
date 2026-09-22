@@ -12,7 +12,7 @@ import {
   userRecentDocuments,
   works,
 } from "@meridian/database/schema";
-import { and, desc, eq, inArray, isNull, ne, not, or, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, ne, not, or, type SQL, sql } from "drizzle-orm";
 import {
   currentDrizzleDb,
   runInDrizzleTransaction,
@@ -23,6 +23,7 @@ import {
   type RecentDocumentsRepository,
   RecentDocumentUnavailableError,
   USER_RECENT_DOCUMENTS_CAP,
+  USER_RECENT_DOCUMENTS_TOUCH_INTERVAL_MS,
 } from "../../ports/recent-documents-repository.js";
 
 const CONTENT_SCHEMES: string[] = [...CONTEXT_URI_SCHEMES];
@@ -93,7 +94,7 @@ export function createDrizzleRecentDocumentsRepository(deps: {
   const db = () => currentDrizzleDb(deps.db);
   return {
     async record(userId: UserId, documentId: DocumentId) {
-      await runInDrizzleTransaction(deps.db, async () => {
+      return runInDrizzleTransaction(deps.db, async () => {
         const tx = db();
         const [visible] = await tx
           .select({ id: documents.id })
@@ -105,14 +106,25 @@ export function createDrizzleRecentDocumentsRepository(deps: {
           .limit(1);
         if (!visible) throw new RecentDocumentUnavailableError(documentId);
         const now = new Date();
-        await tx
+        // An open inside the interval is the same open: the row is already stored
+        // and its rank has not moved, so the write is skipped and nothing returns.
+        const touched = await tx
           .insert(userRecentDocuments)
           .values({ userId, documentId, openedAt: now })
           .onConflictDoUpdate({
             target: [userRecentDocuments.userId, userRecentDocuments.documentId],
             set: { openedAt: now },
-          });
+            setWhere: lt(
+              userRecentDocuments.openedAt,
+              new Date(now.getTime() - USER_RECENT_DOCUMENTS_TOUCH_INTERVAL_MS),
+            ),
+          })
+          .returning({ documentId: userRecentDocuments.documentId });
+        if (touched.length === 0) return false;
+        // Pruning is cap hygiene, not list correctness: the list filters
+        // unlistable rows itself, so it only has to run when a row moved.
         await prune(tx, userId);
+        return true;
       });
     },
     async listByUser(userId: UserId) {
