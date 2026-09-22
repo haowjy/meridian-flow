@@ -431,6 +431,7 @@ export class DocumentSessionRegistry
     documentId: DocumentId;
     generation: AvailabilityGeneration;
     lineageHandle: string;
+    exactDatabaseName: string;
   }): Promise<{ lease: LiveDocumentSessionLease; session: DocumentSession }> {
     this.requireAccountRuntimeOpen();
     const coordination = await this.configuredCoordination();
@@ -440,6 +441,7 @@ export class DocumentSessionRegistry
         input.documentId,
         input.generation,
         input.lineageHandle,
+        input.exactDatabaseName,
       ),
     );
     let state = this.liveRooms.get(input.documentId);

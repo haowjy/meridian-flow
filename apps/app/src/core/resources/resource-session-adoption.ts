@@ -113,6 +113,7 @@ export class ResourceSessionAdoptionCoordinator {
           documentId: witness.documentId,
           generation: witness.generation,
           lineageHandle: key.handle,
+          exactDatabaseName: witness.exactDatabaseName,
         });
         return this.finishRecordedAdoption(key, witness, witness.generation);
       }

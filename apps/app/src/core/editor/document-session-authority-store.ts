@@ -529,6 +529,37 @@ export class DocumentSessionAuthorityStore {
     return { kind: "admitted", persistenceGeneration, exactDatabaseName };
   }
 
+  async claimBindableOrigin(input: {
+    documentId: DocumentId;
+    lineageHandle: string;
+    exactDatabaseName: string;
+  }): Promise<BindablePersistenceAuthority> {
+    const database = await this.databasePromise;
+    const transaction = database.transaction(ROOMS, "readwrite");
+    const rooms = transaction.objectStore(ROOMS);
+    const room = (await requestResult(rooms.get(input.documentId))) as RoomOrderRecord | undefined;
+    const authority = room?.persistence;
+    if (
+      !room ||
+      authority?.phase !== "bindable" ||
+      authority.exactDatabaseName !== input.exactDatabaseName ||
+      (authority.originLineageHandle !== undefined &&
+        authority.originLineageHandle !== input.lineageHandle)
+    ) {
+      transaction.abort();
+      throw new Error("Bindable persistence authority belongs to another lineage");
+    }
+    if (authority.originLineageHandle === input.lineageHandle) {
+      transaction.abort();
+      return authority;
+    }
+    const claimed = { ...authority, originLineageHandle: input.lineageHandle };
+    room.persistence = claimed;
+    rooms.put(room);
+    await transactionDone(transaction);
+    return claimed;
+  }
+
   async beginLocalAdoption(
     input: LocalAdoptionPendingReceipt,
   ): Promise<LocalAdoptionPendingReceipt> {

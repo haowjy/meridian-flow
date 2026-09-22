@@ -59,6 +59,7 @@ export interface LocalDocumentSessionAdoptionPort {
     documentId: DocumentId;
     generation: AvailabilityGeneration;
     lineageHandle: string;
+    exactDatabaseName: string;
   }): Promise<{ lease: LiveDocumentSessionLease; session: DocumentSession }>;
   bindAndAdopt(input: {
     projectId: ProjectId;
