@@ -103,6 +103,26 @@ describe("wake run", () => {
     expect(await rig.repos.turns.listByThread(rig.thread.id)).toEqual([]);
   });
 
+  it("notifies on run start while the run is live", async () => {
+    const gate = runtimeGate();
+    const started: ThreadId[] = [];
+    const rig = await RuntimeTestRig.create({
+      gateway: gatedGateway(gate),
+      onRunStarted: (threadId) => started.push(threadId),
+    });
+    await rig.inbox.enqueue(message("wake me", rig.thread.id));
+
+    await createRunStarter(rig.runner).start(rig.thread.id);
+    // The run is live and blocked in its provider stream; the start notify has
+    // already fired, so a woken subagent strip can read `awake` before terminal.
+    expect(started).toEqual([rig.thread.id]);
+    expect(await rig.runAuthority.read(rig.thread.id)).toMatchObject({ kind: "awake" });
+
+    gate.open();
+    await rig.awaitEvent(EventType.RUN_FINISHED);
+    await expect.poll(() => rig.runAuthority.read(rig.thread.id)).toEqual({ kind: "asleep" });
+  });
+
   it("derives awake while a run streams and asleep once it releases", async () => {
     const gate = runtimeGate();
     const rig = await RuntimeTestRig.create({ gateway: gatedGateway(gate) });

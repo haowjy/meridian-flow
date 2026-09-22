@@ -51,6 +51,7 @@ type RuntimeTestRigOptions = {
   projectTitle?: string;
   creditsMillicredits?: string;
   signalGatewayEvent?: (event: StreamEvent) => boolean;
+  onRunStarted?: (threadId: ThreadId) => void;
 };
 
 export class RuntimeTestRig {
@@ -170,6 +171,7 @@ export class RuntimeTestRig {
       repos: { turns: repos.turns },
       eventSink,
       runAuthority,
+      onRunStarted: options.onRunStarted,
     });
     const thread = await repos.threads.create({ userId, projectId: project.id });
     await creditLedger.grant({

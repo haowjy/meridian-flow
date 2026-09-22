@@ -135,7 +135,7 @@ import {
   createWorkContextReader,
   createWriterTurnProducer,
   DEFAULT_LEASE_TTL_MS,
-  emitSettledRunActivityBestEffort,
+  emitRunActivityBestEffort,
   type Gateway,
   InvalidAdmissionError,
   projectPendingInbox,
@@ -650,6 +650,19 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       { threads: ports.threadRepos.threads, statusReader: ports.runAuthority },
       threadId,
     );
+  // A drain-woken subagent run (a child report or thread_message) has no driver
+  // to emit its activity frames; refresh the root's activity when its lease goes
+  // live and after it releases, so the strip never reads `asleep` during the run
+  // nor stays `awake` after it.
+  const refreshSubagentActivity = (threadId: ThreadId) => {
+    void emitRunActivityBestEffort({
+      findThread: (id) => ports.threadRepos.threads.findById(id),
+      threadId,
+      eventWriter: threadEventHub,
+      readActivity,
+      eventSink: ports.eventSink,
+    });
+  };
   runner = createTurnRunner({
     orchestrator: runTurnProxy,
     hub: threadEventHub,
@@ -657,18 +670,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
     runAuthority: ports.runAuthority,
     workContextDelivery,
-    // A drain-woken subagent run (a child report or thread_message) has no
-    // driver to emit its terminal frame; refresh the root's activity after its
-    // lease is released so the last frame cannot stay `awake`.
-    onRunSettled: (threadId) => {
-      void emitSettledRunActivityBestEffort({
-        findThread: (id) => ports.threadRepos.threads.findById(id),
-        threadId,
-        eventWriter: threadEventHub,
-        readActivity,
-        eventSink: ports.eventSink,
-      });
-    },
+    onRunStarted: refreshSubagentActivity,
+    onRunSettled: refreshSubagentActivity,
   });
   // One durable inbox and lock shared by the loop (consumer) and the producer
   // `ThreadedInbox`. The `RunStarter` wakes a thread from a pending message; the

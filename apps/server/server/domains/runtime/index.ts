@@ -111,7 +111,7 @@ export { unavailableImageAssetPort } from "./ports/image-asset.js";
 export {
   appendSubagentActivity,
   appendSubagentActivityBestEffort,
-  emitSettledRunActivityBestEffort,
+  emitRunActivityBestEffort,
 } from "./spawn/activity-event.js";
 export {
   authorizeThreadMessage,
