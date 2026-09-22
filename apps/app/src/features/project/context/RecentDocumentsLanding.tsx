@@ -157,6 +157,9 @@ function RecentDocumentRow({ item, now }: { item: RecentDocumentItem; now: numbe
   const router = useRouter();
   const Icon = fileKindIcon(item.name);
   const age = relativeTime(item.openedAt, now);
+  // The folder, not the whole locator: the row's title is already the file name,
+  // so a root-level document has nothing left to say and omits this line.
+  const parentPath = item.path.replace(/\/[^/]+$/, "");
   // The canonical readable address, not a hand-built path: it encodes segments
   // and inserts the Work prefix a work-scoped document needs.
   const href = projectAddressHref({
@@ -197,9 +200,11 @@ function RecentDocumentRow({ item, now }: { item: RecentDocumentItem; now: numbe
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-foreground">{item.name}</span>
-        <span className="mt-0.5 flex items-baseline gap-2.5 text-xs">
-          <span className="truncate text-muted-foreground">{item.path}</span>
-        </span>
+        {parentPath ? (
+          <span className="mt-0.5 flex items-baseline gap-2.5 text-xs">
+            <span className="truncate text-muted-foreground">{parentPath}</span>
+          </span>
+        ) : null}
       </span>
       <span aria-hidden className="mt-0.5 shrink-0 text-xs tabular-nums text-ink-subtle">
         {age}
