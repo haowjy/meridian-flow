@@ -112,6 +112,13 @@ export function useThreadDurableProjections({
    */
   const inFlight = useRef(false);
   const again = useRef(false);
+  /**
+   * The Work-binding resync triggered by a gap fetches threads + works and
+   * invalidates the thread namespace. A gap burst must not run it per gap, so it
+   * coalesces like the trail list above: one in flight, one follow-up.
+   */
+  const bindingInFlight = useRef(false);
+  const bindingAgain = useRef(false);
   const reconcile = useCallback(
     async (requestGeneration: number) => {
       if (generation.current !== requestGeneration) return;
@@ -146,11 +153,41 @@ export function useThreadDurableProjections({
     [threadId],
   );
 
+  const resyncBinding = useCallback(
+    async (requestGeneration: number) => {
+      if (!projectId || generation.current !== requestGeneration) return;
+      if (bindingInFlight.current) {
+        bindingAgain.current = true;
+        return;
+      }
+      bindingInFlight.current = true;
+      try {
+        await readStableThreadWorkBinding(queryClient, {
+          projectId,
+          threadId,
+          previousWorkId: null,
+        });
+      } catch {
+        // Best effort: the next gap or snapshot refresh re-runs the resync.
+      } finally {
+        bindingInFlight.current = false;
+      }
+      if (generation.current !== requestGeneration) return;
+      if (bindingAgain.current) {
+        bindingAgain.current = false;
+        void resyncBinding(requestGeneration);
+      }
+    },
+    [projectId, queryClient, threadId],
+  );
+
   useEffect(() => {
     setState(emptyTrailShellState());
     reconciled.current = false;
     inFlight.current = false;
     again.current = false;
+    bindingInFlight.current = false;
+    bindingAgain.current = false;
     const threadGeneration = ++generation.current;
     void queryClient.removeQueries({ queryKey: ["change-trail-detail", threadId] });
     void reconcile(threadGeneration);
@@ -206,13 +243,7 @@ export function useThreadDurableProjections({
         // journal outgrows the server's replay window gap continuously — there,
         // an expanded card's change rows could never finish loading at all.
         void reconcile(threadGeneration);
-        if (projectId) {
-          void readStableThreadWorkBinding(queryClient, {
-            projectId,
-            threadId,
-            previousWorkId: null,
-          }).catch(() => undefined);
-        }
+        void resyncBinding(threadGeneration);
       },
     });
     return () => {
@@ -221,6 +252,6 @@ export function useThreadDurableProjections({
       unsubscribe();
       void queryClient.removeQueries({ queryKey: ["change-trail-detail", threadId] });
     };
-  }, [projectId, queryClient, reconcile, threadId, transport]);
+  }, [projectId, queryClient, reconcile, resyncBinding, threadId, transport]);
   return { changeTrails: state };
 }
