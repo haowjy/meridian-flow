@@ -140,6 +140,7 @@ class Coordination implements DocumentSessionCrossContextCoordination {
     projectId: ProjectId,
     documentId: DocumentId,
     generation: AvailabilityGeneration,
+    originLineageHandle?: string,
   ): Promise<
     LiveDocumentSessionLease & {
       persistenceGeneration: AvailabilityGeneration;
@@ -163,7 +164,12 @@ class Coordination implements DocumentSessionCrossContextCoordination {
         const acquired = await this.ensureSharedHolds(documentId, projectId);
         let durableAdmitted = false;
         try {
-          const decision = await this.store.admit({ documentId, projectId, generation });
+          const decision = await this.store.admit({
+            documentId,
+            projectId,
+            generation,
+            originLineageHandle,
+          });
           if (decision.kind === "generation-revoked") {
             throw new DocumentSessionCoordinationError(
               "generation-revoked",

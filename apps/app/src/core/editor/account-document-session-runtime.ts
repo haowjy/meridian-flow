@@ -154,6 +154,7 @@ export function createAccountDocumentSessionRuntime(
       requireOpen();
       core.connectLocalResources({
         terminal: port.terminal,
+        lineageHandleFor: (projectId, documentId) => port.lineageHandleFor(projectId, documentId),
         beginClose() {
           beginClose();
           port.beginClose();

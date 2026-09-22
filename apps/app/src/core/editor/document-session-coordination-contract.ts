@@ -43,6 +43,8 @@ export interface LocalSessionAuthority {
 /** The feature-owned local resources participate in the authority close barrier. */
 export interface LocalResourceLifetimePort {
   readonly terminal: LocalLineageTerminalPort;
+  /** Resolve the resource lineage that owns a document's local content, if one exists. */
+  lineageHandleFor(projectId: ProjectId, documentId: DocumentId): Promise<string | null>;
   beginClose(): void;
   finishClose(): Promise<void>;
 }
@@ -82,6 +84,7 @@ export interface DocumentSessionCrossContextCoordination {
     projectId: ProjectId,
     documentId: DocumentId,
     generation: AvailabilityGeneration,
+    originLineageHandle?: string,
   ): Promise<
     LiveDocumentSessionLease & {
       persistenceGeneration: AvailabilityGeneration;
