@@ -69,7 +69,10 @@ ContextPaneController
 ```
 
 `RecentDocumentsLanding` is the empty pane. It lists account recently-opened
-documents and navigates on click. It does not open a tab on mount. Recording
+documents and navigates on click. It does not open a tab on mount. The tab
+strip's leading control (`showEditorRecents`) reaches it without closing a tab:
+the address owns which document is visible, the store owns what stays open, so
+clearing the address leaves the working set intact. Recording
 is not the navigation adapter's job: the document row materializes after the
 open intent, so a write there races persistence and is lost. The active
 tracked or viewer tab records once the document is real. File create records

@@ -46,7 +46,9 @@ Shared across both shells:
 - Two triggers for entry actions (context menu + kebab), not three.
 - The empty Editor pane is a chooser (`RecentDocumentsLanding`): account
   recently-opened documents, including viewers. A row navigates. It never
-  seeds a tab.
+  seeds a tab. The strip's leading control reaches it with tabs still open:
+  `routeCommands.showEditorRecents` clears the address and leaves the working
+  set alone, so closing tabs is not the only way back.
 - Record from the active editor tab and from file create, not from the open
   intent. A parked restored tab is not an open, and a fresh create's row can
   still be missing. `recordRecentDocument` owns retry and throttle. After a

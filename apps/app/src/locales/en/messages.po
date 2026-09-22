@@ -2530,6 +2530,7 @@ msgstr "Recent chats"
 msgid "Recent projects"
 msgstr "Recent projects"
 
+#: src/features/project/context/ContextTabBar.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Recently opened"
 msgstr "Recently opened"

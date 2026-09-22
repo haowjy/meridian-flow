@@ -34,6 +34,7 @@ import {
   FilePlus,
   FileText,
   FileType2,
+  History,
   Image as ImageIcon,
   Plus,
   X,
@@ -59,6 +60,14 @@ export type ContextTabBarProps = {
   onClose: (documentId: string) => void;
   onNewDocument?: () => void;
   /**
+   * Return to the Editor destination with nothing selected (the recently-opened
+   * chooser) without closing a tab. Pinned between the leading rail toggle and
+   * the scrolling tabs, so it stays put however far the working set scrolls.
+   */
+  onShowRecents?: () => void;
+  /** Whether that chooser is the surface on screen, so the control reads as current. */
+  recentsActive?: boolean;
+  /**
    * Pinned control docked at the strip's far-left edge (e.g. the project
    * sidebar expand toggle when the sidebar is collapsed). When present, the
    * strip renders even with zero open tabs so the control stays reachable.
@@ -79,6 +88,8 @@ export function ContextTabBar({
   onSelect,
   onClose,
   onNewDocument,
+  onShowRecents,
+  recentsActive = false,
   leading,
   trailing,
 }: ContextTabBarProps) {
@@ -90,6 +101,33 @@ export function ContextTabBar({
       className="flex h-10 shrink-0 items-stretch [--tab-chip-surface:var(--color-background)]"
     >
       {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
+      {onShowRecents ? (
+        <div className="flex shrink-0 items-center pl-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={onShowRecents}
+                aria-label={t`Recently opened`}
+                aria-current={recentsActive ? "page" : undefined}
+                className={cn(
+                  "focus-ring relative isolate grid h-full w-10 shrink-0 place-items-center before:absolute before:inset-x-1 before:inset-y-1 before:-z-10 before:rounded-md before:transition-colors hover:text-foreground hover:before:bg-background/50",
+                  // On the chooser this is where the writer is, not just a way
+                  // back: same canvas pill an active tab wears.
+                  recentsActive
+                    ? "text-foreground before:bg-background/50"
+                    : "text-muted-foreground",
+                )}
+              >
+                <History className="size-3.5" aria-hidden />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={4}>
+              <Trans>Recently opened</Trans>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      ) : null}
       <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden pl-2">
         {tabs.map((tab, index) => {
           const active = tab.documentId === activeTabId;

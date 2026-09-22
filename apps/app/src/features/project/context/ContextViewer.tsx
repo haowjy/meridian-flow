@@ -53,6 +53,8 @@ export type ContextViewerProps = {
   active: boolean;
   layoutSaveFailed?: boolean;
   onNewDocument?: () => void;
+  /** Return to the Editor destination's chooser without closing any tab. */
+  onShowRecents?: () => void;
   onUntitledBecameNonEmpty: (documentId: string) => Promise<void>;
   onCommitted: (
     documentId: string,
@@ -78,6 +80,7 @@ export function ContextViewer({
   dockToggle,
   active,
   onNewDocument,
+  onShowRecents,
   layoutSaveFailed = false,
   onUntitledBecameNonEmpty,
   onCommitted,
@@ -143,6 +146,8 @@ export function ContextViewer({
         onSelect={onSelectTab}
         onClose={onCloseTab}
         onNewDocument={onNewDocument}
+        onShowRecents={onShowRecents}
+        recentsActive={paneState.kind === "empty-workspace"}
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
       />
