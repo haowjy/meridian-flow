@@ -37,6 +37,11 @@ export function apiProjectPath(projectId: string): string {
   return `${API_PROJECTS_PATH}/${projectId}`;
 }
 
+/** Recents are read inside a project: the landing that renders them is one. */
+export function apiProjectRecentDocumentsPath(projectId: string): string {
+  return `${apiProjectPath(projectId)}/recent-documents`;
+}
+
 export function apiProjectAddressPath(slug: string): string {
   return `/api/project-addresses/${encodeURIComponent(slug)}`;
 }

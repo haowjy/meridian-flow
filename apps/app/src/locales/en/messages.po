@@ -295,8 +295,8 @@ msgid "Account settings."
 msgstr "Account settings."
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
-msgid "Across all your projects"
-msgstr "Across all your projects"
+#~ msgid "Across all your projects"
+#~ msgstr "Across all your projects"
 
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Actions"

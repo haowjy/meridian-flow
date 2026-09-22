@@ -2,9 +2,9 @@
  * RecentDocumentsLanding — the Editor pane's empty state.
  *
  * Replaces the old "New document / pick a file from the tree" dead end with the
- * documents the writer last opened, so an empty editor answers "where was I?"
- * The list is account-global (across projects), so every row carries its
- * project name and path; a row in another project navigates there.
+ * documents the writer last opened in this project, so an empty editor answers
+ * "where was I?" The list is scoped to the project it renders inside, so the
+ * rows need no project label: path and time are what is left to disambiguate.
  *
  * Server-owned and cross-device; renders device-cached rows first and lets the
  * network improve them.
@@ -59,12 +59,14 @@ function groupLabel(group: Group): string {
 }
 
 export function RecentDocumentsLanding({
+  projectId,
   onNewDocument,
 }: {
+  projectId: string;
   /** Starts a local document in the current project (Unfiled). */
   onNewDocument?: () => void;
 }) {
-  const recent = useRecentDocuments();
+  const recent = useRecentDocuments(projectId);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -96,9 +98,6 @@ export function RecentDocumentsLanding({
             <h2 className="text-headline-section text-foreground">
               <Trans>Recently opened</Trans>
             </h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              <Trans>Across all your projects</Trans>
-            </p>
           </div>
           <Button size="sm" onClick={onNewDocument} disabled={!onNewDocument}>
             <FilePlus aria-hidden />
@@ -199,7 +198,6 @@ function RecentDocumentRow({ item, now }: { item: RecentDocumentItem; now: numbe
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-foreground">{item.name}</span>
         <span className="mt-0.5 flex items-baseline gap-2.5 text-xs">
-          <span className="shrink-0 text-ink-subtle">{item.projectName}</span>
           <span className="truncate text-muted-foreground">{item.path}</span>
         </span>
       </span>

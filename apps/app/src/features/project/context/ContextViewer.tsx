@@ -198,7 +198,7 @@ export function ContextViewer({
           <MissingDocumentState destination={paneState.destination} />
         ) : null}
         {paneState.kind === "empty-workspace" ? (
-          <RecentDocumentsLanding onNewDocument={onNewDocument} />
+          <RecentDocumentsLanding projectId={projectId} onNewDocument={onNewDocument} />
         ) : null}
         {paneState.kind === "route-error" ? <RouteErrorState /> : null}
       </div>

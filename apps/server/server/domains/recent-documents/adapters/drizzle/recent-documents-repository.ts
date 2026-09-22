@@ -139,7 +139,7 @@ export function createDrizzleRecentDocumentsRepository(deps: {
         return true;
       });
     },
-    async listByUser(userId: UserId) {
+    async listForProject(projectId: string, userId: UserId) {
       const tx = db();
       const rows = await tx
         .select({
@@ -154,7 +154,13 @@ export function createDrizzleRecentDocumentsRepository(deps: {
         .innerJoin(contextSources, eq(documents.contextSourceId, contextSources.id))
         .leftJoin(works, eq(contextSources.workId, works.id))
         .innerJoin(projects, projectIdentity())
-        .where(and(eq(userRecentDocuments.userId, userId), visibleIdentity(userId)))
+        .where(
+          and(
+            eq(userRecentDocuments.userId, userId),
+            eq(projects.id, projectId),
+            visibleIdentity(userId),
+          ),
+        )
         .orderBy(desc(userRecentDocuments.openedAt))
         .limit(USER_RECENT_DOCUMENTS_CAP);
 

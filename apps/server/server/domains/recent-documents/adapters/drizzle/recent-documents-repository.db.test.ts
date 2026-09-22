@@ -127,7 +127,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("hides another user's document and rejects a record the user cannot see", async () => {
       const { db, repo } = await seed();
       await repo.record(userId(USER), documentId(OWNED));
-      await expect(repo.listByUser(userId(OTHER))).resolves.toEqual([]);
+      await expect(repo.listForProject(PROJECT, userId(OTHER))).resolves.toEqual([]);
       await expect(repo.record(userId(OTHER), documentId(OWNED))).rejects.toBeInstanceOf(
         RecentDocumentUnavailableError,
       );
@@ -139,19 +139,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         documentId: OWNED,
         openedAt: new Date(),
       });
-      await expect(repo.listByUser(userId(OTHER))).resolves.toEqual([]);
-      await expect(repo.listByUser(userId(USER))).resolves.toMatchObject([
+      await expect(repo.listForProject(PROJECT, userId(OTHER))).resolves.toEqual([]);
+      await expect(repo.listForProject(PROJECT, userId(USER))).resolves.toMatchObject([
         { documentId: OWNED, projectSlug: "serial" },
       ]);
     });
 
-    it("resolves project, scheme, path, and work slug for each identity shape", async () => {
+    it("resolves project, scheme, path, and work slug within one project, and keeps projects apart", async () => {
       const { repo } = await seed();
       await repo.record(userId(USER), documentId(SCRATCH));
       await repo.record(userId(USER), documentId(NO_WORK_DOC));
       await repo.record(userId(USER), documentId(PERSONAL_DOC));
-      const listed = await repo.listByUser(userId(USER));
-      expect(listed).toHaveLength(3);
+      const listed = await repo.listForProject(PROJECT, userId(USER));
+      expect(listed).toHaveLength(2);
       expect(listed).toEqual(
         expect.arrayContaining([
           // A work-scoped scratch document carries its work slug.
@@ -162,7 +162,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             path: "/scene.md",
             workSlug: "draft",
           }),
-          // No Work and the personal project both resolve to a null work slug.
+          // No Work resolves to a null work slug.
           expect.objectContaining({
             documentId: NO_WORK_DOC,
             projectSlug: "serial",
@@ -170,15 +170,19 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             path: "/aside.md",
             workSlug: null,
           }),
-          expect.objectContaining({
-            documentId: PERSONAL_DOC,
-            projectSlug: "personal",
-            scheme: "user",
-            path: "/notes.md",
-            workSlug: null,
-          }),
         ]),
       );
+      // The personal project keeps its own history: the landing renders inside a
+      // project, so the read is scoped to the one it renders in.
+      await expect(repo.listForProject(PERSONAL, userId(USER))).resolves.toEqual([
+        expect.objectContaining({
+          documentId: PERSONAL_DOC,
+          projectSlug: "personal",
+          scheme: "user",
+          path: "/notes.md",
+          workSlug: null,
+        }),
+      ]);
     });
 
     it("keeps one open per interval, then moves the row on a later open", async () => {
@@ -216,7 +220,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const { db, repo } = await seed();
       await repo.record(userId(USER), documentId(DOOMED));
       await db.update(documents).set({ deletedAt: new Date() }).where(eq(documents.id, DOOMED));
-      await expect(repo.listByUser(userId(USER))).resolves.toEqual([]);
+      await expect(repo.listForProject(PROJECT, userId(USER))).resolves.toEqual([]);
       await expect(repo.record(userId(USER), documentId(DOOMED))).rejects.toBeInstanceOf(
         RecentDocumentUnavailableError,
       );
@@ -245,7 +249,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(userRecentDocuments)
         .where(eq(userRecentDocuments.userId, USER));
       expect(stored.map((row) => row.documentId).sort()).toEqual([...liveIds].sort());
-      const listed = await repo.listByUser(userId(USER));
+      const listed = await repo.listForProject(PROJECT, userId(USER));
       expect(listed).toHaveLength(USER_RECENT_DOCUMENTS_CAP);
       expect(listed.map((item) => item.documentId)).not.toContain(DOOMED);
     });
@@ -253,7 +257,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("lists a binary document", async () => {
       const { repo } = await seed();
       await repo.record(userId(USER), documentId(PDF));
-      await expect(repo.listByUser(userId(USER))).resolves.toEqual([
+      await expect(repo.listForProject(PROJECT, userId(USER))).resolves.toEqual([
         expect.objectContaining({
           documentId: PDF,
           scheme: "manuscript",

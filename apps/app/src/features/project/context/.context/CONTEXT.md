@@ -68,7 +68,7 @@ ContextPaneController
               └─ RecentDocumentsLanding (empty workspace only)
 ```
 
-`RecentDocumentsLanding` is the empty pane. It lists account recently-opened
+`RecentDocumentsLanding` is the empty pane. It lists this project's recently-opened
 documents and navigates on click. It does not open a tab on mount. The tab
 strip's leading control (`showEditorRecents`) reaches it without closing a tab:
 the address owns which document is visible, the store owns what stays open, so
