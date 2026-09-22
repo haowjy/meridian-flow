@@ -24,6 +24,7 @@ export type WsServerMessageDispatchDeps = {
   send: (payload: unknown) => void;
   onConnected: (connectionToken: string) => void;
   onThreadError: (threadId: string, error: Error) => void;
+  onInterruptResponseError: (threadId: string, error: Error) => void;
   onGlobalError: (error: Error) => void;
 };
 
@@ -99,8 +100,11 @@ export function dispatchWsServerMessage(
     }
 
     case "error": {
-      if (isNonFatalInterruptResponseError(message)) return;
       const error = wsErrorToMeridianApiError(message);
+      if (isNonFatalInterruptResponseError(message)) {
+        if (message.threadId) deps.onInterruptResponseError(message.threadId, error);
+        return;
+      }
       if (message.threadId) {
         deps.onThreadError(message.threadId, error);
         return;

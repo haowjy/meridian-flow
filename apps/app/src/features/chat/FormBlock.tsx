@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { ArtifactCard, ComponentResolvedSummary } from "./ArtifactCard";
 import { ArtifactGrid, isArtifactRef } from "./ArtifactGrid";
 import type { ComponentBlockProps } from "./component-registry";
+import { InterruptResponseFeedback } from "./InterruptResponseFeedback";
 import {
   type InterruptField,
   type InterruptFormErrors,
@@ -72,7 +73,13 @@ function readInterruptProps(content: ComponentBlockProps["content"]): InterruptP
   return { prompt, artifacts, fields, recommended };
 }
 
-export function FormBlock({ content, respond, isAwaitingResponse }: ComponentBlockProps) {
+export function FormBlock({
+  content,
+  respond,
+  isAwaitingResponse,
+  responseState,
+  retry,
+}: ComponentBlockProps) {
   const parsed = readInterruptProps(content);
   const hasResolvedValue = Object.hasOwn(content.props, "resolvedValue");
   const resolvedValue =
@@ -113,6 +120,8 @@ export function FormBlock({ content, respond, isAwaitingResponse }: ComponentBlo
       recommended={parsed.recommended}
       isAwaitingResponse={isAwaitingResponse}
       respond={respond}
+      responseState={responseState}
+      retry={retry}
     />
   );
 }
@@ -124,9 +133,13 @@ function InterruptForm({
   recommended,
   isAwaitingResponse,
   respond,
+  responseState,
+  retry,
 }: InterruptProps & {
   isAwaitingResponse: boolean;
   respond: ComponentBlockProps["respond"];
+  responseState: ComponentBlockProps["responseState"];
+  retry: ComponentBlockProps["retry"];
 }) {
   // The form's initial values depend on schema + recommended; recomputing on
   // every keystroke would clobber user input. Memoize on the props that
@@ -136,7 +149,8 @@ function InterruptForm({
   const [errors, setErrors] = useState<InterruptFormErrors>({});
   const [submitted, setSubmitted] = useState(false);
 
-  const formDisabled = !isAwaitingResponse || submitted;
+  const responseLocked = responseState !== null;
+  const formDisabled = !isAwaitingResponse || responseLocked || submitted;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -204,6 +218,7 @@ function InterruptForm({
           </button>
         </div>
       </form>
+      <InterruptResponseFeedback state={responseState} onRetry={retry} />
     </ArtifactCard>
   );
 }

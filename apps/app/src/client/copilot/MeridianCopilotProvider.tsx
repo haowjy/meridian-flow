@@ -34,7 +34,7 @@ export function MeridianCopilotProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return () => {
-      controller.teardown();
+      controller.dispose();
     };
   }, [controller]);
 

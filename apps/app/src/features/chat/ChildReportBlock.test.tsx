@@ -52,6 +52,8 @@ describe("ChildReportBlock", () => {
           }}
           respond={vi.fn()}
           isAwaitingResponse={false}
+          responseState={null}
+          retry={vi.fn()}
         />,
       ),
     );
@@ -70,6 +72,8 @@ describe("ChildReportBlock", () => {
           content={{ kind: "child-report", props: { summary: "Done." } }}
           respond={vi.fn()}
           isAwaitingResponse={false}
+          responseState={null}
+          retry={vi.fn()}
         />,
       ),
     );

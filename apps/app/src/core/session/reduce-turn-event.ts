@@ -65,6 +65,11 @@ type StoreEventTarget = {
     patch?: Partial<Pick<Turn, "completedAt" | "error" | "finishReason">>,
   ): void;
   bumpEventsApplied(threadId: string): number;
+  settleInterruptResponse(identity: {
+    threadId: string;
+    turnId: string;
+    interruptId: string;
+  }): void;
 };
 
 function activeAssistantTurn(store: StoreEventTarget, threadId: string): Turn | null {
@@ -599,6 +604,13 @@ function applyInterruptLifecycleEvent(
       payload,
     );
   }
+  // A resolved/expired lifecycle event is the server-confirmed settlement of
+  // any local response send for this tuple; drop the local pending/error state.
+  store.settleInterruptResponse({
+    threadId,
+    turnId: payload.turnId,
+    interruptId: payload.interruptId,
+  });
   store.patchTurnStatus(threadId, payload.turnId, "streaming");
 }
 

@@ -39,6 +39,17 @@ export type ThreadGapEvent = {
 };
 
 /**
+ * A non-fatal interrupt-response rejection frame, routed to the interrupt
+ * settlement owner rather than the generic thread-error sink. The wire frame
+ * carries only `threadId`; the client correlates it to the sole pending
+ * response for that thread.
+ */
+export type ThreadInterruptResponseError = {
+  threadId: string;
+  error: Error;
+};
+
+/**
  * Transport-shaped contract for subscribing to an assistant turn's event stream
  * and cancelling an in-flight run. The production implementation is
  * `WsThreadTransport`; tests may provide local doubles without changing
@@ -83,8 +94,15 @@ export interface ThreadTransport {
   /** Receive truth-free catalog wake hints over the existing authenticated socket. */
   subscribeCatalog(projectId: string, listener: (hint: CatalogWakeHint) => void): () => void;
 
-  /** Send a interrupt answer over the existing thread WebSocket. */
-  respondInterrupt(input: InterruptRespondInput): void;
+  /** Send a interrupt answer over the existing thread WebSocket. Returns false when the socket was not open and the frame was never sent. */
+  respondInterrupt(input: InterruptRespondInput): boolean;
+
+  /**
+   * Receive non-fatal interrupt-response rejection frames. These never tear
+   * down the thread subscription (the run is still valid); they only settle the
+   * matching local response. Returns an unsubscribe fn.
+   */
+  onInterruptResponseError(listener: (event: ThreadInterruptResponseError) => void): () => void;
 
   /** Cancel an in-flight turn via HTTP. */
   cancel(threadId: string, turnId: string): Promise<CancelTurnResponse>;

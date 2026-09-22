@@ -166,14 +166,24 @@ export class SocketLifecycleController {
     this.publishConnectionState({ kind: "disconnected" });
   }
 
-  send(data: string | ArrayBufferLike | ArrayBufferView): void {
-    if (!this.isSocketOpen()) return;
+  /**
+   * Write one frame to the current socket. Returns false when no open socket
+   * exists or the write throws, so callers that must distinguish "never sent"
+   * from "sent, awaiting response" can classify honestly.
+   */
+  send(data: string | ArrayBufferLike | ArrayBufferView): boolean {
+    if (!this.isSocketOpen()) return false;
     const socket = this.socket;
-    if (!socket) return;
+    if (!socket) return false;
     if (DEBUG_FEATURE_ALLOWED && typeof data === "string") {
       notifyThreadFrame("client_to_server", data, this.socketGeneration);
     }
-    socket.send(data as Parameters<WebSocket["send"]>[0]);
+    try {
+      socket.send(data as Parameters<WebSocket["send"]>[0]);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   resetPingTimer(): void {

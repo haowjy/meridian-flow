@@ -7,6 +7,7 @@
  * cancel, and performs singleton HTTP snapshot recovery on stream gaps.
  */
 import { EventType } from "@meridian/contracts/protocol";
+import type { JsonValue } from "@meridian/contracts/threads";
 import { HttpResponseError } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
@@ -20,6 +21,7 @@ import {
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
 import type { ComposerSubmitEnvelope, ComposerSubmitOutcome } from "@/components/app/composer";
+import type { InterruptResponseState } from "@/core/session/interrupt-response";
 import { applyAguiEventToStore } from "@/core/session/reduce-turn-event";
 import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
 import { StreamDeltaCoalescer } from "./stream-delta-coalescer";
@@ -99,6 +101,7 @@ export class ThreadRunController {
   private abortRequested = false;
   private runToken = 0;
   private readonly gapSnapshotsByThreadId = new Map<string, Promise<void>>();
+  private readonly unsubscribeInterruptResponseError: () => void;
 
   constructor(options: ThreadRunControllerOptions) {
     this.transport = options.transport;
@@ -107,6 +110,9 @@ export class ThreadRunController {
     this.lookupAdmissionFn = options.lookupAdmissionFn ?? lookupUserMessageAdmission;
     this.retireAdmissionFn = options.retireAdmissionFn ?? retireUserMessageAdmission;
     this.getThreadSnapshotFn = options.getThreadSnapshotFn ?? getThreadSnapshot;
+    this.unsubscribeInterruptResponseError = this.transport.onInterruptResponseError(
+      ({ threadId, error }) => this.settleInterruptResponseError(threadId, error),
+    );
   }
 
   submit(
@@ -270,8 +276,36 @@ export class ThreadRunController {
     this.attachLiveSubscription(threadId, token, options);
   }
 
-  respondInterrupt(input: InterruptRespondInput): void {
-    this.transport.respondInterrupt(input);
+  respondInterrupt(input: InterruptRespondInput): InterruptResponseState {
+    // The wire envelope allows `unknown`; the component protocol only emits
+    // JSON, so the retained retry value is a JsonValue.
+    const value = input.value as JsonValue;
+    this.actions.beginInterruptResponse({ ...input, value });
+    const sent = this.transport.respondInterrupt(input);
+    if (!sent) {
+      // The socket was not open, so the frame never left the client. This is a
+      // proven send failure (retryable), not an ambiguous outcome.
+      const failure: InterruptResponseState = { status: "failed" };
+      this.actions.failInterruptResponse(input, failure);
+      return failure;
+    }
+    return { status: "pending" };
+  }
+
+  /**
+   * Settle a non-fatal interrupt rejection frame. The wire frame carries only
+   * `threadId`, so it is matched to the sole pending response for that thread.
+   * `interrupt_not_pending` after a send means the first attempt likely landed
+   * (ambiguous); a correlation mismatch is positive evidence this attempt did
+   * not land (retryable failure). Neither tears down the run subscription.
+   */
+  private settleInterruptResponseError(threadId: string, error: Error): void {
+    const pending = this.actions.pendingInterruptResponseForThread(threadId);
+    if (!pending) return;
+    const code = isMeridianApiError(error) ? error.code : undefined;
+    this.actions.failInterruptResponse(pending, {
+      status: code === "interrupt_correlation_mismatch" ? "failed" : "ambiguous",
+    });
   }
 
   cancel(threadId: string): void {
@@ -294,6 +328,12 @@ export class ThreadRunController {
     this.admissionLease = null;
     this.runToken += 1;
     this.cleanupActiveRun();
+  }
+
+  /** Release controller-lifetime subscriptions (provider unmount). */
+  dispose(): void {
+    this.teardown();
+    this.unsubscribeInterruptResponseError();
   }
 
   private startRun(threadId: string, options: { pruneAbandonedTurn?: boolean } = {}): number {

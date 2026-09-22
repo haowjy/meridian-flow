@@ -24,6 +24,7 @@ import { SocketLifecycleController, type SocketLifecycleOptions } from "./socket
 import type {
   ConnectionState,
   InterruptRespondInput,
+  ThreadInterruptResponseError,
   ThreadTransport,
   ThreadTransportHandlers,
   ThreadTransportSubscribeOptions,
@@ -43,6 +44,9 @@ export class WsThreadTransport implements ThreadTransport {
   private readonly catalogSubscriptions = new Map<
     string,
     Set<(hint: Extract<WsServerMessage, { type: "context-catalog-hint" }>) => void>
+  >();
+  private readonly interruptResponseErrorListeners = new Set<
+    (event: ThreadInterruptResponseError) => void
   >();
   private wantsConnection = false;
   private serverConnected = false;
@@ -132,8 +136,15 @@ export class WsThreadTransport implements ThreadTransport {
     };
   }
 
-  respondInterrupt(input: InterruptRespondInput): void {
-    this.send({ type: "interrupt.respond", ...input });
+  respondInterrupt(input: InterruptRespondInput): boolean {
+    return this.send({ type: "interrupt.respond", ...input });
+  }
+
+  onInterruptResponseError(listener: (event: ThreadInterruptResponseError) => void): () => void {
+    this.interruptResponseErrorListeners.add(listener);
+    return () => {
+      this.interruptResponseErrorListeners.delete(listener);
+    };
   }
 
   subscribeCatalog(
@@ -249,6 +260,11 @@ export class WsThreadTransport implements ThreadTransport {
           handler.onError?.(error);
         }
       },
+      onInterruptResponseError: (threadId, error) => {
+        for (const listener of this.interruptResponseErrorListeners) {
+          listener({ threadId, error });
+        }
+      },
       onGlobalError: (error) => this.publishError(error),
     });
   }
@@ -309,8 +325,8 @@ export class WsThreadTransport implements ThreadTransport {
     }
   }
 
-  private send(payload: unknown): void {
-    this.socket.send(JSON.stringify(payload));
+  private send(payload: unknown): boolean {
+    return this.socket.send(JSON.stringify(payload));
   }
 
   private dispatchSequencedEvent(
