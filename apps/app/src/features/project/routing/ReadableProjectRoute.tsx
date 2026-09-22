@@ -546,8 +546,12 @@ export function ReadableProjectRoute({
       projectAddressHref(toDestination({ kind: "work", workSlug: workSlug(target.workId) })),
     closeWork: (options) => go(toDestination({ kind: "works" }), options),
     // Selecting no document keeps every open tab: the address owns which one is
-    // visible, the store owns what stays open.
-    showEditorRecents: (options) => go(toDestination({ kind: "editor" }), options),
+    // visible, the store owns what stays open. Already on the chooser is a no-op
+    // so a second click cannot push a duplicate entry.
+    showEditorRecents: (options) =>
+      address.destination.kind === "editor"
+        ? Promise.resolve()
+        : go(toDestination({ kind: "editor" }), options),
     openWorkContext: (target, options) =>
       target.path !== undefined
         ? openContext(

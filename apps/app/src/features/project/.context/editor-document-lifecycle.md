@@ -26,6 +26,9 @@ flowchart TD
   pane may offer the account's recently opened documents as a chooser; choosing
   navigates, and entry itself still opens nothing.
   Closing every tab and switching screens cannot reopen a closed identity.
+- **Tab-strip chooser control:** clear the document address and leave the working
+  set alone. Not the Editor navigation item: it resolves no remembered identity
+  and opens no tab, so the pane it lands on stays empty. Clicking a tab returns.
 
 - **Readable URL, reload, Back/Forward:** `ReadableProjectRoute` resolves the
   project and document address. `ProjectAddressDocument` uses the authorized
