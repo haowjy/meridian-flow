@@ -151,6 +151,74 @@ it("still rejects a genuinely different lineage", async () => {
   }
 });
 
+it("claims an exact legacy handle-less authority during cached-session recovery", async () => {
+  const accountId = nextAccount();
+  const store = new DocumentSessionAuthorityStore(accountId);
+  const installed: Array<{ exactDatabaseName: string }> = [];
+  const coordination = createDocumentSessionCrossContextCoordination({
+    accountId,
+    local: {
+      ...localAuthority(),
+      installSynchronously: (input) => installed.push(input),
+    },
+    locks: memoryLocks(),
+    secureContext: true,
+    createWakeChannel: null,
+    reconcileIntervalMs: 60_000,
+  });
+  try {
+    const admitted = await store.admit({ documentId, projectId, generation });
+    if (admitted.kind !== "admitted") throw new Error("Expected legacy authority admission");
+
+    await expect(
+      coordination.inspectLocalLineage({
+        documentId,
+        lineageHandle,
+        exactDatabaseName: admitted.exactDatabaseName,
+      }),
+    ).resolves.toBe("bindable");
+    await expect(
+      coordination.inspectLocalLineage({
+        documentId,
+        lineageHandle,
+        exactDatabaseName: `${admitted.exactDatabaseName}:foreign`,
+      }),
+    ).resolves.toBe("mismatch");
+    await expect(
+      coordination.recoverLocalAdoption(
+        projectId,
+        documentId,
+        generation,
+        lineageHandle,
+        `${admitted.exactDatabaseName}:foreign`,
+      ),
+    ).rejects.toThrow("Local adoption persistence authority belongs to another database");
+    expect(await persistedAuthority(store)).toEqual({
+      phase: "bindable",
+      originLineageHandle: undefined,
+    });
+
+    await coordination.recoverLocalAdoption(
+      projectId,
+      documentId,
+      generation,
+      lineageHandle,
+      admitted.exactDatabaseName,
+    );
+
+    expect(await persistedAuthority(store)).toEqual({
+      phase: "bindable",
+      originLineageHandle: lineageHandle,
+    });
+    expect(installed).toEqual([
+      expect.objectContaining({ exactDatabaseName: admitted.exactDatabaseName }),
+    ]);
+  } finally {
+    await coordination.close();
+    await store.close();
+  }
+});
+
 it("backfills the lineage onto a reusable handle-less bindable authority exactly once", async () => {
   const accountId = nextAccount();
   const store = new DocumentSessionAuthorityStore(accountId);
