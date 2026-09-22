@@ -398,6 +398,20 @@ export function createDrizzleThreadRepository(
         .limit(1);
       return mapThread({ ...row, workId: primary[0]?.workId ?? null });
     },
+    async updateTitle(id, title) {
+      const [row] = await currentDrizzleDb(db)
+        .update(schema.threads)
+        .set({ title, updatedAt: new Date() })
+        .where(eq(schema.threads.id, id))
+        .returning(threadColumns);
+      if (!row) throw new Error(`Thread not found: ${id}`);
+      const primary = await currentDrizzleDb(db)
+        .select({ workId: schema.threadWorks.workId })
+        .from(schema.threadWorks)
+        .where(and(eq(schema.threadWorks.threadId, id), eq(schema.threadWorks.isPrimary, true)))
+        .limit(1);
+      return mapThread({ ...row, workId: primary[0]?.workId ?? null });
+    },
     async bakeComposedSystemPrompt(id, input) {
       const [row] = await currentDrizzleDb(db)
         .update(schema.threads)

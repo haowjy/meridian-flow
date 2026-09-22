@@ -64,6 +64,9 @@ export const projectQueryKeys = {
   homeFeed: (projectId: string) => ["projects", projectId, "home-feed"] as const,
   threadUserState: (projectId: string, threadId: string) =>
     ["projects", projectId, "thread-user-state", threadId] as const,
+  threadRename: (projectId: string, threadId: string) =>
+    ["projects", projectId, "thread-rename", threadId] as const,
+  threadRenamePrefix: (projectId: string) => ["projects", projectId, "thread-rename"] as const,
   workDrafts: (projectId: string, workId: string) =>
     ["projects", projectId, "works", workId, "drafts"] as const,
   workDraftPreview: (projectId: string, workId: string, documentId: string, draftId?: string) =>

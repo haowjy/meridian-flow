@@ -73,9 +73,13 @@ Two interfaces are the only paths between the visual layer and the substrate:
   projections stay in Query; per-thread turn state stays in the store. Its
   lifecycle projector converges `actionRequired` across project thread lists,
   Home, and every matching Work feed while Favorite remains normalized separately.
-- **`useRenameThread`** (`src/client/query/useRenameThread.ts`) — optimistic
-  thread-title rename via `patchThreadInProjectCaches`; lives beside Query hooks
-  (cache-only today, no PATCH endpoint) rather than on the thread store.
+- **`useRenameThread`** (`src/client/query/useRenameThread.ts`) — P1 thread-title
+  command. It projects the requested title into the project thread list
+  immediately, fences per-thread overlap and stale completions through
+  `thread-rename-command`, persists with `PATCH /api/threads/:id/title`, and
+  announces success only after the server confirms. A 4xx refusal reverts the
+  title and shows inline Retry on the title control; an unknown outcome retains
+  the projection and invalidates the thread list to reconcile.
 - **Thread Work binding:** `useRebindThreadWork` returns discriminated confirmed,
   reconciled, and superseded outcomes to the composer-only `ComposerWorkControl`.
   `convergeThreadWorkBinding` is the one cache-effect boundary, while
@@ -103,10 +107,10 @@ Two interfaces are the only paths between the visual layer and the substrate:
   the working-set read as an explicit `row` / `absent` / `unavailable` result.
 - **Zustand (thread-store):** per-thread `turnsByThread`,
   `streamingThreadId`, pending stream metadata, snapshot reconciliation
-  watermark (`snapshotNextSeqFloorByThread`). The project-store defines
-  rename and soft-delete projections, but they have no live caller or complete
-  API owner; do not treat them as shipped behavior. See "Thread snapshot
-  reconciliation" below.
+  watermark (`snapshotNextSeqFloorByThread`). The project-store owns only the
+  optimistic independent-project insert; its unwired rename/soft-delete
+  projections and suppression surface were removed (OPT-002). See "Thread
+  snapshot reconciliation" below.
 - **`ThreadTransport`** (`src/core/transport/ThreadTransport.ts`) — the
   subscribe/cancel contract for live agent events. Runtime chat uses
   `WsThreadTransport`, which connects to `/api/threads/ws`.
@@ -185,9 +189,6 @@ active run once, including a server-initiated run that wakes the parent, so a
 background child's continuation streams live; see
 [`features/chat/.context/thread-live-updates.md`](../src/features/chat/.context/thread-live-updates.md).
 Do not bounce to Home or show Check status, Start over, or saved-first-message recovery.
-
-The dormant project-store rename and soft-delete reducers are not a precedent:
-connect them to one real command owner or delete them.
 
 ### Thread snapshot reconciliation
 
