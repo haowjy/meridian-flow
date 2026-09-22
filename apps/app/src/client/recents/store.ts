@@ -318,10 +318,14 @@ export class DeviceAccountRecentsStore {
     if (!state) return false;
     const removedIds = new Set(input.removed.map((entry) => entry.documentId));
     const updates = new Map(input.updates.map((update) => [update.documentId, update]));
+    // Availability batches include other consumers' documents. Only remember
+    // rows removed from this record, or unrelated ids can evict a real removal.
+    const dropped: Removal[] = [];
     let changed = false;
     const kept: AccountRecentItem[] = [];
     for (const item of state.items) {
       if (removedIds.has(item.documentId)) {
+        dropped.push({ documentId: item.documentId, projectId: item.projectId });
         changed = true;
         continue;
       }
@@ -333,7 +337,7 @@ export class DeviceAccountRecentsStore {
       const address = documentAddress(update.scheme, update.path);
       if (!address) {
         changed = true;
-        removedIds.add(item.documentId);
+        dropped.push({ documentId: item.documentId, projectId: item.projectId });
         continue;
       }
       if (item.name === update.name && sameAddress(item.address, address)) {
@@ -344,19 +348,7 @@ export class DeviceAccountRecentsStore {
       kept.push({ ...item, name: update.name, address });
     }
     if (!changed) return false;
-    if (removedIds.size > 0) {
-      const projectOf = new Map([
-        ...state.items.map((item) => [item.documentId, item.projectId] as const),
-        ...input.removed.map((entry) => [entry.documentId, entry.projectId] as const),
-      ]);
-      state.removed = rememberRemovals(
-        state.removed,
-        [...removedIds].flatMap((documentId) => {
-          const projectId = projectOf.get(documentId);
-          return projectId ? [{ documentId, projectId }] : [];
-        }),
-      );
-    }
+    if (dropped.length > 0) state.removed = rememberRemovals(state.removed, dropped);
     state.items = capItems(kept);
     this.persist();
     return true;
