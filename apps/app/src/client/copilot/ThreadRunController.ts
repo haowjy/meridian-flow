@@ -173,7 +173,14 @@ export class ThreadRunController {
           this.dropOptimistic(threadId, options);
           return outcome("rejected");
         }
-        return this.reconcile(threadId, envelope, options, "lookup", admissionEpoch);
+        return this.reconcile(
+          threadId,
+          envelope.submissionId,
+          envelope.acceptedRevision,
+          options,
+          "lookup",
+          admissionEpoch,
+        );
       }
       if (this.admissionEpoch !== admissionEpoch) return outcome("accepted");
       if (options.optimisticUserTurnId) {
@@ -201,7 +208,14 @@ export class ThreadRunController {
     envelope: ComposerSubmitEnvelope,
     options: SubmitOptions = {},
   ): Promise<ComposerSubmitOutcome> {
-    return this.reconcile(threadId, envelope, options, "lookup", this.admissionEpoch);
+    return this.reconcile(
+      threadId,
+      envelope.submissionId,
+      envelope.acceptedRevision,
+      options,
+      "lookup",
+      this.admissionEpoch,
+    );
   }
 
   retire(
@@ -209,20 +223,49 @@ export class ThreadRunController {
     envelope: ComposerSubmitEnvelope,
     options: SubmitOptions = {},
   ): Promise<ComposerSubmitOutcome> {
-    return this.reconcile(threadId, envelope, options, "retire", this.admissionEpoch);
+    return this.reconcile(
+      threadId,
+      envelope.submissionId,
+      envelope.acceptedRevision,
+      options,
+      "retire",
+      this.admissionEpoch,
+    );
+  }
+
+  /**
+   * Reconcile a durable journal entry. The server keys admissions by
+   * `(threadId, submissionId)`, so recovery needs only the identity, not a
+   * reconstructed composer envelope or its draft snapshot.
+   */
+  lookupSubmission(
+    threadId: string,
+    submissionId: string,
+    options: SubmitOptions = {},
+  ): Promise<ComposerSubmitOutcome> {
+    return this.reconcile(threadId, submissionId, 0, options, "lookup", this.admissionEpoch);
+  }
+
+  retireSubmission(
+    threadId: string,
+    submissionId: string,
+    options: SubmitOptions = {},
+  ): Promise<ComposerSubmitOutcome> {
+    return this.reconcile(threadId, submissionId, 0, options, "retire", this.admissionEpoch);
   }
 
   private async reconcile(
     threadId: string,
-    envelope: ComposerSubmitEnvelope,
+    submissionId: string,
+    acceptedRevision: number,
     options: SubmitOptions,
     operation: "lookup" | "retire",
     admissionEpoch: number,
   ): Promise<ComposerSubmitOutcome> {
     const outcome = (kind: ComposerSubmitOutcome["kind"]): ComposerSubmitOutcome => ({
       kind,
-      submissionId: envelope.submissionId,
-      acceptedRevision: envelope.acceptedRevision,
+      submissionId,
+      acceptedRevision,
     });
     if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
     try {
@@ -230,7 +273,7 @@ export class ThreadRunController {
         ? this.retireAdmissionFn
         : this.lookupAdmissionFn)({
         threadId,
-        submissionId: envelope.submissionId,
+        submissionId,
       });
       if (this.admissionEpoch !== admissionEpoch) {
         if (result.kind === "accepted" || result.kind === "already-accepted")
@@ -255,8 +298,12 @@ export class ThreadRunController {
         return outcome("accepted");
       }
       if (result.kind === "rejected" || result.kind === "retired") {
-        if (options.optimisticUserTurnId)
+        // Recovery keeps the definitive failure on the turn (the writer sees
+        // what was refused); the live composer path still drops the row and
+        // keeps the draft in the composer.
+        if (options.optimisticUserTurnId && !options.keepOptimisticOnFailure) {
           this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
+        }
         return outcome("rejected");
       }
       return outcome("ambiguous");
