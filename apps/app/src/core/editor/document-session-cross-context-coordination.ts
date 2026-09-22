@@ -272,7 +272,8 @@ class Coordination implements DocumentSessionCrossContextCoordination {
       if (
         authority.exactDatabaseName !== input.exactDatabaseName ||
         (authority.phase === "bindable"
-          ? authority.originLineageHandle !== input.lineageHandle
+          ? authority.originLineageHandle !== undefined &&
+            authority.originLineageHandle !== input.lineageHandle
           : authority.lineageHandle !== input.lineageHandle)
       )
         return "mismatch";
@@ -289,6 +290,7 @@ class Coordination implements DocumentSessionCrossContextCoordination {
     documentId: DocumentId,
     generation: AvailabilityGeneration,
     lineageHandle: string,
+    exactDatabaseName: string,
   ): Promise<
     LiveDocumentSessionLease & {
       persistenceGeneration: AvailabilityGeneration;
@@ -305,10 +307,20 @@ class Coordination implements DocumentSessionCrossContextCoordination {
       | undefined;
     await this.documentLocks.withOperation(documentId, async () => {
       const room = await this.store.readRoom(documentId);
-      const authority = room.persistence;
-      if (!authority) throw new Error("Local adoption authority is absent");
-      if (authority.phase === "terminal-local")
+      const current = room.persistence;
+      if (!current) throw new Error("Local adoption authority is absent");
+      if (current.phase === "terminal-local")
         throw new Error("Local adoption authority is terminal");
+      if (current.exactDatabaseName !== exactDatabaseName)
+        throw new Error("Local adoption persistence authority belongs to another database");
+      const authority =
+        current.phase === "bindable"
+          ? await this.store.claimBindableOrigin({
+              documentId,
+              lineageHandle,
+              exactDatabaseName,
+            })
+          : current;
       if (
         (authority.phase === "bindable"
           ? authority.originLineageHandle

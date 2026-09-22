@@ -104,6 +104,7 @@ export interface DocumentSessionCrossContextCoordination {
     documentId: DocumentId,
     generation: AvailabilityGeneration,
     lineageHandle: string,
+    exactDatabaseName: string,
   ): Promise<
     LiveDocumentSessionLease & {
       persistenceGeneration: AvailabilityGeneration;
