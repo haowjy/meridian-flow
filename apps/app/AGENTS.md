@@ -35,5 +35,11 @@ Authenticated writing workspace. Keep it a thin React/TanStack Start shell over 
   and never bounce back because materialization lagged. A server-assigned public
   address stays P0 until a real neutral pending destination exists; never mount
   a fabricated route merely to navigate early.
+- **Specify interaction semantics before mutation plumbing.** For each
+  writer-initiated command, name its authority, immediate and pending state,
+  rejection versus ambiguity behavior, overlap policy, stale/account fence,
+  reload promise, and proving test. Use TanStack Query directly for transient
+  server-command lifecycle. Do not add a Meridian mutation wrapper, global
+  optimistic store, or universal rollback rule.
 - `/_authenticated` mounts one unconditional provider tree (Query → project → thread → transport → copilot); do not gate providers by pathname.
 - Settings is a routed overlay via `?settings=` on any authenticated route (`SettingsDialog` in the layout shell).
