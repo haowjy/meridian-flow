@@ -720,6 +720,10 @@ msgstr "Checking whether Apply finished."
 msgid "Checking Work…"
 msgstr "Checking Work…"
 
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "Checkout cancelled. Nothing was charged."
+msgstr "Checkout cancelled. Nothing was charged."
+
 #: src/features/billing/BillingPage.tsx
 msgid "Checkout unavailable."
 msgstr "Checkout unavailable."
@@ -881,6 +885,10 @@ msgstr "Composer controls"
 #: src/features/chat/FormBlock.tsx
 msgid "Confirm"
 msgstr "Confirm"
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "Confirming your purchase…"
+msgstr "Confirming your purchase…"
 
 #. placeholder {0}: state.attempt
 #: src/components/app/ConnectionBanner.tsx
@@ -2396,6 +2404,11 @@ msgstr "Open results"
 msgid "Open this document in a project to upload figures."
 msgstr "Open this document in a project to upload figures."
 
+#: src/features/billing/BillingPage.tsx
+#: src/features/billing/ExtraUsagePicker.tsx
+msgid "Opening checkout…"
+msgstr "Opening checkout…"
+
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening document…"
 msgstr "Opening document…"
@@ -2476,6 +2489,10 @@ msgstr "Profile"
 #: src/features/chat/IndependentChatView.tsx
 msgid "Project couldn’t load"
 msgstr "Project couldn’t load"
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "Purchase confirmed. Your balance has been updated."
+msgstr "Purchase confirmed. Your balance has been updated."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Put the caret in a table first."
@@ -3690,6 +3707,10 @@ msgstr "Viewing chat resources is not available yet. These files remain availabl
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Wait for this response to finish, then try again."
 msgstr "Wait for this response to finish, then try again."
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "We’re still confirming your purchase. Your balance will update shortly."
+msgstr "We’re still confirming your purchase. Your balance will update shortly."
 
 #: src/features/home/HomeHero.tsx
 msgid "What are you working on?"
