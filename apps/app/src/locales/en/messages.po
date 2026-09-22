@@ -1111,6 +1111,10 @@ msgstr "Couldn't search"
 msgid "Couldn't send."
 msgstr "Couldn't send."
 
+#: src/components/app/composer/Composer.tsx
+msgid "Couldn't send. Your message was not lost."
+msgstr "Couldn't send. Your message was not lost."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't switch Work"
 msgstr "Couldn't switch Work"

@@ -21,7 +21,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
-import { recordChatSubmission, retireChatSubmission } from "@/client/chat-submissions";
+import {
+  getChatSubmissionEpoch,
+  recordChatSubmission,
+  retireChatSubmission,
+} from "@/client/chat-submissions";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
@@ -40,6 +44,7 @@ import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptRefere
 import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
+import { shouldRetireSubmission } from "./chat-submission-retirement";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { TurnList } from "./TurnList";
 import { useChatSubmissionRecovery } from "./useChatSubmissionRecovery";
@@ -127,12 +132,11 @@ export function ChatView({
 
   async function handleSubmit(envelope: ComposerSubmitEnvelope) {
     const text = envelope.text;
-    requestTailFollow();
-    const optimisticUserTurn = actions.appendUserTurn(threadId, text);
-    optimisticBySubmission.current.set(envelope.submissionId, optimisticUserTurn.id);
-    // Durable witness before dispatch: the account-stamped journal entry keeps
-    // the identity and exact fingerprint payload for reload lookup/replay.
-    recordChatSubmission(accountId, {
+    // Durable witness before display and dispatch: a displayed action survives
+    // reload only if the intent was persisted first. If the journal refuses the
+    // write, do not show a row or dispatch — keep the draft and report failure.
+    const epoch = getChatSubmissionEpoch();
+    const recorded = recordChatSubmission(accountId, {
       kind: "existing-thread",
       submissionId: envelope.submissionId,
       threadId,
@@ -143,21 +147,31 @@ export function ChatView({
       references: [...envelope.references],
       activatedSkillSlugs: [...envelope.activatedSkillSlugs],
     });
+    if (!recorded) {
+      return {
+        kind: "rejected" as const,
+        submissionId: envelope.submissionId,
+        acceptedRevision: envelope.acceptedRevision,
+      };
+    }
+    requestTailFollow();
+    const optimisticUserTurn = actions.appendUserTurn(threadId, text);
+    optimisticBySubmission.current.set(envelope.submissionId, optimisticUserTurn.id);
     try {
       const outcome = await controller.submit(threadId, envelope, {
         optimisticUserTurnId: optimisticUserTurn.id,
       });
-      if (outcome.kind !== "ambiguous") {
+      if (shouldRetireSubmission(outcome)) {
         optimisticBySubmission.current.delete(envelope.submissionId);
-        retireChatSubmission(accountId, envelope.submissionId);
+        retireChatSubmission(accountId, envelope.submissionId, epoch);
       }
       return outcome;
     } catch (error) {
-      actions.removeOptimisticUserTurn(threadId, optimisticUserTurn.id);
-      retireChatSubmission(accountId, envelope.submissionId);
+      // An unexpected throw is ambiguous: keep the row and journal so a reload
+      // can still reconcile or replay instead of losing the displayed send.
       announceError(error instanceof Error ? error.message : "Failed to submit message");
       return {
-        kind: "rejected" as const,
+        kind: "ambiguous" as const,
         submissionId: envelope.submissionId,
         acceptedRevision: envelope.acceptedRevision,
       };
@@ -175,12 +189,13 @@ export function ChatView({
   const settleQuarantined = useCallback(
     async (envelope: ComposerSubmitEnvelope, retire: boolean) => {
       const optimisticUserTurnId = optimisticBySubmission.current.get(envelope.submissionId);
+      const epoch = getChatSubmissionEpoch();
       const outcome = await (retire
         ? controller.retire(threadId, envelope, { optimisticUserTurnId })
         : controller.lookup(threadId, envelope, { optimisticUserTurnId }));
-      if (outcome.kind !== "ambiguous") {
+      if (shouldRetireSubmission(outcome)) {
         optimisticBySubmission.current.delete(envelope.submissionId);
-        retireChatSubmission(accountId, envelope.submissionId);
+        retireChatSubmission(accountId, envelope.submissionId, epoch);
       }
       return outcome;
     },

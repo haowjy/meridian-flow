@@ -3,10 +3,14 @@
  * submissions for the mounted thread.
  *
  * On mount it rebuilds one pending user row per journal entry and asks the
- * server for the admission by `submissionId`. An accepted admission renames the
- * row and retires the entry; a definitive rejection leaves the row failed and
- * retires the entry; an ambiguous admission keeps both and exposes the same
- * Check submission status / Start over controls the live composer offers.
+ * server for the admission by `submissionId`:
+ *
+ * - accepted admission: rename the row and retire the entry;
+ * - definitive rejection: leave the failed row, retire the entry;
+ * - `not-seen` (the server has no record): replay the stored fingerprint with
+ *   the same `submissionId` so the displayed send is not lost;
+ * - `pending`/unknown: keep both and expose Check submission status / Start
+ *   over.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -18,6 +22,7 @@ import {
 } from "@/client/chat-submissions";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import type { ThreadStoreActions } from "@/client/stores";
+import { shouldRetireSubmission } from "./chat-submission-retirement";
 
 export type RecoveredChatSubmission = {
   submissionId: string;
@@ -54,6 +59,17 @@ export function useChatSubmissionRecovery(
   const [recovered, setRecovered] = useState<RecoveredChatSubmission[]>([]);
   const turnsRef = useRef(new Map<string, string>());
   const bindKeyRef = useRef("");
+  const replayingRef = useRef(new Set<string>());
+  // A settle that resolves after unmount must not retire or mutate the store:
+  // the next session owns the entry and will reconcile it again.
+  const unmountedRef = useRef(false);
+
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
 
   // Keep the latest collaborators in refs so the recovery effect keys only on
   // the account/thread identity. Re-running it on every action identity change
@@ -79,44 +95,92 @@ export function useChatSubmissionRecovery(
     );
   }, []);
 
+  const forget = useCallback(
+    (submissionId: string) => {
+      restoredTurnIds.delete(`${accountId}:${submissionId}`);
+      dropRecovered(submissionId);
+    },
+    [accountId, dropRecovered],
+  );
+
+  /**
+   * The lookup proved the server never saw this submission. Re-issue the exact
+   * stored fingerprint with the same `submissionId`; because the identity is
+   * stable, a concurrent duplicate admission collapses instead of running twice.
+   */
+  const replay = useCallback(
+    async (entry: ExistingThreadChatSubmission, optimisticTurnId: string): Promise<void> => {
+      if (replayingRef.current.has(entry.submissionId)) return;
+      replayingRef.current.add(entry.submissionId);
+      const epoch = getChatSubmissionEpoch();
+      try {
+        const outcome = await controllerRef.current.submit(
+          threadId,
+          {
+            submissionId: entry.submissionId,
+            acceptedRevision: 0,
+            text: entry.text,
+            blocks: entry.blocks,
+            references: entry.references,
+            activatedSkillSlugs: entry.activatedSkillSlugs,
+          },
+          { optimisticUserTurnId: optimisticTurnId, keepOptimisticOnFailure: true },
+        );
+        if (unmountedRef.current) return;
+        if (getChatSubmissionAccountId() !== accountId) return;
+        if (getChatSubmissionEpoch() !== epoch) return;
+        if (shouldRetireSubmission(outcome)) {
+          retireChatSubmission(accountId, entry.submissionId, epoch);
+          if (outcome.kind === "rejected") {
+            actionsRef.current.patchTurnStatus(threadId, optimisticTurnId, "error");
+          }
+          forget(entry.submissionId);
+          return;
+        }
+        raiseRecovered(entry.submissionId, optimisticTurnId);
+      } finally {
+        replayingRef.current.delete(entry.submissionId);
+      }
+    },
+    [accountId, forget, raiseRecovered, threadId],
+  );
+
   const settle = useCallback(
     async (
-      submissionId: string,
+      entry: ExistingThreadChatSubmission,
       optimisticTurnId: string,
       operation: "lookup" | "retire",
     ): Promise<void> => {
       const epoch = getChatSubmissionEpoch();
       const outcome = await (operation === "retire"
-        ? controllerRef.current.retireSubmission(threadId, submissionId, {
+        ? controllerRef.current.retireSubmission(threadId, entry.submissionId, {
             optimisticUserTurnId: optimisticTurnId,
           })
-        : controllerRef.current.lookupSubmission(threadId, submissionId, {
+        : controllerRef.current.lookupSubmission(threadId, entry.submissionId, {
             optimisticUserTurnId: optimisticTurnId,
             keepOptimisticOnFailure: true,
           }));
       // Account/project lifetime fence: a stale or switched account must not
       // retire another account's entry or settle this row.
+      if (unmountedRef.current) return;
       if (getChatSubmissionAccountId() !== accountId) return;
       if (getChatSubmissionEpoch() !== epoch) return;
 
-      if (outcome.kind === "accepted") {
-        retireChatSubmission(accountId, submissionId);
-        restoredTurnIds.delete(`${accountId}:${submissionId}`);
-        dropRecovered(submissionId);
-        return;
-      }
-      if (outcome.kind === "rejected") {
-        retireChatSubmission(accountId, submissionId);
-        restoredTurnIds.delete(`${accountId}:${submissionId}`);
-        if (operation === "lookup") {
+      if (shouldRetireSubmission(outcome)) {
+        retireChatSubmission(accountId, entry.submissionId, epoch);
+        if (outcome.kind === "rejected" && operation === "lookup") {
           actionsRef.current.patchTurnStatus(threadId, optimisticTurnId, "error");
         }
-        dropRecovered(submissionId);
+        forget(entry.submissionId);
         return;
       }
-      if (operation === "lookup") raiseRecovered(submissionId, optimisticTurnId);
+      if (outcome.kind === "not-seen" && operation === "lookup") {
+        await replay(entry, optimisticTurnId);
+        return;
+      }
+      if (operation === "lookup") raiseRecovered(entry.submissionId, optimisticTurnId);
     },
-    [accountId, dropRecovered, raiseRecovered, threadId],
+    [accountId, forget, raiseRecovered, replay, threadId],
   );
 
   useEffect(() => {
@@ -140,26 +204,32 @@ export function useChatSubmissionRecovery(
         restoredTurnIds.set(mapKey, optimisticTurnId);
       }
       turnsRef.current.set(entry.submissionId, optimisticTurnId);
-      void settle(entry.submissionId, optimisticTurnId, "lookup");
+      void settle(entry, optimisticTurnId, "lookup");
     }
   }, [accountId, threadId, settle]);
 
   const check = useCallback(
     (submissionId: string) => {
       const optimisticTurnId = turnsRef.current.get(submissionId);
-      if (!optimisticTurnId) return;
-      void settle(submissionId, optimisticTurnId, "lookup");
+      const entry = readChatSubmissions(accountId).find(
+        (candidate) => candidate.submissionId === submissionId,
+      );
+      if (!optimisticTurnId || !entry || !isExistingThreadFor(entry, threadId)) return;
+      void settle(entry, optimisticTurnId, "lookup");
     },
-    [settle],
+    [accountId, settle, threadId],
   );
 
   const retire = useCallback(
     (submissionId: string) => {
       const optimisticTurnId = turnsRef.current.get(submissionId);
-      if (!optimisticTurnId) return;
-      void settle(submissionId, optimisticTurnId, "retire");
+      const entry = readChatSubmissions(accountId).find(
+        (candidate) => candidate.submissionId === submissionId,
+      );
+      if (!optimisticTurnId || !entry || !isExistingThreadFor(entry, threadId)) return;
+      void settle(entry, optimisticTurnId, "retire");
     },
-    [settle],
+    [accountId, settle, threadId],
   );
 
   return { recovered, check, retire };

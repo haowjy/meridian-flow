@@ -132,6 +132,23 @@ describe("device chat submission journal", () => {
     expect(journal.entries()).toEqual([]);
   });
 
+  it("refuses a stale-epoch retire after an A→B→A bind", () => {
+    const { journal } = bound();
+    journal.record("account", existingThread());
+    const epochA = journal.epoch;
+
+    journal.setUser("account-b");
+    journal.setUser("account");
+
+    // The live send that started under the first bind must not delete the
+    // entry now that the account has re-bound.
+    expect(journal.retire("account", "sub-1", epochA)).toBe(false);
+    expect(journal.entries()).toHaveLength(1);
+    // The returned session retires it for real once it settles.
+    expect(journal.retire("account", "sub-1", journal.epoch)).toBe(true);
+    expect(journal.entries()).toEqual([]);
+  });
+
   it("returns nothing while unbound", () => {
     const storage = memory();
     const journal = new DeviceChatSubmissionJournal(storage);

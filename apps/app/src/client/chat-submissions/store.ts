@@ -213,8 +213,14 @@ export class DeviceChatSubmissionJournal {
     }
   }
 
-  retire(accountId: string, submissionId: string): boolean {
+  /**
+   * Delete an entry only for the current bind. `expectedEpoch` fences an
+   * A→B→A return: a live send that completes after the account re-bound must
+   * not delete the entry the new session still needs to reconcile.
+   */
+  retire(accountId: string, submissionId: string, expectedEpoch?: number): boolean {
     if (this.state?.accountId !== accountId) return false;
+    if (expectedEpoch !== undefined && this.bindEpoch !== expectedEpoch) return false;
     try {
       this.storage.removeItem(chatSubmissionStorageKey(accountId, submissionId));
     } catch {
