@@ -178,6 +178,28 @@ describe("useChatSubmissionRecovery", () => {
     expect(readChatSubmissions(ACCOUNT)).toHaveLength(1);
   });
 
+  it("reuses the restored row when a thread remounts while still ambiguous", async () => {
+    recordChatSubmission(ACCOUNT, entry());
+    const scenario = new ThreadRunScenario({
+      lookup: async ({ submissionId }) => ({ kind: "pending", submissionId }),
+    });
+
+    await mount(ACCOUNT, scenario, () => undefined);
+    await act(async () => {
+      await vi.waitFor(() => expect(scenario.turns()).toHaveLength(1));
+    });
+    await cleanup?.();
+    cleanup = undefined;
+
+    await mount(ACCOUNT, scenario, () => undefined);
+    await act(async () => {
+      await vi.waitFor(() => expect(scenario.lookupRequests).toHaveLength(2));
+    });
+
+    expect(scenario.turns()).toHaveLength(1);
+    expect(readChatSubmissions(ACCOUNT)).toHaveLength(1);
+  });
+
   it("does not append a second row when remounted after acknowledgement", async () => {
     recordChatSubmission(ACCOUNT, entry());
     const scenario = new ThreadRunScenario({

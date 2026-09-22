@@ -37,6 +37,14 @@ function isExistingThreadFor(
   return entry.kind === "existing-thread" && entry.threadId === threadId;
 }
 
+/**
+ * The thread store outlives a ChatView mount, but a component ref does not.
+ * Remember which restored local row belongs to each unresolved submission for
+ * the session so navigating away and back reuses it instead of appending a
+ * second pending row. Cleared on acknowledgement/rejection.
+ */
+const restoredTurnIds = new Map<string, string>();
+
 export function useChatSubmissionRecovery(
   threadId: string,
   accountId: string,
@@ -93,11 +101,13 @@ export function useChatSubmissionRecovery(
 
       if (outcome.kind === "accepted") {
         retireChatSubmission(accountId, submissionId);
+        restoredTurnIds.delete(`${accountId}:${submissionId}`);
         dropRecovered(submissionId);
         return;
       }
       if (outcome.kind === "rejected") {
         retireChatSubmission(accountId, submissionId);
+        restoredTurnIds.delete(`${accountId}:${submissionId}`);
         if (operation === "lookup") {
           actionsRef.current.patchTurnStatus(threadId, optimisticTurnId, "error");
         }
@@ -120,11 +130,17 @@ export function useChatSubmissionRecovery(
     const entries = readChatSubmissions(accountId).filter((entry) =>
       isExistingThreadFor(entry, threadId),
     );
+    const existingTurns = actionsRef.current.turns(threadId) ?? [];
     for (const entry of entries) {
       if (turnsRef.current.has(entry.submissionId)) continue;
-      const turn = actionsRef.current.appendUserTurn(threadId, entry.text);
-      turnsRef.current.set(entry.submissionId, turn.id);
-      void settle(entry.submissionId, turn.id, "lookup");
+      const mapKey = `${accountId}:${entry.submissionId}`;
+      let optimisticTurnId = restoredTurnIds.get(mapKey);
+      if (!optimisticTurnId || !existingTurns.some((turn) => turn.id === optimisticTurnId)) {
+        optimisticTurnId = actionsRef.current.appendUserTurn(threadId, entry.text).id;
+        restoredTurnIds.set(mapKey, optimisticTurnId);
+      }
+      turnsRef.current.set(entry.submissionId, optimisticTurnId);
+      void settle(entry.submissionId, optimisticTurnId, "lookup");
     }
   }, [accountId, threadId, settle]);
 
