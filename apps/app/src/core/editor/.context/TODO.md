@@ -1,5 +1,26 @@
 # Editor — TODO
 
+## Make collaboration restart and save status honest
+
+`DocumentSession.restartTransport()` destroys the old Hocuspocus provider and
+then gives the replacement provider the same session-owned `Awareness` object.
+Hocuspocus 4.3 destroys caller-supplied Awareness in `provider.destroy()`, so a
+terminal authorization recovery can reuse an object whose state, listeners, and
+stale-peer timer are already gone. Keep the provider/Awareness stable while
+replacing or pausing only the room socket, or make provider ownership explicit;
+then probe remote caret disappearance and restoration across terminal recovery.
+
+Do not promote Hocuspocus 4.3's `unsyncedChanges === 0` to an ongoing durable
+"saved" claim: reconnect resets the counter to one even when several update
+messages are queued. Define the acknowledgement horizon the UI needs before
+surfacing saved state. Also surface an authorized editable session that remains
+`detached`; `SyncStatus.tsx` currently hides it, which made a permanently
+local-only manuscript indistinguishable from a healthy one.
+
+Affected paths: `apps/app/src/core/editor/document-session.ts`,
+`apps/app/src/core/transport/hocuspocus-document-transport.ts`, and
+`apps/app/src/features/editor/SyncStatus.tsx`.
+
 ## Draft review
 
 - **Cursor preservation across live ↔ draft remount.** Scroll uses best-effort
