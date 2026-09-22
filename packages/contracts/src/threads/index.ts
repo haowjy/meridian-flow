@@ -194,7 +194,7 @@ export type JournalEventType =
   | "model.request_sent"
   | "model.response_received"
   | "model.retried"
-  | "background.started" // RETAINED — background-run lifecycle record for the notification lane; no reducer yet
+  | "background.started" // RETAINED — background-run lifecycle record reserved for the notification lane (not this branch); no reducer yet
   | "background.completed"
   | "background.failed"
   | "background.rearmed"
