@@ -23,8 +23,9 @@ flowchart TD
   selection. No later mount effect restores a document or opens the first file.
 - **Bare `/editor` without a local-document history pointer:** explicitly empty
   on direct entry, reload and Back/Forward. Empty means no tab is opened. The
-  pane may offer the account's recently opened documents as a chooser; choosing
-  navigates, and entry itself still opens nothing.
+  pane may offer this project's recently opened documents as a chooser. It paints
+  the device record, including after reload, and does not wait for the server
+  list. Choosing navigates, and entry itself still opens nothing.
   Closing every tab and switching screens cannot reopen a closed identity.
 - **Tab-strip chooser control:** clear the document address and any local-document
   history pointer, and leave the working set alone. A local draft is already
