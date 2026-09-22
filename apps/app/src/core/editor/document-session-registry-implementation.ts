@@ -159,8 +159,10 @@ export class DocumentSessionRegistry
       await this.localTransferReservations.get(localTransferKey(documentId))?.settled;
       this.requireAccountRuntimeOpen();
       const coordination = await this.configuredCoordination();
+      const originLineageHandle =
+        (await this.localResources?.lineageHandleFor(projectId, documentId)) ?? undefined;
       const admitted = await this.translateCoordination(() =>
-        coordination.admit(projectId, documentId, generation),
+        coordination.admit(projectId, documentId, generation, originLineageHandle),
       );
       return {
         accountId: admitted.accountId,

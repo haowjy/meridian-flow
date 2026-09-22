@@ -436,6 +436,7 @@ export class DocumentSessionAuthorityStore {
     documentId: DocumentId;
     projectId: ProjectId;
     generation: AvailabilityGeneration;
+    originLineageHandle?: string;
   }): Promise<AdmissionDecision> {
     assertAvailabilityGeneration(input.generation);
     const database = await this.databasePromise;
@@ -494,11 +495,22 @@ export class DocumentSessionAuthorityStore {
     const exactDatabaseName =
       reusable?.exactDatabaseName ??
       documentSessionPersistenceKey(this.accountId, input.documentId, input.generation);
-    room.persistence = reusable ?? {
-      phase: "bindable",
-      generation: persistenceGeneration,
-      exactDatabaseName,
-    };
+    // The originating resource lineage is the authority's identity for local
+    // adoption; a server-phase admission that knows it must record it or a later
+    // cached open reads this record as a foreign lineage and refuses to adopt.
+    if (reusable) {
+      room.persistence =
+        input.originLineageHandle && !reusable.originLineageHandle
+          ? { ...reusable, originLineageHandle: input.originLineageHandle }
+          : reusable;
+    } else {
+      room.persistence = {
+        phase: "bindable",
+        generation: persistenceGeneration,
+        exactDatabaseName,
+        ...(input.originLineageHandle ? { originLineageHandle: input.originLineageHandle } : {}),
+      };
+    }
     room.documentAdmittedThrough = maximumGeneration(
       room.documentAdmittedThrough,
       input.generation,
