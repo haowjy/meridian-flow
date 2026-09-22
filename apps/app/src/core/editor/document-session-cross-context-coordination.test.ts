@@ -197,6 +197,19 @@ it("claims an exact legacy handle-less authority during cached-session recovery"
       phase: "bindable",
       originLineageHandle: undefined,
     });
+    await expect(
+      coordination.recoverLocalAdoption(
+        projectId,
+        documentId,
+        "119",
+        lineageHandle,
+        admitted.exactDatabaseName,
+      ),
+    ).rejects.toThrow("Local adoption recovery generation is stale");
+    expect(await persistedAuthority(store)).toEqual({
+      phase: "bindable",
+      originLineageHandle: undefined,
+    });
 
     await coordination.recoverLocalAdoption(
       projectId,
