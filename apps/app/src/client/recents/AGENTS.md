@@ -8,9 +8,11 @@ known locator, or clear a removal.
 - Bind the account before any read. A user mismatch discards the record.
 - An open is written here before the record POST. The server's five-second
   interval does not reorder this device. Rank is the later `openedAt`.
-- A removal lives until that document is opened again on this device. Lists
-  never clear it. Availability is the only removal and identity writer besides
-  an open tab.
+- Lists never clear a removal and never delete. Availability is the only removal
+  and identity writer besides an open tab, and it should remember only ids dropped
+  from this record. A mixed batch currently appends ids this record does not hold;
+  the cap can drop a real removal, and the next list imports it. Do not let lists
+  delete to cover that.
 - One bind epoch fences a cached list across account switches. Do not turn that
   into per-item revisions or an acknowledgement protocol.
 - A local draft is a resource handle, not an availability subject. Reopen it
