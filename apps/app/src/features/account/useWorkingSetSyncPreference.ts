@@ -30,6 +30,14 @@ export type WorkingSetSyncRowError = {
 
 export type WorkingSetSyncPreference = {
   value: boolean;
+  /**
+   * The last revision-and-epoch-confirmed server value. Account-lifetime
+   * consumers (the working-set driver) follow this instead of the optimistic
+   * `value`, so a stale loader commit cannot move sync state.
+   */
+  confirmed: boolean;
+  /** Whether an authoritative value exists (a loader seed or a local confirm). */
+  available: boolean;
   pending: boolean;
   error: WorkingSetSyncRowError | null;
   change: (value: boolean) => void;
@@ -71,10 +79,12 @@ export function useWorkingSetSyncPreference(serverValue: boolean | null): Workin
   const accountEpoch = useAccountEpochSignal();
   const router = useRouter();
   const [value, setValue] = useState(serverValue ?? false);
+  // `serverConfirmed` drives the shared override; `confirmedRef` stays the
+  // synchronous base a rejection reverts to. Both advance on the same settle.
+  const [serverConfirmed, setServerConfirmed] = useState<boolean | null>(serverValue);
   const [error, setError] = useState<WorkingSetSyncRowError | null>(null);
   const confirmedRef = useRef(serverValue ?? false);
   const revisionRef = useRef(0);
-  const pendingRevisionRef = useRef<number | null>(null);
   const accountIdRef = useRef(accountId);
   accountIdRef.current = accountId;
   const epochSignalRef = useRef(accountEpoch);
@@ -87,6 +97,7 @@ export function useWorkingSetSyncPreference(serverValue: boolean | null): Workin
     // write can echo a pre-toggle value and clobber the latest intent.
     if (revisionRef.current !== 0) return;
     confirmedRef.current = serverValue;
+    setServerConfirmed(serverValue);
     setValue(serverValue);
   }, [serverValue]);
 
@@ -107,6 +118,7 @@ export function useWorkingSetSyncPreference(serverValue: boolean | null): Workin
   function applyConfirmed(settings: AccountSettings, variables: WriteVariables) {
     if (!isCurrentEpoch(variables)) return;
     confirmedRef.current = settings.workingSetSyncEnabled;
+    setServerConfirmed(settings.workingSetSyncEnabled);
     if (variables.revision !== revisionRef.current) return;
     setValue(settings.workingSetSyncEnabled);
     setError(null);
@@ -141,9 +153,6 @@ export function useWorkingSetSyncPreference(serverValue: boolean | null): Workin
       setError({ kind, retryValue: variables.value });
       void reconcile(variables);
     },
-    onSettled: (_data, _error, variables) => {
-      if (pendingRevisionRef.current === variables.revision) pendingRevisionRef.current = null;
-    },
   });
 
   function reconcile(variables: WriteVariables) {
@@ -161,15 +170,16 @@ export function useWorkingSetSyncPreference(serverValue: boolean | null): Workin
           return;
         }
         // Unconfirmed: keep the optimistic intent and the ambiguous copy so
-        // Retry can re-dispatch.
+        // Retry can re-dispatch. The read is still authoritative for the
+        // confirmed base the driver follows.
         confirmedRef.current = settings.workingSetSyncEnabled;
+        setServerConfirmed(settings.workingSetSyncEnabled);
       })
       .catch(() => undefined);
   }
 
   function change(next: boolean) {
     const revision = ++revisionRef.current;
-    pendingRevisionRef.current = revision;
     setValue(next);
     setError(null);
     mutation.mutate({
@@ -185,5 +195,13 @@ export function useWorkingSetSyncPreference(serverValue: boolean | null): Workin
     change(error.retryValue);
   }
 
-  return { value, pending: mutation.isPending, error, change, retry };
+  return {
+    value,
+    confirmed: serverConfirmed === true,
+    available: serverConfirmed !== null,
+    pending: mutation.isPending,
+    error,
+    change,
+    retry,
+  };
 }
