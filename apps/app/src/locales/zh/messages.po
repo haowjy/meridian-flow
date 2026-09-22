@@ -720,6 +720,10 @@ msgstr ""
 msgid "Checking Work…"
 msgstr ""
 
+#: src/features/billing/CheckoutReturnNotice.tsx
+#~ msgid "Checkout cancelled. Nothing was charged."
+#~ msgstr ""
+
 #: src/features/billing/BillingPage.tsx
 msgid "Checkout unavailable."
 msgstr ""
@@ -880,6 +884,10 @@ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Confirm"
+msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "Confirming your purchase…"
 msgstr ""
 
 #. placeholder {0}: state.attempt
@@ -2396,6 +2404,11 @@ msgstr ""
 msgid "Open this document in a project to upload figures."
 msgstr ""
 
+#: src/features/billing/BillingPage.tsx
+#: src/features/billing/ExtraUsagePicker.tsx
+msgid "Opening checkout…"
+msgstr ""
+
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening document…"
 msgstr ""
@@ -2476,6 +2489,14 @@ msgstr ""
 #: src/features/chat/IndependentChatView.tsx
 msgid "Project couldn’t load"
 msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "Purchase confirmed."
+msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+#~ msgid "Purchase confirmed. Your balance has been updated."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Put the caret in a table first."
@@ -2737,6 +2758,10 @@ msgstr ""
 
 #: src/features/chat/ChildReportBlock.tsx
 msgid "Return"
+msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "Returned from the billing portal."
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
@@ -3691,6 +3716,18 @@ msgstr ""
 msgid "Wait for this response to finish, then try again."
 msgstr ""
 
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
+msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "We couldn’t confirm this purchase. Check your balance before trying again."
+msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+#~ msgid "We’re still confirming your purchase. Your balance will update shortly."
+#~ msgstr ""
+
 #: src/features/home/HomeHero.tsx
 msgid "What are you working on?"
 msgstr "你正在研究什么？"
@@ -3802,6 +3839,10 @@ msgstr "昨天"
 #: src/features/chat/FormBlock.tsx
 #: src/features/chat/TextBlock.tsx
 msgid "you answered"
+msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "You left checkout. No purchase was confirmed."
 msgstr ""
 
 #: src/features/project/home/HomeFeed.tsx
