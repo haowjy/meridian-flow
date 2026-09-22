@@ -31,7 +31,8 @@
 
 ### Fixed
 
-- Opening a document updates this project's recently opened list immediately, including after reload, without waiting for the server. A failed record or an unchanged server row keeps that opening. A stale list cannot erase or reorder it.
+- Opening a document updates this project's recently opened list immediately, including after reload, without waiting for the server. A failed record or an unchanged server row keeps that opening. A stale list cannot erase or reorder it. A removed document does not return from a later list until it is opened again. Switching accounts and back does not replay the previous list onto the record.
+- The tab strip's Recently opened control reaches the list while a local draft is selected. Back returns to that draft. Tabs stay open.
 - Child completion emits `agent.run_completed` instead of the spawn-named `agent.spawn_completed`; a continue is not a spawn.
 - A thread that advanced while the writer was elsewhere — a background child's report waking the parent — now appears on return without a manual reload: the snapshot revalidates on activation and refetches when a new run starts. A server-initiated run on a mounted idle thread also streams its continuation live.
 

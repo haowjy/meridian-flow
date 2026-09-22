@@ -11,7 +11,6 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import { isWorkScopedProjectContextScheme } from "@meridian/contracts/protocol";
 import { useRouter } from "@tanstack/react-router";
 import { FilePlus } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -308,16 +307,13 @@ function recentDocumentHref(
   if (!projectSlug || item.address.kind !== "document") return null;
   const path = readableRecentPath(item.address.path);
   if (!path) return null;
-  const workSlug = isWorkScopedProjectContextScheme(item.address.scheme)
-    ? item.address.workSlug
-    : null;
   return projectAddressHref({
     projectSlug,
     destination: {
       kind: "document",
       scheme: item.address.scheme,
       path,
-      workSlug,
+      workSlug: null,
     },
     chat: { kind: "absent" },
     work: { kind: "absent" },

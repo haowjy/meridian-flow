@@ -1,4 +1,4 @@
-/** Account recents keep a newer local opening ahead of a stale or unchanged server list. */
+/** A list may add a newer opening. It cannot delete, overwrite a locator, or undo a removal. */
 import { describe, expect, it } from "vitest";
 import {
   ACCOUNT_RECENTS_CAP,
@@ -37,13 +37,7 @@ function open(
     projectId,
     name: `${documentId}.md`,
     openedAt,
-    address: {
-      kind: "document",
-      scheme: "manuscript",
-      path: `/${documentId}.md`,
-      workId: null,
-      workSlug: null,
-    },
+    address: { kind: "document", scheme: "manuscript", path: `/${documentId}.md` },
   });
 }
 
@@ -53,9 +47,12 @@ function row(documentId: string, openedAt: string, name = `${documentId}.md`): S
     name,
     scheme: "manuscript",
     path: `/${documentId}.md`,
-    workSlug: null,
     openedAt,
   };
+}
+
+function ids(recents: DeviceAccountRecentsStore) {
+  return recents.forProject("project").map((item) => item.documentId);
 }
 
 describe("account recents", () => {
@@ -76,7 +73,7 @@ describe("account recents", () => {
     open(restored, "chapter", "2026-09-22T12:00:00.000Z");
     const again = new DeviceAccountRecentsStore(storage);
     again.setUser("account");
-    expect(again.forProject("project").map((item) => item.documentId)).toEqual(["chapter"]);
+    expect(ids(again)).toEqual(["chapter"]);
   });
 
   it("caps the account at 50 and puts the newest open first", () => {
@@ -85,152 +82,166 @@ describe("account recents", () => {
     for (let index = 0; index < ACCOUNT_RECENTS_CAP + 1; index += 1) {
       open(recents, `doc-${index}`, `2026-09-22T12:00:${String(index).padStart(2, "0")}.000Z`);
     }
-    const ids = recents.items.map((item) => item.documentId);
-    expect(ids).toHaveLength(ACCOUNT_RECENTS_CAP);
-    expect(ids[0]).toBe(`doc-${ACCOUNT_RECENTS_CAP}`);
-    expect(ids).not.toContain("doc-0");
+    const listed = recents.items.map((item) => item.documentId);
+    expect(listed).toHaveLength(ACCOUNT_RECENTS_CAP);
+    expect(listed[0]).toBe(`doc-${ACCOUNT_RECENTS_CAP}`);
+    expect(listed).not.toContain("doc-0");
     open(recents, "doc-1", "2026-09-22T13:00:00.000Z");
     expect(recents.items[0]?.documentId).toBe("doc-1");
   });
 
-  it("keeps a local opening that a list started before, or has not acknowledged", () => {
+  it("keeps a local opening an omitting or older list does not contain", () => {
     const recents = store();
     recents.setUser("account");
+    open(recents, "chapter", "2026-09-22T12:00:00.000Z");
     open(recents, "older", "2026-09-22T11:00:00.000Z");
-    const before = recents.revision;
-    open(recents, "chapter", "2026-09-22T12:00:00.000Z");
 
+    recents.applyServerList("account", "project", [], recents.epoch);
     recents.applyServerList(
       "account",
       "project",
-      [row("older", "2026-09-22T11:00:00.000Z")],
-      before,
+      [row("older", "2026-09-22T10:00:00.000Z", "stale.md")],
+      recents.epoch,
     );
-    expect(recents.forProject("project").map((item) => item.documentId)).toEqual([
-      "chapter",
-      "older",
-    ]);
-
-    recents.applyServerList("account", "project", [], recents.revision);
-    expect(recents.forProject("project").map((item) => item.documentId)).toEqual([
-      "chapter",
-      "older",
-    ]);
+    expect(ids(recents)).toEqual(["chapter", "older"]);
+    expect(recents.forProject("project")[1]).toMatchObject({
+      name: "older.md",
+      openedAt: "2026-09-22T11:00:00.000Z",
+      address: { path: "/older.md" },
+    });
   });
 
-  it("does not restore server rank when the server row did not move", () => {
-    const recents = store();
-    recents.setUser("account");
-    open(recents, "beta", "2026-09-22T12:00:00.000Z");
-    recents.noteServerRow("account", "beta");
-    open(recents, "chapter", "2026-09-22T12:00:05.000Z");
-    const captured = recents.revision;
-    recents.noteServerRow("account", "chapter");
-
-    recents.applyServerList(
-      "account",
-      "project",
-      [row("beta", "2026-09-22T12:00:04.000Z"), row("chapter", "2026-09-22T11:00:00.000Z")],
-      captured,
-    );
-    expect(recents.forProject("project").map((item) => item.documentId)).toEqual([
-      "chapter",
-      "beta",
-    ]);
-    expect(recents.forProject("project")[0]?.openedAt).toBe("2026-09-22T12:00:05.000Z");
-  });
-
-  it("adopts a newer server open and drops a row the server no longer lists", () => {
+  it("adopts a newer server open and adds an unknown row without demoting a local one", () => {
     const recents = store();
     recents.setUser("account");
     open(recents, "chapter", "2026-09-22T12:00:00.000Z");
-    recents.noteServerRow("account", "chapter");
-    const captured = recents.revision;
 
     recents.applyServerList(
       "account",
       "project",
       [row("chapter", "2026-09-22T12:05:00.000Z"), row("other", "2026-09-22T12:04:00.000Z")],
-      captured,
+      recents.epoch,
     );
     expect(recents.forProject("project").map((item) => [item.documentId, item.openedAt])).toEqual([
       ["chapter", "2026-09-22T12:05:00.000Z"],
       ["other", "2026-09-22T12:04:00.000Z"],
     ]);
-
-    recents.applyServerList(
-      "account",
-      "project",
-      [row("other", "2026-09-22T12:04:00.000Z")],
-      recents.revision,
-    );
-    expect(recents.forProject("project").map((item) => item.documentId)).toEqual(["other"]);
+    expect(recents.forProject("project")[0]?.name).toBe("chapter.md");
   });
 
-  it("does not let a list that started before deletion resurrect the row", () => {
+  it("does not let an omitting list clear a removal or a later list resurrect it", () => {
     const recents = store();
     recents.setUser("account");
     open(recents, "chapter", "2026-09-22T12:00:00.000Z");
-    recents.noteServerRow("account", "chapter");
-    const beforeDelete = recents.revision;
     recents.applyAvailability("account", {
       removed: [{ documentId: "chapter", projectId: "project" }],
       updates: [],
     });
 
+    recents.applyServerList("account", "project", [], recents.epoch);
     recents.applyServerList(
       "account",
       "project",
       [row("chapter", "2026-09-22T12:00:00.000Z")],
-      beforeDelete,
+      recents.epoch,
     );
+    expect(ids(recents)).toEqual([]);
+
+    open(recents, "chapter", "2026-09-22T13:00:00.000Z");
     recents.applyServerList(
       "account",
       "project",
       [row("chapter", "2026-09-22T12:00:00.000Z")],
-      recents.revision,
+      recents.epoch,
     );
-    expect(recents.forProject("project")).toEqual([]);
+    expect(ids(recents)).toEqual(["chapter"]);
   });
 
-  it("updates a renamed locator without moving rank, and ignores a stale list name", () => {
+  it("updates identity from availability and an open tab, including a local draft rename", () => {
     const recents = store();
     recents.setUser("account");
     open(recents, "chapter", "2026-09-22T12:00:00.000Z");
-    recents.noteServerRow("account", "chapter");
-    const beforeRename = recents.revision;
+    recents.touch("account", {
+      documentId: "draft",
+      projectId: "project",
+      name: "Untitled",
+      openedAt: "2026-09-22T12:01:00.000Z",
+      address: { kind: "local", resourceHandle: "resource" },
+    });
     recents.applyAvailability("account", {
       removed: [],
-      updates: [
-        {
-          documentId: "chapter",
-          name: "Renamed.md",
-          scheme: "kb",
-          path: "/Renamed.md",
-          workId: null,
-        },
-      ],
+      updates: [{ documentId: "chapter", name: "Renamed.md", scheme: "kb", path: "/Renamed.md" }],
     });
-    const renamed = recents.forProject("project")[0];
-    expect(renamed?.openedAt).toBe("2026-09-22T12:00:00.000Z");
-    expect(renamed?.name).toBe("Renamed.md");
-    expect(renamed?.address).toMatchObject({ scheme: "kb", path: "/Renamed.md" });
+    recents.patchFromTabs("account", "project", [
+      {
+        documentId: "draft",
+        name: "Chapter one",
+        address: { kind: "local", resourceHandle: "resource" },
+      },
+    ]);
 
+    const filed = recents.forProject("project").find((item) => item.documentId === "chapter");
+    const draft = recents.forProject("project").find((item) => item.documentId === "draft");
+    expect(filed).toMatchObject({
+      name: "Renamed.md",
+      openedAt: "2026-09-22T12:00:00.000Z",
+      address: { scheme: "kb", path: "/Renamed.md" },
+    });
+    expect(draft).toMatchObject({
+      name: "Chapter one",
+      openedAt: "2026-09-22T12:01:00.000Z",
+      address: { kind: "local", resourceHandle: "resource" },
+    });
     recents.applyServerList(
       "account",
       "project",
       [row("chapter", "2026-09-22T12:00:00.000Z", "chapter.md")],
-      beforeRename,
+      recents.epoch,
     );
-    expect(recents.forProject("project")[0]?.name).toBe("Renamed.md");
+    expect(recents.forProject("project").find((item) => item.documentId === "chapter")?.name).toBe(
+      "Renamed.md",
+    );
+  });
+
+  it("ignores a list captured before the account was bound again", () => {
+    const recents = store();
+    recents.setUser("account");
+    const staleEpoch = recents.epoch;
+    open(recents, "chapter", "2026-09-22T12:00:00.000Z");
+    recents.setUser("other");
+    recents.setUser("account");
+
+    expect(
+      recents.applyServerList(
+        "account",
+        "project",
+        [row("frozen", "2026-09-22T12:00:00.000Z")],
+        staleEpoch,
+      ),
+    ).toBe(false);
+    expect(recents.items).toEqual([]);
+
+    recents.applyServerList(
+      "account",
+      "project",
+      [row("fresh", "2026-09-22T12:00:00.000Z")],
+      recents.epoch,
+    );
+    expect(ids(recents)).toEqual(["fresh"]);
   });
 
   it("refuses a switched account's in-flight list", () => {
     const recents = store();
     recents.setUser("account");
     open(recents, "chapter", "2026-09-22T12:00:00.000Z");
+    const epoch = recents.epoch;
     recents.setUser("other");
-    recents.applyServerList("account", "project", [row("leaked", "2026-09-22T13:00:00.000Z")], 0);
+    recents.applyServerList(
+      "account",
+      "project",
+      [row("leaked", "2026-09-22T13:00:00.000Z")],
+      epoch,
+    );
     expect(recents.items).toEqual([]);
   });
 });

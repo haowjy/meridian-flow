@@ -70,9 +70,11 @@ ContextPaneController
 
 `RecentDocumentsLanding` is the empty pane. It lists this project's recently-opened
 documents and navigates on click. It does not open a tab on mount. The tab
-strip's leading control (`showEditorRecents`) reaches it without closing a tab:
-the address owns which document is visible, the store owns what stays open, so
-clearing the address leaves the working set intact. Recording
+strip's leading control (`showEditorRecents`) reaches it without closing a tab.
+The address owns which document is visible, including a local-document history
+pointer on `/editor`. Clearing that pointer leaves the working set intact, and
+Back returns to the document that was showing. Already on the chooser is a no-op.
+Recording
 is not the navigation adapter's job: the document row materializes after the
 open intent, so a write there races persistence and is lost. The active editor
 tab records once it is in front of the writer, including a local draft. That

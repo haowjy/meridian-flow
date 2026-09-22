@@ -1,9 +1,6 @@
 /** Fold admitted availability into account recents. Catalog identity, not a second catalog. */
 import { PROJECT_SCOPED_CONTEXT_URI_SCHEMES } from "@meridian/contracts/context-uri";
-import {
-  isProjectContextTreeScheme,
-  isWorkScopedProjectContextScheme,
-} from "@meridian/contracts/protocol";
+import { isProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { applyRecentAvailability, type RecentIdentityUpdate } from "@/client/recents";
 import type { ProjectDocumentAvailabilityCommand } from "./project-context-availability-coordinator";
 
@@ -32,10 +29,6 @@ export function recentAvailabilityFacts(commands: readonly ProjectDocumentAvaila
       name: command.document.name,
       scheme,
       path,
-      workId:
-        isWorkScopedProjectContextScheme(scheme) && command.document.scope.kind === "work"
-          ? command.document.scope.workId
-          : null,
     });
   }
   return { removed, updates };
