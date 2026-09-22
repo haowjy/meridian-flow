@@ -157,6 +157,32 @@ describe("account recents", () => {
     expect(ids(recents)).toEqual(["chapter"]);
   });
 
+  it("does not let foreign removals evict a recent removal in a mixed availability batch", () => {
+    const recents = store();
+    recents.setUser("account");
+    open(recents, "chapter", "2026-09-22T12:00:00.000Z");
+    open(recents, "live", "2026-09-22T12:01:00.000Z");
+    recents.applyAvailability("account", {
+      removed: [{ documentId: "chapter", projectId: "project" }],
+      updates: [],
+    });
+    recents.applyAvailability("account", {
+      removed: Array.from({ length: ACCOUNT_RECENTS_CAP }, (_, index) => ({
+        documentId: `foreign-${index}`,
+        projectId: "project",
+      })),
+      updates: [{ documentId: "live", name: "Renamed.md", scheme: "kb", path: "/Renamed.md" }],
+    });
+    recents.applyServerList(
+      "account",
+      "project",
+      [row("chapter", "2026-09-22T13:00:00.000Z")],
+      recents.epoch,
+    );
+    expect(ids(recents)).toEqual(["live"]);
+    expect(recents.items[0]?.name).toBe("Renamed.md");
+  });
+
   it("updates identity from availability and an open tab, including a local draft rename", () => {
     const recents = store();
     recents.setUser("account");

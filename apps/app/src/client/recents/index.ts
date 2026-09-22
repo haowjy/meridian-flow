@@ -3,14 +3,12 @@
  * discards the record before any consumer can paint it.
  */
 import {
-  ACCOUNT_RECENTS_STORAGE_KEY,
   type AccountRecentItem,
   DeviceAccountRecentsStore,
   type RecentAddress,
   type RecentIdentityUpdate,
   type RecentOpening,
   type RecentRemoval,
-  type RecentsStorage,
   type ServerRecentRow,
 } from "./store";
 
@@ -39,7 +37,12 @@ const listeners = new Set<() => void>();
 
 function browserStore(): DeviceAccountRecentsStore | null {
   if (typeof window === "undefined") return null;
-  store ??= new DeviceAccountRecentsStore(window.localStorage);
+  store ??= new DeviceAccountRecentsStore({
+    // Access the browser getter inside the store's storage-error boundary too.
+    getItem: (key) => window.localStorage.getItem(key),
+    setItem: (key, value) => window.localStorage.setItem(key, value),
+    removeItem: (key) => window.localStorage.removeItem(key),
+  });
   return store;
 }
 
@@ -114,12 +117,4 @@ export function patchAccountRecentsFromTabs(
   tabs: readonly { documentId: string; name: string; address: RecentAddress }[],
 ): void {
   if (browserStore()?.patchFromTabs(accountId, projectId, tabs)) publish();
-}
-
-export function accountRecentsStorageKey(): string {
-  return ACCOUNT_RECENTS_STORAGE_KEY;
-}
-
-export function createAccountRecentsStore(storage: RecentsStorage): DeviceAccountRecentsStore {
-  return new DeviceAccountRecentsStore(storage);
 }
