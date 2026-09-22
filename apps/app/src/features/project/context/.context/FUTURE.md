@@ -1,7 +1,8 @@
 # Recently opened landing follow-up
 
-Code-local nice-to-haves for `RecentDocumentsLanding.tsx` and the recorder in
-`recent-documents-api.ts`. Nothing here is a known defect.
+Code-local nice-to-haves for `RecentDocumentsLanding.tsx`, the recorder in
+`recent-documents-api.ts`, and the device record those surfaces read. Nothing
+here is a known defect.
 
 - A confirmed-empty list still shows skeletons for one round trip when the query
   refetches, because `staleTime: 0` plus default `refetchOnWindowFocus` refetches
@@ -27,3 +28,14 @@ Code-local nice-to-haves for `RecentDocumentsLanding.tsx` and the recorder in
 - Prune now runs only when a row moved, so an unlistable row can linger in the
   table until the next real open. Bounded by the cap and invisible to the list
   (which filters it), so it is storage hygiene on a delay, not staleness.
+- `apps/app/src/client/recents/store.ts` `rememberRemovals` keeps 50 removals
+  this record actually held. After 50 later own removals, the oldest falls off
+  and a list that still has that id can import it. Revisit only if a writer
+  sees a long-closed row return after many later removals on this device. Do
+  not grow an unbounded log, and do not let lists delete to cover the miss.
+- A closed row's rename or delete waits on window focus, coming online, or the
+  60s poll in `account-feature-context.tsx`, which calls
+  `availability.recheckWatchedProjects`. `recent-availability.ts` then folds
+  that batch into the device record. An unfocused tab can keep a deleted or
+  renamed row on the landing until one of those fires. Do not recheck the set
+  on catalog cache writes to close that lag.
