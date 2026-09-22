@@ -54,13 +54,6 @@ export interface LocalDocumentSessionAdoptionPort {
     lineageHandle: string;
     exactDatabaseName: string;
   }): Promise<"clear" | "adopting" | "bindable" | "terminal" | "mismatch">;
-  recover(input: {
-    projectId: ProjectId;
-    documentId: DocumentId;
-    generation: AvailabilityGeneration;
-    lineageHandle: string;
-    exactDatabaseName: string;
-  }): Promise<{ lease: LiveDocumentSessionLease; session: DocumentSession }>;
   bindAndAdopt(input: {
     projectId: ProjectId;
     documentId: DocumentId;

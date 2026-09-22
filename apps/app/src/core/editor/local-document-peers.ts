@@ -1,12 +1,17 @@
-/** Same-incarnation local Yjs peers; never server admission or persistence ownership. */
+/** Same-incarnation local content and awareness peers; never server admission or persistence ownership. */
 import { collabSchemaKeyTag } from "@meridian/prosemirror-schema";
 import * as decoding from "lib0/decoding";
 import * as encoding from "lib0/encoding";
 import type { IndexeddbPersistence } from "y-indexeddb";
+import { type Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
 import * as sync from "y-protocols/sync";
 import * as Y from "yjs";
 
-type PeerMessage = { kind: "hello" | "sync"; payload: Uint8Array };
+type PeerMessage =
+  | { kind: "hello" | "sync" | "awareness"; payload: Uint8Array }
+  | { kind: "query-awareness" };
+
+type AwarenessChanges = { added: number[]; updated: number[]; removed: number[] };
 
 /** Read the retained y-indexeddb log without borrowing its private compaction cursor. */
 function readPersistedUpdates(database: IDBDatabase): Promise<Uint8Array[]> {
@@ -27,15 +32,19 @@ export class LocalDocumentPeers {
   constructor(
     private readonly document: Y.Doc,
     private readonly persistence: IndexeddbPersistence,
+    private readonly awareness: Awareness,
   ) {
     this.channel = new BroadcastChannel(
       `meridian:document-peers:v1:${collabSchemaKeyTag()}:${encodeURIComponent(persistence.name)}`,
     );
     this.channel.onmessage = this.receive;
     this.document.on("update", this.sendUpdate);
+    this.awareness.on("update", this.sendAwarenessUpdate);
     window.addEventListener("focus", this.wake);
     window.addEventListener("pageshow", this.wake);
     window.document.addEventListener("visibilitychange", this.onVisibility);
+    this.channel.postMessage({ kind: "query-awareness" } satisfies PeerMessage);
+    this.sendAwareness([this.awareness.clientID]);
     this.wake();
   }
 
@@ -45,7 +54,15 @@ export class LocalDocumentPeers {
   };
 
   private receive = ({ data }: MessageEvent<PeerMessage>): void => {
-    if (this.stopped || (data.kind !== "hello" && data.kind !== "sync")) return;
+    if (this.stopped) return;
+    if (data.kind === "query-awareness") {
+      this.sendAwareness([...this.awareness.getStates().keys()]);
+      return;
+    }
+    if (data.kind === "awareness") {
+      applyAwarenessUpdate(this.awareness, data.payload, this);
+      return;
+    }
     const decoder = decoding.createDecoder(data.payload);
     const reply = encoding.createEncoder();
     while (decoding.hasContent(decoder)) sync.readSyncMessage(decoder, reply, this.document, this);
@@ -61,6 +78,22 @@ export class LocalDocumentPeers {
     sync.writeUpdate(encoder, update);
     this.send("sync", encoder);
   };
+
+  private sendAwarenessUpdate = (
+    { added, updated, removed }: AwarenessChanges,
+    origin: unknown,
+  ): void => {
+    if (this.stopped || origin === this) return;
+    this.sendAwareness([...added, ...updated, ...removed]);
+  };
+
+  private sendAwareness(clientIds: number[], states?: Map<number, Record<string, unknown>>): void {
+    if (this.stopped || clientIds.length === 0) return;
+    this.channel.postMessage({
+      kind: "awareness",
+      payload: encodeAwarenessUpdate(this.awareness, clientIds, states),
+    } satisfies PeerMessage);
+  }
 
   private wake = (): void => {
     void this.catchUp().catch(reportError);
@@ -105,9 +138,11 @@ export class LocalDocumentPeers {
   /** Fence synchronously. Drain must finish before the persistence provider is destroyed. */
   stop(): void {
     if (this.stopped) return;
+    this.sendAwareness([this.awareness.clientID], new Map());
     this.stopped = true;
     this.channel.close();
     this.document.off("update", this.sendUpdate);
+    this.awareness.off("update", this.sendAwarenessUpdate);
     window.removeEventListener("focus", this.wake);
     window.removeEventListener("pageshow", this.wake);
     window.document.removeEventListener("visibilitychange", this.onVisibility);

@@ -99,18 +99,6 @@ export interface DocumentSessionCrossContextCoordination {
     lineageHandle: string;
     exactDatabaseName: string;
   }): Promise<"clear" | "adopting" | "bindable" | "terminal" | "mismatch">;
-  recoverLocalAdoption(
-    projectId: ProjectId,
-    documentId: DocumentId,
-    generation: AvailabilityGeneration,
-    lineageHandle: string,
-    exactDatabaseName: string,
-  ): Promise<
-    LiveDocumentSessionLease & {
-      persistenceGeneration: AvailabilityGeneration;
-      exactDatabaseName: string;
-    }
-  >;
   commitLocalAdoption(
     projectId: ProjectId,
     generation: AvailabilityGeneration,

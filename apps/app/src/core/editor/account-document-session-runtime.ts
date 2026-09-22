@@ -109,14 +109,6 @@ export function createAccountDocumentSessionRuntime(
     },
     abort: (receipt) => core.localAdoption.abort(receipt),
     inspect: (request) => core.localAdoption.inspect(request),
-    recover(request) {
-      try {
-        requireOpen();
-        return core.localAdoption.recover(request);
-      } catch (error) {
-        return Promise.reject(error);
-      }
-    },
     bindAndAdopt(request) {
       try {
         requireOpen();

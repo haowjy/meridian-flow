@@ -8,6 +8,7 @@ import type {
 } from "@meridian/resource-replica";
 import {
   markResourceCreateEligible,
+  planSessionAdoptionGeneration,
   prepareNamespaceAttempt,
   recordNamespaceOutcome,
   reserveResourceDocument,
@@ -128,7 +129,6 @@ async function fixture() {
     begin: vi.fn(async () => pending),
     abort: vi.fn(async () => "aborted" as const),
     inspect: vi.fn(async () => "clear" as const),
-    recover: vi.fn(),
     bindAndAdopt: vi.fn(async (input) => {
       const reserved = transfer as LocalDocumentSessionTransfer | null;
       if (!reserved) throw new Error("Missing transfer");
@@ -213,6 +213,23 @@ it("pins authority and acknowledges adoption without replacing the local Y.Doc",
   verified.handle.release();
   expect(release).toHaveBeenCalledOnce();
   expect(created[0]?.getSnapshot().status).toBe("detached");
+});
+
+it("hands recorded bindable authority to the already-open local session", async () => {
+  const { adoption, coordinator, created, key, metadata, verified } = await fixture();
+  const current = await metadata.readResource(key);
+  if (!current) throw new Error("Missing resource record");
+  const pinned = planSessionAdoptionGeneration(current, "7");
+  if (!pinned) throw new Error("Expected a pending session adoption");
+  expect(await metadata.commitResource(pinned)).toBe("committed");
+  vi.mocked(adoption.inspect).mockResolvedValue("bindable");
+
+  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
+
+  expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();
+  expect(created).toHaveLength(1);
+  expect(created[0]?.document.getText("probe").toString()).toBe("preserved");
+  verified.handle.release();
 });
 
 it("keeps a begun handoff retryable while authority is temporarily unavailable", async () => {

@@ -30,7 +30,8 @@
 
 ### Fixed
 
-- Cached document sessions now claim exact legacy handle-less persistence authority and attach their live collaboration transport instead of remaining silently local-only.
+- Cached document sessions now claim exact legacy handle-less persistence authority and transfer their existing editor session into live collaboration instead of leaving transport on a second hidden Y.Doc.
+- Collaborator carets now cross same-browser document tabs through the local peer channel and return after reconnect.
 - Child completion emits `agent.run_completed` instead of the spawn-named `agent.spawn_completed`; a continue is not a spawn.
 - A thread that advanced while the writer was elsewhere — a background child's report waking the parent — now appears on return without a manual reload: the snapshot revalidates on activation and refetches when a new run starts. A server-initiated run on a mounted idle thread also streams its continuation live.
 
