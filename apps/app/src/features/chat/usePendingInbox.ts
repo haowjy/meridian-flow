@@ -23,7 +23,7 @@ export function usePendingInbox(input: {
     () => seed?.pending ?? EMPTY_THREAD_PENDING_INBOX,
   );
   const prevThreadRef = useRef(threadId);
-  const seededRef = useRef(seed !== null);
+  const seededRef = useRef(false);
 
   useEffect(() => {
     if (prevThreadRef.current !== threadId) {
