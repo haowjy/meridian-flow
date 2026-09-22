@@ -102,6 +102,7 @@ export class ThreadRunController {
   private runToken = 0;
   private readonly gapSnapshotsByThreadId = new Map<string, Promise<void>>();
   private readonly unsubscribeInterruptResponseError: () => void;
+  private readonly unsubscribeSocketGenerationClosed: () => void;
 
   constructor(options: ThreadRunControllerOptions) {
     this.transport = options.transport;
@@ -112,6 +113,9 @@ export class ThreadRunController {
     this.getThreadSnapshotFn = options.getThreadSnapshotFn ?? getThreadSnapshot;
     this.unsubscribeInterruptResponseError = this.transport.onInterruptResponseError(
       ({ threadId, error }) => this.settleInterruptResponseError(threadId, error),
+    );
+    this.unsubscribeSocketGenerationClosed = this.transport.onSocketGenerationClosed((generation) =>
+      this.actions.markInterruptResponsesForGenerationAmbiguous(generation),
     );
   }
 
@@ -277,27 +281,41 @@ export class ThreadRunController {
   }
 
   respondInterrupt(input: InterruptRespondInput): InterruptResponseState {
+    // Overlap policy: one in-flight response per tuple. A second click while
+    // this tuple is pending returns the existing state and writes nothing, so
+    // the server cannot see a duplicate frame and the retained value is not
+    // overwritten. Retry after a failed/ambiguous attempt is allowed.
+    const existing = this.actions.interruptResponseFor(input);
+    if (existing?.status === "pending") return { status: "pending" };
+
     // The wire envelope allows `unknown`; the component protocol only emits
     // JSON, so the retained retry value is a JsonValue.
     const value = input.value as JsonValue;
-    this.actions.beginInterruptResponse({ ...input, value });
-    const sent = this.transport.respondInterrupt(input);
-    if (!sent) {
+    const receipt = this.transport.respondInterrupt(input);
+    if (!receipt.sent) {
       // The socket was not open, so the frame never left the client. This is a
       // proven send failure (retryable), not an ambiguous outcome.
       const failure: InterruptResponseState = { status: "failed" };
-      this.actions.failInterruptResponse(input, failure);
+      this.actions.failInterruptResponse({ ...input, value }, failure);
       return failure;
     }
+    // Record the socket generation so a close before any resolution can mark
+    // this entry ambiguous (queued, not proven delivered).
+    this.actions.beginInterruptResponse({
+      ...input,
+      value,
+      generation: receipt.socketGeneration,
+    });
     return { status: "pending" };
   }
 
   /**
    * Settle a non-fatal interrupt rejection frame. The wire frame carries only
-   * `threadId`, so it is matched to the sole pending response for that thread.
-   * `interrupt_not_pending` after a send means the first attempt likely landed
-   * (ambiguous); a correlation mismatch is positive evidence this attempt did
-   * not land (retryable failure). Neither tears down the run subscription.
+   * `threadId`, so it binds to the newest pending response for that thread and
+   * no-ops when none exists. `interrupt_not_pending` after a send means the
+   * first attempt likely landed (ambiguous); a correlation mismatch is positive
+   * evidence this attempt did not land (retryable failure). Neither tears down
+   * the run subscription.
    */
   private settleInterruptResponseError(threadId: string, error: Error): void {
     const pending = this.actions.pendingInterruptResponseForThread(threadId);
@@ -334,6 +352,7 @@ export class ThreadRunController {
   dispose(): void {
     this.teardown();
     this.unsubscribeInterruptResponseError();
+    this.unsubscribeSocketGenerationClosed();
   }
 
   private startRun(threadId: string, options: { pruneAbandonedTurn?: boolean } = {}): number {

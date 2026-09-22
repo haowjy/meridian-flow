@@ -24,6 +24,7 @@ import { SocketLifecycleController, type SocketLifecycleOptions } from "./socket
 import type {
   ConnectionState,
   InterruptRespondInput,
+  InterruptRespondReceipt,
   ThreadInterruptResponseError,
   ThreadTransport,
   ThreadTransportHandlers,
@@ -48,6 +49,7 @@ export class WsThreadTransport implements ThreadTransport {
   private readonly interruptResponseErrorListeners = new Set<
     (event: ThreadInterruptResponseError) => void
   >();
+  private readonly socketGenerationClosedListeners = new Set<(generation: number) => void>();
   private wantsConnection = false;
   private serverConnected = false;
   private connectionToken: string | undefined;
@@ -65,6 +67,13 @@ export class WsThreadTransport implements ThreadTransport {
         onClose: (event) => {
           this.serverConnected = false;
           this.connectionToken = undefined;
+          // The generation that just closed is still `currentGeneration` here
+          // (it only advances on the next `startSocket`/`teardown`), so a send
+          // tagged with it can be recognized as unconfirmed.
+          const closedGeneration = this.socket.currentGeneration;
+          for (const listener of this.socketGenerationClosedListeners) {
+            listener(closedGeneration);
+          }
           for (const subscription of this.subscriptions.values()) {
             subscription.serverSubscribed = false;
             for (const handler of subscription.handlers) {
@@ -136,14 +145,23 @@ export class WsThreadTransport implements ThreadTransport {
     };
   }
 
-  respondInterrupt(input: InterruptRespondInput): boolean {
-    return this.send({ type: "interrupt.respond", ...input });
+  respondInterrupt(input: InterruptRespondInput): InterruptRespondReceipt {
+    const socketGeneration = this.socket.currentGeneration;
+    const sent = this.send({ type: "interrupt.respond", ...input });
+    return sent ? { sent: true, socketGeneration } : { sent: false };
   }
 
   onInterruptResponseError(listener: (event: ThreadInterruptResponseError) => void): () => void {
     this.interruptResponseErrorListeners.add(listener);
     return () => {
       this.interruptResponseErrorListeners.delete(listener);
+    };
+  }
+
+  onSocketGenerationClosed(listener: (generation: number) => void): () => void {
+    this.socketGenerationClosedListeners.add(listener);
+    return () => {
+      this.socketGenerationClosedListeners.delete(listener);
     };
   }
 

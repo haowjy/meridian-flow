@@ -8,6 +8,7 @@
  * summary.
  */
 import { Trans } from "@lingui/react/macro";
+import { useEffect, useRef } from "react";
 
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import type { InterruptResponseState } from "@/core/session/interrupt-response";
@@ -19,6 +20,16 @@ export function InterruptResponseFeedback({
   state: InterruptResponseState | null;
   onRetry: () => void;
 }) {
+  const retryRef = useRef<HTMLButtonElement>(null);
+  const failed = state?.status === "ambiguous" || state?.status === "failed";
+  // Move focus to Retry only on the transition into failure, so a remount with
+  // an already-failed state does not steal focus from the writer.
+  const wasFailed = useRef(failed);
+  useEffect(() => {
+    if (failed && !wasFailed.current) retryRef.current?.focus();
+    wasFailed.current = failed;
+  }, [failed]);
+
   if (!state) return null;
 
   if (state.status === "pending") {
@@ -39,6 +50,7 @@ export function InterruptResponseFeedback({
         )
       }
       onRetry={onRetry}
+      retryRef={retryRef}
     />
   );
 }

@@ -9,7 +9,14 @@
  * `turnsByThread`, so chat has one store-backed source of truth.
  */
 
-import type { ThreadListItem, Turn, TurnStatus } from "@meridian/contracts/protocol";
+import {
+  type Block,
+  blockContentRecord,
+  interruptIdForBlock,
+  type ThreadListItem,
+  type Turn,
+  type TurnStatus,
+} from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
@@ -57,6 +64,8 @@ type ThreadStoreSliceState = ThreadStoreState & {
   pendingStreamByThreadId: Record<string, PendingStreamStart>;
   pendingCreation: PendingCreationState;
   interruptResponses: Record<string, InterruptResponseEntry>;
+  /** Monotonic order for the newest-pending error correlation. */
+  interruptResponseCounter: number;
   turnCounter: number;
 };
 
@@ -134,6 +143,54 @@ function clearInterruptResponsesByPrefix(
   return next;
 }
 
+/** True once a resolved/expired props payload has been written to the block. */
+function interruptBlockHasResolvedValue(block: Block): boolean {
+  const props = blockContentRecord(block).props;
+  if (!props || typeof props !== "object" || Array.isArray(props)) return false;
+  return Object.hasOwn(props, "resolvedValue");
+}
+
+/**
+ * Reconcile local interrupt settlements against an authoritative snapshot for
+ * one thread.
+ *
+ * A snapshot that already shows the interrupt resolved/expired, or a turn that
+ * is no longer `waiting_interrupt`, proves the send is over: drop its
+ * settlement. A snapshot that still shows the turn waiting with no resolution
+ * proves nothing was applied: a still-pending send becomes ambiguous/retryable
+ * rather than a permanent lock. Returns null when nothing changed.
+ */
+function reconcileInterruptResponsesForThread(
+  responses: Record<string, InterruptResponseEntry>,
+  threadId: string,
+  turns: readonly Turn[],
+): Record<string, InterruptResponseEntry> | null {
+  let next: Record<string, InterruptResponseEntry> | null = null;
+  for (const [key, entry] of Object.entries(responses)) {
+    if (entry.threadId !== threadId) continue;
+
+    const turn = turns.find((candidate) => candidate.id === entry.turnId);
+    const waiting = turn?.status === "waiting_interrupt";
+    const block = turn?.blocks.find(
+      (candidate) =>
+        candidate.blockType === "custom" && interruptIdForBlock(candidate) === entry.interruptId,
+    );
+    const resolved = block ? interruptBlockHasResolvedValue(block) : false;
+
+    if (!waiting || resolved) {
+      next ??= { ...responses };
+      delete next[key];
+      continue;
+    }
+
+    if (entry.status === "pending") {
+      next ??= { ...responses };
+      next[key] = { ...entry, status: "ambiguous" };
+    }
+  }
+  return next;
+}
+
 function createAssistantTurn(
   threadId: string,
   turnId: string,
@@ -187,10 +244,13 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     consumePendingStream: state.consumePendingStream,
     markPendingCreation: state.markPendingCreation,
     clearPendingCreation: state.clearPendingCreation,
+    interruptResponseFor: state.interruptResponseFor,
     beginInterruptResponse: state.beginInterruptResponse,
     failInterruptResponse: state.failInterruptResponse,
     settleInterruptResponse: state.settleInterruptResponse,
     pendingInterruptResponseForThread: state.pendingInterruptResponseForThread,
+    markInterruptResponsesForGenerationAmbiguous:
+      state.markInterruptResponsesForGenerationAmbiguous,
   };
 }
 
@@ -207,6 +267,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         pendingStreamByThreadId: {},
         pendingCreation: { projectIds: {}, threadIds: {} },
         interruptResponses: {},
+        interruptResponseCounter: 0,
         streamingThreadId: null,
         streamingProjectId: null,
         turnCounter: 0,
@@ -541,6 +602,15 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               turnsByThread: { ...state.turnsByThread, [threadId]: mergedTurns },
             };
 
+            const reconciledInterruptResponses = reconcileInterruptResponsesForThread(
+              state.interruptResponses,
+              threadId,
+              mergedTurns,
+            );
+            if (reconciledInterruptResponses) {
+              nextState.interruptResponses = reconciledInterruptResponses;
+            }
+
             nextState.snapshotNextSeqFloorByThread = {
               ...state.snapshotNextSeqFloorByThread,
               [threadId]: nextSeq,
@@ -609,31 +679,60 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           });
         },
 
-        beginInterruptResponse(input) {
-          const key = interruptResponseKey(input);
-          set((state) => ({
-            interruptResponses: {
-              ...state.interruptResponses,
-              [key]: {
-                threadId: input.threadId,
-                turnId: input.turnId,
-                interruptId: input.interruptId,
-                status: "pending",
-                value: input.value,
-              },
-            },
-          }));
+        interruptResponseFor(identity) {
+          return get().interruptResponses[interruptResponseKey(identity)];
         },
 
-        failInterruptResponse(identity, failure) {
-          const key = interruptResponseKey(identity);
+        beginInterruptResponse(input) {
+          const key = interruptResponseKey(input);
           set((state) => {
-            const existing = state.interruptResponses[key];
-            if (!existing) return state;
+            const sequence = state.interruptResponseCounter + 1;
             return {
+              interruptResponseCounter: sequence,
               interruptResponses: {
                 ...state.interruptResponses,
-                [key]: { ...existing, status: failure.status },
+                [key]: {
+                  threadId: input.threadId,
+                  turnId: input.turnId,
+                  interruptId: input.interruptId,
+                  status: "pending",
+                  value: input.value,
+                  sequence,
+                  generation: input.generation,
+                },
+              },
+            };
+          });
+        },
+
+        failInterruptResponse(input, failure) {
+          const key = interruptResponseKey(input);
+          set((state) => {
+            const existing = state.interruptResponses[key];
+            if (existing) {
+              // Preserve the retained value/sequence; only the status moves.
+              return {
+                interruptResponses: {
+                  ...state.interruptResponses,
+                  [key]: { ...existing, status: failure.status },
+                },
+              };
+            }
+            // A send that never left the client has no pending row yet.
+            const sequence = state.interruptResponseCounter + 1;
+            return {
+              interruptResponseCounter: sequence,
+              interruptResponses: {
+                ...state.interruptResponses,
+                [key]: {
+                  threadId: input.threadId,
+                  turnId: input.turnId,
+                  interruptId: input.interruptId,
+                  status: failure.status,
+                  value: input.value,
+                  sequence,
+                  generation: null,
+                },
               },
             };
           });
@@ -649,10 +748,25 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         },
 
         pendingInterruptResponseForThread(threadId) {
+          let newest: InterruptResponseEntry | null = null;
           for (const entry of Object.values(get().interruptResponses)) {
-            if (entry.threadId === threadId && entry.status === "pending") return entry;
+            if (entry.threadId !== threadId || entry.status !== "pending") continue;
+            if (!newest || entry.sequence > newest.sequence) newest = entry;
           }
-          return null;
+          return newest;
+        },
+
+        markInterruptResponsesForGenerationAmbiguous(generation) {
+          set((state) => {
+            let changed = false;
+            const next = { ...state.interruptResponses };
+            for (const [key, entry] of Object.entries(state.interruptResponses)) {
+              if (entry.status !== "pending" || entry.generation !== generation) continue;
+              next[key] = { ...entry, status: "ambiguous" };
+              changed = true;
+            }
+            return changed ? { interruptResponses: next } : state;
+          });
         },
       }),
       { name: "thread-store", enabled: import.meta.env.DEV },

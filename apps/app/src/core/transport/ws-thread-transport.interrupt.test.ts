@@ -76,22 +76,45 @@ function setup() {
 }
 
 describe("WsThreadTransport.respondInterrupt", () => {
-  it("reports false when there is no open socket", () => {
+  it("reports not-sent when there is no open socket", () => {
     const { transport } = setup();
-    expect(transport.respondInterrupt(RESPONSE)).toBe(false);
+    expect(transport.respondInterrupt(RESPONSE)).toEqual({ sent: false });
   });
 
-  it("reports true and writes the frame once the socket is open", () => {
+  it("reports the socket generation and writes the frame once the socket is open", () => {
     const { transport, socket } = setup();
     transport.connect();
-    expect(transport.respondInterrupt(RESPONSE)).toBe(false);
+    expect(transport.respondInterrupt(RESPONSE)).toEqual({ sent: false });
 
     socket().open();
-    expect(transport.respondInterrupt(RESPONSE)).toBe(true);
+    const receipt = transport.respondInterrupt(RESPONSE);
+    expect(receipt.sent).toBe(true);
+    expect(receipt.sent && receipt.socketGeneration).toBeGreaterThan(0);
     expect(JSON.parse(socket().sent.at(-1) ?? "{}")).toEqual({
       type: "interrupt.respond",
       ...RESPONSE,
     });
+    transport.disconnect();
+  });
+});
+
+describe("WsThreadTransport interrupt socket generation", () => {
+  it("notifies the closed generation so an unconfirmed send can go ambiguous", () => {
+    const { transport, socket } = setup();
+    const onClosed = vi.fn();
+    const unsubscribe = transport.onSocketGenerationClosed(onClosed);
+    transport.connect();
+    socket().open();
+
+    const receipt = transport.respondInterrupt(RESPONSE);
+    if (!receipt.sent) throw new Error("expected the frame to be written");
+
+    socket().emit("close", { code: 1006, reason: "abnormal", wasClean: false });
+
+    expect(onClosed).toHaveBeenCalledTimes(1);
+    expect(onClosed).toHaveBeenCalledWith(receipt.socketGeneration);
+
+    unsubscribe();
     transport.disconnect();
   });
 });

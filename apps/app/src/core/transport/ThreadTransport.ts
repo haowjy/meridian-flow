@@ -41,13 +41,20 @@ export type ThreadGapEvent = {
 /**
  * A non-fatal interrupt-response rejection frame, routed to the interrupt
  * settlement owner rather than the generic thread-error sink. The wire frame
- * carries only `threadId`; the client correlates it to the sole pending
+ * carries only `threadId`; the client correlates it to the newest pending
  * response for that thread.
  */
 export type ThreadInterruptResponseError = {
   threadId: string;
   error: Error;
 };
+
+/**
+ * Result of an `interrupt.respond` write. `sent: false` is the only proven
+ * "never left the client"; a successful write reports the socket generation it
+ * was queued on so a later close can mark it ambiguous instead of pending.
+ */
+export type InterruptRespondReceipt = { sent: false } | { sent: true; socketGeneration: number };
 
 /**
  * Transport-shaped contract for subscribing to an assistant turn's event stream
@@ -94,8 +101,8 @@ export interface ThreadTransport {
   /** Receive truth-free catalog wake hints over the existing authenticated socket. */
   subscribeCatalog(projectId: string, listener: (hint: CatalogWakeHint) => void): () => void;
 
-  /** Send a interrupt answer over the existing thread WebSocket. Returns false when the socket was not open and the frame was never sent. */
-  respondInterrupt(input: InterruptRespondInput): boolean;
+  /** Send an interrupt answer over the existing thread WebSocket. */
+  respondInterrupt(input: InterruptRespondInput): InterruptRespondReceipt;
 
   /**
    * Receive non-fatal interrupt-response rejection frames. These never tear
@@ -103,6 +110,14 @@ export interface ThreadTransport {
    * matching local response. Returns an unsubscribe fn.
    */
   onInterruptResponseError(listener: (event: ThreadInterruptResponseError) => void): () => void;
+
+  /**
+   * Notified with the generation of a socket that closed for a non-terminal
+   * reason. Responses written on that generation have no server confirmation
+   * yet, so the settlement owner marks them ambiguous/retryable. Returns an
+   * unsubscribe fn.
+   */
+  onSocketGenerationClosed(listener: (generation: number) => void): () => void;
 
   /** Cancel an in-flight turn via HTTP. */
   cancel(threadId: string, turnId: string): Promise<CancelTurnResponse>;
