@@ -342,6 +342,10 @@ export class AccountResourceReplica {
     return record ? { handle: record.resource.handle } : null;
   }
 
+  async lineageHandleFor(projectId: string, documentId: string): Promise<string | null> {
+    return (await this.keyForDocument(projectId, documentId))?.handle ?? null;
+  }
+
   async readKnownDocument(
     projectId: string,
     documentId: string,
