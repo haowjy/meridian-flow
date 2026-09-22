@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  CreateCheckoutSessionRequest,
+  CreateCheckoutSessionResponse,
+} from "@meridian/contracts/protocol";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useRef } from "react";
 import {
   createCheckoutSession,
   getBillingBalance,
@@ -36,17 +41,37 @@ export function useBillingProducts() {
   });
 }
 
-export function useCreateCheckoutSession() {
-  const queryClient = useQueryClient();
+export interface CheckoutHandoff {
+  session: CreateCheckoutSessionResponse;
+  request: CreateCheckoutSessionRequest;
+}
+
+export interface UseCreateCheckoutSessionOptions {
+  /**
+   * Runs after a session/portal URL exists and before the redirect. The caller
+   * captures the pre-redirect ledger baseline here. `isCurrent` is false once a
+   * newer attempt has superseded this one; the caller must not write in that
+   * case, and the hook will not redirect for it.
+   */
+  onHandoff?: (handoff: CheckoutHandoff, isCurrent: () => boolean) => void | Promise<void>;
+}
+
+export function useCreateCheckoutSession(options: UseCreateCheckoutSessionOptions = {}) {
+  const generationRef = useRef(0);
+
   return useMutation({
     mutationFn: createCheckoutSession,
-    onSuccess: async (session) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: billingQueryKeys.balance }),
-        queryClient.invalidateQueries({ queryKey: billingQueryKeys.transactions }),
-      ]);
-      // Both kinds carry a `url`; portal sends the user to Stripe's customer
-      // portal, checkout to a session page. Either way we hand off the page.
+    onMutate: () => {
+      generationRef.current += 1;
+      return { generation: generationRef.current };
+    },
+    onSuccess: async (session, request, context) => {
+      // A newer click owns the pending control and the redirect. A superseded
+      // response must not open its session or stamp its own baseline.
+      if (!context || context.generation !== generationRef.current) return;
+      const isCurrent = () => context.generation === generationRef.current;
+      await options.onHandoff?.({ session, request }, isCurrent);
+      if (!isCurrent()) return;
       window.location.assign(session.url);
     },
   });
