@@ -313,6 +313,11 @@ class Coordination implements DocumentSessionCrossContextCoordination {
         throw new Error("Local adoption authority is terminal");
       if (current.exactDatabaseName !== exactDatabaseName)
         throw new Error("Local adoption persistence authority belongs to another database");
+      if (
+        current.phase === "bindable" &&
+        compareAvailabilityGeneration(current.generation, generation) !== 0
+      )
+        throw new Error("Local adoption recovery generation is stale");
       const authority =
         current.phase === "bindable"
           ? await this.store.claimBindableOrigin({
