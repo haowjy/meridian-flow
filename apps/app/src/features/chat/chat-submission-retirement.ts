@@ -4,8 +4,9 @@
  * A displayed submission may be deleted only when its outcome is resolved:
  *
  * - `accepted` — the server admitted it and the controller bridged the local
- *   row via `acknowledgeUserTurn` (an epoch mismatch returns `ambiguous`
- *   instead, so `accepted` always means the bridge ran).
+ *   row via `acknowledgeUserTurn`. An epoch mismatch (thread/session changed
+ *   mid-POST) also bridges the app-scoped row, but stays `ambiguous` so the
+ *   stale session keeps the journal for recovery to retire.
  * - `rejected` — the endpoint proved a refusal (a structured error or 4xx).
  *
  * `ambiguous` and `not-seen` keep the witness: the write may still land, or the

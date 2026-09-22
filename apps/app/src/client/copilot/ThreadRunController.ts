@@ -211,8 +211,19 @@ export class ThreadRunController {
         return reconciled.kind === "not-seen" ? outcome("ambiguous") : reconciled;
       }
       if (this.admissionEpoch !== admissionEpoch) {
-        // Accepted by the server, but this session no longer owns the thread:
-        // do not acknowledge. Return ambiguous so the caller keeps the journal.
+        // Accepted by the server, but this session no longer owns the thread.
+        // The store is app-scoped, so bridge the local row to the persisted
+        // turn anyway: an unbridged row makes the returning session append a
+        // second pending row that recovery cannot collapse. Return ambiguous
+        // so the stale session keeps the journal for recovery to retire.
+        if (options.optimisticUserTurnId) {
+          this.actions.acknowledgeUserTurn(
+            threadId,
+            options.optimisticUserTurnId,
+            result.userTurnId,
+            result.snapshotFloorNextSeq,
+          );
+        }
         return outcome("ambiguous");
       }
       if (options.optimisticUserTurnId) {

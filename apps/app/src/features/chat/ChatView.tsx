@@ -193,13 +193,27 @@ export function ChatView({
       const outcome = await (retire
         ? controller.retire(threadId, envelope, { optimisticUserTurnId })
         : controller.lookup(threadId, envelope, { optimisticUserTurnId }));
+      if (!retire && outcome.kind === "not-seen" && optimisticUserTurnId) {
+        // The server never saw this submission. Replay the stored fingerprint
+        // through the shared recovery path with the live optimistic row so the
+        // displayed send is not lost; this surface owns no second re-issue.
+        // The replay carries revision 0, so keep the envelope's revision.
+        const replayOutcome = await submissionRecovery.replaySubmission(
+          envelope.submissionId,
+          optimisticUserTurnId,
+        );
+        if (shouldRetireSubmission(replayOutcome)) {
+          optimisticBySubmission.current.delete(envelope.submissionId);
+        }
+        return { ...replayOutcome, acceptedRevision: envelope.acceptedRevision };
+      }
       if (shouldRetireSubmission(outcome)) {
         optimisticBySubmission.current.delete(envelope.submissionId);
         retireChatSubmission(accountId, envelope.submissionId, epoch);
       }
       return outcome;
     },
-    [accountId, controller, threadId],
+    [accountId, controller, submissionRecovery, threadId],
   );
 
   function handleStop() {
