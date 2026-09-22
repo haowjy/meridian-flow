@@ -20,7 +20,7 @@ import type { LucideIcon } from "lucide-react";
 import { CircleUserRound, CreditCard, SlidersHorizontal } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 
-import { updateAccountSettings } from "@/client/api/account-api";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -44,6 +44,7 @@ import { changeUiTheme, UI_THEMES, type UiTheme } from "@/lib/ui-theme";
 import { cn } from "@/lib/utils";
 import { PhoneSettingsContent, type PhoneSettingsSectionItem } from "./PhoneSettings";
 import { SETTINGS_SECTIONS, type SettingsSection } from "./settings-sections";
+import { useWorkingSetSyncPreference } from "./useWorkingSetSyncPreference";
 
 /**
  * Open/close the settings overlay by patching `?settings=` on the CURRENT
@@ -347,34 +348,15 @@ function PreferencesSection({
   const labelClassName = cn("text-sm font-medium text-foreground", !stacked && "w-28 shrink-0");
   const triggerClassName = cn("focus-ring", stacked ? "w-full" : "flex-1");
   const router = useRouter();
-  const [resumeAcrossDevices, setResumeAcrossDevices] = useState(workingSetSyncEnabled ?? false);
-  const [savingResumePreference, setSavingResumePreference] = useState(false);
-
-  useEffect(() => {
-    if (workingSetSyncEnabled !== null) setResumeAcrossDevices(workingSetSyncEnabled);
-  }, [workingSetSyncEnabled]);
+  const resumePreference = useWorkingSetSyncPreference(workingSetSyncEnabled);
+  const [retryingResumePreference, setRetryingResumePreference] = useState(false);
 
   async function retryResumePreference() {
-    setSavingResumePreference(true);
+    setRetryingResumePreference(true);
     try {
       await router.invalidate();
     } finally {
-      setSavingResumePreference(false);
-    }
-  }
-
-  async function changeResumePreference(enabled: boolean) {
-    setResumeAcrossDevices(enabled);
-    setSavingResumePreference(true);
-    try {
-      await updateAccountSettings({ workingSetSyncEnabled: enabled });
-      // Refresh the authenticated route's cached session user so the sync
-      // driver and every mounted settings presentation share the server value.
-      await router.invalidate();
-    } catch {
-      setResumeAcrossDevices(!enabled);
-    } finally {
-      setSavingResumePreference(false);
+      setRetryingResumePreference(false);
     }
   }
 
@@ -463,38 +445,50 @@ function PreferencesSection({
         </TabsContent>
 
         <TabsContent value="account">
-          <div className="flex items-center justify-between gap-6">
-            <div className="min-w-0">
-              <div className="text-sm font-medium text-foreground">
-                <Trans>Resume where I left off on any device</Trans>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-6">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">
+                  <Trans>Resume where I left off on any device</Trans>
+                </div>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {workingSetSyncEnabled === null ? (
+                    <Trans>
+                      Your saved preference is unavailable. Sync is paused until retry succeeds.
+                    </Trans>
+                  ) : (
+                    <Trans>Reopens your last document and chat when you switch devices</Trans>
+                  )}
+                </p>
               </div>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                {workingSetSyncEnabled === null ? (
-                  <Trans>
-                    Your saved preference is unavailable. Sync is paused until retry succeeds.
-                  </Trans>
-                ) : (
-                  <Trans>Reopens your last document and chat when you switch devices</Trans>
-                )}
-              </p>
+              {workingSetSyncEnabled === null ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={retryingResumePreference}
+                  onClick={() => void retryResumePreference()}
+                >
+                  <Trans>Retry</Trans>
+                </Button>
+              ) : (
+                <Switch
+                  checked={resumePreference.value}
+                  aria-busy={resumePreference.pending || undefined}
+                  onCheckedChange={resumePreference.change}
+                  aria-label={t`Resume where I left off on any device`}
+                />
+              )}
             </div>
-            {workingSetSyncEnabled === null ? (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={savingResumePreference}
-                onClick={() => void retryResumePreference()}
-              >
-                <Trans>Retry</Trans>
-              </Button>
-            ) : (
-              <Switch
-                checked={resumeAcrossDevices}
-                disabled={savingResumePreference}
-                onCheckedChange={(enabled) => void changeResumePreference(enabled)}
-                aria-label={t`Resume where I left off on any device`}
+            {resumePreference.error ? (
+              <InlineErrorRow
+                message={
+                  resumePreference.error.kind === "rejected"
+                    ? t`Couldn’t save this preference.`
+                    : t`Couldn’t confirm this preference saved.`
+                }
+                onRetry={resumePreference.retry}
               />
-            )}
+            ) : null}
           </div>
         </TabsContent>
       </Tabs>

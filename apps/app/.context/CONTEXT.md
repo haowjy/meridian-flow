@@ -92,7 +92,10 @@ Two interfaces are the only paths between the visual layer and the substrate:
   `invalidateThreadProjectionDependencies`. Snapshot synchronization applies
   history and action-required lifecycle state. Favorite commands share one
   normalized project/thread authority across Home and Work rows; Home alone
-  projects the affected item between its categories without invalidation.
+  projects the affected item between its categories without invalidation. A
+  failed favorite keeps the last confirmed star, exposes the exact failed
+  intent through an inline row-scoped Retry on the shared row, and still
+  announces the error.
   `useWorks` exposes named catalog Works plus `noWork`. Home derives its
   initial prospective choice from the first active (then first available) named
   catalog Work, or No Work. Omitted or explicit-null root creation binds the

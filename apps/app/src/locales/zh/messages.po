@@ -964,6 +964,10 @@ msgstr ""
 msgid "Couldn't check Work"
 msgstr ""
 
+#: src/features/account/SettingsDialog.tsx
+msgid "Couldn’t confirm this preference saved."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't create a Work"
 msgstr ""
@@ -1099,6 +1103,10 @@ msgstr ""
 
 #: src/features/project/context/use-identity-commit.ts
 msgid "Couldn't save this document's home. Try again."
+msgstr ""
+
+#: src/features/account/SettingsDialog.tsx
+msgid "Couldn’t save this preference."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1516,6 +1524,7 @@ msgstr "图片加载失败"
 msgid "Favorite"
 msgstr ""
 
+#: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Favorite wasn’t saved"
