@@ -140,6 +140,8 @@ export interface ThreadRepository {
     limit: number,
   ): Promise<WorkThreadSummary[]>;
   updateStatus(id: ThreadId, status: ThreadStatus): Promise<Thread>;
+  /** Persists a writer-authored title and refreshes `updatedAt`; returns the authoritative row. */
+  updateTitle(id: ThreadId, title: string): Promise<Thread>;
   /**
    * Compare-and-swap first-attempt bake: writes only while `bakedSkillSlugs` is still
    * null. Returns the authoritative thread row (winner's bake on CAS loss).

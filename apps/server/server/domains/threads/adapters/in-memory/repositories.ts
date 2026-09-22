@@ -359,6 +359,17 @@ export function createInMemoryRepositories(
       threads.set(id, updated);
       return projectThread(updated);
     },
+    async updateTitle(id, title) {
+      const thread = threads.get(id);
+      if (!thread) throw new Error(`Thread not found: ${id}`);
+      const updated = {
+        ...thread,
+        title: title === "" ? null : title,
+        updatedAt: toIsoString(new Date()),
+      };
+      threads.set(id, updated);
+      return projectThread(updated);
+    },
     async bakeComposedSystemPrompt(id, input) {
       const thread = threads.get(id);
       if (!thread) throw new Error(`Thread not found: ${id}`);
