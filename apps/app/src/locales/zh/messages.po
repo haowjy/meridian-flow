@@ -294,6 +294,10 @@ msgstr ""
 msgid "Account settings."
 msgstr ""
 
+#: src/features/project/context/RecentDocumentsLanding.tsx
+#~ msgid "Across all your projects"
+#~ msgstr ""
+
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Actions"
 msgstr ""
@@ -536,6 +540,14 @@ msgstr "一起头脑风暴吧"
 #: src/features/project/mobile/MobileBreadcrumb.tsx
 msgid "Breadcrumb"
 msgstr ""
+
+#: src/features/project/context/RecentDocumentsLanding.tsx
+#~ msgid "Browse the project tree"
+#~ msgstr ""
+
+#: src/features/project/context/RecentDocumentsLanding.tsx
+#~ msgid "Browse the project tree to open another."
+#~ msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
 #~ msgid "Built-in"
@@ -1015,6 +1027,7 @@ msgstr ""
 msgid "Couldn't load files."
 msgstr ""
 
+#: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Couldn't load recent documents."
 msgstr ""
@@ -1058,6 +1071,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't redo"
+msgstr ""
+
+#: src/features/project/context/RecentDocumentsLanding.tsx
+msgid "Couldn't refresh recent documents."
 msgstr ""
 
 #: src/features/agents/AgentPicker.tsx
@@ -1302,6 +1319,10 @@ msgstr ""
 msgid "Documents the AI reads in this chat appear here."
 msgstr ""
 
+#: src/features/project/context/RecentDocumentsLanding.tsx
+#~ msgid "Documents you open show up here."
+#~ msgstr ""
+
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Download {name}"
 msgstr ""
@@ -1344,6 +1365,10 @@ msgstr ""
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
 msgid "Duplicate"
+msgstr ""
+
+#: src/features/project/context/RecentDocumentsLanding.tsx
+msgid "Earlier"
 msgstr ""
 
 #. placeholder {0}: fieldLabel(next)
@@ -1878,6 +1903,10 @@ msgstr ""
 msgid "Loading project…"
 msgstr ""
 
+#: src/features/project/context/RecentDocumentsLanding.tsx
+msgid "Loading recent documents"
+msgstr ""
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Loading recent documents…"
 msgstr ""
@@ -2091,7 +2120,7 @@ msgstr ""
 msgid "New chat"
 msgstr "新对话"
 
-#: src/features/project/context/ContextViewer.tsx
+#: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/dock/ReviewOperationCard.tsx
 msgid "New document"
 msgstr ""
@@ -2234,6 +2263,10 @@ msgstr ""
 msgid "Nothing here yet"
 msgstr ""
 
+#: src/features/project/context/RecentDocumentsLanding.tsx
+msgid "Nothing opened yet"
+msgstr ""
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Nothing to redo yet."
 msgstr ""
@@ -2294,6 +2327,10 @@ msgstr ""
 
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Open a chat to see what the AI referenced."
+msgstr ""
+
+#: src/features/project/context/RecentDocumentsLanding.tsx
+msgid "Open a document from the project tree, or start a new one."
 msgstr ""
 
 #: src/features/project/shell/ResultsRailSection.tsx
@@ -2368,8 +2405,8 @@ msgid "Opening the link"
 msgstr ""
 
 #: src/features/project/context/ContextViewer.tsx
-msgid "Or pick a file from the tree."
-msgstr ""
+#~ msgid "Or pick a file from the tree."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "ordered"
@@ -2493,6 +2530,11 @@ msgstr ""
 msgid "Recent projects"
 msgstr ""
 
+#: src/features/project/context/ContextTabBar.tsx
+#: src/features/project/context/RecentDocumentsLanding.tsx
+msgid "Recently opened"
+msgstr ""
+
 #: src/features/chat/ChoiceBlock.tsx
 msgid "Recommended"
 msgstr ""
@@ -2548,6 +2590,10 @@ msgstr ""
 
 #: src/components/app/ConnectionBanner.tsx
 msgid "Refresh"
+msgstr ""
+
+#: src/features/project/context/ContextViewer.tsx
+msgid "Refresh to try again."
 msgstr ""
 
 #: src/features/billing/UsageCard.tsx
@@ -2658,6 +2704,7 @@ msgstr ""
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
+#: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
 #: src/features/project/home/HomeFeed.tsx
 #: src/routes/_authenticated/p/$projectSlug.tsx
@@ -3320,6 +3367,10 @@ msgstr ""
 #~ msgid "This creation attempt is open in another tab."
 #~ msgstr ""
 
+#: src/features/project/context/ContextViewer.tsx
+msgid "This destination couldn't load."
+msgstr ""
+
 #: src/features/project/routing/ProjectRouteBoundary.tsx
 msgid "This destination couldn’t load."
 msgstr ""
@@ -3458,6 +3509,7 @@ msgstr ""
 msgid "title"
 msgstr ""
 
+#: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/lib/date-groups.ts
 msgid "Today"
 msgstr "今天"
@@ -3741,6 +3793,7 @@ msgstr ""
 msgid "Wrote file"
 msgstr ""
 
+#: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/lib/date-groups.ts
 msgid "Yesterday"
 msgstr "昨天"

@@ -715,6 +715,13 @@
       "when": 1789870684335,
       "tag": "0101_striped_blur",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1790022545281,
+      "tag": "0102_thick_scrambler",
+      "breakpoints": true
     }
   ]
 }

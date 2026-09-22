@@ -44,6 +44,20 @@ Shared across both shells:
 - Desktop tree: one scroll surface. The tree is a continuous flex-column; only
   the tree root scrolls.
 - Two triggers for entry actions (context menu + kebab), not three.
+- The empty Editor pane is a chooser (`RecentDocumentsLanding`): the project's
+  recently-opened documents, including viewers. A row navigates. It never
+  seeds a tab. The strip's leading control reaches it with tabs still open:
+  `routeCommands.showEditorRecents` clears the address and leaves the working
+  set alone, so closing tabs is not the only way back.
+- Record from the active editor tab, not from the open intent and not from the
+  create path. A parked restored tab is not an open, and a create that returns
+  before it materializes must not record from the create site: opening the new
+  document does that, once. `useRecordOpenedDocument` owns the refresh;
+  `recordRecentDocument` owns the retry that covers the window between reserving
+  a document id and the server writing its row. Whether two opens are the same
+  open is the server's rule (`USER_RECENT_DOCUMENTS_TOUCH_INTERVAL_MS`): the
+  record POST answers `recorded`, and the client refreshes only when the stored
+  row actually moved.
 
 ## File groups
 

@@ -34,6 +34,7 @@ import {
   FilePlus,
   FileText,
   FileType2,
+  History,
   Image as ImageIcon,
   Plus,
   X,
@@ -59,6 +60,14 @@ export type ContextTabBarProps = {
   onClose: (documentId: string) => void;
   onNewDocument?: () => void;
   /**
+   * Return to the Editor destination with nothing selected (the recently-opened
+   * chooser) without closing a tab. Pinned between the leading rail toggle and
+   * the scrolling tabs, so it stays put however far the working set scrolls.
+   */
+  onShowRecents?: () => void;
+  /** Whether that chooser is the surface on screen, so the control reads as current. */
+  recentsActive?: boolean;
+  /**
    * Pinned control docked at the strip's far-left edge (e.g. the project
    * sidebar expand toggle when the sidebar is collapsed). When present, the
    * strip renders even with zero open tabs so the control stays reachable.
@@ -79,6 +88,8 @@ export function ContextTabBar({
   onSelect,
   onClose,
   onNewDocument,
+  onShowRecents,
+  recentsActive = false,
   leading,
   trailing,
 }: ContextTabBarProps) {
@@ -90,7 +101,41 @@ export function ContextTabBar({
       className="flex h-10 shrink-0 items-stretch [--tab-chip-surface:var(--color-background)]"
     >
       {leading ? <div className="flex shrink-0 items-center px-2">{leading}</div> : null}
-      <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden pl-2">
+      {onShowRecents ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={onShowRecents}
+              aria-label={t`Recently opened`}
+              aria-current={recentsActive ? "page" : undefined}
+              // Chip grammar, like the tabs: on the chooser this is the place the
+              // page's top edge rises into, and off it the writer gets the same
+              // hover pill an inactive tab wears. Not `h-full` — items-stretch
+              // sizes the chip so the active margin subtracts from its height.
+              className={cn(
+                "focus-ring relative flex shrink-0 items-center gap-1.5 px-3",
+                recentsActive
+                  ? "tab-chip-active text-foreground"
+                  : "tab-chip-inactive text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <History className="size-3.5" aria-hidden />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={4}>
+            <Trans>Recently opened</Trans>
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
+      {/* Flush against the door when it is there: the door is the first chip in
+          the row, not a control docked beside it. */}
+      <div
+        className={cn(
+          "flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden",
+          onShowRecents ? "pl-0" : "pl-2",
+        )}
+      >
         {tabs.map((tab, index) => {
           const active = tab.documentId === activeTabId;
           const previous = tabs[index - 1];

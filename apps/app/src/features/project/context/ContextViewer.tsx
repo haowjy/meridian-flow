@@ -4,11 +4,10 @@
  */
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { FilePlus, PanelLeftOpen, PanelRightOpen } from "lucide-react";
-import type { ReactNode } from "react";
+import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
+import { type ReactNode, useEffect } from "react";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
-import { Button } from "@/components/ui/button";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
 import { DraftReviewHeader } from "@/features/editor/DraftReviewHeader";
 import { PassageNotice } from "@/features/editor/PassageNotice";
@@ -20,7 +19,9 @@ import { ContextViewerHost } from "./ContextViewerHost";
 import type { ContextPaneState, MissingDestination } from "./context-pane-state";
 import { schemeLabel } from "./context-schemes";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
+import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
+import { useRecordOpenedDocument } from "./use-record-opened-document";
 
 function isEditableTab(tab: ContextTab): tab is Extract<ContextTab, { kind: "tracked" | "new" }> {
   return tab.kind === "tracked" || tab.kind === "new";
@@ -49,6 +50,8 @@ export type ContextViewerProps = {
   active: boolean;
   layoutSaveFailed?: boolean;
   onNewDocument?: () => void;
+  /** Return to the Editor destination's chooser without closing any tab. */
+  onShowRecents?: () => void;
   onUntitledBecameNonEmpty: (documentId: string) => Promise<void>;
   onCommitted: (
     documentId: string,
@@ -74,6 +77,7 @@ export function ContextViewer({
   dockToggle,
   active,
   onNewDocument,
+  onShowRecents,
   layoutSaveFailed = false,
   onUntitledBecameNonEmpty,
   onCommitted,
@@ -84,6 +88,21 @@ export function ContextViewer({
   // renderers + signed URLs don't benefit from pre-mounting).
   const trackedTabs = tabs.filter(isEditableTab);
   const activeTab = paneState.kind === "document" ? paneState.tab : null;
+  // Recency is recorded from the tab actually in front of the writer, not from
+  // the intent to open: a freshly created document has no row yet, so recording
+  // at open time raced document persistence and lost the write.
+  const openedDocumentId =
+    activeTab && (activeTab.kind === "tracked" || activeTab.kind === "viewer")
+      ? activeTab.documentId
+      : null;
+  const recordOpenedDocument = useRecordOpenedDocument();
+  // Record only while this pane is the active destination: the editor surface
+  // stays mounted across destinations, and a restored tab nobody is looking at
+  // is not an open.
+  useEffect(() => {
+    if (!active || !openedDocumentId) return;
+    recordOpenedDocument(openedDocumentId);
+  }, [active, openedDocumentId, recordOpenedDocument]);
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const activeTabId = activeTab?.documentId ?? null;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
@@ -114,6 +133,8 @@ export function ContextViewer({
         onSelect={onSelectTab}
         onClose={onCloseTab}
         onNewDocument={onNewDocument}
+        onShowRecents={onShowRecents}
+        recentsActive={paneState.kind === "empty-workspace"}
         leading={railToggleNode(sidebarToggle, "left")}
         trailing={railToggleNode(dockToggle, "right")}
       />
@@ -176,9 +197,10 @@ export function ContextViewer({
         {paneState.kind === "dead-route" ? (
           <MissingDocumentState destination={paneState.destination} />
         ) : null}
-        {paneState.kind === "empty-workspace" || paneState.kind === "route-error" ? (
-          <EditorEmptyState onNewDocument={onNewDocument} />
+        {paneState.kind === "empty-workspace" ? (
+          <RecentDocumentsLanding projectId={projectId} onNewDocument={onNewDocument} />
         ) : null}
+        {paneState.kind === "route-error" ? <RouteErrorState /> : null}
       </div>
     </div>
   );
@@ -234,28 +256,20 @@ function railToggleNode(
   return <PanelToggleButton icon={Icon} label={toggle.label} onClick={toggle.onExpand} />;
 }
 
-function EditorEmptyState({
-  onNewDocument,
-}: {
-  /**
-   * Starts a local document that autosaves to project Unfiled storage.
-   * Deliberately NOT the sidebar inline-create: that flow is scheme-targeted
-   * and happens off-pane, which reads as a dead button from the empty state.
-   */
-  layoutSaveFailed?: boolean;
-  onNewDocument?: () => void;
-}) {
+/**
+ * Where an Editor route that could not resolve lands. Not the empty state: the
+ * writer asked for a specific destination and it failed, so this says so
+ * rather than offering to start something new.
+ */
+function RouteErrorState() {
   return (
     <div className="grid h-full place-items-center px-6 text-center">
-      <div className="flex max-w-sm flex-col items-center gap-3">
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <Button size="sm" onClick={onNewDocument} disabled={!onNewDocument}>
-            <FilePlus aria-hidden />
-            <Trans>New document</Trans>
-          </Button>
-        </div>
+      <div className="flex max-w-sm flex-col gap-2">
+        <p className="font-medium text-prose-foreground">
+          <Trans>This destination couldn't load.</Trans>
+        </p>
         <p className="text-xs text-muted-foreground">
-          <Trans>Or pick a file from the tree.</Trans>
+          <Trans>Refresh to try again.</Trans>
         </p>
       </div>
     </div>
