@@ -1,3 +1,7 @@
+import type {
+  BillingBalanceResponse,
+  BillingTransactionsResponse,
+} from "@meridian/contracts/protocol";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createCheckoutSession,
@@ -5,6 +9,12 @@ import {
   getBillingProducts,
   getBillingTransactions,
 } from "@/client/api/billing-api";
+import {
+  checkoutBaselineFrom,
+  checkoutStorage,
+  clearCheckoutBaseline,
+  writeCheckoutBaseline,
+} from "@/features/billing/checkout";
 
 export const billingQueryKeys = {
   balance: ["billing", "balance"] as const,
@@ -40,7 +50,24 @@ export function useCreateCheckoutSession() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createCheckoutSession,
-    onSuccess: async (session) => {
+    onSuccess: async (session, request) => {
+      // Record the pre-purchase ledger so a same-tab return can prove the delta.
+      // A missing snapshot leaves the baseline absent, which keeps the return
+      // honest (reconciling -> timeout) instead of confirming from the redirect.
+      if (session.kind === "checkout") {
+        const balance = queryClient.getQueryData<BillingBalanceResponse>(billingQueryKeys.balance);
+        const transactions = queryClient.getQueryData<BillingTransactionsResponse>(
+          billingQueryKeys.transactions,
+        );
+        if (balance && transactions) {
+          writeCheckoutBaseline(
+            checkoutStorage(),
+            checkoutBaselineFrom(balance, transactions, request),
+          );
+        } else {
+          clearCheckoutBaseline(checkoutStorage());
+        }
+      }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: billingQueryKeys.balance }),
         queryClient.invalidateQueries({ queryKey: billingQueryKeys.transactions }),

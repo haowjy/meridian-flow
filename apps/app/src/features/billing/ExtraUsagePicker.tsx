@@ -11,6 +11,7 @@
 import { Trans } from "@lingui/react/macro";
 import { useId, useState } from "react";
 
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -26,16 +27,28 @@ export interface ExtraUsageAmountOptions {
 interface ExtraUsagePickerProps {
   amountOptions: ExtraUsageAmountOptions;
   disabled: boolean;
+  /** The purchase request for this control is in flight. */
+  pending?: boolean;
+  /** Visible failure for this control's last purchase attempt. */
+  errorMessage?: string | null;
+  onRetry?: () => void;
   onPurchase: (amountUsd: string) => void;
 }
 
-export function ExtraUsagePicker({ amountOptions, disabled, onPurchase }: ExtraUsagePickerProps) {
+export function ExtraUsagePicker({
+  amountOptions,
+  disabled,
+  pending = false,
+  errorMessage,
+  onRetry,
+  onPurchase,
+}: ExtraUsagePickerProps) {
   const [amount, setAmount] = useState<string>(() => toInputValue(amountOptions.defaultUsd));
   const inputId = useId();
   const hintId = useId();
 
   const validation = validateAmount(amount, amountOptions);
-  const canPurchase = validation.ok && !disabled;
+  const canPurchase = validation.ok && !disabled && !pending;
 
   return (
     <div className="flex flex-col gap-3">
@@ -93,11 +106,12 @@ export function ExtraUsagePicker({ amountOptions, disabled, onPurchase }: ExtraU
         type="button"
         className="w-full"
         disabled={!canPurchase}
+        aria-busy={pending || undefined}
         onClick={() => {
           if (validation.ok) onPurchase(validation.amountUsd);
         }}
       >
-        <Trans>Buy extra usage</Trans>
+        {pending ? <Trans>Opening checkout…</Trans> : <Trans>Buy extra usage</Trans>}
       </Button>
 
       <p
@@ -116,6 +130,8 @@ export function ExtraUsagePicker({ amountOptions, disabled, onPurchase }: ExtraU
           <Trans>Enter an amount in USD.</Trans>
         )}
       </p>
+
+      {errorMessage ? <InlineErrorRow message={errorMessage} onRetry={onRetry} /> : null}
     </div>
   );
 }

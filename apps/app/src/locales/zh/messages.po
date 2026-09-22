@@ -720,6 +720,10 @@ msgstr ""
 msgid "Checking Work…"
 msgstr ""
 
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "Checkout cancelled. Nothing was charged."
+msgstr ""
+
 #: src/features/billing/BillingPage.tsx
 msgid "Checkout unavailable."
 msgstr ""
@@ -880,6 +884,10 @@ msgstr ""
 
 #: src/features/chat/FormBlock.tsx
 msgid "Confirm"
+msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "Confirming your purchase…"
 msgstr ""
 
 #. placeholder {0}: state.attempt
@@ -2396,6 +2404,11 @@ msgstr ""
 msgid "Open this document in a project to upload figures."
 msgstr ""
 
+#: src/features/billing/BillingPage.tsx
+#: src/features/billing/ExtraUsagePicker.tsx
+msgid "Opening checkout…"
+msgstr ""
+
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening document…"
 msgstr ""
@@ -2475,6 +2488,10 @@ msgstr ""
 
 #: src/features/chat/IndependentChatView.tsx
 msgid "Project couldn’t load"
+msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "Purchase confirmed. Your balance has been updated."
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -3689,6 +3706,10 @@ msgstr ""
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "Wait for this response to finish, then try again."
+msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "We’re still confirming your purchase. Your balance will update shortly."
 msgstr ""
 
 #: src/features/home/HomeHero.tsx

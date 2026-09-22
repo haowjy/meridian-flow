@@ -8,6 +8,11 @@
  * the hook redirects. The server marks checkout availability per catalog entry
  * so one missing Stripe price does not disable unrelated purchases.
  *
+ * Checkout is P0 server-confirmed: only the initiating control is pending, and
+ * a failed session create shows an inline Retry on that control without locking
+ * the rest of the catalog. A returned `?checkout=success` never confirms from
+ * Stripe's redirect alone; `useCheckoutReturn` reconciles against the ledger.
+ *
  * Plans have a fixed `priceUsd` + interval and a Subscribe button. Extra
  * usage has `amountOptions` instead — the user picks an amount via
  * `ExtraUsagePicker` and that value becomes `amountUsd` in the request.
@@ -35,10 +40,13 @@ import {
   useBillingTransactions,
   useCreateCheckoutSession,
 } from "@/client/query/useBilling";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
+import { CheckoutReturnNotice } from "./CheckoutReturnNotice";
 import { ExtraUsagePicker } from "./ExtraUsagePicker";
 import { formatUsd } from "./format";
 import { UsageCard } from "./UsageCard";
+import { useCheckoutReturn } from "./useCheckoutReturn";
 
 function returnUrl(path: string): string {
   if (typeof window === "undefined") return path;
@@ -57,11 +65,25 @@ export function BillingPage() {
   const products = useBillingProducts();
   const transactions = useBillingTransactions();
   const checkout = useCreateCheckoutSession();
+  const checkoutReturn = useCheckoutReturn();
   const stripeConfigured = products.data?.stripeConfigured ?? false;
   const entries = products.data?.entries ?? [];
 
   const planEntries = entries.filter((entry) => entry.kind === "plan");
   const extraEntry = entries.find((entry) => entry.kind === "extra-usage");
+
+  // One mutation owns the live attempt: the click that started it is the only
+  // control rendered pending or failed. A new attempt replaces that control.
+  const request = checkout.variables;
+  const pendingEntryId = checkout.isPending ? request?.entryId : undefined;
+  const failedEntryId = checkout.isError ? request?.entryId : undefined;
+  const failureMessage = checkout.error instanceof Error ? checkout.error.message : null;
+
+  const errorFor = (entryId: string): string | null =>
+    failedEntryId === entryId ? failureMessage : null;
+  const retry = () => {
+    if (request) checkout.mutate(request);
+  };
 
   return (
     <main className="h-full overflow-y-auto bg-background text-foreground">
@@ -89,6 +111,8 @@ export function BillingPage() {
           </p>
         </header>
 
+        <CheckoutReturnNotice status={checkoutReturn} />
+
         <UsageCard variant="full" />
 
         <section className="space-y-3">
@@ -107,8 +131,10 @@ export function BillingPage() {
               <PlanCard
                 key={entry.id}
                 entry={entry}
-                disabled={!entry.checkoutAvailable || checkout.isPending}
-                onCheckout={(request) => checkout.mutate(request)}
+                pending={pendingEntryId === entry.id}
+                errorMessage={errorFor(entry.id)}
+                onRetry={retry}
+                onCheckout={(body) => checkout.mutate(body)}
               />
             ))}
             {products.data && planEntries.length === 0 ? (
@@ -132,7 +158,10 @@ export function BillingPage() {
             <article className="surface-card p-5">
               <ExtraUsagePicker
                 amountOptions={extraEntry.amountOptions}
-                disabled={!extraEntry.checkoutAvailable || checkout.isPending}
+                disabled={!extraEntry.checkoutAvailable}
+                pending={pendingEntryId === extraEntry.id}
+                errorMessage={errorFor(extraEntry.id)}
+                onRetry={retry}
                 onPurchase={(amountUsd) =>
                   checkout.mutate({ ...baseCheckoutRequest(extraEntry), amountUsd })
                 }
@@ -174,11 +203,15 @@ export function BillingPage() {
 
 function PlanCard({
   entry,
-  disabled,
+  pending,
+  errorMessage,
+  onRetry,
   onCheckout,
 }: {
   entry: BillingPlanEntry;
-  disabled: boolean;
+  pending: boolean;
+  errorMessage: string | null;
+  onRetry: () => void;
   onCheckout: (request: CreateCheckoutSessionRequest) => void;
 }) {
   const priceLine = `${formatUsd(entry.priceUsd)} / ${entry.interval}`;
@@ -194,11 +227,13 @@ function PlanCard({
         <Button
           type="button"
           className="mt-3 w-full"
-          disabled={disabled}
+          disabled={!entry.checkoutAvailable || pending}
+          aria-busy={pending || undefined}
           onClick={() => onCheckout(baseCheckoutRequest(entry))}
         >
-          <Trans>Subscribe</Trans>
+          {pending ? <Trans>Opening checkout…</Trans> : <Trans>Subscribe</Trans>}
         </Button>
+        {errorMessage ? <InlineErrorRow message={errorMessage} onRetry={onRetry} /> : null}
       </div>
     </article>
   );
