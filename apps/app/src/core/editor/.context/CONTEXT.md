@@ -14,12 +14,15 @@ or authority store. `document-session-locks.ts` implements document lock naming
 and callback lifetimes; `document-session-wakeup.ts` only requests reconciliation
 through advisory broadcasts, browser lifecycle events and timed scans.
 
-`local-document-peers.ts` is separate content transport, owned by each persisted
-DocumentSession. Its channel is scoped to the exact persistence incarnation and
-current schema, never a path or an unqualified document ID. Symmetric Yjs sync
-exchanges live edits; lifecycle wakes also read the retained IndexedDB update log
-so a departed peer is not required for recovery. Replay is a remote transaction.
-Schema/access fences stop peer traffic synchronously; teardown drains pending
+`local-document-peers.ts` is the same-browser peer transport owned by each
+persisted DocumentSession. Its channel is scoped to the exact persistence
+incarnation and current schema, never a path or an unqualified document ID.
+Symmetric Yjs sync exchanges live edits; ephemeral Awareness messages keep
+same-profile tabs' carets visible and let the tab holding server transport relay
+presence for detached local peers. Lifecycle wakes also read the retained
+IndexedDB update log so a departed peer is not required for content recovery.
+Replay is a remote transaction. Schema/access fences stop peer traffic
+synchronously; teardown broadcasts local awareness removal and drains pending
 reads before destroying persistence. Local convergence never means server ack.
 The readonly replay adapter knows y-indexeddb's `updates` store but does not touch
 its private compaction cursor or write a second content journal.

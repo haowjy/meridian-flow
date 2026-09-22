@@ -5,7 +5,7 @@
  * attaches — the writer's prose silently persists only to y-indexeddb.
  */
 import "fake-indexeddb/auto";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import type { CrossContextLockManager } from "../cross-context-locks";
 import { DocumentSessionAuthorityStore } from "./document-session-authority-store";
 import type { LocalSessionAuthority } from "./document-session-coordination-contract";
@@ -184,45 +184,45 @@ it("claims an exact legacy handle-less authority during cached-session recovery"
         exactDatabaseName: `${admitted.exactDatabaseName}:foreign`,
       }),
     ).resolves.toBe("mismatch");
+    const transfer = {
+      prepareCommit: vi.fn(),
+      completeCommit: vi.fn(async () => undefined),
+    };
+    const pending = {
+      documentId,
+      transitionId: "legacy-recovery",
+      lineageHandle,
+      exactDatabaseName: admitted.exactDatabaseName,
+      targetGeneration: generation,
+    };
     await expect(
-      coordination.recoverLocalAdoption(
+      coordination.commitLocalAdoption(
         projectId,
-        documentId,
         generation,
-        lineageHandle,
-        `${admitted.exactDatabaseName}:foreign`,
+        { ...pending, exactDatabaseName: `${admitted.exactDatabaseName}:foreign` },
+        transfer,
       ),
-    ).rejects.toThrow("Local adoption persistence authority belongs to another database");
+    ).rejects.toThrow("Bindable local adoption authority changed before session transfer");
     expect(await persistedAuthority(store)).toEqual({
       phase: "bindable",
       originLineageHandle: undefined,
     });
     await expect(
-      coordination.recoverLocalAdoption(
-        projectId,
-        documentId,
-        "119",
-        lineageHandle,
-        admitted.exactDatabaseName,
-      ),
-    ).rejects.toThrow("Local adoption recovery generation is stale");
+      coordination.commitLocalAdoption(projectId, "119", pending, transfer),
+    ).rejects.toThrow("Bindable local adoption authority changed before session transfer");
     expect(await persistedAuthority(store)).toEqual({
       phase: "bindable",
       originLineageHandle: undefined,
     });
 
-    await coordination.recoverLocalAdoption(
-      projectId,
-      documentId,
-      generation,
-      lineageHandle,
-      admitted.exactDatabaseName,
-    );
+    await coordination.commitLocalAdoption(projectId, generation, pending, transfer);
 
     expect(await persistedAuthority(store)).toEqual({
       phase: "bindable",
       originLineageHandle: lineageHandle,
     });
+    expect(transfer.prepareCommit).toHaveBeenCalledOnce();
+    expect(transfer.completeCommit).toHaveBeenCalledOnce();
     expect(installed).toEqual([
       expect.objectContaining({ exactDatabaseName: admitted.exactDatabaseName }),
     ]);

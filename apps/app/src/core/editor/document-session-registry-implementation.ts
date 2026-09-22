@@ -426,38 +426,6 @@ export class DocumentSessionRegistry
     return coordination.inspectLocalLineage(input);
   }
 
-  async recover(input: {
-    projectId: ProjectId;
-    documentId: DocumentId;
-    generation: AvailabilityGeneration;
-    lineageHandle: string;
-    exactDatabaseName: string;
-  }): Promise<{ lease: LiveDocumentSessionLease; session: DocumentSession }> {
-    this.requireAccountRuntimeOpen();
-    const coordination = await this.configuredCoordination();
-    const lease = await this.translateCoordination(() =>
-      coordination.recoverLocalAdoption(
-        input.projectId,
-        input.documentId,
-        input.generation,
-        input.lineageHandle,
-        input.exactDatabaseName,
-      ),
-    );
-    let state = this.liveRooms.get(input.documentId);
-    if (!state) {
-      state = {
-        leases: new Map([[input.projectId, lease]]),
-        session: null,
-        persistenceGeneration: lease.persistenceGeneration,
-        exactDatabaseName: lease.exactDatabaseName,
-      };
-      this.liveRooms.set(input.documentId, state);
-    }
-    const session = this.get(lease);
-    return { lease, session };
-  }
-
   async bindAndAdopt(input: {
     projectId: ProjectId;
     documentId: DocumentId;
