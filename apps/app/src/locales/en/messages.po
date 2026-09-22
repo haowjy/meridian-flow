@@ -721,8 +721,8 @@ msgid "Checking Work…"
 msgstr "Checking Work…"
 
 #: src/features/billing/CheckoutReturnNotice.tsx
-msgid "Checkout cancelled. Nothing was charged."
-msgstr "Checkout cancelled. Nothing was charged."
+#~ msgid "Checkout cancelled. Nothing was charged."
+#~ msgstr "Checkout cancelled. Nothing was charged."
 
 #: src/features/billing/BillingPage.tsx
 msgid "Checkout unavailable."
@@ -2491,8 +2491,12 @@ msgid "Project couldn’t load"
 msgstr "Project couldn’t load"
 
 #: src/features/billing/CheckoutReturnNotice.tsx
-msgid "Purchase confirmed. Your balance has been updated."
-msgstr "Purchase confirmed. Your balance has been updated."
+msgid "Purchase confirmed."
+msgstr "Purchase confirmed."
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+#~ msgid "Purchase confirmed. Your balance has been updated."
+#~ msgstr "Purchase confirmed. Your balance has been updated."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Put the caret in a table first."
@@ -2755,6 +2759,10 @@ msgstr "Retry Work"
 #: src/features/chat/ChildReportBlock.tsx
 msgid "Return"
 msgstr "Return"
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "Returned from the billing portal."
+msgstr "Returned from the billing portal."
 
 #: src/features/project/dock/DockChangesView.tsx
 msgid "Review"
@@ -3709,8 +3717,16 @@ msgid "Wait for this response to finish, then try again."
 msgstr "Wait for this response to finish, then try again."
 
 #: src/features/billing/CheckoutReturnNotice.tsx
-msgid "We’re still confirming your purchase. Your balance will update shortly."
-msgstr "We’re still confirming your purchase. Your balance will update shortly."
+msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
+msgstr "We couldn’t confirm this purchase yet. Check your balance before trying again."
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "We couldn’t confirm this purchase. Check your balance before trying again."
+msgstr "We couldn’t confirm this purchase. Check your balance before trying again."
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+#~ msgid "We’re still confirming your purchase. Your balance will update shortly."
+#~ msgstr "We’re still confirming your purchase. Your balance will update shortly."
 
 #: src/features/home/HomeHero.tsx
 msgid "What are you working on?"
@@ -3824,6 +3840,10 @@ msgstr "Yesterday"
 #: src/features/chat/TextBlock.tsx
 msgid "you answered"
 msgstr "you answered"
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "You left checkout. No purchase was confirmed."
+msgstr "You left checkout. No purchase was confirmed."
 
 #: src/features/project/home/HomeFeed.tsx
 msgid "Your chats will appear here after you send a message."
