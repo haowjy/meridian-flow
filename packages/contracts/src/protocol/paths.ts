@@ -193,6 +193,10 @@ export function apiThreadPath(threadId: string): string {
   return `${API_THREADS_PATH}/${threadId}`;
 }
 
+export function apiThreadTitlePath(threadId: string): string {
+  return `${apiThreadPath(threadId)}/title`;
+}
+
 export function apiThreadWorkPath(threadId: string): string {
   return `${apiThreadPath(threadId)}/work`;
 }

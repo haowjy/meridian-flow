@@ -17,6 +17,7 @@ import {
   apiThreadRecentDocumentsPath,
   apiThreadSkillsPath,
   apiThreadSnapshotPath,
+  apiThreadTitlePath,
   apiThreadTurnContextPreviewDebugPath,
   apiThreadUserStatePath,
   apiThreadWorkPath,
@@ -25,6 +26,8 @@ import {
   type ListThreadRecentDocumentsResponse,
   type ListThreadsResponse,
   type ModelRequestDebugListResponse,
+  type RenameThreadRequest,
+  type RenameThreadResponse,
   type RetireAdmissionResult,
   type SendMessageResponse,
   type Thread,
@@ -136,6 +139,14 @@ export function updateThreadUserState(
   request: UpdateThreadUserStateRequest,
 ): Promise<UpdateThreadUserStateResponse> {
   return patchJson(apiThreadUserStatePath(threadId), request);
+}
+
+/** PATCH /api/threads/:threadId/title — persists a writer-authored thread title. */
+export function renameThread(
+  threadId: string,
+  request: RenameThreadRequest,
+): Promise<RenameThreadResponse> {
+  return patchJson<RenameThreadResponse>(apiThreadTitlePath(threadId), request);
 }
 
 export function rebindThreadWork(
