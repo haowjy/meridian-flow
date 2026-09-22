@@ -145,14 +145,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ]);
     });
 
-    it("lists a work-scoped scratch document with an addressable path and workSlug", async () => {
+    it("resolves project, scheme, path, and work slug for each identity shape", async () => {
       const { repo } = await seed();
       await repo.record(userId(USER), documentId(SCRATCH));
       await repo.record(userId(USER), documentId(NO_WORK_DOC));
+      await repo.record(userId(USER), documentId(PERSONAL_DOC));
       const listed = await repo.listByUser(userId(USER));
-      expect(listed).toHaveLength(2);
+      expect(listed).toHaveLength(3);
       expect(listed).toEqual(
         expect.arrayContaining([
+          // A work-scoped scratch document carries its work slug.
           expect.objectContaining({
             documentId: SCRATCH,
             projectSlug: "serial",
@@ -160,6 +162,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             path: "/scene.md",
             workSlug: "draft",
           }),
+          // No Work and the personal project both resolve to a null work slug.
           expect.objectContaining({
             documentId: NO_WORK_DOC,
             projectSlug: "serial",
@@ -167,22 +170,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             path: "/aside.md",
             workSlug: null,
           }),
+          expect.objectContaining({
+            documentId: PERSONAL_DOC,
+            projectSlug: "personal",
+            scheme: "user",
+            path: "/notes.md",
+            workSlug: null,
+          }),
         ]),
       );
-    });
-
-    it("lists a user:// document on the personal project", async () => {
-      const { repo } = await seed();
-      await repo.record(userId(USER), documentId(PERSONAL_DOC));
-      await expect(repo.listByUser(userId(USER))).resolves.toEqual([
-        expect.objectContaining({
-          documentId: PERSONAL_DOC,
-          projectSlug: "personal",
-          scheme: "user",
-          path: "/notes.md",
-          workSlug: null,
-        }),
-      ]);
     });
 
     it("omits a soft-deleted document and does not let it occupy a cap slot", async () => {

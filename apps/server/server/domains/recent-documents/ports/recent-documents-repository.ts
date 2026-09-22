@@ -15,5 +15,6 @@ export class RecentDocumentUnavailableError extends Error {
 export interface RecentDocumentsRepository {
   /** Throws RecentDocumentUnavailableError when the document is missing, deleted, or not visible. */
   record(userId: UserId, documentId: DocumentId): Promise<void>;
-  listByUser(userId: UserId, limit?: number): Promise<RecentDocumentItem[]>;
+  /** Newest first, capped at {@link USER_RECENT_DOCUMENTS_CAP}. */
+  listByUser(userId: UserId): Promise<RecentDocumentItem[]>;
 }

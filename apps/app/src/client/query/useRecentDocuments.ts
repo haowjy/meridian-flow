@@ -14,29 +14,15 @@ export type RecentDocumentsStatus = ListQueryStatus<RecentDocumentItem> & {
   documents: RecentDocumentItem[] | null;
 };
 
-export function useRecentDocuments(options?: {
-  enabled?: boolean;
-  limit?: number;
-}): RecentDocumentsStatus {
-  const enabled = options?.enabled ?? true;
+export function useRecentDocuments(): RecentDocumentsStatus {
   const result = unwrapListQuery(
     useQuery({
-      queryKey: accountQueryKeys.recentDocuments(options?.limit),
-      queryFn: () => listRecentDocuments({ limit: options?.limit }),
+      queryKey: accountQueryKeys.recentDocuments,
+      queryFn: listRecentDocuments,
       // Recents change as the writer opens things; never serve a stale list just
       // because the landing remounted. Recording also invalidates this key.
       staleTime: 0,
-      enabled,
     }),
   );
-
-  if (!enabled) {
-    return {
-      ...result,
-      data: null,
-      status: "disabled",
-      documents: null,
-    };
-  }
   return { ...result, documents: result.data };
 }
