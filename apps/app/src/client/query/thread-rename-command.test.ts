@@ -12,7 +12,9 @@ import { HttpResponseError, MeridianApiError } from "@/client/api/http-client";
 import { projectQueryKeys } from "./project-query-keys";
 import {
   abandonThreadRename,
+  applyThreadRenameFence,
   beginThreadRename,
+  captureThreadRenameFence,
   classifyThreadRenameFailure,
   confirmThreadRename,
   readCachedThreadTitle,
@@ -120,7 +122,69 @@ describe("thread-rename command", () => {
     expect(readThreadRenameRecord(client, PROJECT_ID, THREAD_ID).failure).toMatchObject({
       kind: "ambiguous",
     });
-    expect(invalidate).toHaveBeenCalledWith({ queryKey: projectQueryKeys.threads(PROJECT_ID) });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: projectQueryKeys.threads(PROJECT_ID),
+      exact: true,
+    });
+  });
+
+  it("does not invalidate the list from a superseded settlement", () => {
+    const client = clientWithThread();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const first = beginThreadRename(client, PROJECT_ID, THREAD_ID, "First");
+    beginThreadRename(client, PROJECT_ID, THREAD_ID, "Second");
+
+    // The older intent settles while a newer one is still in flight: no refetch
+    // may start, because it can race the newer projection.
+    reconcileThreadRename(client, first, new Error("unknown"));
+    expect(invalidate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: projectQueryKeys.threads(PROJECT_ID) }),
+    );
+    expect(titleOf(client)).toBe("Second");
+  });
+
+  it("does not invalidate the list for a superseded success", () => {
+    const client = clientWithThread();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    const first = beginThreadRename(client, PROJECT_ID, THREAD_ID, "First");
+    beginThreadRename(client, PROJECT_ID, THREAD_ID, "Second");
+
+    expect(confirmThreadRename(client, first, "First")).toBe(false);
+    expect(invalidate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: projectQueryKeys.threads(PROJECT_ID) }),
+    );
+  });
+
+  it("fences a stale list read behind a newer desired title", () => {
+    const client = clientWithThread();
+    // A read captured before the rename starts.
+    const fence = captureThreadRenameFence(client, PROJECT_ID);
+
+    const context = beginThreadRename(client, PROJECT_ID, THREAD_ID, "Renamed");
+    confirmThreadRename(client, context, "Renamed");
+
+    // The stale response still carries the pre-rename row.
+    const applied = applyThreadRenameFence(client, PROJECT_ID, [threadItem("Original")], fence);
+    expect(applied[0]?.title).toBe("Renamed");
+  });
+
+  it("keeps the desired title when a rename begins during a list read", () => {
+    const client = clientWithThread();
+    const fence = captureThreadRenameFence(client, PROJECT_ID);
+    beginThreadRename(client, PROJECT_ID, THREAD_ID, "Renamed");
+
+    const applied = applyThreadRenameFence(client, PROJECT_ID, [threadItem("Original")], fence);
+    expect(applied[0]?.title).toBe("Renamed");
+  });
+
+  it("leaves a list row untouched when its rename fence did not move", () => {
+    const client = clientWithThread();
+    const context = beginThreadRename(client, PROJECT_ID, THREAD_ID, "Renamed");
+    confirmThreadRename(client, context, "Renamed");
+    const fence = captureThreadRenameFence(client, PROJECT_ID);
+
+    const applied = applyThreadRenameFence(client, PROJECT_ID, [threadItem("Server")], fence);
+    expect(applied[0]?.title).toBe("Server");
   });
 
   it("keeps a newer projection when an older intent settles late", () => {

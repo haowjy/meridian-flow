@@ -110,7 +110,7 @@ export async function listProjectThreads(
 ): Promise<ThreadListItem[]> {
   const response = await getJson<ListProjectThreadsResponse>(
     urlFor(apiProjectThreadsPath(projectId), init),
-    { headers: init?.headers },
+    { headers: init?.headers, signal: init?.signal },
   );
   return response.threads;
 }
@@ -316,10 +316,6 @@ export async function createProjectThread(
   return postJson<CreateThreadResponse>(urlFor(apiProjectThreadsPath(projectId), init), data, {
     headers: init?.headers,
   });
-}
-
-export async function deleteProject(projectId: string): Promise<void> {
-  return deleteRequest(apiProjectPath(projectId));
 }
 
 function acceptsContextConflict(status: number, payload: unknown): boolean {

@@ -1,11 +1,31 @@
 import type { ThreadListItem } from "@meridian/contracts/protocol";
-import { useQuery } from "@tanstack/react-query";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listProjectThreads } from "@/client/api/projects-api";
 import { useIsProjectPendingCreation } from "@/client/stores";
 
 import { unwrapListQuery } from "./list-query";
 import { projectQueryKeys } from "./project-query-keys";
+import { applyThreadRenameFence, captureThreadRenameFence } from "./thread-rename-command";
+
+/**
+ * The project thread list read is fenced against in-flight thread renames: a
+ * response captured before a rename revises the title is re-projected instead
+ * of restoring the pre-rename row. Exposed so non-observer reads (tests,
+ * imperative refetches) share the same fence.
+ */
+export function projectThreadsQueryOptions(client: QueryClient, projectId: string) {
+  return {
+    queryKey: projectQueryKeys.threads(projectId),
+    queryFn: ({ signal }: { signal: AbortSignal }) => {
+      const fence = captureThreadRenameFence(client, projectId);
+      return listProjectThreads(projectId, { signal }).then((threads) =>
+        applyThreadRenameFence(client, projectId, threads, fence),
+      );
+    },
+    staleTime: 30_000,
+  };
+}
 
 /**
  * Threads belonging to a single project. Seeded by the project route loader
@@ -34,11 +54,10 @@ export function useProjectThreads(
   const callerEnabled = options?.enabled ?? true;
   const isPendingCreation = useIsProjectPendingCreation(projectId);
   const enabled = callerEnabled && !isPendingCreation;
+  const client = useQueryClient();
   const { data, isError, isFetching, refetch } = unwrapListQuery(
     useQuery({
-      queryKey: projectQueryKeys.threads(projectId),
-      queryFn: () => listProjectThreads(projectId),
-      staleTime: 30_000,
+      ...projectThreadsQueryOptions(client, projectId),
       enabled,
     }),
   );

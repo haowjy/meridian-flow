@@ -146,6 +146,7 @@ export async function patchJson<T>(
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...options?.headers },
     body: JSON.stringify(body),
+    signal: options?.signal,
   });
 
   const payload = await readResponsePayload(response);
