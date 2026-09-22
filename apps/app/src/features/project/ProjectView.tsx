@@ -19,11 +19,17 @@ import {
 } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { isProjectContextCatalogKey } from "@/client/query/project-query-keys";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { observeWorksAvailability } from "@/client/query/works-availability-observer";
+import {
+  patchAccountRecentsFromTabs,
+  readAccountRecents,
+  subscribeAccountRecents,
+} from "@/client/recents";
 import { useContextTabs, useContextTabsStore } from "@/client/stores";
 import type { ContextTab } from "@/client/stores/context-tabs-store/context-tabs-store";
 import {
@@ -48,12 +54,14 @@ import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
 import {
+  useAccountId,
   useContextRemovalCoordinator,
   useProjectContextAvailabilityCoordinator,
 } from "./context/account-feature-context";
 import type { ContextRemovalRoutePort } from "./context/context-removal-coordinator";
 import { ProjectContextRemovalController } from "./context/ProjectContextRemovalController";
 import type { AvailabilityWatchRecord } from "./context/project-context-availability-coordinator";
+import { recentAddressFromTab } from "./context/recent-opening";
 import { TreeCreationProvider } from "./context/TreeCreationProvider";
 import { useDockViewStore } from "./dock/dock-view-store";
 import {
@@ -156,6 +164,7 @@ export type ProjectViewProps = {
 
 export function ProjectView(props: ProjectViewProps) {
   const queryClient = useQueryClient();
+  const accountId = useAccountId();
   const availability = useProjectContextAvailabilityCoordinator();
   const removal = useContextRemovalCoordinator();
   const repairColdWork = useCallback(
@@ -192,18 +201,54 @@ export function ProjectView(props: ProjectViewProps) {
         "recent-routes",
         readRecentRoutes(props.projectId).slice(0, 64).map(availabilityWatchRecord),
       );
+      const tabs = slice?.tabs ?? [];
+      patchAccountRecentsFromTabs(
+        accountId,
+        props.projectId,
+        tabs.flatMap((tab) => {
+          const address = recentAddressFromTab(tab);
+          return address?.kind === "document"
+            ? [{ documentId: tab.documentId, name: tab.name, address }]
+            : [];
+        }),
+      );
+      lease.watch(
+        "account-recents",
+        readAccountRecents(props.projectId).flatMap((item) =>
+          item.acknowledgedRevision !== null && item.address.kind === "document"
+            ? [
+                availabilityWatchRecord({
+                  documentId: item.documentId,
+                  scheme: item.address.scheme,
+                  workId: item.address.workId,
+                }),
+              ]
+            : [],
+        ),
+      );
     };
     reportWatches();
     const stopTabs = useContextTabsStore.subscribe(reportWatches);
     const stopSelection = removal.subscribe(props.projectId, reportWatches);
+    const stopRecents = subscribeAccountRecents(reportWatches);
     const stopWorksObservation = observeWorksAvailability(queryClient, props.projectId);
+    const stopCatalog = queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== "updated") return;
+      if (!isProjectContextCatalogKey(event.query.queryKey, props.projectId)) return;
+      const ids = readAccountRecents(props.projectId)
+        .filter((item) => item.acknowledgedRevision !== null)
+        .map((item) => item.documentId);
+      if (ids.length > 0) void availability.recheck(props.projectId, ids);
+    });
     return () => {
       stopTabs();
       stopSelection();
+      stopRecents();
       stopWorksObservation();
+      stopCatalog();
       lease.release();
     };
-  }, [availability, props.projectId, queryClient, removal]);
+  }, [accountId, availability, props.projectId, queryClient, removal]);
   const [retriedHydration, setRetriedHydration] = useState<WorkingSetHydrationPlan | null>(null);
   const workingSetHydration = retriedHydration ?? props.entryHydration;
   const { threads: projectThreads } = useProjectThreads(props.projectId);

@@ -20,7 +20,8 @@ Authenticated writing workspace. Keep it a thin React/TanStack Start shell over 
 - **Local-first invariant**: state a writer authors or arranges renders from
   device-local persistence first — the network only improves it, and
   disconnect is a status, never a blocking failure. Documents already do this
-  (Yjs + y-indexeddb); Editor tabs use browser-tab-local sessionStorage, and
+  (Yjs + y-indexeddb); Editor tabs use browser-tab-local sessionStorage,
+  account recents are a device-local continuity record, and
   resource metadata/catalog checkpoints use the account IndexedDB replica.
   Works and threads do not yet have the same offline contract. Inherently-online
   surfaces (AI runtime, billing, auth) are exempt: fail loud and honest instead

@@ -74,11 +74,13 @@ strip's leading control (`showEditorRecents`) reaches it without closing a tab:
 the address owns which document is visible, the store owns what stays open, so
 clearing the address leaves the working set intact. Recording
 is not the navigation adapter's job: the document row materializes after the
-open intent, so a write there races persistence and is lost. The active
-tracked or viewer tab records once the document is real. File create records
-the reservation's document id, because that tab does not exist until the
-catalog projects it. Scratch and uploads are not Editor tabs, so they are
-not recorded.
+open intent, so a write there races persistence and is lost. The active editor
+tab records once it is in front of the writer, including a local draft. That
+write lands in the account recents continuity record before the POST. A filed
+document navigates by its readable address. A local draft reopens through the
+empty-path local address (the same history pointer a new document uses), not a
+fabricated path. Scratch and uploads are not
+Editor tabs, so they are not recorded.
 
 ## Reference pages
 

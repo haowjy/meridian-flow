@@ -10,6 +10,7 @@ import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvide
 
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
+import { bindAccountRecents } from "@/client/recents";
 import {
   loadProjectList,
   ProjectStoreProvider,
@@ -134,6 +135,7 @@ export const Route = createFileRoute("/_authenticated")({
 function AuthenticatedLayout() {
   const { projects, now, user } = Route.useLoaderData();
   configureWorkingSetSync(user.userId, user.workingSetSyncEnabled === true);
+  bindAccountRecents(user.userId);
 
   // One unconditional provider tree for every authenticated route — the settings
   // overlay (`?settings=`) and the standalone /billing page render over the same

@@ -31,6 +31,7 @@
 
 ### Fixed
 
+- Opening a document updates this project's recently opened list immediately, including after reload, without waiting for the server. A failed record or an unchanged server row keeps that opening. A stale list cannot erase or reorder it.
 - Child completion emits `agent.run_completed` instead of the spawn-named `agent.spawn_completed`; a continue is not a spawn.
 - A thread that advanced while the writer was elsewhere — a background child's report waking the parent — now appears on return without a manual reload: the snapshot revalidates on activation and refetches when a new run starts. A server-initiated run on a mounted idle thread also streams its continuation live.
 
