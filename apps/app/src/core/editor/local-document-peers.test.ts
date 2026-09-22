@@ -5,11 +5,13 @@ import { IndexeddbPersistence } from "y-indexeddb";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { LocalDocumentPeers } from "./local-document-peers";
+import { createLocalPresence, type LocalPresence } from "./local-presence";
 
 type LocalPeer = {
   document: Y.Doc;
   persistence: IndexeddbPersistence;
   awareness: Awareness;
+  presence: LocalPresence;
   peers: LocalDocumentPeers;
 };
 
@@ -20,9 +22,10 @@ async function connect(name: string): Promise<LocalPeer> {
   const document = new Y.Doc();
   const persistence = new IndexeddbPersistence(name, document);
   const awareness = new Awareness(document);
+  const presence = createLocalPresence(awareness);
   await persistence.whenSynced;
   const peers = new LocalDocumentPeers(document, persistence, awareness);
-  const session = { document, persistence, awareness, peers };
+  const session = { document, persistence, awareness, presence, peers };
   sessions.push(session);
   return session;
 }
@@ -36,6 +39,7 @@ afterEach(async () => {
   for (const session of sessions.splice(0)) {
     await session.peers.drain();
     await session.persistence.destroy();
+    session.presence.release();
     session.awareness.destroy();
     session.document.destroy();
   }
@@ -48,8 +52,8 @@ it("exchanges live awareness between same-incarnation browser peers", async () =
   const left = await connect(name);
   const right = await connect(name);
 
-  left.awareness.setLocalStateField("user", { name: "Left" });
-  left.awareness.setLocalStateField("cursor", { anchor: 1, head: 2 });
+  left.presence.setField("user", { name: "Left" });
+  left.presence.setField("cursor", { anchor: 1, head: 2 });
 
   await vi.waitFor(() => {
     expect(right.awareness.getStates().get(left.awareness.clientID)).toMatchObject({
@@ -58,8 +62,8 @@ it("exchanges live awareness between same-incarnation browser peers", async () =
     });
   });
 
-  right.awareness.setLocalStateField("user", { name: "Right" });
-  right.awareness.setLocalStateField("cursor", { anchor: 3, head: 4 });
+  right.presence.setField("user", { name: "Right" });
+  right.presence.setField("cursor", { anchor: 3, head: 4 });
   await vi.waitFor(() => {
     expect(left.awareness.getStates().get(right.awareness.clientID)).toMatchObject({
       user: { name: "Right" },
