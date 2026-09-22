@@ -28,7 +28,19 @@ import {
 
 const CONTENT_SCHEMES: string[] = [...CONTEXT_URI_SCHEMES];
 
-/** Rows the list will return. Record, list, and prune share this so cap slots are listable rows. */
+/**
+ * Rows the list will return. Record, list, and prune share this so cap slots are
+ * listable rows.
+ *
+ * The liveness facts here (live source, live owning project, live-or-absent work)
+ * are the same facts `context/adapters/document-address` resolves for a path and
+ * `context/adapters/project-context-availability` reports as a reason. They are
+ * written out at each site rather than shared: this one filters by document id
+ * for one user, address resolves one (project, scheme, path), and availability
+ * has to say which fact failed, which needs the distinct reason. The one fact
+ * they could disagree about cannot drift: the schema constrains works.status to
+ * active | archived, so "not archived" and "active" are the same test.
+ */
 function visibleIdentity(userId: UserId): SQL {
   const predicate = and(
     eq(projects.userId, userId),
