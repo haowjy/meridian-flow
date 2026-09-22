@@ -71,3 +71,10 @@ The thread socket's client wire vocabulary is `subscribe`, `unsubscribe`,
 `subscribed`, `event`, `gap`, `error`, and `ping`. Turn cancellation is an HTTP
 operation through `cancelTurn`, not a WebSocket message. Keep these names aligned
 with `@meridian/contracts/protocol` rather than inferring them from UI actions.
+
+A `gap` means the server could not replay from the client's cursor. Its frame
+carries `fromSeq`/`toSeq`; the transport advances the subscription's resume point
+to `toSeq` before re-subscribing, so the next read asks for history the server
+can serve. The truncated catch-up that follows is skipped by the monotonic seq
+guard, and the `onGap` consumers refetch the thread snapshot as the real resync.
+A gap burst coalesces into one resync rather than one per gap.

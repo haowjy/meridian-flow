@@ -254,7 +254,10 @@ contract shapes.
   `normalizeThreadCreate` rejects all spawn/fork lifecycle fields.
   Subagent rows are created only through `SubagentThreadFactory`.
 - Hot cache is bounded at 500 events; older events fall through to journal
-  replay (capped at 10,000 entries).
+  replay (capped at 10,000 entries read from the journal start so cursor grammar
+  matches live delivery). A client behind the window gets a `gap` carrying the
+  requested `fromSeq` and the journal head as `toSeq`; a client already past the
+  window's end gets no gap even though the read hit the cap.
 - `threads.status` is lifecycle only (`idle` | `archived`) and mapped back
   unchanged. Run liveness is never stored there; it is derived from the live
   lease (`ThreadStatus`).
