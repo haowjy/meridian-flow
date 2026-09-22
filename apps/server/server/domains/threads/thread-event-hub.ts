@@ -172,9 +172,20 @@ export function createThreadEventHub(
       );
     }
 
+    // Replay always projects from the journal start so the cursor grammar stays
+    // identical to live delivery, which means the read window is the oldest
+    // rows. The cursor is unreplayable only when the window does not reach the
+    // head *and* the client has not already seen past it; a client at the head
+    // must not be told to gap again, or it resubscribes forever.
+    const headJournalSeq = await deps.journalReader.headSeq(threadId);
+    const lastReadJournalSeq = entries.at(-1)?.seq ?? 0n;
+    const windowTruncated =
+      entries.length === JOURNAL_REPLAY_LIMIT && lastReadJournalSeq < headJournalSeq;
+    const clientAtHead = journalSeqForEventSeq(afterEventSeq) >= headJournalSeq;
+
     return {
       events: replayed.filter((entry) => entry.seq > afterEventSeq),
-      hitReplayLimit: entries.length === JOURNAL_REPLAY_LIMIT,
+      hitReplayLimit: windowTruncated && !clientAtHead,
     };
   }
 

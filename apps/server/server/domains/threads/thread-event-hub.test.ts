@@ -12,11 +12,68 @@ import {
   createInMemoryEventJournalReader,
   createInMemoryEventJournalWriter,
 } from "./adapters/in-memory/index.js";
+import type { EventJournalReader, JournalEntry } from "./ports/index.js";
 import type { SequencedEventInternal } from "./thread-event-hub.js";
 import { createThreadEventHub } from "./thread-event-hub.js";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000901" as ThreadId;
 const PARENT_TURN_ID = "00000000-0000-4000-8000-000000000902";
+
+/** A journal reader whose replay window is the first `windowRows` rows. */
+function createCappedReader(windowRows: number, headSeq: bigint): EventJournalReader {
+  const payload: OrchestratorEvent = {
+    type: "background.started",
+    parentThreadId: THREAD_ID,
+    parentTurnId: PARENT_TURN_ID,
+    childThreadId: "child-1",
+    agentSlug: "code-reviewer",
+    description: "Review the chapter",
+  };
+  const entries: JournalEntry[] = Array.from({ length: windowRows }, (_, index) => ({
+    id: `event-${index}`,
+    threadId: THREAD_ID,
+    turnId: null,
+    seq: BigInt(index + 1),
+    eventType: payload.type,
+    payload,
+    createdAt: new Date(0).toISOString(),
+  }));
+  return {
+    async readAfter(_threadId, afterSeq, limit = Number.POSITIVE_INFINITY) {
+      return entries.filter((entry) => entry.seq > afterSeq).slice(0, limit);
+    },
+    async headSeq() {
+      return headSeq;
+    },
+    async readModelProjectionWatermark() {
+      return 0n;
+    },
+    async listByThread() {
+      return entries;
+    },
+    async listByType() {
+      return [];
+    },
+    async listSince() {
+      return [];
+    },
+    async listByTimeRange() {
+      return [];
+    },
+  };
+}
+
+function createCappedHub(windowRows: number, headSeq: bigint) {
+  return createThreadEventHub({
+    journalWriter: {
+      async appendEvent() {
+        return 0n;
+      },
+    },
+    journalReader: createCappedReader(windowRows, headSeq),
+    eventSink: createNoopEventSink(),
+  });
+}
 
 function createHub() {
   const journal = createInMemoryEventJournalWriter();
@@ -118,5 +175,36 @@ describe("thread event hub subagent activity", () => {
       name: "meridian.subagent.activity",
       value: activity,
     });
+  });
+});
+
+describe("thread event hub replay cap", () => {
+  it("gaps only when the replay window cannot reach the head", async () => {
+    const headCursor = 23_081n * 1_000n + 999n;
+    const behind = await createCappedHub(10_000, 23_081n).catchupAndSubscribe(
+      THREAD_ID,
+      0n,
+      () => {},
+    );
+    expect(behind.hitReplayLimit).toBe(true);
+    behind.unsubscribe();
+
+    const atHead = await createCappedHub(10_000, 23_081n).catchupAndSubscribe(
+      THREAD_ID,
+      headCursor,
+      () => {},
+    );
+    expect(atHead.hitReplayLimit).toBe(false);
+    atHead.unsubscribe();
+  });
+
+  it("does not gap when the journal fits inside the window", async () => {
+    const fits = await createCappedHub(10_000, 10_000n).catchupAndSubscribe(
+      THREAD_ID,
+      0n,
+      () => {},
+    );
+    expect(fits.hitReplayLimit).toBe(false);
+    fits.unsubscribe();
   });
 });
