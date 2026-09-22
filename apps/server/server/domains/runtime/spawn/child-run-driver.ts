@@ -278,8 +278,9 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
   /**
    * Retire a settled run's parent-turn card. The prune and its journal fact are
    * read-model side effects, never part of the run result: a missing row is a
-   * no-op and any failure is reported to the `EventSink` and swallowed, so the
-   * terminal transaction can still commit the run's success.
+   * no-op and any failure is reported to the `EventSink` and swallowed. This
+   * isolates the not-found case only — the call runs inside the terminal
+   * transaction, so a genuine statement error still aborts it and fails the run.
    */
   async function retireRunCard(input: ChildDriveInput, runCard: RunCardRef): Promise<void> {
     try {
