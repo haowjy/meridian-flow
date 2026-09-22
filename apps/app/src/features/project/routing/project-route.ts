@@ -113,6 +113,8 @@ export type ProjectRouteCommands = {
   workHref: (target: WorkDetailTarget) => string;
   closeWork: (options: NavigationOptions) => Promise<void>;
   openWorkContext: (target: WorkContextTarget, options: NavigationOptions) => Promise<void>;
+  /** Editor destination with no document: the recently-opened chooser. */
+  showEditorRecents: (options: NavigationOptions) => Promise<void>;
 };
 
 function stripEmptySearch(search: ProjectSearch): ProjectSearch {
