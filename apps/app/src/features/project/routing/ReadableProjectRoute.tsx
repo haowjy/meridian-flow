@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useBlocker, useRouter, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { getProjectDocumentAddress } from "@/client/api/projects-api";
+import { readFirstSendSubmission } from "@/client/chat-submissions";
 import { projectQueryKeys } from "@/client/query/project-query-keys";
 import { type ProjectRouteData, seedProjectRouteData } from "@/client/query/project-route-data";
 import { useContextCatalogView } from "@/client/query/useContextCatalog";
@@ -22,7 +23,6 @@ import {
   useThreadStore,
 } from "@/client/stores";
 import { hydrateWorkingSet, readRecentRoutes, setThread } from "@/client/working-set";
-import { readInflightChat } from "@/lib/inflight-chat";
 import { originalBrowserSearch } from "@/router-search";
 import { useResolvedChatThread } from "../chat/chat-thread-resolution";
 import { useContextRemovalCoordinator } from "../context/account-feature-context";
@@ -166,11 +166,11 @@ export function ReadableProjectRoute({
   const localTurns = useThreadStore((state) =>
     urlChatId ? state.turnsByThread[urlChatId] : undefined,
   );
-  const inflightChat = urlChatId ? readInflightChat(urlChatId) : null;
+  const firstSendSubmission = urlChatId ? readFirstSendSubmission(user.userId, urlChatId) : null;
   const localChat =
     !!urlChatId &&
     (pendingChat ||
-      !!inflightChat ||
+      !!firstSendSubmission ||
       (localTurns !== undefined && localTurns.length > 0) ||
       chat.status === "resolved");
   const chatIssue = localChat ? undefined : chatCatalogIssue(destination, chat);

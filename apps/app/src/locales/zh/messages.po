@@ -681,6 +681,7 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
+#: src/features/chat/UserTurn.tsx
 msgid "Check submission status"
 msgstr ""
 
@@ -1106,6 +1107,7 @@ msgid "Couldn't search"
 msgstr ""
 
 #: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
 msgstr ""
 
@@ -2889,6 +2891,10 @@ msgstr ""
 msgid "Send message"
 msgstr "发送消息"
 
+#: src/features/chat/UserTurn.tsx
+msgid "Sending"
+msgstr ""
+
 #: src/components/app/ConnectionBanner.tsx
 msgid "Session expired. Please refresh."
 msgstr ""
@@ -2967,6 +2973,7 @@ msgid "Start a quick chat without a project"
 msgstr ""
 
 #: src/components/app/composer/Composer.tsx
+#: src/features/chat/UserTurn.tsx
 msgid "Start over"
 msgstr ""
 

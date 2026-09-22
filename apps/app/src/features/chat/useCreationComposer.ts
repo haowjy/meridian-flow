@@ -5,12 +5,14 @@ import { createProject, createProjectThread } from "@/client/api/projects-api";
 import { useThreadActions } from "@/client/stores";
 import type { ComposerDraftChange, ComposerSubmitEnvelope } from "@/components/app/composer";
 import type { CreationAgent, CreationChoices } from "@/features/agents/creation-agent";
+import { useAccountId } from "@/features/project/context/account-feature-context";
 import { parseProjectAddress } from "@/features/project/routing/project-address";
 import { sendProjectChat } from "@/lib/send-project-chat";
 import { deriveTitleFromMessage } from "@/lib/thread-title";
 
 export function useCreationComposer(projectId: string | null) {
   const router = useRouter();
+  const accountId = useAccountId();
   const threadActions = useThreadActions();
   const [choices, setChoices] = useState<CreationChoices>({});
   const [busy, setBusy] = useState(false);
@@ -35,6 +37,7 @@ export function useCreationComposer(projectId: string | null) {
         );
         if (parsed.kind !== "valid") return false;
         sendProjectChat({
+          accountId,
           projectId,
           projectSlug: parsed.address.projectSlug,
           text: submission.text,
