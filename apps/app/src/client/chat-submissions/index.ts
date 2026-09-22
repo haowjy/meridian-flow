@@ -73,6 +73,10 @@ export function recordChatSubmission(accountId: string, entry: ChatSubmission): 
   return browserJournal()?.record(accountId, entry) ?? false;
 }
 
-export function retireChatSubmission(accountId: string, submissionId: string): void {
-  browserJournal()?.retire(accountId, submissionId);
+export function retireChatSubmission(
+  accountId: string,
+  submissionId: string,
+  expectedEpoch?: number,
+): boolean {
+  return browserJournal()?.retire(accountId, submissionId, expectedEpoch) ?? false;
 }

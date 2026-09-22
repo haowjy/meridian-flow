@@ -10,7 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createProject, createProjectThread } from "@/client/api/projects-api";
 import { createThread } from "@/client/api/threads-api";
-import { readFirstSendSubmission } from "@/client/chat-submissions";
+import { getChatSubmissionEpoch, readFirstSendSubmission } from "@/client/chat-submissions";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import {
   invalidateProjectThreadData,
@@ -27,6 +27,7 @@ import {
   retireFirstSendSubmission,
   runExclusivePersist,
 } from "@/lib/send-project-chat";
+import { shouldRetireSubmission } from "./chat-submission-retirement";
 
 type Controller = ThreadRunController;
 type Creation = NonNullable<PendingStreamStart["creation"]>;
@@ -107,9 +108,9 @@ export function useThreadHandoff(
       }
     };
 
-    const finishFirstSend = (creation: Creation) => {
+    const finishFirstSend = (creation: Creation, epoch: number) => {
       if (creation.submissionId) {
-        retireFirstSendSubmission(accountId, creation.submissionId, threadId, actions);
+        retireFirstSendSubmission(accountId, creation.submissionId, threadId, actions, epoch);
         return;
       }
       actions.clearPendingCreation({ threadId });
@@ -118,13 +119,16 @@ export function useThreadHandoff(
     const startSubmit = (creation: Creation) => {
       if (!creation.text) {
         pendingResumeRef.current = false;
-        finishFirstSend(creation);
+        finishFirstSend(creation, getChatSubmissionEpoch());
         return;
       }
       const envelope = {
         ...serializeComposerDraft(plainComposerDoc(creation.text)),
         activatedSkillSlugs: creation.activatedSkillSlugs ?? [],
       };
+      // Capture the account bind before dispatch: an A→B→A return while the
+      // POST is in flight must not delete the entry the new session needs.
+      const epoch = getChatSubmissionEpoch();
       void controller
         .submit(
           threadId,
@@ -137,13 +141,13 @@ export function useThreadHandoff(
         .then((outcome) => {
           if (outcome.kind === "accepted") {
             clearFailedSend();
-            finishFirstSend(creation);
+            finishFirstSend(creation, epoch);
             return;
           }
           // A definitive rejection is a resolved outcome: retire the durable
-          // intent. Only an ambiguous dispatch keeps it for reload replay.
-          if (outcome.kind === "rejected" && creation.submissionId) {
-            retireFirstSendSubmission(accountId, creation.submissionId, threadId, actions);
+          // intent. Ambiguous and not-seen outcomes keep it for reload replay.
+          if (shouldRetireSubmission(outcome) && creation.submissionId) {
+            retireFirstSendSubmission(accountId, creation.submissionId, threadId, actions, epoch);
           }
           failSend(creation);
         })
@@ -227,7 +231,7 @@ export function useThreadHandoff(
     const submission = readFirstSendSubmission(accountId, threadId);
     if (submission && submission.projectId === projectId) {
       if (pendingResumeRef.current || handoffStartedRef.current) return;
-      persistCreation(rehydrateFirstSendSubmission(submission, actions));
+      persistCreation(rehydrateFirstSendSubmission(submission, actions, accountId));
       return;
     }
 

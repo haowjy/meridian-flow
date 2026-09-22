@@ -15,6 +15,16 @@ const OPTIMISTIC_OWNER_ID = "optimistic-local";
 
 const persistJobs = new Map<string, Promise<void>>();
 
+/**
+ * Per-tab session ids for an in-flight first send. A remount before
+ * acknowledgement must reuse the destination rows instead of appending a
+ * second pending user turn and working turn. Keyed `accountId:submissionId`.
+ */
+const firstSendSessionIds = new Map<
+  string,
+  { optimisticUserTurnId: string; workingTurnId: string }
+>();
+
 /** Serializes background persist work per thread within one tab. */
 export function runExclusivePersist(threadId: string, job: () => Promise<void>): Promise<void> {
   const existing = persistJobs.get(threadId);
@@ -38,6 +48,12 @@ export type SendProjectChatArgs = {
   replace: (href: string) => void;
   search?: string;
   now?: number;
+};
+
+export type SendProjectChatResult = {
+  threadId: string;
+  optimisticUserTurnId: string;
+  workingTurnId: string;
 };
 
 export function makeOptimisticThread(input: {
@@ -98,7 +114,7 @@ export function sendProjectChat({
   replace,
   search = "",
   now,
-}: SendProjectChatArgs): { threadId: string; optimisticUserTurnId: string; workingTurnId: string } {
+}: SendProjectChatArgs): SendProjectChatResult | null {
   const threadId = existingThreadId ?? crypto.randomUUID();
   const timestamp = new Date(now ?? Date.now()).toISOString();
   const trimmed = text.trim();
@@ -106,6 +122,24 @@ export function sendProjectChat({
   const isNew = !existingThreadId;
 
   if (isNew) {
+    // Durable witness before any display or navigation: if the intent cannot be
+    // persisted, do not show a destination or dispatch it. Keep the draft so
+    // the composer can report the local failure.
+    const submission: FirstSendChatSubmission = {
+      kind: "first-send",
+      submissionId,
+      threadId,
+      projectId,
+      createdAt: timestamp,
+      text: trimmed,
+      activatedSkillSlugs: activatedSkillSlugs ? [...activatedSkillSlugs] : [],
+      title,
+      workId,
+      agentSelection: agent.selection,
+      agentName: agent.name,
+      agentSlug: agent.slug,
+    };
+    if (!recordChatSubmission(accountId, submission)) return null;
     threadActions.ensureThread(
       makeOptimisticThread({ id: threadId, projectId, title, timestamp, workId, agent }),
     );
@@ -133,23 +167,10 @@ export function sendProjectChat({
       createProject: false,
     },
   });
-  // Durable witness: recorded before navigation and before the background
-  // dispatch, so a reload or tab close can still replay with this identity.
-  const submission: FirstSendChatSubmission = {
-    kind: "first-send",
-    submissionId,
-    threadId,
-    projectId,
-    createdAt: timestamp,
-    text: trimmed,
-    activatedSkillSlugs: activatedSkillSlugs ? [...activatedSkillSlugs] : [],
-    title,
-    workId,
-    agentSelection: agent.selection,
-    agentName: agent.name,
-    agentSlug: agent.slug,
-  };
-  recordChatSubmission(accountId, submission);
+  firstSendSessionIds.set(`${accountId}:${submissionId}`, {
+    optimisticUserTurnId,
+    workingTurnId,
+  });
   replace(inflightChatHref(projectSlug, threadId, search));
   return { threadId, optimisticUserTurnId, workingTurnId };
 }
@@ -160,8 +181,10 @@ export function retireFirstSendSubmission(
   submissionId: string,
   threadId: string,
   threadActions: ThreadStoreActions,
+  expectedEpoch?: number,
 ): void {
-  retireChatSubmission(accountId, submissionId);
+  retireChatSubmission(accountId, submissionId, expectedEpoch);
+  firstSendSessionIds.delete(`${accountId}:${submissionId}`);
   threadActions.clearPendingCreation({ threadId });
 }
 
@@ -173,6 +196,7 @@ export function retireFirstSendSubmission(
 export function rehydrateFirstSendSubmission(
   entry: FirstSendChatSubmission,
   threadActions: ThreadStoreActions,
+  accountId: string,
 ): NonNullable<PendingStreamStart["creation"]> {
   threadActions.ensureThread(
     makeOptimisticThread({
@@ -190,9 +214,20 @@ export function rehydrateFirstSendSubmission(
   );
   threadActions.markPendingCreation({ threadId: entry.threadId });
   threadActions.markHandoffPending(entry.threadId);
-  const optimisticUserTurnId = threadActions.appendUserTurn(entry.threadId, entry.text).id;
-  const workingTurnId = crypto.randomUUID();
+  // Reuse the rows a same-tab remount already appended before acknowledgement;
+  // only a fresh store (real reload or another tab) needs new local ids.
+  const mapKey = `${accountId}:${entry.submissionId}`;
+  const remembered = firstSendSessionIds.get(mapKey);
+  const existingTurns = threadActions.turns(entry.threadId) ?? [];
+  const reuse =
+    remembered !== undefined &&
+    existingTurns.some((turn) => turn.id === remembered.optimisticUserTurnId);
+  const optimisticUserTurnId = reuse
+    ? remembered.optimisticUserTurnId
+    : threadActions.appendUserTurn(entry.threadId, entry.text).id;
+  const workingTurnId = reuse ? remembered.workingTurnId : crypto.randomUUID();
   threadActions.ensureAssistantTurn(entry.threadId, workingTurnId);
+  firstSendSessionIds.set(mapKey, { optimisticUserTurnId, workingTurnId });
   return {
     projectId: entry.projectId,
     title: entry.title,

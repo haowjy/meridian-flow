@@ -138,6 +138,31 @@ describe("useChatSubmissionRecovery", () => {
     expect(latest.current?.recovered[0]?.submissionId).toBe("sub-1");
   });
 
+  it("replays the stored fingerprint with the same submission id when lookup is not-seen", async () => {
+    recordChatSubmission(ACCOUNT, entry());
+    const scenario = new ThreadRunScenario({
+      lookup: async ({ submissionId }) => ({ kind: "not-seen", submissionId }),
+    });
+
+    await mount(ACCOUNT, scenario, () => undefined);
+
+    await act(async () => {
+      await vi.waitFor(() => expect(scenario.appendRequests).toHaveLength(1));
+    });
+    expect(scenario.appendRequests[0]).toMatchObject({
+      data: { threadId: THREAD_ID, submissionId: "sub-1", text: "Hello" },
+    });
+    expect(scenario.lookupRequests).toHaveLength(1);
+
+    // The default append is accepted, so the replay bridges the row and retires
+    // the entry: exactly one user row, no Start over / Check recovery surface.
+    await act(async () => {
+      await vi.waitFor(() => expect(readChatSubmissions(ACCOUNT)).toEqual([]));
+    });
+    expect(scenario.turns()).toHaveLength(1);
+    expect(scenario.turns()[0]).toMatchObject({ id: "turn-user", status: "complete" });
+  });
+
   it("marks the row failed and retires the entry on a definitive rejection", async () => {
     recordChatSubmission(ACCOUNT, entry());
     const scenario = new ThreadRunScenario({

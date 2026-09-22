@@ -45,11 +45,35 @@ export type SubmitOptions = {
   keepOptimisticOnFailure?: boolean;
 };
 
+/**
+ * The dispatch fingerprint a submit needs. `ComposerSubmitEnvelope` is
+ * assignable; journal recovery replays the persisted fields without a draft.
+ */
+export type SubmissionPayload = Pick<
+  ComposerSubmitEnvelope,
+  "submissionId" | "acceptedRevision" | "text" | "blocks" | "references" | "activatedSkillSlugs"
+>;
+
 function isAdmissionPending(error: unknown): boolean {
   return (
     (error instanceof HttpResponseError || isMeridianApiError(error)) &&
     (error.message === "admission_pending" || error.message.includes("admission_pending"))
   );
+}
+
+/**
+ * A structured refusal or a 4xx proves the endpoint rejected the write, so the
+ * journal entry may be retired. A 5xx, a transport failure, or an unstructured
+ * response does not prove the write never landed: keep the witness recoverable.
+ */
+function isDefinitiveWriteRejection(error: unknown): boolean {
+  if (isMeridianApiError(error)) {
+    return error.status === undefined || (error.status >= 400 && error.status < 500);
+  }
+  if (error instanceof HttpResponseError) {
+    return error.status >= 400 && error.status < 500;
+  }
+  return false;
 }
 
 export type ThreadRunControllerOptions = {
@@ -111,10 +135,10 @@ export class ThreadRunController {
 
   submit(
     threadId: string,
-    envelope: ComposerSubmitEnvelope,
+    payload: SubmissionPayload,
     options: SubmitOptions = {},
   ): Promise<ComposerSubmitOutcome> {
-    return this.dispatch(threadId, envelope, options, this.admissionEpoch);
+    return this.dispatch(threadId, payload, options, this.admissionEpoch);
   }
 
   private dropOptimistic(threadId: string, options: SubmitOptions): void {
@@ -124,7 +148,7 @@ export class ThreadRunController {
 
   private async dispatch(
     threadId: string,
-    envelope: ComposerSubmitEnvelope,
+    envelope: SubmissionPayload,
     options: SubmitOptions,
     admissionEpoch: number,
   ): Promise<ComposerSubmitOutcome> {
@@ -135,8 +159,8 @@ export class ThreadRunController {
     });
     if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
     if (this.admissionLease) {
-      this.dropOptimistic(threadId, options);
-      return outcome("rejected");
+      // Not dispatched. Keep the row and journal so recovery still owns it.
+      return outcome("ambiguous");
     }
 
     const lease = {};
@@ -147,9 +171,10 @@ export class ThreadRunController {
         connectionToken = await this.transport.awaitConnectionToken();
       } catch (error) {
         if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
-        this.dropOptimistic(threadId, options);
+        // The POST never started: nothing was written, but the connection-token
+        // fetch can also fail after the user saw the row. Keep it recoverable.
         announceError(errorMessage(error, "Failed to submit message"));
-        return outcome("rejected");
+        return outcome("ambiguous");
       }
       if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
 
@@ -169,11 +194,11 @@ export class ThreadRunController {
       } catch (error) {
         if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
         if (isAdmissionPending(error)) return outcome("ambiguous");
-        if (isMeridianApiError(error) || error instanceof HttpResponseError) {
+        if (isDefinitiveWriteRejection(error)) {
           this.dropOptimistic(threadId, options);
           return outcome("rejected");
         }
-        return this.reconcile(
+        const reconciled = await this.reconcile(
           threadId,
           envelope.submissionId,
           envelope.acceptedRevision,
@@ -181,8 +206,15 @@ export class ThreadRunController {
           "lookup",
           admissionEpoch,
         );
+        // A live send cannot conclude "never seen" from a lookup that may race
+        // an in-flight admission: keep it ambiguous so recovery owns replay.
+        return reconciled.kind === "not-seen" ? outcome("ambiguous") : reconciled;
       }
-      if (this.admissionEpoch !== admissionEpoch) return outcome("accepted");
+      if (this.admissionEpoch !== admissionEpoch) {
+        // Accepted by the server, but this session no longer owns the thread:
+        // do not acknowledge. Return ambiguous so the caller keeps the journal.
+        return outcome("ambiguous");
+      }
       if (options.optimisticUserTurnId) {
         this.actions.acknowledgeUserTurn(
           threadId,
@@ -276,8 +308,8 @@ export class ThreadRunController {
         submissionId,
       });
       if (this.admissionEpoch !== admissionEpoch) {
-        if (result.kind === "accepted" || result.kind === "already-accepted")
-          return outcome("accepted");
+        // A late accepted result is not bridged into the store, so it must not
+        // read as acknowledged. A proved refusal still retires the journal.
         if (result.kind === "rejected" || result.kind === "retired") return outcome("rejected");
         return outcome("ambiguous");
       }
@@ -306,6 +338,7 @@ export class ThreadRunController {
         }
         return outcome("rejected");
       }
+      if (result.kind === "not-seen") return outcome("not-seen");
       return outcome("ambiguous");
     } catch {
       return outcome("ambiguous");

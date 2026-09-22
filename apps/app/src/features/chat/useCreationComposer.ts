@@ -36,7 +36,7 @@ export function useCreationComposer(projectId: string | null) {
           router.history.location.state,
         );
         if (parsed.kind !== "valid") return false;
-        sendProjectChat({
+        const result = sendProjectChat({
           accountId,
           projectId,
           projectSlug: parsed.address.projectSlug,
@@ -49,7 +49,7 @@ export function useCreationComposer(projectId: string | null) {
           search: router.history.location.search,
           replace: (href) => router.history.replace(href),
         });
-        return true;
+        return result !== null;
       }
       setBusy(true);
       try {

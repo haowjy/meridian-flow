@@ -34,6 +34,7 @@ vi.mock("@/lib/send-project-chat", () => ({
   rehydrateFirstSendSubmission: vi.fn(),
 }));
 vi.mock("@/client/chat-submissions", () => ({
+  getChatSubmissionEpoch: vi.fn(() => 1),
   readFirstSendSubmission: vi.fn(() => null),
 }));
 vi.mock("@/client/api/projects-api", () => ({

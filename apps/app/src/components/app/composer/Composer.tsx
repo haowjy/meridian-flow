@@ -64,7 +64,8 @@ export { serializeComposerDraft } from "./composer-document";
 export type ComposerSubmitOutcome =
   | Readonly<{ kind: "accepted"; submissionId: string; acceptedRevision: number }>
   | Readonly<{ kind: "rejected"; submissionId: string; acceptedRevision: number }>
-  | Readonly<{ kind: "ambiguous"; submissionId: string; acceptedRevision: number }>;
+  | Readonly<{ kind: "ambiguous"; submissionId: string; acceptedRevision: number }>
+  | Readonly<{ kind: "not-seen"; submissionId: string; acceptedRevision: number }>;
 
 export type ComposerUploadScope = { kind: "work"; projectId: string; workId: string };
 
@@ -170,6 +171,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const suppressDraftChangeRef = useRef(false);
   const [pending, setPending] = useState(0);
   const [locked, setLocked] = useState(false);
+  const [submitFailure, setSubmitFailure] = useState(false);
   const [hasContent, setHasContent] = useState(() => {
     if (!initialDraft) return false;
     const projection = serializeComposerDraft(initialDraft.doc);
@@ -296,6 +298,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         composerSelection(current.state.selection),
       );
       setHasContent(envelope.text.length > 0 || envelope.references.length > 0);
+      setSubmitFailure(false);
       if (!suppressDraftChangeRef.current)
         onDraftChange?.({ text: envelope.text, snapshot: envelope.draft });
     },
@@ -395,7 +398,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
         outcome.acceptedRevision !== envelope.acceptedRevision
       )
         return;
-      if (outcome.kind === "ambiguous") {
+      if (outcome.kind === "ambiguous" || outcome.kind === "not-seen") {
         setQuarantined(envelope);
         setLocked(true);
         return;
@@ -437,6 +440,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       }),
     );
     inFlight.current = null;
+    // A rejected send is not cleared: keep the draft and surface the local
+    // failure on the composer instead of silently dropping it.
+    setSubmitFailure(outcome.kind === "rejected");
     await settle(envelope, outcome);
   }
   async function attach(file: File, retryIntakeId?: string, retryPosition?: number) {
@@ -636,6 +642,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           </span>
         ) : null}
       </div>
+      {submitFailure ? (
+        <p role="alert" className="mt-1 text-right text-xs text-destructive">
+          {t`Couldn't send. Your message was not lost.`}
+        </p>
+      ) : null}
     </div>
   );
 });
