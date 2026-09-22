@@ -30,6 +30,7 @@ import type {
 } from "./ThreadTransport";
 import {
   type ActiveThreadSubscription,
+  selectNewestSeq,
   WsThreadSubscriptionRegistry,
 } from "./ws-thread-subscription";
 
@@ -253,6 +254,15 @@ export class WsThreadTransport implements ThreadTransport {
         message: message.message,
         gapCount: subscription.gapCount,
       });
+    }
+
+    // A gap means the server could not replay from our cursor. Jump the resume
+    // point to the head it reported so the next subscribe requests events the
+    // server can actually serve; re-requesting the same unreplayable window
+    // would gap forever. The truncated history is recovered from the thread
+    // snapshot the onGap consumers refetch.
+    if (message.toSeq) {
+      subscription.lastSeq = selectNewestSeq(subscription.lastSeq, message.toSeq);
     }
 
     if (this.socket.isSocketOpen()) {
