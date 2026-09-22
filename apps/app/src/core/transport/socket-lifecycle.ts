@@ -112,6 +112,15 @@ export class SocketLifecycleController {
     return this.socket;
   }
 
+  /**
+   * Generation of the socket most recently created (or, at close time, the one
+   * that just closed). Bumped on every `startSocket`/`teardown`, so a consumer
+   * can tag a write and later recognize its socket's close.
+   */
+  get currentGeneration(): number {
+    return this.socketGeneration;
+  }
+
   isSocketOpen(): boolean {
     return !!this.socket && this.socket.readyState === WebSocket.OPEN;
   }

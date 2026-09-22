@@ -23,6 +23,7 @@ import {
 } from "@/components/app/composer/composer-document";
 import type {
   InterruptRespondInput,
+  InterruptRespondReceipt,
   ThreadTransport,
   ThreadTransportHandlers,
   ThreadTransportSubscribeOptions,
@@ -72,10 +73,14 @@ class ScenarioThreadTransport implements ThreadTransport {
   interruptResponses: InterruptRespondInput[] = [];
   /** When true, `respondInterrupt` reports that the frame was never sent. */
   interruptSendFails = false;
+  /** Socket generation reported on a successful interrupt write. */
+  socketGeneration = 1;
 
   private readonly interruptErrorListeners = new Set<{
     listener: (event: { threadId: string; error: Error }) => void;
   }>();
+
+  private readonly socketClosedListeners = new Set<(generation: number) => void>();
 
   private readonly connectionWaiters = new Set<{
     resolve(token: string): void;
@@ -124,9 +129,11 @@ class ScenarioThreadTransport implements ThreadTransport {
     };
   }
 
-  respondInterrupt(input: InterruptRespondInput): boolean {
+  respondInterrupt(input: InterruptRespondInput): InterruptRespondReceipt {
     this.interruptResponses.push(input);
-    return !this.interruptSendFails;
+    return this.interruptSendFails
+      ? { sent: false }
+      : { sent: true, socketGeneration: this.socketGeneration };
   }
 
   onInterruptResponseError(
@@ -141,6 +148,17 @@ class ScenarioThreadTransport implements ThreadTransport {
 
   emitInterruptResponseError(threadId: string, error: Error): void {
     for (const { listener } of this.interruptErrorListeners) listener({ threadId, error });
+  }
+
+  onSocketGenerationClosed(listener: (generation: number) => void): () => void {
+    this.socketClosedListeners.add(listener);
+    return () => {
+      this.socketClosedListeners.delete(listener);
+    };
+  }
+
+  emitSocketClose(generation = this.socketGeneration): void {
+    for (const listener of this.socketClosedListeners) listener(generation);
   }
 
   async cancel(threadId: string, turnId: string) {
@@ -287,6 +305,10 @@ export class ThreadRunScenario {
 
   reportGap(threadId = "thread_1"): void {
     this.transport.gap(threadId);
+  }
+
+  closeSocket(generation = this.transport.socketGeneration): void {
+    this.transport.emitSocketClose(generation);
   }
 
   turns(threadId = "thread_1") {

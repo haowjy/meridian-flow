@@ -5,6 +5,7 @@
 export type {
   ConnectionState,
   InterruptRespondInput,
+  InterruptRespondReceipt,
   ThreadGapEvent,
   ThreadInterruptResponseError,
   ThreadTransport,
