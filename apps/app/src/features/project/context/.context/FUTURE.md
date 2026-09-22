@@ -22,3 +22,11 @@ Code-local nice-to-haves for `RecentDocumentsLanding.tsx` and the recorder in
   available yet." wall (`ReadableProjectRoute.tsx`). The tab seam produces no
   such tab, so none is recorded today; omit those schemes from the list if one
   ever is.
+- Nothing asserts that every scheme in `CONTEXT_URI_SCHEMES` is resolvable by
+  `document-address`, which is the one axis where recents' listability and
+  context's addressability can genuinely diverge: a listed but unaddressable
+  scheme shows a row that opens onto nothing. A table test over the scheme list
+  closes it; not written because no such scheme exists today.
+- Prune now runs only when a row moved, so an unlistable row can linger in the
+  table until the next real open. Bounded by the cap and invisible to the list
+  (which filters it), so it is storage hygiene on a delay, not staleness.
