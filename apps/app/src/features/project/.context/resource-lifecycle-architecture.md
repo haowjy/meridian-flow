@@ -58,7 +58,7 @@ Closing the view never abandons the resource or cancels synchronization. Explici
 
 Trees, reference browsing, wikilink resolution, restored tabs, readable addresses, and stable-ID navigation consume the same projection. A readable path is a locator; Document ID and stable resource handle are identity. Current identity wins over an obsolete remint alias when both appear in the catalog.
 
-Known exact content opens locally before remote admission. The returned admission binds another lease to the same local session after route and workspace settlement. Remote ownership reconciliation proceeds separately and waits for an adoption-eligible editor binding; navigation and background probe leases never acknowledge a session that would be released immediately. An unacquired catalog resource uses the server opener, and a successful synchronized session can then establish exact local content for later opens. Missing or uninitialized IndexedDB is never treated as an editable blank cache.
+Known exact content opens locally before remote admission. The returned admission binds another lease to the same local session after route and workspace settlement. Remote ownership reconciliation proceeds separately and waits for an adoption-eligible editor binding; navigation and background probe leases never acknowledge a session that would be released immediately. An unacquired catalog resource uses the server opener, and its synchronized registry session survives navigation preflight until the editor binding owns it, then establishes exact local content for later opens. Missing or uninitialized IndexedDB is never treated as an editable blank cache.
 
 ## Rename, move, and delete
 
