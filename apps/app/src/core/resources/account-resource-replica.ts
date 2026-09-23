@@ -411,7 +411,7 @@ export class AccountResourceReplica {
         !(await session.hasInitializedLocalContent())
       )
         return;
-      const cached = await this.commitPlan(key, (record) =>
+      await this.commitPlan(key, (record) =>
         recordAcquiredResourceContent({
           record,
           projectId,
@@ -422,7 +422,16 @@ export class AccountResourceReplica {
           transitionId: crypto.randomUUID(),
         }),
       );
-      if (cached === "unchanged") return;
+      const captured = await this.metadata.readAccessibleResource(projectId, key);
+      if (
+        !captured ||
+        captured.resource.identity.documentId !== documentId ||
+        captured.resource.lifecycle.kind !== "acknowledged" ||
+        captured.resource.lifecycle.availabilityGeneration !== generation ||
+        captured.resource.content.kind !== "exact" ||
+        captured.resource.content.databaseName !== databaseName
+      )
+        return;
       this.schedule(key);
       await this.installProjectRegistryOwnership(projectId, key, generation, session);
     } finally {
