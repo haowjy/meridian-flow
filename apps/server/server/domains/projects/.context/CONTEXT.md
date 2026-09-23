@@ -8,6 +8,7 @@ This domain is not the full project CRUD surface; that lives in
 
 - **Default bootstrap** — `ProjectRepository.ensureDefaultBootstrap(userId)`
   idempotently creates or reuses the user's personal project, manuscript context source, `chapter-1.md` document, the locked No Work row, and that Work's Scratch and Uploads sources. Bootstrap creates no thread.
+- **Ordinary project creation** — creates the project-scoped Manuscript source before No Work and catalog initialization so the project has a manifest identity before it is returned. It does not seed a chapter document or Work-owned sources.
 - **Bootstrap URI** — `DEFAULT_BOOTSTRAP_URI` is `manuscript://chapter-1.md`.
 - **Work domain** — `WorkRepository` owns explicit Work metadata/lifecycle persistence, and `listWorkCatalog` owns the owner-gated catalog projection across Work persistence and collab pending-draft counts.
 
@@ -36,6 +37,7 @@ missing, foreign-owner and deleted handles resolve unavailable.
 
 - The bootstrap transaction takes a Postgres advisory lock scoped to the user id
   so concurrent first-load requests converge.
+- Ordinary project creation persists its project-scoped Manuscript source, locked No Work, and catalog lifecycle state in the same transaction as the project row.
 - The personal project is selected by `projects.userId`, `isPersonal = true`,
   and `deletedAt IS NULL`.
 - Bootstrap creates no Agent, thread, or membership. It does insert the locked No Work

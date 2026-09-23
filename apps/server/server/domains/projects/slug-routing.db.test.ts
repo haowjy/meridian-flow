@@ -15,6 +15,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe("slug routing (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
+    const { eq } = await import("drizzle-orm");
     const { createDrizzleProjectRepository } = await import(
       "./adapters/project-repository/drizzle.js"
     );
@@ -51,6 +52,72 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("project findById on a non-UUID slug resolves to null", async () => {
       const repo = createDrizzleProjectRepository({ db });
       await expect(repo.findById("probe-rowmenu-not-a-uuid" as never)).resolves.toBeNull();
+    });
+
+    it("creates the project manifest source before publishing its catalog identity", async () => {
+      const userId = "93b1f764-1234-f678-0712-123456789ad2";
+      await db.insert(schema.users).values({
+        id: userId,
+        externalId: "manifest-owner",
+        email: "manifest-owner@example.com",
+      });
+      const catalog = createDrizzleContextCatalog(db);
+      const projectRepository = createDrizzleProjectRepository({
+        db,
+        catalogLifecycle: catalog,
+        ensureNoWork: async (projectId) => workRepository().ensureNoWork(projectId),
+      });
+
+      const project = await projectRepository.create({ userId, title: "Manifest serial" });
+      const snapshot = await catalog.snapshot({ kind: "project", projectId: project.id });
+
+      expect(snapshot.entries).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: "source", scheme: "manuscript", name: "Manuscript" }),
+        ]),
+      );
+      expect(await workRepository().findNoWork(project.id)).toMatchObject({
+        projectId: project.id,
+        isNoWork: true,
+      });
+    });
+
+    it("rolls back project identity and No Work when catalog initialization fails", async () => {
+      const userId = "93b1f764-1234-f678-0712-123456789ad3";
+      await db.insert(schema.users).values({
+        id: userId,
+        externalId: "failed-manifest-owner",
+        email: "failed-manifest-owner@example.com",
+      });
+      let projectId: string | undefined;
+      const projectRepository = createDrizzleProjectRepository({
+        db,
+        ensureNoWork: async (id) => workRepository().ensureNoWork(id),
+        catalogLifecycle: {
+          async refreshProject(id) {
+            projectId = id;
+            throw new Error("catalog initialization failed");
+          },
+          async upsertWorkAuthorities() {},
+        },
+      });
+
+      await expect(
+        projectRepository.create({ userId, title: "Unpublished serial" }),
+      ).rejects.toThrow("catalog initialization failed");
+      if (!projectId) throw new Error("Catalog initialization did not observe the project");
+      expect(
+        await db.select().from(schema.projects).where(eq(schema.projects.id, projectId)),
+      ).toEqual([]);
+      expect(
+        await db
+          .select()
+          .from(schema.contextSources)
+          .where(eq(schema.contextSources.projectId, projectId)),
+      ).toEqual([]);
+      expect(
+        await db.select().from(schema.works).where(eq(schema.works.projectId, projectId)),
+      ).toEqual([]);
     });
 
     it("allocates concurrent owner-scoped handles and reserves deleted addresses", async () => {
