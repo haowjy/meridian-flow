@@ -16,6 +16,7 @@ const ids = {
   card: "00000000-0000-4000-8000-000000000be8",
   root: "00000000-0000-4000-8000-000000000be9" as ThreadId,
   rootTurn: "00000000-0000-4000-8000-000000000bea" as TurnId,
+  nextExecution: "00000000-0000-4000-8000-000000000beb" as TurnId,
 };
 
 if (!runDb || !databaseUrl) describe.skip("report publication and recovery (postgres)", () => {});
@@ -228,6 +229,57 @@ else
         .from(schema.eventJournal)
         .where(eq(schema.eventJournal.threadId, ids.parent));
       expect(events.map((row) => row.eventType)).toEqual(["agent.run_completed"]);
+    });
+
+    it("advances a bounded sweep past one failing publication", async () => {
+      await terminal();
+      await db.insert(schema.turns).values({
+        id: ids.nextExecution,
+        threadId: ids.child,
+        parentTurnId: ids.execution,
+        role: "assistant",
+        status: "streaming",
+      });
+      await repos.executionReports.admit({
+        childThreadId: ids.child,
+        assistantTurnId: ids.nextExecution,
+        handle: "p1",
+        origin: "foreground_message",
+        deliveryMode: "direct",
+        callerThreadId: ids.parent,
+        callerTurnId: ids.parentTurn,
+        toolCallId: "message-2",
+        cardBlockId: null,
+      });
+      await finalizeExecution(
+        { repos, eventWriter },
+        {
+          threadId: ids.child,
+          assistantTurnId: ids.nextExecution,
+          cause: { kind: "success", finishReason: "end_turn", finalPublicText: "second" },
+        },
+      );
+      const failingFirst = createReportPublisher({
+        repos,
+        eventWriter: {
+          async appendEvent(threadId, event) {
+            if (event.type === "agent.run_completed" && event.execution === ids.execution) {
+              throw new Error("first publication unavailable");
+            }
+            return eventWriter.appendEvent(threadId, event);
+          },
+        },
+        threadedInbox,
+        eventSink,
+      });
+      expect(await failingFirst.sweep(1)).toBe(1);
+      expect(
+        (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,
+      ).toBe("pending");
+      expect(await failingFirst.sweep(1)).toBe(1);
+      expect(
+        (await repos.executionReports.findByExecution(ids.child, ids.nextExecution))?.publication,
+      ).toBe("published");
     });
 
     it("abandons publication after hard deletion without deleting retained child output", async () => {
