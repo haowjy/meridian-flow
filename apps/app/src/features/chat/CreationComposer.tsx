@@ -9,8 +9,8 @@ import { Composer } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
+import { NewThreadComposerToolbar } from "@/features/project/chat-landing/NewThreadComposerToolbar";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { NewThreadComposerToolbar } from "@/features/project/home/NewThreadComposerToolbar";
 import { AgentOnlyComposerToolbar } from "./ChatComposerToolbar";
 import { useCreationComposer } from "./useCreationComposer";
 

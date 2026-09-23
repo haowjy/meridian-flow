@@ -138,12 +138,12 @@ msgid "{0} isn't in {section}."
 msgstr "{0} isn't in {section}."
 
 #. placeholder {0}: item.title
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
 msgid "{0} moved to Favorite chats"
 msgstr "{0} moved to Favorite chats"
 
 #. placeholder {0}: item.title
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
 msgid "{0} moved to Recent chats"
 msgstr "{0} moved to Recent chats"
 
@@ -663,11 +663,11 @@ msgstr "Chat context"
 #~ msgid "Chat creation is still being reconciled."
 #~ msgstr "Chat creation is still being reconciled."
 
-#: src/features/project/HomePaneController.tsx
+#: src/features/project/ChatLandingController.tsx
 msgid "Chats"
 msgstr "Chats"
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Chats couldn’t load"
 msgstr "Chats couldn’t load"
 
@@ -693,7 +693,7 @@ msgstr "Check submission status"
 #~ msgid "Check this message before sending another. You can keep drafting below."
 #~ msgstr "Check this message before sending another. You can keep drafting below."
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Check your connection and try again."
 msgstr "Check your connection and try again."
 
@@ -770,16 +770,16 @@ msgstr "Choose an option"
 msgid "Choose what to do before continuing."
 msgstr "Choose what to do before continuing."
 
-#: src/features/project/home/NewThreadComposerToolbar.tsx
+#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat"
 msgstr "Choose Work for new chat"
 
 #. placeholder {0}: work.name
-#: src/features/project/home/NewThreadComposerToolbar.tsx
+#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat, currently {0}"
 msgstr "Choose Work for new chat, currently {0}"
 
-#: src/features/project/home/NewThreadComposerToolbar.tsx
+#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
@@ -879,7 +879,7 @@ msgstr "Commands"
 #~ msgid "Completed"
 #~ msgstr "Completed"
 
-#: src/features/project/home/NewThreadComposerToolbar.tsx
+#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
 msgid "Composer controls"
 msgstr "Composer controls"
 
@@ -904,7 +904,7 @@ msgstr "Contents preview"
 msgid "Context"
 msgstr "Context"
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Continue"
 msgstr "Continue"
 
@@ -1546,12 +1546,12 @@ msgstr "Extra usage"
 msgid "Failed to load image"
 msgstr "Failed to load image"
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Favorite"
 msgstr "Favorite"
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
 #: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Favorite wasn’t saved"
 msgstr "Favorite wasn’t saved"
@@ -1692,7 +1692,7 @@ msgstr "Hide source"
 msgid "Hold on…"
 msgstr "Hold on…"
 
-#: src/features/project/HomePaneController.tsx
+#: src/features/project/ChatLandingController.tsx
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx
 #: src/features/project/shell/screens.ts
@@ -1917,7 +1917,7 @@ msgstr "Loading {0}"
 msgid "Loading agents…"
 msgstr "Loading agents…"
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Loading chats"
 msgstr "Loading chats"
 
@@ -1930,7 +1930,7 @@ msgstr "Loading chats"
 msgid "Loading image"
 msgstr "Loading image"
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Loading more chats"
 msgstr "Loading more chats"
 
@@ -2061,7 +2061,7 @@ msgstr "Monthly usage"
 msgid "More"
 msgstr "More"
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "More chats couldn’t load."
 msgstr "More chats couldn’t load."
 
@@ -2273,7 +2273,7 @@ msgid "No results yet."
 msgstr "No results yet."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#: src/features/project/home/NewThreadComposerToolbar.tsx
+#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
 msgid "No Work"
 msgstr "No Work"
 
@@ -2570,7 +2570,7 @@ msgstr "Recent"
 msgid "Recent activity"
 msgstr "Recent activity"
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Recent chats"
 msgstr "Recent chats"
 
@@ -2759,7 +2759,7 @@ msgstr "Resume where I left off on any device"
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 #: src/routes/_authenticated/p/$projectSlug.tsx
 msgid "Retry"
 msgstr "Retry"
@@ -3040,7 +3040,7 @@ msgstr "Start a quick chat without a project"
 msgid "Start over"
 msgstr "Start over"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
 msgid "Start with a scene, a question, or a problem to solve."
 msgstr "Start with a scene, a question, or a problem to solve."
 
@@ -3636,7 +3636,7 @@ msgstr "Unarchived Work {name}"
 msgid "Unavailable"
 msgstr "Unavailable"
 
-#: src/features/project/home/NewThreadComposerToolbar.tsx
+#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
 msgid "Unavailable Work"
 msgstr "Unavailable Work"
 
@@ -3781,7 +3781,7 @@ msgstr "What are you working on?"
 msgid "What this figure shows"
 msgstr "What this figure shows"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
 msgid "What will you write next?"
 msgstr "What will you write next?"
 
@@ -3802,7 +3802,7 @@ msgid "Why this is marked merged"
 msgstr "Why this is marked merged"
 
 #: src/features/chat/ComposerWorkControl.tsx
-#: src/features/project/home/NewThreadComposerToolbar.tsx
+#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/screens.ts
 #: src/features/project/work/WorkScreen.tsx
@@ -3894,7 +3894,7 @@ msgstr "You left checkout. No purchase was confirmed."
 msgid "Your answer may not have reached the agent."
 msgstr "Your answer may not have reached the agent."
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Your chats will appear here after you send a message."
 msgstr "Your chats will appear here after you send a message."
 

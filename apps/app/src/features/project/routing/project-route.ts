@@ -106,7 +106,6 @@ export type WorkContextTarget = {
 };
 
 export type ProjectRouteCommands = {
-  openHome: (options: NavigationOptions) => Promise<void>;
   openChat: (threadId: string, options: NavigationOptions) => Promise<void>;
   openDockThread: (threadId: string, options: NavigationOptions) => Promise<void>;
   openWork: (target: WorkDetailTarget, options: NavigationOptions) => Promise<void>;

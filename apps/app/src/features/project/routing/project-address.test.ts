@@ -3,9 +3,17 @@ import { describe, expect, it } from "vitest";
 import { parseProjectAddress, projectAddressHref, projectAddressState } from "./project-address";
 
 describe("readable project addresses", () => {
+  it("uses the project root as the Chat landing and rejects the former Chats path", () => {
+    expect(parseProjectAddress("/p/serial")).toMatchObject({
+      kind: "valid",
+      address: { destination: { kind: "chat-index" } },
+      href: "/p/serial",
+    });
+    expect(parseProjectAddress("/p/serial/chats").kind).toBe("invalid");
+  });
+
   it.each([
     "/p/serial",
-    "/p/serial/chats",
     "/p/serial/chat/550e8400-e29b-41d4-a716-446655440000",
     "/p/serial/works",
     "/p/serial/work/browse",
@@ -32,7 +40,7 @@ describe("readable project addresses", () => {
     "/p/serial",
     "/p/serial/works",
     "/p/serial/work/revision",
-    "/p/serial/chats",
+    "/p/serial",
     "/p/serial/editor",
   ])("departure selection state is stable after parsing %s", (href) => {
     const parsed = parseProjectAddress(href);
@@ -63,6 +71,7 @@ describe("readable project addresses", () => {
     "/p/serial/chat",
     "/p/serial/chat/fight-scene",
     "/p/serial/chat/a/b",
+    "/p/serial/chats",
     "/p/serial/chats/new",
     "/p/serial/agents",
     "/p/serial/publish",

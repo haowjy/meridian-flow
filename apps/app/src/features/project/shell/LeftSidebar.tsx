@@ -23,7 +23,7 @@ import { WorkspaceNavBody } from "./WorkspaceNavBody";
  * LeftSidebar — content of the persistent left project slot. The
  * `shelf-surface` slot wrapper in `desktop-layout.ts` paints the rail. One column:
  *
- *   wordmark (links to app home) · Home/Chat/Editor nav · file tree · account
+ *   wordmark (project library) · Chat/Work/Editor nav · file tree · account
  *
  * The collapse control sits at the far-left (same x as the PaneHeader expand
  * control) so toggling the rail never moves the cursor.
@@ -66,18 +66,14 @@ export function LeftSidebar({
       aria-label={t`Workspace navigation`}
       className="flex h-full min-h-0 w-full flex-col text-foreground"
     >
-      {/* Wordmark — collapse (far-left) · Meridian (app home) */}
+      {/* Wordmark — collapse (far-left) · Meridian (project library) */}
       <div className="flex h-10 shrink-0 items-center gap-1 px-2">
         <PanelToggleButton
           icon={PanelLeftClose}
           label={t`Collapse sidebar  [`}
           onClick={onCollapse}
         />
-        <Link
-          to="/home"
-          className="focus-ring flex min-w-0 items-center gap-1 rounded-md no-underline"
-          aria-label={t`Home`}
-        >
+        <Link to="/" className="focus-ring flex min-w-0 items-center gap-1 rounded-md no-underline">
           <MeridianMark className="size-7" />
           <span className="text-sm font-semibold tracking-tight text-foreground">Meridian</span>
         </Link>

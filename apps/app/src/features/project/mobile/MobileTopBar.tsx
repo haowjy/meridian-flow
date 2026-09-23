@@ -6,7 +6,7 @@
  * through breadcrumb ancestors, and OS/browser back pops levels because
  * drill-in is route-driven. Screens with a location trail (the context
  * screen) supply a breadcrumb, which sits left-aligned right after the
- * hamburger and takes the remaining row width. Screens without one (home,
+ * hamburger and takes the remaining row width. Screens without one (Chat landing,
  * chat, or the routed Results auxiliary surface) get a centered title — the
  * leading button slot and the trailing actions reserve are both exactly 44px,
  * so the title stays truly centered.

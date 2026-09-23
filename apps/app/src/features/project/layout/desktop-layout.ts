@@ -14,7 +14,7 @@
  * — the Editor destination absorbs its sidebar/dock expand toggles into the
  * tab strip, while the persistent left sidebar owns the file explorer. The
  * grid is a single body row across every screen with no files column.
- * Home/Settings render their route pane in `center` (no
+ * Chat landing, Work, and Settings render their route pane in `center` (no
  * center surface present); Chat/Context render only the center surface.
  */
 import type { DesktopProjectSlotId, SlotDefinition } from "./types";

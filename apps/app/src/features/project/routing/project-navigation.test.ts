@@ -57,7 +57,7 @@ describe("project navigation", () => {
       undefined,
       () => restoration,
     );
-    const first = navigation.transition(address("/p/serial/chats"), { replace: false });
+    const first = navigation.transition(address("/p/serial"), { replace: false });
     const second = navigation.transition(address("/p/serial/works"), { replace: false });
     expect(changes).toEqual([]);
     finish(restored);
@@ -112,7 +112,7 @@ describe("project navigation", () => {
   it("records explicit none when default catalogs have not produced a displayed selection", async () => {
     const { history, navigation } = setup("/p/serial/editor");
     const lateDefault = navigation.capture();
-    await navigation.navigate(address("/p/serial/chats"), { replace: false });
+    await navigation.navigate(address("/p/serial"), { replace: false });
     expect(
       await navigation.replaceIfCurrent(
         lateDefault,
@@ -216,7 +216,7 @@ describe("project navigation", () => {
       workSlug: null,
       local,
     });
-    await navigation.navigate(address("/p/serial/chats"), { replace: false });
+    await navigation.navigate(address("/p/serial"), { replace: false });
     history.back();
     expect(history.location.href).toBe("/p/serial/editor");
     expect(history.location.state).toMatchObject({

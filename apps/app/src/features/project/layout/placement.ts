@@ -68,7 +68,6 @@ const HIDDEN_PLACEMENT: SurfacePlacementMap = {
 
 export function placeSurfaces(screen: ScreenKey): SurfacePlacementMap {
   switch (screen) {
-    case "home":
     case "work":
       return {
         ...HIDDEN_PLACEMENT,
