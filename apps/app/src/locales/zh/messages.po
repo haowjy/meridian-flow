@@ -1126,6 +1126,10 @@ msgstr ""
 msgid "Couldn't search"
 msgstr ""
 
+#: src/features/chat/InterruptResponseFeedback.tsx
+msgid "Couldn't send your answer."
+msgstr ""
+
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
@@ -2945,6 +2949,10 @@ msgstr "发送消息"
 msgid "Sending"
 msgstr ""
 
+#: src/features/chat/InterruptResponseFeedback.tsx
+msgid "Sending your answer…"
+msgstr ""
+
 #: src/components/app/ConnectionBanner.tsx
 msgid "Session expired. Please refresh."
 msgstr ""
@@ -3875,6 +3883,10 @@ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."
+msgstr ""
+
+#: src/features/chat/InterruptResponseFeedback.tsx
+msgid "Your answer may not have reached the agent."
 msgstr ""
 
 #: src/features/project/home/HomeFeed.tsx

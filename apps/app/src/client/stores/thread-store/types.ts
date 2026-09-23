@@ -5,6 +5,12 @@
  */
 import type { AgentSelection } from "@meridian/contracts/agents";
 import type { Block, Thread, ThreadListItem, Turn, TurnStatus } from "@meridian/contracts/protocol";
+import type { JsonValue } from "@meridian/contracts/threads";
+import type {
+  InterruptResponseEntry,
+  InterruptResponseIdentity,
+  InterruptResponseState,
+} from "@/core/session/interrupt-response";
 
 export type PendingStreamStart = {
   after?: string;
@@ -81,6 +87,11 @@ export type ThreadStoreState = {
   liveMeta: Record<string, LiveTurnMeta>;
   streamingThreadId: string | null;
   streamingProjectId: string | null;
+  /**
+   * Local interrupt-response send state keyed by `(threadId, turnId, interruptId)`.
+   * Memory-only, cleared on the matching server resolution event or terminal turn.
+   */
+  interruptResponses: Record<string, InterruptResponseEntry>;
 };
 
 /**
@@ -133,4 +144,35 @@ export type ThreadStoreActions = {
    */
   markPendingCreation(args: { projectId?: string; threadId: string }): void;
   clearPendingCreation(args: { projectId?: string; threadId?: string }): void;
+
+  /** Read the tracked settlement for one tuple, if any (overlap guard). */
+  interruptResponseFor(identity: InterruptResponseIdentity): InterruptResponseEntry | undefined;
+  /**
+   * Record an interrupt response as pending on the wire and expose its state to
+   * the card. The value is retained so Retry can reuse the correlation tuple;
+   * `generation` is the socket the frame was written on.
+   */
+  beginInterruptResponse(
+    input: InterruptResponseIdentity & { value: JsonValue; generation: number },
+  ): void;
+  /**
+   * Move a tracked response to a proven/ambiguous local failure state. Upserts,
+   * because a send that never left the client has no pending row yet.
+   */
+  failInterruptResponse(
+    input: InterruptResponseIdentity & { value: JsonValue },
+    failure: InterruptResponseState,
+  ): void;
+  /** Clear the tracked response once the server resolves/expires the interrupt. */
+  settleInterruptResponse(identity: InterruptResponseIdentity): void;
+  /**
+   * The newest pending response for a thread; used to correlate the thread-only
+   * error frame. Null when the thread has no pending response.
+   */
+  pendingInterruptResponseForThread(threadId: string): InterruptResponseEntry | null;
+  /**
+   * Mark every still-pending response written on `generation` ambiguous. Called
+   * when that socket closes before any matching resolution arrived.
+   */
+  markInterruptResponsesForGenerationAmbiguous(generation: number): void;
 };
