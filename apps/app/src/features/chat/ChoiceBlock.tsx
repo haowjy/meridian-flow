@@ -16,8 +16,15 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { ArtifactCard, ComponentResolvedSummary } from "./ArtifactCard";
 import type { ComponentBlockProps } from "./component-registry";
+import { InterruptResponseFeedback } from "./InterruptResponseFeedback";
 
-export function ChoiceBlock({ content, respond, isAwaitingResponse }: ComponentBlockProps) {
+export function ChoiceBlock({
+  content,
+  respond,
+  isAwaitingResponse,
+  responseState,
+  retry,
+}: ComponentBlockProps) {
   const props = askUserChoiceProps(content);
   const question = props?.question ?? t`Choose an option`;
   const options = props?.options ?? [];
@@ -29,6 +36,10 @@ export function ChoiceBlock({ content, respond, isAwaitingResponse }: ComponentB
     : null;
   const provenance = props?.answerProvenance ?? null;
   const [submittedValue, setSubmittedValue] = useState<string | null>(null);
+  // A recorded response (pending or failed/ambiguous) locks the options so a
+  // remount cannot re-enable them while the server still waits or while Retry
+  // must reuse the same tuple.
+  const responseLocked = responseState !== null;
 
   if (!isAwaitingResponse && hasResolvedValue) {
     return (
@@ -59,7 +70,7 @@ export function ChoiceBlock({ content, respond, isAwaitingResponse }: ComponentB
             <button
               key={option.value}
               type="button"
-              disabled={!isAwaitingResponse || submittedValue !== null}
+              disabled={!isAwaitingResponse || responseLocked || submittedValue !== null}
               onClick={() => {
                 setSubmittedValue(option.value);
                 respond({ value: option.value });
@@ -83,6 +94,7 @@ export function ChoiceBlock({ content, respond, isAwaitingResponse }: ComponentB
           );
         })}
       </fieldset>
+      <InterruptResponseFeedback state={responseState} onRetry={retry} />
     </ArtifactCard>
   );
 }

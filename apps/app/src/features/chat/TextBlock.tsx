@@ -15,8 +15,15 @@ import { type FormEvent, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { ArtifactCard, ComponentResolvedSummary } from "./ArtifactCard";
 import type { ComponentBlockProps } from "./component-registry";
+import { InterruptResponseFeedback } from "./InterruptResponseFeedback";
 
-export function TextBlock({ content, respond, isAwaitingResponse }: ComponentBlockProps) {
+export function TextBlock({
+  content,
+  respond,
+  isAwaitingResponse,
+  responseState,
+  retry,
+}: ComponentBlockProps) {
   const props = askUserFreeTextProps(content);
   const question = props?.question ?? t`Answer the question`;
   const recommended = props?.recommended ?? "";
@@ -25,6 +32,7 @@ export function TextBlock({ content, respond, isAwaitingResponse }: ComponentBlo
   const provenance = props?.answerProvenance ?? null;
   const [value, setValue] = useState(recommended);
   const [submitted, setSubmitted] = useState(false);
+  const responseLocked = responseState !== null;
 
   if (!isAwaitingResponse && hasResolvedValue) {
     return (
@@ -60,7 +68,7 @@ export function TextBlock({ content, respond, isAwaitingResponse }: ComponentBlo
       <form className="flex gap-2" onSubmit={handleSubmit}>
         <Input
           value={value}
-          disabled={!isAwaitingResponse || submitted}
+          disabled={!isAwaitingResponse || responseLocked || submitted}
           aria-label={question}
           placeholder={t`Type your answer…`}
           onChange={(event) => setValue(event.target.value)}
@@ -68,12 +76,13 @@ export function TextBlock({ content, respond, isAwaitingResponse }: ComponentBlo
         />
         <button
           type="submit"
-          disabled={!isAwaitingResponse || submitted}
+          disabled={!isAwaitingResponse || responseLocked || submitted}
           className="focus-ring inline-flex items-center rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground shadow-button transition-all hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <Trans>Submit</Trans>
         </button>
       </form>
+      <InterruptResponseFeedback state={responseState} onRetry={retry} />
     </ArtifactCard>
   );
 }

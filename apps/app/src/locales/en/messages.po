@@ -1126,6 +1126,10 @@ msgstr "Couldn’t save this preference."
 msgid "Couldn't search"
 msgstr "Couldn't search"
 
+#: src/features/chat/InterruptResponseFeedback.tsx
+msgid "Couldn't send your answer."
+msgstr "Couldn't send your answer."
+
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
@@ -2945,6 +2949,10 @@ msgstr "Send message"
 msgid "Sending"
 msgstr "Sending"
 
+#: src/features/chat/InterruptResponseFeedback.tsx
+msgid "Sending your answer…"
+msgstr "Sending your answer…"
+
 #: src/components/app/ConnectionBanner.tsx
 msgid "Session expired. Please refresh."
 msgstr "Session expired. Please refresh."
@@ -3876,6 +3884,10 @@ msgstr "you answered"
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "You left checkout. No purchase was confirmed."
 msgstr "You left checkout. No purchase was confirmed."
+
+#: src/features/chat/InterruptResponseFeedback.tsx
+msgid "Your answer may not have reached the agent."
+msgstr "Your answer may not have reached the agent."
 
 #: src/features/project/home/HomeFeed.tsx
 msgid "Your chats will appear here after you send a message."
