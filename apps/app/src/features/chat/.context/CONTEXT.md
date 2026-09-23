@@ -37,7 +37,12 @@ draft-control changes can be understood independently.
   distinct from the run `admissionEpoch`: mounting the session hook tears the run
   session down in the same React StrictMode commit that starts recovery, so the
   admission epoch must not fence recovery's own work; a genuinely unmounted
-  recovery owner stops matching and cannot retire.
+  recovery owner stops matching, so a stale recovery lookup/replay cannot
+  acknowledge, start a run, or retire; a stale recovery replay also leaves the
+  optimistic row untouched (`StaleAcceptPolicy: "leave-row"`) rather than
+  bridging it, so the returning session's `already-accepted` lookup owns the
+  bridge and the retire. Live sends keep the admission-epoch fence and still
+  bridge an accepted row after teardown.
   See [`client/chat-submissions/AGENTS.md`](../../../client/chat-submissions/AGENTS.md).
 
 Durable change detail renders only through the owning turn receipt; the
