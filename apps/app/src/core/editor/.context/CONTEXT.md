@@ -31,8 +31,11 @@ Browser-local document reservations, stable resource handles, exact persistence,
 and namespace intentions belong to the account-global `AccountResourceReplica`,
 composed by `AccountFeatureLifetime`. The document-session runtime supplies its
 account epoch and adopts acknowledged resource sessions without replacing their
-Y.Doc or persistence database. Editor tabs retain only browser-member identity;
-they do not own resource or namespace lifetime.
+Y.Doc or persistence database. Background reconciliation never transfers and
+acknowledges a session held only by its own transient content lease; it waits for
+a caller-owned lease so the editor keeps the adopted session alive. Editor tabs
+retain only browser-member identity; they do not own resource or namespace
+lifetime.
 
 ## Contracts
 

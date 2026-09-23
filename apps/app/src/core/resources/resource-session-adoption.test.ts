@@ -178,6 +178,7 @@ async function fixture() {
     availability,
   );
   return {
+    access,
     adoption,
     availability,
     coordinator,
@@ -215,6 +216,24 @@ it("pins authority and acknowledges adoption without replacing the local Y.Doc",
   expect(created[0]?.getSnapshot().status).toBe("detached");
 });
 
+it("waits for a caller-owned lease before transferring and acknowledging the session", async () => {
+  const { access, adoption, coordinator, key, metadata, release, verified } = await fixture();
+  verified.handle.release();
+
+  await expect(coordinator.reconcile(key)).resolves.toBe("waiting");
+  expect(adoption.bindAndAdopt).not.toHaveBeenCalled();
+  expect((await metadata.readResource(key))?.resource.obligations.sessionAdoption).toBeDefined();
+
+  const editor = await access.open("project", key, "mounted-editor");
+  if (editor.kind !== "opened") throw new Error(`Editor content is ${JSON.stringify(editor)}`);
+  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
+  expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();
+  expect(editor.handle.session.getSnapshot().status).toBe("detached");
+  expect(release).not.toHaveBeenCalled();
+  editor.handle.release();
+  expect(release).toHaveBeenCalledOnce();
+});
+
 it("hands recorded bindable authority to the already-open local session", async () => {
   const { adoption, coordinator, created, key, metadata, verified } = await fixture();
   const current = await metadata.readResource(key);
@@ -232,6 +251,22 @@ it("hands recorded bindable authority to the already-open local session", async 
   verified.handle.release();
 });
 
+it("rejects an authority fence before pinning the resource generation", async () => {
+  const { adoption, coordinator, key, metadata, verified } = await fixture();
+  vi.mocked(adoption.inspect).mockResolvedValue("mismatch");
+
+  await expect(coordinator.reconcile(key)).rejects.toThrow(
+    "Session adoption persistence authority belongs to another lineage",
+  );
+
+  expect(adoption.inspect).toHaveBeenCalledWith(expect.objectContaining({ generation: "7" }));
+  expect(adoption.begin).not.toHaveBeenCalled();
+  expect(
+    (await metadata.readResource(key))?.resource.obligations.sessionAdoption?.generation,
+  ).toBeNull();
+  verified.handle.release();
+});
+
 it("keeps a begun handoff retryable while authority is temporarily unavailable", async () => {
   const { adoption, availability, coordinator, key, metadata } = await fixture();
   availability.resolve.mockResolvedValueOnce({ kind: "failed" });
@@ -239,7 +274,7 @@ it("keeps a begun handoff retryable while authority is temporarily unavailable",
   await expect(coordinator.reconcile(key)).resolves.toBe("waiting");
   await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
 
-  expect(adoption.begin).toHaveBeenCalledTimes(2);
+  expect(adoption.begin).toHaveBeenCalledTimes(1);
   expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();
   expect((await metadata.readResource(key))?.resource.obligations.sessionAdoption).toBeUndefined();
 });
