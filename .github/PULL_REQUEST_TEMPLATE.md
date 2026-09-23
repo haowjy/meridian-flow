@@ -14,6 +14,15 @@
 
 <!-- Briefly map the solution and key tradeoffs; omit commit logs and diff stats. -->
 
+## Diff
+
+<!-- Report file/line totals excluding generated migrations, then give
+     non-overlapping area totals that add up. Report migrations under DB Changes. -->
+
+- Non-migration total: N files, +N / -N
+- Breakdown:
+  - Area: N files, +N / -N — what changed
+
 ## Before / After
 
 <!-- For fixes or changed behavior, show Before and After; keep Before brief or
@@ -42,15 +51,6 @@
 - Added:
 - Refactored:
 - Deleted:
-
-## Diff
-
-<!-- Report file/line totals excluding generated migrations, then give
-     non-overlapping area totals that add up. Report migrations under DB Changes. -->
-
-- Non-migration total: N files, +N / -N
-- Breakdown:
-  - Area: N files, +N / -N — what changed
 
 ## DB Changes
 
