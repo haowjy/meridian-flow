@@ -400,13 +400,16 @@ export class AccountResourceReplica {
       !(await session.hasInitializedLocalContent())
     )
       return;
+    this.requireOpen();
     const captureId = encodeURIComponent(key.handle);
-    await this.serverSessionCaptures.get(captureId);
+    const priorCapture = this.serverSessionCaptures.get(captureId);
     let finishCapture!: () => void;
     const capture = new Promise<void>((resolve) => {
       finishCapture = resolve;
     });
-    this.serverSessionCaptures.set(captureId, capture);
+    const captureTail = priorCapture ? priorCapture.then(() => capture) : capture;
+    this.serverSessionCaptures.set(captureId, captureTail);
+    await priorCapture;
     try {
       const cached = await this.commitPlan(key, (record) =>
         recordAcquiredResourceContent({
@@ -423,7 +426,7 @@ export class AccountResourceReplica {
       await this.installProjectRegistryOwnership(projectId, key, generation, session);
       this.schedule(key);
     } finally {
-      if (this.serverSessionCaptures.get(captureId) === capture)
+      if (this.serverSessionCaptures.get(captureId) === captureTail)
         this.serverSessionCaptures.delete(captureId);
       finishCapture();
     }
