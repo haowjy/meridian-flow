@@ -126,7 +126,6 @@ export class ResourceSessionAdoptionCoordinator {
         documentId: witness.documentId,
         identityRevision: witness.identityRevision,
         databaseName: witness.exactDatabaseName,
-        requireRetainedLease: true,
       },
       this.reservations,
     );
