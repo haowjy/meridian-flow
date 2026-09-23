@@ -11,11 +11,13 @@ import {
   type DrizzleDb,
   type DrizzleTransaction,
   runInDrizzleTransaction,
+  runInRootDrizzleReadSnapshot,
 } from "../../../../shared/drizzle-transaction.js";
 import type { WorkProjectionMutation } from "../../../projects/adapters/work-projection-mutation.js";
 import { TurnStartConflictError } from "../../domain/turn-start-transition.js";
 import type { InternalThreadRepositories, ThreadStatusReader } from "../../ports/repositories.js";
 import { createDrizzleBlockRepository } from "./block-repository.js";
+import { createDrizzleExecutionReportRepository } from "./execution-report-repository.js";
 import { createDrizzleHomeChatFeedRepository } from "./home-feed-repository.js";
 import { createDrizzleModelResponseRepository } from "./model-response-repository.js";
 import { createDrizzleThreadDocumentRepository } from "./thread-document-repository.js";
@@ -45,6 +47,10 @@ function composeDrizzleRepositories(
     turns: createDrizzleTurnRepository(db, workActivity),
     blocks: createDrizzleBlockRepository(db),
     modelResponses: createDrizzleModelResponseRepository(db),
+    executionReports: createDrizzleExecutionReportRepository(db),
+    readSnapshot(operation) {
+      return runInRootDrizzleReadSnapshot(db, operation);
+    },
     threadDocuments: createDrizzleThreadDocumentRepository(db),
     documentTouches: createDrizzleTurnDocumentTouchRepository(db),
     workContextDeliveries: createDrizzleWorkContextDeliveryRepository(db),

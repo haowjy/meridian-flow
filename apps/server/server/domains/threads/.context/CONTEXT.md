@@ -17,6 +17,15 @@ instead of the N:1 `threads.workId` column.
   `threads_parent_created_active`, excluding soft-deleted rows), returning the
   fields the recursive activity read needs: id, parent, root, depth, ref, title,
   agent name, spawn status, and origin turn.
+- **Execution reports** — `ExecutionReportRepository` owns one row per admitted
+  child assistant turn, keyed by that existing `assistantTurnId`; capture and
+  terminal writes are idempotent compare-and-set operations, while publication
+  is separate bookkeeping. `thread_report` performs an exact child+turn lookup
+  inside one root repeatable-read snapshot after reloading the live caller, resolving
+  the target handle in its project, and checking same-owner/same-lineage. It
+  never selects a latest report or reads transcript tails. Terminal runtime
+  persistence/publication is a later lifecycle step; a report row alone does
+  not imply a terminal result.
 - **Thread activity read** — `domain/thread-activity.ts` composes
   `listDescendants` (the *viewed* thread's own subtree, walked down
   `parent_thread_id`, never `rootThreadId` alone) with the batch lease read

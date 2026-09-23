@@ -23,11 +23,13 @@ import type {
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import type { ChildRunCoordinator, ChildRunRequest } from "../spawn/child-run-coordinator.js";
+import { readThreadReport } from "../spawn/read-thread-report.js";
 import { spawnOutputForTranscript } from "../spawn/spawn-output.js";
 import { persistReturnResult, type SpawnTranscript } from "../spawn/spawn-transcript.js";
 import type {
   SpawnToolArgs,
   ThreadMessageArgs,
+  ThreadReportArgs,
   ToolCallInput,
   ToolExecutor,
 } from "../tools/index.js";
@@ -42,6 +44,8 @@ export interface ToolDispatchDeps {
   childRunCoordinator: ChildRunCoordinator;
   eventSink: EventSink;
   persistenceDeps: PersistenceDeps;
+  executionReports: import("../../threads/ports/repositories.js").ThreadRepositories["executionReports"];
+  readSnapshot: import("../../threads/ports/repositories.js").ThreadRepositories["readSnapshot"];
   workContextDelivery: Pick<WorkContextDelivery, "deliverNow">;
 }
 
@@ -166,6 +170,14 @@ export async function dispatchToolCall(
               : {}),
             ...(spawnInput.overrides !== undefined ? { overrides: spawnInput.overrides } : {}),
             budget: ctx.treeBudget,
+            reportCorrelation: {
+              callerThreadId: ctx.thread.id,
+              callerTurnId: ctx.state.currentTurn.id,
+              toolCallId: call.id,
+              cardBlockId: null,
+              origin: "spawn",
+              deliveryMode: spawnInput.mode === "background" ? "background_notification" : "direct",
+            },
             signal: ctx.state.signal,
           };
           return deps.childRunCoordinator.runChild(request, {
@@ -186,6 +198,18 @@ export async function dispatchToolCall(
             prompt: messageInput.message,
             toolCallId: call.id,
             budget: ctx.treeBudget,
+            ...(messageInput.mode === "foreground"
+              ? {
+                  reportCorrelation: {
+                    callerThreadId: ctx.thread.id,
+                    callerTurnId: ctx.state.currentTurn.id,
+                    toolCallId: call.id,
+                    cardBlockId: null,
+                    origin: "foreground_message" as const,
+                    deliveryMode: "direct" as const,
+                  },
+                }
+              : {}),
             signal: ctx.state.signal,
           };
           return deps.childRunCoordinator.runChild(request, {
@@ -193,6 +217,21 @@ export async function dispatchToolCall(
             ...(messageInput.mode === "foreground" ? { transcript } : {}),
           });
         }
+      : undefined;
+
+  const threadReport =
+    call.name === "thread_report"
+      ? (reportInput: ThreadReportArgs) =>
+          readThreadReport({
+            callerThreadId: ctx.thread.id as never,
+            ref: reportInput.ref,
+            execution: reportInput.execution,
+            repos: {
+              threads: deps.persistenceDeps.repos.threads,
+              executionReports: deps.executionReports,
+              readSnapshot: deps.readSnapshot,
+            },
+          })
       : undefined;
 
   const returnResultCompleter = ctx.returnResultCompleter;
@@ -227,6 +266,7 @@ export async function dispatchToolCall(
       updateComponentBlock: ctx.interruptSession.updateComponentBlock,
       spawn,
       threadMessage,
+      threadReport,
       returnResult,
     },
   );

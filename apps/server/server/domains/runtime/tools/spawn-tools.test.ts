@@ -4,6 +4,7 @@ import {
   createSpawnToolRegistrations,
   parseSpawnToolArgs,
   parseThreadMessageArgs,
+  parseThreadReportArgs,
 } from "./spawn-tools.js";
 
 function spawnSchema(): {
@@ -11,7 +12,9 @@ function spawnSchema(): {
   additionalProperties: boolean;
   required?: string[];
 } {
-  const registration = createSpawnToolRegistrations().find((entry) => entry.source === "spawn");
+  const registration = createSpawnToolRegistrations().find(
+    (entry) => entry.definition.name === "spawn",
+  );
   const definition = registration?.definition;
   if (definition?.type !== "function" || definition.name !== "spawn") {
     throw new Error("spawn registration missing");
@@ -127,5 +130,25 @@ describe("thread_message tool input schema", () => {
     expect(schema.properties).not.toHaveProperty("append_system_prompt");
     expect(schema.properties).not.toHaveProperty("overrides");
     expect(schema.properties).not.toHaveProperty("agent");
+  });
+});
+
+describe("thread_report tool contract", () => {
+  it("requires an exact ref and assistant execution selector", () => {
+    expect(parseThreadReportArgs({ ref: "p3", execution: "turn-uuid", latest: true })).toEqual({
+      ref: "p3",
+      execution: "turn-uuid",
+    });
+    const registration = createSpawnToolRegistrations().find(
+      (entry) => entry.definition.name === "thread_report",
+    );
+    expect(registration?.capability).toBe("thread_report");
+    expect(registration?.advertise).toBe(true);
+    expect(registration?.definition).toMatchObject({
+      inputSchema: { required: ["ref", "execution"], additionalProperties: false },
+    });
+    expect(registration?.definition).toMatchObject({
+      inputSchema: { properties: { ref: { type: "string" }, execution: { type: "string" } } },
+    });
   });
 });

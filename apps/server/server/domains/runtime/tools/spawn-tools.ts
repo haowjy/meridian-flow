@@ -11,6 +11,7 @@ import type {
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
   ThreadMessageToolHandlerContext,
+  ThreadReportToolHandlerContext,
   ToolRegistration,
 } from "./types.js";
 
@@ -53,7 +54,7 @@ export function spawnToolDescription(hasNamedTargets: boolean): string {
 }
 
 const THREAD_MESSAGE_DESCRIPTION =
-  "Send a message to a thread. ref is the thread handle (for example p3 for a subagent, c1 for a primary) from a spawn/thread_message result. Omitted mode is background: the message is queued and returns immediately, and no reply is pushed back; read the target's transcript to see its response. Use mode=foreground to wait for a subagent in your subtree to finish and return its report.";
+  "Send a message to a thread. ref is the thread handle (for example p3 for a subagent, c1 for a primary) from a spawn/thread_message result. Omitted mode is background: the message is queued and returns immediately, and no reply is pushed back. Use mode=foreground to wait for a subagent in your subtree to finish and return its report.";
 
 export type ThreadMessageMode = "foreground" | "background";
 
@@ -63,6 +64,18 @@ export type ThreadMessageArgs = {
   message: string;
   mode: ThreadMessageMode;
 };
+
+export type ThreadReportArgs = { ref: string; execution: string };
+export function parseThreadReportArgs(input: unknown): ThreadReportArgs {
+  const rec =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? (input as Record<string, unknown>)
+      : {};
+  return {
+    ref: typeof rec.ref === "string" ? rec.ref : "",
+    execution: typeof rec.execution === "string" ? rec.execution : "",
+  };
+}
 
 /** One parse for thread_message arguments; omitted mode is background. */
 export function parseThreadMessageArgs(input: unknown): ThreadMessageArgs {
@@ -83,6 +96,35 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       source: "spawn",
       definition: {
         type: "function",
+        name: "thread_report",
+        description:
+          "Read one exact saved execution report from a child in your lineage. Use the pN ref and assistant execution UUID supplied when that execution was admitted or in its completion message. This does not wait for an active execution.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            ref: { type: "string", description: "Authorized child thread handle, for example p3." },
+            execution: {
+              type: "string",
+              description: "Exact assistant-turn UUID for the execution to retrieve.",
+            },
+          },
+          required: ["ref", "execution"],
+          additionalProperties: false,
+        },
+      },
+      execution: {
+        type: "server",
+        handler: async (input: unknown, ctx: ThreadReportToolHandlerContext) =>
+          ctx.threadReport(parseThreadReportArgs(input)),
+      },
+      sequential: true,
+      capability: "thread_report",
+      advertise: true,
+    },
+    {
+      source: "spawn",
+      definition: {
+        type: "function",
         name: "spawn",
         description: SPAWN_DESCRIPTION,
         inputSchema: {
@@ -98,8 +140,7 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
             mode: {
               type: "string",
               enum: ["foreground", "background"],
-              description:
-                "foreground waits for return_result; background returns immediately and posts an inline helper result when done.",
+              description: "foreground waits for the child; background returns immediately.",
             },
             append_system_prompt: {
               type: "string",

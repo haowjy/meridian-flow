@@ -25,6 +25,7 @@ const ALL_FLOW_TOOLS = [
   "skill",
   "spawn",
   "thread_message",
+  "thread_report",
   "work",
   "write",
 ];

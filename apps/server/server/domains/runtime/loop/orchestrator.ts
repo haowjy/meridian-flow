@@ -97,6 +97,7 @@ import type {
   BlockRepository,
   EventJournalWriter,
   ModelResponseRepository,
+  ThreadRepositories,
   ThreadRepository,
   TurnRepository,
 } from "../../threads/index.js";
@@ -167,6 +168,8 @@ export interface OrchestratorRepositories {
   turns: TurnRepository;
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
+  executionReports: ThreadRepositories["executionReports"];
+  readSnapshot: ThreadRepositories["readSnapshot"];
   transaction<T>(operation: () => Promise<T>): Promise<T>;
   runTurnStartTransition<T>(
     threadId: ThreadId,
@@ -1590,6 +1593,8 @@ async function* generateEvents(
                 childRunCoordinator: deps.childRunCoordinator,
                 eventSink,
                 persistenceDeps: deps,
+                executionReports: deps.repos.executionReports,
+                readSnapshot: deps.repos.readSnapshot,
                 workContextDelivery: deps.workContextDelivery,
               },
               call,

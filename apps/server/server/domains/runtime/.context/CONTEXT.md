@@ -225,6 +225,15 @@ aborts that child's own descendants (background runs included): a background
 descendant cannot outlive the subagent that spawned it, and long-lived watchers
 belong to the parent.
 
+Step 2 exposes `thread_report({ ref, execution })` as an ordinary advertised
+tool. It resolves one saved assistant-turn report through the threads
+repository and applies live caller/project/lineage authorization in one
+root repeatable-read snapshot. `ChildDriveInput.reportCorrelation` carries only the
+caller/turn/tool/card and origin/delivery metadata; the actual child
+`assistantTurnId` is assigned only after turn admission. The current runtime
+does not yet admit rows or finalize/publish reports through this port; do not
+infer feature completion from the reader or schema alone.
+
 ### Vocabulary note
 
 - **spawn** = the act exposed by the tool and emitted events.

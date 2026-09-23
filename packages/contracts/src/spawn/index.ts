@@ -5,6 +5,7 @@
  * spent counters are updated in-process until P4 wires the ledger.
  */
 import type { ArtifactRef, MeridianError } from "../interrupt/index.js";
+import type { ThreadId, TurnBlockId, TurnId } from "../runtime/index.js";
 import type { JsonValue } from "../threads/index.js";
 
 /**
@@ -19,6 +20,61 @@ export type ReturnResultCapture = {
 
 /** A run accepts one report; a second return_result is refused, not thrown. */
 export type ReturnResultOutcome = { ok: true } | { ok: false; message: string };
+
+export type SavedOutcome = "succeeded" | "failed" | "cancelled";
+export type ExecutionReportSource = "return_result" | "final_assistant" | "empty";
+export type ExecutionReportOrigin = "spawn" | "foreground_message" | "thread_run";
+export type ExecutionReportDelivery = "background_notification" | "direct" | "none";
+
+/** Parent-side identity passed at child admission; the child turn ID is added only after admission commits. */
+export type ExecutionReportCorrelation = {
+  callerThreadId: ThreadId | null;
+  callerTurnId: TurnId | null;
+  toolCallId: string | null;
+  cardBlockId: TurnBlockId | null;
+  origin: ExecutionReportOrigin;
+  deliveryMode: ExecutionReportDelivery;
+};
+
+export type SavedExecutionReport = {
+  childThreadId: ThreadId;
+  assistantTurnId: TurnId;
+  handle: string;
+  origin: ExecutionReportOrigin;
+  deliveryMode: ExecutionReportDelivery;
+  callerThreadId: ThreadId | null;
+  callerTurnId: TurnId | null;
+  toolCallId: string | null;
+  cardBlockId: TurnBlockId | null;
+  agentSlug: string | null;
+  description: string | null;
+  capture: JsonValue | null;
+  captureToolCallId: string | null;
+  outcome: SavedOutcome | null;
+  reason: string | null;
+  source: ExecutionReportSource | null;
+  summary: string | null;
+  payload: JsonValue | null;
+  artifacts: ArtifactRef[] | null;
+  costMillicredits: number | null;
+  terminalAt: string | null;
+  publication: "none" | "pending" | "published" | "skipped";
+  publishedAt: string | null;
+};
+
+export type ThreadReportResult =
+  | {
+      ref: string;
+      execution: TurnId;
+      outcome: SavedOutcome;
+      source: ExecutionReportSource;
+      summary: string;
+      payload?: JsonValue;
+      artifacts?: ArtifactRef[];
+      partial: boolean;
+      reason: string | null;
+    }
+  | { ref: string; execution: TurnId; status: "not_ready" | "unavailable" };
 
 export function isReturnResultOutcome(value: unknown): value is ReturnResultOutcome {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;

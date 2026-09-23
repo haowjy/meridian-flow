@@ -9,6 +9,7 @@ import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
   AgentReport,
+  ExecutionReportCorrelation,
   ReturnResultCapture,
   SpawnResult,
   TreeBudget,
@@ -35,6 +36,8 @@ export interface ChildDriveInput {
   parentTurnId: TurnId;
   prompt: string;
   budget: TreeBudget;
+  /** Parent-side correlation only; assistantTurnId is supplied after real child admission. */
+  reportCorrelation?: ExecutionReportCorrelation;
 }
 
 export type PreparedChild = {

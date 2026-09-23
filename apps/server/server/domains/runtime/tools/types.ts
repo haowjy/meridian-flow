@@ -20,7 +20,7 @@ import type {
 } from "@meridian/contracts/spawn";
 import type { JsonObject, JsonValue } from "@meridian/contracts/threads";
 import type { FunctionTool } from "../gateway/index.js";
-import type { SpawnToolArgs, ThreadMessageArgs } from "./spawn-tools.js";
+import type { SpawnToolArgs, ThreadMessageArgs, ThreadReportArgs } from "./spawn-tools.js";
 
 // ── Payload types (tool call → execution) ──
 
@@ -74,6 +74,7 @@ export interface ToolExecutionContext {
   updateComponentBlock?: InterruptToolHandlerContext["updateComponentBlock"];
   spawn?: SpawnToolHandlerContext["spawn"];
   threadMessage?: ThreadMessageToolHandlerContext["threadMessage"];
+  threadReport?: ThreadReportToolHandlerContext["threadReport"];
   returnResult?: ReturnResultToolHandlerContext["returnResult"];
 }
 
@@ -159,6 +160,11 @@ export interface SpawnToolHandlerContext extends ToolHandlerContext {
 
 export interface ThreadMessageToolHandlerContext extends ToolHandlerContext {
   threadMessage(input: ThreadMessageArgs): Promise<SpawnResult>;
+}
+export interface ThreadReportToolHandlerContext extends ToolHandlerContext {
+  threadReport(
+    input: ThreadReportArgs,
+  ): Promise<import("@meridian/contracts/spawn").ThreadReportResult>;
 }
 
 export interface ReturnResultToolHandlerContext extends ToolHandlerContext {
@@ -246,12 +252,13 @@ export interface ToolRegistration {
           | ToolHandler<InterruptToolHandlerContext>
           | ToolHandler<SpawnToolHandlerContext>
           | ToolHandler<ThreadMessageToolHandlerContext>
+          | ToolHandler<ThreadReportToolHandlerContext>
           | ToolHandler<ReturnResultToolHandlerContext>;
       }
     | { type: "client" };
   timeoutMs?: number;
   sequential?: boolean;
-  capability?: "interrupt" | "spawn" | "thread_message" | "return_result";
+  capability?: "interrupt" | "spawn" | "thread_message" | "thread_report" | "return_result";
   /** Maps executor-owned failures into a tool's model-facing result protocol. */
   formatExecutionError?: (error: ToolExecutionError) => unknown;
 }

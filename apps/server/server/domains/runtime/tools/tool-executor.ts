@@ -58,6 +58,7 @@ import type {
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
   ThreadMessageToolHandlerContext,
+  ThreadReportToolHandlerContext,
   ToolCallInput,
   ToolExecutionContext,
   ToolExecutionError,
@@ -279,6 +280,7 @@ function handlerContextForRegistration(
   | InterruptToolHandlerContext
   | SpawnToolHandlerContext
   | ThreadMessageToolHandlerContext
+  | ThreadReportToolHandlerContext
   | ReturnResultToolHandlerContext {
   switch (registration.capability) {
     case undefined:
@@ -295,6 +297,12 @@ function handlerContextForRegistration(
         );
       }
       return { ...baseContext, threadMessage: executionContext.threadMessage };
+    case "thread_report":
+      if (!executionContext.threadReport)
+        throw new Error(
+          `Thread-report tool ${registration.definition.name} missing threadReport context`,
+        );
+      return { ...baseContext, threadReport: executionContext.threadReport };
     case "return_result":
       if (!executionContext.returnResult) {
         throw new Error(

@@ -4,8 +4,15 @@
  * transactional ThreadRepositories aggregate. The boundary both adapter sets implement.
  */
 
+import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, TurnId, UserId, WorkId } from "@meridian/contracts/runtime";
+import type {
+  ExecutionReportCorrelation,
+  ExecutionReportSource,
+  SavedExecutionReport,
+  SavedOutcome,
+} from "@meridian/contracts/spawn";
 import type {
   Block,
   BlockStatus,
@@ -95,6 +102,50 @@ export interface ModelResponseRepository {
   create(input: CreateModelResponseInput): Promise<CreateModelResponseResult>;
   findById(id: string): Promise<ModelResponse | null>;
   listByTurn(turnId: TurnId): Promise<ModelResponse[]>;
+}
+
+export interface AdmitExecutionReportInput extends ExecutionReportCorrelation {
+  childThreadId: ThreadId;
+  assistantTurnId: TurnId;
+  handle: string;
+  agentSlug?: string | null;
+  description?: string | null;
+}
+export interface FinalizeExecutionReportInput {
+  childThreadId: ThreadId;
+  assistantTurnId: TurnId;
+  outcome: SavedOutcome;
+  reason: string | null;
+  source: ExecutionReportSource;
+  summary: string;
+  payload?: import("@meridian/contracts/threads").JsonValue | null;
+  artifacts?: ArtifactRef[] | null;
+  costMillicredits?: number | null;
+  publication?: "none" | "pending";
+}
+export interface ExecutionReportRepository {
+  admit(input: AdmitExecutionReportInput): Promise<SavedExecutionReport>;
+  captureOnce(
+    childThreadId: ThreadId,
+    assistantTurnId: TurnId,
+    toolCallId: string,
+    capture: import("@meridian/contracts/spawn").ReturnResultCapture,
+  ): Promise<SavedExecutionReport>;
+  finalizeOnce(input: FinalizeExecutionReportInput): Promise<SavedExecutionReport>;
+  findByExecution(
+    childThreadId: ThreadId,
+    assistantTurnId: TurnId,
+  ): Promise<SavedExecutionReport | null>;
+  listPendingPublication(limit: number): Promise<SavedExecutionReport[]>;
+  lockPendingPublication(
+    childThreadId: ThreadId,
+    assistantTurnId: TurnId,
+  ): Promise<SavedExecutionReport | null>;
+  markPublished(
+    childThreadId: ThreadId,
+    assistantTurnId: TurnId,
+    publication: "published" | "skipped",
+  ): Promise<void>;
 }
 
 export interface CreateThreadInput {
@@ -418,6 +469,9 @@ export type ThreadRepositories = {
   turns: TurnRepository;
   blocks: BlockRepository;
   modelResponses: ModelResponseRepository;
+  executionReports: ExecutionReportRepository;
+  /** One repeatable-read snapshot for authorization-sensitive multi-repository reads. */
+  readSnapshot<T>(operation: () => Promise<T>): Promise<T>;
   threadDocuments: ThreadDocumentRepository;
   documentTouches: TurnDocumentTouchRepository;
   workContextDeliveries: WorkContextDeliveryRepository;

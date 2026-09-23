@@ -7,11 +7,14 @@ export type {
   ListJournalEventsOptions,
 } from "./event-journal.js";
 export type {
+  AdmitExecutionReportInput,
   BlockRepository,
   CreateBlockInput,
   CreateModelResponseInput,
   CreateThreadInput,
   CreateTurnInput,
+  ExecutionReportRepository,
+  FinalizeExecutionReportInput,
   HomeChatFeedRepository,
   InternalThreadRepositories,
   ModelResponseRepository,

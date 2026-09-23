@@ -297,6 +297,7 @@ export const turns = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
   },
   (table) => [
+    unique("turns_thread_id_id_unique").on(table.threadId, table.id),
     index("turns_thread_created").on(table.threadId, table.createdAt.desc()),
     index("turns_parent_created")
       .on(table.parentTurnId, table.createdAt.desc())
@@ -399,6 +400,94 @@ export const turnBlocks = pgTable(
     check(
       "turn_blocks_block_type_valid",
       sql`${table.blockType} IN ('text', 'image', 'file', 'thinking', 'reasoning', 'tool_use', 'tool_result', 'custom')`,
+    ),
+  ],
+);
+
+export const threadExecutionReports = pgTable(
+  "thread_execution_reports",
+  {
+    assistantTurnId: uuid("assistant_turn_id")
+      .$type<TurnId>()
+      .primaryKey()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    childThreadId: uuid("child_thread_id")
+      .$type<ThreadId>()
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    handle: text("handle").notNull(),
+    origin: text("origin").notNull(),
+    deliveryMode: text("delivery_mode").notNull(),
+    callerThreadId: uuid("caller_thread_id")
+      .$type<ThreadId>()
+      .references(() => threads.id, { onDelete: "set null" }),
+    callerTurnId: uuid("caller_turn_id")
+      .$type<TurnId>()
+      .references(() => turns.id, { onDelete: "set null" }),
+    toolCallId: text("tool_call_id"),
+    cardBlockId: uuid("card_block_id")
+      .$type<TurnBlockId>()
+      .references(() => turnBlocks.id, { onDelete: "set null" }),
+    agentSlug: text("agent_slug"),
+    description: text("description"),
+    capture: jsonb("capture").$type<JsonValue | null>(),
+    captureToolCallId: text("capture_tool_call_id"),
+    outcome: text("outcome"),
+    reason: text("reason"),
+    source: text("source"),
+    summary: text("summary"),
+    payload: jsonb("payload").$type<JsonValue | null>(),
+    artifacts: jsonb("artifacts").$type<JsonValue | null>(),
+    costMillicredits: bigint("cost_millicredits", { mode: "number" }),
+    terminalAt: timestamp("terminal_at", { withTimezone: true }),
+    publication: text("publication").notNull().default("none"),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.childThreadId, table.assistantTurnId],
+      foreignColumns: [turns.threadId, turns.id],
+      name: "thread_execution_reports_child_turn_fk",
+    }).onDelete("cascade"),
+    index("thread_execution_reports_pending")
+      .on(table.createdAt)
+      .where(sql`${table.publication} = 'pending'`),
+    check(
+      "thread_execution_reports_origin_valid",
+      sql`${table.origin} IN ('spawn','foreground_message','thread_run')`,
+    ),
+    check(
+      "thread_execution_reports_delivery_valid",
+      sql`${table.deliveryMode} IN ('background_notification','direct','none')`,
+    ),
+    check(
+      "thread_execution_reports_origin_delivery_valid",
+      sql`(${table.origin} = 'spawn' AND ${table.deliveryMode} IN ('background_notification','direct')) OR (${table.origin} = 'foreground_message' AND ${table.deliveryMode} = 'direct') OR (${table.origin} = 'thread_run' AND ${table.deliveryMode} = 'none')`,
+    ),
+    check(
+      "thread_execution_reports_capture_call_coherent",
+      sql`(${table.capture} IS NULL AND ${table.captureToolCallId} IS NULL) OR (${table.capture} IS NOT NULL AND ${table.captureToolCallId} IS NOT NULL)`,
+    ),
+    check(
+      "thread_execution_reports_outcome_valid",
+      sql`${table.outcome} IS NULL OR ${table.outcome} IN ('succeeded','failed','cancelled')`,
+    ),
+    check(
+      "thread_execution_reports_source_valid",
+      sql`${table.source} IS NULL OR ${table.source} IN ('return_result','final_assistant','empty')`,
+    ),
+    check(
+      "thread_execution_reports_publication_valid",
+      sql`${table.publication} IN ('none','pending','published','skipped')`,
+    ),
+    check(
+      "thread_execution_reports_terminal_coherent",
+      sql`(${table.outcome} IS NULL AND ${table.terminalAt} IS NULL) OR (${table.outcome} IS NOT NULL AND ${table.source} IS NOT NULL AND ${table.summary} IS NOT NULL AND ${table.terminalAt} IS NOT NULL)`,
+    ),
+    check(
+      "thread_execution_reports_publication_timestamp_coherent",
+      sql`(${table.publication} IN ('none','pending') AND ${table.publishedAt} IS NULL) OR (${table.publication} IN ('published','skipped') AND ${table.publishedAt} IS NOT NULL)`,
     ),
   ],
 );

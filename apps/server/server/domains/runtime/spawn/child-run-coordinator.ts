@@ -398,6 +398,9 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       // survives the parent turn's terminal reconcile; the driver retires it
       // when the child settles, leaving the report card as the only surface.
       const runCard = await persistRunningCard(options.transcript, cardFields, prepared);
+      if (request.reportCorrelation && runCard) {
+        request.reportCorrelation = { ...request.reportCorrelation, cardBlockId: runCard.id };
+      }
       driver.driveBackground(prepared, request, runCard ? { blockId: runCard.id } : undefined);
       return {
         status: "background",
@@ -412,6 +415,9 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     let runningCard: Block | null = null;
     try {
       runningCard = await persistRunningCard(options.transcript, cardFields, prepared);
+      if (request.reportCorrelation && runningCard) {
+        request.reportCorrelation = { ...request.reportCorrelation, cardBlockId: runningCard.id };
+      }
       const result = await driver.drive(prepared, request);
       await persistHelperCard(options.transcript, { ...cardFields, output: result }, runningCard);
       return result;

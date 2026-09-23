@@ -38,6 +38,17 @@ never a bare `Date` in a template. Canonical patterns:
   [`context-fs/drizzle-store.ts`](../../../apps/server/server/domains/context/adapters/context-fs/drizzle-store.ts)
   (`documentRevisionWhere` + the `updatedAt::text` selects).
 
+### Thread-domain execution reports
+
+`thread_execution_reports` stores one immutable terminal result per child
+assistant turn (`assistant_turn_id`), not a mutable latest-result slot. The
+composite child-thread/turn foreign key prevents assigning a report to a turn
+owned by another thread. Child/assistant-turn ownership cascades; nullable
+caller thread/turn/card references use `SET NULL` so deleting the invocation
+does not erase the child's output. Soft deletion is enforced by live
+repository reads, not destructive report mutation. Migration history remains
+additive; the initial table has no backfill or compatibility path.
+
 ### Thread-domain rollup columns
 
 The `threads`, `turns`, `model_responses`, and `turn_blocks` tables persist the

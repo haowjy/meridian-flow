@@ -57,8 +57,8 @@ export function projectToolPolicy(metadata: CompiledToolFields): EffectiveToolPo
   // Host tools with no Mars name stay attached this slice.
   // spawn is always advertised: named targets come from the roster, and the
   // generic subagent stays available even when the roster is empty.
-  // thread_message carries no Mars name either: any thread may message its lineage.
-  const tools = new Set<string>(["work", "skill", "spawn", "thread_message"]);
+  // Lifecycle reads/actions carry no Mars name: they are bounded by thread authority.
+  const tools = new Set<string>(["work", "skill", "spawn", "thread_message", "thread_report"]);
   if (documentRead) tools.add("read");
   if (mutate) tools.add("write");
   if (documentRead) {

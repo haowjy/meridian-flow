@@ -1,11 +1,15 @@
 /** Executor capability plumbing for the `thread_message` registration. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { SpawnResult } from "@meridian/contracts/spawn";
+import type { SpawnResult, ThreadReportResult } from "@meridian/contracts/spawn";
 import { describe, expect, it, vi } from "vitest";
-import type { ThreadMessageArgs } from "./spawn-tools.js";
+import type { ThreadMessageArgs, ThreadReportArgs } from "./spawn-tools.js";
 import { createToolExecutor } from "./tool-executor.js";
 import { createToolRegistry } from "./tool-registry.js";
-import type { ThreadMessageToolHandlerContext, ToolRegistration } from "./types.js";
+import type {
+  ThreadMessageToolHandlerContext,
+  ThreadReportToolHandlerContext,
+  ToolRegistration,
+} from "./types.js";
 
 function threadMessageRegistration(): ToolRegistration {
   return {
@@ -27,6 +31,25 @@ function threadMessageRegistration(): ToolRegistration {
 }
 
 const executionBase = { threadId: "thread-1" as ThreadId, turnId: "turn-1" as TurnId };
+
+function threadReportRegistration(): ToolRegistration {
+  return {
+    source: "spawn",
+    definition: {
+      type: "function",
+      name: "thread_report",
+      description: "thread_report",
+      inputSchema: { type: "object" },
+    },
+    execution: {
+      type: "server",
+      handler: async (input: unknown, ctx: ThreadReportToolHandlerContext) =>
+        ctx.threadReport(input as ThreadReportArgs),
+    },
+    capability: "thread_report",
+    advertise: true,
+  };
+}
 
 describe("thread_message capability plumbing", () => {
   it("injects the threadMessage callback declared by the registration", async () => {
@@ -57,5 +80,29 @@ describe("thread_message capability plumbing", () => {
 
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.output)).toContain("missing threadMessage context");
+  });
+});
+
+describe("thread_report capability plumbing", () => {
+  it("injects the exact-report reader", async () => {
+    const expected: ThreadReportResult = {
+      ref: "p1",
+      execution: "00000000-0000-4000-8000-000000000001" as TurnId,
+      status: "unavailable",
+    };
+    const threadReportFn = vi.fn(async () => expected);
+    const executor = createToolExecutor(
+      createToolRegistry({ registrations: [threadReportRegistration()] }),
+    );
+    const result = await executor.executeTool(
+      {
+        id: "call-1",
+        name: "thread_report",
+        arguments: { ref: "p1", execution: expected.execution },
+      },
+      { ...executionBase, agentSlug: null, threadReport: threadReportFn },
+    );
+    expect(threadReportFn).toHaveBeenCalledWith({ ref: "p1", execution: expected.execution });
+    expect(result.output).toEqual(expected);
   });
 });
