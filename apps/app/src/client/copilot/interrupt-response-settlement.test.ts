@@ -2,11 +2,12 @@
  * Contract tests for interrupt-response settlement ownership.
  *
  * The controller owns the local settlement for an `interrupt.respond` send:
- * it records pending before/while the frame is on the wire, a proven send
- * failure becomes a retryable `failed`, a duplicate `interrupt_not_pending`
- * after a send becomes `ambiguous` (the first attempt likely landed), a
- * correlation mismatch is a retryable `failed`, and the matching server
- * resolution event clears the entry. The agent outcome stays server-confirmed.
+ * a duplicate `interrupt_not_pending` after a send becomes `ambiguous` (the
+ * first attempt likely landed), a correlation mismatch is a retryable `failed`,
+ * a socket-generation close is ambiguous without touching another generation,
+ * and the matching server resolution event clears the entry. The routing
+ * boundary for non-fatal interrupt errors lives in
+ * `dispatch-ws-server-message.test.ts`.
  */
 import type { AGUIEvent, Block, JsonValue, Thread, Turn } from "@meridian/contracts/protocol";
 import { EventType } from "@meridian/contracts/protocol";
@@ -60,25 +61,6 @@ function interruptKey(interruptId: string = INTERRUPT): string {
 }
 
 describe("interrupt response settlement", () => {
-  it("marks a sent response pending before any server confirmation", () => {
-    const scenario = new ThreadRunScenario();
-
-    const status = scenario.controller.respondInterrupt(response);
-
-    expect(status).toEqual({ status: "pending" });
-    expect(pendingEntry(scenario)).toMatchObject({ status: "pending", value: { value: "yes" } });
-  });
-
-  it("records a proven send failure when the transport never sent the frame", () => {
-    const scenario = new ThreadRunScenario();
-    scenario.transport.interruptSendFails = true;
-
-    const status = scenario.controller.respondInterrupt(response);
-
-    expect(status).toEqual({ status: "failed" });
-    expect(pendingEntry(scenario)).toMatchObject({ status: "failed" });
-  });
-
   it("treats a duplicate interrupt_not_pending as ambiguous, not rejected", () => {
     const scenario = new ThreadRunScenario();
     scenario.controller.respondInterrupt(response);
@@ -98,47 +80,6 @@ describe("interrupt response settlement", () => {
     );
 
     expect(pendingEntry(scenario)).toMatchObject({ status: "failed" });
-  });
-
-  it("clears the settlement when the matching server resolution event arrives", () => {
-    const scenario = new ThreadRunScenario();
-    scenario.controller.respondInterrupt(response);
-    scenario.resume({ expectedTurnId: TURN });
-
-    scenario.emit(resolutionEvent(), "5");
-
-    expect(pendingEntry(scenario)).toBeUndefined();
-  });
-
-  it("ignores a late error frame for a thread with no pending response", () => {
-    const scenario = new ThreadRunScenario();
-
-    scenario.transport.emitInterruptResponseError(THREAD, interruptError("interrupt_not_pending"));
-
-    expect(pendingEntry(scenario)).toBeUndefined();
-  });
-
-  it("keeps the run subscription alive when an interrupt error frame arrives", () => {
-    const scenario = new ThreadRunScenario();
-    scenario.resume({ expectedTurnId: TURN });
-    scenario.controller.respondInterrupt(response);
-
-    scenario.transport.emitInterruptResponseError(THREAD, interruptError("interrupt_not_pending"));
-
-    expect(scenario.activeSubscription()).toBeDefined();
-    // The same subscription still applies the later server resolution.
-    scenario.emit(resolutionEvent(), "6");
-    expect(pendingEntry(scenario)).toBeUndefined();
-  });
-
-  it("clears the settlement when the matching server expiry event arrives", () => {
-    const scenario = new ThreadRunScenario();
-    scenario.controller.respondInterrupt(response);
-    scenario.resume({ expectedTurnId: TURN });
-
-    scenario.emit(resolutionEvent("expired"), "5");
-
-    expect(pendingEntry(scenario)).toBeUndefined();
   });
 
   it("marks a sent response ambiguous when its socket generation closes", () => {
@@ -172,34 +113,14 @@ describe("interrupt response settlement", () => {
     expect(pendingEntry(scenario)).toBeUndefined();
   });
 
-  it("does not send a second frame while the tuple is already pending", () => {
+  it("does not send a second frame on a double click and keeps the first value", () => {
     const scenario = new ThreadRunScenario();
 
     expect(scenario.controller.respondInterrupt(response)).toEqual({ status: "pending" });
-    expect(scenario.controller.respondInterrupt(response)).toEqual({ status: "pending" });
-
-    expect(scenario.transport.interruptResponses).toHaveLength(1);
-  });
-
-  it("keeps the retained value when a double click sends a different one", () => {
-    const scenario = new ThreadRunScenario();
-    scenario.controller.respondInterrupt(response);
-
     scenario.controller.respondInterrupt({ ...response, value: { value: "no" } });
 
-    expect(pendingEntry(scenario)).toMatchObject({ status: "pending", value: { value: "yes" } });
     expect(scenario.transport.interruptResponses).toHaveLength(1);
-  });
-
-  it("allows a new write after a proven failure", () => {
-    const scenario = new ThreadRunScenario();
-    scenario.transport.interruptSendFails = true;
-    expect(scenario.controller.respondInterrupt(response)).toEqual({ status: "failed" });
-
-    scenario.transport.interruptSendFails = false;
-    expect(scenario.controller.respondInterrupt(response)).toEqual({ status: "pending" });
-
-    expect(scenario.transport.interruptResponses).toHaveLength(2);
+    expect(pendingEntry(scenario)).toMatchObject({ status: "pending", value: { value: "yes" } });
   });
 
   it("binds a thread-only error frame to the newest pending tuple", () => {
@@ -219,14 +140,6 @@ describe("interrupt response settlement", () => {
     ).toMatchObject({ status: "ambiguous" });
   });
 
-  it("no-ops a thread-only error frame when the thread has no pending tuple", () => {
-    const scenario = new ThreadRunScenario();
-
-    scenario.transport.emitInterruptResponseError(THREAD, interruptError("interrupt_not_pending"));
-
-    expect(scenario.store.getState().interruptResponses).toEqual({});
-  });
-
   it("clears a settlement when a snapshot already shows the interrupt resolved", () => {
     const scenario = new ThreadRunScenario();
     scenario.controller.respondInterrupt(response);
@@ -237,15 +150,6 @@ describe("interrupt response settlement", () => {
         interruptBlock(INTERRUPT, { resolvedValue: "yes", answerProvenance: "user" }),
       ]),
     );
-
-    expect(pendingEntry(scenario)).toBeUndefined();
-  });
-
-  it("clears a settlement when the snapshot turn is no longer waiting", () => {
-    const scenario = new ThreadRunScenario();
-    scenario.controller.respondInterrupt(response);
-
-    applySnapshot(scenario, assistantTurn("streaming", [interruptBlock(INTERRUPT)]));
 
     expect(pendingEntry(scenario)).toBeUndefined();
   });

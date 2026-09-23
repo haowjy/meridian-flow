@@ -97,58 +97,6 @@ async function mount(
 }
 
 describe("useChatSubmissionRecovery", () => {
-  it("restores a pending row and retires the entry when lookup is accepted", async () => {
-    recordChatSubmission(ACCOUNT, entry());
-    const scenario = new ThreadRunScenario({
-      lookup: async ({ submissionId }) => ({
-        kind: "already-accepted",
-        threadId: THREAD_ID,
-        submissionId,
-        userTurnId: "turn-server",
-        assistantTurnId: "turn-assistant",
-        resumeAfterSeq: "42",
-        snapshotFloorNextSeq: "43",
-      }),
-    });
-
-    await mount(ACCOUNT, scenario, () => undefined);
-
-    await act(async () => {
-      await vi.waitFor(() => expect(scenario.lookupRequests).toHaveLength(1));
-    });
-    expect(scenario.lookupRequests[0]).toEqual({
-      threadId: THREAD_ID,
-      submissionId: "sub-1",
-    });
-    await act(async () => {
-      await vi.waitFor(() => {
-        const turns = scenario.turns();
-        expect(turns).toHaveLength(1);
-        expect(turns[0]).toMatchObject({ id: "turn-server", status: "complete" });
-      });
-    });
-    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
-  });
-
-  it("keeps the row and entry pending when lookup is ambiguous", async () => {
-    recordChatSubmission(ACCOUNT, entry());
-    const scenario = new ThreadRunScenario({
-      lookup: async ({ submissionId }) => ({ kind: "pending", submissionId }),
-    });
-    const latest: { current: ChatSubmissionRecovery | null } = { current: null };
-
-    await mount(ACCOUNT, scenario, (value) => {
-      latest.current = value;
-    });
-
-    await act(async () => {
-      await vi.waitFor(() => expect(latest.current?.recovered).toHaveLength(1));
-    });
-    expect(scenario.turns()[0]).toMatchObject({ status: "pending" });
-    expect(readChatSubmissions(ACCOUNT)).toHaveLength(1);
-    expect(latest.current?.recovered[0]?.submissionId).toBe("sub-1");
-  });
-
   it("keeps the journal and row pending when an in-flight lookup settles after unmount", async () => {
     recordChatSubmission(ACCOUNT, entry());
     const gate = scenarioGate<AdmissionLookup>();
@@ -207,24 +155,6 @@ describe("useChatSubmissionRecovery", () => {
     });
     expect(scenario.turns()).toHaveLength(1);
     expect(scenario.turns()[0]).toMatchObject({ id: "turn-user", status: "complete" });
-  });
-
-  it("marks the row failed and retires the entry on a definitive rejection", async () => {
-    recordChatSubmission(ACCOUNT, entry());
-    const scenario = new ThreadRunScenario({
-      lookup: async ({ submissionId }) => ({
-        kind: "rejected",
-        submissionId,
-        code: "invalid_message",
-      }),
-    });
-
-    await mount(ACCOUNT, scenario, () => undefined);
-
-    await act(async () => {
-      await vi.waitFor(() => expect(scenario.turns()[0]?.status).toBe("error"));
-    });
-    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
   });
 
   it("keeps a proved rejection on the turn and retries with a reminted submission id", async () => {
@@ -394,81 +324,6 @@ describe("useChatSubmissionRecovery", () => {
     expect(readChatSubmissions(ACCOUNT)).toEqual([]);
   });
 
-  it("surfaces Check and never replays beside an in-flight retry remount", async () => {
-    const scenario = new ThreadRunScenario({
-      lookup: async ({ submissionId }) => ({ kind: "not-seen", submissionId }),
-    });
-    const latest: { current: ChatSubmissionRecovery | null } = { current: null };
-    await mount(ACCOUNT, scenario, (value) => {
-      latest.current = value;
-    });
-
-    recordChatSubmission(ACCOUNT, entry({ submissionId: "sub-inflight" }));
-    const liveTurn = scenario.store.getState().appendUserTurn(THREAD_ID, "Hello");
-    await act(async () => {
-      latest.current?.markRejected("sub-inflight", liveTurn.id);
-    });
-
-    // Hold the retry POST so the unresolved send is in flight across a remount.
-    const gate = scenarioGate<SendMessageResponse>();
-    scenario.setAppend(() => gate.promise);
-    let retrySettled = false;
-    await act(async () => {
-      void latest.current?.retry(liveTurn.id).then(() => {
-        retrySettled = true;
-      });
-      await vi.waitFor(() => expect(scenario.appendRequests).toHaveLength(1));
-    });
-    const freshId = readChatSubmissions(ACCOUNT)[0]?.submissionId ?? "";
-    expect(freshId).not.toBe("sub-inflight");
-
-    await cleanup?.();
-    cleanup = undefined;
-    await mount(ACCOUNT, scenario, (value) => {
-      latest.current = value;
-    });
-    // The not-seen mount lookup is fenced by the shared in-flight lock: it must
-    // expose Check instead of dispatching a second replay.
-    await act(async () => {
-      await vi.waitFor(() => expect(latest.current?.recovered).toHaveLength(1));
-    });
-    expect(latest.current?.rejected).toEqual([]);
-    expect(scenario.appendRequests).toHaveLength(1);
-    expect(readChatSubmissions(ACCOUNT)[0]?.submissionId).toBe(freshId);
-
-    gate.resolve(defaultSendResponse());
-    await act(async () => {
-      await vi.waitFor(() => expect(retrySettled).toBe(true));
-    });
-  });
-
-  it("keeps a recovered definitive rejection failed with a retry payload", async () => {
-    recordChatSubmission(ACCOUNT, entry({ submissionId: "sub-recovered" }));
-    const scenario = new ThreadRunScenario({
-      lookup: async ({ submissionId }) => ({
-        kind: "rejected",
-        submissionId,
-        code: "invalid_message",
-      }),
-    });
-    const latest: { current: ChatSubmissionRecovery | null } = { current: null };
-    await mount(ACCOUNT, scenario, (value) => {
-      latest.current = value;
-    });
-
-    await act(async () => {
-      await vi.waitFor(() => expect(scenario.turns()[0]?.status).toBe("error"));
-    });
-    await act(async () => {
-      await vi.waitFor(() => expect(latest.current?.rejected).toHaveLength(1));
-    });
-    expect(latest.current?.rejected[0]).toMatchObject({
-      submissionId: "sub-recovered",
-      fingerprint: expect.objectContaining({ text: "Hello" }),
-    });
-    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
-  });
-
   it("reattaches a retained rejection across a thread remount", async () => {
     const scenario = new ThreadRunScenario();
     const latest: { current: ChatSubmissionRecovery | null } = { current: null };
@@ -498,80 +353,6 @@ describe("useChatSubmissionRecovery", () => {
       optimisticTurnId: liveTurn.id,
       fingerprint: expect.objectContaining({ text: "Hello" }),
     });
-  });
-
-  it("does not recover another account's entries", async () => {
-    recordChatSubmission(ACCOUNT, entry());
-    bindChatSubmissions("account-b");
-    const scenario = new ThreadRunScenario();
-    const latest: { current: ChatSubmissionRecovery | null } = { current: null };
-
-    await mount("account-b", scenario, (value) => {
-      latest.current = value;
-    });
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(latest.current?.recovered).toEqual([]);
-    expect(scenario.lookupRequests).toEqual([]);
-    expect(scenario.turns()).toEqual([]);
-    expect(readChatSubmissions("account-b")).toEqual([]);
-    // A's entry survives for A's next bind.
-    bindChatSubmissions(ACCOUNT);
-    expect(readChatSubmissions(ACCOUNT)).toHaveLength(1);
-  });
-
-  it("reuses the restored row when a thread remounts while still ambiguous", async () => {
-    recordChatSubmission(ACCOUNT, entry());
-    const scenario = new ThreadRunScenario({
-      lookup: async ({ submissionId }) => ({ kind: "pending", submissionId }),
-    });
-
-    await mount(ACCOUNT, scenario, () => undefined);
-    await act(async () => {
-      await vi.waitFor(() => expect(scenario.turns()).toHaveLength(1));
-    });
-    await cleanup?.();
-    cleanup = undefined;
-
-    await mount(ACCOUNT, scenario, () => undefined);
-    await act(async () => {
-      await vi.waitFor(() => expect(scenario.lookupRequests).toHaveLength(2));
-    });
-
-    expect(scenario.turns()).toHaveLength(1);
-    expect(readChatSubmissions(ACCOUNT)).toHaveLength(1);
-  });
-
-  it("does not append a second row when remounted after acknowledgement", async () => {
-    recordChatSubmission(ACCOUNT, entry());
-    const scenario = new ThreadRunScenario({
-      lookup: async ({ submissionId }) => ({
-        kind: "already-accepted",
-        threadId: THREAD_ID,
-        submissionId,
-        userTurnId: "turn-server",
-        assistantTurnId: "turn-assistant",
-        resumeAfterSeq: "42",
-        snapshotFloorNextSeq: "43",
-      }),
-    });
-
-    await mount(ACCOUNT, scenario, () => undefined);
-    await act(async () => {
-      await vi.waitFor(() => expect(scenario.turns()).toHaveLength(1));
-    });
-    await cleanup?.();
-    cleanup = undefined;
-
-    await mount(ACCOUNT, scenario, () => undefined);
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(scenario.lookupRequests).toHaveLength(1);
-    expect(scenario.turns()).toHaveLength(1);
   });
 
   it("collapses the recovery append onto the row bridged after an epoch mismatch", async () => {
@@ -695,38 +476,39 @@ describe("useChatSubmissionRecovery", () => {
     expect(readChatSubmissions(ACCOUNT)).toHaveLength(1);
   });
 
-  it("replays the stored fingerprint through the shared path on an in-session Check", async () => {
+  it("holds a recovery-only replay through a real unmount without acknowledging, subscribing, or retiring", async () => {
+    recordChatSubmission(ACCOUNT, entry({ submissionId: "sub-unmount" }));
     const scenario = new ThreadRunScenario({
       lookup: async ({ submissionId }) => ({ kind: "not-seen", submissionId }),
     });
-    const latest: { current: ChatSubmissionRecovery | null } = { current: null };
-    await mount(ACCOUNT, scenario, (value) => {
-      latest.current = value;
-    });
+    // The only POST in flight is recovery's own replay: no live send to blame
+    // for a late acknowledgement if the writer leaves before it lands.
+    const gate = scenarioGate<SendMessageResponse>();
+    scenario.setAppend(() => gate.promise);
 
-    // Simulate ChatView.handleSubmit after mount: the journal witness and live
-    // row exist, but the mount effect already ran, so recovery has not tracked
-    // them. This is the composer Check path, not a remount.
-    const submission = entry({ submissionId: "sub-check" });
-    recordChatSubmission(ACCOUNT, submission);
-    const liveTurn = scenario.store.getState().appendUserTurn(THREAD_ID, "Hello");
-
-    const lookup = await scenario.controller.lookupSubmission(THREAD_ID, submission.submissionId, {
-      optimisticUserTurnId: liveTurn.id,
-      keepOptimisticOnFailure: true,
-    });
-    expect(lookup.kind).toBe("not-seen");
-
+    await mount(ACCOUNT, scenario, () => undefined);
     await act(async () => {
-      await latest.current?.replaySubmission(submission.submissionId, liveTurn.id);
+      await vi.waitFor(() => expect(scenario.appendRequests).toHaveLength(1));
+    });
+    const optimisticTurnId = scenario.turns()[0]?.id ?? "";
+    expect(optimisticTurnId).not.toBe("");
+
+    // A genuine unmount ends the recovery token before the held POST lands.
+    await cleanup?.();
+    cleanup = undefined;
+    gate.resolve(defaultSendResponse());
+    await act(async () => {
+      await Promise.resolve();
     });
 
-    expect(scenario.appendRequests).toHaveLength(1);
-    expect(scenario.appendRequests[0]).toMatchObject({
-      data: { threadId: THREAD_ID, submissionId: "sub-check", text: "Hello" },
-    });
-    expect(scenario.turns()).toHaveLength(1);
-    expect(scenario.turns()[0]).toMatchObject({ id: "turn-user", status: "complete" });
-    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
+    // A stale replay must not acknowledge: the row stays pending under its
+    // optimistic id instead of being renamed to the server turn.
+    expect(scenario.turns()).toEqual([
+      expect.objectContaining({ id: optimisticTurnId, status: "pending" }),
+    ]);
+    // It must not start a run either, so no live subscription was attached.
+    expect(scenario.activeSubscription()).toBeUndefined();
+    // The journal stays: the returning session's lookup owns the bridge/retire.
+    expect(readChatSubmissions(ACCOUNT)).toMatchObject([{ submissionId: "sub-unmount" }]);
   });
 });

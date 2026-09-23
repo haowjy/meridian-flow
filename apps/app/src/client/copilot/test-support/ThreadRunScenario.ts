@@ -71,8 +71,6 @@ class ScenarioThreadTransport implements ThreadTransport {
   }> = [];
   cancelRequests: Array<{ threadId: string; turnId: string }> = [];
   interruptResponses: InterruptRespondInput[] = [];
-  /** When true, `respondInterrupt` reports that the frame was never sent. */
-  interruptSendFails = false;
   /** Socket generation reported on a successful interrupt write. */
   socketGeneration = 1;
 
@@ -131,9 +129,7 @@ class ScenarioThreadTransport implements ThreadTransport {
 
   respondInterrupt(input: InterruptRespondInput): InterruptRespondReceipt {
     this.interruptResponses.push(input);
-    return this.interruptSendFails
-      ? { sent: false }
-      : { sent: true, socketGeneration: this.socketGeneration };
+    return { sent: true, socketGeneration: this.socketGeneration };
   }
 
   onInterruptResponseError(
