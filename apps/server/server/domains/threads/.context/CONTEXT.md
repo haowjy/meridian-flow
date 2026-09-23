@@ -60,8 +60,10 @@ instead of the N:1 `threads.workId` column.
   and projects committed rows after its journal cursor. Late joiners catch up
   from the hot cache or a cursor-paged replay from zero through the live
   projector's reached journal cursor. Replay projects the prefix to reconstruct
-  state but retains only the requested suffix. Eviction waits for an active
-  drain to finish (grace period, default 60 s).
+  state but retains only the requested suffix; the catchup guard also buffers
+  only events beyond that cursor. Eviction waits for the final active or
+  requested drain to settle, including failed reads, then starts a fresh grace
+  period (default 60 s).
 - **Orchestrator event projector** — stateful transform from
   `OrchestratorEvent` to AG-UI events (run lifecycle, text/reasoning
   streaming, tool call lifecycle, usage, permissions). `subagent.activity`

@@ -6,7 +6,7 @@
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent, ThreadActivity } from "@meridian/contracts/threads";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { goldenAssistantTurn } from "../../../../../packages/contracts/src/threads/golden/turn-fixture.js";
 import { createNoopEventSink } from "../observability/index.js";
 import {
@@ -149,6 +149,98 @@ describe("thread event hub background journaling", () => {
 });
 
 describe("thread event hub committed invalidations", () => {
+  for (const failAt of ["head", "page"] as const) {
+    it(`evicts idle state after ${failAt} read rejects beyond the grace window`, async () => {
+      const journal = createInMemoryEventJournalWriter();
+      await journal.appendEvent(THREAD_ID, {
+        type: "subagent.activity",
+        rootThreadId: THREAD_ID,
+        childThreadId: "child",
+        activity: { descendants: [] },
+      });
+      let entered!: () => void;
+      let rejectRead!: (error: Error) => void;
+      const started = new Promise<void>((resolve) => (entered = resolve));
+      const blocked = new Promise<never>((_resolve, reject) => (rejectRead = reject));
+      const reader: EventJournalReader = {
+        ...journal,
+        async headSeq(threadId) {
+          if (failAt === "head") {
+            entered();
+            return blocked;
+          }
+          return journal.headSeq(threadId);
+        },
+        async readAfter(threadId, afterSeq, limit) {
+          if (failAt === "page") {
+            entered();
+            return blocked;
+          }
+          return journal.readAfter(threadId, afterSeq, limit);
+        },
+      };
+      const hub = createThreadEventHub(
+        { journalWriter: journal, journalReader: reader, eventSink: createNoopEventSink() },
+        { evictionGraceMs: 5 },
+      );
+      const unsubscribe = hub.subscribe(THREAD_ID, () => {});
+      hub.invalidateCommittedJournal(THREAD_ID);
+      await started;
+      unsubscribe();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(hub.hasThreadState(THREAD_ID)).toBe(true);
+      rejectRead(new Error("injected read failure"));
+      await vi.waitFor(() => expect(hub.hasThreadState(THREAD_ID)).toBe(false));
+    });
+  }
+
+  for (const followupFails of [false, true]) {
+    it(`retains a requested follow-up drain after rejection, then evicts after ${followupFails ? "failure" : "success"}`, async () => {
+      const journal = createInMemoryEventJournalWriter();
+      let firstEntered!: () => void;
+      let secondEntered!: () => void;
+      let rejectFirst!: (error: Error) => void;
+      let settleSecond!: (value: bigint) => void;
+      let rejectSecond!: (error: Error) => void;
+      const firstStarted = new Promise<void>((resolve) => (firstEntered = resolve));
+      const secondStarted = new Promise<void>((resolve) => (secondEntered = resolve));
+      const first = new Promise<bigint>((_resolve, reject) => (rejectFirst = reject));
+      const second = new Promise<bigint>((resolve, reject) => {
+        settleSecond = resolve;
+        rejectSecond = reject;
+      });
+      let reads = 0;
+      const reader: EventJournalReader = {
+        ...journal,
+        headSeq() {
+          if (++reads === 1) {
+            firstEntered();
+            return first;
+          }
+          secondEntered();
+          return second;
+        },
+      };
+      const hub = createThreadEventHub(
+        { journalWriter: journal, journalReader: reader, eventSink: createNoopEventSink() },
+        { evictionGraceMs: 5 },
+      );
+      const unsubscribe = hub.subscribe(THREAD_ID, () => {});
+      hub.invalidateCommittedJournal(THREAD_ID);
+      await firstStarted;
+      unsubscribe();
+      hub.invalidateCommittedJournal(THREAD_ID);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      rejectFirst(new Error("first read failed"));
+      await secondStarted;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(hub.hasThreadState(THREAD_ID)).toBe(true);
+      if (followupFails) rejectSecond(new Error("follow-up failed"));
+      else settleSecond(0n);
+      await vi.waitFor(() => expect(hub.hasThreadState(THREAD_ID)).toBe(false));
+    });
+  }
+
   it("keeps one state owner while an unsubscribed thread drain is in flight", async () => {
     const journal = createInMemoryEventJournalWriter();
     const callbacks: Array<() => void | Promise<void>> = [];

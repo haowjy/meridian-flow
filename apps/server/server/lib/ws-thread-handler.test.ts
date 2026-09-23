@@ -1,11 +1,4 @@
-/**
- * Server-side gap contract for the thread WS handler.
- *
- * When a client's cursor falls behind the journal replay cap, the handler must
- * tell the client where to resume: the gap frame carries the requested
- * `fromSeq` and the journal head as `toSeq`. Resuming from that head must be
- * past the cap, or the client would gap forever.
- */
+/** The advertised journal head never replaces the client's delivered cursor. */
 
 import type { WsServerMessage } from "@meridian/contracts/protocol";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";

@@ -214,12 +214,13 @@ export function createThreadEventHub(
           for (const sequenced of projected) notifyListeners(state, sequenced);
         }
       }
-      if (state.listeners.size === 0) scheduleEviction(threadId);
     })().finally(() => {
       state.draining = null;
       if (state.drainRequested) {
         state.drainRequested = false;
         invalidateCommittedJournal(threadId);
+      } else if (state.listeners.size === 0) {
+        scheduleEviction(threadId);
       }
     });
     return state.draining;
@@ -289,7 +290,7 @@ export function createThreadEventHub(
       const state = getState(threadId);
       const bufferedLive: SequencedEventInternal[] = [];
       const guardListener = (entry: SequencedEventInternal) => {
-        bufferedLive.push(entry);
+        if (entry.seq > afterSeq) bufferedLive.push(entry);
       };
       state.listeners.add(guardListener);
 
