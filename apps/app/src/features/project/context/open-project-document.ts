@@ -328,13 +328,7 @@ export class ProjectDocumentNavigationAdapter {
               documentId: resolved.file.documentId,
               generation,
               bind: async (ownerId) => {
-                const rebound = await resources.openDocument(
-                  projectId,
-                  local.key,
-                  ownerId,
-                  undefined,
-                  { adoptionEligible: true },
-                );
+                const rebound = await resources.openDocument(projectId, local.key, ownerId);
                 if (rebound.kind !== "opened")
                   throw new Error("Local document content is unavailable");
                 return {
