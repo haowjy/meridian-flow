@@ -197,6 +197,22 @@ describe("useCheckoutReturn", () => {
     expect(window.location.search).not.toContain("checkout=");
   });
 
+  it("does not treat a portal baseline on a success URL as purchase evidence", async () => {
+    window.history.replaceState({}, "", "/billing?checkout=success");
+    window.sessionStorage.setItem(
+      CHECKOUT_BASELINE_STORAGE_KEY,
+      JSON.stringify({ ...baseline, handoffKind: "portal" }),
+    );
+    refetches.transactions.mockResolvedValue({ data: withPurchase });
+
+    await act(async () => root.render(<Probe />));
+
+    expect(status()).toBe("unverified");
+    expect(refetches.balance).not.toHaveBeenCalled();
+    expect(refetches.transactions).not.toHaveBeenCalled();
+    expect(readCheckoutBaseline(window.sessionStorage)).toBeNull();
+  });
+
   it("resumes reconciliation after a reload mid-poll", async () => {
     window.history.replaceState({}, "", "/billing?checkout=success");
     window.sessionStorage.setItem(CHECKOUT_BASELINE_STORAGE_KEY, JSON.stringify(baseline));
