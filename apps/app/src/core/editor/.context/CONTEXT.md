@@ -18,7 +18,7 @@ through advisory broadcasts, browser lifecycle events and timed scans.
 persisted DocumentSession. Its channel is scoped to the exact persistence
 incarnation and current schema, never a path or an unqualified document ID.
 Symmetric Yjs sync exchanges live edits; ephemeral Awareness messages keep
-same-profile tabs' carets visible and let the tab holding server transport relay
+same-profile tabs' carets visible and let any tab holding server transport relay
 presence for detached local peers. Lifecycle wakes also read the retained
 IndexedDB update log so a departed peer is not required for content recovery.
 Replay is a remote transaction. Schema/access fences stop peer traffic
