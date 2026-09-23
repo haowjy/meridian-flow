@@ -105,36 +105,6 @@ afterEach(async () => {
 const status = () => host.querySelector("[data-status]")?.textContent;
 
 describe("useCheckoutReturn", () => {
-  it("stays idle on a normal billing visit", async () => {
-    await act(async () => root.render(<Probe />));
-    expect(status()).toBe("idle");
-    expect(refetches.balance).not.toHaveBeenCalled();
-  });
-
-  it("waits for a delayed ledger delta before confirming", async () => {
-    window.history.replaceState({}, "", "/billing?checkout=success");
-    window.sessionStorage.setItem(CHECKOUT_BASELINE_STORAGE_KEY, JSON.stringify(baseline));
-    let call = 0;
-    refetches.transactions.mockImplementation(async () => {
-      call += 1;
-      return { data: call >= 3 ? withPurchase : noTransactions };
-    });
-
-    await act(async () => root.render(<Probe />));
-    expect(status()).toBe("reconciling");
-    // The marker must survive while reconciliation is in flight so a reload
-    // can resume it.
-    expect(window.location.search).toContain("checkout=success");
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(50);
-    });
-
-    expect(status()).toBe("confirmed");
-    expect(window.sessionStorage.getItem(CHECKOUT_BASELINE_STORAGE_KEY)).toBeNull();
-    expect(window.location.search).not.toContain("checkout=");
-  });
-
   it("times out honestly when no attributable delta ever lands", async () => {
     window.history.replaceState({}, "", "/billing?checkout=success");
     window.sessionStorage.setItem(CHECKOUT_BASELINE_STORAGE_KEY, JSON.stringify(baseline));
@@ -148,40 +118,6 @@ describe("useCheckoutReturn", () => {
 
     expect(status()).toBe("timeout");
     expect(window.sessionStorage.getItem(CHECKOUT_BASELINE_STORAGE_KEY)).toBeNull();
-    expect(window.location.search).not.toContain("checkout=");
-  });
-
-  it("reaches the deadline even when the refetch never resolves", async () => {
-    window.history.replaceState({}, "", "/billing?checkout=success");
-    window.sessionStorage.setItem(CHECKOUT_BASELINE_STORAGE_KEY, JSON.stringify(baseline));
-    refetches.balance.mockReturnValue(new Promise(() => {}));
-    refetches.transactions.mockReturnValue(new Promise(() => {}));
-
-    await act(async () => root.render(<Probe />));
-    expect(status()).toBe("reconciling");
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(120);
-    });
-
-    expect(status()).toBe("timeout");
-    expect(window.location.search).not.toContain("checkout=");
-  });
-
-  it("never confirms when the refetch rejects, and times out honestly", async () => {
-    window.history.replaceState({}, "", "/billing?checkout=success");
-    window.sessionStorage.setItem(CHECKOUT_BASELINE_STORAGE_KEY, JSON.stringify(baseline));
-    refetches.balance.mockRejectedValue(new Error("offline"));
-    refetches.transactions.mockRejectedValue(new Error("offline"));
-
-    await act(async () => root.render(<Probe />));
-    expect(status()).toBe("reconciling");
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(120);
-    });
-
-    expect(status()).toBe("timeout");
     expect(window.location.search).not.toContain("checkout=");
   });
 

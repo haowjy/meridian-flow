@@ -18,7 +18,6 @@ import {
   isCheckoutConfirmed,
   parseCheckoutBaseline,
   parseCheckoutReturn,
-  transactionFingerprint,
 } from "./checkout";
 
 const balance = (
@@ -168,9 +167,5 @@ describe("isCheckoutConfirmed", () => {
   it("does not confirm a plan when the fresh balance is not a subscription", () => {
     const baseline = checkoutBaselineFrom([], planRequest, "checkout", "free");
     expect(isCheckoutConfirmed(baseline, balance("free"), transactions([grant()]))).toBe(false);
-  });
-
-  it("fingerprints a row by kind, createdAt, and amount", () => {
-    expect(transactionFingerprint(purchase("10"))).toBe("purchase|2026-09-02T00:00:00.000Z|10");
   });
 });

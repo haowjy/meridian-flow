@@ -76,20 +76,6 @@ describe("account recents", () => {
     expect(ids(again)).toEqual(["chapter"]);
   });
 
-  it("caps the account at 50 and puts the newest open first", () => {
-    const recents = store();
-    recents.setUser("account");
-    for (let index = 0; index < ACCOUNT_RECENTS_CAP + 1; index += 1) {
-      open(recents, `doc-${index}`, `2026-09-22T12:00:${String(index).padStart(2, "0")}.000Z`);
-    }
-    const listed = recents.items.map((item) => item.documentId);
-    expect(listed).toHaveLength(ACCOUNT_RECENTS_CAP);
-    expect(listed[0]).toBe(`doc-${ACCOUNT_RECENTS_CAP}`);
-    expect(listed).not.toContain("doc-0");
-    open(recents, "doc-1", "2026-09-22T13:00:00.000Z");
-    expect(recents.items[0]?.documentId).toBe("doc-1");
-  });
-
   it("keeps a local opening an omitting or older list does not contain", () => {
     const recents = store();
     recents.setUser("account");

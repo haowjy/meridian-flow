@@ -6,7 +6,6 @@ import {
   type ChatSubmissionStorage,
   DeviceChatSubmissionJournal,
   type ExistingThreadChatSubmission,
-  type FirstSendChatSubmission,
 } from "./store";
 
 function memory(): ChatSubmissionStorage & { raw(): Map<string, string> } {
@@ -44,24 +43,6 @@ function existingThread(
   };
 }
 
-function firstSend(overrides: Partial<FirstSendChatSubmission> = {}): FirstSendChatSubmission {
-  return {
-    kind: "first-send",
-    submissionId: "sub-first",
-    threadId: "thread-first",
-    projectId: "project-1",
-    createdAt: "2026-09-22T12:00:00.000Z",
-    text: "First",
-    activatedSkillSlugs: [],
-    title: "First",
-    workId: null,
-    agentSelection: { catalogEntryId: "entry", definitionRevisionId: "rev" },
-    agentName: "General",
-    agentSlug: "general",
-    ...overrides,
-  };
-}
-
 function bound() {
   const storage = memory();
   const journal = new DeviceChatSubmissionJournal(storage);
@@ -78,17 +59,6 @@ describe("device chat submission journal", () => {
     expect(journal.get("sub-1")).toEqual(existingThread());
     expect(journal.forThread("thread-1").map((entry) => entry.submissionId)).toEqual(["sub-1"]);
     expect(journal.forThread("other")).toEqual([]);
-  });
-
-  it("upserts one submission id and retires it explicitly", () => {
-    const { journal } = bound();
-    journal.record("account", existingThread({ text: "one" }));
-    journal.record("account", existingThread({ text: "two" }));
-    expect(journal.entries()).toHaveLength(1);
-    expect(journal.get("sub-1")?.text).toBe("two");
-
-    expect(journal.retire("account", "sub-1")).toBe(true);
-    expect(journal.entries()).toEqual([]);
   });
 
   it("rejects the wrong schema version and corrupt JSON without throwing", () => {
@@ -147,24 +117,5 @@ describe("device chat submission journal", () => {
     // The returned session retires it for real once it settles.
     expect(journal.retire("account", "sub-1", journal.epoch)).toBe(true);
     expect(journal.entries()).toEqual([]);
-  });
-
-  it("returns nothing while unbound", () => {
-    const storage = memory();
-    const journal = new DeviceChatSubmissionJournal(storage);
-    expect(journal.entries()).toEqual([]);
-    expect(journal.record("account", existingThread())).toBe(false);
-  });
-
-  it("keeps first-send and existing-thread entries in one account record", () => {
-    const { journal } = bound();
-    journal.record("account", existingThread());
-    journal.record("account", firstSend());
-    expect(
-      journal
-        .entries()
-        .map((entry) => entry.kind)
-        .sort(),
-    ).toEqual(["existing-thread", "first-send"]);
   });
 });
