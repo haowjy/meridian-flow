@@ -213,7 +213,8 @@ export class ResourceContentAccess {
         if (
           existing.ownership.kind !== "local" ||
           [...existing.leases.values()].some(Boolean) ||
-          existing.adoptionBound
+          existing.adoptionBound ||
+          existing.reidentity
         ) {
           ownership.release();
           throw new Error("Resource already owns another session");
