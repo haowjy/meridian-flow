@@ -99,12 +99,18 @@ checks, not on WorkOS client objects.
 In-process fan-out over a durable event journal. The orchestrator writes events
 through it; WebSocket subscribers read from it.
 
-- **Write path:** append a domain event, project AG-UI protocol events, assign
-  monotonic `bigint` sequence numbers, and fan out to active listeners.
+- **Write path:** append a domain event and schedule a commit-aware invalidation.
+  One per-thread drain reads committed journal rows after its cursor in sequence,
+  projects AG-UI protocol events, assigns cursor sub-sequences, and fans out.
+  Local post-commit callbacks and PostgreSQL notifications are both invalidations,
+  never payload delivery.
 - **Read path:** `catchup(threadId, afterSeq)` returns missed events;
   `subscribe(threadId, listener)` adds a live listener.
 - **Catchup + subscribe:** live events that arrive during replay are buffered and
   merged so clients do not miss a gap.
+- **Cold replay:** pages from journal zero through the captured committed head
+  with a stateful projector, then sends only the client suffix. It is complete
+  but O(history); there is no checkpoint or bounded-bootstrap contract.
 - **Eviction:** per-thread hub state is removed after idle timeout.
 
 Hot cache is process-local. Journal rows persist through Drizzle/in-memory

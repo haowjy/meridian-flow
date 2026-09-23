@@ -140,9 +140,10 @@ async function subscribeThread(
   state.subscriptions.get(threadId)?.();
 
   let watermark = BigInt(parsedLastSeq);
-  const requestedSeq = parsedLastSeq;
-  const { catchup, hitReplayLimit, unsubscribe } =
-    await auth.app.threadEventHub.catchupAndSubscribe(threadId, watermark, (entry) => {
+  const { catchup, unsubscribe } = await auth.app.threadEventHub.catchupAndSubscribe(
+    threadId,
+    watermark,
+    (entry) => {
       runInPeerScope(peer, () => {
         if (state.closed) return;
         const minSeq = state.liveWatermark.get(threadId) ?? 0n;
@@ -155,7 +156,8 @@ async function subscribeThread(
           event: entry.event,
         });
       });
-    });
+    },
+  );
 
   for (const entry of catchup) {
     if (entry.seq > watermark) watermark = entry.seq;
@@ -170,19 +172,6 @@ async function subscribeThread(
   state.subscriptions.set(threadId, unsubscribe);
 
   const headSeq = await auth.app.hub.headSeq(threadId);
-  if (hitReplayLimit) {
-    // Carry the skipped range so the client can advance its resume point past
-    // the unreplayable window instead of re-requesting it forever.
-    sendFrame(peer, {
-      type: "gap",
-      threadId,
-      cause: "replay_limit_exceeded",
-      fromSeq: requestedSeq,
-      toSeq: headSeq.toString(),
-      message: "Journal replay capped at 10000 events",
-    });
-  }
-
   const liveState = await auth.app.threadRuntime.liveState(threadId, auth.userId);
   sendFrame(peer, {
     type: "subscribed",

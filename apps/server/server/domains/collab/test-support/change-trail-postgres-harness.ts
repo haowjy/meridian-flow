@@ -459,7 +459,7 @@ export function createHarness(options: ChangeTrailHarnessOptions = {}) {
         return deliveredEvents.length;
       },
     } as never,
-    eventHub: { publishPersistedEvent() {} },
+    eventHub: { invalidateCommittedJournal() {} },
     retryBranch: (branchId) => {
       if (failAllTrailRetries || failNextTrailRetry) {
         failNextTrailRetry = false;

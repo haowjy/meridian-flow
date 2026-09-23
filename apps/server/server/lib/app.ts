@@ -64,7 +64,6 @@ async function createAppServices(): Promise<AppServices> {
     });
   await listenForThreadEvents({
     db,
-    journalReader: app.journalReader,
     eventHub: app.threadEventHub,
     eventSink,
   });

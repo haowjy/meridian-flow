@@ -568,6 +568,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalReader: ports.journalReader,
     journalWriter: ports.journalWriter,
     eventSink: ports.eventSink,
+    scheduleAfterCommit: runAfterDrizzleCommit,
   });
   const changeTrails = createDrizzleChangeTrailReader(ports.db, ports.documentAccess);
   const changeTrailDelivery = createChangeTrailWorker({
@@ -963,7 +964,7 @@ export function createInMemoryAppServices(): AppServices {
     },
   };
   const inMemoryThreadEventHub: ThreadEventHub = {
-    publishPersistedEvent() {},
+    invalidateCommittedJournal() {},
     async appendEvent() {
       return 0n;
     },
@@ -974,7 +975,7 @@ export function createInMemoryAppServices(): AppServices {
       return () => undefined;
     },
     async catchupAndSubscribe() {
-      return { catchup: [], hitReplayLimit: false, unsubscribe: () => undefined };
+      return { catchup: [], unsubscribe: () => undefined };
     },
     async headSeq() {
       return 0n;

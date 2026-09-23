@@ -7,6 +7,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent, ThreadActivity } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
+import { goldenAssistantTurn } from "../../../../../packages/contracts/src/threads/golden/turn-fixture.js";
 import { createNoopEventSink } from "../observability/index.js";
 import {
   createInMemoryEventJournalReader,
@@ -20,24 +21,26 @@ const THREAD_ID = "00000000-0000-4000-8000-000000000901" as ThreadId;
 const PARENT_TURN_ID = "00000000-0000-4000-8000-000000000902";
 
 /** A journal reader whose replay window is the first `windowRows` rows. */
-function createCappedReader(windowRows: number, headSeq: bigint): EventJournalReader {
-  const payload: OrchestratorEvent = {
-    type: "background.started",
-    parentThreadId: THREAD_ID,
-    parentTurnId: PARENT_TURN_ID,
+function createCappedReader(
+  windowRows: number,
+  headSeq: bigint,
+  withGaps = false,
+  payload: OrchestratorEvent | ((index: number) => OrchestratorEvent) = {
+    type: "subagent.activity",
+    rootThreadId: THREAD_ID,
     childThreadId: "child-1",
-    agentSlug: "code-reviewer",
-    description: "Review the chapter",
-  };
+    activity: { descendants: [] },
+  },
+): EventJournalReader {
   const entries: JournalEntry[] = Array.from({ length: windowRows }, (_, index) => ({
     id: `event-${index}`,
     threadId: THREAD_ID,
     turnId: null,
     seq: BigInt(index + 1),
-    eventType: payload.type,
-    payload,
+    eventType: (typeof payload === "function" ? payload(index) : payload).type,
+    payload: typeof payload === "function" ? payload(index) : payload,
     createdAt: new Date(0).toISOString(),
-  }));
+  })).filter((_, index) => !withGaps || index % 1_000 !== 499);
   return {
     async readAfter(_threadId, afterSeq, limit = Number.POSITIVE_INFINITY) {
       return entries.filter((entry) => entry.seq > afterSeq).slice(0, limit);
@@ -63,14 +66,19 @@ function createCappedReader(windowRows: number, headSeq: bigint): EventJournalRe
   };
 }
 
-function createCappedHub(windowRows: number, headSeq: bigint) {
+function createCappedHub(
+  windowRows: number,
+  headSeq: bigint,
+  withGaps = false,
+  payload?: OrchestratorEvent | ((index: number) => OrchestratorEvent),
+) {
   return createThreadEventHub({
     journalWriter: {
       async appendEvent() {
         return 0n;
       },
     },
-    journalReader: createCappedReader(windowRows, headSeq),
+    journalReader: createCappedReader(windowRows, headSeq, withGaps, payload),
     eventSink: createNoopEventSink(),
   });
 }
@@ -140,6 +148,103 @@ describe("thread event hub background journaling", () => {
   });
 });
 
+describe("thread event hub committed invalidations", () => {
+  it("serializes reversed and duplicate invalidations through journal order", async () => {
+    const journal = createInMemoryEventJournalWriter();
+    const callbacks: Array<() => void | Promise<void>> = [];
+    const hub = createThreadEventHub({
+      journalWriter: journal,
+      journalReader: createInMemoryEventJournalReader(journal),
+      eventSink: createNoopEventSink(),
+      scheduleAfterCommit(callback) {
+        callbacks.push(callback);
+      },
+    });
+    const received: SequencedEventInternal[] = [];
+    hub.subscribe(THREAD_ID, (entry) => received.push(entry));
+
+    for (const marker of ["one", "two", "three"]) {
+      await hub.appendEvent(THREAD_ID, {
+        type: "subagent.activity",
+        rootThreadId: THREAD_ID,
+        childThreadId: marker,
+        activity: { descendants: [{ threadId: marker }] } as ThreadActivity,
+      });
+    }
+
+    await callbacks[2]?.();
+    await callbacks[0]?.();
+    await callbacks[2]?.();
+    await callbacks[1]?.();
+    await hub.catchup(THREAD_ID, 0n);
+
+    expect(received.map((entry) => entry.seq)).toEqual([1_000n, 2_000n, 3_000n]);
+    expect(received.map((entry) => entry.event)).toHaveLength(3);
+  });
+
+  it("keeps a committed append made during cold replay in the live handoff", async () => {
+    const journal = createInMemoryEventJournalWriter();
+    const reader = createInMemoryEventJournalReader(journal);
+    const firstEvent: OrchestratorEvent = {
+      type: "subagent.activity",
+      rootThreadId: THREAD_ID,
+      childThreadId: "before-replay",
+      activity: { descendants: [] },
+    };
+    await journal.appendEvent(THREAD_ID, firstEvent);
+
+    let releaseRead!: () => void;
+    let markReadStarted!: () => void;
+    const readStarted = new Promise<void>((resolve) => {
+      markReadStarted = resolve;
+    });
+    const blockedRead = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    let blockFirstRead = true;
+    const blockingReader: EventJournalReader = {
+      readAfter: async (threadId, afterSeq, limit) => {
+        if (blockFirstRead) {
+          blockFirstRead = false;
+          markReadStarted();
+          await blockedRead;
+        }
+        return reader.readAfter(threadId, afterSeq, limit);
+      },
+      headSeq: (threadId) => reader.headSeq(threadId),
+      readModelProjectionWatermark: (threadId) => reader.readModelProjectionWatermark(threadId),
+      listByThread: (threadId, opts) => reader.listByThread(threadId, opts),
+      listByType: (threadId, type) => reader.listByType(threadId, type),
+      listSince: (threadId, id) => reader.listSince(threadId, id),
+      listByTimeRange: (threadId, from, to) => reader.listByTimeRange(threadId, from, to),
+    };
+    const hub = createThreadEventHub({
+      journalWriter: journal,
+      journalReader: blockingReader,
+      eventSink: createNoopEventSink(),
+    });
+    const live: SequencedEventInternal[] = [];
+    const handoff = hub.catchupAndSubscribe(THREAD_ID, 0n, (entry) => live.push(entry));
+    await readStarted;
+    await journal.appendEvent(THREAD_ID, {
+      type: "subagent.activity",
+      rootThreadId: THREAD_ID,
+      childThreadId: "during-replay",
+      activity: { descendants: [] },
+    });
+    hub.invalidateCommittedJournal(THREAD_ID);
+    releaseRead();
+
+    const subscription = await handoff;
+    await hub.catchup(THREAD_ID, 0n);
+    const delivered = [...subscription.catchup, ...live]
+      .map((entry) => entry.seq)
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    expect(delivered).toEqual([1_000n, 2_000n]);
+    subscription.unsubscribe();
+  });
+});
+
 describe("thread event hub subagent activity", () => {
   it("projects the full recomputed activity as one custom frame", async () => {
     const { hub } = createHub();
@@ -178,33 +283,62 @@ describe("thread event hub subagent activity", () => {
   });
 });
 
-describe("thread event hub replay cap", () => {
-  it("gaps only when the replay window cannot reach the head", async () => {
-    const headCursor = 23_081n * 1_000n + 999n;
-    const behind = await createCappedHub(10_000, 23_081n).catchupAndSubscribe(
+describe("thread event hub complete replay", () => {
+  it("replays all rows beyond 10k through the captured head", async () => {
+    const headJournalSeq = 23_081n;
+    const headCursor = headJournalSeq * 1_000n + 999n;
+    const behind = await createCappedHub(23_081, headJournalSeq).catchupAndSubscribe(
       THREAD_ID,
       0n,
       () => {},
     );
-    expect(behind.hitReplayLimit).toBe(true);
+    expect(behind.catchup).toHaveLength(23_081);
+    expect(behind.catchup.at(-1)?.seq).toBe(headJournalSeq * 1_000n);
     behind.unsubscribe();
 
-    const atHead = await createCappedHub(10_000, 23_081n).catchupAndSubscribe(
+    const atHead = await createCappedHub(23_081, headJournalSeq).catchupAndSubscribe(
       THREAD_ID,
       headCursor,
       () => {},
     );
-    expect(atHead.hitReplayLimit).toBe(false);
+    expect(atHead.catchup).toEqual([]);
     atHead.unsubscribe();
   });
 
-  it("does not gap when the journal fits inside the window", async () => {
-    const fits = await createCappedHub(10_000, 10_000n).catchupAndSubscribe(
+  it("reconstructs and sends the suffix of a long active text segment", async () => {
+    const rowCount = 23_081;
+    const payload = (index: number): OrchestratorEvent =>
+      index === 0
+        ? { type: "turn.created", turn: goldenAssistantTurn("turn-long", THREAD_ID) }
+        : { type: "stream.delta", kind: "text", text: "x" };
+    const suffixStart = 20_000n;
+    const suffixAfter = suffixStart * 1_000n + 999n;
+    const replay = await createCappedHub(
+      rowCount,
+      BigInt(rowCount),
+      false,
+      payload,
+    ).catchupAndSubscribe(THREAD_ID, suffixAfter, () => {});
+    expect(replay.catchup).toHaveLength(rowCount - Number(suffixStart));
+    expect(replay.catchup[0]?.seq).toBe((suffixStart + 1n) * 1_000n);
+    expect(replay.catchup.at(-1)?.seq).toBe(BigInt(rowCount) * 1_000n);
+    expect(replay.catchup.at(-1)?.event).toMatchObject({
+      type: "TEXT_MESSAGE_CONTENT",
+      delta: "x",
+    });
+    replay.unsubscribe();
+  });
+
+  it("does not treat legal sequence gaps as a missing replay page", async () => {
+    const rowCount = 23_081;
+    const headJournalSeq = BigInt(rowCount);
+    const replay = await createCappedHub(rowCount, headJournalSeq, true).catchupAndSubscribe(
       THREAD_ID,
       0n,
       () => {},
     );
-    expect(fits.hitReplayLimit).toBe(false);
-    fits.unsubscribe();
+    expect(replay.catchup).toHaveLength(rowCount - 23);
+    expect(replay.catchup.at(-1)?.seq).toBe(headJournalSeq * 1_000n);
+    replay.unsubscribe();
   });
 });
