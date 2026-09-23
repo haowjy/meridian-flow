@@ -355,9 +355,8 @@ export class ThreadRunController {
         return outcome("accepted");
       }
       if (result.kind === "rejected" || result.kind === "retired") {
-        // Recovery keeps the definitive failure on the turn (the writer sees
-        // what was refused); the live composer path still drops the row and
-        // keeps the draft in the composer.
+        // Callers choose whether a proved refusal remains attached to its
+        // optimistic row; the chat surface keeps it for Retry/Edit recovery.
         if (options.optimisticUserTurnId && !options.keepOptimisticOnFailure) {
           this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
         }

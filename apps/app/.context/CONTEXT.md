@@ -57,16 +57,15 @@ Two interfaces are the only paths between the visual layer and the substrate:
   (Zustand vanilla store, one instance per `ThreadStoreProvider`, SSR-safe).
   **Public imports:** `@/client/stores` only — do not reach into store internals from features.
   UI reads via `useThreadStore(selector)`, `useThreadTurns(threadId)`; writes via
-  `useThreadActions()` only. Project Home first-send handoff writes one
-  same-tab `sessionStorage` record through `inflight-chat.ts` before navigation.
-  It survives route remounts, not tab close or reload, and is not an offline
-  outbox. Destination Chat owns persistence and retry; ambiguous existing-thread
-  sends instead use `ThreadRunController` append, lookup, and explicit retirement.
+  `useThreadActions()` only. Before navigation or dispatch, Project Home and
+  existing-thread sends write an unresolved intent to the account-stamped chat
+  submission journal. Destination Chat owns persistence, idempotent replay,
+  acknowledgement, and recovery. Ambiguous sends retain their journal witness;
+  accepted, proved rejected, retired, or writer-abandoned sends retire it.
   `markPendingCreation`, `clearPendingCreation`, and
-  `removeOptimisticUserTurn` fence the deferred create. The last operation is
-  only rollback for a locally appended user turn that failed before server
-  acknowledgement. Durable first-send work belongs to an account-scoped
-  acknowledged-submission record, not to the thread replica or AI runtime.
+  `removeOptimisticUserTurn` fence deferred creation and local display only.
+  The journal is an acknowledged-submission record, not a thread replica or
+  offline AI runtime.
 - **`ThreadCachePort`** (`src/client/stores/thread-store/thread-cache.ts`) —
   thin seam between thread-store lifecycle transitions and the React Query cache.
   The store depends on this port, not `QueryClient` directly — list/snapshot

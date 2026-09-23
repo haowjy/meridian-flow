@@ -66,9 +66,11 @@ export function useCheckoutReturn(options: UseCheckoutReturnOptions = {}): Check
       return;
     }
 
-    // A success with no baseline cannot be attributed to this checkout. Do not
-    // poll and do not promise an update: fail closed and say so.
-    if (!readCheckoutBaseline(storage)) {
+    // A success with no checkout baseline cannot be attributed to this
+    // checkout. A portal handoff also cannot prove a purchase merely because
+    // someone later opened a success URL. Fail closed without polling.
+    const baseline = readCheckoutBaseline(storage);
+    if (baseline?.handoffKind !== "checkout") {
       clearCheckoutBaseline(storage);
       setStatus("unverified");
       clearRef.current();
@@ -83,7 +85,7 @@ export function useCheckoutReturn(options: UseCheckoutReturnOptions = {}): Check
 
     const storage = checkoutStorage();
     const baseline = readCheckoutBaseline(storage);
-    if (!baseline) {
+    if (baseline?.handoffKind !== "checkout") {
       clearCheckoutBaseline(storage);
       setStatus("unverified");
       clearRef.current();
