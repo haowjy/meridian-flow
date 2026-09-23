@@ -32,6 +32,8 @@ export interface ThreadCachePort {
    * its thread list, canonical Work catalog, and the project's context trees.
    */
   invalidateThread(threadId: string, projectId: string | null): void;
+  /** Refetch the durable snapshot when a historical live projection has no loaded turn. */
+  invalidateThreadSnapshot(threadId: string): void;
 }
 
 export function createThreadCache(client: QueryClient): ThreadCachePort {
@@ -63,6 +65,11 @@ export function createThreadCache(client: QueryClient): ThreadCachePort {
         } else {
           void client.invalidateQueries({ queryKey: threadQueryKeys.thread(threadId) });
         }
+      });
+    },
+    invalidateThreadSnapshot(threadId) {
+      queueMicrotask(() => {
+        void client.invalidateQueries({ queryKey: threadQueryKeys.thread(threadId) });
       });
     },
   };

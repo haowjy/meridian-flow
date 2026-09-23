@@ -63,6 +63,7 @@ type StoreEventTarget = {
   ): void;
   upsertAssistantBlock(threadId: string, turnId: string, block: Block): void;
   removeAssistantBlock(threadId: string, blockId: string): void;
+  invalidateThreadSnapshot(threadId: string): void;
   patchTurnStatus(
     threadId: string,
     turnId: string,
@@ -579,9 +580,12 @@ function applyCustomBlockUpsertEvent(
   threadId: string,
   payload: CustomBlockUpsertPayload,
 ): void {
-  store.ensureAssistantTurn(threadId, payload.block.turnId, {
-    createdAt: new Date().toISOString(),
-  });
+  // Custom upserts include historical same-card replacements. Never mint a
+  // synthetic streaming turn for one: the durable snapshot is the authority.
+  if (!turnById(store, threadId, payload.block.turnId)) {
+    store.invalidateThreadSnapshot(threadId);
+    return;
+  }
 
   let block = blockFromCustomUpsertPayload(payload);
   const pendingPatch = pendingInterruptPatchForBlock(threadId, block);

@@ -20,6 +20,7 @@ function store(): ThreadStoreApi {
       upsertThread() {},
       patchThread() {},
       invalidateThread() {},
+      invalidateThreadSnapshot() {},
     },
   });
 }
@@ -29,6 +30,53 @@ function customEvent(name: string, value: unknown): AGUIEvent {
 }
 
 describe("durable custom projection reduction", () => {
+  it("replaces a historical card after RUN_FINISHED without changing the active turn", () => {
+    const api = store();
+    api.getState().ensureAssistantTurn("thread-1", "historical");
+    api.getState().ensureAssistantTurn("thread-1", "active");
+    api.getState().patchTurnStatus("thread-1", "historical", "complete");
+    const beforeActive = api.getState().turns("thread-1")?.[1];
+    const block = {
+      id: "card-1",
+      turnId: "historical",
+      blockType: "custom",
+      sequence: 3,
+      content: { kind: "helper-result", props: { status: "completed" } },
+    };
+
+    applyAguiEventToStore(
+      api.getState(),
+      "thread-1",
+      customEvent("meridian.block.upserted", { block }),
+    );
+
+    const turns = api.getState().turns("thread-1");
+    expect(turns?.[0]?.status).toBe("complete");
+    expect(turns?.[0]?.blocks[0]?.id).toBe("card-1");
+    expect(turns?.[1]).toBe(beforeActive);
+  });
+
+  it("invalidates the durable snapshot instead of minting a missing historical turn", () => {
+    const api = store();
+    let invalidated = 0;
+    const state = api.getState();
+    const target = {
+      ...state,
+      invalidateThreadSnapshot: () => invalidated++,
+    };
+
+    applyAguiEventToStore(
+      target,
+      "thread-1",
+      customEvent("meridian.block.upserted", {
+        block: { id: "card-2", turnId: "gone", blockType: "custom", sequence: 0, content: {} },
+      }),
+    );
+
+    expect(invalidated).toBe(1);
+    expect(api.getState().turns("thread-1")).toBeUndefined();
+  });
+
   it("does not project meridian.inbox.changed into a transcript block", () => {
     const api = store();
     api.getState().ensureAssistantTurn("thread-1", "turn-1");

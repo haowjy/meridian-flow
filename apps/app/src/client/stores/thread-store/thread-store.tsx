@@ -237,6 +237,7 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     ensureAssistantTurn: state.ensureAssistantTurn,
     upsertAssistantBlock: state.upsertAssistantBlock,
     removeAssistantBlock: state.removeAssistantBlock,
+    invalidateThreadSnapshot: state.invalidateThreadSnapshot,
     patchTurnStatus: state.patchTurnStatus,
     pruneStaleAssistantTurns: state.pruneStaleAssistantTurns,
     bumpEventsApplied: state.bumpEventsApplied,
@@ -441,6 +442,10 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             if (!turn) return state;
 
             const normalizedBlock = block.turnId === turnId ? block : { ...block, turnId };
+            const currentBlock = turn.blocks.find(
+              (existingBlock) => existingBlock.sequence === block.sequence,
+            );
+            if (currentBlock && sameBlock(currentBlock, normalizedBlock)) return state;
             const blocks = [
               ...turn.blocks.filter((existingBlock) => existingBlock.sequence !== block.sequence),
               normalizedBlock,
@@ -475,6 +480,10 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
             if (!changed) return state;
             return { turnsByThread: { ...state.turnsByThread, [threadId]: nextTurns } };
           });
+        },
+
+        invalidateThreadSnapshot(threadId) {
+          threadCache.invalidateThreadSnapshot(threadId);
         },
 
         patchTurnStatus(threadId, turnId, status, patch = {}) {
@@ -795,6 +804,45 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
       }),
       { name: "thread-store", enabled: import.meta.env.DEV },
     ),
+  );
+}
+
+function sameBlock(left: Block, right: Block): boolean {
+  return (
+    left.id === right.id &&
+    left.turnId === right.turnId &&
+    left.responseId === right.responseId &&
+    left.blockType === right.blockType &&
+    left.sequence === right.sequence &&
+    left.textContent === right.textContent &&
+    left.provider === right.provider &&
+    left.executionSide === right.executionSide &&
+    left.status === right.status &&
+    sameJson(left.content, right.content) &&
+    sameJson(left.providerData, right.providerData) &&
+    sameJson(left.collapsedContent, right.collapsedContent)
+  );
+}
+
+function sameJson(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (!left || !right || typeof left !== "object" || typeof right !== "object") return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => sameJson(value, right[index]))
+    );
+  }
+  const leftRecord = left as Record<string, unknown>;
+  const rightRecord = right as Record<string, unknown>;
+  const keys = Object.keys(leftRecord);
+  return (
+    keys.length === Object.keys(rightRecord).length &&
+    keys.every(
+      (key) => Object.hasOwn(rightRecord, key) && sameJson(leftRecord[key], rightRecord[key]),
+    )
   );
 }
 

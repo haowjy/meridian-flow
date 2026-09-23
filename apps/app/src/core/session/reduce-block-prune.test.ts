@@ -19,6 +19,7 @@ function store(): ThreadStoreApi {
       upsertThread() {},
       patchThread() {},
       invalidateThread() {},
+      invalidateThreadSnapshot() {},
     },
   });
 }
