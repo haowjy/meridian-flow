@@ -20,10 +20,17 @@ import type {
 } from "@/rich-content/reference-occurrences";
 import type { TranscriptReferenceResolution } from "@/rich-content/TranscriptReference";
 
-export type UserTurnRecovery = {
-  onCheck: () => void;
-  onRetire: () => void;
-};
+export type UserTurnRecovery =
+  | {
+      kind: "ambiguous";
+      onCheck: () => void;
+      onRetire: () => void;
+    }
+  | {
+      kind: "rejected";
+      onRetry: () => void;
+      onEdit: () => void;
+    };
 
 export type UserTurnProps = {
   turn: Turn;
@@ -149,13 +156,23 @@ function UserTurnComponent({ turn, submissionRecovery = null }: UserTurnProps) {
           {t`Couldn't send.`}
         </p>
       ) : null}
-      {submissionRecovery ? (
+      {submissionRecovery?.kind === "ambiguous" ? (
         <div className="mt-1 flex justify-end gap-2">
           <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onCheck}>
             {t`Check submission status`}
           </Button>
           <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetire}>
             {t`Start over`}
+          </Button>
+        </div>
+      ) : null}
+      {submissionRecovery?.kind === "rejected" ? (
+        <div className="mt-1 flex justify-end gap-2">
+          <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetry}>
+            {t`Retry`}
+          </Button>
+          <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onEdit}>
+            {t`Edit`}
           </Button>
         </div>
       ) : null}

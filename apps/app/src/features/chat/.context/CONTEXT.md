@@ -23,7 +23,10 @@ draft-control changes can be understood independently.
 - Durable acknowledged submissions — the account-stamped intent journal in
   `client/chat-submissions` and the reload reconciliation in
   `useChatSubmissionRecovery.ts` / `useThreadHandoff.ts`. The journal owns intent
-  identity only; the server owns outcome.
+  identity only; the server owns outcome. A proved rejection retires the witness
+  but keeps the failed user row with Retry / Edit (Retry remints the submission
+  id, since the server never re-admits a rejected one); ambiguous sends keep the
+  row with Check submission status / Start over.
   See [`client/chat-submissions/AGENTS.md`](../../../client/chat-submissions/AGENTS.md).
 
 Durable change detail renders only through the owning turn receipt; the

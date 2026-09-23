@@ -43,7 +43,11 @@ export type SubscribeLiveOptions = {
 export type SubmitOptions = {
   /** Client-only turn id returned by appendUserTurn for this exact submit. */
   optimisticUserTurnId?: string;
-  /** First-send Retry keeps the user message on the failed turn. */
+  /**
+   * Retain the optimistic user row on a proved rejection so the caller can
+   * attach edit/retry recovery to it (existing-thread sends and first-send
+   * Retry). Omit to drop the row on rejection (writer-directed abandonment).
+   */
   keepOptimisticOnFailure?: boolean;
 };
 
