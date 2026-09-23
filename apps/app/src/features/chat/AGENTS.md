@@ -25,7 +25,8 @@ An assistant turn renders as one **ordered list of render items** (see
   folded into one `Thinking` disclosure in place. Its visible label becomes a
   deterministic digest when it contains tools.
 - **Text** (visible) — an assistant text block, always rendered as prose. Text
-  never folds and never remounts.
+  never folds; settlement or partition changes do not remount an already-mounted
+  text item. The virtual viewport may still unmount and remount off-screen turns.
 - **Artifact** (visible) — a writer-facing block: a custom card (`ask_user`
   interrupt, spawn/`thread_message` `helper-result`, child `child-report`), an
   image, or a file.

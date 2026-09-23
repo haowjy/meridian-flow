@@ -92,13 +92,14 @@ Cards hide their tool_use/tool_result rows (`tool-view-visibility.ts`). The
 custom card is the surface. Spawn and `return_result` protocol remain model
 history; the writer does not see their duplicate rows.
 
-Each admitted invocation has one retained helper-result card with the original
-parent-turn/tool-call/child/delivery/execution tuple. Terminal status is child
-execution truth, not parent protocol admission. If B card publication lags, a
-settled direct terminal outcome supplies the visible status without rewriting
-the card; terminal B props take precedence once published. A foreground card joins only a
-settled `spawn` or `thread_message` result whose execution matches and whose
-delivery mode is direct. The turn renderer indexes protocol identity once over
+Each card-bearing admitted invocation has one retained helper-result card
+with the original parent-turn/tool-call/child/delivery/execution tuple.
+Background `thread_message` is queue-only and makes no card promise. Terminal
+status is child execution truth, not parent protocol admission. If B card
+publication lags, a settled direct terminal outcome supplies the visible status
+without rewriting the card; terminal B props take precedence once published. A foreground card joins only a settled `spawn` or `thread_message` result
+whose execution matches and whose delivery mode is direct. The turn renderer
+indexes protocol identity once over
 the complete turn; contiguous presentation groups cannot pair persisted
 `tool_use → card → tool_result`. The lookup reads before hidden protocol rows
 are filtered, so authoritative snapshots and result-before-card converge

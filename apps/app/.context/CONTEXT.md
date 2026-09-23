@@ -185,15 +185,7 @@ remains the pending destination until creation is confirmed or reconciled by
 that ID. An uncertain outcome stays on the form for retry, not on an unconfirmed
 project screen.
 
-Chat landing Send mints a thread id, writes local turns, replaces the URL, then
-`useThreadHandoff` persists create-or-get + admit + run on those ids. Failure
-stays on that chat. An empty working turn shows "Couldn't send" with Retry on
-the turn, which resubmits the same thread and message ids. `useThreadHandoff`
-clears that chrome once persist and run succeed. It also resumes each distinct
-active run once, including a server-initiated run that wakes the parent, so a
-background child's continuation streams live; see
-[`features/chat/.context/thread-live-updates.md`](../src/features/chat/.context/thread-live-updates.md).
-Do not bounce to the project library or show Check status, Start over, or saved-first-message recovery.
+Chat landing Send records an account-stamped submission intent, including the original message payload, before it displays local turns or navigates. It then replaces the URL immediately; `useThreadHandoff` persists create-or-get, admits the message, and starts the run in the background. The journal remains the recovery witness while the outcome is ambiguous and is retired on acknowledgement or a proved terminal outcome. A first-send reload rehydrates from that journal; its Retry retains the original thread, message, and submission identity. For existing-thread sends, ambiguity offers Check status / Start over, a not-seen check replays the saved payload under its original identity, and a proved rejection retains the failed row and payload for Retry under a fresh submission identity. Account epochs and recovery-session ownership fence stale completion from acknowledging or retiring another session’s entry. Keep the writer on the destination throughout. `useThreadHandoff` also resumes each distinct active run once, including a server-initiated run that wakes the parent, so a background child’s continuation streams live; see [`features/chat/.context/thread-live-updates.md`](../src/features/chat/.context/thread-live-updates.md).
 
 ### Thread snapshot reconciliation
 
