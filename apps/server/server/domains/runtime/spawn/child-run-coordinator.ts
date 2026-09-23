@@ -5,11 +5,12 @@
  * caller allowed through the thread-create spawn gate.
  */
 import { GENERIC_SUBAGENT_SLUG, type InvocationPatch } from "@meridian/contracts/agents";
+import type { InvocationCardProps } from "@meridian/contracts/components";
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
-import type { ThreadId } from "@meridian/contracts/runtime";
-import type { SpawnResult } from "@meridian/contracts/spawn";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { ExecutionReportCorrelation, SpawnResult } from "@meridian/contracts/spawn";
 import type { Block, Thread, ThreadActivity } from "@meridian/contracts/threads";
-import type { EventSink } from "../../observability/index.js";
+import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AgentRevisionStore, CompiledAgentDefinition } from "../../packages/index.js";
 import type {
   EventJournalWriter,
@@ -23,7 +24,13 @@ import { appendSubagentActivity, appendSubagentActivityBestEffort } from "./acti
 import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
 import { resolveChildInvocation } from "./resolve-child-invocation.js";
-import { persistHelperCard, type SpawnTranscript } from "./spawn-transcript.js";
+import { invocationCardProps, unadmittedInvocationFailure } from "./spawn-output.js";
+import {
+  bindAdmittedInvocationCard,
+  persistHelperCard,
+  persistInvocationCard,
+  type SpawnTranscript,
+} from "./spawn-transcript.js";
 import { assertSpawnDepthAllowed, assertTurnBudget } from "./tree-budget.js";
 
 export interface SpawnChildInput extends ChildDriveInput {
@@ -75,7 +82,7 @@ export interface ChildRunCoordinatorDeps {
   /** Recomputes a run tree's activity; feeds the root-journal `subagent.activity` fact. */
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   /** Producer-facing inbox: background thread_message enqueues here. */
-  threadedInbox: Pick<ThreadedInbox, "enqueue">;
+  threadedInbox: Pick<ThreadedInbox, "enqueue" | "withThreadLock">;
   agentRevisions: Pick<
     AgentRevisionStore,
     "readThreadBinding" | "readRevision" | "readSource" | "readPackageDefinitions" | "bindThread"
@@ -276,34 +283,61 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
 
   async function persistRunningCard(
     transcript: SpawnTranscript | undefined,
-    fields: Parameters<typeof persistHelperCard>[1],
+    props: InvocationCardProps,
     prepared: PreparedChild,
   ): Promise<Block | null> {
     try {
-      return await persistHelperCard(transcript, fields);
+      return await persistInvocationCard(transcript, props);
     } catch (error) {
       await driver.release(prepared);
       throw error;
     }
   }
 
-  function runCardFields(
+  function invocationCorrelation(
     request: ChildRunRequest,
-    prepared: PreparedChild,
-  ): Parameters<typeof persistHelperCard>[1] {
-    if (request.kind === "spawn") {
-      return {
-        agent: request.agentSlug,
-        description: request.description,
-        parentTurnId: request.parentTurnId as string,
-        childThreadId: prepared.child.id,
-      };
+    background: boolean,
+  ): Pick<InvocationCardProps, "parentTurnId" | "toolCallId" | "deliveryMode"> {
+    const correlation: ExecutionReportCorrelation | undefined = request.reportCorrelation;
+    if (
+      !correlation?.callerTurnId ||
+      !correlation.toolCallId ||
+      correlation.callerThreadId !== request.parentThread.id ||
+      correlation.callerTurnId !== request.parentTurnId ||
+      correlation.cardBlockId !== null ||
+      correlation.origin !== (request.kind === "spawn" ? "spawn" : "foreground_message") ||
+      (request.kind === "message" && correlation.toolCallId !== request.toolCallId) ||
+      correlation.deliveryMode !== (background ? "background_notification" : "direct")
+    ) {
+      throw new Error("Child invocation has invalid parent report correlation");
     }
     return {
-      agent: prepared.resolvedSlug,
-      parentTurnId: request.parentTurnId as string,
-      childThreadId: prepared.child.id,
+      parentTurnId: correlation.callerTurnId,
+      toolCallId: correlation.toolCallId,
+      deliveryMode: correlation.deliveryMode,
     };
+  }
+
+  function runCardProps(
+    request: ChildRunRequest,
+    prepared: PreparedChild,
+    correlation: Pick<InvocationCardProps, "parentTurnId" | "toolCallId" | "deliveryMode">,
+  ): InvocationCardProps {
+    if (request.kind === "spawn") {
+      return invocationCardProps({
+        agent: request.agentSlug,
+        description: request.description,
+        correlation,
+        childThreadId: prepared.child.id,
+        execution: null,
+      });
+    }
+    return invocationCardProps({
+      agent: prepared.resolvedSlug,
+      correlation,
+      childThreadId: prepared.child.id,
+      execution: null,
+    });
   }
 
   /**
@@ -353,19 +387,44 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       return sendBackgroundMessage(request);
     }
 
+    const correlation = invocationCorrelation(request, background);
+
     const prepared = await prepare(request, background, options.transcript);
     if ("status" in prepared) return prepared;
 
-    const cardFields = runCardFields(request, prepared);
+    const cardProps = runCardProps(request, prepared, correlation);
+
+    let admitted: TurnId | null = null;
+    let runCard: Block | null = null;
+    const onAdmitted = async (execution: TurnId) => {
+      admitted = execution;
+      try {
+        await bindAdmittedInvocationCard({
+          transcript: options.transcript,
+          threadedInbox: deps.threadedInbox,
+          card: runCard,
+          props: cardProps,
+          execution,
+        });
+      } catch (error) {
+        emitEvent(deps.eventSink, {
+          level: "warn",
+          source: "runtime.spawn",
+          name: "child.card_admission_binding_failed",
+          correlation: { threadId: prepared.child.id, turnId: execution },
+          payload: unknownToEventPayload(error),
+        });
+      }
+    };
 
     if (background) {
       // The original card survives parent continuation and B replaces only its status.
-      const runCard = await persistRunningCard(options.transcript, cardFields, prepared);
+      runCard = await persistRunningCard(options.transcript, cardProps, prepared);
       if (request.reportCorrelation && runCard) {
         request.reportCorrelation = { ...request.reportCorrelation, cardBlockId: runCard.id };
       }
       try {
-        const execution = await driver.driveBackground(prepared, request);
+        const execution = await driver.driveBackground(prepared, request, onAdmitted);
         return {
           status: "background",
           execution,
@@ -380,44 +439,31 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
             spawnStatus: "failed",
           });
         }
-        await persistHelperCard(
-          options.transcript,
-          {
-            ...cardFields,
-            output: {
-              status: "error",
-              error: meridianErrorFromSystem("spawn_failed", "Child could not start"),
-            },
-          },
-          runCard,
-        );
+        if (!admitted) {
+          await persistInvocationCard(
+            options.transcript,
+            unadmittedInvocationFailure(cardProps),
+            runCard,
+          );
+        }
         throw error;
       }
     }
 
-    const failureCode = request.kind === "spawn" ? "spawn_failed" : "thread_message_failed";
-    let runningCard: Block | null = null;
     try {
-      runningCard = await persistRunningCard(options.transcript, cardFields, prepared);
-      if (request.reportCorrelation && runningCard) {
-        request.reportCorrelation = { ...request.reportCorrelation, cardBlockId: runningCard.id };
+      runCard = await persistRunningCard(options.transcript, cardProps, prepared);
+      if (request.reportCorrelation && runCard) {
+        request.reportCorrelation = { ...request.reportCorrelation, cardBlockId: runCard.id };
       }
-      return await driver.drive(prepared, request);
+      return await driver.drive(prepared, request, onAdmitted);
     } catch (error) {
-      await persistHelperCard(
-        options.transcript,
-        {
-          ...cardFields,
-          output: {
-            status: "error",
-            error: meridianErrorFromSystem(
-              failureCode,
-              error instanceof Error ? error.message : String(error),
-            ),
-          },
-        },
-        runningCard,
-      );
+      if (!admitted) {
+        await persistInvocationCard(
+          options.transcript,
+          unadmittedInvocationFailure(cardProps),
+          runCard,
+        );
+      }
       throw error;
     }
   }

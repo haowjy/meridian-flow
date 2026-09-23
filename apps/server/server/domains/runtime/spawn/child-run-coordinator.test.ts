@@ -111,7 +111,12 @@ function stubOrchestrator(
 }
 
 async function fixture(
-  options: { orchestrator?: RunTurnPort; eventWriter?: EventJournalWriter } = {},
+  options: {
+    orchestrator?:
+      | RunTurnPort
+      | ((repos: ReturnType<typeof createInMemoryRepositories>) => RunTurnPort);
+    eventWriter?: EventJournalWriter;
+  } = {},
 ) {
   const transactionOwner = new InMemoryTransactionOwner();
   let repos: ReturnType<typeof createInMemoryRepositories>;
@@ -210,7 +215,10 @@ async function fixture(
   const publisher = createReportPublisher({ repos, eventWriter, threadedInbox, eventSink });
 
   const driver = createChildRunDriver({
-    orchestrator: options.orchestrator ?? stubOrchestrator(turns, repos),
+    orchestrator:
+      typeof options.orchestrator === "function"
+        ? options.orchestrator(repos)
+        : (options.orchestrator ?? stubOrchestrator(turns, repos)),
     repos: { executionReports: repos.executionReports },
     eventWriter,
     readActivity,
@@ -274,7 +282,8 @@ async function fixture(
           reportCorrelation: request.reportCorrelation ?? {
             callerThreadId: request.parentThread.id,
             callerTurnId: request.parentTurnId,
-            toolCallId: `test-invocation-${invocation}`,
+            toolCallId:
+              request.kind === "message" ? request.toolCallId : `test-invocation-${invocation}`,
             cardBlockId: null,
             origin: request.kind === "spawn" ? "spawn" : "foreground_message",
             deliveryMode: options.mode === "background" ? "background_notification" : "direct",
@@ -309,11 +318,12 @@ const budget = createDefaultTreeBudget();
 function transcriptFor(
   threadId: ThreadId,
   deps: { repos: ReturnType<typeof createInMemoryRepositories>; eventWriter: EventJournalWriter },
+  turnId = "turn-1",
 ): SpawnTranscript {
   return {
     persistence: { repos: deps.repos, eventWriter: deps.eventWriter },
     threadId,
-    turnId: "turn-1",
+    turnId,
     blockSeqRef: { value: 0 },
     allBlocks: [],
     events: [],
@@ -763,7 +773,7 @@ describe("ChildRunCoordinator thread_message", () => {
   });
 
   it("captures a distinct report per continuation", async () => {
-    const { coordinator, parent } = await fixture();
+    const { coordinator, parent, repos, eventWriter } = await fixture();
     const spawned = await coordinator.runChild(
       {
         kind: "spawn",
@@ -778,6 +788,8 @@ describe("ChildRunCoordinator thread_message", () => {
     if (spawned.status !== "completed") throw new Error("spawn failed");
     const childId = spawned.report.threadId as ThreadId;
     const childHandle = spawned.report.handle;
+    const firstTranscript = transcriptFor(parent.id as ThreadId, { repos, eventWriter }, "turn-2");
+    const secondTranscript = transcriptFor(parent.id as ThreadId, { repos, eventWriter }, "turn-3");
 
     const first = await coordinator.runChild(
       {
@@ -789,7 +801,7 @@ describe("ChildRunCoordinator thread_message", () => {
         toolCallId: "call-first",
         budget,
       },
-      { mode: "foreground" },
+      { mode: "foreground", transcript: firstTranscript },
     );
     const second = await coordinator.runChild(
       {
@@ -801,7 +813,7 @@ describe("ChildRunCoordinator thread_message", () => {
         toolCallId: "call-second",
         budget,
       },
-      { mode: "foreground" },
+      { mode: "foreground", transcript: secondTranscript },
     );
     expect(first.status).toBe("completed");
     expect(second.status).toBe("completed");
@@ -809,6 +821,33 @@ describe("ChildRunCoordinator thread_message", () => {
     expect(first.report.threadId).toBe(childId);
     expect(second.report.threadId).toBe(childId);
     expect(first.report.summary).not.toBe(second.report.summary);
+    const firstCardId = firstTranscript.events.find((event) => event.type === "block.upserted")
+      ?.block.id;
+    const secondCardId = secondTranscript.events.find((event) => event.type === "block.upserted")
+      ?.block.id;
+    expect(firstCardId).toBeTruthy();
+    expect(secondCardId).toBeTruthy();
+    expect(firstCardId).not.toBe(secondCardId);
+    expect((await repos.blocks.findById(firstCardId ?? ""))?.content).toMatchObject({
+      kind: "helper-result",
+      props: {
+        parentTurnId: "turn-2",
+        toolCallId: "call-first",
+        childThreadId: childId,
+        deliveryMode: "direct",
+        execution: first.execution,
+      },
+    });
+    expect((await repos.blocks.findById(secondCardId ?? ""))?.content).toMatchObject({
+      kind: "helper-result",
+      props: {
+        parentTurnId: "turn-3",
+        toolCallId: "call-second",
+        childThreadId: childId,
+        deliveryMode: "direct",
+        execution: second.execution,
+      },
+    });
   });
 
   it("returns thread_message_target_busy without touching the child lifecycle or events", async () => {
@@ -914,13 +953,44 @@ describe("ChildRunCoordinator thread_message", () => {
     expect(customBlocks.length).toBe(1);
     expect(customBlocks[0]?.content).toMatchObject({
       kind: "helper-result",
-      props: { status: "running", childThreadId: spawned.report.threadId },
+      props: {
+        status: "running",
+        childThreadId: spawned.report.threadId,
+        parentTurnId: "turn-1",
+        toolCallId: "test-invocation-1",
+        deliveryMode: "direct",
+        execution: null,
+      },
+    });
+    const admittedCard = transcript.events.find(
+      (event) => event.type === "block.updated" && event.block.id === customBlocks[0]?.id,
+    );
+    expect(admittedCard).toMatchObject({
+      type: "block.updated",
+      block: {
+        id: customBlocks[0]?.id,
+        turnId: "turn-1",
+        sequence: customBlocks[0]?.sequence,
+        content: {
+          kind: "helper-result",
+          props: {
+            status: "running",
+            parentTurnId: "turn-1",
+            toolCallId: "test-invocation-1",
+            deliveryMode: "direct",
+            execution: spawned.execution,
+          },
+        },
+      },
     });
     expect((await repos.blocks.findById(customBlocks[0]?.id ?? ""))?.content).toMatchObject({
       kind: "helper-result",
       props: {
         status: "completed",
         childThreadId: spawned.report.threadId,
+        parentTurnId: "turn-1",
+        toolCallId: "test-invocation-1",
+        deliveryMode: "direct",
         execution: spawned.execution,
       },
     });
@@ -949,7 +1019,14 @@ describe("ChildRunCoordinator thread_message", () => {
     expect(customBlocks).toHaveLength(1);
     expect(customBlocks[0]?.content).toMatchObject({
       kind: "helper-result",
-      props: { status: "running", childThreadId: spawned.threadId },
+      props: {
+        status: "running",
+        childThreadId: spawned.threadId,
+        parentTurnId: "turn-1",
+        toolCallId: "test-invocation-1",
+        deliveryMode: "background_notification",
+        execution: null,
+      },
     });
     const cardId = customBlocks[0]?.id;
     if (!cardId) throw new Error("missing running card id");
@@ -957,11 +1034,95 @@ describe("ChildRunCoordinator thread_message", () => {
     await vi.waitFor(async () => {
       expect((await repos.blocks.findById(cardId))?.content).toMatchObject({
         kind: "helper-result",
-        props: { status: "completed", execution: spawned.execution },
+        props: {
+          status: "completed",
+          parentTurnId: "turn-1",
+          toolCallId: "test-invocation-1",
+          deliveryMode: "background_notification",
+          execution: spawned.execution,
+        },
       });
     });
     expect((await repos.blocks.findById(cardId))?.pruned).not.toBe(true);
     expect(journal.some((entry) => entry.type === "block.updated")).toBe(true);
+  });
+
+  it("returns a background execution only after admission, without waiting for terminal", async () => {
+    let allowAdmission!: () => void;
+    let allowTerminal!: () => void;
+    const admissionGate = new Promise<void>((resolve) => {
+      allowAdmission = resolve;
+    });
+    const terminalGate = new Promise<void>((resolve) => {
+      allowTerminal = resolve;
+    });
+    const { coordinator, parent, repos, eventWriter } = await fixture({
+      orchestrator: (repositories) => {
+        const base = stubOrchestrator([], repositories);
+        return {
+          ...base,
+          async runTurn(input) {
+            await admissionGate;
+            const admitted = await base.runTurn(input);
+            return {
+              ...admitted,
+              events: (async function* () {
+                await terminalGate;
+                yield* admitted.events;
+              })(),
+            };
+          },
+        };
+      },
+    });
+    const transcript = transcriptFor(parent.id as ThreadId, { repos, eventWriter });
+    let returned = false;
+    const running = coordinator
+      .runChild(
+        {
+          kind: "spawn",
+          parentThread: parent,
+          parentTurnId: "turn-1" as TurnId,
+          prompt,
+          budget,
+        },
+        { mode: "background", transcript },
+      )
+      .then((result) => {
+        returned = true;
+        return result;
+      });
+    await vi.waitFor(() =>
+      expect(transcript.events.some((event) => event.type === "block.upserted")).toBe(true),
+    );
+    expect(returned).toBe(false);
+    allowAdmission();
+    const result = await running;
+    expect(result.status).toBe("background");
+    if (result.status !== "background") throw new Error("expected background run");
+    if (!result.threadId || !result.execution) throw new Error("background run has no execution");
+    const childThreadId = result.threadId;
+    const execution = result.execution;
+    expect(
+      (await repos.executionReports.findByExecution(childThreadId, execution))?.outcome,
+    ).toBeNull();
+    const cardId = transcript.events.find((event) => event.type === "block.upserted")?.block.id;
+    expect((await repos.blocks.findById(cardId ?? ""))?.content).toMatchObject({
+      kind: "helper-result",
+      props: {
+        status: "running",
+        parentTurnId: "turn-1",
+        toolCallId: "test-invocation-1",
+        deliveryMode: "background_notification",
+        execution: result.execution,
+      },
+    });
+    allowTerminal();
+    await vi.waitFor(async () => {
+      expect(
+        (await repos.executionReports.findByExecution(childThreadId, execution))?.outcome,
+      ).toBe("succeeded");
+    });
   });
 
   it("marks the original background card failed if assistant-turn admission never commits", async () => {
@@ -993,7 +1154,13 @@ describe("ChildRunCoordinator thread_message", () => {
     if (card?.type !== "block.upserted") throw new Error("missing original card");
     expect((await repos.blocks.findById(card.block.id))?.content).toMatchObject({
       kind: "helper-result",
-      props: { status: "failed" },
+      props: {
+        status: "failed",
+        parentTurnId: "turn-1",
+        toolCallId: "test-invocation-1",
+        deliveryMode: "background_notification",
+        execution: null,
+      },
     });
     const childId = journal.find((entry) => entry.type === "agent.spawn")?.childThreadId;
     if (!childId) throw new Error("missing created child");

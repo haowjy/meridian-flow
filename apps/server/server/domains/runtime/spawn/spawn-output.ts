@@ -13,7 +13,9 @@
  * reply is coming.
  */
 import { GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
-import type { HelperResultProps } from "@meridian/contracts/components";
+import type { HelperResultProps, InvocationCardProps } from "@meridian/contracts/components";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { SavedOutcome } from "@meridian/contracts/spawn";
 import type { JsonValue } from "@meridian/contracts/threads";
 
 const QUEUED_NO_REPLY_NOTE =
@@ -77,6 +79,41 @@ function helperAgentName(slug: string): string {
     .split("-")
     .map((part) => (part ? `${part[0]?.toUpperCase()}${part.slice(1)}` : part))
     .join(" ");
+}
+
+export function invocationCardProps(input: {
+  agent?: string;
+  description?: string;
+  correlation: Pick<InvocationCardProps, "parentTurnId" | "toolCallId" | "deliveryMode">;
+  childThreadId: ThreadId;
+  execution: TurnId | null;
+  outcome?: SavedOutcome;
+}): InvocationCardProps {
+  const slug = input.agent?.trim() || GENERIC_SUBAGENT_SLUG;
+  const base = {
+    agentSlug: slug,
+    agentName: helperAgentName(slug),
+    parentTurnId: input.correlation.parentTurnId,
+    toolCallId: input.correlation.toolCallId,
+    deliveryMode: input.correlation.deliveryMode,
+    childThreadId: input.childThreadId,
+    ...(input.description !== undefined ? { title: input.description } : {}),
+  };
+  if (input.outcome) {
+    if (!input.execution) throw new Error("Terminal invocation card has no execution");
+    return {
+      ...base,
+      status: input.outcome === "succeeded" ? "completed" : "failed",
+      execution: input.execution,
+      outcome: input.outcome,
+    };
+  }
+  return { ...base, status: "running", execution: input.execution };
+}
+
+export function unadmittedInvocationFailure(props: InvocationCardProps): InvocationCardProps {
+  const { status: _status, execution: _execution, outcome: _outcome, ...identity } = props;
+  return { ...identity, status: "failed", execution: null };
 }
 
 function isRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {

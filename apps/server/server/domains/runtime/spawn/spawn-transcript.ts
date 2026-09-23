@@ -8,7 +8,9 @@
  */
 import {
   buildHelperResultComponentContent,
+  buildInvocationCardContent,
   type ComponentBlockContent,
+  type InvocationCardProps,
 } from "@meridian/contracts/components";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ReturnResultCapture, ReturnResultOutcome } from "@meridian/contracts/spawn";
@@ -17,6 +19,7 @@ import { ExecutionReportConflictError } from "../../threads/index.js";
 import type { ExecutionReportRepository } from "../../threads/ports/repositories.js";
 import { contentForBlockInput, localBlockFromEvent } from "../loop/block-helpers.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "../loop/persistence.js";
+import type { ThreadedInbox } from "../loop/threaded-inbox.js";
 import { spawnHelperCardProps } from "./spawn-output.js";
 
 export type SpawnTranscript = {
@@ -86,6 +89,86 @@ export async function persistHelperCard(
     buildHelperResultComponentContent(spawnHelperCardProps(input)),
     existing,
   );
+}
+
+export async function persistInvocationCard(
+  transcript: SpawnTranscript | undefined,
+  props: InvocationCardProps,
+  existing?: Block | null,
+): Promise<Block | null> {
+  if (!transcript) return existing ?? null;
+  return persistCustomCard(transcript, buildInvocationCardContent(props), existing);
+}
+
+/** The parent lock serializes the admission replacement with publication B. */
+export async function bindAdmittedInvocationCard(input: {
+  transcript: SpawnTranscript | undefined;
+  threadedInbox: Pick<ThreadedInbox, "withThreadLock">;
+  card: Block | null;
+  props: InvocationCardProps;
+  execution: TurnId;
+}): Promise<void> {
+  const { transcript, card } = input;
+  if (!transcript || !card) return;
+  await input.threadedInbox.withThreadLock(transcript.threadId, async () => {
+    const persisted = await persistAndAppendEvents(
+      transcript.persistence,
+      transcript.threadId,
+      async () => {
+        const current = await transcript.persistence.repos.blocks.findById(card.id);
+        if (!current) return { result: null, events: [] };
+        if (current.turnId !== transcript.turnId || current.blockType !== "custom") {
+          throw new Error("Invocation card changed ownership before admission binding");
+        }
+        const content = current.content;
+        if (!content || typeof content !== "object" || Array.isArray(content)) {
+          throw new Error("Invocation card has invalid content");
+        }
+        const props = "props" in content ? content.props : null;
+        if (!props || typeof props !== "object" || Array.isArray(props)) {
+          throw new Error("Invocation card has invalid props");
+        }
+        if (
+          props.parentTurnId !== input.props.parentTurnId ||
+          props.toolCallId !== input.props.toolCallId ||
+          props.deliveryMode !== input.props.deliveryMode ||
+          props.childThreadId !== input.props.childThreadId
+        ) {
+          throw new Error("Invocation card correlation changed before admission binding");
+        }
+        if (props.execution === input.execution) return { result: null, events: [] };
+        if (props.status !== "running" || props.execution !== null) {
+          throw new Error("Invocation card has a conflicting execution binding");
+        }
+        const block = contentForBlockInput({
+          id: current.id,
+          turnId: current.turnId,
+          blockType: "custom",
+          sequence: current.sequence,
+          content: buildInvocationCardContent({
+            agentSlug: input.props.agentSlug,
+            agentName: input.props.agentName,
+            parentTurnId: input.props.parentTurnId,
+            toolCallId: input.props.toolCallId,
+            deliveryMode: input.props.deliveryMode,
+            childThreadId: input.props.childThreadId,
+            ...(input.props.title !== undefined ? { title: input.props.title } : {}),
+            status: "running",
+            execution: input.execution,
+          }),
+          status: "complete",
+        });
+        return {
+          result: localBlockFromEvent(block),
+          events: [{ type: "block.updated" as const, block }],
+        };
+      },
+    );
+    if (persisted.result) {
+      rememberBlock(transcript, persisted.result, card);
+      transcript.events.push(...persisted.events);
+    }
+  });
 }
 
 export async function persistReturnResult(

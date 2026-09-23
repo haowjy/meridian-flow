@@ -179,13 +179,17 @@ model, tools, system prompt, or overlay. A binding-less target fails
 claim/controller/registry, so a failed foreground message never writes the
 child's lifecycle; the caller owns the failure policy.
 
-Writer-facing helper-result cards persist through `spawn/spawn-transcript.ts`
-and carry status/navigation metadata, not report body. A spawned background
+Invocation helper-result cards persist through `spawn/spawn-transcript.ts`
+with the original parent turn, tool call, child thread, delivery mode, and a
+nullable execution until admission binds the committed assistant turn. The
+parent-lock-scoped admission replacement and publication B preserve that exact
+tuple and the original block id/turn/sequence; neither carries report body.
+An unadmitted failure keeps `execution: null`. A spawned background
 execution returns only after assistant-turn admission commits, without waiting
 for terminal. Foreground spawn and message return the exact terminal report
 directly, preserving failure/cancellation and partial content. Background
 `thread_message` remains queue-only with no promised execution or reply. The
-original running card is replaced only by B; a missing card is not recreated,
+original card is bound at admission and terminally replaced by B; a missing card is not recreated,
 but a live caller still receives the notification. `return_result` captures
 candidate content with its successful ordinary `tool_result` in one
 transaction; capture alone never makes success. `spawn_status` remains a
@@ -231,9 +235,11 @@ root repeatable-read snapshot. The selector uses the canonical request-ID gramma
 `not_ready` requires the requested assistant turn to be bound to the live run
 lease. An admitted but unbound or older nonterminal run is `unavailable`. `ChildDriveInput.reportCorrelation` carries only the
 caller/turn/tool/card and origin/delivery metadata; the actual child
-`assistantTurnId` is assigned only after turn admission. The current runtime
-does not yet admit rows or finalize/publish reports through this port; do not
-infer feature completion from the reader or schema alone.
+`assistantTurnId` is assigned only after turn admission. The runtime admits
+each child assistant turn, finalizes its saved report with the terminal turn,
+and publishes a parent card/notification from that durable row. Generic
+`ThreadPendingInbox` projects every provenance; the writer-only tray selector
+must filter `provenance.kind === "writer"` on the client.
 
 ### Vocabulary note
 

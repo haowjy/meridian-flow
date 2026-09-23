@@ -1,5 +1,5 @@
 /** PostgreSQL B and orphan recovery: exact parent publication after durable terminal A. */
-import { buildHelperResultComponentContent } from "@meridian/contracts/components";
+import { buildInvocationCardContent } from "@meridian/contracts/components";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -42,6 +42,8 @@ else
     const { createThreadedInbox } = await import("../loop/threaded-inbox.js");
     const { finalizeExecution } = await import("../loop/execution-finalizer.js");
     const { createReportPublisher } = await import("./report-publisher.js");
+    const { bindAdmittedInvocationCard } = await import("./spawn-transcript.js");
+    const { invocationCardProps } = await import("./spawn-output.js");
     const { createOrphanReportRepair } = await import("./orphan-report-repair.js");
 
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
@@ -117,13 +119,18 @@ else
         turnId: ids.parentTurn,
         blockType: "custom",
         sequence: 7,
-        content: buildHelperResultComponentContent({
-          agentSlug: "critic",
-          agentName: "Critic",
-          status: "running",
-          parentTurnId: ids.parentTurn,
-          childThreadId: ids.child,
-        }),
+        content: buildInvocationCardContent(
+          invocationCardProps({
+            agent: "critic",
+            correlation: {
+              parentTurnId: ids.parentTurn,
+              toolCallId: "spawn-1",
+              deliveryMode: "background_notification",
+            },
+            childThreadId: ids.child,
+            execution: null,
+          }),
+        ),
       });
       await repos.executionReports.admit({
         childThreadId: ids.child,
@@ -165,7 +172,13 @@ else
       expect(card).toMatchObject({ id: ids.card, turnId: ids.parentTurn, sequence: 7 });
       expect(card?.content).toMatchObject({
         kind: "helper-result",
-        props: { status: "completed", execution: ids.execution },
+        props: {
+          status: "completed",
+          parentTurnId: ids.parentTurn,
+          toolCallId: "spawn-1",
+          deliveryMode: "background_notification",
+          execution: ids.execution,
+        },
       });
       expect(JSON.stringify(card?.content)).not.toContain("secret report body");
       const events = await db
@@ -173,6 +186,22 @@ else
         .from(schema.eventJournal)
         .where(eq(schema.eventJournal.threadId, ids.parent));
       expect(events.map((row) => row.eventType)).toEqual(["block.updated", "agent.run_completed"]);
+      expect(events[0]?.payload).toMatchObject({
+        block: {
+          id: ids.card,
+          turnId: ids.parentTurn,
+          sequence: 7,
+          content: {
+            kind: "helper-result",
+            props: {
+              parentTurnId: ids.parentTurn,
+              toolCallId: "spawn-1",
+              deliveryMode: "background_notification",
+              execution: ids.execution,
+            },
+          },
+        },
+      });
       expect(JSON.stringify(events.map((row) => row.payload))).not.toContain("secret report body");
       const messages = await inbox.listPending(ids.parent);
       expect(messages).toHaveLength(1);
@@ -186,6 +215,48 @@ else
       expect(
         (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,
       ).toBe("published");
+    });
+
+    it("does not regress terminal status when admission binding arrives after publication", async () => {
+      const originalCard = await repos.blocks.findById(ids.card);
+      if (!originalCard) throw new Error("missing original card");
+      await terminal();
+      await publisher.publish(ids.child, ids.execution);
+      const terminalCard = await repos.blocks.findById(ids.card);
+      if (!terminalCard) throw new Error("missing terminal card");
+      const priorEvents = await db
+        .select()
+        .from(schema.eventJournal)
+        .where(eq(schema.eventJournal.threadId, ids.parent));
+      await bindAdmittedInvocationCard({
+        transcript: {
+          persistence: { repos, eventWriter },
+          threadId: ids.parent,
+          turnId: ids.parentTurn,
+          blockSeqRef: { value: 8 },
+          allBlocks: [],
+          events: [],
+        },
+        threadedInbox,
+        card: originalCard,
+        props: invocationCardProps({
+          agent: "critic",
+          correlation: {
+            parentTurnId: ids.parentTurn,
+            toolCallId: "spawn-1",
+            deliveryMode: "background_notification",
+          },
+          childThreadId: ids.child,
+          execution: null,
+        }),
+        execution: ids.execution,
+      });
+      expect((await repos.blocks.findById(ids.card))?.content).toEqual(terminalCard.content);
+      const afterEvents = await db
+        .select()
+        .from(schema.eventJournal)
+        .where(eq(schema.eventJournal.threadId, ids.parent));
+      expect(afterEvents).toHaveLength(priorEvents.length);
     });
 
     it("rolls back card, event, inbox and marker together on publication failure, then retries", async () => {

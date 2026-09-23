@@ -20,6 +20,8 @@
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
 ### Fixed
 
+- Preserve exact parent-turn/tool-call/execution/delivery-mode correlation on child invocation cards through admission and terminal publication, without regressing a terminal card when admission binding arrives late.
+- Keep all inbox provenances in the shared pending read model; writer-only tray filtering remains a client selector.
 - Materialize uncaptured child report text from the exact assistant turn's final persisted model response, for success and partial failure/cancellation alike. Empty final responses do not borrow older prose or a speculative process buffer.
 - Retire body-bearing `background.completed` and `background.failed` event types; the published `agent.run_completed` fact carries outcome metadata only. Unknown historical journal facts continue to replay without a fabricated live frame.
 - Replace competing child completion paths with one saved per-execution terminal report. Background spawn returns after admission; direct spawn/message return the exact saved outcome, including failed or cancelled partial content. Report bodies no longer ride lifecycle events, cards, or inbox notifications.

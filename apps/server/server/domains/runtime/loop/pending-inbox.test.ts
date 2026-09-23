@@ -82,9 +82,18 @@ describe("projectPendingInbox", () => {
       }),
     ]);
 
-    expect(pending.items.map((item) => item.id)).toEqual(["a", "b"]);
-    expect(pending.items.map((item) => item.summary)).toEqual(["hello", "note one\n\nnote two"]);
+    expect(pending.items.map((item) => item.id)).toEqual(["a", "b", "c"]);
+    expect(pending.items.map((item) => item.summary)).toEqual([
+      "hello",
+      "note one\n\nnote two",
+      "Read thread_report(...)",
+    ]);
     expect(pending.items[1].intent).toBe("notice");
+    expect(pending.items[2].provenance).toEqual({
+      kind: "child",
+      threadId: "child-1",
+      reportId: "report-1",
+    });
   });
 });
 

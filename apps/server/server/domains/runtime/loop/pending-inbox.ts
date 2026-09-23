@@ -1,8 +1,9 @@
 /**
  * The pending-inbox read model and its live signal.
  *
- * `projectPendingInbox` is the one transform from durable inbox rows to the
- * writer-facing `ThreadPendingInbox` (design §5). `createNotifyingThreadedInbox`
+ * `projectPendingInbox` is the one transform from every durable inbox row to
+ * the generic `ThreadPendingInbox` (design §6). Writer-only filtering belongs
+ * to the chat selector, not this shared projection. `createNotifyingThreadedInbox`
  * decorates the producer's locked enqueue with a best-effort `inbox.changed`
  * append after the caller's transaction commits, so a queued message is visible
  * before delivery; the orchestrator appends the same event inside the ack
@@ -21,21 +22,19 @@ import { inboxMessageText } from "./inbox-context.js";
 import type { InboxMessage } from "./ports.js";
 import type { ThreadedInbox } from "./threaded-inbox.js";
 
-/** Project durable inbox rows into the pending tray's shape, preserving `seq` order. */
+/** Project all pending provenance into the shared read model, preserving `seq` order. */
 export function projectPendingInbox(messages: readonly InboxMessage[]): ThreadPendingInbox {
   return {
-    items: messages
-      .filter((message) => message.provenance.kind !== "child")
-      .map(
-        (message): PendingInboxItem => ({
-          id: message.id,
-          seq: message.seq,
-          intent: message.intent,
-          provenance: message.provenance,
-          summary: inboxMessageText(message),
-          enqueuedAt: message.enqueuedAt,
-        }),
-      ),
+    items: messages.map(
+      (message): PendingInboxItem => ({
+        id: message.id,
+        seq: message.seq,
+        intent: message.intent,
+        provenance: message.provenance,
+        summary: inboxMessageText(message),
+        enqueuedAt: message.enqueuedAt,
+      }),
+    ),
   };
 }
 

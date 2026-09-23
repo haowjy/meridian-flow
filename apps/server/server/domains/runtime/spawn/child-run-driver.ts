@@ -56,9 +56,17 @@ export interface ChildRunDriver {
     options: { background?: boolean; signal?: AbortSignal; origin: "spawn" | "message" },
   ): Promise<PreparedChild>;
   release(prepared: PreparedChild): Promise<void>;
-  drive(prepared: PreparedChild, input: ChildDriveInput): Promise<SpawnResult>;
+  drive(
+    prepared: PreparedChild,
+    input: ChildDriveInput,
+    onAdmitted?: (execution: TurnId) => Promise<void>,
+  ): Promise<SpawnResult>;
   /** Resolves only after assistant-turn/report admission commits, not after terminal. */
-  driveBackground(prepared: PreparedChild, input: ChildDriveInput): Promise<TurnId>;
+  driveBackground(
+    prepared: PreparedChild,
+    input: ChildDriveInput,
+    onAdmitted?: (execution: TurnId) => Promise<void>,
+  ): Promise<TurnId>;
 }
 
 export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
@@ -117,7 +125,11 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     await runAuthority.release(prepared.runLease);
   }
 
-  async function start(prepared: PreparedChild, input: ChildDriveInput): Promise<RunTurnHandle> {
+  async function start(
+    prepared: PreparedChild,
+    input: ChildDriveInput,
+    onAdmitted?: (execution: TurnId) => Promise<void>,
+  ): Promise<RunTurnHandle> {
     if (!input.reportCorrelation) {
       throw new Error("Child invocation has no parent report correlation");
     }
@@ -134,6 +146,7 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       },
     });
     deps.childRunRegistry.markChildTurn(prepared.child.id as ThreadId, handle.assistantTurnId);
+    await onAdmitted?.(handle.assistantTurnId);
     return handle;
   }
 
@@ -223,10 +236,14 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     };
   }
 
-  async function drive(prepared: PreparedChild, input: ChildDriveInput): Promise<SpawnResult> {
+  async function drive(
+    prepared: PreparedChild,
+    input: ChildDriveInput,
+    onAdmitted?: (execution: TurnId) => Promise<void>,
+  ): Promise<SpawnResult> {
     let handle: RunTurnHandle;
     try {
-      handle = await start(prepared, input);
+      handle = await start(prepared, input, onAdmitted);
     } catch (error) {
       // Setup failed before a terminal transaction. The child lease must not
       // survive an unadmitted invocation, and no completion is fabricated.
@@ -236,10 +253,14 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     return finish(prepared, input, handle);
   }
 
-  async function driveBackground(prepared: PreparedChild, input: ChildDriveInput): Promise<TurnId> {
+  async function driveBackground(
+    prepared: PreparedChild,
+    input: ChildDriveInput,
+    onAdmitted?: (execution: TurnId) => Promise<void>,
+  ): Promise<TurnId> {
     let handle: RunTurnHandle;
     try {
-      handle = await start(prepared, input);
+      handle = await start(prepared, input, onAdmitted);
     } catch (error) {
       await cleanup(prepared);
       throw error;

@@ -1,5 +1,5 @@
 /** Parent-first publication B for immutable child execution reports. */
-import { buildHelperResultComponentContent } from "@meridian/contracts/components";
+import { buildInvocationCardContent } from "@meridian/contracts/components";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
@@ -8,7 +8,7 @@ import type { EventJournalWriter, ThreadRepositories } from "../../threads/index
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
 import type { ThreadedInbox } from "../loop/threaded-inbox.js";
-import { spawnHelperCardProps } from "./spawn-output.js";
+import { invocationCardProps } from "./spawn-output.js";
 
 export type PublicationOutcome = "published" | "skipped" | "parked" | "already";
 
@@ -79,6 +79,9 @@ export function createReportPublisher(deps: {
 
         const events: OrchestratorEvent[] = [];
         if (report.cardBlockId && report.callerTurnId) {
+          if (!report.toolCallId || report.deliveryMode === "none") {
+            throw new Error("Card-bearing report has incomplete invocation correlation");
+          }
           const card = await deps.repos.blocks.findById(report.cardBlockId);
           if (card) {
             if (card.turnId !== report.callerTurnId || card.blockType !== "custom") {
@@ -91,17 +94,20 @@ export function createReportPublisher(deps: {
                 turnId: card.turnId,
                 blockType: "custom",
                 sequence: card.sequence,
-                content: buildHelperResultComponentContent({
-                  ...spawnHelperCardProps({
+                content: buildInvocationCardContent(
+                  invocationCardProps({
                     agent: report.agentSlug ?? undefined,
                     description: report.description ?? undefined,
-                    parentTurnId: report.callerTurnId,
+                    correlation: {
+                      parentTurnId: report.callerTurnId,
+                      toolCallId: report.toolCallId,
+                      deliveryMode: report.deliveryMode,
+                    },
                     childThreadId: report.childThreadId,
+                    execution: report.assistantTurnId,
+                    outcome: report.outcome,
                   }),
-                  status: report.outcome === "succeeded" ? "completed" : "failed",
-                  outcome: report.outcome,
-                  execution: report.assistantTurnId,
-                }),
+                ),
                 status: "complete",
               }),
             });
