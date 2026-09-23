@@ -360,6 +360,7 @@ export function ContextTabSessionBoundary({
           key,
           participant.current,
           abort.signal,
+          { adoptionEligible: true },
         );
         if (abort.signal.aborted) return;
         if (result.kind !== "opened") {
