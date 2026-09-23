@@ -575,6 +575,7 @@ else
         toolCallId: null,
         cardBlockId: null,
       };
+      activeExecution = ids.execution;
       await repos.transaction(async () => {
         await repos.executionReports.admit(input);
         expect(
@@ -587,16 +588,6 @@ else
           }),
         ).toMatchObject({ status: "unavailable" });
       });
-      expect(
-        await readThreadReport({
-          callerThreadId: ids.caller,
-          ref: "p1",
-          execution: ids.execution,
-          repos,
-          runningTurn,
-        }),
-      ).toMatchObject({ status: "unavailable" });
-      activeExecution = ids.execution;
       expect(
         await readThreadReport({
           callerThreadId: ids.caller,

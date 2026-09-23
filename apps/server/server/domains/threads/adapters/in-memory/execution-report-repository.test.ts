@@ -75,6 +75,15 @@ describe("in-memory execution reports", () => {
     await expect(
       repos.executionReports.captureOnce(child.id, turn.id, "different", { summary: "saved" }),
     ).rejects.toThrow();
+    await expect(
+      repos.transaction(async () => {
+        await repos.executionReports.markPublished(child.id, turn.id, "published");
+        throw new Error("rollback publication");
+      }),
+    ).rejects.toThrow("rollback publication");
+    expect((await repos.executionReports.findByExecution(child.id, turn.id))?.publication).toBe(
+      "pending",
+    );
     await repos.executionReports.markPublished(child.id, turn.id, "published");
     expect(await repos.executionReports.finalizeOnce(terminal)).toMatchObject({
       publication: "published",
