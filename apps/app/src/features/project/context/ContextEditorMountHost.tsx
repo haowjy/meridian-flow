@@ -362,7 +362,10 @@ export function ContextTabSessionBoundary({
           abort.signal,
           { adoptionEligible: true },
         );
-        if (abort.signal.aborted) return;
+        if (abort.signal.aborted) {
+          if (result.kind === "opened") result.handle.release();
+          return;
+        }
         if (result.kind !== "opened") {
           await settleUnavailable();
           return;
