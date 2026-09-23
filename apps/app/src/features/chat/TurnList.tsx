@@ -36,7 +36,7 @@ import { AssistantTurn } from "./AssistantTurn";
 import { ChatColumn } from "./ChatColumn";
 import { useChatSurfaceBottomInset } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
-import { UserTurn } from "./UserTurn";
+import { UserTurn, type UserTurnRecovery } from "./UserTurn";
 import { useChangeTrailNavigation } from "./useChangeTrailNavigation";
 import { useChatFollowScroll } from "./useChatFollowScroll";
 import type { FailedSendRetry } from "./useThreadHandoff";
@@ -61,6 +61,8 @@ export type TurnListProps = {
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   failedSendRetry?: FailedSendRetry | null;
   changeTrails?: Record<string, ChangeTrailShell>;
+  /** Recovered ambiguous submissions, keyed by the restored user turn id. */
+  submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
 };
 
 /** Estimated row height before measurement; corrected by `measureElement`. */
@@ -77,6 +79,7 @@ export function TurnList({
   onRespondToInterrupt,
   failedSendRetry = null,
   changeTrails = {},
+  submissionRecoveryByTurnId,
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const navigateToChange = useChangeTrailNavigation(threadId);
@@ -147,7 +150,9 @@ export function TurnList({
   const renderTurn = useCallback(
     (turn: Turn, idx: number) => {
       if (turn.role === "user") {
-        return <UserTurn turn={turn} />;
+        return (
+          <UserTurn turn={turn} submissionRecovery={submissionRecoveryByTurnId?.get(turn.id)} />
+        );
       }
       return (
         <AssistantTurn
@@ -161,7 +166,15 @@ export function TurnList({
         />
       );
     },
-    [byTurnId, failedSendRetry, lastAssistantIdx, navigateToChange, onRespondToInterrupt, threadId],
+    [
+      byTurnId,
+      failedSendRetry,
+      lastAssistantIdx,
+      navigateToChange,
+      onRespondToInterrupt,
+      submissionRecoveryByTurnId,
+      threadId,
+    ],
   );
 
   return (

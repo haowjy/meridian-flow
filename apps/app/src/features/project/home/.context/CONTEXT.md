@@ -19,11 +19,12 @@ and scroll/focus restoration in the favorite-movement hook. Do not duplicate
 any of those concerns in the screen orchestrator. Work detail renders that same
 row component; bound Agent name inside every list row is display-only.
 
-Project Home Send mints a thread id, writes the local chat, replaces to
-`/p/{projectSlug}/chat/{uuid}`, and persists in the background. Failure stays
-on that chat. There is no first-send continuity slot, destination claim, or
-recovery banner. Favorite/feed state is independent from this creation
-lifecycle.
+Project Home Send mints a thread id, writes an account-stamped unresolved
+submission intent before navigation, replaces to
+`/p/{projectSlug}/chat/{uuid}`, and persists in the background. Destination
+Chat replays or reconciles that same submission identity after reload. Failure
+stays on that chat; the journal is not a thread replica or offline AI runtime.
+Favorite/feed state is independent from this creation lifecycle.
 
 The Chats landing (`/p/:project/chats`) always composes the shared creation
 Composer above the existing chat feed, on desktop and phone. No button or

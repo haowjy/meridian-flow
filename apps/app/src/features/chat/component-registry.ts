@@ -12,6 +12,7 @@
 import type { ComponentBlockContent } from "@meridian/contracts/components";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { ComponentType } from "react";
+import type { InterruptResponseState } from "@/core/session/interrupt-response";
 import { ChildReportBlock } from "./ChildReportBlock";
 import { ChoiceBlock } from "./ChoiceBlock";
 import { FormBlock } from "./FormBlock";
@@ -24,6 +25,10 @@ export type ComponentBlockProps = {
   content: ComponentBlockContent;
   respond: (value: JsonValue) => void;
   isAwaitingResponse: boolean;
+  /** Local send settlement for this interrupt; null when nothing was sent. */
+  responseState: InterruptResponseState | null;
+  /** Re-send the stored answer with the same correlation tuple. */
+  retry: () => void;
 };
 
 export type ComponentEntry = ComponentType<ComponentBlockProps>;

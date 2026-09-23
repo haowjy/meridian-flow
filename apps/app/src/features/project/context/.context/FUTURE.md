@@ -1,7 +1,8 @@
 # Recently opened landing follow-up
 
-Code-local nice-to-haves for `RecentDocumentsLanding.tsx` and the recorder in
-`recent-documents-api.ts`. Nothing here is a known defect.
+Code-local nice-to-haves for `RecentDocumentsLanding.tsx`, the recorder in
+`recent-documents-api.ts`, and the device record those surfaces read. Nothing
+here is a known defect.
 
 - A confirmed-empty list still shows skeletons for one round trip when the query
   refetches, because `staleTime: 0` plus default `refetchOnWindowFocus` refetches
@@ -10,15 +11,6 @@ Code-local nice-to-haves for `RecentDocumentsLanding.tsx` and the recorder in
   the flicker shows up in use: treat an empty fetch as unsettled only when the
   query is invalidated (`getQueryState(accountQueryKeys.recentDocuments(projectId))`), and
   leave a plain stale refetch on the first-run copy.
-- A cold-cache return can still paint the first-run copy for a beat: if the
-  landing's GET returns `[]` before the record's invalidation lands, the empty
-  result sticks until the next focus. `cancelQueries({ queryKey:
-  accountQueryKeys.recentDocumentsRoot })` before the invalidate in
-  `useRecordOpenedDocument` closes it.
-- The recents query key carries the project but no account id
-  (`account-query-keys.ts`), so only the unmount on logout keeps one account's
-  list out of another's session. Not worth a change while logout drops the
-  authenticated query client.
 - The cap is per account, not per project (`USER_RECENT_DOCUMENTS_CAP`), so a
   writer who interleaves projects can see a short list in one of them: the 50
   newest opens account-wide may not cover it. Per-project pruning needs the
@@ -36,3 +28,19 @@ Code-local nice-to-haves for `RecentDocumentsLanding.tsx` and the recorder in
 - Prune now runs only when a row moved, so an unlistable row can linger in the
   table until the next real open. Bounded by the cap and invisible to the list
   (which filters it), so it is storage hygiene on a delay, not staleness.
+- `apps/app/src/client/recents/store.ts` `rememberRemovals` keeps 50 removals
+  this record actually held. After 50 later own removals, the oldest falls off
+  and a list that still has that id can import it. Revisit only if a writer
+  sees a long-closed row return after many later removals on this device. Do
+  not grow an unbounded log, and do not let lists delete to cover the miss.
+- A closed row's rename or delete waits on window focus, coming online, or the
+  60s poll in `account-feature-context.tsx`, which calls
+  `availability.recheckWatchedProjects`. `recent-availability.ts` then folds
+  that batch into the device record. An unfocused tab can keep a deleted or
+  renamed row on the landing until one of those fires. Do not recheck the set
+  on catalog cache writes to close that lag.
+- A local-draft recents row directly awaits `openKnownDocument`. A missing
+  handle returns silently, and this path does not use the by-ID opener's
+  abort/latest-attempt fence. Add a visible unavailable result and the shared
+  navigation fence only if the dead click or competing open appears in use;
+  preserve the empty-path local-draft route and Back behavior.

@@ -113,7 +113,7 @@ export type ProjectRouteCommands = {
   workHref: (target: WorkDetailTarget) => string;
   closeWork: (options: NavigationOptions) => Promise<void>;
   openWorkContext: (target: WorkContextTarget, options: NavigationOptions) => Promise<void>;
-  /** Editor destination with no document: the recently-opened chooser. */
+  /** Editor destination with no document and no local history pointer. */
   showEditorRecents: (options: NavigationOptions) => Promise<void>;
 };
 

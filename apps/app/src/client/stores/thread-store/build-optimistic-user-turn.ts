@@ -21,14 +21,16 @@ export function buildOptimisticUserTurn(input: {
     prevTurnId: input.prevTurnId ?? null,
     role: "user",
     writeMode: null,
-    status: "complete",
+    // Pending until the server admission/lookup renames this row to the
+    // canonical user turn. A user row must not look settled before ack.
+    status: "pending",
     finishReason: null,
     error: null,
     model: null,
     provider: null,
     ...baseTurnFields(),
     createdAt: timestamp,
-    completedAt: timestamp,
+    completedAt: null,
     blocks: [
       {
         id: `${input.id}_block_1`,

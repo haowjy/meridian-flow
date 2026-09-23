@@ -1,20 +1,41 @@
-/** Project Home Send: mint ids, write local, replace the URL, persist in the background. */
+/** Project Home Send: mint ids, record the durable intent, replace the URL, persist in the background. */
 import type { Thread } from "@meridian/contracts/protocol";
-import type { ThreadStoreActions } from "@/client/stores";
+import {
+  type FirstSendChatSubmission,
+  recordChatSubmission,
+  retireChatSubmission,
+} from "@/client/chat-submissions";
+import type { PendingStreamStart, ThreadStoreActions } from "@/client/stores";
 import { isSettingsSection } from "@/features/account/settings-sections";
 import type { CreationAgent } from "@/features/agents/creation-agent";
 import { projectAddressHref } from "@/features/project/routing/project-address";
-import {
-  clearInflightChat,
-  type InflightChat,
-  readInflightChat,
-  writeInflightChat,
-} from "./inflight-chat";
 import { deriveTitleFromMessage } from "./thread-title";
 
 const OPTIMISTIC_OWNER_ID = "optimistic-local";
 
+const persistJobs = new Map<string, Promise<void>>();
+
+/**
+ * Per-tab session ids for an in-flight first send. A remount before
+ * acknowledgement must reuse the destination rows instead of appending a
+ * second pending user turn and working turn. Keyed `accountId:submissionId`.
+ */
+const firstSendSessionIds = new Map<
+  string,
+  { optimisticUserTurnId: string; workingTurnId: string }
+>();
+
+/** Serializes background persist work per thread within one tab. */
+export function runExclusivePersist(threadId: string, job: () => Promise<void>): Promise<void> {
+  const existing = persistJobs.get(threadId);
+  if (existing) return existing;
+  const running = job().finally(() => persistJobs.delete(threadId));
+  persistJobs.set(threadId, running);
+  return running;
+}
+
 export type SendProjectChatArgs = {
+  accountId: string;
   threadId?: string;
   projectId: string;
   projectSlug: string;
@@ -27,6 +48,12 @@ export type SendProjectChatArgs = {
   replace: (href: string) => void;
   search?: string;
   now?: number;
+};
+
+export type SendProjectChatResult = {
+  threadId: string;
+  optimisticUserTurnId: string;
+  workingTurnId: string;
 };
 
 export function makeOptimisticThread(input: {
@@ -74,6 +101,7 @@ export function inflightChatHref(projectSlug: string, threadId: string, search =
 }
 
 export function sendProjectChat({
+  accountId,
   threadId: existingThreadId,
   projectId,
   projectSlug,
@@ -86,7 +114,7 @@ export function sendProjectChat({
   replace,
   search = "",
   now,
-}: SendProjectChatArgs): { threadId: string; optimisticUserTurnId: string; workingTurnId: string } {
+}: SendProjectChatArgs): SendProjectChatResult | null {
   const threadId = existingThreadId ?? crypto.randomUUID();
   const timestamp = new Date(now ?? Date.now()).toISOString();
   const trimmed = text.trim();
@@ -94,6 +122,24 @@ export function sendProjectChat({
   const isNew = !existingThreadId;
 
   if (isNew) {
+    // Durable witness before any display or navigation: if the intent cannot be
+    // persisted, do not show a destination or dispatch it. Keep the draft so
+    // the composer can report the local failure.
+    const submission: FirstSendChatSubmission = {
+      kind: "first-send",
+      submissionId,
+      threadId,
+      projectId,
+      createdAt: timestamp,
+      text: trimmed,
+      activatedSkillSlugs: activatedSkillSlugs ? [...activatedSkillSlugs] : [],
+      title,
+      workId,
+      agentSelection: agent.selection,
+      agentName: agent.name,
+      agentSlug: agent.slug,
+    };
+    if (!recordChatSubmission(accountId, submission)) return null;
     threadActions.ensureThread(
       makeOptimisticThread({ id: threadId, projectId, title, timestamp, workId, agent }),
     );
@@ -107,21 +153,6 @@ export function sendProjectChat({
 
   if (!isNew) return { threadId, optimisticUserTurnId, workingTurnId };
 
-  const inflight: InflightChat = {
-    threadId,
-    projectId,
-    title,
-    text: trimmed,
-    workId,
-    agentSelection: agent.selection,
-    agentName: agent.name,
-    agentSlug: agent.slug,
-    optimisticUserTurnId,
-    workingTurnId,
-    submissionId,
-    ...(activatedSkillSlugs?.length ? { activatedSkillSlugs: [...activatedSkillSlugs] } : {}),
-  };
-  writeInflightChat(inflight);
   threadActions.markPendingStream(threadId, {
     creation: {
       projectId,
@@ -136,42 +167,77 @@ export function sendProjectChat({
       createProject: false,
     },
   });
+  firstSendSessionIds.set(`${accountId}:${submissionId}`, {
+    optimisticUserTurnId,
+    workingTurnId,
+  });
   replace(inflightChatHref(projectSlug, threadId, search));
   return { threadId, optimisticUserTurnId, workingTurnId };
 }
 
-export function finishInflightChat(threadId: string, threadActions: ThreadStoreActions): void {
-  clearInflightChat(threadId);
+/** Retire the durable first-send intent on acknowledgement or a definitive outcome. */
+export function retireFirstSendSubmission(
+  accountId: string,
+  submissionId: string,
+  threadId: string,
+  threadActions: ThreadStoreActions,
+  expectedEpoch?: number,
+): void {
+  retireChatSubmission(accountId, submissionId, expectedEpoch);
+  firstSendSessionIds.delete(`${accountId}:${submissionId}`);
   threadActions.clearPendingCreation({ threadId });
 }
 
-export function rehydrateInflightChat(
-  threadId: string,
+/**
+ * Rebuild the destination rows from a durable first-send intent, then return
+ * the `persistCreation` inputs. Used when the in-memory pending stream and the
+ * same-tab sessionStorage handoff are both gone.
+ */
+export function rehydrateFirstSendSubmission(
+  entry: FirstSendChatSubmission,
   threadActions: ThreadStoreActions,
-): InflightChat | null {
-  const inflight = readInflightChat(threadId);
-  if (!inflight) return null;
-  const existing = threadActions.turns(threadId);
-  if (existing && existing.length > 0) return inflight;
+  accountId: string,
+): NonNullable<PendingStreamStart["creation"]> {
   threadActions.ensureThread(
     makeOptimisticThread({
-      id: threadId,
-      projectId: inflight.projectId,
-      title: inflight.title,
-      timestamp: new Date().toISOString(),
-      workId: inflight.workId,
+      id: entry.threadId,
+      projectId: entry.projectId,
+      title: entry.title,
+      timestamp: entry.createdAt,
+      workId: entry.workId,
       agent: {
-        name: inflight.agentName,
-        slug: inflight.agentSlug,
-        selection: inflight.agentSelection,
+        name: entry.agentName,
+        slug: entry.agentSlug,
+        selection: entry.agentSelection,
       },
     }),
   );
-  threadActions.markPendingCreation({ threadId });
-  const optimisticUserTurnId = threadActions.appendUserTurn(threadId, inflight.text).id;
-  const workingTurnId = crypto.randomUUID();
-  threadActions.ensureAssistantTurn(threadId, workingTurnId);
-  const next = { ...inflight, optimisticUserTurnId, workingTurnId };
-  writeInflightChat(next);
-  return next;
+  threadActions.markPendingCreation({ threadId: entry.threadId });
+  threadActions.markHandoffPending(entry.threadId);
+  // Reuse the rows a same-tab remount already appended before acknowledgement;
+  // only a fresh store (real reload or another tab) needs new local ids.
+  const mapKey = `${accountId}:${entry.submissionId}`;
+  const remembered = firstSendSessionIds.get(mapKey);
+  const existingTurns = threadActions.turns(entry.threadId) ?? [];
+  const reuse =
+    remembered !== undefined &&
+    existingTurns.some((turn) => turn.id === remembered.optimisticUserTurnId);
+  const optimisticUserTurnId = reuse
+    ? remembered.optimisticUserTurnId
+    : threadActions.appendUserTurn(entry.threadId, entry.text).id;
+  const workingTurnId = reuse ? remembered.workingTurnId : crypto.randomUUID();
+  threadActions.ensureAssistantTurn(entry.threadId, workingTurnId);
+  firstSendSessionIds.set(mapKey, { optimisticUserTurnId, workingTurnId });
+  return {
+    projectId: entry.projectId,
+    title: entry.title,
+    text: entry.text,
+    agentSelection: entry.agentSelection,
+    workId: entry.workId,
+    optimisticUserTurnId,
+    workingTurnId,
+    submissionId: entry.submissionId,
+    activatedSkillSlugs: entry.activatedSkillSlugs,
+    createProject: false,
+  };
 }

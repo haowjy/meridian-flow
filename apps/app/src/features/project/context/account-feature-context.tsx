@@ -258,3 +258,11 @@ export function useAccountId(): string {
   if (!accountId) throw new Error("AccountFeatureComposition is required");
   return accountId;
 }
+
+/**
+ * Account epoch for command owners that also render outside the authenticated
+ * shell (tests, SSR). `null` means there is no account lifetime to fence yet.
+ */
+export function useOptionalAccountEpochSignal(): AbortSignal | null {
+  return useContext(AccountEpochContext);
+}

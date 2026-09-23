@@ -33,13 +33,8 @@ export {
   useIndependentProjectsStore,
   useIsIndependentProject,
 } from "./independent-projects";
-export type {
-  PendingProjectDelete,
-  ProjectStoreActions,
-  ProjectStoreState,
-} from "./project-store";
+export type { ProjectStoreActions, ProjectStoreState } from "./project-store";
 export {
-  getSuppressedProjectListIds,
   loadProjectList,
   mergeApiProjects,
   type ProjectStoreApi,

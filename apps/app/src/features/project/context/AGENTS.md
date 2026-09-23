@@ -47,17 +47,16 @@ Shared across both shells:
 - The empty Editor pane is a chooser (`RecentDocumentsLanding`): the project's
   recently-opened documents, including viewers. A row navigates. It never
   seeds a tab. The strip's leading control reaches it with tabs still open:
-  `routeCommands.showEditorRecents` clears the address and leaves the working
-  set alone, so closing tabs is not the only way back.
+  `routeCommands.showEditorRecents` clears the address, including a local-document
+  history pointer, and leaves the working set alone. Already on the chooser is a
+  no-op. Back returns to the document that was showing.
 - Record from the active editor tab, not from the open intent and not from the
-  create path. A parked restored tab is not an open, and a create that returns
-  before it materializes must not record from the create site: opening the new
-  document does that, once. `useRecordOpenedDocument` owns the refresh;
-  `recordRecentDocument` owns the retry that covers the window between reserving
-  a document id and the server writing its row. Whether two opens are the same
-  open is the server's rule (`USER_RECENT_DOCUMENTS_TOUCH_INTERVAL_MS`): the
-  record POST answers `recorded`, and the client refreshes only when the stored
-  row actually moved.
+  create path. A parked restored tab is not an open. Opening the new document
+  records it, including a local draft, once that tab is in front of the writer.
+  The device record updates before the POST. `recordRecentDocument` still owns
+  the retry that covers the window between reserving a document id and the
+  server writing its row. The server's five-second interval is write hygiene:
+  it does not decide whether this device shows the opening.
 
 ## File groups
 

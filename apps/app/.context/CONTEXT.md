@@ -57,36 +57,28 @@ Two interfaces are the only paths between the visual layer and the substrate:
   (Zustand vanilla store, one instance per `ThreadStoreProvider`, SSR-safe).
   **Public imports:** `@/client/stores` only — do not reach into store internals from features.
   UI reads via `useThreadStore(selector)`, `useThreadTurns(threadId)`; writes via
-  `useThreadActions()` only. Project Home first-message continuity lives in one
-  account-scoped IndexedDB owner, not Zustand. Home stages the immutable
-  Composer envelope before navigation; destination Chat atomically claims
-  `ready` as `dispatching`, while a remounted `dispatching` or `ambiguous`
-  record enters server-checked recovery (see Client-led creation patterns).
-  `ThreadRunController` joins append,
-  lookup, and explicit retirement to a typed settlement boundary. Definite rejection remains durable until
-  the matching shared Composer acknowledges an idempotent restoration; when a
-  newer draft exists, the failed first send is prepended with a blank-line
-  document separator so both writer-authored documents survive. Ambiguous admission stays
-  quarantined without blind retry. If a writer changes the Home draft while
-  creation or routing is pending, the immutable first message remains the
-  admitted turn and the latest authored revision transfers separately into the
-  destination Composer, even when that revision's text is byte-equal to the
-  submitted message. The shared Composer reports a monotonic authoring revision;
-  content equality is never a draft-version test.
-  Continuity survives route and reload but is not an outbox: it has no timer,
-  worker, polling, or blind retry. Deferred project-creation flows separately use
-  `markPendingCreation`, `clearPendingCreation`, and `removeOptimisticUserTurn`;
-  the last one is only rollback for a locally appended user turn that failed
-  before server acknowledgement.
+  `useThreadActions()` only. Before navigation or dispatch, Project Home and
+  existing-thread sends write an unresolved intent to the account-stamped chat
+  submission journal. Destination Chat owns persistence, idempotent replay,
+  acknowledgement, and recovery. Ambiguous sends retain their journal witness;
+  accepted, proved rejected, retired, or writer-abandoned sends retire it.
+  `markPendingCreation`, `clearPendingCreation`, and
+  `removeOptimisticUserTurn` fence deferred creation and local display only.
+  The journal is an acknowledged-submission record, not a thread replica or
+  offline AI runtime.
 - **`ThreadCachePort`** (`src/client/stores/thread-store/thread-cache.ts`) —
   thin seam between thread-store lifecycle transitions and the React Query cache.
   The store depends on this port, not `QueryClient` directly — list/snapshot
   projections stay in Query; per-thread turn state stays in the store. Its
   lifecycle projector converges `actionRequired` across project thread lists,
   Home, and every matching Work feed while Favorite remains normalized separately.
-- **`useRenameThread`** (`src/client/query/useRenameThread.ts`) — optimistic
-  thread-title rename via `patchThreadInProjectCaches`; lives beside Query hooks
-  (cache-only today, no PATCH endpoint) rather than on the thread store.
+- **`useRenameThread`** (`src/client/query/useRenameThread.ts`) — P1 thread-title
+  command. It projects the requested title into the project thread list
+  immediately, fences per-thread overlap and stale completions through
+  `thread-rename-command`, persists with `PATCH /api/threads/:id/title`, and
+  announces success only after the server confirms. A 4xx refusal reverts the
+  title and shows inline Retry on the title control; an unknown outcome retains
+  the projection and invalidates the thread list to reconcile.
 - **Thread Work binding:** `useRebindThreadWork` returns discriminated confirmed,
   reconciled, and superseded outcomes to the composer-only `ComposerWorkControl`.
   `convergeThreadWorkBinding` is the one cache-effect boundary, while
@@ -103,7 +95,10 @@ Two interfaces are the only paths between the visual layer and the substrate:
   `invalidateThreadProjectionDependencies`. Snapshot synchronization applies
   history and action-required lifecycle state. Favorite commands share one
   normalized project/thread authority across Home and Work rows; Home alone
-  projects the affected item between its categories without invalidation.
+  projects the affected item between its categories without invalidation. A
+  failed favorite keeps the last confirmed star, exposes the exact failed
+  intent through an inline row-scoped Retry on the shared row, and still
+  announces the error.
   `useWorks` exposes named catalog Works plus `noWork`. Home derives its
   initial prospective choice from the first active (then first available) named
   catalog Work, or No Work. Omitted or explicit-null root creation binds the
@@ -114,8 +109,10 @@ Two interfaces are the only paths between the visual layer and the substrate:
   the working-set read as an explicit `row` / `absent` / `unavailable` result.
 - **Zustand (thread-store):** per-thread `turnsByThread`,
   `streamingThreadId`, pending stream metadata, snapshot reconciliation
-  watermark (`snapshotNextSeqFloorByThread`). Soft-delete undo lives in the
-  **project-store**, not here. See "Thread snapshot reconciliation" below.
+  watermark (`snapshotNextSeqFloorByThread`). The project-store owns only the
+  optimistic independent-project insert; its unwired rename/soft-delete
+  projections and suppression surface were removed (OPT-002). See "Thread
+  snapshot reconciliation" below.
 - **`ThreadTransport`** (`src/core/transport/ThreadTransport.ts`) — the
   subscribe/cancel contract for live agent events. Runtime chat uses
   `WsThreadTransport`, which connects to `/api/threads/ws`.
@@ -195,10 +192,6 @@ background child's continuation streams live; see
 [`features/chat/.context/thread-live-updates.md`](../src/features/chat/.context/thread-live-updates.md).
 Do not bounce to Home or show Check status, Start over, or saved-first-message recovery.
 
-Future optimistic surfaces (rename, soft-delete, undo) follow the same
-shape: optimistic store update first, API call second (`threads-api.ts`),
-deterministic reconcile path on response or failure.
-
 ### Thread snapshot reconciliation
 
 Authoritative turn history enters the store through `applyThreadSnapshot`,
@@ -254,10 +247,18 @@ rendering.
 
 `src/routes/_authenticated.tsx` mounts one unconditional route composition for
 every authenticated route (`AppQueryProvider` → `AccountFeatureComposition` →
-`DraftApplyRecoveryProvider` → `ProjectStoreProvider` → `ThreadStoreProvider` →
-`TransportProvider` → `MeridianCopilotProvider`). No
+`DraftApplyRecoveryProvider` → `WorkingSetSyncPreferenceProvider` →
+`ProjectStoreProvider` → `ThreadStoreProvider` → `TransportProvider` →
+`MeridianCopilotProvider`). No
 pathname-based provider gating — conditional light↔workspace branches previously
 dropped `ThreadStoreProvider` during transitions.
+
+The account-lifetime `WorkingSetSyncPreferenceProvider` owns the cross-device
+working-set preference: it runs the command hook once per account, seeds from
+the loader only before the first local revision, and drives both the Settings
+row and `configureWorkingSetSync` from the same confirmed value. A stale or
+`null` loader commit cannot hide the switch or move the driver once a local
+confirm exists; an account epoch reset clears the override.
 
 **Settings overlay:** `?settings=<section>` is layout-owned (`validateSearch` on
 `/_authenticated`) so the settings dialog is URL-addressable from any authenticated

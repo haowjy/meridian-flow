@@ -12,6 +12,9 @@ vi.mock("@lingui/core/macro", () => ({
   t: (parts: TemplateStringsArray, ...values: unknown[]) =>
     parts.reduce((text, part, index) => `${text}${part}${values[index] ?? ""}`, ""),
 }));
+vi.mock("@lingui/react/macro", () => ({
+  Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 const chat = (favorite = false): ProjectChatItem => ({
   id: "thread-1",
   title: "River",
@@ -159,6 +162,56 @@ describe("ProjectChatRow", () => {
           expect.objectContaining({ id: "thread-1" }),
           false,
         );
+      },
+    );
+  });
+
+  it("renders a row-scoped failure with Retry when the favorite command fails", async () => {
+    const onFavorite = vi.fn();
+    await withRow(
+      <ProjectChatRow
+        {...props({
+          onFavorite,
+          favorite: { pending: false, error: new Error("refused"), retryValue: true },
+        })}
+      />,
+      async () => {
+        const alert = document.querySelector('[role="alert"]');
+        expect(alert?.textContent).toContain("Favorite wasn’t saved");
+        const retry = alert?.querySelector("button") as HTMLButtonElement;
+        expect(retry).toBeTruthy();
+        await act(async () => retry.click());
+        expect(onFavorite).toHaveBeenCalledWith(expect.objectContaining({ id: "thread-1" }), true);
+      },
+    );
+  });
+
+  it("retries the stored failed value rather than the inverse of the current favorite", async () => {
+    const onFavorite = vi.fn();
+    await withRow(
+      <ProjectChatRow
+        {...props({
+          onFavorite,
+          favorite: { pending: false, error: new Error("refused"), retryValue: false },
+        })}
+      />,
+      async () => {
+        const retry = document.querySelector('[role="alert"] button') as HTMLButtonElement;
+        await act(async () => retry.click());
+        // `item.isFavorite` is false, so the inverse derivation would send `true`.
+        expect(onFavorite).toHaveBeenCalledWith(expect.objectContaining({ id: "thread-1" }), false);
+      },
+    );
+  });
+
+  it("marks the overflow trigger busy and shows no failure row while pending", async () => {
+    await withRow(
+      <ProjectChatRow {...props({ favorite: { pending: true, desiredValue: true } })} />,
+      async () => {
+        expect(document.querySelector('[role="alert"]')).toBeNull();
+        const trigger = await openActions();
+        expect(trigger.getAttribute("aria-busy")).toBe("true");
+        expect(menuItem("Add to favorites").getAttribute("aria-disabled")).toBe("true");
       },
     );
   });

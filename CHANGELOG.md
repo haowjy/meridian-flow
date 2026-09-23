@@ -31,6 +31,10 @@
 
 ### Fixed
 
+- Chat submissions stay visible as pending until the server acknowledges them. Unresolved sends survive reload, ambiguous sends retain status recovery, and rejected existing-thread sends keep Retry or Edit on the affected turn.
+- Working-set preferences, chat favorites, thread titles, checkout controls, and interrupt answers now keep pending and failure feedback on the affected control. Stale responses cannot overwrite newer settings or titles, thread titles persist across reload, and billing return pages never claim a purchase before the ledger confirms it.
+- Opening a document updates this project's recently opened list immediately, including after reload, without waiting for the server. A failed record or an unchanged server row keeps that opening. A stale list cannot erase or reorder it. A removed document does not return from a later list until it is opened again. Switching accounts and back does not replay the previous list onto the record.
+- The tab strip's Recently opened control reaches the list while a local draft is selected. Back returns to that draft. Tabs stay open.
 - Child completion emits `agent.run_completed` instead of the spawn-named `agent.spawn_completed`; a continue is not a spawn.
 - A thread that advanced while the writer was elsewhere — a background child's report waking the parent — now appears on return without a manual reload: the snapshot revalidates on activation and refetches when a new run starts. A server-initiated run on a mounted idle thread also streams its continuation live.
 
