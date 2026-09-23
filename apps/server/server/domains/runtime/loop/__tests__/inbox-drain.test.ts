@@ -151,12 +151,22 @@ async function setup(
     /** Seeds an account-installed skill so `/skill` activation can resolve a body. */
     skill?: { slug: string; name: string; description: string; body: string };
     referenceReader?: ReferenceReader;
+    child?: boolean;
   } = {},
 ) {
   const projectRepo = createInMemoryProjectRepository();
   const repos = createInMemoryRepositories({ projects: projectRepo });
   const project = await projectRepo.create({ userId: USER_ID, title: "Inbox" });
-  const thread = await repos.threads.create({ userId: USER_ID, projectId: project.id });
+  const parent = await repos.threads.create({ userId: USER_ID, projectId: project.id });
+  const thread = options.child
+    ? await repos.threads.createSubagent({
+        userId: USER_ID,
+        projectId: project.id,
+        parentThreadId: parent.id,
+        rootThreadId: parent.id,
+        spawnDepth: 1,
+      })
+    : parent;
   const creditLedger = createInMemoryCreditLedger();
   await creditLedger.grant({
     userId: USER_ID,
@@ -225,6 +235,33 @@ async function collectEvents(handle: {
 }
 
 describe("inbox drain", () => {
+  it("admits exact child executions for writer and queued continuations before returning a handle", async () => {
+    const { thread, inbox, orchestrator, repos } = await setup({ child: true });
+    const writer = await orchestrator.runTurn({ threadId: thread.id, userText: "writer prompt" });
+    expect(
+      await repos.executionReports.findByExecution(thread.id, writer.assistantTurnId),
+    ).toMatchObject({
+      assistantTurnId: writer.assistantTurnId,
+      deliveryMode: "none",
+      origin: "thread_run",
+      outcome: null,
+    });
+    await collect(writer);
+
+    await inbox.enqueue(message("queued prompt", thread.id));
+    const queued = await orchestrator.runTurn({ threadId: thread.id, drain: true });
+    expect(
+      await repos.executionReports.findByExecution(thread.id, queued.assistantTurnId),
+    ).toMatchObject({
+      assistantTurnId: queued.assistantTurnId,
+      deliveryMode: "none",
+      origin: "thread_run",
+      outcome: null,
+    });
+    expect(queued.assistantTurnId).not.toBe(writer.assistantTurnId);
+    await collect(queued);
+  });
+
   it("delivers a claimed batch in one request and acks it with the persisted turn", async () => {
     const { thread, inbox, requests, orchestrator } = await setup();
     await inbox.enqueue(message("first steer", thread.id));

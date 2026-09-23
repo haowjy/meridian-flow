@@ -7,6 +7,7 @@
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
+  ExecutionReportCorrelation,
   ReturnResultCapture,
   ReturnResultOutcome,
   TreeBudget,
@@ -24,6 +25,12 @@ interface RunTurnBase {
   treeBudget?: TreeBudget;
   isSubagentThread?: boolean;
   returnResultCompleter?: ReturnResultCompleter;
+  /** Parent invocation identity; omitted for writer and inbox continuations. */
+  executionReport?: {
+    correlation: ExecutionReportCorrelation;
+    agentSlug?: string | null;
+    description?: string | null;
+  };
   /** The run's held lease; the loop releases it through closeRun when it exits. */
   lease?: Lease;
 }

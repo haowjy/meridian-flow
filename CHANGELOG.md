@@ -25,6 +25,7 @@
 
 ### Added
 
+- Admit a saved execution-report row in the assistant-turn setup transaction for every subagent writer or inbox continuation; bind the running turn to its lease in that same transaction.
 - Added a durable `block.updated` replacement event for in-place historical card changes without splitting active text streams.
 - Added per-assistant-turn execution-report storage and exact lineage-authorized `thread_report({ ref, execution })` reads. Runtime terminal capture/finalization and completion publication remain the next lifecycle step.
 

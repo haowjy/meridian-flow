@@ -336,6 +336,37 @@ async function* emit(
   yield await appendEvent(writer, threadId, event);
 }
 
+async function admitRunExecution(
+  deps: OrchestratorDeps,
+  input: RunTurnInput,
+  thread: Thread,
+  assistantTurnId: TurnId,
+): Promise<void> {
+  if (thread.kind !== "subagent" && input.executionReport) {
+    throw new Error("Execution report correlation requires a subagent thread");
+  }
+  if (thread.kind === "subagent") {
+    if (!thread.ref) throw new Error("Subagent thread has no project handle");
+    const correlation = input.executionReport?.correlation ?? {
+      callerThreadId: null,
+      callerTurnId: null,
+      toolCallId: null,
+      cardBlockId: null,
+      origin: "thread_run" as const,
+      deliveryMode: "none" as const,
+    };
+    await deps.repos.executionReports.admit({
+      childThreadId: input.threadId,
+      assistantTurnId,
+      handle: thread.ref,
+      ...correlation,
+      agentSlug: input.executionReport?.agentSlug ?? null,
+      description: input.executionReport?.description ?? null,
+    });
+  }
+  if (input.lease) await deps.runAuthority.bindTurn(input.lease, assistantTurnId);
+}
+
 /**
  * Creates the user and assistant turns, then returns a handle with IDs and
  * an event generator. The caller can capture IDs immediately (both turn IDs
@@ -408,12 +439,12 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
         ],
       };
     },
+    {
+      afterEvents: ({ assistantTurn }) => admitRunExecution(deps, input, thread, assistantTurn.id),
+    },
   );
 
   const { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks } = setup.result;
-  // The assistant turn is durable; bind it to the run lease so liveness reads
-  // (snapshot, WS subscribed, project list) observe it from the lease alone.
-  if (input.lease) await deps.runAuthority.bindTurn(input.lease, assistantTurn.id);
   return {
     userTurnId: userTurn.id,
     assistantTurnId: assistantTurn.id,
@@ -506,6 +537,9 @@ async function runDrainTurn(
         events: [...plan.events, { type: "turn.created", turn: assistantTurn }],
       };
     },
+    {
+      afterEvents: ({ assistantTurn }) => admitRunExecution(deps, input, thread, assistantTurn.id),
+    },
   );
 
   const {
@@ -517,7 +551,6 @@ async function runDrainTurn(
     inheritedBlocks,
     activatedSkillSlugs,
   } = setup.result;
-  if (input.lease) await deps.runAuthority.bindTurn(input.lease, assistantTurn.id);
   return {
     userTurnId: referenceUserTurnId,
     assistantTurnId: assistantTurn.id,
