@@ -15,7 +15,7 @@ import type {
   ProjectRepository,
   UpdateProjectInput,
 } from "../../ports/project-repository.js";
-import { DEFAULT_PROJECT_TITLE, nextProjectSlug } from "./shared.js";
+import { DEFAULT_PROJECT_TITLE, ensureProjectManifestSource, nextProjectSlug } from "./shared.js";
 
 type ProjectRow = typeof projects.$inferSelect;
 function mapProject(row: ProjectRow): Project {
@@ -73,6 +73,7 @@ export function createDrizzleProjectRepository(
           })
           .returning();
         if (!row) throw new Error("Failed to create project");
+        await ensureProjectManifestSource(db, row.id);
         await deps.ensureNoWork?.(row.id);
         await deps.catalogLifecycle?.refreshProject(row.id);
         return mapProject(row);
