@@ -972,6 +972,10 @@ msgstr ""
 msgid "Couldn't check Work"
 msgstr ""
 
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+msgid "Couldn’t confirm this preference saved."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't create a Work"
 msgstr ""
@@ -1111,6 +1115,10 @@ msgstr ""
 
 #: src/features/project/context/use-identity-commit.ts
 msgid "Couldn't save this document's home. Try again."
+msgstr ""
+
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+msgid "Couldn’t save this preference."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1528,6 +1536,7 @@ msgstr "图片加载失败"
 msgid "Favorite"
 msgstr ""
 
+#: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Favorite wasn’t saved"
@@ -2683,7 +2692,7 @@ msgstr ""
 msgid "Rendering diagram…"
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Reopens your last document and chat when you switch devices"
 msgstr ""
 
@@ -2721,14 +2730,14 @@ msgstr "回复完成"
 msgid "Results"
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Resume where I left off on any device"
 msgstr ""
 
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 #: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
@@ -3877,7 +3886,7 @@ msgstr ""
 msgid "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Your saved preference is unavailable. Sync is paused until retry succeeds."
 msgstr ""
 

@@ -15,6 +15,15 @@ export function getAccountSettings(init?: AccountSettingsRequestInit): Promise<A
   return getJson<AccountSettings>(url, { headers: init?.headers, signal: init?.signal });
 }
 
-export function updateAccountSettings(settings: AccountSettings): Promise<AccountSettings> {
-  return patchJson<AccountSettings>(API_ACCOUNT_SETTINGS_PATH, settings);
+export function updateAccountSettings(
+  settings: AccountSettings,
+  init?: AccountSettingsRequestInit,
+): Promise<AccountSettings> {
+  const url = init?.origin
+    ? new URL(API_ACCOUNT_SETTINGS_PATH, init.origin).toString()
+    : API_ACCOUNT_SETTINGS_PATH;
+  return patchJson<AccountSettings>(url, settings, {
+    headers: init?.headers,
+    signal: init?.signal,
+  });
 }

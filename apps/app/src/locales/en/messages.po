@@ -972,6 +972,10 @@ msgstr "Couldn't check recent changes"
 msgid "Couldn't check Work"
 msgstr "Couldn't check Work"
 
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+msgid "Couldn’t confirm this preference saved."
+msgstr "Couldn’t confirm this preference saved."
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't create a Work"
 msgstr "Couldn't create a Work"
@@ -1112,6 +1116,10 @@ msgstr "Couldn't save the Editor tab layout. Reload may not restore your tabs."
 #: src/features/project/context/use-identity-commit.ts
 msgid "Couldn't save this document's home. Try again."
 msgstr "Couldn't save this document's home. Try again."
+
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+msgid "Couldn’t save this preference."
+msgstr "Couldn’t save this preference."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't search"
@@ -1528,6 +1536,7 @@ msgstr "Failed to load image"
 msgid "Favorite"
 msgstr "Favorite"
 
+#: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Favorite wasn’t saved"
@@ -2683,7 +2692,7 @@ msgstr "Renamed to {confirmed}"
 msgid "Rendering diagram…"
 msgstr "Rendering diagram…"
 
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Reopens your last document and chat when you switch devices"
 msgstr "Reopens your last document and chat when you switch devices"
 
@@ -2721,14 +2730,14 @@ msgstr "Response complete"
 msgid "Results"
 msgstr "Results"
 
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Resume where I left off on any device"
 msgstr "Resume where I left off on any device"
 
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 #: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
@@ -3877,7 +3886,7 @@ msgstr "Your message"
 msgid "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
 msgstr "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
 
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Your saved preference is unavailable. Sync is paused until retry succeeds."
 msgstr "Your saved preference is unavailable. Sync is paused until retry succeeds."
 
