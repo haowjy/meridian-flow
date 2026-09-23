@@ -242,7 +242,9 @@ it("hands the exact open session to registry ownership without destroying it", a
   await initialize(record, "words during adoption");
   const key = await install(metadata, record);
   const { access } = openAccess(metadata);
-  const opened = await access.open("project", key, "editor-tab");
+  const opened = await access.open("project", key, "editor-tab", undefined, {
+    adoptionEligible: true,
+  });
   if (opened.kind !== "opened") throw new Error("Expected local content");
   const session = opened.handle.session;
   let transfer: LocalDocumentSessionTransfer | undefined;
@@ -265,7 +267,6 @@ it("hands the exact open session to registry ownership without destroying it", a
         identityRevision: record.resource.identity.revision,
         databaseName:
           record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
-        requireRetainedLease: false,
       },
       reservations,
     ),
@@ -300,7 +301,9 @@ it("retires an uncommitted transfer only after its reservation is aborted", asyn
   await initialize(record);
   const key = await install(metadata, record);
   const { access } = openAccess(metadata);
-  const opened = await access.open("project", key, "editor-tab");
+  const opened = await access.open("project", key, "editor-tab", undefined, {
+    adoptionEligible: true,
+  });
   if (opened.kind !== "opened") throw new Error("Expected local content");
   const handoff = Object.freeze({}) as LocalDocumentSessionHandoff;
   const reservations: LocalDocumentSessionReservationPort = {
@@ -317,7 +320,6 @@ it("retires an uncommitted transfer only after its reservation is aborted", asyn
       identityRevision: identity.revision,
       databaseName:
         record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
-      requireRetainedLease: false,
     },
     reservations,
   );
@@ -336,7 +338,9 @@ it("destroys an unsettled transfer once during account close", async () => {
   await initialize(record);
   const key = await install(metadata, record);
   const { access } = openAccess(metadata);
-  const opened = await access.open("project", key, "editor-tab");
+  const opened = await access.open("project", key, "editor-tab", undefined, {
+    adoptionEligible: true,
+  });
   if (opened.kind !== "opened") throw new Error("Expected local content");
   const session = opened.handle.session;
   const destroy = vi.spyOn(session, "destroy");
@@ -354,7 +358,6 @@ it("destroys an unsettled transfer once during account close", async () => {
       identityRevision: record.resource.identity.revision,
       databaseName:
         record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
-      requireRetainedLease: false,
     },
     reservations,
   );
@@ -499,8 +502,12 @@ it("releases every project registry ownership after the final shared-content lea
     ).toBe("committed");
   }
   const { access } = openAccess(metadata);
-  const first = await access.open("project-a", key, "tab-a");
-  const second = await access.open("project-b", key, "tab-b");
+  const first = await access.open("project-a", key, "tab-a", undefined, {
+    adoptionEligible: true,
+  });
+  const second = await access.open("project-b", key, "tab-b", undefined, {
+    adoptionEligible: true,
+  });
   if (first.kind !== "opened" || second.kind !== "opened") throw new Error("Expected content");
   const session = first.handle.session;
   let transfer: LocalDocumentSessionTransfer | undefined;
@@ -513,7 +520,6 @@ it("releases every project registry ownership after the final shared-content lea
       documentId: record.resource.identity.documentId,
       identityRevision: record.resource.identity.revision,
       databaseName: session.persistenceName ?? "",
-      requireRetainedLease: false,
     },
     {
       reserve(candidate) {

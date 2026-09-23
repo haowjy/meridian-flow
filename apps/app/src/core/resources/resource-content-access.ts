@@ -43,7 +43,7 @@ type ContentIdentity = Readonly<{
 type ContentEntry = {
   identity: ContentIdentity;
   session: DocumentSession;
-  leases: Set<symbol>;
+  leases: Map<symbol, boolean>;
   reidentity?: {
     target: ContentIdentity;
     /** A competing durable remint observed while this local CAS is unresolved. */
@@ -78,7 +78,6 @@ export type ResourceContentTransfer = Readonly<{
   documentId: string;
   identityRevision: number;
   databaseName: string;
-  requireRetainedLease: boolean;
 }>;
 
 export type ResourceContentTransferResult =
@@ -147,9 +146,12 @@ export class ResourceContentAccess {
     key: ResourceKey,
     participantId: string,
     signal?: AbortSignal,
+    options: { adoptionEligible?: boolean } = {},
   ): Promise<ResourceContentOpenResult> {
     if (participantId.length === 0) throw new Error("Resource content participant is required");
-    return this.track(this.openTracked(projectId, key, participantId, signal));
+    return this.track(
+      this.openTracked(projectId, key, participantId, signal, options.adoptionEligible ?? false),
+    );
   }
 
   clearExactContent(input: {
@@ -208,7 +210,7 @@ export class ResourceContentAccess {
     this.entries.set(id, {
       identity,
       session,
-      leases: new Set(),
+      leases: new Map(),
       ownership: { kind: "registry", ownershipByProject: new Map([[projectId, ownership]]) },
     });
   }
@@ -335,8 +337,8 @@ export class ResourceContentAccess {
       }
       return { kind: "reserved", handoff: entry.ownership.handoff };
     }
-    // The reconciler's transient lease cannot keep the transferred editor session alive.
-    if (input.requireRetainedLease && entry.leases.size < 2) return { kind: "waiting" };
+    // Navigation and reconciliation probes cannot keep the transferred editor session alive.
+    if (![...entry.leases.values()].some(Boolean)) return { kind: "waiting" };
 
     const handoff = reservations.reserve({
       projectId: input.projectId,
@@ -405,6 +407,7 @@ export class ResourceContentAccess {
     key: ResourceKey,
     participantId: string,
     signal?: AbortSignal,
+    adoptionEligible = false,
   ): Promise<ResourceContentOpenResult> {
     if (this.state !== "open" || this.epoch.aborted || signal?.aborted)
       return { kind: "cancelled" };
@@ -422,7 +425,7 @@ export class ResourceContentAccess {
       entry = result;
     }
     const lease = Symbol(participantId);
-    entry.leases.add(lease);
+    entry.leases.set(lease, adoptionEligible);
     if (this.state !== "open" || this.epoch.aborted || signal?.aborted) {
       this.releaseLease(id, entry, lease);
       return { kind: "cancelled" };
@@ -516,7 +519,7 @@ export class ResourceContentAccess {
       const entry = {
         identity: identityOf(record),
         session,
-        leases: new Set<symbol>(),
+        leases: new Map<symbol, boolean>(),
         ownership: { kind: "local" as const },
       };
       this.entries.set(id, entry);
