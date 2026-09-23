@@ -18,6 +18,7 @@ import {
 } from "@/client/copilot/test-support/ThreadRunScenario";
 import {
   type ChatSubmissionRecovery,
+  rememberSubmissionTurnId,
   useChatSubmissionRecovery,
 } from "./useChatSubmissionRecovery";
 
@@ -317,6 +318,68 @@ describe("useChatSubmissionRecovery", () => {
     });
     expect(scenario.turns()).toHaveLength(1);
     expect(scenario.turns()[0]).toMatchObject({ id: "turn-user", status: "complete" });
+  });
+
+  it("reuses the live row when recovery mounts while the POST is still held", async () => {
+    const submission = entry({ submissionId: "sub-held" });
+    recordChatSubmission(ACCOUNT, submission);
+    const scenario = new ThreadRunScenario({
+      lookup: async ({ submissionId }) => ({ kind: "pending", submissionId }),
+    });
+    const gate = scenarioGate<SendMessageResponse>();
+    scenario.setAppend(() => gate.promise);
+
+    // Simulate ChatView.handleSubmit: append the live row and register it for
+    // the session before the POST awaits admission.
+    const liveTurn = scenario.store.getState().appendUserTurn(THREAD_ID, submission.text);
+    rememberSubmissionTurnId(ACCOUNT, submission.submissionId, liveTurn.id);
+    const pendingPost = scenario.controller.submit(
+      THREAD_ID,
+      {
+        submissionId: submission.submissionId,
+        acceptedRevision: 0,
+        text: submission.text,
+        blocks: submission.blocks,
+        references: submission.references,
+        activatedSkillSlugs: submission.activatedSkillSlugs,
+      },
+      { optimisticUserTurnId: liveTurn.id },
+    );
+    await act(async () => {
+      await vi.waitFor(() => expect(scenario.appendRequests).toHaveLength(1));
+    });
+
+    // Leave and return while the POST is still held. The server admission is
+    // still `pending`, so recovery must reuse the registered row rather than
+    // append a second pending copy.
+    scenario.controller.teardown();
+    const latest: { current: ChatSubmissionRecovery | null } = { current: null };
+    await mount(ACCOUNT, scenario, (value) => {
+      latest.current = value;
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(scenario.lookupRequests).toHaveLength(1));
+    });
+    expect(scenario.turns()).toEqual([
+      expect.objectContaining({ id: liveTurn.id, status: "pending" }),
+    ]);
+
+    // The held POST then lands: the stale session bridges the same row, so a
+    // single row remains without any Check click.
+    gate.resolve(defaultSendResponse());
+    await act(async () => {
+      await expect(pendingPost).resolves.toMatchObject({ kind: "ambiguous" });
+    });
+    expect(scenario.turns()).toEqual([
+      expect.objectContaining({ id: "turn-user", status: "complete" }),
+    ]);
+    // No recovery control is offered: the remembered id was bridged away.
+    expect(
+      latest.current?.recovered.some((entry) =>
+        scenario.turns().some((turn) => turn.id === entry.optimisticTurnId),
+      ),
+    ).toBe(false);
+    expect(readChatSubmissions(ACCOUNT)).toHaveLength(1);
   });
 
   it("replays the stored fingerprint through the shared path on an in-session Check", async () => {

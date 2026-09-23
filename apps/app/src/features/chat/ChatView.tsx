@@ -47,7 +47,12 @@ import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { shouldRetireSubmission } from "./chat-submission-retirement";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { TurnList } from "./TurnList";
-import { useChatSubmissionRecovery } from "./useChatSubmissionRecovery";
+import {
+  forgetSubmissionTurnId,
+  rememberSubmissionTurnId,
+  submissionTurnId,
+  useChatSubmissionRecovery,
+} from "./useChatSubmissionRecovery";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
@@ -85,7 +90,6 @@ export function ChatView({
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
   const queryClient = useQueryClient();
   const composerRef = useRef<ComposerHandle>(null);
-  const optimisticBySubmission = useRef(new Map<string, string>());
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
 
@@ -156,13 +160,16 @@ export function ChatView({
     }
     requestTailFollow();
     const optimisticUserTurn = actions.appendUserTurn(threadId, text);
-    optimisticBySubmission.current.set(envelope.submissionId, optimisticUserTurn.id);
+    // Register the live row before the POST awaits admission: a thread remount
+    // while the server still holds the lease must reuse it, not append a second
+    // pending copy. Cleared below on acknowledgement or proved rejection.
+    rememberSubmissionTurnId(accountId, envelope.submissionId, optimisticUserTurn.id);
     try {
       const outcome = await controller.submit(threadId, envelope, {
         optimisticUserTurnId: optimisticUserTurn.id,
       });
       if (shouldRetireSubmission(outcome)) {
-        optimisticBySubmission.current.delete(envelope.submissionId);
+        forgetSubmissionTurnId(accountId, envelope.submissionId);
         retireChatSubmission(accountId, envelope.submissionId, epoch);
       }
       return outcome;
@@ -188,7 +195,7 @@ export function ChatView({
 
   const settleQuarantined = useCallback(
     async (envelope: ComposerSubmitEnvelope, retire: boolean) => {
-      const optimisticUserTurnId = optimisticBySubmission.current.get(envelope.submissionId);
+      const optimisticUserTurnId = submissionTurnId(accountId, envelope.submissionId);
       const epoch = getChatSubmissionEpoch();
       const outcome = await (retire
         ? controller.retire(threadId, envelope, { optimisticUserTurnId })
@@ -203,12 +210,12 @@ export function ChatView({
           optimisticUserTurnId,
         );
         if (shouldRetireSubmission(replayOutcome)) {
-          optimisticBySubmission.current.delete(envelope.submissionId);
+          forgetSubmissionTurnId(accountId, envelope.submissionId);
         }
         return { ...replayOutcome, acceptedRevision: envelope.acceptedRevision };
       }
       if (shouldRetireSubmission(outcome)) {
-        optimisticBySubmission.current.delete(envelope.submissionId);
+        forgetSubmissionTurnId(accountId, envelope.submissionId);
         retireChatSubmission(accountId, envelope.submissionId, epoch);
       }
       return outcome;

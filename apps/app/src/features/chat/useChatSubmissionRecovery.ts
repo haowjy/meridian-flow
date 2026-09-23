@@ -58,11 +58,36 @@ function isExistingThreadFor(
 
 /**
  * The thread store outlives a ChatView mount, but a component ref does not.
- * Remember which restored local row belongs to each unresolved submission for
- * the session so navigating away and back reuses it instead of appending a
- * second pending row. Cleared on acknowledgement/rejection.
+ * Remember which local row belongs to each unresolved submission for the
+ * session so navigating away and back reuses it instead of appending a second
+ * pending row. Live sends register their row before dispatch, mount recovery
+ * reuses it, and acknowledgement/proved rejection clears it.
  */
 const restoredTurnIds = new Map<string, string>();
+
+/**
+ * Register the local row for an unresolved submission for the session. Called
+ * by a live send immediately after it appends the row — before the POST awaits
+ * admission — so a remount while the server still holds the lease reuses that
+ * row instead of appending a duplicate.
+ */
+export function rememberSubmissionTurnId(
+  accountId: string,
+  submissionId: string,
+  optimisticTurnId: string,
+): void {
+  restoredTurnIds.set(`${accountId}:${submissionId}`, optimisticTurnId);
+}
+
+/** The local row remembered for an unresolved submission, if any. */
+export function submissionTurnId(accountId: string, submissionId: string): string | undefined {
+  return restoredTurnIds.get(`${accountId}:${submissionId}`);
+}
+
+/** Forget a submission once it is acknowledged or proved rejected. */
+export function forgetSubmissionTurnId(accountId: string, submissionId: string): void {
+  restoredTurnIds.delete(`${accountId}:${submissionId}`);
+}
 
 export function useChatSubmissionRecovery(
   threadId: string,
@@ -111,7 +136,7 @@ export function useChatSubmissionRecovery(
 
   const forget = useCallback(
     (submissionId: string) => {
-      restoredTurnIds.delete(`${accountId}:${submissionId}`);
+      forgetSubmissionTurnId(accountId, submissionId);
       dropRecovered(submissionId);
     },
     [accountId, dropRecovered],
