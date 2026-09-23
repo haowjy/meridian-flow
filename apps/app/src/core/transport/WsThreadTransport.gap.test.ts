@@ -154,6 +154,45 @@ function createHarness(maxResubscribes = 5) {
 }
 
 describe("WsThreadTransport gap recovery", () => {
+  it("does not resume past a head advertised without a delivered event", () => {
+    const resumes: Array<{ subscriptions?: Array<{ lastSeq?: string }> }> = [];
+    let socket: FakeSocket | null = null;
+    const transport = new WsThreadTransport({
+      webSocketFactory: () => {
+        socket = new FakeSocket((_target, frame) => {
+          if ((frame as { type?: string }).type === "resume") {
+            resumes.push(frame as { subscriptions?: Array<{ lastSeq?: string }> });
+          }
+        });
+        return socket as unknown as WebSocket;
+      },
+    });
+    const unsubscribe = transport.subscribe(THREAD_ID, { onEvent: () => {} });
+    const activeSocket = socket as unknown as FakeSocket;
+    activeSocket.open();
+    const connected = {
+      type: "connected",
+      userId: "user-1",
+      scope: { type: "standalone" },
+      serverVersion: "0.0.0",
+      connectionToken: "token-1",
+    };
+    activeSocket.deliver(connected);
+    activeSocket.deliver({
+      type: "subscribed",
+      threadId: THREAD_ID,
+      catchup: [],
+      state: LIVE_STATE,
+      nextSeq: (HEAD_SEQ + 1n).toString(),
+    });
+
+    // A reconnect's resume cursor is event-delivery state, not subscribed.nextSeq.
+    activeSocket.deliver(connected);
+    expect(resumes.at(-1)?.subscriptions?.[0]?.lastSeq).toBe("0");
+    unsubscribe();
+    transport.disconnect();
+  });
+
   it("advances the resume point to the gap head and converges after one resubscribe", () => {
     const harness = createHarness();
     try {

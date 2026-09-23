@@ -95,6 +95,7 @@
 
 ### Changed
 
+- Thread journal fan-out now waits for commit-aware invalidation and drains committed rows in sequence across local and PostgreSQL notifications. Cold reconnect replay pages through the captured committed head without the 10,000-row cutoff or replay-limit gap signal.
 - Test-only maintenance: pruned the schema, journal, recents, recovery, interrupt, working-set, rename, and billing suites added in #566 down to one owner per durable contract, and deleted the low-value UI/mock files that restated those contracts at the component and mock layers. No product behavior changed.
 - Agent execution configuration has one canonical contract in `@meridian/contracts/agents` (`execution-knobs.ts`): effort value set and `max→xhigh` alias, tool policy, tool-name alias fold, resolved shape, and presence-sensitive patch. The compiler, resolver, invocation patch, and gateway effort mapping are projections, and the patch merge table is compile-time exhaustive so an accepted key cannot be silently dropped.
 - `return_result` records the report and ends this turn; the child chat stays open.

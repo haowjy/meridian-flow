@@ -70,8 +70,15 @@ instead of the N:1 `threads.workId` column.
   turn ordering. The turn tree (`parent_turn_id`, `active_leaf_turn_id`) remains
   the ordering model. Turns have no `seq` column.
 - **ThreadEventHub** — in-memory pub/sub + hot cache that sits on top of the
-  journal. Subscribers get live events; late joiners get catchup via hot cache
-  or journal replay. Eviction on idle (grace period, default 60 s).
+  journal. Local appends schedule only a committed-journal invalidation; local
+  and PostgreSQL invalidations share one ordered per-thread drain, which reads
+  and projects committed rows after its journal cursor. Late joiners catch up
+  from the hot cache or a cursor-paged replay from zero through the live
+  projector's reached journal cursor. Replay projects the prefix to reconstruct
+  state but retains only the requested suffix; the catchup guard also buffers
+  only events beyond that cursor. Eviction waits for the final active or
+  requested drain to settle, including failed reads, then starts a fresh grace
+  period (default 60 s).
 - **Orchestrator event projector** — stateful transform from
   `OrchestratorEvent` to AG-UI events (run lifecycle, text/reasoning
   streaming, tool call lifecycle, usage, permissions). `subagent.activity`
@@ -268,11 +275,10 @@ contract shapes.
 - Public create accepts only `kind: "primary"` with `spawnDepth: 0`.
   `normalizeThreadCreate` rejects all spawn/fork lifecycle fields.
   Subagent rows are created only through `SubagentThreadFactory`.
-- Hot cache is bounded at 500 events; older events fall through to journal
-  replay (capped at 10,000 entries read from the journal start so cursor grammar
-  matches live delivery). A client behind the window gets a `gap` carrying the
-  requested `fromSeq` and the journal head as `toSeq`; a client already past the
-  window's end gets no gap even though the read hit the cap.
+- Hot cache is bounded at 500 events; older events fall through to cursor-paged
+  journal replay (one projector from journal start through the live cursor).
+  Sequence gaps from rolled-back allocations are legal. This is complete
+  replay, not bounded-cost bootstrap; cold cost remains O(history).
 - `threads.status` is lifecycle only (`idle` | `archived`) and mapped back
   unchanged. Run liveness is never stored there; it is derived from the live
   lease (`ThreadStatus`).

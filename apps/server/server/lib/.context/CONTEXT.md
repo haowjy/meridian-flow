@@ -111,7 +111,7 @@ access uses `DocumentAccessPort.canAccessDocument()`.
 
 | File | Role |
 |---|---|
-| `ws-thread-handler.ts` | Thread-events WebSocket session: connected frame, subscribe/resume ownership checks, hub catchup/live events, unsubscribe/cleanup. |
+| `ws-thread-handler.ts` | Thread-events WebSocket session: connected frame, subscribe/resume ownership checks, ordered catchup/live handoff, unsubscribe/cleanup. |
 | `yjs-ws-handler.ts` | Hocuspocus bridge for live and Work-draft rooms. Per-connection schema admission runs before sync; typed refusals close the physical transport directly, then throw only to abort hook processing. |
 | `ws-safe-send.ts` | Defensive `peer.send` wrapper for callers that opt into close-on-send-failure behavior. |
 
@@ -193,6 +193,13 @@ Domain API call → contract wire shape
   error frame/close code.
 - **String(seq) at the HTTP/WS boundary.** Internal journal sequence values are
   bigint; protocol frames stringify them.
+- **Thread WS subscription authority.** One per-thread slot admits the newest
+  subscribe request by arrival order. Its active lease remains live until the
+  replacement passes ownership authorization; failed authorization leaves it
+  intact. Pending hub callbacks buffer until the `subscribed` catchup envelope
+  succeeds, then flush in sequence order above the delivered watermark.
+  Unsubscribe, replacement, close, and send failure invalidate pending work;
+  stale async results release their hub listener without publishing.
 - **Object store env-driven.** Local uses filesystem + HMAC signed token URLs;
   S3 uses presigned URLs. `localObjectStore` is `null` in S3 mode.
 
