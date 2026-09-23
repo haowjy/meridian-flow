@@ -9,11 +9,7 @@
  */
 
 import type { Project } from "@meridian/contracts/projects";
-import type {
-  ContextOperationReceipt,
-  HomeChatFeedPage,
-  HomeProjectResponse,
-} from "@meridian/contracts/protocol";
+import type { ContextOperationReceipt, HomeChatFeedPage } from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
   apiProjectAddressPath,
@@ -27,7 +23,6 @@ import {
   apiProjectDocumentAddressPath,
   apiProjectHomeFeedPath,
   apiProjectPath,
-  apiProjectsHomePath,
   apiProjectThreadsPath,
   apiProjectWorkingSetPath,
   apiProjectWorksPath,
@@ -81,12 +76,6 @@ type ListWorkThreadsOptions = RequestInitOptions & {
 
 function urlFor(path: string, init?: RequestInitOptions): string {
   return init?.origin ? new URL(path, init.origin).toString() : path;
-}
-
-export async function getHomeProject(init?: RequestInitOptions): Promise<HomeProjectResponse> {
-  return getJson<HomeProjectResponse>(urlFor(apiProjectsHomePath(), init), {
-    headers: init?.headers,
-  });
 }
 
 export function getProjectHomeFeed(

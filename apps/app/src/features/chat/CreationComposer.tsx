@@ -1,4 +1,4 @@
-/** Shared creation composer for project Home, Chats, and account New project. */
+/** Shared new-chat composer for the project Chat landing. */
 import { t } from "@lingui/core/macro";
 import { useState } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
@@ -11,19 +11,18 @@ import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat-landing/NewThreadComposerToolbar";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { AgentOnlyComposerToolbar } from "./ChatComposerToolbar";
 import { useCreationComposer } from "./useCreationComposer";
 
 export function CreationComposer({
   projectId,
   autoFocus = false,
 }: {
-  projectId: string | null;
+  projectId: string;
   autoFocus?: boolean;
 }) {
   const creation = useCreationComposer(projectId);
-  const works = useWorks(projectId ?? "", { enabled: projectId !== null });
-  const agents = useAgentCatalog(true, projectId ?? undefined);
+  const works = useWorks(projectId);
+  const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;
   const defaultAgent = agents.agents?.find(
     (agent) => agent.ownership === "system" && agent.slug === DEFAULT_AGENT_SLUG,
@@ -38,12 +37,8 @@ export function CreationComposer({
     workId,
   );
   const work = selected?.status === "active" || selected?.isNoWork ? selected : null;
-  const references = useReferenceBrowserCatalog(
-    projectId ?? undefined,
-    work?.id,
-    t`Reference a file`,
-  );
-  const openDocument = useOpenProjectDocument(projectId ?? undefined);
+  const references = useReferenceBrowserCatalog(projectId, work?.id, t`Reference a file`);
+  const openDocument = useOpenProjectDocument(projectId);
   const context = agent ? { workId, agent } : undefined;
   const unavailableWork =
     (works.status === "ready" || works.status === "empty") && workId !== null && !work;
@@ -62,7 +57,7 @@ export function CreationComposer({
     : unavailableWork
       ? t`Your selected Work is unavailable. Choose another Work or No Work.`
       : t`Your selected Agent is unavailable. Choose another Agent.`;
-  const worksReady = projectId === null || works.status === "ready" || works.status === "empty";
+  const worksReady = works.status === "ready" || works.status === "empty";
   const agentsReady = agents.status === "ready" || agents.status === "empty";
   const choicesReady = worksReady && agentsReady && !unavailableChoice;
   return (
@@ -81,56 +76,38 @@ export function CreationComposer({
         onDraftChange={creation.updateDraft}
         referenceCatalog={references}
         availableSkills={availableSkills.skills}
-        onOpenReference={
-          projectId
-            ? (reference) => {
-                void openDocument({ documentId: reference.documentId, disposition: "current" });
-              }
-            : undefined
-        }
-        uploadPort={projectId ? uploadIntakePort : undefined}
-        uploadScope={projectId && work ? { kind: "work", projectId, workId: work.id } : undefined}
-        busy={creation.busy}
-        submitDisabled={!choicesReady || modePending || creation.submitLocked}
+        onOpenReference={(reference) => {
+          void openDocument({ documentId: reference.documentId, disposition: "current" });
+        }}
+        uploadPort={uploadIntakePort}
+        uploadScope={work ? { kind: "work", projectId, workId: work.id } : undefined}
+        submitDisabled={!choicesReady || modePending}
         submitDisabledReason={
           unavailableMessage ??
-          (creation.busy
-            ? t`Creating chat`
-            : modePending
-              ? t`Finishing write mode change`
-              : !worksReady
-                ? t`Loading Work`
-                : !agentsReady
-                  ? agents.isError
-                    ? t`Couldn't load agents.`
-                    : t`Loading agents…`
-                  : undefined)
+          (modePending
+            ? t`Finishing write mode change`
+            : !worksReady
+              ? t`Loading Work`
+              : !agentsReady
+                ? agents.isError
+                  ? t`Couldn't load agents.`
+                  : t`Loading agents…`
+                : undefined)
         }
         toolbarLeft={
-          projectId ? (
-            <NewThreadComposerToolbar
-              projectId={projectId}
-              work={work}
-              selectedWorkId={workId}
-              works={works.works ?? []}
-              worksStatus={works.isError ? "error" : worksReady ? "ready" : "loading"}
-              agent={agent}
-              disabled={creation.contextLocked}
-              onAgentChange={(next) => creation.updateChoices({ agent: next })}
-              onWorkChange={(selected) => creation.updateChoices({ workId: selected?.id ?? null })}
-              onRetryWorks={works.refetch}
-              onModePendingChange={setModePending}
-            />
-          ) : (
-            <AgentOnlyComposerToolbar
-              control={{
-                mode: "interactive",
-                selectedAgent: agent,
-                onSelectedAgentChange: (next) => creation.updateChoices({ agent: next }),
-              }}
-              disabled={creation.contextLocked}
-            />
-          )
+          <NewThreadComposerToolbar
+            projectId={projectId}
+            work={work}
+            selectedWorkId={workId}
+            works={works.works ?? []}
+            worksStatus={works.isError ? "error" : worksReady ? "ready" : "loading"}
+            agent={agent}
+            disabled={modePending}
+            onAgentChange={(next) => creation.updateChoices({ agent: next })}
+            onWorkChange={(selected) => creation.updateChoices({ workId: selected?.id ?? null })}
+            onRetryWorks={works.refetch}
+            onModePendingChange={setModePending}
+          />
         }
       />
       {works.isError ? (

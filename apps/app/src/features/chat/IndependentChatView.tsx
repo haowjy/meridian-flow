@@ -64,8 +64,8 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
       <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border px-3">
         <IconButton
           size="sm"
-          aria-label={t`Back to home`}
-          onClick={() => void navigate({ to: "/home" })}
+          aria-label={t`View projects`}
+          onClick={() => void navigate({ to: "/" })}
         >
           <ArrowLeft className="size-4" aria-hidden />
         </IconButton>
