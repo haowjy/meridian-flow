@@ -139,6 +139,34 @@ describe("SpawnReportCard", () => {
     expect(document.body.textContent).not.toContain("Failed");
   });
 
+  it.each([
+    ["succeeded", "Done"],
+    ["failed", "Failed"],
+    ["cancelled", "Stopped"],
+  ] as const)("shows settled direct %s truth while the retained card is running", async (outcome, label) => {
+    await act(async () =>
+      root.render(
+        <SpawnReportCard
+          agentName="Critic"
+          title={null}
+          status="running"
+          childThreadId="child-3"
+          directResult={{
+            execution: "execution-3",
+            outcome,
+            summary: "Saved result",
+            artifacts: [],
+            partial: outcome !== "succeeded",
+            message: null,
+          }}
+        />,
+      ),
+    );
+    expect(host.textContent).toContain(label);
+    expect(host.textContent).toContain("Saved result");
+    expect(host.textContent).not.toContain("Running");
+  });
+
   it("renders a running card while the child is still working", async () => {
     await act(async () =>
       root.render(

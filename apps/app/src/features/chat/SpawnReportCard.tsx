@@ -28,6 +28,12 @@ const statusPresentation = {
   unavailable: { Icon: CircleAlert, tone: "failed" },
 } satisfies Record<string, { Icon: typeof CheckCircle2; tone: ArtifactCardTone }>;
 
+const directOutcomeStatus = {
+  succeeded: "completed",
+  failed: "failed",
+  cancelled: "stopped",
+} as const;
+
 export function SpawnReportCard({
   agentName,
   title,
@@ -36,8 +42,14 @@ export function SpawnReportCard({
   childThreadId,
   directResult = null,
 }: SpawnReportCardProps) {
-  const unavailable = status === "running" && directResult?.outcome === null;
-  const resolvedStatus = unavailable ? "unavailable" : outcome === "cancelled" ? "stopped" : status;
+  let resolvedStatus: keyof typeof statusPresentation = status;
+  if (status === "running") {
+    if (directResult?.outcome) resolvedStatus = directOutcomeStatus[directResult.outcome];
+    else if (directResult?.outcome === null) resolvedStatus = "unavailable";
+  } else if (outcome === "cancelled") {
+    resolvedStatus = "stopped";
+  }
+  const unavailable = resolvedStatus === "unavailable";
   const { Icon, tone } = statusPresentation[resolvedStatus];
   const hint = title && title !== agentName ? title : undefined;
 
