@@ -108,9 +108,9 @@ Two interfaces are the only paths between the visual layer and the substrate:
   the working-set read as an explicit `row` / `absent` / `unavailable` result.
 - **Zustand (thread-store):** per-thread `turnsByThread`,
   `streamingThreadId`, pending stream metadata, snapshot reconciliation
-  watermark (`snapshotNextSeqFloorByThread`). The project-store owns only the
-  optimistic independent-project insert; its unwired rename/soft-delete
-  projections and suppression surface were removed (OPT-002). See "Thread
+  watermark (`snapshotNextSeqFloorByThread`). The project-store retains the
+  account clock and inserts confirmed creations into the project-list cache;
+  it does not own a second project list. See "Thread
   snapshot reconciliation" below.
 - **`ThreadTransport`** (`src/core/transport/ThreadTransport.ts`) — the
   subscribe/cancel contract for live agent events. Runtime chat uses
