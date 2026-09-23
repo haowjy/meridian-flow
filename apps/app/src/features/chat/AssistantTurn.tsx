@@ -25,6 +25,7 @@ import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
 import { ErrorBlock } from "./ErrorBlock";
 import { groupDeliverySegments } from "./group-delivery-segments";
+import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
 import { ProcessDisclosure } from "./ProcessDisclosure";
 import {
   hasVisibleReasoningText,
@@ -66,6 +67,7 @@ function AssistantTurnComponent({
   );
   const isSettled = isTerminalTurnStatus(turn.status);
   const items = useMemo(() => partitionTurn(sortedBlocks), [sortedBlocks]);
+  const directResults = useMemo(() => directResultsForTurn(sortedBlocks), [sortedBlocks]);
   // Progressive-disclosure label: "Thinking part N" for a turn with several
   // process folds (one per artifact/interrupt-delimited stretch).
   // Ordinals count only visible folds: a process item whose runs have nothing
@@ -118,6 +120,9 @@ function AssistantTurnComponent({
           turnStatus={turn.status}
           onRespondToInterrupt={onRespondToInterrupt}
           writeMode={turn.writeMode ?? "direct"}
+          directResult={
+            item.kind === "artifact" ? (directResults.get(item.block.id) ?? null) : null
+          }
         />
       ))}
 
@@ -181,6 +186,7 @@ const TurnItemView = memo(function TurnItemView({
   turnStatus,
   onRespondToInterrupt,
   writeMode,
+  directResult,
 }: {
   item: RenderItem;
   processOrdinal: number;
@@ -189,6 +195,7 @@ const TurnItemView = memo(function TurnItemView({
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   writeMode: "direct" | "draft";
+  directResult: DirectInvocationResult | null;
 }) {
   const runs = item.kind === "process" ? item.runs : null;
   const digest = useMemo(
@@ -226,6 +233,7 @@ const TurnItemView = memo(function TurnItemView({
         threadId={threadId}
         turnStatus={turnStatus}
         onRespondToInterrupt={onRespondToInterrupt}
+        directResult={directResult}
       />
     </div>
   );
@@ -377,11 +385,13 @@ function DeliveryBlock({
   threadId,
   turnStatus,
   onRespondToInterrupt,
+  directResult,
 }: {
   block: Block;
   threadId: string;
   turnStatus: Turn["status"];
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
+  directResult?: DirectInvocationResult | null;
 }) {
   // `activity` blocks are AG-UI progress placeholders (`ACTIVITY_SNAPSHOT` /
   // `ACTIVITY_DELTA` events with no tool target) that the reducer parks under
@@ -402,6 +412,7 @@ function DeliveryBlock({
         threadId={threadId}
         turnStatus={turnStatus}
         onRespondToInterrupt={onRespondToInterrupt}
+        directResult={directResult}
       />
     );
   }

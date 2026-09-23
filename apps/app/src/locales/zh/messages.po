@@ -2925,6 +2925,10 @@ msgstr ""
 msgid "Response complete"
 msgstr "回复完成"
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Result unavailable"
+msgstr ""
+
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx
 #: src/features/project/shell/ResultsRailSection.tsx
@@ -3049,6 +3053,10 @@ msgstr ""
 
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Saved artifacts"
 msgstr ""
 
 #: src/features/chat/ChatView.tsx

@@ -14,6 +14,7 @@ vi.mock("@/rich-content/Markdown", () => ({
 }));
 
 import { ChatThreadNavigationProvider } from "./ChatThreadNavigation";
+import type { DirectInvocationResult } from "./invocation-direct-result";
 import { SpawnReportCard } from "./SpawnReportCard";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -155,6 +156,37 @@ describe("SpawnReportCard", () => {
     expect(document.body.textContent).toContain("Critic");
     expect(document.body.textContent).toContain("Review the chapter");
     expect(findButton("Open")).toBeDefined();
+  });
+
+  it("shows direct unavailable evidence without claiming a terminal outcome, then yields to recovery", async () => {
+    const base = { agentName: "Critic", title: null, childThreadId: "child-3" };
+    const directResult: DirectInvocationResult = {
+      execution: "execution-3",
+      outcome: null,
+      summary: "",
+      artifacts: [],
+      partial: false,
+      message: "Child report is unavailable",
+    };
+    await act(async () =>
+      root.render(<SpawnReportCard {...base} status="running" directResult={directResult} />),
+    );
+    expect(host.textContent).toContain("Child report is unavailable");
+    expect(host.textContent).not.toContain("Running");
+    expect(host.textContent).not.toContain("Failed");
+    expect(findButton("Show full result")).toBeUndefined();
+    await act(async () =>
+      root.render(
+        <SpawnReportCard
+          {...base}
+          status="completed"
+          outcome="succeeded"
+          directResult={directResult}
+        />,
+      ),
+    );
+    expect(host.textContent).toContain("Done");
+    expect(host.textContent).not.toContain("Child report is unavailable");
   });
 
   it("hides the door when no child thread exists", async () => {

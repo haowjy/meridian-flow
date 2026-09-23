@@ -1,8 +1,7 @@
-/** Turn-scoped join from an invocation card to its settled foreground tool result. */
+/** Turn-scoped protocol lookup for settled foreground invocation cards. */
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
-import type { Block, JsonValue } from "@meridian/contracts/protocol";
+import { type Block, blockContentRecord, type JsonValue } from "@meridian/contracts/protocol";
 import { componentBlockContent } from "./component-block-content";
-import { groupDeliverySegments } from "./group-delivery-segments";
 
 type Invocation = {
   parentTurnId?: string;
@@ -14,7 +13,8 @@ type Invocation = {
 
 export type DirectInvocationResult = {
   execution: string;
-  outcome: "succeeded" | "failed" | "cancelled";
+  /** Null means the direct tool settled without saved terminal evidence. */
+  outcome: "succeeded" | "failed" | "cancelled" | null;
   summary: string;
   payload?: JsonValue;
   artifacts: ArtifactRef[];
@@ -22,40 +22,63 @@ export type DirectInvocationResult = {
   message: string | null;
 };
 
-/** Reads the complete turn before protocol visibility filtering, so order and reload do not matter. */
-export function directResultForInvocation(
-  blocks: readonly Block[],
-  cardBlock: Block,
-): DirectInvocationResult | null {
-  const content = componentBlockContent(cardBlock.content);
-  if (content?.kind !== "helper-result") return null;
-  const invocation = content.props as Invocation;
-  if (
-    invocation.parentTurnId !== cardBlock.turnId ||
-    invocation.deliveryMode !== "direct" ||
-    !invocation.execution ||
-    !invocation.toolCallId ||
-    !invocation.childThreadId
-  ) {
-    return null;
-  }
+type SettledOutput = { output: JsonValue | null; isError: boolean; message: string | null };
 
-  for (const segment of groupDeliverySegments([...blocks])) {
-    const tools =
-      segment.kind === "tool" ? [segment.tool] : segment.kind === "tool-run" ? segment.tools : [];
-    for (const tool of tools) {
-      if (
-        tool.toolCallId !== invocation.toolCallId ||
-        (tool.toolName !== "spawn" && tool.toolName !== "thread_message") ||
-        tool.status !== "complete"
-      ) {
-        continue;
+/** The complete parent turn is one identity scope; presentation runs are not protocol boundaries. */
+export function directResultsForTurn(
+  blocks: readonly Block[],
+): Map<string, DirectInvocationResult> {
+  const names = new Map<string, string>();
+  const settled = new Map<string, SettledOutput>();
+  for (const block of blocks) {
+    if (block.blockType !== "tool_use" && block.blockType !== "tool_result") continue;
+    const content = blockContentRecord(block);
+    const callId = stringField(content, "toolCallId") ?? stringField(content, "toolUseId");
+    if (!callId) continue;
+    const key = `${block.turnId}\0${callId}`;
+    if (block.blockType === "tool_use") {
+      const name = stringField(content, "toolName");
+      if (name) names.set(key, name);
+      // Live reduction merges the settled result onto the use; durable history has a separate result.
+      if (block.status === "complete" && Object.hasOwn(content, "output")) {
+        settled.set(key, outputFields(content));
       }
-      const result = resultEnvelope(tool.output, tool.isError, tool.message);
-      if (result?.execution === invocation.execution) return result;
+    } else {
+      settled.set(key, outputFields(content));
     }
   }
-  return null;
+
+  const direct = new Map<string, DirectInvocationResult>();
+  for (const block of blocks) {
+    if (block.blockType !== "custom") continue;
+    const content = componentBlockContent(block.content);
+    if (content?.kind !== "helper-result") continue;
+    const invocation = content.props as Invocation;
+    if (
+      invocation.parentTurnId !== block.turnId ||
+      invocation.deliveryMode !== "direct" ||
+      !invocation.execution ||
+      !invocation.toolCallId ||
+      !invocation.childThreadId
+    )
+      continue;
+    const key = `${block.turnId}\0${invocation.toolCallId}`;
+    const name = names.get(key);
+    if (name !== "spawn" && name !== "thread_message") continue;
+    const result = settled.get(key);
+    if (!result) continue;
+    const envelope = resultEnvelope(result.output, result.isError, result.message);
+    if (envelope?.execution === invocation.execution) direct.set(block.id, envelope);
+  }
+  return direct;
+}
+
+function outputFields(content: Record<string, JsonValue>): SettledOutput {
+  return {
+    output: content.output ?? null,
+    isError: content.isError === true,
+    message: stringField(content, "message"),
+  };
 }
 
 function resultEnvelope(
@@ -63,32 +86,42 @@ function resultEnvelope(
   isError: boolean,
   toolMessage: string | null,
 ): DirectInvocationResult | null {
-  if (!output || typeof output !== "object" || Array.isArray(output)) return null;
-  const envelope = output as Record<string, JsonValue>;
-  if (typeof envelope.execution !== "string") return null;
-  const status = envelope.status;
-  const outcome = envelope.outcome;
-  const report = isRecord(envelope.report) ? envelope.report : null;
-  if (outcome !== "succeeded" && outcome !== "failed" && outcome !== "cancelled") return null;
-  if (status !== "completed" && status !== "error") return null;
-  const message =
-    typeof envelope.reason === "string"
-      ? envelope.reason
-      : report && typeof report.summary === "string"
-        ? null
-        : toolMessage;
-  const artifacts =
-    report && Array.isArray(report.artifacts) ? report.artifacts.filter(isArtifactRef) : [];
+  if (!isRecord(output) || typeof output.execution !== "string") return null;
+  const outcome = output.outcome;
+  if (output.status !== "completed" && output.status !== "error") return null;
+  if (
+    outcome !== undefined &&
+    outcome !== "succeeded" &&
+    outcome !== "failed" &&
+    outcome !== "cancelled"
+  )
+    return null;
+  if (outcome === undefined && output.status !== "error") return null;
+  const report = isRecord(output.report) ? output.report : null;
   const summary = report && typeof report.summary === "string" ? report.summary : "";
+  const error = isRecord(output.error) ? output.error : null;
+  const message =
+    typeof output.reason === "string"
+      ? output.reason
+      : error && typeof error.message === "string"
+        ? error.message
+        : isError && !summary
+          ? toolMessage
+          : null;
   return {
-    execution: envelope.execution,
-    outcome,
+    execution: output.execution,
+    outcome: outcome ?? null,
     summary,
     ...(report && Object.hasOwn(report, "payload") ? { payload: report.payload } : {}),
-    artifacts,
-    partial: envelope.partial === true || outcome !== "succeeded",
-    message: message ?? (isError && !summary ? toolMessage : null),
+    artifacts:
+      report && Array.isArray(report.artifacts) ? report.artifacts.filter(isArtifactRef) : [],
+    partial: output.partial === true || (outcome !== undefined && outcome !== "succeeded"),
+    message,
   };
+}
+
+function stringField(value: Record<string, JsonValue>, key: string): string | null {
+  return typeof value[key] === "string" ? value[key] : null;
 }
 
 function isRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {
@@ -96,10 +129,9 @@ function isRecord(value: JsonValue | undefined): value is Record<string, JsonVal
 }
 
 function isArtifactRef(value: JsonValue): value is ArtifactRef {
+  if (!isRecord(value)) return false;
   return (
-    isRecord(value) &&
-    (value.type === "object" || value.type === "image") &&
-    typeof value.uri === "string" &&
-    typeof value.label === "string"
+    (value.type === "object" && typeof value.uri === "string") ||
+    ((value.type === "image" || value.type === "liveView") && typeof value.url === "string")
   );
 }

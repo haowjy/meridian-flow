@@ -96,11 +96,16 @@ Each admitted invocation has one retained helper-result card with the original
 parent-turn/tool-call/child/delivery/execution tuple. Terminal status is child
 execution truth, not parent protocol admission. A foreground card joins only a
 settled `spawn` or `thread_message` result whose execution matches and whose
-delivery mode is direct. The join reads the complete turn before hidden protocol
-rows are filtered, so reload and result-before-card converge without a second
-output store. Background cards remain status-only; notification contains no
-report body and triggers no automatic fetch. `thread_report` is an ordinary
-expandable activity row, not another artifact.
+delivery mode is direct. The turn renderer indexes protocol identity once over
+the complete turn; contiguous presentation groups cannot pair persisted
+`tool_use → card → tool_result`. The lookup reads before hidden protocol rows
+are filtered, so authoritative snapshots and result-before-card converge
+without a second output store or per-card store subscription. A settled direct
+error without saved terminal evidence shows its error without claiming a child
+outcome; a later terminal card patch remains authoritative. Background cards
+remain status-only; notification contains no report body and triggers no
+automatic fetch. `thread_report` is an ordinary expandable activity row,
+including saved artifacts, not another artifact card.
 
 Historical card replacement is sent over the existing
 `meridian.block.upserted` frame. Replace a loaded historical turn in place; if

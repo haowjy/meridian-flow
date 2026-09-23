@@ -107,4 +107,45 @@ describe("thread_report tool row", () => {
     await act(async () => root.render(<ToolRow tool={tool("failed")} />));
     expect(host.textContent).toContain("budget_exhausted");
   });
+
+  it("expands an artifact-only saved result in its ordinary activity row", async () => {
+    const artifact = { type: "object", uri: "scratch://saved.md", label: "Saved artifact" };
+    const tool: ToolView = {
+      toolCallId: "call-artifact",
+      toolName: "thread_report",
+      input: { ref: "p3", execution: "execution-1" },
+      output: {
+        ref: "p3",
+        execution: "execution-1",
+        outcome: "succeeded",
+        source: "explicit",
+        summary: "",
+        artifacts: [artifact],
+        partial: false,
+        reason: null,
+      },
+      status: "complete",
+      isError: false,
+      message: null,
+      streamedOutput: null,
+      metadata: null,
+      keyBlock: {
+        id: "tool-artifact",
+        turnId: "turn-1",
+        responseId: null,
+        blockType: "tool_use",
+        sequence: 3,
+        content: { toolCallId: "call-artifact", toolName: "thread_report" },
+        status: "complete",
+        textContent: null,
+        createdAt: "2026-09-23T00:00:00.000Z",
+      },
+    };
+    await act(async () => root.render(<ToolRow tool={tool} />));
+    const toggle = host.querySelector("button");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => toggle?.click());
+    expect(host.textContent).toContain("Saved artifact");
+    expect(host.textContent).not.toContain("No report text was returned");
+  });
 });

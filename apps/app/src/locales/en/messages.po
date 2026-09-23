@@ -2923,6 +2923,10 @@ msgstr "Resize sidebar"
 msgid "Response complete"
 msgstr "Response complete"
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Result unavailable"
+msgstr "Result unavailable"
+
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/ContextSidebar.tsx
 #: src/features/project/shell/ResultsRailSection.tsx
@@ -3048,6 +3052,10 @@ msgstr "Save metadata changes?"
 #: src/features/project/context/IdentityPlacementField.tsx
 msgid "Save name and location"
 msgstr "Save name and location"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Saved artifacts"
+msgstr "Saved artifacts"
 
 #: src/features/chat/ChatView.tsx
 #~ msgid "Saved first message"

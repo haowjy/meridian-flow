@@ -25,6 +25,7 @@ const statusPresentation = {
   completed: { Icon: CheckCircle2, tone: "resolved" },
   failed: { Icon: CircleAlert, tone: "failed" },
   stopped: { Icon: OctagonX, tone: "failed" },
+  unavailable: { Icon: CircleAlert, tone: "failed" },
 } satisfies Record<string, { Icon: typeof CheckCircle2; tone: ArtifactCardTone }>;
 
 export function SpawnReportCard({
@@ -35,7 +36,8 @@ export function SpawnReportCard({
   childThreadId,
   directResult = null,
 }: SpawnReportCardProps) {
-  const resolvedStatus = outcome === "cancelled" ? "stopped" : status;
+  const unavailable = status === "running" && directResult?.outcome === null;
+  const resolvedStatus = unavailable ? "unavailable" : outcome === "cancelled" ? "stopped" : status;
   const { Icon, tone } = statusPresentation[resolvedStatus];
   const hint = title && title !== agentName ? title : undefined;
 
@@ -52,8 +54,11 @@ export function SpawnReportCard({
         {resolvedStatus === "completed" ? <Trans>Done</Trans> : null}
         {resolvedStatus === "failed" ? <Trans>Failed</Trans> : null}
         {resolvedStatus === "stopped" ? <Trans>Stopped</Trans> : null}
+        {resolvedStatus === "unavailable" ? <Trans>Result unavailable</Trans> : null}
       </div>
-      {directResult ? <DirectResult result={directResult} /> : null}
+      {directResult && (directResult.outcome !== null || unavailable) ? (
+        <DirectResult result={directResult} />
+      ) : null}
     </ArtifactCard>
   );
 }
@@ -67,7 +72,7 @@ function DirectResult({ result }: { result: DirectInvocationResult }) {
     result.summary ||
       result.payload !== undefined ||
       result.artifacts.length > 0 ||
-      result.message ||
+      (result.outcome !== null && result.message) ||
       result.partial,
   );
   const hasResult = hasReportText || result.payload !== undefined || result.artifacts.length > 0;

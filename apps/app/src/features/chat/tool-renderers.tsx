@@ -31,6 +31,7 @@ import { type ReactNode, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
+import { ArtifactGrid, isArtifactRef } from "./ArtifactGrid";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
 import {
   type CommandExpand,
@@ -544,6 +545,7 @@ const THREAD_REPORT_RENDERER: ToolRenderer = {
     if (report?.status === "unavailable") return <CommandTitle verb={t`Report is unavailable`} />;
     if (report?.outcome === "failed") return <CommandTitle verb={t`The child run failed`} />;
     if (report?.outcome === "cancelled") return <CommandTitle verb={t`The child run stopped`} />;
+    if (report?.artifacts?.length) return <CommandTitle verb={t`Saved artifacts`} />;
     if (report) return <CommandTitle verb={t`No report text was returned`} />;
     return <CommandTitle verb={t`Report unavailable`} />;
   },
@@ -582,6 +584,7 @@ type ThreadReportView = {
   outcome?: "succeeded" | "failed" | "cancelled";
   summary?: string;
   payload?: JsonValue;
+  artifacts?: import("@meridian/contracts/interrupt").ArtifactRef[];
   reason?: string | null;
   partial?: boolean;
 };
@@ -602,6 +605,7 @@ function threadReport(output: JsonValue | null): ThreadReportView | null {
     outcome: record.outcome,
     summary: typeof record.summary === "string" ? record.summary : "",
     ...(Object.hasOwn(record, "payload") ? { payload: record.payload } : {}),
+    artifacts: Array.isArray(record.artifacts) ? record.artifacts.filter(isArtifactRef) : [],
     reason: typeof record.reason === "string" ? record.reason : null,
     partial: record.partial === true,
   };
@@ -621,7 +625,12 @@ function threadReportExpand(tool: ToolView): ToolExpand | null {
           : t`This report is unavailable.`}
       </p>
     );
-  if (!report.summary && report.payload === undefined && !report.reason) {
+  if (
+    !report.summary &&
+    report.payload === undefined &&
+    !report.reason &&
+    !report.artifacts?.length
+  ) {
     return () => (
       <p className="text-caption text-muted-foreground">
         {report.outcome === "succeeded"
@@ -638,6 +647,7 @@ function threadReportExpand(tool: ToolView): ToolExpand | null {
           {reportPayloadText(report.payload)}
         </pre>
       ) : null}
+      {report.artifacts?.length ? <ArtifactGrid artifacts={report.artifacts} /> : null}
       {report.reason ? <p className="text-caption text-muted-foreground">{report.reason}</p> : null}
       {report.partial ? (
         <p className="text-caption text-muted-foreground">{t`Partial result`}</p>

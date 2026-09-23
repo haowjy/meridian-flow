@@ -51,7 +51,6 @@ const spawnResult = (sequence: number, useSequence: number) =>
     sequence,
     content: {
       toolCallId: `spawn-${useSequence}`,
-      toolName: "spawn",
       output: { status: "completed", report: { threadId: "child-1", summary: "2+2=4." } },
     },
   });
@@ -82,7 +81,6 @@ const threadMessageResult = (sequence: number, useSequence: number) =>
     sequence,
     content: {
       toolCallId: `thread-message-${useSequence}`,
-      toolName: "thread_message",
       output: { status: "completed", report: { threadId: "child-1", summary: "Done." } },
     },
   });
