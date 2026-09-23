@@ -88,6 +88,20 @@ describe("direct invocation result join", () => {
     });
   });
 
+  it("does not show terminal card status or tool-call end before a result envelope settles", () => {
+    const admissionAndToolEnd = [
+      card(),
+      block("use", 1, "tool_use", {
+        toolCallId: "call-1",
+        toolName: "spawn",
+        input: {},
+        output: null,
+        isError: false,
+      }),
+    ];
+    expect(directResultForInvocation(admissionAndToolEnd, card())).toBeNull();
+  });
+
   it("keeps empty success truthful and does not borrow another execution or mode", () => {
     const empty: JsonValue = {
       status: "completed",
