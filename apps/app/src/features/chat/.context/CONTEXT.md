@@ -32,7 +32,12 @@ draft-control changes can be understood independently.
   Retry; the retained rejection is inserted only after a proved rejection and
   cleared on acceptance. Edit focuses a live draft, or restores plain text only
   when the fingerprint is plain and the composer is empty; a structured
-  rejection whose draft is gone offers Retry only.
+  rejection whose draft is gone offers Retry only. Recovery lookup/replay/ack/
+  retire is fenced by a per-hook recovery-session token in `ThreadRunController`,
+  distinct from the run `admissionEpoch`: mounting the session hook tears the run
+  session down in the same React StrictMode commit that starts recovery, so the
+  admission epoch must not fence recovery's own work; a genuinely unmounted
+  recovery owner stops matching and cannot retire.
   See [`client/chat-submissions/AGENTS.md`](../../../client/chat-submissions/AGENTS.md).
 
 Durable change detail renders only through the owning turn receipt; the
