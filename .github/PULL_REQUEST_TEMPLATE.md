@@ -39,10 +39,12 @@
 ## Code Changes
 
 <!-- Inventory production-code changes (not tests), grouped by concern, with
-     key paths and intent. Explain substantial refactors by what complexity or
-     coupling they remove, and note unusually broad or unrelated cleanup. Do not
-     optimize for the smallest diff: meaningful refactoring and deletion are
-     welcome when they make the code easier to change. -->
+     key paths and intent. Look for opportunities to lower net-new code over
+     time by removing duplication, simplifying ownership, refactoring, or
+     deleting dead paths—not by minimizing today's diff. Briefly justify
+     substantial new code. Flag short-lived code with a deletion trigger; if
+     broader cleanup waits for product clarity or delivery speed, explain why
+     and track its trigger under Deferred. -->
 
 - Added:
 - Refactored:
@@ -104,9 +106,10 @@
      leaves out — follow-ups, known limitations, improvements rejected for now —
      and name the tracking home for each: a GitHub issue for cross-cutting or
      externally visible items, or the nearest `.context/TODO` (must-do) /
-     `.context/FUTURE` (nice-to-have) for code-local ones. A deferral worth
-     mentioning is worth a tracking home; untracked deferrals are scope leaks.
-     If nothing was deferred, say so. -->
+     `.context/FUTURE` (nice-to-have) for code-local ones. For temporary code or
+     deferred cleanup, include why it waits and a concrete removal/cleanup
+     trigger. A deferral worth mentioning is worth a tracking home; untracked
+     deferrals are scope leaks. If nothing was deferred, say so. -->
 
 - [ ] Every deferral names its issue or `.context/TODO` / `.context/FUTURE` entry, or "nothing deferred"
 
