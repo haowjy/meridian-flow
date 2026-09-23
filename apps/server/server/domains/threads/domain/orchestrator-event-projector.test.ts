@@ -4,7 +4,10 @@
  */
 import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
-import { projectOrchestratorEvents } from "./orchestrator-event-projector.js";
+import {
+  createOrchestratorEventProjector,
+  projectOrchestratorEvents,
+} from "./orchestrator-event-projector.js";
 
 describe("orchestrator event projector", () => {
   it("maps a pruned block to the client prune frame", () => {
@@ -40,6 +43,48 @@ describe("orchestrator event projector", () => {
       type: EventType.CUSTOM,
       name: "meridian.inbox.changed",
       value: pending,
+    });
+  });
+});
+
+describe("historical card replacement", () => {
+  it("projects a replacement without closing active text or advancing its frontier", () => {
+    const projector = createOrchestratorEventProjector();
+    const started = projector.project({
+      type: "turn.created",
+      turn: {
+        id: "active-turn",
+        threadId: "thread-1",
+        role: "assistant",
+        blocks: [],
+        writeMode: "direct",
+      } as never,
+    });
+    expect(started.some((event) => event.type === EventType.RUN_STARTED)).toBe(true);
+    const first = projector.project({ type: "stream.delta", kind: "text", text: "before" });
+    const replacement = projector.project({
+      type: "block.updated",
+      block: {
+        id: "card-1",
+        turnId: "historical-turn",
+        blockType: "custom",
+        sequence: 99,
+        content: { component: "helper-result" },
+        status: "complete",
+      },
+    });
+    const after = projector.project({ type: "stream.delta", kind: "text", text: "after" });
+    expect(replacement).toMatchObject([
+      {
+        type: EventType.CUSTOM,
+        name: "meridian.block.upserted",
+        value: { block: { id: "card-1", turnId: "historical-turn", sequence: 99 } },
+      },
+    ]);
+    expect(replacement.some((event) => event.type === EventType.TEXT_MESSAGE_END)).toBe(false);
+    expect(after.some((event) => event.type === EventType.TEXT_MESSAGE_START)).toBe(false);
+    expect(first.find((event) => event.type === EventType.TEXT_MESSAGE_START)).toMatchObject({
+      messageId: "active-turn::0",
     });
   });
 });

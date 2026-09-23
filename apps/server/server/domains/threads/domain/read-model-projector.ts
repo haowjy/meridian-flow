@@ -151,6 +151,10 @@ export async function projectReadModelEvent(
     case "block.upserted":
       await repos.blocks.upsert(blockToUpsertInput(event.block));
       return;
+    case "block.updated":
+      if (!(await repos.blocks.replaceExisting(blockToUpsertInput(event.block))))
+        throw new Error(`Cannot replace missing block ${event.block.id}`);
+      return;
     case "block.pruned":
       await repos.blocks.updatePruned(event.blockId, true);
       return;

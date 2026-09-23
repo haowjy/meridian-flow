@@ -224,6 +224,16 @@ export function createOrchestratorEventProjector() {
         return [];
       }
 
+      case "block.updated":
+        if (event.block.blockType !== "custom") return [];
+        return [
+          parseAguiEvent({
+            type: EventType.CUSTOM,
+            name: "meridian.block.upserted",
+            value: { block: event.block },
+          }),
+        ];
+
       case "block.upserted": {
         advancePastProjectedBlock(event.block);
         if (event.block.blockType !== "custom") return [];

@@ -1,6 +1,6 @@
 /** Drizzle BlockRepository: SQL for the thread blocks table (create/list), mapping rows via mappers.ts. Depends inward on the repository port; runs within the shared drizzle-db transaction context. */
 import * as schema from "@meridian/database/schema";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type {
   BlockRepository,
   CreateBlockInput,
@@ -61,6 +61,21 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
         .returning();
       if (!row) throw new Error("Failed to upsert block");
       return mapBlock(row);
+    },
+    async replaceExisting(input) {
+      const [row] = await currentDrizzleDb(db)
+        .update(schema.turnBlocks)
+        .set({ content: input.content ?? null, status: input.status ?? "complete" })
+        .where(
+          and(
+            eq(schema.turnBlocks.id, input.id),
+            eq(schema.turnBlocks.turnId, input.turnId),
+            eq(schema.turnBlocks.sequence, input.sequence),
+            eq(schema.turnBlocks.blockType, input.blockType),
+          ),
+        )
+        .returning();
+      return row ? mapBlock(row) : null;
     },
     async findById(id) {
       const [row] = await currentDrizzleDb(db)

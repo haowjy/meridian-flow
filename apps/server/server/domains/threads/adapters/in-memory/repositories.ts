@@ -685,6 +685,23 @@ export function createInMemoryRepositories(
       blocks.set(block.id, block);
       return block;
     },
+    async replaceExisting(input) {
+      const existing = blocks.get(input.id);
+      if (
+        !existing ||
+        existing.turnId !== input.turnId ||
+        existing.sequence !== input.sequence ||
+        existing.blockType !== input.blockType
+      )
+        return null;
+      const updated = {
+        ...existing,
+        content: input.content ?? null,
+        status: input.status ?? "complete",
+      } as Block;
+      blocks.set(input.id, updated);
+      return updated;
+    },
     async findById(id) {
       return blocks.get(id) ?? null;
     },

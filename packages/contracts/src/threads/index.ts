@@ -173,6 +173,7 @@ export type JournalEventType =
   /** DEFERRED — reserved vocabulary, payload typed when its producer lands. */
   | "block.created"
   | "block.upserted"
+  | "block.updated"
   | "block.delta"
   | "tool.invoked"
   | "tool.denied"

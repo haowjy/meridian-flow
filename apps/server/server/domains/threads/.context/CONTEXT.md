@@ -31,6 +31,7 @@ instead of the N:1 `threads.workId` column.
   never selects a latest report or reads transcript tails. Terminal runtime
   persistence/publication is a later lifecycle step; a report row alone does
   not imply a terminal result.
+- **Historical block replacement** — `block.updated` carries a full existing custom block through the read-model projector and AG-UI custom upsert frame. Unlike insertion, it never advances the active frontier or closes open text/reasoning segments. `replaceExisting` retains id, turn and sequence and rejects a missing block; publisher B must not re-create a vanished card.
 - **Thread activity read** — `domain/thread-activity.ts` composes
   `listDescendants` (the *viewed* thread's own subtree, walked down
   `parent_thread_id`, never `rootThreadId` alone) with the batch lease read

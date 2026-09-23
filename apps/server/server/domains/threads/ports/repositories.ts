@@ -63,6 +63,8 @@ export interface UpsertBlockInput extends CreateBlockInput {
 export interface BlockRepository {
   create(input: CreateBlockInput): Promise<Block>;
   upsert(input: UpsertBlockInput): Promise<Block>;
+  /** Replace an existing block without minting a missing card or changing its placement. */
+  replaceExisting(input: UpsertBlockInput): Promise<Block | null>;
   findById(id: string): Promise<Block | null>;
   listByTurn(turnId: TurnId): Promise<Block[]>;
   /** All blocks across all turns for a thread, ordered by turn creation then block sequence. */

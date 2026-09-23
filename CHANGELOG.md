@@ -24,6 +24,7 @@
 
 ### Added
 
+- Added a durable `block.updated` replacement event for in-place historical card changes without splitting active text streams.
 - Added per-assistant-turn execution-report storage and exact lineage-authorized `thread_report({ ref, execution })` reads. Runtime terminal capture/finalization and completion publication remain the next lifecycle step.
 
 - Editor empty state lists the writer's recently opened documents in the current project, grouped by age (Today / Yesterday / Earlier). Opening a document records it to the account's recents list (`user_recent_documents`), and each project shows its own slice of that history; the landing replaces the old "New document / pick a file from the tree" dead end. A control at the tab strip's leading edge returns to it with tabs still open.

@@ -86,6 +86,7 @@ export type OrchestratorEvent =
     }
   | { type: "model.response_received"; response: ModelResponseReceivedRow }
   | { type: "block.upserted"; block: BlockUpsertedRow }
+  | { type: "block.updated"; block: BlockUpsertedRow }
   | { type: "block.pruned"; blockId: string }
   | {
       type: "interrupt.created";
