@@ -4,6 +4,7 @@ import { useLingui } from "@lingui/react";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { useEffect, useId, useState } from "react";
 import type { ThreadUserStateCommandView } from "@/client/query/thread-user-state-commands";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
@@ -52,6 +53,7 @@ export function ProjectChatRow({
   const actionRequiredId = item.actionRequired ? `${instanceId}-action-required` : undefined;
   const favoriteValue = !item.isFavorite;
   const favoriteSuppressed = favorite.pending;
+  const retryFavoriteValue = favorite.retryValue;
   const activity = formatProjectChatActivity(item.lastActivityAt, now, i18n.locale);
   const fullActivity = new Intl.DateTimeFormat(i18n.locale, {
     dateStyle: "full",
@@ -168,6 +170,18 @@ export function ProjectChatRow({
           </div>
         </div>
       </div>
+      {favorite.error ? (
+        <div className="relative z-10">
+          <InlineErrorRow
+            message={t`Favorite wasn’t saved`}
+            onRetry={
+              retryFavoriteValue === undefined
+                ? undefined
+                : () => onFavorite(item, retryFavoriteValue)
+            }
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

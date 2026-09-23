@@ -7,6 +7,7 @@
  * cancel, and performs singleton HTTP snapshot recovery on stream gaps.
  */
 import { EventType } from "@meridian/contracts/protocol";
+import type { JsonValue } from "@meridian/contracts/threads";
 import { HttpResponseError } from "@/client/api/http-client";
 import { isMeridianApiError } from "@/client/api/meridian-error";
 import {
@@ -20,6 +21,7 @@ import {
 import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
 import type { ComposerSubmitEnvelope, ComposerSubmitOutcome } from "@/components/app/composer";
+import type { InterruptResponseState } from "@/core/session/interrupt-response";
 import { applyAguiEventToStore } from "@/core/session/reduce-turn-event";
 import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
 import { StreamDeltaCoalescer } from "./stream-delta-coalescer";
@@ -41,15 +43,66 @@ export type SubscribeLiveOptions = {
 export type SubmitOptions = {
   /** Client-only turn id returned by appendUserTurn for this exact submit. */
   optimisticUserTurnId?: string;
-  /** First-send Retry keeps the user message on the failed turn. */
+  /**
+   * Retain the optimistic user row on a proved rejection so the caller can
+   * attach edit/retry recovery to it (existing-thread sends and first-send
+   * Retry). Omit to drop the row on rejection (writer-directed abandonment).
+   */
   keepOptimisticOnFailure?: boolean;
 };
+
+/**
+ * The dispatch fingerprint a submit needs. `ComposerSubmitEnvelope` is
+ * assignable; journal recovery replays the persisted fields without a draft.
+ */
+export type SubmissionPayload = Pick<
+  ComposerSubmitEnvelope,
+  "submissionId" | "acceptedRevision" | "text" | "blocks" | "references" | "activatedSkillSlugs"
+>;
+
+/**
+ * Answers whether the session that started a controller operation still owns it
+ * when the operation settles.
+ */
+type SessionFence = () => boolean;
+
+/**
+ * What a dispatch does when the server accepts the POST after this session has
+ * already lost ownership (a fence that no longer matches).
+ *
+ * `bridge-row` (live sends): rename the app-scoped optimistic row onto the
+ * persisted server turn before returning `ambiguous`. The caller keeps the
+ * journal, and the live-send teardown contract expects the row to reflect the
+ * accepted turn (`ThreadRunController.test.ts`).
+ *
+ * `leave-row` (recovery replays/retries): leave the row under its optimistic
+ * id. That recovery session is unmounting; the returning session's
+ * `already-accepted` lookup owns the bridge and the journal retire. Renaming
+ * the row here strands the journal and makes the return append a fresh pending
+ * row that only a successful lookup can collapse.
+ */
+type StaleAcceptPolicy = "bridge-row" | "leave-row";
 
 function isAdmissionPending(error: unknown): boolean {
   return (
     (error instanceof HttpResponseError || isMeridianApiError(error)) &&
     (error.message === "admission_pending" || error.message.includes("admission_pending"))
   );
+}
+
+/**
+ * A structured refusal or a 4xx proves the endpoint rejected the write, so the
+ * journal entry may be retired. A 5xx, a transport failure, or an unstructured
+ * response does not prove the write never landed: keep the witness recoverable.
+ */
+function isDefinitiveWriteRejection(error: unknown): boolean {
+  if (isMeridianApiError(error)) {
+    return error.status === undefined || (error.status >= 400 && error.status < 500);
+  }
+  if (error instanceof HttpResponseError) {
+    return error.status >= 400 && error.status < 500;
+  }
+  return false;
 }
 
 export type ThreadRunControllerOptions = {
@@ -96,9 +149,12 @@ export class ThreadRunController {
   private activeRun: ActiveRun | null = null;
   private admissionLease: object | null = null;
   private admissionEpoch = 0;
+  private recoverySessions = new Set<object>();
   private abortRequested = false;
   private runToken = 0;
   private readonly gapSnapshotsByThreadId = new Map<string, Promise<void>>();
+  private readonly unsubscribeInterruptResponseError: () => void;
+  private readonly unsubscribeSocketGenerationClosed: () => void;
 
   constructor(options: ThreadRunControllerOptions) {
     this.transport = options.transport;
@@ -107,14 +163,71 @@ export class ThreadRunController {
     this.lookupAdmissionFn = options.lookupAdmissionFn ?? lookupUserMessageAdmission;
     this.retireAdmissionFn = options.retireAdmissionFn ?? retireUserMessageAdmission;
     this.getThreadSnapshotFn = options.getThreadSnapshotFn ?? getThreadSnapshot;
+    this.unsubscribeInterruptResponseError = this.transport.onInterruptResponseError(
+      ({ threadId, error }) => this.settleInterruptResponseError(threadId, error),
+    );
+    this.unsubscribeSocketGenerationClosed = this.transport.onSocketGenerationClosed((generation) =>
+      this.actions.markInterruptResponsesForGenerationAmbiguous(generation),
+    );
   }
 
   submit(
     threadId: string,
-    envelope: ComposerSubmitEnvelope,
+    payload: SubmissionPayload,
     options: SubmitOptions = {},
   ): Promise<ComposerSubmitOutcome> {
-    return this.dispatch(threadId, envelope, options, this.admissionEpoch);
+    return this.dispatch(
+      threadId,
+      payload,
+      options,
+      this.admissionFence(this.admissionEpoch),
+      "bridge-row",
+    );
+  }
+
+  /**
+   * Re-admit a journal-recovered submission under its owning recovery session.
+   * `submit` is fenced by the admission session, but mounting the sibling
+   * `useChatThreadSession` tears the run session down in the same React commit
+   * that starts recovery (React StrictMode mount → cleanup → re-mount). The
+   * recovery fence must not be invalidated by that sibling teardown. A POST
+   * accepted after this session ends leaves the optimistic row untouched
+   * (`leave-row`): the returning session's lookup owns the bridge and retire.
+   */
+  recoverSubmission(
+    threadId: string,
+    payload: SubmissionPayload,
+    options: SubmitOptions,
+    session: object,
+  ): Promise<ComposerSubmitOutcome> {
+    return this.dispatch(threadId, payload, options, this.recoveryFence(session), "leave-row");
+  }
+
+  private admissionFence(admissionEpoch: number): SessionFence {
+    return () => this.admissionEpoch === admissionEpoch;
+  }
+
+  private recoveryFence(session: object): SessionFence {
+    return () => this.recoverySessions.has(session);
+  }
+
+  /**
+   * Register the mounted recovery owner for the current account/thread.
+   * Recovery reconciliation and replay are fenced by this token rather than
+   * `admissionEpoch`: the two lifecycles differ, because mounting
+   * `useChatThreadSession` tears the run session down (bumping the admission
+   * epoch) in the same commit that starts recovery. The token is stable across
+   * React StrictMode's mount/cleanup/re-mount for one hook instance, but a
+   * genuinely unmounted owner stops matching, so a stale lookup or replay
+   * cannot acknowledge, start a run, or retire. Multiple mounted recovery
+   * surfaces keep independent tokens.
+   */
+  beginRecoverySession(session: object): void {
+    this.recoverySessions.add(session);
+  }
+
+  endRecoverySession(session: object): void {
+    this.recoverySessions.delete(session);
   }
 
   private dropOptimistic(threadId: string, options: SubmitOptions): void {
@@ -124,19 +237,20 @@ export class ThreadRunController {
 
   private async dispatch(
     threadId: string,
-    envelope: ComposerSubmitEnvelope,
+    envelope: SubmissionPayload,
     options: SubmitOptions,
-    admissionEpoch: number,
+    fence: SessionFence,
+    staleAccept: StaleAcceptPolicy,
   ): Promise<ComposerSubmitOutcome> {
     const outcome = (kind: ComposerSubmitOutcome["kind"]): ComposerSubmitOutcome => ({
       kind,
       submissionId: envelope.submissionId,
       acceptedRevision: envelope.acceptedRevision,
     });
-    if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
+    if (!fence()) return outcome("ambiguous");
     if (this.admissionLease) {
-      this.dropOptimistic(threadId, options);
-      return outcome("rejected");
+      // Not dispatched. Keep the row and journal so recovery still owns it.
+      return outcome("ambiguous");
     }
 
     const lease = {};
@@ -146,12 +260,13 @@ export class ThreadRunController {
       try {
         connectionToken = await this.transport.awaitConnectionToken();
       } catch (error) {
-        if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
-        this.dropOptimistic(threadId, options);
+        if (!fence()) return outcome("ambiguous");
+        // The POST never started: nothing was written, but the connection-token
+        // fetch can also fail after the user saw the row. Keep it recoverable.
         announceError(errorMessage(error, "Failed to submit message"));
-        return outcome("rejected");
+        return outcome("ambiguous");
       }
-      if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
+      if (!fence()) return outcome("ambiguous");
 
       let result: Awaited<ReturnType<AppendUserMessageFn>>;
       try {
@@ -167,15 +282,40 @@ export class ThreadRunController {
           },
         });
       } catch (error) {
-        if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
+        if (!fence()) return outcome("ambiguous");
         if (isAdmissionPending(error)) return outcome("ambiguous");
-        if (isMeridianApiError(error) || error instanceof HttpResponseError) {
+        if (isDefinitiveWriteRejection(error)) {
           this.dropOptimistic(threadId, options);
           return outcome("rejected");
         }
-        return this.reconcile(threadId, envelope, options, "lookup", admissionEpoch);
+        const reconciled = await this.reconcile(
+          threadId,
+          envelope.submissionId,
+          envelope.acceptedRevision,
+          options,
+          "lookup",
+          fence,
+        );
+        // A live send cannot conclude "never seen" from a lookup that may race
+        // an in-flight admission: keep it ambiguous so recovery owns replay.
+        return reconciled.kind === "not-seen" ? outcome("ambiguous") : reconciled;
       }
-      if (this.admissionEpoch !== admissionEpoch) return outcome("accepted");
+      if (!fence()) {
+        // Accepted by the server, but this session no longer owns the thread.
+        // A live send bridges the app-scoped row onto the persisted turn (see
+        // `StaleAcceptPolicy`); a recovery replay leaves the row so the
+        // returning session's own lookup owns the bridge and the retire.
+        // Return `ambiguous` either way so the stale session keeps the journal.
+        if (staleAccept === "bridge-row" && options.optimisticUserTurnId) {
+          this.actions.acknowledgeUserTurn(
+            threadId,
+            options.optimisticUserTurnId,
+            result.userTurnId,
+            result.snapshotFloorNextSeq,
+          );
+        }
+        return outcome("ambiguous");
+      }
       if (options.optimisticUserTurnId) {
         this.actions.acknowledgeUserTurn(
           threadId,
@@ -201,7 +341,14 @@ export class ThreadRunController {
     envelope: ComposerSubmitEnvelope,
     options: SubmitOptions = {},
   ): Promise<ComposerSubmitOutcome> {
-    return this.reconcile(threadId, envelope, options, "lookup", this.admissionEpoch);
+    return this.reconcile(
+      threadId,
+      envelope.submissionId,
+      envelope.acceptedRevision,
+      options,
+      "lookup",
+      this.admissionFence(this.admissionEpoch),
+    );
   }
 
   retire(
@@ -209,32 +356,77 @@ export class ThreadRunController {
     envelope: ComposerSubmitEnvelope,
     options: SubmitOptions = {},
   ): Promise<ComposerSubmitOutcome> {
-    return this.reconcile(threadId, envelope, options, "retire", this.admissionEpoch);
+    return this.reconcile(
+      threadId,
+      envelope.submissionId,
+      envelope.acceptedRevision,
+      options,
+      "retire",
+      this.admissionFence(this.admissionEpoch),
+    );
+  }
+
+  /**
+   * Reconcile a durable journal entry. The server keys admissions by
+   * `(threadId, submissionId)`, so recovery needs only the identity, not a
+   * reconstructed composer envelope or its draft snapshot.
+   */
+  lookupSubmission(
+    threadId: string,
+    submissionId: string,
+    options: SubmitOptions = {},
+    session?: object,
+  ): Promise<ComposerSubmitOutcome> {
+    return this.reconcile(
+      threadId,
+      submissionId,
+      0,
+      options,
+      "lookup",
+      session ? this.recoveryFence(session) : this.admissionFence(this.admissionEpoch),
+    );
+  }
+
+  retireSubmission(
+    threadId: string,
+    submissionId: string,
+    options: SubmitOptions = {},
+    session?: object,
+  ): Promise<ComposerSubmitOutcome> {
+    return this.reconcile(
+      threadId,
+      submissionId,
+      0,
+      options,
+      "retire",
+      session ? this.recoveryFence(session) : this.admissionFence(this.admissionEpoch),
+    );
   }
 
   private async reconcile(
     threadId: string,
-    envelope: ComposerSubmitEnvelope,
+    submissionId: string,
+    acceptedRevision: number,
     options: SubmitOptions,
     operation: "lookup" | "retire",
-    admissionEpoch: number,
+    fence: SessionFence,
   ): Promise<ComposerSubmitOutcome> {
     const outcome = (kind: ComposerSubmitOutcome["kind"]): ComposerSubmitOutcome => ({
       kind,
-      submissionId: envelope.submissionId,
-      acceptedRevision: envelope.acceptedRevision,
+      submissionId,
+      acceptedRevision,
     });
-    if (this.admissionEpoch !== admissionEpoch) return outcome("ambiguous");
+    if (!fence()) return outcome("ambiguous");
     try {
       const result = await (operation === "retire"
         ? this.retireAdmissionFn
         : this.lookupAdmissionFn)({
         threadId,
-        submissionId: envelope.submissionId,
+        submissionId,
       });
-      if (this.admissionEpoch !== admissionEpoch) {
-        if (result.kind === "accepted" || result.kind === "already-accepted")
-          return outcome("accepted");
+      if (!fence()) {
+        // A late accepted result is not bridged into the store, so it must not
+        // read as acknowledged. A proved refusal still retires the journal.
         if (result.kind === "rejected" || result.kind === "retired") return outcome("rejected");
         return outcome("ambiguous");
       }
@@ -255,10 +447,14 @@ export class ThreadRunController {
         return outcome("accepted");
       }
       if (result.kind === "rejected" || result.kind === "retired") {
-        if (options.optimisticUserTurnId)
+        // Callers choose whether a proved refusal remains attached to its
+        // optimistic row; the chat surface keeps it for Retry/Edit recovery.
+        if (options.optimisticUserTurnId && !options.keepOptimisticOnFailure) {
           this.actions.removeOptimisticUserTurn(threadId, options.optimisticUserTurnId);
+        }
         return outcome("rejected");
       }
+      if (result.kind === "not-seen") return outcome("not-seen");
       return outcome("ambiguous");
     } catch {
       return outcome("ambiguous");
@@ -270,8 +466,50 @@ export class ThreadRunController {
     this.attachLiveSubscription(threadId, token, options);
   }
 
-  respondInterrupt(input: InterruptRespondInput): void {
-    this.transport.respondInterrupt(input);
+  respondInterrupt(input: InterruptRespondInput): InterruptResponseState {
+    // Overlap policy: one in-flight response per tuple. A second click while
+    // this tuple is pending returns the existing state and writes nothing, so
+    // the server cannot see a duplicate frame and the retained value is not
+    // overwritten. Retry after a failed/ambiguous attempt is allowed.
+    const existing = this.actions.interruptResponseFor(input);
+    if (existing?.status === "pending") return { status: "pending" };
+
+    // The wire envelope allows `unknown`; the component protocol only emits
+    // JSON, so the retained retry value is a JsonValue.
+    const value = input.value as JsonValue;
+    const receipt = this.transport.respondInterrupt(input);
+    if (!receipt.sent) {
+      // The socket was not open, so the frame never left the client. This is a
+      // proven send failure (retryable), not an ambiguous outcome.
+      const failure: InterruptResponseState = { status: "failed" };
+      this.actions.failInterruptResponse({ ...input, value }, failure);
+      return failure;
+    }
+    // Record the socket generation so a close before any resolution can mark
+    // this entry ambiguous (queued, not proven delivered).
+    this.actions.beginInterruptResponse({
+      ...input,
+      value,
+      generation: receipt.socketGeneration,
+    });
+    return { status: "pending" };
+  }
+
+  /**
+   * Settle a non-fatal interrupt rejection frame. The wire frame carries only
+   * `threadId`, so it binds to the newest pending response for that thread and
+   * no-ops when none exists. `interrupt_not_pending` after a send means the
+   * first attempt likely landed (ambiguous); a correlation mismatch is positive
+   * evidence this attempt did not land (retryable failure). Neither tears down
+   * the run subscription.
+   */
+  private settleInterruptResponseError(threadId: string, error: Error): void {
+    const pending = this.actions.pendingInterruptResponseForThread(threadId);
+    if (!pending) return;
+    const code = isMeridianApiError(error) ? error.code : undefined;
+    this.actions.failInterruptResponse(pending, {
+      status: code === "interrupt_correlation_mismatch" ? "failed" : "ambiguous",
+    });
   }
 
   cancel(threadId: string): void {
@@ -294,6 +532,13 @@ export class ThreadRunController {
     this.admissionLease = null;
     this.runToken += 1;
     this.cleanupActiveRun();
+  }
+
+  /** Release controller-lifetime subscriptions (provider unmount). */
+  dispose(): void {
+    this.teardown();
+    this.unsubscribeInterruptResponseError();
+    this.unsubscribeSocketGenerationClosed();
   }
 
   private startRun(threadId: string, options: { pruneAbandonedTurn?: boolean } = {}): number {

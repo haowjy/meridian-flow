@@ -18,7 +18,10 @@ Key rules:
   re-enable) mark the baseline suspect: fresh GET + the precedence
   reducer before any further push.
 - Sync consent fails closed — only a successfully resolved `true`
-  enables the driver.
+  enables the driver. The account-lifetime
+  `WorkingSetSyncPreferenceProvider` owns the confirmed value and calls
+  `configureWorkingSetSync`; the loader prop seeds it only before the first
+  local revision, so a stale loader echo cannot re-enable or disable sync.
 - Hydration adoption is synchronous render-time state, keyed by
   projectId. Never adopt via effects.
 - Build routes with `buildWorkingSetRoute`: every server route requires its
@@ -27,6 +30,6 @@ Key rules:
 - Do not grow this into a general sync engine. The narrowness is the
   design. A new state kind gets its own record and policy instead of
   widening this one. Account recently-opened documents are a separate
-  Continuity record, not this store and not a new tier.
+  Continuity record (`../recents/`), not this store and not a new tier.
 
 Depth: [.context/CONTEXT.md](.context/CONTEXT.md) (contracts and protocol).

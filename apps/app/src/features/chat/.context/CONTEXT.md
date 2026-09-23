@@ -20,6 +20,30 @@ draft-control changes can be understood independently.
 - [Thread live updates](thread-live-updates.md) — snapshot revalidation on
   activation and on a new run, and the per-run resume that renders a
   server-initiated continuation live.
+- Durable acknowledged submissions — the account-stamped intent journal in
+  `client/chat-submissions` and the reload reconciliation in
+  `useChatSubmissionRecovery.ts` / `useThreadHandoff.ts`. The journal owns intent
+  identity only; the server owns outcome. A proved rejection retires the witness
+  but keeps the failed user row with Retry / Edit (Retry remints the submission
+  id, since the server never re-admits a rejected one); ambiguous sends keep the
+  row with Check submission status / Start over. A Retry that is itself
+  unresolved — ambiguous, unmounted, or epoch-fenced — leaves its fresh journal
+  entry as the only witness and remounts as Check / Start over, never a second
+  Retry; the retained rejection is inserted only after a proved rejection and
+  cleared on acceptance. Edit focuses a live draft, or restores plain text only
+  when the fingerprint is plain and the composer is empty; a structured
+  rejection whose draft is gone offers Retry only. Recovery lookup/replay/ack/
+  retire is fenced by a per-hook recovery-session token in `ThreadRunController`,
+  distinct from the run `admissionEpoch`: mounting the session hook tears the run
+  session down in the same React StrictMode commit that starts recovery, so the
+  admission epoch must not fence recovery's own work; a genuinely unmounted
+  recovery owner stops matching, so a stale recovery lookup/replay cannot
+  acknowledge, start a run, or retire; a stale recovery replay also leaves the
+  optimistic row untouched (`StaleAcceptPolicy: "leave-row"`) rather than
+  bridging it, so the returning session's `already-accepted` lookup owns the
+  bridge and the retire. Live sends keep the admission-epoch fence and still
+  bridge an accepted row after teardown.
+  See [`client/chat-submissions/AGENTS.md`](../../../client/chat-submissions/AGENTS.md).
 
 Durable change detail renders only through the owning turn receipt; the
 transcript does not add a conversation-wide aggregate record.

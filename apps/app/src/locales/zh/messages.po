@@ -681,6 +681,7 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
+#: src/features/chat/UserTurn.tsx
 msgid "Check submission status"
 msgstr ""
 
@@ -719,6 +720,10 @@ msgstr ""
 #: src/features/chat/command-descriptor.ts
 msgid "Checking Work…"
 msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+#~ msgid "Checkout cancelled. Nothing was charged."
+#~ msgstr ""
 
 #: src/features/billing/BillingPage.tsx
 msgid "Checkout unavailable."
@@ -882,6 +887,10 @@ msgstr ""
 msgid "Confirm"
 msgstr ""
 
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "Confirming your purchase…"
+msgstr ""
+
 #. placeholder {0}: state.attempt
 #: src/components/app/ConnectionBanner.tsx
 msgid "Connection lost. Retrying… attempt {0}"
@@ -962,6 +971,10 @@ msgstr ""
 
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't check Work"
+msgstr ""
+
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+msgid "Couldn’t confirm this preference saved."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1081,6 +1094,10 @@ msgstr ""
 #~ msgid "Couldn't remove agent from project."
 #~ msgstr ""
 
+#: src/features/chat/ChatThreadHeader.tsx
+msgid "Couldn't rename chat."
+msgstr ""
+
 #: src/features/project/context/ContextTreeRows.tsx
 msgid "Couldn't rename this document. Try again."
 msgstr ""
@@ -1101,12 +1118,25 @@ msgstr ""
 msgid "Couldn't save this document's home. Try again."
 msgstr ""
 
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
+msgid "Couldn’t save this preference."
+msgstr ""
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't search"
 msgstr ""
 
+#: src/features/chat/InterruptResponseFeedback.tsx
+msgid "Couldn't send your answer."
+msgstr ""
+
 #: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/UserTurn.tsx
 msgid "Couldn't send."
+msgstr ""
+
+#: src/components/app/composer/Composer.tsx
+msgid "Couldn't send. Your message was not lost."
 msgstr ""
 
 #: src/features/chat/command-descriptor.ts
@@ -1371,6 +1401,10 @@ msgstr ""
 msgid "Earlier"
 msgstr ""
 
+#: src/features/chat/UserTurn.tsx
+msgid "Edit"
+msgstr ""
+
 #. placeholder {0}: fieldLabel(next)
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Edit {0}"
@@ -1516,6 +1550,7 @@ msgstr "图片加载失败"
 msgid "Favorite"
 msgstr ""
 
+#: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/home/HomeScreen.tsx
 #: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Favorite wasn’t saved"
@@ -2396,6 +2431,11 @@ msgstr ""
 msgid "Open this document in a project to upload figures."
 msgstr ""
 
+#: src/features/billing/BillingPage.tsx
+#: src/features/billing/ExtraUsagePicker.tsx
+msgid "Opening checkout…"
+msgstr ""
+
 #: src/features/project/mobile/MobileDocumentHost.tsx
 msgid "Opening document…"
 msgstr ""
@@ -2476,6 +2516,14 @@ msgstr ""
 #: src/features/chat/IndependentChatView.tsx
 msgid "Project couldn’t load"
 msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "Purchase confirmed."
+msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+#~ msgid "Purchase confirmed. Your balance has been updated."
+#~ msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "Put the caret in a table first."
@@ -2647,14 +2695,18 @@ msgid "Rename this document or move it somewhere else in your project."
 msgstr ""
 
 #: src/features/chat/ChatThreadHeader.tsx
-msgid "Renamed to {trimmed}"
+msgid "Renamed to {confirmed}"
 msgstr ""
+
+#: src/features/chat/ChatThreadHeader.tsx
+#~ msgid "Renamed to {trimmed}"
+#~ msgstr ""
 
 #: src/core/editor/diagrams/DiagramBody.tsx
 msgid "Rendering diagram…"
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Reopens your last document and chat when you switch devices"
 msgstr ""
 
@@ -2692,16 +2744,17 @@ msgstr "回复完成"
 msgid "Results"
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Resume where I left off on any device"
 msgstr ""
 
 #: src/components/app/InlineErrorRow.tsx
 #: src/core/editor/FigureNodeView.tsx
 #: src/core/editor/images/ImageNodeView.tsx
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 #: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/UserTurn.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -2737,6 +2790,10 @@ msgstr ""
 
 #: src/features/chat/ChildReportBlock.tsx
 msgid "Return"
+msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "Returned from the billing portal."
 msgstr ""
 
 #: src/features/project/dock/DockChangesView.tsx
@@ -2805,6 +2862,10 @@ msgstr ""
 
 #: src/features/editor/SyncStatus.tsx
 msgid "Saved locally (offline)"
+msgstr ""
+
+#: src/features/chat/ChatThreadHeader.tsx
+msgid "Saving chat title"
 msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
@@ -2889,6 +2950,14 @@ msgstr ""
 msgid "Send message"
 msgstr "发送消息"
 
+#: src/features/chat/UserTurn.tsx
+msgid "Sending"
+msgstr ""
+
+#: src/features/chat/InterruptResponseFeedback.tsx
+msgid "Sending your answer…"
+msgstr ""
+
 #: src/components/app/ConnectionBanner.tsx
 msgid "Session expired. Please refresh."
 msgstr ""
@@ -2967,6 +3036,7 @@ msgid "Start a quick chat without a project"
 msgstr ""
 
 #: src/components/app/composer/Composer.tsx
+#: src/features/chat/UserTurn.tsx
 msgid "Start over"
 msgstr ""
 
@@ -3691,6 +3761,18 @@ msgstr ""
 msgid "Wait for this response to finish, then try again."
 msgstr ""
 
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
+msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "We couldn’t confirm this purchase. Check your balance before trying again."
+msgstr ""
+
+#: src/features/billing/CheckoutReturnNotice.tsx
+#~ msgid "We’re still confirming your purchase. Your balance will update shortly."
+#~ msgstr ""
+
 #: src/features/home/HomeHero.tsx
 msgid "What are you working on?"
 msgstr "你正在研究什么？"
@@ -3804,6 +3886,14 @@ msgstr "昨天"
 msgid "you answered"
 msgstr ""
 
+#: src/features/billing/CheckoutReturnNotice.tsx
+msgid "You left checkout. No purchase was confirmed."
+msgstr ""
+
+#: src/features/chat/InterruptResponseFeedback.tsx
+msgid "Your answer may not have reached the agent."
+msgstr ""
+
 #: src/features/project/home/HomeFeed.tsx
 msgid "Your chats will appear here after you send a message."
 msgstr ""
@@ -3824,7 +3914,7 @@ msgstr ""
 msgid "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
 msgstr ""
 
-#: src/features/account/SettingsDialog.tsx
+#: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Your saved preference is unavailable. Sync is paused until retry succeeds."
 msgstr ""
 

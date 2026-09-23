@@ -6,6 +6,7 @@ import { AccountPostApplyDispositionOwner } from "../draft-apply-recovery/draft-
 import { ContextRemovalCoordinator } from "./context-removal-coordinator";
 import { ProjectDocumentLiveOpener } from "./open-project-document";
 import { ProjectContextAvailabilityCoordinator } from "./project-context-availability-coordinator";
+import { reconcileRecentAvailability } from "./recent-availability";
 
 export class AccountFeatureLifetime {
   readonly runtime;
@@ -52,6 +53,7 @@ export class AccountFeatureLifetime {
     this.availability = new ProjectContextAvailabilityCoordinator({
       lookup: lookupProjectContextAvailability,
       apply: async (commands) => {
+        reconcileRecentAvailability(this.accountId, commands);
         await this.removal.reconcileDocumentAvailability(commands).localSettlement;
       },
       repairProjectCatalog,

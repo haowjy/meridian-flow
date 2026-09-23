@@ -1,14 +1,18 @@
 /**
  * ChatThreadHeader — desktop chat header and thread switcher chrome. The route
  * owns thread selection; this file coordinates title resolution and inline
- * rename while the popover owns navigation presentation.
+ * rename while the popover owns navigation presentation. Rename persists on the
+ * server through the P1 command; success is announced only after confirmation.
  */
 import { t } from "@lingui/core/macro";
 import type { Thread } from "@meridian/contracts/protocol";
+import { THREAD_TITLE_MAX_LENGTH } from "@meridian/contracts/protocol";
+import { Loader2 } from "lucide-react";
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { useRenameThread } from "@/client/query/useRenameThread";
 import { announce } from "@/client/stores";
+import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { useOpenNewChatRoute } from "@/features/project/routing/ProjectNavigationContext";
 import { displayThreadTitle } from "@/lib/thread-title";
@@ -20,8 +24,9 @@ import { ThreadSwitcherPopover } from "./ThreadSwitcherPopover";
  * Shows the active thread's title and a popover to switch between the
  * project's threads (grouped by work) or rename the current one inline.
  * Sits in `ChatSurface`'s `header` slot — above the scroll region, so it stays
- * fixed while messages scroll. Rename is client-cache optimistic today (no
- * PATCH endpoint yet); switching delegates primary/dock navigation to the project route.
+ * fixed while messages scroll. Rename projects the title immediately and shows
+ * pending/rejection on this control; switching delegates primary/dock
+ * navigation to the project route.
  */
 export type ChatThreadHeaderProps = {
   projectId: string;
@@ -64,38 +69,59 @@ export function ChatThreadTitle({
   const resolved = activeThread ?? threadById.get(threadId) ?? null;
   const title = displayThreadTitle(resolved?.title);
   const [editing, setEditing] = useState(false);
+  const rename = useRenameThread(projectId, threadId, (confirmed) => {
+    announce(t`Renamed to ${confirmed}`);
+  });
 
   // No wrapper of its own: every host already provides a `flex min-w-0
   // flex-1 items-center` slot, and an extra block wrapper here defeats the
   // flex sizing the children rely on (the rename input must shrink with
-  // the slot, not keep its intrinsic width).
-  return editing ? (
-    <RenameField threadId={threadId} initialTitle={title} onDone={() => setEditing(false)} />
-  ) : (
-    <ThreadSwitcherPopover
-      projectId={projectId}
-      activeThreadId={threadId}
-      title={title}
-      onSelectThread={onSelectThread}
-      onNewChat={openNewChat}
-      onRename={() => setEditing(true)}
-      variant={variant}
-    />
+  // the slot, not keep its intrinsic width). Pending and rejection render as
+  // siblings so they stay attached to the title control.
+  return (
+    <>
+      {editing ? (
+        <RenameField
+          initialTitle={title}
+          onSubmit={rename.submit}
+          onDone={() => setEditing(false)}
+        />
+      ) : (
+        <ThreadSwitcherPopover
+          projectId={projectId}
+          activeThreadId={threadId}
+          title={title}
+          onSelectThread={onSelectThread}
+          onNewChat={openNewChat}
+          onRename={() => setEditing(true)}
+          variant={variant}
+        />
+      )}
+      {rename.pending ? (
+        <Loader2
+          role="status"
+          aria-label={t`Saving chat title`}
+          className="size-3.5 shrink-0 animate-spin text-ink-subtle"
+        />
+      ) : null}
+      {rename.error ? (
+        <InlineErrorRow message={t`Couldn't rename chat.`} onRetry={rename.retry} />
+      ) : null}
+    </>
   );
 }
 
 /* ── Inline rename ─────────────────────────────────────────────────── */
 
 function RenameField({
-  threadId,
   initialTitle,
+  onSubmit,
   onDone,
 }: {
-  threadId: string;
   initialTitle: string;
+  onSubmit: (title: string) => void;
   onDone: () => void;
 }) {
-  const renameThread = useRenameThread();
   const [draft, setDraft] = useState(initialTitle);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const closedRef = useRef(false);
@@ -111,12 +137,9 @@ function RenameField({
     if (closedRef.current) return;
     closedRef.current = true;
     const trimmed = draft.trim();
-    if (trimmed) {
-      renameThread(threadId, trimmed);
-      announce(t`Renamed to ${trimmed}`);
-    }
+    if (trimmed) onSubmit(trimmed);
     onDone();
-  }, [renameThread, draft, onDone, threadId]);
+  }, [onSubmit, draft, onDone]);
 
   const cancel = useCallback(() => {
     if (closedRef.current) return;
@@ -139,6 +162,7 @@ function RenameField({
       ref={inputRef}
       type="text"
       value={draft}
+      maxLength={THREAD_TITLE_MAX_LENGTH}
       aria-label={t`Rename chat`}
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={handleKeyDown}

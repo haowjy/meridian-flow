@@ -5,7 +5,7 @@
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { PanelLeftOpen, PanelRightOpen } from "lucide-react";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
 import { DelayedContentSkeleton } from "@/components/app/DelayedContentSkeleton";
 import { useDraftReview } from "@/features/chat/DraftReviewProvider";
@@ -20,6 +20,7 @@ import type { ContextPaneState, MissingDestination } from "./context-pane-state"
 import { schemeLabel } from "./context-schemes";
 import { DocumentIdentityBar } from "./DocumentIdentityBar";
 import { RecentDocumentsLanding } from "./RecentDocumentsLanding";
+import { recentOpening } from "./recent-opening";
 import type { IdentityCommitOwnership, IdentityCommitted } from "./use-identity-commit";
 import { useRecordOpenedDocument } from "./use-record-opened-document";
 
@@ -89,20 +90,19 @@ export function ContextViewer({
   const trackedTabs = tabs.filter(isEditableTab);
   const activeTab = paneState.kind === "document" ? paneState.tab : null;
   // Recency is recorded from the tab actually in front of the writer, not from
-  // the intent to open: a freshly created document has no row yet, so recording
-  // at open time raced document persistence and lost the write.
-  const openedDocumentId =
-    activeTab && (activeTab.kind === "tracked" || activeTab.kind === "viewer")
-      ? activeTab.documentId
-      : null;
+  // the intent to open. The device record is written in this effect, before the
+  // POST; a parked restored tab is not an open.
+  const openedDocumentId = activeTab?.documentId ?? null;
+  const openedTabRef = useRef(activeTab);
+  openedTabRef.current = activeTab;
   const recordOpenedDocument = useRecordOpenedDocument();
-  // Record only while this pane is the active destination: the editor surface
-  // stays mounted across destinations, and a restored tab nobody is looking at
-  // is not an open.
   useEffect(() => {
-    if (!active || !openedDocumentId) return;
-    recordOpenedDocument(openedDocumentId);
-  }, [active, openedDocumentId, recordOpenedDocument]);
+    const tab = openedTabRef.current;
+    if (!active || !openedDocumentId || tab?.documentId !== openedDocumentId) return;
+    const opening = recentOpening(projectId, tab, new Date().toISOString());
+    if (!opening) return;
+    recordOpenedDocument(opening);
+  }, [active, openedDocumentId, projectId, recordOpenedDocument]);
   const optimisticTab = paneState.kind === "optimistic-loading" ? paneState.tab : null;
   const activeTabId = activeTab?.documentId ?? null;
   const activeIsEditable = activeTab?.kind === "tracked" || activeTab?.kind === "new";
@@ -198,7 +198,11 @@ export function ContextViewer({
           <MissingDocumentState destination={paneState.destination} />
         ) : null}
         {paneState.kind === "empty-workspace" ? (
-          <RecentDocumentsLanding projectId={projectId} onNewDocument={onNewDocument} />
+          <RecentDocumentsLanding
+            projectId={projectId}
+            editorWorkId={editorWorkId}
+            onNewDocument={onNewDocument}
+          />
         ) : null}
         {paneState.kind === "route-error" ? <RouteErrorState /> : null}
       </div>

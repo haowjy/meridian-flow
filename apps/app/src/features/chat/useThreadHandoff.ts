@@ -10,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createProject, createProjectThread } from "@/client/api/projects-api";
 import { createThread } from "@/client/api/threads-api";
+import { getChatSubmissionEpoch, readFirstSendSubmission } from "@/client/chat-submissions";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import {
   invalidateProjectThreadData,
@@ -21,8 +22,12 @@ import {
   plainComposerDoc,
   serializeComposerDraft,
 } from "@/components/app/composer/composer-document";
-import { runExclusivePersist } from "@/lib/inflight-chat";
-import { finishInflightChat, rehydrateInflightChat } from "@/lib/send-project-chat";
+import {
+  rehydrateFirstSendSubmission,
+  retireFirstSendSubmission,
+  runExclusivePersist,
+} from "@/lib/send-project-chat";
+import { shouldRetireSubmission } from "./chat-submission-retirement";
 
 type Controller = ThreadRunController;
 type Creation = NonNullable<PendingStreamStart["creation"]>;
@@ -55,6 +60,7 @@ export function activeSnapshotResumeAfterSeq(liveState: ThreadLiveState): string
 export function useThreadHandoff(
   threadId: string,
   projectId: string | null,
+  accountId: string,
   controller: Controller,
   actions: ThreadStoreActions,
   snapshotResume?: SnapshotResumeState,
@@ -102,16 +108,27 @@ export function useThreadHandoff(
       }
     };
 
+    const finishFirstSend = (creation: Creation, epoch: number) => {
+      if (creation.submissionId) {
+        retireFirstSendSubmission(accountId, creation.submissionId, threadId, actions, epoch);
+        return;
+      }
+      actions.clearPendingCreation({ threadId });
+    };
+
     const startSubmit = (creation: Creation) => {
       if (!creation.text) {
         pendingResumeRef.current = false;
-        finishInflightChat(threadId, actions);
+        finishFirstSend(creation, getChatSubmissionEpoch());
         return;
       }
       const envelope = {
         ...serializeComposerDraft(plainComposerDoc(creation.text)),
         activatedSkillSlugs: creation.activatedSkillSlugs ?? [],
       };
+      // Capture the account bind before dispatch: an A→B→A return while the
+      // POST is in flight must not delete the entry the new session needs.
+      const epoch = getChatSubmissionEpoch();
       void controller
         .submit(
           threadId,
@@ -124,8 +141,13 @@ export function useThreadHandoff(
         .then((outcome) => {
           if (outcome.kind === "accepted") {
             clearFailedSend();
-            finishInflightChat(threadId, actions);
+            finishFirstSend(creation, epoch);
             return;
+          }
+          // A definitive rejection is a resolved outcome: retire the durable
+          // intent. Ambiguous and not-seen outcomes keep it for reload replay.
+          if (shouldRetireSubmission(outcome) && creation.submissionId) {
+            retireFirstSendSubmission(accountId, creation.submissionId, threadId, actions, epoch);
           }
           failSend(creation);
         })
@@ -203,21 +225,13 @@ export function useThreadHandoff(
       return;
     }
 
-    const inflight = rehydrateInflightChat(threadId, actions);
-    if (inflight && inflight.projectId === projectId) {
+    // Durable reload path: the in-memory pending stream and the same-tab
+    // sessionStorage handoff are gone, but the account-stamped journal entry
+    // still names the thread, message, and submission identity to replay.
+    const submission = readFirstSendSubmission(accountId, threadId);
+    if (submission && submission.projectId === projectId) {
       if (pendingResumeRef.current || handoffStartedRef.current) return;
-      persistCreation({
-        projectId: inflight.projectId,
-        title: inflight.title,
-        text: inflight.text,
-        agentSelection: inflight.agentSelection,
-        workId: inflight.workId,
-        optimisticUserTurnId: inflight.optimisticUserTurnId,
-        workingTurnId: inflight.workingTurnId,
-        submissionId: inflight.submissionId,
-        activatedSkillSlugs: inflight.activatedSkillSlugs,
-        createProject: false,
-      });
+      persistCreation(rehydrateFirstSendSubmission(submission, actions, accountId));
       return;
     }
 
@@ -244,7 +258,7 @@ export function useThreadHandoff(
     resumedRunRef.current = runKey;
     pendingResumeRef.current = true;
     startResume(after, liveState.runningTurnId ?? undefined);
-  }, [actions, controller, projectId, queryClient, snapshotResume?.liveState, threadId]);
+  }, [accountId, actions, controller, projectId, queryClient, snapshotResume?.liveState, threadId]);
 
   const retry = useCallback(() => {
     const creation = creationRef.current;

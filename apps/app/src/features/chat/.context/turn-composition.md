@@ -98,6 +98,21 @@ appears as soon as the parent turn holds the block. Background posts the card
 on a later system turn after the child completes; the parent shows nothing
 while that child runs.
 
+### Interrupt response settlement
+
+`interrupt.respond` is fire-and-forget on the wire, so the card owns a local
+send state keyed by `(threadId, turnId, interruptId)` in
+`ThreadStore.interruptResponses`. `CustomBlockRenderer` passes it to the card as
+`responseState`/`retry`: controls stay disabled while pending, including after a
+remount, and a proven or ambiguous send failure renders the shared
+`InterruptResponseFeedback` Retry, which replays the stored answer with the same
+tuple. The agent outcome is never projected locally — it stays server-confirmed
+through the journaled `meridian.interrupt` lifecycle, whose resolution clears
+the local entry. Non-fatal rejection frames (`interrupt_not_pending`,
+`interrupt_correlation_mismatch`) settle that state through
+`ThreadTransport.onInterruptResponseError` instead of tearing down the run
+subscription.
+
 ## Vocabulary
 
 | Term | Definition |

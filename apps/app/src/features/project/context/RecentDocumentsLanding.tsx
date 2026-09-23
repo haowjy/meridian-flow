@@ -6,16 +6,18 @@
  * "where was I?" The list is scoped to the project it renders inside, so the
  * rows need no project label: path and time are what is left to disambiguate.
  *
- * Server-owned and cross-device; renders device-cached rows first and lets the
- * network improve them.
+ * Device-local history paints first. The network adds other devices and never
+ * gates this writer's own openings.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { RecentDocumentItem } from "@meridian/contracts/protocol";
 import { useRouter } from "@tanstack/react-router";
 import { FilePlus } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useProject } from "@/client/query/useProjectList";
 import { useRecentDocuments } from "@/client/query/useRecentDocuments";
+import type { AccountRecentItem } from "@/client/recents";
+import { readableRecentPath } from "@/client/recents";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import { SectionLabel } from "@/components/ui/section-label";
@@ -23,8 +25,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { editorColumnChrome } from "@/features/editor/editor-column";
 import { cn } from "@/lib/utils";
 import { relativeTime } from "../relative-time";
+import { useOpenContextRoute } from "../routing/ProjectNavigationContext";
 import { projectAddressHref } from "../routing/project-address";
+import { useOptionalAccountResourceReplica } from "./account-feature-context";
 import { fileKindIcon } from "./context-file-icon";
+import { useOpenProjectDocument } from "./open-project-document";
 
 /** Age buckets the list groups under, oldest last. */
 const GROUPS = ["today", "yesterday", "earlier"] as const;
@@ -60,13 +65,19 @@ function groupLabel(group: Group): string {
 
 export function RecentDocumentsLanding({
   projectId,
+  editorWorkId = null,
   onNewDocument,
 }: {
   projectId: string;
+  editorWorkId?: string | null;
   /** Starts a local document in the current project (Unfiled). */
   onNewDocument?: () => void;
 }) {
   const recent = useRecentDocuments(projectId);
+  const project = useProject(projectId);
+  const openDocument = useOpenProjectDocument(projectId);
+  const openRoute = useOpenContextRoute();
+  const resources = useOptionalAccountResourceReplica();
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -119,7 +130,20 @@ export function RecentDocumentsLanding({
                     <ul className="mt-2 divide-y divide-border-subtle">
                       {rows.map((item) => (
                         <li key={item.documentId}>
-                          <RecentDocumentRow item={item} now={now} />
+                          <RecentDocumentRow
+                            item={item}
+                            now={now}
+                            projectSlug={project?.slug}
+                            onOpen={(item) => {
+                              void openRecent(item, {
+                                projectId,
+                                editorWorkId,
+                                openDocument,
+                                openRoute,
+                                resources,
+                              });
+                            }}
+                          />
                         </li>
                       ))}
                     </ul>
@@ -153,27 +177,33 @@ export function RecentDocumentsLanding({
   );
 }
 
-function RecentDocumentRow({ item, now }: { item: RecentDocumentItem; now: number }) {
+const recentRowClass = "focus-ring flex w-full items-start gap-3.5 rounded-md py-2.5 text-left";
+
+function RecentDocumentRow({
+  item,
+  now,
+  projectSlug,
+  onOpen,
+}: {
+  item: AccountRecentItem;
+  now: number;
+  projectSlug: string | undefined;
+  onOpen: (item: AccountRecentItem) => void;
+}) {
   const router = useRouter();
-  const Icon = fileKindIcon(item.name);
-  const age = relativeTime(item.openedAt, now);
-  // The folder, not the whole locator: the row's title is already the file name,
-  // so a root-level document has nothing left to say and omits this line.
-  const parentPath = item.path.replace(/\/[^/]+$/, "");
-  // The canonical readable address, not a hand-built path: it encodes segments
-  // and inserts the Work prefix a work-scoped document needs.
-  const href = projectAddressHref({
-    projectSlug: item.projectSlug,
-    destination: {
-      kind: "document",
-      scheme: item.scheme,
-      path: item.path.replace(/^\/+/, ""),
-      workSlug: item.workSlug,
-    },
-    chat: { kind: "absent" },
-    work: { kind: "absent" },
-    results: false,
-  });
+  const href = recentDocumentHref(item, projectSlug);
+  const content = <RecentDocumentContent item={item} now={now} />;
+  if (!href) {
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(item)}
+        className={cn(recentRowClass, "border-0 bg-transparent")}
+      >
+        {content}
+      </button>
+    );
+  }
   return (
     <a
       href={href}
@@ -193,8 +223,20 @@ function RecentDocumentRow({ item, now }: { item: RecentDocumentItem; now: numbe
         event.preventDefault();
         void router.navigate({ href });
       }}
-      className="focus-ring flex items-start gap-3.5 rounded-md py-2.5"
+      className={recentRowClass}
     >
+      {content}
+    </a>
+  );
+}
+
+function RecentDocumentContent({ item, now }: { item: AccountRecentItem; now: number }) {
+  const Icon = fileKindIcon(item.name);
+  const age = relativeTime(item.openedAt, now);
+  const parentPath =
+    item.address.kind === "document" ? item.address.path.replace(/\/[^/]+$/, "") : "";
+  return (
+    <>
       <span className="mt-0.5 grid size-[18px] shrink-0 place-items-center text-ink-subtle">
         <Icon className="size-4" aria-hidden />
       </span>
@@ -209,8 +251,74 @@ function RecentDocumentRow({ item, now }: { item: RecentDocumentItem; now: numbe
       <span aria-hidden className="mt-0.5 shrink-0 text-xs tabular-nums text-ink-subtle">
         {age}
       </span>
-    </a>
+    </>
   );
+}
+
+async function openRecent(
+  item: AccountRecentItem,
+  ports: {
+    projectId: string;
+    editorWorkId: string | null;
+    openDocument: ReturnType<typeof useOpenProjectDocument>;
+    openRoute: ReturnType<typeof useOpenContextRoute>;
+    resources: ReturnType<typeof useOptionalAccountResourceReplica>;
+  },
+): Promise<void> {
+  if (item.address.kind !== "local") {
+    await ports.openDocument({ documentId: item.documentId, workId: ports.editorWorkId });
+    return;
+  }
+  if (!ports.openRoute) return;
+  const opened = ports.resources
+    ? await ports.resources.openKnownDocument(
+        ports.projectId,
+        item.documentId,
+        `recents:${crypto.randomUUID()}`,
+      )
+    : { kind: "missing" as const };
+  if (opened.kind !== "opened") return;
+  try {
+    await ports.openRoute(
+      {
+        scheme: "unfiled",
+        path: "",
+        workId: ports.editorWorkId,
+        documentId: item.documentId,
+      },
+      {
+        tab: {
+          kind: "new",
+          documentId: item.documentId,
+          name: item.name,
+          resourceHandle: item.address.resourceHandle,
+        },
+      },
+    );
+  } finally {
+    opened.handle.release();
+  }
+}
+
+function recentDocumentHref(
+  item: AccountRecentItem,
+  projectSlug: string | undefined,
+): string | null {
+  if (!projectSlug || item.address.kind !== "document") return null;
+  const path = readableRecentPath(item.address.path);
+  if (!path) return null;
+  return projectAddressHref({
+    projectSlug,
+    destination: {
+      kind: "document",
+      scheme: item.address.scheme,
+      path,
+      workSlug: null,
+    },
+    chat: { kind: "absent" },
+    work: { kind: "absent" },
+    results: false,
+  });
 }
 
 function LandingLoading() {

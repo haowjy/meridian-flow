@@ -6,10 +6,11 @@ import { lazy, Suspense, useCallback, useEffect } from "react";
 import { getAccountSettings } from "@/client/api/account-api";
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
+import { bindChatSubmissions } from "@/client/chat-submissions";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
-
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
+import { bindAccountRecents } from "@/client/recents";
 import {
   loadProjectList,
   ProjectStoreProvider,
@@ -17,12 +18,12 @@ import {
   ThreadStoreProvider,
   useIndependentProjectsStore,
 } from "@/client/stores";
-import { configureWorkingSetSync } from "@/client/working-set";
 import { ConnectionBanner } from "@/components/app/ConnectionBanner";
 import { DensityPopoverCollisionProvider } from "@/components/ui/density-popover-collision";
 import { DEBUG_FEATURE_ALLOWED } from "@/core/debug-gate";
 import { SettingsDialog } from "@/features/account/SettingsDialog";
 import { isSettingsSection, type SettingsSection } from "@/features/account/settings-sections";
+import { WorkingSetSyncPreferenceProvider } from "@/features/account/WorkingSetSyncPreferenceProvider";
 
 import { installTraceCapture } from "@/features/debug/trace/install-trace-capture";
 import {
@@ -133,7 +134,8 @@ export const Route = createFileRoute("/_authenticated")({
 
 function AuthenticatedLayout() {
   const { projects, now, user } = Route.useLoaderData();
-  configureWorkingSetSync(user.userId, user.workingSetSyncEnabled === true);
+  bindAccountRecents(user.userId);
+  bindChatSubmissions(user.userId);
 
   // One unconditional provider tree for every authenticated route — the settings
   // overlay (`?settings=`) and the standalone /billing page render over the same
@@ -164,7 +166,9 @@ function AuthenticatedAccountProviderTree({
   return (
     <AccountFeatureComposition accountId={user.userId} repairProjectCatalog={repairProjectCatalog}>
       <DraftApplyRecoveryProvider accountId={user.userId}>
-        <AuthenticatedProviderTree now={now} user={user} />
+        <WorkingSetSyncPreferenceProvider serverValue={user.workingSetSyncEnabled}>
+          <AuthenticatedProviderTree now={now} user={user} />
+        </WorkingSetSyncPreferenceProvider>
       </DraftApplyRecoveryProvider>
     </AccountFeatureComposition>
   );
@@ -202,7 +206,7 @@ function AuthenticatedProviderTree({
                   <Outlet />
                 </div>
               </div>
-              <SettingsDialog workingSetSyncEnabled={user.workingSetSyncEnabled} />
+              <SettingsDialog />
               {DebugOverlay ? (
                 <Suspense fallback={null}>
                   <DebugOverlay />

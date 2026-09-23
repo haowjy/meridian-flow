@@ -227,6 +227,23 @@ describe("project navigation", () => {
     });
     navigation.dispose();
   });
+  it("clears a local pointer when opening the editor chooser and restores it on Back", async () => {
+    const local = { accountId: "account", projectId: "project-id", resourceHandle: "resource" };
+    const { history, navigation } = setup("/p/serial/editor", {
+      chatId: null,
+      workSlug: null,
+      local,
+    });
+    await navigation.navigate(address("/p/serial/editor"), { replace: false });
+    expect(history.location.href).toBe("/p/serial/editor");
+    expect(history.location.state).not.toHaveProperty("meridianProjectSelection");
+    history.back();
+    expect(history.location.href).toBe("/p/serial/editor");
+    expect(history.location.state).toMatchObject({
+      meridianProjectSelection: { version: 2, ...local },
+    });
+    navigation.dispose();
+  });
 });
 
 describe("optional query entry repair", () => {
