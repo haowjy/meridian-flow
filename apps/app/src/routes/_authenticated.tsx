@@ -6,8 +6,8 @@ import { lazy, Suspense, useCallback, useEffect } from "react";
 import { getAccountSettings } from "@/client/api/account-api";
 import { getAuthMe } from "@/client/api/auth-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
+import { bindChatSubmissions } from "@/client/chat-submissions";
 import { MeridianCopilotProvider } from "@/client/copilot/MeridianCopilotProvider";
-
 import { TransportProvider } from "@/client/providers/TransportProvider";
 import { AppQueryProvider } from "@/client/query/AppQueryProvider";
 import { bindAccountRecents } from "@/client/recents";
@@ -135,6 +135,7 @@ export const Route = createFileRoute("/_authenticated")({
 function AuthenticatedLayout() {
   const { projects, now, user } = Route.useLoaderData();
   bindAccountRecents(user.userId);
+  bindChatSubmissions(user.userId);
 
   // One unconditional provider tree for every authenticated route — the settings
   // overlay (`?settings=`) and the standalone /billing page render over the same

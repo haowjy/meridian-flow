@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
 import type { PendingStreamStart, ThreadStoreActions } from "@/client/stores";
-import { finishInflightChat } from "@/lib/send-project-chat";
+import { retireFirstSendSubmission } from "@/lib/send-project-chat";
 import { ErrorBlock } from "./ErrorBlock";
 import { useThreadHandoff } from "./useThreadHandoff";
 
@@ -29,8 +29,13 @@ vi.mock("@lingui/core/macro", () => ({
   msg: (strings: TemplateStringsArray) => ({ id: strings[0] }),
 }));
 vi.mock("@/lib/send-project-chat", () => ({
-  finishInflightChat: vi.fn(),
-  rehydrateInflightChat: vi.fn(() => null),
+  runExclusivePersist: (_threadId: string, job: () => Promise<void>) => job(),
+  retireFirstSendSubmission: vi.fn(),
+  rehydrateFirstSendSubmission: vi.fn(),
+}));
+vi.mock("@/client/chat-submissions", () => ({
+  getChatSubmissionEpoch: vi.fn(() => 1),
+  readFirstSendSubmission: vi.fn(() => null),
 }));
 vi.mock("@/client/api/projects-api", () => ({
   createProject: vi.fn(),
@@ -94,12 +99,12 @@ afterEach(async () => {
   await cleanup?.();
   cleanup = undefined;
   mocks.createProjectThread.mockReset();
-  vi.mocked(finishInflightChat).mockReset();
+  vi.mocked(retireFirstSendSubmission).mockReset();
 });
 
 async function mount(threadActions: ThreadStoreActions, run: ThreadRunController) {
   function Probe() {
-    const failed = useThreadHandoff(THREAD_ID, "project-1", run, threadActions);
+    const failed = useThreadHandoff(THREAD_ID, "project-1", "account", run, threadActions);
     return failed ? <ErrorBlock isLatest kind="send" onRetry={failed.retry} /> : null;
   }
   const host = document.createElement("div");
@@ -167,8 +172,8 @@ describe("useThreadHandoff failed first send", () => {
       .mockResolvedValueOnce(persistedThread);
     const threadActions = actions();
     const run = controller();
-    vi.mocked(finishInflightChat).mockImplementationOnce(() => {
-      throw new Error("inflight clear failed");
+    vi.mocked(retireFirstSendSubmission).mockImplementationOnce(() => {
+      throw new Error("journal retire failed");
     });
     const { host } = await mount(threadActions, run);
 
