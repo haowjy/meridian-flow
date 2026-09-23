@@ -130,6 +130,7 @@ export class AccountResourceReplica {
     }
   >();
   private readonly observedResourceRevisions = new Map<string, number>();
+  private readonly serverSessionCaptures = new Map<string, Promise<void>>();
   private reservationTail: Promise<void> = Promise.resolve();
   private readonly reservationLocks = nativeLocks();
   private readonly locationOperations = new ResourceLocationOperationQueue();
@@ -303,9 +304,12 @@ export class AccountResourceReplica {
     key: ResourceKey,
     participantId: string,
     signal?: AbortSignal,
+    options: { adoptionEligible?: boolean } = {},
   ): Promise<ResourceContentOpenResult> {
     this.requireOpen();
-    const opened = await this.content.open(projectId, key, participantId, signal);
+    await this.waitForServerSessionCaptures(encodeURIComponent(key.handle));
+    this.requireOpen();
+    const opened = await this.content.open(projectId, key, participantId, signal, options);
     if (opened.kind === "opened") {
       void this.reconcileOpenedProjectOwnership(projectId, key, opened.handle.session).catch(
         () => undefined,
@@ -340,6 +344,10 @@ export class AccountResourceReplica {
   async keyForDocument(projectId: string, documentId: string): Promise<ResourceKey | null> {
     const record = await this.metadata.resolveAccessibleResource(projectId, documentId);
     return record ? { handle: record.resource.handle } : null;
+  }
+
+  async lineageHandleFor(projectId: string, documentId: string): Promise<string | null> {
+    return (await this.keyForDocument(projectId, documentId))?.handle ?? null;
   }
 
   async readKnownDocument(
@@ -380,32 +388,57 @@ export class AccountResourceReplica {
     session: DocumentSession,
   ): Promise<void> {
     this.requireOpen();
-    await session.whenSynced();
-    const snapshot = session.getSnapshot();
-    if (snapshot.status !== "synced" || snapshot.schemaFence) return;
     const key = await this.keyForDocument(projectId, documentId);
     const databaseName = session.persistenceName;
-    if (
-      !key ||
-      !databaseName ||
-      session.documentId !== documentId ||
-      !(await session.hasInitializedLocalContent())
-    )
-      return;
-    const cached = await this.commitPlan(key, (record) =>
-      recordAcquiredResourceContent({
-        record,
-        projectId,
-        documentId,
-        databaseName,
-        schema: collabSchemaKeyTag(),
-        generation,
-        transitionId: crypto.randomUUID(),
-      }),
-    );
-    if (cached === "unchanged") return;
-    await this.installProjectRegistryOwnership(projectId, key, generation, session);
-    this.schedule(key);
+    if (!key || !databaseName || session.documentId !== documentId) return;
+    this.requireOpen();
+    const captureId = encodeURIComponent(key.handle);
+    const priorCapture = this.serverSessionCaptures.get(captureId);
+    let finishCapture!: () => void;
+    const capture = new Promise<void>((resolve) => {
+      finishCapture = resolve;
+    });
+    const captureTail = priorCapture ? priorCapture.then(() => capture) : capture;
+    this.serverSessionCaptures.set(captureId, captureTail);
+    try {
+      await session.whenSynced();
+      await priorCapture;
+      this.requireOpen();
+      const snapshot = session.getSnapshot();
+      if (
+        snapshot.status !== "synced" ||
+        snapshot.schemaFence ||
+        !(await session.hasInitializedLocalContent())
+      )
+        return;
+      await this.commitPlan(key, (record) =>
+        recordAcquiredResourceContent({
+          record,
+          projectId,
+          documentId,
+          databaseName,
+          schema: collabSchemaKeyTag(),
+          generation,
+          transitionId: crypto.randomUUID(),
+        }),
+      );
+      const captured = await this.metadata.readAccessibleResource(projectId, key);
+      if (
+        !captured ||
+        captured.resource.identity.documentId !== documentId ||
+        captured.resource.lifecycle.kind !== "acknowledged" ||
+        captured.resource.lifecycle.availabilityGeneration !== generation ||
+        captured.resource.content.kind !== "exact" ||
+        captured.resource.content.databaseName !== databaseName
+      )
+        return;
+      this.schedule(key);
+      await this.installProjectRegistryOwnership(projectId, key, generation, session);
+    } finally {
+      if (this.serverSessionCaptures.get(captureId) === captureTail)
+        this.serverSessionCaptures.delete(captureId);
+      finishCapture();
+    }
   }
 
   private async installProjectRegistryOwnership(
@@ -597,6 +630,7 @@ export class AccountResourceReplica {
         newAttemptIds: () => ({ attemptId: crypto.randomUUID(), operationId: crypto.randomUUID() }),
       });
       if (namespace === "needs-repair" && (await this.remintCreateConflict(key))) continue;
+      await this.waitForServerSessionCaptures(encodeURIComponent(key.handle));
       const adoption = await this.adoption.reconcile(key);
       const cleanup = await this.reconcileLocalCleanup(key);
       if (namespace !== "progressed" && adoption !== "adopted" && !cleanup) return;
@@ -697,6 +731,14 @@ export class AccountResourceReplica {
     return locked.kind === "acquired" ? "completed" : "owned-elsewhere";
   }
 
+  private async waitForServerSessionCaptures(id: string): Promise<void> {
+    for (;;) {
+      const capture = this.serverSessionCaptures.get(id);
+      if (!capture) return;
+      await capture;
+    }
+  }
+
   private requireOpen(): void {
     if (this.closing) throw new Error("Resource replica is closing");
   }
@@ -725,6 +767,7 @@ export class AccountResourceReplica {
       this.adoption.finishClose(),
       this.catalogs.finishClose(),
       ...this.runners.values(),
+      ...this.serverSessionCaptures.values(),
     ]);
     await this.content.finishClose();
     this.metadata.beginClose();
