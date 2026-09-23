@@ -13,7 +13,7 @@ import type {
 } from "@/core/editor/local-document-session-adoption";
 import { DocumentSession, deleteIndexedDb } from "../editor/document-session";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
-import { ResourceContentAccess } from "./resource-content-access";
+import { ResourceContentAccess, type ResourceContentTransfer } from "./resource-content-access";
 
 const accountId = "content-access-account";
 const metadataDatabase = `meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`;
@@ -340,7 +340,7 @@ it("lets server acquisition replace a local construction that has not opened", a
   await serverSession.destroy();
 });
 
-it("rejects transfer commit after the mounted editor closes", async () => {
+it("keeps a failed transfer reserved until the next mounted editor retries", async () => {
   const metadata = openMetadata();
   const record = resource("transfer");
   await initialize(record, "words during adoption");
@@ -361,20 +361,19 @@ it("rejects transfer commit after the mounted editor closes", async () => {
     abort: vi.fn(),
   };
 
-  await expect(
-    access.reserveTransfer(
-      {
-        projectId: "project",
-        key,
-        transitionId: "transition",
-        documentId: record.resource.identity.documentId,
-        identityRevision: record.resource.identity.revision,
-        databaseName:
-          record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
-      },
-      reservations,
-    ),
-  ).resolves.toEqual({ kind: "reserved", handoff });
+  const request: ResourceContentTransfer = {
+    projectId: "project",
+    key,
+    transitionId: "transition",
+    documentId: record.resource.identity.documentId,
+    identityRevision: record.resource.identity.revision,
+    databaseName:
+      record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
+  };
+  await expect(access.reserveTransfer(request, reservations)).resolves.toEqual({
+    kind: "reserved",
+    handoff,
+  });
   expect(transfer?.session).toBe(session);
   opened.handle.release();
   expect(session.getSnapshot().status).toBe("detached");
@@ -398,9 +397,25 @@ it("rejects transfer commit after the mounted editor closes", async () => {
 
   expect(release).not.toHaveBeenCalled();
   release();
-  access.abortTransfer(key, handoff);
+
+  const reopened = await access.open("project", key, "replacement-editor", undefined, {
+    adoptionEligible: true,
+  });
+  if (reopened.kind !== "opened") throw new Error("Expected replacement editor content");
+  expect(reopened.handle.session).toBe(session);
+  await expect(access.reserveTransfer(request, reservations)).resolves.toEqual({
+    kind: "reserved",
+    handoff,
+  });
+  expect(reservations.reserve).toHaveBeenCalledOnce();
+  const retryRelease = vi.fn();
+  transfer?.prepareCommit();
+  await transfer?.completeCommit({ ...ownership, release: retryRelease });
+  reopened.handle.release();
+
+  expect(retryRelease).toHaveBeenCalledOnce();
   expect(session.document.getText("probe").toString()).toBe("words during adoption");
-  await vi.waitFor(() => expect(session.getSnapshot().status).toBe("destroyed"));
+  await session.destroy();
 });
 
 it("retires an uncommitted transfer only after its reservation is aborted", async () => {
