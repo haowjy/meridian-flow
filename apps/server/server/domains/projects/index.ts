@@ -61,8 +61,6 @@ export type ProjectBootstrapResult = {
 };
 
 export type ProjectBootstrapRepository = {
-  /** Cheap existence check — no advisory lock or bootstrap side effects. */
-  findPersonalProjectId(userId: UserId): Promise<ProjectId | null>;
   /**
    * Reads the durable completion flag and repairs an incomplete bootstrap.
    * Seed failures leave readiness false for a later repair without failing the
@@ -74,9 +72,6 @@ export type ProjectBootstrapRepository = {
 
 export function createInMemoryProjectBootstrapRepository(): ProjectBootstrapRepository {
   return {
-    async findPersonalProjectId() {
-      return null;
-    },
     async ensureDefaultBootstrapReady() {
       return false;
     },
@@ -256,17 +251,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     return documentId;
   }
 
-  async function findPersonalProjectId(userId: UserId): Promise<ProjectId | null> {
-    const [existing] = await db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(
-        and(eq(projects.userId, userId), eq(projects.isPersonal, true), isNull(projects.deletedAt)),
-      )
-      .limit(1);
-    return existing?.id ?? null;
-  }
-
   async function isDefaultBootstrapReady(userId: UserId): Promise<boolean> {
     const [project] = await db
       .select({ ready: projects.defaultBootstrapReady })
@@ -310,7 +294,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   }
 
   return {
-    findPersonalProjectId,
     async ensureDefaultBootstrapReady(userId) {
       if ((await isDefaultBootstrapReady(userId)) && repairedReadyUsers.has(userId)) return true;
       try {

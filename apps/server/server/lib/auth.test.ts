@@ -134,9 +134,6 @@ function createTestProjectBootstrap(): {
       return readinessChecks;
     },
     projects: {
-      async findPersonalProjectId() {
-        return personalProjectId;
-      },
       async ensureDefaultBootstrapReady() {
         readinessChecks += 1;
         if (!ready) await ensureDefaultBootstrap();
@@ -389,9 +386,6 @@ describe("auth principal provisioning", () => {
       avatarUrl: null,
     };
     const projects: ProjectBootstrapRepository = {
-      async findPersonalProjectId() {
-        return null;
-      },
       async ensureDefaultBootstrapReady() {
         return false;
       },

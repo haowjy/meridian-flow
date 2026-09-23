@@ -1,6 +1,6 @@
 /** Drizzle UserRepository: idempotent user provisioning over the `users` table (ensure-on-auth). */
 
-import type { ProjectId, UserId } from "@meridian/contracts/runtime";
+import type { UserId } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
 import { users } from "@meridian/database/schema";
 import { eq, sql } from "drizzle-orm";
@@ -61,22 +61,6 @@ export function createDrizzleUserRepository(deps: DrizzleUserRepositoryDeps): Us
         }
         return row.id as UserId;
       });
-    },
-
-    async getLastActiveProjectId(userId: UserId): Promise<ProjectId | null> {
-      const [row] = await db
-        .select({ lastActiveProjectId: users.lastActiveProjectId })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-      return (row?.lastActiveProjectId as ProjectId | null | undefined) ?? null;
-    },
-
-    async setLastActiveProjectId(userId: UserId, projectId: ProjectId | null): Promise<void> {
-      await db
-        .update(users)
-        .set({ lastActiveProjectId: projectId, updatedAt: new Date().toISOString() })
-        .where(eq(users.id, userId));
     },
 
     async getWorkingSetSyncEnabled(userId: UserId): Promise<boolean> {
