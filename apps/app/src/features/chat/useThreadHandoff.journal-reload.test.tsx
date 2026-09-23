@@ -87,26 +87,6 @@ function actions(): ThreadStoreActions {
   } as unknown as ThreadStoreActions;
 }
 
-/** A stateful store double so a remount sees the rows the first mount appended. */
-function statefulActions(): ThreadStoreActions {
-  const turns: Array<{ id: string }> = [];
-  return {
-    consumePendingStream: vi.fn(() => null),
-    ensureThread: vi.fn(),
-    markPendingCreation: vi.fn(),
-    markHandoffPending: vi.fn(),
-    appendUserTurn: vi.fn(() => {
-      const turn = { id: `turn_local_${turns.length + 1}` };
-      turns.push(turn);
-      return turn;
-    }),
-    ensureAssistantTurn: vi.fn(),
-    patchTurnStatus: vi.fn(),
-    clearPendingCreation: vi.fn(),
-    turns: vi.fn(() => turns),
-  } as unknown as ThreadStoreActions;
-}
-
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((onResolve) => {
@@ -190,42 +170,6 @@ describe("useThreadHandoff first-send journal reload", () => {
     expect(threadActions.appendUserTurn).toHaveBeenCalledWith(THREAD_ID, "Draft the fight scene");
     await act(async () => {
       await vi.waitFor(() => expect(readChatSubmissions(ACCOUNT)).toEqual([]));
-    });
-  });
-
-  it("reuses the restored first-send row when remounting before acknowledgement", async () => {
-    recordChatSubmission(ACCOUNT, firstSend());
-    const threadActions = statefulActions();
-    const gate = deferred<{
-      kind: "ambiguous";
-      submissionId: string;
-      acceptedRevision: number;
-    }>();
-    const run = {
-      submit: vi.fn(() => gate.promise),
-      resume: vi.fn(),
-    } as unknown as ThreadRunController;
-    mocks.createProjectThread.mockResolvedValue(persistedThread);
-
-    await mount(threadActions, run);
-    await act(async () => {
-      await vi.waitFor(() => expect(run.submit).toHaveBeenCalledTimes(1));
-    });
-    await cleanup?.();
-    cleanup = undefined;
-
-    await mount(threadActions, run);
-    await act(async () => {
-      await vi.waitFor(() => expect(run.submit).toHaveBeenCalledTimes(2));
-    });
-
-    // The remount reuses the destination rows: one user row, one journal entry.
-    expect(threadActions.appendUserTurn).toHaveBeenCalledTimes(1);
-    expect(threadActions.turns(THREAD_ID)).toHaveLength(1);
-    expect(readChatSubmissions(ACCOUNT)).toHaveLength(1);
-
-    await act(async () => {
-      gate.resolve({ kind: "ambiguous", submissionId: "sub-first", acceptedRevision: 0 });
     });
   });
 

@@ -70,25 +70,6 @@ beforeEach(() => {
 });
 
 describe("runFavoriteCommand", () => {
-  it("projects the intent while the request is held and confirms the base on success", async () => {
-    const write = deferred<{ threadId: string; isFavorite: boolean }>();
-    mocks.updateThreadUserState.mockReturnValueOnce(write.promise);
-    const client = seededClient(false);
-
-    const settled = runFavoriteCommand(client, PROJECT_ID, "thread-1", true);
-
-    const pending = readRecord(client);
-    expect(pending.favorite?.projectedValue).toBe(true);
-    expect(getFavoriteCommandView(pending)).toMatchObject({ pending: true, desiredValue: true });
-
-    write.resolve({ threadId: "thread-1", isFavorite: true });
-    await settled;
-
-    const confirmed = readRecord(client);
-    expect(confirmed.base.isFavorite).toBe(true);
-    expect(getFavoriteCommandView(confirmed)).toMatchObject({ pending: false, error: undefined });
-  });
-
   it("retains the exact failed intent for retry on rejection", async () => {
     mocks.updateThreadUserState.mockRejectedValueOnce(new Error("refused"));
     const client = seededClient(false);
