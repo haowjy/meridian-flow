@@ -364,15 +364,35 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       if (request.reportCorrelation && runCard) {
         request.reportCorrelation = { ...request.reportCorrelation, cardBlockId: runCard.id };
       }
-      const execution = await driver.driveBackground(prepared, request);
-      return {
-        status: "background",
-        execution,
-        handle: prepared.handle,
-        threadId: prepared.child.id,
-        agentSlug: prepared.resolvedSlug,
-        ...(prepared.description !== undefined ? { description: prepared.description } : {}),
-      };
+      try {
+        const execution = await driver.driveBackground(prepared, request);
+        return {
+          status: "background",
+          execution,
+          handle: prepared.handle,
+          threadId: prepared.child.id,
+          agentSlug: prepared.resolvedSlug,
+          ...(prepared.description !== undefined ? { description: prepared.description } : {}),
+        };
+      } catch (error) {
+        if (request.kind === "spawn") {
+          await deps.repos.threads.updateSpawnLifecycle(prepared.child.id, {
+            spawnStatus: "failed",
+          });
+        }
+        await persistHelperCard(
+          options.transcript,
+          {
+            ...cardFields,
+            output: {
+              status: "error",
+              error: meridianErrorFromSystem("spawn_failed", "Child could not start"),
+            },
+          },
+          runCard,
+        );
+        throw error;
+      }
     }
 
     const failureCode = request.kind === "spawn" ? "spawn_failed" : "thread_message_failed";

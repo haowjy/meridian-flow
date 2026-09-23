@@ -964,6 +964,42 @@ describe("ChildRunCoordinator thread_message", () => {
     expect(journal.some((entry) => entry.type === "block.updated")).toBe(true);
   });
 
+  it("marks the original background card failed if assistant-turn admission never commits", async () => {
+    const { coordinator, parent, repos, eventWriter, journal } = await fixture({
+      orchestrator: {
+        async runTurn() {
+          throw new Error("setup rolled back");
+        },
+        async finalizeGeneratorFailure() {},
+      },
+    });
+    const transcript = transcriptFor(parent.id as ThreadId, { repos, eventWriter });
+    await expect(
+      coordinator.runChild(
+        {
+          kind: "spawn",
+          parentThread: parent,
+          parentTurnId: "turn-1" as TurnId,
+          agentSlug: "",
+          prompt,
+          budget,
+        },
+        { mode: "background", transcript },
+      ),
+    ).rejects.toThrow("setup rolled back");
+    const card = transcript.events.find(
+      (event) => event.type === "block.upserted" && event.block.blockType === "custom",
+    );
+    if (card?.type !== "block.upserted") throw new Error("missing original card");
+    expect((await repos.blocks.findById(card.block.id))?.content).toMatchObject({
+      kind: "helper-result",
+      props: { status: "failed" },
+    });
+    const childId = journal.find((entry) => entry.type === "agent.spawn")?.childThreadId;
+    if (!childId) throw new Error("missing created child");
+    expect((await repos.threads.findById(childId as ThreadId))?.spawnStatus).toBe("failed");
+  });
+
   it("enqueues one agent message for a background message and wakes the target", async () => {
     const { coordinator, parent, inbox, runStarter, turns } = await fixture();
     const spawned = await coordinator.runChild(
