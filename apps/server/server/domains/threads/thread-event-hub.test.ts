@@ -149,6 +149,138 @@ describe("thread event hub background journaling", () => {
 });
 
 describe("thread event hub committed invalidations", () => {
+  it("keeps one state owner while an unsubscribed thread drain is in flight", async () => {
+    const journal = createInMemoryEventJournalWriter();
+    const callbacks: Array<() => void | Promise<void>> = [];
+    let readStarted!: () => void;
+    let releaseRead!: () => void;
+    const started = new Promise<void>((resolve) => (readStarted = resolve));
+    const blocked = new Promise<void>((resolve) => (releaseRead = resolve));
+    const reader = createInMemoryEventJournalReader(journal);
+    let blockRead = false;
+    const blockingReader: EventJournalReader = {
+      ...reader,
+      async headSeq(threadId) {
+        return reader.headSeq(threadId);
+      },
+      async readAfter(threadId, afterSeq, limit) {
+        if (blockRead) {
+          blockRead = false;
+          readStarted();
+          await blocked;
+        }
+        return reader.readAfter(threadId, afterSeq, limit);
+      },
+    };
+    const hub = createThreadEventHub(
+      {
+        journalWriter: journal,
+        journalReader: blockingReader,
+        eventSink: createNoopEventSink(),
+        scheduleAfterCommit(callback) {
+          callbacks.push(callback);
+        },
+      },
+      { evictionGraceMs: 1 },
+    );
+    const unsubscribe = hub.subscribe(THREAD_ID, () => {});
+    blockRead = true;
+    await hub.appendEvent(THREAD_ID, { type: "stream.delta", kind: "text", text: "a" });
+    callbacks[0]?.();
+    await started;
+    unsubscribe();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(hub.hasThreadState(THREAD_ID)).toBe(true);
+
+    releaseRead();
+    await hub.catchup(THREAD_ID, 0n);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(hub.hasThreadState(THREAD_ID)).toBe(false);
+  });
+
+  it("keeps delayed text and tool projection on one side of the replay boundary", async () => {
+    const journal = createInMemoryEventJournalWriter();
+    const reader = createInMemoryEventJournalReader(journal);
+    await journal.appendEvent(THREAD_ID, {
+      type: "turn.created",
+      turn: goldenAssistantTurn("turn-handoff", THREAD_ID),
+    });
+    await journal.appendEvent(THREAD_ID, { type: "stream.delta", kind: "text", text: "a" });
+    await journal.appendEvent(THREAD_ID, {
+      type: "stream.delta",
+      kind: "tool_call",
+      toolCallId: "tool-handoff",
+      toolName: "lookup",
+      argumentsDelta: "{}",
+    });
+    for (let i = 0; i < 498; i++) {
+      await journal.appendEvent(THREAD_ID, {
+        type: "background.started",
+        parentThreadId: THREAD_ID,
+        parentTurnId: PARENT_TURN_ID,
+        childThreadId: `background-${i}`,
+        agentSlug: "reviewer",
+        description: "No live projection",
+      });
+    }
+
+    let replayReadStarted!: () => void;
+    let releaseReplayRead!: () => void;
+    const replayStarted = new Promise<void>((resolve) => (replayReadStarted = resolve));
+    const replayBlocked = new Promise<void>((resolve) => (releaseReplayRead = resolve));
+    let blockReplay = false;
+    const blockingReader: EventJournalReader = {
+      ...reader,
+      async readAfter(threadId, afterSeq, limit) {
+        if (blockReplay) {
+          blockReplay = false;
+          replayReadStarted();
+          await replayBlocked;
+        }
+        return reader.readAfter(threadId, afterSeq, limit);
+      },
+    };
+    const hub = createThreadEventHub({
+      journalWriter: journal,
+      journalReader: blockingReader,
+      eventSink: createNoopEventSink(),
+    });
+    await hub.catchup(THREAD_ID, 0n);
+    blockReplay = true;
+    const live: SequencedEventInternal[] = [];
+    const handoffPromise = hub.catchupAndSubscribe(THREAD_ID, 0n, (entry) => live.push(entry));
+    await replayStarted;
+
+    await journal.appendEvent(THREAD_ID, { type: "stream.delta", kind: "text", text: "b" });
+    await journal.appendEvent(THREAD_ID, {
+      type: "tool.result",
+      toolCallId: "tool-handoff",
+      output: "complete",
+      isError: false,
+    });
+    releaseReplayRead();
+    const handoff = await handoffPromise;
+    hub.invalidateCommittedJournal(THREAD_ID);
+    await hub.catchup(THREAD_ID, 0n);
+
+    const delivered = [...handoff.catchup, ...live];
+    const finalText = delivered.filter((entry) => entry.event.type === "TEXT_MESSAGE_CONTENT");
+    expect(
+      finalText.filter(
+        (entry) => entry.event.type === "TEXT_MESSAGE_CONTENT" && entry.event.delta === "b",
+      ),
+    ).toHaveLength(1);
+    expect(finalText.at(-1)?.event).toMatchObject({ type: "TEXT_MESSAGE_CONTENT", delta: "b" });
+    expect(finalText.at(-1)?.event).toMatchObject({ messageId: expect.any(String) });
+    const toolResults = delivered.filter((entry) => entry.event.type === "TOOL_CALL_RESULT");
+    expect(toolResults).toHaveLength(1);
+    expect(toolResults[0]).toMatchObject({
+      seq: 503_002n,
+      event: { type: "TOOL_CALL_RESULT", toolCallId: "tool-handoff", content: "complete" },
+    });
+    handoff.unsubscribe();
+  });
+
   it("serializes reversed and duplicate invalidations through journal order", async () => {
     const journal = createInMemoryEventJournalWriter();
     const callbacks: Array<() => void | Promise<void>> = [];

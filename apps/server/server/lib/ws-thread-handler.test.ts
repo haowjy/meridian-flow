@@ -11,16 +11,12 @@ import type { WsServerMessage } from "@meridian/contracts/protocol";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createNoopEventSink } from "../domains/observability/index.js";
-import type { EventJournalReader, JournalEntry } from "../domains/threads/ports/index.js";
-import { createThreadEventHub } from "../domains/threads/thread-event-hub.js";
 import type { AppServices } from "./app.js";
 import { createThreadWebSocketSession, type WsPeer } from "./ws-thread-handler.js";
 
 const THREAD_ID = "00000000-0000-4000-8000-000000000901" as ThreadId;
 const USER_ID = "user-1" as UserId;
-const WINDOW_ROWS = 10_000;
-const HEAD_JOURNAL_SEQ = 23_081n;
-const HEAD_CURSOR = HEAD_JOURNAL_SEQ * 1_000n + 999n;
+const UNDELIVERED_HEAD = 23_081_000n;
 
 const LIVE_STATE = {
   threadId: THREAD_ID,
@@ -31,64 +27,17 @@ const LIVE_STATE = {
   resumeAfterSeq: "0",
 };
 
-/**
- * A reader whose oldest replay window is the 10k-row cap while the journal head
- * is far past it — the shape every long agent run reaches.
- */
-function cappedWindowReader(): EventJournalReader {
-  const payload = {
-    type: "background.started" as const,
-    parentThreadId: THREAD_ID,
-    parentTurnId: "00000000-0000-4000-8000-000000000902",
-    childThreadId: "child-1",
-    agentSlug: "code-reviewer",
-    description: "Review the chapter",
-  };
-  const entries: JournalEntry[] = Array.from({ length: WINDOW_ROWS }, (_, index) => ({
-    id: `event-${index}`,
-    threadId: THREAD_ID,
-    turnId: null,
-    seq: BigInt(index + 1),
-    eventType: payload.type,
-    payload,
-    createdAt: new Date(0).toISOString(),
-  }));
-
-  return {
-    async readAfter(_threadId, afterSeq, limit = Number.POSITIVE_INFINITY) {
-      return entries.filter((entry) => entry.seq > afterSeq).slice(0, limit);
+function createDelayedDeliveryHarness() {
+  let deliverLive!: (entry: { seq: bigint; event: { type: "RAW" } }) => void;
+  const hub = {
+    async catchupAndSubscribe(_threadId: ThreadId, _lastSeq: bigint, listener: typeof deliverLive) {
+      deliverLive = listener;
+      return { catchup: [], unsubscribe() {} };
     },
     async headSeq() {
-      return HEAD_JOURNAL_SEQ;
-    },
-    async readModelProjectionWatermark() {
-      return 0n;
-    },
-    async listByThread() {
-      return entries;
-    },
-    async listByType() {
-      return [];
-    },
-    async listSince() {
-      return [];
-    },
-    async listByTimeRange() {
-      return [];
+      return UNDELIVERED_HEAD;
     },
   };
-}
-
-function createHarness() {
-  const hub = createThreadEventHub({
-    journalWriter: {
-      async appendEvent() {
-        return 0n;
-      },
-    },
-    journalReader: cappedWindowReader(),
-    eventSink: createNoopEventSink(),
-  });
   const app = {
     eventSink: createNoopEventSink(),
     threadEventHub: hub,
@@ -109,46 +58,27 @@ function createHarness() {
     close: () => {},
   };
 
-  return { session: createThreadWebSocketSession(peer), frames };
+  return {
+    session: createThreadWebSocketSession(peer),
+    frames,
+    deliverLive: (seq: bigint) => deliverLive({ seq, event: { type: "RAW" } }),
+  };
 }
 
-describe("thread WS handler gap frame", () => {
-  it("carries fromSeq/toSeq when catch-up exceeds the replay cap", async () => {
-    const { session, frames } = createHarness();
+describe("thread WS handler subscribe handoff", () => {
+  it("does not turn an undelivered advertised head into a client cursor", async () => {
+    const { session, frames, deliverLive } = createDelayedDeliveryHarness();
     session.open();
     await session.onMessage(
       JSON.stringify({ type: "subscribe", threadId: THREAD_ID, lastSeq: "0" }),
     );
 
-    const gap = frames.find((frame) => frame.type === "gap");
-    expect(gap).toEqual({
-      type: "gap",
-      threadId: THREAD_ID,
-      cause: "replay_limit_exceeded",
-      fromSeq: "0",
-      toSeq: HEAD_CURSOR.toString(),
-      message: "Journal replay capped at 10000 events",
-    });
     const subscribed = frames.find((frame) => frame.type === "subscribed");
-    expect(subscribed).toMatchObject({ nextSeq: (HEAD_CURSOR + 1n).toString() });
-  });
+    expect(subscribed).toMatchObject({ catchup: [], nextSeq: (UNDELIVERED_HEAD + 1n).toString() });
 
-  it("does not gap again when resuming from the head it advertised", async () => {
-    const { session, frames } = createHarness();
-    session.open();
-    await session.onMessage(
-      JSON.stringify({ type: "subscribe", threadId: THREAD_ID, lastSeq: "0" }),
-    );
-    const afterFirst = frames.length;
-
-    await session.onMessage(
-      JSON.stringify({
-        type: "subscribe",
-        threadId: THREAD_ID,
-        lastSeq: HEAD_CURSOR.toString(),
-      }),
-    );
-
-    expect(frames.slice(afterFirst).map((frame) => frame.type)).toEqual(["subscribed"]);
+    // The separately sampled durable head may lead the live listener. The
+    // client resumes from delivered event frames, not subscribed.nextSeq.
+    deliverLive(UNDELIVERED_HEAD);
+    expect(frames.at(-1)).toMatchObject({ type: "event", seq: UNDELIVERED_HEAD.toString() });
   });
 });

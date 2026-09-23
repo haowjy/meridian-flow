@@ -106,7 +106,7 @@ export function createThreadEventHub(
       setTimeout(() => {
         evictionTimers.delete(threadId);
         const state = threads.get(threadId);
-        if (state && state.listeners.size === 0) {
+        if (state && state.listeners.size === 0 && state.draining === null) {
           threads.delete(threadId);
         }
       }, evictionGraceMs),
@@ -162,21 +162,23 @@ export function createThreadEventHub(
   async function replayFromJournal(
     threadId: ThreadId,
     afterEventSeq: bigint,
+    throughJournalSeq: bigint,
   ): Promise<SequencedEventInternal[]> {
     const projector = createOrchestratorEventProjector();
-    const head = await deps.journalReader.headSeq(threadId);
     const replayed: SequencedEventInternal[] = [];
     let cursor = 0n;
-    while (cursor < head) {
+    while (cursor < throughJournalSeq) {
       const entries = await deps.journalReader.readAfter(threadId, cursor, JOURNAL_PAGE_SIZE);
       if (entries.length === 0) break;
       for (const entry of entries) {
+        if (entry.seq > throughJournalSeq) return replayed;
         const payload = entry.payload as OrchestratorEvent;
-        replayed.push(...toSequencedEvents(entry.seq, projector.project(payload), payload));
+        const projected = toSequencedEvents(entry.seq, projector.project(payload), payload);
+        replayed.push(...projected.filter((event) => event.seq > afterEventSeq));
         cursor = entry.seq;
       }
     }
-    return replayed.filter((entry) => entry.seq > afterEventSeq);
+    return replayed;
   }
 
   async function drainCommittedJournal(threadId: ThreadId): Promise<void> {
@@ -244,7 +246,7 @@ export function createThreadEventHub(
       return hotEvents.filter((entry) => entry.seq > afterSeq);
     }
 
-    return replayFromJournal(threadId, afterSeq);
+    return replayFromJournal(threadId, afterSeq, state?.journalCursor ?? 0n);
   }
 
   return {

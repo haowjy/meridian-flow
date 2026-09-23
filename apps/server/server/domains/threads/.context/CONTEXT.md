@@ -58,8 +58,10 @@ instead of the N:1 `threads.workId` column.
   journal. Local appends schedule only a committed-journal invalidation; local
   and PostgreSQL invalidations share one ordered per-thread drain, which reads
   and projects committed rows after its journal cursor. Late joiners catch up
-  from the hot cache or a cursor-paged replay from zero through a captured
-  committed head. Eviction on idle (grace period, default 60 s).
+  from the hot cache or a cursor-paged replay from zero through the live
+  projector's reached journal cursor. Replay projects the prefix to reconstruct
+  state but retains only the requested suffix. Eviction waits for an active
+  drain to finish (grace period, default 60 s).
 - **Orchestrator event projector** — stateful transform from
   `OrchestratorEvent` to AG-UI events (run lifecycle, text/reasoning
   streaming, tool call lifecycle, usage, permissions). `subagent.activity`
@@ -257,7 +259,7 @@ contract shapes.
   `normalizeThreadCreate` rejects all spawn/fork lifecycle fields.
   Subagent rows are created only through `SubagentThreadFactory`.
 - Hot cache is bounded at 500 events; older events fall through to cursor-paged
-  journal replay (one projector from journal start through the captured head).
+  journal replay (one projector from journal start through the live cursor).
   Sequence gaps from rolled-back allocations are legal. This is complete
   replay, not bounded-cost bootstrap; cold cost remains O(history).
 - `threads.status` is lifecycle only (`idle` | `archived`) and mapped back
