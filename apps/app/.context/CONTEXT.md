@@ -1,7 +1,7 @@
 # @meridian/app — Architecture & Conventions
 
-How the frontend is structured, why the seams exist, and what conventions
-govern visual and interaction work.
+How the frontend is structured and why its seams exist. Visual implementation
+conventions live in [visual-conventions.md](visual-conventions.md).
 
 ## Frontend performance
 
@@ -176,11 +176,13 @@ Both transports emit this shape; the reducer consumes this shape.
 
 ## Client-led creation patterns
 
-Standalone `/chat/<id>` deep links remain readable for existing chats, but the
-account library offers no project-less creation command. `/projects/new` names a
-project before its server-assigned slug is available; the form is the neutral
-pending destination and keeps uncertain outcomes there rather than inventing a
-project address.
+Existing standalone `/chat/<id>` links still render an independent-chat view.
+Their backing projects are hidden from the library by the device-local
+independent-project registry until the writer promotes one through that view.
+Neither the account library nor project entry exposes independent-chat creation.
+`/projects/new` names a project before its server-assigned slug is available;
+the form is the neutral pending destination and keeps uncertain outcomes there
+rather than inventing a project address.
 
 Chat landing Send mints a thread id, writes local turns, replaces the URL, then
 `useThreadHandoff` persists create-or-get + admit + run on those ids. Failure
@@ -266,7 +268,18 @@ route without changing path. See `features/account/SettingsDialog.tsx`.
 
 ## Account entry
 
-Authenticated `/` renders the project library from the project-list query, never the last-active project. The library searches visible project titles locally and opens direct `/p/<project-slug>` links. `/projects/new` is a separate creation destination; its title form keeps network pending/failure there until the server returns the authoritative slug, then enters that project's Chat landing. No account-level composer or project-less quick-chat entry is exposed. The existing personal-project bootstrap may still place a starter project in the library for a new account; this UI change does not decide zero-project onboarding.
+Authenticated `/` renders the project library from the project-list query,
+never the last-active project. The library searches visible project titles
+locally and opens direct `/p/<project-slug>` links. The account-home API and
+last-active-project preference are removed; selection comes from the library,
+not a remembered destination.
+
+`/projects/new` is a separate creation destination. Its title form keeps
+network pending and failure there until the server returns the authoritative
+slug, then enters that project's Chat landing. No account-level composer or
+project-less quick-chat entry is exposed. The existing personal-project
+bootstrap may still place a starter project in the library for a new account;
+this UI change does not decide zero-project onboarding.
 
 ## Readable project addresses and route lifetime
 
@@ -311,172 +324,15 @@ child failure parks only the requested host.
 
 The dedicated Work screen presents Active Work first and keeps Archived Work in
 a default-collapsed disclosure. Work management has no project-wide selection
-  state and never resolves, repairs, or changes a chat binding. The catalog is
-  catalog-only and omits No Work. Omitted or null root creation binds locked
-  No Work; the catalog never does. Home and Work
-each own exactly one screen-level `app-scroll`; neither adds a nested scroll
-owner.
+state and never resolves, repairs, or changes a chat binding. The catalog is
+catalog-only and omits No Work. Omitted or null root creation binds locked
+No Work; the catalog never does. The Chat landing and Work each own one
+screen-level `app-scroll`; neither adds a nested scroll owner.
 
-## Visual conventions — tonal manuscript shell
+## Visual conventions
 
-Agent entry point: [DESIGN.md](../../../DESIGN.md) (repo-root design doc; YAML snapshot).
-This section is the implementation contract (tiers, overflow chain, discipline test).
-
-The shell follows the settled **earthen value ladder** — one grey-gold family
-separated by lightness: shelf `oklch(0.91 0.012 84)` (pressed
-`oklch(0.86 0.014 84)`), one chrome field `oklch(0.945 0.012 84)` shared
-pixel-identically by tab band and dock, and warm paper `oklch(0.977 0.007 95)`
-as the brightest page. Light mode
-uses one black ink `oklch(0.24 0.009 100)` throughout. Jade is action-only;
-cinnabar is a scarce seal. The visual tokens live in
-`packages/design-tokens/src/ink-jade.css`.
-
-**Skin, not shell.** The palette, typography, accent semantics, brand mark, and
-login hero are a skin. Sidebar/composer structure and interaction patterns stay
-stable; token changes must not alter layout or behavior.
-
-### Token hierarchy
-
-**Tier 1 — semantic tokens (`@meridian/design-tokens/ink-jade.css`).**
-Shared palette imported into `globals.css` as Tailwind v4 `@theme` variables,
-consumed everywhere as classes (`bg-card`, `shadow-card`, `text-headline-hero`)
-or direct `var(--color-*)` CSS references. Categories:
-
-- **Three-tone ladder:** shelf (rail — chrome one shade darker), sidebar (tab band ≡ dock chrome), background (warm paper page — brightest), card (local lifted fields/menus)
-- **Ink and accents:** foreground (one black ink), primary/jade-text (actions, links, focus), cinnabar (scarce seal only), muted and ink hierarchy roles
-- **Composer:** manuscript-tone `composer-surface` plus `composer-border`; it does not borrow chrome or action color
-- **Borders:** `border`, `border-subtle`, `border-focus` — in-pane controls and hairlines only; shell-region separation is tonal, with no seam borders
-- **Shadows:** `shadow-card`, `shadow-hero`, `shadow-button`, `shadow-rail-left`
-- **Atmosphere:** `dock-airlight` lifts the dock floor; the shelf stays flat so scrolled navigation keeps constant contrast
-- **Type scale:** `text-headline-hero`, `text-headline-section`, `text-body`,
-  `text-compact` / `text-caption` (secondary-prose roles — bundle a relaxed
-  reading line-height), `text-sm` / `text-xs` (UI-control sizes),
-  `text-meta` (dense metadata). Custom `--text-*` size tokens must be registered
-  in `cn()`'s font-size group (`lib/utils.ts`) or tailwind-merge silently drops
-  them next to a `text-<color>`.
-- **Radii:** explicit `--radius-sm` / `--radius-md` / `--radius-lg` / `--radius-xl` values where component geometry needs distinct values
-- **Status colors:** `status-streaming`, `destructive` (distinct from cinnabar)
-
-Contrast guardrails: black ink is about 12.6:1 on the flat shelf and 10.7:1 on
-its pressed step; muted and hint roles are 6.5:1. The
-[Earthen Value Ladder decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/earthen-value-ladder-shell.md)
-owns the deeper rationale, measurements, and rejected directions.
-
-When a new visual concept appears in ≥2 places, it becomes a Tier 1 token. New
-shared tokens land in `packages/design-tokens/src/ink-jade.css` (or project-only
-`@theme` in `globals.css` when app-specific); only then are they consumed.
-
-**Tier 2 — `@utility` primitives (also in `globals.css`).** Composite patterns
-that bundle multiple tokens into a reusable class. Today's primitives:
-
-- `surface-card` — the rounded card surface
-- `streaming-dot` — live indicator
-- `app-frame` — viewport-locked shell (`h-svh max-h-svh overflow-hidden`); one screen, no page scroll
-- `app-scroll` — designated vertical scroll region inside `app-frame`
-- `main-pane` — flex shrink + horizontal clip (`min-w-0 max-w-full overflow-x-hidden`); use on shell inset, chat surface, scroll region — **not** on turn leaves
-- `chat-column` — chat conversation column (`max-w-chat-column`, horizontal padding)
-- `home-column` — home page column (`max-w-home`, vertical padding; grid `li` shrink)
-- `chat-scroll-fade-bottom` — bottom-edge mask on the chat scrollport (`--chat-scroll-fade-size`, scrollbar gap tokens); fades messages behind the pinned composer, not an overlay scrim
-- `user-turn` / `user-message-bubble` — right-aligned user prompt chrome
-- `prose-tokens` — Streamdown/markdown wrapper (typography + code/table overflow).
-  Font size is `calc(1rem * var(--text-scale))`; all inner element sizes
-  (headings, code, tables) are `em` so the whole tree rides the text-size
-  preference. Element styling for markdown lives here, not in Streamdown
-  component overrides — Streamdown's baked fixed-rem utilities (`text-sm` on
-  inline code / table cells) must be overridden by a declaration, or they pin
-  that element off-scale.
-- `text-tier-chat` — remaps `--text-scale` to `--text-scale-chat` for a
-  subtree: chat reads **one preference stop below the manuscript** (md→sm,
-  sm→xs, lg→md). Mounted once on `ChatSurface`; the manuscript editor rides
-  the full scale. Conversation is working material; the manuscript is the
-  artifact. Tiers are DOM inheritance: portaled overlays escape to manuscript
-  scale by design.
-- `text-tier-compact` — the dense meta voice for markdown (tool output,
-  reasoning): parameterizes `prose-tokens` (`--text-scale`, `--prose-leading`,
-  `--prose-color`) instead of stacking a second font-size utility, so no two
-  classes compete for the same property by source order. Fixed size (does not
-  ride the reading preference).
-
-When a className composition repeats in ≥2 places, promote it to a primitive.
-Thin React wrappers (`ChatColumn`, `HomeColumn`) only pin a utility name — no
-extra layout logic.
-
-### Horizontal overflow (flex shrink chain)
-
-Page-level horizontal scroll is prevented by a **boundary chain**, not per-turn
-`min-w-0` classes:
-
-1. `html` / `body` — locked height, `overflow: hidden`
-2. `app-frame` — viewport shell (`AppShell`, bare-view root, `SidebarProvider`)
-3. `app-scroll` — designated vertical scroll regions inside the frame
-4. `AppShell` → `SidebarInset` — `main-pane`
-5. `ChatSurface` root + scroll region — `main-pane`
-6. `chat-column` / `home-column` — include `main-pane`
-7. `prose-tokens` — `break-words`; `pre` / table wrapper scroll inside the column
-8. `user-turn` — `max-w-[95%]` on the bubble column
-
-Cross-repo OSS comparison for shell/scroll boundaries:
-[source-app-shell-patterns.md](source-app-shell-patterns.md).
-
-**Exceptions (keep `min-w-0` on the truncating flex child only):** `disclosure-trigger`,
-ProcessDisclosure / process-fold summary rows, sidebar `ThreadRow` rename field,
-`ErrorBlock` / `ImageBlock` flex rows.
-
-**Tier 3 — Tailwind base scale (in TSX).** Component-internal spacing only.
-`gap-2`, `p-3`, `mb-4`, `space-y-1`. Use the base scale, never arbitrary
-pixels. Component-specific *geometry* (a particular avatar size, a specific
-rounded corner) is acceptable inline.
-
-### Spacing
-
-Spacing is contextual and resists full centralization:
-
-- **Centralize (Tier 1)** when the value defines *cross-component rhythm* —
-  page gutter, sidebar width, `--container-chat-column` (48rem), `--container-home`
-  (45rem), composer footer fade, section gap. Two components need to agree on the value.
-- **Use the Tailwind scale (Tier 3)** for *component-internal* spacing —
-  internal padding, gap between sibling elements, button padding. The
-  component owns the value.
-- **Magic pixels are a smell.** If a value isn't in the Tailwind scale, it's
-  either (a) Tier 1 rhythm that needs promoting, or (b) you should round to
-  the nearest scale step.
-
-Dropdown row geometry is shared by `components/ui/dropdown-presentation.ts`.
-Row-bearing regions add vertical breathing only; `dropdownRowVariants` alone
-owns the horizontal text gutter and square, full-bleed state paint. Keyboard
-focus uses block-edge rules and the theme-specific semantic dropdown focus
-indicator, whose contrast is protected against every shared row fill, not a
-four-sided inset halo. It remains visible inside popup clipping without reading
-as another card. Search
-fields, headings, and state copy add their own local gutters. This keeps
-selected, hover, and focus boundaries edge-attached across menus, selects,
-pickers, composer navigation, and the thread switcher.
-
-Shared Radix dropdown and context-menu content must cancel non-primary
-`pointerup` during capture. Radix otherwise selects the row underneath the
-release that summoned a context menu, even though that row never received the
-press; a right-click can therefore run Open, Copy, or another first-row action
-while the writer is only asking to inspect. Keep the guard in the shared
-`components/ui/` wrappers rather than repeating it at feature call sites.
-
-### Typography
-
-Three fonts via `@theme`: `--font-heading` → Cormorant Garamond (display),
-`--font-prose` → Noto Serif (editor/turns/markdown), `--font-sans` → Inter (UI
-chrome). Loaded via Google Fonts in the app root layout. Headline weight/size
-comes from `text-headline-*` tokens — components consume token classes, not font
-family names directly.
-
-### UI themes and dark mode
-
-Theme switching is token-contained: `@meridian/design-tokens/themes.css`
-holds `:root[data-ui-theme="<name>"]` blocks (currently `dark`) that
-re-point the same token names; the default light palette is the absence of
-the attribute. The device-local preference lives in `src/lib/ui-theme.ts`
-(localStorage + pre-paint boot script in `__root.tsx`, mirroring text
-size) and is switched from Settings → Preferences. Tailwind's `dark:`
-variant keys off the same attribute (see `globals.css`) — never a `.dark`
-class.
+The visual implementation contract lives in
+[visual-conventions.md](visual-conventions.md).
 
 ## i18n
 
@@ -516,18 +372,6 @@ A11y primitives should be centralized the same way visual tokens are:
 When motion vocabulary is needed, follow the same pattern: define
 `--motion-fast` / `--motion-normal` / `--motion-deliberate` durations and a
 small easing scale in `globals.css`, consume via tokens in TSX.
-
-## Discipline test
-
-Before merging a change that touches visuals: grep the touched files for
-`#`-hex colors, `rgba(...)`, `rounded-[N]`, `text-[N]px`, `gap-[N]px`,
-`mt-[N]px`. Each one is either justified (genuinely surface-specific
-geometry) or it's a token that wants promoting.
-
-UI tests assert a behavior or semantic seam—roles, names, state, callback
-outcomes, accessible errors, or a public component boundary—not Tailwind
-styling vocabulary. Browser-measure real layout and hit boxes; JSDOM cannot
-establish geometry.
 
 ## Dev limitations (pilot)
 

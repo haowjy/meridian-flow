@@ -22,7 +22,7 @@ import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 /**
  * Independent chat surface (`/chat/:threadId`) — a thread the user experiences
  * as project-less. Minimal chrome: no Rail, no panels. A back button returns to
- * home; "Create project" promotes the hidden project backing this chat and
+ * the project library; "Create project" promotes the hidden project backing this chat and
  * routes into the full workspace.
  */
 export type IndependentChatViewProps = {
