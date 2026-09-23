@@ -1407,6 +1407,10 @@ msgstr ""
 #~ msgid "Documents you open show up here."
 #~ msgstr ""
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Done"
+msgstr ""
+
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Download {name}"
 msgstr ""
@@ -1601,6 +1605,10 @@ msgstr "正在浏览文件夹…"
 msgid "Extra usage"
 msgstr ""
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Failed"
+msgstr ""
+
 #: src/rich-content/ImageBlock.tsx
 msgid "Failed to load image"
 msgstr "图片加载失败"
@@ -1745,6 +1753,10 @@ msgstr ""
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading 3"
+msgstr ""
+
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Hide full result"
 msgstr ""
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
@@ -2319,6 +2331,11 @@ msgstr ""
 msgid "No model"
 msgstr ""
 
+#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/tool-renderers.tsx
+msgid "No partial report text was returned."
+msgstr ""
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "No pending changes"
 msgstr ""
@@ -2339,9 +2356,20 @@ msgstr ""
 msgid "No projects yet"
 msgstr ""
 
+<<<<<<< HEAD
 #: src/features/home/RecentProjects.tsx
 #~ msgid "No projects yet."
 #~ msgstr ""
+=======
+#: src/features/chat/tool-renderers.tsx
+msgid "No report text was returned"
+msgstr ""
+
+#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/tool-renderers.tsx
+msgid "No report text was returned."
+msgstr ""
+>>>>>>> e2b6ed34b (Render retained child outcomes and join direct reports)
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "No results yet."
@@ -2546,6 +2574,11 @@ msgstr ""
 
 #: src/features/project/chat/SubagentBanner.tsx
 msgid "Parent:"
+msgstr ""
+
+#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/tool-renderers.tsx
+msgid "Partial result"
 msgstr ""
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
@@ -2856,6 +2889,18 @@ msgstr ""
 msgid "Replace image"
 msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Report is still running"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Report is unavailable"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Report unavailable"
+msgstr ""
+
 #: src/features/chat/FormBlock.tsx
 msgid "Required"
 msgstr ""
@@ -2974,6 +3019,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "rule"
+msgstr ""
+
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Running"
 msgstr ""
 
 #. placeholder {0}: fieldLabel(field).toLowerCase()
@@ -3128,6 +3177,10 @@ msgstr ""
 msgid "Settings sections"
 msgstr ""
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Show full result"
+msgstr ""
+
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
 msgstr ""
@@ -3220,6 +3273,7 @@ msgstr "停止"
 msgid "Stop run"
 msgstr ""
 
+#: src/features/chat/SpawnReportCard.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Stopped"
 msgstr "已取消"
@@ -3421,6 +3475,14 @@ msgstr ""
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "The change could not be confirmed. Try again."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The child run failed"
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The child run stopped"
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
@@ -3649,6 +3711,10 @@ msgstr ""
 msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 msgstr ""
 
+#: src/features/chat/tool-renderers.tsx
+msgid "This execution has not finished."
+msgstr ""
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This file holds code only."
 msgstr ""
@@ -3696,6 +3762,10 @@ msgstr ""
 
 #: src/features/project/chat/ChatScreen.tsx
 msgid "This project has no chats yet."
+msgstr ""
+
+#: src/features/chat/tool-renderers.tsx
+msgid "This report is unavailable."
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts

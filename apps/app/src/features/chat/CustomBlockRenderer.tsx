@@ -17,6 +17,7 @@ import { useThreadStore } from "@/client/stores";
 import { interruptResponseKey } from "@/core/session/interrupt-response";
 import { componentBlockContent } from "./component-block-content";
 import { COMPONENT_REGISTRY } from "./component-registry";
+import { directResultForInvocation } from "./invocation-direct-result";
 
 export type InterruptRespondRequest = {
   threadId: string;
@@ -48,6 +49,10 @@ export function CustomBlockRenderer({
           interruptResponseKey({ threadId, turnId: block.turnId, interruptId })
         ]
       : undefined,
+  );
+  const turnBlocks = useThreadStore(
+    (state) =>
+      state.turnsByThread[threadId]?.find((turn) => turn.id === block.turnId)?.blocks ?? [],
   );
 
   if (!content || !Component) {
@@ -84,6 +89,9 @@ export function CustomBlockRenderer({
       )}
       responseState={responseEntry ? { status: responseEntry.status } : null}
       retry={retry}
+      invocationResult={
+        kind === "helper-result" ? directResultForInvocation(turnBlocks, block) : undefined
+      }
     />
   );
 }

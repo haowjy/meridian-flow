@@ -1407,6 +1407,10 @@ msgstr "Documents the AI reads in this chat appear here."
 #~ msgid "Documents you open show up here."
 #~ msgstr "Documents you open show up here."
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Done"
+msgstr "Done"
+
 #: src/features/project/context/viewers/DownloadFallback.tsx
 msgid "Download {name}"
 msgstr "Download {name}"
@@ -1601,6 +1605,10 @@ msgstr "Exploring folders…"
 msgid "Extra usage"
 msgstr "Extra usage"
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Failed"
+msgstr "Failed"
+
 #: src/rich-content/ImageBlock.tsx
 msgid "Failed to load image"
 msgstr "Failed to load image"
@@ -1746,6 +1754,10 @@ msgstr "Heading 2"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Heading 3"
 msgstr "Heading 3"
+
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Hide full result"
+msgstr "Hide full result"
 
 #: src/features/editor/surfaces/objects/ObjectLightbox.tsx
 msgid "Hide source"
@@ -2319,6 +2331,11 @@ msgstr "No messages yet."
 msgid "No model"
 msgstr "No model"
 
+#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/tool-renderers.tsx
+msgid "No partial report text was returned."
+msgstr "No partial report text was returned."
+
 #: src/features/project/dock/DockChangesView.tsx
 msgid "No pending changes"
 msgstr "No pending changes"
@@ -2342,6 +2359,15 @@ msgstr "No projects yet"
 #: src/features/home/RecentProjects.tsx
 #~ msgid "No projects yet."
 #~ msgstr "No projects yet."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "No report text was returned"
+msgstr "No report text was returned"
+
+#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/tool-renderers.tsx
+msgid "No report text was returned."
+msgstr "No report text was returned."
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "No results yet."
@@ -2547,6 +2573,11 @@ msgstr "Parent unknown"
 #: src/features/project/chat/SubagentBanner.tsx
 msgid "Parent:"
 msgstr "Parent:"
+
+#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/tool-renderers.tsx
+msgid "Partial result"
+msgstr "Partial result"
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Paste"
@@ -2856,6 +2887,18 @@ msgstr "Reopens your last document and chat when you switch devices"
 msgid "Replace image"
 msgstr "Replace image"
 
+#: src/features/chat/tool-renderers.tsx
+msgid "Report is still running"
+msgstr "Report is still running"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Report is unavailable"
+msgstr "Report is unavailable"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "Report unavailable"
+msgstr "Report unavailable"
+
 #: src/features/chat/FormBlock.tsx
 msgid "Required"
 msgstr "Required"
@@ -2975,6 +3018,10 @@ msgstr "Row options"
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 msgid "rule"
 msgstr "rule"
+
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Running"
+msgstr "Running"
 
 #. placeholder {0}: fieldLabel(field).toLowerCase()
 #: src/features/project/work/WorkMetadata.tsx
@@ -3128,6 +3175,10 @@ msgstr "Settings"
 msgid "Settings sections"
 msgstr "Settings sections"
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Show full result"
+msgstr "Show full result"
+
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
 msgstr "Sign in as dev user"
@@ -3220,6 +3271,7 @@ msgstr "Stop"
 msgid "Stop run"
 msgstr "Stop run"
 
+#: src/features/chat/SpawnReportCard.tsx
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Stopped"
 msgstr "Stopped"
@@ -3422,6 +3474,14 @@ msgstr "The browser blocked the clipboard. Check this site's permissions."
 #: src/features/chat/useComposerWorkBinding.ts
 msgid "The change could not be confirmed. Try again."
 msgstr "The change could not be confirmed. Try again."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The child run failed"
+msgstr "The child run failed"
+
+#: src/features/chat/tool-renderers.tsx
+msgid "The child run stopped"
+msgstr "The child run stopped"
 
 #: src/features/chat/CreationComposer.tsx
 #~ msgid "The created destination didn’t match your choices."
@@ -3649,6 +3709,10 @@ msgstr "This document is still opening."
 msgid "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 msgstr "This draft is untitled and lives in your Scratch. Click to name it or move it where it belongs."
 
+#: src/features/chat/tool-renderers.tsx
+msgid "This execution has not finished."
+msgstr "This execution has not finished."
+
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "This file holds code only."
 msgstr "This file holds code only."
@@ -3697,6 +3761,10 @@ msgstr "This project couldn’t load. It may be unavailable."
 #: src/features/project/chat/ChatScreen.tsx
 msgid "This project has no chats yet."
 msgstr "This project has no chats yet."
+
+#: src/features/chat/tool-renderers.tsx
+msgid "This report is unavailable."
+msgstr "This report is unavailable."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "This row is already at the edge."

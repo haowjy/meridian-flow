@@ -533,6 +533,28 @@ const DOCUMENT_TOOL_RENDERER: ToolRenderer = {
   expand: documentExpand,
 };
 
+const THREAD_REPORT_RENDERER: ToolRenderer = {
+  title: (tool) => {
+    const report = threadReport(tool.output);
+    const preview = report ? report.summary || reportPayloadText(report.payload) : "";
+    if (preview) return <CommandTitle verb={preview.split(/\r?\n/, 1)[0] ?? ""} />;
+    if (report?.reason) return <CommandTitle verb={report.reason} />;
+    if (tool.message) return <CommandTitle verb={tool.message} />;
+    if (report?.status === "not_ready") return <CommandTitle verb={t`Report is still running`} />;
+    if (report?.status === "unavailable") return <CommandTitle verb={t`Report is unavailable`} />;
+    if (report?.outcome === "failed") return <CommandTitle verb={t`The child run failed`} />;
+    if (report?.outcome === "cancelled") return <CommandTitle verb={t`The child run stopped`} />;
+    if (report) return <CommandTitle verb={t`No report text was returned`} />;
+    return <CommandTitle verb={t`Report unavailable`} />;
+  },
+  expand: threadReportExpand,
+};
+
+function reportPayloadText(payload: JsonValue | undefined): string {
+  if (payload === undefined) return "";
+  return typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+}
+
 const RENDERERS: Record<string, ToolRenderer> = {
   read: DOCUMENT_TOOL_RENDERER,
   write: DOCUMENT_TOOL_RENDERER,
@@ -548,8 +570,78 @@ const RENDERERS: Record<string, ToolRenderer> = {
     title: (tool) => <WorkToolTitle tool={tool} />,
     expand: workExpand,
   },
+  thread_report: THREAD_REPORT_RENDERER,
 };
 
 export function rendererFor(toolName: string): ToolRenderer {
   return RENDERERS[toolName] ?? DEFAULT_RENDERER;
+}
+
+type ThreadReportView = {
+  status?: "not_ready" | "unavailable";
+  outcome?: "succeeded" | "failed" | "cancelled";
+  summary?: string;
+  payload?: JsonValue;
+  reason?: string | null;
+  partial?: boolean;
+};
+
+function threadReport(output: JsonValue | null): ThreadReportView | null {
+  if (!output || typeof output !== "object" || Array.isArray(output)) return null;
+  const record = output as Record<string, JsonValue>;
+  if (record.status === "not_ready" || record.status === "unavailable") {
+    return { status: record.status };
+  }
+  if (
+    record.outcome !== "succeeded" &&
+    record.outcome !== "failed" &&
+    record.outcome !== "cancelled"
+  )
+    return null;
+  return {
+    outcome: record.outcome,
+    summary: typeof record.summary === "string" ? record.summary : "",
+    ...(Object.hasOwn(record, "payload") ? { payload: record.payload } : {}),
+    reason: typeof record.reason === "string" ? record.reason : null,
+    partial: record.partial === true,
+  };
+}
+
+function threadReportExpand(tool: ToolView): ToolExpand | null {
+  const report = threadReport(tool.output);
+  if (!report) {
+    const message = tool.message;
+    return message ? () => <Markdown variant="compact">{message}</Markdown> : null;
+  }
+  if (report.status)
+    return () => (
+      <p className="text-caption text-muted-foreground">
+        {report.status === "not_ready"
+          ? t`This execution has not finished.`
+          : t`This report is unavailable.`}
+      </p>
+    );
+  if (!report.summary && report.payload === undefined && !report.reason) {
+    return () => (
+      <p className="text-caption text-muted-foreground">
+        {report.outcome === "succeeded"
+          ? t`No report text was returned.`
+          : t`No partial report text was returned.`}
+      </p>
+    );
+  }
+  return () => (
+    <div className="space-y-2">
+      {report.summary ? <Markdown variant="compact">{report.summary}</Markdown> : null}
+      {report.payload !== undefined ? (
+        <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">
+          {reportPayloadText(report.payload)}
+        </pre>
+      ) : null}
+      {report.reason ? <p className="text-caption text-muted-foreground">{report.reason}</p> : null}
+      {report.partial ? (
+        <p className="text-caption text-muted-foreground">{t`Partial result`}</p>
+      ) : null}
+    </div>
+  );
 }

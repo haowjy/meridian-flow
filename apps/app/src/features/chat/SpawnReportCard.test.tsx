@@ -53,7 +53,6 @@ describe("SpawnReportCard", () => {
           <SpawnReportCard
             agentName="Critic"
             title={null}
-            summary="Everything holds."
             status="completed"
             childThreadId="child-1"
           />
@@ -71,7 +70,6 @@ describe("SpawnReportCard", () => {
         <SpawnReportCard
           agentName="Helper"
           title={null}
-          summary="2+2=4."
           status="completed"
           childThreadId="child-2"
         />,
@@ -82,23 +80,62 @@ describe("SpawnReportCard", () => {
     expect(document.body.textContent).toContain("Open");
   });
 
-  it("renders returned artifacts alongside the summary", async () => {
+  it("keeps a background invocation status-only", async () => {
+    await act(async () =>
+      root.render(
+        <SpawnReportCard agentName="Critic" title={null} status="completed" childThreadId={null} />,
+      ),
+    );
+
+    expect(document.querySelector("a[href='scratch://outline.md']")).toBeNull();
+    expect(document.body.textContent).toContain("Done");
+  });
+
+  it("shows foreground settlement collapsed to its first line and expands the full result", async () => {
     await act(async () =>
       root.render(
         <SpawnReportCard
           agentName="Critic"
           title={null}
-          summary="Wrote the outline."
-          status="completed"
-          childThreadId={null}
-          artifacts={[{ type: "object", uri: "scratch://outline.md", label: "Outline" }]}
+          status="failed"
+          outcome="failed"
+          childThreadId="child-4"
+          directResult={{
+            execution: "execution-4",
+            outcome: "failed",
+            summary: "Partial first line.\nLater detail.",
+            payload: { retained: true },
+            artifacts: [],
+            partial: true,
+            message: "budget_exhausted",
+          }}
         />,
       ),
     );
 
-    const link = document.querySelector("a[href='scratch://outline.md']");
-    expect(link).not.toBeNull();
-    expect(document.body.textContent).toContain("Outline");
+    expect(document.body.textContent).toContain("Failed");
+    expect(document.body.textContent).toContain("Partial first line.");
+    expect(document.body.textContent).not.toContain("Later detail.");
+    await act(async () => findButton("Show full result")?.click());
+    expect(document.body.textContent).toContain("Later detail.");
+    expect(document.body.textContent).toContain("budget_exhausted");
+    expect(document.body.textContent).toContain("Partial result");
+  });
+
+  it("shows cancellation as Stopped", async () => {
+    await act(async () =>
+      root.render(
+        <SpawnReportCard
+          agentName="Critic"
+          title={null}
+          status="failed"
+          outcome="cancelled"
+          childThreadId={null}
+        />,
+      ),
+    );
+    expect(document.body.textContent).toContain("Stopped");
+    expect(document.body.textContent).not.toContain("Failed");
   });
 
   it("renders a running card while the child is still working", async () => {
@@ -108,7 +145,6 @@ describe("SpawnReportCard", () => {
           <SpawnReportCard
             agentName="Critic"
             title="Review the chapter"
-            summary={null}
             status="running"
             childThreadId="child-3"
           />
@@ -125,13 +161,7 @@ describe("SpawnReportCard", () => {
     await act(async () =>
       root.render(
         <ChatThreadNavigationProvider onOpenThread={vi.fn()}>
-          <SpawnReportCard
-            agentName="Critic"
-            title={null}
-            summary="Couldn't finish that step"
-            status="failed"
-            childThreadId={null}
-          />
+          <SpawnReportCard agentName="Critic" title={null} status="failed" childThreadId={null} />
         </ChatThreadNavigationProvider>,
       ),
     );

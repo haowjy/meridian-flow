@@ -38,13 +38,23 @@ never reads transient stream state (`isLive`, partial blocks). Hidden protocol
 (the `tool_use`/`tool_result` rows a card already surfaces) is dropped, not
 folded.
 
-Run liveness is never a turn block. A background spawn's running card is now a
-durable server block on the parent turn (retired at child settle); the durable
-report still arrives as its own `helper-result` system-turn block. The live
-subagent surface is server truth: `ThreadActivity` from live state (snapshot +
-`meridian.subagent.activity`), rendered recursively by `RunningSubagentsStrip`
-mounted in `ChatView`'s header. It is anchored to the thread, so a terminal
-turn cannot erase it.
+Run liveness is never a turn block. Each admitted spawn invocation has one
+durable retained card on the parent turn. At settlement, the card's status is
+the child execution outcome, not parent protocol admission. Background cards
+remain status-only; foreground cards join the durable direct `spawn` or
+`thread_message` result by parent turn, tool call, child execution and direct
+delivery mode. That join is owned at the turn/card adapter and reads full turn
+data before hidden protocol rows are dropped. `thread_report` is an ordinary
+expandable activity row. The live subagent surface remains server truth:
+`ThreadActivity` from snapshot + `meridian.subagent.activity`, rendered by
+`RunningSubagentsStrip` in `ChatView`'s header.
+
+The existing `meridian.block.upserted` frame also carries historical card
+replacements. Update a loaded target turn without touching active-turn state;
+when the target turn is absent, invalidate/refetch the durable snapshot rather
+than creating a synthetic streaming turn. Store duplicate replacement as a
+reference-preserving no-op. The pending inbox remains generic for transport and
+model drain; filter writer provenance only at the composer tray.
 
 The full model lives in
 [`.context/turn-composition.md`](.context/turn-composition.md); one row's

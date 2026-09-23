@@ -10,6 +10,12 @@ import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 
 export const EMPTY_THREAD_PENDING_INBOX: ThreadPendingInbox = { items: [] };
 
+/** Writer tray is deliberately narrower than the generic inbox/model drain. */
+export function writerPendingInbox(pending: ThreadPendingInbox): ThreadPendingInbox {
+  const items = pending.items.filter((item) => item.provenance.kind === "writer");
+  return items.length === pending.items.length ? pending : { items };
+}
+
 export function isThreadPendingInbox(value: unknown): value is ThreadPendingInbox {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   return Array.isArray((value as ThreadPendingInbox).items);

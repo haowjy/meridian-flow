@@ -1,20 +1,23 @@
-/** HelperResultBlock — background helper agent result, rendered as the shared spawn report card. */
-import type { HelperResultProps } from "@meridian/contracts/components";
-import { isArtifactRef } from "./ArtifactGrid";
+/** The retained invocation card. It displays direct output only after its durable tool result joins. */
 import type { ComponentBlockProps } from "./component-registry";
 import { SpawnReportCard } from "./SpawnReportCard";
 
-export function HelperResultBlock({ content }: ComponentBlockProps) {
-  const props = content.props as HelperResultProps;
-  const artifacts = Array.isArray(props.artifacts) ? props.artifacts.filter(isArtifactRef) : [];
+export function HelperResultBlock({ content, invocationResult }: ComponentBlockProps) {
+  const props = content.props as {
+    agentName: string;
+    title?: string;
+    status: "running" | "completed" | "failed";
+    outcome?: "succeeded" | "failed" | "cancelled";
+    childThreadId?: string;
+  };
   return (
     <SpawnReportCard
       agentName={props.agentName}
       title={props.title ?? null}
-      summary={props.summary ?? null}
       status={props.status}
+      outcome={props.outcome}
       childThreadId={props.childThreadId ?? null}
-      artifacts={artifacts}
+      directResult={invocationResult ?? null}
     />
   );
 }

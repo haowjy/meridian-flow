@@ -89,16 +89,25 @@ via `ask_user`), a **spawn helper-result card** (`kind: "helper-result"`), and a
 **child-report card** (`kind: "child-report"`, from `return_result`).
 
 Cards hide their tool_use/tool_result rows (`tool-view-visibility.ts`). The
-custom card is the surface. Spawn and `return_result` protocol are persisted for
-the model; the writer never sees their rows. Parent spawn cards render only from
-the helper-result custom block.
+custom card is the surface. Spawn and `return_result` protocol remain model
+history; the writer does not see their duplicate rows.
 
-Foreground persists a running helper-result card before the child runs, so it
-appears as soon as the parent turn holds the block. Background spawns no such
-card: run liveness is not history. The client used to synthesize a running
-`helper-result` block on the parent turn from `meridian.background.started`, but
-a terminal parent turn reconciles client-only blocks away, so the card flashed
-and vanished. Only the durable report arrives, on its own system turn.
+Each admitted invocation has one retained helper-result card with the original
+parent-turn/tool-call/child/delivery/execution tuple. Terminal status is child
+execution truth, not parent protocol admission. A foreground card joins only a
+settled `spawn` or `thread_message` result whose execution matches and whose
+delivery mode is direct. The join reads the complete turn before hidden protocol
+rows are filtered, so reload and result-before-card converge without a second
+output store. Background cards remain status-only; notification contains no
+report body and triggers no automatic fetch. `thread_report` is an ordinary
+expandable activity row, not another artifact.
+
+Historical card replacement is sent over the existing
+`meridian.block.upserted` frame. Replace a loaded historical turn in place; if
+it is absent, invalidate/refetch its durable snapshot rather than creating a
+fake streaming turn. Equal replay is a reference-preserving no-op. Pending
+inbox remains complete in the transport/model path and is filtered to writer
+provenance only in the composer's tray.
 
 ### Interrupt response settlement
 
@@ -181,12 +190,12 @@ AssistantTurn.tsx
 `tool-renderers.tsx` is the registry for tool-name-specific presentation. Registry
 keys must be real runtime tool names from
 `apps/server/server/domains/runtime/tools/`. The current runtime surface is
-`write`, `work`, `ls`, `search`, `ask_user`, `spawn`, `thread_message`, and
-`return_result`. `ask_user`, `spawn`, `thread_message`, and `return_result`
-render through custom cards (`choice`/`form`/`free-text`, `helper-result` →
-`SpawnReportCard`, and `child-report` → `ChildReportBlock`), all built on the
-shared `ArtifactCard` shell (`icon`/`tone`/`title`/`door`/`hint`/children). Their
-tool rows are hidden. Card `artifacts[]` render through
+`write`, `work`, `ls`, `search`, `ask_user`, `spawn`, `thread_message`,
+`thread_report`, and `return_result`. `ask_user` and `helper-result` render
+through custom cards; `spawn` and `thread_message` tool rows are hidden because
+the retained invocation card owns their writer surface. `thread_report` is a
+visible ordinary activity row with a first-line preview and full expandable
+result. Card `artifacts[]` render through
 the shared `ArtifactGrid` (`ArtifactGrid.tsx`), reused by `FormBlock`,
 `SpawnReportCard`, and `ChildReportBlock`.
 Process tools (`write`, `work`, `ls`, `search`) render as `ActivityRow`.

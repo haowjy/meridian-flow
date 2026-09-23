@@ -47,6 +47,7 @@ import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { PendingInboxTray } from "./PendingInboxTray";
+import { writerPendingInbox } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { TurnList } from "./TurnList";
 import { activeDescendants } from "./thread-activity";
@@ -336,7 +337,7 @@ export function ChatView({
         }
         footer={
           <div data-debug-composer={threadId}>
-            <PendingInboxTray pending={pendingInbox} />
+            <PendingInboxTray pending={writerPendingInbox(pendingInbox)} />
             {/* The dock strip sits BEHIND (below) the composer — narrower via
               mx-2, top corners rounded, jade-tinted background. The composer
               always keeps its own border and overlaps the strip's edge. */}

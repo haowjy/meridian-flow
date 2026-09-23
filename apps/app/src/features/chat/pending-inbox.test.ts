@@ -8,6 +8,7 @@ import {
   EMPTY_THREAD_PENDING_INBOX,
   isThreadPendingInbox,
   pendingInboxFromEvent,
+  writerPendingInbox,
 } from "./pending-inbox";
 
 describe("isThreadPendingInbox", () => {
@@ -64,5 +65,43 @@ describe("pendingInboxFromEvent", () => {
       }),
     ).toBeNull();
     expect(pendingInboxFromEvent({ type: EventType.RUN_STARTED })).toBeNull();
+  });
+});
+
+describe("writerPendingInbox", () => {
+  it("filters only the writer tray while retaining generic child and agent entries", () => {
+    const writer = {
+      id: "writer",
+      seq: 1,
+      intent: "message" as const,
+      provenance: { kind: "writer" as const, actorId: "writer-1" },
+      summary: "writer message",
+      enqueuedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const child = {
+      ...writer,
+      id: "child",
+      seq: 2,
+      provenance: { kind: "child" as const, threadId: "child-thread", reportId: "execution" },
+      summary: "child report notification",
+    };
+    const agent = {
+      ...writer,
+      id: "agent",
+      seq: 3,
+      provenance: { kind: "agent" as const, threadId: "agent-thread" },
+      summary: "agent message",
+    };
+    const system = {
+      ...writer,
+      id: "system",
+      seq: 4,
+      provenance: { kind: "system" as const, source: "runtime" },
+      summary: "system notice",
+    };
+    const inbox = { items: [writer, child, agent, system] };
+
+    expect(inbox.items).toHaveLength(4);
+    expect(writerPendingInbox(inbox)).toEqual({ items: [writer] });
   });
 });
