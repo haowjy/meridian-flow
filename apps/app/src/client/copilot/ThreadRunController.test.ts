@@ -71,4 +71,54 @@ describe("ThreadRunController write outcomes", () => {
       expect.objectContaining({ id: "turn-user", status: "complete" }),
     ]);
   });
+
+  it("keeps the optimistic row on a rejected admission when recovery keeps it", async () => {
+    const scenario = new ThreadRunScenario();
+    scenario.setAppend(async () => {
+      throw new HttpResponseError("invalid message", 400, null);
+    });
+    const row = scenario.store.getState().appendUserTurn("thread_1", "Hello");
+
+    const pending = scenario.controller.submit(
+      "thread_1",
+      {
+        submissionId: "sub-keep",
+        acceptedRevision: 0,
+        text: "Hello",
+        blocks: [{ type: "text", text: "Hello" }],
+        references: [],
+        activatedSkillSlugs: [],
+      },
+      { optimisticUserTurnId: row.id, keepOptimisticOnFailure: true },
+    );
+
+    // The live rejection owner needs the row left on the turn to attach
+    // Retry / Edit; the controller must not drop it.
+    await expect(pending).resolves.toMatchObject({ kind: "rejected" });
+    expect(scenario.turns()).toEqual([expect.objectContaining({ id: row.id })]);
+  });
+
+  it("drops the optimistic row on a rejected admission when recovery does not keep it", async () => {
+    const scenario = new ThreadRunScenario();
+    scenario.setAppend(async () => {
+      throw new HttpResponseError("invalid message", 400, null);
+    });
+    const row = scenario.store.getState().appendUserTurn("thread_1", "Hello");
+
+    const pending = scenario.controller.submit(
+      "thread_1",
+      {
+        submissionId: "sub-drop",
+        acceptedRevision: 0,
+        text: "Hello",
+        blocks: [{ type: "text", text: "Hello" }],
+        references: [],
+        activatedSkillSlugs: [],
+      },
+      { optimisticUserTurnId: row.id },
+    );
+
+    await expect(pending).resolves.toMatchObject({ kind: "rejected" });
+    expect(scenario.turns()).toEqual([]);
+  });
 });

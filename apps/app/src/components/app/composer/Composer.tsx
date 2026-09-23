@@ -117,6 +117,12 @@ export type ComposerProps = {
 export type ComposerHandle = {
   focus: () => void;
   getDraft: () => string;
+  /**
+   * Whether the composer holds anything the writer authored, including a
+   * reference-only draft whose text projection may be empty. Edit uses this to
+   * avoid overwriting a live draft with a restored plain-text copy.
+   */
+  hasContent: () => boolean;
   snapshot: () => ComposerDraftSnapshot;
   restoreSnapshot: (snapshot: ComposerDraftSnapshot, expectedRevision?: number) => boolean;
   restoreFailedSubmission: (
@@ -357,6 +363,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
       },
       getDraft: () =>
         editor && !editor.isDestroyed ? serializeComposerDraft(editor.getJSON()).text : "",
+      hasContent: () => hasContent,
       snapshot,
       restoreSnapshot,
       restoreFailedSubmission: (id, submitted, later, expectedRevision) => {
@@ -381,7 +388,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           .run();
       },
     }),
-    [editor, restoreSnapshot, snapshot],
+    [editor, hasContent, restoreSnapshot, snapshot],
   );
   useEffect(() => {
     mountedRef.current = true;

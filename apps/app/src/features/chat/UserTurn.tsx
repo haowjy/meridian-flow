@@ -20,10 +20,22 @@ import type {
 } from "@/rich-content/reference-occurrences";
 import type { TranscriptReferenceResolution } from "@/rich-content/TranscriptReference";
 
-export type UserTurnRecovery = {
-  onCheck: () => void;
-  onRetire: () => void;
-};
+export type UserTurnRecovery =
+  | {
+      kind: "ambiguous";
+      onCheck: () => void;
+      onRetire: () => void;
+    }
+  | {
+      kind: "rejected";
+      onRetry: () => void;
+      /**
+       * Focus or restore the retained draft. Absent when only Retry is honest:
+       * a structured rejection whose live draft is gone cannot be rebuilt from
+       * its text without admitting a different message.
+       */
+      onEdit?: () => void;
+    };
 
 export type UserTurnProps = {
   turn: Turn;
@@ -149,7 +161,7 @@ function UserTurnComponent({ turn, submissionRecovery = null }: UserTurnProps) {
           {t`Couldn't send.`}
         </p>
       ) : null}
-      {submissionRecovery ? (
+      {submissionRecovery?.kind === "ambiguous" ? (
         <div className="mt-1 flex justify-end gap-2">
           <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onCheck}>
             {t`Check submission status`}
@@ -157,6 +169,18 @@ function UserTurnComponent({ turn, submissionRecovery = null }: UserTurnProps) {
           <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetire}>
             {t`Start over`}
           </Button>
+        </div>
+      ) : null}
+      {submissionRecovery?.kind === "rejected" ? (
+        <div className="mt-1 flex justify-end gap-2">
+          <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetry}>
+            {t`Retry`}
+          </Button>
+          {submissionRecovery.onEdit ? (
+            <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onEdit}>
+              {t`Edit`}
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </article>
