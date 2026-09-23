@@ -106,7 +106,9 @@ async function fixture() {
     new AbortController().signal,
   );
   accesses.push(access);
-  const verified = await access.open("project", initial.resource, "fixture");
+  const verified = await access.open("project", initial.resource, "fixture", undefined, {
+    adoptionEligible: true,
+  });
   if (verified.kind !== "opened") throw new Error(`Fixture content is ${JSON.stringify(verified)}`);
   let transfer: LocalDocumentSessionTransfer | null = null;
   const handoff = Object.freeze({}) as LocalDocumentSessionHandoff;
@@ -224,7 +226,9 @@ it("waits for a caller-owned lease before transferring and acknowledging the ses
   expect(adoption.bindAndAdopt).not.toHaveBeenCalled();
   expect((await metadata.readResource(key))?.resource.obligations.sessionAdoption).toBeDefined();
 
-  const editor = await access.open("project", key, "mounted-editor");
+  const editor = await access.open("project", key, "mounted-editor", undefined, {
+    adoptionEligible: true,
+  });
   if (editor.kind !== "opened") throw new Error(`Editor content is ${JSON.stringify(editor)}`);
   await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
   expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();

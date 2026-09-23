@@ -303,9 +303,10 @@ export class AccountResourceReplica {
     key: ResourceKey,
     participantId: string,
     signal?: AbortSignal,
+    options: { adoptionEligible?: boolean } = {},
   ): Promise<ResourceContentOpenResult> {
     this.requireOpen();
-    const opened = await this.content.open(projectId, key, participantId, signal);
+    const opened = await this.content.open(projectId, key, participantId, signal, options);
     if (opened.kind === "opened") {
       void this.reconcileOpenedProjectOwnership(projectId, key, opened.handle.session).catch(
         () => undefined,
