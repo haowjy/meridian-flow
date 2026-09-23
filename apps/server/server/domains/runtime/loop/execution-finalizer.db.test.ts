@@ -136,4 +136,95 @@ else
       expect(replay.events).toEqual([]);
       expect(replay.report).toMatchObject({ outcome: "failed", publication: "pending" });
     });
+
+    it("selects ordered public blocks of the final persisted response and its own accounting", async () => {
+      const earlier = await repos.modelResponses.create({
+        turnId: ids.execution,
+        sequence: 0,
+        provider: "test",
+        model: "test-model",
+        priceSource: "unknown",
+        millicredits: "3",
+      });
+      const final = await repos.modelResponses.create({
+        turnId: ids.execution,
+        sequence: 1,
+        provider: "test",
+        model: "test-model",
+        priceSource: "unknown",
+        millicredits: "4",
+      });
+      await repos.blocks.create({
+        turnId: ids.execution,
+        responseId: earlier.row.id,
+        blockType: "text",
+        sequence: 1,
+        content: "older public text",
+      });
+      await repos.blocks.create({
+        turnId: ids.execution,
+        responseId: final.row.id,
+        blockType: "text",
+        sequence: 4,
+        content: "part two",
+      });
+      await repos.blocks.create({
+        turnId: ids.execution,
+        responseId: final.row.id,
+        blockType: "text",
+        sequence: 3,
+        content: "final ",
+      });
+      const terminal = await finalizeExecution(
+        { repos, eventWriter },
+        {
+          threadId: ids.child,
+          assistantTurnId: ids.execution,
+          cause: { kind: "success", finishReason: "end_turn" },
+        },
+      );
+      expect(terminal.report).toMatchObject({
+        outcome: "succeeded",
+        source: "final_assistant",
+        summary: "final part two",
+        costMillicredits: 7,
+      });
+    });
+
+    it("does not borrow older text when the last persisted response has no public text", async () => {
+      const earlier = await repos.modelResponses.create({
+        turnId: ids.execution,
+        sequence: 0,
+        provider: "test",
+        model: "test-model",
+        priceSource: "unknown",
+      });
+      await repos.modelResponses.create({
+        turnId: ids.execution,
+        sequence: 1,
+        provider: "test",
+        model: "test-model",
+        priceSource: "unknown",
+      });
+      await repos.blocks.create({
+        turnId: ids.execution,
+        responseId: earlier.row.id,
+        blockType: "text",
+        sequence: 1,
+        content: "older public text",
+      });
+      const terminal = await finalizeExecution(
+        { repos, eventWriter },
+        {
+          threadId: ids.child,
+          assistantTurnId: ids.execution,
+          cause: { kind: "success", finishReason: "end_turn" },
+        },
+      );
+      expect(terminal.report).toMatchObject({
+        outcome: "succeeded",
+        source: "empty",
+        summary: "",
+      });
+    });
   });

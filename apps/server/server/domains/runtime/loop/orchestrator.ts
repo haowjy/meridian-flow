@@ -1167,10 +1167,6 @@ async function* generateEvents(
       cause: {
         kind: "success",
         finishReason: result.finishReason,
-        finalPublicText: result.content
-          .filter((part) => part.type === "text")
-          .map((part) => part.text)
-          .join(""),
       },
     });
 

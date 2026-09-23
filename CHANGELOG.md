@@ -20,6 +20,7 @@
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
 ### Fixed
 
+- Materialize uncaptured child report text from the exact assistant turn's final persisted model response, for success and partial failure/cancellation alike. Empty final responses do not borrow older prose or a speculative process buffer.
 - Replace competing child completion paths with one saved per-execution terminal report. Background spawn returns after admission; direct spawn/message return the exact saved outcome, including failed or cancelled partial content. Report bodies no longer ride lifecycle events, cards, or inbox notifications.
 - Mark a background child that fails before assistant-turn admission as failed on its existing card and lifecycle hint, without inventing terminal report truth.
 - Recover admitted orphan turns only after acquiring the physical run claim, and retry parent publication from bounded durable pending discovery. Parent publication holds its lock before updating the original card, appending body-free completion metadata, queuing a compact exact `thread_report` reference, and marking the obligation.

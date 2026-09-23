@@ -152,7 +152,7 @@ else
         {
           threadId: ids.child,
           assistantTurnId: ids.execution,
-          cause: { kind: "success", finishReason: "end_turn", finalPublicText: "" },
+          cause: { kind: "success", finishReason: "end_turn" },
         },
       );
     }
@@ -256,7 +256,7 @@ else
         {
           threadId: ids.child,
           assistantTurnId: ids.nextExecution,
-          cause: { kind: "success", finishReason: "end_turn", finalPublicText: "second" },
+          cause: { kind: "success", finishReason: "end_turn" },
         },
       );
       const failingFirst = createReportPublisher({

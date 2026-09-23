@@ -16,7 +16,7 @@ import type { OrchestratorDeps } from "./orchestrator.js";
 import { persistAndAppendEvents } from "./persistence.js";
 
 type TerminalCause =
-  | { kind: "success"; finishReason: FinishReason; finalPublicText: string }
+  | { kind: "success"; finishReason: FinishReason }
   | { kind: "failed"; reason: string; error: MeridianError | string }
   | { kind: "cancelled"; reason: string };
 
@@ -26,9 +26,11 @@ export type FinalizedExecution = {
   report: SavedExecutionReport | null;
 };
 
-function publicText(blocks: Block[]): string {
+function publicText(blocks: Block[], responseId: string | null): string {
   return blocks
-    .filter((block) => block.blockType === "text")
+    .filter(
+      (block) => block.responseId === responseId && block.blockType === "text" && !block.pruned,
+    )
     .map((block) => blockPlainText(block.blockType, block.content) ?? "")
     .join("");
 }
@@ -133,12 +135,12 @@ export async function finalizeExecution(
             : input.cause.kind === "cancelled"
               ? "cancelled"
               : "failed";
-        const text =
-          input.cause.kind === "success"
-            ? input.cause.finalPublicText
-            : publicText(await deps.repos.blocks.listByTurn(turn.id));
-        const source = capture ? "return_result" : text ? "final_assistant" : "empty";
         const responses = await deps.repos.modelResponses.listByTurn(turn.id);
+        const finalResponseId = responses.at(-1)?.id ?? null;
+        const text = capture
+          ? ""
+          : publicText(await deps.repos.blocks.listByTurn(turn.id), finalResponseId);
+        const source = capture ? "return_result" : text ? "final_assistant" : "empty";
         const cost = responses.reduce((sum, row) => sum + BigInt(row.millicredits ?? "0"), 0n);
         if (cost > BigInt(Number.MAX_SAFE_INTEGER)) {
           throw new Error("Execution cost exceeds report numeric range");
