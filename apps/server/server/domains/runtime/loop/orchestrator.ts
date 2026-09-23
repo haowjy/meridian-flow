@@ -1090,16 +1090,6 @@ async function* generateEvents(
 
   yield* initialEvents;
 
-  // Every subagent run owns a return_result completer, even when the caller did
-  // not pass one (a writer sending a new message into a child chat). Writer
-  // continue is settle-only: the child-run driver owns the per-run capture. A
-  // primary writer turn has none, so return_result stays a failed tool_result.
-  const returnResultCompleter =
-    input.returnResultCompleter ??
-    (thread.kind === "subagent"
-      ? deps.childRunCoordinator.createReturnResultCompleter()
-      : undefined);
-
   let currentAssistantTurn: Turn = assistantTurn;
   let activeResponseId: string | undefined;
 
@@ -1648,7 +1638,6 @@ async function* generateEvents(
                 interruptAutoResume,
                 treeBudget,
                 blockSeqRef: interruptState.blockSeqRef,
-                returnResultCompleter,
                 allTurns,
               },
             );

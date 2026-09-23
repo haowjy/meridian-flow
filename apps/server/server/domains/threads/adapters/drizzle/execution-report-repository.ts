@@ -3,7 +3,7 @@
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import * as schema from "@meridian/database/schema";
-import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { assertExecutionReportAdmission } from "../../domain/execution-report-admission.js";
 import { ExecutionReportConflictError } from "../../domain/execution-report-conflict.js";
 import type {
@@ -211,7 +211,24 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
       const row = await find(childThreadId, assistantTurnId);
       return row ? map(row) : null;
     },
-    async listPendingPublication(limit) {
+    async listUnfinalized(limit, afterExecutionId) {
+      if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
+      return currentDrizzleDb(db)
+        .select({
+          childThreadId: table.childThreadId,
+          assistantTurnId: table.assistantTurnId,
+        })
+        .from(table)
+        .where(
+          and(
+            isNull(table.outcome),
+            ...(afterExecutionId ? [gt(table.assistantTurnId, afterExecutionId)] : []),
+          ),
+        )
+        .orderBy(asc(table.assistantTurnId))
+        .limit(limit);
+    },
+    async listPendingPublication(limit, afterExecutionId) {
       const caller = schema.threads;
       const rows = await currentDrizzleDb(db)
         .select({
@@ -225,13 +242,14 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         .where(
           and(
             eq(table.publication, "pending"),
+            ...(afterExecutionId ? [gt(table.assistantTurnId, afterExecutionId)] : []),
             or(
               isNull(table.callerThreadId),
               and(isNull(caller.deletedAt), isNull(schema.projects.deletedAt)),
             ),
           ),
         )
-        .orderBy(asc(table.createdAt), asc(table.assistantTurnId))
+        .orderBy(asc(table.assistantTurnId))
         .limit(limit);
       return rows;
     },

@@ -137,9 +137,15 @@ export interface ExecutionReportRepository {
     childThreadId: ThreadId,
     assistantTurnId: TurnId,
   ): Promise<SavedExecutionReport | null>;
+  /** Bounded metadata for admitted executions still lacking terminal truth. */
+  listUnfinalized(
+    limit: number,
+    afterExecutionId?: TurnId,
+  ): Promise<Array<Pick<SavedExecutionReport, "childThreadId" | "assistantTurnId">>>;
   /** Bounded, deliverable discovery. Soft-deleted callers stay pending until restoration. */
   listPendingPublication(
     limit: number,
+    afterExecutionId?: TurnId,
   ): Promise<
     Array<Pick<SavedExecutionReport, "childThreadId" | "assistantTurnId" | "callerThreadId">>
   >;
@@ -171,7 +177,6 @@ export interface CreateThreadInput {
 
 export interface UpdateSpawnLifecycleInput {
   spawnStatus: SpawnStatus;
-  spawnResult?: JsonValue | null;
 }
 
 /** Atomic first-attempt bake payload for gateway prompt + skill contract. */

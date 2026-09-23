@@ -44,7 +44,6 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     originTurnId: input.originTurnId ?? null,
     spawnDepth: input.spawnDepth,
     spawnStatus: input.spawnStatus ?? "running",
-    spawnResult: null,
     totalCostUsd: "0",
     turnCount: 0,
     historySummary: null,

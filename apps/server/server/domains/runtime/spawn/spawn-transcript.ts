@@ -1,5 +1,5 @@
 /**
- * spawn-transcript — persist writer-facing spawn and report cards.
+ * spawn-transcript — persist writer-facing spawn status cards and return_result tool settlement.
  *
  * Tool dispatch runs handlers and durable tool_result rows. This module upserts
  * helper-result custom cards onto the active turn and owns return_result

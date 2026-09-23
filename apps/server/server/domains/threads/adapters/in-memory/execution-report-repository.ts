@@ -136,10 +136,22 @@ export function createInMemoryExecutionReportRepository(
     async findByExecution(child, execution) {
       return find(child, execution);
     },
-    async listPendingPublication(limit) {
+    async listUnfinalized(limit, afterExecutionId) {
+      if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
+      return [...rows.values()]
+        .filter(
+          (row) =>
+            row.outcome === null && (!afterExecutionId || row.assistantTurnId > afterExecutionId),
+        )
+        .sort((a, b) => a.assistantTurnId.localeCompare(b.assistantTurnId))
+        .slice(0, limit)
+        .map(({ childThreadId, assistantTurnId }) => ({ childThreadId, assistantTurnId }));
+    },
+    async listPendingPublication(limit, afterExecutionId) {
       const eligible = [];
       for (const row of rows.values()) {
         if (row.publication !== "pending") continue;
+        if (afterExecutionId && row.assistantTurnId <= afterExecutionId) continue;
         const caller = row.callerThreadId ? deps.threads.get(row.callerThreadId) : null;
         if (caller?.deletedAt) continue;
         if (caller && deps.projects) {
@@ -150,14 +162,9 @@ export function createInMemoryExecutionReportRepository(
           childThreadId: row.childThreadId,
           assistantTurnId: row.assistantTurnId,
           callerThreadId: caller?.id ?? null,
-          terminalAt: row.terminalAt,
         });
       }
-      eligible.sort(
-        (a, b) =>
-          (a.terminalAt ?? "").localeCompare(b.terminalAt ?? "") ||
-          a.assistantTurnId.localeCompare(b.assistantTurnId),
-      );
+      eligible.sort((a, b) => a.assistantTurnId.localeCompare(b.assistantTurnId));
       return eligible.slice(0, limit).map(({ childThreadId, assistantTurnId, callerThreadId }) => ({
         childThreadId,
         assistantTurnId,

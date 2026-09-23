@@ -2,11 +2,8 @@
  * The inbox drain seam: renders a claimed batch into a model request and
  * persists its `message` entries as durable history. A text `message` becomes a
  * user-role message at the request tail and a persisted user-role turn; a
- * `notice` becomes a request-only notice that never persists a turn. A `report`
- * message (a child's terminal report) persists as a system-role turn carrying a
- * `helper-result` card — the writer's run card — and reaches the model through
- * the shared `componentModelText` projection. Producers are not special-cased;
- * the body decides.
+ * child-provenance text message becomes writer-hidden system history with only
+ * an exact thread_report reference. A `notice` becomes request-only context.
  *
  * The persisted message turn reuses the durable inbox message id as its turn and
  * block id. The inbox collapses `(threadId, idempotencyKey)` to one row, so a
@@ -22,28 +19,13 @@
  * reads) and returns the events to emit, and through `loadActivatedSkillBodies`,
  * which inlines the request-only skill bodies the writer activated on it.
  */
-import {
-  buildHelperResultComponentContent,
-  type HelperResultComponentContent,
-} from "@meridian/contracts/components";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type {
-  Block,
-  BlockUpsertedRow,
-  JsonObject,
-  OrchestratorEvent,
-  Turn,
-} from "@meridian/contracts/threads";
+import type { Block, BlockUpsertedRow, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import type { Notice, NoticePort } from "../../notices/index.js";
 import { system, user } from "../gateway/helpers/messages.js";
 import type { Message } from "../gateway/index.js";
-import { spawnHelperCardProps } from "../spawn/spawn-output.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import {
-  attachSkillBodiesToLatestUserMessage,
-  componentModelText,
-  userTurnContentParts,
-} from "./context-builder.js";
+import { attachSkillBodiesToLatestUserMessage, userTurnContentParts } from "./context-builder.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { Inbox, InboxMessage } from "./ports.js";
@@ -192,11 +174,8 @@ export function renderInboxBatch(
       notices.push(inboxMessageNotice(message));
       continue;
     }
-    // A report is a system-role card; render it in the same model-facing form
-    // the persisted system turn projects, so mid-run delivery matches history.
-    if (message.body.kind === "report") {
-      const modelText = componentModelText(reportCardContent(message, message.id as TurnId));
-      if (modelText) rendered.push(system(modelText));
+    if (message.provenance.kind === "child") {
+      rendered.push(system(inboxMessageText(message)));
       continue;
     }
     // A message whose turn is already durable renders that turn's projection;
@@ -305,14 +284,12 @@ export function messageTurnFor(
   message: InboxMessage,
   prevTurnId: TurnId | null,
 ): { turn: Turn; block: BlockUpsertedRow } {
-  const isReportBody = message.body.kind === "report";
+  const isChildNotification = message.provenance.kind === "child";
   const turn = createLocalTurn({
     id: message.id,
     threadId: message.threadId,
     prevTurnId,
-    // A report is writer-facing card history the model reads as a system turn;
-    // a text `message` is a user-role message.
-    role: isReportBody ? "system" : "user",
+    role: isChildNotification ? "system" : "user",
     status: "complete",
     metadata: { kind: "message" },
     createdAt: message.enqueuedAt,
@@ -321,57 +298,17 @@ export function messageTurnFor(
   const block = contentForBlockInput({
     id: message.id,
     turnId: turn.id,
-    ...(isReportBody
-      ? {
-          blockType: "custom" as const,
-          content: reportCardContent(message, turn.id as TurnId),
-        }
-      : { blockType: "text" as const, textContent: text }),
+    blockType: "text",
+    textContent: text,
     sequence: 0,
     status: "complete",
   });
   return { turn, block };
 }
 
-/**
- * The writer-facing `helper-result` card for a drained report, built through the
- * same `spawnHelperCardProps` seam every spawn/child card uses. `childThreadId`
- * comes from the `child` provenance; the message turn is the door's parent.
- */
-function reportCardContent(message: InboxMessage, turnId: TurnId): HelperResultComponentContent {
-  if (message.body.kind !== "report") {
-    throw new Error("reportCardContent requires a report body");
-  }
-  const body = message.body;
-  const childThreadId =
-    message.provenance.kind === "child" ? (message.provenance.threadId as string) : undefined;
-  const output: JsonObject = body.failed
-    ? { status: "error", error: { code: "child_report_failed", message: body.text } }
-    : {
-        status: "completed",
-        report: {
-          handle: "",
-          threadId: childThreadId ?? "",
-          summary: body.text,
-          ...(body.artifacts !== undefined ? { artifacts: body.artifacts } : {}),
-          ...(body.payload !== undefined ? { payload: body.payload } : {}),
-        },
-      };
-  return buildHelperResultComponentContent(
-    spawnHelperCardProps({
-      ...(body.agentSlug !== undefined ? { agent: body.agentSlug } : {}),
-      ...(body.description !== undefined ? { description: body.description } : {}),
-      parentTurnId: turnId,
-      ...(childThreadId !== undefined ? { childThreadId } : {}),
-      output,
-    }),
-  );
-}
-
 export function inboxMessageText(message: InboxMessage): string {
   switch (message.body.kind) {
     case "text":
-    case "report":
       return message.body.text;
     case "context":
       return message.body.parts.map((part) => part.text).join("\n\n");

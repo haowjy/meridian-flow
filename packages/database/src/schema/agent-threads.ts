@@ -58,7 +58,6 @@ export const threads = pgTable(
     originTurnId: uuid("origin_turn_id").$type<TurnId>(),
     originType: text("origin_type"),
     spawnStatus: text("spawn_status"),
-    spawnResult: jsonb("spawn_result"),
     spawnDepth: integer("spawn_depth").notNull().default(0),
     activeLeafTurnId: uuid("active_leaf_turn_id").$type<TurnId>(),
     turnCount: integer("turn_count").notNull().default(0),

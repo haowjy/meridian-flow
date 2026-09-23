@@ -18,7 +18,6 @@ import type {
   ThreadRepository,
 } from "../../threads/index.js";
 import { createBoundConversation } from "../../threads/index.js";
-import type { ReturnResultCompleter } from "../loop/run-turn-port.js";
 import type { ThreadedInbox } from "../loop/threaded-inbox.js";
 import { appendSubagentActivity, appendSubagentActivityBestEffort } from "./activity-event.js";
 import { authorizeThreadMessage } from "./authorize-thread-message.js";
@@ -54,8 +53,7 @@ export interface ChildRunOptions {
   mode: "foreground" | "background";
   /**
    * Parent-turn card writer. A foreground spawn/continue upserts the running
-   * card then transitions it in place; a background spawn persists the running
-   * card once and the driver retires it at settle.
+   * card; report publication replaces that same card after terminal commit.
    */
   transcript?: SpawnTranscript;
 }
@@ -91,26 +89,10 @@ export interface ChildRunCoordinatorDeps {
 
 export interface ChildRunCoordinator {
   runChild(request: ChildRunRequest, options: ChildRunOptions): Promise<SpawnResult>;
-  /**
-   * One-shot return_result acknowledgement for a settle-only run (a writer
-   * driving a child chat): it records nothing and never captures a report.
-   */
-  createReturnResultCompleter(): ReturnResultCompleter;
 }
 
 export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildRunCoordinator {
   const driver = deps.driver;
-
-  function createReturnResultCompleter(): ReturnResultCompleter {
-    let used = false;
-    return async () => {
-      if (used) {
-        return { ok: false as const, message: "return_result already called for this run" };
-      }
-      used = true;
-      return { ok: true as const };
-    };
-  }
 
   async function prepareSpawn(
     input: SpawnChildInput,
@@ -210,25 +192,8 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       }
       return { ...prepared, description: input.description };
     } catch (error) {
-      const result: SpawnResult = {
-        status: "error",
-        error: meridianErrorFromSystem(
-          "spawn_failed",
-          error instanceof Error ? error.message : String(error),
-        ),
-      };
-      await deps.repos.transaction(async () => {
-        await deps.repos.threads.updateSpawnLifecycle(child.id as ThreadId, {
-          spawnStatus: "failed",
-          spawnResult: result,
-        });
-        await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-          type: "agent.run_completed",
-          parentThreadId: input.parentThread.id,
-          parentTurnId: input.parentTurnId as string,
-          childThreadId: child.id,
-          result,
-        });
+      await deps.repos.threads.updateSpawnLifecycle(child.id as ThreadId, {
+        spawnStatus: "failed",
       });
       throw error;
     }
@@ -394,16 +359,15 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     const cardFields = runCardFields(request, prepared);
 
     if (background) {
-      // The running card is durable server truth on the parent turn, so it
-      // survives the parent turn's terminal reconcile; the driver retires it
-      // when the child settles, leaving the report card as the only surface.
+      // The original card survives parent continuation and B replaces only its status.
       const runCard = await persistRunningCard(options.transcript, cardFields, prepared);
       if (request.reportCorrelation && runCard) {
         request.reportCorrelation = { ...request.reportCorrelation, cardBlockId: runCard.id };
       }
-      driver.driveBackground(prepared, request, runCard ? { blockId: runCard.id } : undefined);
+      const execution = await driver.driveBackground(prepared, request);
       return {
         status: "background",
+        execution,
         handle: prepared.handle,
         threadId: prepared.child.id,
         agentSlug: prepared.resolvedSlug,
@@ -418,9 +382,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       if (request.reportCorrelation && runningCard) {
         request.reportCorrelation = { ...request.reportCorrelation, cardBlockId: runningCard.id };
       }
-      const result = await driver.drive(prepared, request);
-      await persistHelperCard(options.transcript, { ...cardFields, output: result }, runningCard);
-      return result;
+      return await driver.drive(prepared, request);
     } catch (error) {
       await persistHelperCard(
         options.transcript,
@@ -440,5 +402,5 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     }
   }
 
-  return { runChild, createReturnResultCompleter };
+  return { runChild };
 }

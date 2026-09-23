@@ -36,7 +36,6 @@ import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import type { InterruptSession, InterruptTurnState } from "./interrupt-session.js";
 import type { InterruptAutoResumePolicy } from "./interrupts.js";
 import { appendEvent, type PersistenceDeps, persistAndAppendEvents } from "./persistence.js";
-import type { ReturnResultCompleter } from "./run-turn-port.js";
 
 export interface ToolDispatchDeps {
   toolExecutor: ToolExecutor;
@@ -60,7 +59,6 @@ export interface ToolDispatchContext {
   interruptAutoResume: InterruptAutoResumePolicy;
   treeBudget: TreeBudget;
   blockSeqRef: { value: number };
-  returnResultCompleter?: ReturnResultCompleter;
   allTurns: Turn[];
 }
 
@@ -235,15 +233,13 @@ export async function dispatchToolCall(
           })
       : undefined;
 
-  const returnResultCompleter = ctx.returnResultCompleter;
   let returnResultCapture: ReturnResultCapture | undefined;
-  const returnResult = async (capture: Parameters<ReturnResultCompleter>[0]) => {
-    if (!returnResultCompleter) {
+  const returnResult = async (capture: ReturnResultCapture) => {
+    if (ctx.thread.kind !== "subagent") {
       return { ok: false as const, message: "return_result is not available on this run." };
     }
-    const outcome = await returnResultCompleter(capture);
-    if (outcome.ok) returnResultCapture = capture;
-    return outcome;
+    returnResultCapture = capture;
+    return { ok: true as const };
   };
 
   const execResult = await deps.toolExecutor.executeTool(

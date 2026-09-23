@@ -37,8 +37,8 @@ skeleton and delegates the moving parts.
 | File | Role |
 |---|---|
 | `orchestrator.ts` | `createOrchestrator` / `runTurn` skeleton, user/assistant turn creation, iteration control, final yield of events. Before each model request it calls `drainInbox` and merges the batch into the request (`message`s as trailing user messages, `notice`s as request-only attachments); the batch is acked inside `persistModelResponse`'s transaction. Every terminal route — cancel, gateway error, no-result, error finish, budget, max-iteration, return_result, clean completion — funnels through one `exitRun` helper that runs its terminal write through `closeRun` under the lock, so the final claim is uniform (`exitRun` throws a private `RunExit` control-flow signal; the loop boundary is the one place that decides continue-vs-stop). `continueOnPending` is true only for normal completion and the `end_turn`/steer exits (a pending `message` continues the same run, so a mid-run steer stays on the same assistant turn) and false for cancel, hard error, budget, and max-iteration (terminal write, then release). Cancel's pending `message` therefore starts the **next turn** as a distinct drain run; the run loop observes the durable lease cancel flag at each iteration boundary (cross-process) in addition to the local abort. `RunTurnInput` is a union: a writer start mints `userText`'s user turn in setup (used by child prompts; the writer admission persists its own user turn at enqueue and wakes a drain-only start); a **drain-only start** (`drain: true`, a wake) instead claims the pending inbox in its setup transaction, persists each fresh `message` as the run's first user turn, then mints the assistant container after it (`leaf → message(user) → assistant(streaming)`), so the model sees exactly the drained batch. A writer turn already persisted at enqueue is in `priorTurns`, so the drain skips it and chains the assistant container from it; the drain reads that turn's persisted activated-skill metadata and inlines each skill body onto the writer message (request-only, never persisted). A drain start with no durable pending `message` throws `NoPendingWakeError` and mints no assistant turn; a preceding work-context `beforeTurn` write, if any, is durable history the next run reads (the invariant is no phantom assistant, not no write). |
-| `inbox-context.ts` | The drain seam. `renderInboxBatch` appends a text `message` as a user-role message at the request tail, renders a `report` `message` as a system-role helper-result projection, and converts a `notice` into a request-only `Notice`; `planMessageTurns` batches a claimed set into durable turns and `messageTurnFor` builds one `message`'s turn + block (inbox message id reused as turn/block id, `createdAt` from `enqueuedAt`): a user turn + text block for text, a system turn + `helper-result` custom block for a report (childThreadId from the `child` provenance). Shared by `persistInboxMessages` (the loop's mid-run batch) and the orchestrator's drain-only start. `drainInbox` is the loop's only claim: claim, drop redelivered `message`s already in the known-turn set, render, persist, and combine durable notices with request-only inbox notices. A `message` whose turn id already exists in the repository (a writer send persisted at enqueue, claimed mid-run where the run's accumulator predates it) is skipped without a second append, its persisted blocks render into the current request (never the plain body, so images, reference reads, and writer-activated skill bodies survive), and its turn/blocks join the accumulator so later iterations keep seeing it. Adoption is also where a mid-run writer turn's missing text-reference reads are loaded and persisted (`prepareAdoptedTurn`), since iteration 1's read pass covered only the original run's user turn. A `message` is history, not transient context, so later iterations of the same run keep seeing it. Producers are not special-cased; intent and body decide the rendering. |
-| `threaded-inbox.ts` | The one producer-facing enqueue. `createThreadedInbox` wraps the raw `Inbox` in `ThreadLock.withThreadLock` (so the insert commits before `closeRun`'s final claim and per-thread `seq` order holds) and fires a best-effort `RunStarter.start` for a `message`. Producers depend on this port; the drain and `closeRun` keep the raw `Inbox`. |
+| `inbox-context.ts` | The drain seam. `renderInboxBatch` appends a text `message` as a user-role message at the request tail, renders a `child`-provenance text `message` as writer-hidden system history containing only an exact `thread_report` call, and converts a `notice` into a request-only `Notice`; `planMessageTurns` batches a claimed set into durable turns and `messageTurnFor` builds one `message`'s turn + block (inbox message id reused as turn/block id, `createdAt` from `enqueuedAt`): a user turn + text block for text, a system turn + text block for a child-provenance notification. Shared by `persistInboxMessages` (the loop's mid-run batch) and the orchestrator's drain-only start. `drainInbox` is the loop's only claim: claim, drop redelivered `message`s already in the known-turn set, render, persist, and combine durable notices with request-only inbox notices. A `message` whose turn id already exists in the repository (a writer send persisted at enqueue, claimed mid-run where the run's accumulator predates it) is skipped without a second append, its persisted blocks render into the current request (never the plain body, so images, reference reads, and writer-activated skill bodies survive), and its turn/blocks join the accumulator so later iterations keep seeing it. Adoption is also where a mid-run writer turn's missing text-reference reads are loaded and persisted (`prepareAdoptedTurn`), since iteration 1's read pass covered only the original run's user turn. A `message` is history, not transient context, so later iterations of the same run keep seeing it. Producers are not special-cased; intent and body decide the rendering. |
+| `threaded-inbox.ts` | The producer-facing enqueue. `createThreadedInbox` holds `ThreadLock` across insertion and best-effort wake scheduling. Its scoped producer lets report publication B hold the parent lock once across the card/event/inbox/marker transaction without reacquiring it. The drain and `closeRun` keep the raw `Inbox`. |
 | `run-starter.ts` / `sweep-wakes.ts` | The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn runner's `startDrain`, swallowing `TurnStartConflictError` because a wake is best-effort. `sweepWakes` is the durable recovery: for each `inbox.pendingMessageThreads(limit)` with no live `authority.holder`, it starts a drain run; one thread's failure never strands the rest. `app.ts` runs the sweep on startup and on `WAKE_SWEEP_INTERVAL_MS` (default 30s). The `enqueue` wake is the latency path; the sweep is the guarantee. |
 | `thread-lock.ts` / `close-run.ts` | The per-thread serialization lock (`ThreadLock`, `threadLockKey`) shared by the producer `ThreadedInbox` and the run's final claim, and `closeRun`: under that lock, claim the inbox once more; with `continueOnPending` a pending batch returns `continue` before any terminal work, otherwise the terminal completion runs **and then** the lease is released. Holding the lock across completion and release means a `message` cannot start a second run while the terminal turn is still persisting. `release` is idempotent and guarded, so the run owner's `finally` release (the cancel/error backstop for a generator throw) never frees a newer run's lock. Drizzle adapter `adapters/drizzle-thread-lock.ts` uses a `pg_advisory_xact_lock` on `threadLockKey`; the in-memory fake uses a promise-chain mutex. |
 | `block-helpers.ts` | Content block conversion and local accumulator helpers. |
@@ -47,7 +47,7 @@ skeleton and delegates the moving parts.
 | `tool-dispatch.ts` | Live output, spawn/thread_message/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy. return_result settlement is spawn-owned: dispatch honors the typed `ReturnResultOutcome` and does not parse arguments or reconstruct the envelope from JSON. |
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
 | `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
-| `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. On **system** turns it also projects a completed `helper-result` custom card as model text (`componentModelText`), so the parent model reads a background child's report while the writer keeps the card. Assistant custom blocks stay UI-only to preserve tool_use→tool_result adjacency. |
+| `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. Child-provenance system text contains a compact exact `thread_report` call, never the report body; the parent model may fetch that report with the authorized tool. Assistant custom blocks stay UI-only to preserve tool_use→tool_result adjacency. |
 | `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt in a fixed layer order: immutable agent body (revision body or the host-owned empty default), the invocation overlay's additive `appendSystemPrompt`, frozen Work context, available skill slugs (name when it differs) and descriptions, named subagent slug/name/description from the bound roster, core document dialect, runtime URI instruction, and, for subagent threads only, the mandatory closing report instruction as the last layer. An empty or absent append adds nothing, and the guidance string is a module constant (`SUBAGENT_GUIDANCE`). Freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
 | `work-context.ts` / `work-context-delivery.ts` | Reads authoritative Work identity with rendered context and owns durable delivery/recovery behind the deep `WorkContextDelivery` port. Every Work-list change queues eligible live threads. Post-commit wakes drain idle threads, running threads flush at completion, and a startup/poll sweep recovers obligations across process recreation. |
 | `delivery-pump.ts` | Shared `createDeliveryPump` scaffold for a durable per-thread delivery: per-thread flush serialization, the live-run guard, and sweep fan-out. Each transport supplies what "deliver this thread" means and how its pending obligations are listed; obligation stores stay transport-specific. Used by `WorkContextDelivery`. |
@@ -140,12 +140,19 @@ behavior; schema-only stubs are not advertised.
 discriminates spawn from message. It authorizes, resolves the invocation,
 creates and binds the child thread, and persists writer cards. `spawn/resolve-child-invocation.ts`
 is the pure resolution/validation half (no thread, turn, or repository
-dependency); `spawn/child-run-driver.ts` owns the run lifecycle behind
-`drive`/`driveBackground` — register/release the prepared child (run lease,
-abort controller, registry), stream to terminal, capture `return_result` in a
-per-run closure, and persist the terminal lifecycle and event. The coordinator
-consumes `RunTurnPort`, `ChildRunRegistry` from the turn runner, the billing
-spend reader, immutable Agent revisions, and the threads repository's
+dependency). `spawn/child-run-driver.ts` coordinates claim, admitted turn start,
+stream consumption, lease release, exact saved-result read, and best-effort
+publication; it owns no terminal report policy. `loop/execution-finalizer.ts`
+owns immutable terminal transaction A under `closeRun`'s child final-drain lock.
+`spawn/report-publisher.ts` owns parent-first transaction B: it replaces the
+original card in place with `block.updated`, appends body-free
+`agent.run_completed`, queues compact child-provenance system text for
+background delivery only, and marks the report published.
+`spawn/orphan-report-repair.ts` scans bounded unfinalized metadata and requires
+the real session claim before failing a nonterminal admitted turn without a
+model call. The startup/poll sweep runs wake, repair, and publication
+independently. The coordinator consumes `RunTurnPort`, `ChildRunRegistry` from
+the turn runner, immutable Agent revisions, and the threads repository's
 `SubagentThreadFactory` seam. `spawn/apply-invocation-patch.ts` parses the patch with the canonical `invocationPatchSchema` and translates a `ZodError` to `InvocationPatchError`, so an unknown key or wrong value reaches `spawn_invocation_patch_invalid` before any child row is created. It then merges a presence-sensitive `InvocationPatch` onto a fully-resolved baseline (omitted inherits, present list replaces, empty clears, tool map patches one entry, scalar `model`/`effort` replace) through the compile-time-exhaustive `PATCH_MERGES` table, one entry per patch key; `tools` and `disallowed-tools` are coupled and each returns the full `patchTools` result so a map `allow` lifts the baseline denial. Overrides fold tool-name aliases like authoring. Added subagent names resolve from the caller's roster and added skill names from the retained dependency graph, throwing `InvocationPatchError` when unresolvable. The patch applies to named and generic children alike. The effective configuration plus the raw `invocation_overlay` persist on the thread binding and are reused on later turns; the saved Agent definition is never mutated. A spawn-time `append_system_prompt` is an additive overlay layer appended after the immutable Agent body; spawn never replaces the body. Route-facing
 thread creation still goes through public thread creation normalization; only the
 child-run coordinator can create subagent threads.
@@ -170,24 +177,21 @@ model, tools, system prompt, or overlay. A binding-less target fails
 `thread_message_target_unavailable`; a live writer turn or overlapping run fails
 `thread_message_target_busy`. The driver's `register` owns only the
 claim/controller/registry, so a failed foreground message never writes the
-child's lifecycle; the caller owns the failure policy. Writer-facing helper-result cards persist through `spawn/spawn-transcript.ts`
-(one `spawnHelperCardProps` builder). Foreground spawn upserts a running card
-before the child runs and patches it on completion. A background child's
-terminal report is one producer on the same queue as any `message`: the driver's
-`enqueueBackgroundReport` calls `ThreadedInbox.enqueue` with `child` provenance
-and a `report` body (`text`, `artifacts`, `payload`, `agentSlug`, `description`,
-`failed`), idempotency key `child-report:<reportId>`, so the parent is woken and
-drains it like any `message`. The legacy driver still enqueues from its per-run callback and terminal
-`finally`; this is **not** the saved-report authority and must be removed before
-Step 3 is complete. `persistReturnResult` now accepts the candidate through
-`executionReports.captureOnce` in the same transaction as the successful
-ordinary `tool_result`; it no longer emits a premature child-report card. The
-legacy inbox report rendering below remains until parent publication B replaces
-it.
-`spawn_status`/`spawn_result` are spawn-owned: a thread_message run's outcome
-lives on its per-execution card and never overwrites a prior report. Every child
-run emits the neutral `agent.run_completed`; there is no spawn-named completion
-event. Create and terminal also append a neutral `subagent.activity` fact to the
+child's lifecycle; the caller owns the failure policy.
+
+Writer-facing helper-result cards persist through `spawn/spawn-transcript.ts`
+and carry status/navigation metadata, not report body. A spawned background
+execution returns only after assistant-turn admission commits, without waiting
+for terminal. Foreground spawn and message return the exact terminal report
+directly, preserving failure/cancellation and partial content. Background
+`thread_message` remains queue-only with no promised execution or reply. The
+original running card is replaced only by B; a missing card is not recreated,
+but a live caller still receives the notification. `return_result` captures
+candidate content with its successful ordinary `tool_result` in one
+transaction; capture alone never makes success. `spawn_status` remains a
+lifecycle hint for activity readers, while the removed `spawn_result` column is
+not a competing body store. Every child run publishes neutral, body-free
+`agent.run_completed` metadata; there is no spawn-named completion event. Create and terminal also append a neutral `subagent.activity` fact to the
 **root** thread's journal (not the immediate parent), carrying the root's full
 recomputed `ThreadActivity` so every subscriber of the run tree shares one
 activity source. A foreground `thread_message` appends it once the wake lease is
@@ -200,11 +204,7 @@ wake appends are best-effort: a read-model failure is reported to the
 `subagent.activity.emit_failed` for a failed thread lookup) and never gates the
 run or writes a contradictory terminal fact. The read-model
 projector ignores it; the orchestrator event
-projector maps it to the `meridian.subagent.activity` custom frame. The per-run
-capture lives in the driver's `drive` closure; the
-writer-driven settle path uses the coordinator's settle-only
-`createReturnResultCompleter`.
-
+projector maps it to the `meridian.subagent.activity` custom frame.
 Named targets resolve by name within the parent binding's roster; a target with
 `model-invocable: false` is refused, while a primary-mode target is spawnable.
 An omitted or empty `agent` creates an agent-less child: the binding has no

@@ -20,6 +20,9 @@
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
 ### Fixed
 
+- Replace competing child completion paths with one saved per-execution terminal report. Background spawn returns after admission; direct spawn/message return the exact saved outcome, including failed or cancelled partial content. Report bodies no longer ride lifecycle events, cards, or inbox notifications.
+- Recover admitted orphan turns only after acquiring the physical run claim, and retry parent publication from bounded durable pending discovery. Parent publication holds its lock before updating the original card, appending body-free completion metadata, queuing a compact exact `thread_report` reference, and marking the obligation.
+- Remove the obsolete `threads.spawn_result` body column. The child report row is the sole saved result authority; `spawn_status` remains a lifecycle hint.
 - Make return_result capture and its successful tool_result one transaction, and finalize the exact child assistant turn/report together under the final-drain lock. Token exhaustion is failure; natural fallback uses only the final response's public text, and report cost sums that execution's persisted response accounting.
 - Keep the physical child run claim until the outer terminal transaction commits; rollback retains the claim and lease for safe cleanup or retry.
 - Closed the execution-report storage gate: transactional in-memory parity, canonical exact reads with live-run activity, validated invocation correlation, bounded publication discovery, and delivery-derived publication obligations.
@@ -28,7 +31,7 @@
 
 - Admit a saved execution-report row in the assistant-turn setup transaction for every subagent writer or inbox continuation; bind the running turn to its lease in that same transaction.
 - Added a durable `block.updated` replacement event for in-place historical card changes without splitting active text streams.
-- Added per-assistant-turn execution-report storage and exact lineage-authorized `thread_report({ ref, execution })` reads. Runtime terminal capture/finalization and completion publication remain the next lifecycle step.
+- Added per-assistant-turn execution-report storage and exact lineage-authorized `thread_report({ ref, execution })` reads.
 
 - Editor empty state lists the writer's recently opened documents in the current project, grouped by age (Today / Yesterday / Earlier). Opening a document records it to the account's recents list (`user_recent_documents`), and each project shows its own slice of that history; the landing replaces the old "New document / pick a file from the tree" dead end. A control at the tab strip's leading edge returns to it with tabs still open.
 - Seed Writer with full write/edit allow and promote Critic to a pickable primary that may read but not mutate.

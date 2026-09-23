@@ -1,86 +1,51 @@
-/**
- * ChildRunDriver — the child-run lifecycle from claim to terminal persistence.
- * Registers a prepared child (run claim, registry, abort controller), drives its
- * runTurn to terminal state, captures return_result in a per-run closure, and
- * persists the terminal lifecycle, event, and background report message.
- * Invocation resolution and writer-card policy stay with the coordinator.
- */
+/** Child-run coordination: admit, drive, release, then publish saved terminal truth. */
 import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
-  AgentReport,
   ExecutionReportCorrelation,
-  ReturnResultCapture,
   SpawnResult,
   TreeBudget,
 } from "@meridian/contracts/spawn";
-import { blockPlainText, type Thread, type ThreadActivity } from "@meridian/contracts/threads";
-import type { BillingSpendReader } from "../../billing/index.js";
+import type { Thread, ThreadActivity } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
-import type { WorkContextDelivery } from "../../projects/index.js";
-import type {
-  BlockRepository,
-  EventJournalWriter,
-  ThreadRepositories,
-  ThreadRepository,
-  TurnRepository,
-} from "../../threads/index.js";
+import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
 import type { Lease, RunAuthority } from "../loop/ports.js";
-import type { ReturnResultCompleter, RunTurnPort } from "../loop/run-turn-port.js";
-import type { ThreadedInbox } from "../loop/threaded-inbox.js";
+import type { RunTurnHandle, RunTurnPort } from "../loop/run-turn-port.js";
 import type { ChildRunRegistry } from "../loop/turn-runner.js";
 import { appendSubagentActivityBestEffort } from "./activity-event.js";
+import type { ReportPublisher } from "./report-publisher.js";
+import { savedReportToSpawnResult } from "./saved-report-outcome.js";
 
 export interface ChildDriveInput {
   parentThread: Thread;
   parentTurnId: TurnId;
   prompt: string;
   budget: TreeBudget;
-  /** Parent-side correlation only; assistantTurnId is supplied after real child admission. */
+  /** Original parent invocation, including the retained running card. */
   reportCorrelation?: ExecutionReportCorrelation;
 }
 
 export type PreparedChild = {
   child: Thread;
-  /** Server-assigned project handle (`pN`/`cN`); guaranteed non-null once prepared. */
   handle: string;
-  /** Event/thread-visible slug; a named roster name or the generic subagent label. */
   resolvedSlug: string;
-  /** Delivery-card title for a background spawn; omitted for continue. */
   description?: string;
   childController: AbortController;
   childRegistered: boolean;
   runLease: Lease;
   background: boolean;
-  /** Spawn creates the child lifecycle; a message never rewrites it. */
   origin: "spawn" | "message";
 };
 
-/** The parent-turn running card a background run retires when the child settles. */
-export type RunCardRef = { blockId: string };
-
-export type ChildTerminal =
-  | { type: "completed" }
-  | { type: "cancelled" }
-  | { type: "error"; message: string; code: string };
-
 export interface ChildRunDriverDeps {
   orchestrator: RunTurnPort;
-  repos: {
-    threads: Pick<ThreadRepository, "updateSpawnLifecycle">;
-    turns: Pick<TurnRepository, "listByThread">;
-    blocks: Pick<BlockRepository, "listByTurn" | "updatePruned">;
-    transaction: ThreadRepositories["transaction"];
-  };
+  repos: Pick<ThreadRepositories, "executionReports">;
   eventWriter: EventJournalWriter;
-  /** Recomputes a run tree's activity; feeds the root-journal `subagent.activity` fact. */
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   childRunRegistry: ChildRunRegistry;
-  /** Producer-facing inbox: a background child's report is enqueued as a message. */
-  threadedInbox: Pick<ThreadedInbox, "enqueue">;
-  workContextDelivery: Pick<WorkContextDelivery, "flushOwned">;
+  workContextDelivery: { flushOwned(threadId: ThreadId): Promise<void> };
   runAuthority: RunAuthority;
-  billingSpendReader: BillingSpendReader;
+  publisher: Pick<ReportPublisher, "publish">;
   eventSink: EventSink;
 }
 
@@ -91,130 +56,9 @@ export interface ChildRunDriver {
     options: { background?: boolean; signal?: AbortSignal; origin: "spawn" | "message" },
   ): Promise<PreparedChild>;
   release(prepared: PreparedChild): Promise<void>;
-  drive(
-    prepared: PreparedChild,
-    input: ChildDriveInput,
-    runCard?: RunCardRef,
-  ): Promise<SpawnResult>;
-  driveBackground(prepared: PreparedChild, input: ChildDriveInput, runCard?: RunCardRef): void;
-}
-
-export type ResolvedSpawn = {
-  terminalStatus: "succeeded" | "failed" | "cancelled";
-  spawnResult: SpawnResult;
-};
-
-/** One report shape for live capture, terminal fold, and synthesized fallback. */
-export function buildAgentReport(input: {
-  handle: string;
-  threadId: string;
-  capture: ReturnResultCapture;
-  costMillicredits: number;
-  incomplete?: boolean;
-}): AgentReport {
-  return {
-    handle: input.handle,
-    threadId: input.threadId,
-    summary: input.capture.summary,
-    ...(input.capture.payload !== undefined ? { payload: input.capture.payload } : {}),
-    ...(input.capture.artifacts !== undefined ? { artifacts: input.capture.artifacts } : {}),
-    costMillicredits: input.costMillicredits,
-    ...(input.incomplete !== undefined ? { incomplete: input.incomplete } : {}),
-  };
-}
-
-/**
- * The terminal→result cascade, pure but for the caller-provided incomplete
- * report. `captured` wins; then cancelled, error, completed-without-capture
- * (which the caller synthesizes), and finally a missing terminal event.
- */
-export function resolveSpawnResult(input: {
-  terminal: ChildTerminal | null;
-  captured: ReturnResultCapture | undefined;
-  handle: string;
-  threadId: string;
-  costMillicredits: number;
-  incompleteReport?: AgentReport;
-}): ResolvedSpawn {
-  const { terminal, captured, handle, threadId, costMillicredits, incompleteReport } = input;
-  if (captured) {
-    return {
-      terminalStatus: "succeeded",
-      spawnResult: {
-        status: "completed",
-        report: buildAgentReport({ handle, threadId, capture: captured, costMillicredits }),
-      },
-    };
-  }
-  if (terminal?.type === "cancelled") {
-    return {
-      terminalStatus: "cancelled",
-      spawnResult: {
-        status: "error",
-        error: meridianErrorFromSystem("spawn_cancelled", "Child run was cancelled"),
-      },
-    };
-  }
-  if (terminal?.type === "error") {
-    return {
-      terminalStatus: "failed",
-      spawnResult: {
-        status: "error",
-        error: meridianErrorFromSystem(
-          terminal.code || "spawn_failed",
-          terminal.message || "Child run failed",
-        ),
-      },
-    };
-  }
-  if (terminal?.type === "completed") {
-    if (!incompleteReport) {
-      throw new Error("resolveSpawnResult: completed terminal requires an incomplete report");
-    }
-    return {
-      terminalStatus: "succeeded",
-      spawnResult: { status: "completed", report: incompleteReport },
-    };
-  }
-  return {
-    terminalStatus: "failed",
-    spawnResult: {
-      status: "error",
-      error: meridianErrorFromSystem("spawn_failed", "Child run ended without terminal event"),
-    },
-  };
-}
-
-async function synthesizeIncompleteReport(
-  repos: ChildRunDriverDeps["repos"],
-  childThreadId: ThreadId,
-  handle: string,
-  costMillicredits: number,
-): Promise<AgentReport> {
-  const turns = await repos.turns.listByThread(childThreadId);
-  let summary = "Child run ended without return_result";
-  for (let index = turns.length - 1; index >= 0; index -= 1) {
-    const turn = turns[index];
-    if (turn?.role !== "assistant") continue;
-    const blocks = await repos.blocks.listByTurn(turn.id);
-    for (let blockIndex = blocks.length - 1; blockIndex >= 0; blockIndex -= 1) {
-      const block = blocks[blockIndex];
-      if (block?.blockType !== "text") continue;
-      const text = blockPlainText(block.blockType, block.content)?.trim();
-      if (text) {
-        summary = text;
-        break;
-      }
-    }
-    break;
-  }
-  return buildAgentReport({
-    handle,
-    threadId: childThreadId as string,
-    capture: { summary },
-    costMillicredits,
-    incomplete: true,
-  });
+  drive(prepared: PreparedChild, input: ChildDriveInput): Promise<SpawnResult>;
+  /** Resolves only after assistant-turn/report admission commits, not after terminal. */
+  driveBackground(prepared: PreparedChild, input: ChildDriveInput): Promise<TurnId>;
 }
 
 export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
@@ -228,13 +72,11 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     const parentThreadId = child.parentThreadId as ThreadId;
     const childThreadId = child.id as ThreadId;
     const handle = child.ref;
-    if (handle === null) throw new Error("Prepared child has no concurrency handle");
+    if (!handle) throw new Error("Prepared child has no project handle");
     const childController = new AbortController();
     let runLease: Lease | null = null;
     try {
       runLease = await runAuthority.acquire(childThreadId, crypto.randomUUID());
-      // Keep the id out: this message reaches the model as a tool error and
-      // would put the child UUID back into re-emitted context.
       if (!runLease) throw new Error("Child thread already has an active run");
       if (options.background) {
         deps.childRunRegistry.registerBackgroundChild(
@@ -245,11 +87,9 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
       } else {
         const parentSignal = options.signal;
         if (parentSignal) {
-          if (parentSignal.aborted) {
-            childController.abort();
-          } else {
+          if (parentSignal.aborted) childController.abort();
+          else
             parentSignal.addEventListener("abort", () => childController.abort(), { once: true });
-          }
         }
         deps.childRunRegistry.registerChild(parentThreadId, childThreadId, childController);
       }
@@ -271,273 +111,143 @@ export function createChildRunDriver(deps: ChildRunDriverDeps): ChildRunDriver {
     }
   }
 
-  /** Releases a prepared child that never entered drive (e.g. a card write failed). */
   async function release(prepared: PreparedChild): Promise<void> {
     prepared.childController.abort();
     deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
     await runAuthority.release(prepared.runLease);
   }
 
-  /**
-   * Retire a settled run's parent-turn card. The prune and its journal fact are
-   * read-model side effects, never part of the run result: a missing row is a
-   * no-op and any failure is reported to the `EventSink` and swallowed. This
-   * isolates the not-found case only — the call runs inside the terminal
-   * transaction, so a genuine statement error still aborts it and fails the run.
-   */
-  async function retireRunCard(input: ChildDriveInput, runCard: RunCardRef): Promise<void> {
-    try {
-      const pruned = await deps.repos.blocks.updatePruned(runCard.blockId, true);
-      if (!pruned) {
-        emitEvent(deps.eventSink, {
-          level: "warn",
-          source: "runtime.spawn",
-          name: "subagent.run_card_prune_missing",
-          correlation: {
-            threadId: input.parentThread.id,
-            turnId: input.parentTurnId as string,
-          },
-          payload: { blockId: runCard.blockId },
-        });
-      }
-      await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-        type: "block.pruned",
-        blockId: runCard.blockId,
-      });
-    } catch (error) {
-      emitEvent(deps.eventSink, {
-        level: "warn",
-        source: "runtime.spawn",
-        name: "subagent.run_card_prune_failed",
-        correlation: {
-          threadId: input.parentThread.id,
-          turnId: input.parentTurnId as string,
-        },
-        payload: { blockId: runCard.blockId, ...unknownToEventPayload(error) },
-      });
+  async function start(prepared: PreparedChild, input: ChildDriveInput): Promise<RunTurnHandle> {
+    if (!input.reportCorrelation) {
+      throw new Error("Child invocation has no parent report correlation");
     }
+    const handle = await deps.orchestrator.runTurn({
+      threadId: prepared.child.id as ThreadId,
+      userText: input.prompt,
+      signal: prepared.childController.signal,
+      treeBudget: input.budget,
+      lease: prepared.runLease,
+      executionReport: {
+        correlation: input.reportCorrelation,
+        agentSlug: prepared.resolvedSlug,
+        description: prepared.description ?? null,
+      },
+    });
+    deps.childRunRegistry.markChildTurn(prepared.child.id as ThreadId, handle.assistantTurnId);
+    return handle;
   }
 
-  function appendBackgroundTerminal(
-    prepared: PreparedChild,
-    input: ChildDriveInput,
-    result: SpawnResult,
-  ): Promise<bigint> {
-    if (result.status === "completed") {
-      return deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-        type: "background.completed",
-        parentThreadId: input.parentThread.id,
-        parentTurnId: input.parentTurnId as string,
-        childThreadId: prepared.child.id,
-        agentSlug: prepared.resolvedSlug,
-        result,
-      });
-    }
-    return deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-      type: "background.failed",
-      parentThreadId: input.parentThread.id,
-      parentTurnId: input.parentTurnId as string,
-      childThreadId: prepared.child.id,
-      agentSlug: prepared.resolvedSlug,
-      error: result.status === "error" ? result.error.message : "Background run failed",
+  function observeCleanupFailure(prepared: PreparedChild, name: string, error: unknown): void {
+    emitEvent(deps.eventSink, {
+      level: "warn",
+      source: "runtime.spawn",
+      name,
+      correlation: { threadId: prepared.child.id },
+      payload: unknownToEventPayload(error),
     });
   }
 
-  async function drive(
-    prepared: PreparedChild,
-    input: ChildDriveInput,
-    runCard?: RunCardRef,
-  ): Promise<SpawnResult> {
-    let terminalStatus: "succeeded" | "failed" | "cancelled" = "succeeded";
-    let spawnResult: SpawnResult = {
-      status: "error",
-      error: meridianErrorFromSystem("spawn_failed", "Child run did not produce a result"),
-    };
-    let reportId: TurnId | null = null;
-    let captured: ReturnResultCapture | undefined;
-    let capturedUsed = false;
-
-    // Background reports are recorded durably the moment return_result settles,
-    // not only in drive's terminal transaction, so a crash between the two
-    // cannot lose the payload/artifacts; `enqueue` is idempotent on reportId.
-    const enqueueBackgroundReport = async (result: SpawnResult) => {
-      if (!prepared.background) return;
-      const id = (reportId ?? crypto.randomUUID()) as TurnId;
-      const artifacts = result.status === "completed" ? result.report.artifacts : undefined;
-      const payload = result.status === "completed" ? result.report.payload : undefined;
-      await deps.threadedInbox.enqueue({
-        threadId: input.parentThread.id as ThreadId,
-        intent: "message",
-        provenance: { kind: "child", threadId: prepared.child.id as ThreadId, reportId: id },
-        body: {
-          kind: "report",
-          text:
-            result.status === "completed"
-              ? result.report.summary
-              : result.status === "error"
-                ? result.error.message
-                : "Background run finished.",
-          ...(artifacts !== undefined ? { artifacts } : {}),
-          ...(payload !== undefined ? { payload } : {}),
-          ...(prepared.resolvedSlug ? { agentSlug: prepared.resolvedSlug } : {}),
-          ...(prepared.description !== undefined ? { description: prepared.description } : {}),
-          ...(result.status === "error" ? { failed: true } : {}),
-        },
-        idempotencyKey: `child-report:${id}`,
-      });
-    };
-
-    const returnResultCompleter: ReturnResultCompleter = async (capture) => {
-      if (capturedUsed) {
-        return { ok: false, message: "return_result already called for this run" };
-      }
-      capturedUsed = true;
-      captured = capture;
-      if (reportId && prepared.background) {
-        // Runs the moment the report is produced, before the child turn settles.
-        await enqueueBackgroundReport({
-          status: "completed",
-          report: buildAgentReport({
-            handle: prepared.handle,
-            threadId: prepared.child.id,
-            capture,
-            costMillicredits: 0,
-          }),
-        });
-      }
-      return { ok: true };
-    };
-
+  async function cleanup(prepared: PreparedChild): Promise<void> {
+    const childThreadId = prepared.child.id as ThreadId;
+    deps.childRunRegistry.abortChildrenOf(childThreadId, { includeBackground: true });
     try {
-      const handle = await deps.orchestrator.runTurn({
-        threadId: prepared.child.id as ThreadId,
-        userText: input.prompt,
-        signal: prepared.childController.signal,
-        treeBudget: input.budget,
-        isSubagentThread: true,
-        returnResultCompleter,
-        lease: prepared.runLease,
-      });
-      reportId = handle.assistantTurnId;
-      deps.childRunRegistry.markChildTurn(
-        prepared.child.id as ThreadId,
-        handle.assistantTurnId as TurnId,
-      );
-
-      let childTerminal: ChildTerminal | null = null;
-      for await (const event of handle.events) {
-        if (event.type === "turn.completed") childTerminal = { type: "completed" };
-        else if (event.type === "turn.cancelled") childTerminal = { type: "cancelled" };
-        else if (event.type === "turn.error") {
-          childTerminal = { type: "error", message: event.error.message, code: event.error.code };
-        }
-      }
-
-      const childCostMillicredits = Number(
-        await deps.billingSpendReader.getThreadDebitTotal({
-          userId: input.parentThread.userId,
-          threadId: prepared.child.id,
-        }),
-      );
-      const incompleteReport =
-        captured === undefined && childTerminal?.type === "completed"
-          ? await synthesizeIncompleteReport(
-              deps.repos,
-              prepared.child.id as ThreadId,
-              prepared.handle,
-              childCostMillicredits,
-            )
-          : undefined;
-      const resolved = resolveSpawnResult({
-        terminal: childTerminal,
-        captured,
-        handle: prepared.handle,
-        threadId: prepared.child.id,
-        costMillicredits: childCostMillicredits,
-        ...(incompleteReport !== undefined ? { incompleteReport } : {}),
-      });
-      terminalStatus = resolved.terminalStatus;
-      spawnResult = resolved.spawnResult;
+      if (prepared.childRegistered) await deps.workContextDelivery.flushOwned(childThreadId);
     } catch (error) {
-      terminalStatus = "failed";
-      const message = error instanceof Error ? error.message : String(error);
-      spawnResult = { status: "error", error: meridianErrorFromSystem("spawn_failed", message) };
+      observeCleanupFailure(prepared, "child.work_context_flush_failed", error);
     } finally {
+      deps.childRunRegistry.unregisterChild(childThreadId);
       try {
-        await deps.repos.transaction(async () => {
-          // spawn_status/spawn_result record the spawn; a continue run's outcome
-          // lives on its per-execution card and events and never erases it.
-          if (prepared.origin === "spawn") {
-            await deps.repos.threads.updateSpawnLifecycle(prepared.child.id as ThreadId, {
-              spawnStatus: terminalStatus,
-              spawnResult,
-            });
-          }
-          await deps.eventWriter.appendEvent(input.parentThread.id as ThreadId, {
-            type: "agent.run_completed",
-            parentThreadId: input.parentThread.id,
-            parentTurnId: input.parentTurnId as string,
-            childThreadId: prepared.child.id,
-            result: spawnResult,
-          });
-          await enqueueBackgroundReport(spawnResult);
-          // Retire the parent-turn running card in the same terminal transaction
-          // as the report enqueue: exactly one card per run is visible (run card
-          // during, report after), and a crash cannot leave both. Best-effort: a
-          // read-model side effect must never roll back the run's terminal facts
-          // and turn a successful run into a reported failure.
-          if (runCard) {
-            await retireRunCard(input, runCard);
-          }
-        });
-      } finally {
-        deps.childRunRegistry.abortChildrenOf(prepared.child.id as ThreadId, {
-          includeBackground: true,
-        });
-        try {
-          if (prepared.childRegistered) {
-            try {
-              await deps.workContextDelivery.flushOwned(prepared.child.id as ThreadId);
-            } finally {
-              deps.childRunRegistry.unregisterChild(prepared.child.id as ThreadId);
-            }
-          }
-        } finally {
-          await runAuthority.release(prepared.runLease);
-        }
+        await runAuthority.release(prepared.runLease);
+      } catch (error) {
+        observeCleanupFailure(prepared, "child.lease_release_failed", error);
       }
     }
+  }
 
-    // After the lease release so the node reads terminal/asleep, not awake.
-    // Best-effort: the run's outcome is already durable above; a read-model
-    // failure must not become a `background.failed` or a failed spawn result.
+  async function finish(
+    prepared: PreparedChild,
+    input: ChildDriveInput,
+    handle: RunTurnHandle,
+  ): Promise<SpawnResult> {
+    const childThreadId = prepared.child.id as ThreadId;
+    let generatorError: unknown;
+    try {
+      for await (const _event of handle.events) {
+        // The orchestrator persists and journals its events while driving.
+      }
+    } catch (error) {
+      generatorError = error;
+      try {
+        await deps.orchestrator.finalizeGeneratorFailure({
+          threadId: childThreadId,
+          assistantTurnId: handle.assistantTurnId,
+          error,
+          signal: prepared.childController.signal,
+          lease: prepared.runLease,
+        });
+      } catch (failure) {
+        observeCleanupFailure(prepared, "child.generator_finalization_failed", failure);
+      }
+    } finally {
+      await cleanup(prepared);
+    }
+
+    const saved = await deps.repos.executionReports.findByExecution(
+      childThreadId,
+      handle.assistantTurnId,
+    );
+    if (saved?.outcome !== null && saved?.outcome !== undefined) {
+      try {
+        await deps.publisher.publish(childThreadId, handle.assistantTurnId);
+      } catch (error) {
+        observeCleanupFailure(prepared, "child.publication_failed", error);
+      }
+    }
     await appendSubagentActivityBestEffort({
       eventWriter: deps.eventWriter,
       readActivity: deps.readActivity,
-      rootThreadId: input.parentThread.rootThreadId as ThreadId,
-      childThreadId: prepared.child.id,
+      rootThreadId: (input.parentThread.rootThreadId ?? input.parentThread.id) as ThreadId,
+      childThreadId,
       eventSink: deps.eventSink,
     });
-
-    return spawnResult;
+    if (saved?.outcome) return savedReportToSpawnResult(saved);
+    return {
+      status: "error",
+      error: meridianErrorFromSystem(
+        "spawn_unavailable",
+        generatorError
+          ? "Child run failed before a saved terminal report"
+          : "Child report is unavailable",
+      ),
+      execution: handle.assistantTurnId,
+    };
   }
 
-  function driveBackground(
-    prepared: PreparedChild,
-    input: ChildDriveInput,
-    runCard?: RunCardRef,
-  ): void {
-    void drive(prepared, input, runCard)
-      .then((result) => appendBackgroundTerminal(prepared, input, result))
-      .catch((error: unknown) =>
-        appendBackgroundTerminal(prepared, input, {
-          status: "error",
-          error: meridianErrorFromSystem(
-            "spawn_failed",
-            error instanceof Error ? error.message : String(error),
-          ),
-        }),
-      );
+  async function drive(prepared: PreparedChild, input: ChildDriveInput): Promise<SpawnResult> {
+    let handle: RunTurnHandle;
+    try {
+      handle = await start(prepared, input);
+    } catch (error) {
+      // Setup failed before a terminal transaction. The child lease must not
+      // survive an unadmitted invocation, and no completion is fabricated.
+      await cleanup(prepared);
+      throw error;
+    }
+    return finish(prepared, input, handle);
+  }
+
+  async function driveBackground(prepared: PreparedChild, input: ChildDriveInput): Promise<TurnId> {
+    let handle: RunTurnHandle;
+    try {
+      handle = await start(prepared, input);
+    } catch (error) {
+      await cleanup(prepared);
+      throw error;
+    }
+    void finish(prepared, input, handle).catch((error) => {
+      observeCleanupFailure(prepared, "child.background_driver_failed", error);
+    });
+    return handle.assistantTurnId;
   }
 
   return { register, release, drive, driveBackground };

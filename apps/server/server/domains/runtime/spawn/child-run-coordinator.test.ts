@@ -4,7 +4,6 @@
  * pre-create depth refusal. Runs exercise the unified `runChild` entrypoint.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { ReturnResultCapture } from "@meridian/contracts/spawn";
 import { createDefaultTreeBudget } from "@meridian/contracts/spawn";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it, vi } from "vitest";
@@ -33,6 +32,7 @@ import { createThreadedInbox } from "../loop/threaded-inbox.js";
 import { createToolRegistry, resolveAgentThreadTurnContext } from "../tools/index.js";
 import { createChildRunCoordinator } from "./child-run-coordinator.js";
 import { createChildRunDriver } from "./child-run-driver.js";
+import { createReportPublisher } from "./report-publisher.js";
 import type { SpawnTranscript } from "./spawn-transcript.js";
 
 type RecordedTurn = {
@@ -41,7 +41,10 @@ type RecordedTurn = {
   assistantTurnId: TurnId;
 };
 
-function stubOrchestrator(records: RecordedTurn[]): RunTurnPort {
+function stubOrchestrator(
+  records: RecordedTurn[],
+  repos: ReturnType<typeof createInMemoryRepositories>,
+): RunTurnPort {
   let counter = 0;
   return {
     async runTurn(input) {
@@ -52,16 +55,54 @@ function stubOrchestrator(records: RecordedTurn[]): RunTurnPort {
         userText: "userText" in input ? input.userText : "",
         assistantTurnId,
       });
-      // return_result settles while the child's event generator runs, after
-      // runTurn has already returned the assistant turn id.
+      const userTurn = await repos.turns.create({
+        threadId: input.threadId,
+        role: "user",
+        status: "complete",
+        prevTurnId: (await repos.threads.findById(input.threadId))?.activeLeafTurnId ?? null,
+      });
+      await repos.turns.create({
+        id: assistantTurnId,
+        threadId: input.threadId,
+        role: "assistant",
+        status: "streaming",
+        prevTurnId: userTurn.id,
+      });
+      const child = await repos.threads.findById(input.threadId);
+      if (!child?.ref) throw new Error("missing child handle");
+      await repos.executionReports.admit({
+        childThreadId: input.threadId,
+        assistantTurnId,
+        handle: child.ref,
+        ...(input.executionReport?.correlation ?? {
+          origin: "thread_run" as const,
+          deliveryMode: "none" as const,
+          callerThreadId: null,
+          callerTurnId: null,
+          toolCallId: null,
+          cardBlockId: null,
+        }),
+      });
       return {
-        userTurnId: `user-turn-${counter}` as TurnId,
+        userTurnId: userTurn.id,
         assistantTurnId,
         events: (async function* () {
           yield* [] as OrchestratorEvent[];
-          await input.returnResultCompleter?.({
+          await repos.executionReports.captureOnce(input.threadId, assistantTurnId, "return", {
             summary: `child report ${counter}`,
-          } satisfies ReturnResultCapture);
+          });
+          await repos.executionReports.finalizeOnce({
+            childThreadId: input.threadId,
+            assistantTurnId,
+            outcome: "succeeded",
+            reason: null,
+            source: "return_result",
+            summary: `child report ${counter}`,
+            costMillicredits: 0,
+          });
+          if (input.executionReport?.correlation.origin === "spawn") {
+            await repos.threads.updateSpawnLifecycle(input.threadId, { spawnStatus: "succeeded" });
+          }
         })(),
       };
     },
@@ -70,11 +111,7 @@ function stubOrchestrator(records: RecordedTurn[]): RunTurnPort {
 }
 
 async function fixture(
-  options: {
-    orchestrator?: RunTurnPort;
-    eventWriter?: EventJournalWriter;
-    updatePruned?: (id: string, pruned: boolean) => Promise<null>;
-  } = {},
+  options: { orchestrator?: RunTurnPort; eventWriter?: EventJournalWriter } = {},
 ) {
   const transactionOwner = new InMemoryTransactionOwner();
   let repos: ReturnType<typeof createInMemoryRepositories>;
@@ -170,17 +207,11 @@ async function fixture(
     runStarter,
     schedulePostCommit: (task) => task(),
   });
+  const publisher = createReportPublisher({ repos, eventWriter, threadedInbox, eventSink });
 
   const driver = createChildRunDriver({
-    orchestrator: options.orchestrator ?? stubOrchestrator(turns),
-    repos: {
-      threads: repos.threads,
-      turns: repos.turns,
-      blocks: options.updatePruned
-        ? { ...repos.blocks, updatePruned: options.updatePruned }
-        : repos.blocks,
-      transaction: repos.transaction,
-    },
+    orchestrator: options.orchestrator ?? stubOrchestrator(turns, repos),
+    repos: { executionReports: repos.executionReports },
     eventWriter,
     readActivity,
     childRunRegistry: {
@@ -193,17 +224,12 @@ async function fixture(
       },
       abortChildrenOf() {},
     },
-    threadedInbox,
     workContextDelivery: { async flushOwned() {} },
     runAuthority,
-    billingSpendReader: {
-      async getThreadDebitTotal() {
-        return "0";
-      },
-    },
+    publisher,
     eventSink,
   });
-  const coordinator = createChildRunCoordinator({
+  const coreCoordinator = createChildRunCoordinator({
     driver,
     threadedInbox,
     repos: {
@@ -221,6 +247,43 @@ async function fixture(
       model === "parent-model" ? [] : ["The Agent's configured model is unavailable."],
     eventSink,
   });
+  let invocation = 0;
+  const coordinator = {
+    ...coreCoordinator,
+    async runChild(
+      request: Parameters<typeof coreCoordinator.runChild>[0],
+      options: Parameters<typeof coreCoordinator.runChild>[1],
+    ) {
+      if (request.kind === "message" && options.mode === "background") {
+        return coreCoordinator.runChild(request, options);
+      }
+      if (!(await repos.turns.findById(request.parentTurnId))) {
+        const thread = await repos.threads.findById(request.parentThread.id);
+        await repos.turns.create({
+          id: request.parentTurnId,
+          threadId: request.parentThread.id,
+          role: "assistant",
+          status: "complete",
+          prevTurnId: thread?.activeLeafTurnId ?? null,
+        });
+      }
+      invocation += 1;
+      return coreCoordinator.runChild(
+        {
+          ...request,
+          reportCorrelation: request.reportCorrelation ?? {
+            callerThreadId: request.parentThread.id,
+            callerTurnId: request.parentTurnId,
+            toolCallId: `test-invocation-${invocation}`,
+            cardBlockId: null,
+            origin: request.kind === "spawn" ? "spawn" : "foreground_message",
+            deliveryMode: options.mode === "background" ? "background_notification" : "direct",
+          },
+        },
+        options,
+      );
+    },
+  };
 
   return {
     coordinator,
@@ -250,7 +313,7 @@ function transcriptFor(
   return {
     persistence: { repos: deps.repos, eventWriter: deps.eventWriter },
     threadId,
-    turnId: "card-turn",
+    turnId: "turn-1",
     blockSeqRef: { value: 0 },
     allBlocks: [],
     events: [],
@@ -258,20 +321,6 @@ function transcriptFor(
 }
 
 describe("ChildRunCoordinator spawn selection", () => {
-  it("settle-only completer refuses a second return and never aborts", async () => {
-    const { coordinator, abortedChildren } = await fixture();
-    const completer = coordinator.createReturnResultCompleter();
-
-    const first = await completer({ summary: "done" });
-    expect(first).toEqual({ ok: true });
-
-    const second = await completer({ summary: "again" });
-    expect(second.ok).toBe(false);
-    if (!second.ok) expect(second.message.length).toBeGreaterThan(0);
-
-    expect(abortedChildren).toEqual([]);
-  });
-
   it("refuses depth 4 before creating a child; depth 3 still spawns", async () => {
     const { coordinator, parent, journal } = await fixture();
     const refused = await coordinator.runChild(
@@ -808,7 +857,6 @@ describe("ChildRunCoordinator thread_message", () => {
 
     const after = await repos.threads.findById(childId);
     expect(after?.spawnStatus).toBe(before?.spawnStatus);
-    expect(after?.spawnResult).toEqual(before?.spawnResult);
     expect(journal.filter((event) => event.type === "agent.run_completed").length).toBe(
       completions,
     );
@@ -863,18 +911,22 @@ describe("ChildRunCoordinator thread_message", () => {
     const customBlocks = transcript.events.flatMap((event) =>
       event.type === "block.upserted" && event.block.blockType === "custom" ? [event.block] : [],
     );
-    expect(customBlocks.length).toBe(2);
+    expect(customBlocks.length).toBe(1);
     expect(customBlocks[0]?.content).toMatchObject({
       kind: "helper-result",
       props: { status: "running", childThreadId: spawned.report.threadId },
     });
-    expect(customBlocks[1]?.content).toMatchObject({
+    expect((await repos.blocks.findById(customBlocks[0]?.id ?? ""))?.content).toMatchObject({
       kind: "helper-result",
-      props: { status: "completed", childThreadId: spawned.report.threadId },
+      props: {
+        status: "completed",
+        childThreadId: spawned.report.threadId,
+        execution: spawned.execution,
+      },
     });
   });
 
-  it("persists one durable run card for a background spawn and retires it at settle", async () => {
+  it("keeps the same background run card and replaces only its status at publication", async () => {
     const { coordinator, parent, repos, eventWriter, journal } = await fixture();
     const transcript = transcriptFor(parent.id as ThreadId, { repos, eventWriter });
     const spawned = await coordinator.runChild(
@@ -903,42 +955,13 @@ describe("ChildRunCoordinator thread_message", () => {
     if (!cardId) throw new Error("missing running card id");
 
     await vi.waitFor(async () => {
-      expect((await repos.blocks.findById(cardId))?.pruned).toBe(true);
+      expect((await repos.blocks.findById(cardId))?.content).toMatchObject({
+        kind: "helper-result",
+        props: { status: "completed", execution: spawned.execution },
+      });
     });
-    expect(journal.some((entry) => entry.type === "block.pruned")).toBe(true);
-  });
-
-  it("keeps a background run successful when retiring its run card throws", async () => {
-    const { coordinator, parent, repos, eventWriter, journal, eventSink } = await fixture({
-      updatePruned: async () => {
-        throw new Error("prune exploded");
-      },
-    });
-    const transcript = transcriptFor(parent.id as ThreadId, { repos, eventWriter });
-
-    const spawned = await coordinator.runChild(
-      {
-        kind: "spawn",
-        parentThread: parent,
-        parentTurnId: "turn-1" as TurnId,
-        agentSlug: "",
-        prompt,
-        budget,
-      },
-      { mode: "background", transcript },
-    );
-    expect(spawned.status).toBe("background");
-
-    await vi.waitFor(() => {
-      expect(journal.some((entry) => entry.type === "background.completed")).toBe(true);
-    });
-    // A read-model prune failure is not a run failure: no contradictory terminal fact.
-    expect(journal.some((entry) => entry.type === "background.failed")).toBe(false);
-    const terminal = journal.filter((entry) => entry.type === "agent.run_completed");
-    expect(terminal).toHaveLength(1);
-    expect(eventSink.events.some((event) => event.name === "subagent.run_card_prune_failed")).toBe(
-      true,
-    );
+    expect((await repos.blocks.findById(cardId))?.pruned).not.toBe(true);
+    expect(journal.some((entry) => entry.type === "block.updated")).toBe(true);
   });
 
   it("enqueues one agent message for a background message and wakes the target", async () => {
@@ -1020,110 +1043,6 @@ describe("ChildRunCoordinator thread_message", () => {
     expect(runStarter.started).not.toContain(spawned.report.threadId);
   });
 
-  it("records the background report durably when return_result settles, before the run ends", async () => {
-    const orchestrator: RunTurnPort = {
-      async runTurn(input) {
-        return {
-          userTurnId: "user-turn-1" as TurnId,
-          assistantTurnId: "assistant-turn-1" as TurnId,
-          events: (async function* () {
-            yield* [] as OrchestratorEvent[];
-            await input.returnResultCompleter?.({
-              summary: "durable report",
-              payload: { saved: true },
-            } satisfies ReturnResultCapture);
-            // A crash after return_result must not erase the obligation.
-            throw new Error("run died after return_result");
-          })(),
-        };
-      },
-      async finalizeGeneratorFailure() {},
-    };
-    const { coordinator, parent, inbox } = await fixture({ orchestrator });
-
-    const background = await coordinator.runChild(
-      {
-        kind: "spawn",
-        parentThread: parent,
-        parentTurnId: "turn-1" as TurnId,
-        agentSlug: "",
-        prompt,
-        budget,
-      },
-      { mode: "background" },
-    );
-    expect(background.status).toBe("background");
-
-    await vi.waitFor(async () => {
-      expect(await inbox.claimPending(parent.id)).toHaveLength(1);
-    });
-    const [report] = await inbox.claimPending(parent.id);
-    expect(report).toMatchObject({
-      intent: "message",
-      provenance: { kind: "child", reportId: "assistant-turn-1" },
-      body: { kind: "report", text: "durable report", payload: { saved: true } },
-      idempotencyKey: "child-report:assistant-turn-1",
-    });
-  });
-
-  it("does not rewrite the child's stored report when a thread_message run fails", async () => {
-    let calls = 0;
-    const orchestrator: RunTurnPort = {
-      async runTurn(input) {
-        calls += 1;
-        if (calls === 1) {
-          return {
-            userTurnId: "user-turn-1" as TurnId,
-            assistantTurnId: "assistant-turn-1" as TurnId,
-            events: (async function* () {
-              yield* [] as OrchestratorEvent[];
-              await input.returnResultCompleter?.({
-                summary: "first report",
-              } satisfies ReturnResultCapture);
-            })(),
-          };
-        }
-        throw new Error("continue run crashed");
-      },
-      async finalizeGeneratorFailure() {},
-    };
-    const { coordinator, parent, repos } = await fixture({ orchestrator });
-
-    const spawned = await coordinator.runChild(
-      {
-        kind: "spawn",
-        parentThread: parent,
-        parentTurnId: "turn-1" as TurnId,
-        agentSlug: "",
-        prompt,
-        budget,
-      },
-      { mode: "foreground" },
-    );
-    if (spawned.status !== "completed") throw new Error("spawn failed");
-    const childId = spawned.report.threadId as ThreadId;
-    const before = await repos.threads.findById(childId);
-    expect(before?.spawnStatus).toBe("succeeded");
-
-    const continued = await coordinator.runChild(
-      {
-        kind: "message",
-        parentThread: parent,
-        parentTurnId: "turn-2" as TurnId,
-        ref: spawned.report.handle,
-        prompt: "again",
-        toolCallId: "call-fail",
-        budget,
-      },
-      { mode: "foreground" },
-    );
-    expect(continued.status).toBe("error");
-
-    const after = await repos.threads.findById(childId);
-    expect(after?.spawnStatus).toBe("succeeded");
-    expect(after?.spawnResult).toEqual(before?.spawnResult);
-  });
-
   it("returns thread_message_target_not_found for a malformed ref", async () => {
     const { coordinator, parent } = await fixture();
     const result = await coordinator.runChild(
@@ -1146,20 +1065,29 @@ describe("ChildRunCoordinator thread_message", () => {
 
 describe("ChildRunCoordinator root activity journal", () => {
   it("appends subagent.activity to the spawn root on create and terminal", async () => {
-    const { coordinator, parent, journal } = await fixture();
-    const rootThreadId = "root-thread-1" as ThreadId;
-    const nestedParent = {
-      ...parent,
-      parentThreadId: "outer-parent",
-      rootThreadId,
-      spawnDepth: 1,
-    };
+    const { coordinator, parent, repos, journal } = await fixture();
+    const outer = await coordinator.runChild(
+      {
+        kind: "spawn",
+        parentThread: parent,
+        parentTurnId: "outer-turn" as TurnId,
+        agentSlug: "",
+        prompt,
+        budget,
+      },
+      { mode: "foreground" },
+    );
+    if (outer.status !== "completed") throw new Error("outer spawn failed");
+    const nestedParent = await repos.threads.findById(outer.report.threadId as ThreadId);
+    if (!nestedParent) throw new Error("outer child missing");
+    const rootThreadId = parent.id as ThreadId;
+    journal.length = 0;
 
     const result = await coordinator.runChild(
       {
         kind: "spawn",
         parentThread: nestedParent,
-        parentTurnId: "turn-1" as TurnId,
+        parentTurnId: "nested-turn" as TurnId,
         agentSlug: "",
         prompt,
         budget,
@@ -1209,11 +1137,11 @@ describe("ChildRunCoordinator root activity journal", () => {
   });
 
   it("keeps a successful foreground run successful when the terminal activity append throws", async () => {
-    const appended: Array<{ type: string; result?: unknown }> = [];
+    const appended: Array<{ type: string; outcome?: string }> = [];
     let activityAppends = 0;
     const eventWriter: EventJournalWriter = {
       async appendEvent(_threadId, event) {
-        const typed = event as unknown as { type: string; result?: unknown };
+        const typed = event as unknown as { type: string; outcome?: string };
         if (typed.type === "subagent.activity") {
           activityAppends += 1;
           if (activityAppends === 2) throw new Error("terminal activity append exploded");
@@ -1242,7 +1170,8 @@ describe("ChildRunCoordinator root activity journal", () => {
     // Exactly one terminal fact, and it records the run's success.
     const terminal = appended.filter((entry) => entry.type === "agent.run_completed");
     expect(terminal).toHaveLength(1);
-    expect((terminal[0]?.result as { status?: string } | undefined)?.status).toBe("completed");
+    expect(terminal[0]?.outcome).toBe("succeeded");
+    expect(terminal[0]).not.toHaveProperty("result");
     // The swallowed failure is still observable.
     expect(eventSink.events.some((event) => event.name === "subagent.activity.append_failed")).toBe(
       true,
@@ -1250,11 +1179,11 @@ describe("ChildRunCoordinator root activity journal", () => {
   });
 
   it("writes no contradictory terminal event when a background run's terminal append throws", async () => {
-    const appended: Array<{ type: string; result?: unknown }> = [];
+    const appended: Array<{ type: string; outcome?: string }> = [];
     let activityAppends = 0;
     const eventWriter: EventJournalWriter = {
       async appendEvent(_threadId, event) {
-        const typed = event as unknown as { type: string; result?: unknown };
+        const typed = event as unknown as { type: string; outcome?: string };
         if (typed.type === "subagent.activity") {
           activityAppends += 1;
           if (activityAppends === 2) throw new Error("terminal activity append exploded");
@@ -1279,13 +1208,14 @@ describe("ChildRunCoordinator root activity journal", () => {
     expect(result.status).toBe("background");
 
     await vi.waitFor(() => {
-      expect(appended.filter((entry) => entry.type === "background.completed")).toHaveLength(1);
+      expect(appended.filter((entry) => entry.type === "agent.run_completed")).toHaveLength(1);
     });
     // The durable success must not be joined by a second, contradictory failure.
     expect(appended.some((entry) => entry.type === "background.failed")).toBe(false);
     const terminal = appended.filter((entry) => entry.type === "agent.run_completed");
     expect(terminal).toHaveLength(1);
-    expect((terminal[0]?.result as { status?: string } | undefined)?.status).toBe("completed");
+    expect(terminal[0]?.outcome).toBe("succeeded");
+    expect(terminal[0]).not.toHaveProperty("result");
   });
 
   it("appends subagent.activity when a foreground message wakes a thread", async () => {

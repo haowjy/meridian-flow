@@ -24,16 +24,18 @@ import type { ThreadedInbox } from "./threaded-inbox.js";
 /** Project durable inbox rows into the pending tray's shape, preserving `seq` order. */
 export function projectPendingInbox(messages: readonly InboxMessage[]): ThreadPendingInbox {
   return {
-    items: messages.map(
-      (message): PendingInboxItem => ({
-        id: message.id,
-        seq: message.seq,
-        intent: message.intent,
-        provenance: message.provenance,
-        summary: inboxMessageText(message),
-        enqueuedAt: message.enqueuedAt,
-      }),
-    ),
+    items: messages
+      .filter((message) => message.provenance.kind !== "child")
+      .map(
+        (message): PendingInboxItem => ({
+          id: message.id,
+          seq: message.seq,
+          intent: message.intent,
+          provenance: message.provenance,
+          summary: inboxMessageText(message),
+          enqueuedAt: message.enqueuedAt,
+        }),
+      ),
   };
 }
 
@@ -105,6 +107,17 @@ export function createNotifyingThreadedInbox(deps: {
       const message = await deps.threadedInbox.enqueue(draft);
       appendAfterCommit(draft.threadId);
       return message;
+    },
+    withThreadLock(threadId, operation) {
+      return deps.threadedInbox.withThreadLock(threadId, (producer) =>
+        operation({
+          async enqueue(draft) {
+            const message = await producer.enqueue(draft);
+            appendAfterCommit(draft.threadId);
+            return message;
+          },
+        }),
+      );
     },
   };
 }

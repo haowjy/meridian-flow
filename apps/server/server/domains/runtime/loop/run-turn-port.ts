@@ -6,17 +6,10 @@
 
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type {
-  ExecutionReportCorrelation,
-  ReturnResultCapture,
-  ReturnResultOutcome,
-  TreeBudget,
-} from "@meridian/contracts/spawn";
+import type { ExecutionReportCorrelation, TreeBudget } from "@meridian/contracts/spawn";
 import type { JsonValue, OrchestratorEvent } from "@meridian/contracts/threads";
 import type { Tool } from "../gateway/index.js";
 import type { Lease } from "./ports.js";
-
-export type ReturnResultCompleter = (capture: ReturnResultCapture) => Promise<ReturnResultOutcome>;
 
 interface RunTurnBase {
   threadId: ThreadId;
@@ -24,7 +17,6 @@ interface RunTurnBase {
   signal?: AbortSignal;
   treeBudget?: TreeBudget;
   isSubagentThread?: boolean;
-  returnResultCompleter?: ReturnResultCompleter;
   /** Parent invocation identity; omitted for writer and inbox continuations. */
   executionReport?: {
     correlation: ExecutionReportCorrelation;

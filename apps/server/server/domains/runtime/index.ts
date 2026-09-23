@@ -76,7 +76,6 @@ export {
   type DrainRunTurnInput,
   isDrainRun,
   NoPendingWakeError,
-  type ReturnResultCompleter,
   type RunTurnHandle,
   type RunTurnInput,
   type RunTurnPort,
@@ -132,4 +131,6 @@ export {
   type ChildRunDriverDeps,
   createChildRunDriver,
 } from "./spawn/child-run-driver.js";
+export { createOrphanReportRepair } from "./spawn/orphan-report-repair.js";
+export { createReportPublisher, type ReportPublisher } from "./spawn/report-publisher.js";
 export * from "./tools/index.js";

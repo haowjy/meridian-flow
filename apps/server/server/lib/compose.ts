@@ -123,6 +123,8 @@ import {
   createLateBindRunTurnPort,
   createNotifyingThreadedInbox,
   createOrchestrator,
+  createOrphanReportRepair,
+  createReportPublisher,
   createRunStarter,
   createSkillToolRegistrations,
   createSpawnToolRegistrations,
@@ -700,14 +702,38 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     },
     eventSink: ports.eventSink,
   });
+  const reportPublisher = createReportPublisher({
+    repos: ports.threadRepos,
+    eventWriter: threadEventHub,
+    threadedInbox,
+    eventSink: ports.eventSink,
+  });
+  const orphanRepair = createOrphanReportRepair({
+    repos: ports.threadRepos,
+    eventWriter: threadEventHub,
+    authority: ports.runAuthority,
+    threadLock,
+    publisher: reportPublisher,
+    eventSink: ports.eventSink,
+  });
   const wakeSweep = {
-    sweep: () =>
-      sweepWakes({
-        inbox,
-        authority: ports.runAuthority,
-        runStarter,
-        limit: WAKE_SWEEP_LIMIT,
-      }),
+    async sweep() {
+      const results = await Promise.allSettled([
+        sweepWakes({ inbox, authority: ports.runAuthority, runStarter, limit: WAKE_SWEEP_LIMIT }),
+        orphanRepair.sweep(WAKE_SWEEP_LIMIT),
+        reportPublisher.sweep(WAKE_SWEEP_LIMIT),
+      ]);
+      for (const result of results) {
+        if (result.status === "rejected") {
+          emitEvent(ports.eventSink, {
+            level: "warn",
+            source: "runtime.wake-sweep",
+            name: "sweep.failed",
+            payload: unknownToEventPayload(result.reason),
+          });
+        }
+      }
+    },
   };
   const admissionRecords = createDrizzleAdmissionRecords(ports.db);
   const imageAssets = createContextImageAssetPort({
@@ -754,22 +780,16 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const childRunDriver = createChildRunDriver({
     orchestrator: runTurnProxy,
-    repos: {
-      threads: ports.threadRepos.threads,
-      turns: ports.threadRepos.turns,
-      blocks: ports.threadRepos.blocks,
-      transaction: ports.threadRepos.transaction,
-    },
+    repos: { executionReports: ports.threadRepos.executionReports },
     // The live hub, not the bare journal writer: background lifecycle must reach
     // subscribers at append time, in append order. A notifier-relayed write lands
     // after later in-process appends and is dropped as stale by the WS cursor.
     eventWriter: threadEventHub,
     readActivity,
     childRunRegistry: runner.childRunRegistry,
-    threadedInbox,
     workContextDelivery: workContextDelivery,
     runAuthority: ports.runAuthority,
-    billingSpendReader: ports.billingSpendReader,
+    publisher: reportPublisher,
     eventSink: ports.eventSink,
   });
   const childRunCoordinator = createChildRunCoordinator({

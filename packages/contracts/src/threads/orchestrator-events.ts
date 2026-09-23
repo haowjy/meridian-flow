@@ -5,7 +5,7 @@
 
 import type { TurnId } from "../ids.js";
 import type { AskRequest, MeridianError } from "../interrupt/index.js";
-import type { AgentReport, SpawnResult } from "../spawn/index.js";
+import type { AgentReport, SavedOutcome, SpawnResult } from "../spawn/index.js";
 import type { WorkContextProjectionSignal } from "../works/index.js";
 import type {
   BlockStatus,
@@ -136,9 +136,11 @@ export type OrchestratorEvent =
   | {
       type: "agent.run_completed";
       parentThreadId: string;
-      parentTurnId: string;
+      parentTurnId: string | null;
       childThreadId: string;
-      result: SpawnResult;
+      execution: string;
+      handle: string;
+      outcome: SavedOutcome;
     }
   | {
       type: "subagent.activity";
@@ -170,7 +172,7 @@ export type OrchestratorEvent =
       parentTurnId: string;
       childThreadId: string;
       agentSlug: string;
-      result: SpawnResult;
+      result: JsonValue;
     }
   | {
       type: "background.failed";

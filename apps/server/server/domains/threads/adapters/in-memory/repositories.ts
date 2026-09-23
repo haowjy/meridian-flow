@@ -103,7 +103,6 @@ function defaultThread(input: CreateThreadInput): Thread {
     rootThreadId: id,
     spawnDepth: normalized.spawnDepth,
     spawnStatus: normalized.spawnStatus,
-    spawnResult: null,
     totalCostUsd: "0",
     turnCount: 0,
     historySummary: null,
@@ -272,7 +271,6 @@ export function createInMemoryRepositories(
       const updated = {
         ...thread,
         spawnStatus: input.spawnStatus,
-        spawnResult: input.spawnResult ?? thread.spawnResult ?? null,
         updatedAt: toIsoString(new Date()),
       };
       threads.set(id, updated);

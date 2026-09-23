@@ -27,7 +27,7 @@ describe("spawnOutputForTranscript", () => {
     expect(JSON.stringify(output)).not.toContain("threadId");
   });
 
-  it("builds a running helper card then a completed one without cost", () => {
+  it("builds a running helper card then a body-free completed one", () => {
     const running = spawnHelperCardProps({
       parentTurnId: "turn-1",
       description: "Continuity",
@@ -54,14 +54,13 @@ describe("spawnOutputForTranscript", () => {
     expect(done).toMatchObject({
       agentName: "Critic",
       status: "completed",
-      summary: "Holds.",
-      childThreadId: "child-1",
-      payload: { verdict: "ok" },
     });
+    expect(done).not.toHaveProperty("summary");
+    expect(done).not.toHaveProperty("payload");
     expect(JSON.stringify(done)).not.toContain("cost");
   });
 
-  it("carries report artifacts onto the completed card without cost", () => {
+  it("keeps report artifacts off the completed card", () => {
     const done = spawnHelperCardProps({
       agent: "critic",
       parentTurnId: "turn-1",
@@ -76,9 +75,7 @@ describe("spawnOutputForTranscript", () => {
       },
     });
 
-    expect(done.artifacts).toEqual([
-      { type: "object", uri: "scratch://outline.md", label: "Outline" },
-    ]);
+    expect(done.artifacts).toBeUndefined();
     expect(JSON.stringify(done)).not.toContain("cost");
   });
 
@@ -105,10 +102,10 @@ describe("spawnOutputForTranscript", () => {
     expect(failed).toMatchObject({
       agentName: "Subagent",
       status: "failed",
-      summary: "Child run failed",
       childThreadId: "child-9",
       title: "Check continuity",
     });
+    expect(failed).not.toHaveProperty("summary");
   });
 
   it("leaves an error output untouched and strips threadId from a background output", () => {

@@ -48,14 +48,7 @@ function childReport(reportId: string, threadId: ThreadId): MessageDraft {
     threadId,
     intent: "message",
     provenance: { kind: "child", threadId: "child-thread" as ThreadId, reportId },
-    body: {
-      kind: "report",
-      text: "Two chapter breaks sag.",
-      artifacts: [{ type: "object", uri: "outline.md" }],
-      payload: { chapter: 3 },
-      agentSlug: "critic",
-      description: "Review the chapter",
-    },
+    body: { kind: "text", text: `Read thread_report({"ref":"p1","execution":"${reportId}"}).` },
     idempotencyKey: `child-report:${reportId}`,
   };
 }
@@ -88,7 +81,7 @@ describe("renderInboxBatch", () => {
     expect(rendered.notices[0].message).toBe("context note");
   });
 
-  it("renders a child report as a system message carrying its artifacts", async () => {
+  it("renders only a compact exact report reference as a system message", async () => {
     const { inbox, thread } = await seed();
     await inbox.enqueue(childReport("report-1", thread.id));
     const batch = await inbox.claimPending(thread.id);
@@ -100,9 +93,8 @@ describe("renderInboxBatch", () => {
     const text = rendered.messages[0].content.flatMap((part) =>
       part.type === "text" ? [part.text] : [],
     );
-    expect(text.join("\n")).toContain('Background subagent "Critic" reported.');
-    expect(text.join("\n")).toContain("Two chapter breaks sag.");
-    expect(text.join("\n")).toContain("outline.md");
+    expect(text.join("\n")).toContain('thread_report({"ref":"p1","execution":"report-1"})');
+    expect(text.join("\n")).not.toContain("chapter");
   });
 });
 
@@ -235,7 +227,7 @@ describe("persistInboxMessages", () => {
     ]);
   });
 
-  it("persists a report as a system turn carrying a helper-result card", async () => {
+  it("persists a child notification as writer-hidden system text, not a report card", async () => {
     const { repos, eventWriter, inbox, thread } = await seed();
     await inbox.enqueue(childReport("report-2", thread.id));
     const [message] = await inbox.claimPending(thread.id);
@@ -249,18 +241,8 @@ describe("persistInboxMessages", () => {
 
     expect(persisted.turns[0]?.role).toBe("system");
     const [block] = await repos.blocks.listByTurn(message.id);
-    expect(block?.blockType).toBe("custom");
-    expect(block?.content).toMatchObject({
-      kind: "helper-result",
-      props: {
-        agentSlug: "critic",
-        title: "Review the chapter",
-        status: "completed",
-        childThreadId: "child-thread",
-        summary: "Two chapter breaks sag.",
-        artifacts: [{ type: "object", uri: "outline.md" }],
-      },
-    });
+    expect(block?.blockType).toBe("text");
+    expect(block?.content).toBe('Read thread_report({"ref":"p1","execution":"report-2"}).');
   });
 
   it("stamps a message turn with the inbox enqueuedAt, not persist time", async () => {

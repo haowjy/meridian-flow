@@ -5,10 +5,8 @@
  * adapters supply the durable store and the lock. Provider and transport choice
  * stays at the composition root.
  */
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type {
-  JsonValue,
   MessageIntent,
   MessageProvenance,
   ThreadLeaseState,
@@ -33,19 +31,6 @@ export type ContextPart = { source: string; text: string };
 
 export type MessageBody =
   | { kind: "text"; text: string }
-  | {
-      kind: "report";
-      text: string;
-      artifacts?: ArtifactRef[];
-      /** Structured return_result payload carried onto the card and model text. */
-      payload?: JsonValue;
-      /** Reporting child's slug; drives the writer-facing helper-result card. */
-      agentSlug?: string;
-      /** Spawn label carried onto the card's title. */
-      description?: string;
-      /** A failed run's report renders the card in its failed state. */
-      failed?: boolean;
-    }
   | { kind: "context"; parts: ContextPart[] };
 
 export interface MessageDraft {
@@ -107,7 +92,8 @@ export interface RunAuthority {
   /**
    * Binds the run's assistant turn to the live lease. Run liveness is the lease,
    * and this is the one place its running turn becomes observable to other
-   * processes; call it after the turn-start setup transaction commits.
+   * processes; bind it inside the turn-start setup transaction after the turn
+   * and its report admission are projected.
    */
   bindTurn(lease: Lease, turnId: TurnId): Promise<void>;
   read(threadId: ThreadId): Promise<ThreadStatus>;

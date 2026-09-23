@@ -39,7 +39,6 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     rootThreadId: id,
     spawnDepth: 0,
     spawnStatus: null,
-    spawnResult: null,
     totalCostUsd: "0",
     turnCount: 0,
     historySummary: null,

@@ -154,6 +154,9 @@ export async function finalizeExecution(
           artifacts: capture?.artifacts ?? null,
           costMillicredits: Number(cost),
         });
+        if (admitted.origin === "spawn") {
+          await deps.repos.threads.updateSpawnLifecycle(input.threadId, { spawnStatus: outcome });
+        }
       },
     },
   );

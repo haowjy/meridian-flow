@@ -46,6 +46,37 @@ function deferred<T>() {
 }
 
 describe("createThreadedInbox", () => {
+  it("lets a parent transaction enqueue through its scoped producer without reacquiring the lock", async () => {
+    const lockedThreads: ThreadId[] = [];
+    const threadLock: ThreadLock = {
+      async withThreadLock(threadId, operation) {
+        lockedThreads.push(threadId);
+        return operation();
+      },
+    };
+    const inbox = createInMemoryInbox();
+    const threaded = createThreadedInbox({
+      inbox,
+      threadLock,
+      runStarter: createInMemoryRunStarter(),
+      schedulePostCommit: (task) => task(),
+    });
+
+    await threaded.withThreadLock(THREAD_A, async (producer) => {
+      await producer.enqueue(message("child notification"));
+      await expect(
+        producer.enqueue(
+          message("wrong thread", "00000000-0000-4000-8000-0000000000a2" as ThreadId),
+        ),
+      ).rejects.toThrow("another thread");
+    });
+
+    expect(lockedThreads).toEqual([THREAD_A]);
+    expect((await inbox.claimPending(THREAD_A)).map((item) => item.idempotencyKey)).toEqual([
+      "child notification",
+    ]);
+  });
+
   it("enqueues under the draft thread's lock and wakes on a message", async () => {
     const lockedThreads: ThreadId[] = [];
     const threadLock: ThreadLock = {

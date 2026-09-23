@@ -183,10 +183,10 @@ export type JournalEventType =
   | "agent.handoff"
   | "agent.fork"
   | "agent.spawn" // PRODUCED NOW — ChildRunCoordinator
-  | "agent.run_completed" // PRODUCED NOW — ChildRunCoordinator (spawn or thread_message)
+  | "agent.run_completed" // PRODUCED NOW — ReportPublisher B, body-free metadata
   | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (root journal, full recomputed activity)
   | "inbox.changed" // PRODUCED NOW — ThreadedInbox enqueue + orchestrator ack (full recomputed pending inbox)
-  | "block.pruned" // PRODUCED NOW — ChildRunDriver (retires a settled run card)
+  | "block.pruned" // PRODUCED NOW — generic block lifecycle; child run cards are replaced in place
   | "context.assembled"
   | "context.compacted"
   | "context.skill_loaded"
@@ -251,7 +251,6 @@ export interface Thread {
   rootThreadId: string;
   spawnDepth: number;
   spawnStatus: SpawnStatus | null;
-  spawnResult?: JsonValue | null;
   totalCostUsd: string;
   turnCount: number;
   historySummary?: string | null;

@@ -8,10 +8,7 @@ import type { ArtifactRef, MeridianError } from "../interrupt/index.js";
 import type { ThreadId, TurnBlockId, TurnId } from "../runtime/index.js";
 import type { JsonValue } from "../threads/index.js";
 
-/**
- * What a child returns through return_result before final child cost is known.
- * ChildRunCoordinator folds in costMillicredits after the child turn stops.
- */
+/** Candidate content supplied by return_result, before terminal cause is known. */
 export type ReturnResultCapture = {
   summary: string;
   payload?: JsonValue;
@@ -93,20 +90,28 @@ export type AgentReport = {
   payload?: JsonValue;
   artifacts?: ArtifactRef[];
   costMillicredits: number;
-  /** Set when the child ended without calling return_result. */
-  incomplete?: boolean;
 };
 
 export type SpawnResult =
-  | { status: "completed"; report: AgentReport }
+  | { status: "completed"; execution: TurnId; outcome: "succeeded"; report: AgentReport }
   | {
       status: "background";
       handle: string;
       threadId: string;
       agentSlug: string;
       description?: string;
+      /** Present for a spawned execution; absent for queue-only thread_message. */
+      execution?: TurnId;
     }
-  | { status: "error"; error: MeridianError };
+  | {
+      status: "error";
+      error: MeridianError;
+      execution?: TurnId;
+      outcome?: "failed" | "cancelled";
+      report?: AgentReport;
+      partial?: boolean;
+      reason?: string | null;
+    };
 // DEFERRED(interrupt-bubbling): add { status: "interrupt" } arm when a deep worker must reach the human without parent mediation — no pilot case
 
 type AssertJsonValue<T extends JsonValue> = T;

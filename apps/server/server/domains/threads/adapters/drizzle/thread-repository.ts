@@ -231,7 +231,6 @@ export function createDrizzleThreadRepository(
         .update(schema.threads)
         .set({
           spawnStatus: input.spawnStatus,
-          ...(input.spawnResult !== undefined ? { spawnResult: input.spawnResult } : {}),
           updatedAt: new Date(),
         })
         .where(eq(schema.threads.id, id))

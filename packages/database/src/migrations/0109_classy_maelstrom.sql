@@ -1,0 +1,1 @@
+ALTER TABLE "threads" DROP COLUMN "spawn_result";

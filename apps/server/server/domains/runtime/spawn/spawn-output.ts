@@ -14,7 +14,6 @@
  */
 import { GENERIC_SUBAGENT_SLUG } from "@meridian/contracts/agents";
 import type { HelperResultProps } from "@meridian/contracts/components";
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { JsonValue } from "@meridian/contracts/threads";
 
 const QUEUED_NO_REPLY_NOTE =
@@ -25,7 +24,7 @@ export function spawnOutputForTranscript(
   options: { queuedNoReply?: boolean } = {},
 ): JsonValue {
   if (!isRecord(output)) return output;
-  if (output.status === "completed") {
+  if (output.status === "completed" || output.status === "error") {
     const report = output.report;
     if (!isRecord(report)) return output;
     const reportWithoutCost = { ...report };
@@ -58,25 +57,16 @@ export function spawnHelperCardProps(input: {
   };
   const output = input.output;
   if (!isRecord(output)) return base;
-  if (output.status === "completed" && isRecord(output.report)) {
-    const artifacts = output.report.artifacts;
+  if (output.status === "completed") {
     return {
       ...base,
       status: "completed",
-      ...(typeof output.report.summary === "string" ? { summary: output.report.summary } : {}),
-      ...(typeof output.report.threadId === "string"
-        ? { childThreadId: output.report.threadId }
-        : {}),
-      ...(output.report.payload !== undefined ? { payload: output.report.payload } : {}),
-      ...(Array.isArray(artifacts) ? { artifacts: artifacts as ArtifactRef[] } : {}),
     };
   }
   if (output.status === "error") {
-    const error = isRecord(output.error) ? output.error : null;
     return {
       ...base,
       status: "failed",
-      ...(typeof error?.message === "string" ? { summary: error.message } : {}),
     };
   }
   return base;

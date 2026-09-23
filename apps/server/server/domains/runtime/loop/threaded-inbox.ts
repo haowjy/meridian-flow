@@ -22,6 +22,11 @@ import type { ThreadLock } from "./thread-lock.js";
 
 export interface ThreadedInbox {
   enqueue(draft: MessageDraft): Promise<InboxMessage>;
+  /** Parent publisher holds this lock across report/card/inbox/marker transaction. */
+  withThreadLock<T>(
+    threadId: MessageDraft["threadId"],
+    operation: (producer: Pick<ThreadedInbox, "enqueue">) => Promise<T>,
+  ): Promise<T>;
 }
 
 export function createThreadedInbox(deps: {
@@ -31,17 +36,30 @@ export function createThreadedInbox(deps: {
   /** Schedule a non-blocking wake after the caller's business transaction commits. */
   schedulePostCommit(task: () => Promise<void>): void;
 }): ThreadedInbox {
+  const enqueueLocked = async (draft: MessageDraft): Promise<InboxMessage> => {
+    const message = await deps.inbox.enqueue(draft);
+    if (draft.intent === "message") {
+      deps.schedulePostCommit(async () => {
+        await deps.runStarter.start(draft.threadId).catch(() => undefined);
+      });
+    }
+    return message;
+  };
   return {
     async enqueue(draft) {
-      const message = await deps.threadLock.withThreadLock(draft.threadId, () =>
-        deps.inbox.enqueue(draft),
+      return deps.threadLock.withThreadLock(draft.threadId, () => enqueueLocked(draft));
+    },
+    withThreadLock(threadId, operation) {
+      return deps.threadLock.withThreadLock(threadId, () =>
+        operation({
+          async enqueue(draft) {
+            if (draft.threadId !== threadId) {
+              throw new Error("Scoped inbox producer cannot enqueue another thread");
+            }
+            return enqueueLocked(draft);
+          },
+        }),
       );
-      if (draft.intent === "message") {
-        deps.schedulePostCommit(async () => {
-          await deps.runStarter.start(draft.threadId).catch(() => undefined);
-        });
-      }
-      return message;
     },
   };
 }
