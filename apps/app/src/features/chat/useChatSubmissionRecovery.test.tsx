@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 /** Existing-thread reload recovery from the durable submission journal. */
-import type { SendMessageResponse } from "@meridian/contracts/protocol";
+import type { AdmissionLookup, SendMessageResponse } from "@meridian/contracts/protocol";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -147,6 +147,41 @@ describe("useChatSubmissionRecovery", () => {
     expect(scenario.turns()[0]).toMatchObject({ status: "pending" });
     expect(readChatSubmissions(ACCOUNT)).toHaveLength(1);
     expect(latest.current?.recovered[0]?.submissionId).toBe("sub-1");
+  });
+
+  it("keeps the journal and row pending when an in-flight lookup settles after unmount", async () => {
+    recordChatSubmission(ACCOUNT, entry());
+    const gate = scenarioGate<AdmissionLookup>();
+    const scenario = new ThreadRunScenario({ lookup: () => gate.promise });
+
+    await mount(ACCOUNT, scenario, () => undefined);
+    await act(async () => {
+      await vi.waitFor(() => expect(scenario.lookupRequests).toHaveLength(1));
+    });
+    const optimisticTurnId = scenario.turns()[0]?.id ?? "";
+
+    // Unmount before the lookup lands: the token is gone, so the late
+    // `already-accepted` result must not acknowledge the row or retire the
+    // journal. The next mount reconciles it.
+    await cleanup?.();
+    cleanup = undefined;
+    gate.resolve({
+      kind: "already-accepted",
+      threadId: THREAD_ID,
+      submissionId: "sub-1",
+      userTurnId: "turn-server",
+      assistantTurnId: "turn-assistant",
+      resumeAfterSeq: "42",
+      snapshotFloorNextSeq: "43",
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(scenario.turns()).toEqual([
+      expect.objectContaining({ id: optimisticTurnId, status: "pending" }),
+    ]);
+    expect(readChatSubmissions(ACCOUNT)).toMatchObject([{ submissionId: "sub-1" }]);
   });
 
   it("replays the stored fingerprint with the same submission id when lookup is not-seen", async () => {
