@@ -190,7 +190,9 @@ export class ThreadRunController {
    * `submit` is fenced by the admission session, but mounting the sibling
    * `useChatThreadSession` tears the run session down in the same React commit
    * that starts recovery (React StrictMode mount → cleanup → re-mount). The
-   * recovery fence must not be invalidated by that sibling teardown.
+   * recovery fence must not be invalidated by that sibling teardown. A POST
+   * accepted after this session ends leaves the optimistic row untouched
+   * (`leave-row`): the returning session's lookup owns the bridge and retire.
    */
   recoverSubmission(
     threadId: string,
