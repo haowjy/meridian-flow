@@ -236,6 +236,49 @@ it("keeps independent leases on one same-browser session", async () => {
   expect(second.handle.session.getSnapshot().status).toBe("destroyed");
 });
 
+it("keeps a server-acquired session through navigation until the editor binds it", async () => {
+  const metadata = openMetadata();
+  const record = resource("server-acquired");
+  await initialize(record);
+  const key = await install(metadata, record);
+  if (record.resource.content.kind !== "exact") throw new Error("Expected exact content");
+  const session = createFactory().createDetached({
+    accountId,
+    projectId: "project",
+    documentId: record.resource.identity.documentId,
+    persistenceKey: record.resource.content.databaseName,
+  });
+  await session.whenLocalPersistenceSynced();
+  const { access } = openAccess(metadata);
+  const release = vi.fn();
+  await access.adoptRegistrySession("project", key, session, {
+    lease: {
+      accountId,
+      projectId: "project",
+      documentId: record.resource.identity.documentId,
+      generation: "7",
+    },
+    persistenceGeneration: "7",
+    exactDatabaseName: record.resource.content.databaseName,
+    release,
+  });
+
+  const navigation = await access.open("project", key, "navigation");
+  if (navigation.kind !== "opened") throw new Error("Expected navigation content");
+  expect(navigation.handle.session).toBe(session);
+  navigation.handle.release();
+  expect(release).not.toHaveBeenCalled();
+
+  const editor = await access.open("project", key, "editor", undefined, {
+    adoptionEligible: true,
+  });
+  if (editor.kind !== "opened") throw new Error("Expected editor content");
+  expect(editor.handle.session).toBe(session);
+  editor.handle.release();
+  expect(release).toHaveBeenCalledOnce();
+  await session.destroy();
+});
+
 it("hands the exact open session to registry ownership without destroying it", async () => {
   const metadata = openMetadata();
   const record = resource("transfer");
