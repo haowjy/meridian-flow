@@ -403,6 +403,7 @@ export class AccountResourceReplica {
     try {
       await session.whenSynced();
       await priorCapture;
+      this.requireOpen();
       const snapshot = session.getSnapshot();
       if (
         snapshot.status !== "synced" ||
