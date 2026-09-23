@@ -34,9 +34,7 @@ import {
   Composer,
   type ComposerHandle,
   type ComposerSubmitEnvelope,
-  serializeComposerDraft,
 } from "@/components/app/composer";
-import { plainComposerDoc } from "@/components/app/composer/composer-document";
 import { documentLinkTarget, type LinkTarget } from "@/core/editor/links";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { useAccountId } from "@/features/project/context/account-feature-context";
@@ -47,6 +45,7 @@ import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToo
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
+import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { TurnList } from "./TurnList";
 import type { UserTurnRecovery } from "./UserTurn";
 import {
@@ -204,13 +203,11 @@ export function ChatView({
   const restoreRejectedMessage = useCallback((entry: FailedChatSubmission) => {
     const composer = composerRef.current;
     if (!composer) return;
-    // A live send left the draft in the composer, so Edit only needs to focus
-    // it. A reload-recovered rejection has no composer content, so restore the
-    // stored message first (best-effort text; the server owns structured refs).
-    if (!composer.getDraft()) {
-      composer.restoreSnapshot(serializeComposerDraft(plainComposerDoc(entry.text)).draft);
-    }
-    composer.focus();
+    // A live send left the draft in the composer, so Edit focuses it. Only a
+    // plain-text rejection with an empty composer can be restored faithfully;
+    // a structured message has no blocks-to-composer inverse, and a live draft
+    // is never replaced.
+    restoreRejectedDraft(composer, entry.fingerprint);
   }, []);
 
   const settleQuarantined = useCallback(
@@ -303,12 +300,15 @@ export function ChatView({
     });
   }
   for (const entry of submissionRecovery.rejected) {
+    const draftIsRecoverable = entry.draftRetained || canRestoreRejectedDraft(entry.fingerprint);
     submissionRecoveryByTurnId.set(entry.optimisticTurnId, {
       kind: "rejected",
       onRetry: () => {
         void submissionRecovery.retry(entry.optimisticTurnId);
       },
-      onEdit: () => restoreRejectedMessage(entry),
+      // Edit focuses a live draft or restores a plain-text message. A structured
+      // rejection whose draft is gone cannot be rebuilt, so only Retry remains.
+      ...(draftIsRecoverable ? { onEdit: () => restoreRejectedMessage(entry) } : {}),
     });
   }
 

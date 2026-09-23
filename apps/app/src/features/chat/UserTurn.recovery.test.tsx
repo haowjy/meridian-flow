@@ -105,6 +105,14 @@ describe("UserTurn submission recovery", () => {
     expect(buttonLabels()).not.toContain("Check submission status");
   });
 
+  it("omits Edit when only Retry is honest", async () => {
+    const onRetry = vi.fn();
+    await render(<UserTurn turn={turn} submissionRecovery={{ kind: "rejected", onRetry }} />);
+
+    expect(buttonLabels()).toContain("Retry");
+    expect(buttonLabels()).not.toContain("Edit");
+  });
+
   it("offers Check submission status and Start over on an ambiguous send", async () => {
     const onCheck = vi.fn();
     const onRetire = vi.fn();

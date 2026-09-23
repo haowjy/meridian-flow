@@ -19,6 +19,7 @@ import {
 } from "@/client/copilot/test-support/ThreadRunScenario";
 import {
   type ChatSubmissionRecovery,
+  clearChatSubmissionRecoverySession,
   rememberSubmissionTurnId,
   useChatSubmissionRecovery,
 } from "./useChatSubmissionRecovery";
@@ -61,6 +62,9 @@ afterEach(async () => {
   await cleanup?.();
   cleanup = undefined;
   window.localStorage.clear();
+  // Session maps outlive a component mount; reset them so module memory cannot
+  // leak across tests.
+  clearChatSubmissionRecoverySession();
 });
 
 beforeEach(() => {
@@ -209,7 +213,12 @@ describe("useChatSubmissionRecovery", () => {
       expect.objectContaining({ id: liveTurn.id, status: "error" }),
     ]);
     expect(latest.current?.rejected).toEqual([
-      { submissionId: "sub-rejected", optimisticTurnId: liveTurn.id, text: "Hello" },
+      expect.objectContaining({
+        submissionId: "sub-rejected",
+        optimisticTurnId: liveTurn.id,
+        fingerprint: expect.objectContaining({ text: "Hello" }),
+        draftRetained: true,
+      }),
     ]);
     // A proved rejection retires the durable witness: recovery can never replay
     // a rejected admission under the same id.
@@ -282,6 +291,122 @@ describe("useChatSubmissionRecovery", () => {
     expect(readChatSubmissions(ACCOUNT)).toEqual([]);
   });
 
+  it("remounts an ambiguous retry as Check, never a second Retry", async () => {
+    let lookupResult: "pending" | "not-seen" = "pending";
+    const scenario = new ThreadRunScenario({
+      lookup: async ({ submissionId }) =>
+        lookupResult === "not-seen"
+          ? { kind: "not-seen", submissionId }
+          : { kind: "pending", submissionId },
+    });
+    const latest: { current: ChatSubmissionRecovery | null } = { current: null };
+    await mount(ACCOUNT, scenario, (value) => {
+      latest.current = value;
+    });
+
+    // A live rejection retains its fingerprint for Retry.
+    recordChatSubmission(ACCOUNT, entry({ submissionId: "sub-ambiguous-remount" }));
+    const liveTurn = scenario.store.getState().appendUserTurn(THREAD_ID, "Hello");
+    await act(async () => {
+      latest.current?.markRejected("sub-ambiguous-remount", liveTurn.id);
+    });
+    expect(latest.current?.rejected).toHaveLength(1);
+
+    // Retry returns 502: ambiguous. The fresh journal entry is the only
+    // unresolved witness; the turn must offer Check, not Retry.
+    scenario.setAppend(async () => {
+      throw new HttpResponseError("bad gateway", 502, null);
+    });
+    await act(async () => {
+      await latest.current?.retry(liveTurn.id);
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(latest.current?.recovered).toHaveLength(1));
+    });
+    expect(latest.current?.rejected).toEqual([]);
+    const journals = readChatSubmissions(ACCOUNT);
+    expect(journals).toHaveLength(1);
+    const freshId = journals[0]?.submissionId ?? "";
+    expect(freshId).not.toBe("sub-ambiguous-remount");
+    expect(scenario.appendRequests).toHaveLength(1);
+
+    // Remount: the journal lookup resolves the unresolved retry to Check, and
+    // the retired rejection must not resurrect Retry.
+    await cleanup?.();
+    cleanup = undefined;
+    await mount(ACCOUNT, scenario, (value) => {
+      latest.current = value;
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(latest.current?.recovered).toHaveLength(1));
+    });
+    expect(latest.current?.rejected).toEqual([]);
+    expect(readChatSubmissions(ACCOUNT)[0]?.submissionId).toBe(freshId);
+    // No second dispatch on remount: only Check can replay, and it must reuse
+    // the fresh identity rather than reminting yet another one.
+    expect(scenario.appendRequests).toHaveLength(1);
+
+    scenario.setAppend(async () => defaultSendResponse());
+    lookupResult = "not-seen";
+    await act(async () => {
+      latest.current?.check(freshId);
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(scenario.appendRequests).toHaveLength(2));
+    });
+    expect(scenario.appendRequests[1]?.data.submissionId).toBe(freshId);
+    expect(scenario.turns()).toHaveLength(1);
+    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
+  });
+
+  it("surfaces Check and never replays beside an in-flight retry remount", async () => {
+    const scenario = new ThreadRunScenario({
+      lookup: async ({ submissionId }) => ({ kind: "not-seen", submissionId }),
+    });
+    const latest: { current: ChatSubmissionRecovery | null } = { current: null };
+    await mount(ACCOUNT, scenario, (value) => {
+      latest.current = value;
+    });
+
+    recordChatSubmission(ACCOUNT, entry({ submissionId: "sub-inflight" }));
+    const liveTurn = scenario.store.getState().appendUserTurn(THREAD_ID, "Hello");
+    await act(async () => {
+      latest.current?.markRejected("sub-inflight", liveTurn.id);
+    });
+
+    // Hold the retry POST so the unresolved send is in flight across a remount.
+    const gate = scenarioGate<SendMessageResponse>();
+    scenario.setAppend(() => gate.promise);
+    let retrySettled = false;
+    await act(async () => {
+      void latest.current?.retry(liveTurn.id).then(() => {
+        retrySettled = true;
+      });
+      await vi.waitFor(() => expect(scenario.appendRequests).toHaveLength(1));
+    });
+    const freshId = readChatSubmissions(ACCOUNT)[0]?.submissionId ?? "";
+    expect(freshId).not.toBe("sub-inflight");
+
+    await cleanup?.();
+    cleanup = undefined;
+    await mount(ACCOUNT, scenario, (value) => {
+      latest.current = value;
+    });
+    // The not-seen mount lookup is fenced by the shared in-flight lock: it must
+    // expose Check instead of dispatching a second replay.
+    await act(async () => {
+      await vi.waitFor(() => expect(latest.current?.recovered).toHaveLength(1));
+    });
+    expect(latest.current?.rejected).toEqual([]);
+    expect(scenario.appendRequests).toHaveLength(1);
+    expect(readChatSubmissions(ACCOUNT)[0]?.submissionId).toBe(freshId);
+
+    gate.resolve(defaultSendResponse());
+    await act(async () => {
+      await vi.waitFor(() => expect(retrySettled).toBe(true));
+    });
+  });
+
   it("keeps a recovered definitive rejection failed with a retry payload", async () => {
     recordChatSubmission(ACCOUNT, entry({ submissionId: "sub-recovered" }));
     const scenario = new ThreadRunScenario({
@@ -304,7 +429,7 @@ describe("useChatSubmissionRecovery", () => {
     });
     expect(latest.current?.rejected[0]).toMatchObject({
       submissionId: "sub-recovered",
-      text: "Hello",
+      fingerprint: expect.objectContaining({ text: "Hello" }),
     });
     expect(readChatSubmissions(ACCOUNT)).toEqual([]);
   });
@@ -336,7 +461,7 @@ describe("useChatSubmissionRecovery", () => {
     });
     expect(latest.current?.rejected[0]).toMatchObject({
       optimisticTurnId: liveTurn.id,
-      text: "Hello",
+      fingerprint: expect.objectContaining({ text: "Hello" }),
     });
   });
 
