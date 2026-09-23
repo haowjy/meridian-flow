@@ -21,6 +21,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
+import {
+  getChatSubmissionEpoch,
+  recordChatSubmission,
+  retireChatSubmission,
+} from "@/client/chat-submissions";
 import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { threadQueryKeys } from "@/client/query/thread-query-keys";
 import { useThreadAvailableSkills } from "@/client/query/useAvailableSkills";
@@ -32,14 +37,22 @@ import {
 } from "@/components/app/composer";
 import { documentLinkTarget, type LinkTarget } from "@/core/editor/links";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
+import { useAccountId } from "@/features/project/context/account-feature-context";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptReference";
 import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
+import { shouldRetireSubmission } from "./chat-submission-retirement";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { TurnList } from "./TurnList";
+import {
+  forgetSubmissionTurnId,
+  rememberSubmissionTurnId,
+  submissionTurnId,
+  useChatSubmissionRecovery,
+} from "./useChatSubmissionRecovery";
 import { useChatThreadSession } from "./useChatThreadSession";
 import { useLiveTurnAnnouncements } from "./useLiveTurnAnnouncements";
 import { useThreadDurableProjections } from "./useThreadDurableProjections";
@@ -77,11 +90,11 @@ export function ChatView({
   const { changeTrails } = useThreadDurableProjections({ threadId, projectId });
   const queryClient = useQueryClient();
   const composerRef = useRef<ComposerHandle>(null);
-  const optimisticBySubmission = useRef(new Map<string, string>());
   const chatSurfaceRef = useRef<HTMLDivElement>(null);
   const [tailFollowRevision, requestTailFollow] = useReducer((value: number) => value + 1, 0);
 
   const controller = useMeridianAgent();
+  const accountId = useAccountId();
   const turns = useThreadStore((state) => state.turnsByThread[threadId] ?? EMPTY_TURNS);
   const latestAssistantTurn =
     [...turns].reverse().find((turn) => turn.role === "assistant") ?? null;
@@ -106,7 +119,8 @@ export function ChatView({
     isStreaming,
   });
 
-  const failedSendRetry = useThreadHandoff(threadId, projectId, controller, actions, {
+  const submissionRecovery = useChatSubmissionRecovery(threadId, accountId, controller, actions);
+  const failedSendRetry = useThreadHandoff(threadId, projectId, accountId, controller, actions, {
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
   });
@@ -122,21 +136,49 @@ export function ChatView({
 
   async function handleSubmit(envelope: ComposerSubmitEnvelope) {
     const text = envelope.text;
+    // Durable witness before display and dispatch: a displayed action survives
+    // reload only if the intent was persisted first. If the journal refuses the
+    // write, do not show a row or dispatch — keep the draft and report failure.
+    const epoch = getChatSubmissionEpoch();
+    const recorded = recordChatSubmission(accountId, {
+      kind: "existing-thread",
+      submissionId: envelope.submissionId,
+      threadId,
+      projectId: projectId ?? null,
+      createdAt: new Date().toISOString(),
+      text,
+      blocks: [...envelope.blocks],
+      references: [...envelope.references],
+      activatedSkillSlugs: [...envelope.activatedSkillSlugs],
+    });
+    if (!recorded) {
+      return {
+        kind: "rejected" as const,
+        submissionId: envelope.submissionId,
+        acceptedRevision: envelope.acceptedRevision,
+      };
+    }
     requestTailFollow();
     const optimisticUserTurn = actions.appendUserTurn(threadId, text);
-    optimisticBySubmission.current.set(envelope.submissionId, optimisticUserTurn.id);
+    // Register the live row before the POST awaits admission: a thread remount
+    // while the server still holds the lease must reuse it, not append a second
+    // pending copy. Cleared below on acknowledgement or proved rejection.
+    rememberSubmissionTurnId(accountId, envelope.submissionId, optimisticUserTurn.id);
     try {
       const outcome = await controller.submit(threadId, envelope, {
         optimisticUserTurnId: optimisticUserTurn.id,
       });
-      if (outcome.kind !== "ambiguous")
-        optimisticBySubmission.current.delete(envelope.submissionId);
+      if (shouldRetireSubmission(outcome)) {
+        forgetSubmissionTurnId(accountId, envelope.submissionId);
+        retireChatSubmission(accountId, envelope.submissionId, epoch);
+      }
       return outcome;
     } catch (error) {
-      actions.removeOptimisticUserTurn(threadId, optimisticUserTurn.id);
+      // An unexpected throw is ambiguous: keep the row and journal so a reload
+      // can still reconcile or replay instead of losing the displayed send.
       announceError(error instanceof Error ? error.message : "Failed to submit message");
       return {
-        kind: "rejected" as const,
+        kind: "ambiguous" as const,
         submissionId: envelope.submissionId,
         acceptedRevision: envelope.acceptedRevision,
       };
@@ -153,15 +195,32 @@ export function ChatView({
 
   const settleQuarantined = useCallback(
     async (envelope: ComposerSubmitEnvelope, retire: boolean) => {
-      const optimisticUserTurnId = optimisticBySubmission.current.get(envelope.submissionId);
+      const optimisticUserTurnId = submissionTurnId(accountId, envelope.submissionId);
+      const epoch = getChatSubmissionEpoch();
       const outcome = await (retire
         ? controller.retire(threadId, envelope, { optimisticUserTurnId })
         : controller.lookup(threadId, envelope, { optimisticUserTurnId }));
-      if (outcome.kind !== "ambiguous")
-        optimisticBySubmission.current.delete(envelope.submissionId);
+      if (!retire && outcome.kind === "not-seen" && optimisticUserTurnId) {
+        // The server never saw this submission. Replay the stored fingerprint
+        // through the shared recovery path with the live optimistic row so the
+        // displayed send is not lost; this surface owns no second re-issue.
+        // The replay carries revision 0, so keep the envelope's revision.
+        const replayOutcome = await submissionRecovery.replaySubmission(
+          envelope.submissionId,
+          optimisticUserTurnId,
+        );
+        if (shouldRetireSubmission(replayOutcome)) {
+          forgetSubmissionTurnId(accountId, envelope.submissionId);
+        }
+        return { ...replayOutcome, acceptedRevision: envelope.acceptedRevision };
+      }
+      if (shouldRetireSubmission(outcome)) {
+        forgetSubmissionTurnId(accountId, envelope.submissionId);
+        retireChatSubmission(accountId, envelope.submissionId, epoch);
+      }
       return outcome;
     },
-    [controller, threadId],
+    [accountId, controller, submissionRecovery, threadId],
   );
 
   function handleStop() {
@@ -206,6 +265,16 @@ export function ChatView({
       }
     },
     [projectId, activeWork?.id, openReferenceDocument],
+  );
+
+  const submissionRecoveryByTurnId = new Map(
+    submissionRecovery.recovered.map((entry) => [
+      entry.optimisticTurnId,
+      {
+        onCheck: () => submissionRecovery.check(entry.submissionId),
+        onRetire: () => submissionRecovery.retire(entry.submissionId),
+      },
+    ]),
   );
 
   return (
@@ -272,6 +341,7 @@ export function ChatView({
           onRespondToInterrupt={handleRespondToInterrupt}
           failedSendRetry={failedSendRetry}
           changeTrails={changeTrails.byId}
+          submissionRecoveryByTurnId={submissionRecoveryByTurnId}
         />
       </ChatSurface>
     </TranscriptLinkNavigationContext.Provider>

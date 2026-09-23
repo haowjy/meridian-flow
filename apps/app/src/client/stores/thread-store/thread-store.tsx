@@ -254,9 +254,14 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               .filter((turn) => !(hasServerTurn && turn.id === optimisticTurnId))
               .map((turn) => {
                 if (turn.id === optimisticTurnId) {
+                  // The acknowledgement is the explicit bridge from the local
+                  // pending row to the admitted server turn; settle it here so
+                  // the row stops reading as pending before the snapshot lands.
                   return {
                     ...turn,
                     id: serverTurnId,
+                    status: "complete" as const,
+                    completedAt: turn.completedAt ?? new Date(state.now).toISOString(),
                     blocks: turn.blocks.map((block) => ({ ...block, turnId: serverTurnId })),
                   };
                 }
