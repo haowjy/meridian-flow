@@ -29,7 +29,12 @@ export type UserTurnRecovery =
   | {
       kind: "rejected";
       onRetry: () => void;
-      onEdit: () => void;
+      /**
+       * Focus or restore the retained draft. Absent when only Retry is honest:
+       * a structured rejection whose live draft is gone cannot be rebuilt from
+       * its text without admitting a different message.
+       */
+      onEdit?: () => void;
     };
 
 export type UserTurnProps = {
@@ -171,9 +176,11 @@ function UserTurnComponent({ turn, submissionRecovery = null }: UserTurnProps) {
           <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onRetry}>
             {t`Retry`}
           </Button>
-          <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onEdit}>
-            {t`Edit`}
-          </Button>
+          {submissionRecovery.onEdit ? (
+            <Button type="button" variant="quiet" size="sm" onClick={submissionRecovery.onEdit}>
+              {t`Edit`}
+            </Button>
+          ) : null}
         </div>
       ) : null}
     </article>
