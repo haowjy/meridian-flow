@@ -44,6 +44,7 @@ type ContentEntry = {
   identity: ContentIdentity;
   session: DocumentSession;
   leases: Map<symbol, boolean>;
+  adoptionBound: boolean;
   reidentity?: {
     target: ContentIdentity;
     /** A competing durable remint observed while this local CAS is unresolved. */
@@ -211,6 +212,7 @@ export class ResourceContentAccess {
       identity,
       session,
       leases: new Map(),
+      adoptionBound: false,
       ownership: { kind: "registry", ownershipByProject: new Map([[projectId, ownership]]) },
     });
   }
@@ -426,6 +428,7 @@ export class ResourceContentAccess {
     }
     const lease = Symbol(participantId);
     entry.leases.set(lease, adoptionEligible);
+    if (adoptionEligible) entry.adoptionBound = true;
     if (this.state !== "open" || this.epoch.aborted || signal?.aborted) {
       this.releaseLease(id, entry, lease);
       return { kind: "cancelled" };
@@ -520,6 +523,7 @@ export class ResourceContentAccess {
         identity: identityOf(record),
         session,
         leases: new Map<symbol, boolean>(),
+        adoptionBound: false,
         ownership: { kind: "local" as const },
       };
       this.entries.set(id, entry);
@@ -591,6 +595,8 @@ export class ResourceContentAccess {
     entry.leases.delete(lease);
     if (entry.leases.size > 0 || this.entries.get(id) !== entry) return;
     if (entry.ownership.kind === "transferring") return;
+    // Server acquisition must survive navigation preflight until the editor binds that session.
+    if (entry.ownership.kind === "registry" && !entry.adoptionBound) return;
     this.entries.delete(id);
     if (entry.ownership.kind === "registry") this.releaseRegistryOwnership(entry.ownership);
     else this.retire(id, entry.session);

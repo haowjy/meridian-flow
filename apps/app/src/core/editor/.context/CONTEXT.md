@@ -34,9 +34,9 @@ account epoch and adopts acknowledged resource sessions without replacing their
 Y.Doc or persistence database. Background reconciliation never transfers and
 acknowledges a session held only by navigation/reconciliation probe leases; it
 waits for an adoption-eligible editor binding so the editor keeps the adopted
-session alive. Editor tabs
-retain only browser-member identity; they do not own resource or namespace
-lifetime.
+session alive. A server-acquired registry session likewise survives navigation
+preflight until that editor binding takes ownership. Editor tabs retain only
+browser-member identity; they do not own resource or namespace lifetime.
 
 ## Contracts
 
