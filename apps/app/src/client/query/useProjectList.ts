@@ -1,5 +1,5 @@
 /**
- * useProjectList — React Query hook for the sidebar project list, merged with
+ * useProjectList — React Query hook for the account project library, merged with
  * optimistic and independent-project state.
  *
  * Exposes the loading/empty/ready/error list status plus the visible-project
@@ -36,7 +36,7 @@ export type ProjectListStatus = {
 };
 
 /**
- * Sidebar/home project list. `null` = not loaded yet; `[]` = loaded and empty.
+ * Account project list. `null` = not loaded yet; `[]` = loaded and empty.
  * Seeded from the authenticated route loader via the shared query provider.
  */
 export function useProjectListStatus(): ProjectListStatus {
@@ -55,7 +55,7 @@ export function useProject(projectId: string): Project | undefined {
 }
 
 /**
- * Project list for *display* surfaces (home recents, sidebar, drawer) —
+ * Project list for *display* surfaces (account library) —
  * excludes un-promoted independent chats, which are project-backed but hidden
  * until the user promotes them. Use `useProjectList` (unfiltered) when you need
  * to resolve a specific project by id, including hidden ones.

@@ -56,7 +56,7 @@ Two interfaces are the only paths between the visual layer and the substrate:
   (Zustand vanilla store, one instance per `ThreadStoreProvider`, SSR-safe).
   **Public imports:** `@/client/stores` only — do not reach into store internals from features.
   UI reads via `useThreadStore(selector)`, `useThreadTurns(threadId)`; writes via
-  `useThreadActions()` only. Before navigation or dispatch, Project Home and
+  `useThreadActions()` only. Before navigation or dispatch, the project Chat landing and
   existing-thread sends write an unresolved intent to the account-stamped chat
   submission journal. Destination Chat owns persistence, idempotent replay,
   acknowledgement, and recovery. Ambiguous sends retain their journal witness;
@@ -70,7 +70,7 @@ Two interfaces are the only paths between the visual layer and the substrate:
   The store depends on this port, not `QueryClient` directly — list/snapshot
   projections stay in Query; per-thread turn state stays in the store. Its
   lifecycle projector converges `actionRequired` across project thread lists,
-  Home, and every matching Work feed while Favorite remains normalized separately.
+  the Chat landing, and every matching Work feed while Favorite remains normalized separately.
 - **`useRenameThread`** (`src/client/query/useRenameThread.ts`) — P1 thread-title
   command. It projects the requested title into the project thread list
   immediately, fences per-thread overlap and stale completions through
@@ -89,20 +89,20 @@ Two interfaces are the only paths between the visual layer and the substrate:
   `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`).
   `project-invalidation` supplies project-level invalidators;
   `work-projection-cache` is the one Work-entity/binding convergence policy. Any
-  thread or Work transition that can change Home also invalidates `homeFeed`.
+  thread or Work transition that can change the Chat landing also invalidates `homeFeed`.
   Terminal turns and Work rebinds enter through
   `invalidateThreadProjectionDependencies`. Snapshot synchronization applies
   history and action-required lifecycle state. Favorite commands share one
-  normalized project/thread authority across Home and Work rows; Home alone
+  normalized project/thread authority across Chat landing and Work rows; the landing alone
   projects the affected item between its categories without invalidation. A
   failed favorite keeps the last confirmed star, exposes the exact failed
   intent through an inline row-scoped Retry on the shared row, and still
   announces the error.
-  `useWorks` exposes named catalog Works plus `noWork`. Home derives its
+  `useWorks` exposes named catalog Works plus `noWork`. The Chat landing derives its
   initial prospective choice from the first active (then first available) named
   catalog Work, or No Work. Omitted or explicit-null root creation binds the
   locked No Work row as primary.
-  Direct `/project/*` and `/chat/*` authenticated routes mount the project
+  Direct `/p/*` and `/chat/*` authenticated routes mount the project
   provider stack and seed the project list + `now`; the project route loader
   seeds per-project threads and works before the workspace renders, and carries
   the working-set read as an explicit `row` / `absent` / `unavailable` result.
@@ -176,12 +176,13 @@ Both transports emit this shape; the reducer consumes this shape.
 
 ## Client-led creation patterns
 
-`src/lib/optimistic-independent-chat.ts` owns the retained standalone-chat
-optimistic flow: client-generated UUID → navigate immediately → API call →
-reconcile on response. It is deliberately separate from project-address
-creation, whose destination must not own an unresolved project/thread create.
+Standalone `/chat/<id>` deep links remain readable for existing chats, but the
+account library offers no project-less creation command. `/projects/new` names a
+project before its server-assigned slug is available; the form is the neutral
+pending destination and keeps uncertain outcomes there rather than inventing a
+project address.
 
-Project Home Send mints a thread id, writes local turns, replaces the URL, then
+Chat landing Send mints a thread id, writes local turns, replaces the URL, then
 `useThreadHandoff` persists create-or-get + admit + run on those ids. Failure
 stays on that chat. An empty working turn shows "Couldn't send" with Retry on
 the turn, which resubmits the same thread and message ids. `useThreadHandoff`
@@ -189,7 +190,7 @@ clears that chrome once persist and run succeed. It also resumes each distinct
 active run once, including a server-initiated run that wakes the parent, so a
 background child's continuation streams live; see
 [`features/chat/.context/thread-live-updates.md`](../src/features/chat/.context/thread-live-updates.md).
-Do not bounce to Home or show Check status, Start over, or saved-first-message recovery.
+Do not bounce to the project library or show Check status, Start over, or saved-first-message recovery.
 
 ### Thread snapshot reconciliation
 
@@ -262,6 +263,10 @@ confirm exists; an account epoch reset clears the override.
 **Settings overlay:** `?settings=<section>` is layout-owned (`validateSearch` on
 `/_authenticated`) so the settings dialog is URL-addressable from any authenticated
 route without changing path. See `features/account/SettingsDialog.tsx`.
+
+## Account entry
+
+Authenticated `/` renders the project library from the project-list query, never the last-active project. The library searches visible project titles locally and opens direct `/p/<project-slug>` links. `/projects/new` is a separate creation destination; its title form keeps network pending/failure there until the server returns the authoritative slug, then enters that project's Chat landing. No account-level composer or project-less quick-chat entry is exposed. The existing personal-project bootstrap may still place a starter project in the library for a new account; this UI change does not decide zero-project onboarding.
 
 ## Readable project addresses and route lifetime
 

@@ -9,6 +9,7 @@
 
 ### Changed
 
+- Open a searchable project library at the signed-in base URL. Create a named project from a separate destination; open any project directly in Chat. Remove the account Home composer and quick-chat entry.
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
 
 ### Added
@@ -35,6 +36,7 @@
 
 ### Fixed
 
+- New projects initialize their Manuscript source before context catalog refresh, so draft requests no longer fail with a missing manifest identity.
 - Chat submissions stay visible as pending until the server acknowledges them. Unresolved sends survive reload, ambiguous sends retain status recovery, and rejected existing-thread sends keep Retry or Edit on the affected turn.
 - Working-set preferences, chat favorites, thread titles, checkout controls, and interrupt answers now keep pending and failure feedback on the affected control. Stale responses cannot overwrite newer settings or titles, thread titles persist across reload, and billing return pages never claim a purchase before the ledger confirms it.
 - Opening a document updates this project's recently opened list immediately, including after reload, without waiting for the server. A failed record or an unchanged server row keeps that opening. A stale list cannot erase or reorder it. A removed document does not return from a later list until it is opened again. Switching accounts and back does not replay the previous list onto the record.

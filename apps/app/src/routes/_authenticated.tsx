@@ -97,17 +97,6 @@ export const Route = createFileRoute("/_authenticated")({
     );
     const authMePromise = getAuthMe(requestInit);
 
-    // `/` immediately redirects to the default project, so skip its list fetch;
-    // every other authenticated route mounts the same shell and wants the list.
-    if (location.pathname === "/") {
-      const [authMe, settings] = await Promise.all([authMePromise, settingsPromise]);
-      const currentUser = {
-        ...authMe.user,
-        workingSetSyncEnabled: settings?.workingSetSyncEnabled ?? null,
-      };
-      return { user: currentUser, projects: null, now };
-    }
-
     const [authMe, [settingsResult, projectsResult]] = await Promise.all([
       authMePromise,
       Promise.allSettled([settingsPromise, loadProjectList()]),

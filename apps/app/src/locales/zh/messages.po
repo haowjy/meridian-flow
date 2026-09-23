@@ -77,6 +77,11 @@ msgstr ""
 msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
 msgstr ""
 
+#. placeholder {0}: matches.length
+#: src/features/home/ProjectLibrary.tsx
+msgid "{0, plural, one {# project} other {# projects}}"
+msgstr ""
+
 #. placeholder {0}: count ?? 0
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
@@ -269,6 +274,10 @@ msgstr ""
 msgid "A picture cannot go there."
 msgstr ""
 
+#: src/features/home/NewProjectView.tsx
+msgid "A project can hold one book, a whole series, or a story world."
+msgstr ""
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "A table keeps at least one column."
 msgstr ""
@@ -398,6 +407,10 @@ msgstr ""
 msgid "Alignment applies to paragraphs, headings, and tables."
 msgstr ""
 
+#: src/features/home/ProjectLibrary.tsx
+msgid "All projects"
+msgstr ""
+
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "All Work"
 msgstr ""
@@ -454,8 +467,8 @@ msgid "workReceipt.archived"
 msgstr ""
 
 #: src/features/home/HomeHero.tsx
-msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
-msgstr "用日常语言描述你的数据、方法或下一步即可。"
+#~ msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
+#~ msgstr "用日常语言描述你的数据、方法或下一步即可。"
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
@@ -493,8 +506,8 @@ msgid "Back to chat"
 msgstr ""
 
 #: src/features/chat/IndependentChatView.tsx
-msgid "Back to home"
-msgstr ""
+#~ msgid "Back to home"
+#~ msgstr ""
 
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
@@ -531,6 +544,10 @@ msgstr ""
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bold"
+msgstr ""
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Books, series, and story worlds in one place."
 msgstr ""
 
 #: src/components/app/composer/placeholders.ts
@@ -645,6 +662,7 @@ msgstr ""
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/ChatView.tsx
 #: src/features/project/chat/ChatSurface.tsx
+#: src/features/project/ChatLandingController.tsx
 #: src/features/project/ChatPaneController.tsx
 #: src/features/project/dock/DockHeader.tsx
 #: src/features/project/shell/screens.ts
@@ -664,8 +682,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/ChatLandingController.tsx
-msgid "Chats"
-msgstr ""
+#~ msgid "Chats"
+#~ msgstr ""
 
 #: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Chats couldn’t load"
@@ -1160,6 +1178,14 @@ msgstr ""
 msgid "Create “{0}”"
 msgstr ""
 
+#: src/features/home/NewProjectView.tsx
+msgid "Create a project"
+msgstr ""
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Create a project for your first book, series, or story world."
+msgstr ""
+
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "Create file or folder"
 msgstr ""
@@ -1169,6 +1195,8 @@ msgid "Create it now and the link starts working. Nothing about the link changes
 msgstr ""
 
 #: src/features/chat/IndependentChatView.tsx
+#: src/features/home/NewProjectView.tsx
+#: src/features/home/ProjectLibrary.tsx
 msgid "Create project"
 msgstr ""
 
@@ -1194,7 +1222,11 @@ msgid "Creating a Work…"
 msgstr ""
 
 #: src/features/chat/CreationComposer.tsx
-msgid "Creating chat"
+#~ msgid "Creating chat"
+#~ msgstr ""
+
+#: src/features/home/NewProjectView.tsx
+msgid "Creating project…"
 msgstr ""
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
@@ -1437,6 +1469,11 @@ msgstr ""
 msgid "edited {0}"
 msgstr ""
 
+#. placeholder {0}: formatRelativeTime(project.updatedAt, now)
+#: src/features/home/ProjectLibrary.tsx
+msgid "Edited {0}"
+msgstr ""
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Edited {count} documents"
 msgstr ""
@@ -1550,8 +1587,8 @@ msgstr "图片加载失败"
 msgid "Favorite"
 msgstr ""
 
-#: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/chat-landing/ChatLandingScreen.tsx
+#: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Favorite wasn’t saved"
 msgstr ""
@@ -1696,8 +1733,8 @@ msgstr "等一下…"
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx
 #: src/features/project/shell/screens.ts
-msgid "Home"
-msgstr ""
+#~ msgid "Home"
+#~ msgstr ""
 
 #: src/features/account/SettingsDialog.tsx
 msgid "How much of your plan you have used this month."
@@ -1936,6 +1973,10 @@ msgstr ""
 
 #: src/routes/_authenticated/p/$projectSlug.tsx
 msgid "Loading project…"
+msgstr ""
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Loading projects…"
 msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -2264,9 +2305,17 @@ msgstr ""
 msgid "No plans available."
 msgstr ""
 
-#: src/features/home/RecentProjects.tsx
-msgid "No projects yet."
+#: src/features/home/ProjectLibrary.tsx
+msgid "No projects match your search."
 msgstr ""
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "No projects yet"
+msgstr ""
+
+#: src/features/home/RecentProjects.tsx
+#~ msgid "No projects yet."
+#~ msgstr ""
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "No results yet."
@@ -2356,6 +2405,7 @@ msgid "Open {0} at this passage. {1}"
 msgstr ""
 
 #: src/features/chat/DocumentName.tsx
+#: src/features/home/ProjectLibrary.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Open {title}"
 msgstr ""
@@ -2417,6 +2467,10 @@ msgstr ""
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "Open producing turn in {agentName}"
+msgstr ""
+
+#: src/features/home/NewProjectView.tsx
+msgid "Open project"
 msgstr ""
 
 #: src/features/project/shell/ResultsRailSection.tsx
@@ -2513,8 +2567,40 @@ msgstr ""
 msgid "Profile"
 msgstr ""
 
+#: src/features/home/ProjectLibrary.tsx
+#~ msgid "project"
+#~ msgstr ""
+
+#: src/features/home/NewProjectView.tsx
+#~ msgid "Project couldn’t be created. Try again."
+#~ msgstr ""
+
 #: src/features/chat/IndependentChatView.tsx
 msgid "Project couldn’t load"
+msgstr ""
+
+#: src/features/home/NewProjectView.tsx
+msgid "Project created, but it couldn’t open. Try again."
+msgstr ""
+
+#: src/features/home/NewProjectView.tsx
+msgid "Project name"
+msgstr ""
+
+#: src/features/home/NewProjectView.tsx
+msgid "Project wasn’t confirmed. Retry creation."
+msgstr ""
+
+#: src/features/home/ProjectLibrary.tsx
+#~ msgid "projects"
+#~ msgstr ""
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Projects couldn’t load."
+msgstr ""
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Projects couldn’t refresh. Showing saved results."
 msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
@@ -2575,8 +2661,8 @@ msgid "Recent chats"
 msgstr ""
 
 #: src/features/home/RecentProjects.tsx
-msgid "Recent projects"
-msgstr ""
+#~ msgid "Recent projects"
+#~ msgstr ""
 
 #: src/features/project/context/ContextTabBar.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -2756,10 +2842,10 @@ msgstr ""
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
 #: src/features/editor/DraftReviewHeader.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
-#: src/features/project/chat-landing/HomeFeed.tsx
 #: src/routes/_authenticated/p/$projectSlug.tsx
 msgid "Retry"
 msgstr ""
@@ -2770,6 +2856,10 @@ msgstr ""
 
 #: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Retry Associated chats"
+msgstr ""
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Retry loading"
 msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
@@ -2892,6 +2982,10 @@ msgstr ""
 
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Search documents or paste a web link"
+msgstr ""
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Search projects"
 msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
@@ -3032,8 +3126,8 @@ msgid "Split cell"
 msgstr ""
 
 #: src/features/home/HomeView.tsx
-msgid "Start a quick chat without a project"
-msgstr ""
+#~ msgid "Start a quick chat without a project"
+#~ msgstr ""
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
@@ -3075,8 +3169,8 @@ msgstr "已取消"
 #~ msgstr "已取消。"
 
 #: src/features/home/RecentProjects.tsx
-msgid "Streaming"
-msgstr "流式输出中"
+#~ msgid "Streaming"
+#~ msgstr "流式输出中"
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Strikethrough"
@@ -3744,6 +3838,11 @@ msgstr ""
 msgid "User"
 msgstr ""
 
+#: src/features/chat/IndependentChatView.tsx
+#: src/features/home/NewProjectView.tsx
+msgid "View projects"
+msgstr ""
+
 #: src/features/chat/ChatView.tsx
 #~ msgid "View saved message"
 #~ msgstr ""
@@ -3774,8 +3873,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/home/HomeHero.tsx
-msgid "What are you working on?"
-msgstr "你正在研究什么？"
+#~ msgid "What are you working on?"
+#~ msgstr "你正在研究什么？"
 
 #: src/features/editor/surfaces/objects/ObjectFieldPopover.tsx
 msgid "What this figure shows"
@@ -3912,6 +4011,10 @@ msgstr ""
 
 #: src/features/billing/BillingPage.tsx
 msgid "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
+msgstr ""
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Your projects"
 msgstr ""
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx

@@ -1,12 +1,5 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+/** Authenticated account entry: the project library, never an implicit project switch. */
+import { createFileRoute } from "@tanstack/react-router";
+import { ProjectLibrary } from "@/features/home/ProjectLibrary";
 
-import { getHomeProject, getProject } from "@/client/api/projects-api";
-import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
-
-export const Route = createFileRoute("/_authenticated/")({
-  loader: async () => {
-    const { projectId } = await getHomeProject(ssrApiRequestInit());
-    const project = await getProject(projectId, ssrApiRequestInit());
-    throw redirect({ to: "/p/$projectSlug/$", params: { projectSlug: project.slug, _splat: "" } });
-  },
-});
+export const Route = createFileRoute("/_authenticated/")({ component: ProjectLibrary });
