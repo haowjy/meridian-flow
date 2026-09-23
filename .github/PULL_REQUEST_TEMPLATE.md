@@ -1,4 +1,5 @@
-<!-- Give reviewers enough context to understand and verify the final change. -->
+<!-- Describe the PR's final state, not its history. Give reviewers enough
+     context to understand the change. -->
 
 ## Why
 
