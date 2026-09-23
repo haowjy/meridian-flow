@@ -10,7 +10,7 @@ import type { ThreadLeaseState, ThreadStatus } from "@meridian/contracts/threads
 import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
 import { and, eq, gt, inArray } from "drizzle-orm";
-import { currentDrizzleDb } from "../../../shared/drizzle-transaction.js";
+import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import {
   DEFAULT_LEASE_TTL_MS,
   type RunAuthority,
@@ -133,7 +133,7 @@ export function createDrizzleRunAuthority(
   const lock = createThreadRunLock(db);
   const holderId = options.holderId ?? crypto.randomUUID();
   const leaseTtlMs = options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;
-  const held = new Map<ThreadId, { runId: RunId; claim: ThreadRunLockClaim }>();
+  const held = new Map<ThreadId, { runId: RunId; holderId: string; claim: ThreadRunLockClaim }>();
 
   const nextExpiry = () => new Date(Date.now() + leaseTtlMs);
   const db_ = () => currentDrizzleDb(db);
@@ -197,7 +197,7 @@ export function createDrizzleRunAuthority(
         await claim.release();
         throw cause;
       }
-      held.set(threadId, { runId, claim });
+      held.set(threadId, { runId, holderId, claim });
       return { threadId, runId, holderId };
     },
 
@@ -297,25 +297,28 @@ export function createDrizzleRunAuthority(
 
     async release(lease) {
       const entry = held.get(lease.threadId);
-      const ownsLock = entry?.runId === lease.runId;
-      try {
-        await db_()
-          .delete(schema.threadRunLeases)
-          .where(
-            and(
-              eq(schema.threadRunLeases.threadId, lease.threadId),
-              eq(schema.threadRunLeases.runId, lease.runId),
-              eq(schema.threadRunLeases.holderId, lease.holderId),
-            ),
-          );
-      } finally {
-        // A stale/double release from a superseded run must not free the
-        // advisory lock now held by a newer run's lease.
-        if (ownsLock && entry) {
-          held.delete(lease.threadId);
-          await entry.claim.release();
-        }
-      }
+      await db_()
+        .delete(schema.threadRunLeases)
+        .where(
+          and(
+            eq(schema.threadRunLeases.threadId, lease.threadId),
+            eq(schema.threadRunLeases.runId, lease.runId),
+            eq(schema.threadRunLeases.holderId, lease.holderId),
+          ),
+        );
+      if (entry?.runId !== lease.runId || entry.holderId !== lease.holderId) return;
+
+      const unlock = async () => {
+        // A stale callback must not release a newer run. Keep the entry on
+        // unlock failure so the run owner's final release can retry it.
+        if (held.get(lease.threadId) !== entry) return;
+        await entry.claim.release();
+        if (held.get(lease.threadId) === entry) held.delete(lease.threadId);
+      };
+      // A terminal transaction deletes the lease row atomically with its
+      // terminal write. Its physical session lock remains held until the outer
+      // commit; rollback leaves both the lease and the claim in place.
+      if (!deferUntilDrizzleCommit(unlock)) await unlock();
     },
   };
 }

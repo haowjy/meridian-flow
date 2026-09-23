@@ -36,6 +36,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleRunAuthority, createDrizzleThreadRunOwnership } = await import(
       "./drizzle-thread-run-ownership.js"
     );
+    const { runInDrizzleTransaction } = await import("../../../shared/drizzle-transaction.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 6 });
@@ -232,6 +233,51 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await first.holder(THREAD_A)).toBeNull();
       const runThree = required(await second.acquire(THREAD_A, "run-3"));
       await second.release(runThree);
+    });
+
+    it("keeps the physical claim and lease when terminal release rolls back", async () => {
+      const first = createDrizzleRunAuthority(db, { holderId: "holder-1" });
+      const second = createDrizzleRunAuthority(db, { holderId: "holder-2" });
+      const lease = required(await first.acquire(THREAD_A, "run-1"));
+
+      await expect(
+        runInDrizzleTransaction(db, async () => {
+          await first.release(lease);
+          throw new Error("terminal rollback");
+        }),
+      ).rejects.toThrow("terminal rollback");
+
+      expect(await first.holder(THREAD_A)).toBe("run-1");
+      expect(await second.acquire(THREAD_A, "run-2")).toBeNull();
+      await first.release(lease);
+      const next = required(await second.acquire(THREAD_A, "run-2"));
+      await second.release(next);
+    });
+
+    it("keeps the physical claim until the terminal transaction commits", async () => {
+      const first = createDrizzleRunAuthority(db, { holderId: "holder-1" });
+      const second = createDrizzleRunAuthority(db, { holderId: "holder-2" });
+      const lease = required(await first.acquire(THREAD_A, "run-1"));
+      let releaseTransaction!: () => void;
+      let releasedInTransaction!: () => void;
+      const released = new Promise<void>((resolve) => {
+        releasedInTransaction = resolve;
+      });
+      const continueTransaction = new Promise<void>((resolve) => {
+        releaseTransaction = resolve;
+      });
+      const completion = runInDrizzleTransaction(db, async () => {
+        await first.release(lease);
+        releasedInTransaction();
+        await continueTransaction;
+      });
+
+      await released;
+      expect(await second.acquire(THREAD_A, "run-2")).toBeNull();
+      releaseTransaction();
+      await completion;
+      const next = required(await second.acquire(THREAD_A, "run-2"));
+      await second.release(next);
     });
 
     it("observes the cancel flag through read and keeps cancel idempotent", async () => {

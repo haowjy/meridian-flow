@@ -20,6 +20,7 @@
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
 ### Fixed
 
+- Keep the physical child run claim until the outer terminal transaction commits; rollback retains the claim and lease for safe cleanup or retry.
 - Closed the execution-report storage gate: transactional in-memory parity, canonical exact reads with live-run activity, validated invocation correlation, bounded publication discovery, and delivery-derived publication obligations.
 
 ### Added

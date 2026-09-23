@@ -18,11 +18,11 @@
  *     and the run owner starts the pending message as a distinct next turn. For
  *     the error exits the wake sweep (S4) recovers it.
  *
- * Release ownership: `closeRun` releases the lease exactly once, under the
- * lock, after `complete` commits. The run owner also releases in its `finally`
- * as the cancel/error backstop (a generator throw bypasses this exit). That
- * second release is guarded—`RunAuthority.release` must tolerate an
- * already-released or superseded lease—and never frees a newer run's lock.
+ * Release ownership: `closeRun` deletes the lease row in the same transaction
+ * as `complete`; the physical session claim unlocks only after the outer
+ * transaction commits. The run owner releases in its `finally` as the
+ * cancel/error backstop (a generator throw bypasses this exit). That retry is
+ * guarded against an already-released or superseded claim.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Inbox, Lease, RunAuthority } from "./ports.js";
