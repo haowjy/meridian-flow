@@ -1401,6 +1401,10 @@ msgstr ""
 msgid "Earlier"
 msgstr ""
 
+#: src/features/chat/UserTurn.tsx
+msgid "Edit"
+msgstr ""
+
 #. placeholder {0}: fieldLabel(next)
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Edit {0}"
@@ -2750,6 +2754,7 @@ msgstr ""
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 #: src/features/chat/DraftDock.tsx
 #: src/features/chat/ErrorBlock.tsx
+#: src/features/chat/UserTurn.tsx
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx

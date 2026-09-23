@@ -44,10 +44,12 @@ import { TranscriptLinkNavigationContext } from "@/rich-content/TranscriptRefere
 import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToolbar";
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
-import { shouldRetireSubmission } from "./chat-submission-retirement";
 import { DraftDock, useDraftDock } from "./DraftDock";
+import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { TurnList } from "./TurnList";
+import type { UserTurnRecovery } from "./UserTurn";
 import {
+  type FailedChatSubmission,
   forgetSubmissionTurnId,
   rememberSubmissionTurnId,
   submissionTurnId,
@@ -167,10 +169,15 @@ export function ChatView({
     try {
       const outcome = await controller.submit(threadId, envelope, {
         optimisticUserTurnId: optimisticUserTurn.id,
+        keepOptimisticOnFailure: true,
       });
-      if (shouldRetireSubmission(outcome)) {
+      if (outcome.kind === "accepted") {
         forgetSubmissionTurnId(accountId, envelope.submissionId);
         retireChatSubmission(accountId, envelope.submissionId, epoch);
+      } else if (outcome.kind === "rejected") {
+        // A proved rejection stays on the turn with edit/retry recovery; the
+        // recovery owner retires the journal witness and retains the payload.
+        submissionRecovery.markRejected(envelope.submissionId, optimisticUserTurn.id);
       }
       return outcome;
     } catch (error) {
@@ -186,12 +193,22 @@ export function ChatView({
       // The PRIOR assistant turn may have errored and the projector clears it
       // off `status:error` when the next user turn arrives — a side-effect with
       // no journal/WS event. Refresh only after submit settles so this fetch
-      // cannot race ahead of a persisted user turn. Definitive API rejections
-      // roll back the optimistic row; ambiguous transport failures retain it
-      // until a later acknowledgement or reload can reconcile the write.
+      // cannot race ahead of a persisted user turn. Ambiguous transport failures
+      // retain the row until a later acknowledgement or reload can reconcile;
+      // a proved rejection keeps the failed row for edit/retry recovery.
       void queryClient.invalidateQueries({ queryKey: threadQueryKeys.snapshot(threadId) });
     }
   }
+
+  const restoreRejectedMessage = useCallback((entry: FailedChatSubmission) => {
+    const composer = composerRef.current;
+    if (!composer) return;
+    // A live send left the draft in the composer, so Edit focuses it. Only a
+    // plain-text rejection with an empty composer can be restored faithfully;
+    // a structured message has no blocks-to-composer inverse, and a live draft
+    // is never replaced.
+    restoreRejectedDraft(composer, entry.fingerprint);
+  }, []);
 
   const settleQuarantined = useCallback(
     async (envelope: ComposerSubmitEnvelope, retire: boolean) => {
@@ -199,7 +216,10 @@ export function ChatView({
       const epoch = getChatSubmissionEpoch();
       const outcome = await (retire
         ? controller.retire(threadId, envelope, { optimisticUserTurnId })
-        : controller.lookup(threadId, envelope, { optimisticUserTurnId }));
+        : controller.lookup(threadId, envelope, {
+            optimisticUserTurnId,
+            keepOptimisticOnFailure: true,
+          }));
       if (!retire && outcome.kind === "not-seen" && optimisticUserTurnId) {
         // The server never saw this submission. Replay the stored fingerprint
         // through the shared recovery path with the live optimistic row so the
@@ -209,14 +229,18 @@ export function ChatView({
           envelope.submissionId,
           optimisticUserTurnId,
         );
-        if (shouldRetireSubmission(replayOutcome)) {
+        if (replayOutcome.kind === "accepted") {
           forgetSubmissionTurnId(accountId, envelope.submissionId);
         }
         return { ...replayOutcome, acceptedRevision: envelope.acceptedRevision };
       }
-      if (shouldRetireSubmission(outcome)) {
+      if (outcome.kind === "accepted" || (retire && outcome.kind === "rejected")) {
+        // Acknowledgement, or writer-directed Start over: retire the witness.
         forgetSubmissionTurnId(accountId, envelope.submissionId);
         retireChatSubmission(accountId, envelope.submissionId, epoch);
+      } else if (outcome.kind === "rejected" && optimisticUserTurnId) {
+        // A definitive rejection keeps the failed row with edit/retry recovery.
+        submissionRecovery.markRejected(envelope.submissionId, optimisticUserTurnId);
       }
       return outcome;
     },
@@ -267,15 +291,26 @@ export function ChatView({
     [projectId, activeWork?.id, openReferenceDocument],
   );
 
-  const submissionRecoveryByTurnId = new Map(
-    submissionRecovery.recovered.map((entry) => [
-      entry.optimisticTurnId,
-      {
-        onCheck: () => submissionRecovery.check(entry.submissionId),
-        onRetire: () => submissionRecovery.retire(entry.submissionId),
+  const submissionRecoveryByTurnId = new Map<string, UserTurnRecovery>();
+  for (const entry of submissionRecovery.recovered) {
+    submissionRecoveryByTurnId.set(entry.optimisticTurnId, {
+      kind: "ambiguous",
+      onCheck: () => submissionRecovery.check(entry.submissionId),
+      onRetire: () => submissionRecovery.retire(entry.submissionId),
+    });
+  }
+  for (const entry of submissionRecovery.rejected) {
+    const draftIsRecoverable = entry.draftRetained || canRestoreRejectedDraft(entry.fingerprint);
+    submissionRecoveryByTurnId.set(entry.optimisticTurnId, {
+      kind: "rejected",
+      onRetry: () => {
+        void submissionRecovery.retry(entry.optimisticTurnId);
       },
-    ]),
-  );
+      // Edit focuses a live draft or restores a plain-text message. A structured
+      // rejection whose draft is gone cannot be rebuilt, so only Retry remains.
+      ...(draftIsRecoverable ? { onEdit: () => restoreRejectedMessage(entry) } : {}),
+    });
+  }
 
   return (
     <TranscriptLinkNavigationContext.Provider value={projectId ? followTranscriptLink : undefined}>

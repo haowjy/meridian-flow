@@ -2,7 +2,6 @@
 
 ## Optimistic interaction contract
 
-- **CHAT-003: Attach live existing-thread rejection to the turn.** Pending and recovered failure are done: optimistic user rows stay `pending` until acknowledgement, and a reload-recovered rejected submission keeps its row failed while an ambiguous one keeps the row with Check submission status / Start over (`client/chat-submissions`, `useChatSubmissionRecovery`). The remaining gap is the live existing-thread definitive rejection: `ThreadRunController.reconcile` still drops the row and the Composer keeps the draft, so the refusal is not attached to the turn. First-send already keeps Retry on the destination turn.
 - **CHAT-004: Prove interrupt-response settlement at runtime, or scope it explicitly.** Local settlement is implemented and keyed by `(threadId, turnId, interruptId)`: pending/ambiguous/`failed`, socket-generation close, snapshot reconciliation, newest-pending error correlation, and one in-flight response per tuple. Still missing: a browser probe for disconnect-before-ack, Retry, double-submit, and pending-survives-remount (SPEC Phase 6 / A3); contract tests do not substitute. The settlement is memory-only across reload; the server journal owns the outcome.
 
 ## `ls` chevron decision still parses eagerly
