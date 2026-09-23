@@ -56,6 +56,7 @@ const expectedSuites = [
   "apps/server/server/domains/recent-documents/adapters/drizzle/recent-documents-repository.db.test.ts",
   "apps/server/server/domains/runtime/loop/work-context-delivery.db.test.ts",
   "apps/server/server/domains/runtime/loop/work-context-delivery-lifecycle.db.test.ts",
+  "apps/server/server/domains/runtime/loop/execution-finalizer.db.test.ts",
   "apps/server/server/domains/runtime/adapters/drizzle-loop-ports.db.test.ts",
   "apps/server/server/domains/runtime/admission/user-turn-admission.db.test.ts",
   "apps/server/server/domains/threads/adapters/drizzle/thread-repository-root.db.test.ts",

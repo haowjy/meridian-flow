@@ -91,7 +91,6 @@ import type { Notice, NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AccountSkillInstallStore, AgentRevisionStore } from "../../packages/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
-import { toIsoString } from "../../threads/domain/contract-serialization.js";
 import type {
   ActiveDocumentResolver,
   BlockRepository,
@@ -117,11 +116,7 @@ import {
   insertPostToolNotices,
   lastUserMessageIndex,
 } from "./context-builder.js";
-import {
-  finalizeCancelled,
-  finalizeError,
-  finalizeTurnOnGeneratorFailure,
-} from "./finalization.js";
+import { finalizeExecution } from "./execution-finalizer.js";
 import { loadThreadConversationContext } from "./fork-thread-context.js";
 import { drainInbox, planMessageTurns } from "./inbox-context.js";
 import { createInterruptSession, type InterruptArtifactFlushPort } from "./interrupt-session.js";
@@ -260,7 +255,26 @@ export function createOrchestrator(deps: OrchestratorDeps): RunTurnPort {
       return runTurn(deps, input);
     },
     async finalizeGeneratorFailure(input) {
-      await finalizeTurnOnGeneratorFailure(deps, input);
+      await closeRun({
+        threadLock: deps.threadLock,
+        inbox: deps.inbox,
+        runAuthority: deps.runAuthority,
+        threadId: input.threadId,
+        lease: input.lease ?? null,
+        continueOnPending: false,
+        complete: () =>
+          finalizeExecution(deps, {
+            threadId: input.threadId,
+            assistantTurnId: input.assistantTurnId,
+            cause: input.signal?.aborted
+              ? { kind: "cancelled", reason: "cancelled" }
+              : {
+                  kind: "failed",
+                  reason: "generator_error",
+                  error: input.error instanceof Error ? input.error.message : String(input.error),
+                },
+          }),
+      });
     },
   };
 }
@@ -944,30 +958,6 @@ async function persistCommittedWriteResult(input: {
   return { block: persisted.result, events: persisted.events };
 }
 
-async function completeTurn(input: {
-  deps: OrchestratorDeps;
-  threadId: ThreadId;
-  turn: Turn;
-  finishReason: GenerateResult["finishReason"];
-}): Promise<{ turn: Turn; events: OrchestratorEvent[] }> {
-  const completed = await persistAndAppendEvents(input.deps, input.threadId, async () => {
-    const updatedTurn: Turn = {
-      ...input.turn,
-      status: "complete",
-      finishReason: input.finishReason,
-      completedAt: toIsoString(new Date()),
-    };
-    // updateCost is a simple increment of the turn counter; the actual cost is
-    // already reflected via model.response_received and projector rollups.
-    await input.deps.repos.threads.updateCost(input.threadId, "0", 1);
-    return {
-      result: updatedTurn,
-      events: [{ type: "turn.completed", turn: updatedTurn }],
-    };
-  });
-  return { turn: completed.result, events: completed.events };
-}
-
 /**
  * Loads and persists the text-reference reads for one user turn, returning the
  * turn's blocks with the read results applied plus the events to emit. Used both
@@ -1164,22 +1154,35 @@ async function* generateEvents(
     throw new RunExit(false);
   }
 
-  const cancelTerminal = async (): Promise<TerminalOutcome> => ({
-    events: await finalizeCancelled(deps, input.threadId, currentAssistantTurn),
-  });
-  const errorTerminal = (error: MeridianError | string) => async (): Promise<TerminalOutcome> => ({
-    events: await finalizeError(deps, input.threadId, currentAssistantTurn, error),
-  });
-  const completeTerminal =
-    (finishReason: GenerateResult["finishReason"]) => async (): Promise<TerminalOutcome> => {
-      const completion = await completeTurn({
-        deps,
-        threadId: input.threadId,
-        turn: currentAssistantTurn,
-        finishReason,
-      });
-      return { turn: completion.turn, events: completion.events };
-    };
+  const cancelTerminal = () =>
+    finalizeExecution(deps, {
+      threadId: input.threadId,
+      assistantTurnId: currentAssistantTurn.id,
+      cause: { kind: "cancelled", reason: "cancelled" },
+    });
+  const errorTerminal = (error: MeridianError | string, reason?: string) => () =>
+    finalizeExecution(deps, {
+      threadId: input.threadId,
+      assistantTurnId: currentAssistantTurn.id,
+      cause: {
+        kind: "failed",
+        reason: reason ?? (typeof error === "string" ? "runtime_error" : error.code),
+        error,
+      },
+    });
+  const completeTerminal = (result: GenerateResult) => () =>
+    finalizeExecution(deps, {
+      threadId: input.threadId,
+      assistantTurnId: currentAssistantTurn.id,
+      cause: {
+        kind: "success",
+        finishReason: result.finishReason,
+        finalPublicText: result.content
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join(""),
+      },
+    });
 
   // The one cancel exit: discard an in-flight response, then finalize through
   // `exitRun`. Every cancel site calls this so the rollback+cancel sequence
@@ -1491,6 +1494,9 @@ async function* generateEvents(
         if (result.finishReason === "error") {
           yield* exitRun(false, errorTerminal("Model returned error finish reason"));
         }
+        if (result.finishReason === "max_tokens") {
+          yield* exitRun(false, errorTerminal("Model exhausted its output tokens", "max_tokens"));
+        }
 
         // blockSeq continues across tool_result blocks so all blocks for this
         // turn are numbered contiguously regardless of which iteration
@@ -1751,13 +1757,13 @@ async function* generateEvents(
             // A child called return_result: the report is captured and persisted,
             // so the turn ends here instead of looping into another model round.
             // A message that landed in the exit window keeps the run going.
-            yield* exitRun(true, completeTerminal("end_turn"));
+            yield* exitRun(true, completeTerminal(result));
           }
 
           continue;
         }
 
-        yield* exitRun(true, completeTerminal(result.finishReason));
+        yield* exitRun(true, completeTerminal(result));
       } catch (exit) {
         if (exit instanceof RunExit) {
           if (exit.continueRun) continue;
@@ -1774,12 +1780,18 @@ async function* generateEvents(
       // staged runtimes before surfacing cleanup failures, so a second failure
       // here should not hide the error that broke the response.
     }
-    yield* await finalizeTurnOnGeneratorFailure(deps, {
-      threadId: input.threadId,
-      assistantTurnId: currentAssistantTurn.id,
-      error: err,
-      signal: input.signal,
-    });
+    try {
+      if (input.signal?.aborted) {
+        yield* exitRun(false, cancelTerminal);
+      } else {
+        yield* exitRun(
+          false,
+          errorTerminal(err instanceof Error ? err.message : String(err), "generator_error"),
+        );
+      }
+    } catch (exit) {
+      if (!(exit instanceof RunExit)) throw exit;
+    }
   } finally {
     await rollbackActiveResponse().catch(() => undefined);
     // Helper result delivery is flushed by callers after their live-turn registry

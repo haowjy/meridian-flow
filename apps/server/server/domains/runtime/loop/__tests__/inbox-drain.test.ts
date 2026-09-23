@@ -18,6 +18,11 @@ import type {
   Message,
   StreamEvent,
 } from "../../gateway/index.js";
+import {
+  createSpawnToolRegistrations,
+  createToolExecutor,
+  createToolRegistry,
+} from "../../tools/index.js";
 import { activatedSkillMetadata } from "../activated-skills.js";
 import { createOrchestrator } from "../orchestrator.js";
 import type { MessageDraft } from "../ports.js";
@@ -39,9 +44,13 @@ function textResult(text = "done"): GenerateResult {
   };
 }
 
-function toolCallResult(toolName: string, toolCallId: string): GenerateResult {
+function toolCallResult(
+  toolName: string,
+  toolCallId: string,
+  input: Record<string, unknown> = {},
+): GenerateResult {
   return {
-    content: [{ type: "tool_use", toolCallId, toolName, input: {} }],
+    content: [{ type: "tool_use", toolCallId, toolName, input }],
     toolCalls: [],
     finishReason: "tool_use",
     usage: { inputTokens: 1_000_000, outputTokens: 1_000_000 },
@@ -152,6 +161,7 @@ async function setup(
     skill?: { slug: string; name: string; description: string; body: string };
     referenceReader?: ReferenceReader;
     child?: boolean;
+    realSpawnTools?: boolean;
   } = {},
 ) {
   const projectRepo = createInMemoryProjectRepository();
@@ -202,6 +212,10 @@ async function setup(
       throw new Error("not used");
     },
   };
+  const toolRegistry = createToolRegistry();
+  if (options.realSpawnTools) {
+    for (const registration of createSpawnToolRegistrations()) toolRegistry.register(registration);
+  }
   const orchestrator = createOrchestrator(
     createTestOrchestratorDeps({
       boundThreads: () => [thread.id],
@@ -212,6 +226,9 @@ async function setup(
       threadLock: createInMemoryThreadLock(),
       runAuthority: createInMemoryRunAuthority(),
       accountSkillInstalls,
+      ...(options.realSpawnTools
+        ? { toolExecutor: createToolExecutor(toolRegistry), toolRegistry }
+        : {}),
       ...(options.referenceReader ? { referenceReader: options.referenceReader } : {}),
     }),
   );
@@ -235,6 +252,96 @@ async function collectEvents(handle: {
 }
 
 describe("inbox drain", () => {
+  it("captures explicit return_result with its successful tool_result before terminal success", async () => {
+    const { thread, orchestrator, repos } = await setup({
+      child: true,
+      realSpawnTools: true,
+      results: [
+        toolCallResult("return_result", "rr-1", {
+          summary: "explicit summary",
+          payload: { answer: 42 },
+        }),
+      ],
+    });
+    const run = await orchestrator.runTurn({ threadId: thread.id, userText: "report" });
+    await collect(run);
+    const report = await repos.executionReports.findByExecution(thread.id, run.assistantTurnId);
+    expect(report).toMatchObject({
+      outcome: "succeeded",
+      source: "return_result",
+      summary: "explicit summary",
+      payload: { answer: 42 },
+      captureToolCallId: "rr-1",
+    });
+    const toolResults = (await repos.blocks.listByTurn(run.assistantTurnId)).filter(
+      (block) => block.blockType === "tool_result",
+    );
+    expect(toolResults).toHaveLength(1);
+    expect(toolResults[0]?.content).toMatchObject({ output: { ok: true }, isError: false });
+  });
+
+  it("saves only the final response's public text and per-execution response cost", async () => {
+    const { thread, orchestrator, repos } = await setup({
+      child: true,
+      results: [textResult("first result"), textResult("second result")],
+    });
+    const first = await orchestrator.runTurn({ threadId: thread.id, userText: "first" });
+    await collect(first);
+    const firstReport = await repos.executionReports.findByExecution(
+      thread.id,
+      first.assistantTurnId,
+    );
+    expect(firstReport).toMatchObject({
+      outcome: "succeeded",
+      source: "final_assistant",
+      summary: "first result",
+      publication: "none",
+    });
+    expect(firstReport?.costMillicredits).toBeGreaterThan(0);
+
+    const second = await orchestrator.runTurn({ threadId: thread.id, userText: "second" });
+    await collect(second);
+    const secondReport = await repos.executionReports.findByExecution(
+      thread.id,
+      second.assistantTurnId,
+    );
+    expect(secondReport).toMatchObject({
+      outcome: "succeeded",
+      source: "final_assistant",
+      summary: "second result",
+      costMillicredits: firstReport?.costMillicredits,
+    });
+  });
+
+  it("saves an empty successful report rather than an invented incomplete fallback", async () => {
+    const { thread, orchestrator, repos } = await setup({ child: true, results: [textResult("")] });
+    const run = await orchestrator.runTurn({ threadId: thread.id, userText: "empty" });
+    await collect(run);
+    expect(
+      await repos.executionReports.findByExecution(thread.id, run.assistantTurnId),
+    ).toMatchObject({
+      outcome: "succeeded",
+      source: "empty",
+      summary: "",
+      publication: "none",
+    });
+  });
+
+  it("treats token exhaustion as failure while retaining durable public text", async () => {
+    const exhausted = { ...textResult("partial prose"), finishReason: "max_tokens" as const };
+    const { thread, orchestrator, repos } = await setup({ child: true, results: [exhausted] });
+    const run = await orchestrator.runTurn({ threadId: thread.id, userText: "long" });
+    await collect(run);
+    expect(
+      await repos.executionReports.findByExecution(thread.id, run.assistantTurnId),
+    ).toMatchObject({
+      outcome: "failed",
+      reason: "max_tokens",
+      source: "final_assistant",
+      summary: "partial prose",
+    });
+  });
+
   it("admits exact child executions for writer and queued continuations before returning a handle", async () => {
     const { thread, inbox, orchestrator, repos } = await setup({ child: true });
     const writer = await orchestrator.runTurn({ threadId: thread.id, userText: "writer prompt" });

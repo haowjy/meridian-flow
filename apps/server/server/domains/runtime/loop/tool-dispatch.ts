@@ -10,8 +10,7 @@
  * while the tool handler is awaited.
  */
 
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
-import type { TreeBudget } from "@meridian/contracts/spawn";
+import type { ReturnResultCapture, TreeBudget } from "@meridian/contracts/spawn";
 import type {
   Block,
   JsonObject,
@@ -237,15 +236,13 @@ export async function dispatchToolCall(
       : undefined;
 
   const returnResultCompleter = ctx.returnResultCompleter;
-  let returnResultSummary = "";
-  let returnResultArtifacts: ArtifactRef[] | undefined;
+  let returnResultCapture: ReturnResultCapture | undefined;
   const returnResult = async (capture: Parameters<ReturnResultCompleter>[0]) => {
     if (!returnResultCompleter) {
       return { ok: false as const, message: "return_result is not available on this run." };
     }
     const outcome = await returnResultCompleter(capture);
-    returnResultSummary = capture.summary;
-    returnResultArtifacts = capture.artifacts;
+    if (outcome.ok) returnResultCapture = capture;
     return outcome;
   };
 
@@ -283,8 +280,8 @@ export async function dispatchToolCall(
     const settled = await persistReturnResult(transcript, {
       toolCallId: execResult.toolCallId,
       outcome: execResult.returnResult,
-      summary: returnResultSummary,
-      artifacts: returnResultArtifacts,
+      capture: returnResultCapture,
+      executionReports: deps.executionReports,
     });
     return {
       events,

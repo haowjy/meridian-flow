@@ -251,6 +251,7 @@ export function createTurnRunner(deps: {
             assistantTurnId: handle.assistantTurnId,
             error,
             signal: controller.signal,
+            lease: heldLease,
           });
         } finally {
           running.delete(input.threadId);

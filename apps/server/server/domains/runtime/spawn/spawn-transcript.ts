@@ -3,19 +3,18 @@
  *
  * Tool dispatch runs handlers and durable tool_result rows. This module upserts
  * helper-result custom cards onto the active turn and owns return_result
- * settlement (tool_result + child-report in one persist). The inbox drain's
- * report branch uses the same HelperResultProps builder for a background
- * child's terminal card.
+ * settlement. The accepted capture and ordinary tool_result share one
+ * persistence transaction; capture is candidate content, not a terminal card.
  */
 import {
-  buildChildReportComponentContent,
   buildHelperResultComponentContent,
   type ComponentBlockContent,
 } from "@meridian/contracts/components";
-import type { ArtifactRef } from "@meridian/contracts/interrupt";
-import type { ThreadId } from "@meridian/contracts/runtime";
-import type { ReturnResultOutcome } from "@meridian/contracts/spawn";
+import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { ReturnResultCapture, ReturnResultOutcome } from "@meridian/contracts/spawn";
 import type { Block, OrchestratorEvent } from "@meridian/contracts/threads";
+import { ExecutionReportConflictError } from "../../threads/index.js";
+import type { ExecutionReportRepository } from "../../threads/ports/repositories.js";
 import { contentForBlockInput, localBlockFromEvent } from "../loop/block-helpers.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "../loop/persistence.js";
 import { spawnHelperCardProps } from "./spawn-output.js";
@@ -94,18 +93,30 @@ export async function persistReturnResult(
   input: {
     toolCallId: string;
     outcome: ReturnResultOutcome;
-    summary: string;
-    artifacts?: ArtifactRef[];
+    capture: ReturnResultCapture | undefined;
+    executionReports: Pick<ExecutionReportRepository, "captureOnce">;
   },
 ): Promise<{ block: Block; endTurn: boolean }> {
   const persisted = await persistAndAppendEvents(
     transcript.persistence,
     transcript.threadId,
     async () => {
-      const output: { ok: true } | { ok: false; message: string } = input.outcome.ok
-        ? { ok: true }
-        : { ok: false, message: input.outcome.message };
-      const isError = !input.outcome.ok;
+      let output = input.outcome;
+      if (output.ok) {
+        if (!input.capture) throw new Error("Accepted return_result has no capture");
+        try {
+          await input.executionReports.captureOnce(
+            transcript.threadId,
+            transcript.turnId as TurnId,
+            input.toolCallId,
+            input.capture,
+          );
+        } catch (error) {
+          if (!(error instanceof ExecutionReportConflictError)) throw error;
+          output = { ok: false, message: error.message };
+        }
+      }
+      const isError = !output.ok;
       const toolRow = contentForBlockInput({
         turnId: transcript.turnId,
         blockType: "tool_result",
@@ -126,26 +137,13 @@ export async function persistReturnResult(
           isError,
         },
       ];
-      let card: Block | undefined;
-      if (input.outcome.ok) {
-        const report = customCardBlock(
-          transcript,
-          buildChildReportComponentContent({
-            summary: input.summary,
-            ...(input.artifacts !== undefined ? { artifacts: input.artifacts } : {}),
-          }),
-        );
-        events.push({ type: "block.upserted" as const, block: report.row });
-        card = report.local;
-      }
       return {
-        result: { tool: localBlockFromEvent(toolRow), card },
+        result: { tool: localBlockFromEvent(toolRow), endTurn: output.ok },
         events,
       };
     },
   );
   rememberBlock(transcript, persisted.result.tool);
-  if (persisted.result.card) rememberBlock(transcript, persisted.result.card);
   transcript.events.push(...persisted.events);
-  return { block: persisted.result.tool, endTurn: input.outcome.ok };
+  return { block: persisted.result.tool, endTurn: persisted.result.endTurn };
 }

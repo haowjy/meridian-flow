@@ -3,6 +3,7 @@ import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import type { Block, Thread, Turn } from "@meridian/contracts/threads";
 import type { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { assertExecutionReportAdmission } from "../../domain/execution-report-admission.js";
+import { ExecutionReportConflictError } from "../../domain/execution-report-conflict.js";
 import type { ExecutionReportRepository } from "../../ports/repositories.js";
 
 function canonical(value: unknown): string {
@@ -57,7 +58,7 @@ export function createInMemoryExecutionReportRepository(
             ([key, value]) => existing[key as keyof SavedExecutionReport] !== value,
           )
         )
-          throw new Error("Conflicting execution report admission");
+          throw new ExecutionReportConflictError("Conflicting execution report admission");
         return existing;
       }
       const row: SavedExecutionReport = {
@@ -88,11 +89,13 @@ export function createInMemoryExecutionReportRepository(
       };
       if (row.capture !== null) {
         if (row.captureToolCallId !== toolCallId || canonical(row.capture) !== canonical(candidate))
-          throw new Error("A different return_result was already accepted");
+          throw new ExecutionReportConflictError("A different return_result was already accepted");
         return row;
       }
       if (row.outcome !== null)
-        throw new Error("Cannot capture a report after terminal finalization");
+        throw new ExecutionReportConflictError(
+          "Cannot capture a report after terminal finalization",
+        );
       const next = { ...row, capture: candidate, captureToolCallId: toolCallId };
       rows.set(execution, next);
       return next;
@@ -116,7 +119,9 @@ export function createInMemoryExecutionReportRepository(
               canonical(row[key as keyof SavedExecutionReport]) !== canonical(value),
           )
         )
-          throw new Error("Execution report already has a conflicting terminal outcome");
+          throw new ExecutionReportConflictError(
+            "Execution report already has a conflicting terminal outcome",
+          );
         return row;
       }
       const next: SavedExecutionReport = {

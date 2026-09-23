@@ -83,6 +83,7 @@ export interface FinalizeGeneratorFailureInput {
   assistantTurnId: TurnId;
   error: unknown;
   signal?: AbortSignal;
+  lease?: Lease;
 }
 
 export interface RunTurnPort {

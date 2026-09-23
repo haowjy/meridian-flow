@@ -1,92 +1,174 @@
-/**
- * return_result settlement persists tool_result and child-report together.
- */
+/** Return-result capture and tool settlement share one repository transaction. */
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("../loop/persistence.js", () => ({
-  persistAndAppendEvents: vi.fn(async (_deps, _threadId, operation) => operation()),
-}));
-
-import { persistAndAppendEvents } from "../loop/persistence.js";
+import { describe, expect, it } from "vitest";
+import { createInMemoryProjectRepository } from "../../projects/index.js";
+import {
+  createInMemoryEventJournalWriter,
+  createInMemoryRepositories,
+} from "../../threads/index.js";
+import { finalizeExecution } from "../loop/execution-finalizer.js";
 import { persistReturnResult, type SpawnTranscript } from "./spawn-transcript.js";
 
-function transcript(): SpawnTranscript {
-  return {
-    persistence: {} as SpawnTranscript["persistence"],
-    threadId: "thread-1" as ThreadId,
-    turnId: "turn-1",
-    blockSeqRef: { value: 3 },
+async function setup() {
+  const projects = createInMemoryProjectRepository();
+  const repos = createInMemoryRepositories({ projects });
+  const project = await projects.create({ userId: "writer", title: "Return" });
+  const parent = await repos.threads.create({ userId: "writer", projectId: project.id });
+  const child = await repos.threads.createSubagent({
+    userId: "writer",
+    projectId: project.id,
+    parentThreadId: parent.id,
+    rootThreadId: parent.id,
+    spawnDepth: 1,
+  });
+  const turn = await repos.turns.create({
+    threadId: child.id,
+    role: "assistant",
+    status: "streaming",
+    prevTurnId: null,
+  });
+  await repos.executionReports.admit({
+    childThreadId: child.id,
+    assistantTurnId: turn.id,
+    handle: child.ref ?? "",
+    origin: "thread_run",
+    deliveryMode: "none",
+    callerThreadId: null,
+    callerTurnId: null,
+    toolCallId: null,
+    cardBlockId: null,
+  });
+  const transcript: SpawnTranscript = {
+    persistence: { repos, eventWriter: createInMemoryEventJournalWriter() },
+    threadId: child.id as ThreadId,
+    turnId: turn.id,
+    blockSeqRef: { value: 0 },
     allBlocks: [],
     events: [],
   };
+  return { repos, child, turn, transcript };
 }
 
 describe("persistReturnResult", () => {
-  beforeEach(() => {
-    vi.mocked(persistAndAppendEvents).mockClear();
-  });
-
-  it("persists tool_result and child-report in one transaction; card is last", async () => {
-    const active = transcript();
-    const settled = await persistReturnResult(active, {
-      toolCallId: "call-1",
+  it("settles the candidate and successful tool result together without a premature report card", async () => {
+    const { repos, child, turn, transcript } = await setup();
+    const settled = await persistReturnResult(transcript, {
+      toolCallId: "return-1",
       outcome: { ok: true },
-      summary: "done",
+      capture: { summary: "done", payload: { answer: 42 } },
+      executionReports: repos.executionReports,
     });
 
-    expect(persistAndAppendEvents).toHaveBeenCalledOnce();
     expect(settled.endTurn).toBe(true);
-    expect(active.allBlocks.map((block) => block.blockType)).toEqual(["tool_result", "custom"]);
-    const tool = active.allBlocks[0];
-    const card = active.allBlocks[1];
-    expect(tool && card && card.sequence > tool.sequence).toBe(true);
-    expect(active.events.map((event) => event.type)).toEqual([
-      "block.upserted",
-      "tool.result",
-      "block.upserted",
-    ]);
-    const cardEvent = active.events[2];
-    expect(cardEvent?.type).toBe("block.upserted");
-    if (cardEvent?.type !== "block.upserted") return;
-    expect(cardEvent.block.blockType).toBe("custom");
-    expect(cardEvent.block.content).toMatchObject({
-      kind: "child-report",
-      props: { summary: "done" },
+    expect(transcript.allBlocks.map((block) => block.blockType)).toEqual(["tool_result"]);
+    expect(settled.block.content).toMatchObject({ output: { ok: true }, isError: false });
+    expect(await repos.executionReports.findByExecution(child.id, turn.id)).toMatchObject({
+      capture: { summary: "done", payload: { answer: 42 } },
+      captureToolCallId: "return-1",
+      outcome: null,
     });
   });
 
-  it("threads captured artifacts onto the child-report card", async () => {
-    const active = transcript();
-    const artifacts = [
-      { type: "object", uri: "https://example.com/one.pdf", label: "One" },
-      { type: "image", url: "https://example.com/two.png", label: "Two" },
-    ] as const;
-    await persistReturnResult(active, {
-      toolCallId: "call-1",
+  it("persists a rejected competing return as a failed ordinary tool result", async () => {
+    const { repos, child, turn, transcript } = await setup();
+    await repos.executionReports.captureOnce(child.id, turn.id, "first", { summary: "kept" });
+    const settled = await persistReturnResult(transcript, {
+      toolCallId: "second",
       outcome: { ok: true },
-      summary: "done",
-      artifacts: [...artifacts],
+      capture: { summary: "discarded" },
+      executionReports: repos.executionReports,
     });
 
-    const card = active.allBlocks.at(-1);
-    expect(card?.content).toMatchObject({
-      kind: "child-report",
-      props: { summary: "done", artifacts },
+    expect(settled.endTurn).toBe(false);
+    expect(settled.block.content).toMatchObject({ output: { ok: false }, isError: true });
+    expect(await repos.executionReports.findByExecution(child.id, turn.id)).toMatchObject({
+      capture: { summary: "kept" },
+      captureToolCallId: "first",
     });
   });
 
-  it("persists a failed envelope without a card or endTurn", async () => {
-    const active = transcript();
-    const settled = await persistReturnResult(active, {
-      toolCallId: "call-1",
-      outcome: { ok: false, message: "already returned" },
-      summary: "ignored",
+  it("rolls the candidate back when tool-result publication fails", async () => {
+    const { repos, child, turn, transcript } = await setup();
+    transcript.persistence.eventWriter = {
+      async appendEvent() {
+        throw new Error("journal failed");
+      },
+    };
+    await expect(
+      persistReturnResult(transcript, {
+        toolCallId: "return-1",
+        outcome: { ok: true },
+        capture: { summary: "candidate" },
+        executionReports: repos.executionReports,
+      }),
+    ).rejects.toThrow("journal failed");
+    expect(await repos.executionReports.findByExecution(child.id, turn.id)).toMatchObject({
+      capture: null,
+      outcome: null,
     });
+    expect(await repos.blocks.listByTurn(turn.id)).toEqual([]);
+  });
+});
 
-    expect(persistAndAppendEvents).toHaveBeenCalledOnce();
-    expect(settled.endTurn).toBe(false);
-    expect(active.allBlocks.map((block) => block.blockType)).toEqual(["tool_result"]);
-    expect(active.events.map((event) => event.type)).toEqual(["block.upserted", "tool.result"]);
+describe("captured candidate terminal policy", () => {
+  it("does not convert captured content into success after a failed run", async () => {
+    const { repos, child, turn, transcript } = await setup();
+    await persistReturnResult(transcript, {
+      toolCallId: "return-1",
+      outcome: { ok: true },
+      capture: { summary: "partial candidate", payload: { retained: true } },
+      executionReports: repos.executionReports,
+    });
+    await finalizeExecution(
+      { repos, eventWriter: transcript.persistence.eventWriter },
+      {
+        threadId: child.id,
+        assistantTurnId: turn.id,
+        cause: { kind: "failed", reason: "runtime_error", error: "later failure" },
+      },
+    );
+    expect(await repos.executionReports.findByExecution(child.id, turn.id)).toMatchObject({
+      outcome: "failed",
+      source: "return_result",
+      summary: "partial candidate",
+      payload: { retained: true },
+    });
+  });
+
+  it("rolls terminal status and report back together when the journal fails", async () => {
+    const { repos, child, turn, transcript } = await setup();
+    await expect(
+      finalizeExecution(
+        {
+          repos,
+          eventWriter: {
+            async appendEvent() {
+              throw new Error("journal failed");
+            },
+          },
+        },
+        {
+          threadId: child.id,
+          assistantTurnId: turn.id,
+          cause: { kind: "success", finishReason: "end_turn", finalPublicText: "result" },
+        },
+      ),
+    ).rejects.toThrow("journal failed");
+    expect((await repos.turns.findById(turn.id))?.status).toBe("streaming");
+    expect(await repos.executionReports.findByExecution(child.id, turn.id)).toMatchObject({
+      outcome: null,
+    });
+    await finalizeExecution(
+      { repos, eventWriter: transcript.persistence.eventWriter },
+      {
+        threadId: child.id,
+        assistantTurnId: turn.id,
+        cause: { kind: "success", finishReason: "end_turn", finalPublicText: "result" },
+      },
+    );
+    expect(await repos.executionReports.findByExecution(child.id, turn.id)).toMatchObject({
+      outcome: "succeeded",
+      summary: "result",
+    });
   });
 });

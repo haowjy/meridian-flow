@@ -5,6 +5,7 @@ import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import * as schema from "@meridian/database/schema";
 import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import { assertExecutionReportAdmission } from "../../domain/execution-report-admission.js";
+import { ExecutionReportConflictError } from "../../domain/execution-report-conflict.js";
 import type {
   AdmitExecutionReportInput,
   ExecutionReportRepository,
@@ -38,13 +39,6 @@ function map(row: typeof schema.threadExecutionReports.$inferSelect): SavedExecu
     publication: row.publication as SavedExecutionReport["publication"],
     publishedAt: row.publishedAt?.toISOString() ?? null,
   };
-}
-
-export class ExecutionReportConflictError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ExecutionReportConflictError";
-  }
 }
 
 function canonical(value: unknown): string {

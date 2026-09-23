@@ -56,7 +56,7 @@ skeleton and delegates the moving parts.
 
 | `system-instructions/` | Model-facing prompt assets independent of any agent body. `document-dialect.ts` owns Meridian document language and its codec-backed spelling contract; `runtime-uris.ts` owns context namespace guidance. Tool descriptions continue to own mechanics. |
 | `streaming.ts` | Maps gateway `StreamEvent`s to `OrchestratorEvent` stream deltas and extracts tool calls. |
-| `finalization.ts` | Terminal turn status + thread status transitions. Failed turn generator → `turn.error` (no more stuck "streaming"). |
+| `execution-finalizer.ts` | One terminal transaction projects the assistant turn event and immutable admitted child report. It uses the exact final response public text for natural fallback, persisted public blocks for failure partials, and persisted model-response accounting for per-execution cost. The child final-drain lock owns the outer transaction and lease deletion; generator failures use the same finalizer. |
 | `persistence.ts` | Transactional persist/project-then-emit helper. **Ordering**: `projectReadModelEvent` runs before `eventWriter.appendEvent` so the `event_journal.turn_id` FK can reference the turn row created by the projector. Both happen in the same repo transaction. |
 | `admission/` | `UserTurnAdmission` owns writer replay, canonical fingerprinting, exact ordered text/reference/image parsing, project-final authorization with in-place text degradation for unavailable reference identity, lookup, and retirement. Admission is **validate → record → enqueue**: `admission/writer-turn-producer.ts` is the producer. It persists the writer's user turn + blocks at enqueue (reusing the inbox message id as the turn id), stamping any activated `/skill` slugs as hidden turn metadata the serving drain reads back, and appends the writer-provenance `message` in the same turn-start transaction, settling the admission ledger, upload consumption, and document attachment atomically; the wake is best-effort. Liveness is the runner map, never durable turn status: a mid-run send yields the runner's live assistant turn id (a crash-orphaned `streaming` turn and a `waiting_interrupt` run classify correctly), a fresh run yields null and the client learns the turn from `RUN_STARTED`. The producer reads durable rows only as a fallback inside the runner's setup window, scoped to turns created after the run started. An admission winner rolls the whole turn-start transaction back instead of committing a losing or rejected submission. `admission-turn-starter.ts` and `TurnRunner.startTurn` are gone. |
 | `reference-context.ts` | Before the first model call, loads admitted current-turn text references through the host-wired shared agent-edit read operation; a mid-run adopted writer turn's unread references load at adoption. Reads run outside admission/persistence transactions; results are persisted server-side at `reference.read.result` before gateway submission. Duplicate `(documentId, uri)` identities read once per turn; replay reuses the frozen result, while a later mention reads afresh. Images retain their separate projection, and client admission rejects `read` payloads. |
@@ -177,14 +177,13 @@ terminal report is one producer on the same queue as any `message`: the driver's
 `enqueueBackgroundReport` calls `ThreadedInbox.enqueue` with `child` provenance
 and a `report` body (`text`, `artifacts`, `payload`, `agentSlug`, `description`,
 `failed`), idempotency key `child-report:<reportId>`, so the parent is woken and
-drains it like any `message`. The per-run capture hook enqueues the moment
-`return_result` settles; the terminal `finally` enqueues again with the same key
-and the idempotent insert collapses it, so a crash before the run's terminal
-write cannot lose the report. The drain persists it as a system-role
-`helper-result` card and projects it to the model through `componentModelText`.
-`persistReturnResult` then writes `tool_result` and the child-report card in one
-`persistAndAppendEvents` (card last), carrying the captured summary and
-artifacts.
+drains it like any `message`. The legacy driver still enqueues from its per-run callback and terminal
+`finally`; this is **not** the saved-report authority and must be removed before
+Step 3 is complete. `persistReturnResult` now accepts the candidate through
+`executionReports.captureOnce` in the same transaction as the successful
+ordinary `tool_result`; it no longer emits a premature child-report card. The
+legacy inbox report rendering below remains until parent publication B replaces
+it.
 `spawn_status`/`spawn_result` are spawn-owned: a thread_message run's outcome
 lives on its per-execution card and never overwrites a prior report. Every child
 run emits the neutral `agent.run_completed`; there is no spawn-named completion

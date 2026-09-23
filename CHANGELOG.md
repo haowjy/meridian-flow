@@ -20,6 +20,7 @@
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
 ### Fixed
 
+- Make return_result capture and its successful tool_result one transaction, and finalize the exact child assistant turn/report together under the final-drain lock. Token exhaustion is failure; natural fallback uses only the final response's public text, and report cost sums that execution's persisted response accounting.
 - Keep the physical child run claim until the outer terminal transaction commits; rollback retains the claim and lease for safe cleanup or retry.
 - Closed the execution-report storage gate: transactional in-memory parity, canonical exact reads with live-run activity, validated invocation correlation, bounded publication discovery, and delivery-derived publication obligations.
 
