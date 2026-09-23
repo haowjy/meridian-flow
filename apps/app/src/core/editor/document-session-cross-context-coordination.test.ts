@@ -85,6 +85,7 @@ it("stamps the server-phase bindable authority with its resource lineage", async
         documentId,
         lineageHandle,
         exactDatabaseName: lease.exactDatabaseName,
+        generation,
       }),
     ).resolves.toBe("bindable");
   } finally {
@@ -144,6 +145,7 @@ it("still rejects a genuinely different lineage", async () => {
         documentId,
         lineageHandle: "catalog:someone-else",
         exactDatabaseName: lease.exactDatabaseName,
+        generation,
       }),
     ).resolves.toBe("mismatch");
   } finally {
@@ -175,6 +177,7 @@ it("claims an exact legacy handle-less authority during cached-session recovery"
         documentId,
         lineageHandle,
         exactDatabaseName: admitted.exactDatabaseName,
+        generation,
       }),
     ).resolves.toBe("bindable");
     await expect(
@@ -182,6 +185,15 @@ it("claims an exact legacy handle-less authority during cached-session recovery"
         documentId,
         lineageHandle,
         exactDatabaseName: `${admitted.exactDatabaseName}:foreign`,
+        generation,
+      }),
+    ).resolves.toBe("mismatch");
+    await expect(
+      coordination.inspectLocalLineage({
+        documentId,
+        lineageHandle,
+        exactDatabaseName: admitted.exactDatabaseName,
+        generation: "119",
       }),
     ).resolves.toBe("mismatch");
     const transfer = {

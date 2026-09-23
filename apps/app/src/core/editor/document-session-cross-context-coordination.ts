@@ -263,6 +263,7 @@ class Coordination implements DocumentSessionCrossContextCoordination {
     documentId: DocumentId;
     lineageHandle: string;
     exactDatabaseName: string;
+    generation: AvailabilityGeneration;
   }): Promise<"clear" | "adopting" | "bindable" | "terminal" | "mismatch"> {
     await this.requireReady();
     return this.documentLocks.withOperation(input.documentId, async () => {
@@ -276,11 +277,15 @@ class Coordination implements DocumentSessionCrossContextCoordination {
           : authority.lineageHandle !== input.lineageHandle)
       )
         return "mismatch";
-      return authority.phase === "adopting-local"
-        ? "adopting"
-        : authority.phase === "terminal-local"
-          ? "terminal"
-          : "bindable";
+      if (authority.phase === "terminal-local") return "terminal";
+      if (authority.phase === "adopting-local")
+        return authority.targetGeneration === null ||
+          compareAvailabilityGeneration(authority.targetGeneration, input.generation) === 0
+          ? "adopting"
+          : "mismatch";
+      return compareAvailabilityGeneration(authority.generation, input.generation) === 0
+        ? "bindable"
+        : "mismatch";
     });
   }
 

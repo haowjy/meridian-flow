@@ -126,6 +126,7 @@ export class ResourceSessionAdoptionCoordinator {
         documentId: witness.documentId,
         identityRevision: witness.identityRevision,
         databaseName: witness.exactDatabaseName,
+        requireRetainedLease: true,
       },
       this.reservations,
     );
@@ -133,6 +134,7 @@ export class ResourceSessionAdoptionCoordinator {
       this.activeTransfers.delete(encodeURIComponent(key.handle));
       return this.finishRecordedAdoption(key, witness, transfer.ownership.persistenceGeneration);
     }
+    if (transfer.kind === "waiting") return "waiting";
     this.activeTransfers.set(encodeURIComponent(key.handle), { key, handoff: transfer.handoff });
 
     const validated = await this.lock.run(key, async () => {
@@ -147,10 +149,19 @@ export class ResourceSessionAdoptionCoordinator {
       this.abortActiveTransfer(encodeURIComponent(key.handle));
       return "idle";
     }
+    const authority = await this.availability.resolve(
+      witness.projectId,
+      witness.documentId,
+      this.close.signal,
+    );
+    if (authority.kind !== "available" || authority.documentId !== witness.documentId)
+      return "waiting";
+    assertAvailabilityGeneration(authority.generation);
     const authorityState = await this.adoption.inspect({
       documentId: witness.documentId,
       lineageHandle: key.handle,
       exactDatabaseName: witness.exactDatabaseName,
+      generation: authority.generation,
     });
     if (authorityState === "terminal") {
       this.abortActiveTransfer(encodeURIComponent(key.handle));
@@ -170,15 +181,6 @@ export class ResourceSessionAdoptionCoordinator {
             exactDatabaseName: witness.exactDatabaseName,
             transitionId: witness.transitionId,
           });
-
-    const authority = await this.availability.resolve(
-      witness.projectId,
-      witness.documentId,
-      this.close.signal,
-    );
-    if (authority.kind !== "available" || authority.documentId !== witness.documentId)
-      return "waiting";
-    assertAvailabilityGeneration(authority.generation);
     const pinned = await this.lock.run(key, async () => {
       const current = exactAdoption(await this.metadata.readResource(key));
       if (!current || current.transitionId !== witness.transitionId) return "idle" as const;
@@ -211,8 +213,9 @@ export class ResourceSessionAdoptionCoordinator {
         documentId: witness.documentId,
         lineageHandle: key.handle,
         exactDatabaseName: witness.exactDatabaseName,
+        generation: authority.generation,
       });
-      if (state === "terminal" || state === "clear") {
+      if (state === "terminal" || state === "clear" || state === "mismatch") {
         this.abortActiveTransfer(encodeURIComponent(key.handle));
       }
       throw error;

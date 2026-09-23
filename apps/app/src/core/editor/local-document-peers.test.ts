@@ -50,10 +50,9 @@ afterEach(async () => {
 it("exchanges live awareness between same-incarnation browser peers", async () => {
   const name = `awareness-${crypto.randomUUID()}`;
   const left = await connect(name);
-  const right = await connect(name);
-
   left.presence.setField("user", { name: "Left" });
   left.presence.setField("cursor", { anchor: 1, head: 2 });
+  const right = await connect(name);
 
   await vi.waitFor(() => {
     expect(right.awareness.getStates().get(left.awareness.clientID)).toMatchObject({
