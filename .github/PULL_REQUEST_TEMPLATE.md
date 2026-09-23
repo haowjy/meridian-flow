@@ -15,22 +15,28 @@
 
 ## Before / After
 
-<!-- For fixes or changed behavior, show Before and After. For new capabilities,
-     describe After only. Include important workflows and failures. For UI
-     changes, show each changed surface/state; screenshots or GIFs are required.
-     Compare material performance changes under the same workload. If runtime
-     behavior is unchanged, say so. -->
+<!-- For fixes or changed behavior, show Before and After; keep Before brief or
+     omit it when no meaningful prior state exists. For new capabilities,
+     describe After only. Show changed UI states with screenshots or GIFs. -->
 
-- Before (for fixes/existing behavior changes):
+- Before (when meaningful):
 - After:
+
+## Reproduction / Workflow
+
+<!-- Give setup and numbered steps to reproduce the fix or exercise the changed
+     workflow, with expected results. If it has no manual path, say why. -->
+
+- Setup:
+- Steps and expected results:
 
 ## Code Changes
 
-<!-- List production-code changes by area, with key paths and rationale. Favor
-     lower net-new code over time: simplify, refactor, and delete duplication or
-     dead paths. Larger diffs are fine when they leave code simpler. Justify
-     substantial additions. Track temporary code/deferred cleanup with a reason
-     and removal trigger. -->
+<!-- Group production-code additions, refactors, and deletions by area; include
+     key paths and rationale. Aim to lower net-new code over time by simplifying,
+     refactoring, and removing duplication/dead paths—not by shrinking this diff.
+     Explain substantial additions. Track temporary code or cleanup deferred for
+     delivery speed/product clarity, with its reason and removal trigger. -->
 
 - Added:
 - Refactored:
@@ -58,9 +64,9 @@
 
 ## Testing
 
-<!-- List tests added/refactored/deleted and the risk they cover or why removal
-     is safe. Don't add tests to inflate count or coverage; consider deleting
-     redundant tests and scaffolding. -->
+<!-- List tests added/refactored/deleted and the contract or risk each protects
+     (or why removal is safe). Don't add tests for volume or coverage; consider
+     deleting redundant tests and development scaffolding. -->
 
 - Added:
 - Refactored:
@@ -68,8 +74,9 @@
 
 ## Verification
 
-<!-- List commands and runtime checks run, with results. For performance claims,
-     include method, workload, baseline, and result; benchmark only when material. -->
+<!-- List commands and runtime checks run, with results. For performance work,
+     include the metric, method, environment/workload, baseline, and result. No
+     benchmark is needed when performance is not materially affected. -->
 
 - [ ] `pnpm check`
 - [ ] Runtime smoke / browser probe where behavior changed
@@ -80,7 +87,7 @@
      nearest .context/TODO or .context/FUTURE for local work. Temporary code or
      cleanup deferred for speed/product clarity needs a removal trigger. Say if none. -->
 
-- [ ] Tracking home for each deferral; cleanup triggers where needed, or none
+- [ ] Tracking home for each deferral; removal/cleanup trigger when applicable, or none
 
 ## Knowledge Updates
 
