@@ -340,6 +340,50 @@ it("lets server acquisition replace a local construction that has not opened", a
   await serverSession.destroy();
 });
 
+it("does not replace local content while its identity remint is prepared", async () => {
+  const metadata = openMetadata();
+  const record = resource("acquisition-remint");
+  await initialize(record);
+  const key = await install(metadata, record);
+  if (record.resource.content.kind !== "exact") throw new Error("Expected exact content");
+  const { access } = openAccess(metadata);
+  const navigation = await access.open("project", key, "navigation");
+  if (navigation.kind !== "opened") throw new Error("Expected local content");
+  const pending = access.prepareReidentity(
+    key,
+    record.resource.identity.documentId,
+    "reminted-document",
+    record.resource.identity.revision + 1,
+  );
+  if (!pending) throw new Error("Expected a prepared remint");
+  const serverSession = new DocumentSession({
+    roomKey: record.resource.identity.documentId,
+    persistence: { kind: "indexeddb", key: record.resource.content.databaseName },
+  });
+  await serverSession.whenLocalPersistenceSynced();
+  const release = vi.fn();
+
+  await expect(
+    access.adoptRegistrySession("project", key, serverSession, {
+      lease: {
+        accountId,
+        projectId: "project",
+        documentId: record.resource.identity.documentId,
+        generation: "7",
+      },
+      persistenceGeneration: "7",
+      exactDatabaseName: record.resource.content.databaseName,
+      release,
+    }),
+  ).rejects.toThrow("Resource already owns another session");
+  expect(release).toHaveBeenCalledOnce();
+  expect(access.ownershipFor(key, "project")).toBe("local");
+
+  pending.abort();
+  navigation.handle.release();
+  await serverSession.destroy();
+});
+
 it("keeps a failed transfer reserved until the next mounted editor retries", async () => {
   const metadata = openMetadata();
   const record = resource("transfer");
