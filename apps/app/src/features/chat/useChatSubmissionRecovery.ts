@@ -193,6 +193,21 @@ export function useChatSubmissionRecovery(
   const controllerRef = useRef(controller);
   controllerRef.current = controller;
 
+  // One stable recovery-session token per hook instance. Recovery
+  // reconciliation and replay are fenced by this token rather than the
+  // controller's admission epoch, because mounting this hook also mounts the
+  // sibling `useChatThreadSession`, whose teardown bumps the admission epoch
+  // during React StrictMode's mount/cleanup/re-mount. The token survives that
+  // churn; a genuinely unmounted hook stops matching and cannot acknowledge,
+  // replay, or retire.
+  const [recoverySession] = useState<object>(() => ({}));
+
+  useEffect(() => {
+    const activeController = controllerRef.current;
+    activeController.beginRecoverySession(recoverySession);
+    return () => activeController.endRecoverySession(recoverySession);
+  }, [recoverySession]);
+
   const dropRecovered = useCallback((submissionId: string) => {
     setRecovered((current) =>
       current.some((entry) => entry.submissionId === submissionId)
@@ -311,7 +326,7 @@ export function useChatSubmissionRecovery(
       replayingRef.current.add(optimisticTurnId);
       const epoch = getChatSubmissionEpoch();
       try {
-        const outcome = await controllerRef.current.submit(
+        const outcome = await controllerRef.current.recoverSubmission(
           threadId,
           {
             submissionId: entry.submissionId,
@@ -322,6 +337,7 @@ export function useChatSubmissionRecovery(
             activatedSkillSlugs: entry.activatedSkillSlugs,
           },
           { optimisticUserTurnId: optimisticTurnId, keepOptimisticOnFailure: true },
+          recoverySession,
         );
         if (unmountedRef.current) return outcome;
         if (getChatSubmissionAccountId() !== accountId) return outcome;
@@ -341,7 +357,7 @@ export function useChatSubmissionRecovery(
         replayingRef.current.delete(optimisticTurnId);
       }
     },
-    [accountId, forget, raiseRecovered, reject, threadId],
+    [accountId, forget, raiseRecovered, reject, recoverySession, threadId],
   );
 
   const settle = useCallback(
@@ -353,13 +369,18 @@ export function useChatSubmissionRecovery(
     ): Promise<void> => {
       const epoch = getChatSubmissionEpoch();
       const outcome = await (operation === "retire"
-        ? controllerRef.current.retireSubmission(threadId, entry.submissionId, {
-            optimisticUserTurnId: optimisticTurnId,
-          })
-        : controllerRef.current.lookupSubmission(threadId, entry.submissionId, {
-            optimisticUserTurnId: optimisticTurnId,
-            keepOptimisticOnFailure: true,
-          }));
+        ? controllerRef.current.retireSubmission(
+            threadId,
+            entry.submissionId,
+            { optimisticUserTurnId: optimisticTurnId },
+            recoverySession,
+          )
+        : controllerRef.current.lookupSubmission(
+            threadId,
+            entry.submissionId,
+            { optimisticUserTurnId: optimisticTurnId, keepOptimisticOnFailure: true },
+            recoverySession,
+          ));
       // Account/project lifetime fence: a stale or switched account must not
       // retire another account's entry or settle this row.
       if (unmountedRef.current) return;
@@ -388,7 +409,7 @@ export function useChatSubmissionRecovery(
       }
       if (operation === "lookup") raiseRecovered(entry.submissionId, optimisticTurnId);
     },
-    [accountId, forget, raiseRecovered, reject, replay, threadId],
+    [accountId, forget, raiseRecovered, reject, replay, recoverySession, threadId],
   );
 
   useEffect(() => {
@@ -527,7 +548,7 @@ export function useChatSubmissionRecovery(
 
         let outcome: ComposerSubmitOutcome;
         try {
-          outcome = await controllerRef.current.submit(
+          outcome = await controllerRef.current.recoverSubmission(
             threadId,
             {
               submissionId: nextEntry.submissionId,
@@ -538,6 +559,7 @@ export function useChatSubmissionRecovery(
               activatedSkillSlugs: nextEntry.activatedSkillSlugs,
             },
             { optimisticUserTurnId: optimisticTurnId, keepOptimisticOnFailure: true },
+            recoverySession,
           );
         } catch {
           // A throw is ambiguous: leave the fresh journal witness untouched.
@@ -568,7 +590,7 @@ export function useChatSubmissionRecovery(
         replayingRef.current.delete(optimisticTurnId);
       }
     },
-    [accountId, dropRejected, forget, raiseRecovered, reject, threadId],
+    [accountId, dropRejected, forget, raiseRecovered, recoverySession, reject, threadId],
   );
 
   return { recovered, rejected, check, retire, markRejected, retry, replaySubmission };
