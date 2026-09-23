@@ -263,6 +263,21 @@ it("keeps a server-acquired session through navigation until the editor binds it
     release,
   });
 
+  const abort = new AbortController();
+  const readAccessibleResource = metadata.readAccessibleResource.bind(metadata);
+  const read = vi
+    .spyOn(metadata, "readAccessibleResource")
+    .mockImplementationOnce(async (projectId, resourceKey) => {
+      const current = await readAccessibleResource(projectId, resourceKey);
+      abort.abort();
+      return current;
+    });
+  await expect(
+    access.open("project", key, "cancelled-editor", abort.signal, { adoptionEligible: true }),
+  ).resolves.toEqual({ kind: "cancelled" });
+  read.mockRestore();
+  expect(release).not.toHaveBeenCalled();
+
   const navigation = await access.open("project", key, "navigation");
   if (navigation.kind !== "opened") throw new Error("Expected navigation content");
   expect(navigation.handle.session).toBe(session);
@@ -279,7 +294,53 @@ it("keeps a server-acquired session through navigation until the editor binds it
   await session.destroy();
 });
 
-it("hands the exact open session to registry ownership without destroying it", async () => {
+it("lets server acquisition replace a local construction that has not opened", async () => {
+  const metadata = openMetadata();
+  const record = resource("acquisition-race");
+  await initialize(record);
+  const key = await install(metadata, record);
+  if (record.resource.content.kind !== "exact") throw new Error("Expected exact content");
+  let releaseAuthority!: () => void;
+  const authority = new Promise<void>((resolve) => {
+    releaseAuthority = resolve;
+  });
+  const created: DocumentSession[] = [];
+  const sessionFactory = createFactory(created);
+  sessionFactory.whenAuthorityReady = () => authority;
+  const { access } = openAccess(metadata, sessionFactory);
+  const opening = access.open("project", key, "navigation");
+  const serverSession = new DocumentSession({
+    roomKey: record.resource.identity.documentId,
+    persistence: { kind: "indexeddb", key: record.resource.content.databaseName },
+  });
+  await serverSession.whenLocalPersistenceSynced();
+  const release = vi.fn();
+  const adoption = access.adoptRegistrySession("project", key, serverSession, {
+    lease: {
+      accountId,
+      projectId: "project",
+      documentId: record.resource.identity.documentId,
+      generation: "7",
+    },
+    persistenceGeneration: "7",
+    exactDatabaseName: record.resource.content.databaseName,
+    release,
+  });
+
+  releaseAuthority();
+  await adoption;
+  await expect(opening).resolves.toEqual({ kind: "unavailable", reason: "changed" });
+  const editor = await access.open("project", key, "editor", undefined, {
+    adoptionEligible: true,
+  });
+  if (editor.kind !== "opened") throw new Error("Expected acquired editor content");
+  expect(editor.handle.session).toBe(serverSession);
+  editor.handle.release();
+  expect(release).toHaveBeenCalledOnce();
+  await serverSession.destroy();
+});
+
+it("rejects transfer commit after the mounted editor closes", async () => {
   const metadata = openMetadata();
   const record = resource("transfer");
   await initialize(record, "words during adoption");
@@ -331,11 +392,15 @@ it("hands the exact open session to registry ownership without destroying it", a
     release,
   };
   transfer?.prepareCommit();
-  await transfer?.completeCommit(ownership);
+  await expect(async () => {
+    await transfer?.completeCommit(ownership);
+  }).rejects.toThrow("The mounted editor closed during session adoption");
 
-  expect(release).toHaveBeenCalledOnce();
+  expect(release).not.toHaveBeenCalled();
+  release();
+  access.abortTransfer(key, handoff);
   expect(session.document.getText("probe").toString()).toBe("words during adoption");
-  expect(session.getSnapshot().status).toBe("detached");
+  await vi.waitFor(() => expect(session.getSnapshot().status).toBe("destroyed"));
 });
 
 it("retires an uncommitted transfer only after its reservation is aborted", async () => {
