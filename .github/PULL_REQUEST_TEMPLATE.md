@@ -18,12 +18,21 @@
 
 ## Summary
 
-<!-- Orient the reviewer to the diff. List the major implementation or design
-     changes, important boundaries, and deliberate tradeoffs. This should be a
-     map of the solution, not a commit log or a repeat of Resulting Behavior.
-     Start with the diff size: files changed and +/- line counts EXCLUDING
-     generated migrations (state the migration delta separately), e.g.
-     "113 files, +3,102 / -360 excluding migrations (3 files, +26)". -->
+<!-- Orient the reviewer to the solution. List the major implementation or
+     design changes, important boundaries, and deliberate tradeoffs. This
+     should be a map of the solution, not a commit log, diff-stat recap, or
+     repeat of Resulting Behavior. -->
+
+## Diff
+
+<!-- Give the overall diff size and break it down by concern or area. Exclude
+     generated migrations from every total here; report migrations separately
+     under DB Changes. Use non-overlapping groups whose file and line totals
+     add up to the non-migration total. -->
+
+- Non-migration total: N files, +N / -N
+- Breakdown:
+  - Area: N files, +N / -N — what changed
 
 ## DB Changes
 
@@ -49,12 +58,23 @@
      inspectable. If this was direct maintenance with no tracked artifact, say
      so. -->
 
+## Testing
+
+<!-- List tests added, materially refactored, and deleted, and the contract or
+     risk they protect (or why removal is safe). Do NOT try to write a lot of
+     tests to increase test count or coverage. Tests are guardrails, not a goal;
+     consider deleting redundant tests and development scaffolding that no
+     longer protect a real risk. -->
+
+- Added:
+- Refactored:
+- Deleted:
+
 ## Verification
 
-<!-- Prove the claims in Resulting Behavior. Record the exact automated gates,
-     focused tests, and runtime journeys run against the final commit, along with
-     their results or evidence links. Check only what ran; explain anything not
-     applicable or blocked. -->
+<!-- Prove the claims in Resulting Behavior. Record exact automated gates and
+     runtime journeys run against the final commit, with results or evidence
+     links. Check only what ran; explain anything not applicable or blocked. -->
 
 - [ ] `pnpm check`
 - [ ] Runtime smoke / browser probe where behavior changed
