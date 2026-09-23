@@ -21,6 +21,7 @@
 ### Fixed
 
 - Replace competing child completion paths with one saved per-execution terminal report. Background spawn returns after admission; direct spawn/message return the exact saved outcome, including failed or cancelled partial content. Report bodies no longer ride lifecycle events, cards, or inbox notifications.
+- Mark a background child that fails before assistant-turn admission as failed on its existing card and lifecycle hint, without inventing terminal report truth.
 - Recover admitted orphan turns only after acquiring the physical run claim, and retry parent publication from bounded durable pending discovery. Parent publication holds its lock before updating the original card, appending body-free completion metadata, queuing a compact exact `thread_report` reference, and marking the obligation.
 - Remove the obsolete `threads.spawn_result` body column. The child report row is the sole saved result authority; `spawn_status` remains a lifecycle hint.
 - Make return_result capture and its successful tool_result one transaction, and finalize the exact child assistant turn/report together under the final-drain lock. Token exhaustion is failure; natural fallback uses only the final response's public text, and report cost sums that execution's persisted response accounting.

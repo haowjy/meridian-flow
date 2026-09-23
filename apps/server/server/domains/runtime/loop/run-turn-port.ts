@@ -16,7 +16,6 @@ interface RunTurnBase {
   tools?: Tool[];
   signal?: AbortSignal;
   treeBudget?: TreeBudget;
-  isSubagentThread?: boolean;
   /** Parent invocation identity; omitted for writer and inbox continuations. */
   executionReport?: {
     correlation: ExecutionReportCorrelation;
