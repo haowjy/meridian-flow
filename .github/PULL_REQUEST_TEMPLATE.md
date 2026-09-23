@@ -32,14 +32,6 @@
 - Before (when meaningful):
 - After:
 
-## Reproduction / Workflow
-
-<!-- Give setup and numbered steps to reproduce the fix or exercise the changed
-     workflow, with expected results. If it has no manual path, say why. -->
-
-- Setup:
-- Steps and expected results:
-
 ## Code Changes
 
 <!-- Group production-code additions, refactors, and deletions by area; include
@@ -75,12 +67,16 @@
 
 ## Verification
 
-<!-- List commands and runtime checks run, with results. For performance work,
-     include the metric, method, environment/workload, baseline, and result. No
-     benchmark is needed when performance is not materially affected. -->
+<!-- Describe how to exercise changed behavior, then record what was tested and
+     observed. Include setup, steps, expected/actual results, and workflows a
+     probe covered. If no manual path exists, say why. For performance changes,
+     report comparable numbers with metric, method, environment/workload, and
+     baseline/result; omit benchmarks when performance is unaffected. -->
 
-- [ ] `pnpm check`
-- [ ] Runtime smoke / browser probe where behavior changed
+- Workflow/probe:
+- Setup and steps:
+- Expected / observed:
+- Performance (when relevant):
 
 ## Deferred
 
