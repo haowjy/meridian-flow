@@ -29,8 +29,9 @@
      anything important that stays unchanged. For user-facing changes, include
      screenshots or GIFs beside the states they show; cover every changed
      surface and meaningful state (empty, filled, error, narrow). The human
-     merge gate is visual — no visual evidence, no review. If runtime behavior is
-     unchanged, say so and describe what changed instead. -->
+     merge gate is visual — no visual evidence, no review. For material
+     performance effects, compare before and after under the same workload. If
+     runtime behavior is unchanged, say so and describe what changed instead. -->
 
 - Before:
 - After:
@@ -89,7 +90,10 @@
 
 <!-- Prove the claims in Before / After. Record exact automated gates and
      runtime journeys run against the final commit, with results or evidence
-     links. Check only what ran; explain anything not applicable or blocked. -->
+     links. For performance claims, include the measurement method, workload,
+     baseline, and result; don't claim an improvement without evidence. No
+     benchmark is needed when performance is not materially affected. Check only
+     what ran; explain anything not applicable or blocked. -->
 
 - [ ] `pnpm check`
 - [ ] Runtime smoke / browser probe where behavior changed
