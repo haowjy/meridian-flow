@@ -1246,8 +1246,6 @@ describe("ChildRunCoordinator root activity journal", () => {
     await vi.waitFor(() => {
       expect(appended.filter((entry) => entry.type === "agent.run_completed")).toHaveLength(1);
     });
-    // The durable success must not be joined by a second, contradictory failure.
-    expect(appended.some((entry) => entry.type === "background.failed")).toBe(false);
     const terminal = appended.filter((entry) => entry.type === "agent.run_completed");
     expect(terminal).toHaveLength(1);
     expect(terminal[0]?.outcome).toBe("succeeded");

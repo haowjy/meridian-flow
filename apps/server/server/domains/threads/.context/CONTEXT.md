@@ -28,9 +28,10 @@ instead of the N:1 `threads.workId` column.
   abandonment. `thread_report` performs an exact child+turn lookup
   inside one root repeatable-read snapshot after reloading the live caller, resolving
   the target handle in its project, and checking same-owner/same-lineage. It
-  never selects a latest report or reads transcript tails. Terminal runtime
-  persistence/publication is a later lifecycle step; a report row alone does
-  not imply a terminal result.
+  never selects a latest report or reads transcript tails. Runtime terminal A
+  joins the turn/journal write and finalizes this row; parent-first publication
+  B consumes its pending state separately. An admitted row alone does not
+  imply a terminal result.
 - **Historical block replacement** — `block.updated` carries a full existing custom block through the read-model projector and AG-UI custom upsert frame. Unlike insertion, it never advances the active frontier or closes open text/reasoning segments. `replaceExisting` retains id, turn and sequence and rejects a missing block; publisher B must not re-create a vanished card.
 - **Thread activity read** — `domain/thread-activity.ts` composes
   `listDescendants` (the *viewed* thread's own subtree, walked down
@@ -47,8 +48,8 @@ instead of the N:1 `threads.workId` column.
   session advisory lock (`phase`, `cancel_requested`, `expires_at`, and the
   run's bound `turn_id`). Run liveness is read from the lease alone: the project
   list and `ThreadLiveState.runningTurnId` (snapshot and WS `subscribed`) both
-  surface the lease's bound turn, and the orchestrator binds it after the
-  turn-start setup commits (`RunAuthority.bindTurn`). Both cascade
+  surface the lease's bound turn, and the orchestrator binds it inside the
+  turn-start setup transaction (`RunAuthority.bindTurn`). Both cascade
   from `threads`.
 - **Thread↔Work membership** — `thread_works` join table (exactly one primary per live thread; No Work is a real row). `threads.workId` column is **dropped**. Membership is organizational;
   same-project Work-authority URIs do not require membership.

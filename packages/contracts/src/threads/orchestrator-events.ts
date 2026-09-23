@@ -167,22 +167,6 @@ export type OrchestratorEvent =
       description?: string;
     }
   | {
-      type: "background.completed";
-      parentThreadId: string;
-      parentTurnId: string;
-      childThreadId: string;
-      agentSlug: string;
-      result: JsonValue;
-    }
-  | {
-      type: "background.failed";
-      parentThreadId: string;
-      parentTurnId: string;
-      childThreadId?: string;
-      agentSlug: string;
-      error: string;
-    }
-  | {
       type: "agent.handoff";
       sourceThreadId: string;
       targetThreadId: string;

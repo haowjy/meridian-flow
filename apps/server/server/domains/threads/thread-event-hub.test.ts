@@ -104,29 +104,28 @@ function backgroundEvents(): OrchestratorEvent[] {
       description: "Review the chapter",
     },
     {
-      type: "background.completed",
+      type: "agent.run_completed",
       parentThreadId: THREAD_ID,
       parentTurnId: PARENT_TURN_ID,
       childThreadId: "child-1",
-      agentSlug: "code-reviewer",
-      result: {
-        status: "completed",
-        report: { handle: "p1", threadId: "child-1", summary: "Done", costMillicredits: 0 },
-      },
+      execution: "execution-1",
+      handle: "p1",
+      outcome: "succeeded",
     },
     {
-      type: "background.failed",
+      type: "agent.run_completed",
       parentThreadId: THREAD_ID,
       parentTurnId: PARENT_TURN_ID,
       childThreadId: "child-1",
-      agentSlug: "code-reviewer",
-      error: "boom",
+      execution: "execution-2",
+      handle: "p1",
+      outcome: "failed",
     },
   ];
 }
 
 describe("thread event hub background journaling", () => {
-  it("journals background.* events without projecting a live frame", async () => {
+  it("journals produced background lifecycle metadata without projecting a live frame", async () => {
     const { hub } = createHub();
     const received: SequencedEventInternal[] = [];
     hub.subscribe(THREAD_ID, (entry) => received.push(entry));
@@ -145,6 +144,14 @@ describe("thread event hub background journaling", () => {
 
     const rows = await journal.readAfter(THREAD_ID, 0n);
     expect(rows.map((row) => row.payload)).toEqual([event]);
+  });
+
+  it("replays an unknown historical row without inventing a live frame", async () => {
+    const { hub, journal } = createHub();
+    await journal.appendEvent(THREAD_ID, {
+      type: "historical.unknown",
+    } as unknown as OrchestratorEvent);
+    expect(await hub.catchup(THREAD_ID)).toEqual([]);
   });
 });
 

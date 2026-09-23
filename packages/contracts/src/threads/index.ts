@@ -195,9 +195,7 @@ export type JournalEventType =
   | "model.request_sent"
   | "model.response_received"
   | "model.retried"
-  | "background.started" // RETAINED — background-run lifecycle record reserved for the notification lane (not this branch); no reducer yet
-  | "background.completed"
-  | "background.failed"
+  | "background.started" // PRODUCED NOW — launch metadata; terminal truth is agent.run_completed
   | "background.rearmed"
   | "background.killed"
   | "permission.requested"
