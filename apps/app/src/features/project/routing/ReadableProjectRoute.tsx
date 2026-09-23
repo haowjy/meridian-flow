@@ -96,9 +96,8 @@ function routeWork(resolution: AddressResolution<Work>): RouteWorkResolution {
   return { status: "none" };
 }
 function screen(destination: ProjectDestination): ScreenKey {
-  if (destination.kind === "home") return "home";
   if (destination.kind === "work" || destination.kind === "works") return "work";
-  if (destination.kind === "chat" || destination.kind === "chats") return "chat";
+  if (destination.kind === "chat" || destination.kind === "chat-index") return "chat";
   return "context";
 }
 
@@ -133,7 +132,7 @@ export function ReadableProjectRoute({
       ? parsed.address
       : {
           projectSlug: project.slug,
-          destination: { kind: "home" },
+          destination: { kind: "chat-index" },
           chat: NONE,
           work: NONE,
           results: false,
@@ -537,7 +536,6 @@ export function ReadableProjectRoute({
   );
 
   const routeCommands: ProjectRouteCommands = {
-    openHome: (options) => go(toDestination({ kind: "home" }), options),
     openChat: (id, options) => openChat(id, options),
     openDockThread: (id, options) => openChat(id, options, true),
     openWork: (target, options) =>
@@ -610,14 +608,7 @@ export function ReadableProjectRoute({
     return go(
       {
         ...toDestination({
-          kind:
-            next === "home"
-              ? "home"
-              : next === "work"
-                ? "works"
-                : next === "context"
-                  ? "editor"
-                  : "chats",
+          kind: next === "work" ? "works" : next === "context" ? "editor" : "chat-index",
         }),
         work: selection(rememberedEditor.current ?? shown.current.workSlug),
       },
@@ -639,7 +630,7 @@ export function ReadableProjectRoute({
     <ProjectNavigationProvider
       screen={activeScreen}
       openContextRoute={openContext}
-      openNewChat={() => go(toDestination({ kind: "chats" }), { replace: false })}
+      openNewChat={() => go(toDestination({ kind: "chat-index" }), { replace: false })}
       captureNavigation={captureNavigation}
       registerLeaveGuard={navigation?.registerGuard}
     >
@@ -668,7 +659,7 @@ export function ReadableProjectRoute({
           workingSetSyncEnabled={user.workingSetSyncEnabled === true}
           activeScreen={activeScreen}
           activeThreadId={resolvedThreadId}
-          chatDestination={destination.kind === "chats" ? destination.kind : undefined}
+          chatLanding={destination.kind === "chat-index"}
           entryHydration={entryHydration}
           addressOwnsDocumentAdmission
           routeWork={routeWork(work)}

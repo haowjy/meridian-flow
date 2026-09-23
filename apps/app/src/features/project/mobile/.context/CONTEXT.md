@@ -32,7 +32,7 @@ Deferred implementation work is tracked in [TODO](TODO).
 Phone consumes the same readable address as desktop. The route parent owns
 navigation; mobile leaves call the typed handlers passed through `ProjectViewProps`
 and never construct paths or query strings. Primary destinations live beneath
-`/p/<project-slug>` (`/chats`, `/chat/<chat-slug>`, `/works`,
+`/p/<project-slug>` (`/chat/<chat-slug>`, `/works`,
 `/work/<work-slug>`, `/editor`, and context browse/document paths). Context
 paths carry scheme and location in path segments; Work-scoped paths carry their
 Work slug in the path. `chat`, `work`, `settings`, and `results` are the only
@@ -93,7 +93,7 @@ MobileProject
   │   ├─ breadcrumb for context screens
   │   └─ trailing slot: chat ⇄ results toggle, or `+` create menu in Files
   ├─ one active main view
-  │   ├─ HomeScreen or WorkScreen → shared project-screen body and one screen scroll owner
+  │   ├─ ChatLandingScreen or WorkScreen → shared project-screen body and one screen scroll owner
   │   ├─ MobileChatHost → ChatScreen + MobileKeyboardAware
   │   ├─ MobileContextBrowser or MobileDocumentHost
   │   └─ MobileResultsView → ResultsRailBody + MobileResultViewerOverlay
@@ -114,7 +114,7 @@ the document session registry.
   happens through OS/browser back because drill-in pushes route states.
 - Context screens supply a left-aligned breadcrumb immediately after the
   hamburger. The breadcrumb is Files-rooted: `Files › scheme › folders › file`.
-- Home/Work/chat/results use centered titles. The leading hamburger and trailing
+- Chat landing/Work/chat/results use centered titles. The leading hamburger and trailing
   action reserve are both `44px`, so non-breadcrumb titles remain centered.
 - The trailing slot is a per-screen dispatcher (`trailingAction()` in
   `MobileProject`): chat carries the Results entry, Results carries the way

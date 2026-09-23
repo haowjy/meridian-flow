@@ -9,11 +9,10 @@ Recurring traps (layout `shouldReload`, relative-time clocks, editor vendor
 chunks, streaming memo/coalesce) live in [frontend-perf.md](frontend-perf.md).
 `EditorView` is a static host dependency; do not lazy-load it.
 
-## Project Home
+## Project Chat landing
 
-The Home client boundary, feed/row layout contract, interaction ownership, and
-test-specific browser constraint live with the feature in
-[`src/features/project/home/.context/CONTEXT.md`](../src/features/project/home/.context/CONTEXT.md).
+The Chat landing feed/row contract and interaction ownership live with the feature in
+[`src/features/project/chat-landing/.context/CONTEXT.md`](../src/features/project/chat-landing/.context/CONTEXT.md).
 
 ## Server config and auth surface
 
@@ -275,8 +274,8 @@ There is no `/project/<UUID>` or `/projects/<UUID>` project route and no
 remains the deliberately independent chat route and is outside project-address
 cutover scope.
 
-Path destinations are Home (`/p/<project>`), chat collection/new/detail
-(`/chats`, `/chats/new`, `/chat/<chat-slug>`), Work collection/detail
+Path destinations are the Chat landing (`/p/<project>`) and chat detail
+(`/chat/<chat-slug>`), Work collection/detail
 (`/works`, `/work/<work-slug>`), Editor (`/editor`), and context browse or
 document paths. A Work-scoped context path carries its Work slug in the path;
 project-scoped context can use the explicit `work` query selector. The only

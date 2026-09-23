@@ -1,8 +1,8 @@
 /** Browser entry that mounts shipped Home rows and loading rows with deterministic data. */
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { createRoot } from "react-dom/client";
+import { HomeFeed } from "../../src/features/project/chat-landing/HomeFeed";
 import { ProjectChatRow } from "../../src/features/project/chat-list/ProjectChatRow";
-import { HomeFeed } from "../../src/features/project/home/HomeFeed";
 import "../../src/styles/globals.css";
 
 const ordinary = Array.from(

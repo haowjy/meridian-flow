@@ -49,6 +49,7 @@ import {
   useDraftReviewStateOwner,
 } from "@/features/chat/useDraftReviewController";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
+import { ChatLandingController } from "./ChatLandingController";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
@@ -70,7 +71,6 @@ import {
 import { ProjectDraftApplyRecoveryExecutor } from "./draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
 import { EditorWorkRecovery } from "./EditorWorkRecovery";
 import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
-import { HomePaneController } from "./HomePaneController";
 import {
   type SlotGridSurface,
   SURFACE_WIDTH_BOUNDS,
@@ -118,11 +118,11 @@ export type ProjectViewProps = {
   projectId: string;
   workingSet: ProjectRouteData["workingSet"];
   workingSetSyncEnabled: boolean;
-  /** Resolved screen key from the route (defaults to home). */
+  /** Resolved screen key from the route (defaults to Chat). */
   activeScreen: ScreenKey;
   /** Active chat / subagent thread, also used by the persistent dock. */
   activeThreadId: string | null;
-  chatDestination?: "chats";
+  chatLanding?: boolean;
   /** Explicit route Work state; loading/error never collapses into absence. */
   routeWork: RouteWorkResolution;
   editorRouteWork?: RouteWorkResolution;
@@ -563,7 +563,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
 
   // Opening a conversation reveals it where the writer already is. Desktop
   // mounts the chat surface on every screen — centered on Chat, docked on
-  // Home/Editor — so a reveal only has to un-park the surface and point it at
+  // Work/Editor — so a reveal only has to un-park the surface and point it at
   // the thread. Dock selection replaces the secondary chat without changing the destination.
   useConversationRevealRouting((threadId) => {
     if (layout.chat.slot === "dock") {
@@ -682,11 +682,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         >
           <div
             className="flex min-h-0 flex-1 flex-col"
-            role={chatPlacement === "center" && !props.chatDestination ? "main" : undefined}
+            role={chatPlacement === "center" && !props.chatLanding ? "main" : undefined}
           >
             {/* Stable keys pin chat-surface identity so toggling this header
               controller never risks reconciling the live conversation subtree. */}
-            {chatPlacement === "center" && !props.chatDestination ? (
+            {chatPlacement === "center" && !props.chatLanding ? (
               <ChatPaneController
                 key="chat-pane-controller"
                 projectId={props.projectId}
@@ -700,9 +700,9 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               moves between center and dock; placement changes only its chrome. */}
             <div
               className="min-h-0 flex-1 flex-col"
-              style={{ display: props.chatDestination || !props.activeThreadId ? "none" : "flex" }}
-              inert={!!props.chatDestination || !props.activeThreadId}
-              aria-hidden={!!props.chatDestination || !props.activeThreadId}
+              style={{ display: props.chatLanding || !props.activeThreadId ? "none" : "flex" }}
+              inert={!!props.chatLanding || !props.activeThreadId}
+              aria-hidden={!!props.chatLanding || !props.activeThreadId}
             >
               <DraftReviewBoundary value={props.chatReview}>
                 <ChatSurface
@@ -722,7 +722,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                   // conversation survives a close/reopen.
                   visible={
                     !!props.activeThreadId &&
-                    !props.chatDestination &&
+                    !props.chatLanding &&
                     !props.routeIssues?.chat &&
                     (chatPlacement === "center" || isOpen("chat"))
                   }
@@ -731,13 +731,12 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 />
               </DraftReviewBoundary>
             </div>
-            {!props.activeThreadId && !props.chatDestination ? (
+            {!props.activeThreadId && !props.chatLanding ? (
               <p className="p-6 text-sm text-muted-foreground">{t`Choose a chat to continue.`}</p>
             ) : null}
-            {props.chatDestination ? (
-              <HomePaneController
+            {props.chatLanding ? (
+              <ChatLandingController
                 projectId={props.projectId}
-                mode={props.chatDestination}
                 sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
                 chatToggle={surfaceToggle("context-rail", t`Expand context`)}
                 onOpenThread={props.onOpenThread}
@@ -776,15 +775,8 @@ type SurfaceToggleFactory = (surfaceId: SurfaceId, label: string) => PaneHeaderR
 
 function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: SurfaceToggleFactory) {
   switch (props.activeScreen) {
-    case "home":
-      return (
-        <HomePaneController
-          projectId={props.projectId}
-          sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-          chatToggle={surfaceToggle("chat", t`Expand chat`)}
-          onOpenThread={props.onOpenThread}
-        />
-      );
+    case "chat":
+      return null;
     case "work":
       return (
         <WorkPaneController
@@ -796,8 +788,6 @@ function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: Surfa
           chatToggle={surfaceToggle("chat", t`Expand chat`)}
         />
       );
-    case "chat":
-      return null;
     case "context":
       // Context owns no destination header — the tab strip absorbs the
       // sidebar/dock expand toggles. See `ContextViewer`.

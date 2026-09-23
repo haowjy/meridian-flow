@@ -7,6 +7,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
+
 ### Added
 
 - Editor empty state lists the writer's recently opened documents in the current project, grouped by age (Today / Yesterday / Earlier). Opening a document records it to the account's recents list (`user_recent_documents`), and each project shows its own slice of that history; the landing replaces the old "New document / pick a file from the tree" dead end. A control at the tab strip's leading edge returns to it with tabs still open.

@@ -1,7 +1,7 @@
 # features/project — Desktop project shell
 
 The authenticated project project: one persistent multi-panel desktop surface
-that swaps primary *destinations* (Home / Work / Chat / Editor) without tearing down
+that swaps primary *destinations* (Chat / Work / Editor) without tearing down
 its stateful surfaces. This file is the colocated contract for the shell — read
 it before touching layout, the rails/headers, or the prefs store.
 Settings is an auxiliary routed surface, not a primary destination.
@@ -32,17 +32,17 @@ Slot topology (`layout/desktop-layout.ts`), one grid row across every screen:
 ```
 
 - **`rail-l`** — the left sidebar (destinations + project file tree).
-- **`center`** — the destination's main pane (Home/Work route pane, or the
+- **`center`** — the destination's main pane (Chat landing/Work route pane, or the
   Chat/Editor center surface).
-- **`dock`** — the shared right dock. Chat occupies it on Home/Work/Editor; the
-  context-rail occupies it on the Chat screen. It reads as **one persistent
+- **`dock`** — the shared right dock. The context-rail occupies it on Chat; Chat
+  occupies it on Work/Editor. It reads as **one persistent
   sidebar** whose inner content swaps — a single shared width/collapse pref
   (`slotPrefs.dock`), not a per-surface one.
 
 There is **no `files` grid track**. The file explorer is the persistent body of
 the left sidebar; `ContextViewer` owns only the Editor tab strip and document.
 
-`LeftSidebar` is one column with a linked wordmark, Home/Work/Chat/Editor navigation,
+`LeftSidebar` is one column with a linked wordmark, Chat/Work/Editor navigation,
 the persistent project tree, and account controls. The navigation rows are
 shared with mobile through `WorkspaceNavBody`; the wordmark and recursive tree
 are desktop shell grammar.
@@ -62,7 +62,7 @@ active draft. One-shot focus intents bridge detail close/delete to the collectio
 they are route continuity, not Work selection or persistent state.
 Detail composes identity and lifecycle, Goal, Description, pending drafts, Scratch,
 Uploads, and associated chats. Associated chats use bounded cursor pages and the
-same virtualized, borderless project chat row as Home without adding a nested
+same virtualized, borderless project chat row as the Chat landing without adding a nested
 scroll owner. The external-scroll hook measures the list in that owner's
 coordinates and owns stable keys plus focused/menu row pinning. Their membership
 is historical while the displayed Work is the
@@ -72,10 +72,11 @@ to an adjacent row. Both shells share this route-owned module. At phone geometry
 must wrap without horizontal overflow and product controls retain coarse-pointer touch
 targets.
 
-Home is the shared, container-responsive Composer-led entry surface on desktop
-and phone, followed by the server-owned Continue, Favorites, and
-cursor-paginated Recent feed. First send creates and reconciles the canonical
-thread under one stable client-chosen ID before routing. Home and Chats share
+The Chat landing is the project root (`/p/<project>`), a shared,
+container-responsive Composer-led surface on desktop and phone, followed by the
+server-owned Continue, Favorites, and cursor-paginated Recent feed. There is no
+second project Home or `/chats` destination. First send creates and reconciles
+the canonical thread under one stable client-chosen ID before routing. The Chat landing uses
 the saved prospective Work/Agent choices. Without a saved Work choice, creation
 starts with the first active Work or No Work; archived Works are not defaults.
 Loading, error, and authoritative empty catalogs remain distinct. The submitted
@@ -85,12 +86,12 @@ canonical thread matches those captured facts.
 
 The QueryClient owns one normalized Favorite record per project/thread so
 navigation and stale page arrival cannot discard pending writer intent. Work
-feeds remain immutable membership/order pages; only Home moves the affected
-thread between its categories. Project chat lists have no read/unread or
+feeds remain immutable membership/order pages; only the Chat landing moves the
+affected thread between its categories. Project chat lists have no read/unread or
 open-acknowledgement state, and opening a chat performs no state mutation.
 Thread lifecycle projection owns the independent `actionRequired` fact and
-converges live and snapshot changes across Project, Home, and every matching
-Work feed cache without writing Favorite.
+converges live and snapshot changes across Project, the Chat landing, and every
+matching Work feed cache without writing Favorite.
 
 Draft review follows the same persistent-shell rule with two sibling owners.
 The hydrated project owns one Chat review value (Chat Work plus thread) and one
@@ -102,7 +103,7 @@ the matching Editor, advertises them only after route success, and claims them
 only after Work, manuscript path, mounted document, and draft membership agree;
 it survives phone view unmounts because the owner does not.
 
-A chat has one current Work binding. Home's Work choice is prospective creation
+A chat has one current Work binding. The landing's Work choice is prospective creation
 state only; it never invokes the rebind command. The Chat composer may explicitly
 rebind an idle existing chat through the canonical durable transition, and the
 model's explicit `work.switch` command uses that same separate authority. Work
@@ -307,7 +308,7 @@ locations, never document identity.
 
 The Chat navigation item opens the composer-and-history landing, including from
 a chat detail. An already-open landing is a no-op. The switcher’s New chat
-shortcut targets that same landing; there is no separate `/chats/new` route.
+shortcut targets that same landing; there is no separate `/chats` or `/chats/new` route.
 
 Chat switching lives in `features/chat/ThreadSwitcherPopover`; it filters by
 chat title, groups chats by Work when meaningful, and delegates actual
