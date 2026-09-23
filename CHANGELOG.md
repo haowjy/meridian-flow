@@ -18,6 +18,9 @@
 - Remove the unused account project-home redirect endpoint and its wire contract; drop the unconsumed last-active-project preference from user persistence.
 - Open a searchable project library at the signed-in base URL. Create a named project from a separate destination; open any project directly in Chat. Remove the account Home composer and quick-chat entry.
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
+### Fixed
+
+- Closed the execution-report storage gate: transactional in-memory parity, canonical exact reads with live-run activity, validated invocation correlation, bounded publication discovery, and delivery-derived publication obligations.
 
 ### Added
 

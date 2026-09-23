@@ -19,8 +19,13 @@ instead of the N:1 `threads.workId` column.
   agent name, spawn status, and origin turn.
 - **Execution reports** — `ExecutionReportRepository` owns one row per admitted
   child assistant turn, keyed by that existing `assistantTurnId`; capture and
-  terminal writes are idempotent compare-and-set operations, while publication
-  is separate bookkeeping. `thread_report` performs an exact child+turn lookup
+  terminal writes are idempotent compare-and-set operations. Admission validates
+  the child handle, assistant role, caller ownership, turn, and card before
+  persisting correlation. Finalization derives a pending publication obligation
+  from admitted delivery mode; publication remains separate bookkeeping. The
+  bounded discovery query skips soft-deleted callers and projects while retaining
+  their pending obligations for restoration, and surfaces null callers for
+  abandonment. `thread_report` performs an exact child+turn lookup
   inside one root repeatable-read snapshot after reloading the live caller, resolving
   the target handle in its project, and checking same-owner/same-lineage. It
   never selects a latest report or reads transcript tails. Terminal runtime

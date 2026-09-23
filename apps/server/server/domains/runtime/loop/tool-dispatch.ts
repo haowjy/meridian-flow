@@ -46,6 +46,7 @@ export interface ToolDispatchDeps {
   persistenceDeps: PersistenceDeps;
   executionReports: import("../../threads/ports/repositories.js").ThreadRepositories["executionReports"];
   readSnapshot: import("../../threads/ports/repositories.js").ThreadRepositories["readSnapshot"];
+  runningTurn: Pick<import("./ports.js").RunAuthority, "readRunningTurnId">;
   workContextDelivery: Pick<WorkContextDelivery, "deliverNow">;
 }
 
@@ -231,6 +232,7 @@ export async function dispatchToolCall(
               executionReports: deps.executionReports,
               readSnapshot: deps.readSnapshot,
             },
+            runningTurn: deps.runningTurn,
           })
       : undefined;
 

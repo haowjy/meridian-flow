@@ -65,6 +65,7 @@ function harness() {
     persistenceDeps,
     executionReports: {} as ToolDispatchDeps["executionReports"],
     readSnapshot: async (operation) => operation(),
+    runningTurn: { readRunningTurnId: async () => null },
     workContextDelivery: {} as ToolDispatchDeps["workContextDelivery"],
   };
   const thread = { id: PARENT_THREAD_ID, userId: "user-1" } as unknown as Thread;

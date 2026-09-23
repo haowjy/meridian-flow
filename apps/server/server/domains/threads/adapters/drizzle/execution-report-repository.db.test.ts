@@ -38,8 +38,11 @@ else
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
     const db = createDb(databaseUrl, { max: 6 });
     const repos = createDrizzleRepositoriesForTest(db);
+    let activeExecution: TurnId | null = null;
+    const runningTurn = { readRunningTurnId: async () => activeExecution };
 
     beforeEach(async () => {
+      activeExecution = null;
       await truncateDrizzleTables(db, [schema.users]);
       await db.insert(schema.users).values(conformanceUserValues(ids.user, "execution-report"));
       await db
@@ -160,7 +163,525 @@ else
       await db.close();
     });
 
-    it("keeps executions exact, idempotent, immutable and hidden behind live lineage reads", async () => {
+    it("normalizes exact selectors and distinguishes active from stranded admissions", async () => {
+      const input = {
+        childThreadId: ids.child,
+        assistantTurnId: ids.execution,
+        handle: "p1",
+        origin: "thread_run" as const,
+        deliveryMode: "none" as const,
+        callerThreadId: null,
+        callerTurnId: null,
+        toolCallId: null,
+        cardBlockId: null,
+      };
+      await repos.executionReports.admit(input);
+      expect(
+        await readThreadReport({
+          callerThreadId: ids.caller,
+          ref: "p1",
+          execution: ids.execution.toUpperCase(),
+          repos,
+          runningTurn,
+        }),
+      ).toEqual({
+        ref: "p1",
+        execution: ids.execution,
+        status: "unavailable",
+      });
+      activeExecution = ids.execution;
+      expect(
+        await readThreadReport({
+          callerThreadId: ids.caller,
+          ref: "p1",
+          execution: ids.execution,
+          repos,
+          runningTurn,
+        }),
+      ).toMatchObject({ status: "not_ready" });
+      activeExecution = ids.execution2;
+      expect(
+        await readThreadReport({
+          callerThreadId: ids.caller,
+          ref: "p1",
+          execution: ids.execution,
+          repos,
+          runningTurn,
+        }),
+      ).toMatchObject({ status: "unavailable" });
+      await expect(
+        readThreadReport({
+          callerThreadId: ids.caller,
+          ref: "c1",
+          execution: ids.execution,
+          repos,
+          runningTurn,
+        }),
+      ).rejects.toThrow();
+      const { eq } = await import("drizzle-orm");
+      await db.update(schema.threads).set({ ref: "p5" }).where(eq(schema.threads.id, ids.caller));
+      await expect(
+        readThreadReport({
+          callerThreadId: ids.caller,
+          ref: "p5",
+          execution: ids.execution,
+          repos,
+          runningTurn,
+        }),
+      ).rejects.toThrow();
+      await db.update(schema.threads).set({ ref: "c1" }).where(eq(schema.threads.id, ids.caller));
+      await expect(
+        readThreadReport({
+          callerThreadId: ids.caller,
+          ref: "p1",
+          execution: "not-a-uuid",
+          repos,
+          runningTurn,
+        }),
+      ).rejects.toThrow();
+      expect(
+        await readThreadReport({
+          callerThreadId: ids.caller,
+          ref: "p1",
+          execution: "00000000-0000-0000-0000-000000000001",
+          repos,
+          runningTurn,
+        }),
+      ).toMatchObject({ status: "unavailable" });
+    });
+
+    it("rejects mismatched existing child, caller turn, handle and card identities", async () => {
+      const input = {
+        childThreadId: ids.child,
+        assistantTurnId: ids.execution,
+        handle: "p1",
+        origin: "spawn" as const,
+        deliveryMode: "background_notification" as const,
+        callerThreadId: ids.caller,
+        callerTurnId: ids.callerTurn,
+        toolCallId: "call",
+        cardBlockId: null,
+      };
+      await expect(repos.executionReports.admit({ ...input, handle: "p2" })).rejects.toThrow();
+      await expect(
+        repos.executionReports.admit({ ...input, childThreadId: ids.otherChild }),
+      ).rejects.toThrow();
+      await expect(
+        repos.executionReports.admit({ ...input, assistantTurnId: ids.childUserTurn }),
+      ).rejects.toThrow();
+      await expect(
+        repos.executionReports.admit({ ...input, callerTurnId: ids.childUserTurn }),
+      ).rejects.toThrow();
+      const foreignCaller = "00000000-0000-4000-8000-0000000009d7" as ThreadId;
+      const foreignTurn = "00000000-0000-4000-8000-0000000009d8" as TurnId;
+      await db.insert(schema.threads).values({
+        id: foreignCaller,
+        projectId: ids.project,
+        createdByUserId: ids.otherUser,
+        ref: "p4",
+        kind: "subagent",
+        parentThreadId: ids.caller,
+        rootThreadId: ids.caller,
+        originType: "spawn",
+        originTurnId: ids.callerTurn,
+        spawnStatus: "running",
+      });
+      await db.insert(schema.turns).values({
+        id: foreignTurn,
+        threadId: foreignCaller,
+        role: "assistant",
+        status: "complete",
+      });
+      await expect(
+        repos.executionReports.admit({
+          ...input,
+          callerThreadId: foreignCaller,
+          callerTurnId: foreignTurn,
+        }),
+      ).rejects.toThrow();
+      const cardId = "00000000-0000-4000-8000-0000000009d0";
+      await db
+        .insert(schema.turnBlocks)
+        .values({ id: cardId, turnId: ids.childUserTurn, blockType: "custom", sequence: 1 });
+      await expect(
+        repos.executionReports.admit({ ...input, cardBlockId: cardId }),
+      ).rejects.toThrow();
+      expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toBeNull();
+    });
+
+    it("derives publication from delivery and retains terminal content through retries and rollback", async () => {
+      const input = {
+        childThreadId: ids.child,
+        assistantTurnId: ids.execution,
+        handle: "p1",
+        origin: "spawn" as const,
+        deliveryMode: "background_notification" as const,
+        callerThreadId: ids.caller,
+        callerTurnId: ids.callerTurn,
+        toolCallId: "call",
+        cardBlockId: null,
+      };
+      await expect(
+        repos.transaction(async () => {
+          await repos.executionReports.admit(input);
+          throw new Error("rollback admission");
+        }),
+      ).rejects.toThrow("rollback admission");
+      expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toBeNull();
+      await repos.executionReports.admit(input);
+      await expect(
+        repos.transaction(async () => {
+          await repos.executionReports.captureOnce(ids.child, ids.execution, "return", {
+            summary: "candidate",
+          });
+          throw new Error("rollback capture");
+        }),
+      ).rejects.toThrow("rollback capture");
+      expect(
+        (await repos.executionReports.findByExecution(ids.child, ids.execution))?.capture,
+      ).toBeNull();
+      await repos.executionReports.captureOnce(ids.child, ids.execution, "return", {
+        summary: "candidate",
+      });
+      const terminal = {
+        childThreadId: ids.child,
+        assistantTurnId: ids.execution,
+        outcome: "succeeded" as const,
+        reason: null,
+        source: "return_result" as const,
+        summary: "candidate",
+      };
+      expect(await repos.executionReports.finalizeOnce(terminal)).toMatchObject({
+        publication: "pending",
+      });
+      await expect(
+        repos.transaction(async () => {
+          await repos.executionReports.markPublished(ids.child, ids.execution, "published");
+          throw new Error("rollback publication");
+        }),
+      ).rejects.toThrow("rollback publication");
+      expect(
+        (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,
+      ).toBe("pending");
+      await repos.executionReports.markPublished(ids.child, ids.execution, "published");
+      expect(await repos.executionReports.finalizeOnce(terminal)).toMatchObject({
+        publication: "published",
+        summary: "candidate",
+      });
+      expect(
+        await repos.executionReports.captureOnce(ids.child, ids.execution, "return", {
+          summary: "candidate",
+        }),
+      ).toMatchObject({ publication: "published" });
+      await expect(
+        repos.executionReports.finalizeOnce({ ...terminal, summary: "changed" }),
+      ).rejects.toThrow();
+      await repos.executionReports.admit({
+        ...input,
+        assistantTurnId: ids.execution2,
+        origin: "thread_run",
+        deliveryMode: "none",
+        callerThreadId: null,
+        callerTurnId: null,
+        toolCallId: null,
+      });
+      expect(
+        await repos.executionReports.finalizeOnce({ ...terminal, assistantTurnId: ids.execution2 }),
+      ).toMatchObject({ publication: "none" });
+    });
+
+    it("discovers live obligations beyond parked callers and retains child output after caller deletion", async () => {
+      const { eq } = await import("drizzle-orm");
+      await repos.executionReports.markPublished(
+        ids.otherProjectChild,
+        ids.otherProjectExecution,
+        "skipped",
+      );
+      const sibling = "00000000-0000-4000-8000-0000000009d1" as ThreadId;
+      const siblingTurn = "00000000-0000-4000-8000-0000000009d2" as TurnId;
+      const third = "00000000-0000-4000-8000-0000000009d3" as TurnId;
+      const card = "00000000-0000-4000-8000-0000000009d4";
+      await db.insert(schema.threads).values({
+        id: sibling,
+        projectId: ids.project,
+        createdByUserId: ids.user,
+        ref: "p3",
+        kind: "subagent",
+        parentThreadId: ids.caller,
+        rootThreadId: ids.caller,
+        originType: "spawn",
+        originTurnId: ids.callerTurn,
+        spawnStatus: "running",
+      });
+      await db.insert(schema.turns).values([
+        { id: siblingTurn, threadId: sibling, role: "assistant", status: "complete" },
+        {
+          id: third,
+          threadId: ids.child,
+          parentTurnId: ids.childUserTurn,
+          role: "assistant",
+          status: "complete",
+        },
+      ]);
+      await db
+        .insert(schema.turnBlocks)
+        .values({ id: card, turnId: siblingTurn, blockType: "custom", sequence: 1 });
+      for (const execution of [ids.execution, ids.execution2]) {
+        await repos.executionReports.admit({
+          childThreadId: ids.child,
+          assistantTurnId: execution,
+          handle: "p1",
+          origin: "spawn",
+          deliveryMode: "background_notification",
+          callerThreadId: sibling,
+          callerTurnId: siblingTurn,
+          toolCallId: `call-${execution}`,
+          cardBlockId: card,
+        });
+        await repos.executionReports.finalizeOnce({
+          childThreadId: ids.child,
+          assistantTurnId: execution,
+          outcome: "succeeded",
+          reason: null,
+          source: "return_result",
+          summary: `saved-${execution}`,
+        });
+      }
+      await repos.executionReports.admit({
+        childThreadId: ids.child,
+        assistantTurnId: third,
+        handle: "p1",
+        origin: "spawn",
+        deliveryMode: "background_notification",
+        callerThreadId: ids.caller,
+        callerTurnId: ids.callerTurn,
+        toolCallId: "live",
+        cardBlockId: null,
+      });
+      await repos.executionReports.finalizeOnce({
+        childThreadId: ids.child,
+        assistantTurnId: third,
+        outcome: "succeeded",
+        reason: null,
+        source: "return_result",
+        summary: "live",
+      });
+      await db
+        .update(schema.threads)
+        .set({ deletedAt: new Date() })
+        .where(eq(schema.threads.id, sibling));
+      expect(await repos.executionReports.listPendingPublication(1)).toEqual([
+        {
+          childThreadId: ids.child,
+          assistantTurnId: third,
+          callerThreadId: ids.caller,
+        },
+      ]);
+      await db
+        .update(schema.threads)
+        .set({ deletedAt: null })
+        .where(eq(schema.threads.id, sibling));
+      expect(
+        (await repos.executionReports.listPendingPublication(3)).map((row) => row.assistantTurnId),
+      ).toEqual(expect.arrayContaining([ids.execution, ids.execution2, third]));
+      await db.delete(schema.turns).where(eq(schema.turns.id, siblingTurn));
+      await db.delete(schema.threads).where(eq(schema.threads.id, sibling));
+      expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toMatchObject({
+        callerThreadId: null,
+        callerTurnId: null,
+        cardBlockId: null,
+        summary: `saved-${ids.execution}`,
+      });
+      expect(await repos.executionReports.listPendingPublication(1)).toHaveLength(1);
+    });
+
+    it("does not reveal an authorized sibling's report through a mismatched ref or another owner", async () => {
+      const sibling = "00000000-0000-4000-8000-0000000009d5" as ThreadId;
+      const foreignCaller = "00000000-0000-4000-8000-0000000009d6" as ThreadId;
+      await db.insert(schema.threads).values([
+        {
+          id: sibling,
+          projectId: ids.project,
+          createdByUserId: ids.user,
+          ref: "p3",
+          kind: "subagent",
+          parentThreadId: ids.caller,
+          rootThreadId: ids.caller,
+          originType: "spawn",
+          originTurnId: ids.callerTurn,
+          spawnStatus: "running",
+        },
+        {
+          id: foreignCaller,
+          projectId: ids.project,
+          createdByUserId: ids.otherUser,
+          ref: "p4",
+          kind: "subagent",
+          parentThreadId: ids.caller,
+          rootThreadId: ids.caller,
+          originType: "spawn",
+          originTurnId: ids.callerTurn,
+          spawnStatus: "running",
+        },
+      ]);
+      await repos.executionReports.admit({
+        childThreadId: ids.child,
+        assistantTurnId: ids.execution,
+        handle: "p1",
+        origin: "thread_run",
+        deliveryMode: "none",
+        callerThreadId: null,
+        callerTurnId: null,
+        toolCallId: null,
+        cardBlockId: null,
+      });
+      await repos.executionReports.finalizeOnce({
+        childThreadId: ids.child,
+        assistantTurnId: ids.execution,
+        outcome: "succeeded",
+        reason: null,
+        source: "return_result",
+        summary: "secret",
+      });
+      expect(
+        await readThreadReport({
+          callerThreadId: ids.caller,
+          ref: "p3",
+          execution: ids.execution,
+          repos,
+          runningTurn,
+        }),
+      ).toMatchObject({ status: "unavailable" });
+      await expect(
+        readThreadReport({
+          callerThreadId: foreignCaller,
+          ref: "p1",
+          execution: ids.execution,
+          repos,
+          runningTurn,
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("uses a fresh authorized root snapshot instead of the caller's uncommitted transaction", async () => {
+      const input = {
+        childThreadId: ids.child,
+        assistantTurnId: ids.execution,
+        handle: "p1",
+        origin: "thread_run" as const,
+        deliveryMode: "none" as const,
+        callerThreadId: null,
+        callerTurnId: null,
+        toolCallId: null,
+        cardBlockId: null,
+      };
+      await repos.transaction(async () => {
+        await repos.executionReports.admit(input);
+        expect(
+          await readThreadReport({
+            callerThreadId: ids.caller,
+            ref: "p1",
+            execution: ids.execution,
+            repos,
+            runningTurn,
+          }),
+        ).toMatchObject({ status: "unavailable" });
+      });
+      expect(
+        await readThreadReport({
+          callerThreadId: ids.caller,
+          ref: "p1",
+          execution: ids.execution,
+          repos,
+          runningTurn,
+        }),
+      ).toMatchObject({ status: "unavailable" });
+      activeExecution = ids.execution;
+      expect(
+        await readThreadReport({
+          callerThreadId: ids.caller,
+          ref: "p1",
+          execution: ids.execution,
+          repos,
+          runningTurn,
+        }),
+      ).toMatchObject({ status: "not_ready" });
+    });
+
+    it("serializes competing capture and finalization contenders without replacing a winner", async () => {
+      const input = {
+        childThreadId: ids.child,
+        assistantTurnId: ids.execution,
+        handle: "p1",
+        origin: "spawn" as const,
+        deliveryMode: "direct" as const,
+        callerThreadId: ids.caller,
+        callerTurnId: ids.callerTurn,
+        toolCallId: "call",
+        cardBlockId: null,
+      };
+      await repos.executionReports.admit(input);
+      const captures = await Promise.allSettled([
+        repos.executionReports.captureOnce(ids.child, ids.execution, "a", { summary: "A" }),
+        repos.executionReports.captureOnce(ids.child, ids.execution, "b", { summary: "B" }),
+      ]);
+      expect(captures.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(captures.filter((result) => result.status === "rejected")).toHaveLength(1);
+      const savedCapture = await repos.executionReports.findByExecution(ids.child, ids.execution);
+      expect(savedCapture?.captureToolCallId).toMatch(/^[ab]$/);
+      const terminals = await Promise.allSettled([
+        repos.executionReports.finalizeOnce({
+          childThreadId: ids.child,
+          assistantTurnId: ids.execution,
+          outcome: "succeeded",
+          reason: null,
+          source: "return_result",
+          summary: "A",
+        }),
+        repos.executionReports.finalizeOnce({
+          childThreadId: ids.child,
+          assistantTurnId: ids.execution,
+          outcome: "failed",
+          reason: "error",
+          source: "return_result",
+          summary: "B",
+        }),
+      ]);
+      expect(terminals.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      expect(terminals.filter((result) => result.status === "rejected")).toHaveLength(1);
+      expect(
+        (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,
+      ).toBe("pending");
+      let releaseFirst = () => {};
+      let firstLocked = () => {};
+      const firstLock = new Promise<void>((resolve) => {
+        firstLocked = resolve;
+      });
+      const release = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      const publisherA = repos.transaction(async () => {
+        expect(
+          await repos.executionReports.lockPendingPublication(ids.child, ids.execution),
+        ).toMatchObject({ publication: "pending" });
+        firstLocked();
+        await release;
+        await repos.executionReports.markPublished(ids.child, ids.execution, "published");
+      });
+      await firstLock;
+      const publisherB = repos.transaction(async () => {
+        return repos.executionReports.lockPendingPublication(ids.child, ids.execution);
+      });
+      releaseFirst();
+      const [, losingLock] = await Promise.all([publisherA, publisherB]);
+      expect(losingLock).toBeNull();
+      await repos.executionReports.markPublished(ids.child, ids.execution, "skipped");
+      expect(
+        (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,
+      ).toBe("published");
+    });
+
+    it("keeps capture, terminal, and publication retries immutable", async () => {
       const input = {
         childThreadId: ids.child,
         assistantTurnId: ids.execution,
@@ -174,11 +695,13 @@ else
       };
       await repos.executionReports.admit(input);
       await repos.executionReports.admit(input);
+      activeExecution = ids.execution;
       const pending = await readThreadReport({
         callerThreadId: ids.caller,
         ref: "p1",
         execution: ids.execution,
         repos,
+        runningTurn,
       });
       expect(pending).toEqual({ ref: "p1", execution: ids.execution, status: "not_ready" });
       await repos.executionReports.captureOnce(ids.child, ids.execution, "return-1", {
@@ -199,7 +722,6 @@ else
         reason: null,
         source: "return_result",
         summary: "kept",
-        publication: "pending",
       });
       await repos.executionReports.finalizeOnce({
         childThreadId: ids.child,
@@ -208,7 +730,6 @@ else
         reason: null,
         source: "return_result",
         summary: "kept",
-        publication: "pending",
       });
       await expect(
         repos.executionReports.finalizeOnce({
@@ -220,28 +741,60 @@ else
           summary: "kept",
         }),
       ).rejects.toThrow();
-      expect(await repos.executionReports.listPendingPublication(10)).toHaveLength(1);
+      expect(await repos.executionReports.listPendingPublication(10)).toContainEqual({
+        childThreadId: ids.child,
+        assistantTurnId: ids.execution,
+        callerThreadId: ids.caller,
+      });
       await repos.transaction(async () => {
         expect(
           await repos.executionReports.lockPendingPublication(ids.child, ids.execution),
         ).toMatchObject({ publication: "pending" });
         await repos.executionReports.markPublished(ids.child, ids.execution, "published");
       });
-      expect(await repos.executionReports.listPendingPublication(10)).toHaveLength(0);
+      expect(await repos.executionReports.listPendingPublication(10)).not.toContainEqual({
+        childThreadId: ids.child,
+        assistantTurnId: ids.execution,
+        callerThreadId: ids.caller,
+      });
       expect(
         await readThreadReport({
           callerThreadId: ids.caller,
           ref: "p1",
           execution: ids.execution,
           repos,
+          runningTurn,
         }),
       ).toMatchObject({ outcome: "succeeded", summary: "kept", partial: false });
+    });
+
+    it("hides exact reports behind live caller, target, project and turn ownership", async () => {
+      await repos.executionReports.admit({
+        childThreadId: ids.child,
+        assistantTurnId: ids.execution,
+        handle: "p1",
+        origin: "thread_run",
+        deliveryMode: "none",
+        callerThreadId: null,
+        callerTurnId: null,
+        toolCallId: null,
+        cardBlockId: null,
+      });
+      await repos.executionReports.finalizeOnce({
+        childThreadId: ids.child,
+        assistantTurnId: ids.execution,
+        outcome: "succeeded",
+        reason: null,
+        source: "return_result",
+        summary: "kept",
+      });
       expect(
         await readThreadReport({
           callerThreadId: ids.caller,
           ref: "p1",
           execution: ids.execution2,
           repos,
+          runningTurn,
         }),
       ).toMatchObject({ status: "unavailable" });
       await expect(
@@ -250,6 +803,7 @@ else
           ref: "p999",
           execution: ids.execution,
           repos,
+          runningTurn,
         }),
       ).rejects.toThrow();
       await expect(
@@ -258,6 +812,7 @@ else
           ref: "p2",
           execution: ids.execution,
           repos,
+          runningTurn,
         }),
       ).rejects.toThrow();
       await expect(
@@ -266,6 +821,7 @@ else
           ref: "p9",
           execution: ids.otherProjectExecution,
           repos,
+          runningTurn,
         }),
       ).rejects.toThrow();
       await db
@@ -278,6 +834,7 @@ else
           ref: "p1",
           execution: ids.execution,
           repos,
+          runningTurn,
         }),
       ).rejects.toThrow();
       expect(
@@ -293,6 +850,7 @@ else
           ref: "p1",
           execution: ids.execution,
           repos,
+          runningTurn,
         }),
       ).toMatchObject({ summary: "kept" });
       await db
@@ -305,6 +863,7 @@ else
           ref: "p1",
           execution: ids.execution,
           repos,
+          runningTurn,
         }),
       ).rejects.toThrow();
       await db
@@ -321,6 +880,7 @@ else
           ref: "p1",
           execution: ids.execution,
           repos,
+          runningTurn,
         }),
       ).rejects.toThrow();
       await db
@@ -333,7 +893,7 @@ else
       expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toBeNull();
     });
 
-    it("distinguishes empty success and rolls back uncommitted terminal state", async () => {
+    it("rolls back uncommitted terminal state", async () => {
       await repos.executionReports.admit({
         childThreadId: ids.child,
         assistantTurnId: ids.execution,
@@ -362,6 +922,20 @@ else
         outcome: null,
         summary: null,
       });
+    });
+
+    it("distinguishes empty success and rereads an older exact report after continuation", async () => {
+      await repos.executionReports.admit({
+        childThreadId: ids.child,
+        assistantTurnId: ids.execution,
+        handle: "p1",
+        origin: "thread_run",
+        deliveryMode: "none",
+        callerThreadId: null,
+        callerTurnId: null,
+        toolCallId: null,
+        cardBlockId: null,
+      });
       await repos.executionReports.finalizeOnce({
         childThreadId: ids.child,
         assistantTurnId: ids.execution,
@@ -376,6 +950,7 @@ else
           ref: "p1",
           execution: ids.execution,
           repos,
+          runningTurn,
         }),
       ).toMatchObject({ outcome: "succeeded", source: "empty", summary: "" });
       await repos.executionReports.admit({
@@ -403,7 +978,21 @@ else
           ref: "p1",
           execution: ids.execution2,
           repos,
+          runningTurn,
         }),
       ).toMatchObject({ outcome: "failed", source: "empty", summary: "", partial: true });
+      expect(
+        await readThreadReport({
+          callerThreadId: ids.caller,
+          ref: "p1",
+          execution: ids.execution,
+          repos,
+          runningTurn,
+        }),
+      ).toMatchObject({
+        outcome: "succeeded",
+        source: "empty",
+        summary: "",
+      });
     });
   });

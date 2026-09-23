@@ -121,7 +121,6 @@ export interface FinalizeExecutionReportInput {
   payload?: import("@meridian/contracts/threads").JsonValue | null;
   artifacts?: ArtifactRef[] | null;
   costMillicredits?: number | null;
-  publication?: "none" | "pending";
 }
 export interface ExecutionReportRepository {
   admit(input: AdmitExecutionReportInput): Promise<SavedExecutionReport>;
@@ -136,7 +135,12 @@ export interface ExecutionReportRepository {
     childThreadId: ThreadId,
     assistantTurnId: TurnId,
   ): Promise<SavedExecutionReport | null>;
-  listPendingPublication(limit: number): Promise<SavedExecutionReport[]>;
+  /** Bounded, deliverable discovery. Soft-deleted callers stay pending until restoration. */
+  listPendingPublication(
+    limit: number,
+  ): Promise<
+    Array<Pick<SavedExecutionReport, "childThreadId" | "assistantTurnId" | "callerThreadId">>
+  >;
   lockPendingPublication(
     childThreadId: ThreadId,
     assistantTurnId: TurnId,

@@ -6,7 +6,6 @@
 
 import type { ThreadDocumentRelationship } from "@meridian/contracts/protocol";
 import type { ProjectId, ThreadId, WorkId } from "@meridian/contracts/runtime";
-import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
 import { InMemoryTransactionOwner } from "../../../../shared/in-memory-transaction.js";
 import { WorkLifecycleUnavailableError } from "../../../projects/domain/work-lifecycle.js";
@@ -42,6 +41,7 @@ import {
   ThreadMembershipUnavailableError,
   ThreadWorkProjectMismatchError,
 } from "../../ports/repositories.js";
+import { createInMemoryExecutionReportRepository } from "./execution-report-repository.js";
 import { createInMemoryProjectChatAdapter } from "./project-chat-adapter.js";
 
 // USD rollups are display-side only; integer millicredits in the billing
@@ -850,7 +850,12 @@ export function createInMemoryRepositories(
     turns: turnRepo,
     blocks: blockRepo,
     modelResponses: modelResponseRepo,
-    executionReports: createInMemoryExecutionReportRepository(),
+    executionReports: createInMemoryExecutionReportRepository(transactionOwner, {
+      threads,
+      turns,
+      blocks,
+      projects: options.projects,
+    }),
     readSnapshot: (operation) => transactionOwner.run(operation),
     threadDocuments: threadDocumentRepo,
     documentTouches: documentTouchRepo,
@@ -916,124 +921,3 @@ export function createInMemoryRepositories(
 }
 
 export type InMemoryRepositories = ReturnType<typeof createInMemoryRepositories>;
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    const entries = Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
-    return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function createInMemoryExecutionReportRepository() {
-  const rows = new Map<string, SavedExecutionReport>();
-  const key = (child: string, turn: string) => `${child}:${turn}`;
-  return {
-    async admit(input: import("../../ports/repositories.js").AdmitExecutionReportInput) {
-      const id = key(input.childThreadId, input.assistantTurnId);
-      const existing = rows.get(id);
-      const row: SavedExecutionReport = {
-        childThreadId: input.childThreadId,
-        assistantTurnId: input.assistantTurnId,
-        handle: input.handle,
-        origin: input.origin,
-        deliveryMode: input.deliveryMode,
-        callerThreadId: input.callerThreadId,
-        callerTurnId: input.callerTurnId,
-        toolCallId: input.toolCallId,
-        cardBlockId: input.cardBlockId,
-        agentSlug: input.agentSlug ?? null,
-        description: input.description ?? null,
-        capture: null,
-        captureToolCallId: null,
-        outcome: null,
-        reason: null,
-        source: null,
-        summary: null,
-        payload: null,
-        artifacts: null,
-        costMillicredits: null,
-        terminalAt: null,
-        publication: "none",
-        publishedAt: null,
-      };
-      if (existing && JSON.stringify(existing) !== JSON.stringify(row))
-        throw new Error("Conflicting execution report admission");
-      rows.set(id, existing ?? row);
-      return existing ?? row;
-    },
-    async captureOnce(
-      child: string,
-      turn: string,
-      toolCallId: string,
-      capture: import("@meridian/contracts/spawn").ReturnResultCapture,
-    ) {
-      const id = key(child, turn);
-      const row = rows.get(id);
-      if (!row) throw new Error("Execution report was not admitted");
-      const candidate = {
-        summary: capture.summary,
-        ...(capture.payload !== undefined ? { payload: capture.payload } : {}),
-        ...(capture.artifacts !== undefined ? { artifacts: capture.artifacts } : {}),
-      };
-      if (
-        row.capture &&
-        (row.captureToolCallId !== toolCallId ||
-          canonicalJson(row.capture) !== canonicalJson(candidate))
-      )
-        throw new Error("A different return_result was already accepted");
-      if (row.outcome) throw new Error("Cannot capture a report after terminal finalization");
-      const next = { ...row, capture: candidate, captureToolCallId: toolCallId };
-      rows.set(id, next);
-      return next;
-    },
-    async finalizeOnce(input: import("../../ports/repositories.js").FinalizeExecutionReportInput) {
-      const id = key(input.childThreadId, input.assistantTurnId);
-      const row = rows.get(id);
-      if (!row) throw new Error("Execution report was not admitted");
-      const next = {
-        ...row,
-        outcome: input.outcome,
-        reason: input.reason,
-        source: input.source,
-        summary: input.summary,
-        payload: input.payload ?? null,
-        artifacts: input.artifacts ?? null,
-        costMillicredits: input.costMillicredits ?? null,
-        terminalAt: row.terminalAt ?? new Date().toISOString(),
-        publication: input.publication ?? "none",
-      };
-      if (
-        row.outcome &&
-        (row.outcome !== next.outcome ||
-          row.reason !== next.reason ||
-          row.summary !== next.summary ||
-          row.source !== next.source ||
-          canonicalJson(row.payload) !== canonicalJson(next.payload) ||
-          canonicalJson(row.artifacts) !== canonicalJson(next.artifacts) ||
-          row.costMillicredits !== next.costMillicredits)
-      )
-        throw new Error("Execution report already has a conflicting terminal outcome");
-      if (row.outcome) return row;
-      rows.set(id, next);
-      return next;
-    },
-    async findByExecution(child: string, turn: string) {
-      return rows.get(key(child, turn)) ?? null;
-    },
-    async listPendingPublication(limit: number) {
-      return [...rows.values()].filter((row) => row.publication === "pending").slice(0, limit);
-    },
-    async lockPendingPublication(child: string, turn: string) {
-      const row = rows.get(key(child, turn));
-      return row?.publication === "pending" ? row : null;
-    },
-    async markPublished(child: string, turn: string, publication: "published" | "skipped") {
-      const id = key(child, turn);
-      const row = rows.get(id);
-      if (row?.publication === "pending")
-        rows.set(id, { ...row, publication, publishedAt: new Date().toISOString() });
-    },
-  };
-}

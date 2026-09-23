@@ -1595,6 +1595,7 @@ async function* generateEvents(
                 persistenceDeps: deps,
                 executionReports: deps.repos.executionReports,
                 readSnapshot: deps.repos.readSnapshot,
+                runningTurn: deps.runAuthority,
                 workContextDelivery: deps.workContextDelivery,
               },
               call,
