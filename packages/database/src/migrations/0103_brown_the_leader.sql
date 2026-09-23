@@ -1,2 +1,2 @@
 DROP INDEX "users_last_active_project_idx";--> statement-breakpoint
-ALTER TABLE "users" DROP COLUMN "last_active_project_id";
+ALTER TABLE "users" DROP COLUMN "last_active_project_id"; -- migration-lint: skip DROP_COLUMN (pre-launch; account entry is the project library and no reader or writer remains)
