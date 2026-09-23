@@ -178,6 +178,10 @@ export class ResourceContentAccess {
     session: DocumentSession,
     ownership: TransferredDocumentSessionOwnership,
   ): Promise<void> {
+    if (this.state !== "open" || this.epoch.aborted) {
+      ownership.release();
+      throw new Error("Resource content access is closing");
+    }
     const id = resourceKey(key);
     const current = await this.metadata.readAccessibleResource(projectId, key);
     if (!current || localDisposition(current) || current.resource.content.kind !== "exact") {
@@ -193,20 +197,39 @@ export class ResourceContentAccess {
       ownership.release();
       throw new Error("Acquired registry session does not match resource content");
     }
+    try {
+      await this.openings.get(id);
+    } catch (error) {
+      ownership.release();
+      throw error;
+    }
+    if (this.state !== "open" || this.epoch.aborted) {
+      ownership.release();
+      throw new Error("Resource content access is closing");
+    }
     const existing = this.entries.get(id);
     if (existing) {
       if (existing.session !== session) {
-        ownership.release();
-        throw new Error("Resource already owns another session");
+        if (
+          existing.ownership.kind !== "local" ||
+          [...existing.leases.values()].some(Boolean) ||
+          existing.adoptionBound
+        ) {
+          ownership.release();
+          throw new Error("Resource already owns another session");
+        }
+        this.entries.delete(id);
+        this.retire(id, existing.session);
+      } else {
+        if (existing.ownership.kind !== "registry") {
+          ownership.release();
+          throw new Error("Resource session has not transferred to registry ownership");
+        }
+        const prior = existing.ownership.ownershipByProject.get(projectId);
+        if (prior) ownership.release();
+        else existing.ownership.ownershipByProject.set(projectId, ownership);
+        return;
       }
-      if (existing.ownership.kind !== "registry") {
-        ownership.release();
-        throw new Error("Resource session has not transferred to registry ownership");
-      }
-      const prior = existing.ownership.ownershipByProject.get(projectId);
-      if (prior) ownership.release();
-      else existing.ownership.ownershipByProject.set(projectId, ownership);
-      return;
     }
     this.entries.set(id, {
       identity,
@@ -371,14 +394,12 @@ export class ResourceContentAccess {
         ) {
           throw new Error("Session adoption returned different authority");
         }
+        if (![...entry.leases.values()].some(Boolean))
+          throw new Error("The mounted editor closed during session adoption");
         entry.ownership = {
           kind: "registry",
           ownershipByProject: new Map([[admitted.lease.projectId, admitted]]),
         };
-        if (entry.leases.size === 0) {
-          this.entries.delete(id);
-          admitted.release();
-        }
       },
     });
     entry.ownership = {
@@ -427,8 +448,7 @@ export class ResourceContentAccess {
       entry = result;
     }
     const lease = Symbol(participantId);
-    entry.leases.set(lease, adoptionEligible);
-    if (adoptionEligible) entry.adoptionBound = true;
+    entry.leases.set(lease, false);
     if (this.state !== "open" || this.epoch.aborted || signal?.aborted) {
       this.releaseLease(id, entry, lease);
       return { kind: "cancelled" };
@@ -460,6 +480,10 @@ export class ResourceContentAccess {
           unavailable ??
           (entry.session.getSnapshot().schemaFence !== null ? "schema-mismatch" : "changed"),
       };
+    }
+    if (adoptionEligible) {
+      entry.leases.set(lease, true);
+      entry.adoptionBound = true;
     }
     let released = false;
     const openedEntry = entry;
@@ -526,6 +550,11 @@ export class ResourceContentAccess {
         adoptionBound: false,
         ownership: { kind: "local" as const },
       };
+      const installed = this.entries.get(id);
+      if (installed) {
+        this.retire(id, session);
+        return installed;
+      }
       this.entries.set(id, entry);
       return entry;
     } catch (error) {

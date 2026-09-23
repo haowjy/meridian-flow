@@ -307,7 +307,7 @@ export class AccountResourceReplica {
     options: { adoptionEligible?: boolean } = {},
   ): Promise<ResourceContentOpenResult> {
     this.requireOpen();
-    await this.serverSessionCaptures.get(encodeURIComponent(key.handle));
+    await this.waitForServerSessionCaptures(encodeURIComponent(key.handle));
     this.requireOpen();
     const opened = await this.content.open(projectId, key, participantId, signal, options);
     if (opened.kind === "opened") {
@@ -388,18 +388,9 @@ export class AccountResourceReplica {
     session: DocumentSession,
   ): Promise<void> {
     this.requireOpen();
-    await session.whenSynced();
-    const snapshot = session.getSnapshot();
-    if (snapshot.status !== "synced" || snapshot.schemaFence) return;
     const key = await this.keyForDocument(projectId, documentId);
     const databaseName = session.persistenceName;
-    if (
-      !key ||
-      !databaseName ||
-      session.documentId !== documentId ||
-      !(await session.hasInitializedLocalContent())
-    )
-      return;
+    if (!key || !databaseName || session.documentId !== documentId) return;
     this.requireOpen();
     const captureId = encodeURIComponent(key.handle);
     const priorCapture = this.serverSessionCaptures.get(captureId);
@@ -409,8 +400,16 @@ export class AccountResourceReplica {
     });
     const captureTail = priorCapture ? priorCapture.then(() => capture) : capture;
     this.serverSessionCaptures.set(captureId, captureTail);
-    await priorCapture;
     try {
+      await session.whenSynced();
+      await priorCapture;
+      const snapshot = session.getSnapshot();
+      if (
+        snapshot.status !== "synced" ||
+        snapshot.schemaFence ||
+        !(await session.hasInitializedLocalContent())
+      )
+        return;
       const cached = await this.commitPlan(key, (record) =>
         recordAcquiredResourceContent({
           record,
@@ -423,8 +422,8 @@ export class AccountResourceReplica {
         }),
       );
       if (cached === "unchanged") return;
-      await this.installProjectRegistryOwnership(projectId, key, generation, session);
       this.schedule(key);
+      await this.installProjectRegistryOwnership(projectId, key, generation, session);
     } finally {
       if (this.serverSessionCaptures.get(captureId) === captureTail)
         this.serverSessionCaptures.delete(captureId);
@@ -621,7 +620,7 @@ export class AccountResourceReplica {
         newAttemptIds: () => ({ attemptId: crypto.randomUUID(), operationId: crypto.randomUUID() }),
       });
       if (namespace === "needs-repair" && (await this.remintCreateConflict(key))) continue;
-      await this.serverSessionCaptures.get(encodeURIComponent(key.handle));
+      await this.waitForServerSessionCaptures(encodeURIComponent(key.handle));
       const adoption = await this.adoption.reconcile(key);
       const cleanup = await this.reconcileLocalCleanup(key);
       if (namespace !== "progressed" && adoption !== "adopted" && !cleanup) return;
@@ -720,6 +719,14 @@ export class AccountResourceReplica {
       });
     });
     return locked.kind === "acquired" ? "completed" : "owned-elsewhere";
+  }
+
+  private async waitForServerSessionCaptures(id: string): Promise<void> {
+    for (;;) {
+      const capture = this.serverSessionCaptures.get(id);
+      if (!capture) return;
+      await capture;
+    }
   }
 
   private requireOpen(): void {
