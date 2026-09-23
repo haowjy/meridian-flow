@@ -22,8 +22,8 @@
  * Theme-backed tokens use Tailwind v4 namespaces directly; non-utility runtime
  * controls stay as plain root variables.
  *
- * Dark mode is its own future slice. Re-derive it from the settled light values
- * with the same ordering: page brightest, actives lighten, inks flip.
+ * The shipped dark palette overrides these semantic roles in `themes.css`,
+ * retaining the same surface ordering with light ink on darker materials.
  */
 
 /* Package-private tone atoms — ONLY for values shared by several role tokens
