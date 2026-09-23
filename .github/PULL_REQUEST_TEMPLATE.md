@@ -18,10 +18,34 @@
 
 ## Summary
 
-<!-- Orient the reviewer to the solution. List the major implementation or
-     design changes, important boundaries, and deliberate tradeoffs. This
-     should be a map of the solution, not a commit log, diff-stat recap, or
-     repeat of Resulting Behavior. -->
+<!-- Give the reviewer a short orientation to the solution and its important
+     boundaries. This is a map of the approach, not a commit log or diff-stat
+     recap. -->
+
+## Before / After
+
+<!-- Compare the observable behavior before and after this change. Show concrete
+     workflows, outputs, and meaningful states, including failure/recovery and
+     anything important that stays unchanged. For user-facing changes, include
+     screenshots or GIFs beside the states they show; cover every changed
+     surface and meaningful state (empty, filled, error, narrow). The human
+     merge gate is visual — no visual evidence, no review. If runtime behavior is
+     unchanged, say so and describe what changed instead. -->
+
+- Before:
+- After:
+
+## Code Changes
+
+<!-- Inventory production-code changes (not tests), grouped by concern, with
+     key paths and intent. Explain substantial refactors by what complexity or
+     coupling they remove, and note unusually broad or unrelated cleanup. Do not
+     optimize for the smallest diff: meaningful refactoring and deletion are
+     welcome when they make the code easier to change. -->
+
+- Added:
+- Refactored:
+- Deleted:
 
 ## Diff
 
@@ -41,15 +65,6 @@
      CHANGED tables and their relationships, annotating columns with
      NEW / DROPPED / renamed. List added constraints and indexes below the
      diagram. -->
-
-## Resulting Behavior
-
-<!-- Show the goal realized in concrete, observable terms: workflows, outputs,
-     failure behavior, and anything important that remains unchanged. For
-     user-facing UI changes, place screenshots beside the states they demonstrate
-     and use GIFs when interaction or motion carries meaning. Show every changed
-     surface and meaningful state (empty, filled, error, narrow). The human merge
-     gate is visual — no visual evidence, no review. -->
 
 ## Work Item
 
@@ -72,7 +87,7 @@
 
 ## Verification
 
-<!-- Prove the claims in Resulting Behavior. Record exact automated gates and
+<!-- Prove the claims in Before / After. Record exact automated gates and
      runtime journeys run against the final commit, with results or evidence
      links. Check only what ran; explain anything not applicable or blocked. -->
 
