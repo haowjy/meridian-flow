@@ -78,9 +78,11 @@ export type ResourceContentTransfer = Readonly<{
   documentId: string;
   identityRevision: number;
   databaseName: string;
+  requireRetainedLease: boolean;
 }>;
 
 export type ResourceContentTransferResult =
+  | Readonly<{ kind: "waiting" }>
   | Readonly<{ kind: "reserved"; handoff: LocalDocumentSessionHandoff }>
   | Readonly<{ kind: "adopted"; ownership: TransferredDocumentSessionOwnership }>;
 
@@ -333,6 +335,8 @@ export class ResourceContentAccess {
       }
       return { kind: "reserved", handoff: entry.ownership.handoff };
     }
+    // The reconciler's transient lease cannot keep the transferred editor session alive.
+    if (input.requireRetainedLease && entry.leases.size < 2) return { kind: "waiting" };
 
     const handoff = reservations.reserve({
       projectId: input.projectId,

@@ -53,6 +53,7 @@ export interface LocalDocumentSessionAdoptionPort {
     documentId: DocumentId;
     lineageHandle: string;
     exactDatabaseName: string;
+    generation: AvailabilityGeneration;
   }): Promise<"clear" | "adopting" | "bindable" | "terminal" | "mismatch">;
   bindAndAdopt(input: {
     projectId: ProjectId;

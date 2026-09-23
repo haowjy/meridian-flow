@@ -265,6 +265,7 @@ it("hands the exact open session to registry ownership without destroying it", a
         identityRevision: record.resource.identity.revision,
         databaseName:
           record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
+        requireRetainedLease: false,
       },
       reservations,
     ),
@@ -316,6 +317,7 @@ it("retires an uncommitted transfer only after its reservation is aborted", asyn
       identityRevision: identity.revision,
       databaseName:
         record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
+      requireRetainedLease: false,
     },
     reservations,
   );
@@ -352,6 +354,7 @@ it("destroys an unsettled transfer once during account close", async () => {
       identityRevision: record.resource.identity.revision,
       databaseName:
         record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
+      requireRetainedLease: false,
     },
     reservations,
   );
@@ -510,6 +513,7 @@ it("releases every project registry ownership after the final shared-content lea
       documentId: record.resource.identity.documentId,
       identityRevision: record.resource.identity.revision,
       databaseName: session.persistenceName ?? "",
+      requireRetainedLease: false,
     },
     {
       reserve(candidate) {

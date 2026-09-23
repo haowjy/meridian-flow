@@ -421,6 +421,7 @@ export class DocumentSessionRegistry
     documentId: DocumentId;
     lineageHandle: string;
     exactDatabaseName: string;
+    generation: AvailabilityGeneration;
   }): Promise<"clear" | "adopting" | "bindable" | "terminal" | "mismatch"> {
     const coordination = await this.configuredCoordination();
     return coordination.inspectLocalLineage(input);
