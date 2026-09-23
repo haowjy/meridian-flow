@@ -5,7 +5,6 @@
 The `optimistic-updates` work item owns the profiles and verification specification.
 
 - **OPT-001: Design an honest immediate destination for account-Home project creation.** `src/features/chat/useCreationComposer.ts` waits for the server-assigned project slug before routing. Do not mount an unresolved `/p/` address and do not reuse standalone `/chat/:threadId`, whose contract excludes project-address creation. Keep this path P0 until a neutral pending destination or client-known public address can replace into the canonical project route without bouncing Home.
-- **OPT-003: Surface account-preference write failure on its row.** The cross-device working-set switch in `src/features/account/SettingsDialog.tsx` flips immediately but silently reverts when `updateAccountSettings` fails. Retain the P1 projection and add visible inline failure plus Retry.
 - **OPT-005: Correlate a returned Stripe checkout with the ledger.** Per-control pending, visible failure, and Retry are in place; return reconciliation is best-effort (fresh baseline plus transaction fingerprint, otherwise unverified). The client still cannot prove that a specific session produced a ledger row: the success URL carries no session id and there is no session-status endpoint. Keep checkout P0 server-confirmed and add a server-provided session↔ledger correlation before treating a returned `?checkout=success` as proof.
 
 ## Editor UX gaps — deferred, tracked
