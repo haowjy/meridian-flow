@@ -1,87 +1,97 @@
-<!-- Give reviewers enough context and evidence to decide whether this change
-     should merge without reconstructing the work from code, chat history, or a
-     local checkout. Describe the final state of the PR, not its chronology. -->
+<!-- Describe the PR's final state, not its history. Give reviewers enough
+     context to understand the change. -->
 
 ## Why
 
-<!-- Give the reason for the change: the current problem, opportunity, or
-     constraint; evidence that it exists; and why it matters now. This is the
-     motivation, not the solution. For user-facing UI changes, include a
-     screenshot or GIF of the current experience when it makes the problem
-     concrete. -->
+<!-- State the problem or opportunity and why it matters. For UI changes, show
+     the current experience when useful. -->
 
 ## Goal
 
-<!-- Define the outcome this PR is accountable for. The goal is its acceptance
-     boundary: what must be true after merge, not a list of tasks, files, or
-     implementation steps. -->
+<!-- State what must be true after merge. -->
 
 ## Summary
 
-<!-- Orient the reviewer to the diff. List the major implementation or design
-     changes, important boundaries, and deliberate tradeoffs. This should be a
-     map of the solution, not a commit log or a repeat of Resulting Behavior.
-     Start with the diff size: files changed and +/- line counts EXCLUDING
-     generated migrations (state the migration delta separately), e.g.
-     "113 files, +3,102 / -360 excluding migrations (3 files, +26)". -->
+<!-- Briefly map the solution and key tradeoffs; omit commit logs and diff stats. -->
+
+## Diff
+
+<!-- Report file/line totals excluding generated migrations, then give
+     non-overlapping area totals that add up. Report migrations under DB Changes. -->
+
+- Non-migration total: N files, +N / -N
+- Breakdown:
+  - Area: N files, +N / -N — what changed
+
+## Before / After
+
+<!-- For fixes or changed behavior, show Before and After; keep Before brief or
+     omit it when no meaningful prior state exists. For new capabilities,
+     describe After only. Show changed UI states with screenshots or GIFs. -->
+
+- Before (when meaningful):
+- After:
+
+## Code Changes
+
+<!-- Group production-code additions, refactors, and deletions by area; include
+     key paths and rationale. Aim to lower net-new code over time by simplifying,
+     refactoring, and removing duplication/dead paths—not by shrinking this diff.
+     Explain substantial additions. Track temporary code or cleanup deferred for
+     delivery speed/product clarity, with its reason and removal trigger. -->
+
+- Added:
+- Refactored:
+- Deleted:
 
 ## DB Changes
 
-<!-- Only when the PR touches schema/migrations; delete otherwise. Name the
-     migration(s) and show the schema delta as a mermaid erDiagram of the
-     CHANGED tables and their relationships, annotating columns with
-     NEW / DROPPED / renamed. List added constraints and indexes below the
-     diagram. -->
-
-## Resulting Behavior
-
-<!-- Show the goal realized in concrete, observable terms: workflows, outputs,
-     failure behavior, and anything important that remains unchanged. For
-     user-facing UI changes, place screenshots beside the states they demonstrate
-     and use GIFs when interaction or motion carries meaning. Show every changed
-     surface and meaningful state (empty, filled, error, narrow). The human merge
-     gate is visual — no visual evidence, no review. -->
+<!-- Remove if no schema changes. Otherwise name migrations; diagram changed
+     tables/relationships in Mermaid, mark added/dropped/renamed columns, and
+     list new constraints/indexes. -->
 
 ## Work Item
 
-<!-- Point the reviewer to the source of scope and decisions by linking the
-     relevant issue, work directory, design, or plan. This makes alignment
-     inspectable. If this was direct maintenance with no tracked artifact, say
-     so. -->
+<!-- Link the issue, work item, design, or plan; otherwise say this was direct
+     maintenance. -->
+
+## Testing
+
+<!-- List tests added/refactored/deleted and the contract or risk each protects
+     (or why removal is safe). Don't add tests for volume or coverage; consider
+     deleting redundant tests and development scaffolding. -->
+
+- Added:
+- Refactored:
+- Deleted:
 
 ## Verification
 
-<!-- Prove the claims in Resulting Behavior. Record the exact automated gates,
-     focused tests, and runtime journeys run against the final commit, along with
-     their results or evidence links. Check only what ran; explain anything not
-     applicable or blocked. -->
+<!-- Describe how to exercise changed behavior, then record what was tested and
+     observed. Include setup, steps, expected/actual results, and workflows a
+     probe covered. If no manual path exists, say why. For performance changes,
+     report comparable numbers with metric, method, environment/workload, and
+     baseline/result; omit benchmarks when performance is unaffected. -->
 
-- [ ] `pnpm check`
-- [ ] Runtime smoke / browser probe where behavior changed
+- Workflow/probe:
+- Setup and steps:
+- Expected / observed:
+- Performance (when relevant):
 
 ## Deferred
 
-<!-- Make consciously-not-done work inspectable. List what this PR deliberately
-     leaves out — follow-ups, known limitations, improvements rejected for now —
-     and name the tracking home for each: a GitHub issue for cross-cutting or
-     externally visible items, or the nearest `.context/TODO` (must-do) /
-     `.context/FUTURE` (nice-to-have) for code-local ones. A deferral worth
-     mentioning is worth a tracking home; untracked deferrals are scope leaks.
-     If nothing was deferred, say so. -->
+<!-- List deferred work and its tracking home: issue for cross-cutting work;
+     nearest .context/TODO or .context/FUTURE for local work. Temporary code or
+     cleanup deferred for speed/product clarity needs a removal trigger. Say if none. -->
 
-- [ ] Every deferral names its issue or `.context/TODO` / `.context/FUTURE` entry, or "nothing deferred"
+- [ ] Tracking home for each deferral; removal/cleanup trigger when applicable, or none
 
 ## Knowledge Updates
 
-<!-- Show that future contributors will learn the new mental model. List the
-     durable guidance updated with this change, such as `CHANGELOG.md`,
-     `AGENTS.md`, `.context/`, or the KB. If none was needed, explain why the
-     existing guidance remains accurate. -->
+<!-- List durable guidance updated, or say why none was needed. -->
 
 - [ ] `.context/` / KB updates are included, or not needed
 
 ## Spawn Trace
 
-<!-- Make delegated work inspectable. List agent or spawn IDs and each role, such
-     as implementation, review, runtime probe, or knowledge reconciliation. If
-     the work was completed directly, say so. -->
+<!-- List delegated agents and roles, or say the work was done directly. -->
