@@ -239,4 +239,39 @@ describe("useChatSubmissionRecovery lifecycle (StrictMode)", () => {
       expect.objectContaining({ id: "turn-user", status: "complete" }),
     ]);
   });
+
+  it("holds a recovery-only replay through a real unmount without acknowledging, subscribing, or retiring", async () => {
+    recordChatSubmission(ACCOUNT, entry({ submissionId: "sub-unmount" }));
+    const scenario = new ThreadRunScenario({
+      lookup: async ({ submissionId }) => ({ kind: "not-seen", submissionId }),
+    });
+    // The only POST in flight is recovery's own replay: no live send to blame
+    // for a late acknowledgement if the writer leaves before it lands.
+    const gate = scenarioGate<SendMessageResponse>();
+    scenario.setAppend(() => gate.promise);
+
+    const mounted = await mountChatLifecycle(ACCOUNT, scenario);
+    await act(async () => {
+      await vi.waitFor(() => expect(scenario.appendRequests).toHaveLength(1));
+    });
+    const optimisticTurnId = scenario.turns()[0]?.id ?? "";
+    expect(optimisticTurnId).not.toBe("");
+
+    // A genuine unmount ends the recovery token before the held POST lands.
+    await mounted.unmount();
+    gate.resolve(defaultSendResponse());
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // A stale replay must not acknowledge: the row stays pending under its
+    // optimistic id instead of being renamed to the server turn.
+    expect(scenario.turns()).toEqual([
+      expect.objectContaining({ id: optimisticTurnId, status: "pending" }),
+    ]);
+    // It must not start a run either, so no live subscription was attached.
+    expect(scenario.activeSubscription()).toBeUndefined();
+    // The journal stays: the returning session's lookup owns the bridge/retire.
+    expect(readChatSubmissions(ACCOUNT)).toMatchObject([{ submissionId: "sub-unmount" }]);
+  });
 });

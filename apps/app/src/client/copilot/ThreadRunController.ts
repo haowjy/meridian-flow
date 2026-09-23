@@ -66,6 +66,23 @@ export type SubmissionPayload = Pick<
  */
 type SessionFence = () => boolean;
 
+/**
+ * What a dispatch does when the server accepts the POST after this session has
+ * already lost ownership (a fence that no longer matches).
+ *
+ * `bridge-row` (live sends): rename the app-scoped optimistic row onto the
+ * persisted server turn before returning `ambiguous`. The caller keeps the
+ * journal, and the live-send teardown contract expects the row to reflect the
+ * accepted turn (`ThreadRunController.test.ts`).
+ *
+ * `leave-row` (recovery replays/retries): leave the row under its optimistic
+ * id. That recovery session is unmounting; the returning session's
+ * `already-accepted` lookup owns the bridge and the journal retire. Renaming
+ * the row here strands the journal and makes the return append a fresh pending
+ * row that only a successful lookup can collapse.
+ */
+type StaleAcceptPolicy = "bridge-row" | "leave-row";
+
 function isAdmissionPending(error: unknown): boolean {
   return (
     (error instanceof HttpResponseError || isMeridianApiError(error)) &&
@@ -159,7 +176,13 @@ export class ThreadRunController {
     payload: SubmissionPayload,
     options: SubmitOptions = {},
   ): Promise<ComposerSubmitOutcome> {
-    return this.dispatch(threadId, payload, options, this.admissionFence(this.admissionEpoch));
+    return this.dispatch(
+      threadId,
+      payload,
+      options,
+      this.admissionFence(this.admissionEpoch),
+      "bridge-row",
+    );
   }
 
   /**
@@ -175,7 +198,7 @@ export class ThreadRunController {
     options: SubmitOptions,
     session: object,
   ): Promise<ComposerSubmitOutcome> {
-    return this.dispatch(threadId, payload, options, this.recoveryFence(session));
+    return this.dispatch(threadId, payload, options, this.recoveryFence(session), "leave-row");
   }
 
   private admissionFence(admissionEpoch: number): SessionFence {
@@ -215,6 +238,7 @@ export class ThreadRunController {
     envelope: SubmissionPayload,
     options: SubmitOptions,
     fence: SessionFence,
+    staleAccept: StaleAcceptPolicy,
   ): Promise<ComposerSubmitOutcome> {
     const outcome = (kind: ComposerSubmitOutcome["kind"]): ComposerSubmitOutcome => ({
       kind,
@@ -276,11 +300,11 @@ export class ThreadRunController {
       }
       if (!fence()) {
         // Accepted by the server, but this session no longer owns the thread.
-        // The store is app-scoped, so bridge the local row to the persisted
-        // turn anyway: an unbridged row makes the returning session append a
-        // second pending row that recovery cannot collapse. Return ambiguous
-        // so the stale session keeps the journal for recovery to retire.
-        if (options.optimisticUserTurnId) {
+        // A live send bridges the app-scoped row onto the persisted turn (see
+        // `StaleAcceptPolicy`); a recovery replay leaves the row so the
+        // returning session's own lookup owns the bridge and the retire.
+        // Return `ambiguous` either way so the stale session keeps the journal.
+        if (staleAccept === "bridge-row" && options.optimisticUserTurnId) {
           this.actions.acknowledgeUserTurn(
             threadId,
             options.optimisticUserTurnId,
