@@ -256,14 +256,21 @@ it("hands recorded bindable authority to the already-open local session", async 
 });
 
 it("rejects an authority fence before pinning the resource generation", async () => {
-  const { adoption, coordinator, key, metadata, verified } = await fixture();
-  vi.mocked(adoption.inspect).mockResolvedValue("mismatch");
+  const { adoption, availability, coordinator, key, metadata, verified } = await fixture();
+  availability.resolve.mockResolvedValue({
+    kind: "available",
+    documentId: "document",
+    generation: "8",
+  });
+  vi.mocked(adoption.inspect).mockImplementation(async (input) =>
+    input.generation === "8" ? "mismatch" : "bindable",
+  );
 
   await expect(coordinator.reconcile(key)).rejects.toThrow(
     "Session adoption persistence authority belongs to another lineage",
   );
 
-  expect(adoption.inspect).toHaveBeenCalledWith(expect.objectContaining({ generation: "7" }));
+  expect(adoption.inspect).toHaveBeenCalledWith(expect.objectContaining({ generation: "8" }));
   expect(adoption.begin).not.toHaveBeenCalled();
   expect(
     (await metadata.readResource(key))?.resource.obligations.sessionAdoption?.generation,
