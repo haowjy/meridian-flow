@@ -5,9 +5,10 @@ url = "https://github.com/haowjy/meridian-dev-workflow"
 targets = [
     ".opencode",
     ".pi",
+    ".codex",
 ]
+
 models_cache_ttl_hours = 24
-# agent_emission = "always"
 
 [settings.meridian.agent_copy]
 harnesses = ["claude"]
