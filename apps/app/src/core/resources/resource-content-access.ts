@@ -43,7 +43,8 @@ type ContentIdentity = Readonly<{
 type ContentEntry = {
   identity: ContentIdentity;
   session: DocumentSession;
-  leases: Set<symbol>;
+  leases: Map<symbol, boolean>;
+  adoptionBound: boolean;
   reidentity?: {
     target: ContentIdentity;
     /** A competing durable remint observed while this local CAS is unresolved. */
@@ -81,6 +82,7 @@ export type ResourceContentTransfer = Readonly<{
 }>;
 
 export type ResourceContentTransferResult =
+  | Readonly<{ kind: "waiting" }>
   | Readonly<{ kind: "reserved"; handoff: LocalDocumentSessionHandoff }>
   | Readonly<{ kind: "adopted"; ownership: TransferredDocumentSessionOwnership }>;
 
@@ -145,9 +147,12 @@ export class ResourceContentAccess {
     key: ResourceKey,
     participantId: string,
     signal?: AbortSignal,
+    options: { adoptionEligible?: boolean } = {},
   ): Promise<ResourceContentOpenResult> {
     if (participantId.length === 0) throw new Error("Resource content participant is required");
-    return this.track(this.openTracked(projectId, key, participantId, signal));
+    return this.track(
+      this.openTracked(projectId, key, participantId, signal, options.adoptionEligible ?? false),
+    );
   }
 
   clearExactContent(input: {
@@ -173,6 +178,10 @@ export class ResourceContentAccess {
     session: DocumentSession,
     ownership: TransferredDocumentSessionOwnership,
   ): Promise<void> {
+    if (this.state !== "open" || this.epoch.aborted) {
+      ownership.release();
+      throw new Error("Resource content access is closing");
+    }
     const id = resourceKey(key);
     const current = await this.metadata.readAccessibleResource(projectId, key);
     if (!current || localDisposition(current) || current.resource.content.kind !== "exact") {
@@ -188,25 +197,46 @@ export class ResourceContentAccess {
       ownership.release();
       throw new Error("Acquired registry session does not match resource content");
     }
+    try {
+      await this.openings.get(id);
+    } catch (error) {
+      ownership.release();
+      throw error;
+    }
+    if (this.state !== "open" || this.epoch.aborted) {
+      ownership.release();
+      throw new Error("Resource content access is closing");
+    }
     const existing = this.entries.get(id);
     if (existing) {
       if (existing.session !== session) {
-        ownership.release();
-        throw new Error("Resource already owns another session");
+        if (
+          existing.ownership.kind !== "local" ||
+          [...existing.leases.values()].some(Boolean) ||
+          existing.adoptionBound ||
+          existing.reidentity
+        ) {
+          ownership.release();
+          throw new Error("Resource already owns another session");
+        }
+        this.entries.delete(id);
+        this.retire(id, existing.session);
+      } else {
+        if (existing.ownership.kind !== "registry") {
+          ownership.release();
+          throw new Error("Resource session has not transferred to registry ownership");
+        }
+        const prior = existing.ownership.ownershipByProject.get(projectId);
+        if (prior) ownership.release();
+        else existing.ownership.ownershipByProject.set(projectId, ownership);
+        return;
       }
-      if (existing.ownership.kind !== "registry") {
-        ownership.release();
-        throw new Error("Resource session has not transferred to registry ownership");
-      }
-      const prior = existing.ownership.ownershipByProject.get(projectId);
-      if (prior) ownership.release();
-      else existing.ownership.ownershipByProject.set(projectId, ownership);
-      return;
     }
     this.entries.set(id, {
       identity,
       session,
-      leases: new Set(),
+      leases: new Map(),
+      adoptionBound: false,
       ownership: { kind: "registry", ownershipByProject: new Map([[projectId, ownership]]) },
     });
   }
@@ -333,6 +363,8 @@ export class ResourceContentAccess {
       }
       return { kind: "reserved", handoff: entry.ownership.handoff };
     }
+    // Navigation and reconciliation probes cannot keep the transferred editor session alive.
+    if (![...entry.leases.values()].some(Boolean)) return { kind: "waiting" };
 
     const handoff = reservations.reserve({
       projectId: input.projectId,
@@ -363,14 +395,12 @@ export class ResourceContentAccess {
         ) {
           throw new Error("Session adoption returned different authority");
         }
+        if (![...entry.leases.values()].some(Boolean))
+          throw new Error("The mounted editor closed during session adoption");
         entry.ownership = {
           kind: "registry",
           ownershipByProject: new Map([[admitted.lease.projectId, admitted]]),
         };
-        if (entry.leases.size === 0) {
-          this.entries.delete(id);
-          admitted.release();
-        }
       },
     });
     entry.ownership = {
@@ -401,6 +431,7 @@ export class ResourceContentAccess {
     key: ResourceKey,
     participantId: string,
     signal?: AbortSignal,
+    adoptionEligible = false,
   ): Promise<ResourceContentOpenResult> {
     if (this.state !== "open" || this.epoch.aborted || signal?.aborted)
       return { kind: "cancelled" };
@@ -418,7 +449,7 @@ export class ResourceContentAccess {
       entry = result;
     }
     const lease = Symbol(participantId);
-    entry.leases.add(lease);
+    entry.leases.set(lease, false);
     if (this.state !== "open" || this.epoch.aborted || signal?.aborted) {
       this.releaseLease(id, entry, lease);
       return { kind: "cancelled" };
@@ -450,6 +481,10 @@ export class ResourceContentAccess {
           unavailable ??
           (entry.session.getSnapshot().schemaFence !== null ? "schema-mismatch" : "changed"),
       };
+    }
+    if (adoptionEligible) {
+      entry.leases.set(lease, true);
+      entry.adoptionBound = true;
     }
     let released = false;
     const openedEntry = entry;
@@ -512,9 +547,15 @@ export class ResourceContentAccess {
       const entry = {
         identity: identityOf(record),
         session,
-        leases: new Set<symbol>(),
+        leases: new Map<symbol, boolean>(),
+        adoptionBound: false,
         ownership: { kind: "local" as const },
       };
+      const installed = this.entries.get(id);
+      if (installed) {
+        this.retire(id, session);
+        return installed;
+      }
       this.entries.set(id, entry);
       return entry;
     } catch (error) {
@@ -584,6 +625,8 @@ export class ResourceContentAccess {
     entry.leases.delete(lease);
     if (entry.leases.size > 0 || this.entries.get(id) !== entry) return;
     if (entry.ownership.kind === "transferring") return;
+    // Server acquisition must survive navigation preflight until the editor binds that session.
+    if (entry.ownership.kind === "registry" && !entry.adoptionBound) return;
     this.entries.delete(id);
     if (entry.ownership.kind === "registry") this.releaseRegistryOwnership(entry.ownership);
     else this.retire(id, entry.session);

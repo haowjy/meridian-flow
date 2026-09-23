@@ -8,6 +8,7 @@ import type {
 } from "@meridian/resource-replica";
 import {
   markResourceCreateEligible,
+  planSessionAdoptionGeneration,
   prepareNamespaceAttempt,
   recordNamespaceOutcome,
   reserveResourceDocument,
@@ -105,7 +106,9 @@ async function fixture() {
     new AbortController().signal,
   );
   accesses.push(access);
-  const verified = await access.open("project", initial.resource, "fixture");
+  const verified = await access.open("project", initial.resource, "fixture", undefined, {
+    adoptionEligible: true,
+  });
   if (verified.kind !== "opened") throw new Error(`Fixture content is ${JSON.stringify(verified)}`);
   let transfer: LocalDocumentSessionTransfer | null = null;
   const handoff = Object.freeze({}) as LocalDocumentSessionHandoff;
@@ -128,7 +131,6 @@ async function fixture() {
     begin: vi.fn(async () => pending),
     abort: vi.fn(async () => "aborted" as const),
     inspect: vi.fn(async () => "clear" as const),
-    recover: vi.fn(),
     bindAndAdopt: vi.fn(async (input) => {
       const reserved = transfer as LocalDocumentSessionTransfer | null;
       if (!reserved) throw new Error("Missing transfer");
@@ -178,6 +180,7 @@ async function fixture() {
     availability,
   );
   return {
+    access,
     adoption,
     availability,
     coordinator,
@@ -215,6 +218,66 @@ it("pins authority and acknowledges adoption without replacing the local Y.Doc",
   expect(created[0]?.getSnapshot().status).toBe("detached");
 });
 
+it("waits for a caller-owned lease before transferring and acknowledging the session", async () => {
+  const { access, adoption, coordinator, key, metadata, release, verified } = await fixture();
+  verified.handle.release();
+
+  await expect(coordinator.reconcile(key)).resolves.toBe("waiting");
+  expect(adoption.bindAndAdopt).not.toHaveBeenCalled();
+  expect((await metadata.readResource(key))?.resource.obligations.sessionAdoption).toBeDefined();
+
+  const editor = await access.open("project", key, "mounted-editor", undefined, {
+    adoptionEligible: true,
+  });
+  if (editor.kind !== "opened") throw new Error(`Editor content is ${JSON.stringify(editor)}`);
+  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
+  expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();
+  expect(editor.handle.session.getSnapshot().status).toBe("detached");
+  expect(release).not.toHaveBeenCalled();
+  editor.handle.release();
+  expect(release).toHaveBeenCalledOnce();
+});
+
+it("hands recorded bindable authority to the already-open local session", async () => {
+  const { adoption, coordinator, created, key, metadata, verified } = await fixture();
+  const current = await metadata.readResource(key);
+  if (!current) throw new Error("Missing resource record");
+  const pinned = planSessionAdoptionGeneration(current, "7");
+  if (!pinned) throw new Error("Expected a pending session adoption");
+  expect(await metadata.commitResource(pinned)).toBe("committed");
+  vi.mocked(adoption.inspect).mockResolvedValue("bindable");
+
+  await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
+
+  expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();
+  expect(created).toHaveLength(1);
+  expect(created[0]?.document.getText("probe").toString()).toBe("preserved");
+  verified.handle.release();
+});
+
+it("rejects an authority fence before pinning the resource generation", async () => {
+  const { adoption, availability, coordinator, key, metadata, verified } = await fixture();
+  availability.resolve.mockResolvedValue({
+    kind: "available",
+    documentId: "document",
+    generation: "8",
+  });
+  vi.mocked(adoption.inspect).mockImplementation(async (input) =>
+    input.generation === "8" ? "mismatch" : "bindable",
+  );
+
+  await expect(coordinator.reconcile(key)).rejects.toThrow(
+    "Session adoption persistence authority belongs to another lineage",
+  );
+
+  expect(adoption.inspect).toHaveBeenCalledWith(expect.objectContaining({ generation: "8" }));
+  expect(adoption.begin).not.toHaveBeenCalled();
+  expect(
+    (await metadata.readResource(key))?.resource.obligations.sessionAdoption?.generation,
+  ).toBeNull();
+  verified.handle.release();
+});
+
 it("keeps a begun handoff retryable while authority is temporarily unavailable", async () => {
   const { adoption, availability, coordinator, key, metadata } = await fixture();
   availability.resolve.mockResolvedValueOnce({ kind: "failed" });
@@ -222,7 +285,7 @@ it("keeps a begun handoff retryable while authority is temporarily unavailable",
   await expect(coordinator.reconcile(key)).resolves.toBe("waiting");
   await expect(coordinator.reconcile(key)).resolves.toBe("adopted");
 
-  expect(adoption.begin).toHaveBeenCalledTimes(2);
+  expect(adoption.begin).toHaveBeenCalledTimes(1);
   expect(adoption.bindAndAdopt).toHaveBeenCalledOnce();
   expect((await metadata.readResource(key))?.resource.obligations.sessionAdoption).toBeUndefined();
 });

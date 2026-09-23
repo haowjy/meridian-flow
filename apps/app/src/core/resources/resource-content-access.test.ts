@@ -13,7 +13,7 @@ import type {
 } from "@/core/editor/local-document-session-adoption";
 import { DocumentSession, deleteIndexedDb } from "../editor/document-session";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
-import { ResourceContentAccess } from "./resource-content-access";
+import { ResourceContentAccess, type ResourceContentTransfer } from "./resource-content-access";
 
 const accountId = "content-access-account";
 const metadataDatabase = `meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`;
@@ -236,13 +236,163 @@ it("keeps independent leases on one same-browser session", async () => {
   expect(second.handle.session.getSnapshot().status).toBe("destroyed");
 });
 
-it("hands the exact open session to registry ownership without destroying it", async () => {
+it("keeps a server-acquired session through navigation until the editor binds it", async () => {
+  const metadata = openMetadata();
+  const record = resource("server-acquired");
+  await initialize(record);
+  const key = await install(metadata, record);
+  if (record.resource.content.kind !== "exact") throw new Error("Expected exact content");
+  const session = createFactory().createDetached({
+    accountId,
+    projectId: "project",
+    documentId: record.resource.identity.documentId,
+    persistenceKey: record.resource.content.databaseName,
+  });
+  await session.whenLocalPersistenceSynced();
+  const { access } = openAccess(metadata);
+  const release = vi.fn();
+  await access.adoptRegistrySession("project", key, session, {
+    lease: {
+      accountId,
+      projectId: "project",
+      documentId: record.resource.identity.documentId,
+      generation: "7",
+    },
+    persistenceGeneration: "7",
+    exactDatabaseName: record.resource.content.databaseName,
+    release,
+  });
+
+  const abort = new AbortController();
+  const readAccessibleResource = metadata.readAccessibleResource.bind(metadata);
+  const read = vi
+    .spyOn(metadata, "readAccessibleResource")
+    .mockImplementationOnce(async (projectId, resourceKey) => {
+      const current = await readAccessibleResource(projectId, resourceKey);
+      abort.abort();
+      return current;
+    });
+  await expect(
+    access.open("project", key, "cancelled-editor", abort.signal, { adoptionEligible: true }),
+  ).resolves.toEqual({ kind: "cancelled" });
+  read.mockRestore();
+  expect(release).not.toHaveBeenCalled();
+
+  const navigation = await access.open("project", key, "navigation");
+  if (navigation.kind !== "opened") throw new Error("Expected navigation content");
+  expect(navigation.handle.session).toBe(session);
+  navigation.handle.release();
+  expect(release).not.toHaveBeenCalled();
+
+  const editor = await access.open("project", key, "editor", undefined, {
+    adoptionEligible: true,
+  });
+  if (editor.kind !== "opened") throw new Error("Expected editor content");
+  expect(editor.handle.session).toBe(session);
+  editor.handle.release();
+  expect(release).toHaveBeenCalledOnce();
+  await session.destroy();
+});
+
+it("lets server acquisition replace a local construction that has not opened", async () => {
+  const metadata = openMetadata();
+  const record = resource("acquisition-race");
+  await initialize(record);
+  const key = await install(metadata, record);
+  if (record.resource.content.kind !== "exact") throw new Error("Expected exact content");
+  let releaseAuthority!: () => void;
+  const authority = new Promise<void>((resolve) => {
+    releaseAuthority = resolve;
+  });
+  const created: DocumentSession[] = [];
+  const sessionFactory = createFactory(created);
+  sessionFactory.whenAuthorityReady = () => authority;
+  const { access } = openAccess(metadata, sessionFactory);
+  const opening = access.open("project", key, "navigation");
+  const serverSession = new DocumentSession({
+    roomKey: record.resource.identity.documentId,
+    persistence: { kind: "indexeddb", key: record.resource.content.databaseName },
+  });
+  await serverSession.whenLocalPersistenceSynced();
+  const release = vi.fn();
+  const adoption = access.adoptRegistrySession("project", key, serverSession, {
+    lease: {
+      accountId,
+      projectId: "project",
+      documentId: record.resource.identity.documentId,
+      generation: "7",
+    },
+    persistenceGeneration: "7",
+    exactDatabaseName: record.resource.content.databaseName,
+    release,
+  });
+
+  releaseAuthority();
+  await adoption;
+  await expect(opening).resolves.toEqual({ kind: "unavailable", reason: "changed" });
+  const editor = await access.open("project", key, "editor", undefined, {
+    adoptionEligible: true,
+  });
+  if (editor.kind !== "opened") throw new Error("Expected acquired editor content");
+  expect(editor.handle.session).toBe(serverSession);
+  editor.handle.release();
+  expect(release).toHaveBeenCalledOnce();
+  await serverSession.destroy();
+});
+
+it("does not replace local content while its identity remint is prepared", async () => {
+  const metadata = openMetadata();
+  const record = resource("acquisition-remint");
+  await initialize(record);
+  const key = await install(metadata, record);
+  if (record.resource.content.kind !== "exact") throw new Error("Expected exact content");
+  const { access } = openAccess(metadata);
+  const navigation = await access.open("project", key, "navigation");
+  if (navigation.kind !== "opened") throw new Error("Expected local content");
+  const pending = access.prepareReidentity(
+    key,
+    record.resource.identity.documentId,
+    "reminted-document",
+    record.resource.identity.revision + 1,
+  );
+  if (!pending) throw new Error("Expected a prepared remint");
+  const serverSession = new DocumentSession({
+    roomKey: record.resource.identity.documentId,
+    persistence: { kind: "indexeddb", key: record.resource.content.databaseName },
+  });
+  await serverSession.whenLocalPersistenceSynced();
+  const release = vi.fn();
+
+  await expect(
+    access.adoptRegistrySession("project", key, serverSession, {
+      lease: {
+        accountId,
+        projectId: "project",
+        documentId: record.resource.identity.documentId,
+        generation: "7",
+      },
+      persistenceGeneration: "7",
+      exactDatabaseName: record.resource.content.databaseName,
+      release,
+    }),
+  ).rejects.toThrow("Resource already owns another session");
+  expect(release).toHaveBeenCalledOnce();
+  expect(access.ownershipFor(key, "project")).toBe("local");
+
+  pending.abort();
+  navigation.handle.release();
+  await serverSession.destroy();
+});
+
+it("keeps a failed transfer reserved until the next mounted editor retries", async () => {
   const metadata = openMetadata();
   const record = resource("transfer");
   await initialize(record, "words during adoption");
   const key = await install(metadata, record);
   const { access } = openAccess(metadata);
-  const opened = await access.open("project", key, "editor-tab");
+  const opened = await access.open("project", key, "editor-tab", undefined, {
+    adoptionEligible: true,
+  });
   if (opened.kind !== "opened") throw new Error("Expected local content");
   const session = opened.handle.session;
   let transfer: LocalDocumentSessionTransfer | undefined;
@@ -255,20 +405,19 @@ it("hands the exact open session to registry ownership without destroying it", a
     abort: vi.fn(),
   };
 
-  await expect(
-    access.reserveTransfer(
-      {
-        projectId: "project",
-        key,
-        transitionId: "transition",
-        documentId: record.resource.identity.documentId,
-        identityRevision: record.resource.identity.revision,
-        databaseName:
-          record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
-      },
-      reservations,
-    ),
-  ).resolves.toEqual({ kind: "reserved", handoff });
+  const request: ResourceContentTransfer = {
+    projectId: "project",
+    key,
+    transitionId: "transition",
+    documentId: record.resource.identity.documentId,
+    identityRevision: record.resource.identity.revision,
+    databaseName:
+      record.resource.content.kind === "exact" ? record.resource.content.databaseName : "",
+  };
+  await expect(access.reserveTransfer(request, reservations)).resolves.toEqual({
+    kind: "reserved",
+    handoff,
+  });
   expect(transfer?.session).toBe(session);
   opened.handle.release();
   expect(session.getSnapshot().status).toBe("detached");
@@ -286,11 +435,31 @@ it("hands the exact open session to registry ownership without destroying it", a
     release,
   };
   transfer?.prepareCommit();
-  await transfer?.completeCommit(ownership);
+  await expect(async () => {
+    await transfer?.completeCommit(ownership);
+  }).rejects.toThrow("The mounted editor closed during session adoption");
 
-  expect(release).toHaveBeenCalledOnce();
+  expect(release).not.toHaveBeenCalled();
+  release();
+
+  const reopened = await access.open("project", key, "replacement-editor", undefined, {
+    adoptionEligible: true,
+  });
+  if (reopened.kind !== "opened") throw new Error("Expected replacement editor content");
+  expect(reopened.handle.session).toBe(session);
+  await expect(access.reserveTransfer(request, reservations)).resolves.toEqual({
+    kind: "reserved",
+    handoff,
+  });
+  expect(reservations.reserve).toHaveBeenCalledOnce();
+  const retryRelease = vi.fn();
+  transfer?.prepareCommit();
+  await transfer?.completeCommit({ ...ownership, release: retryRelease });
+  reopened.handle.release();
+
+  expect(retryRelease).toHaveBeenCalledOnce();
   expect(session.document.getText("probe").toString()).toBe("words during adoption");
-  expect(session.getSnapshot().status).toBe("detached");
+  await session.destroy();
 });
 
 it("retires an uncommitted transfer only after its reservation is aborted", async () => {
@@ -299,7 +468,9 @@ it("retires an uncommitted transfer only after its reservation is aborted", asyn
   await initialize(record);
   const key = await install(metadata, record);
   const { access } = openAccess(metadata);
-  const opened = await access.open("project", key, "editor-tab");
+  const opened = await access.open("project", key, "editor-tab", undefined, {
+    adoptionEligible: true,
+  });
   if (opened.kind !== "opened") throw new Error("Expected local content");
   const handoff = Object.freeze({}) as LocalDocumentSessionHandoff;
   const reservations: LocalDocumentSessionReservationPort = {
@@ -334,7 +505,9 @@ it("destroys an unsettled transfer once during account close", async () => {
   await initialize(record);
   const key = await install(metadata, record);
   const { access } = openAccess(metadata);
-  const opened = await access.open("project", key, "editor-tab");
+  const opened = await access.open("project", key, "editor-tab", undefined, {
+    adoptionEligible: true,
+  });
   if (opened.kind !== "opened") throw new Error("Expected local content");
   const session = opened.handle.session;
   const destroy = vi.spyOn(session, "destroy");
@@ -496,8 +669,12 @@ it("releases every project registry ownership after the final shared-content lea
     ).toBe("committed");
   }
   const { access } = openAccess(metadata);
-  const first = await access.open("project-a", key, "tab-a");
-  const second = await access.open("project-b", key, "tab-b");
+  const first = await access.open("project-a", key, "tab-a", undefined, {
+    adoptionEligible: true,
+  });
+  const second = await access.open("project-b", key, "tab-b", undefined, {
+    adoptionEligible: true,
+  });
   if (first.kind !== "opened" || second.kind !== "opened") throw new Error("Expected content");
   const session = first.handle.session;
   let transfer: LocalDocumentSessionTransfer | undefined;

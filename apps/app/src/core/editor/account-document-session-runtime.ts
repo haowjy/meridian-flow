@@ -109,14 +109,6 @@ export function createAccountDocumentSessionRuntime(
     },
     abort: (receipt) => core.localAdoption.abort(receipt),
     inspect: (request) => core.localAdoption.inspect(request),
-    recover(request) {
-      try {
-        requireOpen();
-        return core.localAdoption.recover(request);
-      } catch (error) {
-        return Promise.reject(error);
-      }
-    },
     bindAndAdopt(request) {
       try {
         requireOpen();
@@ -154,6 +146,7 @@ export function createAccountDocumentSessionRuntime(
       requireOpen();
       core.connectLocalResources({
         terminal: port.terminal,
+        lineageHandleFor: (projectId, documentId) => port.lineageHandleFor(projectId, documentId),
         beginClose() {
           beginClose();
           port.beginClose();

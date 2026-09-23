@@ -159,8 +159,10 @@ export class DocumentSessionRegistry
       await this.localTransferReservations.get(localTransferKey(documentId))?.settled;
       this.requireAccountRuntimeOpen();
       const coordination = await this.configuredCoordination();
+      const originLineageHandle =
+        (await this.localResources?.lineageHandleFor(projectId, documentId)) ?? undefined;
       const admitted = await this.translateCoordination(() =>
-        coordination.admit(projectId, documentId, generation),
+        coordination.admit(projectId, documentId, generation, originLineageHandle),
       );
       return {
         accountId: admitted.accountId,
@@ -419,39 +421,10 @@ export class DocumentSessionRegistry
     documentId: DocumentId;
     lineageHandle: string;
     exactDatabaseName: string;
+    generation: AvailabilityGeneration;
   }): Promise<"clear" | "adopting" | "bindable" | "terminal" | "mismatch"> {
     const coordination = await this.configuredCoordination();
     return coordination.inspectLocalLineage(input);
-  }
-
-  async recover(input: {
-    projectId: ProjectId;
-    documentId: DocumentId;
-    generation: AvailabilityGeneration;
-    lineageHandle: string;
-  }): Promise<{ lease: LiveDocumentSessionLease; session: DocumentSession }> {
-    this.requireAccountRuntimeOpen();
-    const coordination = await this.configuredCoordination();
-    const lease = await this.translateCoordination(() =>
-      coordination.recoverLocalAdoption(
-        input.projectId,
-        input.documentId,
-        input.generation,
-        input.lineageHandle,
-      ),
-    );
-    let state = this.liveRooms.get(input.documentId);
-    if (!state) {
-      state = {
-        leases: new Map([[input.projectId, lease]]),
-        session: null,
-        persistenceGeneration: lease.persistenceGeneration,
-        exactDatabaseName: lease.exactDatabaseName,
-      };
-      this.liveRooms.set(input.documentId, state);
-    }
-    const session = this.get(lease);
-    return { lease, session };
   }
 
   async bindAndAdopt(input: {

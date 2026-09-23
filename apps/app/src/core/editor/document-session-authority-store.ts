@@ -436,6 +436,7 @@ export class DocumentSessionAuthorityStore {
     documentId: DocumentId;
     projectId: ProjectId;
     generation: AvailabilityGeneration;
+    originLineageHandle?: string;
   }): Promise<AdmissionDecision> {
     assertAvailabilityGeneration(input.generation);
     const database = await this.databasePromise;
@@ -494,11 +495,22 @@ export class DocumentSessionAuthorityStore {
     const exactDatabaseName =
       reusable?.exactDatabaseName ??
       documentSessionPersistenceKey(this.accountId, input.documentId, input.generation);
-    room.persistence = reusable ?? {
-      phase: "bindable",
-      generation: persistenceGeneration,
-      exactDatabaseName,
-    };
+    // The originating resource lineage is the authority's identity for local
+    // adoption; a server-phase admission that knows it must record it or a later
+    // cached open reads this record as a foreign lineage and refuses to adopt.
+    if (reusable) {
+      room.persistence =
+        input.originLineageHandle && !reusable.originLineageHandle
+          ? { ...reusable, originLineageHandle: input.originLineageHandle }
+          : reusable;
+    } else {
+      room.persistence = {
+        phase: "bindable",
+        generation: persistenceGeneration,
+        exactDatabaseName,
+        ...(input.originLineageHandle ? { originLineageHandle: input.originLineageHandle } : {}),
+      };
+    }
     room.documentAdmittedThrough = maximumGeneration(
       room.documentAdmittedThrough,
       input.generation,
@@ -515,6 +527,37 @@ export class DocumentSessionAuthorityStore {
     } satisfies AccessHeadRecord);
     await transactionDone(transaction);
     return { kind: "admitted", persistenceGeneration, exactDatabaseName };
+  }
+
+  async claimBindableOrigin(input: {
+    documentId: DocumentId;
+    lineageHandle: string;
+    exactDatabaseName: string;
+  }): Promise<BindablePersistenceAuthority> {
+    const database = await this.databasePromise;
+    const transaction = database.transaction(ROOMS, "readwrite");
+    const rooms = transaction.objectStore(ROOMS);
+    const room = (await requestResult(rooms.get(input.documentId))) as RoomOrderRecord | undefined;
+    const authority = room?.persistence;
+    if (
+      !room ||
+      authority?.phase !== "bindable" ||
+      authority.exactDatabaseName !== input.exactDatabaseName ||
+      (authority.originLineageHandle !== undefined &&
+        authority.originLineageHandle !== input.lineageHandle)
+    ) {
+      transaction.abort();
+      throw new Error("Bindable persistence authority belongs to another lineage");
+    }
+    if (authority.originLineageHandle === input.lineageHandle) {
+      transaction.abort();
+      return authority;
+    }
+    const claimed = { ...authority, originLineageHandle: input.lineageHandle };
+    room.persistence = claimed;
+    rooms.put(room);
+    await transactionDone(transaction);
+    return claimed;
   }
 
   async beginLocalAdoption(

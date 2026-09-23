@@ -616,7 +616,7 @@ export class DocumentSession {
       typeof BroadcastChannel === "function"
     )
       try {
-        this.localPeers = new LocalDocumentPeers(this.document, this.persistence);
+        this.localPeers = new LocalDocumentPeers(this.document, this.persistence, this.awareness);
       } catch (error) {
         // A denied peer channel must not make successfully loaded writing unavailable.
         reportError(error);

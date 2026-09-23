@@ -101,25 +101,6 @@ export class ResourceSessionAdoptionCoordinator {
       this.abortActiveTransfer(transferId);
       return "idle";
     }
-    if (witness.generation && !this.activeTransfers.has(transferId)) {
-      const authority = await this.adoption.inspect({
-        documentId: witness.documentId,
-        lineageHandle: key.handle,
-        exactDatabaseName: witness.exactDatabaseName,
-      });
-      if (authority === "bindable") {
-        await this.adoption.recover({
-          projectId: witness.projectId,
-          documentId: witness.documentId,
-          generation: witness.generation,
-          lineageHandle: key.handle,
-        });
-        return this.finishRecordedAdoption(key, witness, witness.generation);
-      }
-      if (authority === "terminal") return "waiting";
-      if (authority === "mismatch")
-        throw new Error("Session adoption persistence authority belongs to another lineage");
-    }
     const opened = await this.content.open(
       witness.projectId,
       key,
@@ -152,6 +133,7 @@ export class ResourceSessionAdoptionCoordinator {
       this.activeTransfers.delete(encodeURIComponent(key.handle));
       return this.finishRecordedAdoption(key, witness, transfer.ownership.persistenceGeneration);
     }
+    if (transfer.kind === "waiting") return "waiting";
     this.activeTransfers.set(encodeURIComponent(key.handle), { key, handoff: transfer.handoff });
 
     const validated = await this.lock.run(key, async () => {
@@ -166,10 +148,19 @@ export class ResourceSessionAdoptionCoordinator {
       this.abortActiveTransfer(encodeURIComponent(key.handle));
       return "idle";
     }
+    const authority = await this.availability.resolve(
+      witness.projectId,
+      witness.documentId,
+      this.close.signal,
+    );
+    if (authority.kind !== "available" || authority.documentId !== witness.documentId)
+      return "waiting";
+    assertAvailabilityGeneration(authority.generation);
     const authorityState = await this.adoption.inspect({
       documentId: witness.documentId,
       lineageHandle: key.handle,
       exactDatabaseName: witness.exactDatabaseName,
+      generation: authority.generation,
     });
     if (authorityState === "terminal") {
       this.abortActiveTransfer(encodeURIComponent(key.handle));
@@ -181,15 +172,7 @@ export class ResourceSessionAdoptionCoordinator {
     }
     const pending =
       authorityState === "bindable"
-        ? witness.generation
-          ? {
-              documentId: witness.documentId,
-              transitionId: witness.transitionId,
-              lineageHandle: key.handle,
-              exactDatabaseName: witness.exactDatabaseName,
-              targetGeneration: witness.generation,
-            }
-          : null
+        ? null
         : await this.adoption.begin({
             projectId: witness.projectId,
             documentId: witness.documentId,
@@ -197,16 +180,6 @@ export class ResourceSessionAdoptionCoordinator {
             exactDatabaseName: witness.exactDatabaseName,
             transitionId: witness.transitionId,
           });
-    if (!pending) throw new Error("Bindable session adoption has no recorded generation");
-
-    const authority = await this.availability.resolve(
-      witness.projectId,
-      witness.documentId,
-      this.close.signal,
-    );
-    if (authority.kind !== "available" || authority.documentId !== witness.documentId)
-      return "waiting";
-    assertAvailabilityGeneration(authority.generation);
     const pinned = await this.lock.run(key, async () => {
       const current = exactAdoption(await this.metadata.readResource(key));
       if (!current || current.transitionId !== witness.transitionId) return "idle" as const;
@@ -215,25 +188,33 @@ export class ResourceSessionAdoptionCoordinator {
     });
     if (pinned.kind === "busy") return "blocked";
     if (pinned.value === "idle") {
-      await this.adoption.abort(pending);
+      if (pending) await this.adoption.abort(pending);
       this.abortActiveTransfer(encodeURIComponent(key.handle));
       return "idle";
     }
+    const adoptionPending = pending ?? {
+      documentId: witness.documentId,
+      transitionId: witness.transitionId,
+      lineageHandle: key.handle,
+      exactDatabaseName: witness.exactDatabaseName,
+      targetGeneration: authority.generation,
+    };
     try {
       await this.adoption.bindAndAdopt({
         projectId: witness.projectId,
         documentId: witness.documentId,
         generation: authority.generation,
         handoff: transfer.handoff,
-        pending,
+        pending: adoptionPending,
       });
     } catch (error) {
       const state = await this.adoption.inspect({
         documentId: witness.documentId,
         lineageHandle: key.handle,
         exactDatabaseName: witness.exactDatabaseName,
+        generation: authority.generation,
       });
-      if (state === "terminal" || state === "clear") {
+      if (state === "terminal" || state === "clear" || state === "mismatch") {
         this.abortActiveTransfer(encodeURIComponent(key.handle));
       }
       throw error;

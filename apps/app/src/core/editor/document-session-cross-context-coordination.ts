@@ -8,7 +8,6 @@ import type {
 import type { DocumentId, ProjectId } from "@meridian/contracts/runtime";
 import { type CrossContextLockManager, nativeLocks } from "../cross-context-locks";
 import {
-  type BindablePersistenceAuthority,
   compareAvailabilityGeneration,
   DocumentSessionAuthorityStore,
   type LocalAdoptionPendingReceipt,
@@ -140,6 +139,7 @@ class Coordination implements DocumentSessionCrossContextCoordination {
     projectId: ProjectId,
     documentId: DocumentId,
     generation: AvailabilityGeneration,
+    originLineageHandle?: string,
   ): Promise<
     LiveDocumentSessionLease & {
       persistenceGeneration: AvailabilityGeneration;
@@ -163,7 +163,12 @@ class Coordination implements DocumentSessionCrossContextCoordination {
         const acquired = await this.ensureSharedHolds(documentId, projectId);
         let durableAdmitted = false;
         try {
-          const decision = await this.store.admit({ documentId, projectId, generation });
+          const decision = await this.store.admit({
+            documentId,
+            projectId,
+            generation,
+            originLineageHandle,
+          });
           if (decision.kind === "generation-revoked") {
             throw new DocumentSessionCoordinationError(
               "generation-revoked",
@@ -258,6 +263,7 @@ class Coordination implements DocumentSessionCrossContextCoordination {
     documentId: DocumentId;
     lineageHandle: string;
     exactDatabaseName: string;
+    generation: AvailabilityGeneration;
   }): Promise<"clear" | "adopting" | "bindable" | "terminal" | "mismatch"> {
     await this.requireReady();
     return this.documentLocks.withOperation(input.documentId, async () => {
@@ -266,108 +272,21 @@ class Coordination implements DocumentSessionCrossContextCoordination {
       if (
         authority.exactDatabaseName !== input.exactDatabaseName ||
         (authority.phase === "bindable"
-          ? authority.originLineageHandle !== input.lineageHandle
+          ? authority.originLineageHandle !== undefined &&
+            authority.originLineageHandle !== input.lineageHandle
           : authority.lineageHandle !== input.lineageHandle)
       )
         return "mismatch";
-      return authority.phase === "adopting-local"
-        ? "adopting"
-        : authority.phase === "terminal-local"
-          ? "terminal"
-          : "bindable";
+      if (authority.phase === "terminal-local") return "terminal";
+      if (authority.phase === "adopting-local")
+        return authority.targetGeneration === null ||
+          compareAvailabilityGeneration(authority.targetGeneration, input.generation) === 0
+          ? "adopting"
+          : "mismatch";
+      return compareAvailabilityGeneration(authority.generation, input.generation) === 0
+        ? "bindable"
+        : "mismatch";
     });
-  }
-
-  async recoverLocalAdoption(
-    projectId: ProjectId,
-    documentId: DocumentId,
-    generation: AvailabilityGeneration,
-    lineageHandle: string,
-  ): Promise<
-    LiveDocumentSessionLease & {
-      persistenceGeneration: AvailabilityGeneration;
-      exactDatabaseName: string;
-    }
-  > {
-    await this.requireReady();
-    this.assertAdmissionOpen();
-    let recovered:
-      | (LiveDocumentSessionLease & {
-          persistenceGeneration: AvailabilityGeneration;
-          exactDatabaseName: string;
-        })
-      | undefined;
-    await this.documentLocks.withOperation(documentId, async () => {
-      const room = await this.store.readRoom(documentId);
-      const authority = room.persistence;
-      if (!authority) throw new Error("Local adoption authority is absent");
-      if (authority.phase === "terminal-local")
-        throw new Error("Local adoption authority is terminal");
-      if (
-        (authority.phase === "bindable"
-          ? authority.originLineageHandle
-          : authority.lineageHandle) !== lineageHandle
-      )
-        throw new Error("Local adoption lineage does not own persistence authority");
-      const acquired = await this.ensureSharedHolds(documentId, projectId);
-      let installed = false;
-      try {
-        const bindable: BindablePersistenceAuthority =
-          authority.phase === "adopting-local"
-            ? await (async () => {
-                const bound = await this.store.bindLocalAdoptionGeneration({
-                  documentId,
-                  transitionId: authority.transitionId,
-                  lineageHandle,
-                  exactDatabaseName: authority.exactDatabaseName,
-                  targetGeneration: generation,
-                });
-                const admitted = await this.store.finalizeLocalAdoption({
-                  ...bound,
-                  targetGeneration: generation,
-                });
-                return {
-                  phase: "bindable" as const,
-                  generation: admitted.persistenceGeneration,
-                  exactDatabaseName: admitted.exactDatabaseName,
-                  originLineageHandle: lineageHandle,
-                };
-              })()
-            : authority;
-        if (compareAvailabilityGeneration(bindable.generation, generation) !== 0)
-          throw new Error("Local adoption recovery generation is stale");
-        this.local.installSynchronously({
-          documentId,
-          projectId,
-          generation,
-          persistenceGeneration: bindable.generation,
-          exactDatabaseName: bindable.exactDatabaseName,
-        });
-        let projects = this.admissions.get(documentId);
-        if (!projects) {
-          projects = new Map();
-          this.admissions.set(documentId, projects);
-        }
-        projects.set(projectId, {
-          generation,
-          incarnation: bindable,
-          exactDatabaseName: bindable.exactDatabaseName,
-        });
-        installed = true;
-        recovered = {
-          accountId: this.accountId,
-          projectId,
-          documentId,
-          generation,
-          persistenceGeneration: bindable.generation,
-          exactDatabaseName: bindable.exactDatabaseName,
-        };
-      } finally {
-        if (!installed) await this.releaseNewHolds(documentId, projectId, acquired);
-      }
-    });
-    if (!recovered) throw new Error("Local adoption recovery did not install");
-    return recovered;
   }
 
   async commitLocalAdoption(
@@ -422,13 +341,29 @@ class Coordination implements DocumentSessionCrossContextCoordination {
           persistenceGeneration: generation,
           exactDatabaseName: pending.exactDatabaseName,
         };
-        const authority = (await this.store.readRoom(pending.documentId)).persistence;
+        let authority = (await this.store.readRoom(pending.documentId)).persistence;
+        if (
+          authority?.phase === "bindable" &&
+          authority.generation === generation &&
+          authority.exactDatabaseName === pending.exactDatabaseName &&
+          authority.originLineageHandle === undefined
+        ) {
+          authority = await this.store.claimBindableOrigin({
+            documentId: pending.documentId,
+            lineageHandle: pending.lineageHandle,
+            exactDatabaseName: pending.exactDatabaseName,
+          });
+        }
         const alreadyBindable =
           authority?.phase === "bindable" &&
           authority.generation === generation &&
           authority.exactDatabaseName === pending.exactDatabaseName &&
           authority.originLineageHandle === pending.lineageHandle;
-        if (!alreadyBindable) {
+        if (authority?.phase === "bindable" && !alreadyBindable)
+          throw new Error("Bindable local adoption authority changed before session transfer");
+        if (alreadyBindable) {
+          transfer.prepareCommit(lease);
+        } else {
           const bound = await this.store.bindLocalAdoptionGeneration({
             ...pending,
             targetGeneration: generation,
