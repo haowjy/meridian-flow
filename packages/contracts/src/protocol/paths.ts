@@ -37,10 +37,6 @@ export function apiProjectRecentDocumentsPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/recent-documents`;
 }
 
-export function apiProjectAddressPath(slug: string): string {
-  return `/api/project-addresses/${encodeURIComponent(slug)}`;
-}
-
 export function apiProjectDocumentAddressPath(
   projectId: string,
   scheme: ProjectContextTreeScheme,

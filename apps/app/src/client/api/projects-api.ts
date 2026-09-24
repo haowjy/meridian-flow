@@ -12,7 +12,6 @@ import type { Project } from "@meridian/contracts/projects";
 import type { ContextOperationReceipt, HomeChatFeedPage } from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
-  apiProjectAddressPath,
   apiProjectContextCatalogPath,
   apiProjectContextCreatePath,
   apiProjectContextCreateUntitledPath,
@@ -182,10 +181,6 @@ export function restoreWork(workId: string, init?: RequestInitOptions): Promise<
 /** Reading an owned project also completes idempotent default-package seeding. */
 export async function getProject(projectId: string, init?: RequestInitOptions): Promise<Project> {
   return getJson(urlFor(apiProjectPath(projectId), init), { headers: init?.headers });
-}
-
-export async function getProjectBySlug(slug: string, init?: RequestInitOptions): Promise<Project> {
-  return getJson(urlFor(apiProjectAddressPath(slug), init), { headers: init?.headers });
 }
 
 export async function getProjectDocumentAddress(

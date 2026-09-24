@@ -29,10 +29,10 @@ Deferred implementation work is tracked in [TODO](TODO).
 
 ### Route ownership is the navigation model
 
-Phone consumes the same readable address as desktop. The route parent owns
+Phone consumes the same UUID project address as desktop. The route parent owns
 navigation; mobile leaves call the typed handlers passed through `ProjectViewProps`
 and never construct paths or query strings. Primary destinations live beneath
-`/p/<project-slug>` (`/chat/<chat-slug>`, `/works`,
+`/p/<project-id>` (`/chat/<chat-uuid>`, `/works`,
 `/work/<work-slug>`, `/editor`, and context browse/document paths). Context
 paths carry scheme and location in path segments; Work-scoped paths carry their
 Work slug in the path. `chat`, `work`, `settings`, and `results` are the only

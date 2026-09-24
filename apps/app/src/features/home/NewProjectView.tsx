@@ -19,7 +19,7 @@ export function NewProjectView() {
   const [submittedTitle, setSubmittedTitle] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
-  const [createdSlug, setCreatedSlug] = useState<string | null>(null);
+  const [createdProjectId, setCreatedProjectId] = useState<string | null>(null);
 
   useEffect(() => {
     active.current = true;
@@ -34,19 +34,19 @@ export function NewProjectView() {
     setBusy(true);
     setError(false);
     try {
-      let slug = createdSlug;
-      if (!slug) {
+      let createdId = createdProjectId;
+      if (!createdId) {
         const name = submittedTitle ?? title.trim();
         setSubmittedTitle(name);
         const project = await createProject({ id: projectId, title: name }).catch(() =>
           getProject(projectId),
         );
         ensureProject(project);
-        slug = project.slug;
-        if (active.current) setCreatedSlug(slug);
+        createdId = project.id;
+        if (active.current) setCreatedProjectId(createdId);
       }
       if (active.current && router.history.location.pathname === "/projects/new") {
-        await navigate({ to: "/p/$projectSlug/$", params: { projectSlug: slug, _splat: "" } });
+        await navigate({ to: "/p/$projectId/$", params: { projectId: createdId, _splat: "" } });
       }
     } catch {
       if (active.current) {
@@ -98,7 +98,7 @@ export function NewProjectView() {
             />
             {error && (
               <p className="mt-3 text-sm text-destructive" role="alert">
-                {createdSlug ? (
+                {createdProjectId ? (
                   <Trans>Project created, but it couldn’t open. Try again.</Trans>
                 ) : (
                   <Trans>Project wasn’t confirmed. Retry creation.</Trans>
@@ -113,7 +113,7 @@ export function NewProjectView() {
             >
               {busy ? (
                 <Trans>Creating project…</Trans>
-              ) : createdSlug ? (
+              ) : createdProjectId ? (
                 <Trans>Open project</Trans>
               ) : (
                 <Trans>Create project</Trans>

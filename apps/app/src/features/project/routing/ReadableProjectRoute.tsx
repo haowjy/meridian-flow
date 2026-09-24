@@ -131,7 +131,7 @@ export function ReadableProjectRoute({
     parsed.kind === "valid"
       ? parsed.address
       : {
-          projectSlug: project.slug,
+          projectId: project.id,
           destination: { kind: "chat-index" },
           chat: NONE,
           work: NONE,

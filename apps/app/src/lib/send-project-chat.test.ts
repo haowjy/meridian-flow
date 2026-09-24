@@ -42,8 +42,7 @@ function send(overrides: Partial<Omit<SendProjectChatArgs, "threadActions" | "re
   const replace = vi.fn<(href: string) => void>();
   const result = sendProjectChat({
     accountId: ACCOUNT,
-    projectId: "project-1",
-    projectSlug: "serial",
+    projectId: "550e8400-e29b-41d4-a716-446655440000",
     text: "Draft the fight scene tonight",
     submissionId: "sub-1",
     agent,
@@ -75,7 +74,7 @@ describe("sendProjectChat", () => {
     const { result, threadActions, replace } = send();
 
     expect(result?.threadId).toBe(uuid);
-    expect(replace).toHaveBeenCalledWith(`/p/serial/chat/${uuid}`);
+    expect(replace).toHaveBeenCalledWith(`/p/550e8400-e29b-41d4-a716-446655440000/chat/${uuid}`);
     expect(threadActions.calls).toEqual([
       "ensureThread",
       "markPendingCreation",
@@ -122,8 +121,11 @@ describe("sendProjectChat", () => {
   });
 
   it("builds a uuid chat address", () => {
-    expect(inflightChatHref("serial", "550e8400-e29b-41d4-a716-446655440000")).toBe(
-      "/p/serial/chat/550e8400-e29b-41d4-a716-446655440000",
-    );
+    expect(
+      inflightChatHref(
+        "550e8400-e29b-41d4-a716-446655440000",
+        "550e8400-e29b-41d4-a716-446655440000",
+      ),
+    ).toBe("/p/550e8400-e29b-41d4-a716-446655440000/chat/550e8400-e29b-41d4-a716-446655440000");
   });
 });

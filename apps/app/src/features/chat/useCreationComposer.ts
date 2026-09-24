@@ -32,7 +32,6 @@ export function useCreationComposer(projectId: string) {
         sendProjectChat({
           accountId,
           projectId,
-          projectSlug: parsed.address.projectSlug,
           text: submission.text,
           submissionId: submission.submissionId,
           activatedSkillSlugs: submission.activatedSkillSlugs,

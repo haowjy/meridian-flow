@@ -141,7 +141,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
       await expect(repo.listForProject(PROJECT, userId(OTHER))).resolves.toEqual([]);
       await expect(repo.listForProject(PROJECT, userId(USER))).resolves.toMatchObject([
-        { documentId: OWNED, projectSlug: "serial" },
+        { documentId: OWNED, projectId: PROJECT },
       ]);
     });
 
@@ -157,7 +157,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           // A work-scoped scratch document carries its work slug.
           expect.objectContaining({
             documentId: SCRATCH,
-            projectSlug: "serial",
+            projectId: PROJECT,
             scheme: "scratch",
             path: "/scene.md",
             workSlug: "draft",
@@ -165,7 +165,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           // No Work resolves to a null work slug.
           expect.objectContaining({
             documentId: NO_WORK_DOC,
-            projectSlug: "serial",
+            projectId: PROJECT,
             scheme: "scratch",
             path: "/aside.md",
             workSlug: null,
@@ -177,7 +177,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(repo.listForProject(PERSONAL, userId(USER))).resolves.toEqual([
         expect.objectContaining({
           documentId: PERSONAL_DOC,
-          projectSlug: "personal",
+          projectId: PERSONAL,
           scheme: "user",
           path: "/notes.md",
           workSlug: null,
