@@ -20,6 +20,7 @@
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
 ### Fixed
 
+- Keep the inline awaiting-run status current as inbox state changes, serialize delayed queue notifications with adoption and acknowledgement, and swallow run-settlement projection failures at the lock/commit boundary.
 - Classify durable inbox delivery as awaiting-run, waiting, or consuming from one live-lease/adopted-batch projection; show only waiting writer messages in the queued tray.
 - Unified document reads on the explicit `write(command: "read")` command; `edit` policy now gates only document and Work mutations.
 - Distinguish malformed command arguments from disabled tool commands, and state the required `read` invocation explicitly in model instructions.

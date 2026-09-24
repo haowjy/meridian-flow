@@ -51,7 +51,6 @@ export {
 export { createOrchestrator } from "./loop/orchestrator.js";
 export {
   createNotifyingThreadedInbox,
-  pendingInboxChangedEvent,
   projectPendingInbox,
   readPendingInbox,
 } from "./loop/pending-inbox.js";

@@ -688,23 +688,23 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const runStarter = createRunStarter(runner);
   const readPending = async (threadId: ThreadId) => readPendingInbox(inbox, threadId);
   refreshPendingProjection = async (threadId) => {
-    await threadLock.withThreadLock(threadId, async () => {
-      try {
+    try {
+      await threadLock.withThreadLock(threadId, async () => {
         await threadEventHub.appendEvent(threadId, {
           type: "inbox.changed",
           threadId,
           pending: await readPending(threadId),
         });
-      } catch (error) {
-        emitEvent(ports.eventSink, {
-          level: "warn",
-          source: "runtime.inbox",
-          name: "inbox.changed.append_failed",
-          correlation: { threadId },
-          payload: { threadId, ...unknownToEventPayload(error) },
-        });
-      }
-    });
+      });
+    } catch (error) {
+      emitEvent(ports.eventSink, {
+        level: "warn",
+        source: "runtime.inbox",
+        name: "inbox.changed.append_failed",
+        correlation: { threadId },
+        payload: { threadId, ...unknownToEventPayload(error) },
+      });
+    }
   };
   // Decorate the producer's locked enqueue with the post-commit `inbox.changed`
   // signal, so a queued message reaches the tray before delivery. Consumers take

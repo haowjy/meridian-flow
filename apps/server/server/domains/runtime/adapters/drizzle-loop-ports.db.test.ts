@@ -510,6 +510,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       it("projects exact live-run adoption before ack and invalidates it on release", async () => {
         const inbox = createDrizzleInbox(db);
+        const { createDrizzleEventJournalReader } = await import(
+          "../../threads/adapters/drizzle/event-reader.js"
+        );
+        const { createDrizzleEventJournalWriter } = await import(
+          "../../threads/adapters/drizzle/event-writer.js"
+        );
+        const { readPendingInbox } = await import("../loop/pending-inbox.js");
+        const journal = createDrizzleEventJournalWriter(db);
+        const journalReader = createDrizzleEventJournalReader(db);
         await db.insert(schema.turns).values({
           id: ASSISTANT_TURN,
           threadId: THREAD_A,
@@ -522,7 +531,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         const authority = createDrizzleRunAuthority(db, { holderId: "holder-adoption" });
         const lease = required(await authority.acquire(THREAD_A, "run-adoption"));
 
-        await authority.bindTurn(lease, ASSISTANT_TURN, [f.id]);
+        await runInDrizzleTransaction(db, async () => {
+          await authority.bindTurn(lease, ASSISTANT_TURN, [f.id]);
+          await journal.appendEvent(THREAD_A, {
+            type: "inbox.changed",
+            threadId: THREAD_A,
+            pending: await readPendingInbox(inbox, THREAD_A),
+          });
+        });
         let projection = await inbox.readPendingProjection(THREAD_A);
         expect(
           projectPendingInbox(projection.messages, projection.run).items.map((item) => [
@@ -535,29 +551,70 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         ]);
         expect(projection.messages.every((message) => message.deliveredAt === null)).toBe(true);
 
-        await authority.setInboxConsumption(lease, [g.id]);
+        await runInDrizzleTransaction(db, async () => {
+          await inbox.ack(THREAD_A, [f.id]);
+          await journal.appendEvent(THREAD_A, {
+            type: "inbox.changed",
+            threadId: THREAD_A,
+            pending: await readPendingInbox(inbox, THREAD_A),
+          });
+        });
+        await runInDrizzleTransaction(db, async () => {
+          await authority.setInboxConsumption(lease, [g.id]);
+          await journal.appendEvent(THREAD_A, {
+            type: "inbox.changed",
+            threadId: THREAD_A,
+            pending: await readPendingInbox(inbox, THREAD_A),
+          });
+        });
         projection = await inbox.readPendingProjection(THREAD_A);
         expect(
           projectPendingInbox(projection.messages, projection.run).items.map((item) => [
             item.id,
             item.deliveryState,
           ]),
-        ).toEqual([
-          [f.id, "waiting"],
-          [g.id, "consuming"],
-        ]);
+        ).toEqual([[g.id, "consuming"]]);
         expect(
           (await db.select().from(schema.turns).where(eq(schema.turns.id, ASSISTANT_TURN)))[0]
             .metadata,
         ).toMatchObject({ retained: "value", inboxConsumption: { messageIds: [g.id] } });
 
+        await runInDrizzleTransaction(db, async () => {
+          await inbox.ack(THREAD_A, [g.id]);
+          await journal.appendEvent(THREAD_A, {
+            type: "inbox.changed",
+            threadId: THREAD_A,
+            pending: await readPendingInbox(inbox, THREAD_A),
+          });
+        });
         await authority.release(lease);
+        await journal.appendEvent(THREAD_A, {
+          type: "inbox.changed",
+          threadId: THREAD_A,
+          pending: await readPendingInbox(inbox, THREAD_A),
+        });
         projection = await inbox.readPendingProjection(THREAD_A);
         expect(
           projectPendingInbox(projection.messages, projection.run).items.map(
             (item) => item.deliveryState,
           ),
-        ).toEqual(["awaiting_run", "awaiting_run"]);
+        ).toEqual([]);
+        const events = await journalReader.listByType(THREAD_A, "inbox.changed");
+        expect(
+          events.map((event) => {
+            if (event.payload.type !== "inbox.changed") throw new Error("expected inbox.changed");
+            return event.payload.pending.items.map((item) => [item.id, item.deliveryState]);
+          }),
+        ).toEqual([
+          [
+            [f.id, "consuming"],
+            [g.id, "waiting"],
+          ],
+          [[g.id, "waiting"]],
+          [[g.id, "consuming"]],
+          [],
+          [],
+        ]);
       });
 
       it("reads staged bind and ack state from the publishing transaction and rolls it back", async () => {

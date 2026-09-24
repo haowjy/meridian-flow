@@ -34,6 +34,12 @@ if (!RUN) {
     const { createThreadedInbox } = await import("../loop/threaded-inbox.js");
     const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
     const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
+    const { createNotifyingThreadedInbox, projectPendingInbox } = await import(
+      "../loop/pending-inbox.js"
+    );
+    const { runAfterDrizzleCommit, runInDrizzleTransaction, runInDrizzleSavepoint } = await import(
+      "../../../shared/drizzle-transaction.js"
+    );
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL disappeared after the DB test gate");
     const firstDb = createDb(url, { max: 2 });
@@ -231,48 +237,84 @@ if (!RUN) {
         journalReader: createDrizzleEventJournalReader(firstDb),
         eventSink: createNoopEventSink(),
       });
+      const wakeCallbacks: string[] = [];
+      const notifyCallbacks: string[] = [];
+      const inbox = createDrizzleInbox(firstDb);
+      const rawThreadedInbox = createThreadedInbox({
+        inbox,
+        threadLock: createDrizzleThreadLock(firstDb),
+        runStarter: {
+          async start() {
+            wakeCallbacks.push("wake");
+          },
+        },
+        schedulePostCommit: (task) => {
+          runAfterDrizzleCommit(task);
+        },
+      });
+      const threadedInbox = createNotifyingThreadedInbox({
+        threadedInbox: rawThreadedInbox,
+        eventWriter: hub,
+        readPending: async (threadId) => projectPendingInbox(await inbox.listPending(threadId)),
+        schedulePostCommit: (task) => {
+          runAfterDrizzleCommit(async () => {
+            notifyCallbacks.push("notified");
+            await task();
+          });
+        },
+        eventSink: createNoopEventSink(),
+      });
+      const reserved = await records.reserve({
+        actorUserId: USER as never,
+        threadId: THREAD,
+        submissionId: "winner-rollback",
+        fingerprint: "fingerprint",
+        claimExpiresAt: new Date(Date.now() + 60_000),
+      });
+      expect(reserved.kind).toBe("reserved");
+      await records.reject({
+        threadId: THREAD,
+        submissionId: "winner-rollback",
+        fingerprint: "fingerprint",
+        code: "recovery_no_committed_turn",
+      });
+
       const producer = createWriterTurnProducer({
-        persistence: { repos, eventWriter: hub },
+        persistence: {
+          repos,
+          eventWriter: hub,
+          savepoint: (operation) => runInDrizzleSavepoint(firstDb, operation),
+        },
         hub,
         runner: { getRunningTurn: () => null },
         turns: repos.turns,
-        threadedInbox: createThreadedInbox({
-          inbox: createDrizzleInbox(firstDb),
-          threadLock: createDrizzleThreadLock(firstDb),
-          runStarter: { async start() {} },
-          schedulePostCommit: (task) => void task(),
-        }),
+        threadedInbox,
         workContextDelivery: { async beforeTurn() {} },
         records: {
           ...records,
-          async accept() {
-            return {
-              kind: "winner" as const,
-              record: {
-                state: "rejected" as const,
-                fingerprint: null,
-                code: "recovery_no_committed_turn",
-              },
-            };
+          async accept(input) {
+            return records.accept(input);
           },
         },
         consumeUploads: async () => undefined,
         attachDocument: async () => undefined,
       });
 
-      const result = await producer.enqueue({
-        admission: {
-          actorUserId: USER as never,
-          threadId: THREAD,
-          submissionId: "winner-rollback",
-          text: "late",
+      const result = await runInDrizzleTransaction(firstDb, () =>
+        producer.enqueue({
+          admission: {
+            actorUserId: USER as never,
+            threadId: THREAD,
+            submissionId: "winner-rollback",
+            text: "late",
+            blocks: [{ type: "text" as const, text: "late" }],
+            references: [],
+          },
+          fingerprint: "fingerprint",
           blocks: [{ type: "text" as const, text: "late" }],
           references: [],
-        },
-        fingerprint: "fingerprint",
-        blocks: [{ type: "text" as const, text: "late" }],
-        references: [],
-      });
+        }),
+      );
 
       expect(result).toMatchObject({ kind: "rejected", code: "recovery_no_committed_turn" });
       const turns = (await firstDb.select().from(schema.turns)).filter(
@@ -284,6 +326,12 @@ if (!RUN) {
       );
       expect(inboxRows).toHaveLength(0);
       expect(await firstDb.select().from(schema.eventJournal)).toHaveLength(0);
+      expect(await records.lookup(THREAD, "winner-rollback")).toMatchObject({
+        state: "rejected",
+        code: "recovery_no_committed_turn",
+      });
+      expect(wakeCallbacks).toEqual([]);
+      expect(notifyCallbacks).toEqual([]);
     });
 
     it("persists ordered occurrences, replays their actual sparse cursor, and rolls the whole accepted settlement back together", async () => {

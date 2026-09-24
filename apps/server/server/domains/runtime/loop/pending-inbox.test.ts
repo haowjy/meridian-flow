@@ -1,7 +1,7 @@
 /**
  * The pending-inbox read model and its enqueue signal. `projectPendingInbox`
  * is the one durable-rows-to-tray transform; the notifying inbox decorates the
- * producer enqueue with a best-effort, per-thread-serialized `inbox.changed`
+ * producer enqueue with a best-effort, thread-lock-serialized `inbox.changed`
  * append after commit. A failed append never fails the producer.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
@@ -183,12 +183,29 @@ describe("createNotifyingThreadedInbox", () => {
     );
   });
 
-  it("a delayed enqueue notifier reads current state after adoption and ack", async () => {
+  it("serializes a delayed notifier read/append against adoption and ack", async () => {
     const { writer, appended } = recordingWriter();
     const inbox = createInMemoryInbox();
     const scheduled: Array<() => Promise<void>> = [];
     const threadLock = createInMemoryThreadLock();
     let run: { turnId: string | null; messageIds: string[] } | null = null;
+    let signalReadStarted!: () => void;
+    let releaseRead!: () => void;
+    const readStarted = new Promise<void>((resolve) => {
+      signalReadStarted = resolve;
+    });
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    const readPending = async (threadId: ThreadId) => {
+      const projection = await inbox.readPendingProjection(threadId);
+      const pending = projectPendingInbox(projection.messages, run);
+      if (run === null) {
+        signalReadStarted();
+        await readGate;
+      }
+      return pending;
+    };
     const threaded = createNotifyingThreadedInbox({
       threadedInbox: createThreadedInbox({
         inbox,
@@ -197,20 +214,34 @@ describe("createNotifyingThreadedInbox", () => {
         schedulePostCommit: (task) => scheduled.push(task),
       }),
       eventWriter: writer,
-      readPending: async (threadId) => {
-        const projection = await inbox.readPendingProjection(threadId);
-        return projectPendingInbox(projection.messages, run);
-      },
+      readPending,
       schedulePostCommit: (task) => scheduled.push(task),
       eventSink: createInMemoryEventSink(),
     });
 
     const queued = await threaded.enqueue(message("delayed-notifier"));
-    run = { turnId: "assistant-1", messageIds: [queued.id] };
-    await inbox.ack(THREAD_A, [queued.id]);
-    await Promise.all(scheduled.map((task) => task()));
+    const notifier = Promise.all(scheduled.map((task) => task()));
+    await readStarted;
 
-    expect(appended).toHaveLength(1);
-    expect(appended[0]).toMatchObject({ type: "inbox.changed", pending: { items: [] } });
+    let transitionFinished = false;
+    const transition = threadLock.withThreadLock(THREAD_A, async () => {
+      run = { turnId: "assistant-1", messageIds: [queued.id] };
+      await inbox.ack(THREAD_A, [queued.id]);
+      const pending = await readPending(THREAD_A);
+      await writer.appendEvent(THREAD_A, { type: "inbox.changed", threadId: THREAD_A, pending });
+      transitionFinished = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(transitionFinished).toBe(false);
+
+    releaseRead();
+    await Promise.all([notifier, transition]);
+
+    expect(appended).toHaveLength(2);
+    expect(appended[0]).toMatchObject({
+      type: "inbox.changed",
+      pending: { items: [{ id: queued.id, deliveryState: "awaiting_run" }] },
+    });
+    expect(appended[1]).toMatchObject({ type: "inbox.changed", pending: { items: [] } });
   });
 });

@@ -179,6 +179,7 @@ export function TurnList({
       navigateToChange,
       onRespondToInterrupt,
       submissionRecoveryByTurnId,
+      awaitingRunTurnIds,
       threadId,
     ],
   );
