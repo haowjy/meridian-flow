@@ -54,17 +54,16 @@ export function RenameProjectDialog({
               <Trans>Rename project</Trans>
             </DialogTitle>
           </DialogHeader>
-          <label htmlFor="project-title" className="mt-4 grid gap-1.5 text-sm font-medium">
-            <Trans>Project title</Trans>
-            <Input
-              id="project-title"
-              autoFocus
-              value={value}
-              disabled={pending}
-              onChange={(event) => setValue(event.target.value)}
-              aria-describedby={error ? "project-title-error" : undefined}
-            />
-          </label>
+          <Input
+            id="project-title"
+            className="mt-4"
+            aria-label={t`Project title`}
+            autoFocus
+            value={value}
+            disabled={pending}
+            onChange={(event) => setValue(event.target.value)}
+            aria-describedby={error ? "project-title-error" : undefined}
+          />
           {error ? (
             <p id="project-title-error" role="alert" className="mt-3 text-sm text-destructive">
               {t`Project title could not be saved. Try again.`}
