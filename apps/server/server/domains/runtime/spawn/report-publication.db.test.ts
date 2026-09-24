@@ -1,6 +1,7 @@
 /** PostgreSQL B and orphan recovery: exact parent publication after durable terminal A. */
 import { buildInvocationCardContent } from "@meridian/contracts/components";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
+import type { JsonValue } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 const runDb = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -17,6 +18,7 @@ const ids = {
   root: "00000000-0000-4000-8000-000000000be9" as ThreadId,
   rootTurn: "00000000-0000-4000-8000-000000000bea" as TurnId,
   nextExecution: "00000000-0000-4000-8000-000000000beb" as TurnId,
+  repairExecution: "00000000-0000-4000-8000-000000000bec" as TurnId,
 };
 
 if (!runDb || !databaseUrl) describe.skip("report publication and recovery (postgres)", () => {});
@@ -45,6 +47,7 @@ else
     const { bindAdmittedInvocationCard } = await import("./spawn-transcript.js");
     const { invocationCardProps } = await import("./spawn-output.js");
     const { createOrphanReportRepair } = await import("./orphan-report-repair.js");
+    const { readThreadReport } = await import("./read-thread-report.js");
 
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
     const db = createDb(databaseUrl, { max: 6 });
@@ -215,6 +218,221 @@ else
       expect(
         (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,
       ).toBe("published");
+    });
+
+    it("preserves JSON-text scalar payloads through terminal A, orphan repair, and exact report reads", async () => {
+      const payload = '{"nested":[1,true,null,"text"]}';
+      await repos.executionReports.captureOnce(ids.child, ids.execution, "return-json-text", {
+        summary: "captured scalar",
+        payload,
+      });
+      await finalizeExecution(
+        { repos, eventWriter },
+        {
+          threadId: ids.child,
+          assistantTurnId: ids.execution,
+          cause: { kind: "success", finishReason: "end_turn" },
+        },
+      );
+      const freshRepos = createDrizzleRepositoriesForTest(db);
+      const finalized = await freshRepos.executionReports.findByExecution(ids.child, ids.execution);
+      expect(finalized?.payload).toBe(payload);
+      expect(
+        await readThreadReport({
+          callerThreadId: ids.parent,
+          ref: "p1",
+          execution: ids.execution,
+          repos: freshRepos,
+          runningTurn: {
+            async readRunningTurnId() {
+              return null;
+            },
+          },
+        }),
+      ).toMatchObject({ payload, summary: "captured scalar", outcome: "succeeded" });
+      const terminal = {
+        childThreadId: ids.child,
+        assistantTurnId: ids.execution,
+        outcome: "succeeded" as const,
+        reason: null,
+        source: "return_result" as const,
+        summary: "captured scalar",
+        payload,
+        costMillicredits: 0,
+      };
+      expect(await freshRepos.executionReports.finalizeOnce(terminal)).toMatchObject({ payload });
+      await expect(
+        freshRepos.executionReports.finalizeOnce({
+          ...terminal,
+          payload: { nested: [1, true, null, "text"] },
+        }),
+      ).rejects.toThrow();
+      expect(await publisher.publish(ids.child, ids.execution)).toBe("published");
+      expect(await publisher.publish(ids.child, ids.execution)).toBe("already");
+
+      await db.insert(schema.turns).values({
+        id: ids.nextExecution,
+        threadId: ids.child,
+        parentTurnId: ids.childUserTurn,
+        role: "assistant",
+        status: "streaming",
+      });
+      const objectPayload = { nested: [1, true, null, "text"] };
+      await repos.executionReports.admit({
+        childThreadId: ids.child,
+        assistantTurnId: ids.nextExecution,
+        handle: "p1",
+        origin: "thread_run",
+        deliveryMode: "none",
+        callerThreadId: null,
+        callerTurnId: null,
+        toolCallId: null,
+        cardBlockId: null,
+      });
+      await repos.executionReports.captureOnce(ids.child, ids.nextExecution, "return-object", {
+        summary: "object control",
+        payload: objectPayload,
+      });
+      await finalizeExecution(
+        { repos, eventWriter },
+        {
+          threadId: ids.child,
+          assistantTurnId: ids.nextExecution,
+          cause: { kind: "success", finishReason: "end_turn" },
+        },
+      );
+      expect(
+        (await freshRepos.executionReports.findByExecution(ids.child, ids.nextExecution))?.payload,
+      ).toEqual(objectPayload);
+      expect(
+        await readThreadReport({
+          callerThreadId: ids.parent,
+          ref: "p1",
+          execution: ids.nextExecution,
+          repos: freshRepos,
+          runningTurn: {
+            async readRunningTurnId() {
+              return null;
+            },
+          },
+        }),
+      ).toHaveProperty("payload", objectPayload);
+
+      await db.insert(schema.turns).values({
+        id: ids.repairExecution,
+        threadId: ids.child,
+        parentTurnId: ids.childUserTurn,
+        role: "assistant",
+        status: "streaming",
+      });
+      await repos.executionReports.admit({
+        childThreadId: ids.child,
+        assistantTurnId: ids.repairExecution,
+        handle: "p1",
+        origin: "spawn",
+        deliveryMode: "background_notification",
+        callerThreadId: ids.parent,
+        callerTurnId: ids.parentTurn,
+        toolCallId: "spawn-repair",
+        cardBlockId: null,
+      });
+      await repos.executionReports.captureOnce(ids.child, ids.repairExecution, "return-repair", {
+        summary: "orphan scalar",
+        payload,
+      });
+      const authority = createDrizzleRunAuthority(db, { holderId: "json-roundtrip-repair" });
+      const repair = createOrphanReportRepair({
+        repos,
+        eventWriter,
+        authority,
+        threadLock,
+        publisher,
+        eventSink,
+      });
+      expect(await repair.sweep(1)).toBe(1);
+      const repaired = await freshRepos.executionReports.findByExecution(
+        ids.child,
+        ids.repairExecution,
+      );
+      expect(repaired).toMatchObject({
+        outcome: "failed",
+        reason: "orphaned",
+        payload,
+        publication: "published",
+      });
+      expect(await publisher.publish(ids.child, ids.repairExecution)).toBe("already");
+    });
+
+    it("round-trips every JsonValue payload type without changing scalar-string meaning", async () => {
+      const values: Array<JsonValue | undefined> = [
+        undefined,
+        "ordinary text",
+        '{"x":1}',
+        "[1,2]",
+        "123",
+        "true",
+        "null",
+        '"inner string"',
+        { x: 1 },
+        [1, 2],
+        123,
+        true,
+        null,
+      ];
+      for (const [index, payload] of values.entries()) {
+        const execution = crypto.randomUUID() as TurnId;
+        await db.insert(schema.turns).values({
+          id: execution,
+          threadId: ids.child,
+          parentTurnId: ids.childUserTurn,
+          role: "assistant",
+          status: "complete",
+        });
+        await repos.executionReports.admit({
+          childThreadId: ids.child,
+          assistantTurnId: execution,
+          handle: "p1",
+          origin: "thread_run",
+          deliveryMode: "none",
+          callerThreadId: null,
+          callerTurnId: null,
+          toolCallId: null,
+          cardBlockId: null,
+        });
+        const terminal = {
+          childThreadId: ids.child,
+          assistantTurnId: execution,
+          outcome: "succeeded" as const,
+          reason: null,
+          source: "return_result" as const,
+          summary: `payload ${index}`,
+          ...(payload !== undefined ? { payload } : {}),
+        };
+        await repos.executionReports.finalizeOnce(terminal);
+        const saved = await repos.executionReports.findByExecution(ids.child, execution);
+        expect(saved?.payload).toEqual(payload);
+        const result = await readThreadReport({
+          callerThreadId: ids.parent,
+          ref: "p1",
+          execution,
+          repos,
+          runningTurn: {
+            async readRunningTurnId() {
+              return null;
+            },
+          },
+        });
+        if (payload === undefined) expect(result).not.toHaveProperty("payload");
+        else expect(result).toHaveProperty("payload", payload);
+        await expect(repos.executionReports.finalizeOnce(terminal)).resolves.toMatchObject(
+          payload === undefined ? { summary: `payload ${index}` } : { payload },
+        );
+        if (payload === undefined) {
+          await expect(
+            repos.executionReports.finalizeOnce({ ...terminal, payload: null }),
+          ).rejects.toThrow();
+        }
+      }
     });
 
     it("does not regress terminal status when admission binding arrives after publication", async () => {

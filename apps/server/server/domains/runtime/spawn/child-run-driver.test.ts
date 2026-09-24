@@ -36,7 +36,6 @@ function saved(overrides: Partial<SavedExecutionReport> = {}): SavedExecutionRep
     reason: null,
     source: "final_assistant",
     summary: "final public text",
-    payload: null,
     artifacts: null,
     costMillicredits: 42,
     terminalAt: "2026-01-01T00:00:00.000Z",

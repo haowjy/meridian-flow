@@ -44,7 +44,7 @@ export async function readThreadReport(input: {
       outcome: record.outcome,
       source: record.source,
       summary: record.summary,
-      ...(record.payload !== null ? { payload: record.payload } : {}),
+      ...(record.payload !== undefined ? { payload: record.payload } : {}),
       ...(record.artifacts !== null ? { artifacts: record.artifacts } : {}),
       partial: record.outcome !== "succeeded",
       reason: record.reason,

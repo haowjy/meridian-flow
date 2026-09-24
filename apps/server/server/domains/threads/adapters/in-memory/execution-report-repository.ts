@@ -12,7 +12,7 @@ function canonical(value: unknown): string {
     const fields = Object.entries(value).sort(([a], [b]) => a.localeCompare(b));
     return `{${fields.map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(",")}}`;
   }
-  return JSON.stringify(value);
+  return JSON.stringify(value) ?? "undefined";
 }
 
 export function createInMemoryExecutionReportRepository(
@@ -69,7 +69,6 @@ export function createInMemoryExecutionReportRepository(
         reason: null,
         source: null,
         summary: null,
-        payload: null,
         artifacts: null,
         costMillicredits: null,
         terminalAt: null,
@@ -108,7 +107,7 @@ export function createInMemoryExecutionReportRepository(
         reason: input.reason,
         source: input.source,
         summary: input.summary,
-        payload: input.payload ?? null,
+        payload: input.payload,
         artifacts: input.artifacts ?? null,
         costMillicredits: input.costMillicredits ?? null,
       };

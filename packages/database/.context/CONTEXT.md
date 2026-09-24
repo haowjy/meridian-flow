@@ -49,6 +49,12 @@ does not erase the child's output. Soft deletion is enforced by live
 repository reads, not destructive report mutation. Migration history remains
 additive; the initial table has no backfill or compatibility path.
 
+The public `payload` is an exact optional `JsonValue`: omitted content is SQL
+`NULL`, while JSON `null` remains a present value. The Drizzle report adapter
+reads `payload::text` and parses that database representation once; do not use
+the driver-decoded JSONB string with Drizzle's second JSON parse, which changes
+JSON-looking scalar strings into their parsed values.
+
 ### Thread-domain rollup columns
 
 The `threads`, `turns`, `model_responses`, and `turn_blocks` tables persist the

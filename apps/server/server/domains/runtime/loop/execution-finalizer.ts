@@ -37,7 +37,7 @@ function publicText(blocks: Block[], responseId: string | null): string {
 
 function savedCapture(report: SavedExecutionReport): {
   summary: string;
-  payload: SavedExecutionReport["payload"];
+  payload?: SavedExecutionReport["payload"];
   artifacts: SavedExecutionReport["artifacts"];
 } | null {
   const value = report.capture;
@@ -45,7 +45,7 @@ function savedCapture(report: SavedExecutionReport): {
   if (typeof value.summary !== "string") throw new Error("Invalid admitted return_result capture");
   return {
     summary: value.summary,
-    payload: "payload" in value ? (value.payload ?? null) : null,
+    ...("payload" in value ? { payload: value.payload as SavedExecutionReport["payload"] } : {}),
     artifacts: "artifacts" in value ? (value.artifacts as SavedExecutionReport["artifacts"]) : null,
   };
 }
@@ -152,7 +152,7 @@ export async function finalizeExecution(
           reason: input.cause.kind === "success" ? null : input.cause.reason,
           source,
           summary: capture?.summary ?? text,
-          payload: capture?.payload ?? null,
+          ...(capture && capture.payload !== undefined ? { payload: capture.payload } : {}),
           artifacts: capture?.artifacts ?? null,
           costMillicredits: Number(cost),
         });

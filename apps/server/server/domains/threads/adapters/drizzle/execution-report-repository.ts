@@ -3,7 +3,7 @@
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
 import type { SavedExecutionReport } from "@meridian/contracts/spawn";
 import * as schema from "@meridian/database/schema";
-import { and, asc, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, gt, isNull, or, sql } from "drizzle-orm";
 import { assertExecutionReportAdmission } from "../../domain/execution-report-admission.js";
 import { ExecutionReportConflictError } from "../../domain/execution-report-conflict.js";
 import type {
@@ -13,7 +13,13 @@ import type {
 } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
-function map(row: typeof schema.threadExecutionReports.$inferSelect): SavedExecutionReport {
+type ExecutionReportRow = Omit<typeof schema.threadExecutionReports.$inferSelect, "payload"> & {
+  payload: string | null;
+};
+
+function map(row: ExecutionReportRow): SavedExecutionReport {
+  // Read PostgreSQL's serialization so the driver and Drizzle cannot reinterpret
+  // a JSON scalar string as the JSON text it happens to contain.
   return {
     childThreadId: row.childThreadId,
     assistantTurnId: row.assistantTurnId,
@@ -32,7 +38,7 @@ function map(row: typeof schema.threadExecutionReports.$inferSelect): SavedExecu
     reason: row.reason,
     source: row.source as SavedExecutionReport["source"],
     summary: row.summary,
-    payload: row.payload,
+    ...(row.payload !== null ? { payload: JSON.parse(row.payload) } : {}),
     artifacts: row.artifacts as ArtifactRef[] | null,
     costMillicredits: row.costMillicredits,
     terminalAt: row.terminalAt?.toISOString() ?? null,
@@ -52,9 +58,13 @@ function canonical(value: unknown): string {
 
 export function createDrizzleExecutionReportRepository(db: DrizzleDb): ExecutionReportRepository {
   const table = schema.threadExecutionReports;
+  const reportSelection = {
+    ...getTableColumns(table),
+    payload: sql<string | null>`${table.payload}::text`,
+  };
   const find = async (childThreadId: string, assistantTurnId: string) => {
     const [row] = await currentDrizzleDb(db)
-      .select()
+      .select(reportSelection)
       .from(table)
       .where(
         and(
@@ -156,7 +166,7 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
             isNull(table.outcome),
           ),
         )
-        .returning();
+        .returning(reportSelection);
       const existing = row ?? (await find(childThreadId, assistantTurnId));
       if (!existing) throw new Error("Execution report was not admitted");
       if (
@@ -172,7 +182,12 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         reason: input.reason,
         source: input.source,
         summary: input.summary,
-        payload: input.payload ?? null,
+        payload:
+          input.payload === undefined
+            ? null
+            : input.payload === null
+              ? sql`'null'::jsonb`
+              : input.payload,
         artifacts: input.artifacts ?? null,
         costMillicredits: input.costMillicredits ?? null,
         terminalAt: new Date(),
@@ -190,7 +205,7 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
             isNull(table.outcome),
           ),
         )
-        .returning();
+        .returning(reportSelection);
       const existing = row ?? (await find(input.childThreadId, input.assistantTurnId));
       if (!existing) throw new Error("Execution report was not admitted");
       const same =
@@ -198,7 +213,8 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
         existing.reason === values.reason &&
         existing.source === values.source &&
         existing.summary === values.summary &&
-        canonical(existing.payload) === canonical(values.payload) &&
+        canonical(existing.payload === null ? undefined : JSON.parse(existing.payload)) ===
+          canonical(input.payload) &&
         canonical(existing.artifacts) === canonical(values.artifacts) &&
         existing.costMillicredits === values.costMillicredits;
       if (!same)
@@ -255,7 +271,7 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
     },
     async lockPendingPublication(childThreadId, assistantTurnId) {
       const [row] = await currentDrizzleDb(db)
-        .select()
+        .select(reportSelection)
         .from(table)
         .where(
           and(

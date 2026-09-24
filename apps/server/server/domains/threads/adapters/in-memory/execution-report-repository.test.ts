@@ -38,14 +38,21 @@ describe("in-memory execution reports", () => {
     ).rejects.toThrow("rollback");
     expect(await repos.executionReports.findByExecution(child.id, turn.id)).toBeNull();
     await repos.executionReports.admit(input);
+    const payload = '{"nested":[1,true,null,"text"]}';
     await expect(
       repos.transaction(async () => {
-        await repos.executionReports.captureOnce(child.id, turn.id, "return", { summary: "saved" });
+        await repos.executionReports.captureOnce(child.id, turn.id, "return", {
+          summary: "saved",
+          payload,
+        });
         throw new Error("rollback");
       }),
     ).rejects.toThrow("rollback");
     expect((await repos.executionReports.findByExecution(child.id, turn.id))?.capture).toBeNull();
-    await repos.executionReports.captureOnce(child.id, turn.id, "return", { summary: "saved" });
+    await repos.executionReports.captureOnce(child.id, turn.id, "return", {
+      summary: "saved",
+      payload,
+    });
     const terminal = {
       childThreadId: child.id,
       assistantTurnId: turn.id,
@@ -53,6 +60,7 @@ describe("in-memory execution reports", () => {
       reason: null,
       source: "return_result" as const,
       summary: "saved",
+      payload,
     };
     await expect(
       repos.transaction(async () => {
@@ -63,14 +71,19 @@ describe("in-memory execution reports", () => {
     expect((await repos.executionReports.findByExecution(child.id, turn.id))?.outcome).toBeNull();
     const saved = await repos.executionReports.finalizeOnce(terminal);
     expect(saved.publication).toBe("pending");
+    expect(saved.payload).toBe(payload);
     saved.summary = "external mutation";
     expect((await repos.executionReports.findByExecution(child.id, turn.id))?.summary).toBe(
       "saved",
     );
     expect((await repos.executionReports.admit(input)).summary).toBe("saved");
     expect(
-      (await repos.executionReports.captureOnce(child.id, turn.id, "return", { summary: "saved" }))
-        .summary,
+      (
+        await repos.executionReports.captureOnce(child.id, turn.id, "return", {
+          summary: "saved",
+          payload,
+        })
+      ).summary,
     ).toBe("saved");
     await expect(
       repos.executionReports.captureOnce(child.id, turn.id, "different", { summary: "saved" }),
@@ -89,6 +102,12 @@ describe("in-memory execution reports", () => {
       publication: "published",
       summary: "saved",
     });
+    await expect(
+      repos.executionReports.finalizeOnce({
+        ...terminal,
+        payload: { nested: [1, true, null, "text"] },
+      }),
+    ).rejects.toThrow();
     const other = await repos.threads.createSubagent({
       userId,
       projectId,

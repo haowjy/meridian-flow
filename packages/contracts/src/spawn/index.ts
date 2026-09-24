@@ -51,7 +51,7 @@ export type SavedExecutionReport = {
   reason: string | null;
   source: ExecutionReportSource | null;
   summary: string | null;
-  payload: JsonValue | null;
+  payload?: JsonValue;
   artifacts: ArtifactRef[] | null;
   costMillicredits: number | null;
   terminalAt: string | null;

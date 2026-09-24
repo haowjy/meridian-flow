@@ -10,7 +10,7 @@ export function savedReportToSpawnResult(report: SavedExecutionReport): SpawnRes
     handle: report.handle,
     threadId: report.childThreadId,
     summary: report.summary,
-    ...(report.payload !== null ? { payload: report.payload } : {}),
+    ...(report.payload !== undefined ? { payload: report.payload } : {}),
     ...(report.artifacts !== null ? { artifacts: report.artifacts } : {}),
     costMillicredits: report.costMillicredits ?? 0,
   };
