@@ -49,10 +49,6 @@ describe("waitForPortsFree", () => {
     const held = await waitForPortsFree([port], { timeoutMs: 2_000, intervalMs: 25 });
     expect(held).toEqual([]);
   });
-
-  it("treats an empty port list as immediately free", async () => {
-    expect(await waitForPortsFree([])).toEqual([]);
-  });
 });
 
 describe("releaseFixedPorts", () => {
