@@ -654,6 +654,7 @@ export function ReadableProjectRoute({
           />
         ) : null}
         <ProjectView
+          project={project}
           projectId={projectId}
           workingSet={data.workingSet}
           workingSetSyncEnabled={user.workingSetSyncEnabled === true}

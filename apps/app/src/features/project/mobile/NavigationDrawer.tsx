@@ -4,10 +4,8 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import { MeridianMark } from "@/components/app/MeridianMark";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
@@ -19,6 +17,8 @@ export type NavigationDrawerProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
+  projectTitle: string;
+  onRenameProject: () => void;
   activeScreen: ScreenKey;
   editorWorkId: string | null;
   contextLive: boolean;
@@ -32,6 +32,8 @@ export function NavigationDrawer({
   open,
   onOpenChange,
   projectId,
+  projectTitle,
+  onRenameProject,
   activeScreen,
   editorWorkId,
   contextLive,
@@ -105,17 +107,19 @@ export function NavigationDrawer({
           }}
         >
           <nav aria-label={t`Workspace navigation`} className="flex h-full min-h-0 flex-col">
-            <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border-subtle px-3">
-              <Link
-                to="/"
-                className="focus-ring flex min-w-0 items-center gap-1 rounded-md no-underline"
-                onClick={() => onOpenChange(false)}
+            <div className="flex h-12 shrink-0 items-center border-b border-border-subtle px-3">
+              <button
+                type="button"
+                aria-label={t`Rename project: ${projectTitle}`}
+                title={projectTitle}
+                className="focus-ring flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-semibold hover:bg-sidebar-accent"
+                onClick={onRenameProject}
               >
-                <MeridianMark className="size-7" />
-                <span className="text-sm font-semibold tracking-tight text-foreground">
-                  Meridian
+                <span className="min-w-0 flex-1 truncate">{projectTitle}</span>
+                <span className="text-xs font-normal text-ink-muted">
+                  <Trans>Rename</Trans>
                 </span>
-              </Link>
+              </button>
             </div>
 
             {/* Selecting a destination also closes the drawer — a chrome

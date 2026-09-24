@@ -13,6 +13,9 @@ screens. Chat, editor, and context domain behavior stays with those features.
   navigation and Work management never rebind a chat implicitly.
 - Path `/chat/{id}` is identity, not a primary-list lookup. Query `?chat=`
   still drops missing primaries.
+- Project identity is its route UUID plus the current mutable title. Keep rename
+  in workspace chrome, use React Query for optimistic propagation, and never
+  couple title edits to browser or context-URI slug identity.
 
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) before changing project shell
 layout, routing, rails, headers, or project-scoped state.

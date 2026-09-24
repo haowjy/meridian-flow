@@ -22,7 +22,24 @@ function useProjectListQuery() {
     queryFn: async () => {
       const apiProjects = await listProjects();
       const prev = queryClient.getQueryData<Project[] | null>(projectQueryKeys.list);
-      return mergeApiProjects(prev ?? null, apiProjects);
+      const pendingTitles = new Map(
+        queryClient
+          .getMutationCache()
+          .findAll({ mutationKey: projectQueryKeys.renamePrefix })
+          .filter((mutation) => mutation.state.status === "pending")
+          .flatMap((mutation) => {
+            const projectId = mutation.options.mutationKey?.[2];
+            const title = mutation.state.variables;
+            return typeof projectId === "string" && typeof title === "string"
+              ? [[projectId, title] as const]
+              : [];
+          }),
+      );
+      const reconciled = apiProjects.map((project) => {
+        const title = pendingTitles.get(project.id);
+        return title ? { ...project, title, name: title } : project;
+      });
+      return mergeApiProjects(prev ?? null, reconciled);
     },
     staleTime: 60_000,
   });

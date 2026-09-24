@@ -112,10 +112,13 @@ the document session registry.
 - The hamburger is unconditional on every screen. There is **no back button**.
   Up-navigation happens through breadcrumb ancestors; level-pop navigation
   happens through OS/browser back because drill-in pushes route states.
-- Context screens supply a left-aligned breadcrumb immediately after the
-  hamburger. The breadcrumb is Files-rooted: `Files › scheme › folders › file`.
-- Chat landing/Work/chat/results use centered titles. The leading hamburger and trailing
-  action reserve are both `44px`, so non-breadcrumb titles remain centered.
+- Every destination shows a truncated project title above its screen identity.
+  Context screens keep a left-aligned breadcrumb on the second line; the
+  breadcrumb remains Files-rooted: `Files › scheme › folders › file`.
+- Chat landing/Work/chat/results keep their current screen/thread title on the
+  second line. The leading hamburger and trailing action reserve are both
+  `44px`, so non-breadcrumb titles remain centered. The drawer shows the same
+  project title as a rename control and offers an explicit View projects link.
 - The trailing slot is a per-screen dispatcher (`trailingAction()` in
   `MobileProject`): chat carries the Results entry, Results carries the way
   back to chat, and the Files browser inside a scheme (scheme root or folder,

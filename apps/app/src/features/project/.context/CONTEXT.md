@@ -42,9 +42,10 @@ Slot topology (`layout/desktop-layout.ts`), one grid row across every screen:
 There is **no `files` grid track**. The file explorer is the persistent body of
 the left sidebar; `ContextViewer` owns only the Editor tab strip and document.
 
-`LeftSidebar` is one column with a linked wordmark, Chat/Work/Editor navigation,
-the persistent project tree, and account controls. The navigation rows are
-shared with mobile through `WorkspaceNavBody`; the wordmark and recursive tree
+`LeftSidebar` is one column with a truncating project-title rename control,
+Chat/Work/Editor navigation, the persistent project tree, an explicit View
+projects link to the library, and account controls. The navigation rows are shared
+with mobile through `WorkspaceNavBody`; project identity and the recursive tree
 are desktop shell grammar.
 
 Work is the dedicated collection/detail management destination. The collection reads
@@ -163,7 +164,7 @@ sidebar (`shell/LeftSidebar.tsx`).** New surfaces follow it. The load-bearing
 conventions:
 
 - **Header row = `h-10` (40px), `border-b border-border-subtle`, `px-2`.** Every
-  header reads at the same height: left wordmark, dock/rail header, files
+  header reads at the same height: project identity, dock/rail header, files
   header, editor header. Use `border-border-subtle`, not `border-border`.
   **Exception — the two chrome strips**: the context tab strip
   (`ContextTabBar`, the band) and the dock header (`DockHeader`, transparent
@@ -234,18 +235,20 @@ not admit its retained document or repair the address until its host is active
 again. Writer close and Work pruning are reversible, while acknowledged deletion
 and draft discard keep exact re-entry guards against stale resurrection.
 
-## Readable routing, selection, and controllers
+## Project routing, identity, and controllers
 
-`routes/_authenticated/p/$projectSlug` is the persistent project parent and its
-catch-all child is the only workspace route adapter. It resolves the slug before
-ID-keyed queries, keeps `ProjectView` mounted for same-project child paths, and
-passes resolved address state and typed navigation commands to controlled
-controllers. Controllers never parse or mutate browser URLs themselves.
-`routing/project-address.ts` owns the readable browser grammar;
-`routing/project-navigation.ts` owns guarded push/replace behavior. The legacy
-UUID project routes and `?screen`/`?thread` grammar are gone. `project-route.ts`
-retains stable-ID command types and the context-removal CAS snapshot only; it is
-not a second address grammar.
+`routes/_authenticated/p/$projectId` is the persistent project parent and its
+catch-all child is the only workspace route adapter. It loads the full project
+by UUID, keeps `ProjectView` mounted for same-project child paths, and passes
+resolved address state and typed navigation commands to controlled controllers.
+Controllers never parse or mutate browser URLs themselves. Project title edits
+update the account project-list cache and visible shell identity without changing
+the UUID address. Desktop and phone share one rename dialog and mutation; the
+phone drawer closes before opening it. `routing/project-address.ts` owns the
+project UUID/browser grammar; `routing/project-navigation.ts` owns guarded
+push/replace behavior. The legacy slug project routes and `?screen`/`?thread`
+grammar are gone. `project-route.ts` retains stable-ID command types and the
+context-removal CAS snapshot only; it is not a second address grammar.
 
 Empty Chat/Work selections are stored in href-scoped browser history state, not
 serialized as `?chat=&work=`. Only Editor-related destinations carry the empty
@@ -260,7 +263,7 @@ history is flushed before matching workspace settlement, so immediate reload
 uses the accepted URL and browser-local layout. Document
 admission still canonicalizes document paths and scope independently.
 
-A readable address has explicit selections, not defaults: absent, no-Work,
+A project address has explicit selections, not defaults: absent, no-Work,
 slug, malformed, and unavailable remain distinct. Only genuinely absent Chat
 or Editor selections may use their respective local continuity rules.
 The navigation coordinator matches rendered entries by history key, because

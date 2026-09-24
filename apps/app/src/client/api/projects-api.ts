@@ -52,6 +52,7 @@ import {
   type ProjectContextTreeScheme,
   type ProjectWorkingSet,
   type ThreadListItem,
+  type UpdateProjectRequest,
   type UpdateWorkWriteModeRequest,
   type UpdateWorkWriteModeResponse,
   type Work,
@@ -90,6 +91,16 @@ export async function listProjects(init?: RequestInitOptions): Promise<Project[]
     headers: init?.headers,
   });
   return response.projects;
+}
+
+export function updateProject(
+  projectId: string,
+  data: UpdateProjectRequest,
+  init?: RequestInitOptions,
+): Promise<Project> {
+  return patchJson<Project>(urlFor(apiProjectPath(projectId), init), data, {
+    headers: init?.headers,
+  });
 }
 
 export async function listProjectThreads(
