@@ -118,3 +118,101 @@ describe("ThreadRunController mid-run merge", () => {
     expect(scenario.transport.subscriptions).toHaveLength(2);
   });
 });
+
+describe("controller gap-result ownership", () => {
+  it("does not apply a gap response after its run terminates", async () => {
+    const gate = scenarioGate<import("@meridian/contracts/protocol").ThreadSnapshotResponse>();
+    const scenario = new ThreadRunScenario({ snapshot: () => gate.promise });
+    scenario.resume({ expectedTurnId: "run-1" });
+    scenario.emit(runStarted("run-1"), "10");
+    scenario.reportGap();
+    expect(scenario.snapshotRequests).toEqual(["thread_1"]);
+    scenario.emit(
+      { type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "run-1" } as never,
+      "11",
+    );
+    const terminal = scenario.turns()[0];
+    gate.resolve({
+      thread: { id: "thread_1", projectId: "project-1", userId: "account-1" },
+      turns: [],
+      nextSeq: "100",
+      actionRequired: false,
+      liveState: { runningTurnId: null },
+    } as never);
+    await gate.promise;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(scenario.turns()[0]).toBe(terminal);
+    expect(scenario.turns()).toHaveLength(1);
+  });
+
+  it("retries a stale gap snapshot instead of treating HTTP success as recovery", async () => {
+    let request = 0;
+    const snapshot = (nextSeq: string) =>
+      ({
+        thread: { id: "thread_1" },
+        turns: [],
+        nextSeq,
+        actionRequired: false,
+        liveState: { runningTurnId: null },
+      }) as never;
+    const scenario = new ThreadRunScenario({
+      snapshot: async () => snapshot(++request === 1 ? "4000" : "5000"),
+    });
+    scenario.store.getState().acceptDurableBlockSeq("thread_1", "4000");
+    scenario.resume({ expectedTurnId: "run-1" });
+    scenario.emit(runStarted("run-1"), "10");
+    scenario.reportGap();
+    await vi.waitFor(() => expect(scenario.snapshotRequests).toHaveLength(2));
+    expect(scenario.store.getState().durableBlockCursorByThread.thread_1).toBe("4999");
+  });
+
+  it("retries a mismatched gap response instead of satisfying recovery", async () => {
+    let request = 0;
+    const scenario = new ThreadRunScenario({
+      snapshot: async () =>
+        ({
+          thread: { id: ++request === 1 ? "other-thread" : "thread_1" },
+          turns: [],
+          nextSeq: "5000",
+          actionRequired: false,
+          liveState: { runningTurnId: null },
+        }) as never,
+    });
+    scenario.resume({ expectedTurnId: "run-1" });
+    scenario.emit(runStarted("run-1"), "10");
+    scenario.reportGap();
+    await vi.waitFor(() => expect(scenario.snapshotRequests).toHaveLength(2));
+    expect(scenario.store.getState().durableBlockCursorByThread.thread_1).toBe("4999");
+  });
+
+  it("starts fresh recovery when a newer run joined an older singleton fetch", async () => {
+    const old = scenarioGate<import("@meridian/contracts/protocol").ThreadSnapshotResponse>();
+    const fresh = scenarioGate<import("@meridian/contracts/protocol").ThreadSnapshotResponse>();
+    let requests = 0;
+    const scenario = new ThreadRunScenario({
+      snapshot: () => (++requests === 1 ? old.promise : fresh.promise),
+    });
+    scenario.resume({ expectedTurnId: "run-1" });
+    scenario.emit(runStarted("run-1"), "10");
+    scenario.reportGap();
+    scenario.resume({ expectedTurnId: "run-2" });
+    scenario.emit(runStarted("run-2"), "20");
+    scenario.reportGap();
+    old.resolve({
+      thread: { id: "thread_1" },
+      turns: [],
+      nextSeq: "30",
+      actionRequired: false,
+      liveState: { runningTurnId: null },
+    } as never);
+    await vi.waitFor(() => expect(scenario.snapshotRequests).toEqual(["thread_1", "thread_1"]));
+    fresh.resolve({
+      thread: { id: "thread_1" },
+      turns: [],
+      nextSeq: "31",
+      actionRequired: false,
+      liveState: { runningTurnId: null },
+    } as never);
+    await fresh.promise;
+  });
+});

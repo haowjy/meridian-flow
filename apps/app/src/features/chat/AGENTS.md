@@ -50,7 +50,9 @@ expandable activity row. The live subagent surface remains server truth:
 `ThreadActivity` from snapshot + `meridian.subagent.activity`, rendered by
 `RunningSubagentsStrip` in `ChatView`'s header.
 
-The existing `meridian.block.upserted` frame also carries historical card
+The mounted snapshot-sync hook, not the run controller, owns addressed
+`meridian.block.upserted` and `meridian.block.pruned` projection for the whole
+mounted thread lifetime. The existing upsert frame also carries historical card
 replacements. Update a loaded target turn without touching active-turn state;
 when the target turn is absent, invalidate/refetch the durable snapshot rather
 than creating a synthetic streaming turn. Store duplicate replacement as a

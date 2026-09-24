@@ -1,21 +1,30 @@
 /**
- * useThreadSnapshotSync — applies the authoritative native thread snapshot.
+ * useThreadSnapshotSync — authoritative history and mounted-thread block projection.
  *
- * Fetches the server `Turn[]` snapshot over HTTP and reconciles it into the
- * thread store. This is the only client snapshot path; AG-UI remains a live
- * streaming transport, not persisted history.
+ * The hook owns one addressed durable-block subscriber for its mounted lifetime;
+ * the run controller keeps stream deltas and commands. Explicit activation
+ * installs that owner synchronously after first-send creation succeeds.
  */
-import { EventType } from "@meridian/contracts/protocol";
+import { EventType, parseSeq } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
-
+import { useLayoutEffect, useMemo } from "react";
 import {
   deserializeThreadSnapshot,
   getThreadSnapshot,
   toThreadSnapshotApplyOptions,
 } from "@/client/api/threads-api";
+import { useMeridianAgent } from "@/client/copilot/MeridianCopilotProvider";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useIsThreadPendingCreation, useThreadActions } from "@/client/stores";
+import {
+  applyDurableBlockEvent,
+  isDurableBlockEvent,
+  isWellFormedDurableBlockEvent,
+} from "@/core/session/reduce-turn-event";
+import {
+  useAccountEpochSignal,
+  useAccountId,
+} from "@/features/project/context/account-feature-context";
 import { threadQueryKeys } from "./thread-query-keys";
 
 type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot>;
@@ -26,78 +35,156 @@ export type ThreadSnapshotSyncStatus = {
   liveState: DeserializedThreadSnapshot["liveState"] | null;
   actionRequired: DeserializedThreadSnapshot["actionRequired"] | null;
   nextSeq: DeserializedThreadSnapshot["nextSeq"] | null;
-  /**
-   * The request resolved at least once — applied or failed. Surfaces that must
-   * distinguish "this thread has no such turn" from "history hasn't arrived
-   * yet" (the conversation-reveal handshake) key off this, not off emptiness.
-   */
   settled: boolean;
   isError: boolean;
   isFetching: boolean;
   refetch: () => void;
+  /** Registers this mounted owner's durable handler before returning. */
+  activateProjection: () => boolean;
 };
 
-/**
- * Suppressed while the thread is still pending optimistic server creation —
- * `POST /api/threads` races `GET /api/threads/:id/snapshot` from the chat
- * surface otherwise, producing benign 404s during a normal flow.
- */
+/** Pending creation gates HTTP and automatic subscription until the server row exists. */
 export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatus {
   const actions = useThreadActions();
-  const isPendingCreation = useIsThreadPendingCreation(threadId);
+  const controller = useMeridianAgent();
   const transport = useThreadTransport();
+  const isPendingCreation = useIsThreadPendingCreation(threadId);
+  const accountSignal = useAccountEpochSignal();
+  const accountId = useAccountId();
 
   const { data, isError, isFetching, refetch } = useQuery({
     queryKey: threadQueryKeys.snapshot(threadId),
-    queryFn: async () => {
-      const snapshot = await getThreadSnapshot({ data: { threadId } });
-      return deserializeThreadSnapshot(snapshot);
+    queryFn: async ({ signal }) => {
+      const requestSignal = AbortSignal.any([accountSignal, signal]);
+      // The source check runs before TanStack Query can publish this response.
+      // An obsolete HTTP success cannot become history or handoff authority.
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const snapshot = deserializeThreadSnapshot(
+          await getThreadSnapshot({ data: { threadId }, signal: requestSignal }),
+        );
+        requestSignal.throwIfAborted();
+        if (
+          snapshot.thread.id === threadId &&
+          snapshot.thread.userId === accountId &&
+          actions.acceptsThreadSnapshot(threadId, snapshot.nextSeq)
+        )
+          return snapshot;
+      }
+      throw new Error("Thread snapshot is older than live changes");
     },
-    // Always revalidate on activation: the thread may have advanced while the
-    // writer was elsewhere (for example a background child's report waking the
-    // parent). Cached turns still render first, so this stays navigate-first.
     staleTime: 0,
     refetchOnMount: "always",
-    enabled: !isPendingCreation,
+    enabled: !isPendingCreation && !accountSignal.aborted,
+    retry: false,
   });
 
-  useEffect(() => {
-    if (isPendingCreation) return;
-    // A server-initiated run (a background report waking the parent) begins with
-    // no local controller, so nothing would otherwise learn it started. Refetch
-    // on a new run so the turn/card appears and the handoff can resume it live.
+  const owner = useMemo(() => {
+    let mounted = false;
+    let unsubscribe: (() => void) | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const refresh = () => {
-      if (timer) return;
+    let generation = 0;
+    let refreshQuery: () => void = () => undefined;
+    const current = (expected: number) =>
+      mounted && !accountSignal.aborted && generation === expected;
+    const refresh = (expected: number) => {
+      if (!current(expected) || timer) return;
       timer = setTimeout(() => {
         timer = null;
-        void refetch();
+        if (current(expected)) refreshQuery();
       }, 250);
     };
-    return transport.subscribe(threadId, {
-      onEvent: ({ event }) => {
-        if (event.type === EventType.RUN_STARTED) refresh();
+    return {
+      setRefetch(next: () => void) {
+        refreshQuery = next;
       },
-      onGap: refresh,
-    });
-  }, [transport, threadId, isPendingCreation, refetch]);
+      mount() {
+        mounted = true;
+      },
+      activate(): boolean {
+        if (!mounted || accountSignal.aborted) return false;
+        if (unsubscribe) return true;
+        const expected = generation;
+        let acquired: (() => void) | null = null;
+        try {
+          acquired = transport.subscribe(threadId, {
+            onEvent: ({ event, seq, sourceThreadId }) => {
+              if (!current(expected) || (sourceThreadId && sourceThreadId !== threadId)) return;
+              if ("threadId" in event && event.threadId !== threadId) return;
+              if (event.type === EventType.RUN_STARTED) refresh(expected);
+              if (
+                !isDurableBlockEvent(event) ||
+                !isWellFormedDurableBlockEvent(event) ||
+                parseSeq(seq) === null
+              )
+                return;
+              controller.flushPendingDeltas(threadId);
+              if (!current(expected) || !actions.acceptDurableBlockSeq(threadId, seq)) return;
+              applyDurableBlockEvent(actions, threadId, event);
+            },
+            onGap: () => refresh(expected),
+          });
+          if (!current(expected)) {
+            acquired();
+            return false;
+          }
+          unsubscribe = acquired;
+          return true;
+        } catch (error) {
+          acquired?.();
+          throw error;
+        }
+      },
+      dispose() {
+        mounted = false;
+        generation += 1;
+        if (timer) clearTimeout(timer);
+        timer = null;
+        unsubscribe?.();
+        unsubscribe = null;
+      },
+    };
+  }, [accountSignal, actions, controller, threadId, transport]);
+  owner.setRefetch(() => {
+    if (!accountSignal.aborted) void refetch();
+  });
 
-  useEffect(() => {
-    if (!data) return;
-    actions.applyThreadSnapshot(data.thread, data.turns, toThreadSnapshotApplyOptions(data));
-  }, [actions, data]);
+  // Owner lifetime is independent of the pending-creation flag. A commit that
+  // clears that flag must not dispose the handler installed by first send.
+  useLayoutEffect(() => {
+    owner.mount();
+    return () => owner.dispose();
+  }, [owner]);
+  useLayoutEffect(() => {
+    if (!isPendingCreation) owner.activate();
+  }, [isPendingCreation, owner]);
+
+  const accepted =
+    !accountSignal.aborted &&
+    data?.thread.id === threadId &&
+    data.thread.userId === accountId &&
+    actions.acceptsThreadSnapshot(threadId, data.nextSeq);
+  const snapshot = accepted ? data : null;
+  useLayoutEffect(() => {
+    if (!snapshot || accountSignal.aborted) return;
+    actions.applyThreadSnapshot(
+      snapshot.thread,
+      snapshot.turns,
+      toThreadSnapshotApplyOptions(snapshot),
+    );
+  }, [accountSignal, actions, snapshot]);
 
   return {
-    snapshot: data ?? null,
-    thread: data?.thread ?? null,
-    liveState: data?.liveState ?? null,
-    actionRequired: data?.actionRequired ?? null,
-    nextSeq: data?.nextSeq ?? null,
-    settled: data !== undefined || isError,
+    snapshot,
+    thread: snapshot?.thread ?? null,
+    liveState: snapshot?.liveState ?? null,
+    actionRequired: snapshot?.actionRequired ?? null,
+    nextSeq: snapshot?.nextSeq ?? null,
+    settled: snapshot !== null || isError,
     isError,
     isFetching,
     refetch: () => {
-      void refetch();
+      if (!accountSignal.aborted) void refetch();
     },
+    activateProjection: owner.activate,
   };
 }

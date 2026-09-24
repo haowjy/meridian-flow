@@ -21,6 +21,7 @@ import {
 } from "@/client/query/thread-work-binding-cache";
 import { convergeWorkProjection } from "@/client/query/work-projection-cache";
 import { repairWorksSnapshot } from "@/client/query/works-projection-acquisition";
+import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 
 type TrailEventValue = {
   threadId: string;
@@ -90,6 +91,7 @@ export function useThreadDurableProjections({
 }) {
   const transport = useThreadTransport();
   const queryClient = useQueryClient();
+  const accountSignal = useOptionalAccountEpochSignal();
   const [state, setState] = useState(emptyTrailShellState);
   /**
    * Subscription identity, bumped when the thread changes or the hook unmounts.
@@ -162,11 +164,15 @@ export function useThreadDurableProjections({
       }
       bindingInFlight.current = true;
       try {
-        await readStableThreadWorkBinding(queryClient, {
-          projectId,
-          threadId,
-          previousWorkId: null,
-        });
+        await readStableThreadWorkBinding(
+          queryClient,
+          {
+            projectId,
+            threadId,
+            previousWorkId: null,
+          },
+          accountSignal ?? undefined,
+        );
       } catch {
         // Best effort: the next gap or snapshot refresh re-runs the resync.
       } finally {
@@ -178,7 +184,7 @@ export function useThreadDurableProjections({
         void resyncBinding(requestGeneration);
       }
     },
-    [projectId, queryClient, threadId],
+    [accountSignal, projectId, queryClient, threadId],
   );
 
   useEffect(() => {
@@ -193,6 +199,7 @@ export function useThreadDurableProjections({
     void reconcile(threadGeneration);
     const unsubscribe = transport.subscribe(threadId, {
       onEvent: ({ seq, event }) => {
+        if (accountSignal?.aborted) return;
         const receipt = decodeWorkReceipt(event);
         const receiptChanged =
           receipt?.category === "binding"
@@ -212,7 +219,11 @@ export function useThreadDurableProjections({
         }
         const projection = decodeWorkProjection(threadId, seq, event);
         if (projection) {
-          convergeThreadWorkBinding(queryClient, { source: "projected", ...projection });
+          convergeThreadWorkBinding(
+            queryClient,
+            { source: "projected", ...projection },
+            accountSignal ?? undefined,
+          );
           return;
         }
         if (
@@ -234,6 +245,7 @@ export function useThreadDurableProjections({
         });
       },
       onGap: () => {
+        if (accountSignal?.aborted) return;
         reconciled.current = false;
         setState((current) => (current.gapPending ? current : { ...current, gapPending: true }));
         // Deliberately NOT dropping change-trail detail here. Detail is immutable
@@ -252,6 +264,6 @@ export function useThreadDurableProjections({
       unsubscribe();
       void queryClient.removeQueries({ queryKey: ["change-trail-detail", threadId] });
     };
-  }, [projectId, queryClient, reconcile, resyncBinding, threadId, transport]);
+  }, [accountSignal, projectId, queryClient, reconcile, resyncBinding, threadId, transport]);
   return { changeTrails: state };
 }

@@ -29,7 +29,11 @@ vi.mock("@lingui/core/macro", () => ({
   msg: (strings: TemplateStringsArray) => ({ id: strings[0] }),
 }));
 vi.mock("@/lib/send-project-chat", () => ({
-  runExclusivePersist: (_threadId: string, job: () => Promise<void>) => job(),
+  runExclusiveThreadCreation: (
+    _accountEpoch: AbortSignal,
+    _threadId: string,
+    job: () => Promise<Thread>,
+  ) => job(),
   retireFirstSendSubmission: vi.fn(),
   rehydrateFirstSendSubmission: vi.fn(),
 }));
@@ -104,7 +108,11 @@ afterEach(async () => {
 
 async function mount(threadActions: ThreadStoreActions, run: ThreadRunController) {
   function Probe() {
-    const failed = useThreadHandoff(THREAD_ID, "project-1", "account", run, threadActions);
+    const failed = useThreadHandoff(THREAD_ID, "project-1", "account", run, threadActions, {
+      liveState: null,
+      nextSeq: null,
+      activateProjection: () => true,
+    });
     return failed ? <ErrorBlock isLatest kind="send" onRetry={failed.retry} /> : null;
   }
   const host = document.createElement("div");

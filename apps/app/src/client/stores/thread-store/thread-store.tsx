@@ -21,7 +21,14 @@ import {
 } from "@meridian/contracts/protocol";
 import { isTerminalTurnStatus } from "@meridian/contracts/threads";
 import { useQueryClient } from "@tanstack/react-query";
-import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useState,
+} from "react";
 import { createStore, type StoreApi, useStore } from "zustand";
 import { devtools } from "zustand/middleware";
 import { useShallow } from "zustand/react/shallow";
@@ -905,6 +912,30 @@ export function ThreadStoreProvider({ now, children }: ThreadStoreSeed & { child
       threadCache: createThreadCache(queryClient, accountSignal ?? undefined),
     }),
   );
+
+  // The QueryClient outlives an account epoch. Retire only account-authorized
+  // snapshot Query objects synchronously at close, including inactive threads.
+  useLayoutEffect(() => {
+    if (!accountSignal) return;
+    let retired = false;
+    const retireSnapshots = () => {
+      if (retired) return;
+      retired = true;
+      queryClient.removeQueries({
+        predicate: ({ queryKey }) =>
+          queryKey.length === 3 &&
+          queryKey[0] === "threads" &&
+          typeof queryKey[1] === "string" &&
+          queryKey[2] === "snapshot",
+      });
+    };
+    accountSignal.addEventListener("abort", retireSnapshots, { once: true });
+    if (accountSignal.aborted) retireSnapshots();
+    return () => {
+      accountSignal.removeEventListener("abort", retireSnapshots);
+      retireSnapshots();
+    };
+  }, [accountSignal, queryClient]);
 
   // Keep `store.now` fresh for relative-time labels ("just now" vs "2 min ago")
   // via a timer instead of relying on route-loader refetches on every navigation.

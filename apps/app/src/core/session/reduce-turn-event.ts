@@ -702,8 +702,8 @@ export function applyDurableBlockEvent(
  * Applies one live AG-UI event to the unified thread store.
  *
  * Cross-thread events are ignored without bumping the counter, matching the old
- * reducer's addressed-slot guard. Accepted no-op vocabulary still bumps
- * `eventsApplied` so reconnect/replay keeps opaque block IDs deterministic.
+ * reducer's addressed-slot guard. Run-local no-op vocabulary still bumps
+ * `eventsApplied`; addressed durable blocks use the counter-free branch above.
  */
 export function applyAguiEventToStore(
   store: StoreEventTarget,

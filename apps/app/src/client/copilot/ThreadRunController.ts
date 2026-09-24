@@ -22,7 +22,7 @@ import type { ThreadStoreActions } from "@/client/stores";
 import { announceError } from "@/client/stores";
 import type { ComposerSubmitEnvelope, ComposerSubmitOutcome } from "@/components/app/composer";
 import type { InterruptResponseState } from "@/core/session/interrupt-response";
-import { applyAguiEventToStore } from "@/core/session/reduce-turn-event";
+import { applyAguiEventToStore, isDurableBlockEvent } from "@/core/session/reduce-turn-event";
 import type { InterruptRespondInput, ThreadTransport } from "@/core/transport";
 import { StreamDeltaCoalescer } from "./stream-delta-coalescer";
 
@@ -113,6 +113,7 @@ export type ThreadRunControllerOptions = {
   retireAdmissionFn?: RetireAdmissionFn;
   getThreadSnapshotFn?: GetThreadSnapshotFn;
   accountSignal?: AbortSignal;
+  accountId?: string;
 };
 
 type ActiveRun = {
@@ -148,6 +149,7 @@ export class ThreadRunController {
   private readonly retireAdmissionFn: RetireAdmissionFn;
   private readonly getThreadSnapshotFn: GetThreadSnapshotFn;
   private readonly accountSignal?: AbortSignal;
+  private readonly accountId?: string;
   private disposed = false;
 
   private activeRun: ActiveRun | null = null;
@@ -156,7 +158,10 @@ export class ThreadRunController {
   private recoverySessions = new Set<object>();
   private abortRequested = false;
   private runToken = 0;
-  private readonly gapSnapshotsByThreadId = new Map<string, Promise<void>>();
+  private readonly gapSnapshotsByThreadId = new Map<
+    string,
+    { token: number; promise: Promise<void> }
+  >();
   private readonly unsubscribeInterruptResponseError: () => void;
   private readonly unsubscribeSocketGenerationClosed: () => void;
 
@@ -168,6 +173,7 @@ export class ThreadRunController {
     this.retireAdmissionFn = options.retireAdmissionFn ?? retireUserMessageAdmission;
     this.getThreadSnapshotFn = options.getThreadSnapshotFn ?? getThreadSnapshot;
     this.accountSignal = options.accountSignal;
+    this.accountId = options.accountId;
     this.unsubscribeInterruptResponseError = this.transport.onInterruptResponseError(
       ({ threadId, error }) => {
         if (!this.accountSignal?.aborted && !this.disposed)
@@ -454,6 +460,7 @@ export class ThreadRunController {
   }
 
   resume(threadId: string, options: SubscribeLiveOptions = {}): void {
+    if (this.disposed || this.accountSignal?.aborted) return;
     const token = this.startRun(threadId);
     this.attachLiveSubscription(threadId, token, options);
   }
@@ -556,8 +563,8 @@ export class ThreadRunController {
 
   /** Release controller-lifetime subscriptions (provider unmount). */
   dispose(): void {
-    this.disposed = true;
     this.teardown();
+    this.disposed = true;
     this.unsubscribeInterruptResponseError();
     this.unsubscribeSocketGenerationClosed();
   }
@@ -624,6 +631,8 @@ export class ThreadRunController {
             effectiveEvent.runId !== expectedTurnId
           )
             return;
+
+          if (isDurableBlockEvent(effectiveEvent)) return;
 
           if (expectedTurnId && effectiveEvent.type !== EventType.RUN_STARTED) {
             this.actions.ensureAssistantTurn(threadId, expectedTurnId);
@@ -714,7 +723,15 @@ export class ThreadRunController {
 
   private async replaceFromSnapshot(threadId: string, token: number): Promise<void> {
     const existing = this.gapSnapshotsByThreadId.get(threadId);
-    if (existing) return existing;
+    if (existing) {
+      if (existing.token === token) return existing.promise;
+      try {
+        await existing.promise;
+      } catch {
+        // The older run owns its failure; the current run still needs recovery.
+      }
+      return this.isActiveToken(token) ? this.replaceFromSnapshot(threadId, token) : undefined;
+    }
 
     const recovery = (async () => {
       for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -722,14 +739,20 @@ export class ThreadRunController {
           await this.getThreadSnapshotFn({ data: { threadId }, signal: this.accountSignal }),
         );
         if (!this.isActiveToken(token) || this.activeRun?.threadId !== threadId) return;
-        if (snapshot.thread.id === threadId && this.applySnapshot(snapshot)) return;
+        if (
+          snapshot.thread.id !== threadId ||
+          (this.accountId && snapshot.thread.userId !== this.accountId)
+        )
+          continue;
+        if (this.applySnapshot(snapshot)) return;
       }
       throw new Error("Thread snapshot is older than live changes");
     })().finally(() => {
-      this.gapSnapshotsByThreadId.delete(threadId);
+      if (this.gapSnapshotsByThreadId.get(threadId)?.promise === recovery) {
+        this.gapSnapshotsByThreadId.delete(threadId);
+      }
     });
-
-    this.gapSnapshotsByThreadId.set(threadId, recovery);
+    this.gapSnapshotsByThreadId.set(threadId, { token, promise: recovery });
     return recovery;
   }
 

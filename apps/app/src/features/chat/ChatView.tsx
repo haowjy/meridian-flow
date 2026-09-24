@@ -82,6 +82,7 @@ export type ChatViewProps = {
    * is not in this conversation.
    */
   historySettled: boolean;
+  activateProjection: () => boolean;
 };
 
 export function ChatView({
@@ -92,6 +93,7 @@ export function ChatView({
   snapshotLiveState = null,
   snapshotNextSeq = null,
   historySettled,
+  activateProjection,
 }: ChatViewProps) {
   const openReferenceDocument = useOpenProjectDocument(projectId ?? undefined);
   const actions = useThreadActions();
@@ -138,6 +140,7 @@ export function ChatView({
   const failedSendRetry = useThreadHandoff(threadId, projectId, accountId, controller, actions, {
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
+    activateProjection,
   });
   useLiveTurnAnnouncements(threadId, latestAssistantTurn, composerRef, chatSurfaceRef);
 

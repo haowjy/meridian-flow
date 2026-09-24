@@ -31,6 +31,10 @@ const mocks = vi.hoisted(() => ({
   createThread: vi.fn(),
 }));
 
+let accountEpoch = new AbortController();
+vi.mock("@/features/project/context/account-feature-context", () => ({
+  useOptionalAccountEpochSignal: () => accountEpoch.signal,
+}));
 vi.mock("@lingui/react/macro", () => ({
   Trans: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
@@ -119,11 +123,21 @@ afterEach(async () => {
 beforeEach(() => {
   window.localStorage.clear();
   bindChatSubmissions(ACCOUNT);
+  accountEpoch = new AbortController();
 });
 
-async function mount(threadActions: ThreadStoreActions, run: ThreadRunController) {
+async function mount(
+  threadActions: ThreadStoreActions,
+  run: ThreadRunController,
+  options?: { activateProjection?: () => boolean; onRetry?: (retry: (() => void) | null) => void },
+) {
   function Probe() {
-    useThreadHandoff(THREAD_ID, "project-1", ACCOUNT, run, threadActions);
+    const failed = useThreadHandoff(THREAD_ID, "project-1", ACCOUNT, run, threadActions, {
+      liveState: null,
+      nextSeq: null,
+      activateProjection: options?.activateProjection ?? (() => true),
+    });
+    options?.onRetry?.(failed?.retry ?? null);
     return null;
   }
   const host = document.createElement("div");
@@ -221,5 +235,78 @@ describe("useThreadHandoff first-send journal reload", () => {
     expect(run.submit).not.toHaveBeenCalled();
     expect(readChatSubmissions(ACCOUNT)).toHaveLength(1);
     expect(threadActions.appendUserTurn).toHaveBeenCalledWith(THREAD_ID, "Draft the fight scene");
+  });
+
+  it("keeps Retry and the journal when projection setup fails after creation", async () => {
+    recordChatSubmission(ACCOUNT, firstSend());
+    const threadActions = actions();
+    const run = controller();
+    const activateProjection = vi.fn((): boolean => {
+      throw new Error("subscribe failed");
+    });
+    let retry: (() => void) | null = null;
+    mocks.createProjectThread.mockResolvedValue(persistedThread);
+    await mount(threadActions, run, {
+      activateProjection,
+      onRetry: (next) => {
+        retry = next;
+      },
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(retry).toBeTypeOf("function"));
+    });
+    expect(activateProjection).toHaveBeenCalledTimes(1);
+    expect(threadActions.ensureThread).toHaveBeenCalledWith(persistedThread);
+    expect(run.submit).not.toHaveBeenCalled();
+    expect(readChatSubmissions(ACCOUNT)).toEqual([
+      expect.objectContaining({ submissionId: "sub-first" }),
+    ]);
+  });
+});
+
+describe("in-flight first-send remount", () => {
+  it("shares only creation and lets the returned owner activate and dispatch", async () => {
+    recordChatSubmission(ACCOUNT, firstSend());
+    const creation = deferred<Thread>();
+    mocks.createProjectThread.mockImplementation(() => creation.promise);
+    const threadActions = actions();
+    const run = controller();
+    await mount(threadActions, run);
+    expect(mocks.createProjectThread).toHaveBeenCalledTimes(1);
+    await cleanup?.();
+    cleanup = undefined;
+    await mount(threadActions, run);
+    expect(mocks.createProjectThread).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      creation.resolve(persistedThread);
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(run.submit).toHaveBeenCalledTimes(1));
+    });
+    expect(run.submit).toHaveBeenCalledWith(
+      THREAD_ID,
+      expect.objectContaining({ submissionId: "sub-first" }),
+      expect.any(Object),
+    );
+  });
+});
+
+describe("first-send account fence", () => {
+  it("does not dispatch or retire the journal after account abort during creation", async () => {
+    recordChatSubmission(ACCOUNT, firstSend());
+    const creation = deferred<Thread>();
+    mocks.createProjectThread.mockImplementation(() => creation.promise);
+    const run = controller();
+    await mount(actions(), run);
+    expect(mocks.createProjectThread).toHaveBeenCalledTimes(1);
+    accountEpoch.abort();
+    await act(async () => {
+      creation.resolve(persistedThread);
+      await creation.promise;
+    });
+    expect(run.submit).not.toHaveBeenCalled();
+    expect(readChatSubmissions(ACCOUNT)).toEqual([
+      expect.objectContaining({ submissionId: "sub-first" }),
+    ]);
   });
 });

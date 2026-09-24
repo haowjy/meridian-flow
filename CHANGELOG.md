@@ -20,6 +20,7 @@
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
 ### Fixed
 
+- Keep addressed block replacements and prunes live for a mounted thread after its run ends, with synchronous first-send projection activation, replay/snapshot freshness fences, and account-epoch cleanup.
 - Prepare durable thread-block projection with a shared counter-free reducer, wire-sequence freshness floor, flush-only run ordering seam, and account-fenced snapshot/cache operations.
 - Preserve exact parent-turn/tool-call/execution/direct-mode correlation on retained child cards across live and persisted protocol order, including authoritative snapshot replacement and late admission binding.
 - Empty failed or cancelled child reports now state that no partial output was returned. Direct cards use the human error message; explicit report rows keep structured reasons in their details without labeling an absent body as a partial result.

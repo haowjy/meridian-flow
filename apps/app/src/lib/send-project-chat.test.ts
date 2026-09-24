@@ -3,7 +3,12 @@
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { bindChatSubmissions, readChatSubmissions } from "@/client/chat-submissions";
 import type { ThreadStoreActions } from "@/client/stores";
-import { inflightChatHref, type SendProjectChatArgs, sendProjectChat } from "./send-project-chat";
+import {
+  inflightChatHref,
+  runExclusiveThreadCreation,
+  type SendProjectChatArgs,
+  sendProjectChat,
+} from "./send-project-chat";
 
 vi.mock("./thread-title", () => ({
   deriveTitleFromMessage: (text: string) => text.trim().slice(0, 40),
@@ -127,5 +132,39 @@ describe("sendProjectChat", () => {
         "550e8400-e29b-41d4-a716-446655440000",
       ),
     ).toBe("/p/550e8400-e29b-41d4-a716-446655440000/chat/550e8400-e29b-41d4-a716-446655440000");
+  });
+});
+
+describe("first-send creation sharing", () => {
+  it("shares one epoch/thread create, but not a later A→B→A epoch", async () => {
+    const firstEpoch = new AbortController().signal;
+    const nextEpoch = new AbortController().signal;
+    const returnedEpoch = new AbortController().signal;
+    let resolveFirst!: (thread: import("@meridian/contracts/protocol").Thread) => void;
+    const first = new Promise<import("@meridian/contracts/protocol").Thread>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const thread = { id: "thread-1" } as import("@meridian/contracts/protocol").Thread;
+    let creates = 0;
+    const old = runExclusiveThreadCreation(firstEpoch, "thread-1", () => {
+      creates++;
+      return first;
+    });
+    const joined = runExclusiveThreadCreation(firstEpoch, "thread-1", () => {
+      creates++;
+      return Promise.resolve(thread);
+    });
+    expect(joined).toBe(old);
+    const middle = runExclusiveThreadCreation(nextEpoch, "thread-1", () => {
+      creates++;
+      return Promise.resolve(thread);
+    });
+    const returned = runExclusiveThreadCreation(returnedEpoch, "thread-1", () => {
+      creates++;
+      return Promise.resolve(thread);
+    });
+    expect(creates).toBe(3);
+    resolveFirst(thread);
+    await Promise.all([old, joined, middle, returned]);
   });
 });

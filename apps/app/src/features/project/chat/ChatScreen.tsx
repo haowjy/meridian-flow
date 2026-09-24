@@ -87,6 +87,7 @@ function ChatScreenLoaded({
 }) {
   const {
     snapshot,
+    activateProjection,
     thread: snapshotThread,
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
@@ -134,6 +135,7 @@ function ChatScreenLoaded({
               snapshotLiveState={snapshotLiveState}
               snapshotNextSeq={snapshotNextSeq}
               historySettled={historySettled}
+              activateProjection={activateProjection}
               key={`${projectId}:${threadId}`}
             />
           </ProjectChatContextNavigationProvider>

@@ -198,10 +198,13 @@ which reconciles server turns against local optimistic state via
 | **HTTP** | Chat route activation (mount/remount), a new run (`RUN_STARTED`), or gap | `useThreadSnapshotSync` (Query fetch) |
 | **WebSocket** | Reconnect/gap recovery | `ThreadRunController.applySnapshot` |
 
-`useThreadSnapshotSync` is always stale and refetches on activation, and it
-subscribes to the thread transport to refetch when a new run starts or a gap
-opens. A thread that advanced while the writer was elsewhere — a background
-child's report waking the parent — therefore appears on return without a
+`useThreadSnapshotSync` is always stale and refetches on activation. Its one
+mounted-thread transport handler also owns addressed `meridian.block.upserted`
+and `meridian.block.pruned` reduction after a run terminates; the run controller
+owns deltas, commands and terminals, and flushes buffered deltas before a
+thread-owned block mutation. The handler refetches on `RUN_STARTED` and gap.
+A thread that advanced while the writer was elsewhere — a background child's
+report waking the parent — therefore appears on return without a
 reload, and the handoff learns of a server-initiated run it did not start.
 Cached turns render first, so navigate-first is preserved. The handoff resumes
 each distinct active run once; see
@@ -219,14 +222,22 @@ head+1; the client stores it directly, no arithmetic). Acknowledgement raises
 the thread's stored snapshot floor to it, so a stale snapshot cannot remove
 the rewritten row while the projector catches up.
 
-**Monotonic sequence guard.** `applyThreadSnapshot` requires a
-`nextSeq` option (the server-assigned journal sequence for the snapshot).
-The store tracks `snapshotNextSeqFloorByThread` and rejects
-any snapshot whose `nextSeq` is strictly less than the stored value
-(BigInt comparison for journal sequences beyond Number.MAX_SAFE_INTEGER).
-Both HTTP snapshot callers must pass `nextSeq`. An unsequenced caller
-(no `nextSeq`) is treated as authoritative and always applies -- omitting
-`nextSeq` is intentional only for the handoff/pending-creation path.
+**Wire-sequence freshness.** `applyThreadSnapshot` requires `nextSeq` in the
+same decimal wire-sequence space as WebSocket frames (the server computes it
+from the encoded journal head). The store rejects a snapshot below
+`snapshotNextSeqFloorByThread` before cache or lifecycle effects. A validated
+addressed block frame at sequence `s` advances a separate durable-only cursor
+and raises that floor to at least `s + 1`; a deliberate transport rewind cannot
+restore an older card. Only a snapshot whose history actually reconciled
+advances that cursor through `nextSeq - 1`. The run's resume cursor remains
+independent. Both HTTP acquisition paths pass `nextSeq` and retry a stale
+response while recovery still needs authority.
+
+First-send create-or-get activates the mounted projection synchronously before
+run dispatch; ordinary existing-thread mounts auto-activate. The shared Query
+client outlives an account epoch, so account close removes only canonical
+three-part snapshot queries and abort fences reject old responses. The exact
+Work-binding snapshot writer keeps that key and checks its captured epoch.
 
 ## Authenticated layout shell
 

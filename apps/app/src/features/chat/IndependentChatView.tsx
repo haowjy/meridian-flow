@@ -33,6 +33,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
   const navigate = useNavigate();
   const {
     thread,
+    activateProjection,
     liveState: snapshotLiveState,
     nextSeq: snapshotNextSeq,
     settled: historySettled,
@@ -102,6 +103,7 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
             snapshotLiveState={snapshotLiveState}
             snapshotNextSeq={snapshotNextSeq}
             historySettled={historySettled}
+            activateProjection={activateProjection}
             key={threadId}
           />
         </DraftReviewProvider>
