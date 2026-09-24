@@ -5,7 +5,7 @@
  * shared right-dock slot. Surface prefs are keyed by stable surface identity
  * (last committed width + collapsed). The dock slot also has its own
  * width/collapsed pref so that whichever surface currently occupies the dock
- * (chat on home/context screens, context-rail on chat screen) reads/writes a
+ * (chat on Work/Editor, context-rail on Chat) reads/writes a
  * single shared width and collapse state — the dock reads as one persistent
  * sidebar across screens, only its inner content swaps.
  *

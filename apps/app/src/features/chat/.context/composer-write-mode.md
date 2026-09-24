@@ -66,11 +66,11 @@ unconfirmed request can ask the server; loading client state must never imply
 that nothing is pending.
 
 The shared Work picker and selected-Work write-mode presentation live in the
-neutral `components/app/work-composer-controls` boundary. Home and Chat adapt
-that presentation to different commands: Home edits prospective creation state,
-while Chat can durably rebind an idle existing thread. Home's selected Work is
-already durable, so its write-mode control reads and mutates that Work's real
-policy before thread creation; it does not invent a provisional mode. Draft
+neutral `components/app/work-composer-controls` boundary. The Chat landing and
+chat detail adapt that presentation to different commands: the landing edits
+prospective creation state, while chat detail can durably rebind an idle existing
+thread. The landing's selected Work is already durable, so its write-mode
+control reads and mutates that Work's real policy before thread creation; it does not invent a provisional mode. Draft
 review launch behavior is injected by each project-shell adapter rather than
 imported into the neutral controls.
 
@@ -87,12 +87,12 @@ per page load and freezes that selection; component re-renders do not consume
 another entry. `useSyncExternalStore` supplies a stable first descriptor during
 SSR and the rotated descriptor on the client, while locale resolution happens
 inside the hook. Composer owns rotation; its `placeholder` prop remains the
-explicit override used by the Home hero.
+explicit override used by the Chat landing.
 
-Home and ordinary Chat share a neutral, shadowless Composer surface. Their
-different placements intentionally retain different radius and input-height
-geometry: Home's entry placement is not the Chat footer. Do not add a
-Home-only shadow or flatten those placement-specific geometry differences in
+The Chat landing and chat detail share a neutral, shadowless Composer surface.
+Their different placements intentionally retain different radius and
+input-height geometry: the landing entry is not the chat footer. Do not add a
+landing-only shadow or flatten those placement-specific geometry differences in
 the name of shared implementation.
 
 The base `Textarea` applies `field-sizing-content`, but Composer's JavaScript

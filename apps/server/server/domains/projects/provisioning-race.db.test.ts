@@ -142,9 +142,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const email = "race@example.com";
       const bootstrapUserIds: UserId[] = [];
       const projects = {
-        async findPersonalProjectId() {
-          return null;
-        },
         async ensureDefaultBootstrapReady(userId: UserId) {
           bootstrapUserIds.push(userId);
           return true;

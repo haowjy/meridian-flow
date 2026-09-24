@@ -38,7 +38,7 @@ export function addressWorkSelection(address: ProjectAddress): AddressSelection 
 export function addressChatSelection(address: ProjectAddress): AddressSelection {
   const d = address.destination;
   if (d.kind === "chat") return { kind: "slug", slug: d.chatId };
-  if (d.kind === "chats") return { kind: "none" };
+  if (d.kind === "chat-index") return { kind: "none" };
   return address.chat;
 }
 

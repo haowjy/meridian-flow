@@ -1,4 +1,4 @@
-/** Composer-led Project Home and its independent, server-owned return feed. */
+/** Composer-led project Chat landing and its server-owned return feed. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
@@ -9,12 +9,12 @@ import { CreationComposer } from "@/features/chat/CreationComposer";
 import { HomeFeed } from "./HomeFeed";
 import { useHomeFavoriteMovement } from "./use-home-favorite-movement";
 
-export type HomeScreenProps = {
+export type ChatLandingScreenProps = {
   projectId: string;
   onOpenThread: (threadId: string) => void;
 };
 
-export function HomeScreen({ projectId, onOpenThread }: HomeScreenProps) {
+export function ChatLandingScreen({ projectId, onOpenThread }: ChatLandingScreenProps) {
   const feed = useHomeChatFeed(projectId);
   const { announce, announceError } = useAnnouncement();
   const movement = useHomeFavoriteMovement();
@@ -58,7 +58,7 @@ export function HomeScreen({ projectId, onOpenThread }: HomeScreenProps) {
   return (
     <div
       ref={movement.scrollRef}
-      data-home-scroll-owner
+      data-chat-landing-scroll-owner
       className="app-scroll main-pane"
       {...movement.interactionProps}
     >
@@ -66,7 +66,7 @@ export function HomeScreen({ projectId, onOpenThread }: HomeScreenProps) {
         <div className="flex flex-col gap-6">
           <section>
             <div className="mx-auto w-full max-w-3xl">
-              <h1 className="home-composer-heading text-headline-section">
+              <h1 className="chat-landing-heading text-headline-section">
                 <Trans>What will you write next?</Trans>
               </h1>
               <p className="mt-2 text-body text-muted-foreground">

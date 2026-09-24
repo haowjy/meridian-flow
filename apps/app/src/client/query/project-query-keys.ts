@@ -53,6 +53,8 @@ export function isProjectContextCatalogKey(
 export const projectQueryKeys = {
   all: ["projects"] as const,
   list: ["projects", "list"] as const,
+  renamePrefix: ["projects", "rename"] as const,
+  rename: (projectId: string) => ["projects", "rename", projectId] as const,
   detail: (projectId: string) => ["projects", "detail", projectId] as const,
   documentAddresses: (projectId: string) => ["projects", projectId, "document-addresses"] as const,
   threads: (projectId: string) => ["projects", projectId, "threads"] as const,

@@ -1,5 +1,5 @@
 /**
- * useProjectList — React Query hook for the sidebar project list, merged with
+ * useProjectList — React Query hook for the account project library, merged with
  * optimistic and independent-project state.
  *
  * Exposes the loading/empty/ready/error list status plus the visible-project
@@ -22,7 +22,24 @@ function useProjectListQuery() {
     queryFn: async () => {
       const apiProjects = await listProjects();
       const prev = queryClient.getQueryData<Project[] | null>(projectQueryKeys.list);
-      return mergeApiProjects(prev ?? null, apiProjects);
+      const pendingTitles = new Map(
+        queryClient
+          .getMutationCache()
+          .findAll({ mutationKey: projectQueryKeys.renamePrefix })
+          .filter((mutation) => mutation.state.status === "pending")
+          .flatMap((mutation) => {
+            const projectId = mutation.options.mutationKey?.[2];
+            const title = mutation.state.variables;
+            return typeof projectId === "string" && typeof title === "string"
+              ? [[projectId, title] as const]
+              : [];
+          }),
+      );
+      const reconciled = apiProjects.map((project) => {
+        const title = pendingTitles.get(project.id);
+        return title ? { ...project, title, name: title } : project;
+      });
+      return mergeApiProjects(prev ?? null, reconciled);
     },
     staleTime: 60_000,
   });
@@ -36,7 +53,7 @@ export type ProjectListStatus = {
 };
 
 /**
- * Sidebar/home project list. `null` = not loaded yet; `[]` = loaded and empty.
+ * Account project list. `null` = not loaded yet; `[]` = loaded and empty.
  * Seeded from the authenticated route loader via the shared query provider.
  */
 export function useProjectListStatus(): ProjectListStatus {
@@ -55,7 +72,7 @@ export function useProject(projectId: string): Project | undefined {
 }
 
 /**
- * Project list for *display* surfaces (home recents, sidebar, drawer) —
+ * Project list for *display* surfaces (account library) —
  * excludes un-promoted independent chats, which are project-backed but hidden
  * until the user promotes them. Use `useProjectList` (unfiltered) when you need
  * to resolve a specific project by id, including hidden ones.

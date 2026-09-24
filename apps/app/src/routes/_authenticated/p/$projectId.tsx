@@ -2,7 +2,7 @@
 import { Trans } from "@lingui/react/macro";
 import { createFileRoute, useRouter, useRouterState } from "@tanstack/react-router";
 import type { ReactNode } from "react";
-import { getProjectBySlug } from "@/client/api/projects-api";
+import { getProject } from "@/client/api/projects-api";
 import { ssrApiRequestInit } from "@/client/api/ssr-api-request";
 import { loadProjectRouteData } from "@/client/query/project-route-data";
 import { Button } from "@/components/ui/button";
@@ -10,10 +10,10 @@ import { ReadableProjectRoute } from "@/features/project/routing/ReadableProject
 import { PERSISTENT_SHELL_OPTIONS } from "@/router-shell";
 import { Route as AuthenticatedRoute } from "../../_authenticated";
 
-export const Route = createFileRoute("/_authenticated/p/$projectSlug")({
+export const Route = createFileRoute("/_authenticated/p/$projectId")({
   ...PERSISTENT_SHELL_OPTIONS,
   loader: async ({ params }) => {
-    const project = await getProjectBySlug(params.projectSlug.toLowerCase(), ssrApiRequestInit());
+    const project = await getProject(params.projectId, ssrApiRequestInit());
     return { project, data: await loadProjectRouteData(project.id) };
   },
   pendingMs: 0,
@@ -54,15 +54,21 @@ function ProjectRoute() {
   const { project, data } = Route.useLoaderData();
   const { user } = AuthenticatedRoute.useLoaderData();
   return (
-    <ProjectIdentityBoundary slug={project.slug}>
+    <ProjectIdentityBoundary projectId={project.id}>
       <ReadableProjectRoute key={project.id} project={project} data={data} user={user} />
     </ProjectIdentityBoundary>
   );
 }
 
 /** Fence the previous live project synchronously, before the next loader settles. */
-export function ProjectIdentityBoundary({ slug, children }: { slug: string; children: ReactNode }) {
-  const requestedSlug = useRouterState({
+export function ProjectIdentityBoundary({
+  projectId,
+  children,
+}: {
+  projectId: string;
+  children: ReactNode;
+}) {
+  const requestedProjectId = useRouterState({
     select: (state) => {
       try {
         return decodeURIComponent(state.location.pathname.split("/")[2] ?? "").toLowerCase();
@@ -71,6 +77,6 @@ export function ProjectIdentityBoundary({ slug, children }: { slug: string; chil
       }
     },
   });
-  if (requestedSlug !== slug) return <PendingProject />;
+  if (requestedProjectId !== projectId.toLowerCase()) return <PendingProject />;
   return children;
 }

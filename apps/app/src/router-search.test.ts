@@ -13,7 +13,9 @@ it("validates the original duplicate query through the installed router", async 
   const root = createRootRoute();
   const route = createRoute({ getParentRoute: () => root, path: "/p/$slug/editor" });
   const history = createMemoryHistory({
-    initialEntries: ["/p/serial/editor?chat=one&%63hat=two&settings=usage"],
+    initialEntries: [
+      "/p/550e8400-e29b-41d4-a716-446655440000/editor?chat=one&%63hat=two&settings=usage",
+    ],
   });
   const router = createRouter({
     routeTree: root.addChildren([route]),
@@ -29,11 +31,11 @@ it("validates the original duplicate query through the installed router", async 
     ),
   ).toEqual({ kind: "invalid", reason: "duplicate:chat" });
   await router.navigate({
-    href: "/p/serial/editor?chat=550e8400-e29b-41d4-a716-446655440000&settings=usage",
+    href: "/p/550e8400-e29b-41d4-a716-446655440000/editor?chat=550e8400-e29b-41d4-a716-446655440000&settings=usage",
     replace: true,
   });
   expect(history.location.href).toBe(
-    "/p/serial/editor?chat=550e8400-e29b-41d4-a716-446655440000&settings=usage",
+    "/p/550e8400-e29b-41d4-a716-446655440000/editor?chat=550e8400-e29b-41d4-a716-446655440000&settings=usage",
   );
   expect(
     parseProjectAddress(

@@ -9,14 +9,9 @@
  */
 
 import type { Project } from "@meridian/contracts/projects";
-import type {
-  ContextOperationReceipt,
-  HomeChatFeedPage,
-  HomeProjectResponse,
-} from "@meridian/contracts/protocol";
+import type { ContextOperationReceipt, HomeChatFeedPage } from "@meridian/contracts/protocol";
 import {
   API_PROJECTS_PATH,
-  apiProjectAddressPath,
   apiProjectContextCatalogPath,
   apiProjectContextCreatePath,
   apiProjectContextCreateUntitledPath,
@@ -27,7 +22,6 @@ import {
   apiProjectDocumentAddressPath,
   apiProjectHomeFeedPath,
   apiProjectPath,
-  apiProjectsHomePath,
   apiProjectThreadsPath,
   apiProjectWorkingSetPath,
   apiProjectWorksPath,
@@ -58,6 +52,7 @@ import {
   type ProjectContextTreeScheme,
   type ProjectWorkingSet,
   type ThreadListItem,
+  type UpdateProjectRequest,
   type UpdateWorkWriteModeRequest,
   type UpdateWorkWriteModeResponse,
   type Work,
@@ -83,12 +78,6 @@ function urlFor(path: string, init?: RequestInitOptions): string {
   return init?.origin ? new URL(path, init.origin).toString() : path;
 }
 
-export async function getHomeProject(init?: RequestInitOptions): Promise<HomeProjectResponse> {
-  return getJson<HomeProjectResponse>(urlFor(apiProjectsHomePath(), init), {
-    headers: init?.headers,
-  });
-}
-
 export function getProjectHomeFeed(
   projectId: string,
   cursor?: string | null,
@@ -102,6 +91,16 @@ export async function listProjects(init?: RequestInitOptions): Promise<Project[]
     headers: init?.headers,
   });
   return response.projects;
+}
+
+export function updateProject(
+  projectId: string,
+  data: UpdateProjectRequest,
+  init?: RequestInitOptions,
+): Promise<Project> {
+  return patchJson<Project>(urlFor(apiProjectPath(projectId), init), data, {
+    headers: init?.headers,
+  });
 }
 
 export async function listProjectThreads(
@@ -193,10 +192,6 @@ export function restoreWork(workId: string, init?: RequestInitOptions): Promise<
 /** Reading an owned project also completes idempotent default-package seeding. */
 export async function getProject(projectId: string, init?: RequestInitOptions): Promise<Project> {
   return getJson(urlFor(apiProjectPath(projectId), init), { headers: init?.headers });
-}
-
-export async function getProjectBySlug(slug: string, init?: RequestInitOptions): Promise<Project> {
-  return getJson(urlFor(apiProjectAddressPath(slug), init), { headers: init?.headers });
 }
 
 export async function getProjectDocumentAddress(

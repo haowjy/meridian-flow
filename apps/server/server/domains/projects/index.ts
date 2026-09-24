@@ -7,7 +7,7 @@ import type {
   WorkId,
 } from "@meridian/contracts/runtime";
 import type { Database } from "@meridian/database";
-import { contextSources, documents, projects, works } from "@meridian/database";
+import { documents, projects, works } from "@meridian/database";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { currentDrizzleDb, runInDrizzleTransaction } from "../../shared/drizzle-transaction.js";
 import type {
@@ -18,7 +18,10 @@ import type {
 import { ensureWorkContextSource } from "../context/context-source-provisioning.js";
 import { DrizzleContextDocumentStore } from "../context/index.js";
 import { MANUSCRIPT_URI } from "../context/manuscript-uri.js";
-import { nextProjectSlug } from "./adapters/project-repository/shared.js";
+import {
+  ensureProjectManifestSource,
+  nextProjectSlug,
+} from "./adapters/project-repository/shared.js";
 import { NO_WORK_NAME } from "./adapters/work-repository/shared.js";
 import type { ContextCatalogLifecyclePort } from "./ports/context-catalog-lifecycle.js";
 
@@ -58,8 +61,6 @@ export type ProjectBootstrapResult = {
 };
 
 export type ProjectBootstrapRepository = {
-  /** Cheap existence check — no advisory lock or bootstrap side effects. */
-  findPersonalProjectId(userId: UserId): Promise<ProjectId | null>;
   /**
    * Reads the durable completion flag and repairs an incomplete bootstrap.
    * Seed failures leave readiness false for a later repair without failing the
@@ -71,9 +72,6 @@ export type ProjectBootstrapRepository = {
 
 export function createInMemoryProjectBootstrapRepository(): ProjectBootstrapRepository {
   return {
-    async findPersonalProjectId() {
-      return null;
-    },
     async ensureDefaultBootstrapReady() {
       return false;
     },
@@ -184,39 +182,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     return row.id;
   }
 
-  async function ensureContextSource(
-    tx: BootstrapDb,
-    projectId: ProjectId,
-    input: { slug: "manuscript"; name: string; isPrimary?: boolean },
-  ): Promise<ContextSourceId> {
-    const [existing] = await tx
-      .select({ id: contextSources.id })
-      .from(contextSources)
-      .where(
-        and(
-          eq(contextSources.projectId, projectId),
-          eq(contextSources.slug, input.slug),
-          isNull(contextSources.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (existing) return existing.id;
-
-    const [source] = await tx
-      .insert(contextSources)
-      .values({
-        projectId,
-        name: input.name,
-        slug: input.slug,
-        scope: "project",
-        adapterType: "local",
-        isPrimary: input.isPrimary ?? false,
-      })
-      .returning({ id: contextSources.id });
-    if (!source) throw new Error(`Failed to create ${input.slug} context source`);
-    return source.id;
-  }
-
   async function ensureDocument(
     tx: BootstrapDb,
     projectId: ProjectId,
@@ -286,17 +251,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
     return documentId;
   }
 
-  async function findPersonalProjectId(userId: UserId): Promise<ProjectId | null> {
-    const [existing] = await db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(
-        and(eq(projects.userId, userId), eq(projects.isPersonal, true), isNull(projects.deletedAt)),
-      )
-      .limit(1);
-    return existing?.id ?? null;
-  }
-
   async function isDefaultBootstrapReady(userId: UserId): Promise<boolean> {
     const [project] = await db
       .select({ ready: projects.defaultBootstrapReady })
@@ -314,11 +268,7 @@ export function createDrizzleProjectBootstrapRepository(deps: {
       await lockBootstrap(tx, userId);
       const projectId = await ensureProject(tx, userId);
       const noWorkId = await ensureLockedNoWork(tx, projectId, userId);
-      const manuscriptSourceId = await ensureContextSource(tx, projectId, {
-        slug: "manuscript",
-        name: "Manuscript",
-        isPrimary: true,
-      });
+      const manuscriptSourceId = await ensureProjectManifestSource(db, projectId);
       await ensureWorkContextSource(db, noWorkId, "scratch");
       await ensureWorkContextSource(db, noWorkId, "uploads");
       const documentId = await ensureDocument(tx, projectId, manuscriptSourceId);
@@ -344,7 +294,6 @@ export function createDrizzleProjectBootstrapRepository(deps: {
   }
 
   return {
-    findPersonalProjectId,
     async ensureDefaultBootstrapReady(userId) {
       if ((await isDefaultBootstrapReady(userId)) && repairedReadyUsers.has(userId)) return true;
       try {

@@ -30,10 +30,9 @@ type DockViewSet = {
 
 /**
  * The view set is a function of the dock occupant, which the screen fixes:
- * the chat screen docks the context rail; Home/Context dock the chat surface.
+ * the Chat screen docks the context rail; Work/Editor dock the chat surface.
  */
 const DOCK_VIEW_SETS: Record<ScreenKey, DockViewSet> = {
-  home: { views: ["chat", "changes"], default: "chat", primary: "chat" },
   work: { views: ["chat", "changes"], default: "chat", primary: "chat" },
   chat: { views: ["context", "changes"], default: "context", primary: "context" },
   context: { views: ["chat", "changes"], default: "chat", primary: "chat" },

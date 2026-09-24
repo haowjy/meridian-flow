@@ -4,12 +4,15 @@
  *
  * LeftSidebar (desktop persistent rail) and NavigationDrawer (phone Sheet) both
  * compose this; each owns only its chrome — the collapse control / Sheet, the
- * wordmark header, and safe-area padding. `presentation` carries the
+ * project header, and safe-area padding. `presentation` carries the
  * desktop↔phone touch-target and spacing differences (mirroring how
  * SettingsDialog/PhoneSettings share section bodies), and "close the drawer on
  * select" stays a chrome concern: NavigationDrawer passes `onSelect*` callbacks
  * that close the sheet, so the body never needs to know it lives in one.
  */
+import { Trans } from "@lingui/react/macro";
+import { Link } from "@tanstack/react-router";
+import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { AccountMenu } from "@/features/account/AccountMenu";
@@ -60,6 +63,16 @@ export function WorkspaceNavBody({
         className={cn("shrink-0 border-t border-border-subtle px-2", phone ? "pt-2" : "py-1.5")}
         style={phone ? { paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" } : undefined}
       >
+        <Link
+          to="/"
+          className={cn(
+            "focus-ring flex items-center gap-2 rounded-md px-2 text-sm text-ink-muted no-underline hover:bg-sidebar-accent/50 hover:text-foreground",
+            phone ? "min-h-11" : "min-h-9",
+          )}
+        >
+          <ArrowLeft className="size-4 shrink-0" aria-hidden />
+          <Trans>View projects</Trans>
+        </Link>
         <AccountMenu />
       </div>
     </>

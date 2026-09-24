@@ -4,14 +4,13 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import { MeridianMark } from "@/components/app/MeridianMark";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
+import { InlineProjectTitle, type ProjectTitleEdit } from "../shell/InlineProjectTitle";
 import type { ScreenKey } from "../shell/screens";
 import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
 
@@ -19,6 +18,8 @@ export type NavigationDrawerProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   projectId: string;
+  projectTitle: string;
+  titleEdit: ProjectTitleEdit;
   activeScreen: ScreenKey;
   editorWorkId: string | null;
   contextLive: boolean;
@@ -32,6 +33,8 @@ export function NavigationDrawer({
   open,
   onOpenChange,
   projectId,
+  projectTitle,
+  titleEdit,
   activeScreen,
   editorWorkId,
   contextLive,
@@ -105,18 +108,14 @@ export function NavigationDrawer({
           }}
         >
           <nav aria-label={t`Workspace navigation`} className="flex h-full min-h-0 flex-col">
-            <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border-subtle px-3">
-              <Link
-                to="/home"
-                className="focus-ring flex min-w-0 items-center gap-1 rounded-md no-underline"
-                aria-label={t`Home`}
-                onClick={() => onOpenChange(false)}
-              >
-                <MeridianMark className="size-7" />
-                <span className="text-sm font-semibold tracking-tight text-foreground">
-                  Meridian
-                </span>
-              </Link>
+            <div className="flex h-12 shrink-0 items-center border-b border-border-subtle px-3">
+              <InlineProjectTitle
+                title={projectTitle}
+                {...titleEdit}
+                showRenameHint
+                className="focus-ring flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-semibold hover:bg-sidebar-accent"
+                inputClassName="h-11 text-sm"
+              />
             </div>
 
             {/* Selecting a destination also closes the drawer — a chrome

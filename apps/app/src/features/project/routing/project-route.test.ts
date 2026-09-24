@@ -31,7 +31,7 @@ describe("guarded context route repair", () => {
   });
 
   it.each([
-    { screen: "home" as const },
+    { screen: "chat" as const },
     { screen: "context" as const, scheme: "manuscript" as const, path: "/newer.md" },
   ])("lets newer navigation defeat delayed repair", (latest) => {
     expect(applyContextRepairIfCurrent(repair, latest)).toEqual(latest);

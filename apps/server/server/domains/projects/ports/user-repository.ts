@@ -3,7 +3,7 @@
  * `users.id` is Meridian's internal domain user id; `users.external_id` stores the
  * provider credential id (WorkOS). The boundary both user adapters implement.
  */
-import type { ProjectId, UserId } from "@meridian/contracts/runtime";
+import type { UserId } from "@meridian/contracts/runtime";
 
 export interface EnsureUserInput {
   externalId: string;
@@ -29,8 +29,6 @@ export class AccountLinkConflictError extends Error {
  */
 export interface UserRepository {
   ensureUser(input: EnsureUserInput): Promise<UserId>;
-  getLastActiveProjectId(userId: UserId): Promise<ProjectId | null>;
-  setLastActiveProjectId(userId: UserId, projectId: ProjectId | null): Promise<void>;
   getWorkingSetSyncEnabled(userId: UserId): Promise<boolean>;
   updateWorkingSetSyncEnabled(userId: UserId, enabled: boolean): Promise<boolean>;
 }
