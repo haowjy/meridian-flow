@@ -140,7 +140,7 @@ async function fixture(
           name: "Critic",
           model: "critic-model",
           mode: "primary",
-          tools: { read: "allow", edit: "deny", ask_user: "allow" },
+          tools: { edit: "deny", ask_user: "allow" },
         },
         "You are Critic.",
       ),
@@ -164,7 +164,7 @@ async function fixture(
           name: "Parent",
           model: "parent-model",
           effort: "high",
-          tools: { read: "allow", edit: "deny" },
+          tools: { edit: "deny" },
         },
         "",
       ),
@@ -183,7 +183,7 @@ async function fixture(
     model: "parent-model",
     skills: { load: [], available: [] },
     namedTargets,
-    tools: { read: "allow", edit: "deny" } as const,
+    tools: { edit: "deny" } as const,
     effort: "high" as const,
   };
   await revisions.bindThread(parent.id, parentRevision.id, parentConfiguration, null);
@@ -438,7 +438,7 @@ describe("ChildRunCoordinator spawn selection", () => {
       expect(binding?.revision).toBeNull();
       expect(binding?.configuration.model).toBe("parent-model");
       expect(binding?.configuration.namedTargets).toEqual(parentConfiguration.namedTargets);
-      expect(binding?.configuration.tools).toEqual({ read: "allow", edit: "deny" });
+      expect(binding?.configuration.tools).toEqual({ edit: "deny" });
       expect(binding?.configuration.effort).toBe("high");
     }
   });
@@ -453,7 +453,7 @@ describe("ChildRunCoordinator spawn selection", () => {
       model: "parent-model",
       skills: { load: [], available: [] },
       namedTargets: [] as Array<{ name: string; definitionRevisionId: string }>,
-      tools: { read: "allow", edit: "deny" } as const,
+      tools: { edit: "deny" } as const,
       effort: "high" as const,
     };
     const genericParent = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
@@ -614,7 +614,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
         model: "parent-model",
         skills: { load: [], available: [] },
         namedTargets: [],
-        tools: { read: "allow", edit: "deny" },
+        tools: { edit: "deny" },
       },
       null,
     );
@@ -676,7 +676,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
         model: "parent-model",
         skills: { load: [], available: [] },
         namedTargets: [{ name: "critic", definitionRevisionId: critic.id }],
-        tools: { read: "allow", edit: "allow", ask_user: "allow" },
+        tools: { edit: "allow", ask_user: "allow" },
       },
       null,
     );
@@ -695,11 +695,7 @@ describe("ChildRunCoordinator invocation overlay", () => {
     expect(result.status).toBe("completed");
     if (result.status !== "completed") return;
     const binding = await revisions.readThreadBinding(result.report.threadId);
-    expect(binding?.configuration.tools).toEqual({
-      read: "allow",
-      edit: "allow",
-      ask_user: "allow",
-    });
+    expect(binding?.configuration.tools).toEqual({ edit: "allow", ask_user: "allow" });
   });
 
   it("rejects an agentless child whose overridden model is unavailable", async () => {

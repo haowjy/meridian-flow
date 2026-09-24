@@ -9,7 +9,6 @@ export type WorkCommandName = WorkCommand["command"];
 
 export interface EffectiveToolPolicy {
   tools: ReadonlySet<string>;
-  readCommands: ReadonlySet<WriteCommandName>;
   writeCommands: ReadonlySet<WriteCommandName>;
   workCommands: ReadonlySet<WorkCommandName>;
 }
@@ -24,7 +23,6 @@ const ALL_WRITE_COMMANDS = [
   "undo",
   "redo",
 ] as const satisfies readonly WriteCommandName[];
-const DOCUMENT_READ_COMMANDS = ["read", "diff"] as const satisfies readonly WriteCommandName[];
 const WRITE_MUTATE_COMMANDS = ALL_WRITE_COMMANDS.filter(
   (command) => command !== "read" && command !== "diff",
 );
@@ -42,13 +40,14 @@ type CompiledToolFields = {
 };
 
 export function projectToolPolicy(metadata: CompiledToolFields): EffectiveToolPolicy {
-  const read = marsAllowed("read", metadata);
   const mutate = marsAllowed("edit", metadata);
-  const documentRead = read || mutate;
   const askUser = marsAllowed("ask_user", metadata);
 
-  const readCommands = new Set<WriteCommandName>(documentRead ? DOCUMENT_READ_COMMANDS : []);
-  const writeCommands = new Set<WriteCommandName>(mutate ? WRITE_MUTATE_COMMANDS : []);
+  const writeCommands = new Set<WriteCommandName>([
+    "read",
+    "diff",
+    ...(mutate ? WRITE_MUTATE_COMMANDS : []),
+  ]);
   const workCommands = new Set<WorkCommandName>([
     ...WORK_NAV_COMMANDS,
     ...(mutate ? WORK_MUTATE_COMMANDS : []),
@@ -58,16 +57,19 @@ export function projectToolPolicy(metadata: CompiledToolFields): EffectiveToolPo
   // spawn is always advertised: named targets come from the roster, and the
   // generic subagent stays available even when the roster is empty.
   // Lifecycle reads/actions carry no Mars name: they are bounded by thread authority.
-  const tools = new Set<string>(["work", "skill", "spawn", "thread_message", "thread_report"]);
-  if (documentRead) tools.add("read");
-  if (mutate) tools.add("write");
-  if (documentRead) {
-    tools.add("ls");
-    tools.add("search");
-  }
+  const tools = new Set<string>([
+    "work",
+    "skill",
+    "spawn",
+    "thread_message",
+    "thread_report",
+    "write",
+    "ls",
+    "search",
+  ]);
   if (askUser) tools.add("ask_user");
 
-  return { tools, readCommands, writeCommands, workCommands };
+  return { tools, writeCommands, workCommands };
 }
 
 /** Single per-tool command mapping; callers must not duplicate these lists. */
@@ -75,7 +77,6 @@ export function commandSetForTool(
   policy: EffectiveToolPolicy,
   toolName: string,
 ): ReadonlySet<string> | undefined {
-  if (toolName === "read") return policy.readCommands;
   if (toolName === "write") return policy.writeCommands;
   if (toolName === "work") return policy.workCommands;
   return undefined;
@@ -83,7 +84,7 @@ export function commandSetForTool(
 
 /** Commands understood by the shared command schemas, including policy-disabled commands. */
 export function knownCommandSetForTool(toolName: string): ReadonlySet<string> {
-  if (toolName === "read" || toolName === "write") return new Set(ALL_WRITE_COMMANDS);
+  if (toolName === "write") return new Set(ALL_WRITE_COMMANDS);
   if (toolName === "work") return new Set(ALL_WORK_COMMANDS);
   return new Set();
 }

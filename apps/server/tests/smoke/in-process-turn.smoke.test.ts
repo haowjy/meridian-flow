@@ -67,7 +67,7 @@ describe("smoke: in-process turn", () => {
           {
             type: "tool_use",
             toolCallId: "call-read-smoke",
-            toolName: "read",
+            toolName: "write",
             input: { command: "read", path: FILE_URI },
           },
         ],

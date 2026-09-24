@@ -763,7 +763,6 @@ export function createWiredCoreToolRegistrations(deps: ToolWiringDeps): ToolRegi
   };
 
   return createCoreToolRegistrations({
-    read: documentToolHandler,
     write: documentToolHandler,
     work: async (input: unknown, ctx: ToolHandlerContext) => {
       const parsed = WorkCommandSchema.safeParse(input);

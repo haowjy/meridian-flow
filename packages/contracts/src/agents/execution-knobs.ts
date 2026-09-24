@@ -51,10 +51,6 @@ export const toolAliases: Record<string, string> = {
   terminal: "bash",
   exec_command: "bash",
   shell_command: "bash",
-  read: "read",
-  cat: "read",
-  view: "read",
-  file_read: "read",
   file_write: "edit",
   apply_patch: "edit",
   edit: "edit",
@@ -110,19 +106,31 @@ export const toolAliases: Record<string, string> = {
   toolsearch: "tool_search",
 };
 
-/** Authoring capability names are `read` and `edit`; `write` is only the model tool. */
+/** `write` is a model tool name, never an authoring capability. */
 export const WRITE_IS_MODEL_TOOL_ERROR =
   '"write" is the model tool name; use "edit" for the document-edit capability';
 
-/** `edit` implies `read`; an explicit `disallowed-tools` read denial contradicts it. */
-export const EDIT_IMPLIES_READ_ERROR =
-  '"edit" implies "read"; remove "read" from "disallowed-tools" or drop "edit"';
+const RETIRED_READ_NAMES = new Set(["read", "cat", "view", "file_read"]);
+const RETIRED_READ_ERROR =
+  'Reading is always available; remove this retired read capability entry. Use "edit" to control document mutations.';
+
+function isRetiredReadName(value: string): boolean {
+  const open = value.indexOf("(");
+  const head = (open < 0 ? value : value.slice(0, open))
+    .trim()
+    .replace(/[A-Z]/g, (x) => x.toLowerCase());
+  return RETIRED_READ_NAMES.has(head);
+}
 
 export const toolReferenceSchema = z
   .string()
   .trim()
   .min(1)
   .transform((value, context) => {
+    if (isRetiredReadName(value)) {
+      context.addIssue({ code: "custom", message: RETIRED_READ_ERROR });
+      return z.NEVER;
+    }
     const normalized = normalizeToolName(value);
     if (normalized === null) {
       context.addIssue({ code: "custom", message: "Invalid Mars tool reference" });
@@ -151,6 +159,10 @@ export const toolMapSchema = z
   .superRefine((folded, context) => {
     const names = new Map<string, string>();
     for (const [normalized, policy] of folded) {
+      if (normalized && isRetiredReadName(normalized.name)) {
+        context.addIssue({ code: "custom", message: RETIRED_READ_ERROR });
+        continue;
+      }
       if (normalized?.head === "write") {
         context.addIssue({ code: "custom", message: WRITE_IS_MODEL_TOOL_ERROR });
         continue;
@@ -193,25 +205,6 @@ export const resolvedToolsSchema = z.union([
 ]);
 
 /** Authoring tool selection; resolved configurations are already canonical. */
-export interface AuthoringToolSelection {
-  tools?: string[] | Record<string, ToolPolicy>;
-  "disallowed-tools"?: string[];
-}
-
-/**
- * `edit` implies `read`. Only the explicit `disallowed-tools` denial is a
- * contradiction: a mere absence of `read` stays a policy-projected auto-enable.
- */
-export function authoringToolContradiction(selection: AuthoringToolSelection): string | null {
-  const disallowed = selection["disallowed-tools"] ?? [];
-  if (!disallowed.includes("read") || disallowed.includes("edit")) return null;
-  const tools = selection.tools;
-  const editAllowed =
-    tools === undefined ||
-    (Array.isArray(tools) ? tools.length === 0 || tools.includes("edit") : tools.edit !== "deny");
-  return editAllowed ? EDIT_IMPLIES_READ_ERROR : null;
-}
-
 export const retainedSkillReferenceSchema = z.object({
   packageRevisionId: z.string(),
   path: z.string(),

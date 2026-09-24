@@ -58,7 +58,7 @@ export function workCommandCategory(command: WorkCommand): WorkCommandCategory {
 }
 
 /** Canonical list of runnable core tool names. */
-export const CORE_TOOL_NAMES = ["read", "write", "work", "ls", "search", "ask_user"] as const;
+export const CORE_TOOL_NAMES = ["write", "work", "ls", "search", "ask_user"] as const;
 
 export type CoreToolName = (typeof CORE_TOOL_NAMES)[number];
 type ServerToolHandler = Extract<ToolRegistration["execution"], { type: "server" }>["handler"];
@@ -142,23 +142,9 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       source: "core",
       definition: {
         type: "function",
-        name: "read",
-        description:
-          'Read document content with `{ "command": "read", "path": "..." }`; `command` is required. Returns block-addressed content from a manuscript, knowledge base, scratch, upload, or user file. Each result block separates hash from exact body and says whether the body is full or a prefix. Use `{ "command": "diff" }` only to inspect this turn’s folded edit result; it does not read a path.',
-        inputSchema: writeToolInputSchema(),
-      },
-      execution: { type: "server", handler: handlers.read },
-      sequential: true,
-      timeoutMs: 30_000,
-      formatExecutionError: formatWriteExecutionError,
-    },
-    {
-      source: "core",
-      definition: {
-        type: "function",
         name: "write",
         description:
-          "Document edit tool. Results use the meridian.agent-edit.v1 JSON envelope; each block record separates hash from exact body and says whether body is full or a prefix. Use the read tool for block-addressed content and diff. diff is provisional until the trail settles. To replace an entire existing document, use create with overwrite=true. insert adds content; before/after take block hashes, not text. replace edits content; find replaces only the exact matched span, never following blocks. delete removes the block or block range selected by in. in accepts one block hash or 1-based block number, or an inclusive [start, end] range of hashes or block numbers. Block hashes are internal targeting tokens: use them in tool arguments, but do not quote or label writer-facing prose with hashes unless the writer explicitly asks for edit-protocol details. undo and redo reverse or reapply this thread's document writes.",
+          'Document tool. Every call requires an explicit `command`; never omit it. Read with `{ "command": "read", "path": "..." }`. Results use the meridian.agent-edit.v1 JSON envelope; each block record separates hash from exact body and says whether body is full or a prefix. `diff` inspects this turn’s folded edit result and requires a Work in draft write mode; it does not read a document. Diff is provisional until the trail settles. To replace an entire existing document, use create with overwrite=true. insert adds content; before/after take block hashes, not text. replace edits content; find replaces only the exact matched span, never following blocks. delete removes the block or block range selected by in. in accepts one block hash or 1-based block number, or an inclusive [start, end] range of hashes or block numbers. Block hashes are internal targeting tokens: use them in tool arguments, but do not quote or label writer-facing prose with hashes unless the writer explicitly asks for edit-protocol details. undo and redo reverse or reapply this thread’s document writes.',
         inputSchema: writeToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.write },
@@ -184,7 +170,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "ls",
         description:
-          "List files and directories under a path or URI. Use bare ls() to inspect mounted roots before reading specific documents with the read tool.",
+          'List files and directories under a path or URI. Use bare ls() to inspect mounted roots before reading specific documents with write({command: "read", path: "..."}).',
         inputSchema: {
           type: "object",
           properties: {
@@ -207,7 +193,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "search",
         description:
-          "Literal-text search across visible context files. Use this to find relevant manuscript, knowledge-base, scratch, upload, or user files before reading them with the read tool.",
+          'Literal-text search across visible context files. Use this to find relevant manuscript, knowledge-base, scratch, upload, or user files before reading them with write({command: "read", path: "..."}).',
         inputSchema: {
           type: "object",
           properties: {

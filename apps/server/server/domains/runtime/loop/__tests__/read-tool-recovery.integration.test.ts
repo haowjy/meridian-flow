@@ -1,4 +1,4 @@
-/** Malformed read calls receive repair guidance, then valid read calls dispatch in the same turn. */
+/** Malformed write calls receive repair guidance, then write(read) dispatches in the same turn. */
 import { describe, expect, it } from "vitest";
 import { createInMemoryCreditLedger } from "../../../billing/index.js";
 import { createInMemoryProjectRepository } from "../../../projects/index.js";
@@ -40,8 +40,8 @@ function textResult(): GenerateResult {
   };
 }
 
-describe("read command recovery through the runtime loop", () => {
-  it("reports malformed args and dispatches the corrected read without ending the turn", async () => {
+describe("document command recovery through the runtime loop", () => {
+  it("reports malformed args and dispatches corrected write(read) without ending the turn", async () => {
     const projects = createInMemoryProjectRepository();
     const project = await projects.create({ userId: "user-1", title: "Read recovery" });
     const repos = createInMemoryRepositories({ projects });
@@ -56,25 +56,24 @@ describe("read command recovery through the runtime loop", () => {
 
     const dispatched: unknown[] = [];
     const handlers: CoreToolHandlers = {
-      read: async (input: Parameters<CoreToolHandlers["read"]>[0]) => {
+      write: async (input: Parameters<CoreToolHandlers["write"]>[0]) => {
         dispatched.push(input);
         return { content: "chapter text" };
       },
-      write: async () => ({ ok: true }),
       work: async () => ({ ok: true }),
       ls: async () => ({ ok: true }),
       search: async () => ({ ok: true }),
       ask_user: async () => ({ ok: true }),
     };
-    const readRegistration = createCoreToolRegistrations(handlers).find(
+    const writeRegistration = createCoreToolRegistrations(handlers).find(
       (registration) =>
-        registration.definition.type === "function" && registration.definition.name === "read",
+        registration.definition.type === "function" && registration.definition.name === "write",
     );
-    if (!readRegistration) throw new Error("Core read registration was not created");
-    const toolRegistry = createToolRegistry({ registrations: [readRegistration] });
+    if (!writeRegistration) throw new Error("Core write registration was not created");
+    const toolRegistry = createToolRegistry({ registrations: [writeRegistration] });
     const results = [
-      toolCall("read", "read-missing-command", { path: "manuscript://chapter.md" }),
-      toolCall("read", "read-corrected", {
+      toolCall("write", "read-missing-command", { path: "manuscript://chapter.md" }),
+      toolCall("write", "read-corrected", {
         command: "read",
         path: "manuscript://chapter.md",
       }),

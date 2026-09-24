@@ -33,7 +33,7 @@ async function fixture() {
           name: "Critic",
           model: "critic-model",
           mode: "primary",
-          tools: { read: "allow", edit: "deny", ask_user: "allow" },
+          tools: { edit: "deny", ask_user: "allow" },
         },
         "You are Critic.",
       ),
@@ -53,7 +53,7 @@ async function fixture() {
     files: {
       "mars.toml": '[package]\nname = "test-parent"\n',
       "agents/parent.md": serializeMarkdownDefinition(
-        { name: "Parent", model: "parent-model", effort: "high", tools: { read: "allow" } },
+        { name: "Parent", model: "parent-model", effort: "high" },
         "",
       ),
     },
@@ -69,7 +69,7 @@ async function fixture() {
       { name: "critic", definitionRevisionId: critic.id },
       { name: "hidden", definitionRevisionId: hidden.id },
     ],
-    tools: { read: "allow", edit: "deny" } as const,
+    tools: { edit: "deny" } as const,
     effort: "high" as const,
   };
   await revisions.bindThread("parent-thread", parentRevision.id, parentConfiguration, null);

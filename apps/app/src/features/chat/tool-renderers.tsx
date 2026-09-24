@@ -559,7 +559,6 @@ function reportPayloadText(payload: JsonValue | undefined): string {
 }
 
 const RENDERERS: Record<string, ToolRenderer> = {
-  read: DOCUMENT_TOOL_RENDERER,
   write: DOCUMENT_TOOL_RENDERER,
   ls: {
     title: phraseTitle,

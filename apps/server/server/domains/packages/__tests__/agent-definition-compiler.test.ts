@@ -35,8 +35,8 @@ describe("Agent definition compiler", () => {
     expect(compile({ tools: { agent: "deny", task: "deny" } }).digest).toBe(
       compile({ tools: { agent: "deny" } }).digest,
     );
-    expect(compile({ tools: ["Read", "Task"], effort: "max" }).digest).toBe(
-      compile({ tools: ["read", "agent"], effort: "xhigh" }).digest,
+    expect(compile({ tools: ["Task"], effort: "max" }).digest).toBe(
+      compile({ tools: ["agent"], effort: "xhigh" }).digest,
     );
     expect(compileAgentDefinition({ body: "", meta: { tools: ["mcp(a/b/c)"] } }).ok).toBe(false);
     expect(compile({ tools: ["mcp(GitHub/CreateIssue)"] }).definition.metadata.tools).toEqual([
@@ -100,7 +100,7 @@ describe("Agent definition compiler", () => {
 
   it("applies Mars overlay replacement to the effective allowed and denied channels", () => {
     const result = compile(
-      { model: "a", tools: { read: "allow", edit: "deny" }, "disallowed-tools": ["spawn"] },
+      { model: "a", tools: { edit: "deny" }, "disallowed-tools": ["spawn"] },
       { model: "b", tools: { allowed: ["search"], disallowed: [] } },
     );
     expect(result.definition.metadata).toEqual({
@@ -109,7 +109,7 @@ describe("Agent definition compiler", () => {
       "disallowed-tools": [],
     });
     expect(
-      compile({ tools: ["read"] }, { tools: { allowed: [] } }).definition.metadata.tools,
+      compile({ tools: ["edit"] }, { tools: { allowed: [] } }).definition.metadata.tools,
     ).toEqual([]);
   });
 
@@ -154,34 +154,40 @@ describe("Agent definition compiler", () => {
     }
   });
 
-  it("folds file_write and apply_patch to edit and rejects edit-with-disallowed-read", () => {
+  it("rejects retired read capability spellings and keeps edit aliases", () => {
     expect(compile({ tools: ["file_write", "apply_patch"] }).definition.metadata.tools).toEqual([
       "edit",
     ]);
     expect(compile({ tools: ["edit"] }).ok).toBe(true);
-    // A map-form `read` denial is not the contradiction; the policy auto-enables
-    // document read from `edit`, matching `marsAllowed`.
-    expect(compile({ tools: { read: "deny", edit: "allow" } }).ok).toBe(true);
+    for (const entry of ["read", "cat", "view", "file_read", "Read(scoped)"]) {
+      const result = compileAgentDefinition({ body: "", meta: { tools: [entry] } });
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(
+          result.diagnostics.some((diagnostic) =>
+            diagnostic.message.includes("Reading is always available"),
+          ),
+        ).toBe(true);
+      }
+    }
     for (const meta of [
+      { tools: { read: "deny", edit: "allow" } },
       { tools: { edit: "allow" }, "disallowed-tools": ["read"] },
       { tools: ["edit"], "disallowed-tools": ["read"] },
-      // An empty array is Mars full-allow, so `edit` is allowed there too.
       { tools: [], "disallowed-tools": ["read"] },
+      { tools: { cat: "deny" } },
+      { "disallowed-tools": ["view(scope)"] },
     ]) {
       const result = compileAgentDefinition({ body: "", meta });
       expect(result.ok).toBe(false);
-      if (result.ok) continue;
-      expect(
-        result.diagnostics.some((diagnostic) => diagnostic.message.includes('implies "read"')),
-      ).toBe(true);
+      if (!result.ok) {
+        expect(
+          result.diagnostics.some((diagnostic) =>
+            diagnostic.message.includes("Reading is always available"),
+          ),
+        ).toBe(true);
+      }
     }
-    expect(
-      compileAgentDefinition({
-        body: "",
-        meta: {},
-        config: { tools: { allowed: [], disallowed: ["read"] } },
-      }).ok,
-    ).toBe(false);
   });
 
   it("validates both layers instead of falling back on invalid overrides", () => {

@@ -33,7 +33,7 @@ describe("document renderer", () => {
     expect(sectionText).toContain("|Beta waits.");
 
     const outline = renderer.renderRead(doc, model.getBlocks(doc), "chapter.md", "outline").text;
-    expect(outline).toContain(`read(command="read", path="chapter.md#${headingHash}")`);
+    expect(outline).toContain(`write(command="read", path="chapter.md#${headingHash}")`);
   });
 
   it("renders every candidate for an ambiguous file hash fragment", () => {

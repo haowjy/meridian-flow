@@ -1,8 +1,8 @@
 /**
- * read-payload — turns what the `read` tool returned into what the
+ * read-payload — turns what `write(command="read")` returned into what the
  * writer sees.
  *
- * Two shapes carry the model's view of a document. The `read` tool returns the
+ * Two shapes carry the model's view of a document. The read command returns the
  * `meridian.agent-edit.v1` envelope, whose block items already separate `hash`
  * from `body`, so those bodies are the document as the model received it. Any
  * remaining caller hands back the serialized form: one hashline per block, or,
@@ -33,11 +33,11 @@ export type OutlineHeading = { level: number; text: string };
  * The locator an outline read prints under each heading so the model can read
  * that section next. Machinery, never shown.
  */
-const LOCATOR_LINE = /^read\(command="read"/;
+const LOCATOR_LINE = /^write\(command="read"/;
 
 const HEADING_LINE = /^(#{1,6})\s+(.*)$/;
 
-/** The read tool's result schema; its block items already carry hash-free bodies. */
+/** The read command's result schema; its block items already carry hash-free bodies. */
 const READ_ENVELOPE_SCHEMA = "meridian.agent-edit.v1";
 
 /** The document body, with every block hash removed. */

@@ -119,21 +119,22 @@ describe("applyInvocationPatch", () => {
     const { revisions, packageRevisionId } = await installSkills("t/listmap", []);
 
     const denied = await applyInvocationPatch({
-      baseline: config({ tools: ["read", "edit"], "disallowed-tools": ["edit"] }),
-      patch: { tools: { read: "deny" } },
+      baseline: config({ tools: ["edit"], "disallowed-tools": ["edit"] }),
+      patch: { tools: { edit: "deny" } },
       caller,
       store: revisions,
       packageRevisionId,
     });
     const deniedPolicy = projectToolPolicy(denied);
-    expect(deniedPolicy.tools.has("write")).toBe(false);
+    expect(deniedPolicy.tools.has("write")).toBe(true);
     expect(deniedPolicy.tools.has("ask_user")).toBe(false);
     expect(deniedPolicy.writeCommands).not.toContain("replace");
-    expect(deniedPolicy.tools.has("ls")).toBe(false);
+    expect(deniedPolicy.tools.has("ls")).toBe(true);
+    expect(deniedPolicy.tools.has("search")).toBe(true);
 
     const allowed = await applyInvocationPatch({
-      baseline: config({ tools: ["read"] }),
-      patch: { tools: { read: "allow" } },
+      baseline: config({ tools: ["search"] }),
+      patch: { tools: { search: "allow" } },
       caller,
       store: revisions,
       packageRevisionId,
@@ -225,6 +226,9 @@ describe("applyInvocationPatch", () => {
       { tools: { "write(x)": "allow" } },
       { tools: ["write(x)"] },
       { "disallowed-tools": ["write(x)"] },
+      { tools: ["read"] },
+      { tools: { cat: "deny" } },
+      { "disallowed-tools": ["view(scope)"] },
     ];
     for (const patch of malformed) {
       await expect(
@@ -239,27 +243,22 @@ describe("applyInvocationPatch", () => {
     }
   });
 
-  it("rejects edit allowed together with a disallowed-tools read denial", async () => {
-    const { revisions, packageRevisionId } = await installSkills("t/contradict", []);
-    // Contradiction introduced by the patch itself.
-    await expect(
-      applyInvocationPatch({
-        baseline: config(),
-        patch: { tools: { edit: "allow" }, "disallowed-tools": ["read"] },
-        caller: config(),
-        store: revisions,
-        packageRevisionId,
-      }),
-    ).rejects.toThrow(/implies "read"/);
-    // Contradiction that only appears in the merged result, not the raw patch.
-    await expect(
-      applyInvocationPatch({
-        baseline: config({ tools: { edit: "allow" } }),
-        patch: { "disallowed-tools": ["read"] },
-        caller: config(),
-        store: revisions,
-        packageRevisionId,
-      }),
-    ).rejects.toThrow(/implies "read"/);
+  it("rejects retired read capability overrides with actionable guidance", async () => {
+    const { revisions, packageRevisionId } = await installSkills("t/retired-read", []);
+    for (const patch of [
+      { tools: { read: "deny" } },
+      { tools: { file_read: "allow" } },
+      { "disallowed-tools": ["cat"] },
+    ]) {
+      await expect(
+        applyInvocationPatch({
+          baseline: config(),
+          patch: patch as never,
+          caller: config(),
+          store: revisions,
+          packageRevisionId,
+        }),
+      ).rejects.toThrow(/Reading is always available.*Use "edit"/);
+    }
   });
 });
