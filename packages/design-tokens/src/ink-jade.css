@@ -71,11 +71,9 @@
   /* Jade — text variant (links, jade labels), 6:1 on page */
   --color-jade-text: oklch(0.465 0.07 176);
 
-  /* Secondary / muted / accent live inside the same warm ladder so badges,
-     muted backgrounds, and hover accents never punch out of the page.
-     Secondary + muted sit on the "files" step; accent uses the chrome-hover
-     step (matches sidebar-accent) since accent is read as a hover/selected
-     surface in shadcn primitives. */
+  /* Secondary / muted / accent live inside the same warm recess ladder so
+     badges, muted backgrounds, and primitive hover fills stay on the page's
+     material. Sidebar selection has its own stronger role. */
   --color-secondary: var(--ink-jade-recess);
   --color-secondary-foreground: var(--color-foreground);
   --color-muted: var(--ink-jade-recess);
@@ -155,8 +153,8 @@
 
   --color-border-subtle: oklch(0.9 0.014 86);
   --color-border-focus: oklch(0.78 0.05 175);
-  /* Block-edge keyboard indicator for edge-attached dropdown rows. Unlike the
-     softer ordinary control ring, this role must contrast with every row fill. */
+  /* Inset keyboard indicator for rounded dropdown rows. Unlike the softer
+     ordinary control ring, this role must contrast with every row fill. */
   --color-dropdown-focus-indicator: oklch(0.45 0.07 176);
 
   /* Code surface — fenced code blocks sit on the warm canvas as a recessed
@@ -205,7 +203,6 @@
   --color-status-done-foreground: oklch(0.38 0.06 176);
   --color-status-live-bg: var(--ink-jade-recess);
   --color-status-live-foreground: var(--color-muted-foreground);
-  --color-status-live-dot: var(--color-muted-foreground);
   /* Warning / caution — destructive's anatomy at orange: pale field,
      pigmented hairline, readable ink (>6:1 on the field), vivid mark. The
      45–84 hue band keeps caution apart from cinnabar (error) and writer-gold.
@@ -283,10 +280,6 @@
   --shadow-hero: 0 2px 5px rgba(26, 26, 23, 0.05), 0 24px 60px rgba(26, 26, 23, 0.12);
   --shadow-rail-left: 6px 0 18px -6px
     color-mix(in oklab, var(--color-foreground) 10%, transparent);
-  /* Pinned composer / inline inputs — a whisper of lift, not a floating slab.
-     The pinned composer sits flush on the warm dock, so it leans on its border
-     and a 1px hairline shadow rather than the heavy card drop shadow. */
-  --shadow-input: 0 1px 2px rgba(26, 26, 23, 0.05);
   /* Jade-tinted lifts: derive from the primary token so jade is defined once
      (the OKLCH ladder) rather than re-encoded as raw hex/rgba here. */
   --shadow-button: 0 3px 10px color-mix(in oklab, var(--color-primary) 24%, transparent);

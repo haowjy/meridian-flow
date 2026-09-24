@@ -9,7 +9,8 @@
 
 ### Changed
 
-- Align sidebar hover and current-row geometry with inset rounded warm selection, and give list-like dropdowns a shared Meridian-colored panel and row treatment. Chat switching now separates its heading and New chat action from two-line chat rows; menus, selects, pickers, and suggestion lists retain their own interaction semantics.
+- Align sidebar hover and current-row geometry with inset rounded warm selection, and give list-like dropdowns a shared Meridian-colored panel and row treatment. Chat switching puts New chat before compact chat rows; menus, selects, pickers, and suggestion lists retain their own interaction semantics.
+- Remove unused and duplicate design roles (`--shadow-input`, live-status dot), and keep chat-specific width, padding, and scroll limits out of shared dropdown recipes.
 
 - Show the project name instead of the workspace compass, with an explicit return to the library. Rename from the desktop rail or phone drawer; update the library at once and reject blank titles. Match `--color-muted` across the desktop title band and center pane's curved corner. Edit the icon-free title inline in the desktop rail or phone drawer, with pending and failure on the field.
 - Use each project's UUID as the browser authority at `/p/:projectId`, including library, creation, nested Chat, and document links; retire slug-based project lookup without changing internal context URI slugs.
@@ -42,6 +43,7 @@
 
 ### Fixed
 
+- Closing the chat switcher on the current chat returns keyboard focus to its trigger; navigation and rename can hand focus to their destination.
 - New projects initialize their Manuscript source before context catalog refresh, so draft requests no longer fail with a missing manifest identity.
 - Chat submissions stay visible as pending until the server acknowledges them. Unresolved sends survive reload, ambiguous sends retain status recovery, and rejected existing-thread sends keep Retry or Edit on the affected turn.
 - Working-set preferences, chat favorites, thread titles, checkout controls, and interrupt answers now keep pending and failure feedback on the affected control. Stale responses cannot overwrite newer settings or titles, thread titles persist across reload, and billing return pages never claim a purchase before the ledger confirms it.
