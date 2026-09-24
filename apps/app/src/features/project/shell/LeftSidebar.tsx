@@ -79,7 +79,7 @@ export function LeftSidebar({
           aria-label={t`Rename project: ${projectTitle}`}
           title={projectTitle}
           onClick={onRenameProject}
-          className="focus-ring flex h-8 min-w-0 flex-1 items-center gap-1 rounded-md px-2 text-left text-base font-normal hover:bg-sidebar-accent"
+          className="focus-ring flex h-8 min-w-0 flex-1 items-center gap-1 rounded-md px-2 text-left text-[14px] font-normal hover:bg-sidebar-accent"
         >
           <span className="min-w-0 flex-1 truncate">{projectTitle}</span>
           <Pencil className="size-4 shrink-0 text-muted-foreground" aria-hidden />
