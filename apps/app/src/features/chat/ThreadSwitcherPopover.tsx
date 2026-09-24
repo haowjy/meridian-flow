@@ -152,11 +152,13 @@ export function ThreadSwitcherPopover({
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           const content = contentRef.current;
+          const currentRow = content?.querySelector<HTMLElement>('[aria-current="page"]');
           (
             content?.querySelector<HTMLElement>("[data-switcher-search]") ??
-            content?.querySelector<HTMLElement>('[aria-current="page"]') ??
+            currentRow ??
             content?.querySelector<HTMLElement>("[data-switcher-focus]")
           )?.focus();
+          currentRow?.scrollIntoView({ block: "nearest" });
         }}
         onCloseAutoFocus={(event) => {
           if (focusHandoff.current) event.preventDefault();
@@ -277,7 +279,7 @@ function ThreadSwitchItem({
       className={cn(
         dropdownRowContainerClass,
         "group flex min-w-0 items-center transition-colors",
-        "hover:bg-sidebar-accent/50",
+        "hover:bg-dropdown-hover",
         active && "text-foreground",
       )}
       data-selected={active}
