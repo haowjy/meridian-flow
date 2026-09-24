@@ -80,30 +80,27 @@ function DirectResult({ result }: { result: DirectInvocationResult }) {
   const firstLine =
     (result.summary || payloadText(result.payload)).split(/\r?\n/, 1)[0]?.trim() ?? "";
   const hasReportText = result.summary.length > 0;
-  const hasFullDetails = Boolean(
-    result.summary ||
-      result.payload !== undefined ||
-      result.artifacts.length > 0 ||
-      (result.outcome !== null && result.message) ||
-      result.partial,
-  );
   const hasResult = hasReportText || result.payload !== undefined || result.artifacts.length > 0;
 
   return (
     <div className="mt-2 min-w-0">
       {firstLine ? <Markdown variant="compact">{firstLine}</Markdown> : null}
       {!hasResult ? (
-        <p className="text-caption text-muted-foreground">
-          {result.message ? (
-            result.message
-          ) : result.outcome === "succeeded" ? (
-            <Trans>No report text was returned.</Trans>
-          ) : (
-            <Trans>No partial report text was returned.</Trans>
-          )}
-        </p>
+        <div className="text-caption text-muted-foreground">
+          {result.message ? <p>{result.message}</p> : null}
+          {result.outcome === "succeeded" ? (
+            <p>
+              <Trans>No report text was returned.</Trans>
+            </p>
+          ) : null}
+          {result.outcome === "failed" || result.outcome === "cancelled" ? (
+            <p>
+              <Trans>No partial report text was returned.</Trans>
+            </p>
+          ) : null}
+        </div>
       ) : null}
-      {hasFullDetails ? (
+      {hasResult ? (
         <div className="mt-1">
           <button
             type="button"
@@ -124,6 +121,11 @@ function DirectResult({ result }: { result: DirectInvocationResult }) {
               {result.artifacts.length > 0 ? <ArtifactGrid artifacts={result.artifacts} /> : null}
               {result.message ? (
                 <p className="text-caption text-muted-foreground">{result.message}</p>
+              ) : null}
+              {result.reason ? (
+                <p className="text-caption text-muted-foreground">
+                  <Trans>Reason: {result.reason}</Trans>
+                </p>
               ) : null}
               {result.partial ? (
                 <p className="text-caption text-muted-foreground">

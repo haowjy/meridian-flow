@@ -20,6 +20,7 @@ export type DirectInvocationResult = {
   artifacts: ArtifactRef[];
   partial: boolean;
   message: string | null;
+  reason: string | null;
 };
 
 type SettledOutput = { output: JsonValue | null; isError: boolean; message: string | null };
@@ -100,14 +101,13 @@ function resultEnvelope(
   const report = isRecord(output.report) ? output.report : null;
   const summary = report && typeof report.summary === "string" ? report.summary : "";
   const error = isRecord(output.error) ? output.error : null;
+  const reason = typeof output.reason === "string" ? output.reason : null;
   const message =
-    typeof output.reason === "string"
-      ? output.reason
-      : error && typeof error.message === "string"
-        ? error.message
-        : isError && !summary
-          ? toolMessage
-          : null;
+    error && typeof error.message === "string"
+      ? error.message
+      : isError && !summary
+        ? toolMessage
+        : null;
   return {
     execution: output.execution,
     outcome: outcome ?? null,
@@ -117,6 +117,7 @@ function resultEnvelope(
       report && Array.isArray(report.artifacts) ? report.artifacts.filter(isArtifactRef) : [],
     partial: output.partial === true || (outcome !== undefined && outcome !== "succeeded"),
     message,
+    reason,
   };
 }
 

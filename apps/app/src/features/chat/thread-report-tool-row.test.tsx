@@ -105,6 +105,9 @@ describe("thread_report tool row", () => {
     await act(async () => root.render(<ToolRow tool={tool("succeeded")} />));
     expect(host.textContent).toContain("No report text was returned");
     await act(async () => root.render(<ToolRow tool={tool("failed")} />));
+    expect(host.textContent).toContain("The child run failed");
+    await act(async () => host.querySelector("button")?.click());
+    expect(host.textContent).toContain("No partial report text was returned");
     expect(host.textContent).toContain("budget_exhausted");
   });
 
@@ -147,5 +150,45 @@ describe("thread_report tool row", () => {
     await act(async () => toggle?.click());
     expect(host.textContent).toContain("Saved artifact");
     expect(host.textContent).not.toContain("No report text was returned");
+  });
+
+  it("does not call a failed empty saved report partial output", async () => {
+    const tool: ToolView = {
+      toolCallId: "call-empty-failure",
+      toolName: "thread_report",
+      input: { ref: "p13", execution: "execution-32" },
+      output: {
+        ref: "p13",
+        execution: "execution-32",
+        outcome: "failed",
+        source: "empty",
+        summary: "",
+        artifacts: [],
+        partial: true,
+        reason: "runtime_error",
+      },
+      status: "complete",
+      isError: false,
+      message: null,
+      streamedOutput: null,
+      metadata: null,
+      keyBlock: {
+        id: "tool-empty-failure",
+        turnId: "turn-1",
+        responseId: null,
+        blockType: "tool_use",
+        sequence: 4,
+        content: { toolCallId: "call-empty-failure", toolName: "thread_report" },
+        status: "complete",
+        textContent: null,
+        createdAt: "2026-09-23T00:00:00.000Z",
+      },
+    };
+    await act(async () => root.render(<ToolRow tool={tool} />));
+    expect(host.textContent).toContain("The child run failed");
+    expect(host.textContent).not.toContain("runtime_error");
+    await act(async () => host.querySelector("button")?.click());
+    expect(host.textContent).toContain("No partial report text was returned");
+    expect(host.textContent).not.toContain("Partial result");
   });
 });

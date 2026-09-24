@@ -2721,6 +2721,13 @@ msgstr "Reading text size"
 msgid "Reading…"
 msgstr "Reading…"
 
+#. placeholder {0}: report.reason
+#. placeholder {0}: result.reason
+#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/tool-renderers.tsx
+msgid "Reason: {0}"
+msgstr "Reason: {0}"
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Recent"
 msgstr "Recent"

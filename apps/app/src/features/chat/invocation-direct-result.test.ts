@@ -224,7 +224,8 @@ describe("direct invocation result join", () => {
       outcome: "failed",
       summary: "Saved partial text.",
       partial: true,
-      message: "budget_exhausted",
+      message: null,
+      reason: "budget_exhausted",
     });
   });
 

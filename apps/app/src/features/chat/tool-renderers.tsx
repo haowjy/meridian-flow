@@ -22,6 +22,7 @@
  * JSON for debugging, it goes behind a dev-only setting — not into chat.
  */
 import { t } from "@lingui/core/macro";
+import { Trans } from "@lingui/react/macro";
 import {
   type JsonValue,
   meridianErrorFromStructuredToolOutput,
@@ -539,13 +540,13 @@ const THREAD_REPORT_RENDERER: ToolRenderer = {
     const report = threadReport(tool.output);
     const preview = report ? report.summary || reportPayloadText(report.payload) : "";
     if (preview) return <CommandTitle verb={preview.split(/\r?\n/, 1)[0] ?? ""} />;
-    if (report?.reason) return <CommandTitle verb={report.reason} />;
     if (tool.message) return <CommandTitle verb={tool.message} />;
     if (report?.status === "not_ready") return <CommandTitle verb={t`Report is still running`} />;
     if (report?.status === "unavailable") return <CommandTitle verb={t`Report is unavailable`} />;
     if (report?.outcome === "failed") return <CommandTitle verb={t`The child run failed`} />;
     if (report?.outcome === "cancelled") return <CommandTitle verb={t`The child run stopped`} />;
     if (report?.artifacts?.length) return <CommandTitle verb={t`Saved artifacts`} />;
+    if (report?.reason) return <CommandTitle verb={report.reason} />;
     if (report) return <CommandTitle verb={t`No report text was returned`} />;
     return <CommandTitle verb={t`Report unavailable`} />;
   },
@@ -625,18 +626,20 @@ function threadReportExpand(tool: ToolView): ToolExpand | null {
           : t`This report is unavailable.`}
       </p>
     );
-  if (
-    !report.summary &&
-    report.payload === undefined &&
-    !report.reason &&
-    !report.artifacts?.length
-  ) {
+  if (!report.summary && report.payload === undefined && !report.artifacts?.length) {
     return () => (
-      <p className="text-caption text-muted-foreground">
-        {report.outcome === "succeeded"
-          ? t`No report text was returned.`
-          : t`No partial report text was returned.`}
-      </p>
+      <div className="space-y-1 text-caption text-muted-foreground">
+        <p>
+          {report.outcome === "succeeded"
+            ? t`No report text was returned.`
+            : t`No partial report text was returned.`}
+        </p>
+        {report.reason ? (
+          <p>
+            <Trans>Reason: {report.reason}</Trans>
+          </p>
+        ) : null}
+      </div>
     );
   }
   return () => (
@@ -648,7 +651,11 @@ function threadReportExpand(tool: ToolView): ToolExpand | null {
         </pre>
       ) : null}
       {report.artifacts?.length ? <ArtifactGrid artifacts={report.artifacts} /> : null}
-      {report.reason ? <p className="text-caption text-muted-foreground">{report.reason}</p> : null}
+      {report.reason ? (
+        <p className="text-caption text-muted-foreground">
+          <Trans>Reason: {report.reason}</Trans>
+        </p>
+      ) : null}
       {report.partial ? (
         <p className="text-caption text-muted-foreground">{t`Partial result`}</p>
       ) : null}

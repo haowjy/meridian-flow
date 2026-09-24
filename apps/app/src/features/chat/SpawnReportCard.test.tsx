@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+
+import type { Block, JsonValue } from "@meridian/contracts/protocol";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,7 +16,7 @@ vi.mock("@/rich-content/Markdown", () => ({
 }));
 
 import { ChatThreadNavigationProvider } from "./ChatThreadNavigation";
-import type { DirectInvocationResult } from "./invocation-direct-result";
+import { type DirectInvocationResult, directResultsForTurn } from "./invocation-direct-result";
 import { SpawnReportCard } from "./SpawnReportCard";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -30,6 +32,25 @@ function findButton(name: string): HTMLButtonElement | undefined {
   return [...document.querySelectorAll("button")].find(
     (button) => button.textContent?.trim() === name,
   ) as HTMLButtonElement | undefined;
+}
+
+function protocolBlock(
+  id: string,
+  sequence: number,
+  blockType: Block["blockType"],
+  content: JsonValue,
+): Block {
+  return {
+    id,
+    turnId: "parent-turn",
+    responseId: null,
+    blockType,
+    sequence,
+    content,
+    status: "complete",
+    textContent: null,
+    createdAt: "2026-09-23T00:00:00.000Z",
+  };
 }
 
 describe("SpawnReportCard", () => {
@@ -108,7 +129,8 @@ describe("SpawnReportCard", () => {
             payload: { retained: true },
             artifacts: [],
             partial: true,
-            message: "budget_exhausted",
+            message: "Child run failed",
+            reason: "budget_exhausted",
           }}
         />,
       ),
@@ -121,6 +143,117 @@ describe("SpawnReportCard", () => {
     expect(document.body.textContent).toContain("Later detail.");
     expect(document.body.textContent).toContain("budget_exhausted");
     expect(document.body.textContent).toContain("Partial result");
+  });
+
+  it("states no partial report output for the actual saved failed direct envelope", async () => {
+    const execution = "37403943-a736-4d52-a22b-9665ad7a77e3";
+    const callId = "call_00_SjgG2Pag5WxrRl76aW3X5791";
+    const use = protocolBlock("use", 0, "tool_use", {
+      toolCallId: callId,
+      toolName: "spawn",
+      output: null,
+    });
+    const card = protocolBlock("card", 1, "custom", {
+      kind: "helper-result",
+      props: {
+        parentTurnId: "parent-turn",
+        toolCallId: callId,
+        childThreadId: "child-32",
+        deliveryMode: "direct",
+        execution,
+        status: "failed",
+        outcome: "failed",
+      },
+    });
+    const result = protocolBlock("result", 2, "tool_result", {
+      toolCallId: callId,
+      output: {
+        status: "error",
+        execution,
+        outcome: "failed",
+        partial: true,
+        reason: "runtime_error",
+        error: {
+          code: "spawn_failed",
+          source: "system",
+          message: "Child run failed",
+          retryable: false,
+        },
+        report: { handle: "p13", summary: "" },
+      },
+    });
+    const directResult = directResultsForTurn([use, card, result]).get(card.id);
+    expect(directResult).toBeDefined();
+    await act(async () =>
+      root.render(
+        <SpawnReportCard
+          agentName="Subagent"
+          title={null}
+          status="failed"
+          outcome="failed"
+          childThreadId="child-32"
+          directResult={directResult}
+        />,
+      ),
+    );
+    expect(host.textContent).toContain("Failed");
+    expect(host.textContent).toContain("Child run failed");
+    expect(host.textContent).toContain("No partial report text was returned");
+    expect(host.textContent).not.toContain("runtime_error");
+    expect(host.textContent).not.toContain("Partial result");
+    expect(findButton("Show full result")).toBeUndefined();
+  });
+
+  it("keeps natural empty success distinct from failed empty output", async () => {
+    await act(async () =>
+      root.render(
+        <SpawnReportCard
+          agentName="Subagent"
+          title={null}
+          status="completed"
+          outcome="succeeded"
+          childThreadId={null}
+          directResult={{
+            execution: "execution-empty",
+            outcome: "succeeded",
+            summary: "",
+            artifacts: [],
+            partial: false,
+            message: null,
+            reason: null,
+          }}
+        />,
+      ),
+    );
+    expect(host.textContent).toContain("No report text was returned");
+    expect(host.textContent).not.toContain("No partial report text was returned");
+  });
+
+  it("keeps an empty cancelled result stopped without suggesting partial output", async () => {
+    await act(async () =>
+      root.render(
+        <SpawnReportCard
+          agentName="Subagent"
+          title={null}
+          status="failed"
+          outcome="cancelled"
+          childThreadId={null}
+          directResult={{
+            execution: "execution-cancelled",
+            outcome: "cancelled",
+            summary: "",
+            artifacts: [],
+            partial: true,
+            message: "Child run was cancelled",
+            reason: "cancelled",
+          }}
+        />,
+      ),
+    );
+    expect(host.textContent).toContain("Stopped");
+    expect(host.textContent).toContain("No partial report text was returned");
+    expect(host.textContent).not.toContain("Partial result");
+    expect(findButton("Show full result")).toBeUndefined();
   });
 
   it("shows cancellation as Stopped", async () => {
@@ -158,6 +291,7 @@ describe("SpawnReportCard", () => {
             artifacts: [],
             partial: outcome !== "succeeded",
             message: null,
+            reason: null,
           }}
         />,
       ),
@@ -195,6 +329,7 @@ describe("SpawnReportCard", () => {
       artifacts: [],
       partial: false,
       message: "Child report is unavailable",
+      reason: null,
     };
     await act(async () =>
       root.render(<SpawnReportCard {...base} status="running" directResult={directResult} />),

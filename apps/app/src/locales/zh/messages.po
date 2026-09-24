@@ -2723,6 +2723,13 @@ msgstr ""
 msgid "Reading…"
 msgstr ""
 
+#. placeholder {0}: report.reason
+#. placeholder {0}: result.reason
+#: src/features/chat/SpawnReportCard.tsx
+#: src/features/chat/tool-renderers.tsx
+msgid "Reason: {0}"
+msgstr ""
+
 #: src/features/project/shell/ContextSidebar.tsx
 msgid "Recent"
 msgstr ""

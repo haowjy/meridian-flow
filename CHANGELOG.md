@@ -21,6 +21,7 @@
 ### Fixed
 
 - Preserve exact parent-turn/tool-call/execution/direct-mode correlation on retained child cards across live and persisted protocol order, including authoritative snapshot replacement and late admission binding.
+- Empty failed or cancelled child reports now state that no partial output was returned. Direct cards use the human error message; explicit report rows keep structured reasons in their details without labeling an absent body as a partial result.
 - Keep all inbox provenances in the shared pending read model; writer-only tray filtering remains a client selector.
 - Materialize uncaptured child report text from the exact assistant turn's final persisted model response, for success and partial failure/cancellation alike. Empty final responses do not borrow older prose or a speculative process buffer.
 - Retire body-bearing `background.completed` and `background.failed` event types; the published `agent.run_completed` fact carries outcome metadata only. Unknown historical journal facts continue to replay without a fabricated live frame.
