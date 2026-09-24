@@ -74,7 +74,10 @@ export function createThreadCache(
     invalidateThreadSnapshot(threadId) {
       queueMicrotask(() => {
         if (accountSignal?.aborted) return;
-        void client.invalidateQueries({ queryKey: threadQueryKeys.thread(threadId) });
+        void client.invalidateQueries(
+          { queryKey: threadQueryKeys.snapshot(threadId), exact: true },
+          { cancelRefetch: false },
+        );
       });
     },
   };

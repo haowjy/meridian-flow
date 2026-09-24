@@ -12,6 +12,7 @@ import { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThreadRunController } from "@/client/copilot/ThreadRunController";
+import { createThreadCache } from "@/client/stores/thread-store/thread-cache";
 import { createThreadStore } from "@/client/stores/thread-store/thread-store";
 import type { ThreadTransport, ThreadTransportHandlers } from "@/core/transport";
 import { WsThreadTransport } from "@/core/transport/WsThreadTransport";
@@ -555,10 +556,12 @@ describe("stale acquisition and missing targets", () => {
   it("rejects an old terminal snapshot before Query cache or handoff and retries", async () => {
     const first = deferred<unknown>();
     const second = deferred<unknown>();
+    const third = deferred<unknown>();
     harness.snapshotRequest
       .mockReset()
       .mockImplementationOnce(() => first.promise)
-      .mockImplementationOnce(() => second.promise);
+      .mockImplementationOnce(() => second.promise)
+      .mockImplementationOnce(() => third.promise);
     const store = createThreadStore({
       now: 0,
       threadCache: {
@@ -620,13 +623,152 @@ describe("stale acquisition and missing targets", () => {
     expect(actions.turns("thread-1")?.[0]?.blocks[0]?.content).toMatchObject({
       props: { status: "completed" },
     });
-    second.resolve(response(currentTurns, "5000"));
+    second.resolve(response(staleTurns, "4000"));
+    await act(async () => {
+      await vi.waitFor(() => expect(harness.snapshotRequest).toHaveBeenCalledTimes(3));
+    });
+    expect(observed.current?.snapshot).toBeNull();
+    expect(observed.current?.isError).toBe(false);
+    expect(observed.current?.settled).toBe(false);
+    third.resolve(response(currentTurns, "5000"));
     await act(async () => {
       await vi.waitFor(() => expect(observed.current?.snapshot?.nextSeq).toBe("5000"));
     });
     expect(actions.turns("thread-1")?.[0]?.blocks[0]?.content).toMatchObject({
       props: { status: "completed" },
     });
+  });
+
+  it("coalesces distinct missing-target frames against a populated real query cache", async () => {
+    const held = deferred<unknown>();
+    const recovered = deferred<unknown>();
+    harness.snapshotRequest
+      .mockReset()
+      .mockResolvedValueOnce({
+        thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
+        turns: [],
+        nextSeq: "1000",
+        actionRequired: false,
+        liveState: { runningTurnId: null },
+      })
+      .mockImplementationOnce(() => held.promise)
+      .mockImplementationOnce(() => recovered.promise);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const store = createThreadStore({ now: 0, threadCache: createThreadCache(client) });
+    const actions = store.getState();
+    harness.actions = actions;
+    harness.accountSignal = new AbortController().signal;
+    harness.pendingCreation = false;
+    const bus = transportHarness();
+    harness.transport = bus.transport;
+    const controller = new ThreadRunController({ transport: bus.transport, actions });
+    harness.controller = controller;
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const observed = { current: null as ReturnType<typeof useThreadSnapshotSync> | null };
+    function Probe() {
+      observed.current = useThreadSnapshotSync("thread-1");
+      return null;
+    }
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <Probe />
+        </QueryClientProvider>,
+      ),
+    );
+    disposers.push(async () => {
+      await act(async () => root.unmount());
+      controller.dispose();
+      client.clear();
+      host.remove();
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(observed.current?.snapshot?.nextSeq).toBe("1000"));
+    });
+    act(() => {
+      bus.emit(card("running"), "4000");
+      bus.emit(card("running"), "5000");
+      bus.emit(card("completed"), "6000");
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(harness.snapshotRequest).toHaveBeenCalledTimes(2));
+    });
+    expect(actions.turns("thread-1")).toEqual([]);
+    held.resolve({
+      thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
+      turns: [],
+      nextSeq: "4000",
+      actionRequired: false,
+      liveState: { runningTurnId: null },
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(harness.snapshotRequest).toHaveBeenCalledTimes(3));
+    });
+    recovered.resolve({
+      thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
+      turns: [
+        { id: "turn-1", threadId: "thread-1", role: "assistant", status: "complete", blocks: [] },
+      ],
+      nextSeq: "7000",
+      actionRequired: false,
+      liveState: { runningTurnId: null },
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(observed.current?.snapshot?.nextSeq).toBe("7000"));
+    });
+    expect(actions.turns("thread-1")).toHaveLength(1);
+  });
+
+  it("does not continue stale-success retries after the mounted owner is disposed", async () => {
+    harness.snapshotRequest.mockReset().mockResolvedValue({
+      thread: { id: "thread-1", projectId: "project-1", userId: "account-1" },
+      turns: [],
+      nextSeq: "4000",
+      actionRequired: false,
+      liveState: { runningTurnId: null },
+    });
+    const store = createThreadStore({
+      now: 0,
+      threadCache: {
+        upsertThread() {},
+        patchThread() {},
+        invalidateThread() {},
+        invalidateThreadSnapshot() {},
+      },
+    });
+    const actions = store.getState();
+    actions.acceptDurableBlockSeq("thread-1", "4000");
+    harness.actions = actions;
+    harness.accountSignal = new AbortController().signal;
+    harness.pendingCreation = false;
+    const bus = transportHarness();
+    harness.transport = bus.transport;
+    const controller = new ThreadRunController({ transport: bus.transport, actions });
+    harness.controller = controller;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    function Probe() {
+      useThreadSnapshotSync("thread-1");
+      return null;
+    }
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <Probe />
+        </QueryClientProvider>,
+      ),
+    );
+    await vi.waitFor(() => expect(harness.snapshotRequest).toHaveBeenCalledTimes(1));
+    await act(async () => root.unmount());
+    controller.dispose();
+    client.clear();
+    host.remove();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(harness.snapshotRequest).toHaveBeenCalledTimes(1);
   });
 
   it("invalidates a missing addressed target without making a streaming turn", async () => {

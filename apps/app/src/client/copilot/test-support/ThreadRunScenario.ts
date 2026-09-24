@@ -230,6 +230,7 @@ export class ThreadRunScenario {
         return this.snapshot(data.threadId);
       },
     });
+    this.controller.activate();
   }
 
   setAppend(handler: (request: AppendRequest) => Promise<SendMessageResponse>): void {

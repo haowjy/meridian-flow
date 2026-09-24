@@ -230,8 +230,13 @@ addressed block frame at sequence `s` advances a separate durable-only cursor
 and raises that floor to at least `s + 1`; a deliberate transport rewind cannot
 restore an older card. Only a snapshot whose history actually reconciled
 advances that cursor through `nextSeq - 1`. The run's resume cursor remains
-independent. Both HTTP acquisition paths pass `nextSeq` and retry a stale
-response while recovery still needs authority.
+independent. Both HTTP acquisition paths pass `nextSeq` and keep stale successful
+responses outstanding at a bounded cadence until fresh history arrives or their
+owner ends; actual request failures keep ordinary error behavior. Missing
+addressed targets invalidate the exact snapshot query without cancelling an
+already-running fetch. The provider activates controller transport listeners in
+its layout effect and releases them on cleanup, so StrictMode replay reopens the
+same controller without admitting callbacks from its prior effect lifetime.
 
 First-send create-or-get activates the mounted projection synchronously before
 run dispatch; ordinary existing-thread mounts auto-activate. The shared Query

@@ -29,6 +29,8 @@ import { threadQueryKeys } from "./thread-query-keys";
 
 type DeserializedThreadSnapshot = ReturnType<typeof deserializeThreadSnapshot>;
 
+class StaleThreadSnapshot extends Error {}
+
 export type ThreadSnapshotSyncStatus = {
   snapshot: DeserializedThreadSnapshot | null;
   thread: DeserializedThreadSnapshot["thread"] | null;
@@ -58,24 +60,23 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
       const requestSignal = AbortSignal.any([accountSignal, signal]);
       // The source check runs before TanStack Query can publish this response.
       // An obsolete HTTP success cannot become history or handoff authority.
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const snapshot = deserializeThreadSnapshot(
-          await getThreadSnapshot({ data: { threadId }, signal: requestSignal }),
-        );
-        requestSignal.throwIfAborted();
-        if (
-          snapshot.thread.id === threadId &&
-          snapshot.thread.userId === accountId &&
-          actions.acceptsThreadSnapshot(threadId, snapshot.nextSeq)
-        )
-          return snapshot;
+      const snapshot = deserializeThreadSnapshot(
+        await getThreadSnapshot({ data: { threadId }, signal: requestSignal }),
+      );
+      requestSignal.throwIfAborted();
+      if (snapshot.thread.id !== threadId || snapshot.thread.userId !== accountId) {
+        throw new Error("Thread snapshot identity mismatch");
       }
-      throw new Error("Thread snapshot is older than live changes");
+      if (!actions.acceptsThreadSnapshot(threadId, snapshot.nextSeq)) {
+        throw new StaleThreadSnapshot("Thread snapshot is older than live changes");
+      }
+      return snapshot;
     },
     staleTime: 0,
     refetchOnMount: "always",
     enabled: !isPendingCreation && !accountSignal.aborted,
-    retry: false,
+    retry: (_failureCount, error) => error instanceof StaleThreadSnapshot && !accountSignal.aborted,
+    retryDelay: 250,
   });
 
   const owner = useMemo(() => {

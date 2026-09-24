@@ -7,7 +7,7 @@
  * now the direct transport controller.
  */
 
-import { createContext, type ReactNode, useContext, useEffect, useMemo } from "react";
+import { createContext, type ReactNode, useContext, useLayoutEffect, useMemo } from "react";
 
 import { useThreadTransport } from "@/client/providers/TransportProvider";
 import { useThreadActions } from "@/client/stores";
@@ -44,7 +44,8 @@ export function MeridianCopilotProvider({ children }: { children: ReactNode }) {
     [actions, transport, accountSignal, accountId],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    controller.activate();
     return () => {
       controller.dispose();
     };

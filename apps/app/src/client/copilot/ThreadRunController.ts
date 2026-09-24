@@ -125,6 +125,19 @@ type ActiveRun = {
   flush?: () => void;
 };
 
+function waitForSnapshotRetry(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, 250);
+    signal.addEventListener("abort", finish, { once: true });
+  });
+}
+
 /**
  * Format an error for the a11y announcer / generic error sink.
  *
@@ -151,6 +164,7 @@ export class ThreadRunController {
   private readonly accountSignal?: AbortSignal;
   private readonly accountId?: string;
   private disposed = false;
+  private activationGeneration = 0;
 
   private activeRun: ActiveRun | null = null;
   private admissionLease: object | null = null;
@@ -160,10 +174,10 @@ export class ThreadRunController {
   private runToken = 0;
   private readonly gapSnapshotsByThreadId = new Map<
     string,
-    { token: number; promise: Promise<void> }
+    { token: number; promise: Promise<void>; abort: AbortController }
   >();
-  private readonly unsubscribeInterruptResponseError: () => void;
-  private readonly unsubscribeSocketGenerationClosed: () => void;
+  private unsubscribeInterruptResponseError: (() => void) | null = null;
+  private unsubscribeSocketGenerationClosed: (() => void) | null = null;
 
   constructor(options: ThreadRunControllerOptions) {
     this.transport = options.transport;
@@ -174,18 +188,37 @@ export class ThreadRunController {
     this.getThreadSnapshotFn = options.getThreadSnapshotFn ?? getThreadSnapshot;
     this.accountSignal = options.accountSignal;
     this.accountId = options.accountId;
+  }
+
+  /** Pair provider effect setup with disposal; construction is render-pure. */
+  activate(): void {
+    if (this.accountSignal?.aborted || this.unsubscribeInterruptResponseError) return;
+    this.disposed = false;
+    const ownerGeneration = ++this.activationGeneration;
     this.unsubscribeInterruptResponseError = this.transport.onInterruptResponseError(
       ({ threadId, error }) => {
-        if (!this.accountSignal?.aborted && !this.disposed)
+        if (
+          !this.accountSignal?.aborted &&
+          !this.disposed &&
+          this.activationGeneration === ownerGeneration
+        )
           this.settleInterruptResponseError(threadId, error);
       },
     );
-    this.unsubscribeSocketGenerationClosed = this.transport.onSocketGenerationClosed(
-      (generation) =>
-        !this.accountSignal?.aborted &&
-        !this.disposed &&
-        this.actions.markInterruptResponsesForGenerationAmbiguous(generation),
-    );
+    try {
+      this.unsubscribeSocketGenerationClosed = this.transport.onSocketGenerationClosed(
+        (generation) =>
+          !this.accountSignal?.aborted &&
+          !this.disposed &&
+          this.activationGeneration === ownerGeneration &&
+          this.actions.markInterruptResponsesForGenerationAmbiguous(generation),
+      );
+    } catch (error) {
+      this.unsubscribeInterruptResponseError?.();
+      this.unsubscribeInterruptResponseError = null;
+      this.activationGeneration += 1;
+      throw error;
+    }
   }
 
   submit(
@@ -226,8 +259,12 @@ export class ThreadRunController {
   }
 
   private recoveryFence(session: object): SessionFence {
+    const ownerGeneration = this.activationGeneration;
     return () =>
-      !this.disposed && !this.accountSignal?.aborted && this.recoverySessions.has(session);
+      !this.disposed &&
+      !this.accountSignal?.aborted &&
+      this.activationGeneration === ownerGeneration &&
+      this.recoverySessions.has(session);
   }
 
   /**
@@ -563,10 +600,15 @@ export class ThreadRunController {
 
   /** Release controller-lifetime subscriptions (provider unmount). */
   dispose(): void {
+    if (this.disposed) return;
     this.teardown();
     this.disposed = true;
-    this.unsubscribeInterruptResponseError();
-    this.unsubscribeSocketGenerationClosed();
+    this.activationGeneration += 1;
+    this.recoverySessions.clear();
+    this.unsubscribeInterruptResponseError?.();
+    this.unsubscribeSocketGenerationClosed?.();
+    this.unsubscribeInterruptResponseError = null;
+    this.unsubscribeSocketGenerationClosed = null;
   }
 
   private startRun(threadId: string, options: { pruneAbandonedTurn?: boolean } = {}): number {
@@ -725,34 +767,37 @@ export class ThreadRunController {
     const existing = this.gapSnapshotsByThreadId.get(threadId);
     if (existing) {
       if (existing.token === token) return existing.promise;
-      try {
-        await existing.promise;
-      } catch {
-        // The older run owns its failure; the current run still needs recovery.
-      }
-      return this.isActiveToken(token) ? this.replaceFromSnapshot(threadId, token) : undefined;
+      existing.abort.abort();
+      this.gapSnapshotsByThreadId.delete(threadId);
     }
 
+    const abort = new AbortController();
+    const signal = this.accountSignal
+      ? AbortSignal.any([this.accountSignal, abort.signal])
+      : abort.signal;
     const recovery = (async () => {
-      for (let attempt = 0; attempt < 2; attempt += 1) {
+      while (this.isActiveToken(token) && !signal.aborted) {
         const snapshot = deserializeThreadSnapshot(
-          await this.getThreadSnapshotFn({ data: { threadId }, signal: this.accountSignal }),
+          await this.getThreadSnapshotFn({ data: { threadId }, signal }),
         );
-        if (!this.isActiveToken(token) || this.activeRun?.threadId !== threadId) return;
+        if (signal.aborted || !this.isActiveToken(token) || this.activeRun?.threadId !== threadId)
+          return;
         if (
           snapshot.thread.id !== threadId ||
           (this.accountId && snapshot.thread.userId !== this.accountId)
-        )
+        ) {
+          await waitForSnapshotRetry(signal);
           continue;
+        }
         if (this.applySnapshot(snapshot)) return;
+        await waitForSnapshotRetry(signal);
       }
-      throw new Error("Thread snapshot is older than live changes");
     })().finally(() => {
       if (this.gapSnapshotsByThreadId.get(threadId)?.promise === recovery) {
         this.gapSnapshotsByThreadId.delete(threadId);
       }
     });
-    this.gapSnapshotsByThreadId.set(threadId, { token, promise: recovery });
+    this.gapSnapshotsByThreadId.set(threadId, { token, promise: recovery, abort });
     return recovery;
   }
 
@@ -768,6 +813,13 @@ export class ThreadRunController {
     // apply is gated on `isActiveToken`, so nulling first would drop the last
     // buffered frame on teardown, run switch, and unmount.
     activeRun?.dispose?.();
+    if (activeRun) {
+      const recovery = this.gapSnapshotsByThreadId.get(activeRun.threadId);
+      if (recovery?.token === activeRun.token) {
+        recovery.abort.abort();
+        this.gapSnapshotsByThreadId.delete(activeRun.threadId);
+      }
+    }
     activeRun?.unsubscribe?.();
     this.activeRun = null;
   }

@@ -156,14 +156,55 @@ describe("controller gap-result ownership", () => {
         liveState: { runningTurnId: null },
       }) as never;
     const scenario = new ThreadRunScenario({
-      snapshot: async () => snapshot(++request === 1 ? "4000" : "5000"),
+      snapshot: async () => snapshot(++request < 3 ? "4000" : "5000"),
     });
     scenario.store.getState().acceptDurableBlockSeq("thread_1", "4000");
     scenario.resume({ expectedTurnId: "run-1" });
     scenario.emit(runStarted("run-1"), "10");
     scenario.reportGap();
-    await vi.waitFor(() => expect(scenario.snapshotRequests).toHaveLength(2));
+    await vi.waitFor(() => expect(scenario.snapshotRequests).toHaveLength(3));
     expect(scenario.store.getState().durableBlockCursorByThread.thread_1).toBe("4999");
+    expect(scenario.activeSubscription()).toBeDefined();
+    scenario.emit(
+      { type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "run-1" } as never,
+      "5001",
+    );
+    expect(scenario.turns()[0]?.status).toBe("complete");
+  });
+
+  it("stops outstanding stale recovery on disposal without another fetch", async () => {
+    const scenario = new ThreadRunScenario({
+      snapshot: async () =>
+        ({
+          thread: { id: "thread_1" },
+          turns: [],
+          nextSeq: "4000",
+          actionRequired: false,
+          liveState: { runningTurnId: null },
+        }) as never,
+    });
+    scenario.store.getState().acceptDurableBlockSeq("thread_1", "4000");
+    scenario.resume({ expectedTurnId: "run-1" });
+    scenario.emit(runStarted("run-1"), "10");
+    scenario.reportGap();
+    await vi.waitFor(() => expect(scenario.snapshotRequests).toHaveLength(1));
+    scenario.controller.dispose();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(scenario.snapshotRequests).toHaveLength(1);
+    expect(scenario.activeSubscription()).toBeUndefined();
+  });
+
+  it("keeps real gap network errors on the existing run-failure path", async () => {
+    const scenario = new ThreadRunScenario({
+      snapshot: async () => {
+        throw new Error("offline");
+      },
+    });
+    scenario.resume({ expectedTurnId: "run-1" });
+    scenario.emit(runStarted("run-1"), "10");
+    scenario.reportGap();
+    await vi.waitFor(() => expect(scenario.activeSubscription()).toBeUndefined());
+    expect(scenario.snapshotRequests).toHaveLength(1);
   });
 
   it("retries a mismatched gap response instead of satisfying recovery", async () => {
