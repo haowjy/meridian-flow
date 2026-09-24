@@ -7,7 +7,7 @@ import { type KeyboardEvent, type ReactNode, type RefObject, useId } from "react
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
 import {
-  dropdownResultsVariants,
+  dropdownResultsClass,
   dropdownRowVariants,
   dropdownSearchClass,
 } from "@/components/ui/dropdown-presentation";
@@ -170,7 +170,7 @@ export function WorkPickerPanel({
           className={dropdownSearchClass}
         />
       </div>
-      <div className={`${dropdownResultsVariants({ kind: "picker" })} space-y-2`}>
+      <div className={`${dropdownResultsClass} space-y-2`}>
         {view.status === "ready" && onChooseNone ? (
           <Button
             ref={operation.currentWorkId === "" ? focusRefs?.selected : undefined}

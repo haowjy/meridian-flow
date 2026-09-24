@@ -175,7 +175,7 @@ export function ActivityRow({
   const dot =
     status === "running" ? (
       <span
-        className="bg-status-live-dot mt-[7px] size-1.5 shrink-0 rounded-full motion-safe:animate-pulse"
+        className="bg-status-live-foreground mt-[7px] size-1.5 shrink-0 rounded-full motion-safe:animate-pulse"
         aria-hidden
       />
     ) : status === "error" ? (

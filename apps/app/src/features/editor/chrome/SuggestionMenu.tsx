@@ -29,6 +29,7 @@
 import type { Editor } from "@tiptap/core";
 import { Fragment, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
+import { dropdownPanelClass, dropdownRowVariants } from "@/components/ui/dropdown-presentation";
 import { cn } from "@/lib/utils";
 
 import { EditorPopover } from "./EditorPopover";
@@ -159,7 +160,7 @@ export function SuggestionMenu({
       side={side}
       focusOnOpen="prose"
       returnFocus={() => typingElement.focus()}
-      className={cn("meridian-suggestion-menu-shell min-w-64 p-0", className)}
+      className={cn(dropdownPanelClass, "meridian-suggestion-menu-shell min-w-64 p-0", className)}
     >
       {note ? (
         <div className="border-border-subtle border-b px-2 py-1.5 text-ink-subtle text-xs">
@@ -189,9 +190,8 @@ export function SuggestionMenu({
                 ref={active ? activeRef : undefined}
                 tabIndex={-1}
                 className={cn(
-                  "flex w-full cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-hidden",
-                  "[&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground",
-                  active && "bg-accent text-accent-foreground",
+                  dropdownRowVariants({ interactive: false, selected: active }),
+                  "cursor-default [&_svg]:text-muted-foreground",
                   row.blocked && "text-muted-foreground",
                 )}
                 // The caret is the writer's place in the chapter; a menu row

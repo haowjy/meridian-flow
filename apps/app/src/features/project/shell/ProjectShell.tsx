@@ -141,7 +141,6 @@ export function ProjectShell({
           // own fallback applies — globals.css is the single owner of the
           // corner radius value.
           "--chrome-corner": leftOccupant ? undefined : "0px",
-          "--project-header-bg": "var(--color-muted)",
           "--project-left-width": `${leftWidth}px`,
           // Resize handles render as transparent absolute overlays centered on
           // these grid seams; zero-width tracks remove the visible empty strip.
