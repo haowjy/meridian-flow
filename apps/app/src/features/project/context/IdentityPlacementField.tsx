@@ -13,6 +13,7 @@ import { Check, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ContextTab } from "@/client/stores";
+import { dropdownPanelClass } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -356,7 +357,7 @@ export function IdentityPlacementField({
       <PopoverContent
         data-file-suggestion
         align="start"
-        className="max-h-64 w-80 overflow-y-auto p-0"
+        className={cn(dropdownPanelClass, "max-h-64 w-80 overflow-y-auto p-0")}
         onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <FileSuggestionList

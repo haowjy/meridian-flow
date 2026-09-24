@@ -103,9 +103,11 @@ size-change compensation). `useChatFollowScroll` owns **policy** — the explici
 "at bottom" per-frame from offsets is what made the pill flicker and
 follow-release feel inconsistent.
 
-Key contract: **no child component may own a scroller**. Assistant turn
-rendering (`AssistantTurn.tsx`, `ProcessDisclosure.tsx`) owns only the
-disclosure expand/collapse — the viewport is TurnList's invariant.
+Key contract: **no child of the transcript viewport may own a scroller**.
+Assistant turn rendering (`AssistantTurn.tsx`, `ProcessDisclosure.tsx`) owns only
+the disclosure expand/collapse — the viewport is TurnList's invariant. The
+thread switcher's bounded result list is a separate popover scroller: opening
+it scrolls the current chat into view without taking focus from search.
 
 → TurnList.tsx header comment (single-scroll-owner contract + geometry/policy split)
 → useChatFollowScroll.ts header comment (state machine invariants +

@@ -43,7 +43,7 @@ export function WorkspaceNavBody({
       <div
         className={cn(
           "flex shrink-0 flex-col",
-          phone ? "gap-1 px-3 py-3" : "gap-0.5 border-b border-border-subtle pb-2",
+          phone ? "gap-1 px-3 py-3" : "gap-0.5 border-b border-border-subtle px-2 pb-2",
         )}
       >
         {SCREENS.map((screen) => (
@@ -98,11 +98,11 @@ function ScreenNavItem({
       aria-current={active ? "page" : undefined}
       className={cn(
         "focus-ring flex items-center gap-2.5 text-left text-sm transition-colors",
-        // Desktop rows are full-bleed square bands like the explorer headers.
-        // The rail's 8px container inset moved into the row (px-2 + px-2 →
-        // px-4) so the fill reaches the rail edges while icon/label x stays
-        // put. The phone drawer keeps its rounded touch-target grammar.
-        presentation === "phone" ? "min-h-11 rounded-md px-2 active:scale-[0.98]" : "px-4 py-1.5",
+        // Desktop rows share the footer's inset, rounded treatment; keep the
+        // icon and label aligned with their original positions.
+        presentation === "phone"
+          ? "min-h-11 rounded-md px-2 active:scale-[0.98]"
+          : "rounded-md px-2 py-1.5",
         active
           ? "bg-sidebar-accent font-medium text-foreground"
           : "text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground",

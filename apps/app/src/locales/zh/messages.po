@@ -681,7 +681,7 @@ msgstr ""
 #~ msgid "Chat creation is still being reconciled."
 #~ msgstr ""
 
-#: src/features/project/ChatLandingController.tsx
+#: src/features/chat/ThreadSwitcherPopover.tsx
 #~ msgid "Chats"
 #~ msgstr ""
 

@@ -55,7 +55,7 @@ export function RailPaneHeader({
 }) {
   return (
     /* This row stays on the rail material at rest and only lifts on hover. */
-    <div className="group relative flex h-7 w-full items-center transition-colors hover:bg-sidebar-accent/50">
+    <div className="group relative mx-2 flex h-7 items-center rounded-md transition-colors hover:bg-sidebar-accent/50">
       <button
         type="button"
         aria-expanded={expanded}
@@ -66,7 +66,7 @@ export function RailPaneHeader({
           if (event.key === "ArrowLeft") onExpandedChange(false);
           if (event.key === "ArrowRight") onExpandedChange(true);
         }}
-        className="focus-ring flex h-full min-w-0 flex-1 items-center rounded-none pr-1 pl-1 text-left"
+        className="focus-ring flex h-full min-w-0 flex-1 items-center rounded-md pr-1 pl-1 text-left"
       >
         <span className="flex w-4 shrink-0 items-center justify-center text-muted-foreground">
           <ChevronRight

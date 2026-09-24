@@ -36,6 +36,8 @@
   --color-border-subtle: oklch(0.335 0.012 84);
   --color-border-focus: oklch(0.55 0.07 175);
   --color-dropdown-focus-indicator: oklch(0.75 0.08 176);
+  --color-dropdown-hover: oklch(0.365 0.013 84);
+  --color-dropdown-selected: oklch(0.41 0.014 84);
 
   --color-sidebar: oklch(0.25 0.012 84);
   --color-sidebar-accent: oklch(0.31 0.014 84);
@@ -43,6 +45,7 @@
 
   --color-shelf: oklch(0.215 0.012 84);
   --color-shelf-active: oklch(0.29 0.016 84);
+  --color-shelf-hover: color-mix(in oklab, var(--color-foreground) 6%, var(--color-shelf));
   --color-shelf-ink-subtle: oklch(0.78 0.02 84);
   --color-shelf-ink-muted: oklch(0.74 0.012 84);
   --color-shelf-destructive: oklch(0.68 0.14 17);
