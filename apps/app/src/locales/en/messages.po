@@ -591,7 +591,6 @@ msgstr "Can't undo"
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/shell/RenameProjectDialog.tsx
 #: src/features/project/work/WorkDialog.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Cancel"
@@ -2588,11 +2587,15 @@ msgstr "Project created, but it couldn’t open. Try again."
 msgid "Project name"
 msgstr "Project name"
 
-#: src/features/project/shell/RenameProjectDialog.tsx
+#: src/features/project/shell/InlineProjectTitle.tsx
+msgid "Project name is required"
+msgstr "Project name is required"
+
+#: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Project title"
 msgstr "Project title"
 
-#: src/features/project/shell/RenameProjectDialog.tsx
+#: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Project title could not be saved. Try again."
 msgstr "Project title could not be saved. Try again."
 
@@ -2781,7 +2784,7 @@ msgstr "Removed"
 #: src/features/project/context/ContextTreeRows.tsx
 #: src/features/project/context/DocumentIdentityBar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
-#: src/features/project/mobile/NavigationDrawer.tsx
+#: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename"
 msgstr "Rename"
 
@@ -2791,13 +2794,17 @@ msgid "Rename chat"
 msgstr "Rename chat"
 
 #: src/features/project/shell/RenameProjectDialog.tsx
-msgid "Rename project"
-msgstr "Rename project"
+#~ msgid "Rename project"
+#~ msgstr "Rename project"
 
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx
-msgid "Rename project: {projectTitle}"
-msgstr "Rename project: {projectTitle}"
+#~ msgid "Rename project: {projectTitle}"
+#~ msgstr "Rename project: {projectTitle}"
+
+#: src/features/project/shell/InlineProjectTitle.tsx
+msgid "Rename project: {title}"
+msgstr "Rename project: {title}"
 
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Rename this document or move it somewhere else in your project."
@@ -2949,7 +2956,6 @@ msgid "Save {0}"
 msgstr "Save {0}"
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
-#: src/features/project/shell/RenameProjectDialog.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Save changes"
 msgstr "Save changes"
@@ -2982,7 +2988,10 @@ msgstr "Saved locally (offline)"
 msgid "Saving chat title"
 msgstr "Saving chat title"
 
-#: src/features/project/shell/RenameProjectDialog.tsx
+#: src/features/project/shell/InlineProjectTitle.tsx
+msgid "Saving project title"
+msgstr "Saving project title"
+
 #: src/features/project/work/WorkDetailScreen.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Saving…"

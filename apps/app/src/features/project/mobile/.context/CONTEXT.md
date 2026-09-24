@@ -117,8 +117,8 @@ the document session registry.
   breadcrumb remains Files-rooted: `Files › scheme › folders › file`.
 - Chat landing/Work/chat/results keep their current screen/thread title on the
   second line. The leading hamburger and trailing action reserve are both
-  `44px`, so non-breadcrumb titles remain centered. The drawer shows the same
-  project title as a rename control and offers an explicit View projects link.
+  `44px`, so non-breadcrumb titles remain centered. The drawer edits the
+  project title inline without closing, and offers an explicit View projects link.
 - The trailing slot is a per-screen dispatcher (`trailingAction()` in
   `MobileProject`): chat carries the Results entry, Results carries the way
   back to chat, and the Files browser inside a scheme (scheme root or folder,

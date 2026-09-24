@@ -114,10 +114,7 @@ export function MobileProject(props: MobileProjectProps) {
         onOpenChange={setDrawerOpen}
         projectId={props.projectId}
         projectTitle={props.projectTitle}
-        onRenameProject={() => {
-          setDrawerOpen(false);
-          requestAnimationFrame(props.onRenameProject);
-        }}
+        titleEdit={props.titleEdit}
         activeScreen={props.activeScreen}
         editorWorkId={props.editorWorkId}
         contextLive={props.contextLive}

@@ -9,7 +9,7 @@
 
 ### Changed
 
-- Show the project name instead of the workspace compass, with an explicit return to the library. Rename from the desktop rail or phone drawer; update the library at once and reject blank titles. Match `--color-muted` across the desktop title band and center pane's curved corner, keep the title text free of icons with an editing cursor, and omit the redundant visible field label in the rename dialog.
+- Show the project name instead of the workspace compass, with an explicit return to the library. Rename from the desktop rail or phone drawer; update the library at once and reject blank titles. Match `--color-muted` across the desktop title band and center pane's curved corner. Edit the icon-free title inline in the desktop rail or phone drawer, with pending and failure on the field.
 - Use each project's UUID as the browser authority at `/p/:projectId`, including library, creation, nested Chat, and document links; retire slug-based project lookup without changing internal context URI slugs.
 - Use one card surface and radius for title-only project covers. Show four per desktop row; only the cover opens a project, while its footer title and edit recency sit on one selectable line. Remove library search, explanatory copy, divider, and list count; keep Create project at the top. Match creation buttons to New Work's compact desktop size and 44px coarse-pointer target. Remove the dead account Home width and rename the still-used project screen width and container.
 - Remove the unused account project-home redirect endpoint and its wire contract; drop the unconsumed last-active-project preference from user persistence.

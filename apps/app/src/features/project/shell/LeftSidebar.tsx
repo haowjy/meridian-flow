@@ -13,6 +13,7 @@ import { PanelLeftClose } from "lucide-react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
+import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleButton } from "./PanelToggleButton";
 import type { ScreenKey } from "./screens";
 import { WorkspaceNavBody } from "./WorkspaceNavBody";
@@ -29,7 +30,7 @@ import { WorkspaceNavBody } from "./WorkspaceNavBody";
 export type LeftSidebarProps = {
   projectId: string;
   projectTitle: string;
-  onRenameProject: () => void;
+  titleEdit: ProjectTitleEdit;
   activeScreen: ScreenKey;
   editorWorkId: string | null;
   contextLive: boolean;
@@ -44,7 +45,7 @@ export type LeftSidebarProps = {
 export function LeftSidebar({
   projectId,
   projectTitle,
-  onRenameProject,
+  titleEdit,
   activeScreen,
   editorWorkId,
   contextLive,
@@ -74,15 +75,12 @@ export function LeftSidebar({
           label={t`Collapse sidebar  [`}
           onClick={onCollapse}
         />
-        <button
-          type="button"
-          aria-label={t`Rename project: ${projectTitle}`}
+        <InlineProjectTitle
           title={projectTitle}
-          onClick={onRenameProject}
+          {...titleEdit}
           className="focus-ring flex h-8 min-w-0 flex-1 cursor-default items-center rounded-md px-2 text-left text-[14px] font-semibold hover:bg-sidebar-accent"
-        >
-          <span className="min-w-0 cursor-text truncate">{projectTitle}</span>
-        </button>
+          inputClassName="h-8 px-2 text-[14px] font-semibold"
+        />
       </div>
 
       <WorkspaceNavBody
