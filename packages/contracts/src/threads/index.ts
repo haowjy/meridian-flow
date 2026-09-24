@@ -139,7 +139,7 @@ export type PendingInboxItem = {
   enqueuedAt: string;
 };
 
-/** A thread's undelivered inbox, ordered by `seq`; the tray state is replaced wholesale. */
+/** A thread's unacknowledged inbox, ordered by `seq`; the tray state is replaced wholesale. */
 export type ThreadPendingInbox = {
   items: PendingInboxItem[];
 };
@@ -186,7 +186,7 @@ export type JournalEventType =
   | "agent.spawn" // PRODUCED NOW — ChildRunCoordinator
   | "agent.run_completed" // PRODUCED NOW — ReportPublisher B, body-free metadata
   | "subagent.activity" // PRODUCED NOW — ChildRunCoordinator/Driver (root journal, full recomputed activity)
-  | "inbox.changed" // PRODUCED NOW — ThreadedInbox enqueue + orchestrator ack (full recomputed pending inbox)
+  | "inbox.changed" // PRODUCED NOW — enqueue, bind/adoption/release, and ack (full classified inbox)
   | "block.pruned" // PRODUCED NOW — generic block lifecycle; child run cards are replaced in place
   | "context.assembled"
   | "context.compacted"

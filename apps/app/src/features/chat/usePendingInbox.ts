@@ -4,8 +4,8 @@
  * Sources, in precedence order: the HTTP snapshot seeds the first render; the
  * `subscribed` live state reconciles on every (re)subscribe so a replayed frame
  * frozen at emit time cannot win; `meridian.inbox.changed` frames replace the
- * tray live (enqueue adds a row, ack clears it). The tray is server truth, never
- * a turn block.
+ * tray live (enqueue adds a row; bind, adoption, and release reclassify rows;
+ * ack clears them). The tray is server truth, never a turn block.
  */
 import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ThreadPendingInbox } from "@meridian/contracts/threads";

@@ -56,8 +56,10 @@ mounted thread lifetime. The existing upsert frame also carries historical card
 replacements. Update a loaded target turn without touching active-turn state;
 when the target turn is absent, invalidate/refetch the durable snapshot rather
 than creating a synthetic streaming turn. Store duplicate replacement as a
-reference-preserving no-op. The pending inbox remains generic for transport and
-model drain; filter writer provenance only at the composer tray.
+reference-preserving no-op. The pending inbox remains generic for transport
+and model drain; the composer tray filters writer provenance and
+`deliveryState === "waiting"`. An accepted writer turn with `awaiting_run`
+status shows its ID-keyed inline waiting status.
 
 The full model lives in
 [`.context/turn-composition.md`](.context/turn-composition.md); one row's

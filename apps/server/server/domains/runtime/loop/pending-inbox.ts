@@ -5,10 +5,9 @@
  * the generic `ThreadPendingInbox` (design §6). Writer-only filtering belongs
  * to the chat selector, not this shared projection. `createNotifyingThreadedInbox`
  * decorates the producer's locked enqueue with a best-effort `inbox.changed`
- * append after the caller's transaction commits, so a queued message is visible
- * before delivery; the orchestrator appends the same event inside the ack
- * transaction. Enqueue-time emission is the primary path here, not the
- * focus/refresh fallback the design names.
+ * append after the caller's transaction commits, so a message can be visible as
+ * `awaiting_run` before delivery. Bind, adoption, and release also publish the
+ * same classified view under the lock; the orchestrator publishes it on ack.
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { PendingInboxItem, ThreadPendingInbox } from "@meridian/contracts/threads";

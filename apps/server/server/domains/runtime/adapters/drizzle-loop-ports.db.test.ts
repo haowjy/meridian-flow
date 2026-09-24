@@ -579,14 +579,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             .metadata,
         ).toMatchObject({ retained: "value", inboxConsumption: { messageIds: [g.id] } });
 
-        await runInDrizzleTransaction(db, async () => {
-          await inbox.ack(THREAD_A, [g.id]);
-          await journal.appendEvent(THREAD_A, {
-            type: "inbox.changed",
-            threadId: THREAD_A,
-            pending: await readPendingInbox(inbox, THREAD_A),
-          });
-        });
         await authority.release(lease);
         await journal.appendEvent(THREAD_A, {
           type: "inbox.changed",
@@ -595,10 +587,23 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         });
         projection = await inbox.readPendingProjection(THREAD_A);
         expect(
-          projectPendingInbox(projection.messages, projection.run).items.map(
-            (item) => item.deliveryState,
-          ),
-        ).toEqual([]);
+          projectPendingInbox(projection.messages, projection.run).items.map((item) => [
+            item.id,
+            item.deliveryState,
+          ]),
+        ).toEqual([[g.id, "awaiting_run"]]);
+        expect(projection.messages.map((pending) => pending.deliveredAt)).toEqual([null]);
+
+        await runInDrizzleTransaction(db, async () => {
+          await inbox.ack(THREAD_A, [g.id]);
+          await journal.appendEvent(THREAD_A, {
+            type: "inbox.changed",
+            threadId: THREAD_A,
+            pending: await readPendingInbox(inbox, THREAD_A),
+          });
+        });
+        projection = await inbox.readPendingProjection(THREAD_A);
+        expect(projectPendingInbox(projection.messages, projection.run).items).toEqual([]);
         const events = await journalReader.listByType(THREAD_A, "inbox.changed");
         expect(
           events.map((event) => {
@@ -612,7 +617,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           ],
           [[g.id, "waiting"]],
           [[g.id, "consuming"]],
-          [],
+          [[g.id, "awaiting_run"]],
           [],
         ]);
       });

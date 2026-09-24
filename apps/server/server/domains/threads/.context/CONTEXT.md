@@ -47,7 +47,9 @@ instead of the N:1 `threads.workId` column.
 - **Notification and steering tables** — `thread_inbox_messages` is the durable
   per-thread message queue (global `bigserial` `seq` for per-thread FIFO, unique
   `idempotency_key`, nullable `delivered_at`), drained by the runtime's `Inbox`
-  port. `thread_run_leases` is the queryable run lease paired with the runtime's
+  port. The writer's queued tray uses the runtime's [classified pending
+  projection](../../runtime/.context/CONTEXT.md), not this storage queue alone.
+  `thread_run_leases` is the queryable run lease paired with the runtime's
   session advisory lock (`phase`, `cancel_requested`, `expires_at`, and the
   run's bound `turn_id`). Run liveness is read from the lease alone: the project
   list and `ThreadLiveState.runningTurnId` (snapshot and WS `subscribed`) both
