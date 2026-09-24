@@ -31,7 +31,9 @@ it("retains a warm parent across same-href state changes but honors explicit inv
     },
   });
   const child = createRoute({ getParentRoute: () => parent, path: "$" });
-  const history = createMemoryHistory({ initialEntries: ["/p/book/editor"] });
+  const history = createMemoryHistory({
+    initialEntries: ["/p/550e8400-e29b-41d4-a716-446655440000/editor"],
+  });
   const router = createRouter({
     routeTree: root.addChildren([parent.addChildren([child])]),
     history,
@@ -40,9 +42,11 @@ it("retains a warm parent across same-href state changes but honors explicit inv
   expect(calls).toBe(1);
   expect(authCalls).toBe(1);
   offline = true;
-  history.replace("/p/book/editor", { localDraft: "draft" } as never);
+  history.replace("/p/550e8400-e29b-41d4-a716-446655440000/editor", {
+    localDraft: "draft",
+  } as never);
   await router.load();
-  await router.navigate({ href: "/p/book/chats" });
+  await router.navigate({ href: "/p/550e8400-e29b-41d4-a716-446655440000/chats" });
   expect(calls).toBe(1);
   expect(authCalls).toBe(1);
   expect(router.state.matches.every((match) => match.status === "success")).toBe(true);

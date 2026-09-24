@@ -22,7 +22,7 @@ import { DraftReviewProvider } from "@/features/chat/DraftReviewProvider";
 /**
  * Independent chat surface (`/chat/:threadId`) — a thread the user experiences
  * as project-less. Minimal chrome: no Rail, no panels. A back button returns to
- * home; "Create project" promotes the hidden project backing this chat and
+ * the project library; "Create project" promotes the hidden project backing this chat and
  * routes into the full workspace.
  */
 export type IndependentChatViewProps = {
@@ -54,8 +54,8 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
     if (!project.data) return;
     promoteIndependentProject(project.data.id);
     void navigate({
-      to: "/p/$projectSlug/$",
-      params: { projectSlug: project.data.slug, _splat: "" },
+      to: "/p/$projectId/$",
+      params: { projectId: project.data.id, _splat: "" },
     });
   }, [navigate, project.data]);
 
@@ -64,8 +64,8 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
       <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border px-3">
         <IconButton
           size="sm"
-          aria-label={t`Back to home`}
-          onClick={() => void navigate({ to: "/home" })}
+          aria-label={t`View projects`}
+          onClick={() => void navigate({ to: "/" })}
         >
           <ArrowLeft className="size-4" aria-hidden />
         </IconButton>

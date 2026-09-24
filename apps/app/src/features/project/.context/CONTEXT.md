@@ -1,7 +1,7 @@
 # features/project — Desktop project shell
 
-The authenticated project project: one persistent multi-panel desktop surface
-that swaps primary *destinations* (Home / Work / Chat / Editor) without tearing down
+The authenticated project workspace: one persistent multi-panel desktop surface
+that swaps primary *destinations* (Chat / Work / Editor) without tearing down
 its stateful surfaces. This file is the colocated contract for the shell — read
 it before touching layout, the rails/headers, or the prefs store.
 Settings is an auxiliary routed surface, not a primary destination.
@@ -32,20 +32,23 @@ Slot topology (`layout/desktop-layout.ts`), one grid row across every screen:
 ```
 
 - **`rail-l`** — the left sidebar (destinations + project file tree).
-- **`center`** — the destination's main pane (Home/Work route pane, or the
+- **`center`** — the destination's main pane (Chat landing/Work route pane, or the
   Chat/Editor center surface).
-- **`dock`** — the shared right dock. Chat occupies it on Home/Work/Editor; the
-  context-rail occupies it on the Chat screen. It reads as **one persistent
+- **`dock`** — the shared right dock. The context-rail occupies it on Chat; Chat
+  occupies it on Work/Editor. It reads as **one persistent
   sidebar** whose inner content swaps — a single shared width/collapse pref
   (`slotPrefs.dock`), not a per-surface one.
 
 There is **no `files` grid track**. The file explorer is the persistent body of
 the left sidebar; `ContextViewer` owns only the Editor tab strip and document.
 
-`LeftSidebar` is one column with a linked wordmark, Home/Work/Chat/Editor navigation,
-the persistent project tree, and account controls. The navigation rows are
-shared with mobile through `WorkspaceNavBody`; the wordmark and recursive tree
-are desktop shell grammar.
+`LeftSidebar` is one column with a truncating project-title control,
+Chat/Work/Editor navigation, the persistent project tree, an explicit View
+projects link to the library, and account controls. The title replaces the
+whole Meridian wordmark and compass mark; it identifies this project rather
+than acting as a library link. The navigation rows are shared with mobile
+through `WorkspaceNavBody`; project identity and the recursive tree are
+desktop shell grammar.
 
 Work is the dedicated collection/detail management destination. The collection reads
 active and archived Work and owns creation and lifecycle entry points; it never selects
@@ -62,7 +65,7 @@ active draft. One-shot focus intents bridge detail close/delete to the collectio
 they are route continuity, not Work selection or persistent state.
 Detail composes identity and lifecycle, Goal, Description, pending drafts, Scratch,
 Uploads, and associated chats. Associated chats use bounded cursor pages and the
-same virtualized, borderless project chat row as Home without adding a nested
+same virtualized, borderless project chat row as the Chat landing without adding a nested
 scroll owner. The external-scroll hook measures the list in that owner's
 coordinates and owns stable keys plus focused/menu row pinning. Their membership
 is historical while the displayed Work is the
@@ -72,11 +75,13 @@ to an adjacent row. Both shells share this route-owned module. At phone geometry
 must wrap without horizontal overflow and product controls retain coarse-pointer touch
 targets.
 
-Home is the shared, container-responsive Composer-led entry surface on desktop
-and phone, followed by the server-owned Continue, Favorites, and
-cursor-paginated Recent feed. First send creates and reconciles the canonical
-thread under one stable client-chosen ID before routing. Home and Chats share
-the saved prospective Work/Agent choices. Without a saved Work choice, creation
+The Chat landing is the project root (`/p/<project>`), a shared,
+container-responsive Composer-led surface on desktop and phone, followed by the
+server-owned Continue, Favorites, and cursor-paginated Recent feed. There is no
+second project Home or `/chats` destination. First Send mints a stable thread
+ID, navigates immediately, then creates and reconciles the canonical thread in
+the background. The Chat landing uses the saved prospective Work/Agent
+choices. Without a saved Work choice, creation
 starts with the first active Work or No Work; archived Works are not defaults.
 Loading, error, and authoritative empty catalogs remain distinct. The submitted
 Work ID is an immutable reconciliation fact, along with project and Agent, and
@@ -85,12 +90,12 @@ canonical thread matches those captured facts.
 
 The QueryClient owns one normalized Favorite record per project/thread so
 navigation and stale page arrival cannot discard pending writer intent. Work
-feeds remain immutable membership/order pages; only Home moves the affected
-thread between its categories. Project chat lists have no read/unread or
+feeds remain immutable membership/order pages; only the Chat landing moves the
+affected thread between its categories. Project chat lists have no read/unread or
 open-acknowledgement state, and opening a chat performs no state mutation.
 Thread lifecycle projection owns the independent `actionRequired` fact and
-converges live and snapshot changes across Project, Home, and every matching
-Work feed cache without writing Favorite.
+converges live and snapshot changes across Project, the Chat landing, and every
+matching Work feed cache without writing Favorite.
 
 Draft review follows the same persistent-shell rule with two sibling owners.
 The hydrated project owns one Chat review value (Chat Work plus thread) and one
@@ -102,7 +107,7 @@ the matching Editor, advertises them only after route success, and claims them
 only after Work, manuscript path, mounted document, and draft membership agree;
 it survives phone view unmounts because the owner does not.
 
-A chat has one current Work binding. Home's Work choice is prospective creation
+A chat has one current Work binding. The landing's Work choice is prospective creation
 state only; it never invokes the rebind command. The Chat composer may explicitly
 rebind an idle existing chat through the canonical durable transition, and the
 model's explicit `work.switch` command uses that same separate authority. Work
@@ -132,7 +137,7 @@ produces the classic white-band / green-flash bugs (e.g. an old `bg-background`
 on `ChatSurface` painting a brighter band under the dock header). **Let the slot
 paint.** `SlotGrid` never branches on slot kind — chrome is pure data.
 
-**Three-tone invariant (slice-7):** the shell is exactly three materials —
+**Three large-surface tones (slice-7):** the shell's primary regions use three materials —
 the shelf (`--color-shelf`, the chrome's grey-gold one shade darker; the
 app's standard black ink, with only
 contrast-failing roles remapped via `shelf-surface`'s scoped shelf-* tokens),
@@ -145,8 +150,14 @@ as each pane's `page-sheet`: top-right rounded on `--radius-md`, square and
 flush on the rail side). **Bands never paint**: `PaneHeader`, `ContextTabBar`,
 and `DockHeader` are all transparent h-10 rows on their cell's material. Only
 `--color-background`, `--color-sidebar`, and `--color-sidebar-accent` may meet
-at the band seam — arbitrary surface tokens there re-expose the notch wedge on
-palette change. Chat|Changes in the dock is a CONTAINED
+at the main pane/dock band seam — arbitrary surface tokens there re-expose the
+notch wedge on palette change. The project title header is a narrow exception
+at the shelf/main-pane junction: it uses the
+outer grid's `--color-muted`, also visible in the main-pane notch. The shelf
+remaps `--color-muted` for its controls, so `ProjectShell` resolves the outer
+shade into `--project-header-bg` before `LeftSidebar` enters the shelf scope.
+Using `bg-muted` directly inside that shelf would produce a mismatched corner.
+Chat|Changes in the dock is a CONTAINED
 segmented track (a recessed ink-mix well whose active segment surfaces paper
 inside the track's own boundary), deliberately not tab chips: only the page
 rises out of a band. Two chips wear the tab grammar — the document tabs and
@@ -160,13 +171,14 @@ weights, raw colors). They are now reconciled to **one reference: the left
 sidebar (`shell/LeftSidebar.tsx`).** New surfaces follow it. The load-bearing
 conventions:
 
-- **Header row = `h-10` (40px), `border-b border-border-subtle`, `px-2`.** Every
-  header reads at the same height: left wordmark, dock/rail header, files
-  header, editor header. Use `border-border-subtle`, not `border-border`.
-  **Exception — the two chrome strips**: the context tab strip
+- **Header row = `h-10` (40px), `px-2`.** Every
+  header reads at the same height: project identity, dock/rail header, files
+  header, editor header. Bordered rows use `border-b border-border-subtle`,
+  not `border-border`. The project-title row has no bottom rule.
+  **The two chrome strips** — the context tab strip
   (`ContextTabBar`, the band) and the dock header (`DockHeader`, transparent
   on the dock's own chrome) are the same `h-10` with tonal separation and
-  **no bottom border** (see the three-tone invariant above, and the tab-chip
+  **no bottom border** (see the shell tones above, and the tab-chip
   grammar in `globals.css`). Do not reintroduce a rule under either strip.
 - **One collapse/expand control: `shell/PanelToggleButton.tsx` (`size-8`),
   inset `px-2`.** This is the canonical toggle column. **Invariant — "click
@@ -232,18 +244,25 @@ not admit its retained document or repair the address until its host is active
 again. Writer close and Work pruning are reversible, while acknowledged deletion
 and draft discard keep exact re-entry guards against stale resurrection.
 
-## Readable routing, selection, and controllers
+## Project routing, identity, and controllers
 
-`routes/_authenticated/p/$projectSlug` is the persistent project parent and its
-catch-all child is the only workspace route adapter. It resolves the slug before
-ID-keyed queries, keeps `ProjectView` mounted for same-project child paths, and
-passes resolved address state and typed navigation commands to controlled
-controllers. Controllers never parse or mutate browser URLs themselves.
-`routing/project-address.ts` owns the readable browser grammar;
-`routing/project-navigation.ts` owns guarded push/replace behavior. The legacy
-UUID project routes and `?screen`/`?thread` grammar are gone. `project-route.ts`
-retains stable-ID command types and the context-removal CAS snapshot only; it is
-not a second address grammar.
+`routes/_authenticated/p/$projectId` is the persistent project parent and its
+catch-all child is the only workspace route adapter. It loads the full project
+by UUID, keeps `ProjectView` mounted for same-project child paths, and passes
+resolved address state and typed navigation commands to controlled controllers.
+Controllers never parse or mutate browser URLs themselves. Project title edits
+do not change the UUID address. Desktop rail and phone drawer edit their own
+project title inline: click/tap to focus and select, Enter or blur saves,
+Escape cancels. The shared title editor keeps the draft and local error visible
+through rejection, while `ProjectView` owns one optimistic title mutation and
+cache rollback. It fences overlapping list reads before confirming a successful
+rename so a late stale response cannot overwrite the title. The phone top bar
+shows project identity without becoming a second edit surface.
+`routing/project-address.ts` owns the
+project UUID/browser grammar; `routing/project-navigation.ts` owns guarded
+push/replace behavior. The legacy slug project routes and `?screen`/`?thread`
+grammar are gone. `project-route.ts` retains stable-ID command types and the
+context-removal CAS snapshot only; it is not a second address grammar.
 
 Empty Chat/Work selections are stored in href-scoped browser history state, not
 serialized as `?chat=&work=`. Only Editor-related destinations carry the empty
@@ -258,7 +277,7 @@ history is flushed before matching workspace settlement, so immediate reload
 uses the accepted URL and browser-local layout. Document
 admission still canonicalizes document paths and scope independently.
 
-A readable address has explicit selections, not defaults: absent, no-Work,
+A project address has explicit selections, not defaults: absent, no-Work,
 slug, malformed, and unavailable remain distinct. Only genuinely absent Chat
 or Editor selections may use their respective local continuity rules.
 The navigation coordinator matches rendered entries by history key, because
@@ -307,7 +326,7 @@ locations, never document identity.
 
 The Chat navigation item opens the composer-and-history landing, including from
 a chat detail. An already-open landing is a no-op. The switcher’s New chat
-shortcut targets that same landing; there is no separate `/chats/new` route.
+shortcut targets that same landing; there is no separate `/chats` or `/chats/new` route.
 
 Chat switching lives in `features/chat/ThreadSwitcherPopover`; it filters by
 chat title, groups chats by Work when meaningful, and delegates actual

@@ -3,18 +3,17 @@
  * persistent project file tree. Mobile navigation uses a drawer and its
  * context destination uses drill-in browsing.
  *
- * The wordmark/collapse header and file-tree body are desktop-specific. The
+ * The project-name/collapse header and file-tree body are desktop-specific. The
  * destination and account rows come from `WorkspaceNavBody`, which the phone
  * drawer also composes.
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { Link } from "@tanstack/react-router";
 import { PanelLeftClose } from "lucide-react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import { MeridianMark } from "@/components/app/MeridianMark";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
+import { InlineProjectTitle, type ProjectTitleEdit } from "./InlineProjectTitle";
 import { PanelToggleButton } from "./PanelToggleButton";
 import type { ScreenKey } from "./screens";
 import { WorkspaceNavBody } from "./WorkspaceNavBody";
@@ -23,13 +22,15 @@ import { WorkspaceNavBody } from "./WorkspaceNavBody";
  * LeftSidebar — content of the persistent left project slot. The
  * `shelf-surface` slot wrapper in `desktop-layout.ts` paints the rail. One column:
  *
- *   wordmark (links to app home) · Home/Chat/Editor nav · file tree · account
+ *   project name (rename) · Chat/Work/Editor nav · file tree · library/account
  *
  * The collapse control sits at the far-left (same x as the PaneHeader expand
  * control) so toggling the rail never moves the cursor.
  */
 export type LeftSidebarProps = {
   projectId: string;
+  projectTitle: string;
+  titleEdit: ProjectTitleEdit;
   activeScreen: ScreenKey;
   editorWorkId: string | null;
   contextLive: boolean;
@@ -43,6 +44,8 @@ export type LeftSidebarProps = {
 
 export function LeftSidebar({
   projectId,
+  projectTitle,
+  titleEdit,
   activeScreen,
   editorWorkId,
   contextLive,
@@ -66,21 +69,18 @@ export function LeftSidebar({
       aria-label={t`Workspace navigation`}
       className="flex h-full min-h-0 w-full flex-col text-foreground"
     >
-      {/* Wordmark — collapse (far-left) · Meridian (app home) */}
-      <div className="flex h-10 shrink-0 items-center gap-1 px-2">
+      <div className="flex h-10 shrink-0 items-center gap-1 bg-(--project-header-bg) px-2">
         <PanelToggleButton
           icon={PanelLeftClose}
           label={t`Collapse sidebar  [`}
           onClick={onCollapse}
         />
-        <Link
-          to="/home"
-          className="focus-ring flex min-w-0 items-center gap-1 rounded-md no-underline"
-          aria-label={t`Home`}
-        >
-          <MeridianMark className="size-7" />
-          <span className="text-sm font-semibold tracking-tight text-foreground">Meridian</span>
-        </Link>
+        <InlineProjectTitle
+          title={projectTitle}
+          {...titleEdit}
+          className="focus-ring flex h-8 min-w-0 flex-1 cursor-default items-center rounded-md px-2 text-left text-[14px] font-semibold hover:bg-sidebar-accent"
+          inputClassName="h-8 px-2 text-[14px] font-semibold"
+        />
       </div>
 
       <WorkspaceNavBody

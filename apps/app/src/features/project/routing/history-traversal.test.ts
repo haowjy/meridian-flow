@@ -113,7 +113,7 @@ it("keeps the replacement dirty decision while the old native POP restores", asy
     const returned = popped();
     const next = navigation.transition(
       {
-        projectSlug: "serial",
+        projectId: "550e8400-e29b-41d4-a716-446655440000",
         destination: { kind: "editor" },
         chat: { kind: "none" },
         work: { kind: "none" },
@@ -129,7 +129,7 @@ it("keeps the replacement dirty decision while the old native POP restores", asy
     if (!replacement) throw new Error("Replacement decision was lost");
     replacement.run();
     await expect(next).resolves.toEqual({ kind: "applied" });
-    expect(window.location.pathname).toBe("/p/serial/editor");
+    expect(window.location.pathname).toBe("/p/550e8400-e29b-41d4-a716-446655440000/editor");
   } finally {
     unblock();
     navigation.dispose();

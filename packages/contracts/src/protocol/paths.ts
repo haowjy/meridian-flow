@@ -19,7 +19,6 @@ function projectContextQuery(
   return "";
 }
 export const API_PROJECTS_PATH = "/api/projects";
-export const API_PROJECTS_HOME_PATH = `${API_PROJECTS_PATH}/home`;
 
 export const API_THREADS_PATH = "/api/threads";
 export const API_THREADS_WS_PATH = "/api/threads/ws";
@@ -29,10 +28,6 @@ export const API_ACCOUNT_RECENT_DOCUMENTS_PATH = "/api/account/recent-documents"
 export const API_AUTH_ME_PATH = "/api/auth/me";
 export { YJS_WS_PATH_PREFIX, yjsWsPath } from "./yjs-ws.js";
 
-export function apiProjectsHomePath(): string {
-  return API_PROJECTS_HOME_PATH;
-}
-
 export function apiProjectPath(projectId: string): string {
   return `${API_PROJECTS_PATH}/${projectId}`;
 }
@@ -40,10 +35,6 @@ export function apiProjectPath(projectId: string): string {
 /** Recents are read inside a project: the landing that renders them is one. */
 export function apiProjectRecentDocumentsPath(projectId: string): string {
   return `${apiProjectPath(projectId)}/recent-documents`;
-}
-
-export function apiProjectAddressPath(slug: string): string {
-  return `/api/project-addresses/${encodeURIComponent(slug)}`;
 }
 
 export function apiProjectDocumentAddressPath(

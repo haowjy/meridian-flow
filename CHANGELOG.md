@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Show the project name instead of the workspace compass, with an explicit return to the library. Rename from the desktop rail or phone drawer; update the library at once and reject blank titles. Match `--color-muted` across the desktop title band and center pane's curved corner. Edit the icon-free title inline in the desktop rail or phone drawer, with pending and failure on the field.
+- Use each project's UUID as the browser authority at `/p/:projectId`, including library, creation, nested Chat, and document links; retire slug-based project lookup without changing internal context URI slugs.
+- Use one card surface and radius for title-only project covers. Show four per desktop row; only the cover opens a project, while its footer title and edit recency sit on one selectable line. Remove library search, explanatory copy, divider, and list count; keep Create project at the top. Match creation buttons to New Work's compact desktop size and 44px coarse-pointer target. Remove the dead account Home width and rename the still-used project screen width and container.
+- Remove the unused account project-home redirect endpoint and its wire contract; drop the unconsumed last-active-project preference from user persistence.
+- Open a searchable project library at the signed-in base URL. Create a named project from a separate destination; open any project directly in Chat. Remove the account Home composer and quick-chat entry.
+- Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
+
 ### Added
 
 - Editor empty state lists the writer's recently opened documents in the current project, grouped by age (Today / Yesterday / Earlier). Opening a document records it to the account's recents list (`user_recent_documents`), and each project shows its own slice of that history; the landing replaces the old "New document / pick a file from the tree" dead end. A control at the tab strip's leading edge returns to it with tabs still open.
@@ -31,6 +40,7 @@
 
 ### Fixed
 
+- New projects initialize their Manuscript source before context catalog refresh, so draft requests no longer fail with a missing manifest identity.
 - Chat submissions stay visible as pending until the server acknowledges them. Unresolved sends survive reload, ambiguous sends retain status recovery, and rejected existing-thread sends keep Retry or Edit on the affected turn.
 - Working-set preferences, chat favorites, thread titles, checkout controls, and interrupt answers now keep pending and failure feedback on the affected control. Stale responses cannot overwrite newer settings or titles, thread titles persist across reload, and billing return pages never claim a purchase before the ledger confirms it.
 - Opening a document updates this project's recently opened list immediately, including after reload, without waiting for the server. A failed record or an unchanged server row keeps that opening. A stale list cannot erase or reorder it. A removed document does not return from a later list until it is opened again. Switching accounts and back does not replay the previous list onto the record.

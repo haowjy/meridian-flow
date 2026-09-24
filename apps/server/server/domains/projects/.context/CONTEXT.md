@@ -1,20 +1,23 @@
-# domains/projects — Project bootstrap
+# domains/projects — Projects and Work
 
-Minimal Meridian-specific bootstrap code for the first authenticated workspace.
-This domain is not the full project CRUD surface; that lives in
-`../projects/` and is used by the upstream-parity `/api/projects/*` routes.
+This domain owns project persistence and bootstrap plus Work metadata and
+lifecycle operations. `/api/projects/*` and `/api/works/*` routes are adapters
+over its owner-gated operations.
 
 ## What it owns
 
 - **Default bootstrap** — `ProjectRepository.ensureDefaultBootstrap(userId)`
   idempotently creates or reuses the user's personal project, manuscript context source, `chapter-1.md` document, the locked No Work row, and that Work's Scratch and Uploads sources. Bootstrap creates no thread.
+- **Ordinary project creation** — creates the project-scoped Manuscript source before No Work and catalog initialization so the project has a manifest identity before it is returned. It does not seed a chapter document or Work-owned sources.
 - **Bootstrap URI** — `DEFAULT_BOOTSTRAP_URI` is `manuscript://chapter-1.md`.
 - **Work domain** — `WorkRepository` owns explicit Work metadata/lifecycle persistence, and `listWorkCatalog` owns the owner-gated catalog projection across Work persistence and collab pending-draft counts.
 
 ## Contracts
 
-Project handles are owner-scoped, title-derived at creation, and stable across
-renames. Both personal bootstrap and ordinary creation serialize allocation on
+Project slug handles are owner-scoped, title-derived at creation, and stable
+across renames. Browser `/p/{projectId}` and project CRUD routes instead use the
+existing UUID, so title edits never rewrite a browser address. Both
+personal bootstrap and ordinary creation serialize allocation on
 the same owner lock. Project, Work and chat handles remain reserved through soft
 deletion. Exact `findLiveByOwnerSlug` lookup is separate from UUID `findById`;
 missing, foreign-owner and deleted handles resolve unavailable.
@@ -36,6 +39,7 @@ missing, foreign-owner and deleted handles resolve unavailable.
 
 - The bootstrap transaction takes a Postgres advisory lock scoped to the user id
   so concurrent first-load requests converge.
+- Ordinary project creation persists its project-scoped Manuscript source, locked No Work, and catalog lifecycle state in the same transaction as the project row.
 - The personal project is selected by `projects.userId`, `isPersonal = true`,
   and `deletedAt IS NULL`.
 - Bootstrap creates no Agent, thread, or membership. It does insert the locked No Work
@@ -75,11 +79,3 @@ missing, foreign-owner and deleted handles resolve unavailable.
   transaction after that lock. Reviewable branch-journal creation and redo use
   the same lifecycle boundary. Restore refuses rather than clobbering a
   reclaimed active name.
-
-## Relationship to `domains/projects`
-
-`domains/projects` carries the copied upstream repository and owner-gate
-surface: project CRUD, work list/search/touch, user provisioning, and
-`requireProjectOwner`. Root-chat creation is nullable and Work-list routes are
-pure catalog reads.
-Route wrappers under `/api/projects/*` should stay thin over this domain.

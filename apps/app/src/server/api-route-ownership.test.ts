@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import { getApiRouteOwner } from "./api-route-ownership";
 
 describe("API route ownership", () => {
-  it("forwards readable project resolution without claiming adjacent app routes", () => {
-    expect(getApiRouteOwner("/api/project-addresses/silver-moon")).toBe("server");
-    expect(getApiRouteOwner("/api/project-addresses-other")).toBeNull();
+  it("forwards project ID lookup without claiming adjacent routes", () => {
+    expect(getApiRouteOwner("/api/projects/550e8400-e29b-41d4-a716-446655440000")).toBe("server");
+    expect(getApiRouteOwner("/api/projects-other/id")).toBeNull();
   });
   it.each([
     "/api/works",

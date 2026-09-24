@@ -17,12 +17,12 @@ import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import { DraftReviewBoundary } from "@/features/chat/DraftReviewProvider";
+import { ChatLandingScreen } from "../chat-landing/ChatLandingScreen";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeLabel } from "../context/context-schemes";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
 import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
 import { EditorWorkRecovery } from "../EditorWorkRecovery";
-import { HomeScreen } from "../home/HomeScreen";
 import type { ReviewScopedProjectProps } from "../ProjectView";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { WorkScreen } from "../work/WorkScreen";
@@ -67,6 +67,7 @@ export function MobileProject(props: MobileProjectProps) {
       <MobileTopBar
         activeScreen={props.activeScreen}
         projectId={props.projectId}
+        projectTitle={props.projectTitle}
         activeThreadId={props.activeThreadId}
         onSelectThread={props.onSelectThread}
         title={props.resultsOpen ? t`Results` : undefined}
@@ -112,6 +113,8 @@ export function MobileProject(props: MobileProjectProps) {
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         projectId={props.projectId}
+        projectTitle={props.projectTitle}
+        titleEdit={props.titleEdit}
         activeScreen={props.activeScreen}
         editorWorkId={props.editorWorkId}
         contextLive={props.contextLive}
@@ -146,7 +149,7 @@ function trailingAction(
       </PhoneIconButton>
     );
   }
-  if (props.activeScreen === "chat" && !props.chatDestination) {
+  if (props.activeScreen === "chat" && !props.chatLanding) {
     return (
       <PhoneIconButton onClick={props.onOpenResults} aria-label={t`Open results`}>
         <Sparkles className="size-5" aria-hidden />
@@ -176,8 +179,6 @@ function renderActiveView(
   }
 
   switch (props.activeScreen) {
-    case "home":
-      return <HomeScreen projectId={props.projectId} onOpenThread={props.onOpenThread} />;
     case "work":
       return (
         <WorkScreen
@@ -188,8 +189,8 @@ function renderActiveView(
         />
       );
     case "chat":
-      if (props.chatDestination)
-        return <HomeScreen projectId={props.projectId} onOpenThread={props.onOpenThread} />;
+      if (props.chatLanding)
+        return <ChatLandingScreen projectId={props.projectId} onOpenThread={props.onOpenThread} />;
       return (
         <DraftReviewBoundary value={props.chatReview}>
           <MobileChatHost
@@ -253,7 +254,7 @@ function renderActiveView(
  * › file. "Files" is the root crumb and navigates to the scheme list; deeper
  * ancestors navigate to the Files browser at that location (`""` = scheme
  * root). The last segment is the current location and stays non-interactive —
- * at the Files root itself the trail is just a lone "Files". Home, chat, and
+ * at the Files root itself the trail is just a lone "Files". Chat, Work, and
  * routed Results auxiliary state suppresses the trail so the top bar shows its
  * plain centered title instead — Results is not part of the Files hierarchy.
  */

@@ -77,6 +77,11 @@ msgstr "{0, plural, one {# more item} other {# more items}}"
 msgid "{0, plural, one {# pending draft} other {# pending drafts}}"
 msgstr "{0, plural, one {# pending draft} other {# pending drafts}}"
 
+#. placeholder {0}: matches.length
+#: src/features/home/ProjectLibrary.tsx
+#~ msgid "{0, plural, one {# project} other {# projects}}"
+#~ msgstr "{0, plural, one {# project} other {# projects}}"
+
 #. placeholder {0}: count ?? 0
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "{0, plural, one {Apply # change and switch} other {Apply # changes and switch}}"
@@ -138,12 +143,12 @@ msgid "{0} isn't in {section}."
 msgstr "{0} isn't in {section}."
 
 #. placeholder {0}: item.title
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
 msgid "{0} moved to Favorite chats"
 msgstr "{0} moved to Favorite chats"
 
 #. placeholder {0}: item.title
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
 msgid "{0} moved to Recent chats"
 msgstr "{0} moved to Recent chats"
 
@@ -268,6 +273,10 @@ msgstr "A folder named {trimmed} already exists in this location."
 #: src/core/editor/images/ImageIngressExtension.ts
 msgid "A picture cannot go there."
 msgstr "A picture cannot go there."
+
+#: src/features/home/NewProjectView.tsx
+msgid "A project can hold one book, a whole series, or a story world."
+msgstr "A project can hold one book, a whole series, or a story world."
 
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "A table keeps at least one column."
@@ -398,6 +407,10 @@ msgstr "Align right"
 msgid "Alignment applies to paragraphs, headings, and tables."
 msgstr "Alignment applies to paragraphs, headings, and tables."
 
+#: src/features/home/ProjectLibrary.tsx
+#~ msgid "All projects"
+#~ msgstr "All projects"
+
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "All Work"
 msgstr "All Work"
@@ -454,8 +467,8 @@ msgid "workReceipt.archived"
 msgstr "Archived Work {name}"
 
 #: src/features/home/HomeHero.tsx
-msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
-msgstr "Ask about your data, methods, or the next step in your work—plain language is enough."
+#~ msgid "Ask about your data, methods, or the next step in your work—plain language is enough."
+#~ msgstr "Ask about your data, methods, or the next step in your work—plain language is enough."
 
 #: src/features/chat/useLiveTurnAnnouncements.ts
 msgid "Assistant is thinking"
@@ -493,8 +506,8 @@ msgid "Back to chat"
 msgstr "Back to chat"
 
 #: src/features/chat/IndependentChatView.tsx
-msgid "Back to home"
-msgstr "Back to home"
+#~ msgid "Back to home"
+#~ msgstr "Back to home"
 
 #: src/features/editor/DraftReviewHeader.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
@@ -532,6 +545,10 @@ msgstr "blockquote"
 #: src/features/editor/surfaces/toolbar/toolbar-copy.ts
 msgid "Bold"
 msgstr "Bold"
+
+#: src/features/home/ProjectLibrary.tsx
+#~ msgid "Books, series, and story worlds in one place."
+#~ msgstr "Books, series, and story worlds in one place."
 
 #: src/components/app/composer/placeholders.ts
 msgid "Brainstorm away"
@@ -645,6 +662,7 @@ msgstr "chart"
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/ChatView.tsx
 #: src/features/project/chat/ChatSurface.tsx
+#: src/features/project/ChatLandingController.tsx
 #: src/features/project/ChatPaneController.tsx
 #: src/features/project/dock/DockHeader.tsx
 #: src/features/project/shell/screens.ts
@@ -663,11 +681,11 @@ msgstr "Chat context"
 #~ msgid "Chat creation is still being reconciled."
 #~ msgstr "Chat creation is still being reconciled."
 
-#: src/features/project/HomePaneController.tsx
-msgid "Chats"
-msgstr "Chats"
+#: src/features/project/ChatLandingController.tsx
+#~ msgid "Chats"
+#~ msgstr "Chats"
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Chats couldn’t load"
 msgstr "Chats couldn’t load"
 
@@ -693,7 +711,7 @@ msgstr "Check submission status"
 #~ msgid "Check this message before sending another. You can keep drafting below."
 #~ msgstr "Check this message before sending another. You can keep drafting below."
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Check your connection and try again."
 msgstr "Check your connection and try again."
 
@@ -770,16 +788,16 @@ msgstr "Choose an option"
 msgid "Choose what to do before continuing."
 msgstr "Choose what to do before continuing."
 
-#: src/features/project/home/NewThreadComposerToolbar.tsx
+#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat"
 msgstr "Choose Work for new chat"
 
 #. placeholder {0}: work.name
-#: src/features/project/home/NewThreadComposerToolbar.tsx
+#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat, currently {0}"
 msgstr "Choose Work for new chat, currently {0}"
 
-#: src/features/project/home/NewThreadComposerToolbar.tsx
+#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
@@ -879,7 +897,7 @@ msgstr "Commands"
 #~ msgid "Completed"
 #~ msgstr "Completed"
 
-#: src/features/project/home/NewThreadComposerToolbar.tsx
+#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
 msgid "Composer controls"
 msgstr "Composer controls"
 
@@ -904,7 +922,7 @@ msgstr "Contents preview"
 msgid "Context"
 msgstr "Context"
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Continue"
 msgstr "Continue"
 
@@ -1160,6 +1178,14 @@ msgstr "Couldn't write"
 msgid "Create “{0}”"
 msgstr "Create “{0}”"
 
+#: src/features/home/NewProjectView.tsx
+msgid "Create a project"
+msgstr "Create a project"
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Create a project for your first book, series, or story world."
+msgstr "Create a project for your first book, series, or story world."
+
 #: src/features/project/mobile/MobileCreateEntryMenu.tsx
 msgid "Create file or folder"
 msgstr "Create file or folder"
@@ -1169,6 +1195,8 @@ msgid "Create it now and the link starts working. Nothing about the link changes
 msgstr "Create it now and the link starts working. Nothing about the link changes."
 
 #: src/features/chat/IndependentChatView.tsx
+#: src/features/home/NewProjectView.tsx
+#: src/features/home/ProjectLibrary.tsx
 msgid "Create project"
 msgstr "Create project"
 
@@ -1194,8 +1222,12 @@ msgid "Creating a Work…"
 msgstr "Creating a Work…"
 
 #: src/features/chat/CreationComposer.tsx
-msgid "Creating chat"
-msgstr "Creating chat"
+#~ msgid "Creating chat"
+#~ msgstr "Creating chat"
+
+#: src/features/home/NewProjectView.tsx
+msgid "Creating project…"
+msgstr "Creating project…"
 
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 msgid "Creating…"
@@ -1437,6 +1469,11 @@ msgstr "Edited"
 msgid "edited {0}"
 msgstr "edited {0}"
 
+#. placeholder {0}: formatRelativeTime(project.updatedAt, now)
+#: src/features/home/ProjectLibrary.tsx
+msgid "Edited {0}"
+msgstr "Edited {0}"
+
 #: src/features/chat/TurnEditsReceipt.tsx
 msgid "Edited {count} documents"
 msgstr "Edited {count} documents"
@@ -1546,12 +1583,12 @@ msgstr "Extra usage"
 msgid "Failed to load image"
 msgstr "Failed to load image"
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Favorite"
 msgstr "Favorite"
 
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
-#: src/features/project/home/HomeScreen.tsx
 #: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Favorite wasn’t saved"
 msgstr "Favorite wasn’t saved"
@@ -1692,12 +1729,12 @@ msgstr "Hide source"
 msgid "Hold on…"
 msgstr "Hold on…"
 
-#: src/features/project/HomePaneController.tsx
+#: src/features/project/ChatLandingController.tsx
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx
 #: src/features/project/shell/screens.ts
-msgid "Home"
-msgstr "Home"
+#~ msgid "Home"
+#~ msgstr "Home"
 
 #: src/features/account/SettingsDialog.tsx
 msgid "How much of your plan you have used this month."
@@ -1917,7 +1954,7 @@ msgstr "Loading {0}"
 msgid "Loading agents…"
 msgstr "Loading agents…"
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Loading chats"
 msgstr "Loading chats"
 
@@ -1930,13 +1967,17 @@ msgstr "Loading chats"
 msgid "Loading image"
 msgstr "Loading image"
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Loading more chats"
 msgstr "Loading more chats"
 
-#: src/routes/_authenticated/p/$projectSlug.tsx
+#: src/routes/_authenticated/p/$projectId.tsx
 msgid "Loading project…"
 msgstr "Loading project…"
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Loading projects…"
+msgstr "Loading projects…"
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Loading recent documents"
@@ -2061,7 +2102,7 @@ msgstr "Monthly usage"
 msgid "More"
 msgstr "More"
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "More chats couldn’t load."
 msgstr "More chats couldn’t load."
 
@@ -2264,16 +2305,24 @@ msgstr "No pending drafts."
 msgid "No plans available."
 msgstr "No plans available."
 
+#: src/features/home/ProjectLibrary.tsx
+#~ msgid "No projects match your search."
+#~ msgstr "No projects match your search."
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "No projects yet"
+msgstr "No projects yet"
+
 #: src/features/home/RecentProjects.tsx
-msgid "No projects yet."
-msgstr "No projects yet."
+#~ msgid "No projects yet."
+#~ msgstr "No projects yet."
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "No results yet."
 msgstr "No results yet."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#: src/features/project/home/NewThreadComposerToolbar.tsx
+#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
 msgid "No Work"
 msgstr "No Work"
 
@@ -2356,6 +2405,7 @@ msgid "Open {0} at this passage. {1}"
 msgstr "Open {0} at this passage. {1}"
 
 #: src/features/chat/DocumentName.tsx
+#: src/features/home/ProjectLibrary.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Open {title}"
 msgstr "Open {title}"
@@ -2418,6 +2468,10 @@ msgstr "Open producing turn"
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "Open producing turn in {agentName}"
 msgstr "Open producing turn in {agentName}"
+
+#: src/features/home/NewProjectView.tsx
+msgid "Open project"
+msgstr "Open project"
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "Open result {name}"
@@ -2513,9 +2567,57 @@ msgstr "Preview not available"
 msgid "Profile"
 msgstr "Profile"
 
+#: src/features/home/ProjectLibrary.tsx
+#~ msgid "project"
+#~ msgstr "project"
+
+#: src/features/home/NewProjectView.tsx
+#~ msgid "Project couldn’t be created. Try again."
+#~ msgstr "Project couldn’t be created. Try again."
+
 #: src/features/chat/IndependentChatView.tsx
 msgid "Project couldn’t load"
 msgstr "Project couldn’t load"
+
+#: src/features/home/NewProjectView.tsx
+msgid "Project created, but it couldn’t open. Try again."
+msgstr "Project created, but it couldn’t open. Try again."
+
+#: src/features/home/NewProjectView.tsx
+msgid "Project name"
+msgstr "Project name"
+
+#: src/features/project/shell/InlineProjectTitle.tsx
+msgid "Project name is required"
+msgstr "Project name is required"
+
+#: src/features/project/shell/InlineProjectTitle.tsx
+msgid "Project title"
+msgstr "Project title"
+
+#: src/features/project/shell/InlineProjectTitle.tsx
+msgid "Project title could not be saved. Try again."
+msgstr "Project title could not be saved. Try again."
+
+#: src/features/home/NewProjectView.tsx
+msgid "Project wasn’t confirmed. Retry creation."
+msgstr "Project wasn’t confirmed. Retry creation."
+
+#: src/features/home/ProjectLibrary.tsx
+#~ msgid "projects"
+#~ msgstr "projects"
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Projects"
+msgstr "Projects"
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Projects couldn’t load."
+msgstr "Projects couldn’t load."
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Projects couldn’t refresh. Showing saved results."
+msgstr "Projects couldn’t refresh. Showing saved results."
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "Purchase confirmed."
@@ -2570,13 +2672,13 @@ msgstr "Recent"
 msgid "Recent activity"
 msgstr "Recent activity"
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Recent chats"
 msgstr "Recent chats"
 
 #: src/features/home/RecentProjects.tsx
-msgid "Recent projects"
-msgstr "Recent projects"
+#~ msgid "Recent projects"
+#~ msgstr "Recent projects"
 
 #: src/features/project/context/ContextTabBar.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
@@ -2682,6 +2784,7 @@ msgstr "Removed"
 #: src/features/project/context/ContextTreeRows.tsx
 #: src/features/project/context/DocumentIdentityBar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
+#: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename"
 msgstr "Rename"
 
@@ -2689,6 +2792,19 @@ msgstr "Rename"
 #: src/features/chat/ThreadSwitcherPopover.tsx
 msgid "Rename chat"
 msgstr "Rename chat"
+
+#: src/features/project/shell/RenameProjectDialog.tsx
+#~ msgid "Rename project"
+#~ msgstr "Rename project"
+
+#: src/features/project/mobile/NavigationDrawer.tsx
+#: src/features/project/shell/LeftSidebar.tsx
+#~ msgid "Rename project: {projectTitle}"
+#~ msgstr "Rename project: {projectTitle}"
+
+#: src/features/project/shell/InlineProjectTitle.tsx
+msgid "Rename project: {title}"
+msgstr "Rename project: {title}"
 
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Rename this document or move it somewhere else in your project."
@@ -2756,11 +2872,11 @@ msgstr "Resume where I left off on any device"
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
 #: src/features/editor/DraftReviewHeader.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
-#: src/features/project/home/HomeFeed.tsx
-#: src/routes/_authenticated/p/$projectSlug.tsx
+#: src/routes/_authenticated/p/$projectId.tsx
 msgid "Retry"
 msgstr "Retry"
 
@@ -2771,6 +2887,10 @@ msgstr "Retry {label}"
 #: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Retry Associated chats"
 msgstr "Retry Associated chats"
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Retry loading"
+msgstr "Retry loading"
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Retry Pending drafts"
@@ -2868,6 +2988,10 @@ msgstr "Saved locally (offline)"
 msgid "Saving chat title"
 msgstr "Saving chat title"
 
+#: src/features/project/shell/InlineProjectTitle.tsx
+msgid "Saving project title"
+msgstr "Saving project title"
+
 #: src/features/project/work/WorkDetailScreen.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Saving…"
@@ -2893,6 +3017,10 @@ msgstr "Search documents"
 #: src/features/editor/surfaces/link/LinkForm.tsx
 msgid "Search documents or paste a web link"
 msgstr "Search documents or paste a web link"
+
+#: src/features/home/ProjectLibrary.tsx
+#~ msgid "Search projects"
+#~ msgstr "Search projects"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Search Work"
@@ -3032,15 +3160,15 @@ msgid "Split cell"
 msgstr "Split cell"
 
 #: src/features/home/HomeView.tsx
-msgid "Start a quick chat without a project"
-msgstr "Start a quick chat without a project"
+#~ msgid "Start a quick chat without a project"
+#~ msgstr "Start a quick chat without a project"
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/UserTurn.tsx
 msgid "Start over"
 msgstr "Start over"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
 msgid "Start with a scene, a question, or a problem to solve."
 msgstr "Start with a scene, a question, or a problem to solve."
 
@@ -3075,8 +3203,8 @@ msgstr "Stopped"
 #~ msgstr "Stopped."
 
 #: src/features/home/RecentProjects.tsx
-msgid "Streaming"
-msgstr "Streaming"
+#~ msgid "Streaming"
+#~ msgstr "Streaming"
 
 #: src/features/editor/surfaces/formatting/formatting-copy.ts
 msgid "Strikethrough"
@@ -3531,7 +3659,7 @@ msgstr "This link can no longer be edited. Close the form and try again."
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
 msgstr "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
 
-#: src/routes/_authenticated/p/$projectSlug.tsx
+#: src/routes/_authenticated/p/$projectId.tsx
 msgid "This project couldn’t load. It may be unavailable."
 msgstr "This project couldn’t load. It may be unavailable."
 
@@ -3636,7 +3764,7 @@ msgstr "Unarchived Work {name}"
 msgid "Unavailable"
 msgstr "Unavailable"
 
-#: src/features/project/home/NewThreadComposerToolbar.tsx
+#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
 msgid "Unavailable Work"
 msgstr "Unavailable Work"
 
@@ -3744,6 +3872,12 @@ msgstr "Usage"
 msgid "User"
 msgstr "User"
 
+#: src/features/chat/IndependentChatView.tsx
+#: src/features/home/NewProjectView.tsx
+#: src/features/project/shell/WorkspaceNavBody.tsx
+msgid "View projects"
+msgstr "View projects"
+
 #: src/features/chat/ChatView.tsx
 #~ msgid "View saved message"
 #~ msgstr "View saved message"
@@ -3774,14 +3908,14 @@ msgstr "We couldn’t confirm this purchase. Check your balance before trying ag
 #~ msgstr "We’re still confirming your purchase. Your balance will update shortly."
 
 #: src/features/home/HomeHero.tsx
-msgid "What are you working on?"
-msgstr "What are you working on?"
+#~ msgid "What are you working on?"
+#~ msgstr "What are you working on?"
 
 #: src/features/editor/surfaces/objects/ObjectFieldPopover.tsx
 msgid "What this figure shows"
 msgstr "What this figure shows"
 
-#: src/features/project/home/HomeScreen.tsx
+#: src/features/project/chat-landing/ChatLandingScreen.tsx
 msgid "What will you write next?"
 msgstr "What will you write next?"
 
@@ -3802,7 +3936,7 @@ msgid "Why this is marked merged"
 msgstr "Why this is marked merged"
 
 #: src/features/chat/ComposerWorkControl.tsx
-#: src/features/project/home/NewThreadComposerToolbar.tsx
+#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/screens.ts
 #: src/features/project/work/WorkScreen.tsx
@@ -3894,7 +4028,7 @@ msgstr "You left checkout. No purchase was confirmed."
 msgid "Your answer may not have reached the agent."
 msgstr "Your answer may not have reached the agent."
 
-#: src/features/project/home/HomeFeed.tsx
+#: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Your chats will appear here after you send a message."
 msgstr "Your chats will appear here after you send a message."
 
@@ -3913,6 +4047,10 @@ msgstr "Your message"
 #: src/features/billing/BillingPage.tsx
 msgid "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
 msgstr "Your monthly plan covers included usage. Top up extra usage any time to keep going past your plan."
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Your projects"
+msgstr "Your projects"
 
 #: src/features/account/WorkingSetSyncPreferenceRow.tsx
 msgid "Your saved preference is unavailable. Sync is paused until retry succeeds."

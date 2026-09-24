@@ -1,4 +1,4 @@
-/** Readable browser grammar. Internal project, Work, chat, and document identities remain IDs. */
+/** Browser project addresses use stable project UUIDs; child destinations remain readable. */
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import {
   isProjectContextTreeScheme,
@@ -14,7 +14,7 @@ export type AddressSelection =
   | { kind: "malformed"; value: string };
 
 export type ProjectDestination =
-  | { kind: "home" | "chats" | "works" | "editor" }
+  | { kind: "chat-index" | "works" | "editor" }
   | { kind: "chat"; chatId: string }
   | { kind: "work"; workSlug: string }
   | {
@@ -26,7 +26,7 @@ export type ProjectDestination =
   | { kind: "document"; scheme: ProjectContextTreeScheme; path: string; workSlug: string | null };
 
 export type ProjectAddress = {
-  projectSlug: string;
+  projectId: string;
   destination: ProjectDestination;
   chat: AddressSelection;
   work: AddressSelection;
@@ -66,10 +66,9 @@ function chatSelection(value: string | null): AddressSelection {
 }
 
 function parseDestination(parts: string[]): ProjectDestination | null {
-  if (parts.length === 0) return { kind: "home" };
+  if (parts.length === 0) return { kind: "chat-index" };
   if (parts.length === 1) {
-    if (parts[0] === "chats" || parts[0] === "works" || parts[0] === "editor")
-      return { kind: parts[0] };
+    if (parts[0] === "works" || parts[0] === "editor") return { kind: parts[0] };
     if (parts[0] === "browse") return { kind: "browse", scheme: null, path: "", workSlug: null };
   }
   if (parts.length === 2 && parts[0] === "chat") {
@@ -113,8 +112,8 @@ export function parseProjectAddress(
   } catch {
     return { kind: "invalid", reason: "encoding" };
   }
-  const projectSlug = handle(parts[1]);
-  if (parts[0] !== "p" || !projectSlug || parts.some((part) => !part))
+  const projectId = uuid(parts[1]);
+  if (parts[0] !== "p" || !projectId || parts.some((part) => !part))
     return { kind: "invalid", reason: "path" };
   const destination = parseDestination(parts.slice(2));
   if (!destination) return { kind: "invalid", reason: "destination" };
@@ -144,10 +143,10 @@ export function parseProjectAddress(
   }
   const settings = query.get("settings");
   const address: ProjectAddress = {
-    projectSlug,
+    projectId,
     destination,
     chat:
-      destination.kind === "chat" || destination.kind === "chats"
+      destination.kind === "chat" || destination.kind === "chat-index"
         ? ABSENT
         : chatSelection(query.get("chat")),
     work,
@@ -179,10 +178,10 @@ function writeSelection(query: URLSearchParams, key: string, value: AddressSelec
 }
 
 export function projectAddressHref(address: ProjectAddress): string {
-  const parts = ["p", address.projectSlug];
+  const parts = ["p", address.projectId];
   const d = address.destination;
   switch (d.kind) {
-    case "home":
+    case "chat-index":
       break;
     case "chat":
       parts.push("chat", d.chatId);
@@ -190,7 +189,6 @@ export function projectAddressHref(address: ProjectAddress): string {
     case "work":
       parts.push("work", d.workSlug);
       break;
-    case "chats":
     case "works":
     case "editor":
       parts.push(d.kind);
@@ -204,7 +202,7 @@ export function projectAddressHref(address: ProjectAddress): string {
       break;
   }
   const query = new URLSearchParams();
-  if (d.kind !== "chat" && d.kind !== "chats") writeSelection(query, "chat", address.chat);
+  if (d.kind !== "chat" && d.kind !== "chat-index") writeSelection(query, "chat", address.chat);
   const context = d.kind === "editor" || d.kind === "document" || d.kind === "browse";
   const pathOwnsWork =
     (d.kind === "document" || d.kind === "browse") &&

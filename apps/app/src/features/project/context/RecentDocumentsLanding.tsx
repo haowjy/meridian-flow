@@ -110,7 +110,12 @@ export function RecentDocumentsLanding({
               <Trans>Recently opened</Trans>
             </h2>
           </div>
-          <Button size="sm" onClick={onNewDocument} disabled={!onNewDocument}>
+          <Button
+            size="sm"
+            className="[@media(pointer:coarse)]:min-h-11"
+            onClick={onNewDocument}
+            disabled={!onNewDocument}
+          >
             <FilePlus aria-hidden />
             <Trans>New document</Trans>
           </Button>
@@ -133,7 +138,7 @@ export function RecentDocumentsLanding({
                           <RecentDocumentRow
                             item={item}
                             now={now}
-                            projectSlug={project?.slug}
+                            projectId={project?.id}
                             onOpen={(item) => {
                               void openRecent(item, {
                                 projectId,
@@ -182,16 +187,16 @@ const recentRowClass = "focus-ring flex w-full items-start gap-3.5 rounded-md py
 function RecentDocumentRow({
   item,
   now,
-  projectSlug,
+  projectId,
   onOpen,
 }: {
   item: AccountRecentItem;
   now: number;
-  projectSlug: string | undefined;
+  projectId: string | undefined;
   onOpen: (item: AccountRecentItem) => void;
 }) {
   const router = useRouter();
-  const href = recentDocumentHref(item, projectSlug);
+  const href = recentDocumentHref(item, projectId);
   const content = <RecentDocumentContent item={item} now={now} />;
   if (!href) {
     return (
@@ -300,15 +305,12 @@ async function openRecent(
   }
 }
 
-function recentDocumentHref(
-  item: AccountRecentItem,
-  projectSlug: string | undefined,
-): string | null {
-  if (!projectSlug || item.address.kind !== "document") return null;
+function recentDocumentHref(item: AccountRecentItem, projectId: string | undefined): string | null {
+  if (!projectId || item.address.kind !== "document") return null;
   const path = readableRecentPath(item.address.path);
   if (!path) return null;
   return projectAddressHref({
-    projectSlug,
+    projectId,
     destination: {
       kind: "document",
       scheme: item.address.scheme,
@@ -343,7 +345,12 @@ function LandingEmpty({ onNewDocument }: { onNewDocument?: () => void }) {
       <p className="mt-1 text-xs text-muted-foreground">
         <Trans>Open a document from the project tree, or start a new one.</Trans>
       </p>
-      <Button size="sm" className="mt-5" onClick={onNewDocument} disabled={!onNewDocument}>
+      <Button
+        size="sm"
+        className="mt-5 [@media(pointer:coarse)]:min-h-11"
+        onClick={onNewDocument}
+        disabled={!onNewDocument}
+      >
         <FilePlus aria-hidden />
         <Trans>New document</Trans>
       </Button>

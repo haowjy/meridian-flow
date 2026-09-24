@@ -128,9 +128,9 @@ export function ProjectShell({
       slots={DESKTOP_PROJECT_SLOTS}
       layout={layout}
       surfaces={surfaces}
-      // bg-shelf: the grid's backdrop matches the shelf — it shows only in the
-      // chrome field's rounded top-left notch against the rail.
-      className="relative h-full w-full bg-shelf"
+      // The grid shows only in the center field's rounded top-left notch.
+      // Resolve muted here before the shelf remaps it for its own controls.
+      className="relative h-full w-full bg-muted"
       gridTemplateAreas={desktopGridTemplate.areas}
       gridTemplateColumns={desktopGridTemplate.columns}
       gridTemplateRows={desktopGridTemplate.rows}
@@ -141,6 +141,7 @@ export function ProjectShell({
           // own fallback applies — globals.css is the single owner of the
           // corner radius value.
           "--chrome-corner": leftOccupant ? undefined : "0px",
+          "--project-header-bg": "var(--color-muted)",
           "--project-left-width": `${leftWidth}px`,
           // Resize handles render as transparent absolute overlays centered on
           // these grid seams; zero-width tracks remove the visible empty strip.

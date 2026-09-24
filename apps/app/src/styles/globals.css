@@ -15,8 +15,7 @@
 
 @theme {
   --container-chat-column: 48rem;
-  --container-home: 45rem;
-  --container-project-home: 60rem;
+  --container-project-screen: 60rem;
 }
 
 /* Project-only tokens (not shared with marketing surfaces). */
@@ -317,20 +316,12 @@
   @apply main-pane mx-auto box-border w-full max-w-chat-column px-8;
 }
 
-@utility home-column {
-  @apply main-pane mx-auto box-border flex min-h-0 w-full max-w-home flex-col px-8 py-16;
-
-  & li {
-    @apply min-w-0;
-  }
-}
-
-/* Shared content measure for project-owned Home and Work screens. The screen,
+/* Shared content measure for project Chat and Work screens. The screen,
    rather than the viewport, is the responsive authority for its collections. */
 @utility project-screen-column {
-  container-name: project-home;
+  container-name: project-screen;
   container-type: inline-size;
-  @apply mx-auto box-border flex w-full max-w-project-home flex-col px-4 py-6 sm:px-8 sm:py-8;
+  @apply mx-auto box-border flex w-full max-w-project-screen flex-col px-4 py-6 sm:px-8 sm:py-8;
   padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
 
   @media (min-width: 40rem) {
@@ -387,14 +378,13 @@
   @apply text-base leading-relaxed md:text-[15px];
 }
 
-@container project-home (min-width: 42rem) {
-  .home-composer-heading {
+@container project-screen (min-width: 42rem) {
+  .chat-landing-heading {
     font-size: var(--text-headline-hero);
     line-height: var(--text-headline-hero--line-height);
     letter-spacing: var(--text-headline-hero--letter-spacing);
     font-weight: var(--text-headline-hero--font-weight);
   }
-
 }
 
 @utility user-turn {
@@ -631,7 +621,7 @@
  * wears this below its h-10 chrome band (PaneHeader or the document tab
  * strip). Top-RIGHT corner only (shared tab radius, tucking under the chrome
  * toward the dock): the top-LEFT is deliberately square — the sheet sits
- * flush against the rail edge, and the roundness against the shelf belongs
+ * flush against the rail edge, and the roundness against the project header belongs
  * to the CHROME FIELD's own top-left corner (center slot / route pane), not
  * the sheet (user call, 2026-07-15). The center slot paints the chrome; the
  * sheet is the ONE sanctioned surface paint on top of it.
@@ -644,7 +634,7 @@
 
 /*
  * Chrome field — the center cell's material: the whisper chrome with its
- * rounded top-left curving against the darker shelf (the grid backdrop).
+ * rounded top-left curving against the project header (the grid backdrop).
  * Two elements can occupy that cell — the center slot (Editor/Chat surfaces)
  * and the route-pane wrapper (Home/Library) — and both MUST paint identically,
  * so the concept has one name. Bands (PaneHeader, the tab strip) paint
@@ -653,9 +643,9 @@
 @utility chrome-field {
   /* Shares --radius-md with the tab chips and the page sheet — ONE corner
      voice across the shell (user call 2026-07-16, superseding the earlier
-     3px "architecture" tune). The curve exists only against the shelf:
+     3px "architecture" tune). The curve exists only against the project header:
      ProjectShell zeroes --chrome-corner when the left rail is collapsed,
-     otherwise the shelf backdrop pokes through the notch at the screen edge. */
+     otherwise the matched backdrop shows through the notch at the screen edge. */
   overflow: hidden;
   border-top-left-radius: var(--chrome-corner, var(--radius-md));
   background-color: var(--color-sidebar);

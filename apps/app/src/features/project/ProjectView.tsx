@@ -12,15 +12,19 @@
  */
 
 import { t } from "@lingui/core/macro";
+import type { Project } from "@meridian/contracts/projects";
 import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,
   type Work,
 } from "@meridian/contracts/protocol";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { updateProject } from "@/client/api/projects-api";
+import { projectQueryKeys } from "@/client/query/project-query-keys";
 import type { ProjectRouteData } from "@/client/query/project-route-data";
 import { useContextCatalogWake } from "@/client/query/useContextCatalog";
+import { useProject } from "@/client/query/useProjectList";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
 import { observeWorksAvailability } from "@/client/query/works-availability-observer";
@@ -49,6 +53,7 @@ import {
   useDraftReviewStateOwner,
 } from "@/features/chat/useDraftReviewController";
 import { usePhoneShell } from "@/hooks/use-phone-shell";
+import { ChatLandingController } from "./ChatLandingController";
 import { ChatPaneController } from "./ChatPaneController";
 import { ContextViewerSurfaceController } from "./ContextPaneController";
 import { type ChatPlacement, ChatSurface } from "./chat/ChatSurface";
@@ -70,7 +75,6 @@ import {
 import { ProjectDraftApplyRecoveryExecutor } from "./draft-apply-recovery/ProjectDraftApplyRecoveryExecutor";
 import { EditorWorkRecovery } from "./EditorWorkRecovery";
 import { type EditorWorkScope, resolveEditorWorkScope } from "./editor-work-scope";
-import { HomePaneController } from "./HomePaneController";
 import {
   type SlotGridSurface,
   SURFACE_WIDTH_BOUNDS,
@@ -89,6 +93,7 @@ import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { ProjectRouteBoundary, type ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
+import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
@@ -116,13 +121,15 @@ function availabilityWatchRecord(
 
 export type ProjectViewProps = {
   projectId: string;
+  /** Full route-loaded project, used before the account list query is ready. */
+  project: Project;
   workingSet: ProjectRouteData["workingSet"];
   workingSetSyncEnabled: boolean;
-  /** Resolved screen key from the route (defaults to home). */
+  /** Resolved screen key from the route (defaults to Chat). */
   activeScreen: ScreenKey;
   /** Active chat / subagent thread, also used by the persistent dock. */
   activeThreadId: string | null;
-  chatDestination?: "chats";
+  chatLanding?: boolean;
   /** Explicit route Work state; loading/error never collapses into absence. */
   routeWork: RouteWorkResolution;
   editorRouteWork?: RouteWorkResolution;
@@ -163,6 +170,53 @@ export type ProjectViewProps = {
 
 export function ProjectView(props: ProjectViewProps) {
   const queryClient = useQueryClient();
+  const cachedProject = useProject(props.projectId);
+  const projectTitle = cachedProject?.title ?? props.project.title;
+  const renameProject = useMutation({
+    mutationKey: projectQueryKeys.rename(props.projectId),
+    mutationFn: (title: string) => updateProject(props.projectId, { title }),
+    onMutate: async (title) => {
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: projectQueryKeys.list }),
+        queryClient.cancelQueries({ queryKey: projectQueryKeys.detail(props.projectId) }),
+      ]);
+      const list = queryClient.getQueryData<Project[] | null>(projectQueryKeys.list);
+      const detail = queryClient.getQueryData<Project>(projectQueryKeys.detail(props.projectId));
+      const previousRow = list?.find((project) => project.id === props.projectId);
+      const optimistic = (project: Project): Project => ({ ...project, title, name: title });
+      queryClient.setQueryData<Project[] | null>(projectQueryKeys.list, (current) =>
+        (current ?? [props.project]).map((project) =>
+          project.id === props.projectId ? optimistic(project) : project,
+        ),
+      );
+      if (detail)
+        queryClient.setQueryData(projectQueryKeys.detail(props.projectId), optimistic(detail));
+      return { previousRow, detail };
+    },
+    onError: (_error, _title, previous) => {
+      if (!previous) return;
+      queryClient.setQueryData<Project[] | null>(projectQueryKeys.list, (current) =>
+        current?.flatMap((project) =>
+          project.id === props.projectId
+            ? previous.previousRow
+              ? [previous.previousRow]
+              : []
+            : [project],
+        ),
+      );
+      if (previous.detail)
+        queryClient.setQueryData(projectQueryKeys.detail(props.projectId), previous.detail);
+    },
+    onSuccess: async (project) => {
+      // A list read started while the mutation was pending may return an old
+      // title after PATCH succeeds. Fence it before publishing confirmation.
+      await queryClient.cancelQueries({ queryKey: projectQueryKeys.list });
+      queryClient.setQueryData<Project[] | null>(projectQueryKeys.list, (list) =>
+        list?.map((item) => (item.id === project.id ? project : item)),
+      );
+      queryClient.setQueryData(projectQueryKeys.detail(props.projectId), project);
+    },
+  });
   const accountId = useAccountId();
   const availability = useProjectContextAvailabilityCoordinator();
   const removal = useContextRemovalCoordinator();
@@ -315,6 +369,13 @@ export function ProjectView(props: ProjectViewProps) {
             {...resolvedProps}
             chatWorkId={chatWorkId}
             chatThreadId={resolvedThreadId}
+            projectTitle={projectTitle}
+            titleEdit={{
+              pending: renameProject.isPending,
+              error: renameProject.error,
+              onStart: () => renameProject.reset(),
+              onSave: (title) => renameProject.mutateAsync(title),
+            }}
           />
         </>
       ) : null}
@@ -337,12 +398,15 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
   contextLive: boolean;
 };
 
-export type ReviewScopedProjectProps = ResolvedProjectViewProps & {
-  chatReview: DraftReviewContextValue;
-  editorReview: DraftReviewContextValue;
-  mobileDocumentRoute: MobileDocumentRoute;
-  retainEditorWhileLoading?: boolean;
-};
+type ProjectIdentityProps = { projectTitle: string; titleEdit: ProjectTitleEdit };
+
+export type ReviewScopedProjectProps = ResolvedProjectViewProps &
+  ProjectIdentityProps & {
+    chatReview: DraftReviewContextValue;
+    editorReview: DraftReviewContextValue;
+    mobileDocumentRoute: MobileDocumentRoute;
+    retainEditorWhileLoading?: boolean;
+  };
 
 type MobileEditorPresentation = Pick<
   ResolvedProjectViewProps,
@@ -353,7 +417,8 @@ function HydratedReviewProject({
   chatWorkId,
   chatThreadId,
   ...props
-}: ResolvedProjectViewProps & { chatWorkId: string | null; chatThreadId: string | null }) {
+}: ResolvedProjectViewProps &
+  ProjectIdentityProps & { chatWorkId: string | null; chatThreadId: string | null }) {
   return (
     <EditorReviewHandoffProvider
       projectId={props.projectId}
@@ -368,7 +433,8 @@ function HydratedReviewScopes({
   chatWorkId,
   chatThreadId,
   ...props
-}: ResolvedProjectViewProps & { chatWorkId: string | null; chatThreadId: string | null }) {
+}: ResolvedProjectViewProps &
+  ProjectIdentityProps & { chatWorkId: string | null; chatThreadId: string | null }) {
   const chatReviewState = useDraftReviewStateOwner();
   const editorReviewState = useDraftReviewStateOwner();
   const usePhone = usePhoneShell();
@@ -478,6 +544,8 @@ function HydratedReviewControllers({
   mobileDocumentRoute,
   ...props
 }: ResolvedProjectViewProps & {
+  projectTitle: string;
+  titleEdit: ProjectTitleEdit;
   chatWorkId: string | null;
   chatThreadId: string | null;
   chatReviewState: DraftReviewStateOwner;
@@ -563,7 +631,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
 
   // Opening a conversation reveals it where the writer already is. Desktop
   // mounts the chat surface on every screen — centered on Chat, docked on
-  // Home/Editor — so a reveal only has to un-park the surface and point it at
+  // Work/Editor — so a reveal only has to un-park the surface and point it at
   // the thread. Dock selection replaces the secondary chat without changing the destination.
   useConversationRevealRouting((threadId) => {
     if (layout.chat.slot === "dock") {
@@ -605,6 +673,8 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
       children: (
         <LeftSidebar
           projectId={props.projectId}
+          projectTitle={props.projectTitle}
+          titleEdit={props.titleEdit}
           activeScreen={props.activeScreen}
           editorWorkId={props.editorWorkId}
           contextLive={props.contextLive}
@@ -682,11 +752,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         >
           <div
             className="flex min-h-0 flex-1 flex-col"
-            role={chatPlacement === "center" && !props.chatDestination ? "main" : undefined}
+            role={chatPlacement === "center" && !props.chatLanding ? "main" : undefined}
           >
             {/* Stable keys pin chat-surface identity so toggling this header
               controller never risks reconciling the live conversation subtree. */}
-            {chatPlacement === "center" && !props.chatDestination ? (
+            {chatPlacement === "center" && !props.chatLanding ? (
               <ChatPaneController
                 key="chat-pane-controller"
                 projectId={props.projectId}
@@ -700,9 +770,9 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               moves between center and dock; placement changes only its chrome. */}
             <div
               className="min-h-0 flex-1 flex-col"
-              style={{ display: props.chatDestination || !props.activeThreadId ? "none" : "flex" }}
-              inert={!!props.chatDestination || !props.activeThreadId}
-              aria-hidden={!!props.chatDestination || !props.activeThreadId}
+              style={{ display: props.chatLanding || !props.activeThreadId ? "none" : "flex" }}
+              inert={!!props.chatLanding || !props.activeThreadId}
+              aria-hidden={!!props.chatLanding || !props.activeThreadId}
             >
               <DraftReviewBoundary value={props.chatReview}>
                 <ChatSurface
@@ -722,7 +792,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                   // conversation survives a close/reopen.
                   visible={
                     !!props.activeThreadId &&
-                    !props.chatDestination &&
+                    !props.chatLanding &&
                     !props.routeIssues?.chat &&
                     (chatPlacement === "center" || isOpen("chat"))
                   }
@@ -731,13 +801,12 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 />
               </DraftReviewBoundary>
             </div>
-            {!props.activeThreadId && !props.chatDestination ? (
+            {!props.activeThreadId && !props.chatLanding ? (
               <p className="p-6 text-sm text-muted-foreground">{t`Choose a chat to continue.`}</p>
             ) : null}
-            {props.chatDestination ? (
-              <HomePaneController
+            {props.chatLanding ? (
+              <ChatLandingController
                 projectId={props.projectId}
-                mode={props.chatDestination}
                 sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
                 chatToggle={surfaceToggle("context-rail", t`Expand context`)}
                 onOpenThread={props.onOpenThread}
@@ -776,15 +845,8 @@ type SurfaceToggleFactory = (surfaceId: SurfaceId, label: string) => PaneHeaderR
 
 function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: SurfaceToggleFactory) {
   switch (props.activeScreen) {
-    case "home":
-      return (
-        <HomePaneController
-          projectId={props.projectId}
-          sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}
-          chatToggle={surfaceToggle("chat", t`Expand chat`)}
-          onOpenThread={props.onOpenThread}
-        />
-      );
+    case "chat":
+      return null;
     case "work":
       return (
         <WorkPaneController
@@ -796,8 +858,6 @@ function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: Surfa
           chatToggle={surfaceToggle("chat", t`Expand chat`)}
         />
       );
-    case "chat":
-      return null;
     case "context":
       // Context owns no destination header — the tab strip absorbs the
       // sidebar/dock expand toggles. See `ContextViewer`.

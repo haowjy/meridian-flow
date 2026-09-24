@@ -1015,9 +1015,6 @@ export function createInMemoryAppServices(): AppServices {
     contextCatalogWakeHub: createContextCatalogWakeHub(),
     documentLinks: createDocumentLinkResolver({ catalog: contextCatalog, workAuthorityResolver }),
     projects: {
-      async findPersonalProjectId() {
-        return null;
-      },
       async ensureDefaultBootstrapReady() {
         return false;
       },
@@ -1104,10 +1101,6 @@ export function createInMemoryAppServices(): AppServices {
       async ensureUser() {
         throw new Error("in-memory user repository is not implemented");
       },
-      async getLastActiveProjectId() {
-        return null;
-      },
-      async setLastActiveProjectId() {},
       async getWorkingSetSyncEnabled() {
         return true;
       },
