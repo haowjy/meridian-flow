@@ -6,7 +6,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { MessageIntent, MessageProvenance } from "@meridian/contracts/threads";
 import * as schema from "@meridian/database/schema";
-import { and, asc, eq, inArray, isNull, min } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, min } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDatabase } from "../../../shared/drizzle-transaction.js";
 import type { Inbox, InboxMessage, MessageBody } from "../loop/ports.js";
 
@@ -91,6 +91,48 @@ export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
 
     async listPending(threadId) {
       return selectPending(threadId);
+    },
+
+    async readPendingProjection(threadId) {
+      const rows = await db_()
+        .select({
+          inbox: schema.threadInboxMessages,
+          turnId: schema.threadRunLeases.turnId,
+          metadata: schema.turns.metadata,
+        })
+        .from(schema.threadInboxMessages)
+        .leftJoin(
+          schema.threadRunLeases,
+          and(
+            eq(schema.threadRunLeases.threadId, schema.threadInboxMessages.threadId),
+            gt(schema.threadRunLeases.expiresAt, new Date()),
+          ),
+        )
+        .leftJoin(schema.turns, eq(schema.turns.id, schema.threadRunLeases.turnId))
+        .where(
+          and(
+            eq(schema.threadInboxMessages.threadId, threadId),
+            isNull(schema.threadInboxMessages.deliveredAt),
+          ),
+        )
+        .orderBy(asc(schema.threadInboxMessages.seq));
+      const first = rows[0];
+      const metadata = first?.metadata as
+        | { inboxConsumption?: { messageIds?: unknown } }
+        | null
+        | undefined;
+      const messageIds = Array.isArray(metadata?.inboxConsumption?.messageIds)
+        ? metadata.inboxConsumption.messageIds.filter((id): id is string => typeof id === "string")
+        : [];
+      return {
+        messages: rows.map((row) => toInboxMessage(row.inbox)),
+        run:
+          first?.turnId !== null && first?.turnId !== undefined
+            ? { turnId: first.turnId, messageIds }
+            : first
+              ? { turnId: null, messageIds: [] }
+              : null,
+      };
     },
 
     async ack(threadId, ids) {

@@ -67,14 +67,21 @@ export interface Inbox {
   claimPending(threadId: ThreadId): Promise<InboxMessage[]>;
   /**
    * Read-only view of the undelivered rows, ordered by `seq`. Unlike
-   * `claimPending` it has no side effect and does not serialize with the run's
-   * final claim: the writer-facing pending tray reads here.
+   * `claimPending` it has no side effect. Its results are inputs only; writer
+   * projection uses the joined lease/adoption snapshot below.
    */
   listPending(threadId: ThreadId): Promise<InboxMessage[]>;
+  /** One statement snapshot of raw pending rows and current live-run consumption. */
+  readPendingProjection(threadId: ThreadId): Promise<InboxProjection>;
   ack(threadId: ThreadId, ids: string[]): Promise<void>;
   /** Threads with at least one pending undelivered message, oldest first; the wake sweep's input. */
   pendingMessageThreads(limit: number): Promise<ThreadId[]>;
 }
+
+export type InboxProjection = {
+  messages: InboxMessage[];
+  run: { turnId: TurnId | null; messageIds: string[] } | null;
+};
 
 /** Handle to a held lease; the row's expiry, phase, and cancel flag are server-owned. */
 export interface Lease {
@@ -95,7 +102,9 @@ export interface RunAuthority {
    * processes; bind it inside the turn-start setup transaction after the turn
    * and its report admission are projected.
    */
-  bindTurn(lease: Lease, turnId: TurnId): Promise<void>;
+  bindTurn(lease: Lease, turnId: TurnId, messageIds: readonly string[]): Promise<void>;
+  /** Replace the exact adopted batch on the live lease's bound assistant. */
+  setInboxConsumption(lease: Lease, messageIds: readonly string[]): Promise<boolean>;
   read(threadId: ThreadId): Promise<ThreadStatus>;
   /**
    * Batch liveness read for a page of threads, one lease query. Only threads

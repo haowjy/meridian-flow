@@ -29,6 +29,7 @@ describe("orchestrator event projector", () => {
           seq: 1,
           intent: "message" as const,
           provenance: { kind: "writer" as const, actorId: "user-1" },
+          deliveryState: "waiting" as const,
           summary: "queued",
           enqueuedAt: "2026-01-01T00:00:00.000Z",
         },

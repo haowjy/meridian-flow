@@ -88,12 +88,35 @@ describe("projectPendingInbox", () => {
       "note one\n\nnote two",
       "Read thread_report(...)",
     ]);
+    expect(pending.items.map((item) => item.deliveryState)).toEqual([
+      "awaiting_run",
+      "awaiting_run",
+      "awaiting_run",
+    ]);
     expect(pending.items[1].intent).toBe("notice");
     expect(pending.items[2].provenance).toEqual({
       kind: "child",
       threadId: "child-1",
       reportId: "report-1",
     });
+  });
+
+  it("distinguishes startup, adopted F, and waiting G from the live run snapshot", () => {
+    const messages = [inboxMessage({ id: "F", seq: 1 }), inboxMessage({ id: "G", seq: 2 })];
+    expect(projectPendingInbox(messages).items.map(({ deliveryState }) => deliveryState)).toEqual([
+      "awaiting_run",
+      "awaiting_run",
+    ]);
+    expect(
+      projectPendingInbox(messages, { turnId: null, messageIds: [] }).items.map(
+        ({ deliveryState }) => deliveryState,
+      ),
+    ).toEqual(["awaiting_run", "awaiting_run"]);
+    expect(
+      projectPendingInbox(messages, { turnId: "assistant-1", messageIds: ["F"] }).items.map(
+        ({ deliveryState }) => deliveryState,
+      ),
+    ).toEqual(["consuming", "waiting"]);
   });
 });
 
@@ -158,5 +181,36 @@ describe("createNotifyingThreadedInbox", () => {
     expect(eventSink.events.some((event) => event.name === "inbox.changed.append_failed")).toBe(
       true,
     );
+  });
+
+  it("a delayed enqueue notifier reads current state after adoption and ack", async () => {
+    const { writer, appended } = recordingWriter();
+    const inbox = createInMemoryInbox();
+    const scheduled: Array<() => Promise<void>> = [];
+    const threadLock = createInMemoryThreadLock();
+    let run: { turnId: string | null; messageIds: string[] } | null = null;
+    const threaded = createNotifyingThreadedInbox({
+      threadedInbox: createThreadedInbox({
+        inbox,
+        threadLock,
+        runStarter: createInMemoryRunStarter(),
+        schedulePostCommit: (task) => scheduled.push(task),
+      }),
+      eventWriter: writer,
+      readPending: async (threadId) => {
+        const projection = await inbox.readPendingProjection(threadId);
+        return projectPendingInbox(projection.messages, run);
+      },
+      schedulePostCommit: (task) => scheduled.push(task),
+      eventSink: createInMemoryEventSink(),
+    });
+
+    const queued = await threaded.enqueue(message("delayed-notifier"));
+    run = { turnId: "assistant-1", messageIds: [queued.id] };
+    await inbox.ack(THREAD_A, [queued.id]);
+    await Promise.all(scheduled.map((task) => task()));
+
+    expect(appended).toHaveLength(1);
+    expect(appended[0]).toMatchObject({ type: "inbox.changed", pending: { items: [] } });
   });
 });

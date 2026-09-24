@@ -50,6 +50,15 @@ export function createInMemoryInbox(): Inbox {
         .sort((left, right) => left.seq - right.seq);
     },
 
+    async readPendingProjection(threadId) {
+      return {
+        messages: messages
+          .filter((message) => message.threadId === threadId && message.deliveredAt === null)
+          .sort((left, right) => left.seq - right.seq),
+        run: null,
+      };
+    },
+
     async ack(threadId, ids) {
       const deliveredAt = new Date().toISOString();
       const targets = new Set(ids);
@@ -82,6 +91,7 @@ export function createInMemoryInbox(): Inbox {
 interface InMemoryLease {
   runId: RunId;
   turnId: TurnId | null;
+  messageIds: string[];
   holderId: string;
   phase: ThreadPhase;
   cancelRequested: boolean;
@@ -116,6 +126,7 @@ export function createInMemoryRunAuthority(
       leases.set(threadId, {
         runId,
         turnId: null,
+        messageIds: [],
         holderId,
         phase: "generating",
         cancelRequested: false,
@@ -141,10 +152,18 @@ export function createInMemoryRunAuthority(
       row.phase = phase;
     },
 
-    async bindTurn(lease, turnId) {
+    async bindTurn(lease, turnId, messageIds) {
       const row = leases.get(lease.threadId);
       if (!row || row.runId !== lease.runId) return;
       row.turnId = turnId;
+      row.messageIds = [...messageIds];
+    },
+
+    async setInboxConsumption(lease, messageIds) {
+      const row = liveLease(lease.threadId);
+      if (!row || row.runId !== lease.runId || !row.turnId) return false;
+      row.messageIds = [...messageIds];
+      return true;
     },
 
     async read(threadId) {

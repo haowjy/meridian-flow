@@ -17,6 +17,8 @@ import type { WorkContextDelivery } from "../../projects/index.js";
 import { TurnStartConflictError } from "../../threads/index.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
+import type { MessageDraft } from "./ports.js";
+import type { ThreadedInbox } from "./threaded-inbox.js";
 import { writerUserTurnBlocks } from "./user-turn-blocks.js";
 
 export interface WriterEnqueueSettlement {
@@ -46,8 +48,8 @@ export async function persistWriterEnqueue<T>(input: {
   userTurnId: TurnId;
   userBlocks: readonly UserMessageBlock[];
   userTurnMetadata?: JsonValue | null;
-  /** Appends the durable writer message; runs in the turn-start transaction. */
-  enqueue: () => Promise<void>;
+  threadedInbox: ThreadedInbox;
+  draft: MessageDraft;
   /** Settles admission plus attachments; runs in the turn-start transaction. */
   settle: (settlement: WriterEnqueueSettlement) => Promise<T>;
 }): Promise<T> {
@@ -59,43 +61,49 @@ export async function persistWriterEnqueue<T>(input: {
   for (let attempt = 0; ; attempt += 1) {
     const thread = await input.persistence.repos.threads.findById(input.threadId);
     if (!thread) throw new Error(`Thread not found: ${input.threadId}`);
-    let settled: T | undefined;
     try {
-      await persistAndAppendTurnStartEvents(
-        input.persistence,
-        input.threadId,
-        thread.activeLeafTurnId,
-        async () => {
-          const userTurn = createLocalTurn({
-            id: input.userTurnId,
-            threadId: input.threadId,
-            prevTurnId: thread.activeLeafTurnId ?? null,
-            role: "user",
-            status: "complete",
-            metadata: input.userTurnMetadata ?? null,
-          });
-          const blocks = writerUserTurnBlocks(userTurn.id, input.userBlocks);
-          return {
-            result: { userTurn },
-            events: [
-              { type: "turn.created" as const, turn: userTurn },
-              ...blocks.map((block) => ({ type: "block.upserted" as const, block })),
-            ],
-          };
-        },
-        {
-          afterEvents: async ({ userTurn }) => {
-            await input.enqueue();
-            settled = await input.settle({
-              userTurnId: userTurn.id,
-              resumeAfterSeq,
-              snapshotFloorNextSeq: ((await input.hub.headSeq(input.threadId)) + 1n).toString(),
-            });
-          },
-        },
-      );
-      if (settled === undefined) throw new Error("Writer enqueue did not settle");
-      return settled;
+      return await input.threadedInbox.withThreadLock(input.threadId, async (producer) => {
+        let settled: T | undefined;
+        const persistAttempt = () =>
+          persistAndAppendTurnStartEvents(
+            input.persistence,
+            input.threadId,
+            thread.activeLeafTurnId,
+            async () => {
+              const userTurn = createLocalTurn({
+                id: input.userTurnId,
+                threadId: input.threadId,
+                prevTurnId: thread.activeLeafTurnId ?? null,
+                role: "user",
+                status: "complete",
+                metadata: input.userTurnMetadata ?? null,
+              });
+              const blocks = writerUserTurnBlocks(userTurn.id, input.userBlocks);
+              return {
+                result: { userTurn },
+                events: [
+                  { type: "turn.created" as const, turn: userTurn },
+                  ...blocks.map((block) => ({ type: "block.upserted" as const, block })),
+                ],
+              };
+            },
+            {
+              afterEvents: async ({ userTurn }) => {
+                await producer.enqueue(input.draft);
+                settled = await input.settle({
+                  userTurnId: userTurn.id,
+                  resumeAfterSeq,
+                  snapshotFloorNextSeq: ((await input.hub.headSeq(input.threadId)) + 1n).toString(),
+                });
+              },
+            },
+          );
+        await (input.persistence.savepoint
+          ? input.persistence.savepoint(persistAttempt)
+          : persistAttempt());
+        if (settled === undefined) throw new Error("Writer enqueue did not settle");
+        return settled;
+      });
     } catch (error) {
       if (error instanceof WriterEnqueueRollback) return error.result as T;
       if (!(error instanceof TurnStartConflictError) || attempt >= 2) throw error;

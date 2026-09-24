@@ -39,6 +39,8 @@ export type UserTurnRecovery =
 
 export type UserTurnProps = {
   turn: Turn;
+  /** This admitted turn is durable but has not yet entered a live run. */
+  awaitingRun?: boolean;
   /** Check submission status / Start over for a recovered ambiguous send. */
   submissionRecovery?: UserTurnRecovery | null;
 };
@@ -77,7 +79,11 @@ export function projectUserTurn(turn: Turn): {
   return { text, references, skills };
 }
 
-function UserTurnComponent({ turn, submissionRecovery = null }: UserTurnProps) {
+function UserTurnComponent({
+  turn,
+  submissionRecovery = null,
+  awaitingRun = false,
+}: UserTurnProps) {
   const projectId = useProjectDocumentNavigationProjectId();
   const openDocument = useOpenProjectDocument(projectId ?? undefined);
   const projected = useMemo(() => projectUserTurn(turn), [turn]);
@@ -152,6 +158,15 @@ function UserTurnComponent({ turn, submissionRecovery = null }: UserTurnProps) {
           {t`Sending`}
         </p>
       ) : null}
+      {awaitingRun && turn.status !== "pending" && turn.status !== "error" ? (
+        <p
+          data-user-turn-status="awaiting-run"
+          role="status"
+          className="mt-1 text-right text-xs text-muted-foreground"
+        >
+          {t`Waiting for response`}
+        </p>
+      ) : null}
       {turn.status === "error" ? (
         <p
           data-user-turn-status="error"
@@ -189,6 +204,9 @@ function UserTurnComponent({ turn, submissionRecovery = null }: UserTurnProps) {
 
 export const UserTurn = memo(
   UserTurnComponent,
-  (prev, next) => prev.turn === next.turn && prev.submissionRecovery === next.submissionRecovery,
+  (prev, next) =>
+    prev.turn === next.turn &&
+    prev.submissionRecovery === next.submissionRecovery &&
+    prev.awaitingRun === next.awaitingRun,
 );
 UserTurn.displayName = "UserTurn";

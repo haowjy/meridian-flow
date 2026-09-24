@@ -18,7 +18,7 @@
 import { t } from "@lingui/core/macro";
 import type { Thread, ThreadLiveState, Turn, Work } from "@meridian/contracts/protocol";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { resolveDocumentLink } from "@/client/api/document-links-api";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import {
@@ -47,7 +47,7 @@ import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { PendingInboxTray } from "./PendingInboxTray";
-import { writerPendingInbox } from "./pending-inbox";
+import { awaitingRunTurnIds, writerPendingInbox } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { TurnList } from "./TurnList";
 import { activeDescendants } from "./thread-activity";
@@ -125,6 +125,7 @@ export function ChatView({
   });
   const runningSubagents = activeDescendants(activity.activity);
   const pendingInbox = usePendingInbox({ threadId, seed: snapshotLiveState });
+  const waitingRunTurnIds = useMemo(() => awaitingRunTurnIds(pendingInbox), [pendingInbox]);
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
@@ -399,6 +400,7 @@ export function ChatView({
           failedSendRetry={failedSendRetry}
           changeTrails={changeTrails.byId}
           submissionRecoveryByTurnId={submissionRecoveryByTurnId}
+          awaitingRunTurnIds={waitingRunTurnIds}
         />
       </ChatSurface>
     </TranscriptLinkNavigationContext.Provider>

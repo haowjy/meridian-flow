@@ -70,7 +70,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const lease = await authority.acquire(THREAD_ID, "run-1");
       if (!lease) throw new Error("expected the lease to be acquired");
-      await authority.bindTurn(lease, TURN_ID);
+      await authority.bindTurn(lease, TURN_ID, []);
 
       const listed = (await repo.listByProject(PROJECT_ID)).find((row) => row.id === THREAD_ID);
       const live = await runtime.liveState(THREAD_ID, USER_ID);

@@ -140,10 +140,10 @@ import {
   emitRunActivityBestEffort,
   type Gateway,
   InvalidAdmissionError,
-  projectPendingInbox,
   type RunAuthority,
   type RunStarter,
   type RunTurnPort,
+  readPendingInbox,
   sweepWakes,
   type ThreadedInbox,
   type ThreadRunOwnership,
@@ -196,7 +196,7 @@ import {
   createInMemoryWorkingSetRepository,
   type WorkingSetRepository,
 } from "../domains/working-set/index.js";
-import { runAfterDrizzleCommit } from "../shared/drizzle-transaction.js";
+import { runAfterDrizzleCommit, runInDrizzleSavepoint } from "../shared/drizzle-transaction.js";
 import { InMemoryTransactionOwner } from "../shared/in-memory-transaction.js";
 import { createDrizzleDocumentAccess, type DocumentAccessPort } from "./document-access.js";
 import { resolveObsVerbose } from "./env.js";
@@ -666,6 +666,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       eventSink: ports.eventSink,
     });
   };
+  let refreshPendingProjection: (threadId: ThreadId) => Promise<void> = async () => {};
   runner = createTurnRunner({
     orchestrator: runTurnProxy,
     hub: threadEventHub,
@@ -674,7 +675,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     runAuthority: ports.runAuthority,
     workContextDelivery,
     onRunStarted: refreshSubagentActivity,
-    onRunSettled: refreshSubagentActivity,
+    onRunSettled(threadId) {
+      refreshSubagentActivity(threadId);
+      void refreshPendingProjection(threadId);
+    },
   });
   // One durable inbox and lock shared by the loop (consumer) and the producer
   // `ThreadedInbox`. The `RunStarter` wakes a thread from a pending message; the
@@ -682,8 +686,26 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const inbox = createDrizzleInbox(ports.db);
   const threadLock = createDrizzleThreadLock(ports.db);
   const runStarter = createRunStarter(runner);
-  const readPending = async (threadId: ThreadId) =>
-    projectPendingInbox(await inbox.listPending(threadId));
+  const readPending = async (threadId: ThreadId) => readPendingInbox(inbox, threadId);
+  refreshPendingProjection = async (threadId) => {
+    await threadLock.withThreadLock(threadId, async () => {
+      try {
+        await threadEventHub.appendEvent(threadId, {
+          type: "inbox.changed",
+          threadId,
+          pending: await readPending(threadId),
+        });
+      } catch (error) {
+        emitEvent(ports.eventSink, {
+          level: "warn",
+          source: "runtime.inbox",
+          name: "inbox.changed.append_failed",
+          correlation: { threadId },
+          payload: { threadId, ...unknownToEventPayload(error) },
+        });
+      }
+    });
+  };
   // Decorate the producer's locked enqueue with the post-commit `inbox.changed`
   // signal, so a queued message reaches the tray before delivery. Consumers take
   // the notifying port; the raw `Inbox` stays the drain's (consumer side).
@@ -720,7 +742,13 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const wakeSweep = {
     async sweep() {
       const results = await Promise.allSettled([
-        sweepWakes({ inbox, authority: ports.runAuthority, runStarter, limit: WAKE_SWEEP_LIMIT }),
+        sweepWakes({
+          inbox,
+          authority: ports.runAuthority,
+          runStarter,
+          limit: WAKE_SWEEP_LIMIT,
+          refreshPending: refreshPendingProjection,
+        }),
         orphanRepair.sweep(WAKE_SWEEP_LIMIT),
         reportPublisher.sweep(WAKE_SWEEP_LIMIT),
       ]);
@@ -744,7 +772,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
   });
   const admissionProducer = createWriterTurnProducer({
-    persistence: { repos: ports.threadRepos, eventWriter: threadEventHub },
+    persistence: {
+      repos: ports.threadRepos,
+      eventWriter: threadEventHub,
+      savepoint: (operation) => runInDrizzleSavepoint(ports.db, operation),
+    },
     hub: threadEventHub,
     runner,
     turns: ports.threadRepos.turns,

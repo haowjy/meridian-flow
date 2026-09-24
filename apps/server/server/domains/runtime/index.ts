@@ -53,6 +53,7 @@ export {
   createNotifyingThreadedInbox,
   pendingInboxChangedEvent,
   projectPendingInbox,
+  readPendingInbox,
 } from "./loop/pending-inbox.js";
 export * from "./loop/permissions/index.js";
 export type {

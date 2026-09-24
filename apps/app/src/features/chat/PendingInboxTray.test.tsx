@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * The pending tray shows server-truth queued rows near the composer and clears
- * when the pending set empties (the ack frame removes the row).
+ * The pending tray shows server-truth waiting rows near the composer and clears
+ * when the waiting set empties (the adoption frame removes the row).
  */
 import type { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -34,6 +34,7 @@ const pending: ThreadPendingInbox = {
       seq: 1,
       intent: "message",
       provenance: { kind: "writer", actorId: "user-1" },
+      deliveryState: "waiting",
       summary: "Tighten the duel in chapter 3",
       enqueuedAt: "2026-01-01T00:00:00.000Z",
     },
@@ -42,6 +43,7 @@ const pending: ThreadPendingInbox = {
       seq: 2,
       intent: "notice",
       provenance: { kind: "system", source: "work" },
+      deliveryState: "waiting",
       summary: "Work context changed",
       enqueuedAt: "2026-01-01T00:00:01.000Z",
     },

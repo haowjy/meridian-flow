@@ -30,6 +30,9 @@ function recordingAuthority(): {
     },
     async publish() {},
     async bindTurn() {},
+    async setInboxConsumption() {
+      return true;
+    },
     async read(): Promise<ThreadStatus> {
       return { kind: "asleep" };
     },
@@ -90,6 +93,9 @@ describe("RunAuthority heartbeat", () => {
       },
       async publish() {},
       async bindTurn() {},
+      async setInboxConsumption() {
+        return true;
+      },
       async read() {
         return { kind: "asleep" };
       },
@@ -127,6 +133,9 @@ describe("RunAuthority heartbeat", () => {
       },
       async publish() {},
       async bindTurn() {},
+      async setInboxConsumption() {
+        return true;
+      },
       async read() {
         return { kind: "asleep" };
       },
@@ -169,6 +178,9 @@ describe("RunAuthority heartbeat", () => {
       },
       async publish() {},
       async bindTurn() {},
+      async setInboxConsumption() {
+        return true;
+      },
       async read() {
         return { kind: "asleep" };
       },
@@ -219,6 +231,9 @@ describe("RunAuthority heartbeat", () => {
       },
       async publish() {},
       async bindTurn() {},
+      async setInboxConsumption() {
+        return true;
+      },
       async read() {
         return { kind: "asleep" };
       },

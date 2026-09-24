@@ -5,6 +5,7 @@
 import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
 import {
+  awaitingRunTurnIds,
   EMPTY_THREAD_PENDING_INBOX,
   isThreadPendingInbox,
   pendingInboxFromEvent,
@@ -33,6 +34,7 @@ describe("pendingInboxFromEvent", () => {
         seq: 1,
         intent: "message",
         provenance: { kind: "writer", actorId: "user-1" },
+        deliveryState: "waiting",
         summary: "queued",
         enqueuedAt: "2026-01-01T00:00:00.000Z",
       },
@@ -75,6 +77,7 @@ describe("writerPendingInbox", () => {
       seq: 1,
       intent: "message" as const,
       provenance: { kind: "writer" as const, actorId: "writer-1" },
+      deliveryState: "waiting" as const,
       summary: "writer message",
       enqueuedAt: "2026-01-01T00:00:00.000Z",
     };
@@ -103,5 +106,23 @@ describe("writerPendingInbox", () => {
 
     expect(inbox.items).toHaveLength(4);
     expect(writerPendingInbox(inbox)).toEqual({ items: [writer] });
+  });
+
+  it("keeps accepted idle sends inline and excludes them from the tray", () => {
+    const waiting = {
+      id: "waiting-turn",
+      seq: 1,
+      intent: "message" as const,
+      provenance: { kind: "writer" as const, actorId: "writer-1" },
+      deliveryState: "waiting" as const,
+      summary: "later",
+      enqueuedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const awaiting = { ...waiting, id: "awaiting-turn", deliveryState: "awaiting_run" as const };
+    const consuming = { ...waiting, id: "consuming-turn", deliveryState: "consuming" as const };
+    const inbox = { items: [awaiting, consuming, waiting] };
+
+    expect(writerPendingInbox(inbox)).toEqual({ items: [waiting] });
+    expect(awaitingRunTurnIds(inbox)).toEqual(new Set(["awaiting-turn"]));
   });
 });

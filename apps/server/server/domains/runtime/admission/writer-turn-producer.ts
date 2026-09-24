@@ -105,17 +105,15 @@ export function createWriterTurnProducer(deps: {
             activatedSkillMetadata(input.admission.activatedSkillSlugs ?? []) ??
             input.userTurnMetadata ??
             null,
-          enqueue: () =>
-            deps.threadedInbox
-              .enqueue({
-                id: userTurnId,
-                threadId,
-                intent: "message",
-                provenance: { kind: "writer", actorId: input.admission.actorUserId },
-                body: { kind: "text", text: input.admission.text },
-                idempotencyKey: input.admission.submissionId,
-              })
-              .then(() => undefined),
+          threadedInbox: deps.threadedInbox,
+          draft: {
+            id: userTurnId,
+            threadId,
+            intent: "message",
+            provenance: { kind: "writer", actorId: input.admission.actorUserId },
+            body: { kind: "text", text: input.admission.text },
+            idempotencyKey: input.admission.submissionId,
+          },
           settle: async ({
             userTurnId: settledUserTurnId,
             resumeAfterSeq,

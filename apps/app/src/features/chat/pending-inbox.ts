@@ -12,8 +12,19 @@ export const EMPTY_THREAD_PENDING_INBOX: ThreadPendingInbox = { items: [] };
 
 /** Writer tray is deliberately narrower than the generic inbox/model drain. */
 export function writerPendingInbox(pending: ThreadPendingInbox): ThreadPendingInbox {
-  const items = pending.items.filter((item) => item.provenance.kind === "writer");
+  const items = pending.items.filter(
+    (item) => item.provenance.kind === "writer" && item.deliveryState === "waiting",
+  );
   return items.length === pending.items.length ? pending : { items };
+}
+
+/** Accepted writer turns waiting for a run, shown inline rather than in the tray. */
+export function awaitingRunTurnIds(pending: ThreadPendingInbox): ReadonlySet<string> {
+  return new Set(
+    pending.items
+      .filter((item) => item.provenance.kind === "writer" && item.deliveryState === "awaiting_run")
+      .map((item) => item.id),
+  );
 }
 
 export function isThreadPendingInbox(value: unknown): value is ThreadPendingInbox {

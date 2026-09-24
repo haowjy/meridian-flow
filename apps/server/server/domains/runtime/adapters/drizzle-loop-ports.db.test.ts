@@ -1,6 +1,7 @@
 /** PostgreSQL coverage for the drizzle Inbox and lease-backed RunAuthority adapters. */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { MessageDraft } from "../loop/ports.js";
 
@@ -11,6 +12,7 @@ const USER_ID = "00000000-0000-4000-8000-0000000008a1";
 const PROJECT_ID = "00000000-0000-4000-8000-0000000008a2";
 const THREAD_A = "00000000-0000-4000-8000-0000000008a3" as ThreadId;
 const THREAD_B = "00000000-0000-4000-8000-0000000008a4" as ThreadId;
+const ASSISTANT_TURN = "00000000-0000-4000-8000-0000000008a5";
 
 function required<T>(value: T | null): T {
   if (value === null) throw new Error("expected a value");
@@ -28,6 +30,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleInbox } = await import("./drizzle-inbox.js");
+    const { projectPendingInbox } = await import("../loop/pending-inbox.js");
     const { createDrizzleThreadLock } = await import("./drizzle-thread-lock.js");
     const { closeRun } = await import("../loop/close-run.js");
     const { sweepWakes } = await import("../loop/sweep-wakes.js");
@@ -503,6 +506,95 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           await inbox.ack(THREAD_A, [inboxMessage.id]);
         });
         expect(await inbox.claimPending(THREAD_A)).toEqual([]);
+      });
+
+      it("projects exact live-run adoption before ack and invalidates it on release", async () => {
+        const inbox = createDrizzleInbox(db);
+        await db.insert(schema.turns).values({
+          id: ASSISTANT_TURN,
+          threadId: THREAD_A,
+          role: "assistant",
+          status: "streaming",
+          metadata: { retained: "value" },
+        });
+        const [f, g] = await Promise.all([
+          inbox.enqueue(message("F")),
+          inbox.enqueue(message("G")),
+        ]);
+        const authority = createDrizzleRunAuthority(db, { holderId: "holder-adoption" });
+        const lease = required(await authority.acquire(THREAD_A, "run-adoption"));
+
+        await authority.bindTurn(lease, ASSISTANT_TURN, [f.id]);
+        let projection = await inbox.readPendingProjection(THREAD_A);
+        expect(
+          projectPendingInbox(projection.messages, projection.run).items.map((item) => [
+            item.id,
+            item.deliveryState,
+          ]),
+        ).toEqual([
+          [f.id, "consuming"],
+          [g.id, "waiting"],
+        ]);
+        expect(projection.messages.every((message) => message.deliveredAt === null)).toBe(true);
+
+        await authority.setInboxConsumption(lease, [g.id]);
+        projection = await inbox.readPendingProjection(THREAD_A);
+        expect(
+          projectPendingInbox(projection.messages, projection.run).items.map((item) => [
+            item.id,
+            item.deliveryState,
+          ]),
+        ).toEqual([
+          [f.id, "waiting"],
+          [g.id, "consuming"],
+        ]);
+        expect(
+          (await db.select().from(schema.turns).where(eq(schema.turns.id, ASSISTANT_TURN)))[0]
+            .metadata,
+        ).toMatchObject({ retained: "value", inboxConsumption: { messageIds: [g.id] } });
+
+        await authority.release(lease);
+        projection = await inbox.readPendingProjection(THREAD_A);
+        expect(
+          projectPendingInbox(projection.messages, projection.run).items.map(
+            (item) => item.deliveryState,
+          ),
+        ).toEqual(["awaiting_run", "awaiting_run"]);
+      });
+
+      it("reads staged bind and ack state from the publishing transaction and rolls it back", async () => {
+        const inbox = createDrizzleInbox(db);
+        const { createDrizzleRepositoriesForTest } = await import(
+          "../../threads/adapters/drizzle/index.js"
+        );
+        const repos = createDrizzleRepositoriesForTest(db);
+        await db.insert(schema.turns).values({
+          id: ASSISTANT_TURN,
+          threadId: THREAD_A,
+          role: "assistant",
+          status: "streaming",
+        });
+        const f = await inbox.enqueue(message("transactional-F"));
+        const authority = createDrizzleRunAuthority(db, { holderId: "holder-staged" });
+        const lease = required(await authority.acquire(THREAD_A, "run-staged"));
+
+        await expect(
+          repos.transaction(async () => {
+            await authority.bindTurn(lease, ASSISTANT_TURN, [f.id]);
+            const adopted = await inbox.readPendingProjection(THREAD_A);
+            expect(projectPendingInbox(adopted.messages, adopted.run).items[0]?.deliveryState).toBe(
+              "consuming",
+            );
+            await inbox.ack(THREAD_A, [f.id]);
+            expect((await inbox.readPendingProjection(THREAD_A)).messages).toEqual([]);
+            throw new Error("response transaction failed");
+          }),
+        ).rejects.toThrow("response transaction failed");
+
+        const rolledBack = await inbox.readPendingProjection(THREAD_A);
+        expect(rolledBack.messages.map((item) => item.id)).toEqual([f.id]);
+        expect(rolledBack.run).toMatchObject({ turnId: null, messageIds: [] });
+        await authority.release(lease);
       });
     });
   });

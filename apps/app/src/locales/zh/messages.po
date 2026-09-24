@@ -4015,6 +4015,10 @@ msgstr ""
 msgid "Waiting"
 msgstr ""
 
+#: src/features/chat/UserTurn.tsx
+msgid "Waiting for response"
+msgstr ""
+
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "We couldn’t confirm this purchase yet. Check your balance before trying again."
 msgstr ""

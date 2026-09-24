@@ -143,6 +143,9 @@ describe("createThreadedInbox", () => {
       async listPending() {
         return [];
       },
+      async readPendingProjection() {
+        return { messages: [], run: null };
+      },
       async ack() {},
       async pendingMessageThreads() {
         return [];

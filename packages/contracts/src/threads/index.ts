@@ -125,14 +125,15 @@ export type MessageProvenance =
   | { kind: "system"; source: string };
 
 /**
- * One undelivered inbox row as the writer's pending tray sees it. Derived from
- * durable rows with no claim side effect; never persisted as a turn block.
+ * One durably unacknowledged inbox row with server-derived delivery progress.
+ * `waiting` alone belongs in the writer's queued tray; never a persisted block.
  */
 export type PendingInboxItem = {
   id: string;
   seq: number;
   intent: MessageIntent;
   provenance: MessageProvenance;
+  deliveryState: "awaiting_run" | "waiting" | "consuming";
   /** Body text, or a report/notice summary. */
   summary: string;
   enqueuedAt: string;

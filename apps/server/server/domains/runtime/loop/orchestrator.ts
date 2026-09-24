@@ -126,7 +126,7 @@ import {
   type InterruptRegistry,
 } from "./interrupts.js";
 import { createLocalTurn } from "./local-turn.js";
-import { pendingInboxChangedEvent } from "./pending-inbox.js";
+import { readPendingInbox } from "./pending-inbox.js";
 import { type PermissionGate, permissionGateFromToolPolicy } from "./permissions/index.js";
 import {
   appendEvent,
@@ -355,6 +355,7 @@ async function admitRunExecution(
   input: RunTurnInput,
   thread: Thread,
   assistantTurnId: TurnId,
+  inboxMessageIds: readonly string[],
 ): Promise<void> {
   if (thread.kind !== "subagent" && input.executionReport) {
     throw new Error("Execution report correlation requires a subagent thread");
@@ -378,7 +379,14 @@ async function admitRunExecution(
       description: input.executionReport?.description ?? null,
     });
   }
-  if (input.lease) await deps.runAuthority.bindTurn(input.lease, assistantTurnId);
+  if (input.lease) {
+    await deps.runAuthority.bindTurn(input.lease, assistantTurnId, inboxMessageIds);
+    await deps.eventWriter.appendEvent(input.threadId, {
+      type: "inbox.changed",
+      threadId: input.threadId,
+      pending: await readPendingInbox(deps.inbox, input.threadId),
+    });
+  }
 }
 
 /**
@@ -412,50 +420,51 @@ export async function runTurn(deps: OrchestratorDeps, input: RunTurnInput): Prom
     return runDrainTurn(deps, input, thread);
   }
 
-  const setup = await persistAndAppendTurnStartEvents(
-    deps,
-    input.threadId,
-    thread.activeLeafTurnId,
-    async () => {
-      const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = await loadRunStartContext(
-        deps,
-        thread,
-      );
-      // Read inside the setup transaction so the turn's durable write vocabulary
-      // matches the mode in effect at the moment the turn was minted.
-      const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
-      const userTurn = createLocalTurn({
-        threadId: input.threadId,
-        prevTurnId,
-        role: "user",
-        status: "complete",
-        metadata: input.userTurnMetadata ?? null,
-      });
-      const userBlocks = writerUserTurnBlocks(
-        userTurn.id,
-        input.userBlocks ?? [{ type: "text", text: input.userText }],
-      );
+  const setup = await deps.threadLock.withThreadLock(input.threadId, () =>
+    persistAndAppendTurnStartEvents(
+      deps,
+      input.threadId,
+      thread.activeLeafTurnId,
+      async () => {
+        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } =
+          await loadRunStartContext(deps, thread);
+        // Read inside the setup transaction so the turn's durable write vocabulary
+        // matches the mode in effect at the moment the turn was minted.
+        const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
+        const userTurn = createLocalTurn({
+          threadId: input.threadId,
+          prevTurnId,
+          role: "user",
+          status: "complete",
+          metadata: input.userTurnMetadata ?? null,
+        });
+        const userBlocks = writerUserTurnBlocks(
+          userTurn.id,
+          input.userBlocks ?? [{ type: "text", text: input.userText }],
+        );
 
-      const assistantTurn = createLocalTurn({
-        threadId: input.threadId,
-        prevTurnId: userTurn.id,
-        role: "assistant",
-        status: "streaming",
-        writeMode,
-      });
+        const assistantTurn = createLocalTurn({
+          threadId: input.threadId,
+          prevTurnId: userTurn.id,
+          role: "assistant",
+          status: "streaming",
+          writeMode,
+        });
 
-      return {
-        result: { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks },
-        events: [
-          { type: "turn.created", turn: userTurn },
-          ...userBlocks.map((block) => ({ type: "block.upserted" as const, block })),
-          { type: "turn.created", turn: assistantTurn },
-        ],
-      };
-    },
-    {
-      afterEvents: ({ assistantTurn }) => admitRunExecution(deps, input, thread, assistantTurn.id),
-    },
+        return {
+          result: { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks },
+          events: [
+            { type: "turn.created", turn: userTurn },
+            ...userBlocks.map((block) => ({ type: "block.upserted" as const, block })),
+            { type: "turn.created", turn: assistantTurn },
+          ],
+        };
+      },
+      {
+        afterEvents: ({ assistantTurn }) =>
+          admitRunExecution(deps, input, thread, assistantTurn.id, []),
+      },
+    ),
   );
 
   const { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks } = setup.result;
@@ -491,69 +500,72 @@ async function runDrainTurn(
   input: DrainRunTurnInput,
   thread: Thread,
 ): Promise<RunTurnHandle> {
-  const setup = await persistAndAppendTurnStartEvents(
-    deps,
-    input.threadId,
-    thread.activeLeafTurnId,
-    async () => {
-      const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } = await loadRunStartContext(
-        deps,
-        thread,
-      );
-      const knownTurnIds = new Set<string>([
-        ...inheritedTurns.map((turn) => turn.id),
-        ...priorTurns.map((turn) => turn.id),
-      ]);
+  let initialBatchIds: string[] = [];
+  const setup = await deps.threadLock.withThreadLock(input.threadId, () =>
+    persistAndAppendTurnStartEvents(
+      deps,
+      input.threadId,
+      thread.activeLeafTurnId,
+      async () => {
+        const { priorTurns, inheritedTurns, inheritedBlocks, prevTurnId } =
+          await loadRunStartContext(deps, thread);
+        const knownTurnIds = new Set<string>([
+          ...inheritedTurns.map((turn) => turn.id),
+          ...priorTurns.map((turn) => turn.id),
+        ]);
 
-      const batch = await deps.inbox.claimPending(input.threadId);
-      // The wake sweep only starts a thread with a derived wake need; a race that
-      // drains the last message first must leave no phantom assistant turn behind.
-      if (!batch.some((message) => message.intent === "message")) {
-        throw new NoPendingWakeError(input.threadId);
-      }
+        const batch = await deps.inbox.claimPending(input.threadId);
+        initialBatchIds = batch.map(({ id }) => id);
+        // The wake sweep only starts a thread with a derived wake need; a race that
+        // drains the last message first must leave no phantom assistant turn behind.
+        if (!batch.some((message) => message.intent === "message")) {
+          throw new NoPendingWakeError(input.threadId);
+        }
 
-      // A writer send persisted its turn at enqueue with its activated skill
-      // slugs stamped on the turn; read them back so the drain inlines the
-      // bodies into the writer's message. A fresh non-writer message carries none.
-      const turnById = new Map(
-        [...inheritedTurns, ...priorTurns].map((turn) => [turn.id as string, turn]),
-      );
-      const activatedSkillSlugs = [
-        ...new Set(
-          batch.flatMap((message) => {
-            const turn = turnById.get(message.id);
-            return turn ? readActivatedSkillSlugs(turn) : [];
-          }),
-        ),
-      ];
+        // A writer send persisted its turn at enqueue with its activated skill
+        // slugs stamped on the turn; read them back so the drain inlines the
+        // bodies into the writer's message. A fresh non-writer message carries none.
+        const turnById = new Map(
+          [...inheritedTurns, ...priorTurns].map((turn) => [turn.id as string, turn]),
+        );
+        const activatedSkillSlugs = [
+          ...new Set(
+            batch.flatMap((message) => {
+              const turn = turnById.get(message.id);
+              return turn ? readActivatedSkillSlugs(turn) : [];
+            }),
+          ),
+        ];
 
-      const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
-      const plan = planMessageTurns({ batch, prevTurnId, knownTurnIds });
+        const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
+        const plan = planMessageTurns({ batch, prevTurnId, knownTurnIds });
 
-      const assistantTurn = createLocalTurn({
-        threadId: input.threadId,
-        prevTurnId: plan.leafTurnId,
-        role: "assistant",
-        status: "streaming",
-        writeMode,
-      });
+        const assistantTurn = createLocalTurn({
+          threadId: input.threadId,
+          prevTurnId: plan.leafTurnId,
+          role: "assistant",
+          status: "streaming",
+          writeMode,
+        });
 
-      return {
-        result: {
-          assistantTurn,
-          referenceUserTurnId: plan.leafTurnId ?? assistantTurn.id,
-          messageTurns: plan.turns,
-          priorTurns,
-          inheritedTurns,
-          inheritedBlocks,
-          activatedSkillSlugs,
-        },
-        events: [...plan.events, { type: "turn.created", turn: assistantTurn }],
-      };
-    },
-    {
-      afterEvents: ({ assistantTurn }) => admitRunExecution(deps, input, thread, assistantTurn.id),
-    },
+        return {
+          result: {
+            assistantTurn,
+            referenceUserTurnId: plan.leafTurnId ?? assistantTurn.id,
+            messageTurns: plan.turns,
+            priorTurns,
+            inheritedTurns,
+            inheritedBlocks,
+            activatedSkillSlugs,
+          },
+          events: [...plan.events, { type: "turn.created", turn: assistantTurn }],
+        };
+      },
+      {
+        afterEvents: ({ assistantTurn }) =>
+          admitRunExecution(deps, input, thread, assistantTurn.id, initialBatchIds),
+      },
+    ),
   );
 
   const {
@@ -665,111 +677,112 @@ async function persistModelResponse(input: {
   let blockSeq = input.blockSeq;
   const responseSeq = currentAssistantTurn.responseCount;
   const toolCalls = collectToolCalls(result);
-  const persistedResponse = await persistAndAppendEvents(deps, runInput.threadId, async () => {
-    const responseId = crypto.randomUUID();
-    const computedCost = await turnAccounting.computeAndDebit(
-      result,
-      thread,
-      runInput.threadId,
-      currentAssistantTurn.id,
-      treeBudget,
-      responseId,
-    );
-    const costUsd = computedCost.costUsd;
-    const response: ModelResponseReceivedRow = {
-      id: responseId,
-      turnId: currentAssistantTurn.id,
-      sequence: responseSeq,
-      provider: result.provider,
-      model: result.model,
-      providerRequestId: result.providerRequestId ?? null,
-      inputTokens: result.usage.inputTokens,
-      outputTokens: result.usage.outputTokens,
-      reasoningTokens: result.usage.reasoningTokens ?? null,
-      cacheReadTokens: result.usage.cacheReadTokens ?? null,
-      cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
-      costUsd,
-      millicredits: computedCost.millicredits,
-      priceSource: computedCost.priceSource,
-      pricingSnapshot: computedCost.pricingSnapshot,
-      finishReason: result.finishReason,
-      rawUsage: toJsonValue(result.usage),
-    };
-    const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);
-
-    const createdBlocks: Block[] = [];
-    const events: OrchestratorEvent[] = [{ type: "model.response_received", response }];
-    for (const part of result.content) {
-      const blockInput = contentPartToBlockInput(
-        part,
-        updatedTurn.id,
-        blockSeq++,
-        response.id,
-        result.provider,
+  const persistedResponse = await deps.threadLock.withThreadLock(runInput.threadId, () =>
+    persistAndAppendEvents(deps, runInput.threadId, async () => {
+      const responseId = crypto.randomUUID();
+      const computedCost = await turnAccounting.computeAndDebit(
+        result,
+        thread,
+        runInput.threadId,
+        currentAssistantTurn.id,
+        treeBudget,
+        responseId,
       );
-      if (blockInput) {
-        const block = contentForBlockInput(blockInput);
+      const costUsd = computedCost.costUsd;
+      const response: ModelResponseReceivedRow = {
+        id: responseId,
+        turnId: currentAssistantTurn.id,
+        sequence: responseSeq,
+        provider: result.provider,
+        model: result.model,
+        providerRequestId: result.providerRequestId ?? null,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        reasoningTokens: result.usage.reasoningTokens ?? null,
+        cacheReadTokens: result.usage.cacheReadTokens ?? null,
+        cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
+        costUsd,
+        millicredits: computedCost.millicredits,
+        priceSource: computedCost.priceSource,
+        pricingSnapshot: computedCost.pricingSnapshot,
+        finishReason: result.finishReason,
+        rawUsage: toJsonValue(result.usage),
+      };
+      const updatedTurn = applyResponseToTurnSnapshot(currentAssistantTurn, response);
+
+      const createdBlocks: Block[] = [];
+      const events: OrchestratorEvent[] = [{ type: "model.response_received", response }];
+      for (const part of result.content) {
+        const blockInput = contentPartToBlockInput(
+          part,
+          updatedTurn.id,
+          blockSeq++,
+          response.id,
+          result.provider,
+        );
+        if (blockInput) {
+          const block = contentForBlockInput(blockInput);
+          createdBlocks.push(localBlockFromEvent(block));
+          events.push({ type: "block.upserted", block });
+        }
+      }
+
+      for (const call of toolCalls) {
+        if (result.content.some((p) => p.type === "tool_use" && p.toolCallId === call.id)) {
+          continue;
+        }
+        const block = contentForBlockInput({
+          turnId: updatedTurn.id,
+          blockType: "tool_use",
+          sequence: blockSeq++,
+          responseId: response.id,
+          content: {
+            toolCallId: call.id,
+            toolName: call.name,
+            input: toJsonValue(call.arguments),
+          },
+          provider: result.provider,
+          status: "complete",
+        });
         createdBlocks.push(localBlockFromEvent(block));
         events.push({ type: "block.upserted", block });
       }
-    }
 
-    for (const call of toolCalls) {
-      if (result.content.some((p) => p.type === "tool_use" && p.toolCallId === call.id)) {
-        continue;
-      }
-      const block = contentForBlockInput({
-        turnId: updatedTurn.id,
-        blockType: "tool_use",
-        sequence: blockSeq++,
+      events.push({
+        type: "usage",
         responseId: response.id,
-        content: {
-          toolCallId: call.id,
-          toolName: call.name,
-          input: toJsonValue(call.arguments),
-        },
+        turnId: updatedTurn.id as string,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
+        reasoningTokens: result.usage.reasoningTokens ?? null,
+        cacheReadTokens: result.usage.cacheReadTokens ?? null,
+        cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
+        costUsd,
+        turnCostUsd: updatedTurn.totalCostUsd,
+        model: result.model,
         provider: result.provider,
-        status: "complete",
       });
-      createdBlocks.push(localBlockFromEvent(block));
-      events.push({ type: "block.upserted", block });
-    }
 
-    events.push({
-      type: "usage",
-      responseId: response.id,
-      turnId: updatedTurn.id as string,
-      inputTokens: result.usage.inputTokens,
-      outputTokens: result.usage.outputTokens,
-      reasoningTokens: result.usage.reasoningTokens ?? null,
-      cacheReadTokens: result.usage.cacheReadTokens ?? null,
-      cacheWriteTokens: result.usage.cacheWriteTokens ?? null,
-      costUsd,
-      turnCostUsd: updatedTurn.totalCostUsd,
-      model: result.model,
-      provider: result.provider,
-    });
+      // Ack the batch in the same transaction that persists the response carrying
+      // it; a crash before commit redelivers and the idempotency key collapses.
+      await deps.inbox.ack(runInput.threadId, input.inboxAckIds);
+      // Ack remains coupled to response persistence. Read the remaining classified
+      // rows inside this transaction; earlier adoption already removed consumed
+      // entries from the tray before this response exists.
+      if (input.inboxAckIds.length > 0) {
+        events.push({
+          type: "inbox.changed",
+          threadId: runInput.threadId,
+          pending: await readPendingInbox(deps.inbox, runInput.threadId),
+        });
+      }
 
-    // Ack the batch in the same transaction that persists the response carrying
-    // it; a crash before commit redelivers and the idempotency key collapses.
-    await deps.inbox.ack(runInput.threadId, input.inboxAckIds);
-    // The ack is the moment a queued message leaves the pending tray. Read the
-    // remaining rows inside the same transaction and fold the full-replace
-    // signal into the response's events, so the tray cannot see a half-ack.
-    if (input.inboxAckIds.length > 0) {
-      events.push(
-        pendingInboxChangedEvent(
-          runInput.threadId,
-          await deps.inbox.listPending(runInput.threadId),
-        ),
-      );
-    }
-
-    return {
-      result: { responseId, updatedTurn, createdBlocks },
-      events,
-    };
-  });
+      return {
+        result: { responseId, updatedTurn, createdBlocks },
+        events,
+      };
+    }),
+  );
 
   return {
     responseId: persistedResponse.result.responseId,
@@ -1146,6 +1159,13 @@ async function* generateEvents(
       lease: input.lease ?? null,
       continueOnPending,
       complete,
+      afterRelease: async () => {
+        await deps.eventWriter.appendEvent(input.threadId, {
+          type: "inbox.changed",
+          threadId: input.threadId,
+          pending: await readPendingInbox(deps.inbox, input.threadId),
+        });
+      },
     });
     if (outcome.kind === "continue") throw new RunExit(true);
     currentAssistantTurn = outcome.completion.turn ?? currentAssistantTurn;
@@ -1322,6 +1342,31 @@ async function* generateEvents(
           messages: request.messages,
           knownTurnIds: new Set(allTurns.map((turn) => turn.id)),
           expectedLeafTurnId: allTurns.at(-1)?.id ?? null,
+          adoptInboxBatch: async (batch) => {
+            const lease = input.lease;
+            if (!lease) return;
+            await deps.threadLock.withThreadLock(input.threadId, async () => {
+              await persistAndAppendEvents(deps, input.threadId, async () => {
+                const adopted = await deps.runAuthority.setInboxConsumption(
+                  lease,
+                  batch.map(({ id }) => id),
+                );
+                if (!adopted)
+                  throw new Error("Cannot adopt inbox batch after losing live run lease");
+                const pending = await readPendingInbox(deps.inbox, input.threadId);
+                return {
+                  result: undefined,
+                  events: [
+                    {
+                      type: "inbox.changed" as const,
+                      threadId: input.threadId,
+                      pending,
+                    },
+                  ],
+                };
+              });
+            });
+          },
           prepareAdoptedTurn: (turn, blocks) =>
             persistReferenceReads({
               deps,

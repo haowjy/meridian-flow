@@ -19,11 +19,17 @@ import type {
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { EventJournalWriter } from "../../threads/index.js";
 import { inboxMessageText } from "./inbox-context.js";
-import type { InboxMessage } from "./ports.js";
+import type { Inbox, InboxMessage } from "./ports.js";
 import type { ThreadedInbox } from "./threaded-inbox.js";
 
 /** Project all pending provenance into the shared read model, preserving `seq` order. */
-export function projectPendingInbox(messages: readonly InboxMessage[]): ThreadPendingInbox {
+export type PendingInboxRun = { turnId: string | null; messageIds: readonly string[] } | null;
+
+/** Classify from one canonical lease/assistant snapshot, not admission-time hints. */
+export function projectPendingInbox(
+  messages: readonly InboxMessage[],
+  run: PendingInboxRun = null,
+): ThreadPendingInbox {
   return {
     items: messages.map(
       (message): PendingInboxItem => ({
@@ -31,11 +37,27 @@ export function projectPendingInbox(messages: readonly InboxMessage[]): ThreadPe
         seq: message.seq,
         intent: message.intent,
         provenance: message.provenance,
+        deliveryState:
+          run?.turnId === null
+            ? "awaiting_run"
+            : run?.messageIds.includes(message.id)
+              ? "consuming"
+              : run
+                ? "waiting"
+                : "awaiting_run",
         summary: inboxMessageText(message),
         enqueuedAt: message.enqueuedAt,
       }),
     ),
   };
+}
+
+export async function readPendingInbox(
+  inbox: Inbox,
+  threadId: ThreadId,
+): Promise<ThreadPendingInbox> {
+  const projection = await inbox.readPendingProjection(threadId);
+  return projectPendingInbox(projection.messages, projection.run);
 }
 
 /**
@@ -88,16 +110,31 @@ export function createNotifyingThreadedInbox(deps: {
     deps.schedulePostCommit(async () => {
       const previous = chains.get(threadId) ?? Promise.resolve();
       const next = previous.then(() =>
-        appendPendingInboxChangeBestEffort({
-          eventWriter: deps.eventWriter,
-          readPending: deps.readPending,
-          threadId,
-          eventSink: deps.eventSink,
-        }),
+        deps.threadedInbox
+          .withThreadLock(threadId, async () => {
+            await appendPendingInboxChangeBestEffort({
+              eventWriter: deps.eventWriter,
+              readPending: deps.readPending,
+              threadId,
+              eventSink: deps.eventSink,
+            });
+          })
+          .catch((error) =>
+            emitEvent(deps.eventSink, {
+              level: "warn",
+              source: "runtime.inbox",
+              name: "inbox.changed.append_failed",
+              correlation: { threadId },
+              payload: { threadId, ...unknownToEventPayload(error) },
+            }),
+          ),
       );
       chains.set(threadId, next);
-      await next;
-      if (chains.get(threadId) === next) chains.delete(threadId);
+      try {
+        await next;
+      } finally {
+        if (chains.get(threadId) === next) chains.delete(threadId);
+      }
     });
   }
 

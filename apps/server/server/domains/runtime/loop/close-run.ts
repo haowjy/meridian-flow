@@ -41,12 +41,15 @@ export async function closeRun<T>(input: {
   continueOnPending: boolean;
   /** The terminal write; runs inside the lock, before the lease is released. */
   complete: () => Promise<T>;
+  /** Optional current-state publication after releasing a bound lease, under the same lock. */
+  afterRelease?: () => Promise<void>;
 }): Promise<CloseRunOutcome<T>> {
   return input.threadLock.withThreadLock(input.threadId, async () => {
     const pending = await input.inbox.claimPending(input.threadId);
     if (input.continueOnPending && pending.length > 0) return { kind: "continue" };
     const completion = await input.complete();
     if (input.lease) await input.runAuthority.release(input.lease);
+    if (input.lease) await input.afterRelease?.();
     return { kind: "completed", completion };
   });
 }

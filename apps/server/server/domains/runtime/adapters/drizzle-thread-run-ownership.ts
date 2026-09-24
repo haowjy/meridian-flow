@@ -10,7 +10,11 @@ import type { ThreadLeaseState, ThreadStatus } from "@meridian/contracts/threads
 import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
 import { and, eq, gt, inArray } from "drizzle-orm";
-import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
+import {
+  currentDrizzleDb,
+  deferUntilDrizzleCommit,
+  runInDrizzleTransaction,
+} from "../../../shared/drizzle-transaction.js";
 import {
   DEFAULT_LEASE_TTL_MS,
   type RunAuthority,
@@ -225,17 +229,43 @@ export function createDrizzleRunAuthority(
       return row?.runId ?? null;
     },
 
-    async bindTurn(lease, turnId) {
-      await db_()
-        .update(schema.threadRunLeases)
-        .set({ turnId })
-        .where(
-          and(
-            eq(schema.threadRunLeases.threadId, lease.threadId),
-            eq(schema.threadRunLeases.runId, lease.runId),
-            eq(schema.threadRunLeases.holderId, lease.holderId),
-          ),
-        );
+    async bindTurn(lease, turnId, messageIds) {
+      await runInDrizzleTransaction(db, async () => {
+        const [bound] = await db_()
+          .update(schema.threadRunLeases)
+          .set({ turnId })
+          .where(
+            and(
+              eq(schema.threadRunLeases.threadId, lease.threadId),
+              eq(schema.threadRunLeases.runId, lease.runId),
+              eq(schema.threadRunLeases.holderId, lease.holderId),
+              gt(schema.threadRunLeases.expiresAt, new Date()),
+            ),
+          )
+          .returning({ turnId: schema.threadRunLeases.turnId });
+        if (!bound) throw new Error("Cannot bind assistant turn after losing live run lease");
+        await writeInboxConsumption(lease.threadId, turnId, messageIds);
+      });
+    },
+
+    async setInboxConsumption(lease, messageIds) {
+      return runInDrizzleTransaction(db, async () => {
+        const [row] = await db_()
+          .select({ turnId: schema.threadRunLeases.turnId })
+          .from(schema.threadRunLeases)
+          .where(
+            and(
+              eq(schema.threadRunLeases.threadId, lease.threadId),
+              eq(schema.threadRunLeases.runId, lease.runId),
+              eq(schema.threadRunLeases.holderId, lease.holderId),
+              gt(schema.threadRunLeases.expiresAt, new Date()),
+            ),
+          )
+          .limit(1);
+        if (!row?.turnId) return false;
+        await writeInboxConsumption(lease.threadId, row.turnId, messageIds);
+        return true;
+      });
     },
 
     async publish(lease, phase) {
@@ -321,4 +351,32 @@ export function createDrizzleRunAuthority(
       if (!deferUntilDrizzleCommit(unlock)) await unlock();
     },
   };
+
+  async function writeInboxConsumption(
+    threadId: ThreadId,
+    turnId: string,
+    messageIds: readonly string[],
+  ) {
+    const [turn] = await db_()
+      .select({ metadata: schema.turns.metadata, threadId: schema.turns.threadId })
+      .from(schema.turns)
+      .where(eq(schema.turns.id, turnId))
+      .limit(1);
+    if (!turn) throw new Error(`Bound assistant turn not found: ${turnId}`);
+    if (turn.threadId !== threadId)
+      throw new Error("Bound assistant turn belongs to another thread");
+    const metadata =
+      turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
+        ? turn.metadata
+        : {};
+    await db_()
+      .update(schema.turns)
+      .set({
+        metadata: {
+          ...metadata,
+          inboxConsumption: { messageIds: [...messageIds] },
+        },
+      })
+      .where(and(eq(schema.turns.id, turnId), eq(schema.turns.threadId, threadId)));
+  }
 }

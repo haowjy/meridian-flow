@@ -82,6 +82,8 @@ export async function drainInbox(input: {
    * iteration, so adoption is where its reads land.
    */
   prepareAdoptedTurn?: (turn: Turn, blocks: Block[]) => Promise<AdoptedTurnPreparation>;
+  /** Records this exact selection before any external reference/skill preparation. */
+  adoptInboxBatch?: (batch: readonly InboxMessage[]) => Promise<void>;
   /**
    * Resolves the request-only skill bodies a writer turn activated, read back
    * off its persisted metadata. Applied to the adopted message the turn renders,
@@ -90,6 +92,7 @@ export async function drainInbox(input: {
   loadActivatedSkillBodies?: (turn: Turn) => Promise<readonly ActivatedSkillBody[]>;
 }): Promise<InboxDrain> {
   const batch = await input.inbox.claimPending(input.threadId);
+  if (batch.length > 0) await input.adoptInboxBatch?.(batch);
   const renderable: InboxMessage[] = [];
   const fresh: InboxMessage[] = [];
   const adoptedTurns: Turn[] = [];

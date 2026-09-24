@@ -1,10 +1,10 @@
 /**
  * PendingInboxTray — the composer-attached strip for messages queued but not yet
- * delivered to a model request.
+ * selected for a response by a live run.
  *
- * Anchored near the composer so a queued message is visible before delivery; it
- * clears the moment the drain acks the batch (the `meridian.inbox.changed`
- * frame carries the reduced inbox). Reads `ThreadPendingInbox` from server
+ * Anchored near the composer so a waiting writer message is visible until run
+ * adoption (the `meridian.inbox.changed` frame carries the classified inbox).
+ * Reads `ThreadPendingInbox` from server
  * truth — never the optimistic turn.
  */
 import { Trans } from "@lingui/react/macro";

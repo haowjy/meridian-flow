@@ -13,6 +13,8 @@ export async function sweepWakes(input: {
   inbox: Pick<Inbox, "pendingMessageThreads">;
   authority: Pick<RunAuthority, "holder">;
   runStarter: RunStarter;
+  /** Refreshes connected projections after stale consumption becomes awaiting-run. */
+  refreshPending?: (threadId: import("@meridian/contracts/runtime").ThreadId) => Promise<void>;
   limit: number;
 }): Promise<void> {
   const threadIds = await input.inbox.pendingMessageThreads(input.limit);
@@ -22,6 +24,10 @@ export async function sweepWakes(input: {
       await input.runStarter.start(threadId);
     } catch {
       // Best-effort recovery: one thread's failure must not strand the rest.
+    } finally {
+      if ((await input.authority.holder(threadId)) === null) {
+        await input.refreshPending?.(threadId).catch(() => undefined);
+      }
     }
   }
 }

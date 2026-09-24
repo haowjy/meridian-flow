@@ -304,7 +304,16 @@ facet.
   iterations. This keeps the already-sent request prefix stable without
   changing the frozen system prompt or persisting notices into the turn graph.
 - **Inbox drain is batch-atomic and the exit is dead-check-atomic** — before every
-  request the loop claims the whole pending batch in one `claimPending`, persists
+  request the loop claims the whole pending batch in one `claimPending` and
+  records those exact ids as `assistant.metadata.inboxConsumption` while the live
+  lease is bound to that assistant. The generic `ThreadPendingInbox` projection
+  joins unacknowledged inbox rows to the live lease and bound assistant metadata
+  in one statement: no/unbound lease is `awaiting_run`, an adopted id is
+  `consuming`, and an excluded id behind an initialized live assistant is
+  `waiting`. Only writer `waiting` entries appear in the composer tray; accepted
+  `awaiting_run` writer turns show inline “Waiting for response”. Adoption,
+  acknowledgement, and release publish the same classified full-replace view
+  under the per-thread inbox lock. The loop persists
   each `message` as a user-role turn at the tail (its turn and block ids are the
   durable inbox message ids, so redelivery after a crash between the `message` append
   and the ack reuses the rows instead of duplicating), renders `message`s as trailing
