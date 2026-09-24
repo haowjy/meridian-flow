@@ -1,5 +1,10 @@
 /** Controller recovery fences and mid-run queue admission subscription continuity. */
-import { EventType, type RetireAdmissionResult } from "@meridian/contracts/protocol";
+import {
+  type AdmissionLookup,
+  EventType,
+  type RetireAdmissionResult,
+  type SendMessageResponse,
+} from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import {
   defaultSendResponse,
@@ -8,6 +13,36 @@ import {
 } from "./test-support/ThreadRunScenario";
 
 describe("ThreadRunController write outcomes", () => {
+  it("does not revive old recovery or submission after reactivating the same session object", async () => {
+    const lookup = scenarioGate<AdmissionLookup>();
+    const append = scenarioGate<SendMessageResponse>();
+    const scenario = new ThreadRunScenario({
+      lookup: () => lookup.promise,
+      append: () => append.promise,
+    });
+    const session = {};
+    scenario.controller.beginRecoverySession(session);
+    const recovered = scenario.controller.lookupSubmission("thread_1", "sub-1", {}, session);
+    const submitted = scenario.submit("hello");
+    scenario.controller.dispose();
+    scenario.controller.activate();
+    scenario.controller.beginRecoverySession(session);
+    lookup.resolve({
+      kind: "already-accepted",
+      threadId: "thread_1",
+      submissionId: "sub-1",
+      userTurnId: "turn-user",
+      assistantTurnId: "turn-assistant",
+      resumeAfterSeq: "42",
+      snapshotFloorNextSeq: "43",
+    });
+    append.resolve(defaultSendResponse());
+    await expect(recovered).resolves.toMatchObject({ kind: "ambiguous" });
+    await expect(submitted).resolves.toMatchObject({ kind: "ambiguous" });
+    expect(scenario.activeSubscription()).toBeUndefined();
+    scenario.controller.dispose();
+  });
+
   it("does not acknowledge or start a run when a recovery retire settles after its session ends", async () => {
     const gate = scenarioGate<RetireAdmissionResult>();
     const scenario = new ThreadRunScenario({ retire: () => gate.promise });
@@ -192,6 +227,23 @@ describe("controller gap-result ownership", () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(scenario.snapshotRequests).toHaveLength(1);
     expect(scenario.activeSubscription()).toBeUndefined();
+  });
+
+  it("aborts unresolved gap requests on run replacement and disposal", () => {
+    const scenario = new ThreadRunScenario({
+      snapshot: () => new Promise(() => undefined),
+    });
+    scenario.resume({ expectedTurnId: "run-1" });
+    scenario.reportGap();
+    expect(scenario.snapshotSignals).toHaveLength(1);
+    expect(scenario.snapshotSignals[0]?.aborted).toBe(false);
+    scenario.resume({ expectedTurnId: "run-2" });
+    expect(scenario.snapshotSignals[0]?.aborted).toBe(true);
+    scenario.reportGap();
+    expect(scenario.snapshotSignals).toHaveLength(2);
+    expect(scenario.snapshotSignals[1]?.aborted).toBe(false);
+    scenario.controller.dispose();
+    expect(scenario.snapshotSignals[1]?.aborted).toBe(true);
   });
 
   it("keeps real gap network errors on the existing run-failure path", async () => {

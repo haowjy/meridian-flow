@@ -180,6 +180,7 @@ export class ThreadRunScenario {
   readonly transport = new ScenarioThreadTransport();
   readonly appendRequests: AppendRequest[] = [];
   readonly snapshotRequests: string[] = [];
+  readonly snapshotSignals: AbortSignal[] = [];
   readonly lookupRequests: Array<{ threadId: string; submissionId: string }> = [];
   readonly retireRequests: Array<{ threadId: string; submissionId: string }> = [];
   readonly controller: ThreadRunController;
@@ -225,8 +226,9 @@ export class ThreadRunScenario {
           }
         );
       },
-      getThreadSnapshotFn: async ({ data }) => {
+      getThreadSnapshotFn: async ({ data, signal }) => {
         this.snapshotRequests.push(data.threadId);
+        if (signal) this.snapshotSignals.push(signal);
         return this.snapshot(data.threadId);
       },
     });

@@ -765,10 +765,11 @@ describe("stale acquisition and missing targets", () => {
     await vi.waitFor(() => expect(harness.snapshotRequest).toHaveBeenCalledTimes(1));
     await act(async () => root.unmount());
     controller.dispose();
+    expect(client.getQueryState(threadQueryKeys.snapshot("thread-1"))).toBeDefined();
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    expect(harness.snapshotRequest).toHaveBeenCalledTimes(1);
     client.clear();
     host.remove();
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(harness.snapshotRequest).toHaveBeenCalledTimes(1);
   });
 
   it("invalidates a missing addressed target without making a streaming turn", async () => {
