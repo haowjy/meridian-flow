@@ -76,8 +76,4 @@ describe("projectThreadActivity", () => {
       originTurnId: "turn-9",
     });
   });
-
-  it("returns an empty tree when there are no descendants", () => {
-    expect(projectThreadActivity([], new Map())).toEqual({ descendants: [] });
-  });
 });

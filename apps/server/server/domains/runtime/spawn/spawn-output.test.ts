@@ -3,30 +3,6 @@ import { describe, expect, it } from "vitest";
 import { spawnHelperCardProps, spawnOutputForTranscript } from "./spawn-output.js";
 
 describe("spawnOutputForTranscript", () => {
-  it("drops cost and threadId from a completed report while keeping the handle", () => {
-    const output = spawnOutputForTranscript({
-      status: "completed",
-      report: {
-        handle: "p1",
-        threadId: "child-1",
-        summary: "Stated that 2+2=4.",
-        payload: { answer: 4 },
-        costMillicredits: 69,
-      },
-    });
-
-    expect(output).toEqual({
-      status: "completed",
-      report: {
-        handle: "p1",
-        summary: "Stated that 2+2=4.",
-        payload: { answer: 4 },
-      },
-    });
-    expect(JSON.stringify(output)).not.toContain("cost");
-    expect(JSON.stringify(output)).not.toContain("threadId");
-  });
-
   it("builds a running helper card then a body-free completed one", () => {
     const running = spawnHelperCardProps({
       parentTurnId: "turn-1",
@@ -47,6 +23,7 @@ describe("spawnOutputForTranscript", () => {
           threadId: "child-1",
           summary: "Holds.",
           payload: { verdict: "ok" },
+          artifacts: [{ type: "object", uri: "scratch://outline.md", label: "Outline" }],
           costMillicredits: 9,
         },
       },
@@ -57,38 +34,8 @@ describe("spawnOutputForTranscript", () => {
     });
     expect(done).not.toHaveProperty("summary");
     expect(done).not.toHaveProperty("payload");
+    expect(done).not.toHaveProperty("artifacts");
     expect(JSON.stringify(done)).not.toContain("cost");
-  });
-
-  it("keeps report artifacts off the completed card", () => {
-    const done = spawnHelperCardProps({
-      agent: "critic",
-      parentTurnId: "turn-1",
-      output: {
-        status: "completed",
-        report: {
-          threadId: "child-1",
-          summary: "Wrote the outline.",
-          artifacts: [{ type: "object", uri: "scratch://outline.md", label: "Outline" }],
-          costMillicredits: 5,
-        },
-      },
-    });
-
-    expect(done.artifacts).toBeUndefined();
-    expect(JSON.stringify(done)).not.toContain("cost");
-  });
-
-  it("omits artifacts when the completed report has none", () => {
-    const done = spawnHelperCardProps({
-      parentTurnId: "turn-1",
-      output: {
-        status: "completed",
-        report: { threadId: "child-1", summary: "No files.", costMillicredits: 2 },
-      },
-    });
-
-    expect(done.artifacts).toBeUndefined();
   });
 
   it("keeps childThreadId on a failed card and titles from description", () => {

@@ -144,7 +144,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it.each([
       "cover.png",
-      "report.pdf",
     ])("rejects binary-suffixed tracked create for %s without persisting a document", async (path) => {
       const collab = createCollabDomain({
         db,

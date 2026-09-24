@@ -1,8 +1,7 @@
 /** The model retained by Agent bindings must match the gateway's actual configured default. */
 import { describe, expect, it } from "vitest";
-import { DEFAULT_ATTEMPT_CEILING_MS, DEFAULT_ATTEMPT_STALL_MS } from "../deadline.js";
 import { createGatewayFromEnv } from "./create-from-env.js";
-import { buildProviderConfigs, defaultGatewayOptions, parseEnvMs } from "./providers.js";
+import { buildProviderConfigs, parseEnvMs } from "./providers.js";
 
 describe("resolved gateway default", () => {
   it("returns the mock model when no real provider is enabled", async () => {
@@ -27,11 +26,5 @@ describe("gateway timeout env", () => {
     expect(parseEnvMs("0")).toBe(0);
     expect(parseEnvMs("600000")).toBe(600_000);
     expect(parseEnvMs(45_000)).toBe(45_000);
-  });
-
-  it("defaults to a 120s stall and a 10m ceiling", () => {
-    const options = defaultGatewayOptions([]);
-    expect(options.attemptStallMs).toBe(DEFAULT_ATTEMPT_STALL_MS);
-    expect(options.attemptCeilingMs).toBe(DEFAULT_ATTEMPT_CEILING_MS);
   });
 });

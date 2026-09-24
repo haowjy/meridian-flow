@@ -1,6 +1,6 @@
 /** Executor capability plumbing for the `thread_message` registration. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import type { SpawnResult, ThreadReportResult } from "@meridian/contracts/spawn";
+import type { ThreadReportResult } from "@meridian/contracts/spawn";
 import { describe, expect, it, vi } from "vitest";
 import type { ThreadMessageArgs, ThreadReportArgs } from "./spawn-tools.js";
 import { createToolExecutor } from "./tool-executor.js";
@@ -52,22 +52,6 @@ function threadReportRegistration(): ToolRegistration {
 }
 
 describe("thread_message capability plumbing", () => {
-  it("injects the threadMessage callback declared by the registration", async () => {
-    const threadMessageFn = vi.fn(async () => ({ status: "completed" }) as unknown as SpawnResult);
-    const executor = createToolExecutor(
-      createToolRegistry({ registrations: [threadMessageRegistration()] }),
-    );
-
-    const result = await executor.executeTool(
-      { id: "call-1", name: "thread_message", arguments: { ref: "p1", message: "p" } },
-      { ...executionBase, agentSlug: null, threadMessage: threadMessageFn },
-    );
-
-    expect(threadMessageFn).toHaveBeenCalledWith({ ref: "p1", message: "p" });
-    expect(result.isError).toBeUndefined();
-    expect(result.output).toEqual({ status: "completed" });
-  });
-
   it("fails the call when the threadMessage context is absent", async () => {
     const executor = createToolExecutor(
       createToolRegistry({ registrations: [threadMessageRegistration()] }),

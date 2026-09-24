@@ -27,6 +27,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const USER_ID = "00000000-0000-4000-8000-000000000358";
     const db = createDb(DATABASE_URL, { max: 4 });
     const lockClient = postgres(DATABASE_URL, { max: 1 });
+    const probeClient = postgres(DATABASE_URL, { max: 1 });
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [schema.users]);
@@ -36,6 +37,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     afterAll(async () => {
       await db.$client.end();
       await lockClient.end();
+      await probeClient.end();
     });
 
     function createBoundCollab() {
@@ -87,24 +89,49 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(schema.projects);
       expect(project?.ready).toBe(true);
 
-      await lockClient`
-        select pg_advisory_lock(hashtextextended(${USER_ID}, 0::bigint))
-      `;
-      const warmCall = coldRepository.ensureDefaultBootstrapReady(USER_ID as never);
+      let lockHeld = false;
+      let probeLockAcquired = false;
       try {
-        const outcome = await Promise.race([
-          warmCall.then(() => "completed" as const),
-          new Promise<"blocked">((resolve) => setTimeout(() => resolve("blocked"), 250)),
-        ]);
-        expect(outcome).toBe("completed");
-      } finally {
         await lockClient`
-          select pg_advisory_unlock(hashtextextended(${USER_ID}, 0::bigint))
+          select pg_advisory_lock(hashtextextended(${USER_ID}, 0::bigint))
         `;
-      }
+        lockHeld = true;
+        const [competingLock] = await probeClient`
+          select pg_try_advisory_lock(hashtextextended(${USER_ID}, 0::bigint)) as acquired
+        `;
+        probeLockAcquired = competingLock?.acquired === true;
+        expect(competingLock?.acquired).toBe(false);
 
-      await expect(warmCall).resolves.toBe(true);
-      expect(seedCalls).toBe(1);
+        const warmCall = coldRepository.ensureDefaultBootstrapReady(USER_ID as never);
+        let watchdog: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            warmCall,
+            new Promise<never>((_, reject) => {
+              watchdog = setTimeout(
+                () => reject(new Error("Ready bootstrap waited on advisory lock")),
+                10_000,
+              );
+            }),
+          ]);
+        } finally {
+          if (watchdog) clearTimeout(watchdog);
+        }
+
+        await expect(warmCall).resolves.toBe(true);
+        expect(seedCalls).toBe(1);
+      } finally {
+        if (probeLockAcquired) {
+          await probeClient`
+            select pg_advisory_unlock(hashtextextended(${USER_ID}, 0::bigint))
+          `;
+        }
+        if (lockHeld) {
+          await lockClient`
+            select pg_advisory_unlock(hashtextextended(${USER_ID}, 0::bigint))
+          `;
+        }
+      }
     });
 
     it("isolates atomic bootstrap failure and provisions cleanly on a later request", async () => {

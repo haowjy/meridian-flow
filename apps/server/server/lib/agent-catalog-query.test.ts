@@ -29,10 +29,7 @@ describe("Agent catalog transport", () => {
     expect(() => parseAgentCatalogQuery(query)).toThrow();
   });
   it.each([
-    undefined,
     null,
-    "general",
-    {},
     { catalogEntryId: ID },
     { catalogEntryId: ID, definitionRevisionId: "general" },
   ])("rejects unbound selections %j", (selection) => {

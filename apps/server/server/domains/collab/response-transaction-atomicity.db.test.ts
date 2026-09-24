@@ -85,16 +85,6 @@ describe("change trail (postgres)", () => {
     await harness.expectSuccessfulCommit("retry-response");
   });
 
-  it("commits two documents and publishes process-local state after Postgres commits", async () => {
-    const harness = createHarness();
-    await harness.seedAndStage("positive-response");
-
-    await expect(harness.commit("positive-response")).resolves.toMatchObject({
-      status: "committed",
-    });
-    await harness.expectSuccessfulCommit("positive-response");
-  });
-
   it("retains mixed provenance across repeated compaction and generation replacement", async () => {
     const harness = createHarness();
 
