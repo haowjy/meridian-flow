@@ -66,7 +66,7 @@ export function ChatLandingScreen({ projectId, onOpenThread }: ChatLandingScreen
         <div className="flex flex-col gap-6">
           <section>
             <div className="mx-auto w-full max-w-3xl">
-              <h1 className="home-composer-heading text-headline-section">
+              <h1 className="chat-landing-heading text-headline-section">
                 <Trans>What will you write next?</Trans>
               </h1>
               <p className="mt-2 text-body text-muted-foreground">

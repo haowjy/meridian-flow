@@ -13,7 +13,7 @@ import { AccountMenu } from "@/features/account/AccountMenu";
 import { formatRelativeTime } from "@/lib/date-groups";
 import { displayProjectTitle } from "@/lib/project-title";
 
-const COVER_TONES = ["bg-secondary", "bg-chip-primary-bg", "bg-muted", "bg-card"] as const;
+const COVER_TONES = ["bg-secondary", "bg-card"] as const;
 
 export function ProjectLibrary() {
   const { projects, isError, refetch } = useProjectListStatus();

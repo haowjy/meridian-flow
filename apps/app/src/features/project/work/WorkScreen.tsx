@@ -163,7 +163,7 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
                 <Trans>Active Work</Trans>
               </h2>
               {active.length ? (
-                <ul className="grid gap-4 @2xl/project-home:grid-cols-2">
+                <ul className="grid gap-4 @2xl/project-screen:grid-cols-2">
                   {active.map((work) => (
                     <li key={work.id}>
                       <WorkCard
@@ -221,7 +221,7 @@ export function WorkCollectionScreen({ projectId, routeCommands }: WorkScreenPro
                   </button>
                 </h2>
                 {archivedOpen ? (
-                  <ul className="mt-3 grid gap-4 @2xl/project-home:grid-cols-2">
+                  <ul className="mt-3 grid gap-4 @2xl/project-screen:grid-cols-2">
                     {archived.map((work) => (
                       <li key={work.id}>
                         <WorkCard
@@ -329,7 +329,7 @@ function LoadingCards() {
     <div
       role="status"
       aria-label={t`Loading Work`}
-      className="grid gap-4 @2xl/project-home:grid-cols-2"
+      className="grid gap-4 @2xl/project-screen:grid-cols-2"
     >
       {[0, 1].map((key) => (
         <Card key={key} className="gap-3 px-5 py-5">

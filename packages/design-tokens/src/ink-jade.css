@@ -28,8 +28,8 @@
 
 /* Package-private tone atoms — ONLY for values shared by several role tokens
    (a value with one role stays literal in that role). Not @theme: atoms must
-   not generate utilities, and dark mode overrides the semantic `--color-*`
-   roles, never these. Consumers use role tokens only. */
+   not generate utilities. The dark theme may re-point these atoms along
+   with semantic roles; consumers still use role tokens only. */
 :root {
   /* Raised cards, bubbles, field fills. */
   --ink-jade-lift: oklch(0.978 0.012 92);
