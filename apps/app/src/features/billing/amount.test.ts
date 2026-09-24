@@ -17,12 +17,6 @@ describe("parseUsd", () => {
   });
 });
 
-describe("formatPreset", () => {});
-
-describe("toInputValue", () => {});
-
-describe("equalsUsd", () => {});
-
 describe("validateAmount", () => {
   const bounds = { minUsd: "5.00", maxUsd: "500.00" };
 
