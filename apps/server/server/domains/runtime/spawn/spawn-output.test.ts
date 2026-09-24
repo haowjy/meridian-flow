@@ -23,6 +23,7 @@ describe("spawnOutputForTranscript", () => {
           threadId: "child-1",
           summary: "Holds.",
           payload: { verdict: "ok" },
+          artifacts: [{ type: "object", uri: "scratch://outline.md", label: "Outline" }],
           costMillicredits: 9,
         },
       },
@@ -33,27 +34,7 @@ describe("spawnOutputForTranscript", () => {
     });
     expect(done).not.toHaveProperty("summary");
     expect(done).not.toHaveProperty("payload");
-    expect(JSON.stringify(done)).not.toContain("cost");
-  });
-
-  it("keeps report artifacts off the completed card", () => {
-    const done = spawnHelperCardProps({
-      agent: "critic",
-      parentTurnId: "turn-1",
-      output: {
-        status: "completed",
-        report: {
-          threadId: "child-1",
-          summary: "Wrote the outline.",
-          artifacts: [{ type: "object", uri: "scratch://outline.md", label: "Outline" }],
-          costMillicredits: 5,
-        },
-      },
-    });
-
-    expect(done).toMatchObject({ agentName: "Critic", status: "completed" });
     expect(done).not.toHaveProperty("artifacts");
-    expect(done).not.toHaveProperty("summary");
     expect(JSON.stringify(done)).not.toContain("cost");
   });
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { KeyedMutex } from "./keyed-mutex.js";
 
@@ -15,6 +15,9 @@ function gate() {
 }
 
 describe("KeyedMutex", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
   it("serializes operations for the same key", async () => {
     const mutex = new KeyedMutex();
     const order: string[] = [];
@@ -115,6 +118,7 @@ describe("KeyedMutex", () => {
       ).rejects.toThrow("Timed out acquiring lock");
       heldGate.release();
       await held;
+      await mutex.run("k", async () => {});
       expect(invoked).toBe(false);
     } finally {
       heldGate.release();
@@ -123,6 +127,7 @@ describe("KeyedMutex", () => {
   });
 
   it("does not time out a callback after it acquires the lock", async () => {
+    vi.useFakeTimers();
     const mutex = new KeyedMutex();
     const callbackGate = gate();
     const operation = mutex.run(
@@ -134,13 +139,26 @@ describe("KeyedMutex", () => {
       { timeoutMs: 5 },
     );
 
+    let outcome: "pending" | "resolved" | "rejected" = "pending";
+    void operation.then(
+      () => {
+        outcome = "resolved";
+      },
+      () => {
+        outcome = "rejected";
+      },
+    );
     try {
       await callbackGate.entered;
+      await vi.advanceTimersByTimeAsync(10);
+      expect(outcome).toBe("pending");
       callbackGate.release();
       await expect(operation).resolves.toBeUndefined();
+      expect(outcome).toBe("resolved");
     } finally {
       callbackGate.release();
       await Promise.allSettled([operation]);
+      vi.useRealTimers();
     }
   });
 });

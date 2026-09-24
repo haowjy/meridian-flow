@@ -89,35 +89,49 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .from(schema.projects);
       expect(project?.ready).toBe(true);
 
-      await lockClient`
-        select pg_advisory_lock(hashtextextended(${USER_ID}, 0::bigint))
-      `;
-      const [competingLock] = await probeClient`
-        select pg_try_advisory_lock(hashtextextended(${USER_ID}, 0::bigint)) as acquired
-      `;
-      expect(competingLock?.acquired).toBe(false);
-
-      const warmCall = coldRepository.ensureDefaultBootstrapReady(USER_ID as never);
-      let watchdog: ReturnType<typeof setTimeout> | undefined;
+      let lockHeld = false;
+      let probeLockAcquired = false;
       try {
-        await Promise.race([
-          warmCall,
-          new Promise<never>((_, reject) => {
-            watchdog = setTimeout(
-              () => reject(new Error("Ready bootstrap waited on advisory lock")),
-              10_000,
-            );
-          }),
-        ]);
-      } finally {
-        if (watchdog) clearTimeout(watchdog);
         await lockClient`
-          select pg_advisory_unlock(hashtextextended(${USER_ID}, 0::bigint))
+          select pg_advisory_lock(hashtextextended(${USER_ID}, 0::bigint))
         `;
-      }
+        lockHeld = true;
+        const [competingLock] = await probeClient`
+          select pg_try_advisory_lock(hashtextextended(${USER_ID}, 0::bigint)) as acquired
+        `;
+        probeLockAcquired = competingLock?.acquired === true;
+        expect(competingLock?.acquired).toBe(false);
 
-      await expect(warmCall).resolves.toBe(true);
-      expect(seedCalls).toBe(1);
+        const warmCall = coldRepository.ensureDefaultBootstrapReady(USER_ID as never);
+        let watchdog: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            warmCall,
+            new Promise<never>((_, reject) => {
+              watchdog = setTimeout(
+                () => reject(new Error("Ready bootstrap waited on advisory lock")),
+                10_000,
+              );
+            }),
+          ]);
+        } finally {
+          if (watchdog) clearTimeout(watchdog);
+        }
+
+        await expect(warmCall).resolves.toBe(true);
+        expect(seedCalls).toBe(1);
+      } finally {
+        if (probeLockAcquired) {
+          await probeClient`
+            select pg_advisory_unlock(hashtextextended(${USER_ID}, 0::bigint))
+          `;
+        }
+        if (lockHeld) {
+          await lockClient`
+            select pg_advisory_unlock(hashtextextended(${USER_ID}, 0::bigint))
+          `;
+        }
+      }
     });
 
     it("isolates atomic bootstrap failure and provisions cleanly on a later request", async () => {
