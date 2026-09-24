@@ -252,9 +252,15 @@ facet.
 
 ## Cost, billing, and permissions
 
-- Tool permissions are per-turn: `projectToolPolicy` → permission gate
-  (`check` name + per-tool command set) → `persistPermissionDenial`. Dispatch
-  does not apply policy. Direct `toolExecutor.executeTool` does not apply policy.
+- Tool policy is per-turn: `projectToolPolicy` → permission gate (`check` name,
+  then command) → `persistToolRejection`. A missing, non-string, or unknown
+  command is `invalid_arguments`; a recognized but disabled command or tool is
+  `permission_denied`. Dispatch does not apply policy. Direct
+  `toolExecutor.executeTool` does not apply policy.
+- Document reads are advertised as `read({ command: "read", path: "..." })`;
+  both fields are required. `read({ command: "diff" })` inspects the turn's
+  folded edit result instead of reading a path. The shared document-command
+  schema does not make `write(command: "read")` a model-facing read call.
 - Model-call cost gating is not a `PermissionGate` method. The runtime uses
   `CreditLedger` plus `TreeBudget` (for spawn trees) through `turn-accounting.ts`
   and `ChildRunCoordinator`.
