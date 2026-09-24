@@ -79,8 +79,8 @@ msgstr ""
 
 #. placeholder {0}: matches.length
 #: src/features/home/ProjectLibrary.tsx
-msgid "{0, plural, one {# project} other {# projects}}"
-msgstr ""
+#~ msgid "{0, plural, one {# project} other {# projects}}"
+#~ msgstr ""
 
 #. placeholder {0}: count ?? 0
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
@@ -408,8 +408,8 @@ msgid "Alignment applies to paragraphs, headings, and tables."
 msgstr ""
 
 #: src/features/home/ProjectLibrary.tsx
-msgid "All projects"
-msgstr ""
+#~ msgid "All projects"
+#~ msgstr ""
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "All Work"
@@ -547,8 +547,8 @@ msgid "Bold"
 msgstr ""
 
 #: src/features/home/ProjectLibrary.tsx
-msgid "Books, series, and story worlds in one place."
-msgstr ""
+#~ msgid "Books, series, and story worlds in one place."
+#~ msgstr ""
 
 #: src/components/app/composer/placeholders.ts
 msgid "Brainstorm away"
@@ -2306,8 +2306,8 @@ msgid "No plans available."
 msgstr ""
 
 #: src/features/home/ProjectLibrary.tsx
-msgid "No projects match your search."
-msgstr ""
+#~ msgid "No projects match your search."
+#~ msgstr ""
 
 #: src/features/home/ProjectLibrary.tsx
 msgid "No projects yet"
@@ -2594,6 +2594,10 @@ msgstr ""
 #: src/features/home/ProjectLibrary.tsx
 #~ msgid "projects"
 #~ msgstr ""
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Projects"
+msgstr ""
 
 #: src/features/home/ProjectLibrary.tsx
 msgid "Projects couldn’t load."
@@ -2985,8 +2989,8 @@ msgid "Search documents or paste a web link"
 msgstr ""
 
 #: src/features/home/ProjectLibrary.tsx
-msgid "Search projects"
-msgstr ""
+#~ msgid "Search projects"
+#~ msgstr ""
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Search Work"

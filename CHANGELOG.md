@@ -9,7 +9,7 @@
 
 ### Changed
 
-- Use one existing card surface for all title-only project covers. Match Create project and New document actions to New Work's compact desktop button and 44px coarse-pointer target. Remove the dead account Home width and rename the still-used project screen width and container.
+- Use one card surface and radius for title-only project covers. Show four per desktop row; only the cover opens a project, while its footer title and edit recency sit on one selectable line. Remove library search, explanatory copy, divider, and list count; keep Create project at the top. Match creation buttons to New Work's compact desktop size and 44px coarse-pointer target. Remove the dead account Home width and rename the still-used project screen width and container.
 - Remove the unused account project-home redirect endpoint and its wire contract; drop the unconsumed last-active-project preference from user persistence.
 - Open a searchable project library at the signed-in base URL. Create a named project from a separate destination; open any project directly in Chat. Remove the account Home composer and quick-chat entry.
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
