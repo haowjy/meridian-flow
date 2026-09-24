@@ -31,7 +31,10 @@ instead of the N:1 `threads.workId` column.
   never selects a latest report or reads transcript tails. Runtime terminal A
   joins the turn/journal write and finalizes this row; parent-first publication
   B consumes its pending state separately. An admitted row alone does not
-  imply a terminal result.
+  imply a terminal result. The adapter selects payload as PostgreSQL `::text`
+  and parses once; SQL `NULL` means absent, while JSONB `null` is present. See
+  the [database JSONB contract](../../../../../../packages/database/.context/CONTEXT.md)
+  for the storage rationale.
 - **Historical block replacement** — `block.updated` carries a full existing custom block through the read-model projector and AG-UI custom upsert frame. Unlike insertion, it never advances the active frontier or closes open text/reasoning segments. `replaceExisting` retains id, turn and sequence and rejects a missing block; publisher B must not re-create a vanished card.
 - **Thread activity read** — `domain/thread-activity.ts` composes
   `listDescendants` (the *viewed* thread's own subtree, walked down
