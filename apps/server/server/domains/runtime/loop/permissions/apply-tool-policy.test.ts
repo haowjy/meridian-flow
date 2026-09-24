@@ -1,7 +1,10 @@
 /** Name+command deny is the permission gate. */
+
+import { WriteCommandSchema } from "@meridian/agent-edit/integration";
 import { describe, expect, it } from "vitest";
+import { WorkCommandSchema } from "../../tools/core-tools.js";
 import { permissionGateFromToolPolicy } from "./apply-tool-policy.js";
-import { projectToolPolicy } from "./project-tool-policy.js";
+import { commandSetForTool, projectToolPolicy } from "./project-tool-policy.js";
 
 const CRITIC_MAP = {
   read: "allow",
@@ -54,5 +57,23 @@ describe("permissionGateFromToolPolicy", () => {
       kind: "permission_denied",
       reason: 'Tool "write" is not enabled.',
     });
+  });
+
+  it("keeps recognized command policy in sync with canonical schemas", () => {
+    const policy = projectToolPolicy({ tools: { read: "allow", edit: "allow" } });
+    const writeSchemaCommands = WriteCommandSchema.options.map(
+      (option) => option.shape.command.value,
+    );
+    const workSchemaCommands = WorkCommandSchema.options.map(
+      (option) => option.shape.command.value,
+    );
+    const readCommands = commandSetForTool(policy, "read") ?? new Set();
+    const writeCommands = commandSetForTool(policy, "write") ?? new Set();
+    const allDocumentCommands = new Set([...readCommands, ...writeCommands]);
+
+    expect([...allDocumentCommands].sort()).toEqual([...writeSchemaCommands].sort());
+    expect([...(commandSetForTool(policy, "work") ?? [])].sort()).toEqual(
+      [...workSchemaCommands].sort(),
+    );
   });
 });

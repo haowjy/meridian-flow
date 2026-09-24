@@ -1,17 +1,11 @@
 /** Projects compiled Mars tool policy onto Flow advertise and dispatch policy. */
+
+import type { WriteCommandName as CanonicalWriteCommandName } from "@meridian/agent-edit/integration";
 import type { ToolPolicy } from "@meridian/contracts/agents";
+import type { WorkCommand } from "../../tools/core-tools.js";
 
-export type WriteCommandName =
-  | "read"
-  | "diff"
-  | "create"
-  | "insert"
-  | "replace"
-  | "delete"
-  | "undo"
-  | "redo";
-
-export type WorkCommandName = "list" | "show" | "switch" | "create" | "update" | "delete";
+export type WriteCommandName = CanonicalWriteCommandName;
+export type WorkCommandName = WorkCommand["command"];
 
 export interface EffectiveToolPolicy {
   tools: ReadonlySet<string>;

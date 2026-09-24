@@ -833,7 +833,7 @@ async function settleCancelledResponse(input: {
   return { events, turn: currentAssistantTurn };
 }
 
-async function persistPermissionDenial(input: {
+async function persistToolRejection(input: {
   deps: OrchestratorDeps;
   threadId: ThreadId;
   turn: Turn;
@@ -847,18 +847,18 @@ async function persistPermissionDenial(input: {
   blockSeq: number;
 }): Promise<{ block: Block; nextBlockSeq: number; events: OrchestratorEvent[] }> {
   let blockSeq = input.blockSeq;
-  const denialOutput = {
+  const rejectionOutput = {
     error: input.decision.kind,
     reason: input.decision.reason,
   };
-  const persistedDenial = await persistAndAppendEvents(input.deps, input.threadId, async () => {
+  const persistedRejection = await persistAndAppendEvents(input.deps, input.threadId, async () => {
     const block = contentForBlockInput({
       turnId: input.turn.id,
       blockType: "tool_result",
       sequence: blockSeq++,
       content: {
         toolCallId: input.call.id,
-        output: denialOutput,
+        output: rejectionOutput,
         isError: true,
       },
       status: "complete",
@@ -881,13 +881,17 @@ async function persistPermissionDenial(input: {
         {
           type: "tool.result",
           toolCallId: input.call.id,
-          output: denialOutput,
+          output: rejectionOutput,
           isError: true,
         },
       ],
     };
   });
-  return { block: persistedDenial.result, nextBlockSeq: blockSeq, events: persistedDenial.events };
+  return {
+    block: persistedRejection.result,
+    nextBlockSeq: blockSeq,
+    events: persistedRejection.events,
+  };
 }
 
 async function persistUncommittedWriteResult(input: {
@@ -1584,7 +1588,7 @@ async function* generateEvents(
             // so the model sees the rejection in the next turn's context build.
             const decision = built.permissionGate.check(call.name, call.arguments);
             if (!decision.allowed) {
-              const persistedDenial = await persistPermissionDenial({
+              const persistedRejection = await persistToolRejection({
                 deps,
                 threadId: input.threadId,
                 turn: currentAssistantTurn,
@@ -1592,9 +1596,9 @@ async function* generateEvents(
                 decision: { ...decision, category: "tool_denied" },
                 blockSeq,
               });
-              blockSeq = persistedDenial.nextBlockSeq;
-              allBlocks.push(persistedDenial.block);
-              yield* persistedDenial.events;
+              blockSeq = persistedRejection.nextBlockSeq;
+              allBlocks.push(persistedRejection.block);
+              yield* persistedRejection.events;
               continue;
             }
 

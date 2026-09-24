@@ -6,9 +6,13 @@ import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
 } from "../../../threads/index.js";
-import type { Gateway, GenerateResult, StreamEvent } from "../../gateway/index.js";
-import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
-import type { ToolHandlerContext, ToolRegistration } from "../../tools/types.js";
+import type { Gateway, GenerateRequest, GenerateResult, StreamEvent } from "../../gateway/index.js";
+import {
+  type CoreToolHandlers,
+  createCoreToolRegistrations,
+  createToolExecutor,
+  createToolRegistry,
+} from "../../tools/index.js";
 import { createOrchestrator } from "../orchestrator.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
@@ -51,37 +55,23 @@ describe("read command recovery through the runtime loop", () => {
     });
 
     const dispatched: unknown[] = [];
-    const registration: ToolRegistration = {
-      source: "core",
-      definition: {
-        type: "function",
-        name: "read",
-        description: 'Use `{ "command": "read", "path": "..." }`.',
-        inputSchema: {
-          type: "object",
-          oneOf: [
-            {
-              type: "object",
-              properties: { command: { type: "string", const: "read" }, path: { type: "string" } },
-              required: ["command", "path"],
-            },
-            {
-              type: "object",
-              properties: { command: { type: "string", const: "diff" } },
-              required: ["command"],
-            },
-          ],
-        },
+    const handlers: CoreToolHandlers = {
+      read: async (input: Parameters<CoreToolHandlers["read"]>[0]) => {
+        dispatched.push(input);
+        return { content: "chapter text" };
       },
-      execution: {
-        type: "server",
-        async handler(input: unknown, _context: ToolHandlerContext) {
-          dispatched.push(input);
-          return { content: "chapter text" };
-        },
-      },
+      write: async () => ({ ok: true }),
+      work: async () => ({ ok: true }),
+      ls: async () => ({ ok: true }),
+      search: async () => ({ ok: true }),
+      ask_user: async () => ({ ok: true }),
     };
-    const toolRegistry = createToolRegistry({ registrations: [registration] });
+    const readRegistration = createCoreToolRegistrations(handlers).find(
+      (registration) =>
+        registration.definition.type === "function" && registration.definition.name === "read",
+    );
+    if (!readRegistration) throw new Error("Core read registration was not created");
+    const toolRegistry = createToolRegistry({ registrations: [readRegistration] });
     const results = [
       toolCall("read", "read-missing-command", { path: "manuscript://chapter.md" }),
       toolCall("read", "read-corrected", {
@@ -91,9 +81,11 @@ describe("read command recovery through the runtime loop", () => {
       textResult(),
     ];
     let requestIndex = 0;
+    const requests: GenerateRequest[] = [];
     const gateway: Gateway = {
       getDefaultModel: () => "fixture-model",
-      async *stream(): AsyncGenerator<StreamEvent> {
+      async *stream(request): AsyncGenerator<StreamEvent> {
+        requests.push(request);
         yield { type: "end", result: results[requestIndex++] };
       },
       async generate() {
@@ -136,6 +128,31 @@ describe("read command recovery through the runtime loop", () => {
     );
     expect(events.some((event) => event.type === "permission.denied")).toBe(false);
     expect(dispatched).toEqual([{ command: "read", path: "manuscript://chapter.md" }]);
+    const assistantTurn = (await repos.turns.listByThread(thread.id)).find(
+      (turn) => turn.role === "assistant",
+    );
+    expect(assistantTurn).toBeDefined();
+    const savedRejection = (await repos.blocks.listByTurn(assistantTurn?.id ?? "")).find(
+      (block) =>
+        block.blockType === "tool_result" &&
+        (block.content as { toolCallId?: string } | null)?.toolCallId === "read-missing-command",
+    );
+    const persistedOutput = (savedRejection?.content as { output?: unknown } | null)?.output;
+    expect(persistedOutput).toMatchObject({ error: "invalid_arguments" });
+    const repairReason = (persistedOutput as { reason: string }).reason;
+    expect(repairReason).toContain("command");
+    expect(repairReason).toContain("read");
+    const retryMessage = requests[1]?.messages
+      .flatMap((message) => message.content)
+      .find((part) => part.type === "tool_result" && part.toolCallId === "read-missing-command");
+    expect(retryMessage).toMatchObject({
+      type: "tool_result",
+      toolCallId: "read-missing-command",
+      output: persistedOutput,
+      isError: true,
+    });
+    expect(JSON.stringify(retryMessage)).toContain("invalid_arguments");
+    expect((retryMessage as { output: { reason: string } }).output.reason).toBe(repairReason);
     expect(events.at(-1)?.type).toBe("turn.completed");
   });
 });
