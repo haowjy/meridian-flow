@@ -144,7 +144,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
         type: "function",
         name: "read",
         description:
-          "Document read tool. Returns a document's block-addressed content; path selects a manuscript, knowledge-base, scratch, upload, or user file. Each result block separates hash from exact body and says whether the body is full or a prefix. Use diff to inspect the folded net effect of this turn's edits.",
+          'Read document content with `{ "command": "read", "path": "..." }`; `command` is required. Returns block-addressed content from a manuscript, knowledge base, scratch, upload, or user file. Each result block separates hash from exact body and says whether the body is full or a prefix. Use `{ "command": "diff" }` only to inspect this turn’s folded edit result; it does not read a path.',
         inputSchema: writeToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.read },

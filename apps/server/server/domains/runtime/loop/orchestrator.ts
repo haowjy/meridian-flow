@@ -840,6 +840,7 @@ async function persistPermissionDenial(input: {
   call: ReturnType<typeof collectToolCalls>[number];
   decision: {
     allowed: false;
+    kind: "permission_denied" | "invalid_arguments";
     category: Extract<OrchestratorEvent, { type: "permission.denied" }>["category"];
     reason: string;
   };
@@ -847,7 +848,7 @@ async function persistPermissionDenial(input: {
 }): Promise<{ block: Block; nextBlockSeq: number; events: OrchestratorEvent[] }> {
   let blockSeq = input.blockSeq;
   const denialOutput = {
-    error: "permission_denied",
+    error: input.decision.kind,
     reason: input.decision.reason,
   };
   const persistedDenial = await persistAndAppendEvents(input.deps, input.threadId, async () => {
@@ -866,13 +867,17 @@ async function persistPermissionDenial(input: {
       result: localBlockFromEvent(block),
       events: [
         { type: "block.upserted", block },
-        {
-          type: "permission.denied",
-          toolCallId: input.call.id,
-          toolName: input.call.name,
-          category: input.decision.category,
-          reason: input.decision.reason,
-        },
+        ...(input.decision.kind === "permission_denied"
+          ? [
+              {
+                type: "permission.denied" as const,
+                toolCallId: input.call.id,
+                toolName: input.call.name,
+                category: input.decision.category,
+                reason: input.decision.reason,
+              },
+            ]
+          : []),
         {
           type: "tool.result",
           toolCallId: input.call.id,

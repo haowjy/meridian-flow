@@ -124,6 +124,24 @@ function spawnDescription(tools: Tool[]): string {
 }
 
 describe("resolveAgentThreadTurnContext tool policy", () => {
+  it("advertises an explicit read invocation and requires the command discriminator", () => {
+    const read = createCoreToolRegistrations(stubHandlers()).find(
+      (registration) => registration.definition.name === "read",
+    );
+    expect(read?.definition.description).toContain('{ "command": "read", "path": "..." }');
+    expect(read?.definition.description).toContain("`command` is required");
+    const branches = read?.definition.inputSchema.oneOf;
+    expect(Array.isArray(branches)).toBe(true);
+    expect(branches).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          required: expect.arrayContaining(["command", "path"]),
+          properties: expect.objectContaining({ command: { const: "read", type: "string" } }),
+        }),
+      ]),
+    );
+  });
+
   it("advertises Critic read only and Writer read plus mutate write", async () => {
     const critic = await boundContext({ tools: CRITIC_MAP });
     const writer = await boundContext({ tools: WRITER_MAP });

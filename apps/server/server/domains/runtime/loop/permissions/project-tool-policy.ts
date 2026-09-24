@@ -20,8 +20,9 @@ export interface EffectiveToolPolicy {
   workCommands: ReadonlySet<WorkCommandName>;
 }
 
-const DOCUMENT_READ_COMMANDS = ["read", "diff"] as const satisfies readonly WriteCommandName[];
-const WRITE_MUTATE_COMMANDS = [
+const ALL_WRITE_COMMANDS = [
+  "read",
+  "diff",
   "create",
   "insert",
   "replace",
@@ -29,12 +30,17 @@ const WRITE_MUTATE_COMMANDS = [
   "undo",
   "redo",
 ] as const satisfies readonly WriteCommandName[];
+const DOCUMENT_READ_COMMANDS = ["read", "diff"] as const satisfies readonly WriteCommandName[];
+const WRITE_MUTATE_COMMANDS = ALL_WRITE_COMMANDS.filter(
+  (command) => command !== "read" && command !== "diff",
+);
 const WORK_NAV_COMMANDS = ["list", "show", "switch"] as const satisfies readonly WorkCommandName[];
 const WORK_MUTATE_COMMANDS = [
   "create",
   "update",
   "delete",
 ] as const satisfies readonly WorkCommandName[];
+const ALL_WORK_COMMANDS = [...WORK_NAV_COMMANDS, ...WORK_MUTATE_COMMANDS] as const;
 
 type CompiledToolFields = {
   tools?: string[] | Record<string, ToolPolicy>;
@@ -79,6 +85,13 @@ export function commandSetForTool(
   if (toolName === "write") return policy.writeCommands;
   if (toolName === "work") return policy.workCommands;
   return undefined;
+}
+
+/** Commands understood by the shared command schemas, including policy-disabled commands. */
+export function knownCommandSetForTool(toolName: string): ReadonlySet<string> {
+  if (toolName === "read" || toolName === "write") return new Set(ALL_WRITE_COMMANDS);
+  if (toolName === "work") return new Set(ALL_WORK_COMMANDS);
+  return new Set();
 }
 
 function marsAllowed(name: string, metadata: CompiledToolFields): boolean {

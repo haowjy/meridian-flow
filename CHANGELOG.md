@@ -20,6 +20,7 @@
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
 ### Fixed
 
+- Distinguish malformed command arguments from disabled tool commands, and state the required `read` invocation explicitly in model instructions.
 - Preserve exact JSONB report payload values across PostgreSQL reads, including JSON-looking scalar strings and present JSON `null`.
 - Keep stale successful thread-snapshot recovery pending through repeated races, coalesce missing-card snapshot fetches, and restore the run controller and listeners after React StrictMode effect replay.
 - Keep addressed block replacements and prunes live for a mounted thread after its run ends, with synchronous first-send projection activation, replay/snapshot freshness fences, and account-epoch cleanup.
