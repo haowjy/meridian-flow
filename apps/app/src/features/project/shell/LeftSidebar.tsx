@@ -69,7 +69,7 @@ export function LeftSidebar({
       aria-label={t`Workspace navigation`}
       className="flex h-full min-h-0 w-full flex-col text-foreground"
     >
-      <div className="flex h-10 shrink-0 items-center gap-1 bg-(--project-header-bg) px-2">
+      <div className="flex h-10 shrink-0 items-center gap-1 px-2">
         <PanelToggleButton
           icon={PanelLeftClose}
           label={t`Collapse sidebar  [`}

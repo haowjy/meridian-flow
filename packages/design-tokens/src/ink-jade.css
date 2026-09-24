@@ -145,6 +145,10 @@
   /* Inset keyboard indicator for rounded dropdown rows. Unlike the softer
      ordinary control ring, this role must contrast with every row fill. */
   --color-dropdown-focus-indicator: oklch(0.45 0.07 176);
+  /* List rows sit on page paper, not the darker shelf. Hover is a half-step
+     toward selection; the night palette lifts both above its popover panel. */
+  --color-dropdown-hover: color-mix(in oklab, var(--color-sidebar-accent) 50%, var(--color-background));
+  --color-dropdown-selected: var(--color-sidebar-accent);
 
   /* Code surface — fenced code blocks sit on the warm canvas as a recessed
      "tablet": a notch DEEPER than the card lift (the canvas reads as raised

@@ -11,10 +11,13 @@ export const dropdownRowVariants = cva(
         identity: "min-h-11 flex-col items-start gap-0.5 py-0.5",
       },
       interactive: {
-        true: "dropdown-focus-ring transition-colors hover:bg-sidebar-accent/50 focus-visible:bg-sidebar-accent/50 data-[highlighted]:bg-sidebar-accent/50",
+        true: "dropdown-focus-ring transition-colors hover:bg-dropdown-hover focus-visible:bg-dropdown-hover data-[highlighted]:bg-dropdown-hover",
         false: null,
       },
-      selected: { true: "bg-sidebar-accent font-medium", false: null },
+      selected: {
+        true: "bg-dropdown-selected font-medium [&:is(:hover,:focus-visible,[data-highlighted])]:bg-dropdown-selected",
+        false: null,
+      },
     },
     defaultVariants: { kind: "navigation", interactive: true, selected: false },
   },
@@ -57,4 +60,4 @@ export const dropdownResultsClass = "app-scroll max-h-64";
 
 /** Lets a composite row own selected, hover, and descendant-focus geometry. */
 export const dropdownRowContainerClass =
-  "dropdown-focus-ring rounded-md has-[>:focus-visible]:bg-sidebar-accent/50 data-[selected=true]:bg-sidebar-accent data-[selected=true]:has-[>:focus-visible]:bg-sidebar-accent";
+  "dropdown-focus-ring rounded-md has-[>:focus-visible]:bg-dropdown-hover data-[selected=true]:bg-dropdown-selected data-[selected=true]:hover:bg-dropdown-selected data-[selected=true]:has-[>:focus-visible]:bg-dropdown-selected";

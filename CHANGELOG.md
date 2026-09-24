@@ -43,6 +43,8 @@
 
 ### Fixed
 
+- Keep the project-title header on the sidebar surface in both themes.
+- Reveal the current chat when a long switcher list opens without stealing search focus; give dark dropdown current and hover rows visible tonal steps.
 - Closing the chat switcher on the current chat returns keyboard focus to its trigger; navigation and rename can hand focus to their destination.
 - New projects initialize their Manuscript source before context catalog refresh, so draft requests no longer fail with a missing manifest identity.
 - Chat submissions stay visible as pending until the server acknowledges them. Unresolved sends survive reload, ambiguous sends retain status recovery, and rejected existing-thread sends keep Retry or Edit on the affected turn.
