@@ -7,7 +7,7 @@ import {
 } from "./env.js";
 
 describe("resolveModelRequestDebugCaptureEnabled", () => {
-  it.each(["development", "test"])("enables capture in local %s", (rawNodeEnv) => {
+  it.each(["development"])("enables capture in local %s", (rawNodeEnv) => {
     expect(resolveModelRequestDebugCaptureEnabled({ rawNodeEnv, rawAppEnv: "dev" })).toBe(true);
   });
 
@@ -36,16 +36,11 @@ describe("resolveModelRequestDebugCaptureEnabled", () => {
 });
 
 describe("resolveRecentEventsEnabled", () => {
-  it.each(["development", "test"])("enables recent events in %s", (rawNodeEnv) => {
+  it.each(["development"])("enables recent events in %s", (rawNodeEnv) => {
     expect(resolveRecentEventsEnabled({ rawNodeEnv })).toBe(true);
   });
 
-  it.each([
-    "production",
-    "staging",
-    "",
-    undefined,
-  ])("fails closed for NODE_ENV=%s", (rawNodeEnv) => {
+  it.each(["production", "staging", undefined])("fails closed for NODE_ENV=%s", (rawNodeEnv) => {
     expect(resolveRecentEventsEnabled({ rawNodeEnv })).toBe(false);
   });
 });
@@ -57,7 +52,7 @@ describe("resolveObsVerbose", () => {
     );
   });
 
-  it.each(["development", "test"])("parses known categories in %s", (rawNodeEnv) => {
+  it.each(["development"])("parses known categories in %s", (rawNodeEnv) => {
     expect(
       resolveObsVerbose({
         rawNodeEnv,

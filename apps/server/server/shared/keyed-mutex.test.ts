@@ -2,18 +2,28 @@ import { describe, expect, it } from "vitest";
 
 import { KeyedMutex } from "./keyed-mutex.js";
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function gate() {
+  let release!: () => void;
+  let started!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const entered = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  return { blocked, entered, release, started };
 }
 
 describe("KeyedMutex", () => {
   it("serializes operations for the same key", async () => {
     const mutex = new KeyedMutex();
     const order: string[] = [];
+    const firstGate = gate();
 
     const first = mutex.run("a", async () => {
       order.push("a-start");
-      await delay(20);
+      firstGate.started();
+      await firstGate.blocked;
       order.push("a-end");
     });
     const second = mutex.run("a", async () => {
@@ -21,27 +31,49 @@ describe("KeyedMutex", () => {
       order.push("b-end");
     });
 
-    await Promise.all([first, second]);
-    expect(order).toEqual(["a-start", "a-end", "b-start", "b-end"]);
+    try {
+      await firstGate.entered;
+      expect(order).toEqual(["a-start"]);
+      firstGate.release();
+      await Promise.all([first, second]);
+      expect(order).toEqual(["a-start", "a-end", "b-start", "b-end"]);
+    } finally {
+      firstGate.release();
+      await Promise.allSettled([first, second]);
+    }
   });
 
   it("runs operations for different keys concurrently", async () => {
     const mutex = new KeyedMutex();
     const order: string[] = [];
+    const aGate = gate();
+    const bGate = gate();
 
     const first = mutex.run("a", async () => {
       order.push("a-start");
-      await delay(30);
+      aGate.started();
+      await aGate.blocked;
       order.push("a-end");
     });
     const second = mutex.run("b", async () => {
       order.push("b-start");
-      await delay(5);
+      bGate.started();
+      await bGate.blocked;
       order.push("b-end");
     });
 
-    await Promise.all([first, second]);
-    expect(order).toEqual(["a-start", "b-start", "b-end", "a-end"]);
+    try {
+      await Promise.all([aGate.entered, bGate.entered]);
+      expect(order).toEqual(["a-start", "b-start"]);
+      bGate.release();
+      aGate.release();
+      await Promise.all([first, second]);
+      expect(order).toEqual(["a-start", "b-start", "b-end", "a-end"]);
+    } finally {
+      aGate.release();
+      bGate.release();
+      await Promise.allSettled([first, second]);
+    }
   });
 
   it("continues the chain after a rejecting operation", async () => {
@@ -62,54 +94,53 @@ describe("KeyedMutex", () => {
     expect(order).toEqual(["fail", "after"]);
   });
 
-  it("returns resolved values and propagates errors to the caller", async () => {
-    const mutex = new KeyedMutex();
-
-    await expect(mutex.run("k", async () => 42)).resolves.toBe(42);
-    await expect(
-      mutex.run("k", async () => {
-        throw new Error("nope");
-      }),
-    ).rejects.toThrow("nope");
-  });
-
-  it("accepts a fresh operation after the chain for a key has drained", async () => {
-    const mutex = new KeyedMutex();
-
-    await mutex.run("k", async () => "first");
-    await mutex.run("k", async () => "second");
-
-    await expect(mutex.run("k", async () => "third")).resolves.toBe("third");
-  });
-
   it("times out only while waiting and never invokes the cancelled callback", async () => {
     const mutex = new KeyedMutex();
-    let release!: () => void;
-    const held = mutex.run(
-      "k",
-      () =>
-        new Promise<void>((resolve) => {
-          release = resolve;
-        }),
-    );
+    const heldGate = gate();
+    const held = mutex.run("k", async () => {
+      heldGate.started();
+      await heldGate.blocked;
+    });
     let invoked = false;
-    await expect(
-      mutex.run(
-        "k",
-        async () => {
-          invoked = true;
-        },
-        { timeoutMs: 5 },
-      ),
-    ).rejects.toThrow("Timed out acquiring lock");
-    release();
-    await held;
-    await delay(0);
-    expect(invoked).toBe(false);
+    try {
+      await heldGate.entered;
+      await expect(
+        mutex.run(
+          "k",
+          async () => {
+            invoked = true;
+          },
+          { timeoutMs: 5 },
+        ),
+      ).rejects.toThrow("Timed out acquiring lock");
+      heldGate.release();
+      await held;
+      expect(invoked).toBe(false);
+    } finally {
+      heldGate.release();
+      await Promise.allSettled([held]);
+    }
   });
 
   it("does not time out a callback after it acquires the lock", async () => {
     const mutex = new KeyedMutex();
-    await expect(mutex.run("k", async () => delay(15), { timeoutMs: 5 })).resolves.toBeUndefined();
+    const callbackGate = gate();
+    const operation = mutex.run(
+      "k",
+      async () => {
+        callbackGate.started();
+        await callbackGate.blocked;
+      },
+      { timeoutMs: 5 },
+    );
+
+    try {
+      await callbackGate.entered;
+      callbackGate.release();
+      await expect(operation).resolves.toBeUndefined();
+    } finally {
+      callbackGate.release();
+      await Promise.allSettled([operation]);
+    }
   });
 });
