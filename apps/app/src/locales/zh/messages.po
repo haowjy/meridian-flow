@@ -2356,11 +2356,6 @@ msgstr ""
 msgid "No projects yet"
 msgstr ""
 
-<<<<<<< HEAD
-#: src/features/home/RecentProjects.tsx
-#~ msgid "No projects yet."
-#~ msgstr ""
-=======
 #: src/features/chat/tool-renderers.tsx
 msgid "No report text was returned"
 msgstr ""
@@ -2369,7 +2364,6 @@ msgstr ""
 #: src/features/chat/tool-renderers.tsx
 msgid "No report text was returned."
 msgstr ""
->>>>>>> e2b6ed34b (Render retained child outcomes and join direct reports)
 
 #: src/features/project/shell/ResultsRailSection.tsx
 msgid "No results yet."

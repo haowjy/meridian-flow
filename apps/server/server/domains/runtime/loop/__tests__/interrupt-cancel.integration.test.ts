@@ -36,6 +36,15 @@ function message(key: string, threadId: ThreadId): MessageDraft {
   };
 }
 
+async function startMessageRun(rig: RuntimeTestRig, text: string): Promise<string> {
+  await rig.inbox.enqueue(message(text, rig.thread.id));
+  await rig.runner.startDrain(rig.thread.id);
+  await rig.gatewaySignal.promise;
+  const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
+  if (!turnId) throw new Error("Expected a running assistant turn after drain start");
+  return turnId;
+}
+
 /**
  * First stream yields a delta then blocks on a test-controlled gate, ignoring
  * abort, so the lease state is observable while the run is still live. Later
@@ -73,11 +82,7 @@ describe("interrupt cancel", () => {
     const rig = await RuntimeTestRig.create({ gateway: control.gateway });
     const app = rig.createAppServices();
 
-    const { assistantTurnId } = await rig.runner.startTurn({
-      threadId: rig.thread.id,
-      userText: "long turn",
-    });
-    await rig.gatewaySignal.promise;
+    const assistantTurnId = await startMessageRun(rig, "long turn");
 
     const before = await app.threadRuntime.liveState(rig.thread.id, rig.userId);
     expect(before.status).toEqual({ kind: "awake", phase: "generating", cancelRequested: false });
@@ -92,14 +97,11 @@ describe("interrupt cancel", () => {
     await rig.awaitEvent(EventType.RUN_FINISHED);
   });
 
-  it("finalizes turn.cancelled and releases when nothing is pending", async () => {
+  it("finalizes cancellation and retries the unacked triggering message", async () => {
     const control = gatedPartialGateway();
     const rig = await RuntimeTestRig.create({ gateway: control.gateway });
 
-    await rig.runner.startTurn({ threadId: rig.thread.id, userText: "no pending" });
-    await rig.gatewaySignal.promise;
-    const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
-    expect(turnId).not.toBeNull();
+    const turnId = await startMessageRun(rig, "no pending");
 
     await rig.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
     control.release();
@@ -110,17 +112,20 @@ describe("interrupt cancel", () => {
         status: "cancelled",
       });
     await expect.poll(() => rig.runAuthority.read(rig.thread.id)).toEqual({ kind: "asleep" });
-    expect(await rig.repos.turns.listByThread(rig.thread.id)).toHaveLength(2);
+    const turns = await rig.repos.turns.listByThread(rig.thread.id);
+    expect(turns).toHaveLength(3);
+    expect(turns.filter((turn) => turn.role === "assistant").map((turn) => turn.status)).toEqual([
+      "cancelled",
+      "complete",
+    ]);
+    expect(await rig.inbox.claimPending(rig.thread.id)).toEqual([]);
   });
 
   it("finalizes a cancelled turn and starts a next turn carrying the pending message", async () => {
     const control = gatedPartialGateway();
     const rig = await RuntimeTestRig.create({ gateway: control.gateway });
 
-    await rig.runner.startTurn({ threadId: rig.thread.id, userText: "interrupt me" });
-    await rig.gatewaySignal.promise;
-    const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
-    expect(turnId).not.toBeNull();
+    const turnId = await startMessageRun(rig, "interrupt me");
     const pending = await rig.inbox.enqueue(message("after interrupt", rig.thread.id));
 
     await rig.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
@@ -152,10 +157,7 @@ describe("interrupt cancel", () => {
     const rig = await RuntimeTestRig.create({ gateway: control.gateway });
     const app = rig.createAppServices();
 
-    await rig.runner.startTurn({ threadId: rig.thread.id, userText: "subscribe liveness" });
-    await rig.gatewaySignal.promise;
-    const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
-    expect(turnId).not.toBeNull();
+    const turnId = await startMessageRun(rig, "subscribe liveness");
 
     type SubscribedFrame = {
       type?: string;

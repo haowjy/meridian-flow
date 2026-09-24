@@ -1,6 +1,4 @@
 {
-  "id": "37aa4e95-1865-4348-a031-100f1e9888f2",
-  "prevId": "b4d97944-3052-42c8-9e01-70fffb1e9fcc",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1525,7 +1523,7 @@
       "checkConstraints": {
         "thread_inbox_messages_intent_valid": {
           "name": "thread_inbox_messages_intent_valid",
-          "value": "\"thread_inbox_messages\".\"intent\" IN ('message','notice')"
+          "value": "\"thread_inbox_messages\".\"intent\" IN ('steer','system')"
         },
         "thread_inbox_messages_provenance_valid": {
           "name": "thread_inbox_messages_provenance_valid",
@@ -1561,12 +1559,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "turn_id": {
-          "name": "turn_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         },
         "holder_id": {
           "name": "holder_id",
@@ -5303,6 +5295,95 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.user_recent_documents": {
+      "name": "user_recent_documents",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "opened_at": {
+          "name": "opened_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "user_recent_documents_user_opened_idx": {
+          "name": "user_recent_documents_user_opened_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "opened_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "user_recent_documents_user_id_users_id_fk": {
+          "name": "user_recent_documents_user_id_users_id_fk",
+          "tableFrom": "user_recent_documents",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "user_recent_documents_document_id_documents_id_fk": {
+          "name": "user_recent_documents_document_id_documents_id_fk",
+          "tableFrom": "user_recent_documents",
+          "tableTo": "documents",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "user_recent_documents_pk": {
+          "name": "user_recent_documents_pk",
+          "columns": [
+            "user_id",
+            "document_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.project_results": {
       "name": "project_results",
       "schema": "",
@@ -5653,12 +5734,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "last_active_project_id": {
-          "name": "last_active_project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "working_set_sync_enabled": {
           "name": "working_set_sync_enabled",
           "type": "boolean",
@@ -5681,23 +5756,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "users_last_active_project_idx": {
-          "name": "users_last_active_project_idx",
-          "columns": [
-            {
-              "expression": "last_active_project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
@@ -8861,8 +8920,10 @@
   "policies": {},
   "views": {},
   "_meta": {
-    "columns": {},
     "schemas": {},
-    "tables": {}
-  }
+    "tables": {},
+    "columns": {}
+  },
+  "id": "94c4019b-b881-4d6e-af3a-911ea180ad7c",
+  "prevId": "13682b9f-1856-455f-9f45-f3aa05d6ef2b"
 }

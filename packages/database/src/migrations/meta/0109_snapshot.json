@@ -1,6 +1,6 @@
 {
-  "id": "7c6a8e39-af76-406e-93b6-d5eb4ffec2d4",
-  "prevId": "e2d50d7c-1654-4f48-8351-74ddb978d8e7",
+  "id": "275f82a6-a746-4d68-a15f-8dc7ff8d8dce",
+  "prevId": "abd0e66a-4ec0-4a24-a77d-5ceb8306c015",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2245,6 +2245,12 @@
         "spawn_status": {
           "name": "spawn_status",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "spawn_result": {
+          "name": "spawn_result",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -6039,12 +6045,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "last_active_project_id": {
-          "name": "last_active_project_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "working_set_sync_enabled": {
           "name": "working_set_sync_enabled",
           "type": "boolean",
@@ -6067,23 +6067,7 @@
           "default": "now()"
         }
       },
-      "indexes": {
-        "users_last_active_project_idx": {
-          "name": "users_last_active_project_idx",
-          "columns": [
-            {
-              "expression": "last_active_project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {

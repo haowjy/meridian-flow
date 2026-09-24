@@ -45,10 +45,10 @@ import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToo
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
-import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { PendingInboxTray } from "./PendingInboxTray";
 import { awaitingRunTurnIds, writerPendingInbox } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
+import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { TurnList } from "./TurnList";
 import { activeDescendants } from "./thread-activity";
 import type { UserTurnRecovery } from "./UserTurn";
