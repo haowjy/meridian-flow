@@ -269,9 +269,9 @@ route without changing path. See `features/account/SettingsDialog.tsx`.
 ## Account entry
 
 Authenticated `/` renders the project library from the project-list query,
-never the last-active project. The library searches visible project titles
-locally and opens direct `/p/<project-slug>` links. The account-home API and
-last-active-project preference are removed; selection comes from the library,
+never the last-active project. Each cover links directly to `/p/<project-slug>`;
+its selectable title and edit recency below are not links. The account-home API
+and last-active-project preference are removed; selection comes from the library,
 not a remembered destination.
 
 `/projects/new` is a separate creation destination. Its title form keeps
