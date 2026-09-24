@@ -127,6 +127,10 @@ export type ThreadStoreActions = {
   ): void;
   pruneStaleAssistantTurns(threadId: string): void;
   bumpEventsApplied(threadId: string): number;
+  /** Admit a durable block wire sequence, independent of run cursor rewinds. */
+  acceptDurableBlockSeq(threadId: string, seq: string): boolean;
+  /** Whether an acquired snapshot may affect cache, lifecycle, store, or handoff. */
+  acceptsThreadSnapshot(threadId: string, nextSeq: string): boolean;
   applyThreadSnapshot(
     thread: Thread,
     turns: Turn[],
@@ -134,7 +138,7 @@ export type ThreadStoreActions = {
       lifecycle: Pick<ThreadListItem, "actionRequired" | "runningTurnId">;
       nextSeq: string;
     },
-  ): void;
+  ): boolean;
   markPendingStream(threadId: string, start?: PendingStreamStart): void;
   consumePendingStream(threadId: string): PendingStreamStart | null;
   /**

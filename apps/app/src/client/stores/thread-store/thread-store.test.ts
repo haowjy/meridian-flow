@@ -50,3 +50,34 @@ describe("thread store block upserts", () => {
     expect(after[1]).toBe(otherTurn);
   });
 });
+
+describe("durable block wire freshness", () => {
+  it("keeps the cursor and snapshot floor monotonic beyond safe integers", () => {
+    const store = setup();
+    const actions = store.getState();
+    const seq = "9007199254740993000";
+    expect(actions.acceptDurableBlockSeq("thread-1", seq)).toBe(true);
+    expect(actions.acceptDurableBlockSeq("thread-1", seq)).toBe(false);
+    expect(actions.acceptDurableBlockSeq("thread-1", "9007199254740992999")).toBe(false);
+    expect(actions.acceptDurableBlockSeq("thread-1", "invalid")).toBe(false);
+    expect(actions.acceptsThreadSnapshot("thread-1", seq)).toBe(false);
+    expect(actions.acceptsThreadSnapshot("thread-1", "9007199254740993001")).toBe(true);
+  });
+
+  it("does not let a stale snapshot alter lifecycle or terminal blocks", () => {
+    const store = setup();
+    const actions = store.getState();
+    actions.ensureAssistantTurn("thread-1", "turn-1");
+    actions.upsertAssistantBlock("thread-1", "turn-1", customBlock({ outcome: "done" }));
+    const before = actions.turns("thread-1");
+    actions.acceptDurableBlockSeq("thread-1", "375000");
+    const accepted = actions.applyThreadSnapshot(
+      { id: "thread-1", projectId: "project-1" } as never,
+      [],
+      { nextSeq: "375000", lifecycle: { actionRequired: false, runningTurnId: null } },
+    );
+    expect(accepted).toBe(false);
+    expect(actions.turns("thread-1")).toBe(before);
+    expect(store.getState().durableBlockCursorByThread["thread-1"]).toBe("375000");
+  });
+});

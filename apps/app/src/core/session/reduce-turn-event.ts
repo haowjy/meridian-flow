@@ -655,6 +655,49 @@ function writeModeFromRunStarted(rawEvent: unknown): Turn["writeMode"] | undefin
     : undefined;
 }
 
+/** The addressed block vocabulary has one reducer owner, independent of a run. */
+export function isDurableBlockEvent(event: AGUIEvent): boolean {
+  return (
+    event.type === EventType.CUSTOM &&
+    (event.name === "meridian.block.upserted" || event.name === "meridian.block.pruned")
+  );
+}
+
+export function isWellFormedDurableBlockEvent(event: AGUIEvent): boolean {
+  if (!isDurableBlockEvent(event) || event.type !== EventType.CUSTOM) return false;
+  return event.name === "meridian.block.upserted"
+    ? parseCustomBlockUpsertPayload(event.value) !== null
+    : parseBlockPrunedPayload(event.value) !== null;
+}
+
+/** False means the owned vocabulary was malformed, not an opaque CUSTOM event. */
+export function applyDurableBlockEvent(
+  store: StoreEventTarget,
+  threadId: string,
+  event: AGUIEvent,
+): boolean {
+  if (!isDurableBlockEvent(event) || (eventH(event) && event.threadId !== threadId)) return false;
+  if (event.type !== EventType.CUSTOM) return false;
+  if (event.name === "meridian.block.upserted") {
+    const payload = parseCustomBlockUpsertPayload(event.value);
+    if (!payload) return false;
+    applyCustomBlockUpsertEvent(store, threadId, payload);
+    return true;
+  }
+  const payload = parseBlockPrunedPayload(event.value);
+  if (!payload) return false;
+  if (
+    !(store.turns(threadId) ?? []).some((turn) =>
+      turn.blocks.some((block) => block.id === payload.blockId),
+    )
+  ) {
+    store.invalidateThreadSnapshot(threadId);
+    return true;
+  }
+  store.removeAssistantBlock(threadId, payload.blockId);
+  return true;
+}
+
 /**
  * Applies one live AG-UI event to the unified thread store.
  *
@@ -668,6 +711,11 @@ export function applyAguiEventToStore(
   event: AGUIEvent,
 ): void {
   if (eventH(event) && event.threadId !== threadId) return;
+
+  if (isDurableBlockEvent(event)) {
+    applyDurableBlockEvent(store, threadId, event);
+    return;
+  }
 
   const eventsApplied = store.bumpEventsApplied(threadId);
 
@@ -1014,16 +1062,6 @@ export function applyAguiEventToStore(
     }
 
     case EventType.CUSTOM: {
-      if (event.name === "meridian.block.upserted") {
-        const payload = parseCustomBlockUpsertPayload(event.value);
-        if (payload) applyCustomBlockUpsertEvent(store, threadId, payload);
-        return;
-      }
-      if (event.name === "meridian.block.pruned") {
-        const payload = parseBlockPrunedPayload(event.value);
-        if (payload) store.removeAssistantBlock(threadId, payload.blockId);
-        return;
-      }
       if (event.name === "meridian.interrupt") {
         const payload = parseInterruptLifecyclePayload(event.value);
         if (payload) applyInterruptLifecycleEvent(store, threadId, payload);

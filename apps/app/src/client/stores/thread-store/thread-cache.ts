@@ -36,7 +36,10 @@ export interface ThreadCachePort {
   invalidateThreadSnapshot(threadId: string): void;
 }
 
-export function createThreadCache(client: QueryClient): ThreadCachePort {
+export function createThreadCache(
+  client: QueryClient,
+  accountSignal?: AbortSignal,
+): ThreadCachePort {
   return {
     upsertThread(thread, lifecycle) {
       upsertThreadInProject(client, thread, lifecycle);
@@ -54,6 +57,7 @@ export function createThreadCache(client: QueryClient): ThreadCachePort {
       // The store writes its turn state synchronously first; the cache catches
       // projector-only fields (final usage/cost metadata) on the next tick.
       queueMicrotask(() => {
+        if (accountSignal?.aborted) return;
         if (projectId) {
           invalidateThreadProjectionDependencies(client, {
             threadId,
@@ -69,6 +73,7 @@ export function createThreadCache(client: QueryClient): ThreadCachePort {
     },
     invalidateThreadSnapshot(threadId) {
       queueMicrotask(() => {
+        if (accountSignal?.aborted) return;
         void client.invalidateQueries({ queryKey: threadQueryKeys.thread(threadId) });
       });
     },

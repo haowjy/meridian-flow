@@ -112,6 +112,7 @@ export type ThreadRunControllerOptions = {
   lookupAdmissionFn?: LookupAdmissionFn;
   retireAdmissionFn?: RetireAdmissionFn;
   getThreadSnapshotFn?: GetThreadSnapshotFn;
+  accountSignal?: AbortSignal;
 };
 
 type ActiveRun = {
@@ -120,6 +121,7 @@ type ActiveRun = {
   turnId?: string;
   unsubscribe?: () => void;
   dispose?: () => void;
+  flush?: () => void;
 };
 
 /**
@@ -145,6 +147,8 @@ export class ThreadRunController {
   private readonly lookupAdmissionFn: LookupAdmissionFn;
   private readonly retireAdmissionFn: RetireAdmissionFn;
   private readonly getThreadSnapshotFn: GetThreadSnapshotFn;
+  private readonly accountSignal?: AbortSignal;
+  private disposed = false;
 
   private activeRun: ActiveRun | null = null;
   private admissionLease: object | null = null;
@@ -163,11 +167,18 @@ export class ThreadRunController {
     this.lookupAdmissionFn = options.lookupAdmissionFn ?? lookupUserMessageAdmission;
     this.retireAdmissionFn = options.retireAdmissionFn ?? retireUserMessageAdmission;
     this.getThreadSnapshotFn = options.getThreadSnapshotFn ?? getThreadSnapshot;
+    this.accountSignal = options.accountSignal;
     this.unsubscribeInterruptResponseError = this.transport.onInterruptResponseError(
-      ({ threadId, error }) => this.settleInterruptResponseError(threadId, error),
+      ({ threadId, error }) => {
+        if (!this.accountSignal?.aborted && !this.disposed)
+          this.settleInterruptResponseError(threadId, error);
+      },
     );
-    this.unsubscribeSocketGenerationClosed = this.transport.onSocketGenerationClosed((generation) =>
-      this.actions.markInterruptResponsesForGenerationAmbiguous(generation),
+    this.unsubscribeSocketGenerationClosed = this.transport.onSocketGenerationClosed(
+      (generation) =>
+        !this.accountSignal?.aborted &&
+        !this.disposed &&
+        this.actions.markInterruptResponsesForGenerationAmbiguous(generation),
     );
   }
 
@@ -204,11 +215,13 @@ export class ThreadRunController {
   }
 
   private admissionFence(admissionEpoch: number): SessionFence {
-    return () => this.admissionEpoch === admissionEpoch;
+    return () =>
+      !this.disposed && !this.accountSignal?.aborted && this.admissionEpoch === admissionEpoch;
   }
 
   private recoveryFence(session: object): SessionFence {
-    return () => this.recoverySessions.has(session);
+    return () =>
+      !this.disposed && !this.accountSignal?.aborted && this.recoverySessions.has(session);
   }
 
   /**
@@ -543,6 +556,7 @@ export class ThreadRunController {
 
   /** Release controller-lifetime subscriptions (provider unmount). */
   dispose(): void {
+    this.disposed = true;
     this.teardown();
     this.unsubscribeInterruptResponseError();
     this.unsubscribeSocketGenerationClosed();
@@ -572,11 +586,11 @@ export class ThreadRunController {
     // One frame boundary for the whole run: append-only text/reasoning deltas
     // coalesce into a single store update; everything else flushes first.
     const coalescer = new StreamDeltaCoalescer((event) => {
-      if (disposed || !this.isActiveToken(token)) return;
+      if (disposed || this.accountSignal?.aborted || !this.isActiveToken(token)) return;
       applyAguiEventToStore(this.actions, threadId, event);
     });
     const markDisposed = () => {
-      coalescer.flush();
+      if (!this.accountSignal?.aborted) coalescer.flush();
       disposed = true;
     };
 
@@ -586,13 +600,16 @@ export class ThreadRunController {
       token,
       turnId: expectedTurnId,
       dispose: markDisposed,
+      flush: () => {
+        if (!disposed && !this.accountSignal?.aborted) coalescer.flush();
+      },
     };
 
     const unsubscribe = this.transport.subscribe(
       threadId,
       {
         onEvent: ({ event, error, sourceThreadId }) => {
-          if (disposed || !this.isActiveToken(token)) return;
+          if (disposed || this.accountSignal?.aborted || !this.isActiveToken(token)) return;
           if (sourceThreadId && sourceThreadId !== threadId) return;
           const effectiveEvent =
             event.type === EventType.RUN_ERROR && error
@@ -620,6 +637,9 @@ export class ThreadRunController {
               turnId: effectiveEvent.runId,
               unsubscribe: this.activeRun?.unsubscribe,
               dispose: markDisposed,
+              flush: () => {
+                if (!disposed && !this.accountSignal?.aborted) coalescer.flush();
+              },
             };
             if (this.abortRequested) {
               this.abortRequested = false;
@@ -637,15 +657,15 @@ export class ThreadRunController {
           }
         },
         onError: (error) => {
-          if (disposed || !this.isActiveToken(token)) return;
+          if (disposed || this.accountSignal?.aborted || !this.isActiveToken(token)) return;
           coalescer.flush();
           this.cleanupActiveRun();
           announceError(errorMessage(error, "Thread stream failed"));
         },
         onGap: ({ threadId: gapThreadId }) => {
-          if (disposed || !this.isActiveToken(token)) return;
+          if (disposed || this.accountSignal?.aborted || !this.isActiveToken(token)) return;
           coalescer.flush();
-          void this.replaceFromSnapshot(gapThreadId).catch((error) => {
+          void this.replaceFromSnapshot(gapThreadId, token).catch((error) => {
             if (!this.isActiveToken(token)) return;
             this.cleanupActiveRun();
             announceError(errorMessage(error, "Failed to recover thread snapshot"));
@@ -667,6 +687,9 @@ export class ThreadRunController {
       token,
       unsubscribe,
       dispose: markDisposed,
+      flush: () => {
+        if (!disposed && !this.accountSignal?.aborted) coalescer.flush();
+      },
     };
 
     // If submit() received the turn id from HTTP before RUN_STARTED arrives,
@@ -677,19 +700,31 @@ export class ThreadRunController {
     }
   }
 
+  flushPendingDeltas(threadId: string): void {
+    if (this.activeRun?.threadId === threadId && !this.accountSignal?.aborted) {
+      this.activeRun.flush?.();
+    }
+  }
+
   private requestCancel(threadId: string, turnId: string): void {
     void this.transport.cancel(threadId, turnId).catch((error) => {
       console.error("Failed to cancel active Meridian turn", error);
     });
   }
 
-  private async replaceFromSnapshot(threadId: string): Promise<void> {
+  private async replaceFromSnapshot(threadId: string, token: number): Promise<void> {
     const existing = this.gapSnapshotsByThreadId.get(threadId);
     if (existing) return existing;
 
     const recovery = (async () => {
-      const snapshot = await this.getThreadSnapshotFn({ data: { threadId } });
-      this.applySnapshot(deserializeThreadSnapshot(snapshot));
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const snapshot = deserializeThreadSnapshot(
+          await this.getThreadSnapshotFn({ data: { threadId }, signal: this.accountSignal }),
+        );
+        if (!this.isActiveToken(token) || this.activeRun?.threadId !== threadId) return;
+        if (snapshot.thread.id === threadId && this.applySnapshot(snapshot)) return;
+      }
+      throw new Error("Thread snapshot is older than live changes");
     })().finally(() => {
       this.gapSnapshotsByThreadId.delete(threadId);
     });
@@ -698,9 +733,9 @@ export class ThreadRunController {
     return recovery;
   }
 
-  private applySnapshot(snapshot: DeserializedThreadSnapshot): void {
+  private applySnapshot(snapshot: DeserializedThreadSnapshot): boolean {
     const { thread, turns } = snapshot;
-    this.actions.applyThreadSnapshot(thread, turns, toThreadSnapshotApplyOptions(snapshot));
+    return this.actions.applyThreadSnapshot(thread, turns, toThreadSnapshotApplyOptions(snapshot));
   }
 
   private cleanupActiveRun(): void {
@@ -715,6 +750,6 @@ export class ThreadRunController {
   }
 
   private isActiveToken(token: number): boolean {
-    return this.activeRun?.token === token;
+    return !this.disposed && !this.accountSignal?.aborted && this.activeRun?.token === token;
   }
 }

@@ -12,7 +12,9 @@
 import {
   type Block,
   blockContentRecord,
+  compareSeq,
   interruptIdForBlock,
+  parseSeq,
   type ThreadListItem,
   type Turn,
   type TurnStatus,
@@ -32,6 +34,7 @@ import {
   clearPendingInterruptPatchesForTurn,
 } from "@/core/session/reduce-turn-event";
 import { baseTurnFields } from "@/core/session/state-helpers";
+import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 
 import { buildOptimisticUserTurn } from "./build-optimistic-user-turn";
 import { isOptimisticTurnId, OPTIMISTIC_TURN_ID_PREFIX } from "./optimistic-turn-id";
@@ -60,6 +63,7 @@ type ThreadStoreSliceState = ThreadStoreState & {
   turnsByThread: Record<string, Turn[]>;
   /** Minimum snapshot nextSeq accepted; snapshots below this floor are rejected. */
   snapshotNextSeqFloorByThread: Record<string, string>;
+  durableBlockCursorByThread: Record<string, string>;
   handoffPendingThreadIds: Record<string, true>;
   pendingStreamByThreadId: Record<string, PendingStreamStart>;
   pendingCreation: PendingCreationState;
@@ -241,6 +245,8 @@ function selectThreadActions(state: ThreadStoreSlice): ThreadStoreActions {
     patchTurnStatus: state.patchTurnStatus,
     pruneStaleAssistantTurns: state.pruneStaleAssistantTurns,
     bumpEventsApplied: state.bumpEventsApplied,
+    acceptDurableBlockSeq: state.acceptDurableBlockSeq,
+    acceptsThreadSnapshot: state.acceptsThreadSnapshot,
     applyThreadSnapshot: state.applyThreadSnapshot,
     markPendingStream: state.markPendingStream,
     consumePendingStream: state.consumePendingStream,
@@ -264,6 +270,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
         now,
         turnsByThread: {},
         snapshotNextSeqFloorByThread: {},
+        durableBlockCursorByThread: {},
         liveMeta: {},
         handoffPendingThreadIds: {},
         pendingStreamByThreadId: {},
@@ -579,13 +586,36 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           return nextEventsApplied;
         },
 
+        acceptDurableBlockSeq(threadId, seq) {
+          if (parseSeq(seq) === null) return false;
+          const state = get();
+          const cursor = state.durableBlockCursorByThread[threadId];
+          if (cursor !== undefined && compareSeq(seq, cursor) <= 0) return false;
+          const nextFloor = (BigInt(seq) + 1n).toString();
+          const floor = state.snapshotNextSeqFloorByThread[threadId];
+          set({
+            durableBlockCursorByThread: {
+              ...state.durableBlockCursorByThread,
+              [threadId]: seq,
+            },
+            snapshotNextSeqFloorByThread: {
+              ...state.snapshotNextSeqFloorByThread,
+              [threadId]: floor && compareSeq(floor, nextFloor) > 0 ? floor : nextFloor,
+            },
+          });
+          return true;
+        },
+
+        acceptsThreadSnapshot(threadId, nextSeq) {
+          if (parseSeq(nextSeq) === null) return false;
+          const floor = get().snapshotNextSeqFloorByThread[threadId];
+          return floor === undefined || compareSeq(nextSeq, floor) >= 0;
+        },
+
         applyThreadSnapshot(thread, serverTurns, options) {
           const threadId = thread.id;
           const { nextSeq, lifecycle } = options;
-          const lastAppliedSeq = get().snapshotNextSeqFloorByThread[threadId];
-          if (lastAppliedSeq !== undefined && BigInt(nextSeq) < BigInt(lastAppliedSeq)) {
-            return;
-          }
+          if (!get().acceptsThreadSnapshot(threadId, nextSeq)) return false;
           /**
            * Handoff: the optimistic Home → Project navigation flow.
            *
@@ -644,6 +674,15 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               nextState.interruptResponses = reconciledInterruptResponses;
             }
 
+            const coveredSeq = (BigInt(nextSeq) - 1n).toString();
+            const priorCursor = state.durableBlockCursorByThread[threadId];
+            if (BigInt(nextSeq) > 0n && (!priorCursor || compareSeq(coveredSeq, priorCursor) > 0)) {
+              nextState.durableBlockCursorByThread = {
+                ...state.durableBlockCursorByThread,
+                [threadId]: coveredSeq,
+              };
+            }
+
             nextState.snapshotNextSeqFloorByThread = {
               ...state.snapshotNextSeqFloorByThread,
               [threadId]: nextSeq,
@@ -660,6 +699,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
 
             return nextState;
           });
+          return true;
         },
 
         markPendingStream(threadId, start) {
@@ -858,8 +898,12 @@ function useThreadStoreApi(): ThreadStoreApi {
 
 export function ThreadStoreProvider({ now, children }: ThreadStoreSeed & { children: ReactNode }) {
   const queryClient = useQueryClient();
+  const accountSignal = useOptionalAccountEpochSignal();
   const [store] = useState(() =>
-    createThreadStore({ now, threadCache: createThreadCache(queryClient) }),
+    createThreadStore({
+      now,
+      threadCache: createThreadCache(queryClient, accountSignal ?? undefined),
+    }),
   );
 
   // Keep `store.now` fresh for relative-time labels ("just now" vs "2 min ago")

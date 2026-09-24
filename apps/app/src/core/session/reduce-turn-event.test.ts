@@ -107,3 +107,20 @@ describe("durable custom projection reduction", () => {
     expect(api.getState().turns("thread-1")?.[0]?.blocks).toHaveLength(0);
   });
 });
+
+describe("owned block reduction", () => {
+  it("does not consume an opaque event counter or fabricate a missing turn", () => {
+    const api = store();
+    const actions = api.getState();
+    const before = api.getState().liveMeta["thread-1"]?.eventsApplied ?? 0;
+    applyAguiEventToStore(
+      actions,
+      "thread-1",
+      customEvent("meridian.block.upserted", {
+        block: { id: "card", turnId: "missing", blockType: "custom", sequence: 1, content: {} },
+      }),
+    );
+    expect(api.getState().liveMeta["thread-1"]?.eventsApplied ?? 0).toBe(before);
+    expect(actions.turns("thread-1")).toBeUndefined();
+  });
+});

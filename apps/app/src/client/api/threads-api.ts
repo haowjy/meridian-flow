@@ -127,10 +127,12 @@ export function deleteThread({ data }: { data: { threadId: string } }): Promise<
 
 export function getThreadSnapshot({
   data,
+  signal,
 }: {
   data: GetThreadSnapshotInput;
+  signal?: AbortSignal;
 }): Promise<ThreadSnapshotResponse> {
-  return getJson(apiThreadSnapshotPath(data.threadId, { after: data.after }));
+  return getJson(apiThreadSnapshotPath(data.threadId, { after: data.after }), { signal });
 }
 
 export function updateThreadUserState(
