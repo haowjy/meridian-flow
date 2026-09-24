@@ -91,6 +91,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       let lockHeld = false;
       let probeLockAcquired = false;
+      let warmCall: Promise<boolean> | undefined;
       try {
         await lockClient`
           select pg_advisory_lock(hashtextextended(${USER_ID}, 0::bigint))
@@ -102,7 +103,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         probeLockAcquired = competingLock?.acquired === true;
         expect(competingLock?.acquired).toBe(false);
 
-        const warmCall = coldRepository.ensureDefaultBootstrapReady(USER_ID as never);
+        warmCall = coldRepository.ensureDefaultBootstrapReady(USER_ID as never);
         let watchdog: ReturnType<typeof setTimeout> | undefined;
         try {
           await Promise.race([
@@ -121,15 +122,28 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await expect(warmCall).resolves.toBe(true);
         expect(seedCalls).toBe(1);
       } finally {
-        if (probeLockAcquired) {
-          await probeClient`
-            select pg_advisory_unlock(hashtextextended(${USER_ID}, 0::bigint))
-          `;
-        }
-        if (lockHeld) {
-          await lockClient`
-            select pg_advisory_unlock(hashtextextended(${USER_ID}, 0::bigint))
-          `;
+        try {
+          if (probeLockAcquired) {
+            await probeClient`
+              select pg_advisory_unlock(hashtextextended(${USER_ID}, 0::bigint))
+            `;
+          }
+        } finally {
+          try {
+            if (lockHeld) {
+              await lockClient`
+                select pg_advisory_unlock(hashtextextended(${USER_ID}, 0::bigint))
+              `;
+            }
+          } finally {
+            // The watchdog bounds the assertion, not the underlying repository call.
+            // Drain it after releasing the competing lock before the DB runner resets.
+            if (warmCall)
+              await warmCall.then(
+                () => undefined,
+                () => undefined,
+              );
+          }
         }
       }
     });

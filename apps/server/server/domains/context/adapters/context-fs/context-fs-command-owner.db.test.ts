@@ -4,9 +4,6 @@ import { Ok } from "../../../../shared/result.js";
 import { createResultAwareCommandExecutor } from "../../context/result-aware-command-executor.js";
 import type { ContextCommandTransaction } from "../../ports/context-command-transaction.js";
 
-const _SOURCE_ID = "00000000-0000-4000-8000-000000000911";
-const _UNTITLED_ID = "00000000-0000-4000-8000-000000000912";
-
 describe("ResultAwareCommandExecutor at the ContextFS owner", () => {
   it("serializes same-owner commands through transaction callback settlement", async () => {
     let settleFirst!: () => void;

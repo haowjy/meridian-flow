@@ -8,6 +8,7 @@ import { installJsdomLayout } from "@/test-support/jsdom-layout";
 import { createStandaloneEditorExtensions } from "../config";
 
 let editor: Editor | null = null;
+let host: HTMLElement | null = null;
 
 // Tab reaches prosemirror-tables, which asks the view where the textblock ends.
 installJsdomLayout();
@@ -15,6 +16,8 @@ installJsdomLayout();
 afterEach(() => {
   editor?.destroy();
   editor = null;
+  host?.remove();
+  host = null;
 });
 
 const paragraph = (text: string): JSONContent => ({
@@ -51,6 +54,7 @@ const table: JSONContent = {
 function mount(content: JSONContent[], editable = true): Editor {
   const element = document.createElement("div");
   document.body.append(element);
+  host = element;
   editor = new Editor({
     element,
     editable,

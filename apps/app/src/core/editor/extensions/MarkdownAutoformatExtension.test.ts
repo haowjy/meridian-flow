@@ -14,11 +14,14 @@ import { type CollabPair, createCollabPair } from "@/test-support/collab-editors
 import { createStandaloneEditorExtensions } from "../config";
 import { getLinkResolution } from "../links/LinkSurfaceExtension";
 
-const live: Editor[] = [];
+const live: Array<{ editor: Editor; host: HTMLElement }> = [];
 const pairs: CollabPair[] = [];
 
 afterEach(() => {
-  for (const editor of live.splice(0)) editor.destroy();
+  for (const { editor, host } of live.splice(0)) {
+    editor.destroy();
+    host.remove();
+  }
   for (const pair of pairs.splice(0)) pair.destroy();
 });
 
@@ -26,7 +29,7 @@ function openEditor(content = "<p></p>"): Editor {
   const element = document.createElement("div");
   document.body.append(element);
   const editor = new Editor({ element, extensions: createStandaloneEditorExtensions(), content });
-  live.push(editor);
+  live.push({ editor, host: element });
   return editor;
 }
 
@@ -121,7 +124,7 @@ describe("mark rules fire at their trigger", () => {
 });
 
 describe("block rules fire only at a block start", () => {
-  const midLine = ["prose # not a heading", "prose ```ts not a fence"];
+  const midLine = ["prose # not a heading", "prose ```ts not a fence", "prose 1. not a list"];
 
   for (const typed of midLine) {
     it(`leaves ${JSON.stringify(typed)} as prose`, () => {
