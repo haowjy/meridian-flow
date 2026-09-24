@@ -9,7 +9,7 @@
 
 ### Changed
 
-- Remove approved duplicate shared test cases and seven populated fixtures for frozen pre-launch migration history, along with the now-orphaned fixture helper; preserve retained behavior safeguards, fresh-chain catalog proof, and journal-order checks.
+- Trim redundant app, server, and shared tests and fake-only scaffolding. Retire frozen migration fixtures.
 
 - Align sidebar hover and current-row geometry with inset rounded warm selection, and give list-like dropdowns a shared Meridian-colored panel and row treatment. Chat switching puts New chat before compact chat rows; menus, selects, pickers, and suggestion lists retain their own interaction semantics.
 - Remove unused and duplicate design roles (`--shadow-input`, live-status dot), and keep chat-specific width, padding, and scroll limits out of shared dropdown recipes.

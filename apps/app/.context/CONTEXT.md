@@ -116,6 +116,10 @@ Two interfaces are the only paths between the visual layer and the substrate:
   subscribe/cancel contract for live agent events. Runtime chat uses
   `WsThreadTransport`, which connects to `/api/threads/ws`.
 
+The server's [durable event journal](../../server/server/domains/threads/.context/CONTEXT.md)
+backs replay across restarts; [live-update guidance](../src/features/chat/.context/thread-live-updates.md)
+covers app catch-up.
+
 These exist so adapter swaps (in-memory → Dexie, Mock → WS), protocol changes,
 and reducer evolution stay contained.
 
@@ -385,7 +389,6 @@ small easing scale in `globals.css`, consume via tokens in TSX.
 
 ## Dev limitations (pilot)
 
-- Thread event log is in-memory in `apps/server`. Agent events lost on `apps/server` restart. Swap the adapter there without touching this app.
 - Dev API proxy (`apiHttpDevProxyPlugin`) skips WebSocket upgrades (those go via Vite `server.proxy`). Its explicit route-owner inventory keeps `/api/auth/callback` and `/api/auth/dev-login` in TanStack Start while forwarding the server-owned auth family, including `/api/auth/me`, to `apps/server`.
 
 ## E2E document fixtures
