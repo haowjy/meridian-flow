@@ -9,6 +9,7 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createThreadWebSocketSession, type WsPeer } from "../../../../lib/ws-thread-handler.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
+import type { ToolExecutor } from "../../tools/index.js";
 import type { MessageDraft } from "../ports.js";
 import { RuntimeTestRig, runtimeGate } from "./runtime-test-rig.js";
 import { gatewayStubDefaults } from "./test-gateway.js";
@@ -76,6 +77,36 @@ function gatedPartialGateway(): {
   return { gateway, release: () => hang.open(), calls: () => calls };
 }
 
+function committedToolResponseGateway(onStreamCall: () => void): Gateway {
+  return {
+    ...gatewayStubDefaults,
+    async *stream(): AsyncGenerator<StreamEvent> {
+      onStreamCall();
+      yield {
+        type: "end",
+        result: {
+          content: [
+            {
+              type: "tool_use",
+              toolCallId: "cancel-boundary",
+              toolName: "ask_user",
+              input: { question: "Continue?" },
+            },
+          ],
+          toolCalls: [],
+          finishReason: "tool_use",
+          usage: { inputTokens: 1_000, outputTokens: 1_000 },
+          model: "gpt-4.1-mini",
+          provider: "openai",
+        },
+      };
+    },
+    async generate() {
+      throw new Error("not used");
+    },
+  };
+}
+
 describe("interrupt cancel", () => {
   it("sets the durable lease flag and publishes it through liveState", async () => {
     const control = gatedPartialGateway();
@@ -118,6 +149,50 @@ describe("interrupt cancel", () => {
       "cancelled",
       "complete",
     ]);
+    expect(await rig.inbox.claimPending(rig.thread.id)).toEqual([]);
+  });
+
+  it("cancels after a committed response acknowledges its trigger without starting a successor", async () => {
+    const toolStarted = runtimeGate();
+    const releaseTool = runtimeGate();
+    let streamCalls = 0;
+    const toolExecutor: ToolExecutor = {
+      async executeTool(call) {
+        toolStarted.open();
+        await releaseTool.promise;
+        return { toolCallId: call.id, output: { ok: true } };
+      },
+    };
+    const rig = await RuntimeTestRig.create({
+      gateway: committedToolResponseGateway(() => {
+        streamCalls += 1;
+      }),
+      toolExecutor,
+    });
+    const trigger = await rig.inbox.enqueue(message("committed trigger", rig.thread.id));
+    await rig.runner.startDrain(rig.thread.id);
+    await toolStarted.promise;
+
+    // The tool boundary is reached only after the response has been committed
+    // and the drain's triggering message acknowledged in that same transaction.
+    expect(await rig.turn(trigger.id)).toMatchObject({ role: "user", status: "complete" });
+    expect(await rig.inbox.claimPending(rig.thread.id)).toEqual([]);
+    const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
+    expect(turnId).toBeTruthy();
+
+    await rig.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
+    releaseTool.open();
+
+    await expect
+      .poll(() => rig.turn(turnId as NonNullable<typeof turnId>))
+      .toMatchObject({ status: "cancelled" });
+    await expect.poll(() => rig.runAuthority.read(rig.thread.id)).toEqual({ kind: "asleep" });
+    expect(
+      (await rig.repos.turns.listByThread(rig.thread.id)).filter(
+        (turn) => turn.role === "assistant",
+      ),
+    ).toHaveLength(1);
+    expect(streamCalls).toBe(1);
     expect(await rig.inbox.claimPending(rig.thread.id)).toEqual([]);
   });
 

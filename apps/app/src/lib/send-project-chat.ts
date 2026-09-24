@@ -1,4 +1,4 @@
-/** Project Home Send: mint ids, record the durable intent, replace the URL, persist in the background. */
+/** Chat landing Send: mint ids, record the durable intent, replace the URL, persist in the background. */
 import type { Thread } from "@meridian/contracts/protocol";
 import {
   type FirstSendChatSubmission,

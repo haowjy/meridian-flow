@@ -22,7 +22,7 @@ import {
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
-import { createToolExecutor, createToolRegistry } from "../../tools/index.js";
+import { createToolExecutor, createToolRegistry, type ToolExecutor } from "../../tools/index.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
 import type { Inbox } from "../ports.js";
@@ -52,6 +52,7 @@ type RuntimeTestRigOptions = {
   creditsMillicredits?: string;
   signalGatewayEvent?: (event: StreamEvent) => boolean;
   onRunStarted?: (threadId: ThreadId) => void;
+  toolExecutor?: ToolExecutor;
 };
 
 export class RuntimeTestRig {
@@ -153,7 +154,7 @@ export class RuntimeTestRig {
       createTestOrchestratorDeps({
         boundThreads: () => [thread.id],
         gateway,
-        toolExecutor: createToolExecutor(createToolRegistry()),
+        toolExecutor: options.toolExecutor ?? createToolExecutor(createToolRegistry()),
         repos,
         eventWriter: hub,
         interruptRegistry,
