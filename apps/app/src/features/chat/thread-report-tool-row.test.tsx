@@ -15,11 +15,13 @@ import type { ToolView } from "./group-delivery-segments";
 import { ToolRow } from "./ToolRow";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
+let previousActEnvironment: boolean | undefined;
 
 describe("thread_report tool row", () => {
   let host: HTMLDivElement;
   let root: Root;
   beforeEach(() => {
+    previousActEnvironment = actGlobal.IS_REACT_ACT_ENVIRONMENT;
     actGlobal.IS_REACT_ACT_ENVIRONMENT = true;
     host = document.createElement("div");
     document.body.append(host);
@@ -27,7 +29,8 @@ describe("thread_report tool row", () => {
   });
   afterEach(async () => {
     await act(async () => root.unmount());
-    document.body.innerHTML = "";
+    host.remove();
+    actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
   });
 
   it("previews the first report line and expands to the complete result", async () => {

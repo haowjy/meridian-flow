@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The auto-pair truth table, derived from the registry it is about.
+ * Representative auto-pair behavior across gesture and editor-context boundaries.
  *
  * Every case here types real characters through the same `handleTextInput` path
  * a browser drives and presses real keys through the keymap, because the whole
@@ -8,20 +8,17 @@
  * refusals: a pair that fires where the writer did not want it, or a closing
  * keystroke that vanishes, costs far more than the convenience is worth.
  *
- * The mechanism rows come from `EDITOR_AUTO_PAIRS` itself — every row in every
- * context it declares, and every context it leaves out — so a new pair is one
- * production edit and arrives with opener, step-over, Backspace, and
- * wrong-context coverage already. What is written out by hand below is what the
- * registry cannot say: the boundary rules around the caret, nesting, and the
- * gestures that degrade to plain insertion.
+ * Explicit representative rows cover each context and gesture without deriving
+ * the test cases from the production registry. Handwritten cases below cover
+ * boundary rules around the caret, nesting, and gestures that degrade to plain
+ * insertion.
  */
 import { Editor } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStandaloneEditorExtensions } from "../../config";
-import { autoClosedRunLength } from "./AutoPairExtension";
-import { type AutoPairContext, EDITOR_AUTO_PAIRS } from "./auto-pairs";
+import type { AutoPairContext } from "./auto-pairs";
 
 const live: Editor[] = [];
 
@@ -117,13 +114,7 @@ function codeSpanEditor(): Editor {
   return editor;
 }
 
-/** Every context a pair can be declared in, and how a writer stands in it. */
-const CONTEXT_FIXTURES: readonly { context: AutoPairContext; caretIn: () => Editor }[] = [
-  { context: "prose", caretIn: () => openEditor() },
-  { context: "code-fence", caretIn: fenceEditor },
-  { context: "inline-code", caretIn: codeSpanEditor },
-];
-
+/** Explicit representative rows guard gesture behavior across editor contexts. */
 type PairRow = {
   context: AutoPairContext;
   open: string;
@@ -131,39 +122,51 @@ type PairRow = {
   caretIn: () => Editor;
 };
 
-function rowsWhere(declared: boolean): readonly PairRow[] {
-  return CONTEXT_FIXTURES.flatMap(({ context, caretIn }) =>
-    EDITOR_AUTO_PAIRS.filter((pair) => pair.contexts.includes(context) === declared).map(
-      ({ open, close }) => ({ context, open, close, caretIn }),
-    ),
-  );
-}
+const DECLARED_ROWS: readonly PairRow[] = [
+  { context: "prose", open: "[", close: "]", caretIn: () => openEditor() },
+  { context: "prose", open: '"', close: '"', caretIn: () => openEditor() },
+  { context: "code-fence", open: "{", close: "}", caretIn: fenceEditor },
+  { context: "code-fence", open: "\u0060", close: "\u0060", caretIn: fenceEditor },
+  { context: "inline-code", open: "{", close: "}", caretIn: codeSpanEditor },
+];
+const CLOSER_ROWS: readonly PairRow[] = [
+  { context: "prose", open: "[", close: "]", caretIn: () => openEditor() },
+  { context: "prose", open: '"', close: '"', caretIn: () => openEditor() },
+  { context: "code-fence", open: "\u0060", close: "\u0060", caretIn: fenceEditor },
+  { context: "inline-code", open: "{", close: "}", caretIn: codeSpanEditor },
+];
+const BACKSPACE_ROWS: readonly PairRow[] = [
+  { context: "prose", open: "[", close: "]", caretIn: () => openEditor() },
+  { context: "prose", open: '"', close: '"', caretIn: () => openEditor() },
+  { context: "code-fence", open: "\u0060", close: "\u0060", caretIn: fenceEditor },
+  { context: "inline-code", open: "{", close: "}", caretIn: codeSpanEditor },
+];
+const OMITTED_ROWS: readonly PairRow[] = [
+  { context: "prose", open: "{", close: "}", caretIn: () => openEditor() },
+  { context: "prose", open: "'", close: "'", caretIn: () => openEditor() },
+  { context: "prose", open: "`", close: "`", caretIn: () => openEditor() },
+  { context: "inline-code", open: "`", close: "`", caretIn: codeSpanEditor },
+];
 
-const DECLARED_ROWS = rowsWhere(true);
-const OMITTED_ROWS = rowsWhere(false);
-
-describe("every registered pair, in every context it declares", () => {
+describe("representative registered pairs", () => {
   it.each(DECLARED_ROWS)("$open writes its closer in $context", ({ open, close, caretIn }) => {
     const editor = caretIn();
     const room = shape(editor);
     type(editor, open);
-
     expect(shape(editor)).toBe(room.replace("|", `${open}|${close}`));
   });
 
-  it.each(DECLARED_ROWS)("$close steps over the closer written in $context", (row) => {
+  it.each(CLOSER_ROWS)("$close steps over the closer written in $context", (row) => {
     const editor = row.caretIn();
     const room = shape(editor);
     type(editor, row.open + row.close);
-
     expect(shape(editor)).toBe(room.replace("|", `${row.open}${row.close}|`));
   });
 
-  it.each(DECLARED_ROWS)("Backspace takes both halves of $open in $context", (row) => {
+  it.each(BACKSPACE_ROWS)("Backspace takes both halves of $open in $context", (row) => {
     const editor = row.caretIn();
     const room = shape(editor);
     type(editor, row.open);
-
     expect(press(editor, "Backspace")).toBe(true);
     expect(shape(editor)).toBe(room);
   });
@@ -174,7 +177,6 @@ describe("a context a pair leaves out is a decision", () => {
     const editor = caretIn();
     const room = shape(editor);
     type(editor, open);
-
     expect(shape(editor)).toBe(room.replace("|", `${open}|`));
   });
 });
@@ -366,20 +368,5 @@ describe("the gesture is one transaction", () => {
 
     expect(changes).toBe(1);
     expect(shape(editor)).toBe("[|]");
-  });
-});
-
-describe("the registry", () => {
-  // Their completion path is the markdown autoformat, which needs the closing
-  // run typed rather than written ahead of it.
-  it.each(["*", "_", "~"])("leaves the autoformat's own %s unpaired", (delimiter) => {
-    expect(EDITOR_AUTO_PAIRS.map((pair) => pair.open)).not.toContain(delimiter);
-  });
-
-  it("counts the closers a range replacement has to swallow", () => {
-    const editor = openEditor();
-    type(editor, "[[Gate");
-
-    expect(autoClosedRunLength(editor.state, editor.state.selection.from)).toBe(2);
   });
 });

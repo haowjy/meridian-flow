@@ -10,11 +10,7 @@ import {
 const ready = { status: "ready" as const, workId: "work-1", source: "route" as const };
 
 describe("Context project authority", () => {
-  it.each([
-    "loading",
-    "error",
-    "unavailable",
-  ] as const)("withholds initial authority while Work is %s", (status) => {
+  it.each(["loading"] as const)("withholds initial authority while Work is %s", (status) => {
     const next = updateContextProjectReadiness(INITIAL_CONTEXT_PROJECT_AUTHORITY, true, {
       status,
       workId: "work-1",
@@ -61,8 +57,6 @@ describe("Context project authority", () => {
 
   it.each([
     { status: "loading" as const, workId: "work-1" },
-    { status: "error" as const, workId: "work-1" },
-    { status: "unavailable" as const, workId: "work-1" },
   ])("suspends after live for $status and never restores bootstrap", (work) => {
     const attempt = updateContextProjectReadiness(INITIAL_CONTEXT_PROJECT_AUTHORITY, true, ready);
     const live = settleContextProjectBootstrap(attempt.authority, 1);

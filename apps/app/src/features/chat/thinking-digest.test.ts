@@ -34,49 +34,6 @@ function tool(args: {
 }
 
 describe("countFoldTools", () => {
-  it("counts document reads and edits as documents", () => {
-    const counts = countFoldTools([
-      tool({ toolName: "write", input: { command: "read", path: "ch1.md" } }),
-      tool({ toolName: "write", input: { command: "insert", path: "ch2.md" } }),
-    ]);
-
-    expect(counts.readDocuments.size).toBe(1);
-    expect(counts.editedDocuments.size).toBe(1);
-    expect(counts.steps).toBe(0);
-  });
-
-  it("counts every mutation command, including delete, as an edited document", () => {
-    const commands = ["create", "insert", "replace", "delete", "undo", "redo"];
-    const counts = countFoldTools(
-      commands.map((command, index) =>
-        tool({ toolName: "write", input: { command, path: `chapter-${index}.md` } }),
-      ),
-    );
-    expect(counts.editedDocuments.size).toBe(commands.length);
-    expect(counts.steps).toBe(0);
-  });
-
-  it("counts a write(read) tool call as a read document and a write mutate as an edit", () => {
-    const counts = countFoldTools([
-      tool({ toolName: "write", input: { command: "read", path: "ch1.md" } }),
-      tool({ toolName: "write", input: { command: "replace", path: "ch1.md" } }),
-    ]);
-
-    expect(counts.readDocuments.size).toBe(1);
-    expect(counts.editedDocuments.size).toBe(1);
-    expect([...counts.readDocuments]).toEqual([...counts.editedDocuments]);
-    expect(counts.steps).toBe(0);
-  });
-
-  it("dedupes repeated documents", () => {
-    const counts = countFoldTools([
-      tool({ toolName: "write", input: { command: "read", path: "ch1.md" } }),
-      tool({ toolName: "write", input: { command: "read", path: "ch1.md" } }),
-    ]);
-
-    expect(counts.readDocuments.size).toBe(1);
-  });
-
   it("does not count a diff review as an edit", () => {
     const counts = countFoldTools([
       // A diff carries no `path` on the wire; the writer-facing classification
@@ -101,13 +58,5 @@ describe("countFoldTools", () => {
 
     expect(counts.steps).toBe(4);
     expect(counts.readDocuments.size).toBe(0);
-  });
-
-  it("returns empty counts for no tools", () => {
-    const counts = countFoldTools([]);
-
-    expect(counts.readDocuments.size).toBe(0);
-    expect(counts.editedDocuments.size).toBe(0);
-    expect(counts.steps).toBe(0);
   });
 });

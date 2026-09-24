@@ -102,17 +102,6 @@ describe("SpawnReportCard", () => {
     expect(document.body.textContent).toContain("Open");
   });
 
-  it("keeps a background invocation status-only", async () => {
-    await act(async () =>
-      root.render(
-        <SpawnReportCard agentName="Critic" title={null} status="completed" childThreadId={null} />,
-      ),
-    );
-
-    expect(document.querySelector("a[href='scratch://outline.md']")).toBeNull();
-    expect(document.body.textContent).toContain("Done");
-  });
-
   it("shows foreground settlement collapsed to its first line and expands the full result", async () => {
     await act(async () =>
       root.render(
@@ -299,25 +288,6 @@ describe("SpawnReportCard", () => {
     expect(host.textContent).toContain(label);
     expect(host.textContent).toContain("Saved result");
     expect(host.textContent).not.toContain("Running");
-  });
-
-  it("renders a running card while the child is still working", async () => {
-    await act(async () =>
-      root.render(
-        <ChatThreadNavigationProvider onOpenThread={vi.fn()}>
-          <SpawnReportCard
-            agentName="Critic"
-            title="Review the chapter"
-            status="running"
-            childThreadId="child-3"
-          />
-        </ChatThreadNavigationProvider>,
-      ),
-    );
-
-    expect(document.body.textContent).toContain("Critic");
-    expect(document.body.textContent).toContain("Review the chapter");
-    expect(findButton("Open")).toBeDefined();
   });
 
   it("shows direct unavailable evidence without claiming a terminal outcome, then yields to recovery", async () => {

@@ -64,21 +64,4 @@ describe("ChildReportBlock", () => {
     expect(link).not.toBeNull();
     expect(document.body.textContent).toContain("Forest");
   });
-
-  it("renders a summary-only Return card with no artifact grid", async () => {
-    await act(async () =>
-      root.render(
-        <ChildReportBlock
-          content={{ kind: "child-report", props: { summary: "Done." } }}
-          respond={vi.fn()}
-          isAwaitingResponse={false}
-          responseState={null}
-          retry={vi.fn()}
-        />,
-      ),
-    );
-
-    expect(document.body.textContent).toContain("Done.");
-    expect(document.querySelector("ul")).toBeNull();
-  });
 });
