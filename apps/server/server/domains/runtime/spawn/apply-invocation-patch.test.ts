@@ -248,6 +248,14 @@ describe("applyInvocationPatch", () => {
     for (const patch of [
       { tools: { read: "deny" } },
       { tools: { file_read: "allow" } },
+      { tools: ["FileRead"] },
+      { tools: ["fileRead(manuscript://*)"] },
+      { tools: { rEad: "deny" } },
+      { tools: { cAt: "deny" } },
+      { "disallowed-tools": ["FileRead"] },
+      { "disallowed-tools": ["fileRead(manuscript://*)"] },
+      { "disallowed-tools": ["rEad"] },
+      { "disallowed-tools": ["cAt"] },
       { "disallowed-tools": ["cat"] },
     ]) {
       await expect(

@@ -114,12 +114,20 @@ const RETIRED_READ_NAMES = new Set(["read", "cat", "view", "file_read"]);
 const RETIRED_READ_ERROR =
   'Reading is always available; remove this retired read capability entry. Use "edit" to control document mutations.';
 
-function isRetiredReadName(value: string): boolean {
+function validateAuthoringToolName(
+  value: string,
+): { normalized: NormalizedToolName; error?: undefined } | { normalized: null; error: string } {
   const open = value.indexOf("(");
-  const head = (open < 0 ? value : value.slice(0, open))
-    .trim()
-    .replace(/[A-Z]/g, (x) => x.toLowerCase());
-  return RETIRED_READ_NAMES.has(head);
+  const rawHead = (open < 0 ? value : value.slice(0, open)).trim().toLowerCase();
+  const normalized = normalizeToolName(value);
+  if (RETIRED_READ_NAMES.has(rawHead) || (normalized && RETIRED_READ_NAMES.has(normalized.head))) {
+    return { normalized: null, error: RETIRED_READ_ERROR };
+  }
+  if (!normalized) return { normalized: null, error: "Invalid Mars tool reference" };
+  if (normalized.head === "write") {
+    return { normalized: null, error: WRITE_IS_MODEL_TOOL_ERROR };
+  }
+  return { normalized };
 }
 
 export const toolReferenceSchema = z
@@ -127,20 +135,12 @@ export const toolReferenceSchema = z
   .trim()
   .min(1)
   .transform((value, context) => {
-    if (isRetiredReadName(value)) {
-      context.addIssue({ code: "custom", message: RETIRED_READ_ERROR });
+    const validated = validateAuthoringToolName(value);
+    if (!validated.normalized) {
+      context.addIssue({ code: "custom", message: validated.error });
       return z.NEVER;
     }
-    const normalized = normalizeToolName(value);
-    if (normalized === null) {
-      context.addIssue({ code: "custom", message: "Invalid Mars tool reference" });
-      return z.NEVER;
-    }
-    if (normalized.head === "write") {
-      context.addIssue({ code: "custom", message: WRITE_IS_MODEL_TOOL_ERROR });
-      return z.NEVER;
-    }
-    return normalized.name;
+    return validated.normalized.name;
   });
 export const toolReferencesSchema = z
   .array(toolReferenceSchema)
@@ -154,32 +154,29 @@ export const toolReferencesSchema = z
 export const toolMapSchema = z
   .record(z.string(), toolPolicySchema)
   .transform((map) =>
-    Object.entries(map).map(([name, policy]) => [normalizeToolName(name.trim()), policy] as const),
+    Object.entries(map).map(
+      ([name, policy]) => [validateAuthoringToolName(name.trim()), policy] as const,
+    ),
   )
   .superRefine((folded, context) => {
     const names = new Map<string, string>();
-    for (const [normalized, policy] of folded) {
-      if (normalized && isRetiredReadName(normalized.name)) {
-        context.addIssue({ code: "custom", message: RETIRED_READ_ERROR });
+    for (const [validated, policy] of folded) {
+      const normalized = validated.normalized;
+      if (!normalized) {
+        context.addIssue({ code: "custom", message: validated.error });
         continue;
       }
-      if (normalized?.head === "write") {
-        context.addIssue({ code: "custom", message: WRITE_IS_MODEL_TOOL_ERROR });
-        continue;
-      }
-      const name = normalized?.name;
-      if (!name || (names.has(name) && names.get(name) !== policy)) {
+      const name = normalized.name;
+      if (names.has(name) && names.get(name) !== policy) {
         context.addIssue({ code: "custom", message: "Empty or duplicate normalized tool name" });
       }
-      if (name) names.set(name, policy);
+      names.set(name, policy);
     }
   })
   .transform((folded) =>
     Object.fromEntries(
-      folded.flatMap(([normalized, policy]) =>
-        normalized === null || normalized.head === "write"
-          ? []
-          : [[normalized.name, policy] as const],
+      folded.flatMap(([validated, policy]) =>
+        !validated.normalized ? [] : [[validated.normalized.name, policy] as const],
       ),
     ),
   );
@@ -204,7 +201,7 @@ export const resolvedToolsSchema = z.union([
   z.record(z.string(), toolPolicySchema),
 ]);
 
-/** Authoring tool selection; resolved configurations are already canonical. */
+/** A retained skill reference resolved by binding preparation. */
 export const retainedSkillReferenceSchema = z.object({
   packageRevisionId: z.string(),
   path: z.string(),

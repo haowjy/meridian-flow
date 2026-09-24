@@ -190,6 +190,38 @@ describe("Agent definition compiler", () => {
     }
   });
 
+  it("rejects case-folded and normalized retired read names across frontmatter shapes", () => {
+    const cases = [
+      { tools: ["FileRead"] },
+      { tools: ["fileRead(manuscript://*)"] },
+      { tools: { FileRead: "deny" } },
+      { tools: { rEad: "deny" } },
+      { tools: { cAt: "deny" } },
+      { "disallowed-tools": ["FileRead"] },
+      { "disallowed-tools": ["fileRead(manuscript://*)"] },
+      { "disallowed-tools": ["rEad"] },
+      { "disallowed-tools": ["cAt"] },
+    ];
+
+    for (const meta of cases) {
+      const result = compileAgentDefinition({ body: "", meta });
+      expect(result.ok, JSON.stringify(meta)).toBe(false);
+      if (!result.ok) {
+        expect(
+          result.diagnostics.some((diagnostic) =>
+            diagnostic.message.includes("Reading is always available"),
+          ),
+          JSON.stringify(meta),
+        ).toBe(true);
+      }
+    }
+
+    expect(compile({ tools: ["file_write", "apply_patch"] }).definition.metadata.tools).toEqual([
+      "edit",
+    ]);
+    expect(compile({ tools: { edit: "allow" } }).ok).toBe(true);
+  });
+
   it("validates both layers instead of falling back on invalid overrides", () => {
     for (const [meta, config] of [
       [{ effort: "bogus" }, { effort: "high" }],

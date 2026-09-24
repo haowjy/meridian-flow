@@ -116,7 +116,7 @@ the agent-less generic subagent.
 | `ToolRegistry` | Name-keyed map. Duplicate names throw immediately. `getDefinitions()` advertises only server-executable registrations whose `advertise !== false`. |
 | `ToolExecutor` | Dispatches `ToolCallInput` to registered handlers with timeout, abort, sequential execution, and capability-gated context injection. |
 | `ToolRegistration` | `source: "core" | "spawn" | "skill"`, `definition`, `execution`, optional `timeoutMs`, `sequential`, `advertise`, one privileged `capability`, and optional `formatExecutionError` when a tool owns its model-facing error protocol. |
-| Core handlers | The strict six-branch `work` union, the shared read/write document definitions, and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
+| Core handlers | The strict six-branch `work` union, the single `write` document definition, and other definitions live in `tools/core-tools.ts`; composition wires their handlers through `lib/wired-core-tools.ts`. |
 | Skills | References are retained at binding. `createSkillToolRegistrations` registers the `skill` tool (`source: "skill"`); invoke loads a SKILL.md body only when the slug is in Agent `skills.available` and `model-invocable` is not false. No legacy `invoke` registration or mutable skill catalog participates in preparation. |
 | Spawn tools | `tools/spawn-tools.ts` registers `spawn`, `thread_message`, and `return_result` with explicit privileged capabilities. `thread_message` `{ ref, message, mode }` puts a message into a thread (default `mode: background`); foreground targets a subagent in the caller's subtree and returns its report. Neither spawn nor thread_message accepts an escalation patch. |
 
@@ -257,10 +257,13 @@ facet.
   command is `invalid_arguments`; a recognized but disabled command or tool is
   `permission_denied`. Dispatch does not apply policy. Direct
   `toolExecutor.executeTool` does not apply policy.
-- Document reads are advertised as `read({ command: "read", path: "..." })`;
-  both fields are required. `read({ command: "diff" })` inspects the turn's
-  folded edit result instead of reading a path. The shared document-command
-  schema does not make `write(command: "read")` a model-facing read call.
+- The single document tool is `write` and every call requires an explicit
+  `command`. Baseline `write({ command: "read", path: "..." })` reads and
+  `write({ command: "diff" })` inspects the folded turn trail; these baseline
+  commands do not expand URI, object, Project, owner, or document authorization.
+  Diff additionally requires an owned Work draft, including the No Work row
+  when draft mode is active; otherwise it returns `work_required`. Neither
+  command changes Work binding or write mode.
 - Model-call cost gating is not a `PermissionGate` method. The runtime uses
   `CreditLedger` plus `TreeBudget` (for spawn trees) through `turn-accounting.ts`
   and `ChildRunCoordinator`.
