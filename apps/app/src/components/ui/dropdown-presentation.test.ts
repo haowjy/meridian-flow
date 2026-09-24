@@ -4,7 +4,6 @@ import {
   dropdownRowVariants,
   dropdownSearchClass,
   dropdownSurfaceVariants,
-  dropdownThreadRegionVariants,
 } from "./dropdown-presentation";
 import { selectScrollControlClass } from "./select";
 
@@ -32,29 +31,26 @@ describe("compact dropdown pointer policy", () => {
     expect(row).toContain("text-left");
   });
 
-  it("leaves horizontal highlight geometry to rows in every row-bearing region", () => {
+  it("insets row paint within menu and picker surfaces", () => {
     const rowRegions = [
       dropdownSurfaceVariants({ page: "navigation" }),
       dropdownSurfaceVariants({ page: "picker" }),
-      dropdownThreadRegionVariants({ region: "results" }),
-      dropdownThreadRegionVariants({ region: "footer" }),
     ];
 
     for (const region of rowRegions) {
       expect(region).toMatch(/(?:^|\s)py-/);
-      expect(region).toMatch(/(?:^|\s)px-0(?:\s|$)/);
-      expect(region).not.toMatch(/(?:^|\s)(?:p|px)-(?!0(?:\s|$))/);
+      expect(region).toMatch(/(?:^|\s)px-1(?:\s|$)/);
     }
     expect(dropdownRowVariants()).toMatch(/(?:^|\s)px-2(?:\s|$)/);
   });
 
-  it("delegates direct and composite row focus to the shared square-edge utility", () => {
+  it("keeps keyboard focus within the rounded row", () => {
     const row = dropdownRowVariants();
 
     expect(row).toContain("dropdown-focus-ring");
-    expect(row).toMatch(/(?:^|\s)rounded-none(?:\s|$)/);
+    expect(row).toMatch(/(?:^|\s)rounded-md(?:\s|$)/);
     expect(dropdownRowContainerClass).toContain("dropdown-focus-ring");
-    expect(dropdownRowContainerClass).toMatch(/(?:^|\s)rounded-none(?:\s|$)/);
+    expect(dropdownRowContainerClass).toMatch(/(?:^|\s)rounded-md(?:\s|$)/);
     expect(row).not.toMatch(/(?:^|\s)focus-ring(?:\s|$)/);
   });
 });

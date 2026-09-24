@@ -96,7 +96,7 @@ export function TreeChildren({
 }
 
 function rowPaddingLeft(depth: number): number {
-  return 8 + depth * 16;
+  return depth * 16;
 }
 
 function activateOnKey(handler: () => void) {
@@ -181,7 +181,7 @@ function DirRow({
           onClick={toggle}
           onKeyDown={activateOnKey(toggle)}
           className={cn(
-            "group focus-ring flex items-center pr-1 text-sm text-foreground hover:bg-sidebar-accent",
+            "group focus-ring mx-2 flex items-center rounded-md pr-1 text-sm text-foreground hover:bg-sidebar-accent/50",
             contextTreeRowClassName,
           )}
           style={{ paddingLeft: rowPaddingLeft(depth) }}
@@ -261,13 +261,12 @@ function FileRow({
         onClick={select}
         onKeyDown={activateOnKey(select)}
         className={cn(
-          "group focus-ring flex items-center pr-1 text-sm",
+          "group focus-ring mx-2 flex items-center rounded-md pr-1 text-sm",
           contextTreeRowClassName,
-          /* Hover is inactive-only: the active row holds its paper tone
-             (white-is-active). */
+          /* Hover is inactive-only: the active row retains its stronger fill. */
           active
             ? "bg-sidebar-accent font-medium text-foreground"
-            : "text-foreground hover:bg-sidebar-accent",
+            : "text-foreground hover:bg-sidebar-accent/50",
         )}
         style={{ paddingLeft: rowPaddingLeft(depth) }}
       >
@@ -337,7 +336,7 @@ function RenameRow({
     onDone,
   });
   return (
-    <div className="flex h-7 items-center pr-1" style={{ paddingLeft: rowPaddingLeft(depth) }}>
+    <div className="mx-2 flex h-7 items-center pr-1" style={{ paddingLeft: rowPaddingLeft(depth) }}>
       <span className="h-7 w-4 shrink-0" aria-hidden />
       <RowIcon icon={icon} />
       <div className="relative ml-0.5 flex min-w-0 flex-1 items-center">
@@ -384,7 +383,7 @@ function CreateRow({
     onCreated: kind === "file" ? env.onCreatedFilePath : undefined,
   });
   return (
-    <div className="flex h-7 items-center pr-1" style={{ paddingLeft: rowPaddingLeft(depth) }}>
+    <div className="mx-2 flex h-7 items-center pr-1" style={{ paddingLeft: rowPaddingLeft(depth) }}>
       <span className="h-7 w-4 shrink-0" aria-hidden />
       <RowIcon icon={form.icon} />
       <div className="relative ml-0.5 flex min-w-0 flex-1 items-center">

@@ -43,6 +43,7 @@
 
   --color-shelf: oklch(0.215 0.012 84);
   --color-shelf-active: oklch(0.29 0.016 84);
+  --color-shelf-hover: color-mix(in oklab, var(--color-foreground) 6%, var(--color-shelf));
   --color-shelf-ink-subtle: oklch(0.78 0.02 84);
   --color-shelf-ink-muted: oklch(0.74 0.012 84);
   --color-shelf-destructive: oklch(0.68 0.14 17);
