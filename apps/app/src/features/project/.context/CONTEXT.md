@@ -251,12 +251,13 @@ catch-all child is the only workspace route adapter. It loads the full project
 by UUID, keeps `ProjectView` mounted for same-project child paths, and passes
 resolved address state and typed navigation commands to controlled controllers.
 Controllers never parse or mutate browser URLs themselves. Project title edits
-do not change the UUID address. In this checkout, desktop and phone use one
-rename dialog and mutation with optimistic cache projection and rollback on
-failure; the phone drawer closes before opening it. This is current behavior,
-not the settled target interaction: the writer has since chosen inline title
-editing, which the orchestrator has not landed. Update this contract with that
-implementation rather than treating the dialog as final.
+do not change the UUID address. Desktop rail and phone drawer edit their own
+project title inline: click/tap to focus and select, Enter or blur saves,
+Escape cancels. The shared title editor keeps the draft and local error visible
+through rejection, while `ProjectView` owns one optimistic title mutation and
+cache rollback. It fences overlapping list reads before confirming a successful
+rename so a late stale response cannot overwrite the title. The phone top bar
+shows project identity without becoming a second edit surface.
 `routing/project-address.ts` owns the
 project UUID/browser grammar; `routing/project-navigation.ts` owns guarded
 push/replace behavior. The legacy slug project routes and `?screen`/`?thread`

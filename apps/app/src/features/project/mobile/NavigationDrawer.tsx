@@ -10,6 +10,7 @@ import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
+import { InlineProjectTitle, type ProjectTitleEdit } from "../shell/InlineProjectTitle";
 import type { ScreenKey } from "../shell/screens";
 import { WorkspaceNavBody } from "../shell/WorkspaceNavBody";
 
@@ -18,7 +19,7 @@ export type NavigationDrawerProps = {
   onOpenChange: (open: boolean) => void;
   projectId: string;
   projectTitle: string;
-  onRenameProject: () => void;
+  titleEdit: ProjectTitleEdit;
   activeScreen: ScreenKey;
   editorWorkId: string | null;
   contextLive: boolean;
@@ -33,7 +34,7 @@ export function NavigationDrawer({
   onOpenChange,
   projectId,
   projectTitle,
-  onRenameProject,
+  titleEdit,
   activeScreen,
   editorWorkId,
   contextLive,
@@ -108,18 +109,13 @@ export function NavigationDrawer({
         >
           <nav aria-label={t`Workspace navigation`} className="flex h-full min-h-0 flex-col">
             <div className="flex h-12 shrink-0 items-center border-b border-border-subtle px-3">
-              <button
-                type="button"
-                aria-label={t`Rename project: ${projectTitle}`}
+              <InlineProjectTitle
                 title={projectTitle}
+                {...titleEdit}
+                showRenameHint
                 className="focus-ring flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-sm font-semibold hover:bg-sidebar-accent"
-                onClick={onRenameProject}
-              >
-                <span className="min-w-0 flex-1 truncate">{projectTitle}</span>
-                <span className="text-xs font-normal text-ink-muted">
-                  <Trans>Rename</Trans>
-                </span>
-              </button>
+                inputClassName="h-11 text-sm"
+              />
             </div>
 
             {/* Selecting a destination also closes the drawer — a chrome

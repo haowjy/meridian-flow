@@ -93,10 +93,10 @@ import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
 import { ProjectRouteBoundary, type ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
+import type { ProjectTitleEdit } from "./shell/InlineProjectTitle";
 import { LeftSidebar } from "./shell/LeftSidebar";
 import type { PaneHeaderRailToggle } from "./shell/PaneHeader";
 import { ProjectShell } from "./shell/ProjectShell";
-import { RenameProjectDialog } from "./shell/RenameProjectDialog";
 import type { ScreenKey } from "./shell/screens";
 import { useContextProjectAuthority } from "./use-context-project-authority";
 import { WorkPaneController } from "./WorkPaneController";
@@ -172,7 +172,6 @@ export function ProjectView(props: ProjectViewProps) {
   const queryClient = useQueryClient();
   const cachedProject = useProject(props.projectId);
   const projectTitle = cachedProject?.title ?? props.project.title;
-  const [renameOpen, setRenameOpen] = useState(false);
   const renameProject = useMutation({
     mutationKey: projectQueryKeys.rename(props.projectId),
     mutationFn: (title: string) => updateProject(props.projectId, { title }),
@@ -208,18 +207,16 @@ export function ProjectView(props: ProjectViewProps) {
       if (previous.detail)
         queryClient.setQueryData(projectQueryKeys.detail(props.projectId), previous.detail);
     },
-    onSuccess: (project) => {
+    onSuccess: async (project) => {
+      // A list read started while the mutation was pending may return an old
+      // title after PATCH succeeds. Fence it before publishing confirmation.
+      await queryClient.cancelQueries({ queryKey: projectQueryKeys.list });
       queryClient.setQueryData<Project[] | null>(projectQueryKeys.list, (list) =>
         list?.map((item) => (item.id === project.id ? project : item)),
       );
       queryClient.setQueryData(projectQueryKeys.detail(props.projectId), project);
-      setRenameOpen(false);
     },
   });
-  const openRename = () => {
-    renameProject.reset();
-    setRenameOpen(true);
-  };
   const accountId = useAccountId();
   const availability = useProjectContextAvailabilityCoordinator();
   const removal = useContextRemovalCoordinator();
@@ -354,41 +351,35 @@ export function ProjectView(props: ProjectViewProps) {
     onOpenThread: (threadId: string) => void props.onSelectThread(threadId),
   };
   return (
-    <>
-      <div className="flex h-full min-h-0 w-full bg-background text-foreground">
-        {hydrated ? (
-          <>
-            {resolvedProps.contextLive ? (
-              <ProjectContextRemovalController
-                projectId={props.projectId}
-                activeScreen={props.activeScreen}
-                activeContextScheme={props.activeContextScheme}
-                activeContextPath={props.activeContextPath}
-                editorWorkId={editorWorkId}
-                localDocumentId={props.activeLocalDocumentId}
-                route={props.contextRemovalRoute}
-              />
-            ) : null}
-            <HydratedReviewProject
-              {...resolvedProps}
-              chatWorkId={chatWorkId}
-              chatThreadId={resolvedThreadId}
-              projectTitle={projectTitle}
-              onRenameProject={openRename}
+    <div className="flex h-full min-h-0 w-full bg-background text-foreground">
+      {hydrated ? (
+        <>
+          {resolvedProps.contextLive ? (
+            <ProjectContextRemovalController
+              projectId={props.projectId}
+              activeScreen={props.activeScreen}
+              activeContextScheme={props.activeContextScheme}
+              activeContextPath={props.activeContextPath}
+              editorWorkId={editorWorkId}
+              localDocumentId={props.activeLocalDocumentId}
+              route={props.contextRemovalRoute}
             />
-          </>
-        ) : null}
-      </div>
-      {renameOpen ? (
-        <RenameProjectDialog
-          title={projectTitle}
-          pending={renameProject.isPending}
-          error={renameProject.error}
-          onClose={() => setRenameOpen(false)}
-          onSave={(title) => renameProject.mutate(title)}
-        />
+          ) : null}
+          <HydratedReviewProject
+            {...resolvedProps}
+            chatWorkId={chatWorkId}
+            chatThreadId={resolvedThreadId}
+            projectTitle={projectTitle}
+            titleEdit={{
+              pending: renameProject.isPending,
+              error: renameProject.error,
+              onStart: () => renameProject.reset(),
+              onSave: (title) => renameProject.mutateAsync(title),
+            }}
+          />
+        </>
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -407,7 +398,7 @@ export type ResolvedProjectViewProps = ProjectViewProps & {
   contextLive: boolean;
 };
 
-type ProjectIdentityProps = { projectTitle: string; onRenameProject: () => void };
+type ProjectIdentityProps = { projectTitle: string; titleEdit: ProjectTitleEdit };
 
 export type ReviewScopedProjectProps = ResolvedProjectViewProps &
   ProjectIdentityProps & {
@@ -554,7 +545,7 @@ function HydratedReviewControllers({
   ...props
 }: ResolvedProjectViewProps & {
   projectTitle: string;
-  onRenameProject: () => void;
+  titleEdit: ProjectTitleEdit;
   chatWorkId: string | null;
   chatThreadId: string | null;
   chatReviewState: DraftReviewStateOwner;
@@ -683,7 +674,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         <LeftSidebar
           projectId={props.projectId}
           projectTitle={props.projectTitle}
-          onRenameProject={props.onRenameProject}
+          titleEdit={props.titleEdit}
           activeScreen={props.activeScreen}
           editorWorkId={props.editorWorkId}
           contextLive={props.contextLive}

@@ -591,7 +591,6 @@ msgstr ""
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
 #: src/features/project/context/ContextEntryActions.tsx
-#: src/features/project/shell/RenameProjectDialog.tsx
 #: src/features/project/work/WorkDialog.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Cancel"
@@ -2588,11 +2587,15 @@ msgstr ""
 msgid "Project name"
 msgstr ""
 
-#: src/features/project/shell/RenameProjectDialog.tsx
+#: src/features/project/shell/InlineProjectTitle.tsx
+msgid "Project name is required"
+msgstr ""
+
+#: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Project title"
 msgstr ""
 
-#: src/features/project/shell/RenameProjectDialog.tsx
+#: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Project title could not be saved. Try again."
 msgstr ""
 
@@ -2781,7 +2784,7 @@ msgstr ""
 #: src/features/project/context/ContextTreeRows.tsx
 #: src/features/project/context/DocumentIdentityBar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
-#: src/features/project/mobile/NavigationDrawer.tsx
+#: src/features/project/shell/InlineProjectTitle.tsx
 msgid "Rename"
 msgstr ""
 
@@ -2791,12 +2794,16 @@ msgid "Rename chat"
 msgstr ""
 
 #: src/features/project/shell/RenameProjectDialog.tsx
-msgid "Rename project"
-msgstr ""
+#~ msgid "Rename project"
+#~ msgstr ""
 
 #: src/features/project/mobile/NavigationDrawer.tsx
 #: src/features/project/shell/LeftSidebar.tsx
-msgid "Rename project: {projectTitle}"
+#~ msgid "Rename project: {projectTitle}"
+#~ msgstr ""
+
+#: src/features/project/shell/InlineProjectTitle.tsx
+msgid "Rename project: {title}"
 msgstr ""
 
 #: src/features/project/context/DocumentIdentityBar.tsx
@@ -2949,7 +2956,6 @@ msgid "Save {0}"
 msgstr ""
 
 #: src/components/app/composer/ComposerReferenceMenu.tsx
-#: src/features/project/shell/RenameProjectDialog.tsx
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "Save changes"
 msgstr ""
@@ -2982,7 +2988,10 @@ msgstr ""
 msgid "Saving chat title"
 msgstr ""
 
-#: src/features/project/shell/RenameProjectDialog.tsx
+#: src/features/project/shell/InlineProjectTitle.tsx
+msgid "Saving project title"
+msgstr ""
+
 #: src/features/project/work/WorkDetailScreen.tsx
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Saving…"
