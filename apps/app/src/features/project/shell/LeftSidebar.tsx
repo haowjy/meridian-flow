@@ -9,7 +9,7 @@
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { PanelLeftClose, Pencil } from "lucide-react";
+import { PanelLeftClose } from "lucide-react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
@@ -68,7 +68,7 @@ export function LeftSidebar({
       aria-label={t`Workspace navigation`}
       className="flex h-full min-h-0 w-full flex-col text-foreground"
     >
-      <div className="flex h-10 shrink-0 items-center gap-1 bg-sidebar-accent/40 px-2">
+      <div className="flex h-10 shrink-0 items-center gap-1 bg-(--project-header-bg) px-2">
         <PanelToggleButton
           icon={PanelLeftClose}
           label={t`Collapse sidebar  [`}
@@ -79,10 +79,9 @@ export function LeftSidebar({
           aria-label={t`Rename project: ${projectTitle}`}
           title={projectTitle}
           onClick={onRenameProject}
-          className="focus-ring flex h-8 min-w-0 flex-1 items-center gap-1 rounded-md px-2 text-left text-[14px] font-semibold hover:bg-sidebar-accent"
+          className="focus-ring flex h-8 min-w-0 flex-1 cursor-default items-center rounded-md px-2 text-left text-[14px] font-semibold hover:bg-sidebar-accent"
         >
-          <span className="min-w-0 flex-1 truncate">{projectTitle}</span>
-          <Pencil className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <span className="min-w-0 cursor-text truncate">{projectTitle}</span>
         </button>
       </div>
 
