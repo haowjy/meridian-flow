@@ -180,9 +180,10 @@ Existing standalone `/chat/<id>` links still render an independent-chat view.
 Their backing projects are hidden from the library by the device-local
 independent-project registry until the writer promotes one through that view.
 Neither the account library nor project entry exposes independent-chat creation.
-`/projects/new` names a project before its server-assigned slug is available;
-the form is the neutral pending destination and keeps uncertain outcomes there
-rather than inventing a project address.
+`/projects/new` mints a project UUID for an idempotent create request, but
+remains the pending destination until creation is confirmed or reconciled by
+that ID. An uncertain outcome stays on the form for retry, not on an unconfirmed
+project screen.
 
 Chat landing Send mints a thread id, writes local turns, replaces the URL, then
 `useThreadHandoff` persists create-or-get + admit + run on those ids. Failure

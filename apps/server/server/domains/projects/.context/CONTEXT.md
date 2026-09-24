@@ -1,8 +1,8 @@
-# domains/projects — Project bootstrap
+# domains/projects — Projects and Work
 
-Minimal Meridian-specific bootstrap code for the first authenticated workspace.
-This domain is not the full project CRUD surface; that lives in
-`../projects/` and is used by the upstream-parity `/api/projects/*` routes.
+This domain owns project persistence and bootstrap plus Work metadata and
+lifecycle operations. `/api/projects/*` and `/api/works/*` routes are adapters
+over its owner-gated operations.
 
 ## What it owns
 
@@ -14,8 +14,10 @@ This domain is not the full project CRUD surface; that lives in
 
 ## Contracts
 
-Project handles are owner-scoped, title-derived at creation, and stable across
-renames. Both personal bootstrap and ordinary creation serialize allocation on
+Project slug handles are owner-scoped, title-derived at creation, and stable
+across renames. Browser `/p/{projectId}` and project CRUD routes instead use the
+existing UUID, so title edits never rewrite a browser address. Both
+personal bootstrap and ordinary creation serialize allocation on
 the same owner lock. Project, Work and chat handles remain reserved through soft
 deletion. Exact `findLiveByOwnerSlug` lookup is separate from UUID `findById`;
 missing, foreign-owner and deleted handles resolve unavailable.
@@ -77,11 +79,3 @@ missing, foreign-owner and deleted handles resolve unavailable.
   transaction after that lock. Reviewable branch-journal creation and redo use
   the same lifecycle boundary. Restore refuses rather than clobbering a
   reclaimed active name.
-
-## Relationship to `domains/projects`
-
-`domains/projects` carries the copied upstream repository and owner-gate
-surface: project CRUD, work list/search/touch, user provisioning, and
-`requireProjectOwner`. Root-chat creation is nullable and Work-list routes are
-pure catalog reads.
-Route wrappers under `/api/projects/*` should stay thin over this domain.
