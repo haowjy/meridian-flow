@@ -79,8 +79,8 @@ msgstr "{0, plural, one {# pending draft} other {# pending drafts}}"
 
 #. placeholder {0}: matches.length
 #: src/features/home/ProjectLibrary.tsx
-msgid "{0, plural, one {# project} other {# projects}}"
-msgstr "{0, plural, one {# project} other {# projects}}"
+#~ msgid "{0, plural, one {# project} other {# projects}}"
+#~ msgstr "{0, plural, one {# project} other {# projects}}"
 
 #. placeholder {0}: count ?? 0
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
@@ -408,8 +408,8 @@ msgid "Alignment applies to paragraphs, headings, and tables."
 msgstr "Alignment applies to paragraphs, headings, and tables."
 
 #: src/features/home/ProjectLibrary.tsx
-msgid "All projects"
-msgstr "All projects"
+#~ msgid "All projects"
+#~ msgstr "All projects"
 
 #: src/features/project/work/WorkDetailScreen.tsx
 msgid "All Work"
@@ -547,8 +547,8 @@ msgid "Bold"
 msgstr "Bold"
 
 #: src/features/home/ProjectLibrary.tsx
-msgid "Books, series, and story worlds in one place."
-msgstr "Books, series, and story worlds in one place."
+#~ msgid "Books, series, and story worlds in one place."
+#~ msgstr "Books, series, and story worlds in one place."
 
 #: src/components/app/composer/placeholders.ts
 msgid "Brainstorm away"
@@ -2306,8 +2306,8 @@ msgid "No plans available."
 msgstr "No plans available."
 
 #: src/features/home/ProjectLibrary.tsx
-msgid "No projects match your search."
-msgstr "No projects match your search."
+#~ msgid "No projects match your search."
+#~ msgstr "No projects match your search."
 
 #: src/features/home/ProjectLibrary.tsx
 msgid "No projects yet"
@@ -2594,6 +2594,10 @@ msgstr "Project wasn’t confirmed. Retry creation."
 #: src/features/home/ProjectLibrary.tsx
 #~ msgid "projects"
 #~ msgstr "projects"
+
+#: src/features/home/ProjectLibrary.tsx
+msgid "Projects"
+msgstr "Projects"
 
 #: src/features/home/ProjectLibrary.tsx
 msgid "Projects couldn’t load."
@@ -2985,8 +2989,8 @@ msgid "Search documents or paste a web link"
 msgstr "Search documents or paste a web link"
 
 #: src/features/home/ProjectLibrary.tsx
-msgid "Search projects"
-msgstr "Search projects"
+#~ msgid "Search projects"
+#~ msgstr "Search projects"
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
 msgid "Search Work"

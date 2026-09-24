@@ -1,14 +1,12 @@
 /** Authenticated project library: select an existing body of work or begin another. */
 import { t } from "@lingui/core/macro";
-import { Plural, Trans } from "@lingui/react/macro";
+import { Trans } from "@lingui/react/macro";
 import { Link } from "@tanstack/react-router";
-import { Plus, Search } from "lucide-react";
-import { useState } from "react";
+import { Plus } from "lucide-react";
 import { useProjectListStatus } from "@/client/query/useProjectList";
 import { useIndependentProjectIds, useProjectStore } from "@/client/stores";
 import { MeridianMark } from "@/components/app/MeridianMark";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { AccountMenu } from "@/features/account/AccountMenu";
 import { formatRelativeTime } from "@/lib/date-groups";
 import { displayProjectTitle } from "@/lib/project-title";
@@ -17,19 +15,12 @@ export function ProjectLibrary() {
   const { projects, isError, refetch } = useProjectListStatus();
   const independentIds = useIndependentProjectIds();
   const now = useProjectStore((state) => state.now);
-  const [search, setSearch] = useState("");
   const visible = projects?.filter((project) => !independentIds.has(project.id)) ?? null;
-  const matches =
-    visible?.filter((project) =>
-      displayProjectTitle(project.title)
-        .toLocaleLowerCase()
-        .includes(search.trim().toLocaleLowerCase()),
-    ) ?? [];
 
   return (
     <main className="app-scroll h-full bg-background text-foreground">
       <div className="mx-auto max-w-5xl px-5 pb-14 sm:px-8">
-        <header className="flex items-center justify-between gap-4 border-b border-border py-4">
+        <header className="flex items-center justify-between gap-4 py-3">
           <Link
             to="/"
             className="focus-ring flex items-center gap-1 rounded-md text-sm font-semibold tracking-tight"
@@ -42,42 +33,17 @@ export function ProjectLibrary() {
           </div>
         </header>
 
-        <div className="mx-auto max-w-[44rem] pt-7 sm:pt-10">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-                <Trans>Your projects</Trans>
-              </h1>
-              <p className="mt-2 text-sm text-ink-muted">
-                <Trans>Books, series, and story worlds in one place.</Trans>
-              </p>
-            </div>
+        <div className="mx-auto max-w-4xl pt-4 sm:pt-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+              <Trans>Your projects</Trans>
+            </h1>
             <Button asChild size="sm" className="[@media(pointer:coarse)]:min-h-11">
               <Link to="/projects/new" preload="render">
                 <Plus aria-hidden /> <Trans>Create project</Trans>
               </Link>
             </Button>
           </div>
-
-          {visible !== null && visible.length > 0 && (
-            <div className="relative mt-6 max-w-md">
-              <label htmlFor="project-search" className="visually-hidden">
-                <Trans>Search projects</Trans>
-              </label>
-              <Search
-                aria-hidden
-                className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-muted"
-              />
-              <Input
-                id="project-search"
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder={t`Search projects`}
-                className="h-11 bg-card pl-10"
-              />
-            </div>
-          )}
 
           {isError && !visible?.length ? (
             <div className="mt-10" role="alert">
@@ -102,7 +68,7 @@ export function ProjectLibrary() {
               </p>
             </div>
           ) : (
-            <section className="mt-7" aria-labelledby="project-list-heading">
+            <section className="mt-4" aria-label={t`Projects`}>
               {isError && (
                 <div className="mb-5 flex items-center gap-3 text-sm" role="status">
                   <span>
@@ -113,47 +79,41 @@ export function ProjectLibrary() {
                   </Button>
                 </div>
               )}
-              <div className="mb-4 flex items-baseline justify-between gap-4">
-                <h2 id="project-list-heading" className="text-sm font-semibold">
-                  <Trans>All projects</Trans>
-                </h2>
-                <span className="text-xs text-ink-muted">
-                  <Plural value={matches.length} one="# project" other="# projects" />
-                </span>
-              </div>
-              {matches.length ? (
-                <ul className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 sm:gap-x-6">
-                  {matches.map((project) => {
-                    const title = displayProjectTitle(project.title);
-                    return (
-                      <li key={project.id} className="min-w-0">
-                        <Link
-                          to="/p/$projectSlug/$"
-                          params={{ projectSlug: project.slug, _splat: "" }}
-                          className="group focus-ring block rounded-md"
-                          aria-label={t`Open ${title}`}
+              <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                {visible.map((project) => {
+                  const title = displayProjectTitle(project.title);
+                  return (
+                    <li key={project.id} className="min-w-0">
+                      <Link
+                        to="/p/$projectSlug/$"
+                        params={{ projectSlug: project.slug, _splat: "" }}
+                        className="group focus-ring block rounded-xl"
+                        aria-label={t`Open ${title}`}
+                      >
+                        <div className="flex aspect-[4/5] items-center justify-center rounded-xl border border-border bg-card p-4 text-center transition-transform duration-200 ease-out group-hover:-translate-y-1 motion-reduce:transition-none motion-reduce:transform-none">
+                          <span
+                            aria-hidden
+                            className="max-w-full select-none text-balance break-words text-base font-semibold leading-snug sm:text-lg"
+                          >
+                            {title}
+                          </span>
+                        </div>
+                      </Link>
+                      <div className="mt-2 flex min-w-0 items-baseline gap-2">
+                        <h3
+                          title={title}
+                          className="min-w-0 flex-1 cursor-text select-text truncate text-sm font-semibold"
                         >
-                          <div className="flex aspect-[4/5] items-center justify-center rounded-sm border border-border bg-card p-4 text-center transition-transform duration-200 ease-out group-hover:-translate-y-1 motion-reduce:transition-none motion-reduce:transform-none">
-                            <span className="max-w-full text-balance break-words text-base font-semibold leading-snug sm:text-lg">
-                              {title}
-                            </span>
-                          </div>
-                          <div className="mt-2 min-w-0">
-                            <h3 className="truncate text-sm font-semibold">{title}</h3>
-                            <p className="mt-0.5 text-xs text-ink-muted">
-                              {t`Edited ${formatRelativeTime(project.updatedAt, now)}`}
-                            </p>
-                          </div>
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : (
-                <p className="border-t border-border py-8 text-sm text-ink-muted" role="status">
-                  <Trans>No projects match your search.</Trans>
-                </p>
-              )}
+                          {title}
+                        </h3>
+                        <p className="shrink-0 cursor-text select-text text-xs text-ink-muted">
+                          {t`Edited ${formatRelativeTime(project.updatedAt, now)}`}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
             </section>
           )}
         </div>
