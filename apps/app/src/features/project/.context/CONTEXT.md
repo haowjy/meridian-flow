@@ -148,15 +148,13 @@ dock alone adds the `dock-airlight` floor gradient, transparent in the band's
 reach), and the lit page (`--color-background`, the brightest surface, rising
 as each pane's `page-sheet`: top-right rounded on `--radius-md`, square and
 flush on the rail side). **Bands never paint**: `PaneHeader`, `ContextTabBar`,
-and `DockHeader` are all transparent h-10 rows on their cell's material. Only
-`--color-background`, `--color-sidebar`, and `--color-sidebar-accent` may meet
+`DockHeader`, and the project-title header are transparent h-10 rows on their
+cell's material. The project-title header inherits the shelf slot's surface in
+both themes; the outer grid's `bg-muted` is a backdrop for the main-pane notch,
+not the project-title header.
+Only `--color-background`, `--color-sidebar`, and `--color-sidebar-accent` may meet
 at the main pane/dock band seam — arbitrary surface tokens there re-expose the
-notch wedge on palette change. The project title header is a narrow exception
-at the shelf/main-pane junction: it uses the
-outer grid's `--color-muted`, also visible in the main-pane notch. The shelf
-remaps `--color-muted` for its controls, so `ProjectShell` resolves the outer
-shade into `--project-header-bg` before `LeftSidebar` enters the shelf scope.
-Using `bg-muted` directly inside that shelf would produce a mismatched corner.
+notch wedge on palette change.
 Chat|Changes in the dock is a CONTAINED
 segmented track (a recessed ink-mix well whose active segment surfaces paper
 inside the track's own boundary), deliberately not tab chips: only the page
