@@ -124,7 +124,7 @@ export function WorkDetailScreen({
           }
         />
         <Drafts projectId={projectId} work={controller.work} commands={routeCommands} />
-        <div className="grid min-w-0 gap-6 @2xl/project-home:grid-cols-2">
+        <div className="grid min-w-0 gap-6 @2xl/project-screen:grid-cols-2">
           <TreeSummary
             projectId={projectId}
             work={controller.work}

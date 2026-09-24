@@ -15,8 +15,7 @@
 
 @theme {
   --container-chat-column: 48rem;
-  --container-home: 45rem;
-  --container-project-home: 60rem;
+  --container-project-screen: 60rem;
 }
 
 /* Project-only tokens (not shared with marketing surfaces). */
@@ -317,20 +316,12 @@
   @apply main-pane mx-auto box-border w-full max-w-chat-column px-8;
 }
 
-@utility home-column {
-  @apply main-pane mx-auto box-border flex min-h-0 w-full max-w-home flex-col px-8 py-16;
-
-  & li {
-    @apply min-w-0;
-  }
-}
-
-/* Shared content measure for project-owned Home and Work screens. The screen,
+/* Shared content measure for project Chat and Work screens. The screen,
    rather than the viewport, is the responsive authority for its collections. */
 @utility project-screen-column {
-  container-name: project-home;
+  container-name: project-screen;
   container-type: inline-size;
-  @apply mx-auto box-border flex w-full max-w-project-home flex-col px-4 py-6 sm:px-8 sm:py-8;
+  @apply mx-auto box-border flex w-full max-w-project-screen flex-col px-4 py-6 sm:px-8 sm:py-8;
   padding-bottom: calc(1.5rem + env(safe-area-inset-bottom));
 
   @media (min-width: 40rem) {
@@ -387,14 +378,13 @@
   @apply text-base leading-relaxed md:text-[15px];
 }
 
-@container project-home (min-width: 42rem) {
-  .home-composer-heading {
+@container project-screen (min-width: 42rem) {
+  .chat-landing-heading {
     font-size: var(--text-headline-hero);
     line-height: var(--text-headline-hero--line-height);
     letter-spacing: var(--text-headline-hero--letter-spacing);
     font-weight: var(--text-headline-hero--font-weight);
   }
-
 }
 
 @utility user-turn {
