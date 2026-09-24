@@ -61,12 +61,16 @@ preference. `text-tier-chat` sets the conversation one preference stop below
 the manuscript; `text-tier-compact` is the fixed dense-meta voice. Do not add
 fixed-rem overrides that pin inner code or table cells off the text scale.
 
-Dropdown row geometry is shared by `components/ui/dropdown-presentation.ts`.
-Rows own their full-width hover, selection, and focus paint; labels and search
-fields add their own gutters. Shared Radix dropdown and context-menu content
-cancel non-primary `pointerup` during capture. Otherwise releasing a right
-click can activate the first menu row under the pointer even though the writer
-only intended to open the context menu. Keep this guard in the shared wrappers.
+List-like dropdowns share the panel and inset, rounded row recipes in
+`components/ui/dropdown-presentation.ts`. The panel supplies the outer edge;
+its page gutter keeps hover, focus, and selected paint inside the edge. This
+applies to menus, selects, pickers, chat switching, and anchored suggestion
+lists without collapsing their distinct command, selection, and search
+semantics. Content-only popovers retain their own presentation. Shared Radix
+dropdown and context-menu content cancel non-primary `pointerup` during
+capture. Otherwise releasing a right click can activate the first menu row
+under the pointer even though the writer only intended to open the context
+menu. Keep this guard in the shared wrappers.
 
 ## Verification
 

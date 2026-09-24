@@ -2,25 +2,24 @@
  * ThreadSwitcherPopover — project thread navigation from the chat pane header.
  *
  * Keeps switching primary, with recency visible at a glance; rename stays
- * attached only to the active row and creation stays in the footer.
+ * attached only to the active row and creation sits above the list.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { ChevronDown, Pencil, Plus, Search } from "lucide-react";
-import { type KeyboardEvent, useState } from "react";
+import { type KeyboardEvent, useRef, useState } from "react";
 
 import { useThreadStore } from "@/client/stores";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
-import { Button } from "@/components/ui/button";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
+  dropdownGroupLabelClass,
   dropdownResultsVariants,
   dropdownRowContainerClass,
   dropdownRowVariants,
   dropdownSearchClass,
   dropdownSurfaceVariants,
-  dropdownThreadRegionVariants,
 } from "@/components/ui/dropdown-presentation";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +59,9 @@ export function ThreadSwitcherPopover({
   variant?: "quiet" | "tab";
 }) {
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
+  const contentRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const returnFocusOnClose = useRef(false);
   const { workItems, primaryThreads, threadById, ungroupedThreads } =
     useProjectThreadGroups(projectId);
   const now = useThreadStore((state) => state.now);
@@ -78,6 +80,7 @@ export function ThreadSwitcherPopover({
   const showSearch = shouldShowThreadSearch(primaryThreads.length);
 
   const changeOpen = (nextOpen: boolean) => {
+    if (nextOpen) returnFocusOnClose.current = false;
     setOpen(nextOpen);
     if (!nextOpen) setQuery("");
   };
@@ -117,6 +120,7 @@ export function ThreadSwitcherPopover({
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
         <button
+          ref={triggerRef}
           type="button"
           aria-label={t`Switch chat, currently ${title}`}
           aria-expanded={open}
@@ -143,17 +147,49 @@ export function ThreadSwitcherPopover({
       </PopoverTrigger>
       <PopoverContent
         {...densityPopoverCollisionProps}
+        ref={contentRef}
         align="start"
         className={dropdownSurfaceVariants({ measure: "thread-list", page: "thread-list" })}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          const content = contentRef.current;
+          (
+            content?.querySelector<HTMLElement>("[data-switcher-search]") ??
+            content?.querySelector<HTMLElement>("[data-switcher-current]") ??
+            content?.querySelector<HTMLElement>("[data-switcher-focus]")
+          )?.focus();
+        }}
+        onEscapeKeyDown={() => {
+          returnFocusOnClose.current = true;
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          if (returnFocusOnClose.current) triggerRef.current?.focus();
+          returnFocusOnClose.current = false;
+        }}
         onKeyDown={handleNavigationKeyDown}
       >
+        <div className="flex items-center justify-between gap-2 px-3 pt-2 pb-1">
+          <span className={cn(dropdownGroupLabelClass, "px-0")}>
+            <Trans>Chats</Trans>
+          </span>
+          {onNewChat ? (
+            <button
+              data-switcher-focus
+              type="button"
+              className="dropdown-focus-ring flex h-8 items-center gap-1 rounded-md px-2 text-sm text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground [@media(pointer:coarse)]:h-11"
+              onClick={() => {
+                changeOpen(false);
+                onNewChat();
+              }}
+            >
+              <Plus className="size-4" aria-hidden />
+              <Trans>New chat</Trans>
+            </button>
+          ) : null}
+        </div>
         {showSearch ? (
-          <div
-            className={cn(
-              dropdownThreadRegionVariants({ region: "header" }),
-              "border-b border-border-subtle",
-            )}
-          >
+          <div className="px-2 pb-2">
             <div className="relative">
               <Search
                 className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -161,6 +197,7 @@ export function ThreadSwitcherPopover({
               />
               <Input
                 data-switcher-focus
+                data-switcher-search
                 type="search"
                 value={query}
                 aria-label={t`Search chats`}
@@ -172,12 +209,7 @@ export function ThreadSwitcherPopover({
           </div>
         ) : null}
 
-        <div
-          className={cn(
-            dropdownResultsVariants({ kind: "thread-list" }),
-            dropdownThreadRegionVariants({ region: "results" }),
-          )}
-        >
+        <div className={cn(dropdownResultsVariants({ kind: "thread-list" }), "px-2 pb-2")}>
           {filteredThreads.length === 0 ? (
             <p className="px-2.5 py-4 text-center text-sm text-muted-foreground">
               <Trans>No matching chats</Trans>
@@ -226,28 +258,6 @@ export function ThreadSwitcherPopover({
             </div>
           )}
         </div>
-
-        <div
-          className={cn(
-            dropdownThreadRegionVariants({ region: "footer" }),
-            "border-t border-border-subtle",
-          )}
-        >
-          <Button
-            data-switcher-focus
-            type="button"
-            variant="quiet"
-            className={dropdownRowVariants()}
-            onClick={() => {
-              changeOpen(false);
-              onNewChat?.();
-            }}
-            disabled={!onNewChat}
-          >
-            <Plus aria-hidden />
-            <Trans>New chat</Trans>
-          </Button>
-        </div>
       </PopoverContent>
     </Popover>
   );
@@ -281,25 +291,30 @@ function ThreadSwitchItem({
     >
       <button
         data-switcher-focus
+        data-switcher-current={active ? "" : undefined}
         type="button"
         aria-current={active ? "page" : undefined}
         onClick={() => onSelect(thread.id)}
         className={cn(
-          dropdownRowVariants({ kind: "list", interactive: false }),
-          "flex-1",
+          dropdownRowVariants({ kind: "identity", interactive: false }),
+          "min-h-11 flex-1 items-stretch justify-center gap-0 px-2 py-1.5",
           active ? "font-medium" : "text-ink-muted group-hover:text-foreground",
         )}
       >
-        <span className="min-w-0 flex-1 truncate">{title}</span>
-        <WorkIdentity
-          className="shrink-0"
-          name={thread.agentName}
-          unavailableLabel="General"
-          aria-label={t`Agent: ${agentName}`}
-        />
-        {rel ? (
-          <span className="shrink-0 text-meta font-normal tabular-nums text-ink-subtle">{rel}</span>
-        ) : null}
+        <span className="w-full truncate">{title}</span>
+        <span className="flex w-full min-w-0 items-center gap-2">
+          <WorkIdentity
+            className="text-ink-muted"
+            name={thread.agentName}
+            unavailableLabel="General"
+            aria-label={t`Agent: ${agentName}`}
+          />
+          {rel ? (
+            <span className="shrink-0 text-meta font-normal tabular-nums text-ink-subtle">
+              {rel}
+            </span>
+          ) : null}
+        </span>
       </button>
       {active ? (
         <IconButton

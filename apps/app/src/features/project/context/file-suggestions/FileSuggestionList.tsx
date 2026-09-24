@@ -10,6 +10,7 @@ import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { Folder } from "lucide-react";
 import { forwardRef, type KeyboardEvent, type ReactNode, useImperativeHandle, useRef } from "react";
+import { dropdownRowVariants } from "@/components/ui/dropdown-presentation";
 import { fileKindIcon } from "../context-file-icon";
 import { schemeIcon, schemeLabel } from "../context-schemes";
 import type { FileSuggestion } from "./file-suggestions";
@@ -81,8 +82,7 @@ export const FileSuggestionList = forwardRef<
     rows[nextIndex]?.focus();
   };
 
-  const rowClass =
-    "focus-ring flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-sidebar-accent focus:bg-sidebar-accent";
+  const rowClass = `${dropdownRowVariants()} focus:bg-sidebar-accent/50`;
 
   return (
     // The keydown boundary wraps header + rows so one arrow walk covers both;
