@@ -3,16 +3,14 @@
  * persistent project file tree. Mobile navigation uses a drawer and its
  * context destination uses drill-in browsing.
  *
- * The wordmark/collapse header and file-tree body are desktop-specific. The
+ * The project-name/collapse header and file-tree body are desktop-specific. The
  * destination and account rows come from `WorkspaceNavBody`, which the phone
  * drawer also composes.
  */
 import { t } from "@lingui/core/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
-import { Link } from "@tanstack/react-router";
-import { PanelLeftClose } from "lucide-react";
+import { PanelLeftClose, Pencil } from "lucide-react";
 import type { CatalogFile as ContextFile } from "@/client/query/context-catalog-projection";
-import { MeridianMark } from "@/components/app/MeridianMark";
 import { ContextTreePanel } from "../context/ContextTreePanel";
 import { useOpenProjectDocument } from "../context/open-project-document";
 import { PanelToggleButton } from "./PanelToggleButton";
@@ -23,13 +21,15 @@ import { WorkspaceNavBody } from "./WorkspaceNavBody";
  * LeftSidebar — content of the persistent left project slot. The
  * `shelf-surface` slot wrapper in `desktop-layout.ts` paints the rail. One column:
  *
- *   wordmark (project library) · Chat/Work/Editor nav · file tree · account
+ *   project name (rename) · Chat/Work/Editor nav · file tree · library/account
  *
  * The collapse control sits at the far-left (same x as the PaneHeader expand
  * control) so toggling the rail never moves the cursor.
  */
 export type LeftSidebarProps = {
   projectId: string;
+  projectTitle: string;
+  onRenameProject: () => void;
   activeScreen: ScreenKey;
   editorWorkId: string | null;
   contextLive: boolean;
@@ -43,6 +43,8 @@ export type LeftSidebarProps = {
 
 export function LeftSidebar({
   projectId,
+  projectTitle,
+  onRenameProject,
   activeScreen,
   editorWorkId,
   contextLive,
@@ -66,17 +68,22 @@ export function LeftSidebar({
       aria-label={t`Workspace navigation`}
       className="flex h-full min-h-0 w-full flex-col text-foreground"
     >
-      {/* Wordmark — collapse (far-left) · Meridian (project library) */}
       <div className="flex h-10 shrink-0 items-center gap-1 px-2">
         <PanelToggleButton
           icon={PanelLeftClose}
           label={t`Collapse sidebar  [`}
           onClick={onCollapse}
         />
-        <Link to="/" className="focus-ring flex min-w-0 items-center gap-1 rounded-md no-underline">
-          <MeridianMark className="size-7" />
-          <span className="text-sm font-semibold tracking-tight text-foreground">Meridian</span>
-        </Link>
+        <button
+          type="button"
+          aria-label={t`Rename project: ${projectTitle}`}
+          title={projectTitle}
+          onClick={onRenameProject}
+          className="focus-ring flex h-8 min-w-0 flex-1 items-center gap-1 rounded-md px-2 text-left text-base font-semibold hover:bg-sidebar-accent"
+        >
+          <span className="min-w-0 flex-1 truncate">{projectTitle}</span>
+          <Pencil className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+        </button>
       </div>
 
       <WorkspaceNavBody

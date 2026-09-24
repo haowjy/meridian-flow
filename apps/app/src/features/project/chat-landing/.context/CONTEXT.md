@@ -20,12 +20,12 @@ row component; bound Agent name inside every list row is display-only.
 
 Chat landing Send mints a thread id, writes an account-stamped unresolved
 submission intent before navigation, replaces to
-`/p/{projectSlug}/chat/{uuid}`, and persists in the background. Destination
+`/p/{projectId}/chat/{uuid}`, and persists in the background. Destination
 Chat replays or reconciles that same submission identity after reload. Failure
 stays on that chat; the journal is not a thread replica or offline AI runtime.
 Favorite/feed state is independent from this creation lifecycle.
 
-The Chat landing (`/p/:project`) always composes the shared creation
+The Chat landing (`/p/:projectId`) always composes the shared creation
 Composer above the existing chat feed, on desktop and phone. No button or
 separate `/chats/new` destination gates drafting. Opening the landing creates nothing; Send is the chat. There is no second
 project Home or `/chats` destination.

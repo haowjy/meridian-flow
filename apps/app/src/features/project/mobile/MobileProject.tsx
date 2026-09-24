@@ -67,6 +67,7 @@ export function MobileProject(props: MobileProjectProps) {
       <MobileTopBar
         activeScreen={props.activeScreen}
         projectId={props.projectId}
+        projectTitle={props.projectTitle}
         activeThreadId={props.activeThreadId}
         onSelectThread={props.onSelectThread}
         title={props.resultsOpen ? t`Results` : undefined}
@@ -112,6 +113,11 @@ export function MobileProject(props: MobileProjectProps) {
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
         projectId={props.projectId}
+        projectTitle={props.projectTitle}
+        onRenameProject={() => {
+          setDrawerOpen(false);
+          requestAnimationFrame(props.onRenameProject);
+        }}
         activeScreen={props.activeScreen}
         editorWorkId={props.editorWorkId}
         contextLive={props.contextLive}
