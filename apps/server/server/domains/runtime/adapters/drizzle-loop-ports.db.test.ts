@@ -517,10 +517,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           status: "streaming",
           metadata: { retained: "value" },
         });
-        const [f, g] = await Promise.all([
-          inbox.enqueue(message("F")),
-          inbox.enqueue(message("G")),
-        ]);
+        const f = await inbox.enqueue(message("F"));
+        const g = await inbox.enqueue(message("G"));
         const authority = createDrizzleRunAuthority(db, { holderId: "holder-adoption" });
         const lease = required(await authority.acquire(THREAD_A, "run-adoption"));
 
