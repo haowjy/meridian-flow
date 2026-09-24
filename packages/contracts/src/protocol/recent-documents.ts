@@ -8,7 +8,6 @@ export type RecentDocumentItem = {
   documentId: string;
   projectId: string;
   projectName: string;
-  projectSlug: string;
   /** Null for No Work and for project-scoped documents. */
   workSlug: string | null;
   scheme: ProjectContextTreeScheme;

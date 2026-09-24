@@ -38,7 +38,6 @@ export type SendProjectChatArgs = {
   accountId: string;
   threadId?: string;
   projectId: string;
-  projectSlug: string;
   text: string;
   submissionId: string;
   activatedSkillSlugs?: readonly string[];
@@ -88,10 +87,10 @@ export function makeOptimisticThread(input: {
   };
 }
 
-export function inflightChatHref(projectSlug: string, threadId: string, search = ""): string {
+export function inflightChatHref(projectId: string, threadId: string, search = ""): string {
   const settings = new URLSearchParams(search).get("settings");
   return projectAddressHref({
-    projectSlug,
+    projectId,
     destination: { kind: "chat", chatId: threadId },
     chat: { kind: "absent" },
     work: { kind: "absent" },
@@ -104,7 +103,6 @@ export function sendProjectChat({
   accountId,
   threadId: existingThreadId,
   projectId,
-  projectSlug,
   text,
   submissionId,
   activatedSkillSlugs,
@@ -171,7 +169,7 @@ export function sendProjectChat({
     optimisticUserTurnId,
     workingTurnId,
   });
-  replace(inflightChatHref(projectSlug, threadId, search));
+  replace(inflightChatHref(projectId, threadId, search));
   return { threadId, optimisticUserTurnId, workingTurnId };
 }
 

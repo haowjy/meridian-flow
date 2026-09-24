@@ -54,8 +54,8 @@ export function IndependentChatView({ threadId }: IndependentChatViewProps) {
     if (!project.data) return;
     promoteIndependentProject(project.data.id);
     void navigate({
-      to: "/p/$projectSlug/$",
-      params: { projectSlug: project.data.slug, _splat: "" },
+      to: "/p/$projectId/$",
+      params: { projectId: project.data.id, _splat: "" },
     });
   }, [navigate, project.data]);
 

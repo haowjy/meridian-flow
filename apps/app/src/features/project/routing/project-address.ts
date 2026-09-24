@@ -1,4 +1,4 @@
-/** Readable browser grammar. Internal project, Work, chat, and document identities remain IDs. */
+/** Browser project addresses use stable project UUIDs; child destinations remain readable. */
 import { validateContextEntryPath } from "@meridian/contracts/context-entry-validation";
 import {
   isProjectContextTreeScheme,
@@ -26,7 +26,7 @@ export type ProjectDestination =
   | { kind: "document"; scheme: ProjectContextTreeScheme; path: string; workSlug: string | null };
 
 export type ProjectAddress = {
-  projectSlug: string;
+  projectId: string;
   destination: ProjectDestination;
   chat: AddressSelection;
   work: AddressSelection;
@@ -112,8 +112,8 @@ export function parseProjectAddress(
   } catch {
     return { kind: "invalid", reason: "encoding" };
   }
-  const projectSlug = handle(parts[1]);
-  if (parts[0] !== "p" || !projectSlug || parts.some((part) => !part))
+  const projectId = uuid(parts[1]);
+  if (parts[0] !== "p" || !projectId || parts.some((part) => !part))
     return { kind: "invalid", reason: "path" };
   const destination = parseDestination(parts.slice(2));
   if (!destination) return { kind: "invalid", reason: "destination" };
@@ -143,7 +143,7 @@ export function parseProjectAddress(
   }
   const settings = query.get("settings");
   const address: ProjectAddress = {
-    projectSlug,
+    projectId,
     destination,
     chat:
       destination.kind === "chat" || destination.kind === "chat-index"
@@ -178,7 +178,7 @@ function writeSelection(query: URLSearchParams, key: string, value: AddressSelec
 }
 
 export function projectAddressHref(address: ProjectAddress): string {
-  const parts = ["p", address.projectSlug];
+  const parts = ["p", address.projectId];
   const d = address.destination;
   switch (d.kind) {
     case "chat-index":

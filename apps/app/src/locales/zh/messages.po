@@ -1971,7 +1971,7 @@ msgstr "正在加载图片"
 msgid "Loading more chats"
 msgstr ""
 
-#: src/routes/_authenticated/p/$projectSlug.tsx
+#: src/routes/_authenticated/p/$projectId.tsx
 msgid "Loading project…"
 msgstr ""
 
@@ -2850,7 +2850,7 @@ msgstr ""
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
-#: src/routes/_authenticated/p/$projectSlug.tsx
+#: src/routes/_authenticated/p/$projectId.tsx
 msgid "Retry"
 msgstr ""
 
@@ -3629,7 +3629,7 @@ msgstr ""
 msgid "This page exists only when WORKOS_DEV_AUTOLOGIN is enabled. Clicking the button below performs a real WorkOS password authentication and mints the same session cookie as the production sign-in flow."
 msgstr ""
 
-#: src/routes/_authenticated/p/$projectSlug.tsx
+#: src/routes/_authenticated/p/$projectId.tsx
 msgid "This project couldn’t load. It may be unavailable."
 msgstr ""
 

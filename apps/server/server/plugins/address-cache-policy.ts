@@ -10,10 +10,7 @@ type AddressResponseHooks = {
 
 function isAddressRequest(event: H3Event): boolean {
   const path = new URL(event.req.url).pathname;
-  return (
-    /^\/api\/project-addresses\/[^/]+$/.test(path) ||
-    /^\/api\/projects\/[^/]+\/context\/[^/]+\/address$/.test(path)
-  );
+  return /^\/api\/projects\/[^/]+\/context\/[^/]+\/address$/.test(path);
 }
 
 export default function addressCachePolicy(app: unknown) {

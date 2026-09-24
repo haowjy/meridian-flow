@@ -203,7 +203,6 @@ export function createDrizzleRecentDocumentsRepository(deps: {
           documentId: document.id,
           projectId: sourceProject.id,
           projectName: sourceProject.name,
-          projectSlug: sourceProject.slug,
           workSlug,
           scheme: classification.identity.scheme,
           path: `/${entry.path.join("/")}`,

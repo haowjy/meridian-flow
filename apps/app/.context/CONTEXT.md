@@ -269,24 +269,25 @@ route without changing path. See `features/account/SettingsDialog.tsx`.
 ## Account entry
 
 Authenticated `/` renders the project library from the project-list query,
-never the last-active project. Each cover links directly to `/p/<project-slug>`;
+never the last-active project. Each cover links directly to `/p/<project-uuid>`;
 its selectable title and edit recency below are not links. The account-home API
 and last-active-project preference are removed; selection comes from the library,
 not a remembered destination.
 
 `/projects/new` is a separate creation destination. Its title form keeps
 network pending and failure there until the server returns the authoritative
-slug, then enters that project's Chat landing. No account-level composer or
+project ID, then enters that project's Chat landing. No account-level composer or
 project-less quick-chat entry is exposed. The existing personal-project
 bootstrap may still place a starter project in the library for a new account;
 this UI change does not decide zero-project onboarding.
 
-## Readable project addresses and route lifetime
+## Project addresses and route lifetime
 
-The authenticated project workspace has one readable public grammar rooted at
-`/p/<project-slug>`; all internal query/cache/session identities remain IDs.
-The parent resolves the owner-scoped project slug, mounts `ProjectView` once
-keyed by that resolved ID, and its `$` catch-all selects child destinations.
+The authenticated project workspace uses the project's existing UUID in
+`/p/<project-id>`; title and slug edits do not change browser identity.
+Slug-shaped project routes are not aliases. The parent loads the owner-gated
+project by ID, mounts `ProjectView` once keyed by that ID, and its `$` catch-all
+selects child destinations.
 There is no `/project/<UUID>` or `/projects/<UUID>` project route and no
 `screen`/`thread`/`scheme`/`folder`/`path` query grammar. `/chat/<thread-UUID>`
 remains the deliberately independent chat route and is outside project-address
@@ -305,7 +306,7 @@ replacement use the address serializer. Settings remains the layout-owned
 overlay; Results remains auxiliary state.
 
 `ReadableProjectRoute` is the sole browser-address parser/resolver and
-`createProjectNavigation` owns history admission. Project, Work, and chat
+`createProjectNavigation` owns history admission. The project UUID and Work/chat
 slugs resolve only through successful owner/project catalogs. An unavailable or
 malformed explicit target parks/disables its requested host; it never falls
 through to a remembered or catalog-default target. Main-destination navigation
