@@ -228,11 +228,12 @@ to `server/lib/*-route.ts` and unit-test that route-core directly.
 
 - **`pnpm test` is deterministic** — pure unit + in-memory adapter conformance;
   DB tests remain opt-in.
-- **Database checks** use `@meridian/database` and local Postgres when
-  `RUN_DB_TESTS=1` and `DATABASE_URL` are set. The manifest in
-  `vitest.db.config.ts` must exactly match every discovered `*.db.test.ts`
-  suite; a real-Postgres suite with another suffix remains outside the gate
-  until it is renamed and registered.
+- **Database checks** run through root `pnpm test:db`, whose owned local
+  database lifecycle is in `tools/dev/run-db-tests.ts`. The closed manifest in
+  `apps/server/vitest.db.config.ts` must exactly match every discovered
+  `*.db.test.ts` suite in the server and database package. A real-Postgres
+  suite with another suffix remains outside the gate until it is renamed and
+  registered. Do not use a separate root Vitest DB wrapper.
 - **Browser/runtime checks** should use portless HTTPS routes, never raw ports,
   so tests exercise the real proxy/TLS path.
 
