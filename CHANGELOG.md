@@ -102,7 +102,7 @@
 - User bubbles render picked `/slug` with the same hover name and description as the composer.
 - Composer `/` menu matches the composer shell width. Picked skills stay visible as `/slug` atoms with a hover name and description, and Send copies that `/slug` into the user message.
 - Proxy Home `GET /api/skills` to the API server so composer `/` can list skills before a thread exists.
-- A read-only Agent now advertises a first-class `read` tool, so Critic reads instead of reporting it cannot. Allowing `write` or `edit` implies document read. Mutating Agents advertise both `read` and `write`, and the `write` tool no longer carries `read`/`diff`. The transcript classifies and renders the `read` tool, and agent-edit outline and resync hints now point at `read(command="read", path=...)`.
+- One required-command `write` tool serves document reads, diffs, and edits. The existing `edit` policy governs mutations while all Agents retain `read` and `diff`; advertisement narrows the description as well as the schema to the caller's permitted commands. Read instructions use `write(command="read", path=...)`.
 
 ### Changed
 

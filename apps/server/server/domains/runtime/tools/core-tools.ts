@@ -17,6 +17,7 @@ import {
 import { ASK_USER_TOOL_INPUT_SCHEMA } from "@meridian/contracts/components";
 import { z } from "zod";
 import type { ToolExecutionError, ToolRegistration } from "./types.js";
+import { writeToolDescription } from "./write-tool-description.js";
 
 const WorkStatusSchema = z.enum(["active", "archived"]);
 const WorkSelectorSchema = z.object({ work: z.string().min(1) });
@@ -143,8 +144,7 @@ export function createCoreToolRegistrations(handlers: CoreToolHandlers): ToolReg
       definition: {
         type: "function",
         name: "write",
-        description:
-          'Document tool. Every call requires an explicit `command`; never omit it. Read with `{ "command": "read", "path": "..." }`. Results use the meridian.agent-edit.v1 JSON envelope; each block record separates hash from exact body and says whether body is full or a prefix. `diff` inspects this turn’s folded edit result and requires a Work in draft write mode; it does not read a document. Diff is provisional until the trail settles. To replace an entire existing document, use create with overwrite=true. insert adds content; before/after take block hashes, not text. replace edits content; find replaces only the exact matched span, never following blocks. delete removes the block or block range selected by in. in accepts one block hash or 1-based block number, or an inclusive [start, end] range of hashes or block numbers. Block hashes are internal targeting tokens: use them in tool arguments, but do not quote or label writer-facing prose with hashes unless the writer explicitly asks for edit-protocol details. undo and redo reverse or reapply this thread’s document writes.',
+        description: writeToolDescription(),
         inputSchema: writeToolInputSchema(),
       },
       execution: { type: "server", handler: handlers.write },
