@@ -1,6 +1,6 @@
 # features/project — Desktop project shell
 
-The authenticated project project: one persistent multi-panel desktop surface
+The authenticated project workspace: one persistent multi-panel desktop surface
 that swaps primary *destinations* (Chat / Work / Editor) without tearing down
 its stateful surfaces. This file is the colocated contract for the shell — read
 it before touching layout, the rails/headers, or the prefs store.
@@ -42,11 +42,13 @@ Slot topology (`layout/desktop-layout.ts`), one grid row across every screen:
 There is **no `files` grid track**. The file explorer is the persistent body of
 the left sidebar; `ContextViewer` owns only the Editor tab strip and document.
 
-`LeftSidebar` is one column with a truncating project-title rename control,
+`LeftSidebar` is one column with a truncating project-title control,
 Chat/Work/Editor navigation, the persistent project tree, an explicit View
-projects link to the library, and account controls. The navigation rows are shared
-with mobile through `WorkspaceNavBody`; project identity and the recursive tree
-are desktop shell grammar.
+projects link to the library, and account controls. The title replaces the
+whole Meridian wordmark and compass mark; it identifies this project rather
+than acting as a library link. The navigation rows are shared with mobile
+through `WorkspaceNavBody`; project identity and the recursive tree are
+desktop shell grammar.
 
 Work is the dedicated collection/detail management destination. The collection reads
 active and archived Work and owns creation and lifecycle entry points; it never selects
@@ -135,7 +137,7 @@ produces the classic white-band / green-flash bugs (e.g. an old `bg-background`
 on `ChatSurface` painting a brighter band under the dock header). **Let the slot
 paint.** `SlotGrid` never branches on slot kind — chrome is pure data.
 
-**Three-tone invariant (slice-7):** the shell is exactly three materials —
+**Three large-surface tones (slice-7):** the shell's primary regions use three materials —
 the shelf (`--color-shelf`, the chrome's grey-gold one shade darker; the
 app's standard black ink, with only
 contrast-failing roles remapped via `shelf-surface`'s scoped shelf-* tokens),
@@ -148,8 +150,14 @@ as each pane's `page-sheet`: top-right rounded on `--radius-md`, square and
 flush on the rail side). **Bands never paint**: `PaneHeader`, `ContextTabBar`,
 and `DockHeader` are all transparent h-10 rows on their cell's material. Only
 `--color-background`, `--color-sidebar`, and `--color-sidebar-accent` may meet
-at the band seam — arbitrary surface tokens there re-expose the notch wedge on
-palette change. Chat|Changes in the dock is a CONTAINED
+at the main pane/dock band seam — arbitrary surface tokens there re-expose the
+notch wedge on palette change. The project title header is a narrow exception
+at the shelf/main-pane junction: it uses the
+outer grid's `--color-muted`, also visible in the main-pane notch. The shelf
+remaps `--color-muted` for its controls, so `ProjectShell` resolves the outer
+shade into `--project-header-bg` before `LeftSidebar` enters the shelf scope.
+Using `bg-muted` directly inside that shelf would produce a mismatched corner.
+Chat|Changes in the dock is a CONTAINED
 segmented track (a recessed ink-mix well whose active segment surfaces paper
 inside the track's own boundary), deliberately not tab chips: only the page
 rises out of a band. Two chips wear the tab grammar — the document tabs and
@@ -163,13 +171,14 @@ weights, raw colors). They are now reconciled to **one reference: the left
 sidebar (`shell/LeftSidebar.tsx`).** New surfaces follow it. The load-bearing
 conventions:
 
-- **Header row = `h-10` (40px), `border-b border-border-subtle`, `px-2`.** Every
+- **Header row = `h-10` (40px), `px-2`.** Every
   header reads at the same height: project identity, dock/rail header, files
-  header, editor header. Use `border-border-subtle`, not `border-border`.
-  **Exception — the two chrome strips**: the context tab strip
+  header, editor header. Bordered rows use `border-b border-border-subtle`,
+  not `border-border`. The project-title row has no bottom rule.
+  **The two chrome strips** — the context tab strip
   (`ContextTabBar`, the band) and the dock header (`DockHeader`, transparent
   on the dock's own chrome) are the same `h-10` with tonal separation and
-  **no bottom border** (see the three-tone invariant above, and the tab-chip
+  **no bottom border** (see the shell tones above, and the tab-chip
   grammar in `globals.css`). Do not reintroduce a rule under either strip.
 - **One collapse/expand control: `shell/PanelToggleButton.tsx` (`size-8`),
   inset `px-2`.** This is the canonical toggle column. **Invariant — "click
@@ -242,9 +251,13 @@ catch-all child is the only workspace route adapter. It loads the full project
 by UUID, keeps `ProjectView` mounted for same-project child paths, and passes
 resolved address state and typed navigation commands to controlled controllers.
 Controllers never parse or mutate browser URLs themselves. Project title edits
-update the account project-list cache and visible shell identity without changing
-the UUID address. Desktop and phone share one rename dialog and mutation; the
-phone drawer closes before opening it. `routing/project-address.ts` owns the
+do not change the UUID address. In this checkout, desktop and phone use one
+rename dialog and mutation with optimistic cache projection and rollback on
+failure; the phone drawer closes before opening it. This is current behavior,
+not the settled target interaction: the writer has since chosen inline title
+editing, which the orchestrator has not landed. Update this contract with that
+implementation rather than treating the dialog as final.
+`routing/project-address.ts` owns the
 project UUID/browser grammar; `routing/project-navigation.ts` owns guarded
 push/replace behavior. The legacy slug project routes and `?screen`/`?thread`
 grammar are gone. `project-route.ts` retains stable-ID command types and the
