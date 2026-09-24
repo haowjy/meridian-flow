@@ -1,5 +1,5 @@
 /** Shared visual recipes for menu and picker surfaces; callers retain semantics. */
-import { cva, type VariantProps } from "class-variance-authority";
+import { cva } from "class-variance-authority";
 
 export const dropdownRowVariants = cva(
   "flex w-full min-w-0 items-center justify-start gap-2 rounded-md px-2 text-left text-sm font-normal outline-hidden select-none active:scale-100 has-[>svg]:px-2 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 disabled:pointer-events-none disabled:opacity-50",
@@ -7,7 +7,6 @@ export const dropdownRowVariants = cva(
     variants: {
       kind: {
         navigation: "h-8 py-1.5 [@media(pointer:coarse)]:h-11",
-        list: "h-8 py-1.5 [@media(pointer:coarse)]:h-11",
         descriptive: "h-10 py-0.5 [@media(pointer:coarse)]:h-11",
         identity: "min-h-11 flex-col items-start gap-0.5 py-0.5",
       },
@@ -21,12 +20,10 @@ export const dropdownRowVariants = cva(
   },
 );
 
-export type DropdownRowProps = VariantProps<typeof dropdownRowVariants>;
-
 export const dropdownNavigationPageClass = "px-1 py-1";
 export const dropdownPickerPageClass = "px-1 py-2";
 export const dropdownPanelClass =
-  "rounded-lg border border-border-subtle bg-popover text-popover-foreground shadow-md";
+  "rounded-lg border border-border-subtle bg-background text-popover-foreground shadow-md dark:bg-popover";
 export const dropdownGroupLabelClass = "px-2 py-1.5 text-sm font-medium text-foreground";
 
 export const dropdownMenuContentClass = `z-50 max-h-(--radix-menu-content-available-height) min-w-[8rem] overflow-x-hidden overflow-y-auto ${dropdownPanelClass} data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95`;
@@ -44,12 +41,10 @@ export const dropdownSurfaceVariants = cva(
         compact: "[--dropdown-preferred-width:14rem]",
         identity: "[--dropdown-preferred-width:18rem]",
         catalog: "[--dropdown-preferred-width:20rem]",
-        "thread-list": "[--dropdown-preferred-width:20rem]",
       },
       page: {
         navigation: dropdownNavigationPageClass,
         picker: dropdownPickerPageClass,
-        "thread-list": "p-0",
       },
     },
     defaultVariants: { measure: "compact", page: "navigation" },
@@ -58,15 +53,7 @@ export const dropdownSurfaceVariants = cva(
 
 export const dropdownSearchClass = "h-8 pl-8 pr-2 text-sm [@media(pointer:coarse)]:h-11";
 
-export const dropdownResultsVariants = cva("app-scroll min-h-0 flex-1 overflow-y-auto", {
-  variants: {
-    kind: {
-      picker: "max-h-64",
-      "thread-list": "max-h-72",
-    },
-  },
-  defaultVariants: { kind: "picker" },
-});
+export const dropdownResultsClass = "app-scroll max-h-64";
 
 /** Lets a composite row own selected, hover, and descendant-focus geometry. */
 export const dropdownRowContainerClass =

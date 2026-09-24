@@ -6,7 +6,7 @@ import type { ReactNode, RefObject } from "react";
 import type { AgentCatalogStatus } from "@/client/query/useAgentCatalog";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import {
-  dropdownResultsVariants,
+  dropdownResultsClass,
   dropdownRowContainerClass,
   dropdownRowVariants,
 } from "@/components/ui/dropdown-presentation";
@@ -36,7 +36,7 @@ export function AgentPickerPanel({
   const firstId = agents[0]?.selection.catalogEntryId;
   return (
     <TooltipProvider delayDuration={500}>
-      <div className={cn(dropdownResultsVariants({ kind: "picker" }), "flex flex-col")}>
+      <div className={cn(dropdownResultsClass, "flex flex-col")}>
         {status.status === "loading" || status.status === "disabled" ? (
           <PickerHint>
             <Trans>Loading agents…</Trans>

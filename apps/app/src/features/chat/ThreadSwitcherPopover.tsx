@@ -14,8 +14,7 @@ import { useThreadStore } from "@/client/stores";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { useDensityPopoverCollisionProps } from "@/components/ui/density-popover-collision";
 import {
-  dropdownGroupLabelClass,
-  dropdownResultsVariants,
+  dropdownResultsClass,
   dropdownRowContainerClass,
   dropdownRowVariants,
   dropdownSearchClass,
@@ -60,8 +59,7 @@ export function ThreadSwitcherPopover({
 }) {
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   const contentRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const returnFocusOnClose = useRef(false);
+  const focusHandoff = useRef(false);
   const { workItems, primaryThreads, threadById, ungroupedThreads } =
     useProjectThreadGroups(projectId);
   const now = useThreadStore((state) => state.now);
@@ -80,17 +78,19 @@ export function ThreadSwitcherPopover({
   const showSearch = shouldShowThreadSearch(primaryThreads.length);
 
   const changeOpen = (nextOpen: boolean) => {
-    if (nextOpen) returnFocusOnClose.current = false;
+    if (nextOpen) focusHandoff.current = false;
     setOpen(nextOpen);
     if (!nextOpen) setQuery("");
   };
 
   const selectThread = (threadId: string) => {
+    focusHandoff.current = threadId !== activeThreadId;
     changeOpen(false);
     onSelectThread(threadId);
   };
 
   const startRename = () => {
+    focusHandoff.current = true;
     changeOpen(false);
     onRename();
   };
@@ -120,7 +120,6 @@ export function ThreadSwitcherPopover({
     <Popover open={open} onOpenChange={changeOpen}>
       <PopoverTrigger asChild>
         <button
-          ref={triggerRef}
           type="button"
           aria-label={t`Switch chat, currently ${title}`}
           aria-expanded={open}
@@ -149,47 +148,41 @@ export function ThreadSwitcherPopover({
         {...densityPopoverCollisionProps}
         ref={contentRef}
         align="start"
-        className={dropdownSurfaceVariants({ measure: "thread-list", page: "thread-list" })}
+        className={cn(dropdownSurfaceVariants({ measure: "catalog", page: null }), "p-0")}
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           const content = contentRef.current;
           (
             content?.querySelector<HTMLElement>("[data-switcher-search]") ??
-            content?.querySelector<HTMLElement>("[data-switcher-current]") ??
+            content?.querySelector<HTMLElement>('[aria-current="page"]') ??
             content?.querySelector<HTMLElement>("[data-switcher-focus]")
           )?.focus();
         }}
-        onEscapeKeyDown={() => {
-          returnFocusOnClose.current = true;
-        }}
         onCloseAutoFocus={(event) => {
-          event.preventDefault();
-          if (returnFocusOnClose.current) triggerRef.current?.focus();
-          returnFocusOnClose.current = false;
+          if (focusHandoff.current) event.preventDefault();
+          focusHandoff.current = false;
         }}
         onKeyDown={handleNavigationKeyDown}
       >
-        <div className="flex items-center justify-between gap-2 px-3 pt-2 pb-1">
-          <span className={cn(dropdownGroupLabelClass, "px-0")}>
-            <Trans>Chats</Trans>
-          </span>
-          {onNewChat ? (
+        {onNewChat ? (
+          <div className="px-2 pt-1">
             <button
               data-switcher-focus
               type="button"
-              className="dropdown-focus-ring flex h-8 items-center gap-1 rounded-md px-2 text-sm text-ink-muted hover:bg-sidebar-accent/50 hover:text-foreground [@media(pointer:coarse)]:h-11"
+              className={cn(dropdownRowVariants(), "text-jade-text hover:bg-primary/10")}
               onClick={() => {
+                focusHandoff.current = true;
                 changeOpen(false);
                 onNewChat();
               }}
             >
-              <Plus className="size-4" aria-hidden />
+              <Plus aria-hidden />
               <Trans>New chat</Trans>
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
         {showSearch ? (
-          <div className="px-2 pb-2">
+          <div className="px-2 py-1">
             <div className="relative">
               <Search
                 className="pointer-events-none absolute top-1/2 left-2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -209,7 +202,7 @@ export function ThreadSwitcherPopover({
           </div>
         ) : null}
 
-        <div className={cn(dropdownResultsVariants({ kind: "thread-list" }), "px-2 pb-2")}>
+        <div className={cn(dropdownResultsClass, "max-h-72 px-2 py-1")}>
           {filteredThreads.length === 0 ? (
             <p className="px-2.5 py-4 text-center text-sm text-muted-foreground">
               <Trans>No matching chats</Trans>
@@ -291,30 +284,25 @@ function ThreadSwitchItem({
     >
       <button
         data-switcher-focus
-        data-switcher-current={active ? "" : undefined}
         type="button"
         aria-current={active ? "page" : undefined}
         onClick={() => onSelect(thread.id)}
         className={cn(
-          dropdownRowVariants({ kind: "identity", interactive: false }),
-          "min-h-11 flex-1 items-stretch justify-center gap-0 px-2 py-1.5",
+          dropdownRowVariants({ interactive: false }),
+          "flex-1",
           active ? "font-medium" : "text-ink-muted group-hover:text-foreground",
         )}
       >
-        <span className="w-full truncate">{title}</span>
-        <span className="flex w-full min-w-0 items-center gap-2">
-          <WorkIdentity
-            className="text-ink-muted"
-            name={thread.agentName}
-            unavailableLabel="General"
-            aria-label={t`Agent: ${agentName}`}
-          />
-          {rel ? (
-            <span className="shrink-0 text-meta font-normal tabular-nums text-ink-subtle">
-              {rel}
-            </span>
-          ) : null}
-        </span>
+        <span className="min-w-0 flex-1 truncate">{title}</span>
+        <WorkIdentity
+          className="max-w-24 shrink-0 text-ink-muted"
+          name={thread.agentName}
+          unavailableLabel="General"
+          aria-label={t`Agent: ${agentName}`}
+        />
+        {rel ? (
+          <span className="shrink-0 text-meta font-normal tabular-nums text-ink-subtle">{rel}</span>
+        ) : null}
       </button>
       {active ? (
         <IconButton

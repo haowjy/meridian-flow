@@ -682,8 +682,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/chat/ThreadSwitcherPopover.tsx
-msgid "Chats"
-msgstr ""
+#~ msgid "Chats"
+#~ msgstr ""
 
 #: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Chats couldn’t load"
