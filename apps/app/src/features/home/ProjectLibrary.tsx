@@ -13,8 +13,6 @@ import { AccountMenu } from "@/features/account/AccountMenu";
 import { formatRelativeTime } from "@/lib/date-groups";
 import { displayProjectTitle } from "@/lib/project-title";
 
-const COVER_TONES = ["bg-secondary", "bg-card"] as const;
-
 export function ProjectLibrary() {
   const { projects, isError, refetch } = useProjectListStatus();
   const independentIds = useIndependentProjectIds();
@@ -54,7 +52,7 @@ export function ProjectLibrary() {
                 <Trans>Books, series, and story worlds in one place.</Trans>
               </p>
             </div>
-            <Button asChild className="min-h-11">
+            <Button asChild size="sm" className="[@media(pointer:coarse)]:min-h-11">
               <Link to="/projects/new" preload="render">
                 <Plus aria-hidden /> <Trans>Create project</Trans>
               </Link>
@@ -127,7 +125,6 @@ export function ProjectLibrary() {
                 <ul className="grid grid-cols-2 gap-x-4 gap-y-6 sm:grid-cols-3 sm:gap-x-6">
                   {matches.map((project) => {
                     const title = displayProjectTitle(project.title);
-                    const tone = COVER_TONES[project.slug.charCodeAt(0) % COVER_TONES.length];
                     return (
                       <li key={project.id} className="min-w-0">
                         <Link
@@ -136,9 +133,7 @@ export function ProjectLibrary() {
                           className="group focus-ring block rounded-md"
                           aria-label={t`Open ${title}`}
                         >
-                          <div
-                            className={`flex aspect-[4/5] items-center justify-center rounded-sm border border-border p-4 text-center transition-transform duration-200 ease-out group-hover:-translate-y-1 motion-reduce:transition-none motion-reduce:transform-none ${tone}`}
-                          >
+                          <div className="flex aspect-[4/5] items-center justify-center rounded-sm border border-border bg-card p-4 text-center transition-transform duration-200 ease-out group-hover:-translate-y-1 motion-reduce:transition-none motion-reduce:transform-none">
                             <span className="max-w-full text-balance break-words text-base font-semibold leading-snug sm:text-lg">
                               {title}
                             </span>

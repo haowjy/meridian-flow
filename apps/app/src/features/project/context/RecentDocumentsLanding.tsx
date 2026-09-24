@@ -110,7 +110,12 @@ export function RecentDocumentsLanding({
               <Trans>Recently opened</Trans>
             </h2>
           </div>
-          <Button size="sm" onClick={onNewDocument} disabled={!onNewDocument}>
+          <Button
+            size="sm"
+            className="[@media(pointer:coarse)]:min-h-11"
+            onClick={onNewDocument}
+            disabled={!onNewDocument}
+          >
             <FilePlus aria-hidden />
             <Trans>New document</Trans>
           </Button>
@@ -343,7 +348,12 @@ function LandingEmpty({ onNewDocument }: { onNewDocument?: () => void }) {
       <p className="mt-1 text-xs text-muted-foreground">
         <Trans>Open a document from the project tree, or start a new one.</Trans>
       </p>
-      <Button size="sm" className="mt-5" onClick={onNewDocument} disabled={!onNewDocument}>
+      <Button
+        size="sm"
+        className="mt-5 [@media(pointer:coarse)]:min-h-11"
+        onClick={onNewDocument}
+        disabled={!onNewDocument}
+      >
         <FilePlus aria-hidden />
         <Trans>New document</Trans>
       </Button>

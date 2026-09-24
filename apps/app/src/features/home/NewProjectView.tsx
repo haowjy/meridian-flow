@@ -105,7 +105,12 @@ export function NewProjectView() {
                 )}
               </p>
             )}
-            <Button type="submit" className="mt-6 min-h-11" disabled={busy || !title.trim()}>
+            <Button
+              type="submit"
+              size="sm"
+              className="mt-6 [@media(pointer:coarse)]:min-h-11"
+              disabled={busy || !title.trim()}
+            >
               {busy ? (
                 <Trans>Creating project…</Trans>
               ) : createdSlug ? (
