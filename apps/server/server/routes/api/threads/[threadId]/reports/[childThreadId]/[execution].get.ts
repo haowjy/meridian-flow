@@ -17,11 +17,9 @@ export default defineEventHandler(async (event): Promise<ThreadReportResult> => 
   );
   const child = await app.repos.threads.findById(childThreadId);
   if (!child?.ref) throw new Error("Thread report is not authorized");
-  return readThreadReport({
-    callerThreadId: parent.id,
-    ref: child.ref,
-    execution,
-    repos: app.repos,
-    runningTurn: { readRunningTurnId: async () => null },
-  });
+  // The card names its exact execution; the shared reader addresses finished runs by position.
+  const reports = await app.repos.executionReports.listFinishedByChild(child.id);
+  const run = reports.findIndex((report) => report.assistantTurnId === execution) + 1;
+  if (run === 0) return { ref: child.ref, status: "unavailable" };
+  return readThreadReport({ callerThreadId: parent.id, ref: child.ref, run, repos: app.repos });
 });
