@@ -25,12 +25,15 @@
 
 ## Before / After
 
-<!-- For fixes or changed behavior, show Before and After; keep Before brief or
-     omit it when no meaningful prior state exists. For new capabilities,
-     describe After only. Show changed UI states with screenshots or GIFs. -->
+<!-- List each concrete change as its own item; do not collapse the PR into one
+     paragraph. Label a bug fix explicitly ("Bug fix: ...") so it doesn't blend
+     into feature description. For a bug fix or changed behavior, give Before
+     and After; keep Before brief or omit it when no meaningful prior state
+     exists. For a new capability, describe After only. Show changed UI states
+     with screenshots or GIFs next to the item they illustrate. -->
 
-- Before (when meaningful):
-- After:
+- **Bug fix: <what was broken>.** Before: ... After: ...
+- **<capability or behavior change>.** After: ...
 
 ## Code Changes
 
