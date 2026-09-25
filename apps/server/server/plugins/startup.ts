@@ -35,7 +35,7 @@ registerProcessShutdownCallback("websocket-admission", async () => {
     import("../routes/api/threads/ws"),
   ]);
   yjs.stopAcceptingYjsWebSockets();
-  threads.stopAcceptingThreadWebSockets();
+  threads.shutdownThreadWebSockets();
 });
 registerProcessShutdownCallback("polling-loops", async () => {
   stopAppBackgroundWork();

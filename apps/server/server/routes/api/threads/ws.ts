@@ -124,6 +124,11 @@ export default defineWebSocketHandler(() => ({
   },
 
   message(peer, message) {
+    if (draining) {
+      const authenticatedPeer = peer as unknown as WsPeer;
+      authenticatedPeer.close(1012, "server-shutdown");
+      return;
+    }
     const session = sessions.get(peer as unknown as WsPeer);
     void session?.onMessage(message.text());
   },
