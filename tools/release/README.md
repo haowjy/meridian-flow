@@ -1,9 +1,17 @@
 # Release-on-merge
 
-Every merged PR to `main` with an associated PR releases from the merge commit.
-The sole version source is root `package.json`; package versions remain private
-`0.0.0`. Stable tags use `vX.Y.Z`; prereleases use `vX.Y.Z-rc.N`. Initial
-release numbering starts at `0.0.0`.
+Each release is cut from the current tip of `main`, not from the triggering
+merge commit. The job walks first-parent history after the latest release
+commit or `v*` tag and resolves every uncovered merge's PR labels. Before the
+first release marker exists, the workflow-introduction commit is the bootstrap
+boundary; earlier history is not replayed. A later run therefore covers
+unreleased merges whose queued runs were replaced. One release commit records
+one `Release-Trigger` trailer for each included merge. The strongest included
+intent wins; an exact `release:skip` label or `Release-Skip: true` trailer
+excludes only that merge. If all uncovered merges are skipped, there is no
+release. The sole version source is root `package.json`; package versions
+remain private `0.0.0`. Stable tags use `vX.Y.Z`; prereleases use `vX.Y.Z-rc.N`.
+Initial release numbering starts at `0.0.0`.
 
 ## PR labels
 
@@ -21,20 +29,20 @@ patch), unless `release:rc` or an unknown release label is present, which
 selects an RC. Existing repository labels are `release:patch` and
 `release:minor`; the workflow also accepts the other labels above.
 
-The release commit updates root `package.json` and rolls the current
-`## [Unreleased]` content into a dated `## [X.Y.Z]` section; a fresh empty
-Unreleased section remains. This includes RCs, matching meridian-cli and
-keeping every tag's source changelog truthful. Existing text preceding the
-Unreleased section is preserved as-is.
+The release commit updates root `package.json`. Stable releases roll the
+current `## [Unreleased]` content into a dated `## [X.Y.Z]` section, leaving a
+fresh empty Unreleased section; existing text preceding that section is
+preserved. RC releases leave `CHANGELOG.md` untouched, so their release notes
+come from the current `[Unreleased]` section.
 
 ## Safety and recovery
 
 The job anchors to current `main` and requires the triggering merge to be an
-ancestor. `Release-Trigger` trailers make reruns idempotent; a rerun repairs a
-missing tag rather than creating a second release. Release commits and tags
-are annotated. Push races are retried after fetching/rebasing, and an existing
-tag pointing at a different commit fails loudly. Commits beginning `release:
-v` and commits containing `release:skip` are ignored.
+ancestor. A run whose trigger already appears in any `Release-Trigger` trailer
+is a no-op except that it repairs a missing tag. Release commits and tags are
+annotated. Push races are retried after fetching/rebasing, and an existing tag
+pointing at a different commit fails loudly. Release commits beginning
+`release: v` are ignored before they enter the job concurrency group.
 
 For a release that must be backfilled without running the workflow, manually
 push an annotated `vX.Y.Z` tag to the intended release commit. Tags cannot be

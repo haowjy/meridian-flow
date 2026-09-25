@@ -19,6 +19,39 @@ export function resolveIntent(labels) {
   return { release: true, kind: "rc", bump: "patch" };
 }
 
+export function hasReleaseSkipTrailer(message) {
+  const lines = message.trimEnd().split(/\r?\n/);
+  const trailerStart = lines.lastIndexOf("") + 1;
+  return lines.slice(trailerStart).includes("Release-Skip: true");
+}
+
+export function unreleasedFirstParentCommits(firstParentCommits) {
+  const lastReleaseIndex = firstParentCommits.findLastIndex(
+    (commit) => commit.isRelease || commit.isBaseline,
+  );
+  return firstParentCommits.slice(lastReleaseIndex + 1).map((commit) => commit.sha);
+}
+
+export function resolveBatchIntent(commits) {
+  const covered = [];
+  const skipped = [];
+  let selected = { kind: "rc", bump: "patch", strength: 0 };
+  for (const commit of commits) {
+    const intent = resolveIntent(commit.labels);
+    if (commit.skipTrailer || !intent.release) {
+      skipped.push(commit.sha);
+      continue;
+    }
+    covered.push(commit.sha);
+    const strength =
+      intent.kind === "stable" ? ({ patch: 1, minor: 2, major: 3 }[intent.bump] ?? 1) : 0;
+    if (strength > selected.strength) selected = { ...intent, strength };
+  }
+  if (!covered.length) return { release: false, kind: "skip", covered, skipped };
+  const { strength: _strength, ...intent } = selected;
+  return { release: true, ...intent, covered, skipped };
+}
+
 function parseTag(tag) {
   const match = tag.match(stable) ?? tag.match(rc);
   if (!match) return null;
@@ -83,6 +116,10 @@ export function promoteChangelog(text, version, date) {
 async function main() {
   const [command, ...args] = process.argv.slice(2);
   if (command === "intent") console.log(JSON.stringify(resolveIntent(JSON.parse(args[0] ?? "[]"))));
+  else if (command === "coverage")
+    console.log(JSON.stringify(unreleasedFirstParentCommits(JSON.parse(args[0] ?? "[]"))));
+  else if (command === "batch")
+    console.log(JSON.stringify(resolveBatchIntent(JSON.parse(args[0] ?? "[]"))));
   else if (command === "version")
     console.log(nextVersion(JSON.parse(args[0] ?? "[]"), JSON.parse(args[1] ?? "{}")));
   else if (command === "bump") {

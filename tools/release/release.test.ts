@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { nextVersion, promoteChangelog, resolveIntent } from "./release.mjs";
+import {
+  hasReleaseSkipTrailer,
+  nextVersion,
+  promoteChangelog,
+  resolveBatchIntent,
+  resolveIntent,
+  unreleasedFirstParentCommits,
+} from "./release.mjs";
 
 describe("release intent", () => {
   it.each([
@@ -12,6 +19,84 @@ describe("release intent", () => {
     [["release:wat"], { release: true, kind: "rc", bump: "patch" }],
     [["release:patch", "release:skip"], { release: false, kind: "skip" }],
   ])("%j resolves to %j", (labels, expected) => expect(resolveIntent(labels)).toEqual(expected));
+});
+
+describe("exact release skip", () => {
+  it("recognizes only the exact trailing Release-Skip trailer", () => {
+    expect(hasReleaseSkipTrailer("merge body mentions release:skip as text")).toBe(false);
+    expect(hasReleaseSkipTrailer("Release-Skip: true is ordinary body text")).toBe(false);
+    expect(hasReleaseSkipTrailer("Merge title\n\nRelease-Skip: true")).toBe(true);
+  });
+});
+
+describe("main release coverage", () => {
+  it("covers first-parent commits after the latest release boundary", () => {
+    expect(
+      unreleasedFirstParentCommits([
+        { sha: "merge-1", isRelease: false },
+        { sha: "release-1", isRelease: true },
+        { sha: "merge-2", isRelease: false },
+        { sha: "merge-3", isRelease: false },
+      ]),
+    ).toEqual(["merge-2", "merge-3"]);
+  });
+
+  it("uses the workflow-introduction commit as the tagless bootstrap boundary", () => {
+    expect(
+      unreleasedFirstParentCommits([
+        { sha: "old-history", isRelease: false },
+        { sha: "workflow-activation", isBaseline: true },
+        { sha: "merge-1", isRelease: false },
+      ]),
+    ).toEqual(["merge-1"]);
+  });
+
+  it("takes the strongest non-skipped merge intent", () => {
+    expect(
+      resolveBatchIntent([
+        { sha: "rc", labels: [] },
+        { sha: "minor", labels: ["release:minor"] },
+        { sha: "major", labels: ["release:major"] },
+        { sha: "patch", labels: ["release:patch"] },
+      ]),
+    ).toEqual({
+      release: true,
+      kind: "stable",
+      bump: "major",
+      covered: ["rc", "minor", "major", "patch"],
+      skipped: [],
+    });
+  });
+
+  it("skips only excluded merges and does not let skip labels suppress the batch", () => {
+    expect(
+      resolveBatchIntent([
+        { sha: "skip-label", labels: ["release:skip", "release:major"] },
+        { sha: "skip-trailer", labels: [], skipTrailer: true },
+        { sha: "minor", labels: ["release:minor"] },
+      ]),
+    ).toEqual({
+      release: true,
+      kind: "stable",
+      bump: "minor",
+      covered: ["minor"],
+      skipped: ["skip-label", "skip-trailer"],
+    });
+  });
+
+  it("does not release when every uncovered merge is skipped", () => {
+    expect(
+      resolveBatchIntent([
+        { sha: "skip-label", labels: ["release:skip"] },
+        { sha: "skip-trailer", labels: [], skipTrailer: true },
+      ]),
+    ).toEqual({
+      release: false,
+      kind: "skip",
+      covered: [],
+      skipped: ["skip-label", "skip-trailer"],
+    });
+  });
 });
 
 describe("version selection", () => {
