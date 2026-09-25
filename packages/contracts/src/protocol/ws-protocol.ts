@@ -38,12 +38,14 @@ export type SequencedEvent = {
   sourceThreadId?: string;
 };
 
-export const sequencedEventSchema: z.ZodType<SequencedEvent> = z.object({
+const sequencedEventObjectSchema = z.object({
   seq: wsEventSeqSchema,
   event: z.custom<AGUIEvent>((value) => EventSchemas.safeParse(value).success),
   error: meridianErrorSchema.optional(),
   sourceThreadId: z.string().min(1).optional(),
 });
+
+export const sequencedEventSchema: z.ZodType<SequencedEvent> = sequencedEventObjectSchema;
 
 const wsSubscribeMessageSchema = z.object({
   type: z.literal("subscribe"),
@@ -168,8 +170,6 @@ const threadLiveStateSchema: z.ZodType<ThreadLiveState> = z.object({
   resumeAfterSeq: wsEventSeqSchema,
 });
 
-const aguiEventSchema = z.custom<AGUIEvent>((value) => EventSchemas.safeParse(value).success);
-
 // Deferred: directory, interaction, approval per design
 
 export type WsServerMessage =
@@ -185,18 +185,8 @@ export type WsServerMessage =
       threadId: string;
       catchup: SequencedEvent[];
       state: ThreadLiveState;
-      /** First event position after the subscription snapshot. */
-      nextSeq: string;
     }
-  | {
-      type: "event";
-      threadId: string;
-      seq: string;
-      event: AGUIEvent;
-      /** Present when `event` is RUN_ERROR; mirrors the journal MeridianError envelope. */
-      error?: MeridianError;
-      sourceThreadId?: string;
-    }
+  | (SequencedEvent & { type: "event"; threadId: string })
   | {
       type: "gap";
       threadId: string;
@@ -234,15 +224,10 @@ export const wsServerMessageSchema: z.ZodType<WsServerMessage> = z.discriminated
     threadId: z.string().min(1),
     catchup: z.array(sequencedEventSchema),
     state: threadLiveStateSchema,
-    nextSeq: wsEventSeqSchema,
   }),
-  z.object({
+  sequencedEventObjectSchema.extend({
     type: z.literal("event"),
     threadId: z.string().min(1),
-    seq: wsEventSeqSchema,
-    event: aguiEventSchema,
-    error: meridianErrorSchema.optional(),
-    sourceThreadId: z.string().min(1).optional(),
   }),
   z.object({
     type: z.literal("gap"),

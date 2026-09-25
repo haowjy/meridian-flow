@@ -1,11 +1,11 @@
+import type { MeridianError } from "@meridian/contracts/interrupt";
 /**
  * Thread event hub: the live fan-out + replay surface for a thread's AG-UI
  * events. Maintains a bounded hot cache, replays from the journal on
  * subscribe/cursor, and projects orchestrator events into AG-UI events for
  * subscribers. Owns the realtime delivery layer over the event journal.
  */
-import type { MeridianError } from "@meridian/contracts/interrupt";
-import { type AGUIEvent, EventType } from "@meridian/contracts/protocol";
+import { type AGUIEvent, EventType, type SequencedEvent } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../observability/index.js";
@@ -19,11 +19,7 @@ const DEFAULT_EVICTION_GRACE_MS = 60_000;
 const EVENT_SEQ_FACTOR = 1_000n;
 const EVENT_SEQ_CURSOR_OFFSET = EVENT_SEQ_FACTOR - 1n;
 
-export type SequencedEventInternal = {
-  seq: bigint;
-  event: AGUIEvent;
-  error?: MeridianError;
-};
+export type SequencedEventInternal = Omit<SequencedEvent, "seq"> & { seq: bigint };
 
 type ThreadHubState = {
   events: SequencedEventInternal[];

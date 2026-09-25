@@ -99,7 +99,6 @@ function createHarness(maxResubscribes = 5) {
       threadId: THREAD_ID,
       catchup: [{ seq: "1", event: { type: EventType.RAW, event: {} }, sourceThreadId: THREAD_ID }],
       state: LIVE_STATE,
-      nextSeq: (HEAD_SEQ + 1n).toString(),
     });
   };
 
@@ -183,10 +182,9 @@ describe("WsThreadTransport gap recovery", () => {
       threadId: THREAD_ID,
       catchup: [],
       state: LIVE_STATE,
-      nextSeq: (HEAD_SEQ + 1n).toString(),
     });
 
-    // A reconnect's resume cursor is event-delivery state, not subscribed.nextSeq.
+    // A reconnect's resume cursor is event-delivery state, not the durable head.
     activeSocket.deliver(connected);
     expect(resumes.at(-1)?.subscriptions?.[0]?.lastSeq).toBe("0");
     unsubscribe();

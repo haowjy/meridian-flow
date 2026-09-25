@@ -85,7 +85,6 @@ export function dispatchWsServerMessage(
         handler.onLiveState?.(message.state);
       }
 
-      // Do NOT advance lastSeq from nextSeq — it's "head + 1", not a delivered event seq.
       return;
     }
 

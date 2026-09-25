@@ -53,7 +53,6 @@ function subscribedMessage(): WsServerMessage {
       pending: { items: [] },
       resumeAfterSeq: "1",
     },
-    nextSeq: "2",
   } as unknown as WsServerMessage;
 }
 

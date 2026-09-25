@@ -1,9 +1,10 @@
 /** The advertised journal head never replaces the client's delivered cursor. */
 
-import type { WsServerMessage } from "@meridian/contracts/protocol";
+import { EventType, type WsServerMessage } from "@meridian/contracts/protocol";
 import type { ThreadId, UserId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createNoopEventSink } from "../domains/observability/index.js";
+import type { SequencedEventInternal } from "../domains/threads/thread-event-hub.js";
 import type { AppServices } from "./app.js";
 import { createThreadWebSocketSession, type WsPeer } from "./ws-thread-handler.js";
 
@@ -20,12 +21,12 @@ const LIVE_STATE = {
   resumeAfterSeq: "0",
 };
 
-function createDelayedDeliveryHarness() {
-  let deliverLive!: (entry: { seq: bigint; event: { type: "RAW" } }) => void;
+function createDelayedDeliveryHarness(catchup: SequencedEventInternal[] = []) {
+  let deliverLive!: (entry: SequencedEventInternal) => void;
   const hub = {
     async catchupAndSubscribe(_threadId: ThreadId, _lastSeq: bigint, listener: typeof deliverLive) {
       deliverLive = listener;
-      return { catchup: [], unsubscribe() {} };
+      return { catchup, unsubscribe() {} };
     },
     async headSeq() {
       return UNDELIVERED_HEAD;
@@ -54,7 +55,8 @@ function createDelayedDeliveryHarness() {
   return {
     session: createThreadWebSocketSession(peer),
     frames,
-    deliverLive: (seq: bigint) => deliverLive({ seq, event: { type: "RAW" } }),
+    deliverLive: (seq: bigint) => deliverLive({ seq, event: { type: EventType.RAW, event: {} } }),
+    deliverEntry: (entry: SequencedEventInternal) => deliverLive(entry),
   };
 }
 
@@ -67,11 +69,32 @@ describe("thread WS handler subscribe handoff", () => {
     );
 
     const subscribed = frames.find((frame) => frame.type === "subscribed");
-    expect(subscribed).toMatchObject({ catchup: [], nextSeq: (UNDELIVERED_HEAD + 1n).toString() });
+    expect(subscribed).toMatchObject({ catchup: [] });
+    expect(subscribed).not.toHaveProperty("nextSeq");
 
     // The separately sampled durable head may lead the live listener. The
-    // client resumes from delivered event frames, not subscribed.nextSeq.
+    // client resumes from delivered event frames, not the durable head.
     deliverLive(UNDELIVERED_HEAD);
     expect(frames.at(-1)).toMatchObject({ type: "event", seq: UNDELIVERED_HEAD.toString() });
   });
+});
+
+it("preserves typed errors in catchup and live envelopes", async () => {
+  const error = {
+    code: "credits_exhausted",
+    message: "No credits",
+    retryable: false,
+    source: "system" as const,
+    details: { needed: 10 },
+  };
+  const entry: SequencedEventInternal = {
+    seq: 1000n,
+    event: { type: EventType.RUN_ERROR, message: error.message },
+    error,
+  };
+  const { session, frames, deliverEntry } = createDelayedDeliveryHarness([entry]);
+  await session.onMessage(JSON.stringify({ type: "subscribe", threadId: THREAD_ID }));
+  expect(frames.at(-1)).toMatchObject({ catchup: [{ seq: "1000", error }] });
+  deliverEntry({ ...entry, seq: 2000n });
+  expect(frames.at(-1)).toMatchObject({ type: "event", seq: "2000", error });
 });

@@ -84,7 +84,7 @@ function interruptRejectionError(
 }
 
 function toProtocolSequencedEvent(event: SequencedEventInternal): SequencedEvent {
-  return { seq: event.seq.toString(), event: event.event };
+  return { ...event, seq: event.seq.toString() };
 }
 
 function sendFrame(peer: WsPeer, message: WsServerMessage): boolean {
@@ -139,8 +139,7 @@ function sendLiveEvent(
     sendFrame(peer, {
       type: "event",
       threadId,
-      seq: entry.seq.toString(),
-      event: entry.event,
+      ...toProtocolSequencedEvent(entry),
     }) &&
     (lease.phase === "active" || lease.phase === "flushing")
   ) {
@@ -232,8 +231,6 @@ async function subscribeThread(
     }
     lease.unsubscribe = unsubscribe;
 
-    const headSeq = await auth.app.hub.headSeq(threadId);
-    if (!currentLease()) return;
     const liveState = await auth.app.threadRuntime.liveState(threadId, auth.userId);
     if (!currentLease()) return;
     if (
@@ -242,7 +239,6 @@ async function subscribeThread(
         threadId,
         catchup: catchup.map(toProtocolSequencedEvent),
         state: liveState,
-        nextSeq: (headSeq + 1n).toString(),
       }) ||
       !currentLease()
     )

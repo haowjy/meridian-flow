@@ -33,7 +33,6 @@ function deferred<T>() {
 
 async function harness(
   options: {
-    head?: () => Promise<bigint>;
     liveState?: () => Promise<typeof LIVE_STATE>;
     authorize?: () => Promise<void>;
     readGate?: Promise<void>;
@@ -89,7 +88,7 @@ async function harness(
   const app = {
     eventSink: sink,
     threadEventHub,
-    hub: { ...hub, headSeq: options.head ?? (() => hub.headSeq(THREAD_ID)) },
+    hub,
     threadRuntime: {
       requireOwnedThread: options.authorize ?? (async () => {}),
       liveState: options.liveState ?? (async () => LIVE_STATE),
@@ -148,46 +147,35 @@ const seqs = (frames: WsServerMessage[]) =>
         : [],
   );
 
-for (const gateAt of ["head", "liveState"] as const) {
-  it(`sends historical text/tool catchup before live frames when ${gateAt} is delayed`, async () => {
-    const gate = deferred<never>();
-    const entered = deferred<void>();
-    const options =
-      gateAt === "head"
-        ? {
-            head: async () => {
-              entered.resolve();
-              await gate.promise;
-              return 5_999n;
-            },
-          }
-        : {
-            liveState: async () => {
-              entered.resolve();
-              await gate.promise;
-              return LIVE_STATE;
-            },
-          };
-    const h = await harness(options);
-    const pending = h.subscribe();
-    await entered.promise;
-    await h.appendLive();
-    expect(h.frames.map((frame) => frame.type)).toEqual(["connected"]);
-    gate.resolve(undefined as never);
-    await pending;
-    expect(h.frames.slice(0, 2).map((frame) => frame.type)).toEqual(["connected", "subscribed"]);
-    expect(h.frames.slice(2).every((frame) => frame.type === "event")).toBe(true);
-    const delivered = seqs(h.frames);
-    expect(delivered).toEqual([...new Set(delivered)]);
-    expect(delivered).toEqual([...delivered].sort((a, b) => Number(BigInt(a) - BigInt(b))));
-    const eventTypes = h.frames
-      .filter((frame) => frame.type === "event")
-      .map((frame) => frame.event.type);
-    expect(eventTypes).toContain("TEXT_MESSAGE_CONTENT");
-    expect(eventTypes).toContain("TOOL_CALL_RESULT");
-    h.session.onClose();
-  });
-}
+it("sends historical text/tool catchup before live frames when live state is delayed", async () => {
+  const gate = deferred<never>();
+  const entered = deferred<void>();
+  const options = {
+    liveState: async () => {
+      entered.resolve();
+      await gate.promise;
+      return LIVE_STATE;
+    },
+  };
+  const h = await harness(options);
+  const pending = h.subscribe();
+  await entered.promise;
+  await h.appendLive();
+  expect(h.frames.map((frame) => frame.type)).toEqual(["connected"]);
+  gate.resolve(undefined as never);
+  await pending;
+  expect(h.frames.slice(0, 2).map((frame) => frame.type)).toEqual(["connected", "subscribed"]);
+  expect(h.frames.slice(2).every((frame) => frame.type === "event")).toBe(true);
+  const delivered = seqs(h.frames);
+  expect(delivered).toEqual([...new Set(delivered)]);
+  expect(delivered).toEqual([...delivered].sort((a, b) => Number(BigInt(a) - BigInt(b))));
+  const eventTypes = h.frames
+    .filter((frame) => frame.type === "event")
+    .map((frame) => frame.event.type);
+  expect(eventTypes).toContain("TEXT_MESSAGE_CONTENT");
+  expect(eventTypes).toContain("TOOL_CALL_RESULT");
+  h.session.onClose();
+});
 
 describe("thread socket lease ownership", () => {
   it("releases an older hub result that resolves after its replacement", async () => {
@@ -230,16 +218,16 @@ describe("thread socket lease ownership", () => {
 
   for (const cancel of ["unsubscribe", "close", "replace"] as const) {
     it(`invalidates pending catchup on ${cancel}`, async () => {
-      const gate = deferred<bigint>();
+      const gate = deferred<typeof LIVE_STATE>();
       const entered = deferred<void>();
       let calls = 0;
       const h = await harness({
-        head: async () => {
+        liveState: async () => {
           if (++calls === 1) {
             entered.resolve();
             return gate.promise;
           }
-          return h.hub.headSeq(THREAD_ID);
+          return LIVE_STATE;
         },
       });
       const old = h.subscribe();
@@ -247,7 +235,7 @@ describe("thread socket lease ownership", () => {
       if (cancel === "unsubscribe") await h.unsubscribe();
       else if (cancel === "close") h.session.onClose();
       else await h.subscribe();
-      gate.resolve(5_999n);
+      gate.resolve(LIVE_STATE);
       await old;
       expect(h.frames.filter((frame) => frame.type === "subscribed")).toHaveLength(
         cancel === "replace" ? 1 : 0,
