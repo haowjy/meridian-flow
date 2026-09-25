@@ -138,7 +138,7 @@ export type ProjectViewProps = {
   entryHydration: WorkingSetHydrationPlan;
   addressOwnsDocumentAdmission?: boolean;
   routeLocationKey?: string;
-  routeIssues?: { main?: ProjectRouteIssue; chat?: ProjectRouteIssue; editor?: ProjectRouteIssue };
+  routeIssues?: { main?: ProjectRouteIssue; editor?: ProjectRouteIssue };
   onDisplayedSelection?: (selection: {
     threadId: string | null;
     editorWorkId: string | null;
@@ -746,10 +746,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     {
       id: "chat",
       children: (
-        <ProjectRouteBoundary
-          issue={props.routeIssues?.chat}
-          destinationKey={props.routeLocationKey}
-        >
+        <ProjectRouteBoundary destinationKey={props.routeLocationKey}>
           <div
             className="flex min-h-0 flex-1 flex-col"
             role={chatPlacement === "center" && !props.chatLanding ? "main" : undefined}
@@ -788,11 +785,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                   placement={chatPlacement}
                   // Mounted-but-hidden when the dock is collapsed, so the live
                   // conversation survives a close/reopen.
-                  visible={
-                    !props.chatLanding &&
-                    !props.routeIssues?.chat &&
-                    (chatPlacement === "center" || isOpen("chat"))
-                  }
+                  visible={!props.chatLanding && (chatPlacement === "center" || isOpen("chat"))}
                   onCloseDock={close("chat")}
                   onOpenContextTarget={props.onOpenContextTarget}
                 />

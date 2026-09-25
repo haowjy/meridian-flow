@@ -132,7 +132,9 @@ the document session registry.
   changing the destination. Route chat-reveal commands and pending first-send
   reload recovery open the same Sheet and select its Chat tab. The Sheet renders
   `ChatSurface` with `chrome="phone"`: a 56px status-bar-aware `DockHeader`
-  carrying the same `Chats` trail and a 44px close.
+  carrying the chat switcher and a 44px close. Like the desktop dock it has no
+  index, so no `Chats` trail. The Sheet opens only over Work or Editor; a
+  reveal on the Chat screen never latches it open for the next screen.
 - The trailing slot is a per-screen dispatcher (`trailingAction()` in
   `MobileProject`): chat carries the Results entry, Results carries the way
   back to chat, and the Files browser inside a scheme (scheme root or folder,

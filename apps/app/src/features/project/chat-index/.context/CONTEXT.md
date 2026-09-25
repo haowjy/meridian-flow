@@ -9,13 +9,13 @@ responses retain Favorite commands that completed after the request began.
 
 `thread-user-state-commands.ts` owns normalized Favorite intent, serialization,
 stale-response fencing, and failure. `ProjectChatRow` is shared with Work detail.
-The index delegates selection and New chat to route commands. Creation lives
-in `features/chat/CreationComposer`, rendered in the empty chat pane rather
-than above the feed. Recency groups are computed per render from the flat,
+The index delegates selection to route commands. Creation lives in
+`features/chat/CreationComposer`: the `hero` variant above the feed here, the
+pinned variant in the empty chat pane. Recency groups are computed per render from the flat,
 newest-first pages, so pagination continues inside the last group.
 
-A project with no chats shows a standalone first-run state (no heading or
-filter). An empty Favorites filter is one muted line under the heading row.
+A project with no chats shows the composer and one muted "No chats yet." line.
+An empty Favorites filter is one muted line under the heading row.
 
 The feed observer keys pagination by project, filter, and opaque cursor. Stale
 observer callbacks must not request pages. Lifecycle hints are snapshots, not
@@ -24,12 +24,20 @@ live signals for unsubscribed chats.
 ## Row layout and feed behavior
 
 An index row is a borderless resume-list entry, not a card: title and bound Agent
-name share line one; preview and activity date share line two; overflow owns
-Favorite and has no standing-star counterpart. Work is not the row identity.
+name share line one; preview and activity date share line two. The list is flat,
+so Favorite is a standing mark: a star icon button right beside the Agent name,
+filled for favorites and shown on hover (always on touch) for the rest, next to
+the overflow's Favorite item. The overflow also offers Delete chat when the
+list passes `onDelete`: `client/query/useDeleteChat` confirms through
+`DeleteChatDialog`, calls the server soft delete, drops the chat from the thread
+list and every chat feed, and the route's `forgetChat` clears it as current
+chat. Work is not the row identity. Rows use the shared
+inset list-row hover (`bg-dropdown-hover`, rounded), the chat switcher's recipe.
 Real and loading rows use the same two-line layout: a flexible title/preview
-lane, a right-side Agent lane (`data-project-chat-row-work` for geometry), and a
-trailing date/action slot. The Agent lane has the same position and width in
-every row, and its text is right-aligned within that lane and vertically
+lane, a right-side Agent lane (`data-project-chat-row-work` for geometry; the
+name is `data-project-chat-row-agent`), and a trailing date/action slot. The
+Agent lane has the same position and width in every row, and its star and name
+are right-aligned together within that lane and vertically
 centered across the full two-line row. Its compact current-value treatment
 follows the Composer: the Agent name is medium foreground text, while the Agent
 label remains in its accessible name. A null name displays as General. Title

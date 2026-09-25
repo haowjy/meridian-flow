@@ -4,12 +4,15 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import { useEffect, useState } from "react";
+import { useDeleteChat } from "@/client/query/useDeleteChat";
 import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { useWorkThreads } from "@/client/query/useWorkThreads";
 import { useAnnouncement } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
+import { DeleteChatDialog } from "../chat-list/DeleteChatDialog";
 import { ProjectChatRow } from "../chat-list/ProjectChatRow";
+import { useProjectChatNavigation } from "../routing/ProjectNavigationContext";
 import { useExternalScrollVirtualList } from "./useExternalScrollVirtualList";
 
 const chatKey = (item: ProjectChatItem) => item.id;
@@ -28,6 +31,11 @@ export function WorkAssociatedChats({
 }) {
   const query = useWorkThreads(projectId, work.id);
   const { announce, announceError } = useAnnouncement();
+  const navigation = useProjectChatNavigation();
+  const deletion = useDeleteChat(projectId, (threadId) => {
+    navigation?.forgetChat?.(threadId);
+    announce(t`Chat deleted`);
+  });
   const [now, setNow] = useState(Date.now());
   const threads = query.threads ?? [];
   const { listRef, onActiveChange, virtualizer } = useExternalScrollVirtualList({
@@ -80,6 +88,9 @@ export function WorkAssociatedChats({
                     now={now}
                     onOpen={requestOpen}
                     onActiveChange={onActiveChange}
+                    onDelete={(chat) =>
+                      deletion.request({ id: chat.id, title: chat.title || t`New chat` })
+                    }
                     onFavorite={(chat, value) => {
                       void query.setFavorite(chat.id, value).then((saved) => {
                         if (saved)
@@ -115,6 +126,13 @@ export function WorkAssociatedChats({
           <Trans>No chats are associated with this Work.</Trans>
         </p>
       )}
+      <DeleteChatDialog
+        target={deletion.target}
+        isPending={deletion.isPending}
+        error={deletion.error}
+        onCancel={deletion.cancel}
+        onConfirm={deletion.confirm}
+      />
     </>
   );
 }
@@ -125,6 +143,7 @@ function WorkChatRow({
   now,
   onOpen,
   onActiveChange,
+  onDelete,
   onFavorite,
 }: {
   projectId: string;
@@ -132,6 +151,7 @@ function WorkChatRow({
   now: number;
   onOpen: (item: ProjectChatItem) => void;
   onActiveChange: (id: string, active: boolean) => void;
+  onDelete: (item: ProjectChatItem) => void;
   onFavorite: (item: ProjectChatItem, value: boolean) => void;
 }) {
   const state = useProjectChatUserState(projectId, item);
@@ -141,6 +161,7 @@ function WorkChatRow({
       now={now}
       onOpen={onOpen}
       onActiveChange={onActiveChange}
+      onDelete={onDelete}
       onFavorite={onFavorite}
     />
   );

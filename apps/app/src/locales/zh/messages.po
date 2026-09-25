@@ -252,6 +252,11 @@ msgstr ""
 msgid "<0>{0}</0> and all its contents will be permanently deleted."
 msgstr ""
 
+#. placeholder {0}: target?.title
+#: src/features/project/chat-list/DeleteChatDialog.tsx
+msgid "<0>{0}</0> and its messages will be deleted."
+msgstr ""
+
 #. placeholder {0}: target?.name
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "<0>{0}</0> will be permanently deleted."
@@ -337,6 +342,10 @@ msgstr ""
 #: src/components/app/composer/placeholders.ts
 msgid "Actually…"
 msgstr "其实…"
+
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "Add {title} to favorites"
+msgstr ""
 
 #: src/features/project/work/WorkMetadata.tsx
 msgid "Add a description"
@@ -523,7 +532,6 @@ msgstr ""
 msgid "Back to {title}"
 msgstr ""
 
-#: src/features/project/chat-index/ChatIndexButton.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Back to chat"
 msgstr ""
@@ -613,6 +621,7 @@ msgstr ""
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 #: src/features/editor/surfaces/link/FollowOutcomeDialog.tsx
 #: src/features/editor/surfaces/link/LinkForm.tsx
+#: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 #: src/features/project/work/WorkDialog.tsx
 #: src/features/project/work/WorkMetadata.tsx
@@ -708,6 +717,11 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/chat-index/ChatIndex.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
+msgid "Chat deleted"
+msgstr ""
+
+#: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/mobile/ChatBreadcrumb.tsx
 msgid "Chats"
 msgstr ""
@@ -717,8 +731,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/features/project/chat-index/ChatIndex.tsx
-msgid "Chats you start in this project collect here."
-msgstr ""
+#~ msgid "Chats you start in this project collect here."
+#~ msgstr ""
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
@@ -1042,6 +1056,10 @@ msgstr ""
 msgid "Couldn't delete that Work"
 msgstr ""
 
+#: src/features/project/chat-list/DeleteChatDialog.tsx
+msgid "Couldn't delete this chat. Try again."
+msgstr ""
+
 #: src/features/project/context/ContextTreeRows.tsx
 msgid "Couldn't delete this document. Try again."
 msgstr ""
@@ -1303,8 +1321,17 @@ msgstr ""
 #: src/features/editor/surfaces/blocks/block-copy.ts
 #: src/features/editor/surfaces/objects/fence-menu-items.tsx
 #: src/features/editor/surfaces/objects/object-menu-items.tsx
+#: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Delete"
+msgstr ""
+
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "Delete chat"
+msgstr ""
+
+#: src/features/project/chat-list/DeleteChatDialog.tsx
+msgid "Delete chat?"
 msgstr ""
 
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -1344,6 +1371,7 @@ msgstr ""
 msgid "Deleting a Work…"
 msgstr ""
 
+#: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Deleting…"
 msgstr ""
@@ -2001,7 +2029,7 @@ msgstr ""
 msgid "Loading agents…"
 msgstr ""
 
-#: src/features/project/chat-index/ChatIndex.tsx
+#: src/features/project/chat-index/ChatIndexLoading.tsx
 msgid "Loading chats"
 msgstr ""
 
@@ -2239,16 +2267,15 @@ msgstr ""
 msgid "New"
 msgstr ""
 
+#: src/features/chat/ChatThreadHeader.tsx
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
 #: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/chat/ChatScreen.tsx
-#: src/features/project/chat/ChatSurface.tsx
 #: src/features/project/ChatIndexController.tsx
-#: src/features/project/ChatPaneController.tsx
-#: src/features/project/mobile/ChatBreadcrumb.tsx
+#: src/features/project/work/WorkAssociatedChats.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "新对话"
@@ -2302,8 +2329,8 @@ msgid "No chats are associated with this Work."
 msgstr ""
 
 #: src/features/project/chat-index/ChatIndex.tsx
-msgid "No chats yet"
-msgstr ""
+#~ msgid "No chats yet"
+#~ msgstr ""
 
 #: src/features/project/chat-index/ChatIndex.tsx
 msgid "No chats yet."
@@ -2835,6 +2862,10 @@ msgstr ""
 #: src/features/agents/AgentPicker.tsx
 #~ msgid "Remove {0} from project"
 #~ msgstr ""
+
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "Remove {title} from favorites"
+msgstr ""
 
 #: src/features/project/chat-list/ProjectChatRow.tsx
 msgid "Remove from favorites"
@@ -3996,9 +4027,9 @@ msgstr ""
 msgid "What this figure shows"
 msgstr ""
 
-#: src/features/project/chat-landing/ChatLandingScreen.tsx
-#~ msgid "What will you write next?"
-#~ msgstr ""
+#: src/features/project/chat-index/ChatIndex.tsx
+msgid "What will you write next?"
+msgstr ""
 
 #: src/components/app/composer/placeholders.ts
 msgid "What's next?"

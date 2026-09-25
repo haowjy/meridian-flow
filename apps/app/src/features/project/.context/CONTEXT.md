@@ -78,18 +78,19 @@ targets.
 The chat index is the project root (`/p/<project>`). It reads a flat,
 cursor-paginated primary-chat feed ordered by last activity. Favorites is a
 server-side filter, applied before pagination. The shared row also serves Work
-detail. The index has no composer; the explicit new-chat state owns the pinned
-`CreationComposer` with prospective Work and Agent choices, in the same
+detail. The index leads with the centered `CreationComposer` (`hero` variant,
+autofocused on fine pointers). The explicit new-chat state owns the pinned
+variant, with the same prospective Work and Agent choices, in the
 `features/chat/ChatSurface` frame a live chat uses so the first Send never moves
-the composer. Only an explicit New chat focuses it (route
+the composer. Only an explicit New chat focuses the pinned composer (route
 `newChatFocusRequested`, consumed by the composer), never a page load.
 
 The index door sits in each pane's 40px band after the sidebar toggle, on the
 same x as the Editor's Recently opened chip (`chat-index/ChatIndexButton.tsx`).
 Center wears the tab-chip grammar: on the index the door is the active chip and
 the remembered chat (or pending new chat) waits beside it as an inactive chip
-that calls `showCurrentChat`. The dock uses a quiet pressed toggle between the
-index and the current chat, and always renders its header. Phone reaches the
+that calls `showCurrentChat`. The dock has no index: its always-present header
+carries the chat switcher, which lists the chats and New chat. Phone reaches the
 index through the `Chats` breadcrumb ancestor instead of a door.
 
 `ReadableProjectRoute` resolves one browser-local current chat from the working
@@ -97,9 +98,12 @@ set: a thread identity (primary or subagent), new chat, or none. An explicit
 chat path selects that identity. Chat nav reopens the current chat, opens the
 index if none is remembered, and opens new chat for a project with zero chats.
 New chat and selecting a chat stay in the active pane. Dock selection does not
-write the URL; the dock index is local view state. Center new chat uses the
-project root with entry-local `meridianNewChat` state to distinguish it from
-the index. A confirmed snapshot 404 clears current identity and opens the index.
+write the URL. Center new chat uses the project root with entry-local
+`meridianNewChat` state to distinguish it from the index. A confirmed snapshot
+404 clears current identity; a chat path is replaced (never pushed) with the
+index so Back cannot land on it again, and the dock shows New chat. Reload
+recovery (`recoveringFirstSend`) is decided once at mount; the phone opens its
+chat sheet for it, and for reveals, only over Work or Editor.
 
 First Send writes the durable account-stamped intent before selecting the new
 thread. Center replaces to `/p/<project>/chat/<id>`; dock selection updates the

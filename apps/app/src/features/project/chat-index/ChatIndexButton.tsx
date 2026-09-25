@@ -7,14 +7,12 @@
  *   the document tab strip; it wears the same tab-chip grammar as History.
  * - `CurrentChatChip` — on the center index, the remembered chat as an
  *   inactive tab: the way back, like an open document tab beside Recents.
- * - `ChatIndexToggle` — the dock, which stays one chrome surface; a quiet
- *   pressed/unpressed icon toggles between the index and the current chat.
+ *
+ * The dock has no index: its switcher lists the chats.
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { MessagesSquare } from "lucide-react";
-
-import { IconButton } from "@/components/ui/icon-button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -55,27 +53,5 @@ export function CurrentChatChip({ title, onClick }: { title: string; onClick: ()
     >
       <span className="truncate px-1 text-sm font-medium">{title}</span>
     </button>
-  );
-}
-
-export function ChatIndexToggle({ pressed, onClick }: { pressed: boolean; onClick?: () => void }) {
-  const label = pressed ? t`Back to chat` : t`All chats`;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <IconButton
-          size="sm"
-          aria-label={label}
-          aria-pressed={pressed}
-          onClick={onClick}
-          className={cn("shrink-0", pressed && "bg-sidebar-accent text-foreground")}
-        >
-          <MessagesSquare className="size-4" aria-hidden />
-        </IconButton>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={4}>
-        {label}
-      </TooltipContent>
-    </Tooltip>
   );
 }

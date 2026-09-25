@@ -50,20 +50,39 @@ export function ChatThreadHeader(props: ChatThreadHeaderProps) {
  * caller doesn't have the resolved thread (e.g. the shell), the title resolves
  * from the project thread groups.
  */
-export function ChatThreadTitle({
+type ChatThreadTitleProps = {
+  projectId: string;
+  /** `null` — the empty New chat: the switcher reads "New chat" and has no rename. */
+  threadId: string | null;
+  activeThread?: Thread | null;
+  onSelectThread: (threadId: string) => void;
+  /** Trigger presentation — see `ThreadSwitcherPopover`. */
+  variant?: "quiet" | "tab";
+};
+
+export function ChatThreadTitle(props: ChatThreadTitleProps) {
+  const openNewChat = useOpenNewChatRoute();
+  if (props.threadId === null)
+    return (
+      <ThreadSwitcherPopover
+        projectId={props.projectId}
+        activeThreadId={null}
+        title={t`New chat`}
+        onSelectThread={props.onSelectThread}
+        onNewChat={openNewChat}
+        variant={props.variant}
+      />
+    );
+  return <ExistingThreadTitle {...props} threadId={props.threadId} />;
+}
+
+function ExistingThreadTitle({
   projectId,
   threadId,
   activeThread,
   onSelectThread,
   variant,
-}: {
-  projectId: string;
-  threadId: string;
-  activeThread?: Thread | null;
-  onSelectThread: (threadId: string) => void;
-  /** Trigger presentation — see `ThreadSwitcherPopover`. */
-  variant?: "quiet" | "tab";
-}) {
+}: ChatThreadTitleProps & { threadId: string }) {
   const openNewChat = useOpenNewChatRoute();
   const { threadById } = useProjectThreadGroups(projectId);
   const resolved = activeThread ?? threadById.get(threadId) ?? null;

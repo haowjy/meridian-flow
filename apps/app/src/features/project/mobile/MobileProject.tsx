@@ -47,12 +47,20 @@ type MobileProjectProps = ReviewScopedProjectProps;
 export function MobileProject(props: MobileProjectProps) {
   const chatNavigation = useProjectChatNavigation();
   const setDockView = useDockViewStore((state) => state.setDockView);
-  const [chatOpen, setChatOpen] = useState(chatNavigation?.recoveringFirstSend ?? false);
+  // The sheet is the phone's dock: it opens over Work or Editor only. On the
+  // Chat screen the chat is already the page, so a reveal there must not latch
+  // the sheet open for the next screen.
+  const sheetScreen = props.activeScreen !== "chat";
+  const [chatOpen, setChatOpen] = useState(
+    sheetScreen && (chatNavigation?.recoveringFirstSend ?? false),
+  );
   useEffect(() => {
+    if (!sheetScreen) return;
     if (chatNavigation?.dockChatReveal || chatNavigation?.recoveringFirstSend) {
       setDockView(props.activeScreen, "chat");
       setChatOpen(true);
     }
+    // Reveal is an event: only a new reveal (or recovery at mount) opens the sheet.
   }, [chatNavigation?.dockChatReveal, chatNavigation?.recoveringFirstSend, setDockView]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { tabs } = useContextTabs(props.projectId);
@@ -75,7 +83,6 @@ export function MobileProject(props: MobileProjectProps) {
   const openChatIndex = chatNavigation?.openChatIndex
     ? () => void chatNavigation.openChatIndex?.()
     : undefined;
-  const openNewChat = chatNavigation?.openNewChat;
 
   return (
     <div
@@ -95,7 +102,6 @@ export function MobileProject(props: MobileProjectProps) {
               index={!!props.chatLanding}
               onOpenIndex={openChatIndex}
               onSelectThread={props.onSelectThread}
-              onNewChat={openNewChat}
             />
           ) : crumbs.length > 0 ? (
             <MobileBreadcrumb segments={crumbs} />
@@ -134,13 +140,9 @@ export function MobileProject(props: MobileProjectProps) {
           retainWhileLoading={props.retainEditorWhileLoading}
           issue={
             props.routeIssues?.main ??
-            (props.activeScreen === "chat"
-              ? props.routeIssues?.chat
-              : props.activeScreen === "context"
-                ? props.editorScope.status === "ready"
-                  ? props.routeIssues?.editor
-                  : undefined
-                : undefined)
+            (props.activeScreen === "context" && props.editorScope.status === "ready"
+              ? props.routeIssues?.editor
+              : undefined)
           }
         >
           {renderActiveView(props, creating, () => setCreating(null), localTab)}
@@ -255,12 +257,7 @@ function renderActiveView(
     case "chat":
       if (props.chatLanding)
         return (
-          <ChatIndex
-            projectId={props.projectId}
-            onOpenThread={props.onOpenThread}
-            placement="page"
-            namedByChrome
-          />
+          <ChatIndex projectId={props.projectId} onOpenThread={props.onOpenThread} namedByChrome />
         );
       return (
         <DraftReviewBoundary value={props.chatReview}>

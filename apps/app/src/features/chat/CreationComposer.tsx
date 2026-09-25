@@ -14,7 +14,16 @@ import { useOpenProjectDocument } from "@/features/project/context/open-project-
 import { useProjectChatNavigation } from "@/features/project/routing/ProjectNavigationContext";
 import { useCreationComposer } from "./useCreationComposer";
 
-export function CreationComposer({ projectId }: { projectId: string }) {
+export function CreationComposer({
+  projectId,
+  variant = "pinned",
+  autoFocus = false,
+}: {
+  projectId: string;
+  /** `hero` — the chat index's centered composer; `pinned` — the empty chat's footer. */
+  variant?: "pinned" | "hero";
+  autoFocus?: boolean;
+}) {
   const creation = useCreationComposer(projectId);
   const composerRef = useRef<ComposerHandle>(null);
   const navigation = useProjectChatNavigation();
@@ -75,8 +84,8 @@ export function CreationComposer({ projectId }: { projectId: string }) {
     <>
       <Composer
         ref={composerRef}
-        variant="pinned"
-        autoFocus={focusAtMount}
+        variant={variant}
+        autoFocus={focusAtMount || autoFocus}
         onSubmit={async (envelope) => ({
           kind:
             choicesReady && context && (await creation.submit(envelope, context))
