@@ -750,6 +750,13 @@
       "when": 1790318917086,
       "tag": "0106_thread_chat_activity_trigger",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1790345294295,
+      "tag": "0107_add_turn_recovery_index",
+      "breakpoints": true
     }
   ]
 }
