@@ -3,8 +3,24 @@
 }
 
 :{$PORT:8080} {
-  @health path /_ingress/health
-  respond @health 200
+  @ingressHealth path /_ingress/health
+  handle @ingressHealth {
+    respond 200
+  }
+
+  @serverHealth path /healthz /readyz
+  handle @serverHealth {
+    reverse_proxy {
+      dynamic a {$SERVER_UPSTREAM_HOST} {$SERVER_UPSTREAM_PORT} {
+        refresh 30s
+      }
+      header_up X-Forwarded-Proto https
+      transport http {
+        dial_timeout 5s
+        response_header_timeout 60s
+      }
+    }
+  }
 
   request_body {
     max_size 10MB
