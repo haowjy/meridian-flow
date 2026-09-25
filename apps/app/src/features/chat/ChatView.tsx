@@ -45,8 +45,7 @@ import { AgentOnlyComposerToolbar, ChatComposerToolbar } from "./ChatComposerToo
 import { ChatSurface } from "./ChatSurface";
 import type { InterruptRespondRequest } from "./CustomBlockRenderer";
 import { DraftDock, useDraftDock } from "./DraftDock";
-import { PendingInboxTray } from "./PendingInboxTray";
-import { awaitingRunTurnIds, writerPendingInbox } from "./pending-inbox";
+import { writerTurnQueueStatus } from "./pending-inbox";
 import { RunningSubagentsStrip } from "./RunningSubagentsStrip";
 import { canRestoreRejectedDraft, restoreRejectedDraft } from "./rejected-draft";
 import { TurnList } from "./TurnList";
@@ -125,7 +124,7 @@ export function ChatView({
   });
   const runningSubagents = activeDescendants(activity.activity);
   const pendingInbox = usePendingInbox({ threadId, seed: snapshotLiveState });
-  const waitingRunTurnIds = useMemo(() => awaitingRunTurnIds(pendingInbox), [pendingInbox]);
+  const queueStatusByTurnId = useMemo(() => writerTurnQueueStatus(pendingInbox), [pendingInbox]);
 
   useThreadNavigationAnnounce(threadId, pageTitle, composerRef);
 
@@ -341,7 +340,6 @@ export function ChatView({
         }
         footer={
           <div data-debug-composer={threadId}>
-            <PendingInboxTray pending={writerPendingInbox(pendingInbox)} />
             {/* The dock strip sits BEHIND (below) the composer — narrower via
               mx-2, top corners rounded, jade-tinted background. The composer
               always keeps its own border and overlaps the strip's edge. */}
@@ -400,7 +398,7 @@ export function ChatView({
           failedSendRetry={failedSendRetry}
           changeTrails={changeTrails.byId}
           submissionRecoveryByTurnId={submissionRecoveryByTurnId}
-          awaitingRunTurnIds={waitingRunTurnIds}
+          queueStatusByTurnId={queueStatusByTurnId}
         />
       </ChatSurface>
     </TranscriptLinkNavigationContext.Provider>

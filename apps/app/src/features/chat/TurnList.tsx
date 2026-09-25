@@ -63,7 +63,7 @@ export type TurnListProps = {
   changeTrails?: Record<string, ChangeTrailShell>;
   /** Recovered ambiguous submissions, keyed by the restored user turn id. */
   submissionRecoveryByTurnId?: ReadonlyMap<string, UserTurnRecovery>;
-  awaitingRunTurnIds?: ReadonlySet<string>;
+  queueStatusByTurnId?: ReadonlyMap<string, "queued" | "waiting">;
 };
 
 /** Estimated row height before measurement; corrected by `measureElement`. */
@@ -81,7 +81,7 @@ export function TurnList({
   failedSendRetry = null,
   changeTrails = {},
   submissionRecoveryByTurnId,
-  awaitingRunTurnIds,
+  queueStatusByTurnId,
 }: TurnListProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const navigateToChange = useChangeTrailNavigation(threadId);
@@ -156,7 +156,7 @@ export function TurnList({
           <UserTurn
             turn={turn}
             submissionRecovery={submissionRecoveryByTurnId?.get(turn.id)}
-            awaitingRun={awaitingRunTurnIds?.has(turn.id)}
+            queueStatus={queueStatusByTurnId?.get(turn.id)}
           />
         );
       }
@@ -179,7 +179,7 @@ export function TurnList({
       navigateToChange,
       onRespondToInterrupt,
       submissionRecoveryByTurnId,
-      awaitingRunTurnIds,
+      queueStatusByTurnId,
       threadId,
     ],
   );

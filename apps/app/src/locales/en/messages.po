@@ -144,8 +144,8 @@ msgstr "{0} isn't in {section}."
 
 #. placeholder {0}: pending.items.length
 #: src/features/chat/PendingInboxTray.tsx
-msgid "{0} messages queued"
-msgstr "{0} messages queued"
+#~ msgid "{0} messages queued"
+#~ msgstr "{0} messages queued"
 
 #. placeholder {0}: item.title
 #: src/features/project/chat-landing/ChatLandingScreen.tsx
@@ -258,8 +258,8 @@ msgid "<0>{0}</0> will be permanently deleted."
 msgstr "<0>{0}</0> will be permanently deleted."
 
 #: src/features/chat/PendingInboxTray.tsx
-msgid "1 message queued"
-msgstr "1 message queued"
+#~ msgid "1 message queued"
+#~ msgstr "1 message queued"
 
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "1 subagent running"
@@ -2687,6 +2687,10 @@ msgstr "Purchase confirmed."
 msgid "Put the caret in a table first."
 msgstr "Put the caret in a table first."
 
+#: src/features/chat/UserTurn.tsx
+msgid "Queued"
+msgstr "Queued"
+
 #: src/components/app/composer/placeholders.ts
 msgid "Quick thought"
 msgstr "Quick thought"
@@ -3300,7 +3304,6 @@ msgstr "Stopped"
 msgid "Strikethrough"
 msgstr "Strikethrough"
 
-#: src/features/chat/PendingInboxTray.tsx
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "Subagent"
 msgstr "Subagent"
@@ -3352,8 +3355,8 @@ msgid "Switching Work…"
 msgstr "Switching Work…"
 
 #: src/features/chat/PendingInboxTray.tsx
-msgid "System"
-msgstr "System"
+#~ msgid "System"
+#~ msgstr "System"
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -4132,8 +4135,8 @@ msgid "Yesterday"
 msgstr "Yesterday"
 
 #: src/features/chat/PendingInboxTray.tsx
-msgid "You"
-msgstr "You"
+#~ msgid "You"
+#~ msgstr "You"
 
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx

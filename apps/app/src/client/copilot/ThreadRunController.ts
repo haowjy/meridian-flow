@@ -123,6 +123,7 @@ type ActiveRun = {
   unsubscribe?: () => void;
   dispose?: () => void;
   flush?: () => void;
+  splitBoundaryPending?: boolean;
 };
 
 function waitForSnapshotRetry(signal: AbortSignal): Promise<void> {
@@ -632,6 +633,9 @@ export class ThreadRunController {
     if (!this.isActiveToken(token)) return;
 
     let disposed = false;
+    let awaitingSplitStart = false;
+    let splitFinishTimer: ReturnType<typeof setTimeout> | undefined;
+    let currentExpectedTurnId = expectedTurnId;
     // One frame boundary for the whole run: append-only text/reasoning deltas
     // coalesce into a single store update; everything else flushes first.
     const coalescer = new StreamDeltaCoalescer((event) => {
@@ -639,6 +643,7 @@ export class ThreadRunController {
       applyAguiEventToStore(this.actions, threadId, event);
     });
     const markDisposed = () => {
+      if (splitFinishTimer) clearTimeout(splitFinishTimer);
       if (!this.accountSignal?.aborted) coalescer.flush();
       disposed = true;
     };
@@ -668,24 +673,35 @@ export class ThreadRunController {
           // runId check is intentionally limited to events that carry runId so
           // vocabulary events without run identity still pass through unchanged.
           if (
-            expectedTurnId &&
+            currentExpectedTurnId &&
             "runId" in effectiveEvent &&
-            effectiveEvent.runId !== expectedTurnId
+            effectiveEvent.runId !== currentExpectedTurnId &&
+            !(awaitingSplitStart && effectiveEvent.type === EventType.RUN_STARTED)
           )
             return;
 
           if (isDurableBlockEvent(effectiveEvent)) return;
 
-          if (expectedTurnId && effectiveEvent.type !== EventType.RUN_STARTED) {
-            this.actions.ensureAssistantTurn(threadId, expectedTurnId);
+          if (currentExpectedTurnId && effectiveEvent.type !== EventType.RUN_STARTED) {
+            this.actions.ensureAssistantTurn(threadId, currentExpectedTurnId);
           }
 
           if (effectiveEvent.type === EventType.RUN_STARTED) {
+            if (awaitingSplitStart) {
+              // A and B are separate assistant turns in one admitted execution.
+              // Flush A before B enters the durable snapshot owner, but retain the
+              // subscription/token and optimistic writer row across the boundary.
+              coalescer.flush();
+              awaitingSplitStart = false;
+              if (splitFinishTimer) clearTimeout(splitFinishTimer);
+            }
+            currentExpectedTurnId = effectiveEvent.runId;
             this.activeRun = {
               ...this.activeRun,
               threadId,
               token,
               turnId: effectiveEvent.runId,
+              splitBoundaryPending: false,
               unsubscribe: this.activeRun?.unsubscribe,
               dispose: markDisposed,
               flush: () => {
@@ -700,10 +716,16 @@ export class ThreadRunController {
 
           coalescer.push(effectiveEvent);
 
-          if (
-            effectiveEvent.type === EventType.RUN_FINISHED ||
-            effectiveEvent.type === EventType.RUN_ERROR
-          ) {
+          if (effectiveEvent.type === EventType.RUN_FINISHED && currentExpectedTurnId) {
+            // A same-lease steer is journaled as A-finish then B-start. Keep the
+            // mounted owner alive for that transition; an ordinary terminal run
+            // settles after the short boundary window.
+            awaitingSplitStart = true;
+            this.activeRun = { threadId, token, ...this.activeRun, splitBoundaryPending: true };
+            splitFinishTimer = setTimeout(() => {
+              if (awaitingSplitStart && this.isActiveToken(token)) this.cleanupActiveRun();
+            }, 250);
+          } else if (effectiveEvent.type === EventType.RUN_ERROR) {
             this.cleanupActiveRun();
           }
         },
@@ -776,11 +798,20 @@ export class ThreadRunController {
       ? AbortSignal.any([this.accountSignal, abort.signal])
       : abort.signal;
     const recovery = (async () => {
-      while (this.isActiveToken(token) && !signal.aborted) {
+      while (
+        this.isActiveToken(token) &&
+        !signal.aborted &&
+        !this.activeRun?.splitBoundaryPending
+      ) {
         const snapshot = deserializeThreadSnapshot(
           await this.getThreadSnapshotFn({ data: { threadId }, signal }),
         );
-        if (signal.aborted || !this.isActiveToken(token) || this.activeRun?.threadId !== threadId)
+        if (
+          signal.aborted ||
+          !this.isActiveToken(token) ||
+          this.activeRun?.threadId !== threadId ||
+          this.activeRun.splitBoundaryPending
+        )
           return;
         if (
           snapshot.thread.id !== threadId ||
