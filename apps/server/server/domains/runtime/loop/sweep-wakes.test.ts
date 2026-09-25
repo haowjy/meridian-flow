@@ -2,10 +2,7 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
-import {
-  createInMemoryInbox,
-  createInMemoryRunAuthority,
-} from "../adapters/in-memory/loop-ports.js";
+import { createInMemoryInbox, createInMemoryRunClaim } from "../adapters/in-memory/loop-ports.js";
 import type { MessageDraft } from "./ports.js";
 import { sweepWakes } from "./sweep-wakes.js";
 
@@ -46,16 +43,16 @@ function recordingStarter(started: ThreadId[]) {
 describe("sweepWakes", () => {
   it("starts a pending-message thread with no holder and skips a live holder", async () => {
     const inbox = createInMemoryInbox();
-    const authority = createInMemoryRunAuthority();
+    const authority = createInMemoryRunClaim();
     await inbox.enqueue(message("a", THREAD_A));
     await inbox.enqueue(message("b", THREAD_B));
     await inbox.enqueue(notice("s", THREAD_C));
-    const lease = await authority.acquire(THREAD_A, "run-a");
+    const lease = await authority.startExecution(THREAD_A, "run-a");
 
     const started: ThreadId[] = [];
     await sweepWakes({
       eventSink: createInMemoryEventSink(),
-      inbox,
+      delivery: { ...inbox, async refreshPending() {} },
       authority,
       runStarter: recordingStarter(started),
       limit: 10,
@@ -68,7 +65,7 @@ describe("sweepWakes", () => {
 
   it("respects the limit over the oldest pending-message threads", async () => {
     const inbox = createInMemoryInbox();
-    const authority = createInMemoryRunAuthority();
+    const authority = createInMemoryRunClaim();
     await inbox.enqueue(message("a", THREAD_A));
     await inbox.enqueue(message("b", THREAD_B));
     await inbox.enqueue(message("c", THREAD_C));
@@ -76,7 +73,7 @@ describe("sweepWakes", () => {
     const started: ThreadId[] = [];
     await sweepWakes({
       eventSink: createInMemoryEventSink(),
-      inbox,
+      delivery: { ...inbox, async refreshPending() {} },
       authority,
       runStarter: recordingStarter(started),
       limit: 2,
@@ -87,14 +84,14 @@ describe("sweepWakes", () => {
 
   it("keeps sweeping when one thread's start fails", async () => {
     const inbox = createInMemoryInbox();
-    const authority = createInMemoryRunAuthority();
+    const authority = createInMemoryRunClaim();
     await inbox.enqueue(message("a", THREAD_A));
     await inbox.enqueue(message("b", THREAD_B));
 
     const started: ThreadId[] = [];
     await sweepWakes({
       eventSink: createInMemoryEventSink(),
-      inbox,
+      delivery: { ...inbox, async refreshPending() {} },
       authority,
       runStarter: {
         async start(threadId) {
@@ -107,33 +104,9 @@ describe("sweepWakes", () => {
 
     expect(started).toEqual([THREAD_A, THREAD_B]);
   });
-  it("isolates projection refresh failures and reports the failing thread", async () => {
-    const inbox = createInMemoryInbox();
-    const authority = createInMemoryRunAuthority();
-    const eventSink = createInMemoryEventSink();
-    await inbox.enqueue(message("a", THREAD_A));
-    await inbox.enqueue(message("b", THREAD_B));
-    const refreshed: ThreadId[] = [];
-    await sweepWakes({
-      inbox,
-      authority,
-      eventSink,
-      limit: 2,
-      runStarter: recordingStarter([]),
-      async refreshPending(id) {
-        refreshed.push(id);
-        if (id === THREAD_A) throw new Error("projection unavailable");
-      },
-    });
-    expect(refreshed).toEqual([THREAD_A, THREAD_B]);
-    expect(eventSink.events).toMatchObject([
-      { name: "wake.failed", correlation: { threadId: THREAD_A } },
-    ]);
-  });
-
   it("pages past poisoned candidates and wraps to retry them", async () => {
     const inbox = createInMemoryInbox();
-    const authority = createInMemoryRunAuthority();
+    const authority = createInMemoryRunClaim();
     await inbox.enqueue(message("a", THREAD_A));
     await inbox.enqueue(message("b", THREAD_B));
     const started: ThreadId[] = [];
@@ -141,7 +114,7 @@ describe("sweepWakes", () => {
     for (let i = 0; i < 3; i++) {
       afterThreadId = await sweepWakes({
         eventSink: createInMemoryEventSink(),
-        inbox,
+        delivery: { ...inbox, async refreshPending() {} },
         authority,
         limit: 1,
         afterThreadId,

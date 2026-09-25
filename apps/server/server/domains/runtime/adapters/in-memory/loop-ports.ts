@@ -1,22 +1,22 @@
 /**
- * In-memory loop ports for tests and local dev: Map-backed `Inbox` and
- * `RunAuthority` plus a recording `RunStarter`. The authority fake takes an
+ * In-memory loop ports for tests and local dev: Map-backed `DeliveryStore` and
+ * `RunClaim` plus a recording `RunStarter`. The authority fake takes an
  * injected clock so lease expiry and renewal are deterministic.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { ThreadLeaseState } from "@meridian/contracts/threads";
 import {
   DEFAULT_LEASE_TTL_MS,
-  type Inbox,
   type InboxMessage,
-  type RunAuthority,
+  type RunClaim,
   type RunId,
   type RunStarter,
   type ThreadPhase,
 } from "../../loop/ports.js";
 import type { ThreadLock } from "../../loop/thread-lock.js";
+import { createDeliveryAdapter, type DeliveryStore } from "../runtime-delivery.js";
 
-export function createInMemoryInbox(): Inbox {
+export function createInMemoryInbox(): DeliveryStore {
   const messages: InboxMessage[] = [];
   let nextSeq = 0;
   return {
@@ -38,13 +38,7 @@ export function createInMemoryInbox(): Inbox {
       return message;
     },
 
-    async claimPending(threadId) {
-      return messages
-        .filter((message) => message.threadId === threadId && message.deliveredAt === null)
-        .sort((left, right) => left.seq - right.seq);
-    },
-
-    async listPending(threadId) {
+    async selectPending(threadId) {
       return messages
         .filter((message) => message.threadId === threadId && message.deliveredAt === null)
         .sort((left, right) => left.seq - right.seq);
@@ -98,7 +92,7 @@ interface InMemoryLease {
   expiresAt: number;
 }
 
-export interface InMemoryRunAuthorityOptions {
+export interface InMemoryRunClaimOptions {
   /** Stable holder identity for the adapter; a random one is minted when omitted. */
   holderId?: string;
   leaseTtlMs?: number;
@@ -106,13 +100,15 @@ export interface InMemoryRunAuthorityOptions {
   now?: () => number;
 }
 
-export function createInMemoryRunAuthority(
-  options: InMemoryRunAuthorityOptions = {},
-): RunAuthority {
+export function createInMemoryRunClaim(options: InMemoryRunClaimOptions = {}): RunClaim &
+  import("../runtime-delivery.js").DeliveryLeaseStore & {
+    readDeliveryRun(threadId: ThreadId): import("../../loop/ports.js").InboxProjection["run"];
+  } {
   const holderId = options.holderId ?? crypto.randomUUID();
   const leaseTtlMs = options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;
   const now = options.now ?? (() => Date.now());
   const leases = new Map<ThreadId, InMemoryLease>();
+  const shortClaims = new Set<ThreadId>();
 
   const liveLease = (threadId: ThreadId): InMemoryLease | null => {
     const lease = leases.get(threadId);
@@ -121,8 +117,21 @@ export function createInMemoryRunAuthority(
   };
 
   return {
-    async acquire(threadId, runId) {
-      if (liveLease(threadId)) return null;
+    readDeliveryRun(threadId) {
+      const row = liveLease(threadId);
+      return row ? { turnId: row.turnId, messageIds: [...row.messageIds] } : null;
+    },
+    async withExclusiveThread(threadId, operation) {
+      if (shortClaims.has(threadId) || leases.has(threadId)) return null;
+      shortClaims.add(threadId);
+      try {
+        return await operation();
+      } finally {
+        shortClaims.delete(threadId);
+      }
+    },
+    async startExecution(threadId, runId) {
+      if (shortClaims.has(threadId) || leases.has(threadId)) return null;
       leases.set(threadId, {
         runId,
         turnId: null,
@@ -161,15 +170,30 @@ export function createInMemoryRunAuthority(
     },
 
     async setAdoptedMessageIds(lease, messageIds) {
-      const row = liveLease(lease.threadId);
+      const row = leases.get(lease.threadId);
       if (!row || row.runId !== lease.runId || !row.turnId) return false;
       row.messageIds = [...messageIds];
       return true;
     },
 
-    async readAdoptedMessageIds(lease) {
+    async clearReceipt(lease, expectedIds) {
       const row = leases.get(lease.threadId);
-      return row?.runId === lease.runId ? [...row.messageIds] : [];
+      if (
+        !row ||
+        row.runId !== lease.runId ||
+        row.holderId !== lease.holderId ||
+        row.messageIds.length !== expectedIds.length ||
+        row.messageIds.some((id, i) => id !== expectedIds[i])
+      )
+        return false;
+      row.messageIds = [];
+      return true;
+    },
+    async lockReceipt(lease) {
+      const row = leases.get(lease.threadId);
+      return row?.runId === lease.runId
+        ? { ids: [...row.messageIds], cancelRequested: row.cancelRequested }
+        : null;
     },
 
     async read(threadId) {
@@ -195,7 +219,7 @@ export function createInMemoryRunAuthority(
       return liveLease(threadId)?.turnId ?? null;
     },
 
-    async cancel(threadId, turnId) {
+    async cancelExecution(threadId, turnId) {
       const row = liveLease(threadId);
       if (!row || row.turnId !== turnId) return false;
       row.cancelRequested = true;
@@ -239,4 +263,25 @@ export function createInMemoryThreadLock(): ThreadLock {
       return result;
     },
   };
+}
+
+/** Bind the memory delivery store and claim to the same receipt owner. */
+export function createInMemoryRuntimeDelivery(
+  deps: Omit<Parameters<typeof createDeliveryAdapter>[0], "leaseStore" | "runClaim"> & {
+    runClaim: ReturnType<typeof createInMemoryRunClaim>;
+  },
+) {
+  return createDeliveryAdapter({
+    ...deps,
+    leaseStore: deps.runClaim,
+    inbox: {
+      ...deps.inbox,
+      async readPendingProjection(threadId) {
+        return {
+          messages: await deps.inbox.selectPending(threadId),
+          run: deps.runClaim.readDeliveryRun(threadId),
+        };
+      },
+    },
+  });
 }

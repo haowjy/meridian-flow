@@ -8,7 +8,7 @@ import { createInMemoryProjectRepository } from "../../../projects/index.js";
 import { createInMemoryRepositories } from "../../../threads/index.js";
 import {
   createInMemoryInbox,
-  createInMemoryRunAuthority,
+  createInMemoryRunClaim,
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
 import type {
@@ -224,7 +224,7 @@ async function setup(
       creditLedger,
       inbox,
       threadLock: createInMemoryThreadLock(),
-      runAuthority: createInMemoryRunAuthority(),
+      runClaim: createInMemoryRunClaim(),
       accountSkillInstalls,
       ...(options.realSpawnTools
         ? { toolExecutor: createToolExecutor(toolRegistry), toolRegistry }
@@ -378,7 +378,7 @@ describe("inbox drain", () => {
     expect(texts.some((text) => text.includes("work context note"))).toBe(true);
     // The run's own user + assistant turns are the only persisted turns.
     expect(await repos.turns.listByThread(thread.id)).toHaveLength(2);
-    expect(await inbox.claimPending(thread.id)).toEqual([]);
+    expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
   it("inlines a mid-run writer-activated skill body on the adopted message", async () => {
@@ -469,7 +469,7 @@ describe("inbox drain", () => {
     expect(messageTurn).toBeDefined();
     const blocks = await repos.blocks.listByTurn(messageTurn?.id as string);
     expect(blocks.some((block) => block.textContent === "carry me")).toBe(true);
-    expect(await inbox.claimPending(thread.id)).toEqual([]);
+    expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
   it("redelivers an unacked message once, without a second turn or render", async () => {
@@ -479,7 +479,7 @@ describe("inbox drain", () => {
     // First run drains and persists the message, then fails before the response
     // acks it, so the message stays pending for the next run.
     await execute(await orchestrator.prepare({ threadId: thread.id, userText: "first" }));
-    expect(await inbox.claimPending(thread.id)).toHaveLength(1);
+    expect(await inbox.selectPending(thread.id)).toHaveLength(1);
     let turns = await repos.turns.listByThread(thread.id);
     expect(messageTurns(turns)).toHaveLength(1);
 
@@ -495,7 +495,7 @@ describe("inbox drain", () => {
       (text) => text === "crash safe",
     ).length;
     expect(renderCount).toBe(1);
-    expect(await inbox.claimPending(thread.id)).toEqual([]);
+    expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
   it("persists a message on a second run of an already-baked thread", async () => {
@@ -516,7 +516,7 @@ describe("inbox drain", () => {
     expect(outcome.status).toBe("complete");
     const turns = await repos.turns.listByThread(thread.id);
     expect(messageTurns(turns)).toHaveLength(1);
-    expect(await inbox.claimPending(thread.id)).toEqual([]);
+    expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
   it("attaches a boundary notice to the adopted message before the new assistant", async () => {
@@ -556,7 +556,7 @@ describe("drain-only start", () => {
     const assistantTurn = turns.find((turn) => turn.role === "assistant");
     expect(messageTurn?.role).toBe("user");
     expect(assistantTurn?.prevTurnId).toBe(inboxMessage.id);
-    expect(await inbox.claimPending(thread.id)).toEqual([]);
+    expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
   it("chains multiple drained messages before the assistant in enqueue order", async () => {
@@ -570,7 +570,7 @@ describe("drain-only start", () => {
     expect(turns.find((turn) => turn.id === first.id)?.prevTurnId).toBeNull();
     expect(turns.find((turn) => turn.id === second.id)?.prevTurnId).toBe(first.id);
     expect(turns.find((turn) => turn.role === "assistant")?.prevTurnId).toBe(second.id);
-    expect(await inbox.claimPending(thread.id)).toEqual([]);
+    expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
   it("attaches a notice to the drained message", async () => {
@@ -603,7 +603,7 @@ describe("drain-only start", () => {
 
     // First drain persists the message, then the provider fails before the ack.
     await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
-    expect(await inbox.claimPending(thread.id)).toHaveLength(1);
+    expect(await inbox.selectPending(thread.id)).toHaveLength(1);
 
     // Second drain re-claims the same message, sees the known turn, continues from
     // it, and acks it without a duplicate turn.
@@ -611,7 +611,7 @@ describe("drain-only start", () => {
 
     const turns = await repos.turns.listByThread(thread.id);
     expect(turns.filter((turn) => turn.id === inboxMessage.id)).toHaveLength(1);
-    expect(await inbox.claimPending(thread.id)).toEqual([]);
+    expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
   it("inlines the writer-activated skill body read back off the persisted turn", async () => {

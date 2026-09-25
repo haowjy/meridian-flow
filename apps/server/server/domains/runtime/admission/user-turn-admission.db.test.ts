@@ -30,14 +30,13 @@ if (!RUN) {
     const { createDrizzleAdmissionRecords } = await import("./drizzle-admission-records.js");
     const { createWriterTurnProducer } = await import("./writer-turn-producer.js");
     const { createUserTurnAdmission } = await import("./user-turn-admission.js");
-    const { createInMemoryThreadRunOwnership } = await import("../loop/thread-run-ownership.js");
-    const { createThreadedInbox } = await import("../loop/threaded-inbox.js");
-    const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
-    const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
-    const { createNotifyingThreadedInbox, projectPendingInbox } = await import(
-      "../loop/pending-inbox.js"
+    const { createInMemoryRunClaim } = await import("../adapters/in-memory/loop-ports.js");
+    const { createTestDrizzleDelivery } = await import(
+      "../loop/__tests__/test-drizzle-delivery.js"
     );
-    const { runAfterDrizzleCommit, runInDrizzleTransaction, runInDrizzleSavepoint } = await import(
+    const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
+
+    const { runInDrizzleTransaction, runInDrizzleSavepoint } = await import(
       "../../../shared/drizzle-transaction.js"
     );
     const url = process.env.DATABASE_URL;
@@ -120,14 +119,9 @@ if (!RUN) {
         eventSink: createNoopEventSink(),
       });
       const uploadIntake = createDrizzleUploadIntakeRepository(firstDb);
-      const threadedInbox = createThreadedInbox({
-        inbox: createDrizzleInbox(firstDb),
-        threadLock: createDrizzleThreadLock(firstDb),
-        runStarter: { async start() {} },
-        schedulePostCommit: (task) => void task(),
-      });
+      const delivery = createTestDrizzleDelivery(firstDb, { repos, eventWriter: hub });
       return createUserTurnAdmission({
-        runOwnership: createInMemoryThreadRunOwnership(),
+        runClaim: createInMemoryRunClaim(),
         records,
         availability: {
           async lookup() {
@@ -183,7 +177,7 @@ if (!RUN) {
           hub,
           runner: { getRunningTurn: () => null },
           turns: repos.turns,
-          threadedInbox,
+          delivery,
           workContextDelivery: {
             async beforeTurn() {
               await input.beforeTurn?.();
@@ -239,31 +233,15 @@ if (!RUN) {
         eventSink: createNoopEventSink(),
       });
       const wakeCallbacks: string[] = [];
-      const notifyCallbacks: string[] = [];
-      const inbox = createDrizzleInbox(firstDb);
-      const rawThreadedInbox = createThreadedInbox({
-        inbox,
-        threadLock: createDrizzleThreadLock(firstDb),
+      const _inbox = createDrizzleInbox(firstDb);
+      const delivery = createTestDrizzleDelivery(firstDb, {
+        repos,
+        eventWriter: hub,
         runStarter: {
           async start() {
             wakeCallbacks.push("wake");
           },
         },
-        schedulePostCommit: (task) => {
-          runAfterDrizzleCommit(task);
-        },
-      });
-      const threadedInbox = createNotifyingThreadedInbox({
-        threadedInbox: rawThreadedInbox,
-        eventWriter: hub,
-        readPending: async (threadId) => projectPendingInbox(await inbox.listPending(threadId)),
-        schedulePostCommit: (task) => {
-          runAfterDrizzleCommit(async () => {
-            notifyCallbacks.push("notified");
-            await task();
-          });
-        },
-        eventSink: createNoopEventSink(),
       });
       const reserved = await records.reserve({
         actorUserId: USER as never,
@@ -290,7 +268,7 @@ if (!RUN) {
         hub,
         runner: { getRunningTurn: () => null },
         turns: repos.turns,
-        threadedInbox,
+        delivery,
         workContextDelivery: { async beforeTurn() {} },
         records: {
           ...records,
@@ -333,7 +311,6 @@ if (!RUN) {
         code: "recovery_no_committed_turn",
       });
       expect(wakeCallbacks).toEqual([]);
-      expect(notifyCallbacks).toEqual([]);
     });
 
     it("persists ordered occurrences, replays their actual sparse cursor, and rolls the whole accepted settlement back together", async () => {
@@ -567,9 +544,7 @@ if (!RUN) {
       "admit",
       "retire",
     ] as const)("recovers expired orphan admissions through %s", async (operation) => {
-      const { createDrizzleThreadRunOwnership } = await import(
-        "../adapters/drizzle-thread-run-ownership.js"
-      );
+      const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
       const { canonicalAdmissionFingerprint } = await import("./user-turn-admission.js");
       const input = {
         actorUserId: USER as never,
@@ -586,7 +561,7 @@ if (!RUN) {
       });
       const service = createUserTurnAdmission({
         records,
-        runOwnership: createDrizzleThreadRunOwnership(firstDb),
+        runClaim: createDrizzleRunClaim(firstDb),
         availability: {
           async lookup() {
             throw new Error("Recovery entered reference effects");
@@ -601,13 +576,13 @@ if (!RUN) {
           },
         },
       });
-      const remoteOwnership = createDrizzleThreadRunOwnership(secondDb);
-      const liveClaim = await remoteOwnership.tryAcquire(THREAD);
+      const remoteOwnership = createDrizzleRunClaim(secondDb);
+      const liveClaim = await remoteOwnership.startExecution(THREAD, crypto.randomUUID());
       expect(liveClaim).not.toBeNull();
       try {
         await expect(service[operation](input)).resolves.toMatchObject({ kind: "pending" });
       } finally {
-        await liveClaim?.release();
+        if (liveClaim) await remoteOwnership.release(liveClaim);
       }
       await expect(service[operation](input)).resolves.toMatchObject({
         kind: "rejected",
@@ -618,9 +593,9 @@ if (!RUN) {
       ).rejects.toMatchObject({ code: "idempotency_conflict" });
       expect(await firstDb.select().from(schema.turns)).toHaveLength(0);
       expect(await firstDb.select().from(schema.eventJournal)).toHaveLength(0);
-      const releasedClaim = await remoteOwnership.tryAcquire(THREAD);
+      const releasedClaim = await remoteOwnership.startExecution(THREAD, crypto.randomUUID());
       expect(releasedClaim).not.toBeNull();
-      await releasedClaim?.release();
+      if (releasedClaim) await remoteOwnership.release(releasedClaim);
     });
 
     it("does not turn claim expiry into rejection until recovery proves no live claim or committed turn", async () => {

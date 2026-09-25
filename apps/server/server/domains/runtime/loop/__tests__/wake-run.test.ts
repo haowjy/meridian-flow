@@ -77,7 +77,7 @@ describe("wake run", () => {
     const assistantTurn = turns.find((turn) => turn.role === "assistant");
     expect(messageTurn).toBeDefined();
     expect(assistantTurn?.prevTurnId).toBe(messageTurn?.id);
-    expect(await rig.inbox.claimPending(rig.thread.id)).toEqual([]);
+    expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
   });
 
   it("swallows a second start while a run is live without adding a turn", async () => {
@@ -100,7 +100,7 @@ describe("wake run", () => {
     const rig = await RuntimeTestRig.create({ gateway: textGateway() });
 
     await expect(rig.runner.startDrain(rig.thread.id)).resolves.toBeUndefined();
-    expect(await rig.runAuthority.holder(rig.thread.id)).toBeNull();
+    expect(await rig.runClaim.holder(rig.thread.id)).toBeNull();
     expect(await rig.repos.turns.listByThread(rig.thread.id)).toEqual([]);
   });
 
@@ -117,11 +117,11 @@ describe("wake run", () => {
     // The run is live and blocked in its provider stream; the start notify has
     // already fired, so a woken subagent strip can read `awake` before terminal.
     expect(started).toEqual([rig.thread.id]);
-    expect(await rig.runAuthority.read(rig.thread.id)).toMatchObject({ kind: "awake" });
+    expect(await rig.runClaim.read(rig.thread.id)).toMatchObject({ kind: "awake" });
 
     gate.open();
     await rig.awaitEvent(EventType.RUN_FINISHED);
-    await expect.poll(() => rig.runAuthority.read(rig.thread.id)).toEqual({ kind: "asleep" });
+    await expect.poll(() => rig.runClaim.read(rig.thread.id)).toEqual({ kind: "asleep" });
   });
 
   it("derives awake while a run streams and asleep once it releases", async () => {
@@ -131,7 +131,7 @@ describe("wake run", () => {
 
     await createRunStarter(rig.runner, createInMemoryEventSink()).start(rig.thread.id);
     // The run owns a live lease and is blocked in its provider stream.
-    expect(await rig.runAuthority.read(rig.thread.id)).toEqual({
+    expect(await rig.runClaim.read(rig.thread.id)).toEqual({
       kind: "awake",
       phase: "generating",
       cancelRequested: false,
@@ -140,6 +140,6 @@ describe("wake run", () => {
     gate.open();
     await rig.awaitEvent(EventType.RUN_FINISHED);
     // Release trails the terminal event; status is a pure function of the lease.
-    await expect.poll(() => rig.runAuthority.read(rig.thread.id)).toEqual({ kind: "asleep" });
+    await expect.poll(() => rig.runClaim.read(rig.thread.id)).toEqual({ kind: "asleep" });
   });
 });

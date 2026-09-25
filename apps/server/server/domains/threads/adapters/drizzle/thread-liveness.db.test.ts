@@ -1,3 +1,4 @@
+import { createTestDrizzleDelivery } from "../../../runtime/loop/__tests__/test-drizzle-delivery.js";
 /**
  * PostgreSQL coverage for R2: the project list and the live state read the
  * running turn from the live run lease, and agree on liveness.
@@ -24,7 +25,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { truncateDrizzleTables } = await import("../../../../test-support/drizzle-reset.js");
-    const { createDrizzleRunAuthority } = await import("../../../runtime/index.js");
+    const { createDrizzleRunClaim } = await import("../../../runtime/index.js");
     const { createThreadRuntimeService } = await import("../../runtime-service.js");
     const { createDrizzleThreadRepository } = await import("./thread-repository.js");
 
@@ -129,7 +130,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("reads the running turn from the lease in both the list and live state", async () => {
-      const authority = createDrizzleRunAuthority(db);
+      const authority = createDrizzleRunClaim(db);
       const repo = createDrizzleThreadRepository(db, { statusReader: authority });
       const runtime = createThreadRuntimeService({
         db,
@@ -138,9 +139,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         readPending: async () => ({ items: [] }),
       });
 
-      const lease = await authority.acquire(THREAD_ID, "run-1");
+      const lease = await authority.startExecution(THREAD_ID, "run-1");
       if (!lease) throw new Error("expected the lease to be acquired");
-      await authority.bindTurn(lease, TURN_ID, []);
+      await createTestDrizzleDelivery(db, { runClaim: authority }).adoptBatch(lease, async () => ({
+        value: undefined,
+        turnId: TURN_ID,
+        messageIds: [],
+      }));
 
       const listed = (await repo.listByProject(PROJECT_ID)).find((row) => row.id === THREAD_ID);
       const live = await runtime.liveState(THREAD_ID, USER_ID);

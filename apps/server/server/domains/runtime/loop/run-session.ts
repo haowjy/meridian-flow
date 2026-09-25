@@ -4,7 +4,7 @@ import { isTerminalTurnStatus, type Turn } from "@meridian/contracts/threads";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
-import { DEFAULT_LEASE_TTL_MS, type Lease, type RunAuthority } from "./ports.js";
+import { DEFAULT_LEASE_TTL_MS, type Lease, type RunClaim } from "./ports.js";
 import { createRunStarter } from "./run-starter.js";
 import {
   NoPendingWakeError,
@@ -14,6 +14,7 @@ import {
   type RunOutcome,
   type RunTurnInput,
 } from "./run-turn-port.js";
+import type { RuntimeDelivery } from "./runtime-delivery.js";
 
 type RunSession = {
   controller: AbortController;
@@ -32,7 +33,8 @@ export function createRunSessions(deps: {
     signal: AbortSignal;
     lease: Lease;
   }): Promise<Turn>;
-  runAuthority: RunAuthority;
+  runClaim: RunClaim;
+  delivery: Pick<RuntimeDelivery, "refreshPending">;
   repos: { turns: TurnRepository };
   headSeq(threadId: ThreadId): Promise<bigint>;
   workContextDelivery: Pick<WorkContextDelivery, "beforeTurn" | "flushOwned">;
@@ -41,7 +43,7 @@ export function createRunSessions(deps: {
   onRunSettled?: (threadId: ThreadId) => void;
 }) {
   const running = new Map<ThreadId, RunSession>();
-  const authority = deps.runAuthority;
+  const authority = deps.runClaim;
   function observe(threadId: ThreadId, name: string, error: unknown) {
     emitEvent(deps.eventSink, {
       level: "error",
@@ -94,6 +96,7 @@ export function createRunSessions(deps: {
       }
       try {
         if (lease) await authority.release(lease);
+        if (lease) await deps.delivery.refreshPending(threadId);
       } catch (error) {
         observe(threadId, "lease_release.failed", error);
       } finally {
@@ -106,7 +109,7 @@ export function createRunSessions(deps: {
       }
     }
     try {
-      lease = await authority.acquire(threadId, crypto.randomUUID());
+      lease = await authority.startExecution(threadId, crypto.randomUUID());
       if (!lease) throw new TurnStartConflictError(threadId, "already_running");
       const heldLease = lease;
       heartbeat = setInterval(
@@ -220,7 +223,7 @@ export function createRunSessions(deps: {
     ): Promise<"cancelled" | "already_finished" | "not_found"> {
       const active = running.get(threadId);
       if (active?.assistantTurnId === turnId) {
-        if (!(await authority.cancel(threadId, turnId))) return "already_finished";
+        if (!(await authority.cancelExecution(threadId, turnId))) return "already_finished";
         abortChildrenOf(threadId, true);
         active.controller.abort();
         void active.completion
@@ -231,7 +234,7 @@ export function createRunSessions(deps: {
       const turn = await deps.repos.turns.findById(turnId);
       if (!turn || turn.threadId !== threadId) return "not_found";
       if (isTerminalTurnStatus(turn.status) || active) return "already_finished";
-      return (await authority.cancel(threadId, turnId)) ? "cancelled" : "not_found";
+      return (await authority.cancelExecution(threadId, turnId)) ? "cancelled" : "not_found";
     },
   };
 }

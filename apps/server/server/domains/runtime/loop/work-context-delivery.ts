@@ -8,14 +8,11 @@ import {
   type ThreadRepositories,
   TurnStartConflictError,
 } from "../../threads/index.js";
+import { createInMemoryRunClaim } from "../adapters/in-memory/loop-ports.js";
 import { contentForBlockInput, isJsonObject, localBlockFromEvent } from "./block-helpers.js";
 import { createDeliveryPump } from "./delivery-pump.js";
 import { persistAndAppendTurnStartEvents } from "./persistence.js";
-import {
-  createInMemoryThreadRunOwnership,
-  type ThreadRunOwnership,
-  withRunClaim,
-} from "./thread-run-ownership.js";
+import type { RunClaim } from "./ports.js";
 import type { WorkContextReader } from "./work-context.js";
 
 function localUserTurn(threadId: ThreadId, prevTurnId: TurnId | null): Turn {
@@ -75,11 +72,11 @@ export function createWorkContextDelivery(deps: {
   eventWriter: EventJournalWriter;
   workContext: WorkContextReader;
   isThreadRunning(threadId: ThreadId): boolean;
-  runOwnership?: ThreadRunOwnership;
+  runClaim?: Pick<RunClaim, "withExclusiveThread">;
   /** Schedule a non-blocking wake after the caller's business transaction commits. */
   schedulePostCommit(task: () => Promise<void>): void;
 }): WorkContextDelivery {
-  const runOwnership = deps.runOwnership ?? createInMemoryThreadRunOwnership();
+  const runClaim = deps.runClaim ?? createInMemoryRunClaim();
 
   function pendingPresentationBlocks(blocks: Block[]): Block[] {
     return blocks.filter((block) => {
@@ -207,7 +204,7 @@ export function createWorkContextDelivery(deps: {
     isThreadRunning: (threadId) => deps.isThreadRunning(threadId),
     listPendingThreadIds: () => deps.repos.workContextDeliveries.listPendingThreadIds(),
     deliver: async (threadId) => {
-      await withRunClaim(runOwnership, threadId, async () => {
+      await runClaim.withExclusiveThread(threadId, async () => {
         await append(threadId);
       });
     },

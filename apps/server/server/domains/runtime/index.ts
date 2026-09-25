@@ -7,19 +7,19 @@ export type {
 export { MANUSCRIPT_URI as UNIFIED_MANUSCRIPT_URI } from "../context/manuscript-uri.js";
 export type { WorkContextDelivery } from "../projects/index.js";
 export { createContextImageAssetPort } from "./adapters/context-image-assets.js";
-export { createDrizzleInbox } from "./adapters/drizzle-inbox.js";
+export { createDrizzleRuntimeDelivery } from "./adapters/drizzle/runtime-delivery.js";
+export {
+  createDrizzleRunClaim,
+  type DrizzleRunClaimOptions,
+} from "./adapters/drizzle-run-claim.js";
 export { createDrizzleThreadLock } from "./adapters/drizzle-thread-lock.js";
 export {
-  createDrizzleRunAuthority,
-  createDrizzleThreadRunOwnership,
-  type DrizzleRunAuthorityOptions,
-} from "./adapters/drizzle-thread-run-ownership.js";
-export {
   createInMemoryInbox,
-  createInMemoryRunAuthority,
+  createInMemoryRunClaim,
   createInMemoryRunStarter,
+  createInMemoryRuntimeDelivery,
   createInMemoryThreadLock,
-  type InMemoryRunAuthorityOptions,
+  type InMemoryRunClaimOptions,
   type InMemoryRunStarter,
 } from "./adapters/in-memory/loop-ports.js";
 export {
@@ -34,7 +34,6 @@ export {
 } from "./admission/user-turn-admission.js";
 export { createWriterTurnProducer } from "./admission/writer-turn-producer.js";
 export * from "./gateway/index.js";
-export { type CloseRunOutcome, closeRun } from "./loop/close-run.js";
 export {
   createNoopInterruptArtifactFlushPort,
   type InterruptArtifactFlushPort,
@@ -44,22 +43,20 @@ export {
   createInterruptRegistry,
   EXPIRED_INTERRUPT_VALUE,
 } from "./loop/interrupts.js";
-
 export { createOrchestrator } from "./loop/orchestrator.js";
 export {
-  createNotifyingThreadedInbox,
   projectPendingInbox,
   readPendingInbox,
 } from "./loop/pending-inbox.js";
 export * from "./loop/permissions/index.js";
 export type {
   ContextPart,
-  Inbox,
   InboxMessage,
+  InboxReader,
   Lease,
   MessageBody,
   MessageDraft,
-  RunAuthority,
+  RunClaim,
   RunId,
   RunStarter,
   ThreadPhase,
@@ -82,18 +79,14 @@ export {
   type RunTurnPort,
   type WriterRunTurnInput,
 } from "./loop/run-turn-port.js";
+
+export type { DeliveryProducer, RuntimeDelivery } from "./loop/runtime-delivery.js";
 export { sweepWakes } from "./loop/sweep-wakes.js";
 export {
   THREAD_LOCK_SEED,
   type ThreadLock,
   threadLockKey,
 } from "./loop/thread-lock.js";
-export {
-  createInMemoryThreadRunOwnership,
-  type ThreadRunClaim,
-  type ThreadRunOwnership,
-} from "./loop/thread-run-ownership.js";
-export { createThreadedInbox, type ThreadedInbox } from "./loop/threaded-inbox.js";
 export {
   createWorkContextReader,
   renderWorkContext,

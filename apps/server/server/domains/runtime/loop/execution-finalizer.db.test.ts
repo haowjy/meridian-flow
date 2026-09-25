@@ -1,6 +1,7 @@
 /** PostgreSQL terminal A: turn, report, journal, and publication share one commit. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { createTestDrizzleDelivery } from "./__tests__/test-drizzle-delivery.js";
 
 const runDb = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL;
@@ -91,13 +92,11 @@ else
     it("cancels only the adopted inbox batch atomically, leaving later messages for a new turn", async () => {
       const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
       const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
-      const { createDrizzleRunAuthority } = await import(
-        "../adapters/drizzle-thread-run-ownership.js"
-      );
+      const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
       const { createOrchestrator } = await import("./orchestrator.js");
       const { createTestOrchestratorDeps } = await import("./__tests__/test-orchestrator-deps.js");
       const inbox = createDrizzleInbox(db);
-      const authority = createDrizzleRunAuthority(db);
+      const authority = createDrizzleRunClaim(db);
       const enqueue = (text: string) =>
         inbox.enqueue({
           threadId: ids.parent,
@@ -113,8 +112,8 @@ else
           createTestOrchestratorDeps({
             repos,
             eventWriter,
-            inbox,
-            runAuthority: authority,
+            delivery: createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: authority }),
+            runClaim: authority,
             threadLock: createDrizzleThreadLock(db),
             boundThreads: () => [ids.parent],
           }),
@@ -126,13 +125,13 @@ else
         });
         const later = await enqueue("later request");
         controller.abort();
-        expect((await inbox.listPending(ids.parent)).map((row) => row.id)).toEqual([
+        expect((await inbox.selectPending(ids.parent)).map((row) => row.id)).toEqual([
           stopped.id,
           later.id,
         ]);
         expect((await handle.execute()).status).toBe("cancelled");
         expect((await repos.turns.findById(handle.assistantTurnId))?.status).toBe("cancelled");
-        expect((await inbox.listPending(ids.parent)).map((row) => row.id)).toEqual([later.id]);
+        expect((await inbox.selectPending(ids.parent)).map((row) => row.id)).toEqual([later.id]);
         expect(await authority.holder(ids.parent)).toBeNull();
         const next = await orchestrator.prepare({ threadId: ids.parent, drain: true });
         expect(next.userTurnId).toBe(later.id);
@@ -149,10 +148,7 @@ else
     ] as const)("splits an ordered mixed batch at %s with one lease and report", async (boundary) => {
       const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
       const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
-      const { createDrizzleRunAuthority } = await import(
-        "../adapters/drizzle-thread-run-ownership.js"
-      );
-      const { createThreadedInbox } = await import("./threaded-inbox.js");
+      const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
       const { persistWriterEnqueue } = await import("./writer-enqueue.js");
       const { createOrchestrator } = await import("./orchestrator.js");
       const { createTestOrchestratorDeps } = await import("./__tests__/test-orchestrator-deps.js");
@@ -160,14 +156,9 @@ else
       const { readPendingInbox } = await import("./pending-inbox.js");
       const { createInertGateway } = await import("./__tests__/test-gateway.js");
       const inbox = createDrizzleInbox(db);
-      const authority = createDrizzleRunAuthority(db);
+      const authority = createDrizzleRunClaim(db);
       const threadLock = createDrizzleThreadLock(db);
-      const producer = createThreadedInbox({
-        inbox,
-        threadLock,
-        runStarter: { async start() {} },
-        schedulePostCommit() {},
-      });
+      const producer = createTestDrizzleDelivery(db, { repos, eventWriter, runClaim: authority });
       const controller = new AbortController();
       const requests: import("../gateway/index.js").GenerateRequest[] = [];
       const messageIds: string[] = [];
@@ -190,7 +181,7 @@ else
           },
         },
         inbox,
-        runAuthority: authority,
+        runClaim: authority,
         threadLock,
         boundThreads: () => [ids.child],
         gateway: {
@@ -219,7 +210,7 @@ else
                   },
                 },
                 inbox,
-                threadedInbox: producer,
+                delivery: producer,
                 workContextDelivery: { async beforeTurn() {} },
                 threadId: ids.child,
                 userTurnId: writerId,
@@ -247,7 +238,7 @@ else
               terminal = await authority.readRunningTurnId(ids.child);
               splitState = {
                 run: await authority.holder(ids.child),
-                oldCancel: await authority.cancel(ids.child, selector),
+                oldCancel: await authority.cancelExecution(ids.child, selector),
                 report: await repos.executionReports.findByExecution(ids.child, selector),
                 lookup: await readThreadReport({
                   callerThreadId: ids.parent,
@@ -286,6 +277,11 @@ else
         reason: "split",
       });
       {
+        deps.delivery = createTestDrizzleDelivery(db, {
+          repos,
+          eventWriter: deps.eventWriter,
+          runClaim: authority,
+        });
         const run = await createOrchestrator(deps).prepare({
           threadId: ids.child,
           userText: "start",
@@ -313,7 +309,7 @@ else
             summary: "before steer",
           });
           expect(events.filter((event) => event.type === "turn.completed")).toEqual([]);
-          expect((await inbox.listPending(ids.child)).map((message) => message.id)).toEqual(
+          expect((await inbox.selectPending(ids.child)).map((message) => message.id)).toEqual(
             messageIds,
           );
           expect(await authority.holder(ids.child)).toBeNull();
@@ -340,7 +336,7 @@ else
         expect(report?.costMillicredits).toBe(
           costs.flat().reduce((sum, response) => sum + Number(response.millicredits), 0),
         );
-        expect(await inbox.listPending(ids.child)).toEqual([]);
+        expect(await inbox.selectPending(ids.child)).toEqual([]);
         expect(await authority.holder(ids.child)).toBeNull();
         expect(events.filter((event) => event.type === "turn.completed").length).toBe(
           boundary === "cancel" ? 1 : 2,

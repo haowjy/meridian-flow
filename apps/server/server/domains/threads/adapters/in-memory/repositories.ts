@@ -239,7 +239,7 @@ export function createInMemoryRepositories(
       lastTurnRole: latestTurn?.role ?? null,
       lastTurnStatus: latestTurn?.status ?? null,
       // Run liveness is the live lease, which this durable fake does not model;
-      // tests read it through the in-memory RunAuthority instead.
+      // tests read it through the in-memory RunClaim instead.
       runningTurnId: null,
     });
   }

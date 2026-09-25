@@ -44,7 +44,7 @@ export interface ToolDispatchDeps {
   persistenceDeps: PersistenceDeps;
   executionReports: import("../../threads/ports/repositories.js").ThreadRepositories["executionReports"];
   readSnapshot: import("../../threads/ports/repositories.js").ThreadRepositories["readSnapshot"];
-  runningTurn: Pick<import("./ports.js").RunAuthority, "readRunningTurnId">;
+  runningTurn: Pick<import("./ports.js").RunClaim, "readRunningTurnId">;
   workContextDelivery: Pick<WorkContextDelivery, "deliverNow">;
 }
 

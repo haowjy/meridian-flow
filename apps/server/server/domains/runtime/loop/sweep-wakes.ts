@@ -2,20 +2,22 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import { TurnStartConflictError } from "../../threads/index.js";
-import type { Inbox, RunAuthority, RunStarter } from "./ports.js";
+import type { RunClaim, RunStarter } from "./ports.js";
 
 export async function sweepWakes(input: {
-  inbox: Pick<Inbox, "pendingMessageThreads">;
-  authority: Pick<RunAuthority, "readMany">;
+  delivery: Pick<
+    import("./runtime-delivery.js").RuntimeDelivery,
+    "pendingMessageThreads" | "refreshPending"
+  >;
+  authority: Pick<RunClaim, "readMany">;
   runStarter: RunStarter;
   eventSink: EventSink;
-  refreshPending?: (threadId: ThreadId) => Promise<void>;
   limit: number;
   afterThreadId?: ThreadId;
 }): Promise<ThreadId | undefined> {
-  let threadIds = await input.inbox.pendingMessageThreads(input.limit, input.afterThreadId);
+  let threadIds = await input.delivery.pendingMessageThreads(input.limit, input.afterThreadId);
   if (threadIds.length === 0 && input.afterThreadId) {
-    threadIds = await input.inbox.pendingMessageThreads(input.limit);
+    threadIds = await input.delivery.pendingMessageThreads(input.limit);
   }
   const live = await input.authority.readMany(threadIds);
   for (let offset = 0; offset < threadIds.length; offset += 4) {
@@ -27,10 +29,8 @@ export async function sweepWakes(input: {
         } catch (error) {
           if (!(error instanceof TurnStartConflictError)) reportFailure(threadId, error);
         }
-        // Refresh from the authoritative projection whether the start won, lost,
-        // or failed. No per-candidate holder reads (or holder-read failure holes).
         try {
-          await input.refreshPending?.(threadId);
+          await input.delivery.refreshPending(threadId);
         } catch (error) {
           reportFailure(threadId, error);
         }

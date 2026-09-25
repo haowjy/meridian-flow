@@ -41,7 +41,7 @@ async function startMessageRun(rig: RuntimeTestRig, text: string): Promise<strin
   await rig.inbox.enqueue(message(text, rig.thread.id));
   await rig.runner.startDrain(rig.thread.id);
   await rig.gatewaySignal.promise;
-  const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
+  const turnId = await rig.runClaim.readRunningTurnId(rig.thread.id);
   if (!turnId) throw new Error("Expected a running assistant turn after drain start");
   return turnId;
 }
@@ -142,13 +142,13 @@ describe("interrupt cancel", () => {
       .toMatchObject({
         status: "cancelled",
       });
-    await expect.poll(() => rig.runAuthority.read(rig.thread.id)).toEqual({ kind: "asleep" });
+    await expect.poll(() => rig.runClaim.read(rig.thread.id)).toEqual({ kind: "asleep" });
     const turns = await rig.repos.turns.listByThread(rig.thread.id);
     expect(turns).toHaveLength(2);
     expect(turns.filter((turn) => turn.role === "assistant").map((turn) => turn.status)).toEqual([
       "cancelled",
     ]);
-    expect(await rig.inbox.claimPending(rig.thread.id)).toEqual([]);
+    expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
   });
 
   it("cancels after a committed response acknowledges its trigger without starting a successor", async () => {
@@ -175,8 +175,8 @@ describe("interrupt cancel", () => {
     // The tool boundary is reached only after the response has been committed
     // and the drain's triggering message acknowledged in that same transaction.
     expect(await rig.turn(trigger.id)).toMatchObject({ role: "user", status: "complete" });
-    expect(await rig.inbox.claimPending(rig.thread.id)).toEqual([]);
-    const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
+    expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
+    const turnId = await rig.runClaim.readRunningTurnId(rig.thread.id);
     expect(turnId).toBeTruthy();
 
     await rig.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
@@ -185,14 +185,14 @@ describe("interrupt cancel", () => {
     await expect
       .poll(() => rig.turn(turnId as NonNullable<typeof turnId>))
       .toMatchObject({ status: "cancelled" });
-    await expect.poll(() => rig.runAuthority.read(rig.thread.id)).toEqual({ kind: "asleep" });
+    await expect.poll(() => rig.runClaim.read(rig.thread.id)).toEqual({ kind: "asleep" });
     expect(
       (await rig.repos.turns.listByThread(rig.thread.id)).filter(
         (turn) => turn.role === "assistant",
       ),
     ).toHaveLength(1);
     expect(streamCalls).toBe(1);
-    expect(await rig.inbox.claimPending(rig.thread.id)).toEqual([]);
+    expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
   });
 
   it("finalizes a cancelled turn and starts a next turn carrying the pending message", async () => {
@@ -222,7 +222,7 @@ describe("interrupt cancel", () => {
     const successor = turns.find((turn) => turn.role === "assistant" && turn.id !== turnId);
     expect(successor?.prevTurnId).toBe(pending.id);
     expect(successor?.status).toBe("complete");
-    expect(await rig.inbox.claimPending(rig.thread.id)).toEqual([]);
+    expect(await rig.inbox.selectPending(rig.thread.id)).toEqual([]);
     expect(control.calls()).toBe(2);
   });
 

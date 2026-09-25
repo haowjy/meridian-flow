@@ -259,7 +259,7 @@ export type ThreadDescendant = Pick<
 
 /**
  * Read seam for the derived run status. The runtime's lease authority
- * (`RunAuthority`) satisfies it; the threads domain depends on this narrow
+ * (`RunClaim`) satisfies it; the threads domain depends on this narrow
  * port rather than the runtime domain, so status stays a pure lease function.
  */
 export interface ThreadStatusReader {
@@ -276,7 +276,7 @@ export interface ThreadStatusReader {
 /**
  * Read seam for a thread's undelivered inbox rows as the writer-facing
  * `ThreadPendingInbox`. The runtime composition supplies a projection over the
- * raw `Inbox`; the threads domain depends on this narrow port, not the runtime
+ * raw `InboxReader`; the threads domain depends on this narrow port, not the runtime
  * domain, so pending stays a pure read.
  */
 export interface ThreadPendingInboxReader {

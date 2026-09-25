@@ -1,3 +1,4 @@
+import { createInMemoryRuntimeDelivery } from "../../adapters/in-memory/loop-ports.js";
 /**
  * Test orchestrator dependency factory: assembles the now-required runtime
  * ports with in-memory or noop adapters so each test overrides only the seam it
@@ -27,7 +28,7 @@ import {
 } from "../../../threads/index.js";
 import {
   createInMemoryInbox,
-  createInMemoryRunAuthority,
+  createInMemoryRunClaim,
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
 import type { Gateway } from "../../gateway/index.js";
@@ -99,6 +100,8 @@ export function createTestAgentBinding(
 
 export function createTestOrchestratorDeps(
   overrides: Partial<OrchestratorDeps> & {
+    inbox?: import("../../adapters/runtime-delivery.js").DeliveryStore;
+    threadLock?: import("../thread-lock.js").ThreadLock;
     creditLedger?: CreditLedger;
     boundThreads?: () => readonly string[];
   } = {},
@@ -117,6 +120,9 @@ export function createTestOrchestratorDeps(
   const creditLedger = overrides.creditLedger ?? createInMemoryCreditLedger();
   const gateway = overrides.gateway ?? inertGateway();
 
+  const eventWriter = overrides.eventWriter ?? createInMemoryEventJournalWriter();
+  const notices = overrides.notices ?? createTestNoticePort();
+  const runClaim = overrides.runClaim ?? createInMemoryRunClaim();
   return {
     gateway,
     toolExecutor: inertToolExecutor(),
@@ -126,7 +132,7 @@ export function createTestOrchestratorDeps(
       },
     },
     repos,
-    eventWriter: createInMemoryEventJournalWriter(),
+    eventWriter,
     headSeq: async (id) =>
       BigInt((await (overrides.repos ?? repos).threads.findById(id))?.nextSeq ?? 0),
     agentRevisions: createTestAgentBinding(
@@ -148,10 +154,22 @@ export function createTestOrchestratorDeps(
     interruptRegistry: createInterruptRegistry(),
     eventSink: createInMemoryEventSink(),
     modelRequestDebug: createInMemoryModelRequestDebugStore(),
-    notices: createTestNoticePort(),
-    inbox: createInMemoryInbox(),
-    threadLock: createInMemoryThreadLock(),
-    runAuthority: createInMemoryRunAuthority(),
+    notices,
+    runClaim,
+    delivery:
+      overrides.delivery ??
+      createInMemoryRuntimeDelivery({
+        repos: (overrides.repos ?? repos) as import("../../../threads/index.js").ThreadRepositories,
+        eventWriter,
+        notices,
+        runClaim: runClaim as ReturnType<typeof createInMemoryRunClaim>,
+        inbox: overrides.inbox ?? createInMemoryInbox(),
+        threadLock: overrides.threadLock ?? createInMemoryThreadLock(),
+        runStarter: { async start() {} },
+        schedulePostCommit: (task) => {
+          void task();
+        },
+      }),
     activeDocuments,
     imageAssets: overrides.imageAssets ?? {
       async resolve() {

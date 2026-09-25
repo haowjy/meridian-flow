@@ -33,15 +33,13 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createWorkContextDelivery } = await import("./work-context-delivery.js");
     const { createRunSessions } = await import("./run-session.js");
-    const { createDrizzleRunAuthority, createDrizzleThreadRunOwnership } = await import(
-      "../adapters/drizzle-thread-run-ownership.js"
-    );
+    const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
     const { createInMemoryEventSink } = await import("../../observability/index.js");
     const { createWorkContextReader } = await import("./work-context.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 6 });
-    const sharedRunOwnership = createDrizzleThreadRunOwnership(db);
+    const sharedRunOwnership = createDrizzleRunClaim(db);
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [schema.users]);
@@ -77,7 +75,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     function delivery(
       repos: ReturnType<typeof createDrizzleRepositoriesForTest>,
       eventWriter = createDrizzleEventJournalWriter(db),
-      runOwnership = sharedRunOwnership,
+      runClaim: Pick<import("./ports.js").RunClaim, "withExclusiveThread"> = sharedRunOwnership,
     ) {
       return createWorkContextDelivery({
         repos,
@@ -101,7 +99,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
         isThreadRunning: () => false,
-        runOwnership,
+        runClaim,
         schedulePostCommit() {},
       });
     }
@@ -117,15 +115,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const claimGate = new Promise<void>((resolve) => {
         release = resolve;
       });
-      const runOwnership = {
-        async tryAcquire() {
+      const runClaim = {
+        async withExclusiveThread<T>(_threadId: string, operation: () => Promise<T>) {
           entered();
           await claimGate;
-          return { async release() {} };
+          return operation();
         },
       };
 
-      const sweeping = delivery(repos, createDrizzleEventJournalWriter(db), runOwnership).sweep();
+      const sweeping = delivery(repos, createDrizzleEventJournalWriter(db), runClaim).sweep();
       await claimEntered;
       await db
         .update(schema.threads)
@@ -200,43 +198,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(first.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
     });
 
-    it("refuses same-process reentry without disturbing other session claims", async () => {
-      const ownership = createDrizzleThreadRunOwnership(db);
-      const first = await ownership.tryAcquire(THREAD_ID);
-      expect(first).not.toBeNull();
-
-      await expect(ownership.tryAcquire(THREAD_ID)).resolves.toBeNull();
-      const other = await ownership.tryAcquire(OTHER_THREAD_ID);
-      expect(other).not.toBeNull();
-
-      const remote = createDrizzleThreadRunOwnership(db);
-      await expect(remote.tryAcquire(THREAD_ID)).resolves.toBeNull();
-      await expect(remote.tryAcquire(OTHER_THREAD_ID)).resolves.toBeNull();
-
-      await first?.release();
-      const remoteFirst = await remote.tryAcquire(THREAD_ID);
-      expect(remoteFirst).not.toBeNull();
-      await expect(remote.tryAcquire(OTHER_THREAD_ID)).resolves.toBeNull();
-
-      await other?.release();
-      const remoteOther = await remote.tryAcquire(OTHER_THREAD_ID);
-      expect(remoteOther).not.toBeNull();
-      await remoteFirst?.release();
-      await remoteOther?.release();
-
-      const replacement = await ownership.tryAcquire(THREAD_ID);
-      expect(replacement).not.toBeNull();
-      await first?.release();
-      await expect(remote.tryAcquire(THREAD_ID)).resolves.toBeNull();
-      await replacement?.release();
-      const finalRemote = await remote.tryAcquire(THREAD_ID);
-      expect(finalRemote).not.toBeNull();
-      await finalRemote?.release();
-    });
-
     it("runs one primary turn across concurrent starts on the same production adapter", async () => {
       let runTurnCalls = 0;
       const runner = createRunSessions({
+        delivery: { async refreshPending() {} },
         workContextDelivery: { async beforeTurn() {}, async flushOwned() {} },
         async setup() {
           runTurnCalls += 1;
@@ -254,7 +219,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         eventSink: createInMemoryEventSink(),
         headSeq: (id) => createDrizzleEventJournalReader(db).headSeq(id),
         repos: { turns: createDrizzleRepositoriesForTest(db).turns },
-        runAuthority: createDrizzleRunAuthority(db),
+        runClaim: createDrizzleRunClaim(db),
       });
 
       const starts = await Promise.allSettled([
@@ -270,9 +235,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("leaves a remote obligation with its live owner, then owner completion appends once", async () => {
       const ownerRepos = createDrizzleRepositoriesForTest(db);
       const remoteRepos = createDrizzleRepositoriesForTest(db);
-      const ownerOwnership = createDrizzleThreadRunOwnership(db);
-      const remoteOwnership = createDrizzleThreadRunOwnership(db);
-      const ownerClaim = await ownerOwnership.tryAcquire(THREAD_ID);
+      const ownerOwnership = createDrizzleRunClaim(db);
+      const remoteOwnership = createDrizzleRunClaim(db);
+      const ownerClaim = await ownerOwnership.startExecution(THREAD_ID, "owner-run");
       expect(ownerClaim).not.toBeNull();
       await ownerRepos.workContextDeliveries.enqueueThread(THREAD_ID);
 
@@ -294,7 +259,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(blocks[0]?.textContent).toContain("<work_context>current state</work_context>");
       await expect(ownerRepos.workContextDeliveries.isPending(THREAD_ID)).resolves.toBe(false);
 
-      await ownerClaim?.release();
+      if (ownerClaim) await ownerOwnership.release(ownerClaim);
       await delivery(remoteRepos, createDrizzleEventJournalWriter(db), remoteOwnership).sweep();
       await expect(ownerRepos.turns.listByThread(THREAD_ID)).resolves.toHaveLength(1);
     });

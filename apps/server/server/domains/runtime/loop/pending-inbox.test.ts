@@ -7,16 +7,9 @@
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { createInMemoryEventSink } from "../../observability/index.js";
 import type { EventJournalWriter } from "../../threads/index.js";
-import {
-  createInMemoryInbox,
-  createInMemoryRunStarter,
-  createInMemoryThreadLock,
-} from "../adapters/in-memory/loop-ports.js";
-import { createNotifyingThreadedInbox, projectPendingInbox } from "./pending-inbox.js";
+import { projectPendingInbox } from "./pending-inbox.js";
 import type { InboxMessage, MessageDraft } from "./ports.js";
-import { createThreadedInbox } from "./threaded-inbox.js";
 
 const THREAD_A = "00000000-0000-4000-8000-0000000000a1" as ThreadId;
 
@@ -34,7 +27,7 @@ function inboxMessage(overrides: Partial<InboxMessage> & { id: string }): InboxM
   };
 }
 
-function message(key: string): MessageDraft {
+function _message(key: string): MessageDraft {
   return {
     threadId: THREAD_A,
     intent: "message",
@@ -44,7 +37,7 @@ function message(key: string): MessageDraft {
   };
 }
 
-function recordingWriter(): { writer: EventJournalWriter; appended: OrchestratorEvent[] } {
+function _recordingWriter(): { writer: EventJournalWriter; appended: OrchestratorEvent[] } {
   const appended: OrchestratorEvent[] = [];
   return {
     appended,
@@ -117,131 +110,5 @@ describe("projectPendingInbox", () => {
         ({ deliveryState }) => deliveryState,
       ),
     ).toEqual(["awaiting_run", "waiting"]);
-  });
-});
-
-describe("createNotifyingThreadedInbox", () => {
-  it("appends the recomputed pending rows after commit", async () => {
-    const { writer, appended } = recordingWriter();
-    const inbox = createInMemoryInbox();
-    const scheduled: Array<() => Promise<void>> = [];
-    const threaded = createNotifyingThreadedInbox({
-      threadedInbox: createThreadedInbox({
-        inbox,
-        threadLock: createInMemoryThreadLock(),
-        runStarter: createInMemoryRunStarter(),
-        schedulePostCommit: (task) => void task(),
-      }),
-      eventWriter: writer,
-      readPending: async (threadId) => projectPendingInbox(await inbox.listPending(threadId)),
-      schedulePostCommit: (task) => {
-        scheduled.push(task);
-      },
-      eventSink: createInMemoryEventSink(),
-    });
-
-    await threaded.enqueue(message("queued"));
-    await Promise.all(scheduled.map((task) => task()));
-
-    expect(appended).toHaveLength(1);
-    expect(appended[0]).toMatchObject({ type: "inbox.changed", threadId: THREAD_A });
-    const event = appended[0];
-    if (event.type !== "inbox.changed") throw new Error("expected inbox.changed");
-    expect(event.pending.items.map((item) => item.summary)).toEqual(["queued"]);
-  });
-
-  it("keeps the enqueue when the signal append fails", async () => {
-    const eventSink = createInMemoryEventSink();
-    const inbox = createInMemoryInbox();
-    const scheduled: Array<() => Promise<void>> = [];
-    const threaded = createNotifyingThreadedInbox({
-      threadedInbox: createThreadedInbox({
-        inbox,
-        threadLock: createInMemoryThreadLock(),
-        runStarter: createInMemoryRunStarter(),
-        schedulePostCommit: (task) => void task(),
-      }),
-      eventWriter: {
-        async appendEvent() {
-          throw new Error("append failed");
-        },
-      },
-      readPending: async (threadId) => projectPendingInbox(await inbox.listPending(threadId)),
-      schedulePostCommit: (task) => {
-        scheduled.push(task);
-      },
-      eventSink,
-    });
-
-    const inserted = await threaded.enqueue(message("durable"));
-    await Promise.all(scheduled.map((task) => task()));
-
-    expect(inserted.idempotencyKey).toBe("durable");
-    expect(await inbox.listPending(THREAD_A)).toHaveLength(1);
-    expect(eventSink.events.some((event) => event.name === "inbox.changed.append_failed")).toBe(
-      true,
-    );
-  });
-
-  it("serializes a delayed notifier read/append against adoption and ack", async () => {
-    const { writer, appended } = recordingWriter();
-    const inbox = createInMemoryInbox();
-    const scheduled: Array<() => Promise<void>> = [];
-    const threadLock = createInMemoryThreadLock();
-    let run: { turnId: string | null; messageIds: string[] } | null = null;
-    let signalReadStarted!: () => void;
-    let releaseRead!: () => void;
-    const readStarted = new Promise<void>((resolve) => {
-      signalReadStarted = resolve;
-    });
-    const readGate = new Promise<void>((resolve) => {
-      releaseRead = resolve;
-    });
-    const readPending = async (threadId: ThreadId) => {
-      const projection = await inbox.readPendingProjection(threadId);
-      const pending = projectPendingInbox(projection.messages, run);
-      if (run === null) {
-        signalReadStarted();
-        await readGate;
-      }
-      return pending;
-    };
-    const threaded = createNotifyingThreadedInbox({
-      threadedInbox: createThreadedInbox({
-        inbox,
-        threadLock,
-        runStarter: createInMemoryRunStarter(),
-        schedulePostCommit: (task) => scheduled.push(task),
-      }),
-      eventWriter: writer,
-      readPending,
-      schedulePostCommit: (task) => scheduled.push(task),
-      eventSink: createInMemoryEventSink(),
-    });
-
-    const queued = await threaded.enqueue(message("delayed-notifier"));
-    const notifier = Promise.all(scheduled.map((task) => task()));
-    await readStarted;
-
-    let transitionFinished = false;
-    const transition = threadLock.withThreadLock(THREAD_A, async () => {
-      run = { turnId: "assistant-1", messageIds: [queued.id] };
-      await inbox.ack(THREAD_A, [queued.id]);
-      const pending = await readPending(THREAD_A);
-      await writer.appendEvent(THREAD_A, { type: "inbox.changed", threadId: THREAD_A, pending });
-      transitionFinished = true;
-    });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(transitionFinished).toBe(false);
-
-    releaseRead();
-    await Promise.all([notifier, transition]);
-
-    expect(appended).toHaveLength(2);
-    expect(appended[0]).toMatchObject({
-      type: "inbox.changed",
-      pending: { items: [{ id: queued.id, deliveryState: "awaiting_run" }] },
-    });
-    expect(appended[1]).toMatchObject({ type: "inbox.changed", pending: { items: [] } });
   });
 });

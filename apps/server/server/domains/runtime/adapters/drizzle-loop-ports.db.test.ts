@@ -1,8 +1,8 @@
+import { eq } from "drizzle-orm";
 import { createInMemoryEventSink } from "../../observability/index.js";
-/** PostgreSQL coverage for the drizzle Inbox and lease-backed RunAuthority adapters. */
+/** PostgreSQL coverage for the drizzle DeliveryStore and lease-backed RunClaim adapters. */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
-import { eq } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { MessageDraft } from "../loop/ports.js";
 
@@ -31,15 +31,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createDrizzleInbox } = await import("./drizzle-inbox.js");
-    const { projectPendingInbox } = await import("../loop/pending-inbox.js");
-    const { createDrizzleThreadLock } = await import("./drizzle-thread-lock.js");
-    const { closeRun } = await import("../loop/close-run.js");
     const { sweepWakes } = await import("../loop/sweep-wakes.js");
-    const { createThreadedInbox } = await import("../loop/threaded-inbox.js");
-    const { createInMemoryRunStarter } = await import("./in-memory/loop-ports.js");
-    const { createDrizzleRunAuthority, createDrizzleThreadRunOwnership } = await import(
-      "./drizzle-thread-run-ownership.js"
+    const { createTestDrizzleDelivery } = await import(
+      "../loop/__tests__/test-drizzle-delivery.js"
     );
+    const { createDrizzleRunClaim } = await import("./drizzle-run-claim.js");
     const { runInDrizzleTransaction } = await import("../../../shared/drizzle-transaction.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
@@ -120,7 +116,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await inbox.enqueue(message("b1", THREAD_B));
       await inbox.enqueue(message("a2", THREAD_A));
 
-      const claimed = await inbox.claimPending(THREAD_A);
+      const claimed = await inbox.selectPending(THREAD_A);
       expect(claimed.map((message) => message.idempotencyKey)).toEqual(["a1", "a2"]);
       expect(claimed.map((message) => message.provenance.kind)).toEqual(["writer", "writer"]);
       expect(claimed.map((message) => message.body.kind)).toEqual(["text", "text"]);
@@ -132,7 +128,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await inbox.enqueue(message("a2"));
 
       await inbox.ack(THREAD_A, [first.id]);
-      const redelivered = await inbox.claimPending(THREAD_A);
+      const redelivered = await inbox.selectPending(THREAD_A);
       expect(redelivered.map((message) => message.idempotencyKey)).toEqual(["a2"]);
     });
 
@@ -143,7 +139,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(second.id).toBe(first.id);
       expect(second.seq).toBe(first.seq);
-      expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
+      expect(await inbox.selectPending(THREAD_A)).toHaveLength(1);
     });
 
     it("keeps the same idempotency key distinct across threads", async () => {
@@ -153,7 +149,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       expect(second.id).not.toBe(first.id);
       expect(second.threadId).toBe(THREAD_B);
-      expect(await inbox.claimPending(THREAD_B)).toHaveLength(1);
+      expect(await inbox.selectPending(THREAD_B)).toHaveLength(1);
     });
 
     it("lists pending rows read-only, excluding delivered and ordered by seq", async () => {
@@ -163,14 +159,14 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const second = await inbox.enqueue(notice("a2", THREAD_A));
       const third = await inbox.enqueue(message("a3", THREAD_A));
 
-      const pending = await inbox.listPending(THREAD_A);
+      const pending = await inbox.selectPending(THREAD_A);
       expect(pending.map((row) => row.idempotencyKey)).toEqual(["a1", "a2", "a3"]);
       expect(pending.map((row) => row.seq)).toEqual([first.seq, second.seq, third.seq]);
       // The read has no claim side effect: the rows stay claimable.
-      expect(await inbox.claimPending(THREAD_A)).toHaveLength(3);
+      expect(await inbox.selectPending(THREAD_A)).toHaveLength(3);
 
       await inbox.ack(THREAD_A, [first.id]);
-      const afterAck = await inbox.listPending(THREAD_A);
+      const afterAck = await inbox.selectPending(THREAD_A);
       expect(afterAck.map((row) => row.idempotencyKey)).toEqual(["a2", "a3"]);
       expect(afterAck.map((row) => row.seq)).toEqual([second.seq, third.seq]);
     });
@@ -189,15 +185,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
     it("wakes a pending-message thread and skips one with a live lease", async () => {
       const inbox = createDrizzleInbox(db);
-      const authority = createDrizzleRunAuthority(db, { holderId: "holder-sweep" });
+      const authority = createDrizzleRunClaim(db, { holderId: "holder-sweep" });
       await inbox.enqueue(message("sweep-a", THREAD_A));
       await inbox.enqueue(message("sweep-b", THREAD_B));
-      const leaseA = required(await authority.acquire(THREAD_A, "run-a"));
+      const leaseA = required(await authority.startExecution(THREAD_A, "run-a"));
 
       const started: ThreadId[] = [];
       await sweepWakes({
         eventSink: createInMemoryEventSink(),
-        inbox,
+        delivery: { ...inbox, async refreshPending() {} },
         authority,
         runStarter: {
           async start(threadId) {
@@ -212,11 +208,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("gives a single winner on acquire and reflects the live lease in holder/read", async () => {
-      const first = createDrizzleRunAuthority(db, { holderId: "holder-1" });
-      const second = createDrizzleRunAuthority(db, { holderId: "holder-2" });
+      const first = createDrizzleRunClaim(db, { holderId: "holder-1" });
+      const second = createDrizzleRunClaim(db, { holderId: "holder-2" });
 
-      const lease = required(await first.acquire(THREAD_A, "run-1"));
-      expect(await second.acquire(THREAD_A, "run-2")).toBeNull();
+      const lease = required(await first.startExecution(THREAD_A, "run-1"));
+      expect(await second.startExecution(THREAD_A, "run-2")).toBeNull();
       expect(await first.holder(THREAD_A)).toBe("run-1");
       expect(await first.read(THREAD_A)).toEqual({
         kind: "awake",
@@ -235,18 +231,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       expect(await first.holder(THREAD_A)).toBeNull();
       expect(await first.read(THREAD_A)).toEqual({ kind: "asleep" });
 
-      const secondLease = required(await second.acquire(THREAD_A, "run-3"));
+      const secondLease = required(await second.startExecution(THREAD_A, "run-3"));
       await second.release(secondLease);
     });
 
     it("binds release to its run so a superseded release keeps the newer lock", async () => {
-      const first = createDrizzleRunAuthority(db, { holderId: "holder-1" });
-      const second = createDrizzleRunAuthority(db, { holderId: "holder-2" });
+      const first = createDrizzleRunClaim(db, { holderId: "holder-1" });
+      const second = createDrizzleRunClaim(db, { holderId: "holder-2" });
 
-      const runOne = required(await first.acquire(THREAD_A, "run-1"));
+      const runOne = required(await first.startExecution(THREAD_A, "run-1"));
       await first.release(runOne);
 
-      const runTwo = required(await first.acquire(THREAD_A, "run-2"));
+      const runTwo = required(await first.startExecution(THREAD_A, "run-2"));
       await first.release(runOne);
       await first.release(runOne);
 
@@ -256,18 +252,18 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         phase: "generating",
         cancelRequested: false,
       });
-      expect(await second.acquire(THREAD_A, "run-3")).toBeNull();
+      expect(await second.startExecution(THREAD_A, "run-3")).toBeNull();
 
       await first.release(runTwo);
       expect(await first.holder(THREAD_A)).toBeNull();
-      const runThree = required(await second.acquire(THREAD_A, "run-3"));
+      const runThree = required(await second.startExecution(THREAD_A, "run-3"));
       await second.release(runThree);
     });
 
     it("keeps the physical claim and lease when terminal release rolls back", async () => {
-      const first = createDrizzleRunAuthority(db, { holderId: "holder-1" });
-      const second = createDrizzleRunAuthority(db, { holderId: "holder-2" });
-      const lease = required(await first.acquire(THREAD_A, "run-1"));
+      const first = createDrizzleRunClaim(db, { holderId: "holder-1" });
+      const second = createDrizzleRunClaim(db, { holderId: "holder-2" });
+      const lease = required(await first.startExecution(THREAD_A, "run-1"));
 
       await expect(
         runInDrizzleTransaction(db, async () => {
@@ -277,16 +273,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       ).rejects.toThrow("terminal rollback");
 
       expect(await first.holder(THREAD_A)).toBe("run-1");
-      expect(await second.acquire(THREAD_A, "run-2")).toBeNull();
+      expect(await second.startExecution(THREAD_A, "run-2")).toBeNull();
       await first.release(lease);
-      const next = required(await second.acquire(THREAD_A, "run-2"));
+      const next = required(await second.startExecution(THREAD_A, "run-2"));
       await second.release(next);
     });
 
     it("keeps the physical claim until the terminal transaction commits", async () => {
-      const first = createDrizzleRunAuthority(db, { holderId: "holder-1" });
-      const second = createDrizzleRunAuthority(db, { holderId: "holder-2" });
-      const lease = required(await first.acquire(THREAD_A, "run-1"));
+      const first = createDrizzleRunClaim(db, { holderId: "holder-1" });
+      const second = createDrizzleRunClaim(db, { holderId: "holder-2" });
+      const lease = required(await first.startExecution(THREAD_A, "run-1"));
       let releaseTransaction!: () => void;
       let releasedInTransaction!: () => void;
       const released = new Promise<void>((resolve) => {
@@ -302,16 +298,16 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       });
 
       await released;
-      expect(await second.acquire(THREAD_A, "run-2")).toBeNull();
+      expect(await second.startExecution(THREAD_A, "run-2")).toBeNull();
       releaseTransaction();
       await completion;
-      const next = required(await second.acquire(THREAD_A, "run-2"));
+      const next = required(await second.startExecution(THREAD_A, "run-2"));
       await second.release(next);
     });
 
     it("observes the cancel flag through read and keeps cancel idempotent", async () => {
-      const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
-      const lease = required(await authority.acquire(THREAD_A, "run-1"));
+      const authority = createDrizzleRunClaim(db, { holderId: "holder-1" });
+      const lease = required(await authority.startExecution(THREAD_A, "run-1"));
 
       await db.insert(schema.turns).values({
         id: ASSISTANT_TURN,
@@ -319,11 +315,15 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         role: "assistant",
         status: "streaming",
       });
-      await authority.bindTurn(lease, ASSISTANT_TURN, []);
-      expect(await authority.cancel(THREAD_A, crypto.randomUUID())).toBe(false);
+      await createTestDrizzleDelivery(db, { runClaim: authority }).adoptBatch(lease, async () => ({
+        value: undefined,
+        turnId: ASSISTANT_TURN,
+        messageIds: [],
+      }));
+      expect(await authority.cancelExecution(THREAD_A, crypto.randomUUID())).toBe(false);
       expect(await authority.read(THREAD_A)).toMatchObject({ cancelRequested: false });
-      expect(await authority.cancel(THREAD_A, ASSISTANT_TURN)).toBe(true);
-      expect(await authority.cancel(THREAD_A, ASSISTANT_TURN)).toBe(true);
+      expect(await authority.cancelExecution(THREAD_A, ASSISTANT_TURN)).toBe(true);
+      expect(await authority.cancelExecution(THREAD_A, ASSISTANT_TURN)).toBe(true);
       expect(await authority.read(THREAD_A)).toEqual({
         kind: "awake",
         phase: "generating",
@@ -333,9 +333,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("reports whether renew kept ownership", async () => {
-      const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
+      const authority = createDrizzleRunClaim(db, { holderId: "holder-1" });
 
-      const lease = required(await authority.acquire(THREAD_A, "run-1"));
+      const lease = required(await authority.startExecution(THREAD_A, "run-1"));
       expect(await authority.renew(lease)).toBe(true);
 
       await authority.release(lease);
@@ -343,315 +343,276 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("reports an expired lease as asleep", async () => {
-      const authority = createDrizzleRunAuthority(db, { holderId: "holder-1", leaseTtlMs: 0 });
-      const lease = required(await authority.acquire(THREAD_A, "run-1"));
+      const authority = createDrizzleRunClaim(db, { holderId: "holder-1", leaseTtlMs: 0 });
+      const lease = required(await authority.startExecution(THREAD_A, "run-1"));
       expect(await authority.holder(THREAD_A)).toBeNull();
       expect(await authority.read(THREAD_A)).toEqual({ kind: "asleep" });
       await authority.release(lease);
     });
 
-    it("keeps the lease and the legacy claim mutually exclusive on one thread", async () => {
-      const authority = createDrizzleRunAuthority(db, { holderId: "holder-lease" });
-      const legacy = createDrizzleThreadRunOwnership(db);
-
-      const lease = required(await authority.acquire(THREAD_A, "run-lease"));
-      expect(await legacy.tryAcquire(THREAD_A)).toBeNull();
-      await authority.release(lease);
-      expect(await authority.holder(THREAD_A)).toBeNull();
-
-      const claim = required(await legacy.tryAcquire(THREAD_A));
-      expect(await authority.acquire(THREAD_A, "run-after")).toBeNull();
-      await claim.release();
-
-      const relocked = required(await authority.acquire(THREAD_A, "run-final"));
-      await authority.release(relocked);
+    it("excludes short claims and executions locally and across adapters without fake leases", async () => {
+      const claim = createDrizzleRunClaim(db);
+      const remote = createDrizzleRunClaim(db);
+      await claim.withExclusiveThread(THREAD_A, async () => {
+        expect(await claim.read(THREAD_A)).toEqual({ kind: "asleep" });
+        expect(await claim.withExclusiveThread(THREAD_A, async () => true)).toBeNull();
+        expect(await claim.startExecution(THREAD_A, "local")).toBeNull();
+        expect(await remote.withExclusiveThread(THREAD_A, async () => true)).toBeNull();
+        expect(await remote.startExecution(THREAD_A, "remote")).toBeNull();
+        expect(await claim.withExclusiveThread(THREAD_B, async () => true)).toBe(true);
+      });
+      const lease = required(await claim.startExecution(THREAD_A, "live"));
+      expect(await claim.withExclusiveThread(THREAD_A, async () => true)).toBeNull();
+      expect(await remote.withExclusiveThread(THREAD_A, async () => true)).toBeNull();
+      await claim.release(lease);
+      expect(await remote.withExclusiveThread(THREAD_A, async () => true)).toBe(true);
     });
 
-    describe("closeRun final claim", () => {
-      function deferred<T>() {
-        let resolve!: (value: T) => void;
-        const promise = new Promise<T>((r) => {
-          resolve = r;
-        });
-        return { promise, resolve };
-      }
-
-      async function clearInbox() {
-        await db.delete(schema.threadInboxMessages);
-      }
-
-      it("completes then releases on an empty claim so a later message finds no live lease", async () => {
-        const inbox = createDrizzleInbox(db);
-        const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
-        const threadLock = createDrizzleThreadLock(db);
-        const lease = required(await authority.acquire(THREAD_A, "run-1"));
-
-        expect(
-          await closeRun({
-            threadLock,
-            inbox,
-            runAuthority: authority,
+    describe("RuntimeDelivery atomic transitions", () => {
+      const failure = {
+        async appendEvent() {
+          throw new Error("projection unavailable");
+        },
+      };
+      async function assistant() {
+        const { createDrizzleRepositoriesForTest } = await import(
+          "../../threads/adapters/drizzle/repositories.js"
+        );
+        const repos = createDrizzleRepositoriesForTest(db);
+        return {
+          repos,
+          turn: await repos.turns.create({
             threadId: THREAD_A,
-            lease,
-            continueOnPending: true,
-            complete: async () => "terminal",
+            role: "assistant",
+            status: "streaming",
           }),
-        ).toEqual({ kind: "completed", completion: "terminal" });
-        expect(await authority.holder(THREAD_A)).toBeNull();
-
-        await threadLock.withThreadLock(THREAD_A, () => inbox.enqueue(message("after-release")));
-        expect(await authority.holder(THREAD_A)).toBeNull();
-        expect((await inbox.claimPending(THREAD_A)).map((m) => m.idempotencyKey)).toEqual([
-          "after-release",
+        };
+      }
+      it("rolls back enqueue when projection fails; commits one replacement before the wake", async () => {
+        const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
+        const writer = createDrizzleEventJournalWriter(db);
+        let wakes = 0;
+        const visible: number[][] = [];
+        const runStarter = {
+          async start() {
+            wakes++;
+            visible.push([
+              (await db.select().from(schema.threadInboxMessages)).length,
+              (await db.select().from(schema.eventJournal)).length,
+            ]);
+          },
+        };
+        await expect(
+          createTestDrizzleDelivery(db, { eventWriter: failure, runStarter }).enqueue(
+            message("atomic"),
+          ),
+        ).rejects.toThrow("projection unavailable");
+        expect(await db.select().from(schema.threadInboxMessages)).toHaveLength(0);
+        expect(wakes).toBe(0);
+        const delivery = createTestDrizzleDelivery(db, { eventWriter: writer, runStarter });
+        const accepted = await delivery.enqueue(message("atomic"));
+        expect(wakes).toBe(1);
+        expect((await delivery.enqueue(message("atomic"))).id).toBe(accepted.id);
+        expect(await db.select().from(schema.threadInboxMessages)).toHaveLength(1);
+        expect(wakes).toBe(2);
+        expect(visible).toEqual([
+          [1, 1],
+          [1, 2],
         ]);
       });
-
-      it("holds the lease across the terminal completion so no second acquire can interleave", async () => {
-        const inbox = createDrizzleInbox(db);
-        const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
-        const second = createDrizzleRunAuthority(db, { holderId: "holder-2" });
-        const threadLock = createDrizzleThreadLock(db);
-        const lease = required(await authority.acquire(THREAD_A, "run-1"));
-
-        const completeEntered = deferred<void>();
-        const allowComplete = deferred<void>();
-        const closing = closeRun({
-          threadLock,
-          inbox,
-          runAuthority: authority,
-          threadId: THREAD_A,
+      it("rolls back initial adoption, response+ack and terminal+release on projection failure", async () => {
+        const { currentDrizzleDb } = await import("../../../shared/drizzle-transaction.js");
+        const { repos, turn } = await assistant();
+        const runClaim = createDrizzleRunClaim(db);
+        const remote = createDrizzleRunClaim(db);
+        const lease = required(await runClaim.startExecution(THREAD_A, "atomic"));
+        const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
+        const failing = createTestDrizzleDelivery(db, { repos, runClaim, eventWriter: failure });
+        const row = await delivery.enqueue(message("batch"));
+        const prepare = async () => ({ value: undefined, turnId: turn.id, messageIds: [row.id] });
+        await expect(failing.adoptBatch(lease, prepare)).rejects.toThrow("projection unavailable");
+        expect(await runClaim.readRunningTurnId(THREAD_A)).toBeNull();
+        await delivery.adoptBatch(lease, prepare);
+        const response = () =>
+          currentDrizzleDb(db)
+            .update(schema.turns)
+            .set({ responseCount: 1 })
+            .where(eq(schema.turns.id, turn.id));
+        await expect(failing.ackWithResponse(lease, [row.id], response)).rejects.toThrow(
+          "projection unavailable",
+        );
+        expect((await repos.turns.findById(turn.id))?.responseCount).toBe(0);
+        expect((await delivery.readPendingProjection(THREAD_A)).run?.messageIds).toEqual([row.id]);
+        expect(await delivery.selectPending(THREAD_A)).toHaveLength(1);
+        await delivery.ackWithResponse(lease, [row.id], response);
+        expect(await delivery.selectPending(THREAD_A)).toHaveLength(0);
+        const terminal = {
           lease,
-          continueOnPending: true,
-          complete: async () => {
-            completeEntered.resolve();
-            await allowComplete.promise;
-            return "terminal";
-          },
-        });
-
-        await completeEntered.promise;
-        // The terminal write is in flight; the lease must still block a new run.
-        expect(await second.acquire(THREAD_A, "run-2")).toBeNull();
-        expect(await authority.holder(THREAD_A)).toBe("run-1");
-
-        allowComplete.resolve();
-        expect(await closing).toEqual({ kind: "completed", completion: "terminal" });
-        expect(await authority.holder(THREAD_A)).toBeNull();
-        const runTwo = required(await second.acquire(THREAD_A, "run-2"));
-        await second.release(runTwo);
+          assistantTurnId: turn.id,
+          cause: { kind: "success" as const, finishReason: "end_turn" as const },
+        };
+        await expect(failing.close(terminal)).rejects.toThrow("projection unavailable");
+        expect((await repos.turns.findById(turn.id))?.status).toBe("streaming");
+        expect(await runClaim.readRunningTurnId(THREAD_A)).toBe(turn.id);
+        expect(await remote.startExecution(THREAD_A, "blocked")).toBeNull();
+        expect((await delivery.close(terminal)).kind).toBe("completed");
+        expect(await remote.withExclusiveThread(THREAD_A, async () => true)).toBe(true);
       });
-
-      it("serializes the producer enqueue against the final claim so a racing message is never stranded", async () => {
-        const inbox = createDrizzleInbox(db);
-        const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
-        const threadLock = createDrizzleThreadLock(db);
-        const threadedInbox = createThreadedInbox({
-          inbox,
-          threadLock,
-          runStarter: createInMemoryRunStarter(),
-          schedulePostCommit: (task) => task(),
-        });
-
-        for (let attempt = 0; attempt < 24; attempt++) {
-          await clearInbox();
-          const lease = required(await authority.acquire(THREAD_A, `run-${attempt}`));
-          const [outcome] = await Promise.all([
-            closeRun({
-              threadLock,
-              inbox,
-              runAuthority: authority,
-              threadId: THREAD_A,
-              lease,
-              continueOnPending: true,
-              splitAndContinue: async () => "split",
-              complete: async () => "terminal",
-            }),
-            threadedInbox.enqueue(message(`race-${attempt}`)),
-          ]);
-
-          const holder = await authority.holder(THREAD_A);
-          // The lock makes the two outcomes exhaustive: the run either saw the
-          // message and kept its lease, or released first and the message is pending
-          // for the wake sweep. Never released with the message already claimed.
-          expect(outcome.kind === "split").toBe(holder !== null);
-          expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
-          if (holder !== null) await authority.release(lease);
+      it("refreshes expired queue state even when the recovery wake fails", async () => {
+        const { repos, turn } = await assistant();
+        const runClaim = createDrizzleRunClaim(db);
+        const lease = required(await runClaim.startExecution(THREAD_A, "expired"));
+        const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
+        try {
+          await delivery.adoptBatch(lease, async () => ({
+            value: undefined,
+            turnId: turn.id,
+            messageIds: [],
+          }));
+          await delivery.enqueue(message("waiting"));
+          await db
+            .update(schema.threadRunLeases)
+            .set({ expiresAt: new Date(0) })
+            .where(eq(schema.threadRunLeases.threadId, THREAD_A));
+          await sweepWakes({
+            delivery,
+            authority: runClaim,
+            eventSink: createInMemoryEventSink(),
+            limit: 10,
+            runStarter: {
+              async start() {
+                throw new Error("credits exhausted");
+              },
+            },
+          });
+          const events = await db
+            .select()
+            .from(schema.eventJournal)
+            .where(eq(schema.eventJournal.threadId, THREAD_A));
+          expect(events.at(-1)?.payload).toMatchObject({
+            type: "inbox.changed",
+            pending: { items: [{ deliveryState: "awaiting_run" }] },
+          });
+        } finally {
+          await runClaim.release(lease);
         }
       });
-
-      it("commits an inbox ack only with the transaction that carries it", async () => {
-        const inbox = createDrizzleInbox(db);
-        const { createDrizzleRepositoriesForTest } = await import(
-          "../../threads/adapters/drizzle/index.js"
-        );
-        const repos = createDrizzleRepositoriesForTest(db);
-        const inboxMessage = await inbox.enqueue(message("ack-with-response"));
-
-        await expect(
-          repos.transaction(async () => {
-            await inbox.ack(THREAD_A, [inboxMessage.id]);
-            throw new Error("response persist failed");
-          }),
-        ).rejects.toThrow("response persist failed");
-        // The ack rolled back with the transaction that failed.
-        expect((await inbox.claimPending(THREAD_A)).map((m) => m.idempotencyKey)).toEqual([
-          "ack-with-response",
-        ]);
-
-        await repos.transaction(async () => {
-          await inbox.ack(THREAD_A, [inboxMessage.id]);
-        });
-        expect(await inbox.claimPending(THREAD_A)).toEqual([]);
+      it.each([
+        "mismatch",
+        "expiry",
+      ])("keeps response ack tied to the held receipt (%s)", async (variant) => {
+        const { repos, turn } = await assistant();
+        const runClaim = createDrizzleRunClaim(db);
+        const lease = required(await runClaim.startExecution(THREAD_A, "receipt"));
+        const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
+        try {
+          const row = await delivery.enqueue(message("receipt"));
+          await delivery.adoptBatch(lease, async () => ({
+            value: undefined,
+            turnId: turn.id,
+            messageIds: [row.id],
+          }));
+          if (variant === "mismatch") {
+            await expect(
+              delivery.ackWithResponse(lease, [crypto.randomUUID()], async () => "response"),
+            ).rejects.toThrow();
+            expect((await delivery.readPendingProjection(THREAD_A)).run?.messageIds).toEqual([
+              row.id,
+            ]);
+          } else {
+            await db
+              .update(schema.threadRunLeases)
+              .set({ expiresAt: new Date(0) })
+              .where(eq(schema.threadRunLeases.threadId, THREAD_A));
+            await expect(
+              delivery.ackWithResponse(lease, [row.id], async () => "paid response"),
+            ).resolves.toBe("paid response");
+            expect(await delivery.selectPending(THREAD_A)).toHaveLength(0);
+          }
+        } finally {
+          await runClaim.release(lease);
+        }
       });
-
-      it("projects exact live-run adoption before ack and invalidates it on release", async () => {
-        const inbox = createDrizzleInbox(db);
-        const { createDrizzleEventJournalReader } = await import(
-          "../../threads/adapters/drizzle/event-reader.js"
-        );
-        const { createDrizzleEventJournalWriter } = await import(
-          "../../threads/adapters/drizzle/event-writer.js"
-        );
-        const { readPendingInbox } = await import("../loop/pending-inbox.js");
-        const journal = createDrizzleEventJournalWriter(db);
-        const journalReader = createDrizzleEventJournalReader(db);
-        await db.insert(schema.turns).values({
-          id: ASSISTANT_TURN,
-          threadId: THREAD_A,
-          role: "assistant",
-          status: "streaming",
-          metadata: { retained: "value" },
-        });
-        const f = await inbox.enqueue(message("F"));
-        const g = await inbox.enqueue(message("G"));
-        const authority = createDrizzleRunAuthority(db, { holderId: "holder-adoption" });
-        const lease = required(await authority.acquire(THREAD_A, "run-adoption"));
-
-        await runInDrizzleTransaction(db, async () => {
-          await authority.bindTurn(lease, ASSISTANT_TURN, [f.id]);
-          await journal.appendEvent(THREAD_A, {
-            type: "inbox.changed",
-            threadId: THREAD_A,
-            pending: await readPendingInbox(inbox, THREAD_A),
+      it.each([
+        false,
+        true,
+      ])("honors a remote cancel before terminal close (pending followup: %s)", async (hasPending) => {
+        const { repos, turn } = await assistant();
+        const runClaim = createDrizzleRunClaim(db);
+        const remote = createDrizzleRunClaim(db);
+        const lease = required(await runClaim.startExecution(THREAD_A, "remote-cancel"));
+        const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
+        try {
+          await delivery.adoptBatch(lease, async () => ({
+            value: undefined,
+            turnId: turn.id,
+            messageIds: [],
+          }));
+          const pending = hasPending ? await delivery.enqueue(message("next-run")) : null;
+          expect(await remote.cancelExecution(THREAD_A, turn.id)).toBe(true);
+          const closed = await delivery.close({
+            lease,
+            assistantTurnId: turn.id,
+            cause: { kind: "success", finishReason: "end_turn" },
+            continueWith: {
+              lease,
+              currentTurn: turn,
+              knownTurnIds: new Set([turn.id]),
+              expectedLeafTurnId: turn.id,
+            },
           });
-        });
-        let projection = await inbox.readPendingProjection(THREAD_A);
-        expect(
-          projectPendingInbox(projection.messages, projection.run).items.map((item) => [
-            item.id,
-            item.deliveryState,
-          ]),
-        ).toEqual([
-          [f.id, "awaiting_run"],
-          [g.id, "waiting"],
-        ]);
-        expect(projection.messages.every((message) => message.deliveredAt === null)).toBe(true);
-
-        await runInDrizzleTransaction(db, async () => {
-          await inbox.ack(THREAD_A, [f.id]);
-          await journal.appendEvent(THREAD_A, {
-            type: "inbox.changed",
-            threadId: THREAD_A,
-            pending: await readPendingInbox(inbox, THREAD_A),
-          });
-        });
-        await runInDrizzleTransaction(db, async () => {
-          await authority.setAdoptedMessageIds(lease, [g.id]);
-          await journal.appendEvent(THREAD_A, {
-            type: "inbox.changed",
-            threadId: THREAD_A,
-            pending: await readPendingInbox(inbox, THREAD_A),
-          });
-        });
-        projection = await inbox.readPendingProjection(THREAD_A);
-        expect(
-          projectPendingInbox(projection.messages, projection.run).items.map((item) => [
-            item.id,
-            item.deliveryState,
-          ]),
-        ).toEqual([[g.id, "awaiting_run"]]);
-        expect(
-          (await db.select().from(schema.turns).where(eq(schema.turns.id, ASSISTANT_TURN)))[0]
-            .metadata,
-        ).toEqual({ retained: "value" });
-        expect(await authority.readAdoptedMessageIds(lease)).toEqual([g.id]);
-
-        await authority.release(lease);
-        await journal.appendEvent(THREAD_A, {
-          type: "inbox.changed",
-          threadId: THREAD_A,
-          pending: await readPendingInbox(inbox, THREAD_A),
-        });
-        projection = await inbox.readPendingProjection(THREAD_A);
-        expect(
-          projectPendingInbox(projection.messages, projection.run).items.map((item) => [
-            item.id,
-            item.deliveryState,
-          ]),
-        ).toEqual([[g.id, "awaiting_run"]]);
-        expect(projection.messages.map((pending) => pending.deliveredAt)).toEqual([null]);
-
-        await runInDrizzleTransaction(db, async () => {
-          await inbox.ack(THREAD_A, [g.id]);
-          await journal.appendEvent(THREAD_A, {
-            type: "inbox.changed",
-            threadId: THREAD_A,
-            pending: await readPendingInbox(inbox, THREAD_A),
-          });
-        });
-        projection = await inbox.readPendingProjection(THREAD_A);
-        expect(projectPendingInbox(projection.messages, projection.run).items).toEqual([]);
-        const events = await journalReader.listByType(THREAD_A, "inbox.changed");
-        expect(
-          events.map((event) => {
-            if (event.payload.type !== "inbox.changed") throw new Error("expected inbox.changed");
-            return event.payload.pending.items.map((item) => [item.id, item.deliveryState]);
-          }),
-        ).toEqual([
-          [
-            [f.id, "awaiting_run"],
-            [g.id, "waiting"],
-          ],
-          [[g.id, "waiting"]],
-          [[g.id, "awaiting_run"]],
-          [[g.id, "awaiting_run"]],
-          [],
-        ]);
+          expect(closed.kind).toBe("completed");
+          expect((await repos.turns.findById(turn.id))?.status).toBe("cancelled");
+          expect((await delivery.selectPending(THREAD_A)).map((row) => row.id)).toEqual(
+            pending ? [pending.id] : [],
+          );
+        } finally {
+          await runClaim.release(lease);
+        }
       });
-
-      it("reads staged bind and ack state from the publishing transaction and rolls it back", async () => {
-        const inbox = createDrizzleInbox(db);
-        const { createDrizzleRepositoriesForTest } = await import(
-          "../../threads/adapters/drizzle/index.js"
-        );
-        const repos = createDrizzleRepositoriesForTest(db);
-        await db.insert(schema.turns).values({
-          id: ASSISTANT_TURN,
-          threadId: THREAD_A,
-          role: "assistant",
-          status: "streaming",
+      it("serializes a racing enqueue after terminal commit and leaves it recoverable", async () => {
+        const { repos, turn } = await assistant();
+        const { createDrizzleEventJournalWriter } = await import("../../threads/index.js");
+        const writer = createDrizzleEventJournalWriter(db);
+        const runClaim = createDrizzleRunClaim(db);
+        const lease = required(await runClaim.startExecution(THREAD_A, "race"));
+        let entered!: () => void, release!: () => void;
+        const reached = new Promise<void>((resolve) => {
+          entered = resolve;
         });
-        const f = await inbox.enqueue(message("transactional-F"));
-        const authority = createDrizzleRunAuthority(db, { holderId: "holder-staged" });
-        const lease = required(await authority.acquire(THREAD_A, "run-staged"));
-
-        await expect(
-          repos.transaction(async () => {
-            await authority.bindTurn(lease, ASSISTANT_TURN, [f.id]);
-            const adopted = await inbox.readPendingProjection(THREAD_A);
-            expect(projectPendingInbox(adopted.messages, adopted.run).items[0]?.deliveryState).toBe(
-              "awaiting_run",
-            );
-            await inbox.ack(THREAD_A, [f.id]);
-            expect((await inbox.readPendingProjection(THREAD_A)).messages).toEqual([]);
-            throw new Error("response transaction failed");
-          }),
-        ).rejects.toThrow("response transaction failed");
-
-        const rolledBack = await inbox.readPendingProjection(THREAD_A);
-        expect(rolledBack.messages.map((item) => item.id)).toEqual([f.id]);
-        expect(rolledBack.run).toMatchObject({ turnId: null, messageIds: [] });
-        await authority.release(lease);
+        const gate = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const delivery = createTestDrizzleDelivery(db, { repos, runClaim });
+        await delivery.adoptBatch(lease, async () => ({
+          value: undefined,
+          turnId: turn.id,
+          messageIds: [],
+        }));
+        const closing = createTestDrizzleDelivery(db, {
+          repos,
+          runClaim,
+          eventWriter: {
+            async appendEvent(threadId, event) {
+              if (event.type === "inbox.changed") {
+                entered();
+                await gate;
+              }
+              return writer.appendEvent(threadId, event);
+            },
+          },
+        }).close({
+          lease,
+          assistantTurnId: turn.id,
+          cause: { kind: "success", finishReason: "end_turn" },
+        });
+        await reached;
+        const queued = delivery.enqueue(message("racing"));
+        release();
+        await closing;
+        await queued;
+        expect(await runClaim.holder(THREAD_A)).toBeNull();
+        expect(await delivery.pendingMessageThreads(10)).toEqual([THREAD_A]);
       });
     });
   });

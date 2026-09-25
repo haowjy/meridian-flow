@@ -6,7 +6,7 @@
  * this turn instead of appending a second one.
  *
  * `settle` and `enqueue` run inside the turn-start transaction. `enqueue` goes
- * through `ThreadedInbox`, whose per-thread lock reuses the ambient transaction,
+ * through `DeliveryProducer`, whose per-thread lock reuses the ambient transaction,
  * so the durable message joins the same commit and its post-commit wake is
  * scheduled by the outer transaction.
  */
@@ -18,8 +18,8 @@ import { TurnStartConflictError } from "../../threads/index.js";
 import { planMessageTurns } from "./inbox-context.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
-import type { Inbox, MessageDraft } from "./ports.js";
-import type { ThreadedInbox } from "./threaded-inbox.js";
+import type { InboxReader, MessageDraft } from "./ports.js";
+import type { DeliveryProducer } from "./runtime-delivery.js";
 import { writerUserTurnBlocks } from "./user-turn-blocks.js";
 
 export interface WriterEnqueueSettlement {
@@ -49,8 +49,8 @@ export async function persistWriterEnqueue<T>(input: {
   userTurnId: TurnId;
   userBlocks: readonly UserMessageBlock[];
   userTurnMetadata?: JsonValue | null;
-  threadedInbox: ThreadedInbox;
-  inbox: Pick<Inbox, "listPending">;
+  delivery: DeliveryProducer;
+  inbox: Pick<InboxReader, "selectPending">;
   draft: MessageDraft;
   /** Settles admission plus attachments; runs in the turn-start transaction. */
   settle: (settlement: WriterEnqueueSettlement) => Promise<T>;
@@ -64,7 +64,7 @@ export async function persistWriterEnqueue<T>(input: {
     const thread = await input.persistence.repos.threads.findById(input.threadId);
     if (!thread) throw new Error(`Thread not found: ${input.threadId}`);
     try {
-      return await input.threadedInbox.withThreadLock(input.threadId, async (producer) => {
+      return await input.delivery.withThreadLock(input.threadId, async (producer) => {
         let settled: T | undefined;
         const persistAttempt = () =>
           persistAndAppendTurnStartEvents(
@@ -74,7 +74,7 @@ export async function persistWriterEnqueue<T>(input: {
             async () => {
               // A queued child/agent message may predate this durable writer turn.
               // Materialize that prefix now rather than later reparenting history.
-              const batch = await input.inbox.listPending(input.threadId);
+              const batch = await input.inbox.selectPending(input.threadId);
               const known = new Set(
                 (await input.persistence.repos.turns.listByThread(input.threadId)).map(
                   (turn) => turn.id,

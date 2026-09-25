@@ -57,9 +57,9 @@ replacements. Update a loaded target turn without touching active-turn state;
 when the target turn is absent, invalidate/refetch the durable snapshot rather
 than creating a synthetic streaming turn. Store duplicate replacement as a
 reference-preserving no-op. The pending inbox remains generic for transport
-and model drain; the composer tray filters writer provenance and
-`deliveryState === "waiting"`. An accepted writer turn with `awaiting_run`
-status shows its ID-keyed inline waiting status.
+and model drain. `writerTurnQueueStatus` filters writer provenance into one
+ID-keyed inline status per accepted bubble: `waiting` means Queued, and
+`awaiting_run` means Waiting for response. There is no composer queue tray.
 
 The full model lives in
 [`.context/turn-composition.md`](.context/turn-composition.md); one row's

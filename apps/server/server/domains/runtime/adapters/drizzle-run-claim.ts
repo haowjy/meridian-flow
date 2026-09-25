@@ -1,7 +1,7 @@
 /**
  * PostgreSQL adapters for cross-process thread-run ownership. The session
  * advisory lock stays the atomic mutex (crash-safe because the DB session
- * dies); `RunAuthority` adds the queryable, expiring lease row that
+ * dies); `RunClaim` adds the queryable, expiring lease row that
  * `holder()` and derived status can read from another process.
  */
 
@@ -9,19 +9,14 @@ import type { ThreadId } from "@meridian/contracts/runtime";
 import type { ThreadLeaseState, ThreadStatus } from "@meridian/contracts/threads";
 import type { Database } from "@meridian/database";
 import * as schema from "@meridian/database/schema";
-import { and, eq, gt, inArray, isNotNull, sql } from "drizzle-orm";
-import {
-  currentDrizzleDb,
-  deferUntilDrizzleCommit,
-  runInDrizzleTransaction,
-} from "../../../shared/drizzle-transaction.js";
+import { and, eq, gt, inArray } from "drizzle-orm";
+import { currentDrizzleDb, deferUntilDrizzleCommit } from "../../../shared/drizzle-transaction.js";
 import {
   DEFAULT_LEASE_TTL_MS,
-  type RunAuthority,
+  type RunClaim,
   type RunId,
   type ThreadPhase,
 } from "../loop/ports.js";
-import type { ThreadRunOwnership } from "../loop/thread-run-ownership.js";
 
 const THREAD_RUN_LOCK_SEED = 81n;
 
@@ -115,25 +110,16 @@ function createThreadRunLock(db: Database): ThreadRunLock {
   };
 }
 
-export function createDrizzleThreadRunOwnership(db: Database): ThreadRunOwnership {
-  const lock = createThreadRunLock(db);
-  return {
-    tryAcquire(threadId) {
-      return lock.tryAcquire(threadId);
-    },
-  };
-}
-
-export interface DrizzleRunAuthorityOptions {
+export interface DrizzleRunClaimOptions {
   /** Stable holder identity for this worker; a random one is minted when omitted. */
   holderId?: string;
   leaseTtlMs?: number;
 }
 
-export function createDrizzleRunAuthority(
+export function createDrizzleRunClaim(
   db: Database,
-  options: DrizzleRunAuthorityOptions = {},
-): RunAuthority {
+  options: DrizzleRunClaimOptions = {},
+): RunClaim {
   const lock = createThreadRunLock(db);
   const holderId = options.holderId ?? crypto.randomUUID();
   const leaseTtlMs = options.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;
@@ -166,7 +152,16 @@ export function createDrizzleRunAuthority(
       .from(schema.threadRunLeases);
 
   return {
-    async acquire(threadId, runId) {
+    async withExclusiveThread(threadId, operation) {
+      const claim = await lock.tryAcquire(threadId);
+      if (!claim) return null;
+      try {
+        return await operation();
+      } finally {
+        await claim.release();
+      }
+    },
+    async startExecution(threadId, runId) {
       const claim = await lock.tryAcquire(threadId);
       if (!claim) return null;
       const acquiredAt = new Date();
@@ -231,58 +226,6 @@ export function createDrizzleRunAuthority(
       return row?.runId ?? null;
     },
 
-    async bindTurn(lease, turnId, messageIds) {
-      await runInDrizzleTransaction(db, async () => {
-        const [bound] = await db_()
-          .update(schema.threadRunLeases)
-          .set({ turnId, adoptedMessageIds: [...messageIds] })
-          .where(
-            and(
-              eq(schema.threadRunLeases.cancelRequested, false),
-              sql`EXISTS (SELECT 1 FROM ${schema.turns} WHERE ${schema.turns.id} = ${turnId}
-                AND ${schema.turns.threadId} = ${lease.threadId} AND ${schema.turns.role} = 'assistant')`,
-              eq(schema.threadRunLeases.threadId, lease.threadId),
-              eq(schema.threadRunLeases.runId, lease.runId),
-              eq(schema.threadRunLeases.holderId, lease.holderId),
-              gt(schema.threadRunLeases.expiresAt, new Date()),
-            ),
-          )
-          .returning({ turnId: schema.threadRunLeases.turnId });
-        if (!bound) throw new Error("Cannot bind assistant turn after losing live run lease");
-      });
-    },
-
-    async setAdoptedMessageIds(lease, messageIds) {
-      const rows = await db_()
-        .update(schema.threadRunLeases)
-        .set({ adoptedMessageIds: [...messageIds] })
-        .where(
-          and(
-            eq(schema.threadRunLeases.threadId, lease.threadId),
-            eq(schema.threadRunLeases.runId, lease.runId),
-            eq(schema.threadRunLeases.holderId, lease.holderId),
-            isNotNull(schema.threadRunLeases.turnId),
-            gt(schema.threadRunLeases.expiresAt, new Date()),
-          ),
-        )
-        .returning({ turnId: schema.threadRunLeases.turnId });
-      return rows.length > 0;
-    },
-
-    async readAdoptedMessageIds(lease) {
-      const [row] = await db_()
-        .select({ ids: schema.threadRunLeases.adoptedMessageIds })
-        .from(schema.threadRunLeases)
-        .where(
-          and(
-            eq(schema.threadRunLeases.threadId, lease.threadId),
-            eq(schema.threadRunLeases.runId, lease.runId),
-            eq(schema.threadRunLeases.holderId, lease.holderId),
-          ),
-        );
-      return row?.ids ?? [];
-    },
-
     async publish(lease, phase) {
       await db_()
         .update(schema.threadRunLeases)
@@ -327,7 +270,7 @@ export function createDrizzleRunAuthority(
       return row?.turnId ?? null;
     },
 
-    async cancel(threadId, turnId) {
+    async cancelExecution(threadId, turnId) {
       const rows = await db_()
         .update(schema.threadRunLeases)
         .set({ cancelRequested: true })
