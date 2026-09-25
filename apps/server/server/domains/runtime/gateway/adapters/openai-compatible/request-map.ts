@@ -13,6 +13,12 @@
  *   text-only messages use the simpler string content format.
  * - `stream_options: { include_usage: true }` is always set so the final
  *   chunk carries cumulative token usage (per OpenAI streaming docs).
+ * - `providerOptions.anthropic.cacheControl` on a system/user text part forces
+ *   array-format content with an OpenRouter-style `cache_control` block
+ *   (identical shape to Anthropic's own wire format), for Anthropic-backed
+ *   models routed through OpenRouter's chat-completions surface. Assistant
+ *   tool-call and tool-result messages don't carry it: OpenRouter's
+ *   cache_control passthrough is documented only for system/user content.
  */
 import type OpenAI from "openai";
 
@@ -39,11 +45,19 @@ function textFromParts(parts: ContentPart[]): string {
  * silently dropped because Chat Completions has no native reasoning_part or
  * tool_use_part in user/assistant message content.
  */
+/** OpenRouter's `cache_control` passthrough uses Anthropic's own block shape. */
+type CacheControllableTextPart = OpenAI.Chat.Completions.ChatCompletionContentPartText & {
+  cache_control?: { type: "ephemeral" };
+};
+
 function mapContentParts(
   parts: ContentPart[],
 ): string | OpenAI.Chat.Completions.ChatCompletionContentPart[] {
   const hasImage = parts.some((p) => p.type === "image");
-  if (!hasImage) {
+  const hasCacheControl = parts.some(
+    (p) => "providerOptions" in p && p.providerOptions?.anthropic?.cacheControl,
+  );
+  if (!hasImage && !hasCacheControl) {
     return textFromParts(parts);
   }
 
@@ -52,7 +66,12 @@ function mapContentParts(
     switch (part.type) {
       case "text":
         if (part.text.length > 0) {
-          mapped.push({ type: "text", text: part.text });
+          const cacheControl = part.providerOptions?.anthropic?.cacheControl;
+          mapped.push({
+            type: "text",
+            text: part.text,
+            ...(cacheControl ? { cache_control: cacheControl } : {}),
+          } as CacheControllableTextPart);
         }
         break;
       case "image": {

@@ -33,6 +33,7 @@ import {
 import { type BuildContextInput, buildContext } from "./context-builder.js";
 import { projectImageBlocksForModel } from "./image-context.js";
 import type { EffectiveToolPolicy } from "./permissions/project-tool-policy.js";
+import { applyPromptCacheMarks } from "./prompt-cache-marks.js";
 import type { WorkContextReader } from "./work-context.js";
 
 /** Frozen `bakedTools` is opaque JSON at the contract boundary; the runtime owns its shape. */
@@ -142,11 +143,9 @@ export async function assembleNextTurnContext(
 
   const gatewayParams = agentContext.gatewayParams;
   const modelId = gatewayParams.model ?? input.gateway?.getDefaultModel?.();
-  const supportsImageInput =
-    input.gateway
-      ?.listModels?.()
-      .find((model) => model.id === modelId)
-      ?.capabilities.has("image_input") ?? false;
+  const resolvedModel = input.gateway?.listModels?.().find((model) => model.id === modelId);
+  const supportsImageInput = resolvedModel?.capabilities.has("image_input") ?? false;
+  const supportsPromptCaching = resolvedModel?.capabilities.has("caching") ?? false;
   const blocks = await projectImageBlocksForModel({
     thread,
     blocks: input.blocks,
@@ -157,7 +156,7 @@ export async function assembleNextTurnContext(
       },
     },
   });
-  const { messages, tools: contextTools } = buildContext({
+  const built = buildContext({
     thread,
     turns: input.turns,
     blocks,
@@ -170,6 +169,8 @@ export async function assembleNextTurnContext(
     namedSubagents: namedSubagentsForUnfrozen,
     subagentGuidance: subagentGuidanceForUnfrozen,
   });
+  const contextTools = built.tools;
+  const messages = supportsPromptCaching ? applyPromptCacheMarks(built.messages) : built.messages;
 
   return {
     thread,

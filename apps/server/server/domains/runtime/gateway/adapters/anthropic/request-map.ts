@@ -100,6 +100,12 @@ function mapContentPartToAnthropicBlock(
         id: part.toolCallId,
         name: part.toolName,
         input: part.input,
+        ...(part.providerOptions?.anthropic?.cacheControl
+          ? {
+              cache_control: part.providerOptions.anthropic
+                .cacheControl as Anthropic.Messages.CacheControlEphemeral,
+            }
+          : {}),
       } as any;
     case "tool_result":
       return {
@@ -107,6 +113,12 @@ function mapContentPartToAnthropicBlock(
         tool_use_id: part.toolCallId,
         content: safeToolOutput(part.output),
         is_error: part.isError ?? false,
+        ...(part.providerOptions?.anthropic?.cacheControl
+          ? {
+              cache_control: part.providerOptions.anthropic
+                .cacheControl as Anthropic.Messages.CacheControlEphemeral,
+            }
+          : {}),
       } as any;
     case "reasoning": {
       if (!matchesReasoningOrigin(part, targetProviderId, targetModelId)) return null;

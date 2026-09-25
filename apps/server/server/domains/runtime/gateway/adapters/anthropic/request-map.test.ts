@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { assistant, toolResult, user } from "../../helpers/messages.js";
+import { assistant, system, toolResult, user } from "../../helpers/messages.js";
 import { toAnthropicMessageParams } from "./request-map.js";
+
+const EPHEMERAL = { type: "ephemeral" as const };
 
 const skillTool = {
   type: "function" as const,
@@ -161,5 +163,79 @@ describe("Anthropic message alternation", () => {
         { type: "text", text: "writer message two" },
       ],
     });
+  });
+});
+
+describe("Anthropic prompt-cache breakpoints", () => {
+  it("forwards providerOptions.anthropic.cacheControl for system, tool, and tool result blocks", () => {
+    const params = toAnthropicMessageParams(
+      {
+        messages: [
+          {
+            ...system("You are Writer."),
+            content: [
+              {
+                type: "text",
+                text: "You are Writer.",
+                providerOptions: { anthropic: { cacheControl: EPHEMERAL } },
+              },
+            ],
+          },
+          assistant([
+            {
+              type: "tool_use",
+              toolCallId: "call_1",
+              toolName: "search",
+              input: {},
+              providerOptions: { anthropic: { cacheControl: EPHEMERAL } },
+            },
+          ]),
+          {
+            ...toolResult("call_1", "result", false),
+            content: [
+              {
+                type: "tool_result",
+                toolCallId: "call_1",
+                output: "result",
+                isError: false,
+                providerOptions: { anthropic: { cacheControl: EPHEMERAL } },
+              },
+            ],
+          },
+        ],
+        tools: [
+          {
+            type: "function",
+            name: "search",
+            description: "Search.",
+            inputSchema: {},
+            providerOptions: { anthropic: { cacheControl: EPHEMERAL } },
+          },
+        ],
+      },
+      "claude-sonnet-4-5",
+      256,
+    );
+    expect(params.system).toEqual([
+      { type: "text", text: "You are Writer.", cache_control: EPHEMERAL },
+    ]);
+    expect(params.tools?.[0]).toMatchObject({ cache_control: EPHEMERAL });
+    const assistantMessage = params.messages.find((m) => m.role === "assistant");
+    if (!assistantMessage) throw new Error("Expected an assistant message");
+    expect(assistantBlocks({ ...params, messages: [assistantMessage] })[0]).toMatchObject({
+      type: "tool_use",
+      cache_control: EPHEMERAL,
+    });
+    const toolMessage = params.messages.find(
+      (m) =>
+        m.role === "user" &&
+        Array.isArray(m.content) &&
+        m.content.some((block) => block.type === "tool_result"),
+    );
+    const toolContent = toolMessage?.content;
+    const toolBlock = (Array.isArray(toolContent) ? toolContent : []).find(
+      (block: { type: string }) => block.type === "tool_result",
+    );
+    expect(toolBlock).toMatchObject({ cache_control: EPHEMERAL });
   });
 });

@@ -113,6 +113,7 @@ export interface ToolUsePart {
    */
   input: Record<string, unknown>;
   inputParseError?: { raw: string; message: string };
+  providerOptions?: ProviderOptions;
 }
 
 export interface ToolResultPart {
@@ -120,6 +121,7 @@ export interface ToolResultPart {
   toolCallId: string;
   output: unknown;
   isError?: boolean;
+  providerOptions?: ProviderOptions;
 }
 
 export interface CustomPart {
