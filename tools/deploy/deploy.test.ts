@@ -81,7 +81,7 @@ async function run(scenario: string) {
       snapshotName = url.searchParams.get("name") ?? "";
       response.end(JSON.stringify({ snapshot: { id: "snap-123" }, operation: { id: "op-1" } }));
     } else if (url.pathname.endsWith("/operations/op-1")) {
-      response.end(JSON.stringify({ status: "finished", failures_count: 0 }));
+      response.end(JSON.stringify({ operation: { status: "finished", failures_count: 0 } }));
     } else {
       response.end(
         JSON.stringify({
