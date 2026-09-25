@@ -699,6 +699,10 @@ msgstr "随便聊聊"
 msgid "Chat context"
 msgstr ""
 
+#: src/features/chat/IndependentChatView.tsx
+msgid "Chat couldn’t load"
+msgstr ""
+
 #: src/features/chat/CreationComposer.tsx
 #~ msgid "Chat creation is still being reconciled."
 #~ msgstr ""
@@ -1990,6 +1994,10 @@ msgstr ""
 #: src/features/agents/AgentPicker.tsx
 #: src/features/chat/CreationComposer.tsx
 msgid "Loading agents…"
+msgstr ""
+
+#: src/features/chat/IndependentChatView.tsx
+msgid "Loading chat…"
 msgstr ""
 
 #: src/features/project/chat-landing/HomeFeed.tsx

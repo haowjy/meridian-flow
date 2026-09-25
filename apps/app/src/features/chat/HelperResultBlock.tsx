@@ -33,7 +33,7 @@ export function HelperResultBlock({ content, invocationResult, threadId }: Compo
   const savedReport: DirectInvocationResult | null =
     saved.data && "outcome" in saved.data
       ? {
-          execution: saved.data.execution,
+          execution: props.execution as string,
           outcome: saved.data.outcome,
           summary: saved.data.summary,
           ...(saved.data.payload === undefined ? {} : { payload: saved.data.payload }),

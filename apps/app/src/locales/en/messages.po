@@ -699,6 +699,10 @@ msgstr "Chat away"
 msgid "Chat context"
 msgstr "Chat context"
 
+#: src/features/chat/IndependentChatView.tsx
+msgid "Chat couldn’t load"
+msgstr "Chat couldn’t load"
+
 #: src/features/chat/CreationComposer.tsx
 #~ msgid "Chat creation is still being reconciled."
 #~ msgstr "Chat creation is still being reconciled."
@@ -1991,6 +1995,10 @@ msgstr "Loading {0}"
 #: src/features/chat/CreationComposer.tsx
 msgid "Loading agents…"
 msgstr "Loading agents…"
+
+#: src/features/chat/IndependentChatView.tsx
+msgid "Loading chat…"
+msgstr "Loading chat…"
 
 #: src/features/project/chat-landing/HomeFeed.tsx
 msgid "Loading chats"
