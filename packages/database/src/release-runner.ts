@@ -105,6 +105,8 @@ export async function runRelease(input: {
     let appliedMigrations = 0;
     let skippedFunctions = false;
     await client.begin(async (tx) => {
+      await tx.unsafe("SET LOCAL lock_timeout = '5s'");
+      await tx.unsafe("SET LOCAL statement_timeout = '10min'");
       await tx.unsafe(`SELECT pg_advisory_xact_lock(${releaseAdvisoryLockKey})`);
       await tx`CREATE SCHEMA IF NOT EXISTS drizzle`;
       await tx`
