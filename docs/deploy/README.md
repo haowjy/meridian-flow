@@ -123,6 +123,8 @@ apply only when `OBJECT_STORE_PROVIDER=local`.
 
 | Variable | Required / value | Set by | Purpose |
 |---|---|---|---|
+| `NODE_ENV` | `production` | `configure.sh` | Production runtime. |
+| `APP_ENV` | `staging` or `production` | `configure.sh` | Deployment identity. |
 | `HOST` | `::` | `configure.sh` | Listen on all interfaces. |
 | `PORT` | `8080` | `configure.sh` | Public Caddy listener. |
 | `APP_UPSTREAM` | `app.railway.internal:3000` | `configure.sh` | App private hostname; Caddy refreshes DNS periodically. |
