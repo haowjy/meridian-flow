@@ -12,7 +12,7 @@ import {
   type MockOpenAIServer,
 } from "../../gateway/adapters/mock/server.js";
 import { createGateway } from "../../gateway/create-gateway.js";
-import type { Gateway } from "../../gateway/index.js";
+import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import { RuntimeTestRig } from "./runtime-test-rig.js";
 
 function createMockGateway(mock: MockOpenAIServer): Gateway {
@@ -37,6 +37,35 @@ function createMockGateway(mock: MockOpenAIServer): Gateway {
     defaultModel: "gpt-4.1-mini",
     retry: { maxAttempts: 1, initialDelayMs: 1, maxDelayMs: 1 },
   });
+}
+
+async function providerFailureEnvelopeFixture() {
+  const gateway: Gateway = {
+    getDefaultModel: () => "fixture-model",
+    async *stream(): AsyncGenerator<StreamEvent> {
+      yield { type: "start", model: "fixture-model", provider: "fixture" };
+      yield {
+        type: "error",
+        code: "provider_error",
+        message: "Upstream model failed",
+        retryable: true,
+      };
+    },
+    async generate() {
+      throw new Error("not used");
+    },
+  };
+  const rig = await RuntimeTestRig.create({ gateway });
+  const handle = await rig.orchestrator.runTurn({
+    threadId: rig.thread.id,
+    userText: "provider failure fixture",
+  });
+  const events = await rig.collect(handle);
+  const terminal = events.find((event) => event.type === "turn.error");
+  if (terminal?.type !== "turn.error") {
+    throw new Error("Provider failure fixture did not produce turn.error");
+  }
+  return terminal.error;
 }
 
 describe("cancel billing", () => {
@@ -89,14 +118,15 @@ describe("cancel billing", () => {
     expect(balanceAfterSecondAbort).toBe(balanceAfterCancel);
   });
 
-  it("shutdown aborts a running turn and waits for the terminal event to persist", async () => {
+  it("shutdown finalizes as a retryable runtime error, emits one terminal event, and settles billing", async () => {
+    const providerFailure = await providerFailureEnvelopeFixture();
     const rig = await RuntimeTestRig.create({ gateway: createMockGateway(mock) });
     await rig.runner.startTurn({ threadId: rig.thread.id, userText: "deploy drain" });
     await rig.gatewaySignal.promise;
 
     const turnId = rig.runner.getRunningTurnId(rig.thread.id);
     expect(turnId).not.toBeNull();
-    const finished = rig.awaitCancelled(turnId as NonNullable<typeof turnId>);
+    const finished = rig.awaitEvent(EventType.RUN_ERROR);
 
     const shuttingDown = rig.runner.shutdown();
     await expect(
@@ -104,11 +134,22 @@ describe("cancel billing", () => {
     ).rejects.toMatchObject({ code: "server_restarting" });
     await shuttingDown;
     await finished;
-
-    expect((await rig.turn(turnId as NonNullable<typeof turnId>))?.status).toBe("cancelled");
-    expect(rig.projectedEvents.some(({ event }) => event.type === EventType.RUN_FINISHED)).toBe(
-      true,
-    );
+    const assistantTurn = await rig.turn(turnId as NonNullable<typeof turnId>);
+    expect(assistantTurn?.status).toBe("error");
+    const terminalEvents = rig.projectedEvents.filter(({ error }) => error !== undefined);
+    expect(terminalEvents).toHaveLength(1);
+    const shutdownError = terminalEvents[0]?.error;
+    expect(shutdownError).toBeDefined();
+    expect(Object.keys(shutdownError ?? {}).sort()).toEqual(Object.keys(providerFailure).sort());
+    expect(shutdownError).toMatchObject({
+      code: "runtime_error",
+      message: "The server is restarting. Retry this message shortly.",
+      retryable: providerFailure.retryable,
+      source: "system",
+    });
+    const balance = await rig.balance();
+    expect(BigInt(balance)).toBeLessThan(1_200_000n);
+    expect(balance).not.toBe("1200000");
   });
 
   it("does not cancel the in-flight turn when the owning WebSocket disconnects before subscribe", async () => {

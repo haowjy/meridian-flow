@@ -25,6 +25,7 @@ import {
   type Turn,
 } from "@meridian/contracts/threads";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
+import { isShutdownAbort, shutdownTurnError } from "./abort-reasons.js";
 import type { OrchestratorDeps } from "./orchestrator.js";
 import { persistAndAppendEvents } from "./persistence.js";
 
@@ -45,6 +46,17 @@ export async function finalizeCancelled(
     return { result: null, events: [{ type: "turn.cancelled", turn: updatedTurn }] };
   });
   return events;
+}
+
+export function finalizeAbortedTurn(
+  deps: Pick<OrchestratorDeps, "repos" | "eventWriter">,
+  threadId: ThreadId,
+  turn: Turn,
+  signal: AbortSignal | undefined,
+): Promise<OrchestratorEvent[]> {
+  return isShutdownAbort(signal)
+    ? finalizeError(deps, threadId, turn, shutdownTurnError())
+    : finalizeCancelled(deps, threadId, turn);
 }
 
 export async function finalizeError(
@@ -89,7 +101,7 @@ export async function finalizeTurnOnGeneratorFailure(
   if (!turn || turn.threadId !== input.threadId) return [];
   if (isTerminalTurnStatus(turn.status)) return [];
   if (input.signal?.aborted) {
-    return finalizeCancelled(deps, input.threadId, turn);
+    return finalizeAbortedTurn(deps, input.threadId, turn, input.signal);
   }
   const message = input.error instanceof Error ? input.error.message : String(input.error);
   return finalizeError(deps, input.threadId, turn, message);

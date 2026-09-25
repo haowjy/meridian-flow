@@ -42,6 +42,7 @@ import {
   TurnStartConflictError,
 } from "../../threads/index.js";
 import type { ChildReportDelivery } from "../spawn/child-report-delivery.js";
+import { ServerRestartingError } from "./abort-reasons.js";
 import type { RunTurnPort } from "./run-turn-port.js";
 import {
   createInMemoryThreadRunOwnership,
@@ -65,7 +66,10 @@ export interface ChildRunRegistry {
   unregisterChild(childThreadId: ThreadId): void;
   markChildTurn(childThreadId: ThreadId, assistantTurnId: TurnId): void;
   abortChild(childThreadId: ThreadId): void;
-  abortChildrenOf(parentThreadId: ThreadId, options?: { includeBackground?: boolean }): void;
+  abortChildrenOf(
+    parentThreadId: ThreadId,
+    options?: { includeBackground?: boolean; reason?: unknown },
+  ): void;
 }
 
 type RunningTurn = {
@@ -84,15 +88,6 @@ export class StaleConnectionTokenError extends Error {
   constructor() {
     super("connection_token_not_live");
     this.name = "StaleConnectionTokenError";
-  }
-}
-
-export class ServerRestartingError extends Error {
-  readonly code = "server_restarting";
-
-  constructor() {
-    super("The server is restarting. Retry this message shortly.");
-    this.name = "ServerRestartingError";
   }
 }
 
@@ -151,15 +146,13 @@ export function createTurnRunner(deps: {
   async function shutdown(): Promise<void> {
     stopping = true;
     const errors: unknown[] = [];
+    const reason = new ServerRestartingError();
     for (const [threadId, active] of running) {
       if (active.assistantTurnId) {
-        try {
-          await cancel(threadId, active.assistantTurnId);
-        } catch (error) {
-          errors.push(error);
-        }
+        childRunRegistry.abortChildrenOf(threadId, { includeBackground: true, reason });
+        active.controller.abort(reason);
       } else {
-        active.controller.abort();
+        active.controller.abort(reason);
       }
     }
 
@@ -209,7 +202,7 @@ export function createTurnRunner(deps: {
       for (const [childThreadId, child] of childRuns) {
         if (child.parentThreadId !== parentThreadId) continue;
         if (child.background && !options?.includeBackground) continue;
-        child.controller.abort();
+        child.controller.abort(options?.reason);
         childRuns.delete(childThreadId);
       }
     },
