@@ -21,7 +21,7 @@ service() {
   edit "$name" deploy.drainingSeconds 30
   edit "$name" deploy.overlapSeconds 0
   edit "$name" deploy.numReplicas 1
-  [[ -z $predeploy ]] || edit "$name" deploy.preDeployCommand '["node","/app/release/release.mjs"]'
+  [[ -z $predeploy ]] || edit "$name" deploy.preDeployCommand 'node /app/release/release.mjs'
   edit "$name" variables.NODE_ENV.value production
   edit "$name" variables.APP_ENV.value "$app_env"
   edit "$name" variables.HOST.value ::
@@ -40,6 +40,7 @@ edit server variables.S3_SECRET_KEY.value '${{uploads.SECRET_ACCESS_KEY}}' # Ver
 service app 3000 /login "$environment"
 edit app variables.MERIDIAN_API_ORIGIN.value http://server.railway.internal:3000
 service www 3000 / "$environment"
+edit www variables.WEB_DATABASE_URL.value '${{server.DATABASE_URL}}' # Railway cross-service reference; verify resolves on first deploy.
 service ingress 8080 /_ingress/health "$environment"
 edit ingress variables.APP_UPSTREAM.value app.railway.internal:3000
 edit ingress variables.SERVER_UPSTREAM.value server.railway.internal:3000
