@@ -259,7 +259,9 @@ export const turns = pgTable(
     index("turns_thread_created").on(table.threadId, table.createdAt.desc()),
     index("turns_recoverable_created")
       .on(table.createdAt)
-      .where(sql`${table.role} = 'assistant' AND ${table.status} IN ('pending', 'streaming')`),
+      .where(
+        sql`${table.role} = 'assistant' AND ${table.status} IN ('pending', 'streaming', 'waiting_interrupt')`,
+      ),
     index("turns_parent_created")
       .on(table.parentTurnId, table.createdAt.desc())
       .where(sql`${table.parentTurnId} IS NOT NULL`),

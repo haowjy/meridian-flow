@@ -2491,7 +2491,7 @@
             }
           ],
           "isUnique": false,
-          "where": "\"turns\".\"role\" = 'assistant' AND \"turns\".\"status\" IN ('pending', 'streaming')",
+          "where": "\"turns\".\"role\" = 'assistant' AND \"turns\".\"status\" IN ('pending', 'streaming', 'waiting_interrupt')",
           "concurrently": false,
           "method": "btree",
           "with": {}
