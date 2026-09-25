@@ -38,9 +38,29 @@ describe("working-set route parser", () => {
     ).toBe(false);
   });
 
-  it("rejects invalid paths and invalid list entries", () => {
-    expect(parseWorkingSetRoute({ scheme: "kb", path: "" }).ok).toBe(false);
-    expect(parseWorkingSetRoute({ scheme: "kb", path: "x".repeat(1025) }).ok).toBe(false);
-    expect(parseWorkingSetRouteList([{ scheme: "unknown", path: "/" }]).ok).toBe(false);
+  it("rejects invalid paths and invalid list entries at their intended guards", () => {
+    const validRoute = {
+      documentId: "00000000-0000-0000-0000-000000000001",
+      scheme: "manuscript" as const,
+      path: "/chapter.md",
+    };
+
+    expect(parseWorkingSetRoute({ ...validRoute, path: "" })).toEqual({
+      ok: false,
+      message: "Working-set route path must contain 1 to 1024 characters",
+    });
+    expect(parseWorkingSetRoute({ ...validRoute, path: "x".repeat(1025) })).toEqual({
+      ok: false,
+      message: "Working-set route path must contain 1 to 1024 characters",
+    });
+    expect(parseWorkingSetRoute({ ...validRoute, path: "x".repeat(1024) }).ok).toBe(true);
+    expect(parseWorkingSetRoute({ ...validRoute, scheme: "unknown" })).toEqual({
+      ok: false,
+      message: "Working-set route has an unknown scheme",
+    });
+    expect(parseWorkingSetRouteList([{ ...validRoute, scheme: "unknown" }])).toEqual({
+      ok: false,
+      message: "Working-set route has an unknown scheme",
+    });
   });
 });

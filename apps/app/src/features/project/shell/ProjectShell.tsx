@@ -9,9 +9,7 @@
  * shared across screens via slot-level prefs, so dock resize/collapse always go
  * through `onSetDockWidth`/`onSetDockCollapsed`, never the occupant surface's
  * own pref.
- *
- * The file explorer lives in the shared left sidebar; the former `files` grid
- * slot and its dedicated preferences no longer exist.
+
  */
 import { t } from "@lingui/core/macro";
 import { type CSSProperties, type ReactNode, type RefObject, useEffect, useRef } from "react";

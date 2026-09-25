@@ -24,11 +24,12 @@ import type {
   LocalDocumentSessionReservationPort,
   LocalDocumentSessionTransfer,
 } from "@/core/editor/local-document-session-adoption";
-import { DocumentSession, deleteIndexedDb } from "../editor/document-session";
+import { DocumentSession } from "../editor/document-session";
 import { IndexedDbResourceMetadata } from "./indexeddb-resource-metadata";
 import { ResourceContentAccess } from "./resource-content-access";
 import type { ResourceAvailabilityResolver } from "./resource-session-adoption";
 import { ResourceSessionAdoptionCoordinator } from "./resource-session-adoption";
+import { deleteIndexedDb } from "./test-support/delete-indexed-db";
 
 const accountId = "resource-session-adoption";
 const metadataName = `meridian:resource-metadata:v3:${encodeURIComponent(accountId)}`;
