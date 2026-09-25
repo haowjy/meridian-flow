@@ -181,7 +181,7 @@ function ChatIndexBody({
         busy={feed.isFetchingNextPage}
         // Rows own a hover wash with inner padding; bleed it so row text lines
         // up with the heading and group labels.
-        listClassName="-mx-2"
+        listClassName="-mx-2 [--row-rule-inset:--spacing(2)]"
         renderItem={(item) => (
           <ChatIndexRow projectId={projectId} item={item} rowProps={rowProps} />
         )}

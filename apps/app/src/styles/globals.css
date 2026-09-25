@@ -349,9 +349,10 @@
   }
 }
 
-/* Resume-list row rules: one device pixel. Chromium rounds a sub-pixel border
-   up to 1 CSS px, so the rule is a 1px line scaled to half height instead. */
-@utility divide-hairline {
+/* Resume-list row rules. A list that bleeds past its column for a wider hover
+   pill sets --row-rule-inset to the bleed, so the rule still spans only the
+   text column. */
+@utility divide-row-rule {
   & > :not(:last-child) {
     position: relative;
   }
@@ -359,11 +360,9 @@
     content: "";
     pointer-events: none;
     position: absolute;
-    inset-inline: 0;
+    inset-inline: var(--row-rule-inset, 0);
     bottom: 0;
     height: 1px;
-    transform: scaleY(0.5);
-    transform-origin: bottom;
     background-color: var(--color-border-subtle);
   }
 }

@@ -54,5 +54,6 @@ and overflow share that trailing center; the action replaces the date on hover,
 focus-within, or an open menu without reflow. On coarse/no-hover inputs, the
 44 × 44 px action remains in the trailing lane and the date follows the preview
 inline. Fine rows retain a 53.6 px rhythm and coarse rows a 56 px rhythm; loading
-must match it. Rows are ruled by `divide-hairline`, one device pixel drawn over
-the row's bottom edge, so the rule adds no height.
+must match it. Rows are ruled by `divide-row-rule`, a 1px line drawn over the row's bottom
+edge (adding no height) and inset by the list's 8px bleed so it spans only the
+text column.
