@@ -58,6 +58,76 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.close();
     });
 
+    it("keeps snapshot payload and journal cursors on one committed view", async () => {
+      const { createDrizzleRepositoriesForTest } = await import("./repositories.js");
+      const { createDrizzleEventJournalReader } = await import("./event-reader.js");
+      const { createDrizzleEventJournalWriter } = await import("./event-writer.js");
+      const { createThreadEventHub } = await import("../../thread-event-hub.js");
+      const { buildThreadSnapshot } = await import("../../thread-snapshot.js");
+      const { createNoopEventSink } = await import("../../../observability/index.js");
+      const { runInDrizzleTransaction, runOutsideDrizzleTransaction } = await import(
+        "../../../../shared/drizzle-transaction.js"
+      );
+      const repos = createDrizzleRepositoriesForTest(db);
+      const writer = createDrizzleEventJournalWriter(db);
+      const reader = createDrizzleEventJournalReader(db);
+      const hub = createThreadEventHub({
+        journalWriter: writer,
+        journalReader: reader,
+        eventSink: createNoopEventSink(),
+      });
+      const original = await repos.blocks.create({
+        turnId: TURN_ID,
+        blockType: "custom",
+        sequence: 0,
+        content: { version: 1 },
+      });
+      await writer.appendEvent(THREAD_ID, {
+        type: "block.upserted",
+        block: { ...original, status: "complete" },
+      });
+      const readers = {
+        read: async () => ({ kind: "asleep" as const }),
+        readRunningTurnId: async () => null,
+        readMany: async () => new Map(),
+        readPending: async () => ({ items: [] }),
+      };
+      const snapshot = await buildThreadSnapshot(
+        {
+          ...repos,
+          blocks: {
+            ...repos.blocks,
+            async listByThread(threadId) {
+              const blocks = await repos.blocks.listByThread(threadId);
+              await runOutsideDrizzleTransaction(() =>
+                runInDrizzleTransaction(db, async () => {
+                  const updated = await repos.blocks.replaceExisting({
+                    ...original,
+                    content: { version: 2 },
+                  });
+                  if (!updated) throw new Error("missing fixture block");
+                  await writer.appendEvent(THREAD_ID, {
+                    type: "block.updated",
+                    block: { ...updated, status: "complete" },
+                  });
+                }),
+              );
+              return blocks;
+            },
+          },
+        },
+        hub,
+        readers,
+        THREAD_ID,
+      );
+      expect(snapshot.turns[0].blocks[0].content).toEqual({ version: 1 });
+      expect(snapshot.liveState.resumeAfterSeq).toBe("1999");
+      expect(snapshot.nextSeq).toBe("2000");
+      const fresh = await buildThreadSnapshot(repos, hub, readers, THREAD_ID);
+      expect(fresh.turns[0].blocks[0].content).toEqual({ version: 2 });
+      expect(fresh.liveState.resumeAfterSeq).toBe("2999");
+    });
+
     it("reads the running turn from the lease in both the list and live state", async () => {
       const authority = createDrizzleRunAuthority(db);
       const repo = createDrizzleThreadRepository(db, { statusReader: authority });

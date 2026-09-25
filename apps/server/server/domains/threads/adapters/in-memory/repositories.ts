@@ -763,6 +763,14 @@ export function createInMemoryRepositories(
     async findById(id) {
       return modelResponses.get(id) ?? null;
     },
+    async listByThread(threadId) {
+      const turnIds = new Set(
+        [...turns.values()].filter((turn) => turn.threadId === threadId).map((turn) => turn.id),
+      );
+      return [...modelResponses.values()]
+        .filter((response) => turnIds.has(response.turnId))
+        .sort((a, b) => a.sequence - b.sequence);
+    },
     async listByTurn(turnId) {
       return [...modelResponses.values()]
         .filter((r) => r.turnId === turnId)

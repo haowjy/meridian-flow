@@ -104,6 +104,7 @@ export interface ModelResponseRepository {
   create(input: CreateModelResponseInput): Promise<CreateModelResponseResult>;
   findById(id: string): Promise<ModelResponse | null>;
   listByTurn(turnId: TurnId): Promise<ModelResponse[]>;
+  listByThread(threadId: ThreadId): Promise<ModelResponse[]>;
 }
 
 export interface AdmitExecutionReportInput extends ExecutionReportCorrelation {

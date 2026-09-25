@@ -17,12 +17,13 @@ import type {
   BlockRepository,
   ModelResponseRepository,
   ThreadLiveReaders,
+  ThreadRepositories,
   ThreadRepository,
   TurnRepository,
 } from "./ports/index.js";
 import type { ThreadEventHub } from "./thread-event-hub.js";
 
-export interface ThreadSnapshotRepositories {
+export interface ThreadSnapshotRepositories extends Pick<ThreadRepositories, "readSnapshot"> {
   threads: ThreadRepository;
   turns: TurnRepository;
   blocks: BlockRepository;
@@ -49,8 +50,15 @@ export function toClientSafeBlock(block: Block): Block {
   };
 }
 
-function siblingIdsFor(turn: Turn, turns: Turn[]): string[] {
-  return turns.filter((candidate) => candidate.prevTurnId === turn.prevTurnId).map((t) => t.id);
+function groupBy<T, K>(items: T[], keyFor: (item: T) => K): Map<K, T[]> {
+  const groups = new Map<K, T[]>();
+  for (const item of items) {
+    const key = keyFor(item);
+    const group = groups.get(key);
+    if (group) group.push(item);
+    else groups.set(key, [item]);
+  }
+  return groups;
 }
 
 export async function buildThreadSnapshot(
@@ -59,66 +67,68 @@ export async function buildThreadSnapshot(
   statusReader: ThreadLiveReaders,
   threadId: ThreadId,
 ): Promise<ThreadSnapshotResponse> {
-  const thread = await repos.threads.findById(threadId);
-  if (!thread) {
-    throw new Error(`Thread not found: ${threadId}`);
-  }
-  const parentThread = thread.parentThreadId
-    ? await repos.threads.findById(thread.parentThreadId as ThreadId)
-    : null;
+  return repos.readSnapshot(async () => {
+    const thread = await repos.threads.findById(threadId);
+    if (!thread) {
+      throw new Error(`Thread not found: ${threadId}`);
+    }
+    const parentThread = thread.parentThreadId
+      ? await repos.threads.findById(thread.parentThreadId as ThreadId)
+      : null;
 
-  // Liveness is the live lease's bound turn. Read it before the durable payload:
-  // the lease only names a turn after its setup transaction committed, so a
-  // turn named here is guaranteed to be in the `listByThread` projection below.
-  const runningTurnId = await statusReader.readRunningTurnId(threadId);
+    const runningTurnId = await statusReader.readRunningTurnId(threadId);
+    const headSeq = await hub.headSeq(threadId);
 
-  // Capture the head before any payload reads: the advertised sequence must
-  // never be newer than the payload, or a client can accept a torn snapshot.
-  const headSeq = await hub.headSeq(threadId);
-
-  const turns = orderTurnsCausally(await repos.turns.listByThread(threadId));
-  const threadTurns = await Promise.all(
-    turns.map(async (turn): Promise<Turn> => {
-      // Pruned rows are retired from the transcript (e.g. a settled background
-      // run card replaced by its report card); reload must not resurrect them.
-      const blocks = (await repos.blocks.listByTurn(turn.id))
+    const turns = orderTurnsCausally(await repos.turns.listByThread(threadId));
+    const blocksByTurn = groupBy(
+      (await repos.blocks.listByThread(threadId))
         .filter((block) => block.pruned !== true)
-        .map(toClientSafeBlock);
-      const responses = await repos.modelResponses.listByTurn(turn.id);
-      return {
+        .map(toClientSafeBlock),
+      (block) => block.turnId,
+    );
+    const responsesByTurn = groupBy(
+      await repos.modelResponses.listByThread(threadId),
+      (response) => response.turnId,
+    );
+    const siblings = groupBy(turns, (turn) => turn.prevTurnId);
+    const siblingIds = new Map(
+      [...siblings].map(([parent, children]) => [parent, children.map((turn) => turn.id)]),
+    );
+    const threadTurns = turns.map(
+      (turn): Turn => ({
         ...turn,
-        blocks,
-        responses,
-        siblingIds: siblingIdsFor(turn, turns),
-      };
-    }),
-  );
+        blocks: blocksByTurn.get(turn.id) ?? [],
+        responses: responsesByTurn.get(turn.id) ?? [],
+        siblingIds: siblingIds.get(turn.prevTurnId) as string[],
+      }),
+    );
 
-  const nextSeq = (headSeq + 1n).toString();
-  const resumeAfterSeq = (await hub.readModelProjectionWatermark(threadId)).toString();
-  const activity = await readThreadActivity({ threads: repos.threads, statusReader }, threadId);
-  const pending = await statusReader.readPending(threadId);
+    const nextSeq = (headSeq + 1n).toString();
+    const resumeAfterSeq = (await hub.readModelProjectionWatermark(threadId)).toString();
+    const activity = await readThreadActivity({ threads: repos.threads, statusReader }, threadId);
+    const pending = await statusReader.readPending(threadId);
 
-  return {
-    threadId,
-    thread,
-    parent: parentThread ? { id: parentThread.id, title: parentThread.title } : null,
-    turns: threadTurns,
-    liveState: {
+    return {
       threadId,
-      status: await statusReader.read(threadId),
-      runningTurnId,
-      activity,
-      pending,
-      // During an active run,
-      // stream.delta rows can sit between that head and the last read-model
-      // projection, so resume from the projection cursor and replay only the
-      // unmaterialized delta window the snapshot could not include.
-      resumeAfterSeq,
-    },
-    actionRequired: snapshotActionRequired(thread.activeLeafTurnId, threadTurns),
-    nextSeq,
-  };
+      thread,
+      parent: parentThread ? { id: parentThread.id, title: parentThread.title } : null,
+      turns: threadTurns,
+      liveState: {
+        threadId,
+        status: await statusReader.read(threadId),
+        runningTurnId,
+        activity,
+        pending,
+        // During an active run,
+        // stream.delta rows can sit between that head and the last read-model
+        // projection, so resume from the projection cursor and replay only the
+        // unmaterialized delta window the snapshot could not include.
+        resumeAfterSeq,
+      },
+      actionRequired: snapshotActionRequired(thread.activeLeafTurnId, threadTurns),
+      nextSeq,
+    };
+  });
 }
 
 function snapshotActionRequired(activeLeafTurnId: TurnId | null, turns: Turn[]): boolean {

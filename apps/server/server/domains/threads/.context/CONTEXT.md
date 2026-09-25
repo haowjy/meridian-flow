@@ -94,7 +94,7 @@ instead of the N:1 `threads.workId` column.
 - **Read-model projector** — synchronous in-transaction transform from durable
   `turn.created` / `model.response_received` / `block.upserted` events to
   `turns`, `model_responses`, `turn_blocks`, and recomputed token/cost rollups.
-- **Thread snapshot builder** — assembles the full `ThreadSnapshotResponse`
+- **Thread snapshot builder** — reads rows, live state, materialized watermark, and journal head in one root repeatable-read view. All participating adapters honor the ambient transaction; blocks and responses are bulk-read per thread. Assembles the full `ThreadSnapshotResponse`
   (thread + turns + blocks + responses + live state) for initial page load.
   Subagent snapshots include `parent: { id, title }` from a `findById` point
   lookup, not the parent's conversation.
