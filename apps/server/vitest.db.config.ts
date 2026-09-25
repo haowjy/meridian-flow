@@ -69,6 +69,7 @@ const expectedSuites = [
   "apps/server/server/test-support/drizzle-reset.db.test.ts",
   "packages/database/src/consume-credit-lots-fifo.db.test.ts",
   "packages/database/src/fresh-migrations.db.test.ts",
+  "packages/database/src/release-runner.db.test.ts",
 ] as const;
 const discoveredSuites = globSync("{apps/server,packages/database}/**/*.db.test.ts", {
   cwd: root,

@@ -93,10 +93,13 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
    PRs targeting `main`/`staging`; feature-branch PRs lint only migrations changed
    since the base ref. The squashed `0000_` baseline is exempt from warning rules
    except `DELETE_WITHOUT_WHERE`.
-5. `pnpm db:migrate` — apply pending migrations.
-6. If PL/pgSQL functions/triggers changed: update
-   [`../src/functions/`](../src/functions) and run `pnpm db:apply-functions`
-   (functions are applied separately, after migrate).
+5. `pnpm db:migrate` — apply pending migrations and canonical functions.
+6. `pnpm db:apply-functions` transactionally synchronizes function SQL when
+   iterating on functions independently.
+
+Deploy uses the database-owned release runner. Its pre-deploy bundle backs up
+to the configured S3-compatible bucket and applies pending migrations plus all
+canonical functions atomically; local development does not load deploy config.
 
 A row-transform migration MUST ship with a populated upgrade fixture in
 `fresh-migrations.db.test.ts`. Apply the committed prefix, seed the pre-migration

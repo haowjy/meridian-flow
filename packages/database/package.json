@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./release": "./src/release-runner.ts",
     "./__test-support__/db-fixtures": "./src/__test-support__/db-fixtures.ts",
     "./schema": "./src/schema/index.ts",
     "./schema/*": "./src/schema/*.ts",
@@ -16,9 +17,11 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx ../../tools/dev/migrate-db.ts",
     "db:studio": "drizzle-kit studio",
-    "db:apply-functions": "tsx scripts/apply-functions.ts"
+    "db:apply-functions": "tsx scripts/apply-functions.ts",
+    "build:release": "node scripts/build-release.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1075.0",
     "@meridian/contracts": "workspace:*",
     "@meridian/prosemirror-schema": "workspace:*",
     "drizzle-orm": "catalog:",
@@ -26,6 +29,7 @@
   },
   "devDependencies": {
     "drizzle-kit": "catalog:",
+    "esbuild": "0.28.1",
     "tsx": "^4.22.4",
     "typescript": "catalog:",
     "vitest": "catalog:"

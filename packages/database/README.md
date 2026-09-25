@@ -10,7 +10,8 @@ From repo root (requires `.env` with `DATABASE_URL`, port **54422** for local Po
 
 ```bash
 pnpm db:migrate          # apply pending migrations
-pnpm db:apply-functions  # sync PL/pgSQL from src/functions/ (after migrate in dev)
+pnpm db:apply-functions  # transactionally sync PL/pgSQL from src/functions/
+pnpm --filter @meridian/database build:release # self-contained deploy release bundle
 pnpm db:generate         # drizzle-kit generate (review output)
 pnpm db:studio
 ```
@@ -23,6 +24,12 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 ```
 
 **Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (migrate + apply-functions).
+
+Deploy images run `pnpm --filter @meridian/database build:release` at build
+time and invoke `node dist/release/release.mjs` as Railway's pre-deploy
+command. It verifies an S3-compatible custom-format backup before applying
+pending migrations and function SQL in the same transaction. The bundle needs
+Node and `pg_dump` at runtime, but no `node_modules`.
 
 ## Auth boundary
 

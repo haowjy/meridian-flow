@@ -1,13 +1,13 @@
 #!/usr/bin/env tsx
 /** Apply committed migrations and surface the exact file and PostgreSQL failure. */
 import path from "node:path";
+import { formatMigrationFailure, runMigrations } from "@meridian/database/release";
 import { isLocalDevPostgres } from "./lib/dev-db";
 import {
   applyDevEnvToProcess,
   resolveCurrentRepoRoot,
   resolveMainDatabaseNames,
 } from "./lib/dev-env";
-import { formatMigrationFailure, runMigrations } from "./lib/migration-runner";
 import { isProcessAncestor, managedTestDatabaseOwnerPid } from "./lib/test-db-lifecycle";
 
 const ALLOW_MAIN_DATABASE = "--allow-main-database";
@@ -61,7 +61,7 @@ async function main(): Promise<void> {
     await runMigrations({ databaseUrl, migrationsDirectory });
     console.log(`db:migrate: applied migrations to "${databaseName}"`);
   } catch (error) {
-    console.error(formatMigrationFailure(error, { repoRoot }));
+    console.error(formatMigrationFailure(error));
     process.exitCode = 1;
   }
 }
