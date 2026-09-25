@@ -2426,8 +2426,8 @@ msgid "ol"
 msgstr ""
 
 #: src/lib/date-groups.ts
-msgid "Older"
-msgstr "更早"
+#~ msgid "Older"
+#~ msgstr "更早"
 
 #: src/features/project/context/DocumentIdentityBar.tsx
 msgid "Only on this device"
@@ -3794,8 +3794,8 @@ msgid "This stored figure needs a project before it can be rendered."
 msgstr ""
 
 #: src/lib/date-groups.ts
-msgid "This week"
-msgstr "本周"
+#~ msgid "This week"
+#~ msgstr "本周"
 
 #: src/components/app/work-composer-controls/SelectedWorkWriteModeControl.tsx
 msgid "This Work has {count, plural, one {# AI change} other {# AI changes}} in draft."
@@ -3818,7 +3818,6 @@ msgid "title"
 msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
-#: src/lib/date-groups.ts
 msgid "Today"
 msgstr "今天"
 
@@ -4128,7 +4127,6 @@ msgid "Wrote file"
 msgstr ""
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
-#: src/lib/date-groups.ts
 msgid "Yesterday"
 msgstr "昨天"
 
