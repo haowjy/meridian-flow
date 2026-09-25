@@ -7,11 +7,19 @@ import { defineConfig } from "nitro/config";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const repoLogsGlob = `${path.join(repoRoot, "logs").replaceAll(path.sep, "/")}/**`;
 
-try {
-  loadEnvFile(path.join(repoRoot, ".env"));
-} catch (error) {
-  if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
-    throw error;
+// Local developer convenience only. Staging/production builds use injected
+// variables and never read the repository's development secrets.
+if (
+  process.env.NODE_ENV !== "production" &&
+  process.env.APP_ENV !== "staging" &&
+  process.env.APP_ENV !== "production"
+) {
+  try {
+    loadEnvFile(path.join(repoRoot, ".env"));
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") {
+      throw error;
+    }
   }
 }
 

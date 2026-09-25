@@ -11,10 +11,21 @@ import { resolveWsUpgradeAuth, type WsDeferredClose } from "../../../lib/ws-upgr
 const PING_INTERVAL_MS = 30_000;
 const sessions = new WeakMap<WsPeer, ReturnType<typeof createThreadWebSocketSession>>();
 const pingIntervals = new WeakMap<WsPeer, ReturnType<typeof setInterval>>();
+const peers = new Set<WsPeer>();
+let draining = false;
+
+export function stopAcceptingThreadWebSockets(): void {
+  draining = true;
+}
+
+export function shutdownThreadWebSockets(): void {
+  stopAcceptingThreadWebSockets();
+  for (const peer of peers) peer.close(1012, "server-shutdown");
+}
 
 type ThreadWsRouteContext =
   | (WsAuthenticatedContext & { kind: "authenticated" })
-  | { kind: "deferred-close"; close: WsDeferredClose };
+  | { kind: "deferred-close"; close: WsDeferredClose | { code: 1012; reason: "server-shutdown" } };
 
 type ThreadWsRoutePeer = Omit<WsPeer, "context"> & {
   context?: ThreadWsRouteContext;
@@ -29,6 +40,7 @@ function clearPing(peer: WsPeer): void {
 
 function disposePeer(peer: WsPeer, event: "close" | "error" = "close"): void {
   clearPing(peer);
+  peers.delete(peer);
   const session = sessions.get(peer);
   if (event === "error") session?.onError();
   else session?.onClose();
@@ -37,6 +49,14 @@ function disposePeer(peer: WsPeer, event: "close" | "error" = "close"): void {
 
 export default defineWebSocketHandler(() => ({
   async upgrade(request) {
+    if (draining) {
+      return {
+        context: {
+          kind: "deferred-close",
+          close: { code: 1012, reason: "server-shutdown" },
+        } satisfies ThreadWsRouteContext,
+      };
+    }
     const auth = await resolveWsUpgradeAuth(request, {
       logPrefix: "ws-thread-route",
       eventSink: getProcessEventSink(),
@@ -80,6 +100,11 @@ export default defineWebSocketHandler(() => ({
     }
 
     const authenticatedPeer = wsPeer as unknown as WsPeer;
+    if (draining) {
+      authenticatedPeer.close(1012, "server-shutdown");
+      return;
+    }
+    peers.add(authenticatedPeer);
     const session = createThreadWebSocketSession(authenticatedPeer);
     sessions.set(authenticatedPeer, session);
     if (!session.open()) {
