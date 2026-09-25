@@ -15,7 +15,8 @@ on:
 # Supersede in-flight runs for the same ref so rapid re-pushes don't pile up.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel main push runs: release-on-merge depends on their final status.
+  cancel-in-progress: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
 
 jobs:
   quality:
