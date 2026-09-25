@@ -9,10 +9,9 @@
  *   `skills.available` slugs on first attempt via compare-and-swap
  *   `bakeComposedSystemPrompt`. Empty Agent available still writes `[]`. A losing
  *   concurrent bake refetches and uses the winner's frozen prompt + slugs. After
- *   freeze, new available slugs do not rewrite the prompt. Compact (M4) is the
- *   rebake.
+ *   freeze, dynamic context never rewrites the prompt.
  * - Freeze happens at first turn attempt (context assembly), even if the gateway
- *   send then fails or is cancelled; autoprune is the only future re-bake trigger.
+ *   send then fails or is cancelled.
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
@@ -27,9 +26,9 @@ import {
   resolveThreadModelAvailableSkills,
 } from "./available-skills.js";
 import {
+  assembleComposedSystemPrompt,
   isThreadPromptFrozen,
   type PromptInventoryListing,
-  rebakeComposedSystemPrompt,
 } from "./composed-system-prompt.js";
 import { type BuildContextInput, buildContext } from "./context-builder.js";
 import { projectImageBlocksForModel } from "./image-context.js";
@@ -104,7 +103,7 @@ export async function assembleNextTurnContext(
       agentRevisions: input.agentRevisions,
     });
     const workContext = (await input.workContext.renderForThread(thread.id as ThreadId)).text;
-    const bakedPrompt = rebakeComposedSystemPrompt({
+    const bakedPrompt = assembleComposedSystemPrompt({
       basePrompt: agentContext.agentBody,
       appendPrompt: agentContext.appendPrompt,
       workContext,

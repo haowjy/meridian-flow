@@ -12,6 +12,7 @@ export interface CreateDerivedPrimaryThreadInput {
   originType: Extract<ThreadOriginType, "handoff" | "fork">;
   originTurnId?: TurnId | null;
   title?: string | null;
+  inheritedPrompt?: Pick<Thread, "composedSystemPrompt" | "bakedSkillSlugs">;
 }
 
 export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadInput): Thread {
@@ -26,8 +27,8 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     status: "idle",
     title: input.title ?? null,
     ref: null,
-    composedSystemPrompt: null,
-    bakedSkillSlugs: null,
+    composedSystemPrompt: input.inheritedPrompt?.composedSystemPrompt ?? null,
+    bakedSkillSlugs: input.inheritedPrompt?.bakedSkillSlugs ?? null,
     workingState: null,
     agentDefinitionRevisionId: null,
     agentName: null,
