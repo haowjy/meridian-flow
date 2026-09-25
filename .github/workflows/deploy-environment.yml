@@ -16,10 +16,15 @@ on:
         required: false
       NEON_API_KEY:
         required: false
+      NEON_PROJECT_ID:
+        required: false
+      NEON_BRANCH_ID:
+        required: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment:
       name: ${{ inputs.environment }}
       url: ${{ vars.PUBLIC_URL }}
@@ -34,6 +39,7 @@ jobs:
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
           PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+          WWW_URL: ${{ vars.WWW_URL }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
           missing=()
@@ -43,21 +49,28 @@ jobs:
           [[ -n "$NEON_BRANCH_ID" ]] || missing+=("vars.NEON_BRANCH_ID")
           [[ -n "$PUBLIC_URL" ]] || missing+=("vars.PUBLIC_URL")
           if [[ -n "$PUBLIC_URL" && ! "$PUBLIC_URL" =~ ^https?:// ]]; then missing+=("vars.PUBLIC_URL (must be an http(s) URL)"); fi
+          if [[ -n "$WWW_URL" && ! "$WWW_URL" =~ ^https?:// ]]; then missing+=("vars.WWW_URL (optional, but must be an http(s) URL when set)"); fi
           if (( ${#missing[@]} )); then
             joined=$(IFS=', '; echo "${missing[*]}")
             echo "::error::Missing $joined. Set secrets and variables in GitHub → Settings → Environments → $ENVIRONMENT. NEON_API_KEY is a secret; NEON_PROJECT_ID and NEON_BRANCH_ID are variables."
             exit 1
           fi
+          echo "::notice::Optional WWW_URL enables the www root smoke check; NEON_SNAPSHOT_TTL_DAYS defaults to 3 for staging and 14 for production."
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.17.0
+          cache: pnpm
       - name: Download release manifest
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
         run: |
           gh release download "v${VERSION}" --repo "$GITHUB_REPOSITORY" --pattern release-manifest.json --dir "$RUNNER_TEMP/release"
-          jq -e --arg version "$VERSION" --arg tag "v${VERSION}" '.version == $version and .tag == $tag' "$RUNNER_TEMP/release/release-manifest.json" >/dev/null || { echo "::error::Release manifest does not match requested v${VERSION}"; exit 1; }
+          node tools/deploy/manifest.ts validate "$RUNNER_TEMP/release/release-manifest.json" "v${VERSION}"
       - name: Install pinned Railway CLI
-        run: npm i -g @railway/cli@5.62.1
+        run: pnpm add --global @railway/cli@5.62.1
       - name: Deploy digest-pinned images
         id: deploy
         env:
@@ -66,16 +79,20 @@ jobs:
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
           ENVIRONMENT: ${{ inputs.environment }}
+          NEON_SNAPSHOT_TTL_DAYS: ${{ vars.NEON_SNAPSHOT_TTL_DAYS }}
         run: node tools/deploy/deploy.ts "$ENVIRONMENT" "$RUNNER_TEMP/release/release-manifest.json"
       - name: Runtime smoke check
         id: smoke
         env:
           PUBLIC_URL: ${{ vars.PUBLIC_URL }}
           VERSION: ${{ inputs.version }}
+          WWW_URL: ${{ vars.WWW_URL }}
           GH_TOKEN: ${{ github.token }}
         run: |
           release_sha=$(jq -r .sha "$RUNNER_TEMP/release/release-manifest.json")
-          node tools/deploy/smoke-check.ts "$PUBLIC_URL" --expect-version "$VERSION" --expect-release "$release_sha"
+          args=(--expect-version "$VERSION" --expect-release "$release_sha")
+          [[ -z "$WWW_URL" ]] || args+=(--www-url "$WWW_URL")
+          node tools/deploy/smoke-check.ts "$PUBLIC_URL" "${args[@]}"
       - name: Set deployment commit status
         if: always()
         env:
@@ -84,13 +101,13 @@ jobs:
           VERSION: ${{ inputs.version }}
           DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
           SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+          MANIFEST_PATH: ${{ runner.temp }}/release/release-manifest.json
         run: |
           tag="v${VERSION}"
-          sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha)
-          if [[ $(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.type) == tag ]]; then
-            sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$sha" --jq .object.sha)
-          fi
+          sha=$(node tools/deploy/release-commit.ts "$tag")
+          manifest_hash=unavailable
+          [[ ! -f "$MANIFEST_PATH" ]] || manifest_hash=$(node tools/deploy/manifest.ts sha256 "$MANIFEST_PATH")
           state=failure
-          description="${ENVIRONMENT} deploy failed"
-          if [[ "$DEPLOY_OUTCOME" == success && "$SMOKE_OUTCOME" == success ]]; then state=success; description="${ENVIRONMENT} deploy and smoke passed"; fi
+          description="${ENVIRONMENT} deploy failed manifest-sha256=${manifest_hash}"
+          if [[ "$DEPLOY_OUTCOME" == success && "$SMOKE_OUTCOME" == success ]]; then state=success; description="${ENVIRONMENT} deploy and smoke passed manifest-sha256=${manifest_hash}"; fi
           gh api "repos/$GITHUB_REPOSITORY/statuses/$sha" -f state="$state" -f context="deploy/$ENVIRONMENT" -f description="$description" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

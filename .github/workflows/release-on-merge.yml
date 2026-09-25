@@ -32,6 +32,7 @@ jobs:
         run: tools/release/resolve-batch.sh
       - name: Publish versioned release
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TRIGGER_SHA: ${{ github.sha }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           RELEASE_BATCH_JSON: ${{ steps.batch.outputs.batch }}

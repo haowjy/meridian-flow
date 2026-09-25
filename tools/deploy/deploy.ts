@@ -2,10 +2,10 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { parseReleaseManifest } from "./manifest.ts";
 import { createConfirmedSnapshot } from "./neon.ts";
 
 type Image = { repository: string; digest: string; ref: string };
-type Manifest = { version: string; tag: string; sha: string; images: Record<string, Image> };
 type Deployment = { id?: string; status?: string; deploymentId?: string };
 const services = ["server", "app", "www", "ingress"] as const;
 const cliVersion = "5.62.1";
@@ -150,28 +150,10 @@ async function main() {
   if (missing.length) fail(`Missing required deploy inputs: ${missing.join(", ")}`);
   if (!["staging", "production"].includes(environment))
     fail(`Unsupported environment '${environment}' (expected staging or production)`);
-  const manifest = json<Manifest>(await readFile(manifestPath, "utf8"), "release manifest");
-  if (
-    !/^v\d+\.\d+\.\d+(-rc\.\d+)?$/.test(manifest.tag) ||
-    manifest.tag !== `v${manifest.version}` ||
-    !/^[0-9a-f]{40}$/.test(manifest.sha)
-  )
-    fail("Manifest must include a matching version/tag and full 40-character release sha");
-  for (const service of services) {
-    const image = manifest.images?.[service];
-    if (
-      !image ||
-      image.repository !== `ghcr.io/haowjy/meridian-flow-${service}` ||
-      !/^sha256:[0-9a-f]{64}$/.test(image.digest) ||
-      image.ref !== `${image.repository}@${image.digest}`
-    )
-      fail(
-        `Manifest image '${service}' must contain its expected repository, sha256 digest, and matching digest ref`,
-      );
-  }
+  const manifest = parseReleaseManifest(await readFile(manifestPath, "utf8"));
   // Complete the external backup before any Railway command can mutate or deploy a service.
   const defaultTtlDays = environment === "staging" ? 3 : 14;
-  const ttlDays = Number(process.env.NEON_SNAPSHOT_TTL_DAYS ?? defaultTtlDays);
+  const ttlDays = Number(process.env.NEON_SNAPSHOT_TTL_DAYS || defaultTtlDays);
   const snapshot = await createConfirmedSnapshot({
     apiKey: requiredEnv("NEON_API_KEY"),
     projectId: requiredEnv("NEON_PROJECT_ID"),
