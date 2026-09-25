@@ -83,8 +83,9 @@ shared row also serves Work detail. The index leads with the centered
 screen the index is New chat. The dock's empty chat owns the pinned variant,
 with the same prospective Work and Agent choices, in the `ChatSurface` frame a
 live chat uses so the first Send never moves the composer. Only an explicit New
-chat focuses the pinned composer (a one-shot channel in `chat-navigation`), never
-a page load.
+chat focuses the pinned composer (a one-shot focus-request id in
+`chat-navigation`, consumed by whichever composer renders it), never a page
+load.
 
 The index door sits in each pane's 40px band after the sidebar toggle, on the
 same x as the Editor's Recently opened chip (`chat-index/ChatIndexButton.tsx`).
@@ -95,17 +96,29 @@ index through the `Chats` breadcrumb ancestor instead of a door.
 
 `routing/chat-navigation.tsx` owns one current chat per browser, account, and
 project (`client/current-chat.ts`, never synced): a thread identity (primary or
-subagent) or none. The Chat screen's center is the index or a chat path; the
-dock shows the current chat, or an empty New chat when there is none. A chat
-path becomes the current chat. Chat nav reopens the current chat, or the index
-when there is none. Commands keep the writer's screen: on the Chat screen they
-navigate through the route's coordinator; elsewhere they point the dock at the
-chat and call the shell's registered dock reveal. Dock selection does not write
-the URL. Behind the index the chat surface keeps the current chat mounted and
-hidden. A confirmed snapshot 404 clears the current chat; a chat path is
-replaced (never pushed) with the index so Back cannot land on it again. Reload
-recovery (`recoveringFirstSend`) is decided once at mount; the phone opens its
-chat sheet for it over Work or Editor.
+subagent) or none. It publishes one `ChatDisplay` variant, derived at render
+from the URL (never the reverse): the index with the current chat's id (for its
+reopen chip), a URL-addressed thread, or the dock's thread-or-none. Consumers
+switch on the variant instead of ANDing a thread id with an index flag; there is
+no separate "current thread id" prop. The Chat screen's center is the index or
+a chat path; the dock shows the current chat, or an empty New chat when there
+is none. A chat path becomes the current chat, persisted only in an effect so
+the URL always wins the same render. Chat nav reopens the current chat, or the
+index when there is none. Commands keep the writer's screen: on the Chat screen
+they navigate through the route's coordinator; elsewhere they point the dock at
+the chat and call the shell's registered dock reveal (`useConversationRevealRouting`
+lives inside `useProjectChatNavigation`, so every shell shares one reveal path).
+Dock selection does not write the URL. Behind the index the chat surface keeps
+the current chat mounted and hidden — its persistent thread id always tracks
+the display's underlying chat, warm or not. **What is displayed, though, goes
+to nothing on the index**: the context rail (`ContextSidebar`) and the draft
+review scope both key off the *displayed* chat, which is null while the index
+is showing, even though the surface stays warm behind it. Only the index's
+reopen chip (`ChatIndexController`'s `CurrentChatChip`) reads the remembered
+current chat directly. A confirmed snapshot 404 clears the current chat; a chat
+path is replaced (never pushed) with the index so Back cannot land on it again.
+Reload recovery (`recoveringFirstSend`) is decided once at mount; the phone
+opens its chat sheet for it over Work or Editor.
 
 First Send writes the durable account-stamped intent before selecting the new
 thread. From the index it pushes `/p/<project>/chat/<id>`, so Back returns to

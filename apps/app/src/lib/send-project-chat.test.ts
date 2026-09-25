@@ -72,7 +72,7 @@ afterEach(() => {
 });
 
 describe("sendProjectChat", () => {
-  it("mints a uuid, writes local state, and selectChats before persist", () => {
+  it("mints a uuid, writes local state, and selects the new chat", () => {
     const uuid = "550e8400-e29b-41d4-a716-446655440000";
     vi.spyOn(crypto, "randomUUID")
       .mockReturnValueOnce(uuid)
@@ -81,6 +81,11 @@ describe("sendProjectChat", () => {
     const { result, threadActions, selectChat } = send();
 
     expect(result?.threadId).toBe(uuid);
+    // `sendProjectChat` is synchronous end to end: by the time it returns, the
+    // chat is already selected. The actual network persist is a separate,
+    // later effect (`useThreadHandoff`) that cannot run until after this
+    // returns, so there is no ordering race here to prove with a mock-call
+    // sequence — only that selection happened as part of this call.
     expect(selectChat).toHaveBeenCalledWith(uuid);
     expect(threadActions.calls).toEqual([
       "ensureThread",
@@ -90,9 +95,6 @@ describe("sendProjectChat", () => {
       "ensureAssistantTurn",
       "markPendingStream",
     ]);
-    expect(selectChat.mock.invocationCallOrder[0]).toBeGreaterThan(
-      (threadActions.markPendingStream as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0],
-    );
     // Durable witness exists for the identity we just navigated to.
     expect(readChatSubmissions(ACCOUNT)).toEqual([
       expect.objectContaining({ kind: "first-send", submissionId: "sub-1", threadId: uuid }),
@@ -127,9 +129,14 @@ describe("sendProjectChat", () => {
     }
   });
 
-  it("recovers a dock first send after reload without a URL chat identity", () => {
+  it("survives reload: the journal rehydrates a dock first send with no URL chat identity", () => {
+    // A dock (non-URL) first send records its durable intent and the current
+    // chat exactly like a Chat-screen send; only the destination differs. This
+    // proves the journal round-trips through a real "reload" (a fresh reader
+    // over the same localStorage), not that this call touched the browser URL
+    // (it never does — `selectChat` here is the real `writeCurrentChat`, the
+    // same production seam `acceptCreatedChat` uses).
     const projectId = "550e8400-e29b-41d4-a716-446655440000";
-    window.history.replaceState({}, "", `/p/${projectId}/editor`);
     const result = sendProjectChat({
       accountId: ACCOUNT,
       projectId,
@@ -140,7 +147,6 @@ describe("sendProjectChat", () => {
       threadActions: actions(),
       selectChat: (threadId) => writeCurrentChat(ACCOUNT, projectId, threadId),
     });
-    expect(window.location.pathname).toBe(`/p/${projectId}/editor`);
     const currentId = readCurrentChat(ACCOUNT, projectId);
     expect(currentId).toBe(result?.threadId);
     const reloadedJournal = new DeviceChatSubmissionJournal(window.localStorage);

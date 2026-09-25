@@ -10,31 +10,31 @@
 import { t } from "@lingui/core/macro";
 
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
+import {
+  type ChatDisplay,
+  displayedChatThreadId,
+  useChatNavigation,
+} from "../routing/chat-navigation";
 import { MobileBreadcrumb } from "./MobileBreadcrumb";
 
 export function ChatBreadcrumb({
   projectId,
-  threadId,
-  index,
-  onOpenIndex,
-  onSelectThread,
+  display,
 }: {
   projectId: string;
-  threadId: string | null;
-  /** The index is showing: the trail ends at "Chats". */
-  index: boolean;
-  onOpenIndex?: () => void;
-  onSelectThread: (threadId: string) => void;
+  /** Only meaningful on the Chat screen. */
+  display: ChatDisplay;
 }) {
+  const { openChatIndex } = useChatNavigation();
   const chats = t`Chats`;
-  if (index) return <MobileBreadcrumb segments={[{ label: chats }]} />;
+  if (display.kind === "index") return <MobileBreadcrumb segments={[{ label: chats }]} />;
   const current = (
-    <ChatThreadTitle projectId={projectId} threadId={threadId} onSelectThread={onSelectThread} />
+    <ChatThreadTitle projectId={projectId} threadId={displayedChatThreadId(display)} />
   );
   return (
     <MobileBreadcrumb
       segments={[
-        { label: chats, onSelect: onOpenIndex, keep: true },
+        { label: chats, onSelect: () => void openChatIndex(), keep: true },
         { label: t`Chat`, current },
       ]}
     />

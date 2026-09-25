@@ -5,7 +5,6 @@ import type { ScreenKey } from "../shell/screens";
 
 export type ProjectSearch = {
   screen?: ScreenKey;
-  thread?: string;
   scheme?: ProjectContextTreeScheme;
   folder?: string;
   path?: string;
@@ -20,7 +19,6 @@ export type ProjectSearch = {
 export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): boolean {
   return (
     left.screen === right.screen &&
-    left.thread === right.thread &&
     left.scheme === right.scheme &&
     left.folder === right.folder &&
     left.path === right.path &&

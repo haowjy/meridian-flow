@@ -14,11 +14,13 @@
  * position across center↔dock moves — the chat is never reconciled away.
  *
  * The phone's chat sheet is the exception: it mounts the surface only while
- * the sheet is open.
+ * the sheet is open, and supplies its own header via `renderHeader`.
  */
 import type { Work } from "@meridian/contracts/protocol";
+import type { ReactNode } from "react";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { cn } from "@/lib/utils";
+import { DockHeader, type DockHeaderProps } from "../dock/DockHeader";
 import { DockShell } from "../dock/DockShell";
 import type { ContextRouteTarget } from "../routing/project-route";
 import type { ScreenKey } from "../shell/screens";
@@ -37,7 +39,6 @@ export type ChatSurfaceProps = {
   availableWorks: readonly Work[];
   /** Active screen — drives the dock view set when this surface is docked. */
   activeScreen: ScreenKey;
-  onSelectThread: (threadId: string) => void;
   placement: ChatPlacement;
   /** When false the surface is hidden (e.g. Settings / closed dock) WITHOUT unmounting. */
   visible: boolean;
@@ -48,8 +49,8 @@ export type ChatSurfaceProps = {
    */
   onCloseDock?: () => void;
   onOpenContextTarget?: (target: ContextRouteTarget) => void;
-  /** `phone` — the docked chat is the phone's chat sheet: touch-sized header, Chats trail. */
-  chrome?: "desktop" | "phone";
+  /** Dock header renderer; omit for the default desktop header. The phone chat sheet supplies its own. */
+  renderHeader?: (args: DockHeaderProps) => ReactNode;
 };
 
 export function ChatSurface({
@@ -58,13 +59,13 @@ export function ChatSurface({
   activeWork,
   availableWorks,
   activeScreen,
-  onSelectThread,
   placement,
   visible,
   onCloseDock,
   onOpenContextTarget,
-  chrome = "desktop",
+  renderHeader,
 }: ChatSurfaceProps) {
+  const threadSelect = <ChatThreadTitle projectId={projectId} threadId={threadId} />;
   return (
     <div
       aria-hidden={!visible}
@@ -81,15 +82,10 @@ export function ChatSurface({
       <DockShell
         placement={placement}
         screen={activeScreen}
-        onClose={onCloseDock}
-        chrome={chrome}
-        threadSelect={
-          <ChatThreadTitle
-            projectId={projectId}
-            threadId={threadId}
-            onSelectThread={onSelectThread}
-          />
-        }
+        renderHeader={(args) => {
+          const headerProps: DockHeaderProps = { ...args, onClose: onCloseDock, threadSelect };
+          return renderHeader ? renderHeader(headerProps) : <DockHeader {...headerProps} />;
+        }}
       >
         {() => (
           <ChatScreen
@@ -97,7 +93,6 @@ export function ChatSurface({
             threadId={threadId}
             activeWork={activeWork}
             availableWorks={availableWorks}
-            onSelectThread={onSelectThread}
             onOpenContextTarget={onOpenContextTarget}
           />
         )}

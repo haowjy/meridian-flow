@@ -21,13 +21,38 @@ import { readFirstSendSubmission } from "@/client/chat-submissions";
 import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
 import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
 import { useIsThreadPendingCreation } from "@/client/stores";
+import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import type { ScreenKey } from "../shell/screens";
 import type { ProjectDestination } from "./project-address";
 import type { NavigationOptions } from "./project-route";
 
+/**
+ * What the writer's screen currently shows for chat: the index (with the
+ * current chat remembered for its reopen chip), a specific chat the URL
+ * addresses, or the dock's chat (or none). Exactly one variant is ever true;
+ * consumers switch on `kind` instead of ANDing a thread id with an index flag.
+ */
+export type ChatDisplay =
+  | { kind: "index"; currentThreadId: string | null }
+  | { kind: "thread"; threadId: string }
+  | { kind: "dock"; threadId: string | null };
+
+/** The thread the persistent chat surface renders, warm behind the index too. */
+export function chatSurfaceThreadId(display: ChatDisplay): string | null {
+  return display.kind === "index" ? display.currentThreadId : display.threadId;
+}
+
+/**
+ * The thread the writer is looking at as primary content: null on the index.
+ * The rail and the draft review scope key off this, not the surface's thread.
+ */
+export function displayedChatThreadId(display: ChatDisplay): string | null {
+  return display.kind === "index" ? null : display.threadId;
+}
+
 export type ChatNavigation = {
-  /** The chat the dock shows and the Chat screen reopens; null is no chat. */
-  currentThreadId: string | null;
+  /** What the Chat screen or the dock currently shows. */
+  display: ChatDisplay;
   /** An unacknowledged first send from before a reload needs a visible host. */
   recoveringFirstSend: boolean;
   openChat: (threadId: string) => Promise<void>;
@@ -43,13 +68,26 @@ export type ChatNavigation = {
   /** The shell's way to show the dock's chat. The latest registration wins. */
   registerDockReveal: (reveal: () => void) => () => void;
   /**
-   * Delivers an explicit New chat's focus to the empty composer showing it,
-   * once: at registration when New chat mounted the composer, or in place.
+   * One-shot New chat focus intent for the pinned empty composer. Non-null
+   * exactly once per `openNewChat` call, until the composer that focused
+   * consumes it; a composer that mounts fresh already sees it in this same
+   * render, so mount timing never races a hold window.
    */
-  registerNewChatFocus: (focus: () => void) => () => void;
+  newChatFocusRequestId: number | null;
+  consumeNewChatFocusRequest: (id: number) => void;
 };
 
 type Go = (destination: ProjectDestination, options: NavigationOptions) => Promise<unknown>;
+
+function computeChatDisplay(
+  activeScreen: ScreenKey,
+  urlChatId: string | null,
+  currentThreadId: string | null,
+): ChatDisplay {
+  if (activeScreen !== "chat") return { kind: "dock", threadId: currentThreadId };
+  if (urlChatId !== null) return { kind: "thread", threadId: urlChatId };
+  return { kind: "index", currentThreadId };
+}
 
 /** Owns the current chat for one project route; returns the provider value. */
 export function useProjectChatNavigation({
@@ -64,15 +102,18 @@ export function useProjectChatNavigation({
   activeScreen: ScreenKey;
   urlChatId: string | null;
   go: Go;
-}): ChatNavigation & { chatThreadId: string | null } {
+}): ChatNavigation {
   const [currentThreadId, setCurrentThreadId] = useState(() =>
     readCurrentChat(accountId, projectId),
   );
-  const chatThreadId = urlChatId ?? currentThreadId;
+  const display = computeChatDisplay(activeScreen, urlChatId, currentThreadId);
+  const surfaceThreadId = chatSurfaceThreadId(display);
   const [recoveringFirstSend] = useState(
-    () => chatThreadId !== null && readFirstSendSubmission(accountId, chatThreadId) !== null,
+    () => surfaceThreadId !== null && readFirstSendSubmission(accountId, surfaceThreadId) !== null,
   );
   const [channels] = useState(createChannels);
+  const [newChatFocusRequestId, setNewChatFocusRequestId] = useState<number | null>(null);
+  const nextFocusRequestId = useRef(1);
   const latest = useRef({ accountId, projectId, activeScreen, urlChatId, currentThreadId, go });
   latest.current = { accountId, projectId, activeScreen, urlChatId, currentThreadId, go };
 
@@ -109,7 +150,7 @@ export function useProjectChatNavigation({
         if (onChatScreen()) return openChatIndex();
         remember(null);
         channels.dockReveal.request();
-        channels.newChatFocus.request();
+        setNewChatFocusRequestId(nextFocusRequestId.current++);
       },
       acceptCreatedChat: (threadId: string) => {
         remember(threadId);
@@ -120,7 +161,9 @@ export function useProjectChatNavigation({
         if (latest.current.currentThreadId === threadId) remember(null);
       },
       registerDockReveal: channels.dockReveal.register,
-      registerNewChatFocus: channels.newChatFocus.register,
+      consumeNewChatFocusRequest: (id: number) => {
+        setNewChatFocusRequestId((current) => (current === id ? null : current));
+      },
     };
     return { remember, commands };
   }, [channels]);
@@ -128,15 +171,19 @@ export function useProjectChatNavigation({
   useEffect(() => {
     if (urlChatId) remember(urlChatId);
   }, [urlChatId, remember]);
-  useMissingChatFallback(accountId, chatThreadId, () => {
+  useMissingChatFallback(accountId, surfaceThreadId, () => {
     remember(null);
     // Replace, never push: Back must not land on the missing chat again.
     if (latest.current.urlChatId) void latest.current.go({ kind: "chat-index" }, { replace: true });
   });
+  // Opening a conversation reveals it where the writer already is: point the
+  // dock at it and call the registered dock reveal, or navigate on the Chat
+  // screen. One place, shared by every shell.
+  useConversationRevealRouting(commands.openChat);
 
   return useMemo(
-    () => ({ ...commands, currentThreadId, recoveringFirstSend, chatThreadId }),
-    [commands, currentThreadId, recoveringFirstSend, chatThreadId],
+    () => ({ ...commands, display, recoveringFirstSend, newChatFocusRequestId }),
+    [commands, display, recoveringFirstSend, newChatFocusRequestId],
   );
 }
 
@@ -168,25 +215,18 @@ function useMissingChatFallback(accountId: string, threadId: string | null, onMi
 }
 
 /**
- * One-shot requests delivered to the latest registered handler. With none
- * registered, a request waits up to `holdMs` for the next registration (a
- * composer mounted by the same action), then lapses so a later mount never
- * receives it. A zero hold drops it.
+ * One-shot requests delivered to the latest registered handler; a request with
+ * no handler registered is simply dropped. Only one shell is ever mounted at a
+ * time, so a registration is already live before any command can fire it.
  */
-function createChannel(holdMs: number) {
-  let heldUntil: number | null = null;
+function createChannel() {
   const handlers: Array<() => void> = [];
   return {
     request() {
-      const handler = handlers.at(-1);
-      if (handler) handler();
-      else if (holdMs > 0) heldUntil = Date.now() + holdMs;
+      handlers.at(-1)?.();
     },
     register(handler: () => void) {
       handlers.push(handler);
-      const held = heldUntil !== null && Date.now() <= heldUntil;
-      heldUntil = null;
-      if (held) handler();
       return () => {
         const index = handlers.lastIndexOf(handler);
         if (index >= 0) handlers.splice(index, 1);
@@ -196,8 +236,7 @@ function createChannel(holdMs: number) {
 }
 
 function createChannels() {
-  // The dock's shell is always mounted; focus waits for the composer New chat mounts.
-  return { dockReveal: createChannel(0), newChatFocus: createChannel(1000) };
+  return { dockReveal: createChannel() };
 }
 
 const ChatNavigationContext = createContext<ChatNavigation | null>(null);
