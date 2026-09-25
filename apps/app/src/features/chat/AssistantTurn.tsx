@@ -20,6 +20,7 @@ import {
   type RenderItem,
   type Run,
 } from "./partition-turn";
+import { ReportContent } from "./ReportContent";
 import { StreamingText } from "./StreamingText";
 import { ToolRow } from "./ToolRow";
 import { TurnBlockStep } from "./TurnBlockStep";
@@ -202,6 +203,14 @@ const TurnItemView = memo(function TurnItemView({
             />
           ))}
         </ProcessDisclosure>
+      </div>
+    );
+  }
+
+  if (item.kind === "report") {
+    return (
+      <div className="mb-2 space-y-2 text-prose-foreground" data-turn-item-kind="report">
+        <ReportContent report={item.report} empty={null} className="space-y-2" />
       </div>
     );
   }

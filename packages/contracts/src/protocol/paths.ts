@@ -303,3 +303,11 @@ export function apiBillingProductsPath(): string {
 export function apiBillingCheckoutSessionsPath(): string {
   return `${API_BILLING_PATH}/checkout-sessions`;
 }
+
+export function apiThreadExecutionReportPath(
+  threadId: string,
+  childThreadId: string,
+  execution: string,
+): string {
+  return `${API_THREADS_PATH}/${threadId}/reports/${childThreadId}/${execution}`;
+}

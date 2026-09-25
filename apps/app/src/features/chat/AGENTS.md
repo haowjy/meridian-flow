@@ -28,7 +28,7 @@ An assistant turn renders as one **ordered list of render items** (see
   never folds; settlement or partition changes do not remount an already-mounted
   text item. The virtual viewport may still unmount and remount off-screen turns.
 - **Artifact** (visible) — a writer-facing block: a custom card (`ask_user`
-  interrupt, spawn/`thread_message` `helper-result`, child `child-report`), an
+  interrupt, spawn/`thread_message` `helper-result`), an
   image, or a file.
 
 Text and artifacts close the open process run, so a reasoning run that arrives
@@ -41,11 +41,11 @@ folded.
 
 Run liveness is never a turn block. Each admitted spawn invocation has one
 durable retained card on the parent turn. At settlement, the card's status is
-the child execution outcome, not parent protocol admission. Background cards
-remain status-only; foreground cards join the durable direct `spawn` or
-`thread_message` result by parent turn, tool call, child execution and direct
-delivery mode. That join is owned at the turn/card adapter and reads full turn
-data before hidden protocol rows are dropped. `thread_report` is an ordinary
+the child execution outcome, not parent protocol admission. Foreground cards join the durable direct `spawn` or `thread_message` result
+by parent turn, tool call, child execution and direct delivery mode. Background
+cards read the exact saved report through the lineage-authorized report read.
+Both keep report bodies out of the retained invocation block; the writer UI
+loads them into the shared report presentation. `thread_report` is an ordinary
 expandable activity row. The live subagent surface remains server truth:
 `ThreadActivity` from snapshot + `meridian.subagent.activity`, rendered by
 `RunningSubagentsStrip` in `ChatView`'s header.
@@ -78,7 +78,7 @@ composer mode, and review state live in
    collapse into their `Thinking` disclosure as they stream. There is no
    settlement-time fold and no visible frontier. Text and artifacts never fold.
 3. **Artifact cards stay visible.** Custom cards (`ask_user` interrupt, spawn
-   `helper-result`, child `child-report`) render through the shared `ArtifactCard`
+   `helper-result`) render through the shared `ArtifactCard`
    shell (`icon`/`tone`/`title`/`door`/`hint`/children); process tools render as
    `ActivityRow`. Their tool protocol is dropped, not folded. The two tool kinds
   are named in `tool-kind.ts`: an artifact's result is writer-facing (custom

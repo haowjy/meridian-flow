@@ -78,26 +78,6 @@ export function buildInvocationCardContent(input: InvocationCardProps): Componen
   return { kind: "helper-result", props: input as unknown as JsonObject };
 }
 
-/** The child's returned report, rendered as an `ArtifactCard` in the child transcript. */
-export type ChildReportProps = JsonObject & {
-  summary: string;
-  artifacts?: ArtifactRef[];
-};
-
-export type ChildReportComponentContent = ComponentBlockContent & {
-  kind: "child-report";
-  props: ChildReportProps;
-};
-
-export function buildChildReportComponentContent(
-  input: ChildReportProps,
-): ChildReportComponentContent {
-  return {
-    kind: "child-report",
-    props: input,
-  };
-}
-
 /** Answer returned to interrupt tools after user response or auto-resume. */
 export type InterruptAnswerEnvelope = {
   value: JsonValue;
