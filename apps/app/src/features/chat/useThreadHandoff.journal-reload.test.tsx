@@ -6,9 +6,11 @@
  */
 import type { SendMessageResponse, Thread } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useStore } from "zustand";
+import * as trails from "@/client/change-trails";
 import {
   bindChatSubmissions,
   type FirstSendChatSubmission,
@@ -21,8 +23,15 @@ import {
   scenarioGate,
   ThreadRunScenario,
 } from "@/client/copilot/test-support/ThreadRunScenario";
+import * as transportProvider from "@/client/providers/TransportProvider";
 import type { ThreadStoreActions } from "@/client/stores";
+import * as stores from "@/client/stores";
+import { FakeThreadSocket } from "@/core/transport/test-support/FakeThreadSocket";
+import { WsThreadTransport } from "@/core/transport/WsThreadTransport";
 import { ErrorBlock } from "./ErrorBlock";
+import { usePendingInbox } from "./usePendingInbox";
+import { useThreadActivity } from "./useThreadActivity";
+import { useThreadDurableProjections } from "./useThreadDurableProjections";
 import { useThreadHandoff } from "./useThreadHandoff";
 
 (
@@ -148,9 +157,10 @@ async function mount(
   threadActions: ThreadStoreActions,
   run: ThreadRunController,
   options?: {
-    activateProjection?: () => boolean;
+    activateProjection?: (after?: string) => boolean;
     onRetry?: (retry: (() => void) | null) => void;
     renderError?: boolean;
+    listeners?: ReactNode;
   },
 ) {
   function Probe() {
@@ -177,6 +187,7 @@ async function mount(
     root.render(
       <QueryClientProvider client={client}>
         <Probe />
+        {options?.listeners}
       </QueryClientProvider>,
     );
   });
@@ -262,10 +273,13 @@ describe("useThreadHandoff first-send journal reload", () => {
     expect(threadActions.appendUserTurn).toHaveBeenCalledWith(THREAD_ID, "Draft the fight scene");
   });
 
-  it("keeps Retry and the journal when projection setup fails after creation", async () => {
+  it("keeps Retry and the journal when projection setup fails after admission", async () => {
     recordChatSubmission(ACCOUNT, firstSend());
-    const threadActions = actions();
-    const run = controller();
+    const scenario = new ThreadRunScenario();
+    const threadActions = scenario.store.getState();
+    const run = scenario.controller;
+    controllers.push(run);
+    scenario.setAppend(async () => defaultSendResponse({ threadId: THREAD_ID }));
     const activateProjection = vi.fn((): boolean => {
       throw new Error("subscribe failed");
     });
@@ -281,8 +295,8 @@ describe("useThreadHandoff first-send journal reload", () => {
       await vi.waitFor(() => expect(retry).toBeTypeOf("function"));
     });
     expect(activateProjection).toHaveBeenCalledTimes(1);
-    expect(threadActions.ensureThread).toHaveBeenCalledWith(persistedThread);
-    expect(run.submit).not.toHaveBeenCalled();
+    expect(scenario.appendRequests).toHaveLength(1);
+    expect(scenario.transport.subscriptions).toHaveLength(0);
     expect(readChatSubmissions(ACCOUNT)).toEqual([
       expect.objectContaining({ submissionId: "sub-first" }),
     ]);
@@ -337,6 +351,64 @@ describe("first-send account fence", () => {
 });
 
 describe("real-store first-send retry", () => {
+  it("subscribes only after acceptance and shares the subscription with projection listeners", async () => {
+    recordChatSubmission(ACCOUNT, firstSend());
+    const creation = scenarioGate<Thread>();
+    const admission = scenarioGate<SendMessageResponse>();
+    const scenario = new ThreadRunScenario({ append: () => admission.promise });
+    scenario.store.getState().markPendingCreation({ threadId: THREAD_ID });
+    controllers.push(scenario.controller);
+    mocks.createProjectThread.mockReturnValue(creation.promise);
+    const socket = new FakeThreadSocket();
+    const transport = new WsThreadTransport({
+      webSocketFactory: () => socket as unknown as WebSocket,
+    });
+    vi.spyOn(scenario.transport, "subscribe").mockImplementation(
+      transport.subscribe.bind(transport),
+    );
+    vi.spyOn(transportProvider, "useThreadTransport").mockReturnValue(transport);
+    vi.spyOn(stores, "useIsThreadPendingCreation").mockImplementation((id) =>
+      useStore(scenario.store, (state) => Boolean(id && state.pendingCreation.threadIds[id])),
+    );
+    vi.spyOn(trails, "listChangeTrailShells").mockResolvedValue([]);
+    function Listeners() {
+      useThreadActivity({ threadId: THREAD_ID, rootThreadId: THREAD_ID, seed: null });
+      usePendingInbox({ threadId: THREAD_ID, seed: null });
+      useThreadDurableProjections({ threadId: THREAD_ID, projectId: "project-1" });
+      return null;
+    }
+    transport.connect();
+    socket.open();
+    socket.deliver({
+      type: "connected",
+      userId: ACCOUNT,
+      scope: { type: "standalone" },
+      serverVersion: "0.0.0",
+      connectionToken: "token",
+    });
+    try {
+      await mount(scenario.store.getState(), scenario.controller, {
+        listeners: <Listeners />,
+        activateProjection: (after) => {
+          transport.subscribe(THREAD_ID, { onEvent: () => {} }, { after });
+          return true;
+        },
+      });
+      expect(socket.sent).toEqual([]);
+      await act(async () => creation.resolve(persistedThread));
+      expect(socket.sent).toEqual([]);
+      await act(async () => admission.resolve(defaultSendResponse({ threadId: THREAD_ID })));
+      expect(socket.sent.map((frame) => JSON.parse(frame))).toEqual([
+        { type: "subscribe", threadId: THREAD_ID, lastSeq: "42" },
+      ]);
+    } finally {
+      await cleanup?.();
+      cleanup = undefined;
+      transport.disconnect();
+      vi.restoreAllMocks();
+    }
+  });
+
   it("keeps retry identity across creation failure and never revives Retry after accepted dispatch", async () => {
     recordChatSubmission(ACCOUNT, firstSend());
     const scenario = new ThreadRunScenario();

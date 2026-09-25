@@ -3,7 +3,7 @@
  *
  * The hook owns one addressed durable-block subscriber for its mounted lifetime;
  * the run controller keeps stream deltas and commands. Explicit activation
- * installs that owner synchronously after first-send creation succeeds.
+ * installs that owner synchronously after first-send admission succeeds.
  */
 import { EventType, parseSeq } from "@meridian/contracts/protocol";
 import { useQuery } from "@tanstack/react-query";
@@ -42,10 +42,10 @@ export type ThreadSnapshotSyncStatus = {
   isFetching: boolean;
   refetch: () => void;
   /** Registers this mounted owner's durable handler before returning. */
-  activateProjection: () => boolean;
+  activateProjection: (after?: string) => boolean;
 };
 
-/** Pending creation gates HTTP and automatic subscription until the server row exists. */
+/** Pending creation gates HTTP and automatic subscription through first-send admission. */
 export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatus {
   const actions = useThreadActions();
   const controller = useMeridianAgent();
@@ -101,29 +101,33 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
       mount() {
         mounted = true;
       },
-      activate(): boolean {
+      activate(after?: string): boolean {
         if (!mounted || accountSignal.aborted) return false;
         if (unsubscribe) return true;
         const expected = generation;
         let acquired: (() => void) | null = null;
         try {
-          acquired = transport.subscribe(threadId, {
-            onEvent: ({ event, seq, sourceThreadId }) => {
-              if (!current(expected) || (sourceThreadId && sourceThreadId !== threadId)) return;
-              if ("threadId" in event && event.threadId !== threadId) return;
-              if (event.type === EventType.RUN_STARTED) refresh(expected);
-              if (
-                !isDurableBlockEvent(event) ||
-                !isWellFormedDurableBlockEvent(event) ||
-                parseSeq(seq) === null
-              )
-                return;
-              controller.flushPendingDeltas(threadId);
-              if (!current(expected) || !actions.acceptDurableBlockSeq(threadId, seq)) return;
-              applyDurableBlockEvent(actions, threadId, event);
+          acquired = transport.subscribe(
+            threadId,
+            {
+              onEvent: ({ event, seq, sourceThreadId }) => {
+                if (!current(expected) || (sourceThreadId && sourceThreadId !== threadId)) return;
+                if ("threadId" in event && event.threadId !== threadId) return;
+                if (event.type === EventType.RUN_STARTED) refresh(expected);
+                if (
+                  !isDurableBlockEvent(event) ||
+                  !isWellFormedDurableBlockEvent(event) ||
+                  parseSeq(seq) === null
+                )
+                  return;
+                controller.flushPendingDeltas(threadId);
+                if (!current(expected) || !actions.acceptDurableBlockSeq(threadId, seq)) return;
+                applyDurableBlockEvent(actions, threadId, event);
+              },
+              onGap: () => refresh(expected),
             },
-            onGap: () => refresh(expected),
-          });
+            after === undefined ? undefined : { after },
+          );
           if (!current(expected)) {
             acquired();
             return false;

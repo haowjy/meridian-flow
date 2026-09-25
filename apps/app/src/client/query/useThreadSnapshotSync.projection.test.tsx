@@ -387,8 +387,8 @@ describe("first-send projection activation", () => {
       await vi.advanceTimersByTimeAsync(260);
       expect(harness.trace.slice(0, 4)).toEqual([
         "create-success",
-        "durable-handler-registered",
         "submit-called",
+        "durable-handler-registered",
         "run-handler-registered",
       ]);
       expect(

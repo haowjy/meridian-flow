@@ -21,6 +21,7 @@ import {
 } from "@/client/query/thread-work-binding-cache";
 import { convergeWorkProjection } from "@/client/query/work-projection-cache";
 import { repairWorksSnapshot } from "@/client/query/works-projection-acquisition";
+import { useIsThreadPendingCreation } from "@/client/stores";
 import { useOptionalAccountEpochSignal } from "@/features/project/context/account-feature-context";
 
 type TrailEventValue = {
@@ -90,6 +91,7 @@ export function useThreadDurableProjections({
   projectId: string | null;
 }) {
   const transport = useThreadTransport();
+  const isPendingCreation = useIsThreadPendingCreation(threadId);
   const queryClient = useQueryClient();
   const accountSignal = useOptionalAccountEpochSignal();
   const [state, setState] = useState(emptyTrailShellState);
@@ -188,6 +190,7 @@ export function useThreadDurableProjections({
   );
 
   useEffect(() => {
+    if (isPendingCreation) return;
     setState(emptyTrailShellState());
     reconciled.current = false;
     inFlight.current = false;
@@ -264,6 +267,15 @@ export function useThreadDurableProjections({
       unsubscribe();
       void queryClient.removeQueries({ queryKey: ["change-trail-detail", threadId] });
     };
-  }, [accountSignal, projectId, queryClient, reconcile, resyncBinding, threadId, transport]);
+  }, [
+    accountSignal,
+    projectId,
+    queryClient,
+    reconcile,
+    resyncBinding,
+    threadId,
+    transport,
+    isPendingCreation,
+  ]);
   return { changeTrails: state };
 }

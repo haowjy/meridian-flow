@@ -37,6 +37,8 @@ export type SubmitOptions = {
   /** Client-only turn id returned by appendUserTurn for this exact submit. */
   optimisticUserTurnId?: string;
   keepOptimisticOnFailure?: boolean;
+  /** Install mounted durable projections at the accepted cursor before replay starts. */
+  activateProjection?: (after: string) => boolean;
 };
 
 export type SubmissionPayload = Pick<
@@ -304,6 +306,9 @@ export class ThreadRunController {
           result.snapshotFloorNextSeq,
         );
       }
+      if (options.activateProjection && !options.activateProjection(result.resumeAfterSeq)) {
+        return outcome("ambiguous");
+      }
       this.attachAcceptedRun(threadId, result);
       return outcome("accepted");
     } finally {
@@ -410,6 +415,9 @@ export class ThreadRunController {
             result.userTurnId,
             result.snapshotFloorNextSeq,
           );
+        }
+        if (options.activateProjection && !options.activateProjection(result.resumeAfterSeq)) {
+          return outcome("ambiguous");
         }
         this.attachAcceptedRun(threadId, result);
         return outcome("accepted");
