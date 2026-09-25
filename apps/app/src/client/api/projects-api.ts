@@ -83,8 +83,9 @@ export function getProjectChatFeed(
   cursor?: string | null,
   signal?: AbortSignal,
   favorite = false,
+  search: string | null = null,
 ): Promise<ProjectChatFeedPage> {
-  return getJson<ProjectChatFeedPage>(apiProjectChatFeedPath(projectId, cursor, favorite), {
+  return getJson<ProjectChatFeedPage>(apiProjectChatFeedPath(projectId, cursor, favorite, search), {
     signal,
   });
 }

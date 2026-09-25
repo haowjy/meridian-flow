@@ -61,12 +61,14 @@ export function apiProjectChatFeedPath(
   projectId: string,
   cursor?: string | null,
   favorite = false,
+  search: string | null = null,
 ): string {
   const query = new URLSearchParams();
   if (cursor) query.set("cursor", cursor);
   if (favorite) query.set("favorite", "true");
-  const search = query.toString();
-  return `${apiProjectPath(projectId)}/chat-feed${search ? `?${search}` : ""}`;
+  if (search) query.set("q", search);
+  const queryString = query.toString();
+  return `${apiProjectPath(projectId)}/chat-feed${queryString ? `?${queryString}` : ""}`;
 }
 
 export function apiThreadUserStatePath(threadId: string): string {

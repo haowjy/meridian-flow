@@ -430,6 +430,7 @@ describe("ChildRunCoordinator spawn selection", () => {
       after: null,
       limit: 10,
       favorite: false,
+      search: null,
     });
     expect(home[0]?.id).toBe(parent.id);
     expect(home.map((item) => item.id)).not.toContain(childId);

@@ -116,6 +116,9 @@ export function createInMemoryProjectChatAdapter(
       return eligible
         .filter((item) => !input.favorite || item.isFavorite)
         .filter(
+          (item) => !input.search || item.title.toLowerCase().includes(input.search.toLowerCase()),
+        )
+        .filter(
           (item) =>
             !input.after ||
             item.lastActivityAt < input.after.sortAt ||

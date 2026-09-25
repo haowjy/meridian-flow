@@ -43,3 +43,27 @@ it("pages All and Favorites independently over the same activity order", async (
     ids.slice(0, 30).sort().reverse(),
   );
 });
+
+it("searches titles case-insensitively, literally, and within Favorites", async () => {
+  const repos = createInMemoryRepositories();
+  const titles = ["Sect Trials", "The sect's hidden map", "50% off pills", "Unrelated"];
+  const threads = [];
+  for (const title of titles) {
+    const thread = await repos.threads.create({ projectId: "project", userId: "user" });
+    await repos.threads.updateTitle(thread.id as ThreadId, title);
+    threads.push(thread);
+  }
+  await repos.threadUserState.update({
+    threadId: threads[1]?.id as ThreadId,
+    userId: "user" as UserId,
+    isFavorite: true,
+  });
+  const input = { repository: repos.chatFeed, projectId: "project", userId: "user" };
+  const titlesOf = async (options: { search: string; favorite?: boolean }) =>
+    (await getProjectChatFeedPage({ ...input, ...options })).items.map((item) => item.title).sort();
+
+  expect(await titlesOf({ search: "  SECT " })).toEqual(["Sect Trials", "The sect's hidden map"]);
+  expect(await titlesOf({ search: "sect", favorite: true })).toEqual(["The sect's hidden map"]);
+  expect(await titlesOf({ search: "50%" })).toEqual(["50% off pills"]);
+  expect((await getProjectChatFeedPage({ ...input, search: "   " })).items).toHaveLength(4);
+});
