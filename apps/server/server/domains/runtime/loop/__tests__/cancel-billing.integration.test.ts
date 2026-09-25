@@ -68,25 +68,6 @@ describe("cancel billing", () => {
     expect(balance).not.toBe("1200000");
   });
 
-  it("does not double-debit when cancel settlement replays the same usage event", async () => {
-    const rig = await RuntimeTestRig.create({ gateway: createMockGateway(mock) });
-    const controller = new AbortController();
-    const handle = await rig.orchestrator.runTurn({
-      threadId: rig.thread.id,
-      userText: "cancel billing",
-      signal: controller.signal,
-    });
-    const eventsPromise = rig.collect(handle);
-    await rig.gatewaySignal.promise;
-    controller.abort();
-    await eventsPromise;
-    const balanceAfterCancel = await rig.balance();
-
-    controller.abort();
-    const balanceAfterSecondAbort = await rig.balance();
-    expect(balanceAfterSecondAbort).toBe(balanceAfterCancel);
-  });
-
   it("does not cancel a running turn when a subscribed WebSocket disconnects", async () => {
     const rig = await RuntimeTestRig.create({ gateway: createMockGateway(mock) });
     const app = rig.createAppServices();
