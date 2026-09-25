@@ -1,8 +1,8 @@
 # client/working-set
 
-Device-local recent document routes and current chat. Optional server sync
-provides cross-device document recency, never current-chat selection. Recency can rank already-open Editor tabs; it
-never creates workspace membership. Browser-local Editor tabs belong to
+Device-local recent document routes. Optional server sync provides
+cross-device document recency only. Recency can rank already-open Editor tabs;
+it never creates workspace membership. Browser-local Editor tabs belong to
 `../stores/context-tabs-store/`, and document content belongs to Yjs.
 
 Mental model: a deliberately narrow offline-first reconciler. Local
