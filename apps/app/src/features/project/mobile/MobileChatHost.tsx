@@ -15,7 +15,6 @@ export type MobileChatHostProps = {
   threadId: string | null;
   activeWork: Work | null;
   availableWorks: readonly Work[];
-  onSelectThread: (threadId: string) => void;
   onOpenContextTarget?: (target: ContextRouteTarget) => void;
 };
 
@@ -24,7 +23,6 @@ export function MobileChatHost({
   threadId,
   activeWork,
   availableWorks,
-  onSelectThread,
   onOpenContextTarget,
 }: MobileChatHostProps) {
   return (
@@ -34,7 +32,6 @@ export function MobileChatHost({
         threadId={threadId}
         activeWork={activeWork}
         availableWorks={availableWorks}
-        onSelectThread={onSelectThread}
         onOpenContextTarget={onOpenContextTarget}
       />
     </MobileKeyboardAware>

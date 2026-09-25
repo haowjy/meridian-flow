@@ -222,10 +222,7 @@ export function planContextAvailabilityBatch(
       ),
       promote: removal.workingSet.promote?.documentId === id ? null : removal.workingSet.promote,
     };
-    recentRoutes = reconcileSnapshotContextRoutes(
-      { recentRoutes, lastThreadId: null },
-      workingSet,
-    ).recentRoutes;
+    recentRoutes = reconcileSnapshotContextRoutes({ recentRoutes }, workingSet).recentRoutes;
     admitted = removal.admitted;
     if (removal.outcome.kind !== "noop") {
       transitionRevision += 1;

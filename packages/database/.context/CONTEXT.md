@@ -47,6 +47,14 @@ reasoning/cache token counts, and block provider metadata. These columns are
 maintained by TypeScript repositories and the read-model projector; do not add
 database triggers/functions for these rollups.
 
+The one deliberate exception is `threads.last_activity_at` and
+`threads.conversational_leaf_turn_id`: unlike the rollups above, which have
+exactly one writer (the read-model projector), any future writer that moves
+`threads.active_leaf_turn_id` (branch switching, for example) must not be able
+to leave this projection stale, so Postgres triggers own it instead. See
+[`domains/threads/.context/CONTEXT.md`](../../../apps/server/server/domains/threads/.context/CONTEXT.md#chat-activity-projection-single-owner)
+and migration `0106_thread_chat_activity_trigger.sql`.
+
 ### Yjs document heads and checkpoints
 
 `document_yjs_heads.latest_checkpoint_id` is declared in the Drizzle schema as an

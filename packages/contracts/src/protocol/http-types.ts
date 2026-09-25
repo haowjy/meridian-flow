@@ -76,7 +76,7 @@ export type ListProjectThreadsResponse = {
   threads: ThreadListItem[];
 };
 
-export type { WorkChatFeedPage as ListWorkThreadsResponse } from "../threads/project-chat-feed.js";
+export type { ProjectChatFeedPage as ListWorkThreadsResponse } from "../threads/project-chat-feed.js";
 
 export type { AiWriteMode, Work };
 
@@ -203,7 +203,6 @@ export type ProjectWorkingSet = {
   userId: string;
   projectId: string;
   recentRoutes: WorkingSetRoute[];
-  lastThreadId: string | null;
   revision: number;
   updatedAt: string;
 };

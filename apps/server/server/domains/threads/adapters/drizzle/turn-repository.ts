@@ -2,6 +2,12 @@
  * Drizzle TurnRepository: SQL for the turns table (idempotent create/list,
  * status updates, and model-response-derived usage rollup recomputation). The
  * projector can replay journal facts safely because rollups are aggregates, not deltas.
+ *
+ * The stored chat-activity projection (threads.last_activity_at,
+ * threads.conversational_leaf_turn_id) is not maintained here: Postgres
+ * triggers own it (see migration 0106 and
+ * domains/threads/.context/CONTEXT.md), firing on the active-leaf update
+ * below and on turn status/completion changes.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Turn } from "@meridian/contracts/threads";

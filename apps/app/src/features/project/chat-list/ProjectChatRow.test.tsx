@@ -75,7 +75,7 @@ async function waitFor(assertion: () => void) {
 describe("ProjectChatRow", () => {
   it("shows the bound Agent name in the identity lane", async () => {
     await withRow(<ProjectChatRow {...props()} />, () => {
-      const agent = document.querySelector("[data-project-chat-row-work]");
+      const agent = document.querySelector("[data-project-chat-row-agent]");
       expect(agent?.textContent).toBe("Muse");
       expect(agent?.getAttribute("aria-label")).toBe("Agent: Muse");
     });
@@ -83,7 +83,7 @@ describe("ProjectChatRow", () => {
 
   it("falls back to General when the bound Agent name is missing", async () => {
     await withRow(<ProjectChatRow {...props({ item: { ...chat(), agentName: null } })} />, () => {
-      const agent = document.querySelector("[data-project-chat-row-work]");
+      const agent = document.querySelector("[data-project-chat-row-agent]");
       expect(agent?.textContent).toBe("General");
       expect(agent?.getAttribute("aria-label")).toBe("Agent: General");
     });

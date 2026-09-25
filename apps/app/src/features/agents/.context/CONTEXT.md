@@ -14,7 +14,7 @@ and a one-line hint. Hover and keyboard focus may repeat those facts. Unavailabl
 Agents are omitted. Ownership and slugs are not picker labels. Removal is not in
 the composer; keep the remove API for a later management screen.
 
-Home Send reserves the selected Agent (default General) on the local thread
+New-chat Send reserves the selected Agent (default General) on the local thread
 before persist. Catalog updates cannot replace that reserved choice. The
 server remains the authority for admission of retained revisions.
 
@@ -22,7 +22,7 @@ server remains the authority for admission of retained revisions.
 
 | Surface | Behavior |
 |---|---|
-| Home/Chats creation composer | Interactive picker until creation is reserved. |
+| New-chat composer | Interactive picker until creation is reserved. |
 | Existing conversation, including zero turns | Readonly bound-Agent status. |
 | Results provenance | Inert attribution inside the producing-thread link. |
 

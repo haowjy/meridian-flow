@@ -13,8 +13,12 @@ single scroll container for the conversation. It is NOT the chat session,
 thread management, or shared Composer and Work-control presentation — those are
 adjacent concerns (`useChatThreadSession`, `components/app/composer`, and
 `components/app/work-composer-controls`). Explicit existing-thread Work rebinding stays here as a Chat adapter; prospective
-Home selection does not. Work management and navigation must not call or copy
+new-chat selection does not. Work management and navigation must not call or copy
 the rebind adapter.
+
+`CreationComposer` sends through the route-owned pane-aware chat command. It
+never writes a URL. The first-send journal survives reload under the remembered
+current thread ID, including when creation starts in the dock.
 
 ## Mental model
 
