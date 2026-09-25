@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextVersion, promoteChangelog, resolveIntent } from "./release.mjs";
+import { hasReleaseSkipTrailer, nextVersion, promoteChangelog, resolveIntent } from "./release.mjs";
 
 describe("release intent", () => {
   it.each([
@@ -12,6 +12,14 @@ describe("release intent", () => {
     [["release:wat"], { release: true, kind: "rc", bump: "patch" }],
     [["release:patch", "release:skip"], { release: false, kind: "skip" }],
   ])("%j resolves to %j", (labels, expected) => expect(resolveIntent(labels)).toEqual(expected));
+});
+
+describe("exact release skip", () => {
+  it("recognizes only the exact trailing Release-Skip trailer", () => {
+    expect(hasReleaseSkipTrailer("merge body mentions release:skip as text")).toBe(false);
+    expect(hasReleaseSkipTrailer("Release-Skip: true is ordinary body text")).toBe(false);
+    expect(hasReleaseSkipTrailer("Merge title\n\nRelease-Skip: true")).toBe(true);
+  });
 });
 
 describe("version selection", () => {

@@ -19,6 +19,12 @@ export function resolveIntent(labels) {
   return { release: true, kind: "rc", bump: "patch" };
 }
 
+export function hasReleaseSkipTrailer(message) {
+  const lines = message.trimEnd().split(/\r?\n/);
+  const trailerStart = lines.lastIndexOf("") + 1;
+  return lines.slice(trailerStart).includes("Release-Skip: true");
+}
+
 function parseTag(tag) {
   const match = tag.match(stable) ?? tag.match(rc);
   if (!match) return null;
