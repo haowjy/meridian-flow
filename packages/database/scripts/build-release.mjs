@@ -24,7 +24,10 @@ await writeFile(
 const migrations = path.join(packageDir, "src/migrations");
 const outputMigrations = path.join(output, "migrations");
 await mkdir(path.join(outputMigrations, "meta"), { recursive: true });
-await cp(path.join(migrations, "meta/_journal.json"), path.join(outputMigrations, "meta/_journal.json"));
+await cp(
+  path.join(migrations, "meta/_journal.json"),
+  path.join(outputMigrations, "meta/_journal.json"),
+);
 for (const entry of await readdir(migrations, { withFileTypes: true })) {
   if (entry.isFile() && entry.name.endsWith(".sql")) {
     await cp(path.join(migrations, entry.name), path.join(outputMigrations, entry.name));
