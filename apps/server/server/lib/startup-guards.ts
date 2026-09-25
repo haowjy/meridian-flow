@@ -5,6 +5,11 @@
  */
 
 import { assertSupportedDatabaseUrl } from "@meridian/database";
+import {
+  type EventSink,
+  emitEvent,
+  unknownToEventPayload,
+} from "../domains/observability/index.js";
 import type { ObjectStoreProvider } from "./backend-policy.js";
 
 const DEFAULT_DEV_SECRETS = new Set(["", "dev-workos-key", "dev-workos-client"]);
@@ -266,4 +271,22 @@ export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
     throw new Error(`Invalid API startup configuration:\n${details}`);
   }
   return outcome;
+}
+
+export async function exitOnStartupGuardFailure(
+  error: unknown,
+  options: { eventSink: EventSink; exit?: (code: number) => void },
+): Promise<void> {
+  emitEvent(options.eventSink, {
+    level: "error",
+    source: "plugins.startup",
+    name: "startup_guard.failed",
+    payload: unknownToEventPayload(error),
+  });
+  try {
+    await options.eventSink.flush();
+  } catch (flushError) {
+    process.stderr.write(`startup_guard.event_flush_failed ${String(flushError)}\n`);
+  }
+  (options.exit ?? ((code) => process.exit(code)))(1);
 }

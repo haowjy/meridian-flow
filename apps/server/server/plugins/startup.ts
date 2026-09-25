@@ -18,7 +18,7 @@ import {
   registerProcessShutdownCallback,
 } from "../lib/observability";
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
-import { assertApiStartupGuards } from "../lib/startup-guards";
+import { assertApiStartupGuards, exitOnStartupGuardFailure } from "../lib/startup-guards";
 
 // srvx owns listener closure; leave enough time for our 25s application drain
 // to finish before its listener-level force-close fallback can run.
@@ -60,7 +60,14 @@ registerProcessShutdownCallback("database-close", closeAppResources);
 installObservabilityShutdownHooks();
 
 export default async function startupPlugin() {
-  const { warnings, replicaCount, durableEventBackend } = await assertApiStartupGuards();
+  let guards: Awaited<ReturnType<typeof assertApiStartupGuards>>;
+  try {
+    guards = await assertApiStartupGuards();
+  } catch (error) {
+    await exitOnStartupGuardFailure(error, { eventSink });
+    return;
+  }
+  const { warnings, replicaCount, durableEventBackend } = guards;
   for (const warning of warnings) {
     emitEvent(eventSink, {
       level: "warn",
