@@ -32,13 +32,12 @@ if (!enabled || !databaseUrl) {
         const rows = await target<{ table_name: string }[]>`
             SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public'
-              AND table_name IN ('turn_trail_work', 'change_trail_document_occurrences', 'branch_write_journal', 'work_context_delivery_obligations')
+              AND table_name IN ('turn_trail_work', 'change_trail_document_occurrences', 'branch_write_journal')
           `;
         expect(rows.map((row) => row.table_name).sort()).toEqual([
           "branch_write_journal",
           "change_trail_document_occurrences",
           "turn_trail_work",
-          "work_context_delivery_obligations",
         ]);
         const triggers = await target<{ event_object_table: string; trigger_name: string }[]>`
             SELECT event_object_table, trigger_name

@@ -20,6 +20,24 @@ export function createInMemoryInbox(): DeliveryStore {
   const messages: InboxMessage[] = [];
   let nextSeq = 0;
   return {
+    async workNoticeTargets() {
+      throw new Error("Work notice audience is not configured");
+    },
+    async canMaterializeWork() {
+      return true;
+    },
+    async pendingWorkThreads(limit, afterThreadId) {
+      return [
+        ...new Set(
+          messages
+            .filter((m) => m.body.kind === "work_context_refresh" && !m.deliveredAt)
+            .map((m) => m.threadId),
+        ),
+      ]
+        .sort()
+        .filter((id) => !afterThreadId || id > afterThreadId)
+        .slice(0, limit);
+    },
     async enqueue(draft) {
       const existing = messages.find(
         (message) =>

@@ -5,7 +5,7 @@ export type {
   OrchestratorEvent,
 } from "@meridian/contracts/threads";
 export { MANUSCRIPT_URI as UNIFIED_MANUSCRIPT_URI } from "../context/manuscript-uri.js";
-export type { WorkContextDelivery } from "../projects/index.js";
+export type { WorkContextNotices } from "../projects/index.js";
 export { createContextImageAssetPort } from "./adapters/context-image-assets.js";
 export { createDrizzleRuntimeDelivery } from "./adapters/drizzle/runtime-delivery.js";
 export {
@@ -93,7 +93,6 @@ export {
   WORK_CONTEXT_ACTIVE_LIMIT,
   type WorkContextReader,
 } from "./loop/work-context.js";
-export { createWorkContextDelivery } from "./loop/work-context-delivery.js";
 export type { ImageAssetPort } from "./ports/image-asset.js";
 export { unavailableImageAssetPort } from "./ports/image-asset.js";
 export {

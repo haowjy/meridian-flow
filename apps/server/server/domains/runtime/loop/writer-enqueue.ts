@@ -13,9 +13,7 @@
 import type { UserMessageBlock } from "@meridian/contracts/protocol";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
-import type { WorkContextDelivery } from "../../projects/index.js";
 import { TurnStartConflictError } from "../../threads/index.js";
-import { planMessageTurns } from "./inbox-context.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { InboxReader, MessageDraft } from "./ports.js";
@@ -44,7 +42,6 @@ export class WriterEnqueueRollback<T> extends Error {
 export async function persistWriterEnqueue<T>(input: {
   persistence: PersistenceDeps;
   hub: { headSeq(threadId: ThreadId): Promise<bigint> };
-  workContextDelivery: Pick<WorkContextDelivery, "beforeTurn">;
   threadId: ThreadId;
   userTurnId: TurnId;
   userBlocks: readonly UserMessageBlock[];
@@ -56,39 +53,24 @@ export async function persistWriterEnqueue<T>(input: {
   settle: (settlement: WriterEnqueueSettlement) => Promise<T>;
 }): Promise<T> {
   const resumeAfterSeq = (await input.hub.headSeq(input.threadId)).toString();
-  // Preserve the writer-run order: any pending Work-context update persists
-  // before the writer's turn.
-  await input.workContextDelivery.beforeTurn(input.threadId);
 
   for (let attempt = 0; ; attempt += 1) {
-    const thread = await input.persistence.repos.threads.findById(input.threadId);
-    if (!thread) throw new Error(`Thread not found: ${input.threadId}`);
     try {
       return await input.delivery.withThreadLock(input.threadId, async (producer) => {
         let settled: T | undefined;
-        const persistAttempt = () =>
-          persistAndAppendTurnStartEvents(
+        const persistAttempt = async () => {
+          await producer.materializePrefix();
+          const current = await input.persistence.repos.threads.findById(input.threadId);
+          if (!current) throw new Error(`Thread not found: ${input.threadId}`);
+          return persistAndAppendTurnStartEvents(
             input.persistence,
             input.threadId,
-            thread.activeLeafTurnId,
+            current.activeLeafTurnId,
             async () => {
-              // A queued child/agent message may predate this durable writer turn.
-              // Materialize that prefix now rather than later reparenting history.
-              const batch = await input.inbox.selectPending(input.threadId);
-              const known = new Set(
-                (await input.persistence.repos.turns.listByThread(input.threadId)).map(
-                  (turn) => turn.id,
-                ),
-              );
-              const prefix = planMessageTurns({
-                batch,
-                prevTurnId: thread.activeLeafTurnId ?? null,
-                knownTurnIds: known,
-              });
               const userTurn = createLocalTurn({
                 id: input.userTurnId,
                 threadId: input.threadId,
-                prevTurnId: prefix.leafTurnId,
+                prevTurnId: current.activeLeafTurnId,
                 role: "user",
                 status: "complete",
                 metadata: input.userTurnMetadata ?? null,
@@ -97,7 +79,6 @@ export async function persistWriterEnqueue<T>(input: {
               return {
                 result: { userTurn },
                 events: [
-                  ...prefix.events,
                   { type: "turn.created" as const, turn: userTurn },
                   ...blocks.map((block) => ({ type: "block.upserted" as const, block })),
                 ],
@@ -114,6 +95,7 @@ export async function persistWriterEnqueue<T>(input: {
               },
             },
           );
+        };
         await (input.persistence.savepoint
           ? input.persistence.savepoint(persistAttempt)
           : persistAttempt());

@@ -56,7 +56,6 @@ describe("writer enqueue through the drain", () => {
           void task();
         },
       }),
-      workContextDelivery: { async beforeTurn() {} },
       records: fakeRecords(),
       consumeUploads: async () => undefined,
       attachDocument: async () => undefined,

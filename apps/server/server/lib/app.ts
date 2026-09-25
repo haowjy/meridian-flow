@@ -45,10 +45,10 @@ async function createAppServices(): Promise<AppServices> {
       });
     });
   const sweepWorkContext = () =>
-    void app.workContextDelivery.sweep().catch((cause) => {
+    void app.workContextNotices.sweepWorkNotices().catch((cause) => {
       emitEvent(eventSink, {
         level: "error",
-        source: "runtime.work-context-delivery",
+        source: "runtime.work-context-notices",
         name: "sweep.failed",
         payload: unknownToEventPayload(cause),
       });

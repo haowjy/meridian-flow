@@ -72,7 +72,6 @@ import type { BillingUsagePolicy } from "../../billing/index.js";
 import type { Notice, NoticePort } from "../../notices/index.js";
 import { type EventSink, emitEvent, unknownToEventPayload } from "../../observability/index.js";
 import type { AccountSkillInstallStore, AgentRevisionStore } from "../../packages/index.js";
-import type { WorkContextDelivery } from "../../projects/index.js";
 import type {
   ActiveDocumentResolver,
   BlockRepository,
@@ -179,7 +178,6 @@ export interface OrchestratorDeps {
   /** Interrupt-boundary artifact flush; explicit noop adapter means disabled. */
   interruptArtifacts: InterruptArtifactFlushPort;
   childRunCoordinator: ChildRunCoordinator;
-  workContextDelivery: Pick<WorkContextDelivery, "deliverNow" | "beforeTurn" | "flushOwned">;
   interruptRegistry: InterruptRegistry;
   eventSink: EventSink;
   modelRequestDebug: ModelRequestDebugStore;
@@ -361,7 +359,7 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
     return runDrainTurn(deps, input, thread);
   }
 
-  const setup = await deps.delivery.adoptBatch(input.lease, async (_batch) => {
+  const setup = await deps.delivery.adoptBatch(input.lease, async (batch, workContext) => {
     const value = await persistAndAppendTurnStartEvents(
       deps,
       input.threadId,
@@ -372,9 +370,15 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
         // Read inside the setup transaction so the turn's durable write vocabulary
         // matches the mode in effect at the moment the turn was minted.
         const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
+        const workPlan = planMessageTurns({
+          batch: batch.filter((message) => message.body.kind === "work_context_refresh"),
+          prevTurnId,
+          knownTurnIds: new Set(priorTurns.map((turn) => turn.id)),
+          workContext,
+        });
         const userTurn = createLocalTurn({
           threadId: input.threadId,
-          prevTurnId,
+          prevTurnId: workPlan.leafTurnId,
           role: "user",
           status: "complete",
           metadata: input.userTurnMetadata ?? null,
@@ -393,8 +397,15 @@ async function prepareLoop(deps: OrchestratorDeps, input: RunLoopInput): Promise
         });
 
         return {
-          result: { userTurn, assistantTurn, priorTurns, inheritedTurns, inheritedBlocks },
+          result: {
+            userTurn,
+            assistantTurn,
+            priorTurns: [...priorTurns, ...workPlan.turns],
+            inheritedTurns,
+            inheritedBlocks,
+          },
           events: [
+            ...workPlan.events,
             { type: "turn.created", turn: userTurn },
             ...userBlocks.map((block) => ({ type: "block.upserted" as const, block })),
             { type: "turn.created", turn: assistantTurn },
@@ -444,7 +455,7 @@ async function runDrainTurn(
   thread: Thread,
 ): Promise<PreparedLoop> {
   let initialBatchIds: string[] = [];
-  const setup = await deps.delivery.adoptBatch(input.lease, async (batch) => {
+  const setup = await deps.delivery.adoptBatch(input.lease, async (batch, workContext) => {
     const value = await persistAndAppendTurnStartEvents(
       deps,
       input.threadId,
@@ -480,7 +491,7 @@ async function runDrainTurn(
         ];
 
         const writeMode = thread.workId ? await deps.workWriteMode.read(thread.workId) : "direct";
-        const plan = planMessageTurns({ batch, prevTurnId, knownTurnIds });
+        const plan = planMessageTurns({ batch, prevTurnId, knownTurnIds, workContext });
 
         const assistantTurn = createLocalTurn({
           threadId: input.threadId,
@@ -1612,7 +1623,6 @@ async function executeLoop(
               executionReports: deps.repos.executionReports,
               readSnapshot: deps.repos.readSnapshot,
               runningTurn: deps.runClaim,
-              workContextDelivery: deps.workContextDelivery,
             },
             call,
             {

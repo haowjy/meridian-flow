@@ -16,6 +16,11 @@ export function createTestDelivery(
 ) {
   const runClaim = createInMemoryRunClaim();
   return createInMemoryRuntimeDelivery({
+    workContext: {
+      async renderForThread() {
+        throw new Error("No Work context configured");
+      },
+    },
     repos: createInMemoryRepositories(),
     eventWriter: createInMemoryEventJournalWriter(),
     notices: createTestNoticePort(),

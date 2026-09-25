@@ -159,6 +159,11 @@ export function createTestOrchestratorDeps(
     delivery:
       overrides.delivery ??
       createInMemoryRuntimeDelivery({
+        workContext: overrides.workContext ?? {
+          async renderForThread() {
+            throw new Error("No Work context configured");
+          },
+        },
         repos: (overrides.repos ?? repos) as import("../../../threads/index.js").ThreadRepositories,
         eventWriter,
         notices,
@@ -174,13 +179,6 @@ export function createTestOrchestratorDeps(
     imageAssets: overrides.imageAssets ?? {
       async resolve() {
         return null;
-      },
-    },
-    workContextDelivery: overrides.workContextDelivery ?? {
-      async beforeTurn() {},
-      async flushOwned() {},
-      async deliverNow() {
-        throw new Error("No Work-context delivery expected");
       },
     },
     responseWrites: {

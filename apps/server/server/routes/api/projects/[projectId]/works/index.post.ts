@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
   const work = await createWork(
     {
       works: app.workRepo,
-      workContextDelivery: app.workContextDelivery,
+      workContextNotices: app.workContextNotices,
     },
     {
       id: parseOptionalRequestId(body.id, "id"),

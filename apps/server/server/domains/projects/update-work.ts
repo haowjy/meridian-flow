@@ -7,7 +7,7 @@ import {
   WorkLockedError,
   type WorkRepository,
 } from "./ports/work-repository.js";
-import type { WorkContextDelivery } from "./work-context-delivery.js";
+import type { WorkContextNotices } from "./work-context-notices.js";
 
 export type UpdateWorkCommandInput = UpdateWorkInput & { status?: WorkStatus };
 export type WorkTransition = { before: Work; after: Work; changed: boolean };
@@ -39,7 +39,7 @@ export function normalizeWorkUpdateInput(input: UpdateWorkCommandInput): UpdateW
 export async function updateWork(
   deps: {
     works: WorkRepository;
-    workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
+    workContextNotices: Pick<WorkContextNotices, "projectChanged">;
   },
   workId: WorkId,
   input: UpdateWorkCommandInput,
@@ -50,7 +50,7 @@ export async function updateWork(
 export async function updateWorkTransition(
   deps: {
     works: WorkRepository;
-    workContextDelivery: Pick<WorkContextDelivery, "projectChanged">;
+    workContextNotices: Pick<WorkContextNotices, "projectChanged">;
   },
   workId: WorkId,
   input: UpdateWorkCommandInput,
@@ -88,7 +88,7 @@ export async function updateWorkTransition(
       contextChanged:
         before.name !== work.name || before.goal !== work.goal || before.status !== work.status,
     };
-    if (result.contextChanged) await deps.workContextDelivery.projectChanged(work.projectId);
+    if (result.contextChanged) await deps.workContextNotices.projectChanged(work.projectId);
     return result;
   });
   return { before: result.before, after: result.after, changed: result.changed };

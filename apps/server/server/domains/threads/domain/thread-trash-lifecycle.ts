@@ -4,9 +4,10 @@ import type { Thread } from "@meridian/contracts/threads";
 import type {
   ProjectRepository,
   ProjectWorkAuthorityResolver,
+  WorkContextNotices,
   WorkRepository,
 } from "../../projects/index.js";
-import type { ThreadRepositories, WorkContextDeliveryRepository } from "../ports/repositories.js";
+import type { ThreadRepositories } from "../ports/repositories.js";
 
 export class ThreadTrashUnavailableError extends Error {
   constructor(readonly threadId: ThreadId) {
@@ -26,7 +27,7 @@ interface TransitionThreadTrashDeps {
   repos: Pick<ThreadRepositories, "threads" | "threadWorks" | "transaction">;
   projects: Pick<ProjectRepository, "findById">;
   works: Pick<WorkRepository, "findNoWork">;
-  obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
+  workContextNotices: Pick<WorkContextNotices, "threadChanged">;
   workAuthorityResolver: ProjectWorkAuthorityResolver;
 }
 
@@ -79,7 +80,7 @@ export async function transitionThreadTrash(
             await deps.repos.threadWorks.rebindPrimaryForRestore(input.threadId, replacementWorkId);
           }
           const thread = await deps.repos.threads.setTrashState(input.threadId, "visible");
-          await deps.obligations.enqueueThread(input.threadId);
+          await deps.workContextNotices.threadChanged(input.threadId);
           return { thread, changed: true };
         });
         if (transition) return transition;

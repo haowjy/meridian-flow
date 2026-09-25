@@ -5,12 +5,9 @@ import type {
   Work,
   WorkBindingReceiptState,
 } from "@meridian/contracts/works";
+import type { WorkContextNotices } from "../../projects/index.js";
 import { WorkLifecycleUnavailableError, type WorkRepository } from "../../projects/index.js";
-import type {
-  ThreadRepository,
-  ThreadWorksRepository,
-  WorkContextDeliveryRepository,
-} from "../ports/repositories.js";
+import type { ThreadRepository, ThreadWorksRepository } from "../ports/repositories.js";
 import {
   ThreadMembershipUnavailableError,
   ThreadWorkProjectMismatchError,
@@ -36,7 +33,7 @@ interface RebindThreadWorkDeps {
   threads: Pick<ThreadRepository, "findById">;
   threadWorks: Pick<ThreadWorksRepository, "rebindPrimary">;
   works: Pick<WorkRepository, "findById" | "findNoWork">;
-  obligations: Pick<WorkContextDeliveryRepository, "enqueueThread">;
+  workContextNotices: Pick<WorkContextNotices, "threadChanged">;
 }
 
 export interface RebindThreadWorkInput {
@@ -102,7 +99,7 @@ export async function rebindThreadWork(
 
   const before = receiptState(previousWork);
   const after = receiptState(targetWork);
-  if (rebound.changed) await deps.obligations.enqueueThread(thread.id);
+  if (rebound.changed) await deps.workContextNotices.threadChanged(thread.id);
 
   return {
     threadId: thread.id as ThreadId,

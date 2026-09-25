@@ -31,7 +31,8 @@ export type ContextPart = { source: string; text: string };
 
 export type MessageBody =
   | { kind: "text"; text: string }
-  | { kind: "context"; parts: ContextPart[] };
+  | { kind: "context"; parts: ContextPart[] }
+  | { kind: "work_context_refresh" };
 
 export interface MessageDraft {
   threadId: ThreadId;

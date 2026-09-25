@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
     includeSoftDeleted: true,
   });
   const work = await restoreWork(
-    { works: app.workRepo, workContextDelivery: app.workContextDelivery },
+    { works: app.workRepo, workContextNotices: app.workContextNotices },
     workId,
   ).catch((error: unknown) => {
     if (error instanceof WorkRestoreConflictError) {

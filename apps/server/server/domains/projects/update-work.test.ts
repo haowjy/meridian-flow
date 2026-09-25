@@ -43,7 +43,7 @@ describe("updateWork", () => {
     await updateWork(
       {
         works,
-        workContextDelivery: {
+        workContextNotices: {
           async projectChanged(projectId) {
             changed.push(projectId);
           },
@@ -64,7 +64,7 @@ describe("updateWork", () => {
     await updateWork(
       {
         works,
-        workContextDelivery: {
+        workContextNotices: {
           async projectChanged() {
             refreshes += 1;
           },
@@ -89,7 +89,7 @@ describe("updateWork", () => {
     const projectChanged = vi.fn(async () => {});
 
     const transition = await updateWorkTransition(
-      { works, workContextDelivery: { projectChanged } },
+      { works, workContextNotices: { projectChanged } },
       existing.id,
       {
         name: " Draft ",
@@ -115,7 +115,7 @@ describe("updateWork", () => {
     const update = vi.spyOn(works, "update");
 
     const omitted = await updateWorkTransition(
-      { works, workContextDelivery: { async projectChanged() {} } },
+      { works, workContextNotices: { async projectChanged() {} } },
       existing.id,
       { name: "Draft" },
     );
@@ -123,7 +123,7 @@ describe("updateWork", () => {
     expect(update).not.toHaveBeenCalled();
 
     const cleared = await updateWorkTransition(
-      { works, workContextDelivery: { async projectChanged() {} } },
+      { works, workContextNotices: { async projectChanged() {} } },
       existing.id,
       { goal: null, description: null },
     );
@@ -139,7 +139,7 @@ describe("updateWork", () => {
     const works = createInMemoryWorkRepository();
     const existing = await works.create({ projectId: PROJECT_ID, name: "Draft" });
     const update = vi.spyOn(works, "update");
-    const deps = { works, workContextDelivery: { async projectChanged() {} } };
+    const deps = { works, workContextNotices: { async projectChanged() {} } };
 
     await expect(
       updateWorkTransition(deps, existing.id, { name: "Revised", status: "archived" }),
@@ -168,7 +168,7 @@ describe("updateWork", () => {
     };
 
     await expect(
-      updateWork({ works, workContextDelivery: { async projectChanged() {} } }, existing.id, {
+      updateWork({ works, workContextNotices: { async projectChanged() {} } }, existing.id, {
         name: "Revised",
         status: "archived",
       }),

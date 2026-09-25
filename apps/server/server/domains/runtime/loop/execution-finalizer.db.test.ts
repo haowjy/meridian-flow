@@ -211,7 +211,6 @@ else
                 },
                 inbox,
                 delivery: producer,
-                workContextDelivery: { async beforeTurn() {} },
                 threadId: ids.child,
                 userTurnId: writerId,
                 userBlocks: [{ type: "text", text: "writer steer" }],

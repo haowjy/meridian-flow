@@ -27,7 +27,7 @@ export async function lockThreadForTurnTransition(db: DrizzleDb, threadId: Threa
     })
     .from(schema.threads)
     .where(eq(schema.threads.id, threadId))
-    .for("update");
+    .for("no key update");
   if (!thread) throw new Error(`Thread not found: ${threadId}`);
   return thread;
 }
