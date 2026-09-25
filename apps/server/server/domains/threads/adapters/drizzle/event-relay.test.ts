@@ -7,7 +7,7 @@ import { createThreadEventHub } from "../../thread-event-hub.js";
 import { listenForThreadEvents } from "./event-relay.js";
 
 describe("thread event relay", () => {
-  it("does not replay an idle subscribed thread from journal sequence zero after re-LISTEN", async () => {
+  it("seeds an empty thread at zero after re-LISTEN without a racy head lookup", async () => {
     let onListen: (() => void) | undefined;
     let activeReads = 0;
     let maxActiveReads = 0;
@@ -33,6 +33,7 @@ describe("thread event relay", () => {
       { evictionGraceMs: 60_000 },
     );
     const subscription = await hub.catchupAndSubscribe(threadId, 0n, () => {});
+    expect(journalReader.headSeq).not.toHaveBeenCalled();
     readAfter.mockClear();
     const db = {
       listen: async (_channel: string, _notify: unknown, onlisten?: () => void) => {
@@ -48,7 +49,8 @@ describe("thread event relay", () => {
     await vi.waitFor(() => expect(readAfter).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 15));
 
-    expect(readAfter).not.toHaveBeenCalledWith(threadId, 0n, expect.anything());
+    expect(readAfter).toHaveBeenCalledWith(threadId, 0n, expect.anything());
+    expect(journalReader.headSeq).not.toHaveBeenCalled();
     expect(maxActiveReads).toBe(1);
     subscription.unsubscribe();
   });
