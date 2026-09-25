@@ -31,7 +31,7 @@ import {
   type PromptInventoryListing,
   rebakeComposedSystemPrompt,
 } from "./composed-system-prompt.js";
-import { buildContext } from "./context-builder.js";
+import { type BuildContextInput, buildContext } from "./context-builder.js";
 import { projectImageBlocksForModel } from "./image-context.js";
 import type { EffectiveToolPolicy } from "./permissions/project-tool-policy.js";
 import type { WorkContextReader } from "./work-context.js";
@@ -40,6 +40,7 @@ export interface AssembleNextTurnContextInput {
   thread: Thread;
   turns: Turn[];
   blocks: Block[];
+  skillBodiesByTurn?: BuildContextInput["skillBodiesByTurn"];
   agentRevisions: Pick<AgentRevisionStore, "readThreadBinding" | "readSource" | "readRevision">;
   toolRegistry: Parameters<typeof resolveAgentThreadTurnContext>[0]["toolRegistry"];
   gateway?: Pick<Gateway, "getDefaultModel" | "listModels">;
@@ -152,6 +153,7 @@ export async function assembleNextTurnContext(
     thread,
     turns: input.turns,
     blocks,
+    skillBodiesByTurn: input.skillBodiesByTurn,
     tools,
     unfrozenBasePrompt,
     appendPrompt: appendPromptForUnfrozen,

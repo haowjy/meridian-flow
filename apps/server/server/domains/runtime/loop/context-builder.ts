@@ -61,10 +61,18 @@ import { assistant, system, text, toolResult } from "../gateway/helpers/messages
 import type { ContentPart, Message, Tool, ToolUsePart } from "../gateway/index.js";
 import { assembleComposedSystemPrompt, isThreadPromptFrozen } from "./composed-system-prompt.js";
 
+/** A request-only skill body inlined onto the activating writer message. */
+export interface ActivatedSkillBody {
+  slug: string;
+  description: string;
+  body: string;
+}
+
 export interface BuildContextInput {
   thread: Thread;
   turns: Turn[];
   blocks: Block[];
+  skillBodiesByTurn?: ReadonlyMap<string, readonly ActivatedSkillBody[]>;
   tools?: Tool[];
   /** Raw agent/project prompt used only while the thread prompt is not frozen. */
   unfrozenBasePrompt?: string | null;
@@ -132,6 +140,8 @@ export function buildContext(input: BuildContextInput): {
     const turnBlocks = blocksByTurn.get(turn.id as string) ?? [];
     if (turn.role === "user") {
       const parts = userTurnContentParts(turnBlocks);
+      const skills = input.skillBodiesByTurn?.get(turn.id);
+      if (skills?.length) parts.push(text(skills.map(formatInvokedSkill).join("\n\n")));
       if (parts.length > 0) {
         messages.push({ role: "user", content: parts });
       }
@@ -242,11 +252,10 @@ function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]
 
 /**
  * The model-facing content parts for one user turn: its allowed blocks plus any
- * persisted reference read results. Shared by the history projection and the
- * mid-run inbox adoption, so a writer message already persisted as a turn
- * renders identically whether it is read from history or claimed live.
+ * persisted reference read results. Images must already be projected by the
+ * shared request assembler, whether the turn is historical or newly adopted.
  */
-export function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
+function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
   const parts = turnBlocksToContentParts([...blocks], ["text", "image", "file"]);
   const included = new Set<string>();
   for (const block of blocks) {
@@ -357,7 +366,7 @@ function blockToContentPart(block: Block): ContentPart | null {
  */
 export function attachSkillBodiesToLatestUserMessage(
   messages: readonly Message[],
-  skills: readonly { slug: string; description: string; body: string }[],
+  skills: readonly ActivatedSkillBody[],
   targetIndex?: number,
 ): Message[] {
   if (skills.length === 0) return [...messages];
@@ -369,7 +378,7 @@ export function attachSkillBodiesToLatestUserMessage(
   );
 }
 
-function formatInvokedSkill(skill: { slug: string; description: string; body: string }): string {
+function formatInvokedSkill(skill: ActivatedSkillBody): string {
   const description = skill.description.replace(/\s+/g, " ").trim();
   return [
     `skill invoked: ${skill.slug}`,

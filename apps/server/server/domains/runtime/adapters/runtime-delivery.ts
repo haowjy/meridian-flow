@@ -186,7 +186,6 @@ export function createDeliveryAdapter(
       threadId,
       batch,
       workContext: work.workContext,
-      messages: [],
     });
     await inbox.ack(threadId, work.ids);
     drain.ackIds = drain.ackIds.filter(

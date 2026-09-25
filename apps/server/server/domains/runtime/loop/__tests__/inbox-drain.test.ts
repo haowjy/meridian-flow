@@ -3,7 +3,7 @@
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.js";
-import type { GenerateResult, Message } from "../../gateway/index.js";
+import type { Gateway, GenerateResult, Message } from "../../gateway/index.js";
 import { createReportPublisher } from "../../spawn/report-publisher.js";
 import {
   createSpawnToolRegistrations,
@@ -92,6 +92,7 @@ async function setup(
     referenceReader?: ReferenceReader;
     child?: boolean;
     realSpawnTools?: boolean;
+    supportsImageInput?: boolean;
     imageAssets?: import("../../ports/image-asset.js").ImageAssetPort;
   } = {},
 ) {
@@ -104,7 +105,19 @@ async function setup(
     for (const registration of createSpawnToolRegistrations()) toolRegistry.register(registration);
   }
   const rig = await runtimeScenario({
-    gateway,
+    gateway: {
+      ...gateway,
+      listModels: () => [
+        {
+          id: "gpt-4.1-mini",
+          provider: "openai",
+          displayName: "Test model",
+          contextWindow: 128_000,
+          maxOutputTokens: 16_384,
+          capabilities: new Set(options.supportsImageInput === false ? [] : ["image_input"]),
+        },
+      ],
+    } satisfies Gateway,
     accountSkillInstalls,
     ...(options.realSpawnTools
       ? { toolExecutor: createToolExecutor(toolRegistry), toolRegistry }
@@ -271,8 +284,9 @@ describe("inbox drain", () => {
     expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
-  it("inlines a mid-run writer-activated skill body on the adopted message", async () => {
+  it("keeps a mid-run writer-activated skill body on its adopted message across iterations", async () => {
     const { thread, requests, orchestrator, send } = await setup({
+      results: [textResult("first"), toolCallResult("unknown", "call-1"), textResult("done")],
       skill: {
         slug: "writing-principles",
         name: "Writing Principles",
@@ -290,21 +304,41 @@ describe("inbox drain", () => {
 
     await execute(await orchestrator.prepare({ threadId: thread.id, userText: "hello" }));
 
-    expect(requests).toHaveLength(2);
-    const texts = messageTexts(requests[1]?.messages ?? []);
-    expect(texts.some((text) => text.includes("also tighten the dialogue"))).toBe(true);
-    expect(texts.some((text) => text.includes("skill invoked: writing-principles"))).toBe(true);
-    expect(texts.some((text) => text.includes("Show, do not tell."))).toBe(true);
+    expect(requests).toHaveLength(3);
+    for (const request of requests.slice(1)) {
+      const adopted = request.messages.find((message) =>
+        messageText(message).includes("also tighten the dialogue"),
+      );
+      expect(messageText(adopted as Message)).toContain("skill invoked: writing-principles");
+      expect(messageText(adopted as Message)).toContain("Show, do not tell.");
+    }
   });
 
-  it("reads a mid-run adopted message's references into the request and the turn", async () => {
+  it.each([
+    "available",
+    "unavailable",
+    "unsupported",
+  ] as const)("projects a mid-run adopted message's references (%s) without replacing durable identities", async (availability) => {
     const documentId = "33333333-3333-4333-8333-333333333333";
     const uri = "uploads://@/gate-map.png";
     let adoptedTurnId: TurnId | undefined;
     const { thread, requests, orchestrator, repos, send } = await setup({
+      supportsImageInput: availability !== "unsupported",
       imageAssets: {
-        async resolve() {
-          return { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 };
+        async resolve(scope, reference) {
+          expect(scope).toEqual({
+            threadId: thread.id,
+            projectId: thread.projectId,
+            actorUserId: USER_ID,
+          });
+          expect(reference).toEqual({
+            type: "image_reference",
+            documentId: "44444444-4444-4444-8444-444444444444",
+            uri,
+          });
+          return availability === "available"
+            ? { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 }
+            : null;
         },
       },
       referenceReader: {
@@ -342,12 +376,58 @@ describe("inbox drain", () => {
       documentId: "44444444-4444-4444-8444-444444444444",
       uri,
     });
-    expect(requests[1].messages.flatMap((message) => message.content)).toContainEqual({
-      type: "image_reference",
+    const imageParts = requests[1].messages
+      .flatMap((message) => message.content)
+      .filter((part) => part.type !== "text");
+    expect(imageParts).toEqual(
+      availability === "available"
+        ? [
+            {
+              type: "image",
+              mediaType: "image/png",
+              data: "aW1hZ2U=",
+            },
+          ]
+        : [],
+    );
+    expect(texts).toContain("[[Gate Map]]");
+    expect(texts).not.toContain("compare with [[Gate Map]]");
+  });
+
+  it("shares the image occurrence budget across history and adopted writer turns", async () => {
+    const image = {
+      type: "image" as const,
       documentId: "44444444-4444-4444-8444-444444444444",
-      uri,
+      uri: "uploads://@/map.png",
+    };
+    const { thread, requests, orchestrator, repos, send } = await setup({
+      imageAssets: {
+        async resolve() {
+          return { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 10 * 1024 * 1024 };
+        },
+      },
+      onStream: async (call) => {
+        if (call === 1)
+          await send(thread.id, "new images", {
+            blocks: [{ type: "text", text: "new images" }, image, image],
+          });
+      },
     });
-    expect(messageTexts(requests[1].messages)).not.toContain("compare with [[Gate Map]]");
+    await send(thread.id, "old image", { blocks: [{ type: "text", text: "old image" }, image] });
+    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
+    expect(requests).toHaveLength(2);
+    const users = requests[1].messages.filter((message) => message.role === "user");
+    expect(
+      users.map((message) => message.content.filter((part) => part.type === "image").length),
+    ).toEqual([0, 2]);
+    expect(messageTexts(users)).toEqual(["old image", "new images"]);
+    expect(
+      (await repos.blocks.listByThread(thread.id))
+        .filter((block) => block.blockType === "image")
+        .map((block) => block.content),
+    ).toEqual(
+      Array(3).fill({ type: "image_reference", documentId: image.documentId, uri: image.uri }),
+    );
   });
 
   it("persists a drained message as a user turn the next iteration still sees", async () => {

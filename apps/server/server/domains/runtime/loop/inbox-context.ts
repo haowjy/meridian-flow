@@ -1,7 +1,7 @@
 /**
- * The inbox drain seam: renders a claimed batch into a model request and
- * persists its `message` entries as durable history. A text `message` becomes a
- * user-role message at the request tail and a persisted user-role turn; a
+ * The inbox drain seam: materializes a claimed batch as durable history and
+ * collects request-only notices and skill bodies. A text `message` becomes a
+ * persisted user-role turn; a
  * child-provenance text message becomes writer-hidden system history with only
  * an exact thread_report reference. A Work refresh notice becomes a durable system_update; other notices stay request-only.
  *
@@ -13,40 +13,30 @@
  * assistant split and lease receipt around this message materialization.
  *
  * A message whose turn is already durable (a writer send persisted at enqueue,
- * then claimed mid-run) is adopted, not re-persisted. Adoption renders the
- * turn's persisted blocks through the caller's `prepareAdoptedTurn` hook, which
- * resolves any rich content the enqueue transaction could not (text-reference
- * reads), and through `loadActivatedSkillBodies`,
- * which inlines the request-only skill bodies the writer activated on it.
+ * then claimed mid-run) is adopted, not re-persisted. `prepareAdoptedTurn`
+ * persists its missing text-reference reads; `loadActivatedSkillBodies` loads
+ * request-only skill bodies. The shared context assembler owns all rendering,
+ * including image projection across the complete request's occurrence budget.
  */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { Block, BlockUpsertedRow, OrchestratorEvent, Turn } from "@meridian/contracts/threads";
 import type { Notice, NoticePort } from "../../notices/index.js";
-import { system, user } from "../gateway/helpers/messages.js";
-import type { Message } from "../gateway/index.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
-import { attachSkillBodiesToLatestUserMessage, userTurnContentParts } from "./context-builder.js";
+import type { ActivatedSkillBody } from "./context-builder.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
 import type { InboxMessage } from "./ports.js";
 import type { RenderedWorkContext } from "./work-context.js";
-
-/** A request-only skill body inlined onto the activating writer message. */
-export interface ActivatedSkillBody {
-  slug: string;
-  description: string;
-  body: string;
-}
 
 /** The rich blocks an adopted turn's preparation resolved. */
 export interface AdoptedTurnPreparation {
   blocks: Block[];
 }
 
-/** The loop's view of one drained batch: request and notices plus durable writes. */
+/** The loop's view of one drained batch: durable writes and request-only context. */
 export interface InboxDrain {
-  /** The request messages, with drained `message` entries appended at the tail. */
-  rendered: Message[];
+  /** Request-only skill bodies keyed by the writer turn that activated them. */
+  skillBodiesByTurn: ReadonlyMap<TurnId, readonly ActivatedSkillBody[]>;
   /** Durable notices plus request-only inbox `notice` entries, in batch order. */
   notices: Notice[];
   /** Persisted message turns/blocks for the loop's in-memory accumulator. */
@@ -57,12 +47,10 @@ export interface InboxDrain {
 }
 
 /**
- * Turns the caller's locked pending batch into model-request
- * context: `message` entries append as user messages and persist as user turns,
- * Work refresh notices become durable system_update turns; other notices stay request-only. A `message` already in
- * `knownTurnIds` was persisted by a crashed run and redelivered, so it is not
- * rendered or appended again. The whole `message` batch persists in one
- * turn-start transition.
+ * Materializes the caller's locked pending batch. Work refresh notices become
+ * durable system_update turns; other notices stay request-only. Messages already
+ * in `knownTurnIds` are redeliveries and are not appended again. The whole fresh
+ * message batch persists in one turn-start transition.
  */
 export async function drainInbox(input: {
   persistence: PersistenceDeps;
@@ -70,7 +58,6 @@ export async function drainInbox(input: {
   workContext?: RenderedWorkContext;
   notices: NoticePort;
   threadId: ThreadId;
-  messages: readonly Message[];
   knownTurnIds: ReadonlySet<TurnId>;
   expectedLeafTurnId: TurnId | null;
   /**
@@ -89,15 +76,12 @@ export async function drainInbox(input: {
   loadActivatedSkillBodies?: (turn: Turn) => Promise<readonly ActivatedSkillBody[]>;
 }): Promise<InboxDrain> {
   const batch = input.batch;
-  const renderable: InboxMessage[] = [];
   const fresh: InboxMessage[] = [];
   const adoptedTurns: Turn[] = [];
   const adoptedBlocks: Block[] = [];
-  const adoptedBlocksByMessageId = new Map<string, Block[]>();
-  const skillBodiesByMessageId = new Map<string, readonly ActivatedSkillBody[]>();
+  const skillBodiesByTurn = new Map<TurnId, readonly ActivatedSkillBody[]>();
   for (const message of batch) {
     if (message.intent !== "message" && message.body.kind !== "work_context_refresh") {
-      renderable.push(message);
       fresh.push(message);
       continue;
     }
@@ -116,23 +100,13 @@ export async function drainInbox(input: {
         blocks = prepared.blocks;
       }
       const skillBodies = await input.loadActivatedSkillBodies?.(existing);
-      if (skillBodies?.length) skillBodiesByMessageId.set(message.id, skillBodies);
+      if (skillBodies?.length) skillBodiesByTurn.set(existing.id, skillBodies);
       adoptedTurns.push(existing);
       adoptedBlocks.push(...blocks);
-      adoptedBlocksByMessageId.set(message.id, blocks);
-      renderable.push(message);
       continue;
     }
-    renderable.push(message);
     fresh.push(message);
   }
-  const rendered = renderInboxBatch(
-    input.messages,
-    renderable,
-    adoptedBlocksByMessageId,
-    skillBodiesByMessageId,
-    input.workContext,
-  );
   // Chain fresh messages from the durable leaf so a pre-persisted writer turn
   // (adopted above) is not forked past.
   const persistLeafTurnId = fresh.some(
@@ -150,62 +124,19 @@ export async function drainInbox(input: {
   });
   const notices = [
     ...(await input.notices.drainForModelContext(input.threadId)),
-    ...rendered.notices,
+    ...batch
+      .filter(
+        (message) => message.intent !== "message" && message.body.kind !== "work_context_refresh",
+      )
+      .map(inboxMessageNotice),
   ];
   return {
-    rendered: rendered.messages,
+    skillBodiesByTurn,
     notices,
     turns: [...adoptedTurns, ...persisted.turns],
     blocks: [...adoptedBlocks, ...persisted.blocks],
     ackIds: batch.map((message) => message.id),
   };
-}
-
-export function renderInboxBatch(
-  messages: readonly Message[],
-  batch: readonly InboxMessage[],
-  adoptedBlocksByMessageId: ReadonlyMap<string, readonly Block[]> = new Map(),
-  skillBodiesByMessageId: ReadonlyMap<string, readonly ActivatedSkillBody[]> = new Map(),
-  workContext?: RenderedWorkContext,
-): { messages: Message[]; notices: Notice[] } {
-  const rendered = [...messages];
-  const notices: Notice[] = [];
-  for (const message of batch) {
-    if (message.body.kind === "work_context_refresh") {
-      const adopted = adoptedBlocksByMessageId.get(message.id);
-      if (adopted) rendered.push({ role: "user", content: userTurnContentParts(adopted) });
-      else if (workContext)
-        rendered.push(user(`<system_update>\n${workContext.text}\n</system_update>`));
-      continue;
-    }
-    if (message.intent !== "message") {
-      notices.push(inboxMessageNotice(message));
-      continue;
-    }
-    if (message.provenance.kind === "child") {
-      rendered.push(system(inboxMessageText(message)));
-      continue;
-    }
-    // A message whose turn is already durable renders that turn's projection;
-    // the plain body would drop images, persisted reference reads, and the
-    // request-only bodies of the skills the writer activated on it.
-    const adopted = adoptedBlocksByMessageId.get(message.id);
-    if (adopted) {
-      const parts = userTurnContentParts(adopted);
-      if (parts.length > 0) {
-        const skillBodies = skillBodiesByMessageId.get(message.id);
-        const entry: Message = { role: "user", content: parts };
-        rendered.push(
-          skillBodies?.length
-            ? (attachSkillBodiesToLatestUserMessage([entry], skillBodies)[0] as Message)
-            : entry,
-        );
-      }
-    } else {
-      rendered.push(user(inboxMessageText(message)));
-    }
-  }
-  return { messages: rendered, notices };
 }
 
 /**
