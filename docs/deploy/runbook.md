@@ -216,13 +216,19 @@ a disposable branch; HTTP 2xx alone is not enough.
    than rebuilding code. Confirm Railway scale-to-zero is disabled for the
    server, app, www, and ingress; service replicas stay at one. Check Railway's
    supported drain setting/value and ensure the server has the intended 30
-   seconds. These first-run verifications are required before launch.
+   seconds. Confirm DNS refresh/retry behavior, all app ports are 3000 and
+   ingress is 8080, and `www.WEB_DATABASE_URL` resolves from the server
+   reference. Verify 10 MB is sufficient for the largest intended multipart
+   upload/KB import; the server routes have no application-level size cap.
+   These first-run checks are required before launch.
 
 **Verify:** Railway shows the four services in both environments, every
 service is in Virginia, the app's `MERIDIAN_API_ORIGIN` points to the private
 server URL, ingress upstream variables point to private app/server URLs, and
 the bucket-derived S3 values resolve. Service state remains intentionally
-un-deployed until the first GHCR images exist.
+un-deployed until the first GHCR images exist. Set `NEON_SNAPSHOT_TTL_DAYS` to
+3 for staging and 14 for production; optionally set `WWW_URL` for the public
+marketing site's unauthenticated 200 check.
 
 ## 4. Configure WorkOS
 

@@ -9,8 +9,9 @@ schema changes.
 
 ## What a deploy runs
 
-1. A `main` merge is versioned by `release-on-merge.yml`; it writes a
-   `release: vX.Y.Z` commit and tag using `RELEASE_TOKEN`.
+1. The first-parent batch of `main` merges is versioned by
+   `release-on-merge.yml`; it writes one `release: vX.Y.Z` commit and tag using
+   `RELEASE_TOKEN`.
 2. CI runs on the release commit. Only a successful CI run for that release
    commit starts staging deployment.
 3. Staging validates its GitHub environment config and downloads the release
@@ -31,7 +32,7 @@ schema changes.
    and waits until each Railway deployment reaches success. It does not treat
    the CLI command returning as runtime evidence.
 7. Smoke probes the public ingress: server liveness and readiness, expected
-   version and SHA, app redirect/login HTML and response headers, and the
+   version and SHA, root redirect/login page and response headers, and the
    unauthenticated Yjs websocket upgrade (must open then close `4401
    auth_failed`). The workflow sets `deploy/staging` success only after both
    deploy and smoke succeed. Production promotion uses those exact manifest
