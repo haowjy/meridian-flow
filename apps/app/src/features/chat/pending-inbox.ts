@@ -1,6 +1,5 @@
 /**
- * Pure helpers for the pending-inbox tray: recognize the wire shape and pick it
- * out of a live frame.
+ * Pure helpers for accepted writer-turn queue status and live inbox frames.
  *
  * No transport or React here — the live wiring lives in `usePendingInbox`, so
  * this logic is directly unit-testable.
@@ -10,21 +9,18 @@ import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 
 export const EMPTY_THREAD_PENDING_INBOX: ThreadPendingInbox = { items: [] };
 
-/** Writer tray is deliberately narrower than the generic inbox/model drain. */
-export function writerPendingInbox(pending: ThreadPendingInbox): ThreadPendingInbox {
-  const items = pending.items.filter(
-    (item) => item.provenance.kind === "writer" && item.deliveryState === "waiting",
-  );
-  return items.length === pending.items.length ? pending : { items };
-}
+export type WriterTurnQueueStatus = "queued" | "waiting";
 
-/** Accepted writer turns waiting for a run, shown inline rather than in the tray. */
-export function awaitingRunTurnIds(pending: ThreadPendingInbox): ReadonlySet<string> {
-  return new Set(
-    pending.items
-      .filter((item) => item.provenance.kind === "writer" && item.deliveryState === "awaiting_run")
-      .map((item) => item.id),
-  );
+/** One status per accepted writer turn; inbox IDs are the persisted turn IDs. */
+export function writerTurnQueueStatus(
+  pending: ThreadPendingInbox,
+): ReadonlyMap<string, WriterTurnQueueStatus> {
+  const statuses = new Map<string, WriterTurnQueueStatus>();
+  for (const item of pending.items) {
+    if (item.provenance.kind !== "writer") continue;
+    statuses.set(item.id, item.deliveryState === "waiting" ? "queued" : "waiting");
+  }
+  return statuses;
 }
 
 export function isThreadPendingInbox(value: unknown): value is ThreadPendingInbox {
@@ -33,7 +29,7 @@ export function isThreadPendingInbox(value: unknown): value is ThreadPendingInbo
 }
 
 /**
- * The pending tray from a live frame, or null when the frame is unrelated or
+ * The pending inbox from a live frame, or null when the frame is unrelated or
  * malformed. `meridian.inbox.changed` carries the full recomputed inbox, so a
  * consumer replaces its state wholesale.
  */

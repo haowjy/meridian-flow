@@ -152,6 +152,30 @@ describe("ThreadRunController mid-run merge", () => {
 
     expect(scenario.transport.subscriptions).toHaveLength(2);
   });
+
+  it("keeps one mounted stream across a server-initiated split turn", async () => {
+    const scenario = new ThreadRunScenario({
+      append: async () => defaultSendResponse({ assistantTurnId: null, resumeAfterSeq: "10" }),
+    });
+    await scenario.submit("long request");
+    scenario.emit(runStarted("turn-a"), "11");
+    scenario.emit(
+      { type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn-a" } as never,
+      "12",
+    );
+    expect(scenario.activeSubscription()?.active).toBe(true);
+
+    scenario.emit(runStarted("turn-b"), "13");
+    expect(scenario.transport.subscriptions).toHaveLength(1);
+    expect(scenario.activeSubscription()?.active).toBe(true);
+    expect(scenario.turns().map(({ id }) => id)).toEqual(["turn-a", "turn-b"]);
+
+    scenario.emit(
+      { type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "turn-b" } as never,
+      "14",
+    );
+    await vi.waitFor(() => expect(scenario.activeSubscription()).toBeUndefined());
+  });
 });
 
 describe("controller gap-result ownership", () => {
@@ -166,6 +190,7 @@ describe("controller gap-result ownership", () => {
       { type: EventType.RUN_FINISHED, threadId: "thread_1", runId: "run-1" } as never,
       "11",
     );
+    await vi.waitFor(() => expect(scenario.activeSubscription()).toBeUndefined());
     const terminal = scenario.turns()[0];
     gate.resolve({
       thread: { id: "thread_1", projectId: "project-1", userId: "account-1" },

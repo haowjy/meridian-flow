@@ -1,30 +1,9 @@
 /**
- * The pending tray reads the wire-shaped inbox and only from the
- * `meridian.inbox.changed` frame; unrelated or malformed frames are ignored.
+ * The pending inbox selector and `meridian.inbox.changed` live replacement.
  */
 import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it } from "vitest";
-import {
-  awaitingRunTurnIds,
-  EMPTY_THREAD_PENDING_INBOX,
-  isThreadPendingInbox,
-  pendingInboxFromEvent,
-  writerPendingInbox,
-} from "./pending-inbox";
-
-describe("isThreadPendingInbox", () => {
-  it("accepts an object with an items array", () => {
-    expect(isThreadPendingInbox({ items: [] })).toBe(true);
-    expect(isThreadPendingInbox(EMPTY_THREAD_PENDING_INBOX)).toBe(true);
-  });
-
-  it("rejects a missing items array and non-objects", () => {
-    expect(isThreadPendingInbox({})).toBe(false);
-    expect(isThreadPendingInbox([])).toBe(false);
-    expect(isThreadPendingInbox(null)).toBe(false);
-    expect(isThreadPendingInbox("pending")).toBe(false);
-  });
-});
+import { pendingInboxFromEvent, writerTurnQueueStatus } from "./pending-inbox";
 
 describe("pendingInboxFromEvent", () => {
   const pending = {
@@ -70,8 +49,8 @@ describe("pendingInboxFromEvent", () => {
   });
 });
 
-describe("writerPendingInbox", () => {
-  it("filters only the writer tray while retaining generic child and agent entries", () => {
+describe("writerTurnQueueStatus", () => {
+  it("selects one status per writer turn and excludes child/system notices", () => {
     const writer = {
       id: "writer",
       seq: 1,
@@ -104,25 +83,10 @@ describe("writerPendingInbox", () => {
     };
     const inbox = { items: [writer, child, agent, system] };
 
-    expect(inbox.items).toHaveLength(4);
-    expect(writerPendingInbox(inbox)).toEqual({ items: [writer] });
-  });
-
-  it("keeps accepted idle sends inline and excludes them from the tray", () => {
-    const waiting = {
-      id: "waiting-turn",
-      seq: 1,
-      intent: "message" as const,
-      provenance: { kind: "writer" as const, actorId: "writer-1" },
-      deliveryState: "waiting" as const,
-      summary: "later",
-      enqueuedAt: "2026-01-01T00:00:00.000Z",
-    };
-    const awaiting = { ...waiting, id: "awaiting-turn", deliveryState: "awaiting_run" as const };
-    const adopted = { ...waiting, id: "adopted-turn", deliveryState: "awaiting_run" as const };
-    const inbox = { items: [awaiting, adopted, waiting] };
-
-    expect(writerPendingInbox(inbox)).toEqual({ items: [waiting] });
-    expect(awaitingRunTurnIds(inbox)).toEqual(new Set(["awaiting-turn", "adopted-turn"]));
+    const statuses = writerTurnQueueStatus(inbox);
+    expect(statuses.size).toBe(1);
+    expect(statuses.get("writer")).toBe("queued");
+    expect(statuses.has("child")).toBe(false);
+    expect(statuses.has("system")).toBe(false);
   });
 });

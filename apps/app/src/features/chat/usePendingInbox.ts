@@ -2,10 +2,9 @@
  * usePendingInbox — the live undelivered inbox for one viewed thread.
  *
  * Sources, in precedence order: the HTTP snapshot seeds the first render; the
- * `subscribed` live state reconciles on every (re)subscribe so a replayed frame
- * frozen at emit time cannot win; `meridian.inbox.changed` frames replace the
- * tray live (enqueue adds a row; bind, adoption, and release reclassify rows;
- * ack clears them). The tray is server truth, never a turn block.
+ * `subscribed` live state reconciles on every (re)subscribe; inbox events replace
+ * state wholesale. Epoch fencing prevents a late frame from an old thread owner
+ * from overwriting the mounted thread's queue statuses.
  */
 import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ThreadPendingInbox } from "@meridian/contracts/threads";
@@ -24,6 +23,7 @@ export function usePendingInbox(input: {
   );
   const prevThreadRef = useRef(threadId);
   const seededRef = useRef(false);
+  const subscriptionEpoch = useRef(0);
 
   useEffect(() => {
     if (prevThreadRef.current !== threadId) {
@@ -41,13 +41,22 @@ export function usePendingInbox(input: {
   }, [seed, threadId]);
 
   useEffect(() => {
-    return transport.subscribe(threadId, {
+    const epoch = ++subscriptionEpoch.current;
+    const unsubscribe = transport.subscribe(threadId, {
       onEvent: ({ event }) => {
+        if (subscriptionEpoch.current !== epoch) return;
         const next = pendingInboxFromEvent(event);
         if (next) setPending(next);
       },
-      onLiveState: (state) => setPending(state.pending ?? EMPTY_THREAD_PENDING_INBOX),
+      onLiveState: (state) => {
+        if (subscriptionEpoch.current === epoch)
+          setPending(state.pending ?? EMPTY_THREAD_PENDING_INBOX);
+      },
     });
+    return () => {
+      subscriptionEpoch.current += 1;
+      unsubscribe();
+    };
   }, [transport, threadId]);
 
   return pending;

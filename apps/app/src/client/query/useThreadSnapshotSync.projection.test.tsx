@@ -185,6 +185,7 @@ for (const terminal of [EventType.RUN_FINISHED, EventType.RUN_ERROR]) {
         bus.emit(card("running"), "2000");
         bus.emit({ type: terminal, threadId: "thread-1", runId: "turn-1" } as AGUIEvent, "3000");
       });
+      await new Promise((resolve) => setTimeout(resolve, 260));
       expect(bus.subscriptions.filter((entry) => entry.active)).toHaveLength(1);
       const before = store.getState().turns("thread-1")?.[0];
       expect(before?.blocks[0]?.id).toBe("card-1");
@@ -329,6 +330,7 @@ describe("first-send projection activation", () => {
       await act(async () => {
         await vi.waitFor(() => expect(harness.trace).toContain("run-handler-registered"));
       });
+      await new Promise((resolve) => setTimeout(resolve, 260));
       expect(harness.trace.slice(0, 4)).toEqual([
         "create-success",
         "durable-handler-registered",
@@ -540,6 +542,7 @@ describe("current stream ordering", () => {
           "1500",
         );
       });
+      await new Promise((resolve) => setTimeout(resolve, 260));
       expect(
         store
           .getState()

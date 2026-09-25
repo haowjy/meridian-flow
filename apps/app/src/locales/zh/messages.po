@@ -144,8 +144,8 @@ msgstr ""
 
 #. placeholder {0}: pending.items.length
 #: src/features/chat/PendingInboxTray.tsx
-msgid "{0} messages queued"
-msgstr ""
+#~ msgid "{0} messages queued"
+#~ msgstr ""
 
 #. placeholder {0}: item.title
 #: src/features/project/chat-landing/ChatLandingScreen.tsx
@@ -258,8 +258,8 @@ msgid "<0>{0}</0> will be permanently deleted."
 msgstr ""
 
 #: src/features/chat/PendingInboxTray.tsx
-msgid "1 message queued"
-msgstr ""
+#~ msgid "1 message queued"
+#~ msgstr ""
 
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "1 subagent running"
@@ -2683,6 +2683,10 @@ msgstr ""
 msgid "Put the caret in a table first."
 msgstr ""
 
+#: src/features/chat/UserTurn.tsx
+msgid "Queued"
+msgstr ""
+
 #: src/components/app/composer/placeholders.ts
 msgid "Quick thought"
 msgstr "突然想到"
@@ -3296,7 +3300,6 @@ msgstr "已取消"
 msgid "Strikethrough"
 msgstr ""
 
-#: src/features/chat/PendingInboxTray.tsx
 #: src/features/chat/RunningSubagentsStrip.tsx
 msgid "Subagent"
 msgstr ""
@@ -3348,8 +3351,8 @@ msgid "Switching Work…"
 msgstr ""
 
 #: src/features/chat/PendingInboxTray.tsx
-msgid "System"
-msgstr ""
+#~ msgid "System"
+#~ msgstr ""
 
 #: src/features/editor/surfaces/slash/slash-catalog-copy.ts
 #: src/features/editor/surfaces/table/table-copy.ts
@@ -4128,8 +4131,8 @@ msgid "Yesterday"
 msgstr "昨天"
 
 #: src/features/chat/PendingInboxTray.tsx
-msgid "You"
-msgstr ""
+#~ msgid "You"
+#~ msgstr ""
 
 #: src/features/chat/ChoiceBlock.tsx
 #: src/features/chat/FormBlock.tsx

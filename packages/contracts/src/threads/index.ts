@@ -139,7 +139,7 @@ export type PendingInboxItem = {
   enqueuedAt: string;
 };
 
-/** A thread's unacknowledged inbox, ordered by `seq`; the tray state is replaced wholesale. */
+/** A thread's unacknowledged inbox, ordered by `seq`; snapshots replace state wholesale. */
 export type ThreadPendingInbox = {
   items: PendingInboxItem[];
 };
