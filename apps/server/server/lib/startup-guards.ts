@@ -275,17 +275,20 @@ export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
 
 export async function exitOnStartupGuardFailure(
   error: unknown,
-  options: { eventSink: EventSink; exit?: (code: number) => void },
+  options: {
+    eventSink: EventSink;
+    writeError?: (message: string) => void;
+    exit?: (code: number) => void;
+  },
 ): Promise<void> {
+  const message = error instanceof Error ? error.message : String(error);
   emitEvent(options.eventSink, {
     level: "error",
     source: "plugins.startup",
     name: "startup_guard.failed",
-    payload: {
-      message: error instanceof Error ? error.message : String(error),
-      ...unknownToEventPayload(error),
-    },
+    payload: { ...unknownToEventPayload(error) },
   });
+  (options.writeError ?? ((value) => process.stderr.write(`${value}\n`)))(message);
   try {
     await options.eventSink.flush();
   } catch (flushError) {

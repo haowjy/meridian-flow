@@ -40,16 +40,21 @@ describe("staging and production startup guards", () => {
 
     await exitOnStartupGuardFailure(new Error("invalid config"), {
       eventSink,
+      writeError(message) {
+        order.push(`stderr:${message}`);
+      },
       exit(code) {
         order.push(`exit:${code}`);
       },
     });
 
-    expect(order).toEqual(["emit:startup_guard.failed", "flush", "exit:1"]);
-    expect(emitted[0]).toMatchObject({
-      name: "startup_guard.failed",
-      payload: { message: "invalid config" },
-    });
+    expect(order).toEqual([
+      "emit:startup_guard.failed",
+      "stderr:invalid config",
+      "flush",
+      "exit:1",
+    ]);
+    expect(emitted[0]).toMatchObject({ name: "startup_guard.failed" });
   });
 
   it("rejects dev placeholders based on APP_ENV even when NODE_ENV is development", () => {
