@@ -15,7 +15,6 @@ concurrency:
 
 jobs:
   verify:
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -24,6 +23,13 @@ jobs:
     outputs:
       version: ${{ steps.release.outputs.version }}
     steps:
+      # Environment deployment-branch restrictions are the actual security gate.
+      - name: Require dispatch from main
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "::error::Deploy Production must be dispatched from main (got $GITHUB_REF)"
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -50,7 +56,6 @@ jobs:
 
   promote:
     needs: verify
-    if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
       statuses: write
