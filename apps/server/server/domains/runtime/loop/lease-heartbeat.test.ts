@@ -42,7 +42,9 @@ function recordingAuthority(): {
     async readMany() {
       return new Map();
     },
-    async cancel() {},
+    async cancel() {
+      return false;
+    },
     async release() {
       state.releases += 1;
     },
@@ -105,7 +107,9 @@ describe("RunAuthority heartbeat", () => {
       async readMany() {
         return new Map();
       },
-      async cancel() {},
+      async cancel() {
+        return false;
+      },
       async release() {},
     };
     const heartbeat = createHeartbeatRunAuthority(authority, {
@@ -145,7 +149,9 @@ describe("RunAuthority heartbeat", () => {
       async readMany() {
         return new Map();
       },
-      async cancel() {},
+      async cancel() {
+        return false;
+      },
       async release() {},
     };
     const heartbeat = createHeartbeatRunAuthority(authority, {
@@ -190,7 +196,9 @@ describe("RunAuthority heartbeat", () => {
       async readMany() {
         return new Map();
       },
-      async cancel() {},
+      async cancel() {
+        return false;
+      },
       async release() {},
     };
     const heartbeat = createHeartbeatRunAuthority(authority, {
@@ -243,7 +251,9 @@ describe("RunAuthority heartbeat", () => {
       async readMany() {
         return new Map();
       },
-      async cancel() {},
+      async cancel() {
+        return false;
+      },
       async release() {},
     };
     const heartbeat = createHeartbeatRunAuthority(authority, {

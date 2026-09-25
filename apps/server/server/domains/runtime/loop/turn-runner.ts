@@ -333,7 +333,7 @@ export function createTurnRunner(deps: {
         // Set the durable flag before aborting: it is the cross-process cancel
         // channel and the truthful `ThreadStatus.cancelRequested`. The local
         // abort is only the fast path.
-        await runAuthority.cancel(threadId);
+        if (!(await runAuthority.cancel(threadId, turnId))) return "already_finished";
         childRunRegistry.abortChildrenOf(threadId, { includeBackground: true });
         active.controller.abort();
         if (active.completion) {
@@ -358,14 +358,8 @@ export function createTurnRunner(deps: {
         return "already_finished";
       }
 
-      // No local run owns this turn. A live lease can still belong to another
-      // process, where the durable flag is the only cancel channel.
-      if (await runAuthority.holder(threadId)) {
-        await runAuthority.cancel(threadId);
-        return "cancelled";
-      }
-
-      return "not_found";
+      // The guarded update is the cross-process channel, not a prior holder read.
+      return (await runAuthority.cancel(threadId, turnId)) ? "cancelled" : "not_found";
     },
   };
 }

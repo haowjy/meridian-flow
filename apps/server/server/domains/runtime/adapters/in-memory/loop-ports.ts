@@ -189,9 +189,11 @@ export function createInMemoryRunAuthority(
       return liveLease(threadId)?.turnId ?? null;
     },
 
-    async cancel(threadId) {
+    async cancel(threadId, turnId) {
       const row = liveLease(threadId);
-      if (row) row.cancelRequested = true;
+      if (!row || row.turnId !== turnId) return false;
+      row.cancelRequested = true;
+      return true;
     },
 
     async release(lease) {

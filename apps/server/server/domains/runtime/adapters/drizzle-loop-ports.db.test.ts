@@ -287,8 +287,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
       const lease = required(await authority.acquire(THREAD_A, "run-1"));
 
-      await authority.cancel(THREAD_A);
-      await authority.cancel(THREAD_A);
+      await db.insert(schema.turns).values({
+        id: ASSISTANT_TURN,
+        threadId: THREAD_A,
+        role: "assistant",
+        status: "streaming",
+      });
+      await authority.bindTurn(lease, ASSISTANT_TURN, []);
+      expect(await authority.cancel(THREAD_A, crypto.randomUUID())).toBe(false);
+      expect(await authority.read(THREAD_A)).toMatchObject({ cancelRequested: false });
+      expect(await authority.cancel(THREAD_A, ASSISTANT_TURN)).toBe(true);
+      expect(await authority.cancel(THREAD_A, ASSISTANT_TURN)).toBe(true);
       expect(await authority.read(THREAD_A)).toEqual({
         kind: "awake",
         phase: "generating",
