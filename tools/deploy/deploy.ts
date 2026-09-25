@@ -15,6 +15,7 @@ const detectMs = Number(process.env.DEPLOY_DETECT_MS ?? 60_000);
 const terminalFailures = new Set([
   "FAILED",
   "CRASHED",
+  "COMPLETED",
   "REMOVED",
   "SKIPPED",
   "CANCELED",
