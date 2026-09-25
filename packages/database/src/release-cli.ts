@@ -29,6 +29,10 @@ const requiredBackupEnv = [
   "BACKUP_S3_SECRET_KEY",
 ] as const;
 
+function log(message: string): void {
+  process.stdout.write(`${message}\n`);
+}
+
 function config(needsBackup: boolean): Config {
   const databaseUrl = process.env.DATABASE_URL;
   const required = needsBackup ? requiredBackupEnv : ["DATABASE_URL"];
@@ -132,9 +136,7 @@ async function backup(cfg: Config): Promise<void> {
           `Backup verification failed for s3://${cfg.bucket}/${key}: expected ${size} bytes, received ${head.ContentLength ?? 0}`,
         );
       }
-      console.log(
-        `backup: uploaded and verified s3://${cfg.bucket}/${key} (${head.ContentLength} bytes)`,
-      );
+      log(`backup: uploaded and verified s3://${cfg.bucket}/${key} (${head.ContentLength} bytes)`);
     } finally {
       s3.destroy();
     }
@@ -159,7 +161,7 @@ async function main(): Promise<void> {
   const noBackup = flags.includes("--no-backup");
   if (command !== "migrate" && noBackup) throw new Error("--no-backup is only valid with migrate");
   const cfg = config(command !== "migrate" || !noBackup);
-  console.log(
+  log(
     `release: command=${command} database=${databaseLabel(cfg.databaseUrl)} sha=${cfg.releaseSha}`,
   );
   if (command === "backup") return backup(cfg);
@@ -170,9 +172,7 @@ async function main(): Promise<void> {
     migrationsDirectory: path.join(dir, "migrations"),
     functionsDirectory: path.join(dir, "functions"),
   });
-  console.log(
-    `migrate: applied ${result.appliedMigrations} migration(s); functions applied atomically`,
-  );
+  log(`migrate: applied ${result.appliedMigrations} migration(s); functions applied atomically`);
 }
 
 main().catch((error: unknown) => {
