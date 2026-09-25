@@ -41,6 +41,16 @@ describe("main release coverage", () => {
     ).toEqual(["merge-2", "merge-3"]);
   });
 
+  it("uses the workflow-introduction commit as the tagless bootstrap boundary", () => {
+    expect(
+      unreleasedFirstParentCommits([
+        { sha: "old-history", isRelease: false },
+        { sha: "workflow-activation", isBaseline: true },
+        { sha: "merge-1", isRelease: false },
+      ]),
+    ).toEqual(["merge-1"]);
+  });
+
   it("takes the strongest non-skipped merge intent", () => {
     expect(
       resolveBatchIntent([

@@ -26,7 +26,9 @@ export function hasReleaseSkipTrailer(message) {
 }
 
 export function unreleasedFirstParentCommits(firstParentCommits) {
-  const lastReleaseIndex = firstParentCommits.findLastIndex((commit) => commit.isRelease);
+  const lastReleaseIndex = firstParentCommits.findLastIndex(
+    (commit) => commit.isRelease || commit.isBaseline,
+  );
   return firstParentCommits.slice(lastReleaseIndex + 1).map((commit) => commit.sha);
 }
 

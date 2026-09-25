@@ -2,8 +2,10 @@
 
 Each release is cut from the current tip of `main`, not from the triggering
 merge commit. The job walks first-parent history after the latest release
-commit or `v*` tag and resolves every uncovered merge's PR labels, so a later
-run covers merges whose queued runs were replaced. One release commit records
+commit or `v*` tag and resolves every uncovered merge's PR labels. Before the
+first release marker exists, the workflow-introduction commit is the bootstrap
+boundary; earlier history is not replayed. A later run therefore covers
+unreleased merges whose queued runs were replaced. One release commit records
 one `Release-Trigger` trailer for each included merge. The strongest included
 intent wins; an exact `release:skip` label or `Release-Skip: true` trailer
 excludes only that merge. If all uncovered merges are skipped, there is no
