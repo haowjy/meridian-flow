@@ -12,10 +12,6 @@ on:
         required: true
         type: string
 
-concurrency:
-  group: deploy-staging
-  cancel-in-progress: false
-
 jobs:
   build:
     if: >-
@@ -24,6 +20,10 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main' &&
       startsWith(github.event.workflow_run.head_commit.message, 'release: v')
+    # GitHub retains one pending group run; newest release wins and only staged commits are promotable.
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -37,8 +37,10 @@ jobs:
           fetch-depth: 0
       - name: Resolve release tag and version
         id: release
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          sha='${{ github.event.workflow_run.head_sha }}'
+          sha="$RELEASE_SHA"
           mapfile -t tags < <(git tag --points-at "$sha" 'v*')
           [[ ${#tags[@]} -eq 1 ]] || { echo "::error::Expected exactly one v* tag on $sha; found ${#tags[@]}: ${tags[*]}"; exit 1; }
           tag=${tags[0]}
@@ -49,7 +51,6 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -134,7 +135,8 @@ jobs:
           const image = (service) => ({repository: `${env.repository}-${service}`, digest: env[`${service.toUpperCase()}_DIGEST`], ref: `${env.repository}-${service}@${env[`${service.toUpperCase()}_DIGEST`]}`});
           console.log(JSON.stringify({version: env.VERSION, tag: env.TAG, sha: env.SHA, images: {server:image('server'),app:image('app'),www:image('www'),ingress:image('ingress')},builtAt:new Date().toISOString(),runUrl:`${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`}, null, 2));
           NODE
-          section=$(awk -v heading="## [$VERSION]" 'index($0, heading)==1 {found=1; next} found && /^## / {exit} found {print}' CHANGELOG.md || true)
+          if [[ "$VERSION" == *-rc.* ]]; then heading='## [Unreleased]'; else heading="## [$VERSION]"; fi
+          section=$(awk -v heading="$heading" 'index($0, heading)==1 {found=1; next} found && /^## / {exit} found {print}' CHANGELOG.md || true)
           printf '%s\n' "$section" > release-notes.md
           flags=(); [[ "$VERSION" == *-rc.* ]] && flags+=(--prerelease)
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -147,6 +149,9 @@ jobs:
   deploy-built:
     needs: build
     if: always() && needs.build.result == 'success'
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment: staging
@@ -155,6 +160,9 @@ jobs:
 
   deploy-existing:
     if: github.event_name == 'workflow_dispatch'
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -163,13 +171,18 @@ jobs:
     steps:
       - name: Validate existing release
         id: validate
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
-          version='${{ inputs.version }}'
+          version="$VERSION_INPUT"
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || { echo "::error::Enter an existing version without leading v, such as 1.2.3"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
   deploy-existing-call:
     needs: deploy-existing
     if: github.event_name == 'workflow_dispatch' && needs.deploy-existing.result == 'success'
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
     uses: ./.github/workflows/deploy-environment.yml
     with:
       environment: staging
