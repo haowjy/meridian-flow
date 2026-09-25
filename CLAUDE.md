@@ -2,13 +2,8 @@
 
 ## Claude-specific
 
-Delegate through `meridian spawn` fan-outs, not the built-in Agent/Task
-tool, unless the user specifically asks for Claude subagents or the agent
-exists only as a Claude subagent (e.g. `frontend-coder`). Meridian spawns
-route to the right model and harness and leave inspectable artifacts.
-
-**Frontend routing (human ruling, 2026-07-25): anything a writer sees —
-components, layout, styling, rendering behavior — routes to the
-`frontend-coder` Claude subagent. Never send visual/frontend work to
-gpt-dev/codex lanes; they optimize for "fits and passes checks," not
-design fidelity. Server/domain correctness work stays with gpt-dev.**
+Delegate through `meridian spawn -a <agent>` by default, and take the profile's
+resolved model. Profiles set a model per task to balance cost and
+effectiveness. Escalate to a defined Claude agent from `.claude/agents/`
+(built-in Agent tool) only when a task is delicate enough to need a Claude
+model. Never use the generic `claude` agent type or a fork of yourself.
