@@ -6,7 +6,7 @@
  */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent, ThreadActivity } from "@meridian/contracts/threads";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { goldenAssistantTurn } from "../../../../../packages/contracts/src/threads/golden/turn-fixture.js";
 import { createNoopEventSink } from "../observability/index.js";
 import {
@@ -156,6 +156,8 @@ describe("thread event hub background journaling", () => {
 });
 
 describe("thread event hub committed invalidations", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
   for (const failAt of ["head", "page"] as const) {
     it(`evicts idle state after ${failAt} read rejects beyond the grace window`, async () => {
       const journal = createInMemoryEventJournalWriter();
@@ -194,10 +196,11 @@ describe("thread event hub committed invalidations", () => {
       hub.invalidateCommittedJournal(THREAD_ID);
       await started;
       unsubscribe();
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await vi.advanceTimersByTimeAsync(20);
       expect(hub.hasThreadState(THREAD_ID)).toBe(true);
       rejectRead(new Error("injected read failure"));
-      await vi.waitFor(() => expect(hub.hasThreadState(THREAD_ID)).toBe(false));
+      await vi.advanceTimersByTimeAsync(5);
+      expect(hub.hasThreadState(THREAD_ID)).toBe(false);
     });
   }
 
@@ -237,14 +240,15 @@ describe("thread event hub committed invalidations", () => {
       await firstStarted;
       unsubscribe();
       hub.invalidateCommittedJournal(THREAD_ID);
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await vi.advanceTimersByTimeAsync(20);
       rejectFirst(new Error("first read failed"));
       await secondStarted;
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await vi.advanceTimersByTimeAsync(20);
       expect(hub.hasThreadState(THREAD_ID)).toBe(true);
       if (followupFails) rejectSecond(new Error("follow-up failed"));
       else settleSecond(0n);
-      await vi.waitFor(() => expect(hub.hasThreadState(THREAD_ID)).toBe(false));
+      await vi.advanceTimersByTimeAsync(5);
+      expect(hub.hasThreadState(THREAD_ID)).toBe(false);
     });
   }
 
@@ -288,12 +292,12 @@ describe("thread event hub committed invalidations", () => {
     callbacks[0]?.();
     await started;
     unsubscribe();
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await vi.advanceTimersByTimeAsync(5);
     expect(hub.hasThreadState(THREAD_ID)).toBe(true);
 
     releaseRead();
     await hub.catchup(THREAD_ID, 0n);
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await vi.advanceTimersByTimeAsync(5);
     expect(hub.hasThreadState(THREAD_ID)).toBe(false);
   });
 

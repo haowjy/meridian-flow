@@ -58,7 +58,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await db.close();
     });
 
-    it("publishes neither locally nor through PostgreSQL for outer/savepoint rollback", async () => {
+    it("publishes only committed events after outer/savepoint rollback and an ordered notification barrier", async () => {
       const local: bigint[] = [];
       const remote: string[] = [];
       const hub = createThreadEventHub({
@@ -67,75 +67,61 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         eventSink: createNoopEventSink(),
         scheduleAfterCommit: runAfterDrizzleCommit,
       });
-      const unsubscribe = hub.subscribe(THREAD_ID, (entry) => local.push(entry.seq));
-      const unlisten = await db.listen("thread_events", (payload) => remote.push(payload));
+      let localArrived!: () => void;
+      const localDelivered = new Promise<void>((resolve) => {
+        localArrived = resolve;
+      });
+      const unsubscribe = hub.subscribe(THREAD_ID, (entry) => {
+        local.push(entry.seq);
+        localArrived();
+      });
+      let barrierArrived!: () => void;
+      const barrier = new Promise<void>((resolve) => {
+        barrierArrived = resolve;
+      });
+      const unlisten = await db.listen("thread_events", (payload) => {
+        if (payload === "rollback-barrier") barrierArrived();
+        else remote.push(payload);
+      });
       const event = {
         type: "subagent.activity" as const,
         rootThreadId: THREAD_ID,
         childThreadId: "child",
         activity: { descendants: [] },
       };
-
-      await expect(
-        runInDrizzleTransaction(db, async () => {
+      try {
+        await expect(
+          runInDrizzleTransaction(db, async () => {
+            await hub.appendEvent(THREAD_ID, event);
+            expect(local).toEqual([]);
+            throw new Error("outer rollback");
+          }),
+        ).rejects.toThrow("outer rollback");
+        await runInDrizzleTransaction(db, async () => {
+          await expect(
+            runInDrizzleSavepoint(db, async () => {
+              await hub.appendEvent(THREAD_ID, event);
+              throw new Error("savepoint rollback");
+            }),
+          ).rejects.toThrow("savepoint rollback");
+        });
+        expect(await journalReader.headSeq(THREAD_ID)).toBe(0n);
+        expect(local).toEqual([]);
+        await runInDrizzleTransaction(db, async () => {
           await hub.appendEvent(THREAD_ID, event);
           expect(local).toEqual([]);
-          throw new Error("outer rollback");
-        }),
-      ).rejects.toThrow("outer rollback");
-
-      await runInDrizzleTransaction(db, async () => {
-        await expect(
-          runInDrizzleSavepoint(db, async () => {
-            await hub.appendEvent(THREAD_ID, event);
-            throw new Error("savepoint rollback");
-          }),
-        ).rejects.toThrow("savepoint rollback");
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(await journalReader.headSeq(THREAD_ID)).toBe(0n);
-      expect(local).toEqual([]);
-      expect(remote).toEqual([]);
-
-      unsubscribe();
-      await unlisten.unlisten();
-    });
-
-    it("publishes a journal event locally and remotely after outer commit", async () => {
-      const local: bigint[] = [];
-      const remote: string[] = [];
-      const hub = createThreadEventHub({
-        journalWriter,
-        journalReader,
-        eventSink: createNoopEventSink(),
-        scheduleAfterCommit: runAfterDrizzleCommit,
-      });
-      const unsubscribe = hub.subscribe(THREAD_ID, (entry) => local.push(entry.seq));
-      const unlisten = await db.listen("thread_events", (payload) => remote.push(payload));
-      await runInDrizzleTransaction(db, () =>
-        hub.appendEvent(THREAD_ID, {
-          type: "subagent.activity",
-          rootThreadId: THREAD_ID,
-          childThreadId: "child",
-          activity: { descendants: [] },
-        }),
-      );
-
-      await waitUntil(() => local.length === 1 && remote.length === 1);
-      expect(local).toEqual([1_000n]);
-      expect(remote).toEqual([`${THREAD_ID}:1`]);
-
-      unsubscribe();
-      await unlisten.unlisten();
-    });
-
-    async function waitUntil(predicate: () => boolean): Promise<void> {
-      const deadline = Date.now() + 1_000;
-      while (!predicate() && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+        // NOTIFY is commit-ordered on one listener. This committed marker drains
+        // all prior notifications without a wall-clock absence window.
+        const { sql } = await import("drizzle-orm");
+        await db.execute(sql`select pg_notify('thread_events', 'rollback-barrier')`);
+        await Promise.all([barrier, localDelivered]);
+        expect(local).toEqual([1_000n]);
+        expect(remote).toEqual([`${THREAD_ID}:1`]);
+      } finally {
+        unsubscribe();
+        await unlisten.unlisten();
       }
-      expect(predicate()).toBe(true);
-    }
+    });
   });
 }
