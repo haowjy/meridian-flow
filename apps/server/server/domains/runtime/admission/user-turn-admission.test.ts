@@ -3,7 +3,7 @@
 import type { UserTurnAdmissionInput } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
 import type { ProjectContextAvailabilityPort } from "../../context/index.js";
-import { createInMemoryThreadRunOwnership } from "../loop/thread-run-ownership.js";
+import { createInMemoryRunClaim } from "../adapters/in-memory/loop-ports.js";
 import type { AdmissionRecord, AdmissionWriterProducer } from "./user-turn-admission.js";
 import {
   AdmissionConflictError,
@@ -100,9 +100,9 @@ function harness(
     })),
   } as ProjectContextAvailabilityPort;
   const threadProject = vi.fn(async () => projectId);
-  const runOwnership = createInMemoryThreadRunOwnership();
+  const runClaim = createInMemoryRunClaim();
   const service = createUserTurnAdmission({
-    runOwnership,
+    runClaim,
     records: {
       lookup,
       recoverExpiredPending: vi.fn(async () => existing),
@@ -135,14 +135,14 @@ function harness(
     producer,
     availability,
     threadProject,
-    runOwnership,
+    runClaim,
     captured: () => capturedStart,
   };
 }
 
 describe("UserTurnAdmission", () => {
   it("leaves unexpired reservations outside the run-claim race", async () => {
-    const { service, runOwnership } = harness({
+    const { service, runClaim } = harness({
       state: "pending",
       fingerprint: canonicalAdmissionFingerprint({
         ...input(),
@@ -151,7 +151,7 @@ describe("UserTurnAdmission", () => {
       }),
       claimExpiresAt: new Date("2999-01-01T00:00:00Z"),
     });
-    const acquire = vi.spyOn(runOwnership, "tryAcquire");
+    const acquire = vi.spyOn(runClaim, "withExclusiveThread");
     await expect(service.lookup(input())).resolves.toMatchObject({ kind: "pending" });
     await expect(service.admit(input())).resolves.toMatchObject({ kind: "pending" });
     expect(acquire).not.toHaveBeenCalled();

@@ -33,8 +33,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleNoticePort } = await import("../domains/notices/index.js");
     const { handleRebindThreadWorkRequest } = await import("./thread-work-rebind-route.js");
     const { default: interruptErrorHandler } = await import("./interrupt-error-handler.js");
-    const { createDrizzleThreadRunOwnership } = await import(
-      "../domains/runtime/adapters/drizzle-thread-run-ownership.js"
+    const { createDrizzleRunClaim } = await import(
+      "../domains/runtime/adapters/drizzle-run-claim.js"
     );
     const { createDrizzleRepositoriesForTest } = await import(
       "../domains/threads/adapters/drizzle/repositories.js"
@@ -62,9 +62,9 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it("excludes a writer rebind while another server instance owns the run", async () => {
       await threads.threadWorks.addMembership(THREAD_ID, WORK_ID, true);
       const projects = createDrizzleProjectRepository({ db });
-      const modelInstance = createDrizzleThreadRunOwnership(db);
-      const writerInstance = createDrizzleThreadRunOwnership(db);
-      const modelClaim = await modelInstance.tryAcquire(THREAD_ID);
+      const modelInstance = createDrizzleRunClaim(db);
+      const writerInstance = createDrizzleRunClaim(db);
+      const modelClaim = await modelInstance.startExecution(THREAD_ID, "model-run");
       expect(modelClaim).not.toBeNull();
 
       try {
@@ -80,7 +80,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
               notices,
               transaction: threads.transaction,
-              runOwnership: writerInstance,
+              runClaim: writerInstance,
             },
             {
               threadId: THREAD_ID,
@@ -100,7 +100,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           workId: WORK_ID,
         });
       } finally {
-        await modelClaim?.release();
+        if (modelClaim) await modelInstance.release(modelClaim);
       }
       await handleRebindThreadWorkRequest(
         {
@@ -112,7 +112,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
           notices,
           transaction: threads.transaction,
-          runOwnership: writerInstance,
+          runClaim: writerInstance,
         },
         {
           threadId: THREAD_ID,
@@ -154,8 +154,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
             notices,
             transaction: threads.transaction,
-            runOwnership: {
-              tryAcquire: async () => ({ release: async () => {} }),
+            runClaim: {
+              withExclusiveThread: async (_threadId, operation) => operation(),
             },
           },
           {
@@ -222,8 +222,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               workContextDelivery: { deliverAfterCommit: async () => "delivered" as const },
               notices,
               transaction: async (operation) => operation(),
-              runOwnership: {
-                tryAcquire: async () => ({ release: async () => {} }),
+              runClaim: {
+                withExclusiveThread: async (_threadId, operation) => operation(),
               },
             },
             {
@@ -261,8 +261,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           workContextDelivery: { deliverAfterCommit: async () => "pending" as const },
           notices,
           transaction: threads.transaction,
-          runOwnership: {
-            tryAcquire: async () => ({ release: async () => {} }),
+          runClaim: {
+            withExclusiveThread: async (_threadId, operation) => operation(),
           },
         },
         {
@@ -313,8 +313,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               },
             },
             transaction: threads.transaction,
-            runOwnership: {
-              tryAcquire: async () => ({ release: async () => {} }),
+            runClaim: {
+              withExclusiveThread: async (_threadId, operation) => operation(),
             },
           },
           {

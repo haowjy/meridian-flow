@@ -16,7 +16,7 @@ import type {
 import { parseRequestId } from "@meridian/contracts/request-id";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { ProjectContextAvailabilityPort } from "../../context/index.js";
-import type { ThreadRunOwnership } from "../loop/thread-run-ownership.js";
+import type { RunClaim } from "../loop/ports.js";
 
 export const MAX_USER_MESSAGE_BLOCKS = 64;
 export const MAX_USER_MESSAGE_IMAGES = 16;
@@ -318,7 +318,7 @@ function assertMatchingFingerprint(record: AdmissionRecord, fingerprint: string)
 async function recoverAdmission(
   deps: {
     records: AdmissionRecordPort;
-    runOwnership: ThreadRunOwnership;
+    runClaim: Pick<RunClaim, "withExclusiveThread">;
     now?: () => Date;
   },
   threadId: string,
@@ -329,25 +329,22 @@ async function recoverAdmission(
   if (record?.state !== "pending" || !record.claimExpiresAt || record.claimExpiresAt > now)
     return record;
   // Match runner ordering and keep the claim until the recovery transaction commits.
-  const claim = await deps.runOwnership.tryAcquire(threadId as never);
-  if (!claim) return deps.records.lookup(threadId, submissionId);
-  try {
-    return await deps.records.recoverExpiredPending({
+  const recovered = await deps.runClaim.withExclusiveThread(threadId as never, () =>
+    deps.records.recoverExpiredPending({
       threadId,
       submissionId,
       now,
       async hasLiveClaim() {
         return false;
       },
-    });
-  } finally {
-    await claim.release();
-  }
+    }),
+  );
+  return recovered ?? deps.records.lookup(threadId, submissionId);
 }
 
 export function createUserTurnAdmission(deps: {
   records: AdmissionRecordPort;
-  runOwnership: ThreadRunOwnership;
+  runClaim: Pick<RunClaim, "withExclusiveThread">;
   availability: ProjectContextAvailabilityPort;
   threadProject(threadId: string): Promise<string | null>;
   verifyDraftUpload?(reference: SubmittedReference & { intakeId: string }): Promise<boolean>;

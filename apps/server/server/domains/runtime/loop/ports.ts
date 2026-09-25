@@ -1,6 +1,6 @@
 /**
  * Loop ports for the inbox message model: the message vocabulary (intent +
- * provenance + body), the durable `Inbox` queue, the `RunAuthority` lease/lock,
+ * provenance + body), the read-only inbox view, the `RunClaim` lease/lock,
  * and the thin `RunStarter` actuation seam. Domain code depends on these;
  * adapters supply the durable store and the lock. Provider and transport choice
  * stays at the composition root.
@@ -54,27 +54,10 @@ export interface InboxMessage extends MessageDraft {
   deliveredAt: string | null;
 }
 
-export interface Inbox {
-  /**
-   * Durably appends a message, collapsing a duplicate on `(threadId, idempotencyKey)`.
-   * Raw storage: it does not serialize with `closeRun`'s final claim. Producers
-   * must go through `ThreadedInbox` (`loop/threaded-inbox.ts`), which holds the
-   * per-thread lock around this call so the global `seq` orders commits within a
-   * thread and the batch preserves enqueue order. Only the drain and `closeRun`
-   * (the consumer side) hold the raw `Inbox`.
-   */
-  enqueue(draft: MessageDraft): Promise<InboxMessage>;
-  claimPending(threadId: ThreadId): Promise<InboxMessage[]>;
-  /**
-   * Read-only view of the undelivered rows, ordered by `seq`. Unlike
-   * `claimPending` it has no side effect. Its results are inputs only; writer
-   * projection uses the joined lease/adoption snapshot below.
-   */
-  listPending(threadId: ThreadId): Promise<InboxMessage[]>;
-  /** One statement snapshot of raw pending rows and current live-run consumption. */
+/** Read-only durable queue view. Mutations are owned by RuntimeDelivery. */
+export interface InboxReader {
+  selectPending(threadId: ThreadId): Promise<InboxMessage[]>;
   readPendingProjection(threadId: ThreadId): Promise<InboxProjection>;
-  ack(threadId: ThreadId, ids: string[]): Promise<void>;
-  /** Pending-message threads in stable ID order; keyset paging preserves per-thread enqueue order. */
   pendingMessageThreads(limit: number, afterThreadId?: ThreadId): Promise<ThreadId[]>;
 }
 
@@ -90,22 +73,14 @@ export interface Lease {
   holderId: string;
 }
 
-export interface RunAuthority {
-  acquire(threadId: ThreadId, runId: RunId): Promise<Lease | null>;
+export interface RunClaim {
+  /** Short exclusive work uses the same claim without minting an observable lease. */
+  withExclusiveThread<T>(threadId: ThreadId, operation: () => Promise<T>): Promise<T | null>;
+  startExecution(threadId: ThreadId, runId: RunId): Promise<Lease | null>;
   /** Returns `false` when the lease row is gone or owned by another run; the holder has lost it. */
   renew(lease: Lease): Promise<boolean>;
   holder(threadId: ThreadId): Promise<RunId | null>;
   publish(lease: Lease, phase: ThreadPhase): Promise<void>;
-  /**
-   * Binds the run's assistant turn to the live lease. Run liveness is the lease,
-   * and this is the one place its running turn becomes observable to other
-   * processes; bind it inside the turn-start setup transaction after the turn
-   * and its report admission are projected.
-   */
-  bindTurn(lease: Lease, turnId: TurnId, messageIds: readonly string[]): Promise<void>;
-  /** Replace the exact adopted batch on the live lease. */
-  setAdoptedMessageIds(lease: Lease, messageIds: readonly string[]): Promise<boolean>;
-  readAdoptedMessageIds(lease: Lease): Promise<string[]>;
   read(threadId: ThreadId): Promise<ThreadStatus>;
   /**
    * Batch liveness read for a page of threads, one lease query. Only threads
@@ -120,13 +95,13 @@ export interface RunAuthority {
    */
   readRunningTurnId(threadId: ThreadId): Promise<TurnId | null>;
   /** Cancels only the live lease bound to this turn; false means no matching execution. */
-  cancel(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
+  cancelExecution(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
   /**
    * Releases the held lease. Guarded: an already-released or superseded lease is
-   * a no-op and must never free a newer run's lock. `closeRun` releases under
+   * a no-op and must never free a newer run's lock. Delivery close releases under
    * the thread lock after the terminal write commits; the run owner's `finally`
-   * releases again as the cancel/error backstop when the generator throws
-   * before reaching `closeRun`. The guard is what makes that double release safe.
+   * releases again as the cancel/error backstop when execution fails
+   * before delivery close. The guard is what makes that double release safe.
    */
   release(lease: Lease): Promise<void>;
 }

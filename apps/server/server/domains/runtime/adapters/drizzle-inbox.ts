@@ -1,5 +1,5 @@
 /**
- * PostgreSQL adapter for the durable per-thread message queue (`Inbox`). The
+ * PostgreSQL adapter for the durable per-thread message queue (`DeliveryStore`). The
  * `provenance`/`body` jsonb reads trust the stored shape via `as unknown as`;
  * this adapter performs no runtime validation at the storage boundary.
  */
@@ -8,7 +8,8 @@ import type { MessageIntent, MessageProvenance } from "@meridian/contracts/threa
 import * as schema from "@meridian/database/schema";
 import { and, asc, eq, gt, inArray, isNull } from "drizzle-orm";
 import { currentDrizzleDb, type DrizzleDatabase } from "../../../shared/drizzle-transaction.js";
-import type { Inbox, InboxMessage, MessageBody } from "../loop/ports.js";
+import type { InboxMessage, MessageBody } from "../loop/ports.js";
+import type { DeliveryStore } from "./runtime-delivery.js";
 
 function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -28,13 +29,9 @@ function toInboxMessage(row: typeof schema.threadInboxMessages.$inferSelect): In
   };
 }
 
-export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
+export function createDrizzleInbox(db: DrizzleDatabase): DeliveryStore {
   const db_ = () => currentDrizzleDb(db);
 
-  // One pending read implementation shared by the consumer's `claimPending` and
-  // the writer-facing `listPending`; the partial index
-  // `thread_inbox_messages_pending` serves it. `listPending` stays distinct at
-  // the port so a future mutating claim cannot leak into the read-only path.
   async function selectPending(threadId: ThreadId): Promise<InboxMessage[]> {
     const rows = await db_()
       .select()
@@ -78,16 +75,12 @@ export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
         )
         .limit(1);
       if (!existing) {
-        throw new Error(`Inbox enqueue lost its row: ${draft.idempotencyKey}`);
+        throw new Error(`DeliveryStore enqueue lost its row: ${draft.idempotencyKey}`);
       }
       return toInboxMessage(existing);
     },
 
-    async claimPending(threadId) {
-      return selectPending(threadId);
-    },
-
-    async listPending(threadId) {
+    async selectPending(threadId) {
       return selectPending(threadId);
     },
 

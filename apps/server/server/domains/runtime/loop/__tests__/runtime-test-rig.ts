@@ -1,3 +1,4 @@
+import type { DeliveryStore } from "../../adapters/runtime-delivery.js";
 /**
  * Composed runtime test environment with seeded ownership, credits, event
  * subscriptions, and observable turn outcomes.
@@ -17,14 +18,13 @@ import {
 } from "../../../threads/index.js";
 import {
   createInMemoryInbox,
-  createInMemoryRunAuthority,
+  createInMemoryRunClaim,
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import { createToolExecutor, createToolRegistry, type ToolExecutor } from "../../tools/index.js";
 import { createInterruptRegistry } from "../interrupts.js";
 import { createOrchestrator } from "../orchestrator.js";
-import type { Inbox } from "../ports.js";
 import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
 export type RuntimeGate<T = void> = {
@@ -67,7 +67,7 @@ export class RuntimeTestRig {
   readonly gateway;
   readonly inbox;
   readonly journal;
-  readonly runAuthority;
+  readonly runClaim;
 
   private readonly eventWaiters = new Set<{
     predicate: (event: AGUIEvent) => boolean;
@@ -86,8 +86,8 @@ export class RuntimeTestRig {
     hub: ReturnType<typeof createThreadEventHub>;
     orchestrator: ReturnType<typeof createOrchestrator>;
     runner: ReturnType<typeof createOrchestrator>;
-    inbox: Inbox;
-    runAuthority: ReturnType<typeof createInMemoryRunAuthority>;
+    inbox: DeliveryStore;
+    runClaim: ReturnType<typeof createInMemoryRunClaim>;
   }) {
     Object.assign(this, state);
     this.userId = state.userId;
@@ -102,7 +102,7 @@ export class RuntimeTestRig {
     this.runner = state.runner;
     this.inbox = state.inbox;
     this.journal = state.journal;
-    this.runAuthority = state.runAuthority;
+    this.runClaim = state.runClaim;
     this.hub.subscribe(this.thread.id, (entry) => {
       this.projectedEvents.push(entry);
       for (const waiter of this.eventWaiters) {
@@ -148,7 +148,7 @@ export class RuntimeTestRig {
       journalReader: eventWriter,
       eventSink,
     });
-    const runAuthority = createInMemoryRunAuthority();
+    const runClaim = createInMemoryRunClaim();
     const inbox = createInMemoryInbox();
     const threadLock = createInMemoryThreadLock();
     const orchestrator = createOrchestrator(
@@ -165,7 +165,7 @@ export class RuntimeTestRig {
         eventSink,
         inbox,
         threadLock,
-        runAuthority,
+        runClaim,
       }),
     );
     const runner = orchestrator;
@@ -189,7 +189,7 @@ export class RuntimeTestRig {
       orchestrator,
       runner,
       inbox,
-      runAuthority,
+      runClaim,
     });
     return rig;
   }
@@ -247,15 +247,15 @@ export class RuntimeTestRig {
       },
       liveState: async () => ({
         threadId: this.thread.id,
-        status: await this.runAuthority.read(this.thread.id),
-        runningTurnId: await this.runAuthority.readRunningTurnId(this.thread.id),
+        status: await this.runClaim.read(this.thread.id),
+        runningTurnId: await this.runClaim.readRunningTurnId(this.thread.id),
         activity: { descendants: [] },
         pending: { items: [] },
         resumeAfterSeq: "0",
       }),
-      read: (threadId: ThreadId) => this.runAuthority.read(threadId),
-      readMany: (threadIds: readonly ThreadId[]) => this.runAuthority.readMany(threadIds),
-      readRunningTurnId: (threadId: ThreadId) => this.runAuthority.readRunningTurnId(threadId),
+      read: (threadId: ThreadId) => this.runClaim.read(threadId),
+      readMany: (threadIds: readonly ThreadId[]) => this.runClaim.readMany(threadIds),
+      readRunningTurnId: (threadId: ThreadId) => this.runClaim.readRunningTurnId(threadId),
       readPending: async () => ({ items: [] }),
       journalEvents: async () => [],
     };

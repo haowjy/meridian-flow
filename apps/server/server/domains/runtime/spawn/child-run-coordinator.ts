@@ -19,7 +19,7 @@ import type {
   ThreadRepository,
 } from "../../threads/index.js";
 import { createBoundConversation, TurnStartConflictError } from "../../threads/index.js";
-import type { ThreadedInbox } from "../loop/threaded-inbox.js";
+import type { DeliveryProducer } from "../loop/runtime-delivery.js";
 import { appendSubagentActivity } from "./activity-event.js";
 import { authorizeThreadMessage } from "./authorize-thread-message.js";
 import type { ChildDriveInput, ChildRunDriver, PreparedChild } from "./child-run-driver.js";
@@ -82,7 +82,7 @@ export interface ChildRunCoordinatorDeps {
   /** Recomputes a run tree's activity; feeds the root-journal `subagent.activity` fact. */
   readActivity: (threadId: ThreadId) => Promise<ThreadActivity>;
   /** Producer-facing inbox: background thread_message enqueues here. */
-  threadedInbox: Pick<ThreadedInbox, "enqueue" | "withThreadLock">;
+  delivery: DeliveryProducer;
   agentRevisions: Pick<
     AgentRevisionStore,
     "readThreadBinding" | "readRevision" | "readSource" | "readPackageDefinitions" | "bindThread"
@@ -320,7 +320,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
     if (!authorized.ok) return { status: "error", error: authorized.error };
 
     const target = authorized.target;
-    await deps.threadedInbox.enqueue({
+    await deps.delivery.enqueue({
       threadId: target.id as ThreadId,
       intent: "message",
       provenance: { kind: "agent", threadId: request.parentThread.id as ThreadId },
@@ -361,7 +361,7 @@ export function createChildRunCoordinator(deps: ChildRunCoordinatorDeps): ChildR
       admitted = execution;
       await bindAdmittedInvocationCard({
         transcript: options.transcript,
-        threadedInbox: deps.threadedInbox,
+        delivery: deps.delivery,
         card: runCard,
         props: cardProps,
         execution,

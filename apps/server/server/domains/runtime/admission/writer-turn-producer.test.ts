@@ -16,7 +16,7 @@ import {
   createInMemoryRunStarter,
   createInMemoryThreadLock,
 } from "../adapters/in-memory/loop-ports.js";
-import { createThreadedInbox } from "../loop/threaded-inbox.js";
+import { createTestDelivery } from "../loop/__tests__/test-delivery.js";
 import type { AdmissionPersistencePort } from "./drizzle-admission-records.js";
 import { createWriterTurnProducer } from "./writer-turn-producer.js";
 
@@ -74,7 +74,7 @@ async function harness(recordsOverride?: AdmissionPersistencePort) {
     hub: journal,
     runner,
     turns: repos.turns,
-    threadedInbox: createThreadedInbox({
+    delivery: createTestDelivery({
       inbox,
       threadLock: createInMemoryThreadLock(),
       runStarter,
@@ -118,7 +118,7 @@ describe("createWriterTurnProducer", () => {
     expect(turns).toHaveLength(1);
     expect(turns[0]?.role).toBe("user");
 
-    const pending = await inbox.claimPending(thread.id);
+    const pending = await inbox.selectPending(thread.id);
     expect(pending).toHaveLength(1);
     expect(pending[0]?.id).toBe(result.userTurnId);
     expect(pending[0]?.provenance).toEqual({ kind: "writer", actorId: USER });

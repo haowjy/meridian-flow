@@ -12,10 +12,10 @@ import {
   type Turn,
 } from "@meridian/contracts/threads";
 import { toIsoString } from "../../threads/domain/contract-serialization.js";
-import type { OrchestratorDeps } from "./orchestrator.js";
+import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
 import { persistAndAppendEvents } from "./persistence.js";
 
-type TerminalCause =
+export type TerminalCause =
   | { kind: "success"; finishReason: FinishReason }
   | { kind: "failed"; reason: string; error: MeridianError | string }
   | { kind: "cancelled"; reason: string };
@@ -47,7 +47,19 @@ function turnEvent(turn: Turn, cause: TerminalCause): OrchestratorEvent {
 
 /** Call under the child final-drain lock; nested persistence joins its transaction. */
 export async function finalizeExecution(
-  deps: Pick<OrchestratorDeps, "repos" | "eventWriter">,
+  deps: {
+    repos: Pick<
+      ThreadRepositories,
+      | "threads"
+      | "turns"
+      | "blocks"
+      | "modelResponses"
+      | "transaction"
+      | "executionReports"
+      | "runTurnStartTransition"
+    >;
+    eventWriter: EventJournalWriter;
+  },
   input: { threadId: ThreadId; assistantTurnId: TurnId; cause: TerminalCause },
 ): Promise<FinalizedExecution> {
   let report: SavedExecutionReport | null = null;

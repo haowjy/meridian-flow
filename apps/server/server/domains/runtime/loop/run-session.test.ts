@@ -69,7 +69,7 @@ describe("RunSession", () => {
     expect(await f.deps.repos.turns.findById(run.assistantTurnId)).toMatchObject({
       status: "streaming",
     });
-    expect(await f.deps.runAuthority.holder(f.thread.id)).toBe(run.runId);
+    expect(await f.deps.runClaim.holder(f.thread.id)).toBe(run.runId);
     const execution = run.execute();
     expect(run.execute()).toBe(execution);
     expect(await execution).toMatchObject({
@@ -80,7 +80,7 @@ describe("RunSession", () => {
     expect(f.journal.getEvents(f.thread.id).map(({ event }) => event.type)).toContain(
       "turn.completed",
     );
-    expect(await f.deps.runAuthority.holder(f.thread.id)).toBeNull();
+    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
     expect(f.runtime.isThreadRunning(f.thread.id)).toBe(false);
   });
 
@@ -91,7 +91,7 @@ describe("RunSession", () => {
     expect(await run.execute()).toMatchObject({ status: "cancelled" });
     expect(f.calls()).toBe(0);
     await expect.poll(() => f.runtime.isThreadRunning(f.thread.id)).toBe(false);
-    expect(await f.deps.runAuthority.holder(f.thread.id)).toBeNull();
+    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
   });
 
   it("falls back after a pre-loop crash and still releases when Work flush fails", async () => {
@@ -110,7 +110,7 @@ describe("RunSession", () => {
       "execution.failed",
       "work_flush.failed",
     ]);
-    expect(await f.deps.runAuthority.holder(f.thread.id)).toBeNull();
+    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
   });
 
   it("observes terminal fallback failure, settles the run, and releases", async () => {
@@ -128,7 +128,7 @@ describe("RunSession", () => {
       "terminal_fallback.failed",
     ]);
     expect(f.runtime.getRunningTurn(f.thread.id)).toBeNull();
-    expect(await f.deps.runAuthority.holder(f.thread.id)).toBeNull();
+    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
   });
 
   it("terminalizes admitted setup when post-setup cursor capture fails", async () => {
@@ -143,14 +143,14 @@ describe("RunSession", () => {
     const turns = await f.deps.repos.turns.listByThread(f.thread.id);
     expect(turns.find((turn) => turn.role === "assistant")?.status).toBe("error");
     expect(f.calls()).toBe(0);
-    expect(await f.deps.runAuthority.holder(f.thread.id)).toBeNull();
+    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
   });
 
   it("retries physical release after terminal release fails", async () => {
     let releases = 0;
     const f = await fixture((deps) => {
-      const release = deps.runAuthority.release;
-      deps.runAuthority.release = async (lease) => {
+      const release = deps.runClaim.release;
+      deps.runClaim.release = async (lease) => {
         if (++releases === 1) throw new Error("physical unlock failed");
         await release(lease);
       };
@@ -158,7 +158,7 @@ describe("RunSession", () => {
     const run = await f.prepare();
     await run.execute();
     expect(releases).toBeGreaterThanOrEqual(2);
-    expect(await f.deps.runAuthority.holder(f.thread.id)).toBeNull();
+    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
     expect(f.runtime.isThreadRunning(f.thread.id)).toBe(false);
   });
 
@@ -167,10 +167,10 @@ describe("RunSession", () => {
     const f = await fixture((deps) => {
       deps.workContextDelivery.flushOwned = flush;
     });
-    const held = await f.deps.runAuthority.acquire(f.thread.id, "remote");
+    const held = await f.deps.runClaim.startExecution(f.thread.id, "remote");
     await expect(f.prepare()).rejects.toMatchObject({ reason: "already_running" });
     expect(flush).not.toHaveBeenCalled();
-    if (held) await f.deps.runAuthority.release(held);
+    if (held) await f.deps.runClaim.release(held);
   });
 
   it("heartbeats a lazy prepared run, observes renewal failure, and stops on release", async () => {
@@ -180,7 +180,7 @@ describe("RunSession", () => {
         throw new Error("renew offline");
       });
       const f = await fixture((deps) => {
-        deps.runAuthority.renew = renew;
+        deps.runClaim.renew = renew;
       });
       const run = await f.prepare();
       await vi.advanceTimersByTimeAsync(Math.floor(DEFAULT_LEASE_TTL_MS / 3));
@@ -228,7 +228,7 @@ describe("RunSession", () => {
       eventSink: f.sink,
       publisher: {
         async publish(threadId, execution) {
-          expect(await f.deps.runAuthority.holder(threadId)).toBeNull();
+          expect(await f.deps.runClaim.holder(threadId)).toBeNull();
           expect(f.runtime.getRunningTurn(threadId)).toBeNull();
           expect(
             await f.deps.repos.executionReports.findByExecution(threadId, execution),
@@ -314,7 +314,7 @@ describe("RunSession", () => {
       status: "streaming",
       prevTurnId: run.assistantTurnId,
     });
-    f.deps.runAuthority.readRunningTurnId = async () => other.id;
+    f.deps.runClaim.readRunningTurnId = async () => other.id;
     f.deps.repos.blocks.listByThread = async () => {
       throw new Error("history unavailable");
     };
@@ -326,8 +326,8 @@ describe("RunSession", () => {
   it("preserves committed terminal truth when only the backstop release fails", async () => {
     let releases = 0;
     const f = await fixture((deps) => {
-      const release = deps.runAuthority.release;
-      deps.runAuthority.release = async (lease) => {
+      const release = deps.runClaim.release;
+      deps.runClaim.release = async (lease) => {
         if (++releases === 2) throw new Error("backstop unavailable");
         await release(lease);
       };
@@ -338,6 +338,6 @@ describe("RunSession", () => {
       turn: { id: run.assistantTurnId },
     });
     expect(f.sink.events.map((event) => event.name)).toContain("lease_release.failed");
-    expect(await f.deps.runAuthority.holder(f.thread.id)).toBeNull();
+    expect(await f.deps.runClaim.holder(f.thread.id)).toBeNull();
   });
 });

@@ -7,7 +7,7 @@ import { type EventSink, emitEvent, unknownToEventPayload } from "../../observab
 import type { EventJournalWriter, ThreadRepositories } from "../../threads/index.js";
 import { contentForBlockInput } from "../loop/block-helpers.js";
 import { persistAndAppendEvents } from "../loop/persistence.js";
-import type { ThreadedInbox } from "../loop/threaded-inbox.js";
+import type { DeliveryProducer } from "../loop/runtime-delivery.js";
 import { invocationCardProps } from "./spawn-output.js";
 
 export type PublicationOutcome = "published" | "skipped" | "parked" | "already";
@@ -20,7 +20,7 @@ export interface ReportPublisher {
 export function createReportPublisher(deps: {
   repos: ThreadRepositories;
   eventWriter: EventJournalWriter;
-  threadedInbox: ThreadedInbox;
+  delivery: DeliveryProducer;
   eventSink: EventSink;
 }): ReportPublisher {
   let cursor: TurnId | undefined;
@@ -47,9 +47,9 @@ export function createReportPublisher(deps: {
     const callerThreadId = selected.callerThreadId;
     if (!callerThreadId) return markSkipped(childThreadId, assistantTurnId);
 
-    // ThreadedInbox owns the parent lock, and its scoped producer never takes it
+    // DeliveryProducer owns the parent lock, and its scoped producer never takes it
     // again. No child lock or lease wait is reachable from this callback.
-    return deps.threadedInbox.withThreadLock(callerThreadId, async (producer) =>
+    return deps.delivery.withThreadLock(callerThreadId, async (producer) =>
       deps.repos.transaction(async (): Promise<PublicationOutcome> => {
         const callerRow = await deps.repos.threads.lockByIdIncludingDeleted(callerThreadId);
         const report = await deps.repos.executionReports.lockPendingPublication(

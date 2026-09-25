@@ -23,13 +23,13 @@ import {
 } from "../../threads/index.js";
 import {
   createInMemoryInbox,
-  createInMemoryRunAuthority,
+  createInMemoryRunClaim,
   createInMemoryRunStarter,
   createInMemoryThreadLock,
 } from "../adapters/in-memory/loop-ports.js";
+import { createTestDelivery } from "../loop/__tests__/test-delivery.js";
 import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { RunTurnPort } from "../loop/run-turn-port.js";
-import { createThreadedInbox } from "../loop/threaded-inbox.js";
 import { createToolRegistry, resolveAgentThreadTurnContext } from "../tools/index.js";
 import { createChildRunCoordinator } from "./child-run-coordinator.js";
 import { createChildRunDriver } from "./child-run-driver.js";
@@ -45,12 +45,12 @@ type RecordedTurn = {
 function stubOrchestrator(
   records: RecordedTurn[],
   repos: ReturnType<typeof createInMemoryRepositories>,
-  authority = createInMemoryRunAuthority(),
+  authority = createInMemoryRunClaim(),
 ): RunTurnPort {
   let counter = 0;
   return {
     async prepare(input) {
-      const lease = await authority.acquire(input.threadId, crypto.randomUUID());
+      const lease = await authority.startExecution(input.threadId, crypto.randomUUID());
       if (!lease) throw new TurnStartConflictError(input.threadId, "already_running");
       counter += 1;
       const assistantTurnId = `assistant-turn-${counter}` as TurnId;
@@ -198,7 +198,7 @@ async function fixture(
   const journal: Array<{ threadId: string; type: string; childThreadId?: string }> = [];
   const abortedChildren: string[] = [];
   const turns: RecordedTurn[] = [];
-  const runAuthority = createInMemoryRunAuthority();
+  const runClaim = createInMemoryRunClaim();
   const eventWriter: EventJournalWriter = options.eventWriter ?? {
     async appendEvent(threadId, event) {
       journal.push({
@@ -210,22 +210,22 @@ async function fixture(
   };
   const eventSink = createInMemoryEventSink();
   const readActivity = (threadId: ThreadId) =>
-    readThreadActivity({ threads: repos.threads, statusReader: runAuthority }, threadId);
+    readThreadActivity({ threads: repos.threads, statusReader: runClaim }, threadId);
   const inbox = createInMemoryInbox();
   const runStarter = createInMemoryRunStarter();
-  const threadedInbox = createThreadedInbox({
+  const delivery = createTestDelivery({
     inbox,
     threadLock: createInMemoryThreadLock(),
     runStarter,
     schedulePostCommit: (task) => task(),
   });
-  const publisher = createReportPublisher({ repos, eventWriter, threadedInbox, eventSink });
+  const publisher = createReportPublisher({ repos, eventWriter, delivery, eventSink });
 
   const driver = createChildRunDriver({
     orchestrator:
       typeof options.orchestrator === "function"
         ? options.orchestrator(repos)
-        : (options.orchestrator ?? stubOrchestrator(turns, repos, runAuthority)),
+        : (options.orchestrator ?? stubOrchestrator(turns, repos, runClaim)),
     repos: { executionReports: repos.executionReports },
     eventWriter,
     readActivity,
@@ -234,7 +234,7 @@ async function fixture(
   });
   const coreCoordinator = createChildRunCoordinator({
     driver,
-    threadedInbox,
+    delivery,
     repos: {
       threads: repos.threads,
       subagentThreads: repos.threads,
@@ -301,7 +301,7 @@ async function fixture(
     turns,
     inbox,
     runStarter,
-    runAuthority,
+    runClaim,
     eventWriter,
     eventSink,
   };
@@ -852,7 +852,7 @@ describe("ChildRunCoordinator thread_message", () => {
   });
 
   it("reports busy on the attempted card without creating a child execution", async () => {
-    const { coordinator, parent, repos, journal, runAuthority, eventWriter } = await fixture();
+    const { coordinator, parent, repos, journal, runClaim, eventWriter } = await fixture();
     const spawned = await coordinator.runChild(
       {
         kind: "spawn",
@@ -870,7 +870,7 @@ describe("ChildRunCoordinator thread_message", () => {
     const completions = journal.filter((event) => event.type === "agent.run_completed").length;
 
     const transcript = transcriptFor(parent.id, { repos, eventWriter }, "turn-2");
-    const heldLease = await runAuthority.acquire(childId, "blocking-run");
+    const heldLease = await runClaim.startExecution(childId, "blocking-run");
     expect(heldLease).not.toBeNull();
     try {
       const busy = await coordinator.runChild(
@@ -893,7 +893,7 @@ describe("ChildRunCoordinator thread_message", () => {
         expect(busy.error.message).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-/);
       }
     } finally {
-      if (heldLease) await runAuthority.release(heldLease);
+      if (heldLease) await runClaim.release(heldLease);
     }
 
     expect(transcript.allBlocks).toHaveLength(1);
@@ -1205,7 +1205,7 @@ describe("ChildRunCoordinator thread_message", () => {
     if (background.status !== "background") return;
     expect(background.handle).toBe(spawned.report.handle);
 
-    const pending = await inbox.claimPending(childId);
+    const pending = await inbox.selectPending(childId);
     expect(pending).toHaveLength(1);
     expect(pending[0]).toMatchObject({
       threadId: childId,

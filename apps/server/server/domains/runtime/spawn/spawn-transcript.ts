@@ -19,7 +19,7 @@ import { ExecutionReportConflictError } from "../../threads/index.js";
 import type { ExecutionReportRepository } from "../../threads/ports/repositories.js";
 import { contentForBlockInput, localBlockFromEvent } from "../loop/block-helpers.js";
 import { type PersistenceDeps, persistAndAppendEvents } from "../loop/persistence.js";
-import type { ThreadedInbox } from "../loop/threaded-inbox.js";
+import type { DeliveryProducer } from "../loop/runtime-delivery.js";
 import { spawnHelperCardProps } from "./spawn-output.js";
 
 export type SpawnTranscript = {
@@ -102,14 +102,14 @@ export async function persistInvocationCard(
 /** The parent lock serializes the admission replacement with publication B. */
 export async function bindAdmittedInvocationCard(input: {
   transcript: SpawnTranscript | undefined;
-  threadedInbox: Pick<ThreadedInbox, "withThreadLock">;
+  delivery: Pick<DeliveryProducer, "withThreadLock">;
   card: Block | null;
   props: InvocationCardProps;
   execution: TurnId;
 }): Promise<void> {
   const { transcript, card } = input;
   if (!transcript || !card) return;
-  await input.threadedInbox.withThreadLock(transcript.threadId, async () => {
+  await input.delivery.withThreadLock(transcript.threadId, async () => {
     const persisted = await persistAndAppendEvents(
       transcript.persistence,
       transcript.threadId,

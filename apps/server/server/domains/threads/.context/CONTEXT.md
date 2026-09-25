@@ -61,7 +61,7 @@ instead of the N:1 `threads.workId` column.
   run's bound `turn_id`). Run liveness is read from the lease alone: the project
   list and `ThreadLiveState.runningTurnId` (snapshot and WS `subscribed`) both
   surface the lease's bound turn, and the orchestrator binds it inside the
-  turn-start setup transaction (`RunAuthority.bindTurn`). Both cascade
+  turn-start setup transaction (`RuntimeDelivery.adoptBatch`). Both cascade
   from `threads`.
 - **Thread↔Work membership** — `thread_works` join table (exactly one primary per live thread; No Work is a real row). `threads.workId` column is **dropped**. Membership is organizational;
   same-project Work-authority URIs do not require membership.

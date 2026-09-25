@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createInMemoryThreadLock } from "../adapters/in-memory/loop-ports.js";
 import type { AdmissionPersistencePort } from "../admission/drizzle-admission-records.js";
 import { createWriterTurnProducer } from "../admission/writer-turn-producer.js";
-import { createThreadedInbox } from "../loop/threaded-inbox.js";
+import { createTestDelivery } from "../loop/__tests__/test-delivery.js";
 import { RuntimeTestRig } from "./__tests__/runtime-test-rig.js";
 import { createInertGateway } from "./__tests__/test-gateway.js";
 
@@ -44,7 +44,7 @@ describe("writer enqueue through the drain", () => {
       hub: rig.hub,
       runner: rig.runner,
       turns: rig.repos.turns,
-      threadedInbox: createThreadedInbox({
+      delivery: createTestDelivery({
         inbox: rig.inbox,
         threadLock: createInMemoryThreadLock(),
         runStarter: {

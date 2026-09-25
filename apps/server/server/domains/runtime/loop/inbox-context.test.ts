@@ -1,5 +1,5 @@
 /**
- * Inbox batch rendering and message-turn persistence: notices stay
+ * DeliveryStore batch rendering and message-turn persistence: notices stay
  * request-only, and a redelivered message reuses its durable id instead
  * of appending a second turn.
  */
@@ -71,7 +71,7 @@ describe("renderInboxBatch", () => {
     const { inbox, thread } = await seed();
     await inbox.enqueue(message("steer body", thread.id));
     await inbox.enqueue(notice("context note", thread.id));
-    const batch = await inbox.claimPending(thread.id);
+    const batch = await inbox.selectPending(thread.id);
 
     const rendered = renderInboxBatch([], batch);
 
@@ -84,7 +84,7 @@ describe("renderInboxBatch", () => {
   it("renders only a compact exact report reference as a system message", async () => {
     const { inbox, thread } = await seed();
     await inbox.enqueue(childReport("report-1", thread.id));
-    const batch = await inbox.claimPending(thread.id);
+    const batch = await inbox.selectPending(thread.id);
 
     const rendered = renderInboxBatch([], batch);
 
@@ -103,7 +103,7 @@ describe("planMessageTurns", () => {
     const { inbox, thread } = await seed();
     await inbox.enqueue(message("one", thread.id));
     await inbox.enqueue(message("two", thread.id));
-    const batch = await inbox.claimPending(thread.id);
+    const batch = await inbox.selectPending(thread.id);
 
     const plan = planMessageTurns({ batch, prevTurnId: null, knownTurnIds: new Set() });
 
@@ -123,7 +123,7 @@ describe("planMessageTurns", () => {
     const { inbox, thread } = await seed();
     await inbox.enqueue(message("first", thread.id));
     await inbox.enqueue(message("second", thread.id));
-    const batch = await inbox.claimPending(thread.id);
+    const batch = await inbox.selectPending(thread.id);
     const firstId = batch[0]?.id ?? "";
     const secondId = batch[1]?.id ?? "";
 
@@ -142,7 +142,7 @@ describe("planMessageTurns", () => {
     const { inbox, thread } = await seed();
     await inbox.enqueue(notice("ambient", thread.id));
     await inbox.enqueue(message("direct", thread.id));
-    const batch = await inbox.claimPending(thread.id);
+    const batch = await inbox.selectPending(thread.id);
 
     const plan = planMessageTurns({ batch, prevTurnId: null, knownTurnIds: new Set() });
 
@@ -153,7 +153,7 @@ describe("planMessageTurns", () => {
   it("returns the previous leaf unchanged when nothing fresh remains", async () => {
     const { inbox, thread } = await seed();
     await inbox.enqueue(message("known", thread.id));
-    const batch = await inbox.claimPending(thread.id);
+    const batch = await inbox.selectPending(thread.id);
     const knownId = batch[0]?.id ?? "";
 
     const plan = planMessageTurns({
@@ -172,7 +172,7 @@ describe("persistInboxMessages", () => {
   it("reuses the durable message id so a redelivery appends no second turn", async () => {
     const { repos, eventWriter, inbox, thread } = await seed();
     await inbox.enqueue(message("keep me", thread.id));
-    const [claimedMessage] = await inbox.claimPending(thread.id);
+    const [claimedMessage] = await inbox.selectPending(thread.id);
 
     const deps = { repos, eventWriter };
     const first = await persistInboxMessages({
@@ -205,7 +205,7 @@ describe("persistInboxMessages", () => {
     const { repos, eventWriter, inbox, thread } = await seed();
     await inbox.enqueue(message("one", thread.id));
     await inbox.enqueue(message("two", thread.id));
-    const batch = await inbox.claimPending(thread.id);
+    const batch = await inbox.selectPending(thread.id);
 
     const transition = vi.spyOn(repos, "runTurnStartTransition");
     const persisted = await persistInboxMessages({
@@ -224,7 +224,7 @@ describe("persistInboxMessages", () => {
   it("persists a child notification as writer-hidden system text, not a report card", async () => {
     const { repos, eventWriter, inbox, thread } = await seed();
     await inbox.enqueue(childReport("report-2", thread.id));
-    const [message] = await inbox.claimPending(thread.id);
+    const [message] = await inbox.selectPending(thread.id);
 
     const persisted = await persistInboxMessages({
       deps: { repos, eventWriter },
@@ -242,7 +242,7 @@ describe("persistInboxMessages", () => {
   it("stamps a message turn with the inbox enqueuedAt, not persist time", async () => {
     const { repos, eventWriter, inbox, thread } = await seed();
     await inbox.enqueue(message("timed", thread.id));
-    const [claimedMessage] = await inbox.claimPending(thread.id);
+    const [claimedMessage] = await inbox.selectPending(thread.id);
     const enqueuedAt = "2020-01-02T03:04:05.000Z";
 
     const persisted = await persistInboxMessages({
@@ -271,7 +271,7 @@ describe("drainInbox", () => {
   it("skips a redelivered message already in knownTurnIds and still returns its ack id", async () => {
     const { repos, eventWriter, inbox, thread } = await seed();
     await inbox.enqueue(message("crash then retry", thread.id));
-    const [claimedMessage] = await inbox.claimPending(thread.id);
+    const [claimedMessage] = await inbox.selectPending(thread.id);
     if (!claimedMessage) throw new Error("expected a claimed message");
     // Persist once, leaving the message unacked (crash before ack).
     const first = await persistInboxMessages({
@@ -284,7 +284,7 @@ describe("drainInbox", () => {
     // The same unacked message is redelivered; its turn is already durable.
     const drain = await drainInbox({
       persistence: { repos, eventWriter },
-      batch: await inbox.claimPending(thread.id),
+      batch: await inbox.selectPending(thread.id),
       notices: noopNotices(),
       threadId: thread.id,
       messages: [],
@@ -340,7 +340,7 @@ describe("drainInbox", () => {
 
     const drain = await drainInbox({
       persistence: { repos, eventWriter },
-      batch: await inbox.claimPending(thread.id),
+      batch: await inbox.selectPending(thread.id),
       notices: noopNotices(),
       threadId: thread.id,
       messages: [],

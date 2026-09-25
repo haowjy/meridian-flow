@@ -22,9 +22,9 @@ import type { WorkContextDelivery } from "../../projects/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
 import { activatedSkillMetadata } from "../loop/activated-skills.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
-import type { Inbox } from "../loop/ports.js";
+import type { InboxReader } from "../loop/ports.js";
 import type { RunningTurnView } from "../loop/run-session.js";
-import type { ThreadedInbox } from "../loop/threaded-inbox.js";
+import type { DeliveryProducer } from "../loop/runtime-delivery.js";
 import { persistWriterEnqueue, WriterEnqueueRollback } from "../loop/writer-enqueue.js";
 import type { AdmissionPersistencePort } from "./drizzle-admission-records.js";
 import {
@@ -58,8 +58,8 @@ export function createWriterTurnProducer(deps: {
   runner: { getRunningTurn(threadId: ThreadId): RunningTurnView | null };
   /** Setup-window fallback only; consulted while the runner owns the thread. */
   turns: Pick<TurnRepository, "findRunningAssistantId">;
-  threadedInbox: ThreadedInbox;
-  inbox: Pick<Inbox, "listPending">;
+  delivery: DeliveryProducer;
+  inbox: Pick<InboxReader, "selectPending">;
   workContextDelivery: Pick<WorkContextDelivery, "beforeTurn">;
   records: AdmissionPersistencePort;
   consumeUploads(documentIds: readonly string[]): Promise<void>;
@@ -107,7 +107,7 @@ export function createWriterTurnProducer(deps: {
             activatedSkillMetadata(input.admission.activatedSkillSlugs ?? []) ??
             input.userTurnMetadata ??
             null,
-          threadedInbox: deps.threadedInbox,
+          delivery: deps.delivery,
           inbox: deps.inbox,
           draft: {
             id: userTurnId,

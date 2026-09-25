@@ -79,7 +79,7 @@ describe("cancel billing", () => {
     });
     await rig.runner.startDrain(rig.thread.id);
     await rig.gatewaySignal.promise;
-    const turnId = await rig.runAuthority.readRunningTurnId(rig.thread.id);
+    const turnId = await rig.runClaim.readRunningTurnId(rig.thread.id);
     expect(turnId).not.toBeNull();
 
     const peer: WsPeer = {
@@ -95,7 +95,7 @@ describe("cancel billing", () => {
     );
     session.onClose();
 
-    expect(await rig.runAuthority.readRunningTurnId(rig.thread.id)).toBe(turnId);
+    expect(await rig.runClaim.readRunningTurnId(rig.thread.id)).toBe(turnId);
 
     await app.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
     await rig.awaitCancelled(turnId as NonNullable<typeof turnId>);

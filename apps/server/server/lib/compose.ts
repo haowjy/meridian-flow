@@ -109,40 +109,37 @@ import {
   createChildRunDriver,
   createContextImageAssetPort,
   createDrizzleAdmissionRecords,
-  createDrizzleInbox,
-  createDrizzleRunAuthority,
+  createDrizzleRunClaim,
+  createDrizzleRuntimeDelivery,
   createDrizzleThreadLock,
-  createDrizzleThreadRunOwnership,
   createGatewayFromEnv,
   createInMemoryInbox,
+  createInMemoryRunClaim,
   createInMemoryRunStarter,
+  createInMemoryRuntimeDelivery,
   createInMemoryThreadLock,
-  createInMemoryThreadRunOwnership,
   createInstrumentedGateway,
-  createNotifyingThreadedInbox,
   createOrchestrator,
   createOrphanReportRepair,
   createReportPublisher,
   createRunStarter,
   createSkillToolRegistrations,
   createSpawnToolRegistrations,
-  createThreadedInbox,
   createToolExecutor,
   createToolRegistry,
   createUserTurnAdmission,
   createWorkContextDelivery,
   createWorkContextReader,
   createWriterTurnProducer,
+  type DeliveryProducer,
   emitRunActivityBestEffort,
   type Gateway,
   InvalidAdmissionError,
-  type RunAuthority,
+  type RunClaim,
   type RunStarter,
   type RunTurnPort,
   readPendingInbox,
   sweepWakes,
-  type ThreadedInbox,
-  type ThreadRunOwnership,
   type ToolExecutor,
   type ToolRegistry,
   type TurnRunner,
@@ -174,6 +171,7 @@ import { readThreadActivity } from "../domains/threads/domain/thread-activity.js
 import {
   type ActiveDocumentResolver,
   createActiveDocumentResolver,
+  createInMemoryEventJournalWriter,
   requireThreadOwner,
 } from "../domains/threads/index.js";
 import type {
@@ -244,11 +242,11 @@ export type AppServices = {
   orchestrator: RunTurnPort;
   runner: TurnRunner;
   runStarter: RunStarter;
-  threadedInbox: ThreadedInbox;
+  delivery: DeliveryProducer;
   /** Startup/interval recovery for threads with a pending message and no live run. */
   wakeSweep: { sweep(): Promise<void> };
   userTurnAdmission: UserTurnAdmission;
-  runOwnership: ThreadRunOwnership;
+  runClaim: Pick<RunClaim, "withExclusiveThread">;
   toolRegistry: ToolRegistry;
   toolExecutor: ToolExecutor;
   modelRequestDebug: ModelRequestDebugStore;
@@ -309,8 +307,7 @@ export type ProductionAppPorts = {
   documentAccess: DocumentAccessPort;
   notices: NoticePort;
   activeDocuments: ActiveDocumentResolver;
-  runOwnership: ThreadRunOwnership;
-  runAuthority: RunAuthority;
+  runClaim: RunClaim;
 };
 
 const CONCURRENT_RENDER_SAFETY_TOKENS = 16_000;
@@ -387,11 +384,10 @@ export async function createProductionAppPorts(input: {
     availability: projectContextAvailability,
     catalog: contextCatalog,
   });
-  const runOwnership = createDrizzleThreadRunOwnership(db);
-  const runAuthority = createDrizzleRunAuthority(db, {
+  const runClaim = createDrizzleRunClaim(db, {
     holderId: `${process.pid}-${crypto.randomUUID()}`,
   });
-  const threadRepos = createDrizzleRepositories(db, workProjectionMutation, runAuthority);
+  const threadRepos = createDrizzleRepositories(db, workProjectionMutation, runClaim);
   const activeDocuments = createActiveDocumentResolver(threadRepos);
   const journalReader = createDrizzleEventJournalReader(db);
   const journalWriter = createDrizzleEventJournalWriter(db);
@@ -512,8 +508,7 @@ export async function createProductionAppPorts(input: {
 
   return {
     db,
-    runOwnership,
-    runAuthority,
+    runClaim,
     gateway,
     threadRepos,
     journalReader,
@@ -588,7 +583,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventWriter: threadEventHub,
     workContext,
     isThreadRunning: (threadId) => runner.isThreadRunning(threadId),
-    runOwnership: ports.runOwnership,
+    runClaim: ports.runClaim,
     schedulePostCommit(task) {
       runAfterDrizzleCommit(() => {
         void task().catch((cause) => {
@@ -644,7 +639,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   const toolExecutor = createToolExecutor(toolRegistry);
   const readActivity = (threadId: ThreadId) =>
     readThreadActivity(
-      { threads: ports.threadRepos.threads, statusReader: ports.runAuthority },
+      { threads: ports.threadRepos.threads, statusReader: ports.runClaim },
       threadId,
     );
   // A drain-woken subagent run (a child report or thread_message) has no driver
@@ -660,65 +655,30 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       eventSink: ports.eventSink,
     });
   };
-  let refreshPendingProjection: (threadId: ThreadId) => Promise<void> = async () => {};
-  // One durable inbox and lock shared by the loop (consumer) and the producer
-  // `ThreadedInbox`. The `RunStarter` wakes a thread from a pending message; the
-  // sweep is the durable recovery for a missed wake.
-  const inbox = createDrizzleInbox(ports.db);
   const threadLock = createDrizzleThreadLock(ports.db);
   const runStarter = createRunStarter(
     { startDrain: (id) => runner.startDrain(id) },
     ports.eventSink,
   );
-  const readPending = async (threadId: ThreadId) => readPendingInbox(inbox, threadId);
-  refreshPendingProjection = async (threadId) => {
-    try {
-      await threadLock.withThreadLock(threadId, async () => {
-        await threadEventHub.appendEvent(threadId, {
-          type: "inbox.changed",
-          threadId,
-          pending: await readPending(threadId),
-        });
-      });
-    } catch (error) {
-      emitEvent(ports.eventSink, {
-        level: "warn",
-        source: "runtime.inbox",
-        name: "inbox.changed.append_failed",
-        correlation: { threadId },
-        payload: { threadId, ...unknownToEventPayload(error) },
-      });
-    }
-  };
-  // Decorate the producer's locked enqueue with the post-commit `inbox.changed`
-  // signal, so a queued message reaches the tray before delivery. Consumers take
-  // the notifying port; the raw `Inbox` stays the drain's (consumer side).
-  const threadedInbox = createNotifyingThreadedInbox({
-    threadedInbox: createThreadedInbox({
-      inbox,
-      threadLock,
-      runStarter,
-      schedulePostCommit(task) {
-        runAfterDrizzleCommit(task);
-      },
-    }),
+  const delivery = createDrizzleRuntimeDelivery(ports.db, {
+    repos: ports.threadRepos,
     eventWriter: threadEventHub,
-    readPending,
-    schedulePostCommit(task) {
-      runAfterDrizzleCommit(task);
-    },
-    eventSink: ports.eventSink,
+    runClaim: ports.runClaim,
+    notices: ports.notices,
+    runStarter,
   });
+  const inbox = delivery;
+  const readPending = (threadId: ThreadId) => readPendingInbox(delivery, threadId);
   const reportPublisher = createReportPublisher({
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
-    threadedInbox,
+    delivery,
     eventSink: ports.eventSink,
   });
   const orphanRepair = createOrphanReportRepair({
     repos: ports.threadRepos,
     eventWriter: threadEventHub,
-    authority: ports.runAuthority,
+    authority: ports.runClaim,
     threadLock,
     publisher: reportPublisher,
     eventSink: ports.eventSink,
@@ -728,13 +688,12 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     async sweep() {
       const results = await Promise.allSettled([
         sweepWakes({
-          inbox,
-          authority: ports.runAuthority,
+          delivery,
+          authority: ports.runClaim,
           runStarter,
           limit: WAKE_SWEEP_LIMIT,
           afterThreadId: wakeCursor,
           eventSink: ports.eventSink,
-          refreshPending: refreshPendingProjection,
         }).then((cursor) => {
           wakeCursor = cursor;
         }),
@@ -770,7 +729,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     hub: threadEventHub,
     runner: { getRunningTurn: (id) => runner.getRunningTurn(id) },
     turns: ports.threadRepos.turns,
-    threadedInbox,
+    delivery,
     workContextDelivery,
     records: admissionRecords,
     consumeUploads: (documentIds) => ports.uploadIntake.consume(documentIds),
@@ -778,7 +737,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
       ports.threadRepos.threadDocuments.attach(threadId as never, documentId, relationship),
   });
   const userTurnAdmission = createUserTurnAdmission({
-    runOwnership: ports.runOwnership,
+    runClaim: ports.runClaim,
     records: admissionRecords,
     availability: ports.projectContextAvailability,
     async threadProject(threadId) {
@@ -814,7 +773,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   });
   const childRunCoordinator = createChildRunCoordinator({
     driver: childRunDriver,
-    threadedInbox,
+    delivery,
     unavailableReasons: (definition, model) =>
       agentExecutionUnavailableReasons(definition, ports.gateway, model),
     modelUnavailable: (model) => agentModelUnavailableReasons(ports.gateway, model),
@@ -844,7 +803,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     onRunStarted: refreshSubagentActivity,
     onRunSettled(threadId) {
       refreshSubagentActivity(threadId);
-      void refreshPendingProjection(threadId);
     },
     gateway: ports.gateway,
     referenceReader: createReferenceReader(coreToolDeps),
@@ -875,9 +833,8 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     modelRequestDebug: ports.modelRequestDebug,
     responseWrites,
     notices: ports.notices,
-    inbox,
-    threadLock,
-    runAuthority: ports.runAuthority,
+    delivery,
+    runClaim: ports.runClaim,
     activeDocuments: ports.activeDocuments,
     imageAssets,
     concurrentRenderBudgetBytes,
@@ -894,7 +851,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     hub: threadEventHub,
     threadRuntime: createThreadRuntimeService({
       db: ports.db,
-      statusReader: ports.runAuthority,
+      statusReader: ports.runClaim,
       threads: ports.threadRepos.threads,
       readPending,
     }),
@@ -932,10 +889,10 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     orchestrator,
     runner,
     runStarter,
-    threadedInbox,
+    delivery,
     wakeSweep,
     userTurnAdmission,
-    runOwnership: ports.runOwnership,
+    runClaim: ports.runClaim,
     toolRegistry,
     toolExecutor,
     modelRequestDebug: ports.modelRequestDebug,
@@ -977,9 +934,13 @@ export function createInMemoryAppServices(): AppServices {
     },
     env: {},
   });
-  const runOwnership = createInMemoryThreadRunOwnership();
+  const runClaim = createInMemoryRunClaim();
   const runStarter = createInMemoryRunStarter();
-  const threadedInbox = createThreadedInbox({
+  const delivery = createInMemoryRuntimeDelivery({
+    repos: threadRepos,
+    eventWriter: createInMemoryEventJournalWriter(),
+    notices,
+    runClaim,
     inbox: createInMemoryInbox(),
     threadLock: createInMemoryThreadLock(),
     runStarter,
@@ -1341,7 +1302,7 @@ export function createInMemoryAppServices(): AppServices {
       },
     },
     runStarter,
-    threadedInbox,
+    delivery,
     wakeSweep,
     userTurnAdmission: {
       async admit(input) {
@@ -1354,7 +1315,7 @@ export function createInMemoryAppServices(): AppServices {
         return { kind: "retired", submissionId: input.submissionId, code: "retired" };
       },
     },
-    runOwnership,
+    runClaim,
     toolRegistry: {
       getDefinitions() {
         return [];

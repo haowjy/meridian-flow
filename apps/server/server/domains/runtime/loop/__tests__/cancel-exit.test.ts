@@ -10,7 +10,7 @@ import { createInMemoryProjectRepository } from "../../../projects/index.js";
 import { createInMemoryRepositories } from "../../../threads/index.js";
 import {
   createInMemoryInbox,
-  createInMemoryRunAuthority,
+  createInMemoryRunClaim,
   createInMemoryThreadLock,
 } from "../../adapters/in-memory/loop-ports.js";
 import type { Gateway, GenerateResult, StreamEvent } from "../../gateway/index.js";
@@ -66,7 +66,7 @@ describe("single cancel exit", () => {
         creditLedger,
         inbox: createInMemoryInbox(),
         threadLock: createInMemoryThreadLock(),
-        runAuthority: createInMemoryRunAuthority(),
+        runClaim: createInMemoryRunClaim(),
         toolExecutor: {
           async executeTool(call) {
             // The writer cancels while the tool is in flight; the loop must exit

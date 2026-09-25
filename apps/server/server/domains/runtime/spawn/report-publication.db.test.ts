@@ -2,7 +2,7 @@
 import { buildInvocationCardContent } from "@meridian/contracts/components";
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const runDb = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL;
@@ -26,7 +26,7 @@ else
   describe("report publication and recovery (postgres)", async () => {
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
-    const { eq } = await import("drizzle-orm");
+    const { eq, sql } = await import("drizzle-orm");
     const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
@@ -38,10 +38,10 @@ else
     const { createInMemoryEventSink } = await import("../../observability/index.js");
     const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
     const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
-    const { createDrizzleRunAuthority } = await import(
-      "../adapters/drizzle-thread-run-ownership.js"
+    const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
+    const { createTestDrizzleDelivery } = await import(
+      "../loop/__tests__/test-drizzle-delivery.js"
     );
-    const { createThreadedInbox } = await import("../loop/threaded-inbox.js");
     const { finalizeExecution } = await import("../loop/execution-finalizer.js");
     const { createReportPublisher } = await import("./report-publisher.js");
     const { bindAdmittedInvocationCard } = await import("./spawn-transcript.js");
@@ -56,13 +56,8 @@ else
     const inbox = createDrizzleInbox(db);
     const threadLock = createDrizzleThreadLock(db);
     const eventSink = createInMemoryEventSink();
-    const threadedInbox = createThreadedInbox({
-      inbox,
-      threadLock,
-      runStarter: { async start() {} },
-      schedulePostCommit() {},
-    });
-    const publisher = createReportPublisher({ repos, eventWriter, threadedInbox, eventSink });
+    const delivery = createTestDrizzleDelivery(db, { repos, eventWriter });
+    const publisher = createReportPublisher({ repos, eventWriter, delivery, eventSink });
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [schema.users]);
@@ -188,7 +183,11 @@ else
         .select()
         .from(schema.eventJournal)
         .where(eq(schema.eventJournal.threadId, ids.parent));
-      expect(events.map((row) => row.eventType)).toEqual(["block.updated", "agent.run_completed"]);
+      expect(events.map((row) => row.eventType)).toEqual([
+        "block.updated",
+        "agent.run_completed",
+        "inbox.changed",
+      ]);
       expect(events[0]?.payload).toMatchObject({
         block: {
           id: ids.card,
@@ -206,7 +205,7 @@ else
         },
       });
       expect(JSON.stringify(events.map((row) => row.payload))).not.toContain("secret report body");
-      const messages = await inbox.listPending(ids.parent);
+      const messages = await inbox.selectPending(ids.parent);
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         provenance: { kind: "child", threadId: ids.child, reportId: ids.execution },
@@ -340,7 +339,7 @@ else
         summary: "orphan scalar",
         payload,
       });
-      const authority = createDrizzleRunAuthority(db, { holderId: "json-roundtrip-repair" });
+      const authority = createDrizzleRunClaim(db, { holderId: "json-roundtrip-repair" });
       const repair = createOrphanReportRepair({
         repos,
         eventWriter,
@@ -454,7 +453,7 @@ else
           blockSeqRef: { value: 8 },
           allBlocks: [],
         },
-        threadedInbox,
+        delivery,
         card: originalCard,
         props: invocationCardProps({
           agent: "critic",
@@ -478,18 +477,14 @@ else
 
     it("rolls back card, event, inbox and marker together on publication failure, then retries", async () => {
       await terminal();
-      const { runAfterDrizzleCommit } = await import("../../../shared/drizzle-transaction.js");
       let wakes = 0;
-      const transactionalInbox = createThreadedInbox({
-        inbox,
-        threadLock,
+      const transactionalInbox = createTestDrizzleDelivery(db, {
+        repos,
+        eventWriter,
         runStarter: {
           async start() {
             wakes++;
           },
-        },
-        schedulePostCommit: (task) => {
-          runAfterDrizzleCommit(task);
         },
       });
       const failing = createReportPublisher({
@@ -503,13 +498,13 @@ else
                 (await repos.executionReports.findByExecution(ids.child, ids.execution))
                   ?.publication,
               ).toBe("published");
-              expect(await inbox.listPending(ids.parent)).toHaveLength(1);
+              expect(await inbox.selectPending(ids.parent)).toHaveLength(1);
               throw new Error("failure after publication marker");
             },
           },
         },
         eventWriter,
-        threadedInbox: transactionalInbox,
+        delivery: transactionalInbox,
         eventSink,
       });
       await expect(failing.publish(ids.child, ids.execution)).rejects.toThrow(
@@ -523,23 +518,57 @@ else
         kind: "helper-result",
         props: { status: "running" },
       });
-      expect(await inbox.listPending(ids.parent)).toEqual([]);
+      expect(await inbox.selectPending(ids.parent)).toEqual([]);
       expect(
         (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,
       ).toBe("pending");
       const recovered = createReportPublisher({
         repos,
         eventWriter,
-        threadedInbox: transactionalInbox,
+        delivery: transactionalInbox,
         eventSink,
       });
       expect(await recovered.publish(ids.child, ids.execution)).toBe("published");
       expect(await recovered.publish(ids.child, ids.execution)).toBe("already");
       expect(wakes).toBe(1);
-      expect(await inbox.listPending(ids.parent)).toHaveLength(1);
+      expect(await inbox.selectPending(ids.parent)).toHaveLength(1);
       expect(
         (await parentEvents()).filter((event) => event.eventType === "agent.run_completed"),
       ).toHaveLength(1);
+    });
+
+    it("waits for the parent lock before locking the child report", async () => {
+      await terminal();
+      let entered!: () => void, release!: () => void;
+      const reached = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const parent = threadLock.withThreadLock(ids.parent, async () => {
+        entered();
+        await gate;
+      });
+      await reached;
+      const publishing = publisher.publish(ids.child, ids.execution);
+      try {
+        await vi.waitUntil(async () => {
+          const rows =
+            await db.$client`select 1 from pg_locks where locktype='advisory' and not granted and database=(select oid from pg_database where datname=current_database())`;
+          return rows.length > 0;
+        });
+        // A publisher that locked the report before waiting on its parent would make NOWAIT fail.
+        await db.transaction((tx) =>
+          tx.execute(
+            sql`select assistant_turn_id from thread_execution_reports where assistant_turn_id=${ids.execution} for update nowait`,
+          ),
+        );
+      } finally {
+        release();
+        await parent;
+      }
+      await expect(publishing).resolves.toBe("published");
     });
 
     it("serializes competing publishers and does not recreate a deleted card", async () => {
@@ -551,12 +580,12 @@ else
       ]);
       expect(outcomes.sort()).toEqual(["already", "published"]);
       expect(await repos.blocks.findById(ids.card)).toBeNull();
-      expect(await inbox.listPending(ids.parent)).toHaveLength(1);
+      expect(await inbox.selectPending(ids.parent)).toHaveLength(1);
       const events = await db
         .select()
         .from(schema.eventJournal)
         .where(eq(schema.eventJournal.threadId, ids.parent));
-      expect(events.map((row) => row.eventType)).toEqual(["agent.run_completed"]);
+      expect(events.map((row) => row.eventType)).toEqual(["agent.run_completed", "inbox.changed"]);
     });
 
     it("advances a bounded sweep past one failing publication", async () => {
@@ -597,7 +626,7 @@ else
             return eventWriter.appendEvent(threadId, event);
           },
         },
-        threadedInbox,
+        delivery,
         eventSink,
       });
       expect(await failingFirst.sweep(1)).toBe(1);
@@ -647,7 +676,7 @@ else
     });
 
     it("does not infer orphan death from a missing lease while the physical claim is held", async () => {
-      const authority = createDrizzleRunAuthority(db, { holderId: "repair-test" });
+      const authority = createDrizzleRunClaim(db, { holderId: "repair-test" });
       const repair = createOrphanReportRepair({
         repos,
         eventWriter,
@@ -656,7 +685,7 @@ else
         publisher,
         eventSink,
       });
-      const held = await authority.acquire(ids.child, crypto.randomUUID());
+      const held = await authority.startExecution(ids.child, crypto.randomUUID());
       if (!held) throw new Error("failed to acquire test claim");
       await db
         .update(schema.threadRunLeases)

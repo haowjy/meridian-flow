@@ -47,14 +47,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
     const { createWorkContextDelivery } = await import("./work-context-delivery.js");
-    const { createDrizzleThreadRunOwnership } = await import(
-      "../adapters/drizzle-thread-run-ownership.js"
-    );
+    const { createDrizzleRunClaim } = await import("../adapters/drizzle-run-claim.js");
 
     assertThrowawayDatabaseForRunDbTests(DATABASE_URL);
     const db = createDb(DATABASE_URL, { max: 6 });
     const control = postgres(DATABASE_URL, { max: 1 });
-    const sharedRunOwnership = createDrizzleThreadRunOwnership(db);
+    const sharedRunOwnership = createDrizzleRunClaim(db);
     const projects = createDrizzleProjectRepository({ db });
     const workAuthorityResolver = createDrizzleProjectWorkAuthorityResolver(db);
     const workRepo = createDrizzleProjectWorkRepository({
@@ -120,7 +118,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     function delivery(
       repos: ReturnType<typeof createDrizzleRepositoriesForTest>,
       eventWriter = createDrizzleEventJournalWriter(db),
-      runOwnership = sharedRunOwnership,
+      runClaim = sharedRunOwnership,
     ) {
       return createWorkContextDelivery({
         repos,
@@ -144,7 +142,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           },
         },
         isThreadRunning: () => false,
-        runOwnership,
+        runClaim,
         schedulePostCommit() {},
       });
     }
