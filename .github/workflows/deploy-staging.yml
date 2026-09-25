@@ -37,8 +37,10 @@ jobs:
           fetch-depth: 0
       - name: Resolve release tag and version
         id: release
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          sha='${{ github.event.workflow_run.head_sha }}'
+          sha="$RELEASE_SHA"
           mapfile -t tags < <(git tag --points-at "$sha" 'v*')
           [[ ${#tags[@]} -eq 1 ]] || { echo "::error::Expected exactly one v* tag on $sha; found ${#tags[@]}: ${tags[*]}"; exit 1; }
           tag=${tags[0]}
@@ -49,7 +51,6 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -163,8 +164,10 @@ jobs:
     steps:
       - name: Validate existing release
         id: validate
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
         run: |
-          version='${{ inputs.version }}'
+          version="$VERSION_INPUT"
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || { echo "::error::Enter an existing version without leading v, such as 1.2.3"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
   deploy-existing-call:

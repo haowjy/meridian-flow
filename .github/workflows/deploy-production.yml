@@ -9,6 +9,10 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
   verify:
     runs-on: ubuntu-latest
