@@ -93,10 +93,19 @@ Schema edits live in [`../src/schema/`](../src/schema). To ship a change:
    PRs targeting `main`/`staging`; feature-branch PRs lint only migrations changed
    since the base ref. The squashed `0000_` baseline is exempt from warning rules
    except `DELETE_WITHOUT_WHERE`.
-5. `pnpm db:migrate` — apply pending migrations.
-6. If PL/pgSQL functions/triggers changed: update
-   [`../src/functions/`](../src/functions) and run `pnpm db:apply-functions`
-   (functions are applied separately, after migrate).
+5. `pnpm db:migrate` — apply pending migrations and canonical functions.
+6. `pnpm db:apply-functions` transactionally synchronizes function SQL when
+   iterating on functions independently.
+
+Deploy uses the database-owned release runner. The `tools/deploy/deploy.ts`
+seam creates the provider snapshot and atomically supplies
+`MERIDIAN_BACKUP_REF=<provider>:<backup id>:release=<sha>` with the new image.
+When migrations are pending, the runner requires that ref to match
+`MERIDIAN_RELEASE_SHA`, compares the bundle journal against the applied ledger,
+and applies pending migrations plus canonical functions atomically. A database
+whose applied history extends the bundle's exact prefix is a valid rollback
+target with zero pending migrations; divergent history fails. Local development
+does not load deploy config and can explicitly use `--no-backup-check`.
 
 A row-transform migration MUST ship with a populated upgrade fixture in
 `fresh-migrations.db.test.ts`. Apply the committed prefix, seed the pre-migration

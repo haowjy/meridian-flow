@@ -10,7 +10,8 @@ From repo root (requires `.env` with `DATABASE_URL`, port **54422** for local Po
 
 ```bash
 pnpm db:migrate          # apply pending migrations
-pnpm db:apply-functions  # sync PL/pgSQL from src/functions/ (after migrate in dev)
+pnpm db:apply-functions  # transactionally sync PL/pgSQL from src/functions/
+pnpm --filter @meridian/database build:release # self-contained deploy release bundle
 pnpm db:generate         # drizzle-kit generate (review output)
 pnpm db:studio
 ```
@@ -23,6 +24,22 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 ```
 
 **Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (migrate + apply-functions).
+
+Deploy images run `pnpm --filter @meridian/database build:release` at build
+time and invoke `node dist/release/release.mjs` as Railway's pre-deploy
+command. If migrations are pending, it requires a deploy-seam confirmation in
+`MERIDIAN_BACKUP_REF` (`<provider>:<backup id>:release=<sha>`) whose release
+SHA matches `MERIDIAN_RELEASE_SHA`; then it applies migrations and function SQL
+in one transaction. Snapshot creation is owned by `tools/deploy/deploy.ts`, so
+the Neon credential never reaches the Railway runtime. With no pending
+migrations, no backup confirmation is required. The bundle needs Node at
+runtime, but no `node_modules`.
+
+The release command requires `DATABASE_URL`; `MERIDIAN_RELEASE_SHA` defaults to
+`unknown`. Pending migrations are refused unless `MERIDIAN_BACKUP_REF` confirms
+a pre-migration backup for that exact release. Local development can explicitly
+use `--no-backup-check` with `APP_ENV=dev`, `development`, or `local`; the
+image's default command must not use that escape hatch.
 
 ## Auth boundary
 
