@@ -1,6 +1,8 @@
 /** Drizzle BlockRepository: SQL for the thread blocks table (create/list), mapping rows via mappers.ts. Depends inward on the repository port; runs within the shared drizzle-db transaction context. */
+
+import type { TurnId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import type {
   BlockRepository,
   CreateBlockInput,
@@ -8,6 +10,7 @@ import type {
 } from "../../ports/repositories.js";
 import { mapBlock } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
+import { recomputeThreadChatActivitySql } from "./visible-conversation-sql.js";
 
 function blockValues(input: CreateBlockInput) {
   const textContent = input.textContent ?? null;
@@ -35,10 +38,15 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
         .values(blockValues(input))
         .returning();
       if (!row) throw new Error("Failed to create block");
+      if (row.blockType === CUSTOM_BLOCK) await recomputeForTurn(db, row.turnId);
       return mapBlock(row);
     },
     async upsert(input: UpsertBlockInput) {
       const values = blockValues(input);
+      const [existing] = await currentDrizzleDb(db)
+        .select({ turnId: schema.turnBlocks.turnId, blockType: schema.turnBlocks.blockType })
+        .from(schema.turnBlocks)
+        .where(eq(schema.turnBlocks.id, input.id));
       const [row] = await currentDrizzleDb(db)
         .insert(schema.turnBlocks)
         .values(values)
@@ -60,6 +68,10 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
         })
         .returning();
       if (!row) throw new Error("Failed to upsert block");
+      if (existing?.blockType === CUSTOM_BLOCK && existing.turnId !== row.turnId)
+        await recomputeForTurn(db, existing.turnId);
+      if (row.blockType === CUSTOM_BLOCK || existing?.blockType === CUSTOM_BLOCK)
+        await recomputeForTurn(db, row.turnId);
       return mapBlock(row);
     },
     async findById(id) {
@@ -96,4 +108,21 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
       return mapBlock(row);
     },
   };
+}
+
+/**
+ * Blocks decide a turn's visibility only when a system turn carries a custom
+ * block, so only custom blocks move a chat's activity. Streaming text and tool
+ * blocks skip the recompute.
+ */
+const CUSTOM_BLOCK = "custom";
+
+async function recomputeForTurn(db: DrizzleDb, turnId: string) {
+  const [turn] = await currentDrizzleDb(db)
+    .select({ threadId: schema.turns.threadId })
+    .from(schema.turns)
+    .where(eq(schema.turns.id, turnId as TurnId));
+  if (turn) {
+    await currentDrizzleDb(db).execute(recomputeThreadChatActivitySql(sql`${turn.threadId}::uuid`));
+  }
 }

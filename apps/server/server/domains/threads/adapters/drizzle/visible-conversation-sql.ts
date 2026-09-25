@@ -86,6 +86,19 @@ export function visibleConversationalHeadLateral(activeLeafTurnId: SQL): SQL {
   ) AS conversational_head`;
 }
 
+/** Recompute the persisted conversational head using the canonical visibility predicate. */
+export function recomputeThreadChatActivitySql(threadId: SQL): SQL {
+  return sql`UPDATE threads t SET
+    conversational_leaf_turn_id = head.turn_id,
+    last_activity_at = COALESCE(head.activity_at, t.created_at)
+  FROM threads source
+  LEFT JOIN LATERAL (
+    SELECT conversational_head.turn_id, conversational_head.activity_at
+    FROM ${visibleConversationalHeadLateral(sql`source.active_leaf_turn_id`)}
+  ) head ON true
+  WHERE t.id = source.id AND source.id = ${threadId}`;
+}
+
 /** One correlated, whitespace-normalized 240-character visible-head preview. */
 export function projectChatPreviewLateral(headTurnId: SQL): SQL {
   return sql`LATERAL (

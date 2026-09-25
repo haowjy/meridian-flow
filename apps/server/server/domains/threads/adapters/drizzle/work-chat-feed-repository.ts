@@ -9,7 +9,6 @@ import {
   type ProjectChatSqlRow,
   projectChatPreviewLateral,
   threadActionRequiredSql,
-  visibleConversationalHeadLateral,
 } from "./visible-conversation-sql.js";
 import { workAssociationCandidatesSql } from "./work-association-candidates-sql.js";
 
@@ -34,12 +33,12 @@ export function createDrizzleWorkChatFeedRepository(db: DrizzleDatabase): WorkCh
             ELSE COALESCE(adr.definition->'metadata'->>'name', adr.slug)
           END AS agent_name,
           conversation_preview.last_message_preview,
-          ${exactUtcTimestampSql(sql`COALESCE(conversational_head.activity_at, t.created_at)`)}
+          ${exactUtcTimestampSql(sql`t.last_activity_at`)}
             AS last_activity_at_exact,
           ${exactUtcTimestampSql(sql`candidates.updated_at`)} AS updated_at_exact,
           ${threadActionRequiredSql({
-            headRole: sql`conversational_head.role`,
-            headStatus: sql`conversational_head.status`,
+            headRole: sql`head.role`,
+            headStatus: sql`head.status`,
           })} AS action_required,
           COALESCE(tus.is_favorite, false) AS is_favorite
         FROM candidates
@@ -53,8 +52,8 @@ export function createDrizzleWorkChatFeedRepository(db: DrizzleDatabase): WorkCh
           ON adr.id = tab.definition_revision_id
         LEFT JOIN thread_user_state tus
           ON tus.thread_id = t.id AND tus.user_id = ${input.userId}::uuid
-        LEFT JOIN ${visibleConversationalHeadLateral(sql`t.active_leaf_turn_id`)} ON true
-        LEFT JOIN ${projectChatPreviewLateral(sql`conversational_head.turn_id`)} ON true
+        LEFT JOIN turns head ON head.id = t.conversational_leaf_turn_id
+        LEFT JOIN ${projectChatPreviewLateral(sql`t.conversational_leaf_turn_id`)} ON true
         ORDER BY candidates.updated_at DESC, candidates.thread_id DESC
       `);
       return Array.from(rows as unknown as Iterable<WorkRow>).map(

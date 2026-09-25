@@ -18,6 +18,7 @@ import type {
 } from "../../ports/repositories.js";
 import { mapTurn } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDatabase, type DrizzleDb } from "./repositories.js";
+import { recomputeThreadChatActivitySql } from "./visible-conversation-sql.js";
 
 export async function lockThreadForTurnTransition(db: DrizzleDb, threadId: ThreadId) {
   const [thread] = await currentDrizzleDb(db)
@@ -146,6 +147,7 @@ export function createDrizzleTurnRepository(
             updatedAt: now,
           })
           .where(eq(schema.threads.id, row.threadId));
+        await activeDb.execute(recomputeThreadChatActivitySql(sql`${row.threadId}::uuid`));
         const [thread] = await activeDb
           .select({
             projectId: schema.threads.projectId,
@@ -219,6 +221,9 @@ export function createDrizzleTurnRepository(
         .where(eq(schema.turns.id, id))
         .returning();
       if (!row) throw new Error(`Turn not found: ${id}`);
+      await currentDrizzleDb(db).execute(
+        recomputeThreadChatActivitySql(sql`${row.threadId}::uuid`),
+      );
       return mapTurn(row);
     },
     async recomputeRollups(id) {
