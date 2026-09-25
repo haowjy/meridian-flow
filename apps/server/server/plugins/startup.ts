@@ -45,6 +45,9 @@ registerProcessShutdownCallback("http-drain", async () => {
   stopHttpRequestAdmission();
   await waitForHttpRequestDrain(10_000);
 });
+registerProcessShutdownCallback("turn-drain", async () => {
+  await (await getApp()).runner.shutdown();
+});
 registerProcessShutdownCallback("websocket-drain", async () => {
   const [yjs, threads] = await Promise.all([
     import("../routes/ws/yjs"),

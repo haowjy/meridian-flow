@@ -1208,6 +1208,7 @@ export function createInMemoryAppServices(): AppServices {
       async cancel() {
         return "not_found" as const;
       },
+      async shutdown() {},
     },
     userTurnAdmission: {
       async admit(input) {

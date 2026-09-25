@@ -4,6 +4,7 @@
  * disconnects do not cancel in-flight turns.
  */
 
+import { EventType } from "@meridian/contracts/protocol";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createThreadWebSocketSession, type WsPeer } from "../../../../lib/ws-thread-handler.js";
 import {
@@ -86,6 +87,24 @@ describe("cancel billing", () => {
     controller.abort();
     const balanceAfterSecondAbort = await rig.balance();
     expect(balanceAfterSecondAbort).toBe(balanceAfterCancel);
+  });
+
+  it("shutdown aborts a running turn and waits for the terminal event to persist", async () => {
+    const rig = await RuntimeTestRig.create({ gateway: createMockGateway(mock) });
+    await rig.runner.startTurn({ threadId: rig.thread.id, userText: "deploy drain" });
+    await rig.gatewaySignal.promise;
+
+    const turnId = rig.runner.getRunningTurnId(rig.thread.id);
+    expect(turnId).not.toBeNull();
+    const finished = rig.awaitCancelled(turnId as NonNullable<typeof turnId>);
+
+    await rig.runner.shutdown();
+    await finished;
+
+    expect((await rig.turn(turnId as NonNullable<typeof turnId>))?.status).toBe("cancelled");
+    expect(rig.projectedEvents.some(({ event }) => event.type === EventType.RUN_FINISHED)).toBe(
+      true,
+    );
   });
 
   it("does not cancel the in-flight turn when the owning WebSocket disconnects before subscribe", async () => {
