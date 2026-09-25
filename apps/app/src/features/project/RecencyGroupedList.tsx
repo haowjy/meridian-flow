@@ -76,10 +76,7 @@ export function RecencyGroupedList<T>({
         return (
           <section key={group} className="mt-7 first:mt-0">
             <SectionLabel variant="group">{groupLabel(group)}</SectionLabel>
-            <ul
-              className={cn("mt-2 divide-y divide-border-subtle", listClassName)}
-              aria-busy={busy || undefined}
-            >
+            <ul className={cn("mt-2 divide-hairline", listClassName)} aria-busy={busy || undefined}>
               {rows.map((item) => (
                 <li key={itemKey(item)}>{renderItem(item)}</li>
               ))}

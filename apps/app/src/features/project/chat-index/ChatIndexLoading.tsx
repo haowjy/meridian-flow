@@ -12,7 +12,7 @@ export function ChatIndexLoading() {
       </span>
       <div aria-hidden>
         <Skeleton className="h-3 w-14 motion-reduce:animate-none" />
-        <ul className="-mx-2 mt-2 divide-y divide-border-subtle">
+        <ul className="-mx-2 mt-2 divide-hairline">
           {Array.from({ length: 5 }, (_, index) => (
             <ProjectChatRowSkeleton key={index} />
           ))}
