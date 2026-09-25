@@ -291,6 +291,12 @@ export function createThreadEventHub(
 
       const { events: catchupEvents, hitReplayLimit } = await readCatchup(threadId, afterSeq);
 
+      const lastCatchupEvent = catchupEvents.at(-1);
+      const journalHead = lastCatchupEvent
+        ? journalSeqForEventSeq(lastCatchupEvent.seq)
+        : await deps.journalReader.headSeq(threadId);
+      if (journalHead > state.journalHeadSeq) state.journalHeadSeq = journalHead;
+
       state.listeners.delete(guardListener);
       state.listeners.add(listener);
 

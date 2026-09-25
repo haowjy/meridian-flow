@@ -3,9 +3,56 @@ import { describe, expect, it, vi } from "vitest";
 import type { EventSink } from "../../../observability/index.js";
 import type { EventJournalReader } from "../../ports/index.js";
 import type { ThreadEventHub } from "../../thread-event-hub.js";
+import { createThreadEventHub } from "../../thread-event-hub.js";
 import { listenForThreadEvents } from "./event-relay.js";
 
 describe("thread event relay", () => {
+  it("does not replay an idle subscribed thread from journal sequence zero after re-LISTEN", async () => {
+    let onListen: (() => void) | undefined;
+    let activeReads = 0;
+    let maxActiveReads = 0;
+    const threadId = "thread-idle" as never;
+    const readAfter = vi.fn(async (_threadId: unknown, _afterSeq: bigint) => {
+      activeReads += 1;
+      maxActiveReads = Math.max(maxActiveReads, activeReads);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      activeReads -= 1;
+      return [];
+    });
+    const journalReader = {
+      readAfter,
+      headSeq: vi.fn(async () => 900n),
+    } as unknown as EventJournalReader;
+    const eventSink = { emit() {}, emitBatch() {}, async flush() {} } as EventSink;
+    const hub = createThreadEventHub(
+      {
+        journalReader,
+        journalWriter: { appendEvent: async () => 0n },
+        eventSink,
+      },
+      { evictionGraceMs: 60_000 },
+    );
+    const subscription = await hub.catchupAndSubscribe(threadId, 0n, () => {});
+    readAfter.mockClear();
+    const db = {
+      listen: async (_channel: string, _notify: unknown, onlisten?: () => void) => {
+        onListen = onlisten;
+        onlisten?.();
+        return { unlisten: async () => {} };
+      },
+    } as unknown as Database;
+
+    await listenForThreadEvents({ db, journalReader, eventHub: hub, eventSink });
+    onListen?.();
+    onListen?.();
+    await vi.waitFor(() => expect(readAfter).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 15));
+
+    expect(readAfter).not.toHaveBeenCalledWith(threadId, 0n, expect.anything());
+    expect(maxActiveReads).toBe(1);
+    subscription.unsubscribe();
+  });
+
   it("replays journal events for live subscribers after postgres re-LISTENs", async () => {
     let onListen: (() => void) | undefined;
     const activeThreadId = "thread-live" as never;

@@ -15,6 +15,8 @@ export async function listenForThreadEvents(input: {
   eventSink: EventSink;
 }): Promise<{ unlisten: () => Promise<void> }> {
   let hasConnectedOnce = false;
+  let catchUpInFlight = false;
+  let catchUpAgain = false;
   return input.db.listen(
     "thread_events",
     (payload) => {
@@ -32,14 +34,7 @@ export async function listenForThreadEvents(input: {
         hasConnectedOnce = true;
         return;
       }
-      void catchUpActiveSubscribers().catch((cause) => {
-        emitEvent(input.eventSink, {
-          level: "error",
-          source: "threads.event-relay",
-          name: "relisten_catchup.failed",
-          payload: unknownToEventPayload(cause),
-        });
-      });
+      requestCatchUp();
     },
   );
 
@@ -59,6 +54,30 @@ export async function listenForThreadEvents(input: {
         if (entries.length < RELISTEN_REPLAY_BATCH_SIZE) break;
       }
     }
+  }
+
+  function requestCatchUp(): void {
+    catchUpAgain = true;
+    if (catchUpInFlight) return;
+    catchUpInFlight = true;
+    void (async () => {
+      try {
+        while (catchUpAgain) {
+          catchUpAgain = false;
+          await catchUpActiveSubscribers();
+        }
+      } catch (cause) {
+        emitEvent(input.eventSink, {
+          level: "error",
+          source: "threads.event-relay",
+          name: "relisten_catchup.failed",
+          payload: unknownToEventPayload(cause),
+        });
+      } finally {
+        catchUpInFlight = false;
+        if (catchUpAgain) requestCatchUp();
+      }
+    })();
   }
 
   async function relay(payload: string): Promise<void> {
