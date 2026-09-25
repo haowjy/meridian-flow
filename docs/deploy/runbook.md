@@ -132,6 +132,12 @@ or smoke check.
    **Verify:** staging and production `deploy/*` statuses succeed on the release commit; `/healthz`
    reports the expected version and SHA; `/readyz`, app callback/login, and WebSocket checks pass.
 
+What a deploy does to live work: the old server drains HTTP requests, closes websockets with 1012 so
+clients reconnect, and checkpoints Yjs documents before it exits. An AI turn still running on the old
+server gets no special handling. The process going away is treated like a crash, and within about 20 s
+the new server settles that turn to the ordinary error state through orphaned-turn recovery, so the
+writer can send again.
+
 ## 6. Rollback and database restore
 
 **Application rollback:** dispatch production with an older tag that has successful `deploy/staging`;
