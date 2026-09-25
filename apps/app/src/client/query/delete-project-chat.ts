@@ -1,40 +1,40 @@
-/** Delete a project chat and drop it from every cached chat projection. */
-import type { ThreadListItem } from "@meridian/contracts/protocol";
+/**
+ * Optimistic soft delete: the row leaves every cached chat projection at once
+ * and the caller's current-chat/favorite side effects run immediately, ahead
+ * of the server's confirmation.
+ */
 import type { QueryClient } from "@tanstack/react-query";
 import { deleteThread } from "@/client/api/threads-api";
-import type { ChatFeedData } from "./project-chat-feed-cache";
+import { removeChatRow, restoreChatRow, snapshotChatRow } from "./chat-projections";
 import { invalidateProjectThreadData, invalidateWorkThreads } from "./project-invalidation";
 import { projectQueryKeys } from "./project-query-keys";
 
+export type DeleteProjectChatOutcome = { status: "success" } | { status: "error"; error: Error };
+
 /**
- * The server's owned soft delete, then the chat leaves every project chat
- * projection (thread list, chat feed, Work feeds) before the refetch confirms.
+ * Remove the chat from every projection and its normalized user-state record
+ * before the server confirms. A failure restores the exact pre-delete cache
+ * snapshot and returns the error for the caller to surface on the row.
  */
 export async function deleteProjectChat(
   client: QueryClient,
   projectId: string,
   threadId: string,
-): Promise<void> {
-  await deleteThread({ data: { threadId } });
-  client.setQueryData<ThreadListItem[] | null>(projectQueryKeys.threads(projectId), (list) =>
-    list ? list.filter((thread) => thread.id !== threadId) : list,
-  );
-  const withoutChat = (data: ChatFeedData | undefined) =>
-    data && {
-      ...data,
-      pages: data.pages.map((page) => ({
-        ...page,
-        items: page.items.filter((item) => item.id !== threadId),
-      })),
-    };
-  client.setQueriesData<ChatFeedData>(
-    { queryKey: projectQueryKeys.chatFeed(projectId) },
-    withoutChat,
-  );
-  client.setQueriesData<ChatFeedData>(
-    { queryKey: projectQueryKeys.workThreads(projectId) },
-    withoutChat,
-  );
-  void invalidateProjectThreadData(client, projectId);
-  void invalidateWorkThreads(client, projectId);
+): Promise<DeleteProjectChatOutcome> {
+  const snapshot = snapshotChatRow(client, projectId, threadId);
+  const userState = client.getQueryData(projectQueryKeys.threadUserState(projectId, threadId));
+  removeChatRow(client, projectId, threadId);
+  client.removeQueries({ queryKey: projectQueryKeys.threadUserState(projectId, threadId) });
+  try {
+    await deleteThread({ data: { threadId } });
+    void invalidateProjectThreadData(client, projectId);
+    void invalidateWorkThreads(client, projectId);
+    return { status: "success" };
+  } catch (cause) {
+    restoreChatRow(client, projectId, threadId, snapshot);
+    if (userState !== undefined) {
+      client.setQueryData(projectQueryKeys.threadUserState(projectId, threadId), userState);
+    }
+    return { status: "error", error: cause instanceof Error ? cause : new Error(String(cause)) };
+  }
 }

@@ -24,7 +24,7 @@ import { invalidateThreadProjectionDependencies } from "@/client/query/thread-wo
 export interface ThreadCachePort {
   /** Optimistically insert/merge a thread into its project's cached list. */
   upsertThread(thread: Thread, lifecycle?: ThreadListLifecycle): void;
-  /** Project live lifecycle state across project lists, Home, and Work feeds. */
+  /** Project live lifecycle state across project lists and Work feeds. */
   patchThread(threadId: string, lifecycle: ThreadListLifecycle): void;
   /**
    * Invalidate the persisted projections for a terminal turn: the thread
