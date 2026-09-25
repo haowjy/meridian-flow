@@ -74,6 +74,7 @@ export async function executionScenario(db?: Database, ids = executionIds()) {
         spawnStatus: "running",
       },
     ]);
+    await db.insert(schema.projectThreadCounters).values({ projectId: ids.project, n: 1 });
   } else {
     await repos.threads.create({ id: ids.caller, userId: ids.user, projectId: ids.project });
     await repos.threads.createSubagent({
