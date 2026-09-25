@@ -29,7 +29,7 @@ export async function runRelease(input: {
   migrationsDirectory: string;
   functionsDirectory: string;
 }): Promise<{ appliedMigrations: number }> {
-  const client = postgres(input.databaseUrl, { max: 1 });
+  const client = postgres(input.databaseUrl, { max: 1, onnotice: () => {} });
   try {
     const journal = JSON.parse(
       readFileSync(path.join(input.migrationsDirectory, "meta/_journal.json"), "utf8"),
@@ -128,7 +128,7 @@ export async function applyFunctions(input: {
   databaseUrl: string;
   functionsDirectory: string;
 }): Promise<void> {
-  const client = postgres(input.databaseUrl, { max: 1 });
+  const client = postgres(input.databaseUrl, { max: 1, onnotice: () => {} });
   try {
     await client.begin(async (tx) => {
       for (const name of functionFiles) {
