@@ -51,11 +51,13 @@ failed event and proceeds to later stages; the shared 25 s deadline bounds
 process exit. srvx closes its listener independently and keeps its force-close
 fallback at 29 s, after the application deadline. In-flight turns get no special
 shutdown handling; process loss (deploy, crash, OOM, SIGKILL) is handled by a
-bounded boot and 20 s periodic sweep. The sweep scans assistant `pending` and
-`streaming` turns, acquires the same per-thread Postgres run claim as active
-runners, re-reads the turn under that claim, and settles only unowned turns via
-the normal `turn.error` finalizer. A live owner is skipped and retried later;
-`waiting_interrupt` is a legitimate paused state and is not swept.
+bounded boot and 20 s periodic sweep. The sweep scans assistant `pending`,
+`streaming`, and `waiting_interrupt` turns, acquires the same per-thread Postgres
+run claim as active runners, re-reads the turn under that claim, and settles
+only unowned turns. A live owner, including a runner paused on an interrupt,
+keeps its claim and is skipped for a later sweep. A dead paused turn is settled
+with its existing `interrupt.expired` and `turn.error` events so the ask block
+closes through normal client handling.
 
 ## Project route surface
 

@@ -42,7 +42,9 @@ skeleton and delegates the moving parts.
 | `interrupt-session.ts` | Same-turn interrupt suspend/resume mechanics and component-block updates. |
 | `tool-dispatch.ts` | Live output, spawn/continue/returnResult callback wiring, and durable tool_result persistence. Dispatch does not apply policy. return_result settlement is spawn-owned: dispatch honors the typed `ReturnResultOutcome` and does not parse arguments or reconstruct the envelope from JSON. |
 | `run-turn-port.ts` | `RunTurnPort` plus `createLateBindRunTurnPort()` to break the runner/orchestrator/child-run cycle. |
-| `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises plus restart recovery from the event journal. No module-global registry state. |
+| `interrupts.ts` | `InterruptRegistry` factory; process-local pending interrupt promises and the event-journal settlement used by the orphan sweep after it acquires the thread-run claim. No module-global registry state. |
+| `orphaned-turn-recovery.ts` | Boot and periodic crash-recovery sweep: claims each candidate thread, re-reads the assistant turn, expires unresolved interrupts or finalizes ordinary orphaned turns, and isolates candidate failures. |
+| `adapters/drizzle-orphan-turn-candidates.ts` | Bounded, created-time-ordered query for assistant `pending`, `streaming`, and `waiting_interrupt` candidates, backed by the partial index. |
 | `context-builder.ts` | Builds `Message[]` + `Tool[]`; sends frozen `composedSystemPrompt` verbatim when baked; formats transient safety notices injected by the orchestrator. On **system** turns it also projects a completed `helper-result` custom card as model text (`componentModelText`), so the parent model reads a background child's report while the writer keeps the card. Assistant custom blocks stay UI-only to preserve tool_use→tool_result adjacency. |
 | `composed-system-prompt.ts` | Assembles and re-bakes the gateway system prompt in a fixed layer order: immutable agent body (revision body or the host-owned empty default), the invocation overlay's additive `appendSystemPrompt`, frozen Work context, available skill slugs (name when it differs) and descriptions, named subagent slug/name/description from the bound roster, core document dialect, runtime URI instruction, and, for subagent threads only, the mandatory closing report instruction as the last layer. An empty or absent append adds nothing, and the guidance string is a module constant (`SUBAGENT_GUIDANCE`). Freeze sentinel is `bakedSkillSlugs !== null`. Frozen at first turn attempt (context assembly), even if the send fails or is cancelled; autoprune is the only future re-bake trigger. |
 | `work-context.ts` / `work-context-delivery.ts` | Reads authoritative Work identity with rendered context and owns durable delivery/recovery behind the deep `WorkContextDelivery` port. Every Work-list change queues eligible live threads. Post-commit wakes drain idle threads, running threads flush at completion, and a startup/poll sweep recovers obligations across process recreation. |
@@ -277,8 +279,13 @@ facet.
   already active or being claimed for that thread. The PostgreSQL adapter also
   rejects same-process reentry because session advisory locks themselves are
   reentrant. Production runners hold the cross-process claim through completion
-  delivery; a crashed process loses its session claim, so startup recovery can
-  safely take over orphaned work.
+  delivery. `turn-runner.ts` keeps that session claim until its for-await loop
+  finishes, including while `interrupt-session.ts` awaits a response. The
+  orphaned-turn sweep runs at boot and every 20 seconds, acquiring the same
+  claim before settling `pending`, `streaming`, or `waiting_interrupt` turns.
+  This requires a direct Postgres connection: a transaction-pooled URL would
+  break session advisory-lock ownership. The startup guard rejects Neon
+  `-pooler` endpoints in staging and production.
 - **Work context updates preserve prompt identity** — a frozen prompt is never
   rebuilt for Work metadata or lifecycle changes. The refreshed block is a
   durable `<system_update>` user-role turn. Every Work or primary-binding
