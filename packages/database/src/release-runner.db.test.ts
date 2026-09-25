@@ -14,20 +14,22 @@ if (!enabled || !databaseUrl) {
   describe.skip("atomic release database tests", () => {});
 } else {
   describe("atomic release database tests", () => {
-    it("rolls the migration batch back when a function fails", { timeout: 30_000 }, async () => {
-      const databaseName = `meridian_release_${process.pid}_${Date.now()}`;
-      const baseUrl = new URL(databaseUrl);
-      const adminUrl = new URL(baseUrl);
-      adminUrl.pathname = "/postgres";
-      const targetUrl = new URL(baseUrl);
-      targetUrl.pathname = `/${databaseName}`;
-      const admin = postgres(adminUrl.toString(), { max: 1 });
-      await admin.unsafe(`CREATE DATABASE "${databaseName}"`);
+    it("rolls the migration batch back when a function fails", async () => {
       const fixtureDirectory = await mkdtemp(join(tmpdir(), "meridian-release-fixture-"));
       const functionsDir = join(fixtureDirectory, "functions");
       const migrationsDirectory = join(fixtureDirectory, "migrations");
       const sourceFunctions = fileURLToPath(new URL("./functions/", import.meta.url));
+      const tableName = `release_atomicity_probe_${process.pid}_${Date.now()}`;
+      const target = postgres(databaseUrl, { max: 1, onnotice: () => {} });
       try {
+        await target.unsafe("CREATE SCHEMA IF NOT EXISTS drizzle");
+        await target.unsafe(`
+          CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
+            id SERIAL PRIMARY KEY,
+            hash text NOT NULL,
+            created_at bigint
+          )
+        `);
         await mkdir(join(migrationsDirectory, "meta"), { recursive: true });
         const when = Date.now();
         await writeFile(
@@ -40,38 +42,36 @@ if (!enabled || !databaseUrl) {
         );
         await writeFile(
           join(migrationsDirectory, "0000_release_probe.sql"),
-          "CREATE TABLE release_atomicity_probe (id integer PRIMARY KEY);",
+          `CREATE TABLE ${tableName} (id integer PRIMARY KEY);`,
         );
         await cp(sourceFunctions, functionsDir, { recursive: true });
         await writeFile(
           join(functionsDir, "consume_credit_lots_fifo.sql"),
           "CREATE FUNCTION broken (",
         );
+        const [before] = await target<Array<{ count: string }>>`
+          SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations
+        `;
         await expect(
           runRelease({
-            databaseUrl: targetUrl.toString(),
+            databaseUrl,
             migrationsDirectory,
             functionsDirectory: functionsDir,
           }),
         ).rejects.toThrow();
-        const target = postgres(targetUrl.toString(), { max: 1 });
-        try {
-          const [tables] = await target<Array<{ count: string }>>`
-            SELECT count(*)::text AS count FROM information_schema.tables
-            WHERE table_schema = 'public' AND table_name = 'release_atomicity_probe'
-          `;
-          const [migrations] = await target<Array<{ count: string }>>`
-            SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations
-          `;
-          expect(tables.count).toBe("0");
-          expect(migrations.count).toBe("0");
-        } finally {
-          await target.end();
-        }
+        const [tables] = await target<Array<{ count: string }>>`
+          SELECT count(*)::text AS count FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_name = ${tableName}
+        `;
+        const [after] = await target<Array<{ count: string }>>`
+          SELECT count(*)::text AS count FROM drizzle.__drizzle_migrations
+        `;
+        expect(tables.count).toBe("0");
+        expect(after.count).toBe(before.count);
       } finally {
+        await target.unsafe(`DROP TABLE IF EXISTS ${tableName}`);
+        await target.end();
         await rm(fixtureDirectory, { recursive: true, force: true });
-        await admin.unsafe(`DROP DATABASE "${databaseName}" WITH (FORCE)`);
-        await admin.end();
       }
     });
   });
