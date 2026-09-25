@@ -62,7 +62,7 @@ export function DockHeader({
     >
       {/* No overflow-hidden: truncation is owned by the min-w-0/truncate chain
           inside, and clipping here shears the trigger's hover pill (it
-          reaches 6px left of the slot for optical text alignment). */}
+          bleeds left of the slot). */}
       <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
         {view === "chat" ? threadSelect : null}
       </div>

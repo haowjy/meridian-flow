@@ -50,7 +50,8 @@ export function ThreadSwitcherPopover({
   onNewChat?: () => void;
   onRename?: () => void;
   /**
-   * `quiet` — hover-pill trigger for chrome that stays chrome (the dock).
+   * `quiet` — chrome that stays chrome (the dock): hovers like an inactive
+   *   document tab.
    * `tab` — the active-tab chip grammar: the chat pane's page material
    * continues up into the band, same as the document tab strip. Use only
    * where the pane below the band is `page-sheet`.
@@ -131,7 +132,9 @@ export function ThreadSwitcherPopover({
                 // chip's base (and its flares) sit on the band's bottom edge
                 // where the page begins.
                 "tab-chip-active relative h-9 px-3 [--tab-chip-surface:var(--color-background)]"
-              : "-ml-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-sidebar-accent [@media(pointer:coarse)]:min-h-11",
+              : // An inactive document tab's hover: the inset pill over the
+                // band's full height, not a pill hugging the text.
+                "tab-chip-inactive relative -ml-2 self-stretch px-3 [--tab-chip-surface:var(--color-background)] [@media(pointer:coarse)]:min-h-11",
           )}
         >
           <PaneTitle className="min-w-0 flex-1">{title}</PaneTitle>
