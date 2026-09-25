@@ -1,6 +1,6 @@
 /**
- * Purpose: Owns the in-memory interrupt promise registry plus restart recovery for same-turn suspend/resume.
- * Key decisions: the registry is intentionally process-local for the MVP, while the journal remains the durable truth; restart recovery expires unresolved interrupts because the awaiting orchestrator promise cannot survive process death.
+ * Purpose: Owns the in-memory interrupt promise registry plus journal-based settlement of unresolved interrupts.
+ * Key decisions: the registry is intentionally process-local; the orphan-turn sweep invokes journal recovery only after acquiring the thread-run claim, since the awaiting orchestrator promise cannot survive process death.
  */
 import type {
   ComponentBlockContent,
@@ -64,7 +64,7 @@ export interface InterruptRegistry {
     interruptId: string;
     value: JsonValue;
   }): ResolveInterruptResult;
-  /** Recovery deduplication map for restart recovery per thread. */
+  /** Recovery deduplication map for claimed orphan-turn settlement per thread. */
   recoverPendingInterrupts(deps: InterruptRecoveryDeps): Promise<OrchestratorEvent[]>;
 }
 

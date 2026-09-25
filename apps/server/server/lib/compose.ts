@@ -545,10 +545,14 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     journalWriter: ports.journalWriter,
     eventSink: ports.eventSink,
   });
+  const interruptRegistry = createInterruptRegistry();
   const orphanedTurnRecovery = createOrphanedTurnRecovery({
     listCandidates: (limit) => listOrphanTurnCandidates(ports.db, limit),
     repos: ports.threadRepos,
+    journalReader: ports.journalReader,
     eventWriter: ports.journalWriter,
+    interruptRegistry,
+    eventSink: ports.eventSink,
     runOwnership: ports.runOwnership,
   });
   const changeTrails = createDrizzleChangeTrailReader(ports.db, ports.documentAccess);
@@ -559,7 +563,6 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     retryBranch: (branchId) => ports.documentSync.pushToLive({ branchId }),
     recoverPendingLiveSettlements: () => ports.documentSync.recoverPendingLiveSettlements(),
   });
-  const interruptRegistry = createInterruptRegistry();
   const workContext = createWorkContextReader({
     threads: ports.threadRepos.threads,
     works: ports.workRepo,
@@ -994,11 +997,36 @@ export function createInMemoryAppServices(): AppServices {
     orphanedTurnRecovery: createOrphanedTurnRecovery({
       listCandidates: async () => [],
       repos: threadRepos,
+      journalReader: {
+        async readAfter() {
+          return [];
+        },
+        async headSeq() {
+          return 0n;
+        },
+        async readModelProjectionWatermark() {
+          return 0n;
+        },
+        async listByThread() {
+          return [];
+        },
+        async listByType() {
+          return [];
+        },
+        async listSince() {
+          return [];
+        },
+        async listByTimeRange() {
+          return [];
+        },
+      },
       eventWriter: {
         async appendEvent() {
           return 1n;
         },
       },
+      interruptRegistry: createInterruptRegistry(),
+      eventSink: createNoopEventSink(),
       runOwnership,
     }),
     threadEventHub: inMemoryThreadEventHub,

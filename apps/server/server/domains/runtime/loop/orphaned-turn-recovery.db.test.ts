@@ -10,6 +10,7 @@ const PROJECT_ID = "00000000-0000-4000-8000-000000000812";
 const THREAD_ID = "00000000-0000-4000-8000-000000000813";
 const USER_TURN_ID = "00000000-0000-4000-8000-000000000814";
 const ASSISTANT_TURN_ID = "00000000-0000-4000-8000-000000000815";
+const LATER_ASSISTANT_TURN_ID = "00000000-0000-4000-8000-000000000817";
 
 if (!RUN_DB_TESTS || !DATABASE_URL) {
   describe.skip("orphaned turn recovery (postgres)", () => {});
@@ -29,6 +30,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     const { createDrizzleThreadRunOwnership } = await import(
       "../adapters/drizzle-thread-run-ownership.js"
     );
+    const { createInterruptRegistry } = await import("./interrupts.js");
     const { createOrphanedTurnRecovery } = await import("./orphaned-turn-recovery.js");
     const { listOrphanTurnCandidates } = await import(
       "../adapters/drizzle-orphan-turn-candidates.js"
@@ -82,7 +84,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       return createOrphanedTurnRecovery({
         listCandidates: (limit) => listOrphanTurnCandidates(db, limit),
         repos,
+        journalReader: reader,
         eventWriter: writer,
+        interruptRegistry: createInterruptRegistry(),
+        eventSink: { emit() {}, emitBatch() {}, async flush() {} },
         runOwnership,
       });
     }
@@ -130,13 +135,47 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await claim?.release();
     });
 
-    it("does not finalize a legitimate waiting_interrupt turn", async () => {
+    it("settles a dead waiting_interrupt turn with the existing expiry and restart events", async () => {
       await repos.turns.updateStatus(ASSISTANT_TURN_ID, { status: "waiting_interrupt" });
+      await writer.appendEvent(THREAD_ID, {
+        type: "interrupt.created",
+        turnId: ASSISTANT_TURN_ID,
+        interruptId: "orphaned-ask",
+        blockSequence: 0,
+        request: {
+          interruptId: "orphaned-ask",
+          prompt: "test",
+          artifacts: [],
+          answerSchema: { type: "object" },
+        },
+      });
+      await expect(recovery().sweep()).resolves.toBe(1);
+      await expect(repos.turns.findById(ASSISTANT_TURN_ID)).resolves.toMatchObject({
+        status: "error",
+      });
+      await expect(reader.listByType(THREAD_ID, "interrupt.expired")).resolves.toMatchObject([
+        { payload: { turnId: ASSISTANT_TURN_ID, interruptId: "orphaned-ask", blockSequence: 0 } },
+      ]);
+      await expect(reader.listByType(THREAD_ID, "turn.error")).resolves.toMatchObject([
+        {
+          payload: {
+            turn: { id: ASSISTANT_TURN_ID, status: "error" },
+            error: { code: "interrupt_interrupted" },
+          },
+        },
+      ]);
+    });
+
+    it("leaves a live waiting_interrupt turn untouched while its run claim is held", async () => {
+      await repos.turns.updateStatus(ASSISTANT_TURN_ID, { status: "waiting_interrupt" });
+      const claim = await recoveryOwnership.tryAcquire(THREAD_ID);
+      expect(claim).not.toBeNull();
       await expect(recovery().sweep()).resolves.toBe(0);
       await expect(repos.turns.findById(ASSISTANT_TURN_ID)).resolves.toMatchObject({
         status: "waiting_interrupt",
       });
-      await expect(reader.listByType(THREAD_ID, "turn.error")).resolves.toHaveLength(0);
+      await expect(reader.listByType(THREAD_ID, "interrupt.expired")).resolves.toHaveLength(0);
+      await claim?.release();
     });
 
     it("writes one terminal event when multiple instances sweep concurrently", async () => {
@@ -150,6 +189,62 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await expect(repos.turns.findById(ASSISTANT_TURN_ID)).resolves.toMatchObject({
         status: "error",
       });
+    });
+
+    it("continues to later orphans when one candidate settlement throws", async () => {
+      await repos.turns.create({
+        id: LATER_ASSISTANT_TURN_ID,
+        threadId: THREAD_ID,
+        prevTurnId: ASSISTANT_TURN_ID,
+        role: "assistant",
+        status: "streaming",
+      });
+      const emitted: { name?: string }[] = [];
+      let failFirstSettlement = true;
+      const result = createOrphanedTurnRecovery({
+        listCandidates: async () => [
+          { id: ASSISTANT_TURN_ID, threadId: THREAD_ID },
+          { id: LATER_ASSISTANT_TURN_ID, threadId: THREAD_ID },
+        ],
+        repos,
+        journalReader: reader,
+        eventWriter: {
+          async appendEvent(threadId, event) {
+            if (
+              failFirstSettlement &&
+              event.type === "turn.error" &&
+              event.turn.id === ASSISTANT_TURN_ID
+            ) {
+              failFirstSettlement = false;
+              throw new Error("simulated settlement failure");
+            }
+            return writer.appendEvent(threadId, event);
+          },
+        },
+        interruptRegistry: createInterruptRegistry(),
+        eventSink: {
+          emit(event) {
+            emitted.push(event);
+          },
+          emitBatch(events) {
+            emitted.push(...events);
+          },
+          async flush() {},
+        },
+        runOwnership: recoveryOwnership,
+      });
+
+      await expect(result.sweep()).resolves.toBe(1);
+      expect(emitted).toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: "candidate.failed" })]),
+      );
+      await expect(repos.turns.findById(ASSISTANT_TURN_ID)).resolves.toMatchObject({
+        status: "streaming",
+      });
+      await expect(repos.turns.findById(LATER_ASSISTANT_TURN_ID)).resolves.toMatchObject({
+        status: "error",
+      });
+      await expect(reader.listByType(THREAD_ID, "turn.error")).resolves.toHaveLength(1);
     });
   });
 }

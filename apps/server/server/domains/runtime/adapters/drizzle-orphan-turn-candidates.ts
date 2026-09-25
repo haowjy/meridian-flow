@@ -14,7 +14,7 @@ export async function listOrphanTurnCandidates(
     .where(
       and(
         eq(schema.turns.role, "assistant"),
-        inArray(schema.turns.status, ["pending", "streaming"]),
+        inArray(schema.turns.status, ["pending", "streaming", "waiting_interrupt"]),
       ),
     )
     .orderBy(asc(schema.turns.createdAt))
