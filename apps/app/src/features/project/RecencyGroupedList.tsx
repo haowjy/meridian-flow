@@ -1,7 +1,8 @@
 /**
  * RecencyGroupedList — Today / Yesterday / Earlier sections for project
- * resume lists. The Editor's Recently opened and the Chat index share it so
- * both read as one family: same buckets, labels, and row rhythm.
+ * resume lists. The Editor's Recently opened renders through it; the chat
+ * index virtualizes the same `recencyGroups` under the same `RecencyGroupLabel`,
+ * so both read as one family: same buckets, labels, and row rhythm.
  */
 import { t } from "@lingui/core/macro";
 import { type ReactNode, useEffect, useState } from "react";
@@ -10,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 /** Age buckets the list groups under, oldest last. */
 const GROUPS = ["today", "yesterday", "earlier"] as const;
-type RecencyGroup = (typeof GROUPS)[number];
+export type RecencyGroup = (typeof GROUPS)[number];
 
 function startOfDay(ms: number): number {
   const date = new Date(ms);
@@ -50,14 +51,33 @@ function groupLabel(group: RecencyGroup): string {
   }
 }
 
+/** Newest-first items split into their non-empty buckets, each keeping that order. */
+export function recencyGroups<T>(
+  items: readonly T[],
+  now: number,
+  timestamp: (item: T) => string,
+): { group: RecencyGroup; items: T[] }[] {
+  return GROUPS.map((group) => ({
+    group,
+    items: items.filter((item) => recencyGroup(timestamp(item), now) === group),
+  })).filter((bucket) => bucket.items.length > 0);
+}
+
+/** A bucket's label with the space above (except the first) and below it. */
+export function RecencyGroupLabel({ group, first }: { group: RecencyGroup; first: boolean }) {
+  return (
+    <div className={cn("pb-2", !first && "pt-7")}>
+      <SectionLabel variant="group">{groupLabel(group)}</SectionLabel>
+    </div>
+  );
+}
+
 export function RecencyGroupedList<T>({
   items,
   now,
   timestamp,
   itemKey,
   renderItem,
-  busy,
-  listClassName,
 }: {
   /** Newest first; each bucket keeps this order. */
   items: readonly T[];
@@ -65,25 +85,24 @@ export function RecencyGroupedList<T>({
   timestamp: (item: T) => string;
   itemKey: (item: T) => string;
   renderItem: (item: T) => ReactNode;
-  busy?: boolean;
-  listClassName?: string;
 }) {
   return (
     <div className="flex flex-col">
-      {GROUPS.map((group) => {
-        const rows = items.filter((item) => recencyGroup(timestamp(item), now) === group);
-        if (rows.length === 0) return null;
-        return (
-          <section key={group} className="mt-7 first:mt-0">
-            <SectionLabel variant="group">{groupLabel(group)}</SectionLabel>
-            <ul className={cn("mt-2 divide-row-rule", listClassName)} aria-busy={busy || undefined}>
-              {rows.map((item) => (
-                <li key={itemKey(item)}>{renderItem(item)}</li>
-              ))}
-            </ul>
-          </section>
-        );
-      })}
+      {recencyGroups(items, now, timestamp).map((bucket, index) => (
+        <section key={bucket.group}>
+          <RecencyGroupLabel group={bucket.group} first={index === 0} />
+          <ul>
+            {bucket.items.map((item, row) => (
+              <li
+                key={itemKey(item)}
+                className={cn("relative", row < bucket.items.length - 1 && "row-rule")}
+              >
+                {renderItem(item)}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
     </div>
   );
 }

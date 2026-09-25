@@ -8,9 +8,9 @@ import { useProjectChatUserState } from "@/client/query/useProjectChatUserState"
 import { useWorkThreads } from "@/client/query/useWorkThreads";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
+import { useExternalScrollVirtualList } from "@/hooks/use-external-scroll-virtual-list";
 import { ProjectChatRow } from "../chat-list/ProjectChatRow";
 import { useChatRowCommands } from "../chat-list/useChatRowCommands";
-import { useExternalScrollVirtualList } from "./useExternalScrollVirtualList";
 
 const chatKey = (item: ProjectChatItem) => item.id;
 const estimateChatRow = () => 52;

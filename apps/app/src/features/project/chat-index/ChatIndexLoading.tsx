@@ -12,9 +12,9 @@ export function ChatIndexLoading() {
       </span>
       <div aria-hidden>
         <Skeleton className="h-3 w-14 motion-reduce:animate-none" />
-        <ul className="-mx-2 mt-2 divide-row-rule [--row-rule-inset:--spacing(2)]">
+        <ul className="-mx-2 mt-2 [--row-rule-inset:--spacing(2)]">
           {Array.from({ length: 5 }, (_, index) => (
-            <ProjectChatRowSkeleton key={index} />
+            <ProjectChatRowSkeleton key={index} ruled={index < 4} />
           ))}
         </ul>
       </div>

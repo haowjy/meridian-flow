@@ -349,14 +349,12 @@
   }
 }
 
-/* Resume-list row rules. A list that bleeds past its column for a wider hover
-   pill sets --row-rule-inset to the bleed, so the rule still spans only the
-   text column. */
-@utility divide-row-rule {
-  & > :not(:last-child) {
-    position: relative;
-  }
-  & > :not(:last-child)::after {
+/* A resume-list row's rule, drawn over its bottom edge so it adds no height.
+   Put it on a positioned row that is followed by another row in its group; a
+   list that bleeds past its column for a wider hover pill sets
+   --row-rule-inset to the bleed, so the rule spans only the text column. */
+@utility row-rule {
+  &::after {
     content: "";
     pointer-events: none;
     position: absolute;

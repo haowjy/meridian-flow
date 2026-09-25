@@ -9,24 +9,21 @@
  */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
-import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
-import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Input } from "@/components/ui/input";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { CreationComposer } from "@/features/chat/CreationComposer";
 import { cn } from "@/lib/utils";
-import { ProjectChatRow, type ProjectChatRowProps } from "../chat-list/ProjectChatRow";
 import { useChatRowCommands } from "../chat-list/useChatRowCommands";
-import { RecencyGroupedList, useMinuteClock } from "../RecencyGroupedList";
+import { useMinuteClock } from "../RecencyGroupedList";
 import { useChatNavigation } from "../routing/chat-navigation";
+import { ChatIndexList, type ChatIndexRowProps } from "./ChatIndexList";
 import { ChatIndexLoading } from "./ChatIndexLoading";
 
 type Filter = "all" | "favorites";
-type RowProps = Omit<ProjectChatRowProps, "item" | "favorite">;
 type Feed = ReturnType<typeof useProjectChatFeed>;
 
 export type ChatIndexProps = {
@@ -54,11 +51,16 @@ export function ChatIndex({ projectId, namedByChrome = false }: ChatIndexProps) 
   const finePointer = useFinePointer();
   const { deleteDialog, ...commands } = useChatRowCommands(projectId);
   const { openChat } = useChatNavigation();
-  const rowProps: RowProps = { ...commands, now, onOpen: (item) => void openChat(item.id) };
+  const rowProps: ChatIndexRowProps = {
+    ...commands,
+    now,
+    onOpen: (item) => void openChat(item.id),
+  };
+  const scrollOwner = useRef<HTMLDivElement>(null);
 
   return (
     // One scroll for the whole page; the list's tools stick once scrolled past.
-    <div data-chat-index-scroll-owner className="app-scroll main-pane">
+    <div ref={scrollOwner} data-chat-index-scroll-owner className="app-scroll main-pane">
       <div
         className={cn(
           "chat-column @container/project-screen pb-12",
@@ -95,6 +97,7 @@ export function ChatIndex({ projectId, namedByChrome = false }: ChatIndexProps) 
             feed={feed}
             favorites={filter === "favorites"}
             search={search}
+            scrollOwner={scrollOwner}
             rowProps={rowProps}
           />
         </div>
@@ -143,13 +146,15 @@ function ChatIndexBody({
   feed,
   favorites,
   search,
+  scrollOwner,
   rowProps,
 }: {
   projectId: string;
   feed: Feed;
   favorites: boolean;
   search: string | null;
-  rowProps: RowProps;
+  scrollOwner: React.RefObject<HTMLElement | null>;
+  rowProps: ChatIndexRowProps;
 }) {
   if (feed.isPending) return <ChatIndexLoading />;
   if (feed.isError && !feed.data)
@@ -173,18 +178,13 @@ function ChatIndexBody({
     );
   return (
     <>
-      <RecencyGroupedList
+      <ChatIndexList
+        projectId={projectId}
         items={feed.items}
-        now={rowProps.now}
-        timestamp={(item) => item.lastActivityAt}
-        itemKey={(item) => item.id}
+        complete={!feed.hasNextPage}
         busy={feed.isFetchingNextPage}
-        // Rows own a hover wash with inner padding; bleed it so row text lines
-        // up with the heading and group labels.
-        listClassName="-mx-2 [--row-rule-inset:--spacing(2)]"
-        renderItem={(item) => (
-          <ChatIndexRow projectId={projectId} item={item} rowProps={rowProps} />
-        )}
+        scrollOwner={scrollOwner}
+        rowProps={rowProps}
       />
       <NextPage feed={feed} />
       {/* A failed refresh over cached rows keeps the list and offers a quiet
@@ -199,19 +199,6 @@ function ChatIndexBody({
       ) : null}
     </>
   );
-}
-
-function ChatIndexRow({
-  projectId,
-  item,
-  rowProps,
-}: {
-  projectId: string;
-  item: ProjectChatItem;
-  rowProps: RowProps;
-}) {
-  const state = useProjectChatUserState(projectId, item);
-  return <ProjectChatRow {...rowProps} {...state} />;
 }
 
 /**
