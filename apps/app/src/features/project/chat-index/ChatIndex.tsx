@@ -12,10 +12,7 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import {
-  type ProjectFeedNextPageIdentity,
-  useProjectChatFeed,
-} from "@/client/query/useProjectChatFeed";
+import { useProjectChatFeed } from "@/client/query/useProjectChatFeed";
 import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Input } from "@/components/ui/input";
@@ -206,28 +203,23 @@ function ChatIndexRow({
   return <ProjectChatRow {...rowProps} {...state} />;
 }
 
-/** Infinite pagination: a sentinel near the end requests each cursor once. */
+/**
+ * Infinite pagination: a sentinel near the end requests the next page. The
+ * observer exists only while a page can be requested, and each page it loads
+ * re-observes, so a tall viewport keeps filling until the sentinel leaves it.
+ */
 function NextPage({ feed }: { feed: Feed }) {
   const sentinel = useRef<HTMLDivElement>(null);
-  const requestedPage = useRef<ProjectFeedNextPageIdentity | null>(null);
+  const { fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError } = feed;
+  const pages = feed.data?.pages.length;
   useEffect(() => {
-    if (
-      !sentinel.current ||
-      !feed.hasNextPage ||
-      !feed.nextPageIdentity ||
-      feed.isFetchingNextPage ||
-      feed.isFetchNextPageError
-    )
-      return;
-    const pageIdentity = feed.nextPageIdentity;
+    if (!sentinel.current || !hasNextPage || isFetchingNextPage || isFetchNextPageError) return;
     let active = true;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (!active) return;
-        if (entry?.isIntersecting && requestedPage.current !== pageIdentity) {
-          requestedPage.current = pageIdentity;
-          void feed.fetchNextPage();
-        }
+        if (!active || !entry?.isIntersecting) return;
+        active = false;
+        void fetchNextPage();
       },
       { rootMargin: "240px" },
     );
@@ -236,13 +228,7 @@ function NextPage({ feed }: { feed: Feed }) {
       active = false;
       observer.disconnect();
     };
-  }, [
-    feed.fetchNextPage,
-    feed.hasNextPage,
-    feed.isFetchNextPageError,
-    feed.isFetchingNextPage,
-    feed.nextPageIdentity,
-  ]);
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError, pages]);
 
   if (feed.isFetchNextPageError)
     return (

@@ -115,11 +115,11 @@ uses current chat identity, not a URL-only selector. The submitted Work, Agent,
 and project are immutable reconciliation facts; no admission or visibility
 handoff may run until the canonical thread matches them.
 
-The QueryClient owns normalized Favorite intent per project/thread. Feed pages retain
-server cursor boundaries; locally changed Favorite membership is projected
-optimistically and fenced against stale page arrival. Favorite completion
-invalidates all project-feed filters. Work membership
-is unchanged. No feed owns read/unread state. Lifecycle projection updates
+The QueryClient owns normalized Favorite intent per project/thread, fenced
+against stale page arrival. A Favorite projects onto every cached row of that
+chat at once; the Favorites filter hides an unfavorited row locally, but no feed
+guesses membership. Favorite completion refetches only Favorites feeds. Work
+membership is unchanged. No feed owns read/unread state. Lifecycle projection updates
 `actionRequired` in cached rows when a subscribed thread emits; unsubscribed
 threads are only refreshed by ordinary query reads, not a background signal.
 

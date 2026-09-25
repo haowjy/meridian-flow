@@ -258,7 +258,11 @@ async function advance(
   }
 
   syncProjectFeed(client, projectId, threadId);
-  void client.invalidateQueries({ queryKey: projectQueryKeys.chatFeed(projectId) });
+  // Rows already show the settled value in place; only Favorites membership
+  // can have changed, so only Favorites feeds refetch.
+  void client.invalidateQueries({
+    queryKey: projectQueryKeys.chatFeedFilter(projectId, { favorite: true }),
+  });
   queue.entries.shift();
   queue.running = false;
   const next = queue.entries[0];

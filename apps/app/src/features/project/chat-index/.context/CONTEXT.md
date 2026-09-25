@@ -17,14 +17,14 @@ newest-first pages, so pagination continues inside the last group.
 A project with no chats shows the composer and one muted "No chats yet." line.
 Search settles for 200 ms, then asks the server for title matches (`q`,
 case-insensitive, LIKE metacharacters literal, applied with Favorites before
-pagination); search and filter are part of the feed query key. A searched
-Favorites page is exactly the server's matches, so it skips the pending-favorite
-membership merge. An empty search result names the query.
+pagination); search and filter are part of the feed query key
+(`chatFeedFilter`). Every page is exactly the server's matches. An empty search
+result names the query.
 An empty Favorites filter is one muted line under the heading row.
 
-The feed observer keys pagination by project, filter, and opaque cursor. Stale
-observer callbacks must not request pages. Lifecycle hints are snapshots, not
-live signals for unsubscribed chats.
+The pagination sentinel observes only while a page can be requested, so a stale
+observer callback cannot request a page. Lifecycle hints are snapshots, not live
+signals for unsubscribed chats.
 
 ## Row layout and feed behavior
 
