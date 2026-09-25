@@ -54,6 +54,11 @@ export interface AdmissionRecordPort {
     fingerprint: AdmissionFingerprint;
     claimExpiresAt: Date;
   }): Promise<{ kind: "reserved" } | { kind: "winner"; record: AdmissionRecord }>;
+  releasePending(input: {
+    threadId: string;
+    submissionId: string;
+    fingerprint: AdmissionFingerprint;
+  }): Promise<void>;
   reject(input: {
     threadId: string;
     submissionId: string;

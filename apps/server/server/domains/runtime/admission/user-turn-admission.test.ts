@@ -113,6 +113,7 @@ function harness(
           ? { kind: "winner" as const, record: existing }
           : { kind: "reserved" as const };
       }),
+      releasePending: vi.fn(async () => {}),
       reject: vi.fn(async (request) => ({
         state: "rejected" as const,
         fingerprint: reservedFingerprint,
