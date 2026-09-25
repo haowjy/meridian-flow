@@ -2,6 +2,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { createConfirmedSnapshot } from "./neon.ts";
 
 type Image = { repository: string; digest: string; ref: string };
 type Manifest = { version: string; tag: string; sha: string; images: Record<string, Image> };
@@ -11,9 +12,27 @@ const cliVersion = "5.62.1";
 const timeoutMs = Number(process.env.DEPLOY_TIMEOUT_MS ?? 12 * 60_000);
 const pollMs = Number(process.env.DEPLOY_POLL_MS ?? 3_000);
 const detectMs = Number(process.env.DEPLOY_DETECT_MS ?? 60_000);
+const terminalFailures = new Set([
+  "FAILED",
+  "CRASHED",
+  "COMPLETED",
+  "REMOVED",
+  "SKIPPED",
+  "CANCELED",
+  "CANCELLED",
+  "TIMED_OUT",
+  "ABORTED",
+  "DEACTIVATED",
+  "THROTTLED",
+]);
 
 function fail(message: string): never {
   throw new Error(message);
+}
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) fail(`Missing required deploy input: ${name}`);
+  return value;
 }
 function command(args: string[], input?: string): string {
   const result = spawnSync("railway", args, { encoding: "utf8", input, env: process.env });
@@ -76,7 +95,7 @@ async function waitForTerminal(
     if (latest) current = latest;
     const status = (current.status ?? "").toUpperCase();
     if (status === "SUCCESS") return id;
-    if (["FAILED", "CRASHED"].includes(status)) {
+    if (terminalFailures.has(status)) {
       fail(
         `${service}: deployment ${id} ${status}; inspect with: railway logs -s ${service} -e ${environment} ${id} --deployment`,
       );
@@ -91,10 +110,11 @@ async function deployService(
   environment: string,
   service: string,
   image: Image,
+  backupRef?: string,
 ): Promise<[string, string]> {
   const previous = deploymentList(environment, service)[0];
   const previousId = previous && deploymentId(previous);
-  command([
+  const editArgs = [
     "environment",
     "edit",
     "-e",
@@ -103,9 +123,11 @@ async function deployService(
     service,
     "source.image",
     image.ref,
-    "-m",
-    `Promote ${image.ref}`,
-  ]);
+  ];
+  if (backupRef)
+    editArgs.push("--service-config", service, "variables.MERIDIAN_BACKUP_REF.value", backupRef);
+  editArgs.push("-m", `Promote ${image.ref}${backupRef ? " with confirmed Neon snapshot" : ""}`);
+  command(editArgs);
   const deployment = await waitForNewDeployment(environment, service, previousId);
   const id = await waitForTerminal(environment, service, deployment);
   return [service, id];
@@ -117,12 +139,12 @@ async function main() {
   if (!manifestPath) missing.push("manifest.json path");
   else if (!existsSync(manifestPath)) missing.push(`manifest file at ${manifestPath}`);
   if (!process.env.RAILWAY_TOKEN) missing.push("RAILWAY_TOKEN");
+  if (!process.env.NEON_API_KEY) missing.push("NEON_API_KEY");
+  if (!process.env.NEON_PROJECT_ID) missing.push("NEON_PROJECT_ID");
+  if (!process.env.NEON_BRANCH_ID) missing.push("NEON_BRANCH_ID");
   if (missing.length) fail(`Missing required deploy inputs: ${missing.join(", ")}`);
   if (!["staging", "production"].includes(environment))
     fail(`Unsupported environment '${environment}' (expected staging or production)`);
-  const versionOutput = command(["--version"]);
-  if (!versionOutput.includes(cliVersion))
-    fail(`Railway CLI ${cliVersion} required, found '${versionOutput}'`);
   const manifest = json<Manifest>(await readFile(manifestPath, "utf8"), "release manifest");
   if (
     !/^v\d+\.\d+\.\d+(-rc\.\d+)?$/.test(manifest.tag) ||
@@ -142,8 +164,24 @@ async function main() {
         `Manifest image '${service}' must contain its expected repository, sha256 digest, and matching digest ref`,
       );
   }
+  // Complete the external backup before any Railway command can mutate or deploy a service.
+  const ttlDays = Number(process.env.NEON_SNAPSHOT_TTL_DAYS ?? 14);
+  const snapshot = await createConfirmedSnapshot({
+    apiKey: requiredEnv("NEON_API_KEY"),
+    projectId: requiredEnv("NEON_PROJECT_ID"),
+    branchId: requiredEnv("NEON_BRANCH_ID"),
+    tag: manifest.tag,
+    ttlDays,
+    timeoutMs: Number(process.env.NEON_OPERATION_TIMEOUT_MS ?? 120_000),
+    pollMs: Number(process.env.NEON_POLL_MS ?? 1_000),
+    baseUrl: process.env.NEON_API_BASE_URL,
+  });
+  const backupRef = `neon-snapshot:${snapshot.id}:release=${manifest.sha}`;
+  const versionOutput = command(["--version"]);
+  if (!versionOutput.includes(cliVersion))
+    fail(`Railway CLI ${cliVersion} required, found '${versionOutput}'`);
   const results: Array<[string, string]> = [];
-  results.push(await deployService(environment, "server", manifest.images.server));
+  results.push(await deployService(environment, "server", manifest.images.server, backupRef));
   const rest = await Promise.all(
     services
       .filter((name) => name !== "server")

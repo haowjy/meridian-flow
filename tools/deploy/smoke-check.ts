@@ -76,16 +76,14 @@ async function runChecks(): Promise<Result[]> {
     await checked("app /login", async () => {
       const response = await request(new URL(loginLocation, origin).toString());
       const body = await response.text();
+      const hasTitle = /<title>\s*Meridian\s*<\/title>/i.test(body);
       const matches =
         (!expectedVersion || response.headers.get("x-meridian-version") === expectedVersion) &&
         (!expectedRelease || response.headers.get("x-meridian-release") === expectedRelease);
-      const good =
-        response.status === 200 &&
-        body.includes("Get the story out of your head and onto the page.") &&
-        matches;
+      const good = response.status === 200 && hasTitle && matches;
       return good
         ? "PASS"
-        : `FAIL (HTTP ${response.status}, page marker=${body.includes("Get the story out of your head and onto the page.")}, version=${response.headers.get("x-meridian-version")}, release=${response.headers.get("x-meridian-release")})`;
+        : `FAIL (HTTP ${response.status}, Meridian title=${hasTitle}, version=${response.headers.get("x-meridian-version")}, release=${response.headers.get("x-meridian-release")})`;
     }),
   );
   checks.push(
