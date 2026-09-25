@@ -55,20 +55,33 @@ describe("spawnOutputForTranscript", () => {
     expect(failed).not.toHaveProperty("summary");
   });
 
-  it("leaves an error output untouched and strips threadId from a background output", () => {
+  it("removes internal execution and thread ids from model-facing spawn output", () => {
     const error = { status: "error", error: { code: "spawn_depth_exceeded" } };
     const background = {
       status: "background",
       handle: "p2",
       threadId: "child-2",
+      execution: "private-execution-id",
       agentSlug: "general",
     };
+    const completed = {
+      status: "completed",
+      execution: "private-execution-id",
+      report: { handle: "p2", threadId: "child-2", summary: "Done", costMillicredits: 5 },
+    };
 
-    expect(spawnOutputForTranscript(error)).toBe(error);
+    expect(spawnOutputForTranscript(error)).toEqual(error);
+    expect(spawnOutputForTranscript({ ...error, execution: "private-execution-id" })).toEqual(
+      error,
+    );
     expect(spawnOutputForTranscript(background)).toEqual({
       status: "background",
       handle: "p2",
       agentSlug: "general",
+    });
+    expect(spawnOutputForTranscript(completed)).toEqual({
+      status: "completed",
+      report: { handle: "p2", summary: "Done" },
     });
   });
 

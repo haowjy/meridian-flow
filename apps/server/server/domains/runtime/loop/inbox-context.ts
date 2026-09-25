@@ -1,9 +1,9 @@
 /**
  * The inbox drain seam: materializes a claimed batch as durable history and
  * collects request-only notices and skill bodies. A text `message` becomes a
- * persisted user-role turn; a
- * child-provenance text message becomes writer-hidden system history with only
- * an exact thread_report reference. A Work refresh notice becomes a durable system_update; other notices stay request-only.
+ * persisted turn. Child-provenance messages become structured subagent-update
+ * system turns; Work refreshes become durable system updates, and other notices
+ * remain request-only user context.
  *
  * The persisted message turn reuses the durable inbox message id as its turn and
  * block id. The inbox collapses `(threadId, idempotencyKey)` to one row, so a
@@ -122,6 +122,13 @@ export async function drainInbox(input: {
     batch: fresh,
     workContext: input.workContext,
   });
+  const turnByMessageId = new Map(
+    [...adoptedTurns, ...persisted.turns].map((turn) => [turn.id, turn] as const),
+  );
+  const orderedTurns = batch.flatMap((message) => {
+    const turn = turnByMessageId.get(message.id as TurnId);
+    return turn ? [turn] : [];
+  });
   const notices = [
     ...(await input.notices.drainForModelContext(input.threadId)),
     ...batch
@@ -133,7 +140,7 @@ export async function drainInbox(input: {
   return {
     skillBodiesByTurn,
     notices,
-    turns: [...adoptedTurns, ...persisted.turns],
+    turns: orderedTurns,
     blocks: [...adoptedBlocks, ...persisted.blocks],
     ackIds: batch.map((message) => message.id),
   };
@@ -252,9 +259,16 @@ export function messageTurnFor(
     role: isChildNotification ? "system" : "user",
     status: "complete",
     metadata:
-      message.body.kind === "work_context_refresh"
-        ? { kind: "system_update", section: "work_context" }
-        : { kind: "message" },
+      message.provenance.kind === "child"
+        ? {
+            kind: "subagent_update",
+            handle: message.provenance.handle,
+            outcome: message.provenance.outcome,
+            execution: message.provenance.reportId,
+          }
+        : message.body.kind === "work_context_refresh"
+          ? { kind: "system_update", section: "work_context" }
+          : { kind: "inbox_message" },
     createdAt: message.enqueuedAt,
   });
   const text =

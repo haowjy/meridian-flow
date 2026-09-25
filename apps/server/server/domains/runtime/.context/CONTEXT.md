@@ -38,7 +38,7 @@ skeleton and delegates the moving parts.
 | File | Role |
 |---|---|
 | `orchestrator.ts` | One admitted run may span several assistant turns. At a safe boundary, adopting directed messages completes A, appends/adopts message turns, creates B, and rebinds the held lease in one thread-locked transaction. Requests use A → messages → B graph order. Durable Work refresh notices also split; ordinary request-only notices do not. Response+ack clears the lease receipt; cancel retires adopted IDs only, leaving later messages for a new run. The locked final claim uses the same split transition, not a second continuation path. Report admission happens only at run setup, and terminal finalization only at run exit. |
-| `inbox-context.ts` | Materializes a claimed batch as durable turns/blocks, notices, and request-only skill bodies keyed by adopted writer turn. Existing writer turns are adopted without a second append; `prepareAdoptedTurn` persists their missing text-reference reads. `planMessageTurns` and `messageTurnFor` own fresh message history (child provenance becomes a hidden system `thread_report` reference). The loop accumulates these turns and skill bodies, then the shared context assembler renders them. Never splice a second inbox rendering over the assembled request: that bypasses image authorization, model capability, and the whole-request occurrence budget. |
+| `inbox-context.ts` | Materializes a claimed batch as durable turns/blocks, notices, and request-only skill bodies keyed by adopted writer turn. Existing writer turns are adopted without a second append; `prepareAdoptedTurn` persists their missing text-reference reads. `planMessageTurns` and `messageTurnFor` own fresh message history. Child completions persist a system turn with `{ kind: "subagent_update", handle, outcome, execution }` metadata; the execution UUID is for internal card correlation only. The loop accumulates these turns and skill bodies, then the shared context assembler renders them. Never splice a second inbox rendering over the assembled request: that bypasses image authorization, model capability, and the whole-request occurrence budget. |
 | `runtime-delivery.ts` / `adapters/runtime-delivery.ts` | One domain delivery boundary owns locked enqueue, initial batch adoption, response+ack, A → messages → B split and terminal close. The concrete Drizzle adapter joins all writes to one ambient transaction and appends the classified pending replacement before commit. Journal failure rolls the transition back; only the physical wake is best-effort after commit. Recovery and backstop release refresh through this same append path so expired queues reclassify live. Close locks the lease receipt before deciding whether to split or terminalize, honoring a remote cancellation accepted during the final model call. Publication B uses its scoped parent producer without reacquiring the parent lock. |
 | `run-starter.ts` / `sweep-wakes.ts` | The wake actuation seam. `createRunStarter` maps `RunStarter.start` to the turn runner's `startDrain`, handling `TurnStartConflictError` quietly and reporting unexpected failures once through EventSink because a wake is best-effort. `sweepWakes` is the durable recovery: it keyset-pages pending threads in stable thread-ID order, batch-reads live leases, and starts eligible threads with bounded concurrency. Its caller retains the returned cursor across sweeps; an empty suffix wraps to the first page. One candidate’s failure is reported without stranding the rest. `app.ts` registers the sweep with the process recovery scheduler at boot, then rearms it after completion with `WAKE_SWEEP_INTERVAL_MS` (default 30s). The `enqueue` wake is the latency path; the sweep is the guarantee. |
 | `thread-lock.ts` | Short per-thread transaction serialization, distinct from the session run claim. Delivery acquires the advisory lock, then the shared `NO KEY UPDATE` thread row lock before enqueue or consumption/close. Work rows follow the thread row in sorted id order through `shared/thread-work-lock.ts`; publication parent locking and writer admission use the same order. Work-only notice insertion takes no thread mutation/advisory lock, only compatible FK `KEY SHARE`. No provider call runs under these locks. |
@@ -145,8 +145,17 @@ report policy. `loop/execution-finalizer.ts`
 owns immutable terminal transaction A under `closeRun`'s child final-drain lock.
 `spawn/report-publisher.ts` owns parent-first transaction B: it replaces the
 original card in place with `block.updated`, appends body-free
-`agent.run_completed`, queues compact child-provenance system text for
-background delivery only, and marks the report published.
+`agent.run_completed`, queues compact child-provenance notice text for
+background delivery only (`Subagent pN finished (outcome). Read its report with
+thread_report({"ref":"pN"}).`), and marks the report published. The model can
+request an earlier 1-based child run with optional `run`; internal execution
+UUIDs do not enter the model surface. `context-builder.ts` emits every persisted
+system-role history turn in place as a user message wrapped once in
+`<system_update>`. Only the actual thread system prompt uses the provider
+system field; adapters merge adjacent user messages as required by Anthropic.
+Writer sends persisted for inbox adoption carry `kind: "inbox_message"`; the
+client keeps them visible with their inline queue state until adoption, then
+places them with other inbox updates inside the preceding assistant turn.
 `spawn/orphan-report-repair.ts` scans bounded unfinalized metadata and requires
 the real session claim before failing a nonterminal admitted turn without a
 model call. The process scheduler runs wake, repair, and publication in separate lanes

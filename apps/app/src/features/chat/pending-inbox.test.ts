@@ -64,7 +64,13 @@ describe("writerTurnQueueStatus", () => {
       ...writer,
       id: "child",
       seq: 2,
-      provenance: { kind: "child" as const, threadId: "child-thread", reportId: "execution" },
+      provenance: {
+        kind: "child" as const,
+        threadId: "child-thread",
+        reportId: "execution",
+        handle: "p1",
+        outcome: "succeeded",
+      },
       summary: "child report notification",
     };
     const agent = {

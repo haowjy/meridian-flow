@@ -141,6 +141,8 @@ const messageProvenanceSchema: z.ZodType<import("../threads/index.js").MessagePr
       kind: z.literal("child"),
       threadId: z.string().min(1),
       reportId: z.string().min(1),
+      handle: z.string().min(1),
+      outcome: z.enum(["succeeded", "failed", "cancelled"]),
     }),
     z.object({ kind: z.literal("system"), source: z.string().min(1) }),
   ],

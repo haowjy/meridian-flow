@@ -33,7 +33,6 @@ describe("thread_report capability plumbing", () => {
   it("injects the exact-report reader", async () => {
     const expected: ThreadReportResult = {
       ref: "p1",
-      execution: "00000000-0000-4000-8000-000000000001" as TurnId,
       status: "unavailable",
     };
     const threadReportFn = vi.fn(async () => expected);
@@ -42,11 +41,11 @@ describe("thread_report capability plumbing", () => {
       {
         id: "call-1",
         name: "thread_report",
-        arguments: { ref: "p1", execution: expected.execution },
+        arguments: { ref: "p1" },
       },
       { ...executionBase, agentSlug: null, threadReport: threadReportFn },
     );
-    expect(threadReportFn).toHaveBeenCalledWith({ ref: "p1", execution: expected.execution });
+    expect(threadReportFn).toHaveBeenCalledWith({ ref: "p1" });
     expect(result.output).toEqual(expected);
   });
 });

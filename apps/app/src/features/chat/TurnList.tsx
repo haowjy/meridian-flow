@@ -53,7 +53,10 @@ export function TurnList({
   const viewportRef = useRef<HTMLDivElement>(null);
   const navigateToChange = useChangeTrailNavigation(threadId);
   const bottomInset = useChatSurfaceBottomInset();
-  const visibleTurns = useMemo(() => filterVisibleTurns(turns), [turns]);
+  const visibleTurns = useMemo(
+    () => filterVisibleTurns(turns, queueStatusByTurnId),
+    [queueStatusByTurnId, turns],
+  );
   const lastAssistantIdx = findLastAssistantIndex(visibleTurns);
   const byTurnId = useMemo(() => {
     const byTurnId = new Map<string, ChangeTrailShell>();
@@ -131,6 +134,7 @@ export function TurnList({
         <AssistantTurn
           threadId={threadId}
           turn={turn}
+          deliveryEvents={deliveryEventsAfter(turn, turns)}
           isLatestAssistant={idx === lastAssistantIdx}
           onRetry={turn.id === failedSendRetry?.turnId ? failedSendRetry.retry : undefined}
           onRespondToInterrupt={onRespondToInterrupt}
@@ -148,6 +152,7 @@ export function TurnList({
       submissionRecoveryByTurnId,
       queueStatusByTurnId,
       threadId,
+      turns,
     ],
   );
 
@@ -206,6 +211,87 @@ export function TurnList({
       />
     </div>
   );
+}
+
+function deliveryEventsAfter(
+  turn: Turn,
+  turns: Turn[],
+): Array<{ turn: Turn; childThreadId?: string; title?: string }> {
+  const events: Array<{ turn: Turn; childThreadId?: string; title?: string }> = [];
+  let precedingId = turn.id;
+  for (;;) {
+    const next = turns.find((candidate) => candidate.prevTurnId === precedingId);
+    if (!next) return events;
+    if (!isDeliveryEvent(next)) {
+      if (!isHiddenContextTurn(next)) return events;
+      precedingId = next.id;
+      continue;
+    }
+    const metadata = next.metadata as Record<string, unknown>;
+    const invocation =
+      metadata.kind === "subagent_update"
+        ? findInvocation(turns, String(metadata.execution))
+        : null;
+    events.push({
+      turn: next,
+      ...(invocation?.threadId ? { childThreadId: invocation.threadId } : {}),
+      ...(invocation?.title ? { title: invocation.title } : {}),
+    });
+    precedingId = next.id;
+  }
+}
+
+function isHiddenContextTurn(turn: Turn): boolean {
+  if (turn.role === "system") return !turn.blocks.some((block) => block.blockType === "custom");
+  const metadata = turn.metadata;
+  return Boolean(
+    turn.role === "user" &&
+      metadata &&
+      typeof metadata === "object" &&
+      !Array.isArray(metadata) &&
+      metadata.kind === "system_update" &&
+      metadata.section === "work_context",
+  );
+}
+
+function isDeliveryEvent(turn: Turn): boolean {
+  const metadata = turn.metadata;
+  return Boolean(
+    metadata &&
+      typeof metadata === "object" &&
+      !Array.isArray(metadata) &&
+      (metadata.kind === "inbox_message" || metadata.kind === "subagent_update"),
+  );
+}
+
+function findInvocation(
+  turns: Turn[],
+  execution: string,
+): { threadId?: string; title?: string } | null {
+  for (const turn of turns)
+    for (const block of turn.blocks) {
+      const content = block.content;
+      if (
+        !content ||
+        typeof content !== "object" ||
+        Array.isArray(content) ||
+        content.kind !== "helper-result"
+      )
+        continue;
+      const props = content.props;
+      if (
+        !props ||
+        typeof props !== "object" ||
+        Array.isArray(props) ||
+        props.execution !== execution
+      )
+        continue;
+      return {
+        threadId: typeof props.childThreadId === "string" ? props.childThreadId : undefined,
+        title: typeof props.title === "string" ? props.title : undefined,
+      };
+    }
+  return null;
 }
 
 function JumpToLatestButton({

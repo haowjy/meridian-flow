@@ -19,7 +19,7 @@ import type {
 } from "./types.js";
 
 const SPAWN_DESCRIPTION =
-  "Run a subagent in its own thread to delegate a task. Prefer a named specialist from your subagents roster when one fits; use the generic subagent (omit agent or pass an empty string) sparingly. Use mode=background for non-blocking subagent checks. After starting background work, end your turn to wait; its completion message will wake you. Do not message the child to wait or promise completion in this response.";
+  "Run a subagent in its own thread to delegate a task. Prefer a named specialist from your subagents roster when one fits; use the generic subagent (omit agent or pass an empty string) sparingly. Use mode=background for non-blocking subagent checks. After starting background work, end your turn to wait; its completion message will wake you. Read the latest result with thread_report using the returned pN ref. Do not message the child to wait or promise completion in this response.";
 const SPAWN_DESCRIPTION_EMPTY_ROSTER = `${SPAWN_DESCRIPTION} You have no named subagents; do not spawn unless the writer asks.`;
 
 export type SpawnToolArgs = {
@@ -72,7 +72,7 @@ export function spawnToolDescription(hasNamedTargets: boolean): string {
 }
 
 const THREAD_MESSAGE_DESCRIPTION =
-  "Send a message to a thread. ref is the thread handle (for example p3 for a subagent, c1 for a primary) from a spawn/thread_message result. Omitted mode is background: the message is queued and returns immediately, and no reply is pushed back. Use mode=foreground to wait for a subagent in your subtree to finish and return its report. If you started background work, end your turn to wait; its completion message wakes you. Do not send a message to the child just to wait for its completion.";
+  "Send a message to a thread. ref is the thread handle (for example p3 for a subagent, c1 for a primary) from a spawn/thread_message result. Omitted mode is background: the message is queued and returns immediately, and no reply is pushed back. Use mode=foreground to wait for a subagent in your subtree to finish and return its report. If you started background work, end your turn to wait; its completion message wakes you. Read a finished child result with thread_report using its ref. Do not send a message to the child just to wait for its completion.";
 
 export type ThreadMessageMode = "foreground" | "background";
 
@@ -83,7 +83,7 @@ export type ThreadMessageArgs = {
   mode: ThreadMessageMode;
 };
 
-export type ThreadReportArgs = { ref: string; execution: string };
+export type ThreadReportArgs = { ref: string; run?: number };
 export function parseThreadReportArgs(input: unknown): ThreadReportArgs {
   const rec =
     input && typeof input === "object" && !Array.isArray(input)
@@ -91,7 +91,7 @@ export function parseThreadReportArgs(input: unknown): ThreadReportArgs {
       : {};
   return {
     ref: typeof rec.ref === "string" ? rec.ref : "",
-    execution: typeof rec.execution === "string" ? rec.execution : "",
+    ...(Number.isInteger(rec.run) && Number(rec.run) > 0 ? { run: Number(rec.run) } : {}),
   };
 }
 
@@ -116,17 +116,18 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
         type: "function",
         name: "thread_report",
         description:
-          "Read one exact saved execution report from a child in your lineage. Use the pN ref and assistant execution UUID supplied when that execution was admitted or in its completion message. This does not wait for an active execution.",
+          "Read the latest finished report from a child in your lineage using its pN ref. Optionally pass run (1-based per child) to read an earlier report. This does not wait for an active execution.",
         inputSchema: {
           type: "object",
           properties: {
             ref: { type: "string", description: "Authorized child thread handle, for example p3." },
-            execution: {
-              type: "string",
-              description: "Exact assistant-turn UUID for the execution to retrieve.",
+            run: {
+              type: "integer",
+              minimum: 1,
+              description: "Earlier finished run number for this child.",
             },
           },
-          required: ["ref", "execution"],
+          required: ["ref"],
           additionalProperties: false,
         },
       },

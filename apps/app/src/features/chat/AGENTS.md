@@ -50,6 +50,13 @@ expandable activity row. The live subagent surface remains server truth:
 `ThreadActivity` from snapshot + `meridian.subagent.activity`, rendered by
 `RunningSubagentsStrip` in `ChatView`'s header.
 
+Child completion is a separate durable transcript event: system turns with
+`metadata.kind === "subagent_update"` render as a quiet inline row at their
+causal position. Its execution UUID is internal correlation to the matching
+invocation card; copy comes from structured handle/outcome metadata, never
+notice-text parsing. Keep this visibility rule aligned with
+`threads/domain/visible-conversation-policy.ts`.
+
 The mounted snapshot-sync hook, not the run controller, owns addressed
 `meridian.block.upserted` and `meridian.block.pruned` projection for the whole
 mounted thread lifetime. The existing upsert frame also carries historical card

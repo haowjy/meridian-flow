@@ -2,11 +2,13 @@
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { type Block, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
+import { CheckCircle2, CircleAlert, MessageSquareText, XCircle } from "lucide-react";
 import { memo, useMemo } from "react";
 import type { ChangeTrailShell } from "@/client/change-trails";
 import { useTurnLiveLineage } from "@/client/query/useTurnLiveLineage";
 import { ImageBlock } from "@/rich-content/ImageBlock";
 import { Markdown } from "@/rich-content/Markdown";
+import { ActivityRow } from "./ActivityRow";
 import { imageContentForBlock, isImageBlock } from "./block-kind";
 import { blockRenderKey } from "./block-render-key";
 import { CustomBlockRenderer, type InterruptRespondRequest } from "./CustomBlockRenderer";
@@ -33,6 +35,7 @@ import type { NavigateToTrailChange } from "./useChangeTrailNavigation";
 export type AssistantTurnProps = {
   threadId?: string;
   turn: Turn;
+  deliveryEvents?: Array<{ turn: Turn; childThreadId?: string; title?: string }>;
   isLatestAssistant?: boolean;
   onRetry?: () => void;
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
@@ -43,6 +46,7 @@ export type AssistantTurnProps = {
 function AssistantTurnComponent({
   threadId,
   turn,
+  deliveryEvents = [],
   isLatestAssistant = false,
   onRetry,
   onRespondToInterrupt,
@@ -73,6 +77,10 @@ function AssistantTurnComponent({
     }
     return result;
   }, [items]);
+  let lastProcessIndex = -1;
+  rows.forEach(({ item }, index) => {
+    if (item.kind === "process") lastProcessIndex = index;
+  });
   const isErrored = turn.status === "error";
   const showsInkDrop = turn.status === "pending" || turn.status === "streaming";
   const isLive = !isSettled;
@@ -98,7 +106,7 @@ function AssistantTurnComponent({
       data-turn-role="assistant"
       data-turn-status={turn.status}
     >
-      {rows.map(({ item, processOrdinal, processCount }) => (
+      {rows.map(({ item, processOrdinal, processCount }, rowIndex) => (
         <TurnItemView
           key={itemRenderKey(item)}
           item={item}
@@ -111,8 +119,21 @@ function AssistantTurnComponent({
           directResult={
             item.kind === "artifact" ? (directResults.get(item.block.id) ?? null) : null
           }
+          deliveryEvents={
+            item.kind === "process" && rowIndex === lastProcessIndex ? deliveryEvents : []
+          }
         />
       ))}
+
+      {rows.every(({ item }) => item.kind !== "process") &&
+        deliveryEvents.map((event) => (
+          <DeliveryEventRow
+            key={event.turn.id}
+            turn={event.turn}
+            childThreadId={event.childThreadId}
+            title={event.title}
+          />
+        ))}
 
       {hasTurnEditsReceiptContent(liveLineageDocuments, changeTrail, workReceipts) ? (
         <TurnEditsReceipt
@@ -135,6 +156,56 @@ function AssistantTurnComponent({
       ) : null}
       {showsInkDrop ? <InkDrop /> : null}
     </div>
+  );
+}
+
+function DeliveryEventRow({
+  turn,
+  childThreadId,
+  title,
+}: {
+  turn: Turn;
+  childThreadId?: string;
+  title?: string;
+}) {
+  const metadata =
+    turn.metadata && typeof turn.metadata === "object" && !Array.isArray(turn.metadata)
+      ? (turn.metadata as Record<string, unknown>)
+      : {};
+  if (metadata.kind === "subagent_update") {
+    const outcome = String(metadata.outcome);
+    const Icon =
+      outcome === "succeeded" ? CheckCircle2 : outcome === "failed" ? CircleAlert : XCircle;
+    const label =
+      outcome === "succeeded" ? "finished" : outcome === "failed" ? "failed" : "was cancelled";
+    return (
+      <ActivityRow Icon={Icon}>
+        <span>
+          Subagent {String(metadata.handle)} {label}
+          {title ? `: ${title}` : ""}.
+        </span>
+        {childThreadId ? (
+          <>
+            {" "}
+            <a
+              className="rounded-sm underline underline-offset-4 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              href={`/chat/${childThreadId}`}
+            >
+              Open
+            </a>
+          </>
+        ) : null}
+      </ActivityRow>
+    );
+  }
+  const body = turn.blocks
+    .filter((block) => block.blockType === "text")
+    .map((block) => block.textContent ?? "")
+    .join("");
+  return (
+    <ActivityRow Icon={MessageSquareText}>
+      <span className="whitespace-pre-wrap text-foreground">{body || "Shared an attachment"}</span>
+    </ActivityRow>
   );
 }
 
@@ -168,6 +239,7 @@ const TurnItemView = memo(function TurnItemView({
   onRespondToInterrupt,
   writeMode,
   directResult,
+  deliveryEvents,
 }: {
   item: RenderItem;
   processOrdinal: number;
@@ -177,6 +249,7 @@ const TurnItemView = memo(function TurnItemView({
   onRespondToInterrupt?: (request: InterruptRespondRequest) => void;
   writeMode: "direct" | "draft";
   directResult: DirectInvocationResult | null;
+  deliveryEvents: AssistantTurnProps["deliveryEvents"];
 }) {
   const runs = item.kind === "process" ? item.runs : null;
   const digest = useMemo(
@@ -203,6 +276,14 @@ const TurnItemView = memo(function TurnItemView({
             />
           ))}
         </ProcessDisclosure>
+        {deliveryEvents?.map((event) => (
+          <DeliveryEventRow
+            key={event.turn.id}
+            turn={event.turn}
+            childThreadId={event.childThreadId}
+            title={event.title}
+          />
+        ))}
       </div>
     );
   }

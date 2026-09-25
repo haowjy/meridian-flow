@@ -40,11 +40,8 @@ else
     assertThrowawayDatabaseForRunDbTests(databaseUrl);
     const db = createDb(databaseUrl, { max: 6 });
     const repos = createDrizzleRepositoriesForTest(db);
-    let activeExecution: TurnId | null = null;
-    const runningTurn = { readRunningTurnId: async () => activeExecution };
 
     beforeEach(async () => {
-      activeExecution = null;
       await truncateDrizzleTables(db, [schema.users]);
     });
     async function seedOwnershipGraph() {
@@ -166,7 +163,7 @@ else
         }
       });
 
-      it("normalizes exact selectors and distinguishes active from stranded admissions", async () => {
+      it("reads only finished reports by child run", async () => {
         const input = {
           childThreadId: ids.child,
           assistantTurnId: ids.execution,
@@ -183,42 +180,32 @@ else
           await readThreadReport({
             callerThreadId: ids.caller,
             ref: "p1",
-            execution: ids.execution.toUpperCase(),
+
             repos,
-            runningTurn,
           }),
-        ).toEqual({
-          ref: "p1",
-          execution: ids.execution,
-          status: "unavailable",
-        });
-        activeExecution = ids.execution;
+        ).toEqual({ ref: "p1", status: "unavailable" });
         expect(
           await readThreadReport({
             callerThreadId: ids.caller,
             ref: "p1",
-            execution: ids.execution,
+
             repos,
-            runningTurn,
           }),
-        ).toMatchObject({ status: "not_ready" });
-        activeExecution = ids.execution2;
+        ).toMatchObject({ status: "unavailable" });
         expect(
           await readThreadReport({
             callerThreadId: ids.caller,
             ref: "p1",
-            execution: ids.execution,
+
             repos,
-            runningTurn,
           }),
         ).toMatchObject({ status: "unavailable" });
         await expect(
           readThreadReport({
             callerThreadId: ids.caller,
             ref: "c1",
-            execution: ids.execution,
+
             repos,
-            runningTurn,
           }),
         ).rejects.toThrow();
         const { eq } = await import("drizzle-orm");
@@ -227,9 +214,8 @@ else
           readThreadReport({
             callerThreadId: ids.caller,
             ref: "p5",
-            execution: ids.execution,
+
             repos,
-            runningTurn,
           }),
         ).rejects.toThrow();
         await db.update(schema.threads).set({ ref: "c1" }).where(eq(schema.threads.id, ids.caller));
@@ -237,18 +223,16 @@ else
           readThreadReport({
             callerThreadId: ids.caller,
             ref: "p1",
-            execution: "not-a-uuid",
+
             repos,
-            runningTurn,
           }),
-        ).rejects.toThrow();
+        ).resolves.toMatchObject({ status: "unavailable" });
         expect(
           await readThreadReport({
             callerThreadId: ids.caller,
             ref: "p1",
-            execution: "00000000-0000-0000-0000-000000000001",
+
             repos,
-            runningTurn,
           }),
         ).toMatchObject({ status: "unavailable" });
       });
@@ -473,18 +457,16 @@ else
           await readThreadReport({
             callerThreadId: ids.caller,
             ref: "p3",
-            execution: ids.execution,
+
             repos,
-            runningTurn,
           }),
         ).toMatchObject({ status: "unavailable" });
         await expect(
           readThreadReport({
             callerThreadId: foreignCaller,
             ref: "p1",
-            execution: ids.execution,
+
             repos,
-            runningTurn,
           }),
         ).rejects.toThrow();
       });
@@ -501,16 +483,14 @@ else
           toolCallId: null,
           cardBlockId: null,
         };
-        activeExecution = ids.execution;
         await repos.transaction(async () => {
           await repos.executionReports.admit(input);
           expect(
             await readThreadReport({
               callerThreadId: ids.caller,
               ref: "p1",
-              execution: ids.execution,
+
               repos,
-              runningTurn,
             }),
           ).toMatchObject({ status: "unavailable" });
         });
@@ -518,11 +498,9 @@ else
           await readThreadReport({
             callerThreadId: ids.caller,
             ref: "p1",
-            execution: ids.execution,
             repos,
-            runningTurn,
           }),
-        ).toMatchObject({ status: "not_ready" });
+        ).toMatchObject({ status: "unavailable" });
       });
 
       it("serializes competing capture and finalization contenders without replacing a winner", async () => {
@@ -598,7 +576,7 @@ else
         ).toBe("published");
       });
 
-      it("hides exact reports behind live caller, target, project and turn ownership", async () => {
+      it("authorizes the latest report behind live caller, target, project and turn ownership", async () => {
         await repos.executionReports.admit({
           childThreadId: ids.child,
           assistantTurnId: ids.execution,
@@ -622,36 +600,32 @@ else
           await readThreadReport({
             callerThreadId: ids.caller,
             ref: "p1",
-            execution: ids.execution2,
+
             repos,
-            runningTurn,
           }),
-        ).toMatchObject({ status: "unavailable" });
+        ).toMatchObject({ ref: "p1", run: 1, summary: "kept" });
         await expect(
           readThreadReport({
             callerThreadId: ids.caller,
             ref: "p999",
-            execution: ids.execution,
+
             repos,
-            runningTurn,
           }),
         ).rejects.toThrow();
         await expect(
           readThreadReport({
             callerThreadId: ids.caller,
             ref: "p2",
-            execution: ids.execution,
+
             repos,
-            runningTurn,
           }),
         ).rejects.toThrow();
         await expect(
           readThreadReport({
             callerThreadId: ids.caller,
             ref: "p9",
-            execution: ids.otherProjectExecution,
+
             repos,
-            runningTurn,
           }),
         ).rejects.toThrow();
         await db
@@ -662,9 +636,8 @@ else
           readThreadReport({
             callerThreadId: ids.caller,
             ref: "p1",
-            execution: ids.execution,
+
             repos,
-            runningTurn,
           }),
         ).rejects.toThrow();
         expect(
@@ -678,9 +651,8 @@ else
           await readThreadReport({
             callerThreadId: ids.caller,
             ref: "p1",
-            execution: ids.execution,
+
             repos,
-            runningTurn,
           }),
         ).toMatchObject({ summary: "kept" });
         await db
@@ -691,9 +663,8 @@ else
           readThreadReport({
             callerThreadId: ids.caller,
             ref: "p1",
-            execution: ids.execution,
+
             repos,
-            runningTurn,
           }),
         ).rejects.toThrow();
         await db
@@ -708,9 +679,8 @@ else
           readThreadReport({
             callerThreadId: ids.caller,
             ref: "p1",
-            execution: ids.execution,
+
             repos,
-            runningTurn,
           }),
         ).rejects.toThrow();
         await db
@@ -723,7 +693,7 @@ else
         expect(await repos.executionReports.findByExecution(ids.child, ids.execution)).toBeNull();
       });
 
-      it("distinguishes empty success and rereads an older exact report after continuation", async () => {
+      it("returns the latest child run and allows reading an earlier run", async () => {
         await repos.executionReports.admit({
           childThreadId: ids.child,
           assistantTurnId: ids.execution,
@@ -747,11 +717,10 @@ else
           await readThreadReport({
             callerThreadId: ids.caller,
             ref: "p1",
-            execution: ids.execution,
+
             repos,
-            runningTurn,
           }),
-        ).toMatchObject({ outcome: "succeeded", source: "empty", summary: "" });
+        ).toMatchObject({ ref: "p1", run: 1, outcome: "succeeded", source: "empty", summary: "" });
         await repos.executionReports.admit({
           childThreadId: ids.child,
           assistantTurnId: ids.execution2,
@@ -775,20 +744,27 @@ else
           await readThreadReport({
             callerThreadId: ids.caller,
             ref: "p1",
-            execution: ids.execution2,
+
             repos,
-            runningTurn,
           }),
-        ).toMatchObject({ outcome: "failed", source: "empty", summary: "", partial: true });
+        ).toMatchObject({
+          ref: "p1",
+          run: 2,
+          outcome: "failed",
+          source: "empty",
+          summary: "",
+          partial: true,
+        });
         expect(
           await readThreadReport({
             callerThreadId: ids.caller,
             ref: "p1",
-            execution: ids.execution,
+            run: 1,
             repos,
-            runningTurn,
           }),
         ).toMatchObject({
+          ref: "p1",
+          run: 1,
           outcome: "succeeded",
           source: "empty",
           summary: "",

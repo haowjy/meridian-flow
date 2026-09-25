@@ -134,3 +134,32 @@ describe("toAnthropicMessageParams thinking-before-tool_use repair", () => {
     expect(assistantBlocks(params)[0]).toEqual({ type: "thinking", thinking: "" });
   });
 });
+
+describe("Anthropic message alternation", () => {
+  it("merges adjacent delivery user messages after a tool result", () => {
+    const params = toAnthropicMessageParams(
+      {
+        messages: [
+          assistant([
+            { type: "tool_use", toolCallId: "call_delivery", toolName: "spawn", input: {} },
+          ]),
+          toolResult("call_delivery", { ok: true }),
+          user("<system_update>child finished</system_update>"),
+          user("writer message one"),
+          user("writer message two"),
+        ],
+      },
+      "claude-sonnet-4-5",
+      256,
+    );
+    expect(params.messages.map((message) => message.role)).toEqual(["assistant", "user"]);
+    expect(params.messages[1]).toMatchObject({
+      content: [
+        { type: "tool_result", tool_use_id: "call_delivery" },
+        { type: "text", text: "<system_update>child finished</system_update>" },
+        { type: "text", text: "writer message one" },
+        { type: "text", text: "writer message two" },
+      ],
+    });
+  });
+});

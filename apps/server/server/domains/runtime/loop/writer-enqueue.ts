@@ -73,7 +73,7 @@ export async function persistWriterEnqueue<T>(input: {
                 prevTurnId: current.activeLeafTurnId,
                 role: "user",
                 status: "complete",
-                metadata: input.userTurnMetadata ?? null,
+                metadata: writerInboxMetadata(input.userTurnMetadata),
               });
               const blocks = writerUserTurnBlocks(userTurn.id, input.userBlocks);
               return {
@@ -107,4 +107,11 @@ export async function persistWriterEnqueue<T>(input: {
       if (!(error instanceof TurnStartConflictError) || attempt >= 2) throw error;
     }
   }
+}
+
+function writerInboxMetadata(metadata: JsonValue | null | undefined): JsonValue {
+  if (metadata && typeof metadata === "object" && !Array.isArray(metadata)) {
+    return { ...metadata, kind: "inbox_message" };
+  }
+  return { kind: "inbox_message" };
 }
