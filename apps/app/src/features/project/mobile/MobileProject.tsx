@@ -1,14 +1,4 @@
-/**
- * MobileProject — phone-class project shell with one active view at a time.
- *
- * This is a sibling of the desktop ProjectShell, not a conditional branch
- * inside it. It reuses the same route-owned ProjectViewProps and inner content
- * components while replacing the desktop grid/rails with top bar + drawer +
- * stacked single-pane navigation. Context drill-in (scheme → folders → file)
- * is entirely route-driven, so the OS/browser back gesture pops levels;
- * up-navigation in the chrome is the top bar's breadcrumb (ancestor taps),
- * not a back button — the drawer trigger stays on every screen.
- */
+/** Renders the mobile project workspace. */
 
 import { t } from "@lingui/core/macro";
 import { MessageSquare, Sparkles } from "lucide-react";
@@ -127,17 +117,7 @@ export function MobileProject(props: MobileProjectProps) {
   );
 }
 
-/**
- * Top-bar trailing action dispatcher — one slot, screen-dependent identity.
- * Chat is where results get produced, so it carries the Results entry;
- * Results carries the visible way back (edge-swipe works too, but a
- * discoverable affordance shouldn't require knowing the gesture). The Files
- * browser inside a scheme (scheme root or a folder, no file open) carries
- * the `+` create menu — creation lands "where you are", the route's current
- * scheme+folder. The Files root (scheme list) gets no `+`: schemes are
- * sources, not folders, so there is no "here" to create into. All other
- * screens leave the slot empty.
- */
+/** Top-bar trailing action dispatcher — one slot, screen-dependent identity. */
 function trailingAction(
   props: ReviewScopedProjectProps,
   onRequestCreate: (kind: ContextCreateKind) => void,
@@ -249,15 +229,6 @@ function renderActiveView(
   }
 }
 
-/**
- * Top-bar breadcrumb for the whole context screen: Files › scheme › folders
- * › file. "Files" is the root crumb and navigates to the scheme list; deeper
- * ancestors navigate to the Files browser at that location (`""` = scheme
- * root). The last segment is the current location and stays non-interactive —
- * at the Files root itself the trail is just a lone "Files". Chat, Work, and
- * routed Results auxiliary state suppresses the trail so the top bar shows its
- * plain centered title instead — Results is not part of the Files hierarchy.
- */
 function contextBreadcrumbSegments(props: ReviewScopedProjectProps): MobileBreadcrumbSegment[] {
   if (props.activeScreen !== "context") return [];
   // `t` resolves at render time (this runs per render), matching how

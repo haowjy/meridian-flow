@@ -1,54 +1,4 @@
-/**
- * ActivityRow — the visual primitive for one entry in an assistant turn's
- * activity timeline.
- *
- * Replaces the card-altitude `ToolCard` with a text-altitude row matching the
- * design system's "text, not a card" disclosure altitude. Used by every
- * block kind in `ActivityBlock`: tools, reasoning, prose fallbacks.
- *
- * Two layout modes from one component — picked by props, not a `mode` enum:
- *
- *  1. **Action layout** (`title` set) — a single-line `icon + title + status
- *     + chevron` row. Used by tool rows and other "verb noun" actions. If
- *     `expand` is set, clicking the row toggles an inline curated fold.
- *
- *  2. **Prose layout** (`children` set, no `title`) — `icon + paragraph`
- *     side-by-side, so a multiline reasoning block aligns the prose against
- *     the icon's baseline instead of stacking under it. This was the misalign
- *     bug in v1: rendering `<icon-only-row>` then `<prose-block>` with a left
- *     pad below the icon left a gap between the icon and the first line.
- *
- * **Two actions, one row (the stretched-button pattern).** A row both expands
- * and, where its title names a document, navigates. The large forgiving target
- * carries the safe reversible action (expand); the small precise target
- * carries the consequential one (leaving the transcript). So the toggle is an
- * empty absolutely-positioned button rendered *after* the title content, and
- * any door inside the title sits above it. They are DOM siblings, never
- * nested: a `<button>` authored inside a `<button>` in JSX is not rescued the
- * way the HTML parser rescues static markup, and it breaks screen readers.
- * The stretched area covers the title row only, so clicking inside an open
- * expand never collapses it.
- *
- * **Timeline rail (self-contained).** Each row paints its own piece of the
- * Claude-style process timeline inside the icon column: the chip sits at the
- * top and a 1px `flex-1` span fills the remaining vertical space down to the
- * row's bottom edge. Because the icon column stretches to the full row height
- * (parent uses `items-stretch`) and rows stack with no margin between them,
- * the line in row N visually meets the icon in row N+1 — producing a
- * continuous rail without any sibling-aware CSS, data attributes, pseudo-
- * elements, or stacking-context tricks. Text blocks render outside this
- * component as full-width prose, so they naturally break the rail.
- *
- * Why self-contained: an earlier version used `[data-activity-row]` plus
- * `:has(+)` and adjacent-sibling pseudo-elements. That worked only when every
- * row was a *direct* DOM sibling, which broke as soon as a wrapper appeared
- * between runs (e.g. `<div data-fold-activity-run>` around tool runs while
- * reasoning runs render as fragments). Pulling the rail into the row itself
- * makes the structural assumption local — the row owns the rail, the
- * surrounding markup is free to nest however it wants. The
- * `data-activity-row` attribute survives only as a stable test/structural
- * marker for "this is one rendered timeline row" — no CSS keys off it.
- */
+/** Renders a single process activity row in the transcript. */
 import { ChevronRight, type LucideIcon } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { cn } from "@/lib/utils";
@@ -63,45 +13,16 @@ export type ActivityRowProps = {
   title?: ReactNode;
   /** Status indicator. Hidden when the row is `done` and not interactive. */
   status?: ActivityRowStatus;
-  /**
-   * Inline expandable content (curated — no raw JSON). Click toggles fold.
-   *
-   * A thunk, not a node: a settled turn can hold a dozen closed rows, and none
-   * of them should build a payload nobody has asked to see. Passing the thunk
-   * at all is the row's promise that there *is* something behind it — an
-   * expand affordance with nothing behind it is worse than none.
-   */
   expand?: () => ReactNode;
-  /**
-   * Multiline prose body (reasoning paragraphs, text fallbacks). When `title`
-   * is omitted, this lays out side-by-side with the icon. When `title` is
-   * present, it stacks below the title row in the right column.
-   */
   children?: ReactNode;
   /** Optional className applied to the prose container — for variant tinting. */
   proseClassName?: string;
 };
 
-/**
- * Per-row vertical rhythm. Lives on the icon column AND content column so the
- * line's start (below the chip) and the prose's first baseline both pick up
- * the same top inset.
- */
 const ICON_TOP_PAD = "pt-[3px]";
 
-/**
- * The title row's own vertical padding. Shared with the icon column, which
- * wears it too so the chip's box and the title's box start and end together.
- */
 const TITLE_ROW_PAD = "py-0.5";
 
-/**
- * One line of compact text, derived from the same two tokens the title and the
- * prose body set. The chip centres inside this rather than sitting at the top
- * of the column: a 19px chip against a 20.8px line box is not centred by
- * matching their tops, and every future type or padding change would need the
- * offset re-tuned. Centring on the line box holds by construction.
- */
 const COMPACT_LINE_BOX =
   // `box-content` so the min-height describes the line box itself, leaving the
   // content column's padding to be added on top of it exactly as the title row

@@ -1,17 +1,4 @@
-/**
- * dock-view-store — which view the right dock shows, per screen, for the session.
- *
- * Purpose: the dock is a tabbed container whose view set depends on which
- * surface occupies it (chat vs the context rail), plus a shared work-scoped
- * Changes view. This store remembers the writer's last *explicit* choice per
- * screen so switching destinations and coming back restores the view they left.
- *
- * Key decision: session-only, no `persist`. The default per screen is the
- * occupant's native view (Context on the chat screen, Chat elsewhere); a fresh
- * reload starts from those defaults rather than a stale view. Placement, width,
- * and collapse stay owned by the surface-prefs store — this store only tracks
- * the view.
- */
+/** dock-view-store — which view the right dock shows, per screen, for the session. */
 import { create } from "zustand";
 
 import type { ScreenKey } from "../shell/screens";
@@ -68,11 +55,6 @@ export function withoutEmptyChanges(
   };
 }
 
-/**
- * Pure resolution: the active view is the writer's stored choice when it is
- * still valid for this screen's set, otherwise the screen's default. Kept
- * separate from the hook so the fallback contract is unit-testable.
- */
 export function resolveDockView(screen: ScreenKey, stored: DockView | undefined): ResolvedDockView {
   const set = DOCK_VIEW_SETS[screen];
   const view = stored && set.views.includes(stored) ? stored : set.default;

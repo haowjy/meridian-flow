@@ -1,13 +1,4 @@
-/**
- * Per-thread turn + coordination state (Zustand vanilla store + React context).
- *
- * Phase 1: project rows live in React Query; project-level soft-delete lives
- * in `ProjectStoreProvider`. This store now holds only per-thread turns,
- * handoff flags, streaming coordination, and the pending-creation gate that
- * the optimistic Home → Project flow uses to suppress fetches until the
- * server-side project + thread exist. Live assistant blocks are written into
- * `turnsByThread`, so chat has one store-backed source of truth.
- */
+/** Stores per-thread turns and run coordination state. */
 
 import {
   type Block,
@@ -56,11 +47,6 @@ import type {
   TurnStatusPatch,
 } from "./types";
 
-/**
- * Pending-creation gate. While a project / thread is being created on the
- * server after an optimistic navigation, queries for that scope return
- * `enabled: false` so they don't fire and 404.
- */
 type PendingCreationState = {
   projectIds: Record<string, true>;
   threadIds: Record<string, true>;
@@ -92,13 +78,7 @@ type ThreadStoreConfig = ThreadStoreSeed & {
 
 type ThreadStoreApi = StoreApi<ThreadStoreSlice>;
 
-/**
- * Generate an optimistic turn ID with the shared local-turn prefix.
- *
- * These IDs are never persisted — the server assigns canonical IDs that
- * replace the local ones during snapshot reconciliation. The prefix makes
- * it visually clear which turns are still unconfirmed.
- */
+/** Generate an optimistic turn ID with the shared local-turn prefix. */
 function nextTurnId(counter: number): { id: string; next: number } {
   const next = counter + 1;
   return { id: `${OPTIMISTIC_TURN_ID_PREFIX}${next}`, next };
@@ -161,16 +141,6 @@ function interruptBlockHasResolvedValue(block: Block): boolean {
   return Object.hasOwn(props, "resolvedValue");
 }
 
-/**
- * Reconcile local interrupt settlements against an authoritative snapshot for
- * one thread.
- *
- * A snapshot that already shows the interrupt resolved/expired, or a turn that
- * is no longer `waiting_interrupt`, proves the send is over: drop its
- * settlement. A snapshot that still shows the turn waiting with no resolution
- * proves nothing was applied: a still-pending send becomes ambiguous/retryable
- * rather than a permanent lock. Returns null when nothing changed.
- */
 function reconcileInterruptResponsesForThread(
   responses: Record<string, InterruptResponseEntry>,
   threadId: string,
@@ -341,14 +311,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
 
             const hasServerTurn = turns.some((turn) => turn.id === serverTurnId);
 
-            /**
-             * The POST /messages response is the explicit identity bridge from
-             * the local `turn_local_*` row to the persisted user turn. Snapshots
-             * only carry server IDs, so the client must rewrite the local row
-             * as soon as the append is acknowledged; otherwise by-id snapshot
-             * reconcile has no way to know the optimistic and server rows are
-             * the same user message.
-             */
+            /** The POST /messages response is the explicit identity bridge from the local `turn_local_*` row to the persisted user turn. */
             const nextTurns = turns
               .filter((turn) => !(hasServerTurn && turn.id === optimisticTurnId))
               .map((turn) => {
@@ -465,11 +428,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
               normalizedBlock,
             ].sort((a, b) => a.sequence - b.sequence);
 
-            /**
-             * `sequence` is the block identity within a turn. Upserting by it,
-             * instead of append order, makes live tail events and snapshot head
-             * blocks commute when they arrive in either order.
-             */
             const nextTurns = turns.map((existingTurn, index) =>
               index === turnIndex ? { ...existingTurn, blocks } : existingTurn,
             );
@@ -623,20 +581,6 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           const threadId = thread.id;
           const { nextSeq, lifecycle } = options;
           if (!get().acceptsThreadSnapshot(threadId, nextSeq)) return false;
-          /**
-           * Handoff: the optimistic Home → Project navigation flow.
-           *
-           * When the user creates a project from Home, the client
-           * optimistically creates the thread + project and navigates
-           * before the server confirms. While waiting, the server may
-           * return an empty snapshot (the thread doesn't exist yet). In
-           * that case, `keepLocalTurns = true` preserves the optimistic
-           * local turns so the UI doesn't flash blank.
-           *
-           * Once the server returns real turns (handoffComplete), the
-           * local optimistic turns are merged with server data via
-           * `reconcileSnapshotTurns`.
-           */
           const handoffPending = Boolean(get().handoffPendingThreadIds[threadId]);
           const keepLocalTurns = handoffPending && serverTurns.length === 0;
 
@@ -718,15 +662,7 @@ export function createThreadStore(config: ThreadStoreConfig): ThreadStoreApi {
           }));
         },
 
-        /**
-         * One-shot read-and-remove of pending stream metadata.
-         *
-         * The pending stream is consumed by the chat handoff
-         * exactly once — the metadata carries the first-message text
-         * and thread creation flags that the agent uses to begin the
-         * conversation. It must not be re-read (would resend the message)
-         * or left in the store (would pollute the next run).
-         */
+        /** One-shot read-and-remove of pending stream metadata. */
         consumePendingStream(threadId) {
           const pending = get().pendingStreamByThreadId[threadId];
           if (!pending) return null;

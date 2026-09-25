@@ -1,9 +1,4 @@
-/**
- * ChatThreadHeader — desktop chat header and thread switcher chrome. The route
- * owns thread selection; this file coordinates title resolution and inline
- * rename while the popover owns navigation presentation. Rename persists on the
- * server through the P1 command; success is announced only after confirmation.
- */
+/** Renders the current chat title and thread actions. */
 import { t } from "@lingui/core/macro";
 import type { Thread } from "@meridian/contracts/protocol";
 import { THREAD_TITLE_MAX_LENGTH } from "@meridian/contracts/protocol";
@@ -18,16 +13,6 @@ import { useOpenNewChatRoute } from "@/features/project/routing/ProjectNavigatio
 import { displayThreadTitle } from "@/lib/thread-title";
 import { ThreadSwitcherPopover } from "./ThreadSwitcherPopover";
 
-/**
- * Thread chrome at the top of the chat main pane (desktop project chat).
- *
- * Shows the active thread's title and a popover to switch between the
- * project's threads (grouped by work) or rename the current one inline.
- * Sits in `ChatSurface`'s `header` slot — above the scroll region, so it stays
- * fixed while messages scroll. Rename projects the title immediately and shows
- * pending/rejection on this control; switching delegates primary/dock
- * navigation to the project route.
- */
 export type ChatThreadHeaderProps = {
   projectId: string;
   threadId: string;
@@ -43,13 +28,6 @@ export function ChatThreadHeader(props: ChatThreadHeaderProps) {
   );
 }
 
-/**
- * The thread title control on its own — switcher popover (with inline rename),
- * no surrounding header bar. Extracted so the project `PaneHeader` can host it
- * as the chat destination's single header. `activeThread` is optional: when the
- * caller doesn't have the resolved thread (e.g. the shell), the title resolves
- * from the project thread groups.
- */
 export function ChatThreadTitle({
   projectId,
   threadId,

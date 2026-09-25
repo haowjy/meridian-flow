@@ -1,11 +1,4 @@
-/**
- * ContextPaneController — desktop SURFACE controller for the route-owned
- * Context destination.
- *
- * Purpose: own route reconciliation, tab mutations, and scroll restoration
- * for the Editor destination. The project sidebar owns the file tree; this
- * controller owns only the persistent tab/document surface.
- */
+/** ContextPaneController — desktop SURFACE controller for the route-owned Context destination. */
 import {
   isWorkScopedProjectContextScheme,
   type ProjectContextTreeScheme,

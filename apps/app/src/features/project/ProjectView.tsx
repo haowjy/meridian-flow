@@ -1,15 +1,4 @@
-/**
- * ProjectView — the controlled project workspace shell.
- *
- * Renders the desktop project path (surface layout grid + per-screen pane
- * controller + persistent chat surface) for the active screen. The readable project
- * route owns all navigation state; this shell only distributes route-owned
- * props to focused pane controllers and calls route handlers in response to
- * user actions.
- *
- * The persistent left sidebar owns project file navigation. The Context
- * destination keeps the tab strip and editor/viewer body only.
- */
+/** Renders the project workspace shell and its active destination. */
 
 import { t } from "@lingui/core/macro";
 import type { ProjectDto as Project } from "@meridian/contracts/projects";
@@ -583,11 +572,7 @@ function expandToggle(
   return { open, onExpand: () => onSetCollapsed(surfaceId, false), label };
 }
 
-/**
- * Desktop layout for every destination. Persistent shell state lives on stable
- * surfaces; per-screen rendering is delegated to pane controllers that receive
- * only the props they need.
- */
+/** Desktop layout for every destination. */
 export function DesktopProject(props: ReviewScopedProjectProps) {
   // Private mount continuity is not a selected route or a source for URL defaults.
   const priorChat = useRef<{ threadId: string; work: Work | null } | null>(null);
@@ -865,11 +850,6 @@ function renderDesktopPane(props: ResolvedProjectViewProps, surfaceToggle: Surfa
   }
 }
 
-/**
- * Collapse chrome once when entering compact desktop widths. The listener only
- * runs on mount/media-boundary changes, so a user can re-expand rails without
- * the effect immediately fighting that preference.
- */
 function useCompactDesktopAutoCollapse(
   setDockCollapsed: (collapsed: boolean) => void,
   setSurfaceCollapsed: (surfaceId: SurfaceId, collapsed: boolean) => void,

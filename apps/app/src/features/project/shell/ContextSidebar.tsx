@@ -1,8 +1,4 @@
-/**
- * ContextSidebar — right-side project rail summarizing work context sections
- * and deferred artifact surfaces. It is visual chrome only; data ownership
- * stays with the project/context feature hooks.
- */
+/** ContextSidebar — right-side project rail summarizing work context sections and deferred artifact surfaces. */
 import { t } from "@lingui/core/macro";
 import type { DocumentFileType } from "@meridian/contracts/protocol";
 import type { LucideIcon } from "lucide-react";
@@ -18,24 +14,7 @@ import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailKindIcon } fro
 import { ResultsRailBody, useResultsRailModel } from "./ResultsRailSection";
 import { ResultViewerOverlay } from "./ResultViewerOverlay";
 
-/**
- * Thread-context rail (Chat destination, right edge).
- *
- * Two sections, labels locked by the project design brief:
- *
- *   1. **Recent**  — documents the agent recently read/touched
- *      (`turn_document_touches`, deduped by document).
- *   2. **Results** — promoted artifacts the agent produced (project-scoped,
- *      not thread-scoped). Owns its own state machine in `ResultsRailSection`
- *      and reuses the existing read-only viewers in a modal overlay.
- *
- * Recent uses `DocumentRailSection`, which owns its
- * loading/empty/error/disabled state machine and count
- * suppression rules. Counts only render in `empty`/`ready` — anything else
- * (disabled, loading, error) hides the count so we never fabricate `0`
- * over the top of a hint that says "couldn't load". The Results section
- * mirrors the same honest count discipline.
- */
+/** Thread-context rail (Chat destination, right edge). */
 export type ContextSidebarProps = {
   /** Active thread; when null, sections render their disabled empty state. */
   threadId: string | null;
@@ -107,12 +86,7 @@ type RailMessages = {
   error: string;
 };
 
-/**
- * One state-machine for both live data rails. Renders the section header
- * (with a count visible **only** in `empty`/`ready` so we never fabricate a
- * `0` next to a "couldn't load" hint) and dispatches the body across the
- * five honest states.
- */
+/** One state-machine for both live data rails. */
 function DocumentRailSection({
   title,
   icon,
