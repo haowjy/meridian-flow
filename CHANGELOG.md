@@ -25,6 +25,8 @@
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
 ### Fixed
 
+- Retire a stopped run’s adopted inbox messages with cancellation; preserve later follow-ups for the next turn.
+
 - Bound cancelled provider drains to five seconds, even when provider teardown hangs.
 
 - Cancel only the requested assistant execution, never a newer run on the same thread.
