@@ -319,12 +319,11 @@ week inspect Workspace settings → Usage and use the invoice to project a real
 run rate. Move to Pro if team/workspace limits, capacity, or support needs
 require it ([Railway pricing plans][railway-pricing]).
 
-A month at 1 CU for production with staging at 0.25 CU is estimated around A month at
-1 CU for production with staging at 0.25 CU is estimated around **$98.13**.
-Actual autoscaling CU-time varies by workload. Railway still hosts the app
-services and S3-compatible bucket; its current plan/usage charge is separate.
-See the [accepted Postgres host decision][postgres] for assumptions, competing
-options, and pricing sources.
+If production averaged 1 CU all month and staging stayed at 0.25 CU, Neon
+would be about **$98.13/month**; with the Railway Hobby plan floor, that
+scenario starts around **$103.13/month** before overages and other exclusions.
+Actual autoscaling CU-time varies by workload. See the [accepted Postgres host
+decision][postgres] for assumptions, competing options, and pricing sources.
 
 [gh-env]: https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#required-reviewers
 [railway-pricing]: https://docs.railway.com/pricing/plans
