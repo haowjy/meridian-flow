@@ -1,4 +1,4 @@
-/** The retained invocation card: status, child door, and foreground-only direct settlement. */
+/** The retained invocation card: status, child door, and a collapsed report preview. */
 import { Trans } from "@lingui/react/macro";
 import { CheckCircle2, CircleAlert, LoaderCircle, OctagonX } from "lucide-react";
 import { useState } from "react";
@@ -18,6 +18,8 @@ type SpawnReportCardProps = {
   outcome?: SpawnReportOutcome;
   childThreadId: string | null;
   directResult?: DirectInvocationResult | null;
+  loadingReport?: boolean;
+  reportError?: boolean;
 };
 
 const statusPresentation = {
@@ -41,6 +43,8 @@ export function SpawnReportCard({
   outcome,
   childThreadId,
   directResult = null,
+  loadingReport = false,
+  reportError = false,
 }: SpawnReportCardProps) {
   let resolvedStatus: keyof typeof statusPresentation = status;
   if (status === "running") {
@@ -68,6 +72,16 @@ export function SpawnReportCard({
         {resolvedStatus === "stopped" ? <Trans>Stopped</Trans> : null}
         {resolvedStatus === "unavailable" ? <Trans>Result unavailable</Trans> : null}
       </div>
+      {loadingReport ? (
+        <div className="text-caption text-muted-foreground">
+          <Trans>Loading report…</Trans>
+        </div>
+      ) : null}
+      {reportError ? (
+        <div className="text-caption text-muted-foreground">
+          <Trans>Report is unavailable</Trans>
+        </div>
+      ) : null}
       {directResult && (directResult.outcome !== null || unavailable) ? (
         <DirectResult result={directResult} />
       ) : null}

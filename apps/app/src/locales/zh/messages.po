@@ -2029,6 +2029,10 @@ msgstr ""
 msgid "Loading references…"
 msgstr ""
 
+#: src/features/chat/SpawnReportCard.tsx
+msgid "Loading report…"
+msgstr ""
+
 #: src/features/project/shell/ResultViewerOverlay.tsx
 msgid "Loading result…"
 msgstr ""
@@ -2895,6 +2899,7 @@ msgstr ""
 msgid "Report is still running"
 msgstr ""
 
+#: src/features/chat/SpawnReportCard.tsx
 #: src/features/chat/tool-renderers.tsx
 msgid "Report is unavailable"
 msgstr ""
@@ -2986,8 +2991,8 @@ msgid "Retry Work"
 msgstr ""
 
 #: src/features/chat/ChildReportBlock.tsx
-msgid "Return"
-msgstr ""
+#~ msgid "Return"
+#~ msgstr ""
 
 #: src/features/billing/CheckoutReturnNotice.tsx
 msgid "Returned from the billing portal."

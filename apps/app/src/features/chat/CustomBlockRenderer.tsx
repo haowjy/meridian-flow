@@ -88,6 +88,7 @@ export function CustomBlockRenderer({
       responseState={responseEntry ? { status: responseEntry.status } : null}
       retry={retry}
       invocationResult={kind === "helper-result" ? (directResult ?? null) : undefined}
+      threadId={threadId}
     />
   );
 }
