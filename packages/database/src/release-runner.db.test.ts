@@ -50,18 +50,29 @@ if (!enabled || !databaseUrl) {
             created_at bigint
           )
         `);
-        await mkdir(join(migrationsDirectory, "meta"), { recursive: true });
-        const when = Date.now();
+        await cp(sourceMigrations, migrationsDirectory, { recursive: true });
+        const journalPath = join(migrationsDirectory, "meta/_journal.json");
+        const journal = JSON.parse(await readFile(journalPath, "utf8")) as {
+          entries: Array<{
+            idx: number;
+            version: string;
+            when: number;
+            tag: string;
+            breakpoints: boolean;
+          }>;
+        };
+        const lastWhen = journal.entries.at(-1)?.when ?? 0;
+        const when = Math.max(Date.now(), lastWhen + 1);
+        journal.entries.push({
+          idx: journal.entries.length,
+          version: "7",
+          when,
+          tag: "9999_release_probe",
+          breakpoints: true,
+        });
+        await writeFile(journalPath, JSON.stringify(journal));
         await writeFile(
-          join(migrationsDirectory, "meta/_journal.json"),
-          JSON.stringify({
-            version: "7",
-            dialect: "postgresql",
-            entries: [{ idx: 0, version: "7", when, tag: "0000_release_probe", breakpoints: true }],
-          }),
-        );
-        await writeFile(
-          join(migrationsDirectory, "0000_release_probe.sql"),
+          join(migrationsDirectory, "9999_release_probe.sql"),
           `CREATE TABLE ${tableName} (id integer PRIMARY KEY);`,
         );
         await cp(sourceFunctions, functionsDir, { recursive: true });
