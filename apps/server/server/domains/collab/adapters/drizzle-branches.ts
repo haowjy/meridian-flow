@@ -1,4 +1,5 @@
 /** Drizzle persistence adapter for shadow branch peers and manifest peers. */
+
 import { randomUUID } from "node:crypto";
 import {
   type DocumentCoordinator,
@@ -17,7 +18,6 @@ import {
   documents,
   documentYjsHeads,
   documentYjsUpdates,
-  threads,
   threadWorks,
   works,
 } from "@meridian/database/schema";
@@ -36,6 +36,7 @@ import {
   deferUntilDrizzleCommit,
   runInDrizzleTransaction,
 } from "../../../shared/drizzle-transaction.js";
+import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
 import { runWithActiveWorkDrafts } from "../../../shared/work-draft-lifecycle.js";
 import type { WorkProjectionMutation } from "../../projects/index.js";
 import {
@@ -326,11 +327,7 @@ export function createDrizzleBranchStore(
     liveDoc: Y.Doc;
   }): Promise<BranchSnapshot> {
     return runInDrizzleTransaction(db, async () => {
-      await currentDrizzleDb(db)
-        .select({ id: threads.id })
-        .from(threads)
-        .where(eq(threads.id, input.threadId))
-        .for("update");
+      await lockThreadForMutation(db, input.threadId);
       const workId = await findPrimaryWork(input.threadId);
       const existing = await findActiveThreadPeer(input.documentId, input.threadId);
       if (existing?.workId === workId) return existing;

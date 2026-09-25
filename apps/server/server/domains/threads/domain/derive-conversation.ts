@@ -46,6 +46,8 @@ export async function handoffThreadAgent(
   if (!binding.ok) throw new AgentSelectionError(input.agentSelection.definitionRevisionId);
   const summary = input.summary?.trim() || (await programmaticSummary(deps, source.id));
   return deps.transaction(async () => {
+    // The source journal is mutated after the new thread acquires its Work membership.
+    await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
     const target = await createDerivedPrimaryWithMembership(
       deps,
       {
@@ -97,6 +99,8 @@ export async function forkThreadAgent(
     throw new Error("Fork origin turn must belong to the source thread");
   }
   return deps.transaction(async () => {
+    // The source journal is mutated after the new thread acquires its Work membership.
+    await deps.threads.lockByIdIncludingDeleted(source.id as ThreadId);
     const target = await createDerivedPrimaryWithMembership(
       deps,
       {

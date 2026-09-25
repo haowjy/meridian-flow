@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+- Prevent deadlocks when writer sends race Work switches or Work notices.
+
 - Split steered replies into ordered assistant turns without restarting the run. Keep one child report with terminal text and whole-run cost. Show adopted messages as waiting for response.
 
 ### Changed

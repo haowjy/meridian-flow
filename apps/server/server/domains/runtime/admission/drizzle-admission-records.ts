@@ -1,9 +1,10 @@
 /** PostgreSQL admission ledger, enlisted in the ambient serialized turn transaction. */
 import type { AcceptedAdmission, RetireAdmissionResult } from "@meridian/contracts/protocol";
 import type { Database } from "@meridian/database";
-import { threads, turns, userTurnAdmissions } from "@meridian/database/schema";
+import { turns, userTurnAdmissions } from "@meridian/database/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { runInDrizzleTransaction } from "../../../shared/drizzle-transaction.js";
+import { lockThreadForMutation } from "../../../shared/thread-work-lock.js";
 import { currentDrizzleDb } from "../../threads/adapters/drizzle/repositories.js";
 import type { AdmissionRecord, AdmissionRecordPort } from "./user-turn-admission.js";
 
@@ -69,11 +70,7 @@ export function createDrizzleAdmissionRecords(db: Database): AdmissionPersistenc
     lookup: read,
     async reserve(input) {
       return runInDrizzleTransaction(db, async () => {
-        await currentDrizzleDb(db)
-          .select({ id: threads.id })
-          .from(threads)
-          .where(eq(threads.id, input.threadId as never))
-          .for("update");
+        await lockThreadForMutation(db, input.threadId as never);
         const existing = await read(input.threadId, input.submissionId);
         if (existing) return { kind: "winner", record: existing };
         await currentDrizzleDb(db)
@@ -91,11 +88,7 @@ export function createDrizzleAdmissionRecords(db: Database): AdmissionPersistenc
     },
     async reject(input) {
       return runInDrizzleTransaction(db, async () => {
-        await currentDrizzleDb(db)
-          .select({ id: threads.id })
-          .from(threads)
-          .where(eq(threads.id, input.threadId as never))
-          .for("update");
+        await lockThreadForMutation(db, input.threadId as never);
         const [row] = await currentDrizzleDb(db)
           .select()
           .from(userTurnAdmissions)
@@ -129,11 +122,7 @@ export function createDrizzleAdmissionRecords(db: Database): AdmissionPersistenc
     },
     async recoverExpiredPending(input) {
       return runInDrizzleTransaction(db, async () => {
-        await currentDrizzleDb(db)
-          .select({ id: threads.id })
-          .from(threads)
-          .where(eq(threads.id, input.threadId as never))
-          .for("update");
+        await lockThreadForMutation(db, input.threadId as never);
         const [row] = await currentDrizzleDb(db)
           .select()
           .from(userTurnAdmissions)
@@ -215,11 +204,7 @@ export function createDrizzleAdmissionRecords(db: Database): AdmissionPersistenc
     },
     async retire(request): Promise<RetireAdmissionResult> {
       return runInDrizzleTransaction(db, async () => {
-        await currentDrizzleDb(db)
-          .select({ id: threads.id })
-          .from(threads)
-          .where(eq(threads.id, request.threadId))
-          .for("update");
+        await lockThreadForMutation(db, request.threadId);
         const existing = await read(request.threadId, request.submissionId);
         if (existing?.state === "accepted")
           return { ...existing.response, kind: "already-accepted" };

@@ -197,8 +197,11 @@ export interface ThreadRepository {
   findLiveByProjectRef(projectId: ProjectId, ref: string): Promise<Thread | null>;
   /** Returns the owning project even when the thread is soft-deleted. */
   findProjectIdByIdIncludingDeleted(id: ThreadId): Promise<ProjectId | null>;
-  /** Locks and returns the thread lifecycle row, including soft-deleted threads. */
-  lockByIdIncludingDeleted(id: ThreadId): Promise<Thread | null>;
+  /** Locks the thread; optional Work targets lock with its primary in canonical order (restore). */
+  lockByIdIncludingDeleted(
+    id: ThreadId,
+    additionalWorkIds?: readonly WorkId[],
+  ): Promise<Thread | null>;
   listByUser(userId: UserId): Promise<Thread[]>;
   /** Primary threads in a project (excludes subagents and soft-deleted threads; caller must gate project access). */
   listByProject(projectId: ProjectId): Promise<ThreadListItem[]>;
@@ -410,8 +413,6 @@ export interface ThreadWorksRepository {
     threadId: ThreadId,
     workId: WorkId,
   ): Promise<{ previousWorkId: WorkId | null; changed: boolean }>;
-  /** Locks the thread after callers have acquired any Work lifecycle locks. */
-  lockPrimary(threadId: ThreadId): Promise<{ workId: WorkId } | null>;
   findPrimary(threadId: ThreadId): Promise<{ workId: WorkId } | null>;
   /** Upserts a primary onto an already-locked Work while restore holds the thread row lock. */
   rebindPrimaryForRestore(threadId: ThreadId, workId: WorkId): Promise<void>;
