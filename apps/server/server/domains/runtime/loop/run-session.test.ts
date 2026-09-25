@@ -5,8 +5,8 @@ import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
 } from "../../threads/index.js";
-import { createTestOrchestratorDeps } from "./__tests__/test-orchestrator-deps.js";
-import { createOrchestrator, type OrchestratorDeps } from "./orchestrator.js";
+import { createRuntimeHarness } from "./__tests__/runtime-harness.js";
+import type { OrchestratorDeps } from "./orchestrator.js";
 import { DEFAULT_LEASE_TTL_MS } from "./ports.js";
 
 async function fixture(configure?: (deps: OrchestratorDeps) => void) {
@@ -14,14 +14,16 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
   const sink = createInMemoryEventSink();
   let calls = 0;
   const repos = createInMemoryRepositories();
-  const deps = createTestOrchestratorDeps({
+  const thread = await repos.threads.create({ userId: "user-1", projectId: "project-1" });
+  const harness = createRuntimeHarness({
     repos,
     eventWriter: journal,
     eventSink: sink,
     headSeq: (id) => journal.headSeq(id),
     boundThreads: () => [thread.id],
   });
-  const thread = await deps.repos.threads.create({ userId: "user-1", projectId: "project-1" });
+  const deps = harness.deps;
+
   await deps.creditLedger.grant({
     userId: thread.userId,
     source: "manual",
@@ -46,7 +48,7 @@ async function fixture(configure?: (deps: OrchestratorDeps) => void) {
     },
   };
   configure?.(deps);
-  const runtime = createOrchestrator(deps);
+  const runtime = harness.orchestrator;
   return {
     runtime,
     repos,

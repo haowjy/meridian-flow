@@ -27,7 +27,7 @@ import {
   createInMemoryRunStarter,
   createInMemoryThreadLock,
 } from "../adapters/in-memory/loop-ports.js";
-import { createTestDelivery } from "../loop/__tests__/test-delivery.js";
+import { createRuntimeHarness } from "../loop/__tests__/runtime-harness.js";
 import { assembleComposedSystemPrompt } from "../loop/composed-system-prompt.js";
 import type { RunTurnPort } from "../loop/run-turn-port.js";
 import { createToolRegistry, resolveAgentThreadTurnContext } from "../tools/index.js";
@@ -213,12 +213,15 @@ async function fixture(
     readThreadActivity({ threads: repos.threads, statusReader: runClaim }, threadId);
   const inbox = createInMemoryInbox();
   const runStarter = createInMemoryRunStarter();
-  const delivery = createTestDelivery({
+  const delivery = createRuntimeHarness({
+    repos,
+    eventWriter,
+    runClaim,
     inbox,
     threadLock: createInMemoryThreadLock(),
     runStarter,
     schedulePostCommit: (task) => task(),
-  });
+  }).delivery;
   const publisher = createReportPublisher({ repos, eventWriter, delivery, eventSink });
 
   const driver = createChildRunDriver({

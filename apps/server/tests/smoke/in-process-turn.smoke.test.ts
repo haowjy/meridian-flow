@@ -14,12 +14,8 @@ import type {
   GenerateResult,
   StreamEvent,
 } from "../../server/domains/runtime/index.js";
-import {
-  createOrchestrator,
-  createToolExecutor,
-  createToolRegistry,
-} from "../../server/domains/runtime/index.js";
-import { createTestOrchestratorDeps } from "../../server/domains/runtime/loop/__tests__/test-orchestrator-deps.js";
+import { createToolExecutor, createToolRegistry } from "../../server/domains/runtime/index.js";
+import { createRuntimeHarness } from "../../server/domains/runtime/loop/__tests__/runtime-harness.js";
 import {
   createInMemoryEventJournalWriter,
   createInMemoryRepositories,
@@ -129,17 +125,15 @@ describe("smoke: in-process turn", () => {
       reason: "smoke",
     });
     const journal = createInMemoryEventJournalWriter();
-    const orchestrator = createOrchestrator(
-      createTestOrchestratorDeps({
-        boundThreads: () => [thread.id],
-        gateway,
-        repos,
-        eventWriter: journal,
-        toolRegistry,
-        toolExecutor,
-        creditLedger,
-      }),
-    );
+    const orchestrator = createRuntimeHarness({
+      boundThreads: () => [thread.id],
+      gateway,
+      repos,
+      eventWriter: journal,
+      toolRegistry,
+      toolExecutor,
+      creditLedger,
+    }).orchestrator;
 
     const run = await orchestrator.prepare({
       threadId: thread.id,

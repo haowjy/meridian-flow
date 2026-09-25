@@ -1,35 +1,21 @@
 /** Loop-level inbox drain: batch delivery, request-only rendering, and the final-claim continuation. */
 
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
-import { describe, expect, it } from "vitest";
-import { createInMemoryCreditLedger } from "../../../billing/index.js";
+import { describe, expect, it, vi } from "vitest";
 import { createInMemoryAccountSkillInstallStore } from "../../../packages/index.js";
-import { createInMemoryProjectRepository } from "../../../projects/index.js";
-import { createInMemoryRepositories } from "../../../threads/index.js";
-import {
-  createInMemoryInbox,
-  createInMemoryRunClaim,
-  createInMemoryThreadLock,
-} from "../../adapters/in-memory/loop-ports.js";
-import type {
-  Gateway,
-  GenerateRequest,
-  GenerateResult,
-  Message,
-  StreamEvent,
-} from "../../gateway/index.js";
+import type { GenerateResult, Message } from "../../gateway/index.js";
+import { createReportPublisher } from "../../spawn/report-publisher.js";
 import {
   createSpawnToolRegistrations,
   createToolExecutor,
   createToolRegistry,
 } from "../../tools/index.js";
-import { activatedSkillMetadata } from "../activated-skills.js";
-import { createOrchestrator } from "../orchestrator.js";
 import type { MessageDraft } from "../ports.js";
 import type { ReferenceReader } from "../reference-context.js";
 import { NoPendingWakeError } from "../run-turn-port.js";
-import { gatewayStubDefaults } from "./test-gateway.js";
-import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
+import { createTestAgentBinding } from "./runtime-fixtures.js";
+import { runtimeScenario } from "./runtime-harness.js";
+import { scriptedGateway } from "./test-gateway.js";
 
 const USER_ID = "user-1";
 
@@ -79,62 +65,6 @@ function notice(key: string, threadId: ThreadId): MessageDraft {
   };
 }
 
-/**
- * Mirrors the writer producer's persist-at-enqueue: the user turn with its
- * activated-skill metadata, its blocks, and the inbox `message` all share one id.
- */
-async function persistWriterSend(input: {
-  repos: ReturnType<typeof createInMemoryRepositories>;
-  inbox: ReturnType<typeof createInMemoryInbox>;
-  threadId: ThreadId;
-  text: string;
-  activatedSkillSlugs?: readonly string[];
-  reference?: { documentId: string; uri: string; text: string };
-}): Promise<TurnId> {
-  const turnId = crypto.randomUUID() as TurnId;
-  const leafTurnId = (await input.repos.threads.findById(input.threadId))?.activeLeafTurnId ?? null;
-  await input.repos.turns.create({
-    id: turnId,
-    threadId: input.threadId,
-    prevTurnId: leafTurnId,
-    role: "user",
-    status: "complete",
-    metadata: activatedSkillMetadata(input.activatedSkillSlugs ?? []),
-  });
-  await input.repos.blocks.create({
-    id: `${turnId}:0`,
-    turnId,
-    blockType: "text",
-    sequence: 0,
-    textContent: input.text,
-  });
-  if (input.reference) {
-    await input.repos.blocks.create({
-      id: `${turnId}:1`,
-      turnId,
-      blockType: "text",
-      sequence: 1,
-      textContent: input.reference.text,
-      // No `read` result: the run must read it when the message is adopted.
-      content: {
-        type: "reference",
-        text: input.reference.text,
-        documentId: input.reference.documentId,
-        uri: input.reference.uri,
-      },
-    });
-  }
-  await input.inbox.enqueue({
-    id: turnId,
-    threadId: input.threadId,
-    intent: "message",
-    provenance: { kind: "writer", actorId: USER_ID },
-    body: { kind: "text", text: input.text },
-    idempotencyKey: turnId,
-  });
-  return turnId;
-}
-
 function messageTexts(messages: readonly Message[]): string[] {
   return messages.flatMap((message) =>
     message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
@@ -162,77 +92,37 @@ async function setup(
     referenceReader?: ReferenceReader;
     child?: boolean;
     realSpawnTools?: boolean;
+    imageAssets?: import("../../ports/image-asset.js").ImageAssetPort;
   } = {},
 ) {
-  const projectRepo = createInMemoryProjectRepository();
-  const repos = createInMemoryRepositories({ projects: projectRepo });
-  const project = await projectRepo.create({ userId: USER_ID, title: "Inbox" });
-  const parent = await repos.threads.create({ userId: USER_ID, projectId: project.id });
-  const thread = options.child
-    ? await repos.threads.createSubagent({
-        userId: USER_ID,
-        projectId: project.id,
-        parentThreadId: parent.id,
-        rootThreadId: parent.id,
-        spawnDepth: 1,
-      })
-    : parent;
-  const creditLedger = createInMemoryCreditLedger();
-  await creditLedger.grant({
-    userId: USER_ID,
-    source: "manual",
-    amountMillicredits: "1000000",
-    reason: "inbox drain test",
-  });
-  const inbox = createInMemoryInbox();
   const accountSkillInstalls = createInMemoryAccountSkillInstallStore();
-  if (options.skill) {
-    await accountSkillInstalls.insert({ ownerUserId: USER_ID as never, ...options.skill });
-  }
-  const requests: GenerateRequest[] = [];
-  let call = 0;
-  const gateway: Gateway = {
-    ...gatewayStubDefaults,
-    async *stream(request: GenerateRequest): AsyncGenerator<StreamEvent> {
-      call += 1;
-      requests.push(request);
-      await options.onStream?.(call);
-      if (options.errorAtCall === call) {
-        yield {
-          type: "error",
-          code: "provider_error",
-          message: "provider failed",
-          retryable: false,
-        };
-        return;
-      }
-      yield { type: "end", result: options.results?.[call - 1] ?? textResult() };
-    },
-    async generate() {
-      throw new Error("not used");
-    },
-  };
+  if (options.skill) await accountSkillInstalls.insert({ ownerUserId: USER_ID, ...options.skill });
+  const gateway = scriptedGateway(options);
+  const { requests } = gateway;
   const toolRegistry = createToolRegistry();
   if (options.realSpawnTools) {
     for (const registration of createSpawnToolRegistrations()) toolRegistry.register(registration);
   }
-  const orchestrator = createOrchestrator(
-    createTestOrchestratorDeps({
-      boundThreads: () => [thread.id],
-      gateway,
-      repos,
-      creditLedger,
-      inbox,
-      threadLock: createInMemoryThreadLock(),
-      runClaim: createInMemoryRunClaim(),
-      accountSkillInstalls,
-      ...(options.realSpawnTools
-        ? { toolExecutor: createToolExecutor(toolRegistry), toolRegistry }
-        : {}),
-      ...(options.referenceReader ? { referenceReader: options.referenceReader } : {}),
-    }),
-  );
-  return { thread, inbox, requests, orchestrator, repos };
+  const rig = await runtimeScenario({
+    gateway,
+    accountSkillInstalls,
+    ...(options.realSpawnTools
+      ? { toolExecutor: createToolExecutor(toolRegistry), toolRegistry }
+      : {}),
+    ...(options.referenceReader ? { referenceReader: options.referenceReader } : {}),
+    ...(options.imageAssets ? { imageAssets: options.imageAssets } : {}),
+    agentRevisions: createTestAgentBinding("gpt-4.1-mini", "", () => [thread.id]),
+  });
+  const thread = options.child
+    ? await rig.repos.threads.createSubagent({
+        userId: USER_ID,
+        projectId: rig.project.id,
+        parentThreadId: rig.thread.id,
+        rootThreadId: rig.thread.id,
+        spawnDepth: 1,
+      })
+    : rig.thread;
+  return { ...rig, thread, requests };
 }
 
 async function execute(run: import("../run-turn-port.js").PreparedRun) {
@@ -382,7 +272,7 @@ describe("inbox drain", () => {
   });
 
   it("inlines a mid-run writer-activated skill body on the adopted message", async () => {
-    const { thread, inbox, requests, orchestrator, repos } = await setup({
+    const { thread, requests, orchestrator, send } = await setup({
       skill: {
         slug: "writing-principles",
         name: "Writing Principles",
@@ -391,11 +281,7 @@ describe("inbox drain", () => {
       },
       onStream: async (call) => {
         if (call === 1) {
-          await persistWriterSend({
-            repos,
-            inbox,
-            threadId: thread.id,
-            text: "also tighten the dialogue",
+          await send(thread.id, "also tighten the dialogue", {
             activatedSkillSlugs: ["writing-principles"],
           });
         }
@@ -415,7 +301,12 @@ describe("inbox drain", () => {
     const documentId = "33333333-3333-4333-8333-333333333333";
     const uri = "uploads://@/gate-map.png";
     let adoptedTurnId: TurnId | undefined;
-    const { thread, inbox, requests, orchestrator, repos } = await setup({
+    const { thread, requests, orchestrator, repos, send } = await setup({
+      imageAssets: {
+        async resolve() {
+          return { mediaType: "image/png", data: "aW1hZ2U=", sizeBytes: 5 };
+        },
+      },
       referenceReader: {
         async read(reference) {
           return { uri: reference.uri, pages: [1] };
@@ -423,13 +314,14 @@ describe("inbox drain", () => {
       },
       onStream: async (call) => {
         if (call === 1) {
-          adoptedTurnId = await persistWriterSend({
-            repos,
-            inbox,
-            threadId: thread.id,
-            text: "compare with [[Gate Map]]",
-            reference: { documentId, uri, text: "[[Gate Map]]" },
-          });
+          adoptedTurnId = (
+            await send(thread.id, "compare with [[Gate Map]]", {
+              blocks: [
+                { type: "reference", documentId, uri, text: "[[Gate Map]]" },
+                { type: "image", documentId: "44444444-4444-4444-8444-444444444444", uri },
+              ],
+            })
+          ).userTurnId;
         }
       },
     });
@@ -445,6 +337,17 @@ describe("inbox drain", () => {
       (block) => (block.content as { type?: string } | null)?.type === "reference",
     );
     expect(referenceBlock?.content).toMatchObject({ read: { result: { uri, pages: [1] } } });
+    expect(blocks.find((block) => block.blockType === "image")?.content).toMatchObject({
+      type: "image_reference",
+      documentId: "44444444-4444-4444-8444-444444444444",
+      uri,
+    });
+    expect(requests[1].messages.flatMap((message) => message.content)).toContainEqual({
+      type: "image_reference",
+      documentId: "44444444-4444-4444-8444-444444444444",
+      uri,
+    });
+    expect(messageTexts(requests[1].messages)).not.toContain("compare with [[Gate Map]]");
   });
 
   it("persists a drained message as a user turn the next iteration still sees", async () => {
@@ -559,15 +462,85 @@ describe("drain-only start", () => {
     expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
+  it("delivers a hidden system notification without copying the saved report body", async () => {
+    const rig = await setup();
+    const { thread, repos, orchestrator, requests, delivery, deps } = rig;
+    const callerTurn = await repos.turns.create({
+      threadId: thread.id,
+      role: "assistant",
+      status: "complete",
+      prevTurnId: null,
+    });
+    const child = await repos.threads.createSubagent({
+      userId: thread.userId,
+      projectId: thread.projectId,
+      parentThreadId: thread.id,
+      rootThreadId: thread.id,
+      spawnDepth: 1,
+    });
+    const execution = await repos.turns.create({
+      threadId: child.id,
+      role: "assistant",
+      status: "complete",
+      prevTurnId: null,
+    });
+    await repos.executionReports.admit({
+      childThreadId: child.id,
+      assistantTurnId: execution.id,
+      handle: child.ref ?? "",
+      origin: "spawn",
+      deliveryMode: "background_notification",
+      callerThreadId: thread.id,
+      callerTurnId: callerTurn.id,
+      toolCallId: "spawn-1",
+      cardBlockId: null,
+    });
+    const secret = "DISTINCTIVE_CHAPTER_BODY_omega_17";
+    await repos.executionReports.finalizeOnce({
+      childThreadId: child.id,
+      assistantTurnId: execution.id,
+      outcome: "succeeded",
+      reason: null,
+      source: "return_result",
+      summary: secret,
+      payload: { chapter: secret },
+    });
+    await createReportPublisher({
+      repos,
+      eventWriter: deps.eventWriter,
+      eventSink: deps.eventSink,
+      delivery,
+    }).publish(child.id, execution.id);
+    const [queued] = await delivery.selectPending(thread.id);
+    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
+    expect(await repos.turns.findById(queued.id)).toMatchObject({ role: "system" });
+    const blocks = await repos.blocks.listByTurn(queued.id);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({ blockType: "text" });
+    const notification = requests[0].messages.find(
+      (message) => message.role === "system" && messageText(message).includes(execution.id),
+    );
+    expect(messageText(notification as Message)).toContain(`"execution":"${execution.id}"`);
+    expect(
+      JSON.stringify([queued, blocks, requests, rig.projectedEvents.map(({ event }) => event)]),
+    ).not.toContain(secret);
+    expect(await delivery.selectPending(thread.id)).toEqual([]);
+  });
+
   it("chains multiple drained messages before the assistant in enqueue order", async () => {
     const { thread, inbox, orchestrator, repos } = await setup();
+    const enqueuedAt = new Date("2020-01-02T03:04:05.000Z");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(enqueuedAt);
     const first = await inbox.enqueue(message("first", thread.id));
+    vi.useRealTimers();
     const second = await inbox.enqueue(message("second", thread.id));
 
     await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
 
     const turns = await repos.turns.listByThread(thread.id);
     expect(turns.find((turn) => turn.id === first.id)?.prevTurnId).toBeNull();
+    expect(turns.find((turn) => turn.id === first.id)?.createdAt).toBe(enqueuedAt.toISOString());
     expect(turns.find((turn) => turn.id === second.id)?.prevTurnId).toBe(first.id);
     expect(turns.find((turn) => turn.role === "assistant")?.prevTurnId).toBe(second.id);
     expect(await inbox.selectPending(thread.id)).toEqual([]);
@@ -615,7 +588,7 @@ describe("drain-only start", () => {
   });
 
   it("inlines the writer-activated skill body read back off the persisted turn", async () => {
-    const { thread, inbox, requests, orchestrator, repos } = await setup({
+    const { thread, requests, orchestrator, send, inbox, repos } = await setup({
       skill: {
         slug: "writing-principles",
         name: "Writing Principles",
@@ -623,15 +596,15 @@ describe("drain-only start", () => {
         body: "Show, do not tell.",
       },
     });
-    await persistWriterSend({
-      repos,
-      inbox,
-      threadId: thread.id,
-      text: "help me revise this scene",
+    const sent = await send(thread.id, "help me revise this scene", {
       activatedSkillSlugs: ["writing-principles"],
     });
 
-    await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
+    const fresh = await inbox.enqueue(message("fresh after saved writer", thread.id));
+    const run = await orchestrator.prepare({ threadId: thread.id, drain: true });
+    await run.execute();
+    expect((await repos.turns.findById(fresh.id))?.prevTurnId).toBe(sent.userTurnId);
+    expect((await repos.turns.findById(run.assistantTurnId))?.prevTurnId).toBe(fresh.id);
 
     expect(requests).toHaveLength(1);
     const texts = messageTexts(requests[0]?.messages ?? []);

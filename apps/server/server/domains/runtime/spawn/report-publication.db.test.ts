@@ -1,17 +1,17 @@
-/** PostgreSQL B and orphan recovery: exact parent publication after durable terminal A. */
-import { buildInvocationCardContent } from "@meridian/contracts/components";
+/** PostgreSQL publication B and orphan recovery after durable terminal A. */
 import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { executionScenario } from "../../../test-support/execution-scenario.js";
 
 const runDb = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
 const databaseUrl = process.env.DATABASE_URL;
 const ids = {
   user: "00000000-0000-4000-8000-000000000be1",
   project: "00000000-0000-4000-8000-000000000be2",
-  parent: "00000000-0000-4000-8000-000000000be3" as ThreadId,
+  caller: "00000000-0000-4000-8000-000000000be3" as ThreadId,
   child: "00000000-0000-4000-8000-000000000be4" as ThreadId,
-  parentTurn: "00000000-0000-4000-8000-000000000be5" as TurnId,
+  callerTurn: "00000000-0000-4000-8000-000000000be5" as TurnId,
   childUserTurn: "00000000-0000-4000-8000-000000000be6" as TurnId,
   execution: "00000000-0000-4000-8000-000000000be7" as TurnId,
   card: "00000000-0000-4000-8000-000000000be8",
@@ -27,7 +27,7 @@ else
     const { createDb } = await import("@meridian/database");
     const schema = await import("@meridian/database/schema");
     const { eq, sql } = await import("drizzle-orm");
-    const { assertThrowawayDatabaseForRunDbTests, conformanceUserValues } = await import(
+    const { assertThrowawayDatabaseForRunDbTests } = await import(
       "@meridian/database/__test-support__/db-fixtures"
     );
     const { truncateDrizzleTables } = await import("../../../test-support/drizzle-reset.js");
@@ -61,87 +61,8 @@ else
 
     beforeEach(async () => {
       await truncateDrizzleTables(db, [schema.users]);
-      await db.insert(schema.users).values(conformanceUserValues(ids.user, "publication-b"));
-      await db.insert(schema.projects).values({
-        id: ids.project,
-        userId: ids.user,
-        name: "Publication B",
-        slug: "publication-b",
-      });
-      await db.insert(schema.threads).values({
-        id: ids.root,
-        projectId: ids.project,
-        createdByUserId: ids.user,
-        ref: "c1",
-      });
-      await db.insert(schema.threads).values([
-        {
-          id: ids.parent,
-          projectId: ids.project,
-          createdByUserId: ids.user,
-          ref: "p0",
-          kind: "subagent",
-          parentThreadId: ids.root,
-          rootThreadId: ids.root,
-          originTurnId: ids.rootTurn,
-          originType: "spawn",
-          spawnStatus: "succeeded",
-        },
-        {
-          id: ids.child,
-          projectId: ids.project,
-          createdByUserId: ids.user,
-          ref: "p1",
-          kind: "subagent",
-          parentThreadId: ids.parent,
-          rootThreadId: ids.root,
-          originTurnId: ids.parentTurn,
-          originType: "spawn",
-          spawnStatus: "running",
-        },
-      ]);
-      await db.insert(schema.turns).values([
-        { id: ids.rootTurn, threadId: ids.root, role: "assistant", status: "complete" },
-        { id: ids.parentTurn, threadId: ids.parent, role: "assistant", status: "complete" },
-        { id: ids.childUserTurn, threadId: ids.child, role: "user", status: "complete" },
-        {
-          id: ids.execution,
-          threadId: ids.child,
-          parentTurnId: ids.childUserTurn,
-          role: "assistant",
-          status: "streaming",
-        },
-      ]);
-      await db.insert(schema.turnBlocks).values({
-        id: ids.card,
-        turnId: ids.parentTurn,
-        blockType: "custom",
-        sequence: 7,
-        content: buildInvocationCardContent(
-          invocationCardProps({
-            agent: "critic",
-            correlation: {
-              parentTurnId: ids.parentTurn,
-              toolCallId: "spawn-1",
-              deliveryMode: "background_notification",
-            },
-            childThreadId: ids.child,
-            execution: null,
-          }),
-        ),
-      });
-      await repos.executionReports.admit({
-        childThreadId: ids.child,
-        assistantTurnId: ids.execution,
-        handle: "p1",
-        origin: "spawn",
-        deliveryMode: "background_notification",
-        callerThreadId: ids.parent,
-        callerTurnId: ids.parentTurn,
-        toolCallId: "spawn-1",
-        cardBlockId: ids.card,
-        agentSlug: "critic",
-      });
+      const scenario = await executionScenario(db, ids);
+      await scenario.admit();
     });
     afterAll(async () => {
       await db.close();
@@ -167,12 +88,12 @@ else
       expect(await publisher.publish(ids.child, ids.execution)).toBe("published");
       expect(await publisher.publish(ids.child, ids.execution)).toBe("already");
       const card = await repos.blocks.findById(ids.card);
-      expect(card).toMatchObject({ id: ids.card, turnId: ids.parentTurn, sequence: 7 });
+      expect(card).toMatchObject({ id: ids.card, turnId: ids.callerTurn, sequence: 7 });
       expect(card?.content).toMatchObject({
         kind: "helper-result",
         props: {
           status: "completed",
-          parentTurnId: ids.parentTurn,
+          parentTurnId: ids.callerTurn,
           toolCallId: "spawn-1",
           deliveryMode: "background_notification",
           execution: ids.execution,
@@ -182,7 +103,7 @@ else
       const events = await db
         .select()
         .from(schema.eventJournal)
-        .where(eq(schema.eventJournal.threadId, ids.parent));
+        .where(eq(schema.eventJournal.threadId, ids.caller));
       expect(events.map((row) => row.eventType)).toEqual([
         "block.updated",
         "agent.run_completed",
@@ -191,12 +112,12 @@ else
       expect(events[0]?.payload).toMatchObject({
         block: {
           id: ids.card,
-          turnId: ids.parentTurn,
+          turnId: ids.callerTurn,
           sequence: 7,
           content: {
             kind: "helper-result",
             props: {
-              parentTurnId: ids.parentTurn,
+              parentTurnId: ids.callerTurn,
               toolCallId: "spawn-1",
               deliveryMode: "background_notification",
               execution: ids.execution,
@@ -205,7 +126,7 @@ else
         },
       });
       expect(JSON.stringify(events.map((row) => row.payload))).not.toContain("secret report body");
-      const messages = await inbox.selectPending(ids.parent);
+      const messages = await inbox.selectPending(ids.caller);
       expect(messages).toHaveLength(1);
       expect(messages[0]).toMatchObject({
         provenance: { kind: "child", threadId: ids.child, reportId: ids.execution },
@@ -238,7 +159,7 @@ else
       expect(finalized?.payload).toBe(payload);
       expect(
         await readThreadReport({
-          callerThreadId: ids.parent,
+          callerThreadId: ids.caller,
           ref: "p1",
           execution: ids.execution,
           repos: freshRepos,
@@ -305,7 +226,7 @@ else
       ).toEqual(objectPayload);
       expect(
         await readThreadReport({
-          callerThreadId: ids.parent,
+          callerThreadId: ids.caller,
           ref: "p1",
           execution: ids.nextExecution,
           repos: freshRepos,
@@ -330,8 +251,8 @@ else
         handle: "p1",
         origin: "spawn",
         deliveryMode: "background_notification",
-        callerThreadId: ids.parent,
-        callerTurnId: ids.parentTurn,
+        callerThreadId: ids.caller,
+        callerTurnId: ids.callerTurn,
         toolCallId: "spawn-repair",
         cardBlockId: null,
       });
@@ -411,7 +332,7 @@ else
         const saved = await repos.executionReports.findByExecution(ids.child, execution);
         expect(saved?.payload).toEqual(payload);
         const result = await readThreadReport({
-          callerThreadId: ids.parent,
+          callerThreadId: ids.caller,
           ref: "p1",
           execution,
           repos,
@@ -444,12 +365,12 @@ else
       const priorEvents = await db
         .select()
         .from(schema.eventJournal)
-        .where(eq(schema.eventJournal.threadId, ids.parent));
+        .where(eq(schema.eventJournal.threadId, ids.caller));
       await bindAdmittedInvocationCard({
         transcript: {
           persistence: { repos, eventWriter },
-          threadId: ids.parent,
-          turnId: ids.parentTurn,
+          threadId: ids.caller,
+          turnId: ids.callerTurn,
           blockSeqRef: { value: 8 },
           allBlocks: [],
         },
@@ -458,7 +379,7 @@ else
         props: invocationCardProps({
           agent: "critic",
           correlation: {
-            parentTurnId: ids.parentTurn,
+            parentTurnId: ids.callerTurn,
             toolCallId: "spawn-1",
             deliveryMode: "background_notification",
           },
@@ -471,7 +392,7 @@ else
       const afterEvents = await db
         .select()
         .from(schema.eventJournal)
-        .where(eq(schema.eventJournal.threadId, ids.parent));
+        .where(eq(schema.eventJournal.threadId, ids.caller));
       expect(afterEvents).toHaveLength(priorEvents.length);
     });
 
@@ -498,7 +419,7 @@ else
                 (await repos.executionReports.findByExecution(ids.child, ids.execution))
                   ?.publication,
               ).toBe("published");
-              expect(await inbox.selectPending(ids.parent)).toHaveLength(1);
+              expect(await inbox.selectPending(ids.caller)).toHaveLength(1);
               throw new Error("failure after publication marker");
             },
           },
@@ -512,13 +433,13 @@ else
       );
       expect(wakes).toBe(0);
       const parentEvents = () =>
-        db.select().from(schema.eventJournal).where(eq(schema.eventJournal.threadId, ids.parent));
+        db.select().from(schema.eventJournal).where(eq(schema.eventJournal.threadId, ids.caller));
       expect(await parentEvents()).toEqual([]);
       expect((await repos.blocks.findById(ids.card))?.content).toMatchObject({
         kind: "helper-result",
         props: { status: "running" },
       });
-      expect(await inbox.selectPending(ids.parent)).toEqual([]);
+      expect(await inbox.selectPending(ids.caller)).toEqual([]);
       expect(
         (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,
       ).toBe("pending");
@@ -531,7 +452,7 @@ else
       expect(await recovered.publish(ids.child, ids.execution)).toBe("published");
       expect(await recovered.publish(ids.child, ids.execution)).toBe("already");
       expect(wakes).toBe(1);
-      expect(await inbox.selectPending(ids.parent)).toHaveLength(1);
+      expect(await inbox.selectPending(ids.caller)).toHaveLength(1);
       expect(
         (await parentEvents()).filter((event) => event.eventType === "agent.run_completed"),
       ).toHaveLength(1);
@@ -546,7 +467,7 @@ else
       const gate = new Promise<void>((resolve) => {
         release = resolve;
       });
-      const parent = threadLock.withThreadLock(ids.parent, async () => {
+      const parent = threadLock.withThreadLock(ids.caller, async () => {
         entered();
         await gate;
       });
@@ -580,11 +501,11 @@ else
       ]);
       expect(outcomes.sort()).toEqual(["already", "published"]);
       expect(await repos.blocks.findById(ids.card)).toBeNull();
-      expect(await inbox.selectPending(ids.parent)).toHaveLength(1);
+      expect(await inbox.selectPending(ids.caller)).toHaveLength(1);
       const events = await db
         .select()
         .from(schema.eventJournal)
-        .where(eq(schema.eventJournal.threadId, ids.parent));
+        .where(eq(schema.eventJournal.threadId, ids.caller));
       expect(events.map((row) => row.eventType)).toEqual(["agent.run_completed", "inbox.changed"]);
     });
 
@@ -603,8 +524,8 @@ else
         handle: "p1",
         origin: "foreground_message",
         deliveryMode: "direct",
-        callerThreadId: ids.parent,
-        callerTurnId: ids.parentTurn,
+        callerThreadId: ids.caller,
+        callerTurnId: ids.callerTurn,
         toolCallId: "message-2",
         cardBlockId: null,
       });
@@ -642,8 +563,8 @@ else
     it("abandons publication after hard deletion without deleting retained child output", async () => {
       await terminal();
       await db.delete(schema.turnBlocks).where(eq(schema.turnBlocks.id, ids.card));
-      await db.delete(schema.turns).where(eq(schema.turns.id, ids.parentTurn));
-      await db.delete(schema.threads).where(eq(schema.threads.id, ids.parent));
+      await db.delete(schema.turns).where(eq(schema.turns.id, ids.callerTurn));
+      await db.delete(schema.threads).where(eq(schema.threads.id, ids.caller));
       expect(
         (await repos.executionReports.findByExecution(ids.child, ids.execution))?.callerThreadId,
       ).toBeNull();
@@ -661,14 +582,14 @@ else
       await db
         .update(schema.threads)
         .set({ deletedAt: new Date() })
-        .where(eq(schema.threads.id, ids.parent));
+        .where(eq(schema.threads.id, ids.caller));
       await terminal();
       expect(await publisher.publish(ids.child, ids.execution)).toBe("parked");
       expect(await publisher.sweep(1)).toBe(0);
       await db
         .update(schema.threads)
         .set({ deletedAt: null })
-        .where(eq(schema.threads.id, ids.parent));
+        .where(eq(schema.threads.id, ids.caller));
       expect(await publisher.sweep(1)).toBe(1);
       expect(
         (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,

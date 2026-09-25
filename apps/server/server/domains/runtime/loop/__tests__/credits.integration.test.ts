@@ -1,15 +1,6 @@
 /** Runtime credit-gate integration tests for ledger exhaustion and interrupt meter-pause semantics. */
 
-import type { OrchestratorEvent } from "@meridian/contracts/threads";
 import { describe, expect, it } from "vitest";
-import { createInMemoryCreditLedger } from "../../../billing/index.js";
-import { createInMemoryEventSink } from "../../../observability/index.js";
-import { createInMemoryProjectRepository } from "../../../projects/index.js";
-import {
-  createInMemoryEventJournalWriter,
-  createInMemoryRepositories,
-  createThreadEventHub,
-} from "../../../threads/index.js";
 import type { Gateway, GenerateResult, StreamEvent } from "../../gateway/index.js";
 import {
   createToolExecutor,
@@ -17,10 +8,8 @@ import {
   type InterruptToolHandlerContext,
   type ToolHandler,
 } from "../../tools/index.js";
-import { createInterruptRegistry } from "../interrupts.js";
-import { createOrchestrator } from "../orchestrator.js";
+import { runtimeGate, runtimeScenario } from "./runtime-harness.js";
 import { gatewayStubDefaults } from "./test-gateway.js";
-import { createTestOrchestratorDeps } from "./test-orchestrator-deps.js";
 
 function pricedTextResult(text = "done"): GenerateResult {
   return {
@@ -33,34 +22,15 @@ function pricedTextResult(text = "done"): GenerateResult {
   };
 }
 
-async function setup(gateway: Gateway) {
-  const projectRepo = createInMemoryProjectRepository();
-  const repos = createInMemoryRepositories({ projects: projectRepo });
-  const project = await projectRepo.create({ userId: "user-1", title: "WB" });
-  const creditLedger = createInMemoryCreditLedger();
-  const eventWriter = createInMemoryEventJournalWriter();
-  const interruptRegistry = createInterruptRegistry();
-  const hub = createThreadEventHub({
-    journalWriter: eventWriter,
-    journalReader: eventWriter,
-    eventSink: createInMemoryEventSink(),
-  });
+async function setup(gateway: Gateway, creditsMillicredits = "1000000") {
   const registry = createToolRegistry();
-  const toolExecutor = createToolExecutor(registry);
-  const orchestrator = createOrchestrator(
-    createTestOrchestratorDeps({
-      boundThreads: () => [thread.id],
-      gateway,
-      toolExecutor,
-      repos,
-      eventWriter: hub,
-      interruptRegistry,
-      creditLedger,
-      eventSink: createInMemoryEventSink(),
-    }),
-  );
-  const thread = await repos.threads.create({ userId: "user-1", projectId: project.id });
-  return { repos, thread, creditLedger, orchestrator, registry, eventWriter, interruptRegistry };
+  const rig = await runtimeScenario({
+    gateway,
+    creditsMillicredits,
+    toolRegistry: registry,
+    toolExecutor: createToolExecutor(registry),
+  });
+  return { ...rig, registry, interruptRegistry: rig.deps.interruptRegistry };
 }
 
 describe("runtime credits", () => {
@@ -74,13 +44,7 @@ describe("runtime credits", () => {
         throw new Error("not used");
       },
     };
-    const { thread, creditLedger, orchestrator } = await setup(gateway);
-    await creditLedger.grant({
-      userId: "user-1",
-      source: "manual",
-      amountMillicredits: "200000",
-      reason: "single call",
-    });
+    const { thread, creditLedger, orchestrator } = await setup(gateway, "200000");
 
     const completed = await (
       await orchestrator.prepare({ threadId: thread.id, userText: "first" })
@@ -131,14 +95,9 @@ describe("runtime credits", () => {
         throw new Error("not used");
       },
     };
-    const { thread, creditLedger, orchestrator, registry, eventWriter, interruptRegistry } =
+    const { thread, creditLedger, orchestrator, registry, interruptRegistry } =
       await setup(gateway);
-    await creditLedger.grant({
-      userId: "user-1",
-      source: "manual",
-      amountMillicredits: "1000000",
-      reason: "interrupt",
-    });
+    const parked = runtimeGate();
     registry.register({
       source: "core",
       definition: {
@@ -150,28 +109,23 @@ describe("runtime credits", () => {
       capability: "interrupt",
       execution: {
         type: "server",
-        handler: (async (_input, ctx: InterruptToolHandlerContext) =>
-          ctx.interrupt({
+        handler: (async (_input, ctx: InterruptToolHandlerContext) => {
+          const answer = ctx.interrupt({
             interruptId: "cp-1",
             prompt: "pause",
             artifacts: [],
             answerSchema: { type: "object", properties: {} },
             requiresHuman: true,
-          })) as ToolHandler<InterruptToolHandlerContext>,
+          });
+          parked.open();
+          return answer;
+        }) as ToolHandler<InterruptToolHandlerContext>,
       },
     });
 
     const handle = await orchestrator.prepare({ threadId: thread.id, userText: "park" });
     const eventsPromise = handle.execute();
-    await waitForEvent(eventWriter, thread.id, "interrupt.created");
-    expect(
-      await creditLedger.getThreadDebitTotal({
-        userId: "user-1",
-        threadId: thread.id,
-      }),
-    ).toBe("230000");
-
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await parked.promise;
     expect(
       await creditLedger.getThreadDebitTotal({
         userId: "user-1",
@@ -186,17 +140,8 @@ describe("runtime credits", () => {
       value: {},
     });
     await eventsPromise;
+    expect(await creditLedger.getThreadDebitTotal({ userId: "user-1", threadId: thread.id })).toBe(
+      "460000",
+    );
   });
 });
-
-async function waitForEvent(
-  writer: ReturnType<typeof createInMemoryEventJournalWriter>,
-  threadId: string,
-  type: OrchestratorEvent["type"],
-) {
-  const started = Date.now();
-  while (!writer.getEvents(threadId).some((entry) => entry.event.type === type)) {
-    if (Date.now() - started > 2000) throw new Error(`timeout waiting for ${type}`);
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-}

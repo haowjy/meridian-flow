@@ -1,17 +1,10 @@
-/**
- * Interrupt integration: cancel travels on the durable lease so it is visible
- * cross-process, the interrupted turn finalizes as `cancelled` and releases, and
- * a pending message starts the next turn as its own drain run. The same lease is
- * the one liveness truth the WS `subscribed` frame carries.
- */
-import { EventType } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createThreadWebSocketSession, type WsPeer } from "../../../../lib/ws-thread-handler.js";
 import type { Gateway, StreamEvent } from "../../gateway/index.js";
 import type { ToolExecutor } from "../../tools/index.js";
 import type { MessageDraft } from "../ports.js";
-import { RuntimeTestRig, runtimeGate } from "./runtime-test-rig.js";
+import { type RuntimeHarness, runtimeGate, runtimeScenario } from "./runtime-harness.js";
 import { gatewayStubDefaults } from "./test-gateway.js";
 
 const USER_ID = "user-1";
@@ -37,7 +30,7 @@ function message(key: string, threadId: ThreadId): MessageDraft {
   };
 }
 
-async function startMessageRun(rig: RuntimeTestRig, text: string): Promise<string> {
+async function startMessageRun(rig: RuntimeHarness, text: string): Promise<string> {
   await rig.inbox.enqueue(message(text, rig.thread.id));
   await rig.runner.startDrain(rig.thread.id);
   await rig.gatewaySignal.promise;
@@ -110,7 +103,7 @@ function committedToolResponseGateway(onStreamCall: () => void): Gateway {
 describe("interrupt cancel", () => {
   it("sets the durable lease flag and publishes it through liveState", async () => {
     const control = gatedPartialGateway();
-    const rig = await RuntimeTestRig.create({ gateway: control.gateway });
+    const rig = await runtimeScenario({ gateway: control.gateway });
     const app = rig.createAppServices();
 
     const assistantTurnId = await startMessageRun(rig, "long turn");
@@ -125,23 +118,21 @@ describe("interrupt cancel", () => {
     expect(during.status).toMatchObject({ kind: "awake", cancelRequested: true });
 
     control.release();
-    await rig.awaitEvent(EventType.RUN_FINISHED);
+    await rig.untilSettled();
   });
 
   it("finalizes cancellation and retires the adopted triggering message", async () => {
     const control = gatedPartialGateway();
-    const rig = await RuntimeTestRig.create({ gateway: control.gateway });
+    const rig = await runtimeScenario({ gateway: control.gateway });
 
     const turnId = await startMessageRun(rig, "no pending");
 
     await rig.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
     control.release();
 
-    await expect
-      .poll(() => rig.turn(turnId as NonNullable<typeof turnId>))
-      .toMatchObject({
-        status: "cancelled",
-      });
+    await rig.untilSettled();
+    expect(await rig.turn(turnId as string)).toMatchObject({ status: "cancelled" });
+    // Cancellation schedules a separate empty drain after this run settles.
     await expect.poll(() => rig.runClaim.read(rig.thread.id)).toEqual({ kind: "asleep" });
     const turns = await rig.repos.turns.listByThread(rig.thread.id);
     expect(turns).toHaveLength(2);
@@ -162,7 +153,7 @@ describe("interrupt cancel", () => {
         return { toolCallId: call.id, output: { ok: true } };
       },
     };
-    const rig = await RuntimeTestRig.create({
+    const rig = await runtimeScenario({
       gateway: committedToolResponseGateway(() => {
         streamCalls += 1;
       }),
@@ -182,9 +173,9 @@ describe("interrupt cancel", () => {
     await rig.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
     releaseTool.open();
 
-    await expect
-      .poll(() => rig.turn(turnId as NonNullable<typeof turnId>))
-      .toMatchObject({ status: "cancelled" });
+    await rig.untilSettled();
+    expect(await rig.turn(turnId as string)).toMatchObject({ status: "cancelled" });
+    // Cancellation schedules a separate empty drain after this run settles.
     await expect.poll(() => rig.runClaim.read(rig.thread.id)).toEqual({ kind: "asleep" });
     expect(
       (await rig.repos.turns.listByThread(rig.thread.id)).filter(
@@ -197,7 +188,7 @@ describe("interrupt cancel", () => {
 
   it("finalizes a cancelled turn and starts a next turn carrying the pending message", async () => {
     const control = gatedPartialGateway();
-    const rig = await RuntimeTestRig.create({ gateway: control.gateway });
+    const rig = await runtimeScenario({ gateway: control.gateway });
 
     const turnId = await startMessageRun(rig, "interrupt me");
     const pending = await rig.inbox.enqueue(message("after interrupt", rig.thread.id));
@@ -205,12 +196,7 @@ describe("interrupt cancel", () => {
     await rig.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
     control.release();
 
-    await expect
-      .poll(async () => {
-        const turns = await rig.repos.turns.listByThread(rig.thread.id);
-        return turns.filter((turn) => turn.role === "assistant").length;
-      })
-      .toBe(2);
+    await rig.untilSettled(2);
 
     const turns = await rig.repos.turns.listByThread(rig.thread.id);
     const cancelled = turns.find((turn) => turn.id === turnId);
@@ -228,7 +214,7 @@ describe("interrupt cancel", () => {
 
   it("carries the lease's running turn in the subscribed WS frame", async () => {
     const control = gatedPartialGateway();
-    const rig = await RuntimeTestRig.create({ gateway: control.gateway });
+    const rig = await runtimeScenario({ gateway: control.gateway });
     const app = rig.createAppServices();
 
     const turnId = await startMessageRun(rig, "subscribe liveness");
@@ -256,6 +242,6 @@ describe("interrupt cancel", () => {
 
     await rig.runner.cancel(rig.thread.id, turnId as NonNullable<typeof turnId>);
     control.release();
-    await rig.awaitEvent(EventType.RUN_FINISHED);
+    await rig.untilSettled();
   });
 });

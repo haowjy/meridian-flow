@@ -22,7 +22,12 @@ import type { AppServices } from "./app.js";
 const SERVER_VERSION = "0.0.0";
 
 export type WsAuthenticatedContext = Readonly<{
-  app: AppServices;
+  app: Pick<
+    AppServices,
+    "eventSink" | "threadEventHub" | "projectRepo" | "interruptRegistry" | "contextCatalogWakeHub"
+  > & {
+    threadRuntime: Pick<AppServices["threadRuntime"], "requireOwnedThread" | "liveState">;
+  };
   userId: UserId;
   traceId: string;
 }>;
