@@ -6,16 +6,16 @@ on:
   # `ready_for_review` is included so marking a draft ready triggers a run.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  # Push CI on the durable trunk verifies the post-merge result. Add a staging
-  # branch here when one exists; don't encode temporary integration branches.
+  # Push CI on the durable trunk verifies the post-merge result.
   push:
     branches: [main]
   workflow_call:
 
-# Supersede in-flight runs for the same ref so rapid re-pushes don't pile up.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # PR updates supersede one another; unique non-PR groups also keep GitHub
+  # from replacing a pending main push with a later push to the same ref.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   quality:
