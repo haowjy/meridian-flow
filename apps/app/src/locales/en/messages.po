@@ -2574,8 +2574,7 @@ msgstr "Parent unknown"
 msgid "Parent:"
 msgstr "Parent:"
 
-#: src/features/chat/SpawnReportCard.tsx
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/ReportContent.tsx
 msgid "Partial result"
 msgstr "Partial result"
 
@@ -2722,9 +2721,7 @@ msgid "Reading…"
 msgstr "Reading…"
 
 #. placeholder {0}: report.reason
-#. placeholder {0}: result.reason
-#: src/features/chat/SpawnReportCard.tsx
-#: src/features/chat/tool-renderers.tsx
+#: src/features/chat/ReportContent.tsx
 msgid "Reason: {0}"
 msgstr "Reason: {0}"
 

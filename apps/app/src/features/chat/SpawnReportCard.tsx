@@ -4,9 +4,9 @@ import { CheckCircle2, CircleAlert, LoaderCircle, OctagonX } from "lucide-react"
 import { useState } from "react";
 import { Markdown } from "@/rich-content/Markdown";
 import { ArtifactCard, type ArtifactCardTone } from "./ArtifactCard";
-import { ArtifactGrid } from "./ArtifactGrid";
 import { useOpenChatThread } from "./ChatThreadNavigation";
 import type { DirectInvocationResult } from "./invocation-direct-result";
+import { payloadText, ReportContent } from "./ReportContent";
 
 type SpawnReportStatus = "running" | "completed" | "failed";
 type SpawnReportOutcome = "succeeded" | "failed" | "cancelled";
@@ -86,19 +86,18 @@ function DirectResult({ result }: { result: DirectInvocationResult }) {
     <div className="mt-2 min-w-0">
       {firstLine ? <Markdown variant="compact">{firstLine}</Markdown> : null}
       {!hasResult ? (
-        <div className="text-caption text-muted-foreground">
-          {result.message ? <p>{result.message}</p> : null}
-          {result.outcome === "succeeded" ? (
-            <p>
+        <ReportContent
+          report={{ ...result, reason: null }}
+          empty={
+            result.outcome === "succeeded" ? (
               <Trans>No report text was returned.</Trans>
-            </p>
-          ) : null}
-          {result.outcome === "failed" || result.outcome === "cancelled" ? (
-            <p>
+            ) : result.outcome === "failed" || result.outcome === "cancelled" ? (
               <Trans>No partial report text was returned.</Trans>
-            </p>
-          ) : null}
-        </div>
+            ) : null
+          }
+          message={result.message}
+          className="text-caption text-muted-foreground"
+        />
       ) : null}
       {hasResult ? (
         <div className="mt-1">
@@ -111,38 +110,17 @@ function DirectResult({ result }: { result: DirectInvocationResult }) {
             {expanded ? <Trans>Hide full result</Trans> : <Trans>Show full result</Trans>}
           </button>
           {expanded ? (
-            <div className="mt-2 space-y-2">
-              {hasReportText ? <Markdown variant="compact">{result.summary}</Markdown> : null}
-              {result.payload !== undefined ? (
-                <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">
-                  {payloadText(result.payload)}
-                </pre>
-              ) : null}
-              {result.artifacts.length > 0 ? <ArtifactGrid artifacts={result.artifacts} /> : null}
-              {result.message ? (
-                <p className="text-caption text-muted-foreground">{result.message}</p>
-              ) : null}
-              {result.reason ? (
-                <p className="text-caption text-muted-foreground">
-                  <Trans>Reason: {result.reason}</Trans>
-                </p>
-              ) : null}
-              {result.partial ? (
-                <p className="text-caption text-muted-foreground">
-                  <Trans>Partial result</Trans>
-                </p>
-              ) : null}
-            </div>
+            <ReportContent
+              report={result}
+              empty={<Trans>No report text was returned.</Trans>}
+              message={result.message}
+              className="mt-2 space-y-2"
+            />
           ) : null}
         </div>
       ) : null}
     </div>
   );
-}
-
-function payloadText(payload: DirectInvocationResult["payload"]): string {
-  if (payload === undefined) return "";
-  return typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
 }
 
 /** The child name is a door; it is not nested in an expansion target. */

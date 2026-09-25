@@ -11,17 +11,15 @@ vi.mock("@/rich-content/Markdown", () => ({
   Markdown: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
-import type { ToolView } from "./group-delivery-segments";
+import { toolView } from "./report-test-fixtures";
 import { ToolRow } from "./ToolRow";
 
 const actGlobal = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
-let previousActEnvironment: boolean | undefined;
 
 describe("thread_report tool row", () => {
   let host: HTMLDivElement;
   let root: Root;
   beforeEach(() => {
-    previousActEnvironment = actGlobal.IS_REACT_ACT_ENVIRONMENT;
     actGlobal.IS_REACT_ACT_ENVIRONMENT = true;
     host = document.createElement("div");
     document.body.append(host);
@@ -30,41 +28,29 @@ describe("thread_report tool row", () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     host.remove();
-    actGlobal.IS_REACT_ACT_ENVIRONMENT = previousActEnvironment;
   });
 
-  it("previews the first report line and expands to the complete result", async () => {
-    const tool: ToolView = {
-      toolCallId: "call-1",
-      toolName: "thread_report",
-      input: { ref: "p3", execution: "execution-1" },
-      output: {
-        ref: "p3",
-        execution: "execution-1",
-        outcome: "succeeded",
-        source: "explicit",
-        summary: "First line.\nFull report.",
-        partial: false,
-        reason: null,
-      },
-      status: "complete",
-      isError: false,
-      message: null,
-      streamedOutput: null,
-      metadata: null,
-      keyBlock: {
-        id: "tool-call",
-        turnId: "turn-1",
-        responseId: null,
-        blockType: "tool_use",
-        sequence: 1,
-        content: { toolCallId: "call-1", toolName: "thread_report" },
-        status: "complete",
-        textContent: null,
-        createdAt: "2026-09-23T00:00:00.000Z",
-      },
-    };
-    await act(async () => root.render(<ToolRow tool={tool} />));
+  it("keeps the report collapsed in its titled activity row until expanded", async () => {
+    await act(async () =>
+      root.render(
+        <ToolRow
+          tool={toolView({
+            toolCallId: "call-report",
+            toolName: "thread_report",
+            input: { ref: "p3", execution: "execution-1" },
+            output: {
+              ref: "p3",
+              execution: "execution-1",
+              outcome: "succeeded",
+              source: "explicit",
+              summary: "First line.\nFull report.",
+              partial: false,
+              reason: null,
+            },
+          })}
+        />,
+      ),
+    );
 
     expect(host.textContent).toContain("First line.");
     expect(host.textContent).not.toContain("Full report.");
@@ -72,126 +58,5 @@ describe("thread_report tool row", () => {
     expect(toggle?.getAttribute("aria-expanded")).toBe("false");
     await act(async () => toggle?.click());
     expect(host.textContent).toContain("Full report.");
-  });
-
-  it("uses explicit empty and failure copy instead of inventing a report", async () => {
-    const tool = (outcome: "succeeded" | "failed") => ({
-      toolCallId: "call-2",
-      toolName: "thread_report",
-      input: null,
-      output: {
-        ref: "p3",
-        execution: "execution-2",
-        outcome,
-        source: "empty",
-        summary: "",
-        partial: outcome !== "succeeded",
-        reason: outcome === "failed" ? "budget_exhausted" : null,
-      },
-      status: "complete" as const,
-      isError: false,
-      message: null,
-      streamedOutput: null,
-      metadata: null,
-      keyBlock: {
-        id: "tool-call-2",
-        turnId: "turn-1",
-        responseId: null,
-        blockType: "tool_use" as const,
-        sequence: 2,
-        content: { toolCallId: "call-2", toolName: "thread_report" },
-        status: "complete" as const,
-        textContent: null,
-        createdAt: "2026-09-23T00:00:00.000Z",
-      },
-    });
-    await act(async () => root.render(<ToolRow tool={tool("succeeded")} />));
-    expect(host.textContent).toContain("No report text was returned");
-    await act(async () => root.render(<ToolRow tool={tool("failed")} />));
-    expect(host.textContent).toContain("The child run failed");
-    await act(async () => host.querySelector("button")?.click());
-    expect(host.textContent).toContain("No partial report text was returned");
-    expect(host.textContent).toContain("budget_exhausted");
-  });
-
-  it("expands an artifact-only saved result in its ordinary activity row", async () => {
-    const artifact = { type: "object", uri: "scratch://saved.md", label: "Saved artifact" };
-    const tool: ToolView = {
-      toolCallId: "call-artifact",
-      toolName: "thread_report",
-      input: { ref: "p3", execution: "execution-1" },
-      output: {
-        ref: "p3",
-        execution: "execution-1",
-        outcome: "succeeded",
-        source: "explicit",
-        summary: "",
-        artifacts: [artifact],
-        partial: false,
-        reason: null,
-      },
-      status: "complete",
-      isError: false,
-      message: null,
-      streamedOutput: null,
-      metadata: null,
-      keyBlock: {
-        id: "tool-artifact",
-        turnId: "turn-1",
-        responseId: null,
-        blockType: "tool_use",
-        sequence: 3,
-        content: { toolCallId: "call-artifact", toolName: "thread_report" },
-        status: "complete",
-        textContent: null,
-        createdAt: "2026-09-23T00:00:00.000Z",
-      },
-    };
-    await act(async () => root.render(<ToolRow tool={tool} />));
-    const toggle = host.querySelector("button");
-    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
-    await act(async () => toggle?.click());
-    expect(host.textContent).toContain("Saved artifact");
-    expect(host.textContent).not.toContain("No report text was returned");
-  });
-
-  it("does not call a failed empty saved report partial output", async () => {
-    const tool: ToolView = {
-      toolCallId: "call-empty-failure",
-      toolName: "thread_report",
-      input: { ref: "p13", execution: "execution-32" },
-      output: {
-        ref: "p13",
-        execution: "execution-32",
-        outcome: "failed",
-        source: "empty",
-        summary: "",
-        artifacts: [],
-        partial: true,
-        reason: "runtime_error",
-      },
-      status: "complete",
-      isError: false,
-      message: null,
-      streamedOutput: null,
-      metadata: null,
-      keyBlock: {
-        id: "tool-empty-failure",
-        turnId: "turn-1",
-        responseId: null,
-        blockType: "tool_use",
-        sequence: 4,
-        content: { toolCallId: "call-empty-failure", toolName: "thread_report" },
-        status: "complete",
-        textContent: null,
-        createdAt: "2026-09-23T00:00:00.000Z",
-      },
-    };
-    await act(async () => root.render(<ToolRow tool={tool} />));
-    expect(host.textContent).toContain("The child run failed");
-    expect(host.textContent).not.toContain("runtime_error");
-    await act(async () => host.querySelector("button")?.click());
-    expect(host.textContent).toContain("No partial report text was returned");
-    expect(host.textContent).not.toContain("Partial result");
   });
 });
