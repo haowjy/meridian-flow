@@ -25,13 +25,14 @@ pnpm test   # integration tests; needs DATABASE_URL + TEST_USER_ID
 
 **Fresh clone:** `pnpm dev:infra` → `pnpm bootstrap` (migrate + apply-functions).
 
-Deploy images run `pnpm --filter @meridian/database build:release` at build
-time and invoke `node dist/release/release.mjs` as Railway's pre-deploy
-command. If migrations are pending, it requires a deploy-seam confirmation in
+The server image runs `pnpm --filter @meridian/database build:release` at build
+time and carries the bundle at `/app/release/`. The deploy seam invokes
+`node /app/release/release.mjs` before the new server image becomes healthy. If
+migrations are pending, it requires a deploy-seam confirmation in
 `MERIDIAN_BACKUP_REF` (`<provider>:<backup id>:release=<sha>`) whose release
 SHA matches `MERIDIAN_RELEASE_SHA`; then it applies migrations and function SQL
-in one transaction. Snapshot creation is owned by `tools/deploy/deploy.ts`, so
-the Neon credential never reaches the Railway runtime. With no pending
+in one transaction. Neon snapshot creation is owned by the CI deploy seam, so
+the Neon API credential never reaches the application runtime. With no pending
 migrations, no backup confirmation is required. The bundle needs Node at
 runtime, but no `node_modules`.
 

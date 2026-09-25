@@ -11,7 +11,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d meridian"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d meridian"]
       interval: 2s
       timeout: 5s
       retries: 20
@@ -43,11 +43,46 @@ services:
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
-        for bucket in uploads backups; do
+        for bucket in uploads; do
           if ! aws --endpoint-url http://object-store:9000 s3api head-bucket --bucket "$$bucket" 2>/dev/null; then
             aws --endpoint-url http://object-store:9000 s3api create-bucket --bucket "$$bucket"
           fi
         done
+
+  backup:
+    image: postgres:16
+    environment:
+      PGPASSWORD: postgres
+      MERIDIAN_RELEASE_SHA: ${MERIDIAN_RELEASE_SHA:-local}
+    volumes:
+      - backup-data:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        until pg_isready -h postgres -U postgres -d meridian; do sleep 1; done
+        dump="/backups/predeploy-$${MERIDIAN_RELEASE_SHA}.dump"
+        pg_dump -Fc -h postgres -U postgres -d meridian -f "$$dump"
+        test -s "$$dump"
+        pg_restore --list "$$dump" >/dev/null
+        echo "backup: verified $$dump ($$(stat -c %s "$$dump") bytes)"
+
+  release:
+    image: meridian-production-shaped-server:latest
+    command: ["node", "/app/release/release.mjs"]
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/meridian
+      MERIDIAN_RELEASE_SHA: ${MERIDIAN_RELEASE_SHA:-local}
+      MERIDIAN_BACKUP_REF: local-pg-dump:predeploy-${MERIDIAN_RELEASE_SHA:-local}.dump:release=${MERIDIAN_RELEASE_SHA:-local}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backup:
+        condition: service_completed_successfully
 
   server:
     image: meridian-production-shaped-server:latest
@@ -55,7 +90,7 @@ services:
       context: ../../..
       dockerfile: apps/server/Dockerfile
       args:
-        MERIDIAN_VERSION: ${MERIDIAN_VERSION:-local}
+        MERIDIAN_VERSION: ${MERIDIAN_VERSION:-0.0.0-local}
         MERIDIAN_RELEASE_SHA: ${MERIDIAN_RELEASE_SHA:-local}
     environment:
       NODE_ENV: production
@@ -70,13 +105,6 @@ services:
       S3_ACCESS_KEY: meridian-local
       S3_SECRET_KEY: meridian-local-secret
       S3_FORCE_PATH_STYLE: "true"
-      BACKUP_S3_BUCKET: backups
-      BACKUP_S3_REGION: us-east-1
-      BACKUP_S3_ENDPOINT: http://object-store:9000
-      BACKUP_S3_FORCE_PATH_STYLE: "true"
-      BACKUP_S3_ACCESS_KEY: meridian-local
-      BACKUP_S3_SECRET_KEY: meridian-local-secret
-      BACKUP_S3_PREFIX: local
       WORKOS_API_KEY: sk_prod_prod_boot_smoke_not_a_real_key
       WORKOS_CLIENT_ID: client_prod_boot_smoke_not_real
       WORKOS_COOKIE_PASSWORD: prod-boot-smoke-cookie-password-000000000000
@@ -87,6 +115,8 @@ services:
       postgres:
         condition: service_healthy
       object-store-buckets:
+        condition: service_completed_successfully
+      release:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/readyz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -101,7 +131,7 @@ services:
       context: ../../..
       dockerfile: apps/app/Dockerfile
       args:
-        MERIDIAN_VERSION: ${MERIDIAN_VERSION:-local}
+        MERIDIAN_VERSION: ${MERIDIAN_VERSION:-0.0.0-local}
         MERIDIAN_RELEASE_SHA: ${MERIDIAN_RELEASE_SHA:-local}
     environment:
       NODE_ENV: production
@@ -128,7 +158,7 @@ services:
       context: ../../..
       dockerfile: apps/www/Dockerfile
       args:
-        MERIDIAN_VERSION: ${MERIDIAN_VERSION:-local}
+        MERIDIAN_VERSION: ${MERIDIAN_VERSION:-0.0.0-local}
         MERIDIAN_RELEASE_SHA: ${MERIDIAN_RELEASE_SHA:-local}
     environment:
       NODE_ENV: production
@@ -151,7 +181,7 @@ services:
       context: ../../..
       dockerfile: tools/deploy/ingress/Dockerfile
       args:
-        MERIDIAN_VERSION: ${MERIDIAN_VERSION:-local}
+        MERIDIAN_VERSION: ${MERIDIAN_VERSION:-0.0.0-local}
         MERIDIAN_RELEASE_SHA: ${MERIDIAN_RELEASE_SHA:-local}
     environment:
       PORT: "8080"
@@ -175,3 +205,4 @@ services:
 volumes:
   postgres-data:
   object-store-data:
+  backup-data:
