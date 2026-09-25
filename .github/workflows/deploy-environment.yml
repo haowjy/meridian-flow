@@ -14,6 +14,8 @@ on:
     secrets:
       RAILWAY_TOKEN:
         required: false
+      NEON_API_KEY:
+        required: false
 
 jobs:
   deploy:
@@ -28,16 +30,22 @@ jobs:
       - name: Validate deployment config
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
           PUBLIC_URL: ${{ vars.PUBLIC_URL }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
           missing=()
           [[ -n "$RAILWAY_TOKEN" ]] || missing+=("secrets.RAILWAY_TOKEN")
+          [[ -n "$NEON_API_KEY" ]] || missing+=("secrets.NEON_API_KEY")
+          [[ -n "$NEON_PROJECT_ID" ]] || missing+=("vars.NEON_PROJECT_ID")
+          [[ -n "$NEON_BRANCH_ID" ]] || missing+=("vars.NEON_BRANCH_ID")
           [[ -n "$PUBLIC_URL" ]] || missing+=("vars.PUBLIC_URL")
           if [[ -n "$PUBLIC_URL" && ! "$PUBLIC_URL" =~ ^https?:// ]]; then missing+=("vars.PUBLIC_URL (must be an http(s) URL)"); fi
           if (( ${#missing[@]} )); then
             joined=$(IFS=', '; echo "${missing[*]}")
-            echo "::error::Missing $joined. Set them in GitHub → Settings → Environments → $ENVIRONMENT."
+            echo "::error::Missing $joined. Set secrets and variables in GitHub → Settings → Environments → $ENVIRONMENT. NEON_API_KEY is a secret; NEON_PROJECT_ID and NEON_BRANCH_ID are variables."
             exit 1
           fi
       - uses: actions/checkout@v4
@@ -54,7 +62,11 @@ jobs:
         id: deploy
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: node tools/deploy/deploy.ts "${{ inputs.environment }}" "$RUNNER_TEMP/release/release-manifest.json"
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          NEON_BRANCH_ID: ${{ vars.NEON_BRANCH_ID }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: node tools/deploy/deploy.ts "$ENVIRONMENT" "$RUNNER_TEMP/release/release-manifest.json"
       - name: Runtime smoke check
         id: smoke
         env:

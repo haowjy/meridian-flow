@@ -1,11 +1,14 @@
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const execFileAsync = promisify(execFile);
 const manifest = JSON.stringify({
   version: "1.2.3",
   tag: "v1.2.3",
@@ -44,7 +47,27 @@ if (args[0] === 'deployment' && args[1] === 'list') {
 }
 console.error('unexpected command', args); process.exit(2);
 `;
-function run(scenario: string) {
+async function run(scenario: string) {
+  let snapshotName = "";
+  const neon = createServer((request, response) => {
+    const url = new URL(request.url ?? "/", "http://localhost");
+    response.setHeader("content-type", "application/json");
+    if (request.method === "POST") {
+      snapshotName = url.searchParams.get("name") ?? "";
+      response.end(JSON.stringify({ operation: { id: "op-1" } }));
+    } else if (url.pathname.endsWith("/operations/op-1")) {
+      response.end(JSON.stringify({ status: "finished", failures_count: 0 }));
+    } else {
+      response.end(
+        JSON.stringify({
+          snapshots: [{ id: "snap-123", name: snapshotName, branch_id: "branch-1" }],
+        }),
+      );
+    }
+  });
+  await new Promise<void>((resolve) => neon.listen(0, "127.0.0.1", resolve));
+  const address = neon.address();
+  if (!address || typeof address === "string") throw new Error("fake Neon server did not bind");
   const dir = mkdtempSync(join(tmpdir(), "meridian-deploy-test-"));
   const bin = join(dir, "bin");
   const state = join(dir, "state.json");
@@ -56,7 +79,7 @@ function run(scenario: string) {
     writeFileSync(fake, fakeCli);
     chmodSync(fake, 0o755);
     writeFileSync(manifestPath, manifest);
-    const output = execFileSync(
+    const output = await execFileAsync(
       process.execPath,
       [join(root, "tools/deploy/deploy.ts"), "staging", manifestPath],
       {
@@ -64,6 +87,10 @@ function run(scenario: string) {
           ...process.env,
           PATH: `${bin}:${oldPath}`,
           RAILWAY_TOKEN: "test-token",
+          NEON_API_KEY: "test-key",
+          NEON_PROJECT_ID: "project-1",
+          NEON_BRANCH_ID: "branch-1",
+          NEON_API_BASE_URL: `http://127.0.0.1:${address.port}`,
           FAKE_RAILWAY_STATE: state,
           SCENARIO: scenario,
           DEPLOY_DETECT_MS: "24",
@@ -71,31 +98,33 @@ function run(scenario: string) {
           DEPLOY_POLL_MS: "2",
         },
         encoding: "utf8",
-        stdio: "pipe",
       },
     );
-    return output;
+    return output.stdout;
   } catch (error) {
-    const e = error as { stdout?: Buffer; stderr?: Buffer; status?: number };
-    return `${e.stderr?.toString() ?? ""}${e.stdout?.toString() ?? ""}`;
+    const e = error as { stdout?: string; stderr?: string };
+    return `${e.stderr ?? ""}${e.stdout ?? ""}`;
   } finally {
     rmSync(dir, { recursive: true, force: true });
+    await new Promise<void>((resolve) => neon.close(() => resolve()));
   }
 }
 
 describe("Railway deploy seam", () => {
-  it("promotes server before the remaining images and reports deployments", () => {
-    const output = run("success");
+  it("promotes server before the remaining images and reports deployments", async () => {
+    const output = await run("success");
     expect(output).toMatch(/server\s+server-1/);
     expect(output).toMatch(/ingress\s+ingress-1/);
   });
-  it("fails with the exact inspection command for failed deployments", () => {
-    expect(run("failure")).toContain("railway logs -s server -e staging server-1 --deployment");
+  it("fails with the exact inspection command for failed deployments", async () => {
+    expect(await run("failure")).toContain(
+      "railway logs -s server -e staging server-1 --deployment",
+    );
   });
-  it("falls back to redeploy when changing source.image did not trigger a deployment", () => {
-    expect(run("no-auto")).toMatch(/app\s+app-1/);
+  it("falls back to redeploy when changing source.image did not trigger a deployment", async () => {
+    expect(await run("no-auto")).toMatch(/app\s+app-1/);
   });
-  it("fails boundedly when deployments never reach a terminal state", () => {
-    expect(run("timeout")).toContain("server-1 timed out");
+  it("fails boundedly when deployments never reach a terminal state", async () => {
+    expect(await run("timeout")).toContain("server-1 timed out");
   });
 });
