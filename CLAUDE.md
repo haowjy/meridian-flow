@@ -8,6 +8,5 @@ effectiveness. Escalate to a defined Claude agent from `.claude/agents/`
 (built-in Agent tool) only when a task is delicate enough to need a Claude
 model. Never use the generic `claude` agent type or a fork of yourself.
 
-Anything a writer sees (components, layout, styling, rendering behavior) goes
-to `frontend-coder`, not `gpt-dev`. Server and domain correctness work stays
-with `gpt-dev`.
+Anything a writer sees (components, layout, styling, rendering behavior) is
+implemented by `frontend-coder`, whoever is leading the work.
