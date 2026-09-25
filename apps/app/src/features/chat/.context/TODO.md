@@ -41,3 +41,12 @@ the same parity in `partition-turn.ts` and `tool-renderers.tsx`).
 When mentions land, append ", @ for reference" to the rotating composer
 placeholder when the writer has not used `@` in seven days. Drive it from the
 real mention last-use timestamp rather than a disabled placeholder path.
+
+## Unbounded project chat list ([#593](https://github.com/haowjy/meridian-flow/issues/593))
+
+Every project load downloads every thread unpaged (`useProjectThreads` →
+`GET /api/projects/:id/threads`). The switcher lists and searches it, and
+title, Agent, and Work lookups read it by id. Chats grow without bound, so move
+the switcher onto the paged, server-searched chat feed the index uses
+(virtualized), point per-chat lookups at the thread snapshot or cached feed
+rows, and delete the whole-project list. Consumers are listed in the issue.
