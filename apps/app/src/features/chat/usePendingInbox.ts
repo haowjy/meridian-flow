@@ -10,6 +10,7 @@ import type { ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ThreadPendingInbox } from "@meridian/contracts/threads";
 import { useEffect, useRef, useState } from "react";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
+import { useIsThreadPendingCreation } from "@/client/stores";
 import { EMPTY_THREAD_PENDING_INBOX, pendingInboxFromEvent } from "./pending-inbox";
 
 export function usePendingInbox(input: {
@@ -18,6 +19,7 @@ export function usePendingInbox(input: {
 }): ThreadPendingInbox {
   const { threadId, seed } = input;
   const transport = useThreadTransport();
+  const isPendingCreation = useIsThreadPendingCreation(threadId);
   const [pending, setPending] = useState<ThreadPendingInbox>(
     () => seed?.pending ?? EMPTY_THREAD_PENDING_INBOX,
   );
@@ -41,6 +43,7 @@ export function usePendingInbox(input: {
   }, [seed, threadId]);
 
   useEffect(() => {
+    if (isPendingCreation) return;
     const epoch = ++subscriptionEpoch.current;
     const unsubscribe = transport.subscribe(threadId, {
       onEvent: ({ event }) => {
@@ -57,7 +60,7 @@ export function usePendingInbox(input: {
       subscriptionEpoch.current += 1;
       unsubscribe();
     };
-  }, [transport, threadId]);
+  }, [transport, threadId, isPendingCreation]);
 
   return pending;
 }

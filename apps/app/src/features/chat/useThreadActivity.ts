@@ -18,6 +18,7 @@ import { EventType, type ThreadLiveState } from "@meridian/contracts/protocol";
 import type { ThreadActivity, ThreadStatus } from "@meridian/contracts/threads";
 import { useEffect, useRef, useState } from "react";
 import { useThreadTransport } from "@/client/providers/TransportProvider";
+import { useIsThreadPendingCreation } from "@/client/stores";
 import { EMPTY_THREAD_ACTIVITY, isThreadActivity, subtreeOf } from "./thread-activity";
 
 const ASLEEP: ThreadStatus = { kind: "asleep" };
@@ -34,6 +35,7 @@ export function useThreadActivity(input: {
 }): ThreadActivityView {
   const { threadId, rootThreadId, seed } = input;
   const transport = useThreadTransport();
+  const isPendingCreation = useIsThreadPendingCreation(threadId);
   const [view, setView] = useState<ThreadActivityView>(() => seedView(seed));
   const prevThreadRef = useRef(threadId);
   const seededRef = useRef(false);
@@ -55,6 +57,7 @@ export function useThreadActivity(input: {
   }, [seed, threadId]);
 
   useEffect(() => {
+    if (isPendingCreation) return;
     return transport.subscribe(threadId, {
       onEvent: ({ event }) => {
         if (event.type !== EventType.CUSTOM || event.name !== "meridian.subagent.activity") return;
@@ -68,7 +71,7 @@ export function useThreadActivity(input: {
         setView({ activity: state.activity ?? EMPTY_THREAD_ACTIVITY, status: state.status });
       },
     });
-  }, [transport, threadId, rootThreadId]);
+  }, [transport, threadId, rootThreadId, isPendingCreation]);
 
   return view;
 }

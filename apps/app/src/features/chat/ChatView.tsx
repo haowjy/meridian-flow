@@ -81,7 +81,7 @@ export type ChatViewProps = {
    * is not in this conversation.
    */
   historySettled: boolean;
-  activateProjection: () => boolean;
+  activateProjection: (after?: string) => boolean;
 };
 
 export function ChatView({

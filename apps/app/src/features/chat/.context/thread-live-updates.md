@@ -33,10 +33,12 @@ snapshot reconciliation" section.
 
 `useThreadHandoff` (`../useThreadHandoff.ts`) reads the snapshot's `liveState`
 and attaches the controller that applies the run's AG-UI deltas. Before a
-first-send run can subscribe, create-or-get returns the thread, the current
-mount synchronously activates the snapshot hook's durable handler, and only
-then submits. A remount joins only the shared creation promise; its own
-fenced continuation activates and dispatches. Existing-thread resume also
+first-send run can subscribe, create-or-get returns the thread and message
+admission accepts. The controller then invokes the current mount's projection
+activation at the accepted replay cursor before attaching its run handler.
+Pending creation gates the other mounted projection listeners until they can
+join that same subscription. A remount joins only the shared creation promise;
+its own fenced continuation dispatches and activates. Existing-thread resume also
 activates first:
 
 - The guard latches **per active run** (`resumedRunRef`, keyed by

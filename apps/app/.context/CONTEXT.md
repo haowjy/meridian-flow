@@ -242,9 +242,12 @@ already-running fetch. The provider activates controller transport listeners in
 its layout effect and releases them on cleanup, so StrictMode replay reopens the
 same controller without admitting callbacks from its prior effect lifetime.
 
-First-send create-or-get activates the mounted projection synchronously before
-run dispatch; ordinary existing-thread mounts auto-activate. The shared Query
-client outlives an account epoch, so account close removes only canonical
+First-send creation stays pending through message admission. Once accepted,
+the handoff activates the mounted projection synchronously at the returned
+replay cursor, before the run controller attaches. Activity, inbox, and
+Work/trail listeners join that subscription only after pending creation clears;
+none subscribe or fetch a missing thread. Ordinary existing-thread mounts
+auto-activate. The shared Query client outlives an account epoch, so account close removes only canonical
 three-part snapshot queries and abort fences reject old responses. The exact
 Work-binding snapshot writer keeps that key and checks its captured epoch.
 

@@ -41,7 +41,7 @@ export type FailedSendRetry = {
 type SnapshotResumeState = {
   liveState: ThreadLiveState | null;
   nextSeq: string | null;
-  activateProjection: () => boolean;
+  activateProjection: (after?: string) => boolean;
 };
 
 function isActiveSnapshot(liveState: ThreadLiveState): boolean {
@@ -133,8 +133,9 @@ export function useThreadHandoff(
     };
 
     const startSubmit = (creation: Creation, lifetime: object) => {
-      if (!isCurrent(lifetime) || !snapshotResume.activateProjection()) return;
+      if (!isCurrent(lifetime)) return;
       if (!creation.text) {
+        if (!snapshotResume.activateProjection()) return;
         pendingResumeRef.current = false;
         finishFirstSend(creation, getChatSubmissionEpoch());
         return;
@@ -153,6 +154,8 @@ export function useThreadHandoff(
           {
             optimisticUserTurnId: creation.optimisticUserTurnId,
             keepOptimisticOnFailure: true,
+            activateProjection: (after) =>
+              isCurrent(lifetime) && snapshotResume.activateProjection(after),
           },
         )
         .then((outcome) => {
@@ -221,17 +224,16 @@ export function useThreadHandoff(
         .then(async (thread) => {
           if (!isCurrent(lifetime)) return;
           actions.ensureThread(thread);
-          actions.clearPendingCreation(
-            creation.createProject ? { projectId: creation.projectId, threadId } : { threadId },
-          );
-          if (!snapshotResume.activateProjection()) return;
+          if (creation.createProject) {
+            actions.clearPendingCreation({ projectId: creation.projectId });
+          }
           await Promise.all([
             invalidateProjectThreadData(queryClient, creation.projectId),
             ...(thread.workId
               ? [invalidateWorkThreads(queryClient, creation.projectId, thread.workId)]
               : []),
           ]);
-          if (!isCurrent(lifetime) || !snapshotResume.activateProjection()) return;
+          if (!isCurrent(lifetime)) return;
           startSubmit(creation, lifetime);
         })
         .catch(() => {

@@ -262,10 +262,13 @@ describe("useThreadHandoff first-send journal reload", () => {
     expect(threadActions.appendUserTurn).toHaveBeenCalledWith(THREAD_ID, "Draft the fight scene");
   });
 
-  it("keeps Retry and the journal when projection setup fails after creation", async () => {
+  it("keeps Retry and the journal when projection setup fails after admission", async () => {
     recordChatSubmission(ACCOUNT, firstSend());
-    const threadActions = actions();
-    const run = controller();
+    const scenario = new ThreadRunScenario();
+    const threadActions = scenario.store.getState();
+    const run = scenario.controller;
+    controllers.push(run);
+    scenario.setAppend(async () => defaultSendResponse({ threadId: THREAD_ID }));
     const activateProjection = vi.fn((): boolean => {
       throw new Error("subscribe failed");
     });
@@ -281,8 +284,8 @@ describe("useThreadHandoff first-send journal reload", () => {
       await vi.waitFor(() => expect(retry).toBeTypeOf("function"));
     });
     expect(activateProjection).toHaveBeenCalledTimes(1);
-    expect(threadActions.ensureThread).toHaveBeenCalledWith(persistedThread);
-    expect(run.submit).not.toHaveBeenCalled();
+    expect(scenario.appendRequests).toHaveLength(1);
+    expect(scenario.transport.subscriptions).toHaveLength(0);
     expect(readChatSubmissions(ACCOUNT)).toEqual([
       expect.objectContaining({ submissionId: "sub-first" }),
     ]);
