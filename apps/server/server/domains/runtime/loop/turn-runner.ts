@@ -44,6 +44,7 @@ import {
   TurnStartConflictError,
 } from "../../threads/index.js";
 import type { Lease, RunAuthority } from "./ports.js";
+import { createRunStarter } from "./run-starter.js";
 import { NoPendingWakeError, type RunTurnInput, type RunTurnPort } from "./run-turn-port.js";
 
 export type TurnRunner = ReturnType<typeof createTurnRunner>;
@@ -262,12 +263,24 @@ export function createTurnRunner(deps: {
               await runAuthority.release(heldLease);
               childRunRegistry.abortChildrenOf(input.threadId);
             } finally {
-              deps.onRunSettled?.(input.threadId);
               markRunComplete();
+              deps.onRunSettled?.(input.threadId);
             }
           }
         }
-      })();
+      })().catch((error) => {
+        emitEvent(eventSink, {
+          level: "error",
+          source: "runtime.turn-runner",
+          name: "task.failed",
+          correlation: {
+            threadId: input.threadId,
+            turnId: handle.assistantTurnId,
+            runId: handle.assistantTurnId,
+          },
+          payload: unknownToEventPayload(error),
+        });
+      });
 
       return {
         userTurnId: handle.userTurnId,
@@ -340,7 +353,9 @@ export function createTurnRunner(deps: {
           // After this run finalizes as cancelled and releases, the pending
           // message starts the next turn as a drain run. Best-effort; the wake
           // sweep is the durable backstop.
-          void active.completion.then(() => startDrain(threadId)).catch(() => undefined);
+          void active.completion.then(() =>
+            createRunStarter({ startDrain }, eventSink).start(threadId),
+          );
         }
         return "cancelled";
       }
