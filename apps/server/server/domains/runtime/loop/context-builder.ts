@@ -1,57 +1,4 @@
-/**
- * Context builder: assembles a thread's turns and blocks into the canonical
- * Message[] sent to the gateway for the next model call. Owns the
- * thread-history → model-context projection.
- *
- * Key design decisions:
- *
- * - **Block ordering within a turn**: blocks are sorted by `sequence`
- *   (ascending).  This is the persisted order from the orchestrator's
- *   blockSeq allocation — content blocks appear in adapter output order
- *   (Anthropic content-block index / OpenAI Responses output_index),
- *   followed by synthesized tool_use blocks, then tool_result blocks.
- *
- * - **Tool_result interleaving**: when an assistant turn contains
- *   tool_result blocks, the builder emits an assistant message for the
- *   content parts *before* the first tool_result, then a separate `tool`
- *   role message for each tool_result, then another assistant message for
- *   content parts after the last tool_result. This matches the gateway's
- *   message format where tool results are distinct messages, not inline
- *   content parts of the assistant message.
- *
- * - **Frozen system prompt**: on first attempt the orchestrator bakes the
- *   immutable agent body, the spawn-time append layer, available skill names and
- *   descriptions, named subagent slug/name/description, document dialect, URI
- *   guidance, and (subagent threads only) the closing report instruction into
- *   `composedSystemPrompt`. Later turns send that string verbatim
- *   (byte-identical). Autoprune is the only future re-bake trigger.
- *
- * - **Runtime URI guidance**: the server appends storage-scheme instructions
- *   to every thread prompt so the model chooses `kb://` for knowledge-base
- *   files while bare paths continue to resolve as `manuscript://`.
- *
- * - **Working state injection**: if `thread.workingState` is set, it's
- *   injected as a separate system message containing JSON-serialized state.
- *   This gives the model persistent scratch space across turns.
- *
- * - **Custom block filtering**: custom blocks are UI surfaces. Interrupt Q&A
- *   already travels through the ask_user tool_use input and tool_result output;
- *   projecting the UI block into the assistant message would break Anthropic's
- *   required tool_use→tool_result adjacency. System turns are the one exception:
- *   a completed `helper-result` card projects as text so the parent model reads
- *   a background child's report, while the writer keeps the card.
- *
- * - **User turns**: all blocks of allowed types (text, image, file)
- *   are merged into a single user message's content[] array.
- *
- * - **Activated skill bodies**: slash-activated SKILL.md is appended as extra
- *   request-only text on the current user message (slug, description, body).
- *   Not a fabricated tool round, not persisted, not frozen prompt bytes.
- *
- * - **System turns**: text blocks from system-role turns are concatenated
- *   into a single system message — they appear as multi-line system
- *   content, not as turn-structured data.
- */
+/** Projects persisted turns and blocks into the canonical gateway message context. */
 
 import type { ComponentBlockContent, HelperResultProps } from "@meridian/contracts/components";
 import { referenceOccurrenceContent } from "@meridian/contracts/protocol";
@@ -240,12 +187,7 @@ function turnBlocksToContentParts(blocks: Block[], allowed: Block["blockType"][]
   return parts;
 }
 
-/**
- * The model-facing content parts for one user turn: its allowed blocks plus any
- * persisted reference read results. Shared by the history projection and the
- * mid-run inbox adoption, so a writer message already persisted as a turn
- * renders identically whether it is read from history or claimed live.
- */
+/** Projects a user turn's allowed blocks and persisted reference results. */
 export function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
   const parts = turnBlocksToContentParts([...blocks], ["text", "image", "file"]);
   const included = new Set<string>();
@@ -264,10 +206,7 @@ export function userTurnContentParts(blocks: readonly Block[]): ContentPart[] {
   return parts;
 }
 
-// Projects a system-turn custom card into the model-facing text. Only the
-// delivered background report (`helper-result`) has model meaning; the card
-// itself stays in the writer transcript. A running card has nothing to report.
-// Artifact refs are included so a report never loses what it produced.
+// The delivered report is model context; the UI card remains in the transcript.
 export function componentModelText(content: ComponentBlockContent): string | null {
   if (content.kind !== "helper-result") return null;
   const props = content.props as HelperResultProps;
@@ -283,11 +222,7 @@ export function componentModelText(content: ComponentBlockContent): string | nul
   return lines.join("\n");
 }
 
-// Converts a single block into a gateway ContentPart.
-// Returns null for blocks whose content cannot be represented as a
-// gateway content part (e.g. empty text blocks, malformed JSON content).
-// reasoning blocks extract `text` from a structured content object or
-// fall back to `textContent`; providerOptions are preserved if present.
+// Unsupported or empty blocks have no gateway content part.
 function blockToContentPart(block: Block): ContentPart | null {
   switch (block.blockType) {
     case "text":
@@ -340,21 +275,14 @@ function blockToContentPart(block: Block): ContentPart | null {
       }
       return null;
     case "custom":
-      // Custom blocks are UI-only. For interrupts, the tool_use input carries
-      // the question/options and the tool_result carries the answer; adding a
-      // text summary here would separate Anthropic tool_use blocks from their
-      // required immediately-following tool_result blocks.
+      // Interrupt content stays in its tool input/result to preserve provider ordering.
       return null;
     default:
       return null;
   }
 }
 
-/**
- * Appends to the last user message by default. Callers that have already
- * appended other user messages (a drained message) pass `targetIndex` to pin the
- * attachment to the writer's triggering message instead.
- */
+/** Appends content to the selected user message. */
 export function attachSkillBodiesToLatestUserMessage(
   messages: readonly Message[],
   skills: readonly { slug: string; description: string; body: string }[],
@@ -394,7 +322,7 @@ export function attachNoticesToLatestUserMessage(
   );
 }
 
-/** Index of the last user-role message, or undefined when there is none. */
+/** Returns the last user-message index, if present. */
 export function lastUserMessageIndex(messages: readonly Message[]): number | undefined {
   for (let index = messages.length - 1; index >= 0; index--) {
     if (messages[index]?.role === "user") return index;
@@ -495,8 +423,7 @@ function formatUndoNotices(notices: readonly Notice[]): string {
   const reversals = [...latest.values()].filter(
     (notification) => notification.direction === "undo",
   );
-  // Group by uri (the document identity), not filename — distinct docs can share
-  // a basename, and merging their handles would mislabel which file changed.
+  // URI, not basename, identifies a document; distinct documents can share a name.
   const grouped = new Map<string, { label: string; handles: string[] }>();
   for (const notification of reversals) {
     const key = notification.uri || notification.writeHandle;

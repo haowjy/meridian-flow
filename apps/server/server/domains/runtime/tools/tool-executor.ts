@@ -192,25 +192,7 @@ function abortOutcome(signal: AbortSignal | undefined): Promise<{ aborted: true 
   });
 }
 
-/**
- * Runs a tool handler with a per-tool wall-clock timeout.
- *
- * Creates a derived `AbortController` that merges the external abort signal
- * (turn cancellation) with the timeout abort. The handler receives this
- * merged signal via `context.signal`.
- *
- * Three-way race:
- *   1. `handlerPromise` — the handler completes normally
- *   2. `timeoutPromise` — the per-tool `timeoutMs` elapses
- *   3. `abortPromise` — the external signal fires (turn cancelled)
- *
- * The handler's rejections are silently ignored after the race settles
- * (`.catch(() => {})`) because the race winner already determined the
- * outcome — the loser's rejection is a predictable consequence of abort.
- *
- * The timeout timer is always cleared in the `finally` block to avoid
- * leaking a Node.js timer if the handler or external abort resolves first.
- */
+/** Races a tool handler against its timeout and the caller's abort signal. */
 async function runWithTimeout(
   handler: (input: unknown, context: ToolHandlerContext) => Promise<unknown>,
   input: unknown,
@@ -240,9 +222,8 @@ async function runWithTimeout(
       result,
     }));
     void handlerPromise.catch(() => {
-      // Outcome is decided by the race; ignore late rejections (e.g. abort after timeout).
+      // Outcome may be decided by timeout or abort before the handler settles.
     });
-
     const abortPromise = abortOutcome(externalSignal);
     return await Promise.race(
       abortPromise
@@ -256,13 +237,7 @@ async function runWithTimeout(
   }
 }
 
-/**
- * Checks whether a tool is flagged as sequential in the registry.
- * Returns `false` if the tool is not found (unknown tools can't be sequential).
- *
- * Separate from `getRegistration` so batch execution can query this property
- * without retrieving the full registration object for every call.
- */
+/** Returns whether the registered tool must run alone. */
 function isSequentialTool(registry: ToolRegistry, name: string): boolean {
   try {
     return registry.getRegistration(name)?.sequential === true;
@@ -324,24 +299,7 @@ function handlerContextForRegistration(
 }
 
 export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatch {
-  /**
-   * Dispatches a single tool call.
-   *
-   * ── Flow ──
-   *
-   * 1. Look up the tool registration by name. Unknown tools → error.
-   * 2. If the tool is client-type → error (not implemented).
-   * 3. If already aborted → abort error (avoid starting new work).
-   * 4. Build the `ToolHandlerContext` with the turn-level abort signal.
-   * 5. If the registration has `timeoutMs`, race handler vs timeout vs abort.
-   *    If no timeout, race handler vs abort only.
-   * 6. Normalize the outcome into a `ToolExecutionResult`.
-   *
-   * Any uncaught exception from the handler is caught by the outer try/catch
-   * and converted to an error result — the handler Promise rejection is not
-   * surfaced through `Promise.race` because rejections are suppressed with
-   * `.catch(() => {})` in both the timeout and non-timeout paths.
-   */
+  /** Dispatches one call and maps handler failures to tool results. */
   async function executeTool(
     call: ToolCallInput,
     ctx: ToolExecutionContext,
@@ -354,10 +312,6 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
       }
 
       if (registration.execution.type === "client") {
-        // Client-side tool dispatch is defined at the type level but not yet
-        // implemented. When it lands, the executor will emit a
-        // "tool.client_waiting" event and suspend until the client responds
-        // through the thread event hub. For now, client tools are unreachable.
         return errorResult(call.id, meridianErrorFromTool("Client tool dispatch not implemented"));
       }
 
@@ -429,12 +383,6 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         return successResult(call.id, outcome.result, registration.capability);
       }
 
-      // ── No per-tool timeout — race handler vs abort only ──
-      //
-      // This path exists separately from `runWithTimeout` because when no
-      // `timeoutMs` is configured we don't need to create a timeout timer,
-      // a derived AbortController, or a combined signal. The handler receives
-      // the caller's signal directly for efficiency.
       const handler = registration.execution.handler as (
         input: unknown,
         context: typeof effectiveHandlerContext,
@@ -443,7 +391,7 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
         result,
       }));
       void handlerPromise.catch(() => {
-        // Outcome may be decided by caller abort; ignore late rejections.
+        // Outcome may be decided by caller abort before the handler settles.
       });
       const abortPromise = abortOutcome(ctx.signal);
       const outcome = await Promise.race(
