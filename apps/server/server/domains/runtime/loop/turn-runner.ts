@@ -87,6 +87,15 @@ export class StaleConnectionTokenError extends Error {
   }
 }
 
+export class ServerRestartingError extends Error {
+  readonly code = "server_restarting";
+
+  constructor() {
+    super("The server is restarting. Retry this message shortly.");
+    this.name = "ServerRestartingError";
+  }
+}
+
 export function createTurnRunner(deps: {
   orchestrator: RunTurnPort;
   hub: ThreadEventHub;
@@ -103,6 +112,7 @@ export function createTurnRunner(deps: {
   const liveConnectionTokens = new Set<string>();
   const childRuns = new Map<ThreadId, ChildRun>();
   const activeTurnTasks = new Set<Promise<void>>();
+  let stopping = false;
 
   function assertConnectionTokenLive(connectionToken: string | undefined): void {
     if (!connectionToken) return;
@@ -139,6 +149,7 @@ export function createTurnRunner(deps: {
   }
 
   async function shutdown(): Promise<void> {
+    stopping = true;
     const errors: unknown[] = [];
     for (const [threadId, active] of running) {
       if (active.assistantTurnId) {
@@ -162,6 +173,10 @@ export function createTurnRunner(deps: {
     if (errors.length > 0) {
       throw new AggregateError(errors, "One or more running turns failed to drain on shutdown.");
     }
+  }
+
+  function assertAccepting(): void {
+    if (stopping) throw new ServerRestartingError();
   }
 
   const childRunRegistry: ChildRunRegistry = {
@@ -211,6 +226,8 @@ export function createTurnRunner(deps: {
       liveConnectionTokens.delete(connectionToken);
     },
 
+    assertAccepting,
+
     getRunningTurnId(threadId: ThreadId): TurnId | null {
       return running.get(threadId)?.assistantTurnId ?? null;
     },
@@ -236,6 +253,7 @@ export function createTurnRunner(deps: {
       resumeAfterSeq: string;
       snapshotFloorNextSeq: string;
     }> {
+      assertAccepting();
       if (running.has(input.threadId)) {
         throw new TurnStartConflictError(input.threadId, "already_running");
       }

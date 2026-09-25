@@ -12,12 +12,12 @@ import {
 import { validateAuthConfiguration } from "../lib/auth";
 import { createEventSinkFromEnv } from "../lib/event-sink-factory";
 import { stopHttpRequestAdmission, waitForHttpRequestDrain } from "../lib/http-drain";
-import {
-  getOrBindProcessObservability,
-  installObservabilityShutdownHooks,
-  registerProcessShutdownCallback,
-} from "../lib/observability";
+import { getOrBindProcessObservability } from "../lib/observability";
 import { installApiProcessCrashPolicy } from "../lib/process-crash-policy";
+import {
+  installProcessShutdownHooks,
+  registerProcessShutdownCallback,
+} from "../lib/process-shutdown";
 import { assertApiStartupGuards, exitOnStartupGuardFailure } from "../lib/startup-guards";
 
 // srvx owns listener closure; leave enough time for our 25s application drain
@@ -34,16 +34,31 @@ registerProcessShutdownCallback("websocket-admission", async () => {
     import("../routes/ws/yjs"),
     import("../routes/api/threads/ws"),
   ]);
-  yjs.stopAcceptingYjsWebSockets();
-  threads.shutdownThreadWebSockets();
+  const errors: unknown[] = [];
+  try {
+    threads.shutdownThreadWebSockets();
+  } catch (error) {
+    errors.push(error);
+  }
+  try {
+    yjs.stopAcceptingYjsWebSockets();
+  } catch (error) {
+    errors.push(error);
+  }
+  if (errors.length > 0)
+    throw new AggregateError(errors, "Websocket admission could not stop cleanly.");
 });
 registerProcessShutdownCallback("polling-loops", async () => {
   stopAppBackgroundWork();
   await drainAppBackgroundWork();
 });
-registerProcessShutdownCallback("turn-drain", async () => {
-  await (await getApp()).runner.shutdown();
-});
+registerProcessShutdownCallback(
+  "turn-drain",
+  async () => {
+    await (await getApp()).runner.shutdown();
+  },
+  { timeoutMs: 8_000 },
+);
 registerProcessShutdownCallback("http-drain", async () => {
   stopHttpRequestAdmission();
   await waitForHttpRequestDrain(10_000);
@@ -57,7 +72,7 @@ registerProcessShutdownCallback("websocket-drain", async () => {
   threads.shutdownThreadWebSockets();
 });
 registerProcessShutdownCallback("database-close", closeAppResources);
-installObservabilityShutdownHooks();
+installProcessShutdownHooks(eventSink);
 
 export default async function startupPlugin() {
   let guards: Awaited<ReturnType<typeof assertApiStartupGuards>>;

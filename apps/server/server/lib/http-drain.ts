@@ -1,4 +1,6 @@
 /** Tracks admitted HTTP handlers and gates requests once graceful shutdown starts. */
+import { withDeadline } from "./process-shutdown.js";
+
 const inFlight = new Set<object>();
 const admitted = new WeakSet<object>();
 const drainWaiters = new Set<() => void>();
@@ -40,22 +42,14 @@ export function inFlightHttpRequestCount(): number {
 export async function waitForHttpRequestDrain(timeoutMs: number): Promise<void> {
   if (inFlight.size === 0) return;
 
-  let timer: ReturnType<typeof setTimeout> | undefined;
   let onDrained: (() => void) | undefined;
-  try {
-    await Promise.race([
-      new Promise<void>((resolve) => {
-        onDrained = () => resolve();
-        drainWaiters.add(onDrained);
-      }),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => {
-          reject(new Error(`Timed out waiting for ${inFlight.size} in-flight HTTP request(s).`));
-        }, timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-    if (onDrained) drainWaiters.delete(onDrained);
+  const drained = new Promise<void>((resolve) => {
+    onDrained = () => resolve();
+    drainWaiters.add(onDrained);
+  });
+  const result = await withDeadline(() => drained, Date.now() + timeoutMs);
+  if (onDrained) drainWaiters.delete(onDrained);
+  if (result.status === "deadline") {
+    throw new Error(`Timed out waiting for ${inFlight.size} in-flight HTTP request(s).`);
   }
 }
