@@ -10,7 +10,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
 import { threadSnapshotQueryOptions } from "@/client/query/useThreadSnapshotSync";
-import { ThreadStoreProvider } from "@/client/stores";
+import { ThreadStoreProvider, useThreadActions } from "@/client/stores";
 import type { ScreenKey } from "../shell/screens";
 import { type ChatNavigation, useProjectChatNavigation } from "./chat-navigation";
 import type { ProjectDestination } from "./project-address";
@@ -27,8 +27,10 @@ let container: HTMLDivElement;
 let client: QueryClient;
 let go: ReturnType<typeof vi.fn<(destination: ProjectDestination) => Promise<void>>>;
 let navigation: ChatNavigation & { chatThreadId: string | null };
+let threadActions: ReturnType<typeof useThreadActions>;
 
 function Harness(props: { activeScreen: ScreenKey; urlChatId: string | null }) {
+  threadActions = useThreadActions();
   navigation = useProjectChatNavigation({
     accountId: ACCOUNT,
     projectId: PROJECT,
@@ -124,9 +126,51 @@ it("remembers the chat in the URL, and replaces a missing one with the index", (
     client
       .getQueryCache()
       .build(client, { queryKey: threadSnapshotQueryOptions("gone").queryKey })
-      .setState({ status: "error", error: Object.assign(new Error("missing"), { status: 404 }) }),
+      .setState({
+        status: "error",
+        error: Object.assign(new Error("missing"), { status: 404 }),
+        errorUpdatedAt: Date.now(),
+      }),
   );
   render("chat", "gone");
   expect(navigation.currentThreadId).toBeNull();
   expect(go).toHaveBeenCalledWith({ kind: "chat-index" });
+});
+
+it("goes to the Chat screen from anywhere: the current chat, else the index", async () => {
+  render("work");
+  await act(() => navigation.showChatScreen());
+  expect(go).toHaveBeenLastCalledWith({ kind: "chat-index" });
+  writeCurrentChat(ACCOUNT, PROJECT, "a");
+  act(() => root.unmount());
+  root = createRoot(container);
+  render("context");
+  await act(() => navigation.showChatScreen());
+  expect(go).toHaveBeenLastCalledWith({ kind: "chat", chatId: "a" });
+});
+
+it("keeps a first send whose pre-creation 404 is still cached once it is acknowledged", () => {
+  render("chat", "sent");
+  const snapshot = client
+    .getQueryCache()
+    .build(client, { queryKey: threadSnapshotQueryOptions("sent").queryKey });
+  act(() => threadActions.markPendingCreation({ threadId: "sent" }));
+  act(() =>
+    snapshot.setState({
+      status: "error",
+      error: Object.assign(new Error("missing"), { status: 404 }),
+      errorUpdatedAt: Date.now() - 1000,
+    }),
+  );
+  act(() => threadActions.clearPendingCreation({ threadId: "sent" }));
+  expect(navigation.currentThreadId).toBe("sent");
+  expect(go).not.toHaveBeenCalledWith({ kind: "chat-index" });
+});
+
+it("drops a dock reveal no shell was registered for", async () => {
+  render("work");
+  await act(() => navigation.openChat("a"));
+  const reveal = vi.fn();
+  act(() => void navigation.registerDockReveal(reveal));
+  expect(reveal).not.toHaveBeenCalled();
 });

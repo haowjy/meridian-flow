@@ -7,7 +7,8 @@ import { t } from "@lingui/core/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { deleteProjectChat, useProjectChatCommands } from "@/client/query/useProjectChatCommands";
+import { deleteProjectChat } from "@/client/query/delete-project-chat";
+import { runFavoriteCommand } from "@/client/query/thread-user-state-commands";
 import { useAnnouncement } from "@/client/stores";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { useChatNavigation } from "../routing/chat-navigation";
@@ -15,7 +16,6 @@ import { DeleteChatDialog, type DeleteChatTarget } from "./DeleteChatDialog";
 
 export function useChatRowCommands(projectId: string) {
   const client = useQueryClient();
-  const { setFavorite } = useProjectChatCommands(projectId);
   const { forgetChat } = useChatNavigation();
   const { announce, announceError } = useAnnouncement();
   const [target, setTarget] = useState<DeleteChatTarget | null>(null);
@@ -36,8 +36,8 @@ export function useChatRowCommands(projectId: string) {
   return {
     onFavorite: (item: ProjectChatItem, value: boolean) => {
       const title = displayThreadTitle(item.title);
-      void setFavorite(item.id, value).then((saved) => {
-        if (!saved) announceError(t`Favorite wasn’t saved`);
+      void runFavoriteCommand(client, projectId, item.id, value).then((outcome) => {
+        if (outcome.status !== "success") announceError(t`Favorite wasn’t saved`);
         else announce(value ? t`${title} added to Favorites` : t`${title} removed from Favorites`);
       });
     },

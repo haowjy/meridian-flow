@@ -31,6 +31,8 @@ export type ChatNavigation = {
   /** An unacknowledged first send from before a reload needs a visible host. */
   recoveringFirstSend: boolean;
   openChat: (threadId: string) => Promise<void>;
+  /** The Chat screen: the current chat, or the index when there is none. */
+  showChatScreen: () => Promise<void>;
   /** The Chat screen's index; in the dock, an empty composer. */
   openNewChat: () => Promise<void>;
   openChatIndex: () => Promise<void>;
@@ -92,9 +94,17 @@ export function useProjectChatNavigation({
     const openChatIndex = async () => {
       await latest.current.go({ kind: "chat-index" }, { replace: false });
     };
+    const showChatScreen = async () => {
+      const threadId = latest.current.currentThreadId;
+      await latest.current.go(
+        threadId ? { kind: "chat", chatId: threadId } : { kind: "chat-index" },
+        { replace: false },
+      );
+    };
     const commands = {
       openChat,
       openChatIndex,
+      showChatScreen,
       openNewChat: async () => {
         if (onChatScreen()) return openChatIndex();
         remember(null);
@@ -130,44 +140,53 @@ export function useProjectChatNavigation({
   );
 }
 
-/** A chat the server no longer has (deleted elsewhere, or a stale link) is let go. */
+/**
+ * A chat the server no longer has (deleted elsewhere, or a stale link) is let
+ * go. A 404 recorded before the chat was last pending creation is the benign
+ * race of a first send, not a missing chat, even once the send is acknowledged.
+ */
 function useMissingChatFallback(accountId: string, threadId: string | null, onMissing: () => void) {
   const pendingCreation = useIsThreadPendingCreation(threadId);
-  const snapshot = useQuery({ ...threadSnapshotQueryOptions(threadId ?? ""), enabled: false });
-  const error = snapshot.error;
-  const missing =
-    !!threadId &&
-    !pendingCreation &&
-    !!error &&
-    "status" in error &&
-    error.status === 404 &&
-    // A first send the server has not acknowledged yet is not missing.
-    readFirstSendSubmission(accountId, threadId) === null;
+  const firstSend = !!threadId && readFirstSendSubmission(accountId, threadId) !== null;
+  const pending = pendingCreation || firstSend;
+  const { error, errorUpdatedAt } = useQuery({
+    ...threadSnapshotQueryOptions(threadId ?? ""),
+    enabled: false,
+  });
+  const notFound = !!error && "status" in error && error.status === 404;
+  const pendingAt = useRef(0);
   const latest = useRef(onMissing);
   latest.current = onMissing;
   useEffect(() => {
-    if (missing) latest.current();
-  }, [missing]);
+    if (!threadId) return;
+    if (pending) {
+      pendingAt.current = Date.now();
+      return;
+    }
+    if (notFound && errorUpdatedAt > pendingAt.current) latest.current();
+  }, [threadId, pending, notFound, errorUpdatedAt]);
 }
 
-/** One-shot requests delivered to the latest registered handler. */
-function createChannel() {
-  let pending = false;
+/**
+ * One-shot requests delivered to the latest registered handler. With none
+ * registered, a request waits up to `holdMs` for the next registration (a
+ * composer mounted by the same action), then lapses so a later mount never
+ * receives it. A zero hold drops it.
+ */
+function createChannel(holdMs: number) {
+  let heldUntil: number | null = null;
   const handlers: Array<() => void> = [];
-  const deliver = () => {
-    const handler = handlers.at(-1);
-    if (!pending || !handler) return;
-    pending = false;
-    handler();
-  };
   return {
     request() {
-      pending = true;
-      deliver();
+      const handler = handlers.at(-1);
+      if (handler) handler();
+      else if (holdMs > 0) heldUntil = Date.now() + holdMs;
     },
     register(handler: () => void) {
       handlers.push(handler);
-      deliver();
+      const held = heldUntil !== null && Date.now() <= heldUntil;
+      heldUntil = null;
+      if (held) handler();
       return () => {
         const index = handlers.lastIndexOf(handler);
         if (index >= 0) handlers.splice(index, 1);
@@ -177,7 +196,8 @@ function createChannel() {
 }
 
 function createChannels() {
-  return { dockReveal: createChannel(), newChatFocus: createChannel() };
+  // The dock's shell is always mounted; focus waits for the composer New chat mounts.
+  return { dockReveal: createChannel(0), newChatFocus: createChannel(1000) };
 }
 
 const ChatNavigationContext = createContext<ChatNavigation | null>(null);

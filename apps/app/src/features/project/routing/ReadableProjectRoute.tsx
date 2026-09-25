@@ -542,8 +542,7 @@ export function ReadableProjectRoute({
   const selectScreen = (next: ScreenKey) => {
     if (next === activeScreen && next !== "chat") return Promise.resolve();
     // Chat reopens the current chat; with none, its index.
-    if (next === "chat")
-      return chat.currentThreadId ? chat.openChat(chat.currentThreadId) : chat.openChatIndex();
+    if (next === "chat") return chat.showChatScreen();
     if (next === "context" && contextRemoval.getProjectSnapshot(projectId).live) {
       const workspace = getContextTabs(projectId);
       const tab = selectEditorEntryTab({
