@@ -1,12 +1,14 @@
 /**
- * ChatScreen — project workspace destination that renders the selected thread
- * as the primary pane. It coordinates desktop/mobile rail visibility without
- * owning thread routing itself.
+ * ChatScreen — renders the resolved thread in whichever pane hosts the chat
+ * (center, dock, phone), or the empty New chat when there is none. It never
+ * owns thread routing itself.
  */
+import { t } from "@lingui/core/macro";
 import type { Thread, Work } from "@meridian/contracts/protocol";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
+import { ChatSurface as ChatFrame } from "@/features/chat/ChatSurface";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { ChatView } from "@/features/chat/ChatView";
 import { CreationComposer } from "@/features/chat/CreationComposer";
@@ -37,11 +39,13 @@ export function ChatScreen({
 }: ChatScreenProps) {
   const { threads: projectThreads } = useProjectThreads(projectId);
 
+  // New chat: the same frame a live chat uses, with nothing above the composer
+  // yet, so the first Send grows a transcript without moving the composer.
   if (threadId === null) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col justify-end p-4">
-        <CreationComposer projectId={projectId} />
-      </div>
+      <ChatFrame title={t`New chat`} footer={<CreationComposer projectId={projectId} />}>
+        {null}
+      </ChatFrame>
     );
   }
 

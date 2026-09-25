@@ -8,7 +8,8 @@
 import { t } from "@lingui/core/macro";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { ThreadSwitcherPopover } from "@/features/chat/ThreadSwitcherPopover";
-import { useOpenNewChatRoute } from "./routing/ProjectNavigationContext";
+import { ChatIndexChip } from "./chat-index/ChatIndexButton";
+import { useProjectChatNavigation } from "./routing/ProjectNavigationContext";
 
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
 
@@ -27,9 +28,15 @@ export function ChatPaneController({
   contextToggle,
   onSelectThread,
 }: ChatPaneControllerProps) {
-  const openNewChat = useOpenNewChatRoute();
+  const navigation = useProjectChatNavigation();
   return (
     <PaneHeader
+      leading={
+        <ChatIndexChip
+          active={false}
+          onClick={navigation?.openChatIndex && (() => void navigation.openChatIndex?.())}
+        />
+      }
       title={
         threadId ? (
           <ChatThreadTitle
@@ -46,7 +53,7 @@ export function ChatPaneController({
             activeThreadId={null}
             title={t`New chat`}
             onSelectThread={onSelectThread}
-            onNewChat={openNewChat}
+            onNewChat={navigation?.openNewChat}
             variant="tab"
           />
         )

@@ -11,7 +11,11 @@ responses retain Favorite commands that completed after the request began.
 stale-response fencing, and failure. `ProjectChatRow` is shared with Work detail.
 The index delegates selection and New chat to route commands. Creation lives
 in `features/chat/CreationComposer`, rendered in the empty chat pane rather
-than above the feed.
+than above the feed. Recency groups are computed per render from the flat,
+newest-first pages, so pagination continues inside the last group.
+
+A project with no chats shows a standalone first-run state (no heading or
+filter). An empty Favorites filter is one muted line under the heading row.
 
 The feed observer keys pagination by project, filter, and opaque cursor. Stale
 observer callbacks must not request pages. Lifecycle hints are snapshots, not
@@ -19,7 +23,7 @@ live signals for unsubscribed chats.
 
 ## Row layout and feed behavior
 
-A landing row is a borderless resume-list entry, not a card: title and bound Agent
+An index row is a borderless resume-list entry, not a card: title and bound Agent
 name share line one; preview and activity date share line two; overflow owns
 Favorite and has no standing-star counterpart. Work is not the row identity.
 Real and loading rows use the same two-line layout: a flexible title/preview

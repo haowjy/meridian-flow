@@ -1,4 +1,4 @@
-/** Home-specific compact activity dates. */
+/** Compact activity dates for project chat rows. */
 export function formatProjectChatActivity(value: string, now: number, locale?: string): string {
   const date = new Date(value);
   const elapsed = Math.max(0, now - date.getTime());

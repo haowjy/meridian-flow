@@ -108,7 +108,7 @@ msgid "{0} added to favorites"
 msgstr "{0} added to favorites"
 
 #. placeholder {0}: item.title
-#: src/features/project/chat-landing/ChatLandingScreen.tsx
+#: src/features/project/chat-index/ChatIndex.tsx
 msgid "{0} added to Favorites"
 msgstr "{0} added to Favorites"
 
@@ -163,7 +163,7 @@ msgid "{0} removed from favorites"
 msgstr "{0} removed from favorites"
 
 #. placeholder {0}: item.title
-#: src/features/project/chat-landing/ChatLandingScreen.tsx
+#: src/features/project/chat-index/ChatIndex.tsx
 msgid "{0} removed from Favorites"
 msgstr "{0} removed from Favorites"
 
@@ -417,9 +417,13 @@ msgstr "Align right"
 msgid "Alignment applies to paragraphs, headings, and tables."
 msgstr "Alignment applies to paragraphs, headings, and tables."
 
-#: src/features/project/chat-landing/ChatLandingScreen.tsx
+#: src/features/project/chat-index/ChatIndex.tsx
 msgid "All"
 msgstr "All"
+
+#: src/features/project/chat-index/ChatIndexButton.tsx
+msgid "All chats"
+msgstr "All chats"
 
 #: src/features/home/ProjectLibrary.tsx
 #~ msgid "All projects"
@@ -515,6 +519,11 @@ msgstr "auto-selected"
 msgid "Back"
 msgstr "Back"
 
+#: src/features/project/chat-index/ChatIndexButton.tsx
+msgid "Back to {title}"
+msgstr "Back to {title}"
+
+#: src/features/project/chat-index/ChatIndexButton.tsx
 #: src/features/project/mobile/MobileProject.tsx
 msgid "Back to chat"
 msgstr "Back to chat"
@@ -675,8 +684,8 @@ msgstr "chart"
 
 #: src/components/app/composer/Composer.tsx
 #: src/features/chat/ChatView.tsx
-#: src/features/project/ChatLandingController.tsx
 #: src/features/project/dock/DockHeader.tsx
+#: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/features/project/mobile/MobileProject.tsx
 #: src/features/project/shell/screens.ts
 msgid "Chat"
@@ -698,13 +707,18 @@ msgstr "Chat context"
 #~ msgid "Chat creation is still being reconciled."
 #~ msgstr "Chat creation is still being reconciled."
 
-#: src/features/project/chat-landing/ChatLandingScreen.tsx
+#: src/features/project/chat-index/ChatIndex.tsx
+#: src/features/project/mobile/ChatBreadcrumb.tsx
 msgid "Chats"
 msgstr "Chats"
 
 #: src/features/project/chat-landing/ProjectFeed.tsx
-msgid "Chats couldn’t load"
-msgstr "Chats couldn’t load"
+#~ msgid "Chats couldn’t load"
+#~ msgstr "Chats couldn’t load"
+
+#: src/features/project/chat-index/ChatIndex.tsx
+msgid "Chats you start in this project collect here."
+msgstr "Chats you start in this project collect here."
 
 #: src/features/chat/DraftDock.tsx
 #: src/features/editor/DraftReviewHeader.tsx
@@ -729,8 +743,8 @@ msgstr "Check submission status"
 #~ msgstr "Check this message before sending another. You can keep drafting below."
 
 #: src/features/project/chat-landing/ProjectFeed.tsx
-msgid "Check your connection and try again."
-msgstr "Check your connection and try again."
+#~ msgid "Check your connection and try again."
+#~ msgstr "Check your connection and try again."
 
 #: src/features/chat/command-descriptor.ts
 msgid "Checked recent changes"
@@ -805,16 +819,16 @@ msgstr "Choose an option"
 msgid "Choose what to do before continuing."
 msgstr "Choose what to do before continuing."
 
-#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
+#: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat"
 msgstr "Choose Work for new chat"
 
 #. placeholder {0}: work.name
-#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
+#: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat, currently {0}"
 msgstr "Choose Work for new chat, currently {0}"
 
-#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
+#: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "Choose Work for new chat, currently {unavailableLabel}"
 msgstr "Choose Work for new chat, currently {unavailableLabel}"
 
@@ -834,6 +848,10 @@ msgstr "Close {0}"
 #: src/features/chat/ArtifactGrid.tsx
 msgid "Close artifact preview"
 msgstr "Close artifact preview"
+
+#: src/features/project/dock/DockHeader.tsx
+msgid "Close chat"
+msgstr "Close chat"
 
 #: src/features/account/PhoneSettings.tsx
 msgid "Close settings"
@@ -914,7 +932,7 @@ msgstr "Commands"
 #~ msgid "Completed"
 #~ msgstr "Completed"
 
-#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
+#: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "Composer controls"
 msgstr "Composer controls"
 
@@ -1071,6 +1089,10 @@ msgstr "Couldn't load agents."
 msgid "Couldn't load change details."
 msgstr "Couldn't load change details."
 
+#: src/features/project/chat-index/ChatIndex.tsx
+msgid "Couldn't load chats."
+msgstr "Couldn't load chats."
+
 #: src/features/project/context/ContextTreePanel.tsx
 msgid "Couldn't load files."
 msgstr "Couldn't load files."
@@ -1120,6 +1142,10 @@ msgstr "Couldn't read"
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't redo"
 msgstr "Couldn't redo"
+
+#: src/features/project/chat-index/ChatIndex.tsx
+msgid "Couldn't refresh chats."
+msgstr "Couldn't refresh chats."
 
 #: src/features/project/context/RecentDocumentsLanding.tsx
 msgid "Couldn't refresh recent documents."
@@ -1446,7 +1472,7 @@ msgstr "Drop image to insert it"
 msgid "Duplicate"
 msgstr "Duplicate"
 
-#: src/features/project/context/RecentDocumentsLanding.tsx
+#: src/features/project/RecencyGroupedList.tsx
 msgid "Earlier"
 msgstr "Earlier"
 
@@ -1604,13 +1630,13 @@ msgstr "Failed to load image"
 #~ msgid "Favorite"
 #~ msgstr "Favorite"
 
-#: src/features/project/chat-landing/ChatLandingScreen.tsx
+#: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/work/WorkAssociatedChats.tsx
 msgid "Favorite wasn’t saved"
 msgstr "Favorite wasn’t saved"
 
-#: src/features/project/chat-landing/ChatLandingScreen.tsx
+#: src/features/project/chat-index/ChatIndex.tsx
 msgid "Favorites"
 msgstr "Favorites"
 
@@ -1975,7 +2001,7 @@ msgstr "Loading {0}"
 msgid "Loading agents…"
 msgstr "Loading agents…"
 
-#: src/features/project/chat-landing/ProjectFeed.tsx
+#: src/features/project/chat-index/ChatIndex.tsx
 msgid "Loading chats"
 msgstr "Loading chats"
 
@@ -1988,7 +2014,7 @@ msgstr "Loading chats"
 msgid "Loading image"
 msgstr "Loading image"
 
-#: src/features/project/chat-landing/ProjectFeed.tsx
+#: src/features/project/chat-index/ChatIndex.tsx
 msgid "Loading more chats"
 msgstr "Loading more chats"
 
@@ -2123,9 +2149,13 @@ msgstr "Monthly usage"
 msgid "More"
 msgstr "More"
 
+#: src/features/project/chat-index/ChatIndex.tsx
+msgid "More chats couldn't load."
+msgstr "More chats couldn't load."
+
 #: src/features/project/chat-landing/ProjectFeed.tsx
-msgid "More chats couldn’t load."
-msgstr "More chats couldn’t load."
+#~ msgid "More chats couldn’t load."
+#~ msgstr "More chats couldn’t load."
 
 #: src/components/app/composer-toolbar/ComposerToolbar.tsx
 msgid "More composer controls"
@@ -2212,10 +2242,13 @@ msgstr "New"
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/chat-landing/ChatLandingScreen.tsx
+#: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
+#: src/features/project/chat/ChatScreen.tsx
 #: src/features/project/chat/ChatSurface.tsx
+#: src/features/project/ChatIndexController.tsx
 #: src/features/project/ChatPaneController.tsx
+#: src/features/project/mobile/ChatBreadcrumb.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "New chat"
@@ -2268,6 +2301,14 @@ msgstr "No billing activity yet."
 msgid "No chats are associated with this Work."
 msgstr "No chats are associated with this Work."
 
+#: src/features/project/chat-index/ChatIndex.tsx
+msgid "No chats yet"
+msgstr "No chats yet"
+
+#: src/features/project/chat-index/ChatIndex.tsx
+msgid "No chats yet."
+msgstr "No chats yet."
+
 #: src/features/editor/surfaces/table/table-copy.ts
 msgid "No column has been resized yet."
 msgstr "No column has been resized yet."
@@ -2287,6 +2328,10 @@ msgstr "No document answers to this name. A document can be created for it once 
 #: src/features/editor/surfaces/link/LinkMenu.tsx
 msgid "No document with this name yet"
 msgstr "No document with this name yet"
+
+#: src/features/project/chat-index/ChatIndex.tsx
+msgid "No favorite chats yet."
+msgstr "No favorite chats yet."
 
 #: src/features/chat/FormBlock.tsx
 msgid "No fields required; confirm to continue."
@@ -2346,7 +2391,7 @@ msgid "No results yet."
 msgstr "No results yet."
 
 #: src/components/app/work-composer-controls/WorkPickerPanel.tsx
-#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
+#: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "No Work"
 msgstr "No Work"
 
@@ -2451,8 +2496,12 @@ msgid "Open a Work to create an Untitled document"
 msgstr "Open a Work to create an Untitled document"
 
 #: src/features/project/mobile/MobileProject.tsx
-msgid "Open chat dock"
-msgstr "Open chat dock"
+msgid "Open chat"
+msgstr "Open chat"
+
+#: src/features/project/mobile/MobileProject.tsx
+#~ msgid "Open chat dock"
+#~ msgstr "Open chat dock"
 
 #: src/features/project/context/ContextTabBar.tsx
 msgid "Open context files"
@@ -2900,7 +2949,7 @@ msgstr "Resume where I left off on any device"
 #: src/features/chat/ErrorBlock.tsx
 #: src/features/chat/UserTurn.tsx
 #: src/features/editor/DraftReviewHeader.tsx
-#: src/features/project/chat-landing/ProjectFeed.tsx
+#: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/context/ContextEditorMountHost.tsx
 #: src/features/project/context/RecentDocumentsLanding.tsx
 #: src/features/project/EditorWorkRecovery.tsx
@@ -3129,6 +3178,10 @@ msgstr "Settings"
 #: src/features/account/SettingsDialog.tsx
 msgid "Settings sections"
 msgstr "Settings sections"
+
+#: src/features/project/chat-index/ChatIndex.tsx
+msgid "Show chats"
+msgstr "Show chats"
 
 #: src/routes/dev-login.tsx
 msgid "Sign in as dev user"
@@ -3735,7 +3788,7 @@ msgstr "This Work is unavailable."
 msgid "title"
 msgstr "title"
 
-#: src/features/project/context/RecentDocumentsLanding.tsx
+#: src/features/project/RecencyGroupedList.tsx
 #: src/lib/date-groups.ts
 msgid "Today"
 msgstr "Today"
@@ -3792,7 +3845,7 @@ msgstr "Unarchived Work {name}"
 msgid "Unavailable"
 msgstr "Unavailable"
 
-#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
+#: src/features/project/chat/NewThreadComposerToolbar.tsx
 msgid "Unavailable Work"
 msgstr "Unavailable Work"
 
@@ -3964,7 +4017,7 @@ msgid "Why this is marked merged"
 msgstr "Why this is marked merged"
 
 #: src/features/chat/ComposerWorkControl.tsx
-#: src/features/project/chat-landing/NewThreadComposerToolbar.tsx
+#: src/features/project/chat/NewThreadComposerToolbar.tsx
 #: src/features/project/mobile/MobileContextBrowser.tsx
 #: src/features/project/shell/screens.ts
 #: src/features/project/work/WorkScreen.tsx
@@ -4037,7 +4090,7 @@ msgstr "Wrote"
 msgid "Wrote file"
 msgstr "Wrote file"
 
-#: src/features/project/context/RecentDocumentsLanding.tsx
+#: src/features/project/RecencyGroupedList.tsx
 #: src/lib/date-groups.ts
 msgid "Yesterday"
 msgstr "Yesterday"
@@ -4057,8 +4110,8 @@ msgid "Your answer may not have reached the agent."
 msgstr "Your answer may not have reached the agent."
 
 #: src/features/project/chat-landing/ProjectFeed.tsx
-msgid "Your chats will appear here after you send a message."
-msgstr "Your chats will appear here after you send a message."
+#~ msgid "Your chats will appear here after you send a message."
+#~ msgstr "Your chats will appear here after you send a message."
 
 #: src/features/chat/CreationComposer.tsx
 #~ msgid "Your draft couldn’t be saved on this device."

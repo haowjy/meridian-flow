@@ -378,15 +378,6 @@
   @apply text-base leading-relaxed md:text-[15px];
 }
 
-@container project-screen (min-width: 42rem) {
-  .chat-landing-heading {
-    font-size: var(--text-headline-hero);
-    line-height: var(--text-headline-hero--line-height);
-    letter-spacing: var(--text-headline-hero--letter-spacing);
-    font-weight: var(--text-headline-hero--font-weight);
-  }
-}
-
 @utility user-turn {
   @apply mb-8 ml-auto w-fit max-w-[95%];
 }

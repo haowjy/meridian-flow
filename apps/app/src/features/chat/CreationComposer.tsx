@@ -1,26 +1,37 @@
 /** Shared pinned new-chat composer for the center, dock, and phone. */
 import { t } from "@lingui/core/macro";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { uploadIntakePort } from "@/client/api/upload-intake-api";
 import { useAgentCatalog } from "@/client/query/useAgentCatalog";
 import { useSelectionAvailableSkills } from "@/client/query/useAvailableSkills";
 import { useWorks, workFromSnapshot } from "@/client/query/useWorks";
-import { Composer } from "@/components/app/composer";
+import { Composer, type ComposerHandle } from "@/components/app/composer";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
-import { NewThreadComposerToolbar } from "@/features/project/chat-landing/NewThreadComposerToolbar";
+import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
+import { useProjectChatNavigation } from "@/features/project/routing/ProjectNavigationContext";
 import { useCreationComposer } from "./useCreationComposer";
 
-export function CreationComposer({
-  projectId,
-  autoFocus = false,
-}: {
-  projectId: string;
-  autoFocus?: boolean;
-}) {
+export function CreationComposer({ projectId }: { projectId: string }) {
   const creation = useCreationComposer(projectId);
+  const composerRef = useRef<ComposerHandle>(null);
+  const navigation = useProjectChatNavigation();
+  const focusRequested = navigation?.newChatFocusRequested ?? false;
+  const consumeFocus = navigation?.consumeNewChatFocus;
+  // An explicit New chat focuses whichever empty composer shows it: at mount
+  // when the request created this composer, or in place when one was already
+  // showing. The frame lets a just-revealed dock drop `inert` first.
+  const [focusAtMount] = useState(focusRequested);
+  useEffect(() => {
+    if (!focusRequested) return;
+    const frame = requestAnimationFrame(() => {
+      composerRef.current?.focus();
+      consumeFocus?.();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [focusRequested, consumeFocus]);
   const works = useWorks(projectId);
   const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;
@@ -63,8 +74,9 @@ export function CreationComposer({
   return (
     <>
       <Composer
+        ref={composerRef}
         variant="pinned"
-        autoFocus={autoFocus}
+        autoFocus={focusAtMount}
         onSubmit={async (envelope) => ({
           kind:
             choicesReady && context && (await creation.submit(envelope, context))
