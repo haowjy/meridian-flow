@@ -622,17 +622,10 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     setDockView(props.activeScreen, "chat");
   });
 
-  // Opening a conversation reveals it where the writer already is. Desktop
-  // mounts the chat surface on every screen — centered on Chat, docked on
-  // Work/Editor — so a reveal only has to un-park the surface and point it at
-  // the thread. Dock selection replaces the secondary chat without changing the destination.
-  useConversationRevealRouting((threadId) => {
-    if (layout.chat.slot === "dock") {
-      setDockCollapsed(false);
-      setDockView(props.activeScreen, "chat");
-    }
-    props.onSelectThread(threadId);
-  });
+  // Opening a conversation reveals it where the writer already is: chat
+  // navigation points the dock at it and calls the registered dock reveal,
+  // or navigates on the Chat screen.
+  useConversationRevealRouting(props.onSelectThread);
 
   const isOpen = (surfaceId: SurfaceId) => !layout[surfaceId].collapsed;
   // The single writer-driven collapse entry. Calls targeting a surface that is

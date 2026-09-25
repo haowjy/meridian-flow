@@ -18,6 +18,7 @@ const chatNavigation: ChatNavigation = {
   openChat: noop,
   openNewChat: noop,
   openChatIndex: noop,
+  showChatScreen: noop,
   acceptCreatedChat: () => undefined,
   forgetChat: () => undefined,
   registerDockReveal: unregister,

@@ -1,25 +1,10 @@
-/** Shared commands for project chat rows: field-scoped Favorite and owned Delete. */
+/** Delete a project chat and drop it from every cached chat projection. */
 import type { ThreadListItem } from "@meridian/contracts/protocol";
-import { type QueryClient, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import type { QueryClient } from "@tanstack/react-query";
 import { deleteThread } from "@/client/api/threads-api";
 import type { ChatFeedData } from "./project-chat-feed-cache";
 import { invalidateProjectThreadData, invalidateWorkThreads } from "./project-invalidation";
 import { projectQueryKeys } from "./project-query-keys";
-import { runFavoriteCommand, type ThreadUserStateLifecycle } from "./thread-user-state-commands";
-
-export function useProjectChatCommands(projectId: string) {
-  const client = useQueryClient();
-  const setFavorite = useCallback(
-    async (threadId: string, value: boolean, lifecycle?: ThreadUserStateLifecycle) =>
-      (await runFavoriteCommand(client, projectId, threadId, value, lifecycle)).status ===
-      "success",
-    [client, projectId],
-  );
-  return {
-    setFavorite,
-  };
-}
 
 /**
  * The server's owned soft delete, then the chat leaves every project chat
