@@ -1,9 +1,15 @@
 # Release-on-merge
 
-Every merged PR to `main` with an associated PR releases from the merge commit.
-The sole version source is root `package.json`; package versions remain private
-`0.0.0`. Stable tags use `vX.Y.Z`; prereleases use `vX.Y.Z-rc.N`. Initial
-release numbering starts at `0.0.0`.
+Each release is cut from the current tip of `main`, not from the triggering
+merge commit. The job walks first-parent history after the latest release
+commit or `v*` tag and resolves every uncovered merge's PR labels, so a later
+run covers merges whose queued runs were replaced. One release commit records
+one `Release-Trigger` trailer for each included merge. The strongest included
+intent wins; an exact `release:skip` label or `Release-Skip: true` trailer
+excludes only that merge. If all uncovered merges are skipped, there is no
+release. The sole version source is root `package.json`; package versions
+remain private `0.0.0`. Stable tags use `vX.Y.Z`; prereleases use `vX.Y.Z-rc.N`.
+Initial release numbering starts at `0.0.0`.
 
 ## PR labels
 
@@ -30,11 +36,11 @@ come from the current `[Unreleased]` section.
 ## Safety and recovery
 
 The job anchors to current `main` and requires the triggering merge to be an
-ancestor. `Release-Trigger` trailers make reruns idempotent; a rerun repairs a
-missing tag rather than creating a second release. Release commits and tags
-are annotated. Push races are retried after fetching/rebasing, and an existing
-tag pointing at a different commit fails loudly. Commits beginning `release:
-v` and commits containing `release:skip` are ignored.
+ancestor. A run whose trigger already appears in any `Release-Trigger` trailer
+is a no-op except that it repairs a missing tag. Release commits and tags are
+annotated. Push races are retried after fetching/rebasing, and an existing tag
+pointing at a different commit fails loudly. Release commits beginning
+`release: v` are ignored before they enter the job concurrency group.
 
 For a release that must be backfilled without running the workflow, manually
 push an annotated `vX.Y.Z` tag to the intended release commit. Tags cannot be

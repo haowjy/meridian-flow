@@ -8,13 +8,12 @@ permissions:
   contents: read
   pull-requests: read
 
-concurrency:
-  group: release-on-main
-  cancel-in-progress: false
-
 jobs:
   release:
     if: "${{ !startsWith(github.event.head_commit.message, 'release: v') }}"
+    concurrency:
+      group: release-on-main
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,44 +23,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24.17.0
-      - name: Anchor to current main and validate trigger
-        env:
-          TRIGGER_SHA: ${{ github.sha }}
-        run: |
-          git fetch origin main --force --tags
-          git checkout -B main origin/main
-          git cat-file -e "${TRIGGER_SHA}^{commit}"
-          git merge-base --is-ancestor "$TRIGGER_SHA" HEAD || { echo "::error::Trigger ${TRIGGER_SHA} is not an ancestor of current main tip $(git rev-parse HEAD)."; exit 1; }
-      - name: Find merged PR and resolve labels
-        id: intent
+      - name: Resolve all unreleased first-parent merges
+        id: batch
         env:
           GH_TOKEN: ${{ github.token }}
           TRIGGER_SHA: ${{ github.sha }}
           REPOSITORY: ${{ github.repository }}
-        run: |
-          prs="$(gh api "/repos/${REPOSITORY}/commits/${TRIGGER_SHA}/pulls")"
-          selected="$(jq --arg sha "$TRIGGER_SHA" '[.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha == $sha)]' <<<"$prs")"
-          reason="exact merge SHA"
-          if [[ "$(jq length <<<"$selected")" -eq 0 ]]; then
-            selected="$(jq '[.[] | select(.merged_at != null and .base.ref == "main")]' <<<"$prs")"
-            reason="merged PR fallback"
-          fi
-          count="$(jq length <<<"$selected")"
-          if [[ "$count" -eq 0 ]]; then
-            echo "::notice::No associated merged PR; skipping. Backfill by pushing a v* tag manually (see tools/release/README.md)."
-            echo 'intent={"release":false,"kind":"skip"}' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [[ "$count" -ne 1 ]]; then echo "::error::Ambiguous PR selection for ${TRIGGER_SHA}: ${count} candidates (${reason})."; exit 1; fi
-          labels="$(jq -c '[.[0].labels[]?.name]' <<<"$selected")"
-          intent="$(node tools/release/release.mjs intent "$labels")"
-          echo "::notice::Resolved PR #$(jq -r '.[0].number' <<<"$selected") via ${reason}; intent ${intent}."
-          echo "intent=${intent}" >> "$GITHUB_OUTPUT"
+        run: tools/release/resolve-batch.sh
       - name: Publish versioned release
-        if: fromJSON(steps.intent.outputs.intent).release == true
         env:
           TRIGGER_SHA: ${{ github.sha }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          RELEASE_INTENT_JSON: ${{ steps.intent.outputs.intent }}
+          RELEASE_BATCH_JSON: ${{ steps.batch.outputs.batch }}
           RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: tools/release/publish.sh
