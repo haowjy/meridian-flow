@@ -349,6 +349,25 @@
   }
 }
 
+/* Resume-list row rules: one device pixel. Chromium rounds a sub-pixel border
+   up to 1 CSS px, so the rule is a 1px line scaled to half height instead. */
+@utility divide-hairline {
+  & > :not(:last-child) {
+    position: relative;
+  }
+  & > :not(:last-child)::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: 1px;
+    transform: scaleY(0.5);
+    transform-origin: bottom;
+    background-color: var(--color-border-subtle);
+  }
+}
+
 @utility chat-scroll-fade-bottom {
   /* Reserve gutter so dual-mask scrollbar width matches layout (see PQINA pattern). */
   scrollbar-gutter: stable;
