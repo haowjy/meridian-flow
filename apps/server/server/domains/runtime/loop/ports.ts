@@ -74,8 +74,8 @@ export interface Inbox {
   /** One statement snapshot of raw pending rows and current live-run consumption. */
   readPendingProjection(threadId: ThreadId): Promise<InboxProjection>;
   ack(threadId: ThreadId, ids: string[]): Promise<void>;
-  /** Threads with at least one pending undelivered message, oldest first; the wake sweep's input. */
-  pendingMessageThreads(limit: number): Promise<ThreadId[]>;
+  /** Pending-message threads in stable ID order; keyset paging preserves per-thread enqueue order. */
+  pendingMessageThreads(limit: number, afterThreadId?: ThreadId): Promise<ThreadId[]>;
 }
 
 export type InboxProjection = {
@@ -118,8 +118,8 @@ export interface RunAuthority {
    * {@link read}, never from the turns table.
    */
   readRunningTurnId(threadId: ThreadId): Promise<TurnId | null>;
-  /** Sets the live lease's durable cancel flag; idempotent, and the only cross-process cancel channel. */
-  cancel(threadId: ThreadId): Promise<void>;
+  /** Cancels only the live lease bound to this turn; false means no matching execution. */
+  cancel(threadId: ThreadId, turnId: TurnId): Promise<boolean>;
   /**
    * Releases the held lease. Guarded: an already-released or superseded lease is
    * a no-op and must never free a newer run's lock. `closeRun` releases under

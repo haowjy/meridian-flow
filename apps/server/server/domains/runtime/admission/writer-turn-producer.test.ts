@@ -209,33 +209,4 @@ describe("createWriterTurnProducer", () => {
 
     expect(result).toMatchObject({ kind: "accepted", assistantTurnId: null });
   });
-
-  it("rolls the writer turn back when another settlement already won", async () => {
-    const base = fakeRecords();
-    const winner: AdmissionPersistencePort = {
-      ...base.port,
-      async accept() {
-        return {
-          kind: "winner",
-          record: {
-            state: "rejected",
-            fingerprint: null,
-            code: "recovery_no_committed_turn",
-          },
-        };
-      },
-    };
-    const { producer, repos, runner, thread } = await harness(winner);
-    runner.set(null);
-
-    const result = await producer.enqueue(input(thread.id, "late"));
-
-    expect(result).toEqual({
-      kind: "rejected",
-      submissionId: "submission-1",
-      code: "recovery_no_committed_turn",
-    });
-    expect(await repos.turns.listByThread(thread.id)).toHaveLength(0);
-    expect(base.accepted).toHaveLength(0);
-  });
 });

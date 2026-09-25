@@ -1,6 +1,7 @@
 /** The wake sweep's derived need: pending messages with no live holder start a run. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
+import { createInMemoryEventSink } from "../../observability/index.js";
 import {
   createInMemoryInbox,
   createInMemoryRunAuthority,
@@ -52,7 +53,13 @@ describe("sweepWakes", () => {
     const lease = await authority.acquire(THREAD_A, "run-a");
 
     const started: ThreadId[] = [];
-    await sweepWakes({ inbox, authority, runStarter: recordingStarter(started), limit: 10 });
+    await sweepWakes({
+      eventSink: createInMemoryEventSink(),
+      inbox,
+      authority,
+      runStarter: recordingStarter(started),
+      limit: 10,
+    });
 
     // THREAD_A is live, THREAD_C has no message, only THREAD_B wakes.
     expect(started).toEqual([THREAD_B]);
@@ -67,7 +74,13 @@ describe("sweepWakes", () => {
     await inbox.enqueue(message("c", THREAD_C));
 
     const started: ThreadId[] = [];
-    await sweepWakes({ inbox, authority, runStarter: recordingStarter(started), limit: 2 });
+    await sweepWakes({
+      eventSink: createInMemoryEventSink(),
+      inbox,
+      authority,
+      runStarter: recordingStarter(started),
+      limit: 2,
+    });
 
     expect(started).toEqual([THREAD_A, THREAD_B]);
   });
@@ -80,6 +93,7 @@ describe("sweepWakes", () => {
 
     const started: ThreadId[] = [];
     await sweepWakes({
+      eventSink: createInMemoryEventSink(),
       inbox,
       authority,
       runStarter: {
@@ -92,5 +106,53 @@ describe("sweepWakes", () => {
     });
 
     expect(started).toEqual([THREAD_A, THREAD_B]);
+  });
+  it("isolates projection refresh failures and reports the failing thread", async () => {
+    const inbox = createInMemoryInbox();
+    const authority = createInMemoryRunAuthority();
+    const eventSink = createInMemoryEventSink();
+    await inbox.enqueue(message("a", THREAD_A));
+    await inbox.enqueue(message("b", THREAD_B));
+    const refreshed: ThreadId[] = [];
+    await sweepWakes({
+      inbox,
+      authority,
+      eventSink,
+      limit: 2,
+      runStarter: recordingStarter([]),
+      async refreshPending(id) {
+        refreshed.push(id);
+        if (id === THREAD_A) throw new Error("projection unavailable");
+      },
+    });
+    expect(refreshed).toEqual([THREAD_A, THREAD_B]);
+    expect(eventSink.events).toMatchObject([
+      { name: "wake.failed", correlation: { threadId: THREAD_A } },
+    ]);
+  });
+
+  it("pages past poisoned candidates and wraps to retry them", async () => {
+    const inbox = createInMemoryInbox();
+    const authority = createInMemoryRunAuthority();
+    await inbox.enqueue(message("a", THREAD_A));
+    await inbox.enqueue(message("b", THREAD_B));
+    const started: ThreadId[] = [];
+    let afterThreadId: ThreadId | undefined;
+    for (let i = 0; i < 3; i++) {
+      afterThreadId = await sweepWakes({
+        eventSink: createInMemoryEventSink(),
+        inbox,
+        authority,
+        limit: 1,
+        afterThreadId,
+        runStarter: {
+          async start(id) {
+            started.push(id);
+            if (id === THREAD_A) throw new Error("exhausted balance");
+          },
+        },
+      });
+    }
+    expect(started).toEqual([THREAD_A, THREAD_B, THREAD_A]);
   });
 });

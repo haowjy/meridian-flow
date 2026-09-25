@@ -73,17 +73,17 @@ export function createInMemoryInbox(): Inbox {
       }
     },
 
-    async pendingMessageThreads(limit) {
-      const threads: ThreadId[] = [];
-      const seen = new Set<ThreadId>();
-      for (const message of [...messages].sort((left, right) => left.seq - right.seq)) {
-        if (message.intent !== "message" || message.deliveredAt !== null) continue;
-        if (seen.has(message.threadId)) continue;
-        seen.add(message.threadId);
-        threads.push(message.threadId);
-        if (threads.length >= limit) break;
-      }
-      return threads;
+    async pendingMessageThreads(limit, afterThreadId) {
+      return [
+        ...new Set(
+          messages
+            .filter((message) => message.intent === "message" && message.deliveredAt === null)
+            .map((message) => message.threadId),
+        ),
+      ]
+        .sort()
+        .filter((threadId) => !afterThreadId || threadId > afterThreadId)
+        .slice(0, limit);
     },
   };
 }
@@ -189,9 +189,11 @@ export function createInMemoryRunAuthority(
       return liveLease(threadId)?.turnId ?? null;
     },
 
-    async cancel(threadId) {
+    async cancel(threadId, turnId) {
       const row = liveLease(threadId);
-      if (row) row.cancelRequested = true;
+      if (!row || row.turnId !== turnId) return false;
+      row.cancelRequested = true;
+      return true;
     },
 
     async release(lease) {

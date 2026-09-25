@@ -16,6 +16,9 @@
 - Share immutable child-report state rules across storage adapters; decode saved captures at storage ingress.
 
 - Replay cold thread subscriptions once; skip journal drains on unobserved replicas.
+- Exercise report-publication rollback after inbox and publication marker writes, then replay recovery.
+
+- Drop fake rollback and repeated-abort tests that did not exercise transaction rollback or billing replay.
 
 - While an agent is working, Enter sends a typed follow-up and the composer swaps Stop for a ringed Send action. Escape still stops the run.
 - Trim redundant app, server, and shared tests and fake-only scaffolding. Retire frozen migration fixtures.
@@ -36,6 +39,15 @@
 - Keep thread snapshots and replay cursors on one consistent database view.
 
 - Preserve structured run errors in live and replayed thread events.
+- Observe detached run cleanup failures and report them with the assistant execution identity.
+
+- Page wake recovery past blocked threads, batch lease checks, and report failed wakes without losing queued messages.
+
+- Retire a stopped run’s adopted inbox messages with cancellation; preserve later follow-ups for the next turn.
+
+- Bound cancelled provider drains to five seconds, even when provider teardown hangs.
+
+- Cancel only the requested assistant execution, never a newer run on the same thread.
 
 - Keep the inline awaiting-run status current as inbox state changes, serialize delayed queue notifications with adoption and acknowledgement, and swallow run-settlement projection failures at the lock/commit boundary.
 - Classify durable inbox delivery as awaiting-run, waiting, or consuming from one live-lease/adopted-batch projection; show only waiting writer messages in the queued tray.

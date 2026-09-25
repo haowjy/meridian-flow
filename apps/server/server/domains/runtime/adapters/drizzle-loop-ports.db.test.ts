@@ -1,3 +1,4 @@
+import { createInMemoryEventSink } from "../../observability/index.js";
 /** PostgreSQL coverage for the drizzle Inbox and lease-backed RunAuthority adapters. */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
@@ -182,6 +183,8 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       await inbox.enqueue(notice("s2", THREAD_B));
 
       expect(await inbox.pendingMessageThreads(10)).toEqual([THREAD_A, THREAD_B]);
+      expect(await inbox.pendingMessageThreads(1, THREAD_A)).toEqual([THREAD_B]);
+      expect(await inbox.pendingMessageThreads(1, THREAD_B)).toEqual([]);
     });
 
     it("wakes a pending-message thread and skips one with a live lease", async () => {
@@ -193,6 +196,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
 
       const started: ThreadId[] = [];
       await sweepWakes({
+        eventSink: createInMemoryEventSink(),
         inbox,
         authority,
         runStarter: {
@@ -309,8 +313,17 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
       const lease = required(await authority.acquire(THREAD_A, "run-1"));
 
-      await authority.cancel(THREAD_A);
-      await authority.cancel(THREAD_A);
+      await db.insert(schema.turns).values({
+        id: ASSISTANT_TURN,
+        threadId: THREAD_A,
+        role: "assistant",
+        status: "streaming",
+      });
+      await authority.bindTurn(lease, ASSISTANT_TURN, []);
+      expect(await authority.cancel(THREAD_A, crypto.randomUUID())).toBe(false);
+      expect(await authority.read(THREAD_A)).toMatchObject({ cancelRequested: false });
+      expect(await authority.cancel(THREAD_A, ASSISTANT_TURN)).toBe(true);
+      expect(await authority.cancel(THREAD_A, ASSISTANT_TURN)).toBe(true);
       expect(await authority.read(THREAD_A)).toEqual({
         kind: "awake",
         phase: "generating",

@@ -312,17 +312,19 @@ export function createDrizzleRunAuthority(
       return row?.turnId ?? null;
     },
 
-    async cancel(threadId) {
-      await db_()
+    async cancel(threadId, turnId) {
+      const rows = await db_()
         .update(schema.threadRunLeases)
         .set({ cancelRequested: true })
         .where(
           and(
             eq(schema.threadRunLeases.threadId, threadId),
-            eq(schema.threadRunLeases.cancelRequested, false),
+            eq(schema.threadRunLeases.turnId, turnId),
             gt(schema.threadRunLeases.expiresAt, new Date()),
           ),
-        );
+        )
+        .returning({ turnId: schema.threadRunLeases.turnId });
+      return rows.length > 0;
     },
 
     async release(lease) {

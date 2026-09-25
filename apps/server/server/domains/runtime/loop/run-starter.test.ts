@@ -1,6 +1,7 @@
-/** The best-effort RunStarter: a live run is swallowed, a real failure is not. */
+/** Best-effort wake: contention is quiet; unexpected failures produce a diagnostic. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
+import { createInMemoryEventSink } from "../../observability/index.js";
 import { TurnStartConflictError } from "../../threads/index.js";
 import { createRunStarter } from "./run-starter.js";
 
@@ -8,22 +9,33 @@ const THREAD = "thread-1" as ThreadId;
 
 describe("createRunStarter", () => {
   it("swallows the already-running conflict", async () => {
-    const runStarter = createRunStarter({
-      async startDrain(threadId) {
-        throw new TurnStartConflictError(threadId, "already_running");
+    const eventSink = createInMemoryEventSink();
+    const runStarter = createRunStarter(
+      {
+        async startDrain(threadId) {
+          throw new TurnStartConflictError(threadId, "already_running");
+        },
       },
-    });
+      eventSink,
+    );
 
     await expect(runStarter.start(THREAD)).resolves.toBeUndefined();
   });
 
-  it("propagates a non-conflict failure", async () => {
-    const runStarter = createRunStarter({
-      async startDrain() {
-        throw new Error("boom");
+  it("reports a non-conflict failure once without rejecting the durable enqueue", async () => {
+    const eventSink = createInMemoryEventSink();
+    const runStarter = createRunStarter(
+      {
+        async startDrain() {
+          throw new Error("boom");
+        },
       },
-    });
+      eventSink,
+    );
 
-    await expect(runStarter.start(THREAD)).rejects.toThrow("boom");
+    await expect(runStarter.start(THREAD)).resolves.toBeUndefined();
+    expect(eventSink.events).toMatchObject([
+      { name: "wake.failed", correlation: { threadId: THREAD } },
+    ]);
   });
 });

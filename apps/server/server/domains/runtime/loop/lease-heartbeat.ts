@@ -83,6 +83,6 @@ export function createHeartbeatRunAuthority(
     read: (threadId) => authority.read(threadId),
     readMany: (threadIds) => authority.readMany(threadIds),
     readRunningTurnId: (threadId) => authority.readRunningTurnId(threadId),
-    cancel: (threadId) => authority.cancel(threadId),
+    cancel: (threadId, turnId) => authority.cancel(threadId, turnId),
   };
 }

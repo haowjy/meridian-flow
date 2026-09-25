@@ -249,6 +249,25 @@ function settledReceipt(
   return settled.receipt;
 }
 
+async function finalizeRun(
+  deps: OrchestratorDeps,
+  input: Parameters<typeof finalizeExecution>[1],
+): ReturnType<typeof finalizeExecution> {
+  return deps.repos.transaction(async () => {
+    const terminal = await finalizeExecution(deps, input);
+    if (terminal.turn.status === "cancelled") {
+      // The assistant's durable batch survives lease expiry and generator failure.
+      // Never ack closeRun's final claim: it also contains unadopted follow-ups.
+      const metadata = terminal.turn.metadata as
+        | { inboxConsumption?: { messageIds: string[] } }
+        | null
+        | undefined;
+      await deps.inbox.ack(input.threadId, metadata?.inboxConsumption?.messageIds ?? []);
+    }
+    return terminal;
+  });
+}
+
 export function createOrchestrator(deps: OrchestratorDeps): RunTurnPort {
   return {
     runTurn(input: RunTurnInput): Promise<RunTurnHandle> {
@@ -263,7 +282,7 @@ export function createOrchestrator(deps: OrchestratorDeps): RunTurnPort {
         lease: input.lease ?? null,
         continueOnPending: false,
         complete: () =>
-          finalizeExecution(deps, {
+          finalizeRun(deps, {
             threadId: input.threadId,
             assistantTurnId: input.assistantTurnId,
             cause: input.signal?.aborted
@@ -1174,13 +1193,13 @@ async function* generateEvents(
   }
 
   const cancelTerminal = () =>
-    finalizeExecution(deps, {
+    finalizeRun(deps, {
       threadId: input.threadId,
       assistantTurnId: currentAssistantTurn.id,
       cause: { kind: "cancelled", reason: "cancelled" },
     });
   const errorTerminal = (error: MeridianError | string, reason?: string) => () =>
-    finalizeExecution(deps, {
+    finalizeRun(deps, {
       threadId: input.threadId,
       assistantTurnId: currentAssistantTurn.id,
       cause: {
@@ -1190,7 +1209,7 @@ async function* generateEvents(
       },
     });
   const completeTerminal = (result: GenerateResult) => () =>
-    finalizeExecution(deps, {
+    finalizeRun(deps, {
       threadId: input.threadId,
       assistantTurnId: currentAssistantTurn.id,
       cause: {

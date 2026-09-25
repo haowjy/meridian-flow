@@ -86,6 +86,79 @@ else
       await db.close();
     });
 
+    it("cancels only the adopted inbox batch atomically, leaving later messages for a new turn", async () => {
+      const { createDrizzleInbox } = await import("../adapters/drizzle-inbox.js");
+      const { createDrizzleThreadLock } = await import("../adapters/drizzle-thread-lock.js");
+      const { createDrizzleRunAuthority } = await import(
+        "../adapters/drizzle-thread-run-ownership.js"
+      );
+      const { createOrchestrator } = await import("./orchestrator.js");
+      const { createTestOrchestratorDeps } = await import("./__tests__/test-orchestrator-deps.js");
+      const inbox = createDrizzleInbox(db);
+      const authority = createDrizzleRunAuthority(db);
+      const enqueue = (text: string) =>
+        inbox.enqueue({
+          threadId: ids.parent,
+          intent: "message",
+          provenance: { kind: "writer", actorId: ids.user },
+          body: { kind: "text", text },
+          idempotencyKey: text,
+        });
+      const stopped = await enqueue("stopped request");
+      const lease = await authority.acquire(ids.parent, "cancel-run");
+      if (!lease) throw new Error("expected lease");
+      try {
+        const controller = new AbortController();
+        const orchestrator = createOrchestrator(
+          createTestOrchestratorDeps({
+            repos,
+            eventWriter,
+            inbox,
+            runAuthority: authority,
+            threadLock: createDrizzleThreadLock(db),
+            boundThreads: () => [ids.parent],
+          }),
+        );
+        const handle = await orchestrator.runTurn({
+          threadId: ids.parent,
+          drain: true,
+          lease,
+          signal: controller.signal,
+        });
+        const later = await enqueue("later request");
+        controller.abort();
+        await expect(
+          repos.transaction(async () => {
+            await orchestrator.finalizeGeneratorFailure({
+              threadId: ids.parent,
+              assistantTurnId: handle.assistantTurnId,
+              signal: controller.signal,
+              lease,
+              error: "cancelled",
+            });
+            expect((await inbox.listPending(ids.parent)).map((row) => row.id)).toEqual([later.id]);
+            throw new Error("terminal rollback");
+          }),
+        ).rejects.toThrow("terminal rollback");
+        expect((await inbox.listPending(ids.parent)).map((row) => row.id)).toEqual([
+          stopped.id,
+          later.id,
+        ]);
+        expect((await repos.turns.findById(handle.assistantTurnId))?.status).toBe("streaming");
+        for await (const _event of handle.events) {
+          /* drive real cancellation */
+        }
+        expect((await repos.turns.findById(handle.assistantTurnId))?.status).toBe("cancelled");
+        expect((await inbox.listPending(ids.parent)).map((row) => row.id)).toEqual([later.id]);
+        expect(await authority.holder(ids.parent)).toBeNull();
+        const next = await orchestrator.runTurn({ threadId: ids.parent, drain: true });
+        expect(next.userTurnId).toBe(later.id);
+        expect(next.assistantTurnId).not.toBe(handle.assistantTurnId);
+      } finally {
+        await authority.release(lease);
+      }
+    });
+
     it("rolls terminal turn and report obligation back together, then retries idempotently", async () => {
       await repos.executionReports.captureOnce(ids.child, ids.execution, "return-1", {
         summary: "candidate",

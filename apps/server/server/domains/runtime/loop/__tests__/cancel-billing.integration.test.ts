@@ -1,7 +1,4 @@
-/**
- * Cancel billing integration tests: soft-cancel debits consumed usage through
- * the real createGateway path and explicit cancel remains idempotent.
- */
+/** Real-gateway partial-cancel billing and non-cancelling WebSocket disconnects. */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createThreadWebSocketSession, type WsPeer } from "../../../../lib/ws-thread-handler.js";
@@ -66,25 +63,6 @@ describe("cancel billing", () => {
     const balance = await rig.balance();
     expect(BigInt(balance)).toBeLessThan(1_200_000n);
     expect(balance).not.toBe("1200000");
-  });
-
-  it("does not double-debit when cancel settlement replays the same usage event", async () => {
-    const rig = await RuntimeTestRig.create({ gateway: createMockGateway(mock) });
-    const controller = new AbortController();
-    const handle = await rig.orchestrator.runTurn({
-      threadId: rig.thread.id,
-      userText: "cancel billing",
-      signal: controller.signal,
-    });
-    const eventsPromise = rig.collect(handle);
-    await rig.gatewaySignal.promise;
-    controller.abort();
-    await eventsPromise;
-    const balanceAfterCancel = await rig.balance();
-
-    controller.abort();
-    const balanceAfterSecondAbort = await rig.balance();
-    expect(balanceAfterSecondAbort).toBe(balanceAfterCancel);
   });
 
   it("does not cancel a running turn when a subscribed WebSocket disconnects", async () => {

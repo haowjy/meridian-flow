@@ -685,7 +685,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
   // sweep is the durable recovery for a missed wake.
   const inbox = createDrizzleInbox(ports.db);
   const threadLock = createDrizzleThreadLock(ports.db);
-  const runStarter = createRunStarter(runner);
+  const runStarter = createRunStarter(runner, ports.eventSink);
   const readPending = async (threadId: ThreadId) => readPendingInbox(inbox, threadId);
   refreshPendingProjection = async (threadId) => {
     try {
@@ -739,6 +739,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     publisher: reportPublisher,
     eventSink: ports.eventSink,
   });
+  let wakeCursor: ThreadId | undefined;
   const wakeSweep = {
     async sweep() {
       const results = await Promise.allSettled([
@@ -747,7 +748,11 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
           authority: ports.runAuthority,
           runStarter,
           limit: WAKE_SWEEP_LIMIT,
+          afterThreadId: wakeCursor,
+          eventSink: ports.eventSink,
           refreshPending: refreshPendingProjection,
+        }).then((cursor) => {
+          wakeCursor = cursor;
         }),
         orphanRepair.sweep(WAKE_SWEEP_LIMIT),
         reportPublisher.sweep(WAKE_SWEEP_LIMIT),

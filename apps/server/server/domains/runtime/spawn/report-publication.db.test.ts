@@ -479,19 +479,47 @@ else
 
     it("rolls back card, event, inbox and marker together on publication failure, then retries", async () => {
       await terminal();
-      const failing = createReportPublisher({
-        repos,
-        eventWriter: {
-          async appendEvent() {
-            throw new Error("journal unavailable");
+      const { runAfterDrizzleCommit } = await import("../../../shared/drizzle-transaction.js");
+      let wakes = 0;
+      const transactionalInbox = createThreadedInbox({
+        inbox,
+        threadLock,
+        runStarter: {
+          async start() {
+            wakes++;
           },
         },
-        threadedInbox,
+        schedulePostCommit: (task) => {
+          runAfterDrizzleCommit(task);
+        },
+      });
+      const failing = createReportPublisher({
+        repos: {
+          ...repos,
+          executionReports: {
+            ...repos.executionReports,
+            async markPublished(...args) {
+              await repos.executionReports.markPublished(...args);
+              expect(
+                (await repos.executionReports.findByExecution(ids.child, ids.execution))
+                  ?.publication,
+              ).toBe("published");
+              expect(await inbox.listPending(ids.parent)).toHaveLength(1);
+              throw new Error("failure after publication marker");
+            },
+          },
+        },
+        eventWriter,
+        threadedInbox: transactionalInbox,
         eventSink,
       });
       await expect(failing.publish(ids.child, ids.execution)).rejects.toThrow(
-        "journal unavailable",
+        "failure after publication marker",
       );
+      expect(wakes).toBe(0);
+      const parentEvents = () =>
+        db.select().from(schema.eventJournal).where(eq(schema.eventJournal.threadId, ids.parent));
+      expect(await parentEvents()).toEqual([]);
       expect((await repos.blocks.findById(ids.card))?.content).toMatchObject({
         kind: "helper-result",
         props: { status: "running" },
@@ -500,7 +528,19 @@ else
       expect(
         (await repos.executionReports.findByExecution(ids.child, ids.execution))?.publication,
       ).toBe("pending");
-      expect(await publisher.publish(ids.child, ids.execution)).toBe("published");
+      const recovered = createReportPublisher({
+        repos,
+        eventWriter,
+        threadedInbox: transactionalInbox,
+        eventSink,
+      });
+      expect(await recovered.publish(ids.child, ids.execution)).toBe("published");
+      expect(await recovered.publish(ids.child, ids.execution)).toBe("already");
+      expect(wakes).toBe(1);
+      expect(await inbox.listPending(ids.parent)).toHaveLength(1);
+      expect(
+        (await parentEvents()).filter((event) => event.eventType === "agent.run_completed"),
+      ).toHaveLength(1);
     });
 
     it("serializes competing publishers and does not recreate a deleted card", async () => {

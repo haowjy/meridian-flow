@@ -44,6 +44,7 @@ import {
   TurnStartConflictError,
 } from "../../threads/index.js";
 import type { Lease, RunAuthority } from "./ports.js";
+import { createRunStarter } from "./run-starter.js";
 import { NoPendingWakeError, type RunTurnInput, type RunTurnPort } from "./run-turn-port.js";
 
 export type TurnRunner = ReturnType<typeof createTurnRunner>;
@@ -262,12 +263,24 @@ export function createTurnRunner(deps: {
               await runAuthority.release(heldLease);
               childRunRegistry.abortChildrenOf(input.threadId);
             } finally {
-              deps.onRunSettled?.(input.threadId);
               markRunComplete();
+              deps.onRunSettled?.(input.threadId);
             }
           }
         }
-      })();
+      })().catch((error) => {
+        emitEvent(eventSink, {
+          level: "error",
+          source: "runtime.turn-runner",
+          name: "task.failed",
+          correlation: {
+            threadId: input.threadId,
+            turnId: handle.assistantTurnId,
+            runId: handle.assistantTurnId,
+          },
+          payload: unknownToEventPayload(error),
+        });
+      });
 
       return {
         userTurnId: handle.userTurnId,
@@ -333,14 +346,16 @@ export function createTurnRunner(deps: {
         // Set the durable flag before aborting: it is the cross-process cancel
         // channel and the truthful `ThreadStatus.cancelRequested`. The local
         // abort is only the fast path.
-        await runAuthority.cancel(threadId);
+        if (!(await runAuthority.cancel(threadId, turnId))) return "already_finished";
         childRunRegistry.abortChildrenOf(threadId, { includeBackground: true });
         active.controller.abort();
         if (active.completion) {
           // After this run finalizes as cancelled and releases, the pending
           // message starts the next turn as a drain run. Best-effort; the wake
           // sweep is the durable backstop.
-          void active.completion.then(() => startDrain(threadId)).catch(() => undefined);
+          void active.completion.then(() =>
+            createRunStarter({ startDrain }, eventSink).start(threadId),
+          );
         }
         return "cancelled";
       }
@@ -358,14 +373,8 @@ export function createTurnRunner(deps: {
         return "already_finished";
       }
 
-      // No local run owns this turn. A live lease can still belong to another
-      // process, where the durable flag is the only cancel channel.
-      if (await runAuthority.holder(threadId)) {
-        await runAuthority.cancel(threadId);
-        return "cancelled";
-      }
-
-      return "not_found";
+      // The guarded update is the cross-process channel, not a prior holder read.
+      return (await runAuthority.cancel(threadId, turnId)) ? "cancelled" : "not_found";
     },
   };
 }
