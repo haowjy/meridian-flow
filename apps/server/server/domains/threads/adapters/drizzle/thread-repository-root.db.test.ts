@@ -31,16 +31,20 @@ else
       return row?.rootThreadId ?? null;
     }
 
-    it("freezes both bake fields at the database boundary, including an empty skill list", async () => {
+    it("freezes all three bake fields at the database boundary, including an empty skill list", async () => {
+      const bakedTools = [{ type: "function", name: "write" }];
       await repos.threads.bakeComposedSystemPrompt(ids.threadId, {
         composedSystemPrompt: "Frozen prompt",
         bakedSkillSlugs: [],
+        bakedTools,
       });
       for (const patch of [
         { composedSystemPrompt: "Changed prompt" },
         { composedSystemPrompt: null },
         { bakedSkillSlugs: ["new-skill"] },
         { bakedSkillSlugs: null },
+        { bakedTools: [] },
+        { bakedTools: null },
       ]) {
         await expect(
           db.update(schema.threads).set(patch).where(eq(schema.threads.id, ids.threadId)),
@@ -52,14 +56,17 @@ else
           title: "Ordinary updates still work",
           composedSystemPrompt: "Frozen prompt",
           bakedSkillSlugs: [],
+          bakedTools,
         })
         .where(eq(schema.threads.id, ids.threadId));
       const frozen = await repos.threads.bakeComposedSystemPrompt(ids.threadId, {
         composedSystemPrompt: "Losing CAS",
         bakedSkillSlugs: ["ignored"],
+        bakedTools: [{ type: "function", name: "ignored" }],
       });
       expect(frozen.composedSystemPrompt).toBe("Frozen prompt");
       expect(frozen.bakedSkillSlugs).toEqual([]);
+      expect(frozen.bakedTools).toEqual(bakedTools);
     });
 
     it("roots an organic primary at itself", async () => {

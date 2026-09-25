@@ -96,6 +96,32 @@ bake; only an explicitly different Agent starts a new bake. Compaction
 is the sole planned in-thread exception and is not implemented; its future
 repository operation must coordinate narrowly with the database freeze guard.
 
+**A thread's whole cached request prefix — system prompt, advertised tools,
+and history — is fixed for the life of the thread.** `agent-thread-context.ts`
+still re-derives `advertiseTools(baseTools, policy)` (+ the spawn description
+and, for a subagent thread, `return_result`) every turn, but
+`turn-context-assembly.ts` only uses that live derivation to compute the
+first-attempt bake; once `isThreadPromptFrozen(thread)`, it reads
+`thread.bakedTools` verbatim instead, exactly like `composedSystemPrompt`. The
+two are baked together in the one CAS (`bakeComposedSystemPrompt`, extended
+with `bakedTools`) so a thread can never end up with a frozen prompt paired
+with a live-rederived tool list. Live `policy` (from the immutable thread
+binding) still gates execution every turn — freezing only pins what the model
+is *told* it can call, never what dispatch and the permission gate actually
+allow. If a frozen advertised tool no longer exists in the live registry,
+`ToolExecutor.executeTool` already returns an ordinary `Tool not found`
+tool-result error (`tools/tool-executor.ts`) rather than crashing — dispatch
+was always by name against the live registry, never against the advertised
+list. There is currently no refresh path at all: a code deploy that adds,
+removes, or changes a tool, or an Agent revision update, must never change a
+baked thread's tools or prompt — not on model change, not on an idle/cache-TTL
+timer. The only sanctioned trigger is compaction (not yet built) or an
+explicitly Agent-changing fork/handoff, both of which rebake prompt and tools
+together. When the model needs to learn about a change mid-thread, that is a
+system notification folded into conversation (the existing inbox/notice path
+in `work-context.ts` and the loop's notice port), never a tool-list or prompt
+change.
+
 Prompt bake
 and the `skill` tool use bound Agent `skills.available` only (name and
 description from retained `SKILL.md`), dropping `model-invocable: false`.

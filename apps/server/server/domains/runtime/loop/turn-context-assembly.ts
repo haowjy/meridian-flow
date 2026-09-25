@@ -15,7 +15,7 @@
  */
 
 import type { ThreadId } from "@meridian/contracts/runtime";
-import type { Block, Thread, Turn } from "@meridian/contracts/threads";
+import type { Block, JsonValue, Thread, Turn } from "@meridian/contracts/threads";
 import type { AgentRevisionStore } from "../../packages/index.js";
 import type { BakeComposedSystemPromptInput } from "../../threads/ports/repositories.js";
 import type { FunctionTool, Gateway, GenerateRequest, Tool } from "../gateway/index.js";
@@ -34,6 +34,11 @@ import { type BuildContextInput, buildContext } from "./context-builder.js";
 import { projectImageBlocksForModel } from "./image-context.js";
 import type { EffectiveToolPolicy } from "./permissions/project-tool-policy.js";
 import type { WorkContextReader } from "./work-context.js";
+
+/** Frozen `bakedTools` is opaque JSON at the contract boundary; the runtime owns its shape. */
+function toolsFromBakedJson(value: Thread["bakedTools"]): Tool[] | null {
+  return Array.isArray(value) ? (value as unknown as Tool[]) : null;
+}
 
 export interface AssembleNextTurnContextInput {
   thread: Thread;
@@ -81,7 +86,7 @@ export async function assembleNextTurnContext(
     baseTools: input.baseTools,
   });
 
-  const tools = agentContext.tools;
+  let tools = agentContext.tools;
   let workContextSection: string | undefined;
   let unfrozenBasePrompt: string | null | undefined;
   let appendPromptForUnfrozen: string | undefined;
@@ -93,6 +98,7 @@ export async function assembleNextTurnContext(
 
   if (isThreadPromptFrozen(thread)) {
     systemPrompt = thread.composedSystemPrompt ?? "";
+    tools = toolsFromBakedJson(thread.bakedTools) ?? tools;
   } else {
     const availableSkills = await resolveThreadModelAvailableSkills({
       thread,
@@ -116,10 +122,13 @@ export async function assembleNextTurnContext(
       thread = await input.bakeComposedSystemPrompt(thread.id as ThreadId, {
         composedSystemPrompt: bakedPrompt,
         bakedSkillSlugs: availableSkills.map((skill) => skill.slug),
+        bakedTools: tools as unknown as JsonValue,
       });
       if (!isThreadPromptFrozen(thread))
         throw new Error("Thread prompt freeze returned an unfrozen thread");
       systemPrompt = thread.composedSystemPrompt ?? bakedPrompt;
+      // A losing CAS refetches the winner's frozen tools, mirroring the prompt above.
+      tools = toolsFromBakedJson(thread.bakedTools) ?? tools;
     } else {
       systemPrompt = bakedPrompt;
       unfrozenBasePrompt = agentContext.agentBody;

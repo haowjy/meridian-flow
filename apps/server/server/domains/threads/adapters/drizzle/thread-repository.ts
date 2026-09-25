@@ -199,6 +199,7 @@ export function createDrizzleThreadRepository(
         title: thread.title ?? "",
         composedSystemPrompt: thread.composedSystemPrompt,
         bakedSkillSlugs: thread.bakedSkillSlugs,
+        bakedTools: thread.bakedTools,
         parentThreadId: thread.parentThreadId,
         rootThreadId: thread.rootThreadId,
         originTurnId: input.originTurnId ?? thread.id,
@@ -220,6 +221,7 @@ export function createDrizzleThreadRepository(
         title: thread.title ?? "",
         composedSystemPrompt: thread.composedSystemPrompt,
         bakedSkillSlugs: thread.bakedSkillSlugs,
+        bakedTools: thread.bakedTools,
         parentThreadId: input.parentThreadId,
         rootThreadId: thread.rootThreadId,
         originTurnId: input.originTurnId ?? null,
@@ -473,6 +475,7 @@ export function createDrizzleThreadRepository(
         .set({
           composedSystemPrompt: input.composedSystemPrompt,
           bakedSkillSlugs: input.bakedSkillSlugs,
+          bakedTools: input.bakedTools,
           updatedAt: new Date(),
         })
         .where(and(eq(schema.threads.id, id), isNull(schema.threads.bakedSkillSlugs)))

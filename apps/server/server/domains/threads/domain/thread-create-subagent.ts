@@ -34,6 +34,7 @@ export function buildSubagentThreadRow(input: CreateSubagentThreadInput): Thread
     ref: null,
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
+    bakedTools: null,
     workingState: null,
     agentDefinitionRevisionId: null,
     agentName: null,

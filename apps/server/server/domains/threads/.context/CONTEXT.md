@@ -9,21 +9,38 @@ instead of the N:1 `threads.workId` column.
 
 ## Prompt lifetime
 
-A thread's system prompt is frozen at first context assembly, including failed
-or cancelled provider attempts. The database rejects later changes to either
-`composed_system_prompt` or `baked_skill_slugs`. Forks copy that bake under the
-parent row lock; an unfrozen parent yields an unfrozen fork. Inherited bakes
-receive a current-Work refresh through conversation content so a historical fork
-point or summary-only handoff cannot leave stale Work authority. A subagent-only
-or generic binding cannot become a primary thread without selecting a primary
-Agent. Work changes,
+A thread's system prompt **and its advertised tool list** are frozen together
+at first context assembly, including failed or cancelled provider attempts.
+The database rejects later changes to `composed_system_prompt`,
+`baked_skill_slugs`, or `baked_tools` (migration `0002_freeze_thread_tools.sql`
+extends the `threads_frozen_prompt` trigger from migration
+`0001_freeze_thread_prompt.sql` to also watch `baked_tools`). `baked_tools` is
+untyped `jsonb`, like `working_state`: the runtime domain owns its exact shape
+(the gateway's `Tool[]`), not this domain. Forks copy that bake (prompt +
+tools together) under the parent row lock; an unfrozen parent yields an
+unfrozen fork. Inherited bakes receive a current-Work refresh through
+conversation content so a historical fork point or summary-only handoff
+cannot leave stale Work authority. A subagent-only or generic binding cannot
+become a primary thread without selecting a primary Agent. Work changes,
 notices, child results, skills and working state are in-place conversation
-content, never system-prompt edits. Fork/handoff seed turns render as user-role
-`<system_update>` content. Only an Agent-changing derivation gets a new prompt.
-Compaction is the only planned in-thread exception; no compaction path exists
-yet. Its eventual implementation must own one named repository operation and
-the corresponding narrow DB authorization (see the
+content, never system-prompt or tool-list edits. Fork/handoff seed turns
+render as user-role `<system_update>` content. Only an Agent-changing
+derivation gets a new prompt and tool bake.
+
+**There is no refresh path today.** A thread's whole cached request prefix —
+prompt, tools, and history — stays fixed for the thread's life; a code
+deploy that changes the tool registry, an Agent revision update, a model
+change, or an idle/cache-TTL timer must never rebake a live thread. Compaction
+is the only planned in-thread exception, and it is the *only* sanctioned
+trigger once built; no compaction path exists yet. Its eventual implementation
+must own one named repository operation and the corresponding narrow DB
+authorization (see the
 [database contract](../../../../../../packages/database/.context/CONTEXT.md)).
+When the model needs to learn about a change mid-thread, that is a system
+notification folded into conversation (the existing inbox/notice path), never
+a prompt or tool-list change — see the
+[runtime contract](../../runtime/.context/CONTEXT.md)
+for the tool-freeze mechanics.
 
 ## What it owns
 

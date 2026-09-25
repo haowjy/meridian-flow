@@ -266,6 +266,7 @@ You are Writer.
     await repos.threads.bakeComposedSystemPrompt(thread.id, {
       composedSystemPrompt: "frozen",
       bakedSkillSlugs: ["creative-writing-modes", "writing-principles"],
+      bakedTools: [],
     });
     const frozen = await repos.threads.findById(thread.id);
 

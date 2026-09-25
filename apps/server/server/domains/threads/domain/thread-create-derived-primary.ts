@@ -12,7 +12,7 @@ export interface CreateDerivedPrimaryThreadInput {
   originType: Extract<ThreadOriginType, "handoff" | "fork">;
   originTurnId?: TurnId | null;
   title?: string | null;
-  inheritedPrompt?: Pick<Thread, "composedSystemPrompt" | "bakedSkillSlugs">;
+  inheritedPrompt?: Pick<Thread, "composedSystemPrompt" | "bakedSkillSlugs" | "bakedTools">;
 }
 
 export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadInput): Thread {
@@ -29,6 +29,7 @@ export function buildDerivedPrimaryThreadRow(input: CreateDerivedPrimaryThreadIn
     ref: null,
     composedSystemPrompt: input.inheritedPrompt?.composedSystemPrompt ?? null,
     bakedSkillSlugs: input.inheritedPrompt?.bakedSkillSlugs ?? null,
+    bakedTools: input.inheritedPrompt?.bakedTools ?? null,
     workingState: null,
     agentDefinitionRevisionId: null,
     agentName: null,

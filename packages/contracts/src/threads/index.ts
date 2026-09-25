@@ -230,6 +230,12 @@ export interface Thread {
    * (or subagent creation). `null` = not yet baked; `[]` = baked with no skills.
    */
   bakedSkillSlugs?: string[] | null;
+  /**
+   * Advertised Tool[] payload frozen with `composedSystemPrompt` at first
+   * attempt (or subagent creation): opaque JSON, shaped by the runtime
+   * gateway's `Tool` type. `null` = not yet baked.
+   */
+  bakedTools?: JsonValue | null;
   workingState?: WorkingState | null;
   agentDefinitionRevisionId: string | null;
   /** Display name from the retained Agent definition. */

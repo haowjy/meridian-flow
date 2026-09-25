@@ -213,12 +213,16 @@ vs string `mode` split is a known inconsistency, not a pattern to extend.
 
 ### Frozen thread prompts
 
-The `threads_frozen_prompt` trigger rejects changes to either prompt bake field
-once `baked_skill_slugs` is non-null (including `[]`). First bake remains a CAS;
-identical-value writes and unrelated updates remain legal. No compaction rebake
-exists. A future compaction feature must introduce one named thread-repository
-operation and its narrowly scoped database authorization together; never disable
-the trigger for ordinary thread updates.
+The `threads_frozen_prompt` trigger rejects changes to any of the three bake
+fields (`composed_system_prompt`, `baked_skill_slugs`, `baked_tools`) once
+`baked_skill_slugs` is non-null (including `[]`). `baked_tools` (migration
+`0002_freeze_thread_tools.sql`) is untyped `jsonb`, like `working_state`: the
+runtime domain (not this package) owns its shape (`Tool[]`). First bake
+remains a CAS across all three fields together; identical-value writes and
+unrelated updates remain legal. No compaction rebake exists. A future
+compaction feature must introduce one named thread-repository operation and
+its narrowly scoped database authorization together; never disable the
+trigger for ordinary thread updates.
 
 ### Retained Agent definitions
 

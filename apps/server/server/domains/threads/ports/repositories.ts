@@ -184,10 +184,12 @@ export interface UpdateSpawnLifecycleInput {
   spawnStatus: SpawnStatus;
 }
 
-/** Atomic first-attempt bake payload for gateway prompt + skill contract. */
+/** Atomic first-attempt bake payload for gateway prompt + skill + tool contract. */
 export interface BakeComposedSystemPromptInput {
   composedSystemPrompt: string;
   bakedSkillSlugs: string[];
+  /** Exact advertised Tool[] payload, opaque JSON; the runtime owns its shape. */
+  bakedTools: JsonValue;
 }
 
 export interface ThreadRepository {

@@ -52,6 +52,8 @@ export const threads = pgTable(
     workingState: jsonb("working_state"),
     composedSystemPrompt: text("composed_system_prompt"),
     bakedSkillSlugs: jsonb("baked_skill_slugs").$type<string[] | null>(),
+    /** Frozen advertised Tool[] payload, baked atomically with the prompt. Untyped like `workingState`: the runtime owns the shape. */
+    bakedTools: jsonb("baked_tools"),
     systemPromptHash: text("system_prompt_hash"),
     parentThreadId: uuid("parent_thread_id").$type<ThreadId>(),
     rootThreadId: uuid("root_thread_id").$type<ThreadId>(),

@@ -94,6 +94,7 @@ function defaultThread(input: CreateThreadInput): Thread {
     ref: null,
     composedSystemPrompt: null,
     bakedSkillSlugs: null,
+    bakedTools: null,
     workingState: input.workingState ?? null,
     agentDefinitionRevisionId: null,
     agentName: null,
@@ -390,6 +391,7 @@ export function createInMemoryRepositories(
         ...thread,
         composedSystemPrompt: input.composedSystemPrompt,
         bakedSkillSlugs: input.bakedSkillSlugs,
+        bakedTools: input.bakedTools,
         updatedAt: toIsoString(new Date()),
       };
       threads.set(id, updated);

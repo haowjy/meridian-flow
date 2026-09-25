@@ -201,6 +201,7 @@ describe("frozen prompt provider requests", () => {
       });
       const inherited = agentSelection !== rig.alternate.selection;
       expect(fork.bakedSkillSlugs).toEqual(inherited ? parent?.bakedSkillSlugs : null);
+      expect(fork.bakedTools).toEqual(inherited ? parent?.bakedTools : null);
       expect(fork.agentDefinitionRevisionId).toBe(
         inherited
           ? rig.original.selection.definitionRevisionId
@@ -308,8 +309,13 @@ describe("frozen prompt provider requests", () => {
       userId: rig.thread.userId,
     });
     expect(fork.bakedSkillSlugs).toBeNull();
+    expect(fork.bakedTools).toBeNull();
     await rig.run(fork.id);
-    expect((await rig.repos.threads.findById(fork.id))?.bakedSkillSlugs).toEqual([]);
-    expect((await rig.repos.threads.findById(rig.thread.id))?.bakedSkillSlugs).toBeNull();
+    const rebaked = await rig.repos.threads.findById(fork.id);
+    expect(rebaked?.bakedSkillSlugs).toEqual([]);
+    expect(rebaked?.bakedTools).not.toBeNull();
+    const untouchedParent = await rig.repos.threads.findById(rig.thread.id);
+    expect(untouchedParent?.bakedSkillSlugs).toBeNull();
+    expect(untouchedParent?.bakedTools).toBeNull();
   });
 });

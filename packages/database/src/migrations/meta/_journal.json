@@ -15,6 +15,13 @@
       "when": 1790358886263,
       "tag": "0001_freeze_thread_prompt",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790362723345,
+      "tag": "0002_freeze_thread_tools",
+      "breakpoints": true
     }
   ]
 }
