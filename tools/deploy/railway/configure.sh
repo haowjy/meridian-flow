@@ -42,8 +42,10 @@ edit app variables.MERIDIAN_API_ORIGIN.value http://server.railway.internal:3000
 service www 3000 / "$environment"
 edit www variables.WEB_DATABASE_URL.value '${{server.DATABASE_URL}}' # Railway cross-service reference; verify resolves on first deploy.
 service ingress 8080 /_ingress/health "$environment"
-edit ingress variables.APP_UPSTREAM.value app.railway.internal:3000
-edit ingress variables.SERVER_UPSTREAM.value server.railway.internal:3000
+edit ingress variables.APP_UPSTREAM_HOST.value app.railway.internal
+edit ingress variables.APP_UPSTREAM_PORT.value 3000
+edit ingress variables.SERVER_UPSTREAM_HOST.value server.railway.internal
+edit ingress variables.SERVER_UPSTREAM_PORT.value 3000
 
 args+=(-m "Configure Meridian $environment runtime")
 railway "${args[@]}"

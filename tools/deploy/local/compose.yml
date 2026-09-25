@@ -108,7 +108,8 @@ services:
       WORKOS_API_KEY: sk_prod_prod_boot_smoke_not_a_real_key
       WORKOS_CLIENT_ID: client_prod_boot_smoke_not_real
       WORKOS_COOKIE_PASSWORD: prod-boot-smoke-cookie-password-000000000000
-      WORKOS_REDIRECT_URI: http://meridian.localtest.me:18080/api/auth/callback
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://meridian.localtest.me:18080}
+      WORKOS_REDIRECT_URI: ${PUBLIC_ORIGIN:-http://meridian.localtest.me:18080}/api/auth/callback
       OPENAI_API_KEY: sk-proj-local-compose-not-a-real-key
       API_REPLICA_COUNT: "1"
       PORT: "3000"
@@ -141,7 +142,8 @@ services:
       WORKOS_API_KEY: sk_prod_prod_boot_smoke_not_a_real_key
       WORKOS_CLIENT_ID: client_prod_boot_smoke_not_real
       WORKOS_COOKIE_PASSWORD: prod-boot-smoke-cookie-password-000000000000
-      WORKOS_REDIRECT_URI: http://meridian.localtest.me:18080/api/auth/callback
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://meridian.localtest.me:18080}
+      WORKOS_REDIRECT_URI: ${PUBLIC_ORIGIN:-http://meridian.localtest.me:18080}/api/auth/callback
       PORT: "3000"
     depends_on:
       server:
@@ -153,29 +155,6 @@ services:
       retries: 20
       start_period: 15s
 
-  www:
-    image: meridian-production-shaped-www:latest
-    build:
-      context: ../../..
-      dockerfile: apps/www/Dockerfile
-      args:
-        MERIDIAN_VERSION: ${MERIDIAN_VERSION:-0.0.0-local}
-        MERIDIAN_RELEASE_SHA: ${MERIDIAN_RELEASE_SHA:-local}
-    environment:
-      NODE_ENV: production
-      APP_ENV: production
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/meridian
-      PORT: "3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
-      interval: 3s
-      timeout: 5s
-      retries: 20
-      start_period: 10s
-
   ingress:
     image: meridian-production-shaped-ingress:latest
     build:
@@ -186,8 +165,10 @@ services:
         MERIDIAN_RELEASE_SHA: ${MERIDIAN_RELEASE_SHA:-local}
     environment:
       PORT: "8080"
-      APP_UPSTREAM: app:3000
-      SERVER_UPSTREAM: server:3000
+      APP_UPSTREAM_HOST: app
+      APP_UPSTREAM_PORT: "3000"
+      SERVER_UPSTREAM_HOST: server
+      SERVER_UPSTREAM_PORT: "3000"
     ports:
       - "18080:8080"
     depends_on:
@@ -200,8 +181,6 @@ services:
       interval: 3s
       timeout: 5s
       retries: 20
-
-  # The release lane will add the backup+migrate one-shot service here.
 
 volumes:
   postgres-data:

@@ -135,7 +135,7 @@ jobs:
 
   prod-boot:
     name: prod-boot
-    # Skip draft PRs; pushes and workflow_call always run.
+    # Skip draft PRs; push runs always execute.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:

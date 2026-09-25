@@ -5,12 +5,6 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      version:
-        description: Existing built release tag, e.g. v1.2.3
-        required: true
-        type: string
 
 jobs:
   build:
@@ -72,70 +66,31 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build server image
-        id: server
-        uses: docker/build-push-action@v6
+      - name: Build and push release images
+        id: images
         if: steps.existing.outputs.exists != 'true'
-        with:
-          context: .
-          file: apps/server/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/haowjy/meridian-flow-server:v${{ steps.release.outputs.version }}
-            ghcr.io/haowjy/meridian-flow-server:sha-${{ steps.release.outputs.sha }}
-          build-args: |
-            MERIDIAN_VERSION=${{ steps.release.outputs.version }}
-            MERIDIAN_RELEASE_SHA=${{ steps.release.outputs.sha }}
-          cache-from: type=gha,scope=meridian-server
-          cache-to: type=gha,mode=max,scope=meridian-server
-      - name: Build app image
-        id: app
-        uses: docker/build-push-action@v6
-        if: steps.existing.outputs.exists != 'true'
-        with:
-          context: .
-          file: apps/app/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/haowjy/meridian-flow-app:v${{ steps.release.outputs.version }}
-            ghcr.io/haowjy/meridian-flow-app:sha-${{ steps.release.outputs.sha }}
-          build-args: |
-            MERIDIAN_VERSION=${{ steps.release.outputs.version }}
-            MERIDIAN_RELEASE_SHA=${{ steps.release.outputs.sha }}
-          cache-from: type=gha,scope=meridian-app
-          cache-to: type=gha,mode=max,scope=meridian-app
-      - name: Build www image
-        id: www
-        uses: docker/build-push-action@v6
-        if: steps.existing.outputs.exists != 'true'
-        with:
-          context: .
-          file: apps/www/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/haowjy/meridian-flow-www:v${{ steps.release.outputs.version }}
-            ghcr.io/haowjy/meridian-flow-www:sha-${{ steps.release.outputs.sha }}
-          build-args: |
-            MERIDIAN_VERSION=${{ steps.release.outputs.version }}
-            MERIDIAN_RELEASE_SHA=${{ steps.release.outputs.sha }}
-          cache-from: type=gha,scope=meridian-www
-          cache-to: type=gha,mode=max,scope=meridian-www
-      - name: Build ingress image
-        id: ingress
-        uses: docker/build-push-action@v6
-        if: steps.existing.outputs.exists != 'true'
-        with:
-          context: .
-          file: tools/deploy/ingress/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/haowjy/meridian-flow-ingress:v${{ steps.release.outputs.version }}
-            ghcr.io/haowjy/meridian-flow-ingress:sha-${{ steps.release.outputs.sha }}
-          build-args: |
-            MERIDIAN_VERSION=${{ steps.release.outputs.version }}
-            MERIDIAN_RELEASE_SHA=${{ steps.release.outputs.sha }}
-          cache-from: type=gha,scope=meridian-ingress
-          cache-to: type=gha,mode=max,scope=meridian-ingress
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+        run: |
+          set -euo pipefail
+          for service in server app www ingress; do
+            case "$service" in
+              server|app|www) dockerfile="apps/$service/Dockerfile" ;;
+              ingress) dockerfile=tools/deploy/ingress/Dockerfile ;;
+            esac
+            image="ghcr.io/haowjy/meridian-flow-$service"
+            metadata="$RUNNER_TEMP/$service-metadata.json"
+            docker buildx build --push --metadata-file "$metadata" \
+              --file "$dockerfile" --tag "$image:v$VERSION" \
+              --tag "$image:sha-$RELEASE_SHA" \
+              --build-arg "MERIDIAN_VERSION=$VERSION" \
+              --build-arg "MERIDIAN_RELEASE_SHA=$RELEASE_SHA" \
+              --cache-from "type=gha,scope=meridian-$service" \
+              --cache-to "type=gha,mode=max,scope=meridian-$service" .
+            digest=$(jq -er '.["containerimage.digest"]' "$metadata")
+            echo "$service=$digest" >> "$GITHUB_OUTPUT"
+          done
       - name: Create manifest and release
         if: steps.existing.outputs.exists != 'true'
         env:
@@ -143,10 +98,10 @@ jobs:
           TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
           SHA: ${{ steps.release.outputs.sha }}
-          SERVER_DIGEST: ${{ steps.server.outputs.digest }}
-          APP_DIGEST: ${{ steps.app.outputs.digest }}
-          WWW_DIGEST: ${{ steps.www.outputs.digest }}
-          INGRESS_DIGEST: ${{ steps.ingress.outputs.digest }}
+          SERVER_DIGEST: ${{ steps.images.outputs.server }}
+          APP_DIGEST: ${{ steps.images.outputs.app }}
+          WWW_DIGEST: ${{ steps.images.outputs.www }}
+          INGRESS_DIGEST: ${{ steps.images.outputs.ingress }}
         run: |
           node tools/deploy/manifest.ts create release-manifest.json
           node tools/deploy/manifest.ts validate release-manifest.json "$TAG" "$SHA"
@@ -156,7 +111,7 @@ jobs:
           flags=(); [[ "$VERSION" == *-rc.* ]] && flags+=(--prerelease)
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file release-notes.md "${flags[@]}"
-            gh release upload "$TAG" release-manifest.json --repo "$GITHUB_REPOSITORY" --clobber
+            gh release upload "$TAG" release-manifest.json --repo "$GITHUB_REPOSITORY"
           else
             gh release create "$TAG" release-manifest.json --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes-file release-notes.md "${flags[@]}"
           fi
@@ -181,36 +136,4 @@ jobs:
     with:
       environment: staging
       version: ${{ needs.build.outputs.version }}
-    secrets: inherit
-
-  deploy-existing:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    outputs:
-      version: ${{ steps.validate.outputs.version }}
-    steps:
-      - name: Validate existing release
-        id: validate
-        env:
-          VERSION_INPUT: ${{ inputs.version }}
-        run: |
-          version="$VERSION_INPUT"
-          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || { echo "::error::Enter an existing release tag such as v1.2.3"; exit 1; }
-          echo "version=${version#v}" >> "$GITHUB_OUTPUT"
-  deploy-existing-call:
-    needs: deploy-existing
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && needs.deploy-existing.result == 'success'
-    concurrency:
-      group: deploy-staging
-      cancel-in-progress: false
-    permissions:
-      contents: read
-      statuses: write
-    uses: ./.github/workflows/deploy-environment.yml
-    with:
-      environment: staging
-      version: ${{ needs.deploy-existing.outputs.version }}
     secrets: inherit
