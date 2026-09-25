@@ -1,37 +1,4 @@
-/**
- * The block drag itself: two doors, one gesture, one finalizer.
- *
- * The margin handle is one door; the body of a block object — a figure, a rule,
- * a rendered diagram — is the other, because direct manipulation is what a
- * writer reaches for first: you grab the thing and pull it where it goes. An
- * object that lands inline is not this gesture at all: it goes through
- * ProseMirror's own drag, which carries it between two words. Which drag a body
- * starts is a registration (`EDITOR_OBJECT_TYPES`), never a node name read here.
- *
- * Both doors are ONE controller deliberately. They share the hold in the
- * document, the kernel's drag token, the slop that decides a press was a click,
- * and every way the gesture can end; splitting them would be two state machines
- * that have to agree.
- *
- * Two rules run through all of it, and both are about a document that moves
- * while a hand is on it (law 9: nothing gates a write):
- *
- * - **Every position held across a transaction goes through the document's own
- *   hold.** A block a peer deleted must take the gesture with it rather than
- *   handing the drop to the neighbour.
- * - **One finalizer ends the gesture, and everything that can end it calls
- *   that one.** Release, browser cancel, lost capture, a blurred window,
- *   Escape, and a peer deleting the block under the pointer are six ways to
- *   stop; five are interruptions, and any of them leaving the kernel suppressed
- *   would freeze every surface on the page until reload. Escape arrives through
- *   the kernel rather than a listener here: a gesture is the deepest rung of the
- *   walk home (law 3), so the chain cancels it through the handler `beginDrag`
- *   was given, wherever the writer's focus had got to.
- *
- * The kernel owns the timing and the standing-down: a drag is declared with
- * `chrome.beginDrag`, whose closer is token-guarded, so calling it late is safe
- * and calling it twice is nothing.
- */
+/** Coordinates block dragging from press through drop. */
 
 import type { Editor } from "@tiptap/core";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -46,31 +13,13 @@ import {
 } from "./block-geometry";
 import { blockAt, moveBlockToSeamTransaction } from "./block-targets";
 
-/**
- * Pointer travel that turns a press into a drag, not a click. Straight-line
- * distance: summing the axes made a 2px diagonal jitter — a hand resting on a
- * mouse — read as 4px of travel, so the block faded for a gesture that never
- * went anywhere.
- */
+/** Pointer travel that turns a press into a drag, not a click. */
 const DRAG_SLOP_PX = 4;
 
-/**
- * Which door the press came through. The gesture is the same one either way;
- * only the click at the end of a press that never travelled differs — the
- * handle's click opens the menu, and an object's body leaves the click to
- * ProseMirror, which puts the jade ring on it (law 1).
- */
+/** Which door the press came through. */
 type DragSource = "handle" | "body";
 
-/**
- * A press that may become a drag, from the moment it lands to whatever ends it.
- *
- * The drop target is NOT stored. It is derived from `pointerY` every time it
- * is needed, because a child index goes stale the instant a peer inserts a
- * block above, and the jade line would then promise a seam the drop would
- * miss. The pointer is the writer's intent and the geometry under it is the
- * truth; a seam is only ever a reading of the two.
- */
+/** A press that may become a drag, from the moment it lands to whatever ends it. */
 type Gesture = {
   pointerId: number;
   source: DragSource;
@@ -82,11 +31,7 @@ type Gesture = {
   lifted: boolean;
   /** The kernel's closer, once the press became a drag. */
   endDrag: (() => void) | null;
-  /**
-   * The element holding the pointer, when the press took capture. Only the
-   * handle does: capture retargets the mouse events ProseMirror reads to
-   * decide a click, and a body press has to leave that reading alone.
-   */
+  /** The element holding the pointer, when the press took capture. */
   capture: HTMLElement | null;
 };
 
@@ -96,22 +41,14 @@ export type BlockPress = Pick<PointerEvent, "pointerId" | "clientX" | "clientY">
 export type BlockGesture = {
   /** The seam the drop line belongs on, or null while nothing has lifted. */
   seamIndex: number | null;
-  /**
-   * True from the press to the finish, lifted or not. The handle reads it to
-   * stay mounted through the whole gesture: unmounting it mid-drag would drop
-   * the pointer capture the browser is holding for it.
-   */
+  /** True from the press to the finish, lifted or not. */
   active: boolean;
   /**
    * The margin handle's press. The object-body door is inside the controller,
    * because it listens on the prose rather than on chrome this lane renders.
    */
   pressHandle: (press: BlockPress, pos: number, capture: HTMLElement) => void;
-  /**
-   * True while a press owns the pointer. Read synchronously by the doors that
-   * must decline mid-gesture — the approach's probe, the grip's right-click —
-   * so it is a call rather than a rendered flag.
-   */
+  /** True while a press owns the pointer. */
   inFlight: () => boolean;
 };
 
@@ -141,14 +78,7 @@ export function useBlockMovementGesture({
   const onHandleClickRef = useRef(onHandleClick);
   onHandleClickRef.current = onHandleClick;
 
-  /**
-   * End the gesture, once. `commit` is what the writer asked for: a release
-   * commits, every interruption does not.
-   *
-   * Ordering matters twice over. The held position is read before the hold is
-   * released, because letting go is what forgets it; and `gestureRef` is
-   * cleared first, so the transactions this dispatches cannot re-enter here.
-   */
+  /** End the gesture, once. */
   const finishGesture = useCallback(
     (commit: boolean) => {
       const gesture = gestureRef.current;
@@ -162,7 +92,7 @@ export function useBlockMovementGesture({
         if (gesture.lifted) dropHeldBlock(editor, held, gesture.pointerY);
         // A press that never travelled is a click. The handle's click opens
         // the menu; an object's body leaves the click alone, and ProseMirror
-        // is already turning it into the jade ring (law 1).
+        // is already turning it into the jade ring ().
         else if (gesture.source === "handle") onHandleClickRef.current(held);
       }
 
@@ -176,11 +106,7 @@ export function useBlockMovementGesture({
     [editor],
   );
 
-  /**
-   * Take the press. Both doors land here, so the handle and an object's body
-   * start ONE gesture: the same hold in the document, the same kernel token
-   * once it lifts, the same finalizer whatever ends it.
-   */
+  /** Take the press. */
   const beginGesture = useCallback(
     (press: BlockPress, pos: number, source: DragSource, capture: HTMLElement | null) => {
       capture?.setPointerCapture?.(press.pointerId);
@@ -222,31 +148,7 @@ export function useBlockMovementGesture({
     };
   }, [editor, finishGesture]);
 
-  /**
-   * The object door: a press on the body of an object the registry drags as a
-   * block starts the drag the handle starts, on that object's top-level block.
-   *
-   * The press is NOT prevented. A press that never travels is a click, and
-   * law 1's click has to reach ProseMirror to put the jade ring on the object.
-   * What has to be stopped is what the browser would do with the press
-   * INSTEAD, and the two answers are stopped on different terms:
-   *
-   * - **Its own drag**, refused over a BLOCK object. ProseMirror arms it on
-   *   mousedown (a picture is `draggable` in the schema, a selected node is
-   *   draggable whatever the schema says), it shows no block drop line, and it
-   *   moves the node by serializing and re-parsing it — which brought a figure
-   *   back as a bare paragraph. Over an object that lands inline that same
-   *   drag is the RIGHT one and is left alone: it carries an inline slice, the
-   *   dropcursor draws the caret between characters, and the drop is one
-   *   transaction (human ruling, 2026-07-29).
-   * - **A text selection** growing out of the object across everything the
-   *   pointer crosses, refused while this gesture owns the pointer. Prose
-   *   that merely runs THROUGH an object is untouched: that selection starts
-   *   somewhere else, and this gesture never begins.
-   *
-   * Mouse only. A finger has no cursor to aim with and a drag under it is the
-   * page scrolling; touch moves a block through the handle it taps (law 8).
-   */
+  /** The object door: a press on the body of an object the registry drags as a block starts the drag the handle starts, on that object's top-level block. */
   useEffect(() => {
     if (!editable || !chrome) return;
     const dom = editor.view.dom;

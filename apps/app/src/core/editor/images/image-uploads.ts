@@ -1,18 +1,4 @@
-/**
- * A picture from this machine: the slot it takes, and what happens to that slot
- * while its bytes travel.
- *
- * The order is the design (§5.6) and it is the whole fix: the node lands first,
- * the upload follows, and everything after is that node's business. Landing
- * writes one attribute onto the same node, so nothing is inserted at completion
- * and no line of prose moves.
- *
- * One ordering rule is not cosmetic. An upload's entry — and therefore the owner
- * signal peers read (`image-upload-presence.ts`) — is opened BEFORE the token's
- * slot reaches the document. Awareness leaves on the announcement's own
- * dispatch and the document update leaves on the insert's, so no collaborator
- * can see a slot in flight before it knows someone is filling it.
- */
+/** Runs image upload and replacement commands. */
 
 import { t } from "@lingui/core/macro";
 import type { Editor } from "@tiptap/core";
@@ -50,13 +36,7 @@ import {
   UPLOAD_TOKEN_ATTR,
 } from "./pending-images";
 
-/**
- * Ask the writer for an image file, and hand it to whoever asked.
- *
- * The input is created and clicked rather than rendered: a host that has to
- * keep a hidden `<input>` in its tree is a host that owns part of this
- * lifecycle.
- */
+/** Ask the writer for an image file, and hand it to whoever asked. */
 function pickImageFile(onFile: (file: File) => void): void {
   const input = window.document.createElement("input");
   input.type = "file";
@@ -74,11 +54,7 @@ function pickImageFile(onFile: (file: File) => void): void {
   input.click();
 }
 
-/**
- * Is there anywhere for a picture to go? Refusing out loud when there is no
- * project is the same law-5 rule as the greyed toolbar control — a picker that
- * leads nowhere is worse than a control that says why.
- */
+/** Is there anywhere for a picture to go? */
 function ingressHost(editor: Editor | null): ImageIngressHost | null {
   const storage = imageIngressStorage(editor);
   if (!editor || !storage || !editor.isEditable) return null;
@@ -89,24 +65,7 @@ function ingressHost(editor: Editor | null): ImageIngressHost | null {
   return storage.host;
 }
 
-/**
- * Where a picture the writer is about to choose goes.
- *
- * **A target is held, never a number.** The operating system's chooser stays
- * open for as long as the writer takes, and every raw position in the document
- * means something else after one peer write or one AI write — the same hazard
- * `anchors.ts` exists for, at its worst. So the caller says what it is aiming at
- * BEFORE the chooser opens, in a shape that outlives it, and the file that comes
- * back is resolved against the document as it now stands. A picker holding
- * nothing would read the selection at file-return time, which is how a picture
- * asked for from a table cell once landed past the whole table.
- *
- * The two kinds are the two things a picture can be aimed at, and each takes the
- * hold that fits it: an existing picture is a NODE, and it is that node the
- * writer pointed at (a hold ends at a Yjs move, which is the honest answer for a
- * gesture); a new picture is a PLACE in the prose, which has no node yet and
- * survives as an anchor.
- */
+/** Where a picture the writer is about to choose goes. */
 export type ImagePickerTarget =
   /** A new picture at a place in the prose. */
   | { kind: "insert"; at: EditorAnchor }
@@ -121,7 +80,7 @@ export function imageCaretTarget(editor: Editor | null): ImagePickerTarget | nul
 }
 
 /**
- * The picture at `pos`, for §5.6's Replace verb (on the object surface's ⋮), or
+ * The picture at `pos`, for's Replace verb (on the object surface's ⋮), or
  * null when nothing starts there.
  */
 export function imageReplaceTarget(editor: Editor | null, pos: number): ImagePickerTarget | null {
@@ -130,14 +89,7 @@ export function imageReplaceTarget(editor: Editor | null, pos: number): ImagePic
   return slot && { kind: "replace", slot };
 }
 
-/**
- * Ask the writer for a picture, and put it where the target says.
- *
- * One door for both kinds, because the part that is hard is the part they share:
- * the wait. What differs afterwards is only what a resolved target means — an
- * insert makes a slot, a replace reuses one — and both refuse out loud rather
- * than falling back to wherever the caret has drifted to.
- */
+/** Ask the writer for a picture, and put it where the target says. */
 export function openImagePicker(editor: Editor | null, target: ImagePickerTarget | null): void {
   if (!editor || !target || !ingressHost(editor)) return;
   pickImageFile((file) =>
@@ -147,20 +99,7 @@ export function openImagePicker(editor: Editor | null, target: ImagePickerTarget
   );
 }
 
-/**
- * A new picture at the place the writer asked from, however far the document
- * has moved since.
- *
- * The anchor answers where that place is now, and the schema answers whether it
- * is still a place a picture may stand — a peer can have turned the paragraph
- * into something that holds no inline content, or taken it away entirely. Both
- * questions are asked before an entry is opened, so a refusal costs no upload
- * and leaves the project no asset it has no use for.
- *
- * Nothing here searches for somewhere else to put it. The writer pointed at one
- * place; a picture that appeared anywhere but there — after the table they were
- * standing in, say — is a worse answer than a picture that says it cannot go.
- */
+/** A new picture at the place the writer asked from, however far the document has moved since. */
 function insertImageAtAnchor(editor: Editor, anchor: EditorAnchor, file: File): void {
   const storage = imageIngressStorage(editor);
   if (!storage) return;
@@ -172,15 +111,7 @@ function insertImageAtAnchor(editor: Editor, anchor: EditorAnchor, file: File): 
   insertImageFile(editor, file, at.from);
 }
 
-/**
- * Another picture for a slot the writer already placed (§5.6's Replace verb).
- *
- * The node stays exactly where it is and keeps everything the writer wrote about
- * it — its alt text, and a figure's caption and label. The ordinary upload
- * lifecycle then runs over that slot: same entry, same progress, same failure.
- * So nothing is inserted, nothing is removed, the manuscript does not move, and
- * one undo puts the old picture back (`landUpload`).
- */
+/** Another picture for a slot the writer already placed. */
 function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): void {
   const storage = imageIngressStorage(editor);
   const host = ingressHost(editor);
@@ -217,27 +148,14 @@ function replaceImageFile(editor: Editor | null, target: NodeHold, file: File): 
   void runUpload(editor, host, upload.id, upload.signal);
 }
 
-/**
- * Put this picture in the document and start sending it.
- *
- * The node lands first and the upload follows, which is the whole point: the
- * writer's slot is theirs from the moment they asked for it, and everything
- * after this is that node's business.
- */
+/** Put this picture in the document and start sending it. */
 export function insertImageFile(editor: Editor | null, file: File, pos?: number): void {
   openImageFileUpload(editor, file, (target, alt, token) =>
     insertPendingImageNode(target, alt, token, pos),
   );
 }
 
-/**
- * An image file arriving from the clipboard — the paste door's one decision.
- *
- * A paste over a swept rectangle of cells means what every paste over a sweep
- * means (`../table-sweep-paste.ts`): the sweep is replaced, and the picture —
- * paragraph-hosted, the shape a cell block is — lands in the top-left cell.
- * Any other selection is the picture at the caret, exactly as an insert.
- */
+/** An image file arriving from the clipboard — the paste door's one decision. */
 export function pasteImageFile(editor: Editor | null, file: File): void {
   if (!editor || editor.isDestroyed) return;
   if (editor.state.selection instanceof CellSelection) {
@@ -247,12 +165,7 @@ export function pasteImageFile(editor: Editor | null, file: File): void {
   insertImageFile(editor, file, editor.state.selection.from);
 }
 
-/**
- * One lifecycle for a picture file with somewhere to go: validate the file,
- * open the upload, let `place` land the slot, and start the bytes. `place`
- * answers where the slot stands — null is a refusal, and it costs no upload
- * and leaves the project no orphaned asset.
- */
+/** One lifecycle for a picture file with somewhere to go: validate the file, open the upload, let `place` land the slot, and start the bytes. */
 function openImageFileUpload(
   editor: Editor | null,
   file: File,
@@ -306,18 +219,7 @@ export function removePendingImage(editor: Editor | null, pos: number): void {
   editor.view.dispatch(transaction);
 }
 
-/**
- * The picture's slot, opened where the writer asked for it.
- *
- * `image` is an inline atom (§5.6), so where it can sit is a schema question
- * and not a preference: inside a paragraph it goes between the words, and
- * anywhere that cannot hold an inline picture (the seam between blocks, a code
- * fence) it arrives in a paragraph of its own after that block. Null is the
- * refusal, for a position that can take neither.
- *
- * The slot carries its upload's token from the first moment, in the same
- * transaction, so the insert and its identity are one undoable step.
- */
+/** The picture's slot, opened where the writer asked for it. */
 function insertPendingImageNode(
   editor: Editor,
   alt: string,
@@ -359,13 +261,7 @@ function insertPendingImageNode(
   return imagePos;
 }
 
-/**
- * The picture's slot, landed as a sweep-replace: the swept cells emptied and
- * the picture standing in its own paragraph in the rectangle's top-left cell,
- * in one transaction — so one undo restores the sweep and takes the picture
- * with it. The transaction's shape is the sweep module's, not invented here;
- * this only says what the landing content is.
- */
+/** The picture's slot, landed as a sweep-replace: the swept cells emptied and the picture standing in its own paragraph in the rectangle's top-left cell, in one transaction — so one undo restores the sweep and takes the picture with it. */
 function insertPendingImageInSweep(editor: Editor, alt: string, token: string): number | null {
   const { state } = editor;
   const imageType = state.schema.nodes.image;
@@ -385,15 +281,7 @@ function insertPendingImageInSweep(editor: Editor, alt: string, token: string): 
   return landed.from + 1;
 }
 
-/**
- * Write these attributes onto the slot at `pos`, over the ones it has now.
- *
- * Every write this file makes to an existing slot is one of these, and the two
- * facts that differ between them are its arguments: whether the writer will undo
- * it, and whether it also closes the upload's entry. Reading the node back here
- * rather than taking it from the caller is what keeps the merge honest — a
- * figure's caption, a peer's alt-text edit, whatever the slot gained since.
- */
+/** Write these attributes onto the slot at `pos`, over the ones it has now. */
 function writeSlot(
   editor: Editor,
   pos: number,
@@ -414,14 +302,7 @@ function writeSlot(
 
 type OpenUpload = { id: string; signal: AbortSignal };
 
-/**
- * Open one upload's lifecycle: its token, its entry, and the owner signal every
- * peer reads through it.
- *
- * Deliberately before the token's slot exists in the document. The frame is
- * measured from here too, so the slot is the picture's real shape before a
- * single byte has arrived.
- */
+/** Open one upload's lifecycle: its token, its entry, and the owner signal every peer reads through it. */
 function beginUpload(
   editor: Editor,
   input: { file: File; alt: string; landing: PendingImageUpload["landing"] },
@@ -490,21 +371,7 @@ async function runUpload(
   }
 }
 
-/**
- * The bytes arrived: the picture's own node becomes the picture.
- *
- * The slot never moves and nothing is inserted or removed, which is why the
- * manuscript does not move — and the fence is re-read here because an upload
- * outlives the connection that started it.
- *
- * **What the writer undoes depends on how the slot was opened**, which is why the
- * entry carries it. An INSERT put the node there in a historical transaction, so
- * its bytes arriving is bookkeeping: undo takes the picture away rather than
- * stepping back through its own arrival and leaving an empty frame. A REPLACE was
- * aimed at a picture the writer already had, so the arrival IS the edit — this
- * picture became that picture — and it lands as one history event whose undo puts
- * the old one back.
- */
+/** The bytes arrived: the picture's own node becomes the picture. */
 function landUpload(editor: Editor, id: string, uploaded: UploadedImage): void {
   const storage = imageIngressStorage(editor);
   const entry = uploadEntry(editor, id);
