@@ -27,6 +27,7 @@ export type SequencedEventInternal = {
 
 type ThreadHubState = {
   events: SequencedEventInternal[];
+  journalHeadSeq: bigint;
   publishedJournalEvents: Set<string>;
   projector: ReturnType<typeof createOrchestratorEventProjector>;
   listeners: Set<(event: SequencedEventInternal) => void>;
@@ -126,6 +127,7 @@ export function createThreadEventHub(
       projectors.set(threadId, projector);
       state = {
         events: [],
+        journalHeadSeq: 0n,
         publishedJournalEvents: new Set(),
         projector,
         listeners: new Set(),
@@ -200,6 +202,7 @@ export function createThreadEventHub(
     orchestratorEvent: OrchestratorEvent,
   ): void {
     const state = getState(threadId);
+    if (journalSeq > state.journalHeadSeq) state.journalHeadSeq = journalSeq;
     const eventKey = `${journalSeq}:${JSON.stringify(orchestratorEvent)}`;
     if (state.publishedJournalEvents.has(eventKey)) return;
     state.publishedJournalEvents.add(eventKey);
@@ -315,6 +318,15 @@ export function createThreadEventHub(
 
     hasThreadState(threadId: ThreadId): boolean {
       return threads.has(threadId);
+    },
+
+    activeThreadJournalHeads(): Array<{ threadId: ThreadId; afterSeq: bigint }> {
+      return [...threads.entries()]
+        .filter(([, state]) => state.listeners.size > 0)
+        .map(([threadId, state]) => ({
+          threadId: threadId as ThreadId,
+          afterSeq: state.journalHeadSeq,
+        }));
     },
 
     async headSeq(threadId: ThreadId): Promise<bigint> {

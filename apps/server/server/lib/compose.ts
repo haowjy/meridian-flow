@@ -909,6 +909,9 @@ export function createInMemoryAppServices(): AppServices {
     hasThreadState() {
       return false;
     },
+    activeThreadJournalHeads() {
+      return [];
+    },
   };
 
   const contextCatalog = new InMemoryContextCatalog();
@@ -1208,6 +1211,7 @@ export function createInMemoryAppServices(): AppServices {
       async cancel() {
         return "not_found" as const;
       },
+      async shutdown() {},
     },
     userTurnAdmission: {
       async admit(input) {
