@@ -1,69 +1,69 @@
 {
-  auto_https off
+	auto_https off
 }
 
 :{$PORT:8080} {
-  @ingressHealth path /_ingress/health
-  handle @ingressHealth {
-    respond 200
-  }
+	@ingressHealth path /_ingress/health
+	handle @ingressHealth {
+		respond 200
+	}
 
-  @serverHealth path /healthz /readyz
-  handle @serverHealth {
-    reverse_proxy {
-      dynamic a {$SERVER_UPSTREAM_HOST} {$SERVER_UPSTREAM_PORT} {
-        refresh 30s
-      }
-      header_up X-Forwarded-Proto https
-      transport http {
-        dial_timeout 5s
-        response_header_timeout 60s
-      }
-    }
-  }
+	@serverHealth path /healthz /readyz
+	handle @serverHealth {
+		reverse_proxy {
+			dynamic a {$SERVER_UPSTREAM_HOST} {$SERVER_UPSTREAM_PORT} {
+				refresh 30s
+			}
+			header_up X-Forwarded-Proto https
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 60s
+			}
+		}
+	}
 
-  request_body {
-    max_size 10MB
-  }
+	request_body {
+		max_size 10MB
+	}
 
-  @appOwned path /api/auth/callback /api/auth/dev-login
-  handle @appOwned {
-    reverse_proxy {
-      dynamic a {$APP_UPSTREAM_HOST} {$APP_UPSTREAM_PORT} {
-        refresh 30s
-      }
-      header_up X-Forwarded-Proto https
-      transport http {
-        dial_timeout 5s
-        response_header_timeout 60s
-      }
-    }
-  }
+	@appOwned path /api/auth/callback /api/auth/dev-login
+	handle @appOwned {
+		reverse_proxy {
+			dynamic a {$APP_UPSTREAM_HOST} {$APP_UPSTREAM_PORT} {
+				refresh 30s
+			}
+			header_up X-Forwarded-Proto https
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 60s
+			}
+		}
+	}
 
-  @serverOwned path /api/* /ws/*
-  handle @serverOwned {
-    reverse_proxy {
-      dynamic a {$SERVER_UPSTREAM_HOST} {$SERVER_UPSTREAM_PORT} {
-        refresh 30s
-      }
-      header_up X-Forwarded-Proto https
-      transport http {
-        dial_timeout 5s
-        response_header_timeout 60s
-      }
-    }
-  }
+	@serverOwned path /api/* /ws/*
+	handle @serverOwned {
+		reverse_proxy {
+			dynamic a {$SERVER_UPSTREAM_HOST} {$SERVER_UPSTREAM_PORT} {
+				refresh 30s
+			}
+			header_up X-Forwarded-Proto https
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 60s
+			}
+		}
+	}
 
-  handle {
-    reverse_proxy {
-      dynamic a {$APP_UPSTREAM_HOST} {$APP_UPSTREAM_PORT} {
-        refresh 30s
-      }
-      header_up X-Forwarded-Proto https
-      transport http {
-        dial_timeout 5s
-        response_header_timeout 60s
-      }
-    }
-  }
+	handle {
+		reverse_proxy {
+			dynamic a {$APP_UPSTREAM_HOST} {$APP_UPSTREAM_PORT} {
+				refresh 30s
+			}
+			header_up X-Forwarded-Proto https
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 60s
+			}
+		}
+	}
 }
