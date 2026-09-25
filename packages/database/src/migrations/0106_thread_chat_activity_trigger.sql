@@ -7,9 +7,12 @@
 -- the triggers below, which all call the same recompute function.
 CREATE FUNCTION recompute_thread_chat_activity(p_thread_id uuid) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
+  -- Lock first, then recompute in a separate statement: under READ COMMITTED a
+  -- single UPDATE that waits on a concurrent writer re-checks the thread row
+  -- but keeps its pre-wait snapshot of turns, so it could write a stale head.
+  PERFORM 1 FROM threads WHERE id = p_thread_id FOR UPDATE;
   -- Canonical visible-conversational-head predicate. Kept in lockstep with
-  -- visibleConversationalTurnSql (apps/server/.../visible-conversation-sql.ts)
-  -- and isVisibleConversationalTurn (domain/visible-conversation-policy.ts).
+  -- isVisibleConversationalTurn (apps/server/.../domain/visible-conversation-policy.ts).
   UPDATE threads t SET (conversational_leaf_turn_id, last_activity_at) = (
     SELECT conversational_head.turn_id, COALESCE(conversational_head.activity_at, t.created_at)
     FROM (SELECT 1) AS anchor
