@@ -12,7 +12,7 @@ older staging-verified version; migrations remain forward-only.
   configures healthchecks, lifecycle behavior, and non-secret references; it
   never owns `source.image` or secret values.
 - `smoke-check.ts` proves HTTP, readiness, release identity, login, websocket,
-  and optionally www runtime behavior. The unauthenticated Yjs websocket must open, then close with code 4401 and reason `auth_failed`. A command that cannot prove its work
+  and optionally www runtime behavior. Ingress must route `/healthz` and `/readyz` to the server. The unauthenticated Yjs websocket must open, then close with code 4401 and reason `auth_failed`. A command that cannot prove its work
   must exit non-zero; missing config is never a successful stub.
 - Workflow files own release image builds, manifests, GitHub status, and
   staging/production promotion gates.
