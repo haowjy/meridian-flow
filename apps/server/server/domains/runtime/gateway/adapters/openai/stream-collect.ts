@@ -17,7 +17,7 @@
  *   guarantee non-interleaving during streaming, so Meridian buffers by index
  *   and sorts at assembly time rather than trusting arrival order.
  * - `response.function_call_arguments.delta` events carry `item_id` and
- *   `output_index` but NOT `call_id` (confirmed in SDK types). This is why
+ *   `output_index` but not `call_id`. This is why
  *   argument deltas are buffered in `pendingDeltas` until the durable `call_id`
  *   arrives via `response.output_item.added` or a later event.
  * - SDK v6 renamed the streaming event literals from `response.reasoning.*`
