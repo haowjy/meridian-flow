@@ -34,6 +34,27 @@ export async function runShutdownSteps(
   }
 }
 
+export async function flushBeforeDeadline(
+  flush: () => Promise<void>,
+  remainingMs: number,
+): Promise<{ status: "flushed" } | { status: "failed"; error: unknown } | { status: "deadline" }> {
+  if (remainingMs <= 0) return { status: "deadline" };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const result = await Promise.race([
+    Promise.resolve()
+      .then(flush)
+      .then(
+        () => ({ status: "flushed" as const }),
+        (error: unknown) => ({ status: "failed" as const, error }),
+      ),
+    new Promise<{ status: "deadline" }>((resolve) => {
+      timer = setTimeout(() => resolve({ status: "deadline" }), remainingMs);
+    }),
+  ]);
+  if (timer) clearTimeout(timer);
+  return result;
+}
+
 function state() {
   const store = globalThis as ObservabilityGlobal;
   if (!store[OBSERVABILITY_KEY]) {
@@ -149,11 +170,21 @@ export function installObservabilityShutdownHooks(): void {
         }
         return true;
       });
-      try {
-        await current.sink.flush();
-      } catch (cause) {
+      const flushResult = await flushBeforeDeadline(
+        () => current.sink.flush(),
+        deadline - Date.now(),
+      );
+      if (flushResult.status !== "flushed") {
         failed = true;
-        process.stderr.write(`shutdown observability flush failed: ${String(cause)}\n`);
+        const reason =
+          flushResult.status === "deadline" ? "deadline" : `error:${String(flushResult.error)}`;
+        emitEvent(current.sink, {
+          level: "error",
+          source: "process.shutdown",
+          name: "shutdown.incomplete.observability-flush",
+          payload: { signal, reason },
+        });
+        process.stderr.write(`shutdown.incomplete.observability-flush ${reason}\n`);
       }
       process.exit(failed ? 1 : 0);
     })();
