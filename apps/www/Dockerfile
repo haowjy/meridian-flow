@@ -6,21 +6,12 @@ RUN corepack enable && corepack prepare pnpm@10.34.3 --activate
 WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc lefthook.yml ./
 COPY patches/ ./patches/
-COPY apps/app/package.json ./apps/app/package.json
-COPY apps/server/package.json ./apps/server/package.json
-COPY apps/www/package.json ./apps/www/package.json
-COPY packages/agent-edit/package.json ./packages/agent-edit/package.json
-COPY packages/agent-edit/demo/playground/package.json ./packages/agent-edit/demo/playground/package.json
-COPY packages/contracts/package.json ./packages/contracts/package.json
-COPY packages/database/package.json ./packages/database/package.json
-COPY packages/design-tokens/package.json ./packages/design-tokens/package.json
-COPY packages/markup/package.json ./packages/markup/package.json
-COPY packages/prosemirror-schema/package.json ./packages/prosemirror-schema/package.json
-COPY packages/resource-replica/package.json ./packages/resource-replica/package.json
-COPY packages/yjs-inspect/package.json ./packages/yjs-inspect/package.json
-RUN git init -q . && pnpm install --filter @meridian/www... --frozen-lockfile
+RUN pnpm fetch
 COPY . .
-RUN pnpm --filter @meridian/www build
+# git init lets the root prepare hook install lefthook; fetch+offline install
+# means workspace additions need no hand-maintained manifest list.
+RUN git init -q . && pnpm install --offline --frozen-lockfile --filter @meridian/www... \
+ && pnpm --filter @meridian/www build
 
 FROM node:24.17.0-bookworm-slim AS runtime
 ENV NODE_ENV=production HOST=::
