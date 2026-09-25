@@ -1,24 +1,4 @@
-/**
- * partition-turn — turns an ordered `Block[]` into the ordered render items the
- * transcript draws.
- *
- * A turn is one list, in block order. Each item is one of three tiers:
- *   - `process`  — a contiguous run of reasoning and process tools, collapsed
- *                  into one Thinking disclosure, in place.
- *   - `text`     — an assistant text block, always rendered as prose.
- *   - `artifact` — a writer-facing block (custom card, image, file), always
- *                  rendered (see `tool-kind.ts`).
- *
- * Text and artifacts close the open process run. A reasoning run that arrives
- * after visible prose therefore starts a fresh fold below it instead of
- * merging back above it, and prose never rolls into a fold. The old
- * frontier/fold split — where the last activity run stayed visible and earlier
- * prose disappeared into the fold — is gone.
- *
- * Hidden protocol (the `tool_use`/`tool_result` rows a custom card already
- * surfaces) is dropped: `ToolRow` renders nothing for it, and the fold digest
- * reads through the same visibility predicate.
- */
+/** partition-turn — turns an ordered `Block[]` into the ordered render items the transcript draws. */
 import { type Block, blockContentRecord, blockPlainText } from "@meridian/contracts/protocol";
 import { isToolDeliveryBlock } from "./block-kind";
 import { groupDeliverySegments } from "./group-delivery-segments";
@@ -91,11 +71,6 @@ export function partitionTurn(blocks: Block[]): RenderItem[] {
   return items;
 }
 
-/**
- * toolCallIds whose tool rows a custom card hides, read through the same
- * visibility policy the render path uses. `tool_result` does not stamp
- * `toolName`; pairing with `tool_use` supplies the name before classification.
- */
 function hiddenToolCallIds(blocks: Block[]): Set<string> {
   const hidden = new Set<string>();
   for (const segment of groupDeliverySegments(blocks)) {

@@ -1,32 +1,7 @@
-/**
- * read-payload — turns what `write(command="read")` returned into what the
- * writer sees.
- *
- * Two shapes carry the model's view of a document. The read command returns the
- * `meridian.agent-edit.v1` envelope, whose block items already separate `hash`
- * from `body`, so those bodies are the document as the model received it. Any
- * remaining caller hands back the serialized form: one hashline per block, or,
- * for an outline read, headings interleaved with the locator lines the model
- * uses to read further. Both are addressing machinery, so it is stripped here
- * rather than in a renderer, and both public readers accept either shape so no
- * renderer branches on the payload.
- *
- * The serialized path reads through {@link splitHashline} rather than the
- * anchored stripper: a block whose hash came through empty serializes as
- * `|body`, and an anchored prefix match correctly refuses to touch that, which
- * would leak a leading pipe into the writer's prose and lose an empty-hash
- * heading entirely. Envelope bodies are already hash-free, so they are taken
- * verbatim and a legitimate `|` in the writer's prose survives.
- *
- * Targeting is resolved server-side, so the payload already *is* the region the
- * model asked for. That makes the preview rule the same for a bare read and a
- * scoped one: show the top of what came back. No location prediction, no
- * per-command branching.
- */
 import { splitHashline } from "@meridian/agent-edit";
 import type { JsonValue } from "@meridian/contracts/protocol";
 
-/** A heading an outline read reported, with the depth it sat at. */
+/** Normalizes document-reading tool payloads for chat rendering. */
 export type OutlineHeading = { level: number; text: string };
 
 /**
@@ -46,13 +21,6 @@ export function readPayloadMarkup(output: JsonValue | null | undefined): string 
   return lines === null ? "" : lines.join("\n").trim();
 }
 
-/**
- * The headings an outline read saw, or `null` when the payload carries none.
- *
- * A `null` here is not a failure: `renderOutline` falls back to whole blocks
- * for a document with no headings, so the caller renders that payload as the
- * prose it is.
- */
 export function readPayloadOutline(output: JsonValue | null | undefined): OutlineHeading[] | null {
   const lines = readPayloadLines(output);
   if (lines === null) return null;

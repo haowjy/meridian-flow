@@ -1,11 +1,4 @@
-/**
- * ThreadRunController — direct run controller for Meridian thread streams.
- *
- * Owns the frontend run lifecycle without AG-UI's client runtime: appends user
- * messages over HTTP, subscribes to `ThreadTransport`, filters stale/cross-run
- * events, applies accepted events directly to ThreadStore, handles deferred
- * cancel, and performs singleton HTTP snapshot recovery on stream gaps.
- */
+/** Owns a thread run from submission through transport recovery. */
 import { EventType } from "@meridian/contracts/protocol";
 import type { JsonValue } from "@meridian/contracts/threads";
 import { HttpResponseError } from "@/client/api/http-client";
@@ -43,44 +36,17 @@ export type SubscribeLiveOptions = {
 export type SubmitOptions = {
   /** Client-only turn id returned by appendUserTurn for this exact submit. */
   optimisticUserTurnId?: string;
-  /**
-   * Retain the optimistic user row on a proved rejection so the caller can
-   * attach edit/retry recovery to it (existing-thread sends and first-send
-   * Retry). Omit to drop the row on rejection (writer-directed abandonment).
-   */
   keepOptimisticOnFailure?: boolean;
 };
 
-/**
- * The dispatch fingerprint a submit needs. `ComposerSubmitEnvelope` is
- * assignable; journal recovery replays the persisted fields without a draft.
- */
 export type SubmissionPayload = Pick<
   ComposerSubmitEnvelope,
   "submissionId" | "acceptedRevision" | "text" | "blocks" | "references" | "activatedSkillSlugs"
 >;
 
-/**
- * Answers whether the session that started a controller operation still owns it
- * when the operation settles.
- */
 type SessionFence = () => boolean;
 
-/**
- * What a dispatch does when the server accepts the POST after this session has
- * already lost ownership (a fence that no longer matches).
- *
- * `bridge-row` (live sends): rename the app-scoped optimistic row onto the
- * persisted server turn before returning `ambiguous`. The caller keeps the
- * journal, and the live-send teardown contract expects the row to reflect the
- * accepted turn (`ThreadRunController.test.ts`).
- *
- * `leave-row` (recovery replays/retries): leave the row under its optimistic
- * id. That recovery session is unmounting; the returning session's
- * `already-accepted` lookup owns the bridge and the journal retire. Renaming
- * the row here strands the journal and makes the return append a fresh pending
- * row that only a successful lookup can collapse.
- */
+/** What a dispatch does when the server accepts the POST after this session has already lost ownership (a fence that no longer matches). */
 type StaleAcceptPolicy = "bridge-row" | "leave-row";
 
 function isAdmissionPending(error: unknown): boolean {
@@ -90,11 +56,7 @@ function isAdmissionPending(error: unknown): boolean {
   );
 }
 
-/**
- * A structured refusal or a 4xx proves the endpoint rejected the write, so the
- * journal entry may be retired. A 5xx, a transport failure, or an unstructured
- * response does not prove the write never landed: keep the witness recoverable.
- */
+/** A structured refusal or a 4xx proves the endpoint rejected the write, so the journal entry may be retired. */
 function isDefinitiveWriteRejection(error: unknown): boolean {
   if (isMeridianApiError(error)) {
     return error.status === undefined || (error.status >= 400 && error.status < 500);
@@ -139,15 +101,7 @@ function waitForSnapshotRetry(signal: AbortSignal): Promise<void> {
   });
 }
 
-/**
- * Format an error for the a11y announcer / generic error sink.
- *
- * For `MeridianApiError`, the envelope's `code` is appended in parentheses so
- * the surface text honestly reflects what came over the wire (e.g.
- * "Rate limited (rate_limited)"). Otherwise the bare message is used.
- * Plain non-Error values fall through to `fallback` so we never announce
- * "[object Object]".
- */
+/** Format an error for the a11y announcer / generic error sink. */
 function errorMessage(error: unknown, fallback: string): string {
   if (isMeridianApiError(error)) {
     return error.code ? `${error.message} (${error.code})` : error.message;
@@ -236,15 +190,7 @@ export class ThreadRunController {
     );
   }
 
-  /**
-   * Re-admit a journal-recovered submission under its owning recovery session.
-   * `submit` is fenced by the admission session, but mounting the sibling
-   * `useChatThreadSession` tears the run session down in the same React commit
-   * that starts recovery (React StrictMode mount → cleanup → re-mount). The
-   * recovery fence must not be invalidated by that sibling teardown. A POST
-   * accepted after this session ends leaves the optimistic row untouched
-   * (`leave-row`): the returning session's lookup owns the bridge and retire.
-   */
+  /** Re-admit a journal-recovered submission under its owning recovery session. */
   recoverSubmission(
     threadId: string,
     payload: SubmissionPayload,
@@ -268,17 +214,7 @@ export class ThreadRunController {
       this.recoverySessions.has(session);
   }
 
-  /**
-   * Register the mounted recovery owner for the current account/thread.
-   * Recovery reconciliation and replay are fenced by this token rather than
-   * `admissionEpoch`: the two lifecycles differ, because mounting
-   * `useChatThreadSession` tears the run session down (bumping the admission
-   * epoch) in the same commit that starts recovery. The token is stable across
-   * React StrictMode's mount/cleanup/re-mount for one hook instance, but a
-   * genuinely unmounted owner stops matching, so a stale lookup or replay
-   * cannot acknowledge, start a run, or retire. Multiple mounted recovery
-   * surfaces keep independent tokens.
-   */
+  /** Register the mounted recovery owner for the current account/thread. */
   beginRecoverySession(session: object): void {
     this.recoverySessions.add(session);
   }
@@ -406,11 +342,7 @@ export class ThreadRunController {
     );
   }
 
-  /**
-   * Reconcile a durable journal entry. The server keys admissions by
-   * `(threadId, submissionId)`, so recovery needs only the identity, not a
-   * reconstructed composer envelope or its draft snapshot.
-   */
+  /** Reconcile a durable journal entry. */
   lookupSubmission(
     threadId: string,
     submissionId: string,
@@ -532,14 +464,6 @@ export class ThreadRunController {
     return { status: "pending" };
   }
 
-  /**
-   * Settle a non-fatal interrupt rejection frame. The wire frame carries only
-   * `threadId`, so it binds to the newest pending response for that thread and
-   * no-ops when none exists. `interrupt_not_pending` after a send means the
-   * first attempt likely landed (ambiguous); a correlation mismatch is positive
-   * evidence this attempt did not land (retryable failure). Neither tears down
-   * the run subscription.
-   */
   private settleInterruptResponseError(threadId: string, error: Error): void {
     const pending = this.actions.pendingInterruptResponseForThread(threadId);
     if (!pending) return;
@@ -571,12 +495,6 @@ export class ThreadRunController {
     this.cleanupActiveRun();
   }
 
-  /**
-   * Attach after an accepted send. A merge (`assistantTurnId` non-null) continues
-   * the live run the client is already streaming: re-subscribing from the
-   * enqueue cursor would rewind past deltas the client has applied, so keep the
-   * running subscription. A fresh run (null) starts and resubscribes normally.
-   */
   private attachAcceptedRun(
     threadId: string,
     result: { assistantTurnId: string | null; resumeAfterSeq: string },

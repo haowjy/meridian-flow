@@ -1,19 +1,4 @@
-/**
- * DocumentIdentityBar — the universal breadcrumb band at the top of the
- * active tab's canvas. One quiet mono path (`Scratch › Untitled 4`) on every
- * document; provisional docs are a *state* of the bar (italic leaf + jade
- * chip), not separate chrome.
- *
- * One affordance: **the chip**. Jade "Choose a home" on provisional docs and
- * quiet outline "Rename" once homed both open the same inline identity field.
- * Device-only words add a quiet status beside it — never in its place:
- * placement commits queue durably offline, so the action stays available
- * exactly when the writer is device-only. The breadcrumb itself is inert,
- * reserved for a future per-segment navigator (see IdentityPath).
- *
- * Keystroke-path contract: at rest the bar renders from tab metadata only.
- * Content observers mount only while a field is open on a provisional doc.
- */
+/** DocumentIdentityBar — the universal breadcrumb band at the top of the active tab's canvas. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
@@ -138,14 +123,6 @@ export function DocumentIdentityBar({
   );
 }
 
-/** Rest state: the quiet crumb row. Middle folders collapse to `…`; narrow
- *  containers drop the scheme label (glyph only) and folder names.
- *
- *  The crumbs are deliberately inert — the chip is the only edit entry
- *  point. The breadcrumb is reserved for navigation: the next slice gives
- *  each segment a VS Code-style dropdown (a mini context-tree navigator
- *  anchored at that segment), which is why every segment stays its own
- *  `data-seg` element instead of one flat string. */
 function IdentityPath({ location }: { location: TabLocation }) {
   const SchemeIcon = schemeIcon(location.scheme);
   const separator = (
@@ -193,15 +170,7 @@ function IdentityPath({ location }: { location: TabLocation }) {
   return <span className="flex min-w-0 items-center gap-1">{segments}</span>;
 }
 
-/**
- * Chip slot at the bar's right edge. The device-only status (warning tokens,
- * 2s sustained grace) and the permanent home chip **coexist**: status quiet
- * on the left, action anchored at the right edge. Never let the status
- * replace the action — placement commits queue durably offline, so
- * device-only is exactly when a writer may want to file the document.
- * The status stays visible while the field is open; only the action chip
- * yields (the open field *is* the action).
- */
+/** Chip slot at the bar's right edge. */
 function IdentityChipSlot({
   projectId,
   tab,
@@ -292,13 +261,7 @@ function DeviceOnlyChip() {
 
 const DEVICE_ONLY_GRACE_MS = 2_000;
 
-/**
- * Device-only with a 2s sustained grace: the warning only claims the slot
- * once unsynced words have persisted for 2 seconds, so a normal quick
- * materialization never flashes warning chrome. The clock is the
- * reconciler's per-document `pendingSince` — remounting the bar (tab
- * switches) cannot restart the window.
- */
+/** Device-only with a 2s sustained grace: the warning only claims the slot once unsynced words have persisted for 2 seconds, so a normal quick materialization never flashes warning.... */
 function useDeviceOnly(projectId: string, tab: ContextTab): boolean {
   const { records } = useAccountResourceProjection(projectId);
   const resource = records.find(({ resource }) =>

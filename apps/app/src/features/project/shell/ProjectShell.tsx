@@ -1,16 +1,5 @@
-/**
- * ProjectShell — destination-agnostic desktop layout mechanics.
- *
- * Purpose: render one flat grid whose direct children are the persistent surface
- * wrappers, route pane content, and resize handles. Key decision: the shell
- * derives slot occupancy from SurfaceLayoutMap only; moving a surface changes
- * the wrapper grid-area while the surface remains mounted under the same parent.
- * The right dock is one persistent sidebar — its width and collapsed state are
- * shared across screens via slot-level prefs, so dock resize/collapse always go
- * through `onSetDockWidth`/`onSetDockCollapsed`, never the occupant surface's
- * own pref.
+/** ProjectShell — destination-agnostic desktop layout mechanics. */
 
- */
 import { t } from "@lingui/core/macro";
 import { type CSSProperties, type ReactNode, type RefObject, useEffect, useRef } from "react";
 

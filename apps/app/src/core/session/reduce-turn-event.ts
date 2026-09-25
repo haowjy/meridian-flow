@@ -1,11 +1,4 @@
-/**
- * reduce-turn-event — maps live AG-UI events straight into ThreadStore turns.
- *
- * The unified-block model has no live `live view-state` accumulator: every event
- * writes the canonical assistant `Turn.blocks[]` row through store actions, and
- * `liveMeta.eventsApplied` is the only transient counter used for deterministic
- * opaque block IDs.
- */
+/** Applies accepted stream events to a turn. */
 import {
   type InterruptAnswerProvenance,
   interruptResolvedPropsFromAnswer,
@@ -244,12 +237,6 @@ function recordContentField(
     : null;
 }
 
-/**
- * Server-authored result metadata riding the live `tool.result` event (the
- * AG-UI TOOL_CALL_RESULT schema is passthrough, so the field survives the
- * protocol parse). Same shape as the durable block's `content.metadata` —
- * this is how the work receipt reaches a live turn before reload.
- */
 function toolResultEventMetadata(event: object): Record<string, JsonValue> | null {
   const value = (event as Record<string, unknown>).metadata;
   return value && typeof value === "object" && !Array.isArray(value)
@@ -408,15 +395,6 @@ function blockFromCustomUpsertPayload(payload: CustomBlockUpsertPayload): Block 
   });
 }
 
-/**
- * Payload schema for the `meridian.tool.output_delta` CUSTOM event.
- *
- * Wire format (server projector → AG-UI CUSTOM event):
- *   { toolCallId: string, stream: "stdout" | "stderr", text: string }
- *
- * `text` is an INCREMENTAL chunk (append; not cumulative). The authoritative
- * final result still arrives via `TOOL_CALL_RESULT`.
- */
 type ToolOutputDeltaPayload = {
   toolCallId: string;
   stream: "stdout" | "stderr";
@@ -433,12 +411,6 @@ function parseToolOutputDeltaPayload(value: unknown): ToolOutputDeltaPayload | n
   return { toolCallId, stream, text };
 }
 
-/**
- * Payload schema for the `meridian.tool.result_error` CUSTOM event.
- *
- * AG-UI's TOOL_CALL_RESULT event has no failure marker, so the server sends
- * this adjacent companion event only for failed tool calls.
- */
 type ToolResultErrorPayload = {
   toolCallId: string;
   isError: true;
@@ -535,15 +507,7 @@ function patchInterruptBlock(block: Block, payload: InterruptLifecyclePayload): 
   };
 }
 
-/**
- * Buffered interrupt resolution patches keyed by thread/turn/interrupt id.
- *
- * The live hub can replay `meridian.interrupt` before `meridian.block.upserted`
- * when a client reconnects around an ask_user pause/resume boundary. The buffer
- * lets the late component block receive its resolved props, but entries must be
- * cleared on snapshot/terminal boundaries because this map is module-global,
- * not tied to a ThreadStore provider lifetime.
- */
+/** Buffered interrupt resolution patches keyed by thread/turn/interrupt id. */
 const pendingInterruptPatches = new Map<string, InterruptLifecyclePayload>();
 
 function pendingInterruptPatchKey(threadId: string, turnId: string, interruptId: string): string {
@@ -698,13 +662,7 @@ export function applyDurableBlockEvent(
   return true;
 }
 
-/**
- * Applies one live AG-UI event to the unified thread store.
- *
- * Cross-thread events are ignored without bumping the counter, matching the old
- * reducer's addressed-slot guard. Run-local no-op vocabulary still bumps
- * `eventsApplied`; addressed durable blocks use the counter-free branch above.
- */
+/** Applies one live AG-UI event to the unified thread store. */
 export function applyAguiEventToStore(
   store: StoreEventTarget,
   threadId: string,

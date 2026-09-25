@@ -1,11 +1,4 @@
-/**
- * useDraftReviewController — shared state machine for reviewing AI document drafts.
- *
- * The dock Changes cards and editor header both address the same inline review
- * session; this controller keeps whole-draft apply/discard, selective
- * per-card Discard, review closure, and editor focus state on one path so
- * review surfaces cannot drift. Apply commits the whole current branch.
- */
+/** useDraftReviewController — shared state machine for reviewing AI document drafts. */
 
 import { useQueryClient } from "@tanstack/react-query";
 import type { Editor } from "@tiptap/core";
@@ -52,13 +45,7 @@ export function useDraftReviewStateOwner(): DraftReviewStateOwner {
   return { state, dispatch };
 }
 
-/**
- * The single review-runtime claim: the mounted editor a review card can scroll
- * to, plus the selection it is showing. Dispositions do NOT read it — they take
- * their selection from review state so the Changes rail works on screens with no
- * manuscript pane. Registration is claim-based on the editor identity
- * (see register/release below).
- */
+/** The single review-runtime claim: the mounted editor a review card can scroll to, plus the selection it is showing. */
 export type InlineReviewRuntime = {
   editor: Editor;
   documentId: string;
@@ -91,21 +78,9 @@ export type DraftReviewController = {
   exitInlineReview: () => void;
   exitReview: () => void;
   inlineReviewModelAvailable: (identity: string, documentId: string, draftId: string) => void;
-  /**
-   * Claim/release the single review-runtime slot. Registration is claim-based:
-   * only the editor that holds the claim can release it. This matters because
-   * the context host keeps warm HIDDEN editors mounted — an unconditional
-   * "clear on not-in-review" from any of them would stomp the active review
-   * editor's registration (found live: card clicks silently no-oped after
-   * switching review documents).
-   */
+  /** Claim/release the single review-runtime slot. */
   registerInlineReviewRuntime: (runtime: InlineReviewRuntime) => void;
   releaseInlineReviewRuntime: (editor: Editor) => void;
-  /**
-   * Highlight and scroll the reviewed document to an operation's span. Reads
-   * the review editor off the runtime so any surface (the dock Changes cards)
-   * can drive the manuscript without holding the editor handle itself.
-   */
   focusReviewOperation: (operationId: string) => void;
   discardOperation: (operationId: string) => Promise<DraftCommandOutcome>;
   apply: (documentId: string, draftId: string) => Promise<DraftCommandOutcome>;

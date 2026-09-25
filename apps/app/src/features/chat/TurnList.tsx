@@ -1,31 +1,4 @@
-/**
- * TurnList — the conversation transcript and the SINGLE scroll owner.
- *
- * One plain viewport is the only scroll container, with two clearly split owners:
- *   - `@tanstack/react-virtual` owns GEOMETRY: row layout/height (virtualized for
- *     long threads) and scrollTop compensation when a row ABOVE the viewport
- *     changes height (images load, disclosures expand), so the reader's place is
- *     preserved while scrolled up.
- *   - `useChatFollowScroll` owns POLICY: the explicit `follow | free` state
- *     machine. In `follow` every content revision (`getTotalSize()` change)
- *     re-pins the viewport to the live edge; in `free` nothing auto-scrolls. The
- *     jump-to-latest pill is visible iff `free`.
- * Geometry never doubles as policy state — deriving "at bottom" per-frame from
- * `isAtEnd()` is what made the pill flicker and follow-release feel inconsistent.
- * There is no second scroll engine and no nested scroller.
- *
- * Top inset and composer clearance are the virtualizer's own `paddingStart` /
- * `paddingEnd`, so "scrolled to the end" lines up exactly with the last turn resting
- * above the composer (the bottom inset is the measured composer height from
- * `ChatSurface`, via `useChatSurfaceBottomInset`).
- *
- * Rows are keyed by `turn.id`, so when the live assistant turn settles the same row
- * stays mounted and only its `Turn` data changes — no remount; expand/collapse and
- * scroll position survive (Stream S3 convergence).
- *
- * Draft affordances are not in the transcript: pending AI changes live in the
- * composer-attached DraftDock.
- */
+/** Renders the transcript and owns its scroll viewport. */
 import type { Turn } from "@meridian/contracts/protocol";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import { ArrowDownIcon } from "lucide-react";
@@ -47,12 +20,6 @@ export type TurnListProps = {
   threadId: string;
   /** Settled history with the live turn merged in by id, oldest first. */
   turns: Turn[];
-  /**
-   * Whether the thread's history request has resolved. The transcript owns the
-   * "that turn isn't here" verdict for a conversation reveal, and it can only
-   * give it once loading is over — before that, a missing turn is one that
-   * hasn't arrived yet.
-   */
   historySettled: boolean;
   /** Monotonic submit signal: new local messages intentionally reacquire tail-follow. */
   tailFollowRevision: number;
@@ -241,10 +208,6 @@ export function TurnList({
   );
 }
 
-/**
- * Jump-to-latest pill. Sits above the pinned composer (offset by the measured
- * composer height) and fades out while the reader is following the live edge.
- */
 function JumpToLatestButton({
   hidden,
   bottomInset,

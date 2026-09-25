@@ -1,21 +1,4 @@
-/**
- * Project-route composition for document doors: what happens to passage state
- * every time the writer opens one.
- *
- * **Every door reports here, passage or not.** A door is the moment the writer
- * changes their mind about where they are, and that has to retire whatever the
- * last door was still resolving — otherwise a slow passage lookup lands a
- * highlight, or raises "that passage changed", in a document the writer left
- * two clicks ago. Making only passage doors visible to the coordinator left
- * ordinary doors unable to cancel anything, and let a stale notice sit under a
- * later, perfectly good landing.
- *
- * Routing is not this hook's job: the door has already made it, and the
- * document opens whether or not the passage survives. What is left is
- * resolving the path to a document id (the tree is the only place that mapping
- * lives), handing the anchor to the editor runtime, and reporting the one
- * outcome the writer needs to hear about.
- */
+/** Project-route composition for document doors: what happens to passage state every time the writer opens one. */
 import type { ProjectContextTreeScheme } from "@meridian/contracts/protocol";
 import { useCallback, useEffect, useRef } from "react";
 

@@ -1,17 +1,4 @@
-/**
- * AssistantTurn — single render path for assistant turns.
- *
- * One `Block[]` for live and settled alike: no synthetic `"live-reasoning"`
- * block and no separate `thinkingStream`/`textStream`/`visibleTool` props.
- * `partitionTurn` reduces it to an ordered `RenderItem[]` — process folds
- * (reasoning + process tools) collapse in place, text and artifacts stay
- * visible — so prose never folds and is never remounted by a later reasoning
- * run. Render keys derive from `(turnId, sequence)` via `blockRenderKey`.
- *
- * Draft affordances live OFF the transcript now: pending AI changes are the
- * composer-attached DraftDock's job, and this turn only records what it edited
- * (see `TurnEditsReceipt`). Write vocabulary comes from the mode frozen on the turn.
- */
+/** AssistantTurn — single render path for assistant turns. */
 import { t } from "@lingui/core/macro";
 import { Trans } from "@lingui/react/macro";
 import { type Block, isTerminalTurnStatus, type Turn } from "@meridian/contracts/protocol";
@@ -158,14 +145,7 @@ function InkDrop() {
   );
 }
 
-/**
- * One entry per document, preferring its committed (`live`) lineage.
- *
- * A turn that drafted an edit the writer later applied carries BOTH a `draft`
- * and a `live` entry for the same URI, draft first. The card is a receipt for
- * what happened to the manuscript, so the committed entry is the one that
- * counts — keeping the draft would render an applied edit as if it never landed.
- */
+/** One entry per document, preferring its committed (`live`) lineage. */
 function dedupeTurnEditDocuments<T extends { uri: string; scope: "live" | "draft" }>(
   documents: readonly T[],
 ): T[] {
@@ -247,14 +227,7 @@ function thinkingAriaLabel(processIndex: number, processCount: number): string |
   return processCount <= 1 ? t`Thinking` : t`Thinking part ${processIndex + 1}`;
 }
 
-/**
- * A process item earns its disclosure only when it holds something the writer
- * can read. Reasoning runs always qualify (empty ones are dropped in
- * `partitionTurn`); an activity run qualifies with at least one visible tool
- * row. The gate covers the one gap: a hidden protocol block whose provider
- * omitted its `toolCallId` is not detected as hidden, and `ToolRow` renders
- * nothing for it.
- */
+/** A process item earns its disclosure only when it holds something the writer can read. */
 function foldHasVisibleContent(runs: Run[]): boolean {
   return runs.some((run) => run.kind === "reasoning") || toolViewsInFold(runs).length > 0;
 }
@@ -323,12 +296,6 @@ function runRenderKey(run: Run): string {
 export const AssistantTurn = memo(AssistantTurnComponent);
 AssistantTurn.displayName = "AssistantTurn";
 
-/**
- * Process rows: reasoning, tools, and other process blocks render as icon-rail
- * rows inside the Thinking disclosure. Text and artifacts render outside it
- * (see `DeliveryBlock`); that contrast carries the meaning — the fold is "what
- * the assistant did", prose is "what the assistant said".
- */
 const DeliverySegments = memo(function DeliverySegments({
   blocks,
   threadId,

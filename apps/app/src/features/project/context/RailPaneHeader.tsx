@@ -1,32 +1,4 @@
-/**
- * RailPaneHeader — the rail's one pane-header grammar, shared by every
- * section band: Manuscript / Knowledge Base / User / Scratch / Uploads, all
- * flush full-width top-level siblings (never indented). There is no work
- * header row (ruling 2026-08-06, superseding the work-title-as-marking
- * model); the work-scoped panes name their work through a hover tooltip
- * their caller wraps around this header. Pane headers retain their own compact
- * 28px rhythm; context entry rows are 32px on fine pointers and 44px on
- * coarse/no-hover input.
- * Grammar: `font-medium text-sm uppercase tracking-wide` on the
- * section row. The caps + row rhythm carry the header read (bold was
- * rejected by ruling; caps apply to ALL headers, as VS Code uppercases
- * folder names in explorer headers). Headers use a `size-3.5` icon in a `w-4`
- * slot and a `size-3` twistie in a `w-4` slot.
- *
- * Separation follows the flatter workbench direction: headers remain
- * transparent at rest. A subtle hover is the only temporary fill, so section
- * identity comes from rhythm, the caps label, and the twistie rather than
- * stacked color bands or repeated rules. The whole
- * row is the collapse target (Enter/Space via the native button, ArrowLeft
- * collapses, ArrowRight expands, aria-expanded, focus-ring).
- *
- * Headers carry identity icons: every pane passes its category's `icon`
- * (the scheme icons from `context-schemes`) at the tree rows' icon scale.
- * Actions follow the Explorer header grammar: a right-edge shelf, invisible
- * at rest, revealed on header hover / focus-within, and only while expanded
- * (VS Code hides actions on collapsed panes). Callers pass
- * `PaneHeaderActionButton`s as `actions`.
- */
+/** Shared header for project context rail panes. */
 import { ChevronRight, type LucideIcon } from "lucide-react";
 import type React from "react";
 
@@ -98,12 +70,7 @@ export function RailPaneHeader({
   );
 }
 
-/**
- * One header action (VS Code Explorer-header anatomy): ~20px hit target
- * around a 16px icon, transparent at rest, rail hover tint + icon darken on
- * hover, focus-ring for keyboard. stopPropagation so an action click can
- * never toggle the header's collapse.
- */
+/** One header action (VS Code Explorer-header anatomy): ~20px hit target around a 16px icon, transparent at rest, rail hover tint + icon darken on hover, focus-ring for keyboard. */
 export function PaneHeaderActionButton({
   icon: Icon,
   label,
