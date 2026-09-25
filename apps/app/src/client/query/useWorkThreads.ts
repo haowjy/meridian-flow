@@ -4,12 +4,12 @@ import { useCallback, useMemo, useRef } from "react";
 
 import { listWorkThreads } from "@/client/api/projects-api";
 import { useIsProjectPendingCreation } from "@/client/stores";
+import { flattenChatFeed } from "./chat-projections";
 import { projectQueryKeys } from "./project-query-keys";
 import {
   admitThreadUserStateItems,
   beginThreadUserStateFeedRequest,
 } from "./thread-user-state-commands";
-import { useProjectChatCommands } from "./useProjectChatCommands";
 
 declare const workChatsNextPageIdentity: unique symbol;
 export type WorkChatsNextPageIdentity = string & {
@@ -19,7 +19,6 @@ export type WorkChatsNextPageIdentity = string & {
 export function useWorkThreads(projectId: string, workId: string, options?: { enabled?: boolean }) {
   const isPendingCreation = useIsProjectPendingCreation(projectId);
   const enabled = (options?.enabled ?? true) && !isPendingCreation;
-  const commands = useProjectChatCommands(projectId);
   const client = useQueryClient();
   const query = useInfiniteQuery({
     queryKey: projectQueryKeys.workThreads(projectId, workId),
@@ -35,17 +34,7 @@ export function useWorkThreads(projectId: string, workId: string, options?: { en
     retry: false,
     enabled,
   });
-  const threads = useMemo(() => {
-    if (!query.data) return null;
-    const seen = new Set<string>();
-    return query.data.pages.flatMap((page) =>
-      page.items.filter((item) => {
-        if (seen.has(item.id)) return false;
-        seen.add(item.id);
-        return true;
-      }),
-    );
-  }, [query.data]);
+  const threads = useMemo(() => (query.data ? flattenChatFeed(query.data) : null), [query.data]);
   const nextCursor = query.data?.pages.at(-1)?.nextCursor ?? null;
   const nextPageIdentity = useMemo(
     () =>
@@ -71,6 +60,5 @@ export function useWorkThreads(projectId: string, workId: string, options?: { en
     threads,
     nextPageIdentity,
     fetchNextPageFor,
-    ...commands,
   };
 }

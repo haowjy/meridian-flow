@@ -1,4 +1,4 @@
-/** Chat landing Send: mint ids, record the durable intent, replace the URL, persist in the background. */
+/** Project first Send: mint ids, record the durable intent, select the current chat, persist in the background. */
 import type { Thread } from "@meridian/contracts/protocol";
 import {
   type FirstSendChatSubmission,
@@ -6,9 +6,7 @@ import {
   retireChatSubmission,
 } from "@/client/chat-submissions";
 import type { PendingStreamStart, ThreadStoreActions } from "@/client/stores";
-import { isSettingsSection } from "@/features/account/settings-sections";
 import type { CreationAgent } from "@/features/agents/creation-agent";
-import { projectAddressHref } from "@/features/project/routing/project-address";
 import { deriveTitleFromMessage } from "./thread-title";
 
 const OPTIMISTIC_OWNER_ID = "optimistic-local";
@@ -53,8 +51,7 @@ export type SendProjectChatArgs = {
   agent: CreationAgent;
   workId: string | null;
   threadActions: ThreadStoreActions;
-  replace: (href: string) => void;
-  search?: string;
+  selectChat: (threadId: string) => void;
   now?: number;
 };
 
@@ -96,18 +93,6 @@ export function makeOptimisticThread(input: {
   };
 }
 
-export function inflightChatHref(projectId: string, threadId: string, search = ""): string {
-  const settings = new URLSearchParams(search).get("settings");
-  return projectAddressHref({
-    projectId,
-    destination: { kind: "chat", chatId: threadId },
-    chat: { kind: "absent" },
-    work: { kind: "absent" },
-    results: false,
-    ...(isSettingsSection(settings) ? { settings } : {}),
-  });
-}
-
 export function sendProjectChat({
   accountId,
   threadId: existingThreadId,
@@ -118,8 +103,7 @@ export function sendProjectChat({
   agent,
   workId,
   threadActions,
-  replace,
-  search = "",
+  selectChat,
   now,
 }: SendProjectChatArgs): SendProjectChatResult | null {
   const threadId = existingThreadId ?? crypto.randomUUID();
@@ -178,7 +162,7 @@ export function sendProjectChat({
     optimisticUserTurnId,
     workingTurnId,
   });
-  replace(inflightChatHref(projectId, threadId, search));
+  selectChat(threadId);
   return { threadId, optimisticUserTurnId, workingTurnId };
 }
 

@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { HttpResponseError, MeridianApiError } from "@/client/api/http-client";
 
+import { flattenChatFeed } from "./chat-projections";
 import { projectQueryKeys } from "./project-query-keys";
 import {
   abandonThreadRename,
@@ -228,5 +229,45 @@ describe("thread-rename command", () => {
 
     expect(titleOf(client)).toBe("Renamed");
     expect(readThreadRenameRecord(client, PROJECT_ID, THREAD_ID).failure).toBeUndefined();
+  });
+
+  it("patches the chat feed and Work feed rows in place instead of invalidating them", () => {
+    const client = clientWithThread();
+    const feedKey = projectQueryKeys.chatFeedFilter(PROJECT_ID, { favorite: false, search: null });
+    const workFeedKey = projectQueryKeys.workThreads(PROJECT_ID, "work-1");
+    const chatItem = {
+      id: THREAD_ID,
+      title: "Original",
+      work: null,
+      agentName: null,
+      lastMessagePreview: null,
+      lastActivityAt: "2026-09-24T12:00:00.000Z",
+      actionRequired: false,
+      isFavorite: false,
+    };
+    client.setQueryData(feedKey, {
+      pages: [{ items: [chatItem], nextCursor: null }],
+      pageParams: [null],
+    });
+    client.setQueryData(workFeedKey, {
+      pages: [{ items: [chatItem], nextCursor: null }],
+      pageParams: [null],
+    });
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    const context = beginThreadRename(client, PROJECT_ID, THREAD_ID, "Renamed");
+    expect(flattenChatFeed(client.getQueryData(feedKey))[0]?.title).toBe("Renamed");
+    expect(flattenChatFeed(client.getQueryData(workFeedKey))[0]?.title).toBe("Renamed");
+
+    confirmThreadRename(client, context, "Renamed");
+    expect(flattenChatFeed(client.getQueryData(feedKey))[0]?.title).toBe("Renamed");
+    expect(flattenChatFeed(client.getQueryData(workFeedKey))[0]?.title).toBe("Renamed");
+    // The feeds are patched in place, never invalidated for a title change.
+    expect(invalidate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: projectQueryKeys.chatFeed(PROJECT_ID) }),
+    );
+    expect(invalidate).not.toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: projectQueryKeys.workThreads(PROJECT_ID) }),
+    );
   });
 });

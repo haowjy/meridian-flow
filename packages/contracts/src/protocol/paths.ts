@@ -57,9 +57,22 @@ export function apiWorkThreadsPath(workId: string, cursor?: string | null): stri
   return cursor ? `${path}?cursor=${encodeURIComponent(cursor)}` : path;
 }
 
-export function apiProjectHomeFeedPath(projectId: string, cursor?: string | null): string {
-  const path = `${apiProjectPath(projectId)}/home-feed`;
-  return cursor ? `${path}?cursor=${encodeURIComponent(cursor)}` : path;
+export type ProjectChatFeedRequestOptions = {
+  cursor?: string | null;
+  favorite?: boolean;
+  search?: string | null;
+};
+
+export function apiProjectChatFeedPath(
+  projectId: string,
+  opts?: ProjectChatFeedRequestOptions,
+): string {
+  const query = new URLSearchParams();
+  if (opts?.cursor) query.set("cursor", opts.cursor);
+  if (opts?.favorite) query.set("favorite", "true");
+  if (opts?.search) query.set("q", opts.search);
+  const queryString = query.toString();
+  return `${apiProjectPath(projectId)}/chat-feed${queryString ? `?${queryString}` : ""}`;
 }
 
 export function apiThreadUserStatePath(threadId: string): string {

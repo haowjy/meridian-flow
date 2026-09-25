@@ -4,8 +4,9 @@ import type { ThreadListItem } from "@meridian/contracts/protocol";
 import type { QueryClient } from "@tanstack/react-query";
 
 import { HttpResponseError, isMeridianApiError } from "@/client/api/http-client";
+import { patchChatRow } from "./chat-projections";
 import { projectQueryKeys } from "./project-query-keys";
-import { patchThreadInProjectCaches, readProjectThreadList } from "./project-thread-cache";
+import { readProjectThreadList } from "./project-thread-cache";
 
 export type ThreadRenameFailureKind = "rejected" | "ambiguous" | "abandoned";
 
@@ -72,17 +73,22 @@ export function readCachedThreadTitle(
   return list?.find((thread) => thread.id === threadId)?.title ?? null;
 }
 
-function projectTitle(client: QueryClient, threadId: string, title: string | null): void {
-  patchThreadInProjectCaches(client, threadId, { title });
-}
-
 /**
- * Home and Work feeds read a separate projection. Refresh them rather than
- * patching a second cache by hand; inactive feeds are only marked stale.
+ * Project a title into every cached representation of the thread: the
+ * project's thread list (which does not know its own project id, so every
+ * mounted project's list is checked) and this project's chat/Work feed rows,
+ * patched in place rather than invalidated.
  */
-function invalidateThreadTitleFeeds(client: QueryClient, projectId: string): void {
-  void client.invalidateQueries({ queryKey: projectQueryKeys.homeFeed(projectId), exact: true });
-  void client.invalidateQueries({ queryKey: projectQueryKeys.workThreads(projectId) });
+function projectTitle(
+  client: QueryClient,
+  projectId: string,
+  threadId: string,
+  title: string | null,
+): void {
+  patchChatRow(client, projectId, threadId, {
+    threadListItem: (item) => ({ ...item, title }),
+    projectChatItem: (item) => ({ ...item, title: title ?? "" }),
+  });
 }
 
 /** The authoritative thread list is the header projection; refetch it fenced. */
@@ -173,7 +179,7 @@ export function beginThreadRename(
     pendingCount: current.pendingCount + 1,
     failure: undefined,
   });
-  projectTitle(client, threadId, title);
+  projectTitle(client, projectId, threadId, title);
   return { projectId, threadId, revision };
 }
 
@@ -195,10 +201,9 @@ export function confirmThreadRename(
     failure: isLatest ? undefined : current.failure,
   });
   if (!isLatest) return false;
-  projectTitle(client, threadId, title);
+  projectTitle(client, projectId, threadId, title);
   if (pendingCount === 0) {
     invalidateThreadList(client, projectId);
-    invalidateThreadTitleFeeds(client, projectId);
   }
   return true;
 }
@@ -216,7 +221,7 @@ export function rejectThreadRename(
     writeRecord(client, projectId, threadId, { ...current, pendingCount });
     return;
   }
-  projectTitle(client, threadId, current.baseTitle);
+  projectTitle(client, projectId, threadId, current.baseTitle);
   writeRecord(client, projectId, threadId, {
     ...current,
     pendingCount,
@@ -241,7 +246,6 @@ export function reconcileThreadRename(
   });
   if (isLatest && pendingCount === 0) {
     invalidateThreadList(client, projectId);
-    invalidateThreadTitleFeeds(client, projectId);
   }
 }
 
@@ -271,6 +275,6 @@ export function discardThreadRename(
   threadId: string,
 ): void {
   const current = readThreadRenameRecord(client, projectId, threadId);
-  if (current.revision > 0) projectTitle(client, threadId, current.baseTitle);
+  if (current.revision > 0) projectTitle(client, projectId, threadId, current.baseTitle);
   writeRecord(client, projectId, threadId, emptyThreadRenameRecord);
 }

@@ -2,15 +2,26 @@
 import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
-import { useEffect, useId, useState } from "react";
+import { Star } from "lucide-react";
+import { memo, useEffect, useId, useState } from "react";
 import type { ThreadUserStateCommandView } from "@/client/query/thread-user-state-commands";
+import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { formatProjectChatActivity } from "./project-chat-activity-date";
+import {
+  formatFullProjectChatActivity,
+  formatProjectChatActivity,
+} from "./project-chat-activity-date";
+
+export type ProjectChatDeleteError = {
+  error: Error;
+  onRetry: () => void;
+};
 
 export type ProjectChatRowProps = {
   item: ProjectChatItem;
@@ -18,13 +29,20 @@ export type ProjectChatRowProps = {
   onOpen: (item: ProjectChatItem) => void;
   onFavorite: (item: ProjectChatItem, value: boolean) => void;
   favorite: ThreadUserStateCommandView;
+  /** Opens the list's delete confirmation; omitted where a list cannot delete. */
+  onDelete?: (item: ProjectChatItem) => void;
+  /** Set only for the row whose optimistic delete failed and was restored. */
+  deleteError?: ProjectChatDeleteError;
   onActiveChange?: (id: string, active: boolean) => void;
 };
 
 /** Loading anatomy kept with the real row so their three lanes cannot drift. */
-export function ProjectChatRowSkeleton() {
+export function ProjectChatRowSkeleton({ ruled = false }: { ruled?: boolean }) {
   return (
-    <li data-project-chat-row-layout className="project-chat-row-layout grid px-2 py-1.5">
+    <li
+      data-project-chat-row-layout
+      className={cn("project-chat-row-layout relative grid px-2 py-1.5", ruled && "row-rule")}
+    >
       <Skeleton className="col-start-1 row-start-1 mr-2 h-4 motion-reduce:animate-none" />
       <div data-project-chat-row-work className="px-1">
         <Skeleton className="h-4 w-full motion-reduce:animate-none" />
@@ -37,12 +55,14 @@ export function ProjectChatRowSkeleton() {
   );
 }
 
-export function ProjectChatRow({
+export const ProjectChatRow = memo(function ProjectChatRow({
   item,
   now,
   onOpen,
   onFavorite,
   favorite,
+  onDelete,
+  deleteError,
   onActiveChange,
 }: ProjectChatRowProps) {
   const { i18n } = useLingui();
@@ -55,10 +75,7 @@ export function ProjectChatRow({
   const favoriteSuppressed = favorite.pending;
   const retryFavoriteValue = favorite.retryValue;
   const activity = formatProjectChatActivity(item.lastActivityAt, now, i18n.locale);
-  const fullActivity = new Intl.DateTimeFormat(i18n.locale, {
-    dateStyle: "full",
-    timeStyle: "short",
-  }).format(new Date(item.lastActivityAt));
+  const fullActivity = formatFullProjectChatActivity(item.lastActivityAt, i18n.locale);
   const agentName = item.agentName ?? "General";
   const agentLabel = t`Agent: ${agentName}`;
   const active = menuOpen || focusWithin;
@@ -70,7 +87,9 @@ export function ProjectChatRow({
   return (
     <div
       data-project-chat-row={item.id}
-      className="group relative min-w-0 px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-muted/40"
+      // The shared inset list-row recipe: rounded hover paint inside the gutter,
+      // the same ground as the chat switcher's rows.
+      className="group relative min-w-0 rounded-md px-2 py-1.5 transition-colors motion-reduce:transition-none hover:bg-dropdown-hover"
       onFocusCapture={() => setFocusWithin(true)}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setFocusWithin(false);
@@ -81,7 +100,7 @@ export function ProjectChatRow({
         aria-label={t`Open ${title}`}
         aria-describedby={actionRequiredId}
         onClick={() => onOpen(item)}
-        className="focus-ring absolute inset-0 z-0 text-left"
+        className="focus-ring absolute inset-0 z-0 rounded-md text-left"
       >
         <span className="sr-only">{title}</span>
       </button>
@@ -103,14 +122,40 @@ export function ProjectChatRow({
         >
           {title}
         </span>
-        <WorkIdentity
-          data-project-chat-row-work
-          className="px-1"
-          name={item.agentName}
-          unavailableLabel="General"
-          aria-label={agentLabel}
-          title={agentName}
-        />
+        {/* The flat list has no Favorites section, so a favorite keeps a standing
+            star beside its Agent; other rows offer the outline on hover, like the
+            actions menu. */}
+        <div data-project-chat-row-work className="text-xs font-medium text-foreground">
+          <IconButton
+            size="sm"
+            aria-pressed={item.isFavorite}
+            aria-label={
+              item.isFavorite ? t`Remove ${title} from favorites` : t`Add ${title} to favorites`
+            }
+            aria-disabled={favoriteSuppressed || undefined}
+            onClick={() => {
+              if (!favoriteSuppressed) onFavorite(item, favoriteValue);
+            }}
+            className={cn(
+              // Touch gets a 44px target without widening the Agent lane: the
+              // hit area extends past the 32px button instead of growing it.
+              "pointer-events-auto relative [@media(hover:none)]:after:absolute [@media(hover:none)]:after:-inset-1.5 [@media(hover:none)]:after:content-[''] [@media(pointer:coarse)]:after:absolute [@media(pointer:coarse)]:after:-inset-1.5 [@media(pointer:coarse)]:after:content-['']",
+              item.isFavorite
+                ? "text-primary hover:text-primary"
+                : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100",
+            )}
+          >
+            <Star aria-hidden className={cn("size-4", item.isFavorite && "fill-current")} />
+          </IconButton>
+          <WorkIdentity
+            data-project-chat-row-agent
+            className="px-1"
+            name={item.agentName}
+            unavailableLabel="General"
+            aria-label={agentLabel}
+            title={agentName}
+          />
+        </div>
         <div
           data-project-chat-row-line
           className="col-start-1 row-start-2 flex min-w-0 items-center gap-2 text-compact text-muted-foreground"
@@ -166,6 +211,11 @@ export function ProjectChatRow({
               >
                 <span>{item.isFavorite ? t`Remove from favorites` : t`Add to favorites`}</span>
               </DropdownMenuItem>
+              {onDelete ? (
+                <DropdownMenuItem variant="destructive" onSelect={() => onDelete(item)}>
+                  <span>{t`Delete chat`}</span>
+                </DropdownMenuItem>
+              ) : null}
             </OverflowMenu>
           </div>
         </div>
@@ -182,6 +232,25 @@ export function ProjectChatRow({
           />
         </div>
       ) : null}
+      {deleteError ? (
+        <div className="relative z-10">
+          <InlineErrorRow message={t`Couldn't delete this chat`} onRetry={deleteError.onRetry} />
+        </div>
+      ) : null}
     </div>
   );
-}
+});
+
+/**
+ * One row entry point for both the chat index and Work detail: reads the
+ * row's normalized user state itself, so a list only has to supply the item
+ * and its commands.
+ */
+export const ProjectChatFeedRow = memo(function ProjectChatFeedRow({
+  projectId,
+  item,
+  ...rowProps
+}: { projectId: string; item: ProjectChatItem } & Omit<ProjectChatRowProps, "item" | "favorite">) {
+  const state = useProjectChatUserState(projectId, item);
+  return <ProjectChatRow {...rowProps} {...state} />;
+});

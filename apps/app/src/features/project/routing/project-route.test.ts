@@ -13,17 +13,15 @@ describe("guarded context route repair", () => {
     next: { scheme: "manuscript" as const, path: "/next.md", workId: null },
   };
 
-  it("repairs the exact latest search and preserves unrelated params", () => {
+  it("repairs the exact latest search", () => {
     expect(
       applyContextRepairIfCurrent(repair, {
         screen: "context",
-        thread: "thread-1",
         scheme: "manuscript",
         path: "/deleted.md",
       }),
     ).toEqual({
       screen: "context",
-      thread: "thread-1",
       scheme: "manuscript",
       path: "/next.md",
       work: "none",

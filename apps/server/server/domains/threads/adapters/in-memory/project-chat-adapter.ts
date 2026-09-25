@@ -1,4 +1,4 @@
-/** Focused in-memory adapter for Home/Work Project-chat projections and writer state. */
+/** Focused in-memory adapter for Project/Work Project-chat projections and writer state. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, ProjectChatItem, Thread, Turn } from "@meridian/contracts/threads";
 import {
@@ -6,7 +6,7 @@ import {
   isVisibleConversationalTurn,
 } from "../../domain/visible-conversation-policy.js";
 import type {
-  HomeChatFeedRepository,
+  ProjectChatFeedRepository,
   ThreadUserStateRepository,
   WorkChatFeedRepository,
 } from "../../ports/repositories.js";
@@ -97,7 +97,7 @@ export function createInMemoryProjectChatAdapter(
     };
   }
 
-  const homeFeed: HomeChatFeedRepository = {
+  const chatFeed: ProjectChatFeedRepository = {
     async queryPage(input) {
       const eligible: ProjectChatItem[] = [];
       for (const thread of source.threads()) {
@@ -113,26 +113,24 @@ export function createInMemoryProjectChatAdapter(
       eligible.sort(
         (a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || b.id.localeCompare(a.id),
       );
-      const continueChat = eligible[0] ?? null;
-      const favorites = input.includeFeatured
-        ? eligible.filter((item) => item.id !== continueChat?.id && item.isFavorite)
-        : [];
-      const recent = eligible
-        .filter((item) => item.id !== continueChat?.id && !item.isFavorite)
+      return eligible
+        .filter((item) => !input.favorite || item.isFavorite)
+        .filter(
+          (item) => !input.search || item.title.toLowerCase().includes(input.search.toLowerCase()),
+        )
         .filter(
           (item) =>
             !input.after ||
             item.lastActivityAt < input.after.sortAt ||
             (item.lastActivityAt === input.after.sortAt && item.id < input.after.threadId),
         )
-        .slice(0, input.recentLimit);
-      return { continueChat: input.includeFeatured ? continueChat : null, favorites, recent };
+        .slice(0, input.limit);
     },
   };
 
   const workChatFeed: WorkChatFeedRepository = {
     async queryPage(input) {
-      const associated: Array<{ thread: Thread; updatedAt: string }> = [];
+      const associated: Thread[] = [];
       for (const thread of source.threads()) {
         if (
           thread.kind === "primary" &&
@@ -141,27 +139,23 @@ export function createInMemoryProjectChatAdapter(
           source.hasWorkMembership(thread.id as ThreadId, input.workId) &&
           (await source.isProjectVisible(thread))
         ) {
-          associated.push({ thread, updatedAt: exactTimestamp(thread.updatedAt) });
+          associated.push(thread);
         }
       }
-      return Promise.all(
-        associated
-          .filter(
-            ({ thread, updatedAt }) =>
-              !input.after ||
-              updatedAt < input.after.sortAt ||
-              (updatedAt === input.after.sortAt && thread.id < input.after.threadId),
-          )
-          .sort(
-            (a, b) =>
-              b.updatedAt.localeCompare(a.updatedAt) || b.thread.id.localeCompare(a.thread.id),
-          )
-          .slice(0, input.limit)
-          .map(async ({ thread, updatedAt }) => ({
-            item: await projectChatItem(thread, input.userId),
-            updatedAt,
-          })),
+      const items = await Promise.all(
+        associated.map((thread) => projectChatItem(thread, input.userId)),
       );
+      return items
+        .filter(
+          (item) =>
+            !input.after ||
+            item.lastActivityAt < input.after.sortAt ||
+            (item.lastActivityAt === input.after.sortAt && item.id < input.after.threadId),
+        )
+        .sort(
+          (a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || b.id.localeCompare(a.id),
+        )
+        .slice(0, input.limit);
     },
   };
 
@@ -174,5 +168,5 @@ export function createInMemoryProjectChatAdapter(
     },
   };
 
-  return { homeFeed, workChatFeed, threadUserState, conversationalHead };
+  return { chatFeed, workChatFeed, threadUserState, conversationalHead };
 }

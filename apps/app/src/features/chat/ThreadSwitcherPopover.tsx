@@ -27,6 +27,7 @@ import { sectionLabelVariants } from "@/components/ui/section-label";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
 import { PaneTitle } from "@/features/project/PaneTitle";
 import { relativeTime } from "@/features/project/relative-time";
+import { useChatNavigation } from "@/features/project/routing/chat-navigation";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { cn } from "@/lib/utils";
 
@@ -38,25 +39,23 @@ export function ThreadSwitcherPopover({
   projectId,
   activeThreadId,
   title,
-  onSelectThread,
-  onNewChat,
   onRename,
   variant = "quiet",
 }: {
   projectId: string;
-  activeThreadId: string;
+  activeThreadId: string | null;
   title: string;
-  onSelectThread: (threadId: string) => void;
-  onNewChat?: () => void;
-  onRename: () => void;
+  onRename?: () => void;
   /**
-   * `quiet` — hover-pill trigger for chrome that stays chrome (the dock).
+   * `quiet` — chrome that stays chrome (the dock): hovers like an inactive
+   *   document tab.
    * `tab` — the active-tab chip grammar: the chat pane's page material
    * continues up into the band, same as the document tab strip. Use only
    * where the pane below the band is `page-sheet`.
    */
   variant?: "quiet" | "tab";
 }) {
+  const { openChat: onSelectThread, openNewChat } = useChatNavigation();
   const densityPopoverCollisionProps = useDensityPopoverCollisionProps();
   const contentRef = useRef<HTMLDivElement>(null);
   const focusHandoff = useRef(false);
@@ -86,13 +85,13 @@ export function ThreadSwitcherPopover({
   const selectThread = (threadId: string) => {
     focusHandoff.current = threadId !== activeThreadId;
     changeOpen(false);
-    onSelectThread(threadId);
+    void onSelectThread(threadId);
   };
 
   const startRename = () => {
     focusHandoff.current = true;
     changeOpen(false);
-    onRename();
+    onRename?.();
   };
 
   const handleNavigationKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -131,7 +130,9 @@ export function ThreadSwitcherPopover({
                 // chip's base (and its flares) sit on the band's bottom edge
                 // where the page begins.
                 "tab-chip-active relative h-9 px-3 [--tab-chip-surface:var(--color-background)]"
-              : "-ml-1.5 rounded-md px-1.5 py-1 transition-colors hover:bg-sidebar-accent",
+              : // An inactive document tab's hover: the inset pill over the
+                // band's full height, not a pill hugging the text.
+                "tab-chip-inactive relative -ml-2 self-stretch px-3 [--tab-chip-surface:var(--color-background)] [@media(pointer:coarse)]:min-h-11",
           )}
         >
           <PaneTitle className="min-w-0 flex-1">{title}</PaneTitle>
@@ -166,23 +167,21 @@ export function ThreadSwitcherPopover({
         }}
         onKeyDown={handleNavigationKeyDown}
       >
-        {onNewChat ? (
-          <div className="px-2 pt-1">
-            <button
-              data-switcher-focus
-              type="button"
-              className={cn(dropdownRowVariants(), "text-jade-text hover:bg-primary/10")}
-              onClick={() => {
-                focusHandoff.current = true;
-                changeOpen(false);
-                onNewChat();
-              }}
-            >
-              <Plus aria-hidden />
-              <Trans>New chat</Trans>
-            </button>
-          </div>
-        ) : null}
+        <div className="px-2 pt-1">
+          <button
+            data-switcher-focus
+            type="button"
+            className={cn(dropdownRowVariants(), "text-jade-text hover:bg-primary/10")}
+            onClick={() => {
+              focusHandoff.current = true;
+              changeOpen(false);
+              void openNewChat();
+            }}
+          >
+            <Plus aria-hidden />
+            <Trans>New chat</Trans>
+          </button>
+        </div>
         {showSearch ? (
           <div className="px-2 py-1">
             <div className="relative">
@@ -269,7 +268,7 @@ function ThreadSwitchItem({
   active: boolean;
   now: number;
   onSelect: (threadId: string) => void;
-  onRename: () => void;
+  onRename?: () => void;
 }) {
   const title = displayThreadTitle(thread.title);
   const rel = relativeTime(thread.updatedAt, now);

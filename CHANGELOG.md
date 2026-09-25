@@ -48,6 +48,10 @@
 
 - While an agent is working, Enter sends a typed follow-up and the composer swaps Stop for a ringed Send action. Escape still stops the run.
 - Trim redundant app, server, and shared tests and fake-only scaffolding. Retire frozen migration fixtures.
+- Chat navigation reopens the chat this browser last had open, or the chat index when there is none. The remembered chat is per device and no longer synced.
+- Opening or starting a chat from Work or Editor keeps the screen and shows it in the right sidebar. A first Send stays in its pane, including across reload.
+- The chat index is the Chat screen's New chat: a centered composer, then search, an All or Favorites filter, and chats grouped by Today, Yesterday, and Earlier in one page scroll. Chats star in place and can be deleted from any list.
+- The chat feed pages from activity stored on each thread instead of walking every chat's history.
 
 - Align sidebar hover and current-row geometry with inset rounded warm selection, and give list-like dropdowns a shared Meridian-colored panel and row treatment. Chat switching puts New chat before compact chat rows; menus, selects, pickers, and suggestion lists retain their own interaction semantics.
 - Remove unused and duplicate design roles (`--shadow-input`, live-status dot), and keep chat-specific width, padding, and scroll limits out of shared dropdown recipes.
@@ -141,7 +145,7 @@
 - The chat `read`/`skim` expand renders the `meridian.agent-edit.v1` result envelope's block bodies, so a read row opens onto its prose or outline instead of offering no chevron.
 - A collapsed Thinking digest no longer reports a `read(command:"diff")` review as an edited document.
 - A spawn override that names a tool by alias (for example `shell`) folds to its canonical name before the merge, matching authoring. Canonical `xhigh`/`none` effort authored in Mars frontmatter also survives source normalization instead of being dropped.
-- Opening `/chat/{id}` for a subagent no longer shows "This destination is unavailable." Path chat is identity; the primary list is not a lookup. Snapshot miss stays ChatScreen's error. Query `?chat=` still drops missing primaries.
+- Opening `/chat/{id}` for a subagent no longer shows "This destination is unavailable." Path chat is identity; the primary list is not a lookup. Snapshot miss stays ChatScreen's error.
 - Nested subagent Parent back resolves the parent by id on the child snapshot, not the primary-only list.
 - `return_result` persists the protocol result and child-report card in one transaction.
 - Writer-continue `return_result` no longer parks reports in the process Map.

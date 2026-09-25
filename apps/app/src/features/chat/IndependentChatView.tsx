@@ -135,7 +135,6 @@ function IndependentChatProjectView({
             path: target.path,
             workSlug: workSlug ?? null,
           },
-          chat: { kind: "absent" },
           work: { kind: "absent" },
           results: false,
         }),
@@ -145,17 +144,6 @@ function IndependentChatProjectView({
     },
     [projectId, router, works],
   );
-  const openNewChat = useCallback(async () => {
-    await router.navigate({
-      href: projectAddressHref({
-        projectId,
-        destination: { kind: "chat-index" },
-        chat: { kind: "absent" },
-        work: { kind: "absent" },
-        results: false,
-      }),
-    });
-  }, [projectId, router]);
 
   const handlePromote = useCallback(() => {
     if (!project.data) return;
@@ -195,11 +183,7 @@ function IndependentChatProjectView({
       ) : null}
 
       <main className="min-h-0 flex-1">
-        <ProjectNavigationProvider
-          screen="chat"
-          openContextRoute={openContextRoute}
-          openNewChat={openNewChat}
-        >
+        <ProjectNavigationProvider screen="chat" openContextRoute={openContextRoute}>
           <EditorReviewHandoffProvider projectId={projectId} openContextRoute={openContextRoute}>
             <ProjectDraftApplyRecoveryExecutor
               projectId={projectId}

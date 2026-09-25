@@ -8,6 +8,7 @@ import { type ReactNode, useState } from "react";
 import type { ProjectResultItem } from "@/client/api/project-results-api";
 import type { ListQueryStatus } from "@/client/query/list-query";
 import { useThreadRecentDocuments } from "@/client/query/useThreadRecentDocuments";
+import { DockHeader } from "../dock/DockHeader";
 import { DockShell } from "../dock/DockShell";
 import { CollapsibleRailSection, RailEmptyHint, RailErrorRow, RailKindIcon } from "./RailSection";
 
@@ -33,7 +34,11 @@ export function ContextSidebar({ threadId, projectId, onClose }: ContextSidebarP
 
   return (
     <aside aria-label={t`Chat context`} className="flex h-full min-h-0 w-full flex-col">
-      <DockShell placement="dock" screen="chat" onClose={onClose}>
+      <DockShell
+        placement="dock"
+        screen="chat"
+        renderHeader={(args) => <DockHeader {...args} onClose={onClose} />}
+      >
         <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto overflow-x-hidden px-2 py-2">
           <DocumentRailSection
             title={t`Recent`}

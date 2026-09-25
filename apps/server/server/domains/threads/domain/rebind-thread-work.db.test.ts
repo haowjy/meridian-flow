@@ -205,7 +205,7 @@ else
           limit: 2,
         });
         expect(feed).toHaveLength(1);
-        expect(feed[0]?.item).toMatchObject({
+        expect(feed[0]).toMatchObject({
           id: ids.threadId,
           work: { id: ids.targetWorkId, title: "Rebound target" },
         });

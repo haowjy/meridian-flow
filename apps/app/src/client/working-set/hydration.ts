@@ -47,9 +47,6 @@ export function planSuspectBaselineConfirmation(
   return {
     status: "confirmed",
     revision: plan.row.revision,
-    adopt: {
-      recentRoutes: plan.row.recentRoutes,
-      lastThreadId: plan.row.lastThreadId,
-    },
+    adopt: { recentRoutes: plan.row.recentRoutes },
   };
 }

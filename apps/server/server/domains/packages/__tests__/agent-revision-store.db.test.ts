@@ -94,7 +94,7 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect((await threads.listByUser(USER))[0]?.agentName).toBe("Retained Name");
     });
 
-    it("labels an agent-less binding as the generic subagent through thread reads and home feed", async () => {
+    it("labels an agent-less binding as the generic subagent through thread reads and the chat feed", async () => {
       const threads = createDrizzleThreadRepository(db);
       const { createDrizzleRepositoriesForTest } = await import(
         "../../threads/adapters/drizzle/repositories.js"
@@ -106,14 +106,39 @@ if (!url || !["1", "true"].includes(process.env.RUN_DB_TESTS ?? "")) {
       expect((await threads.listByUser(USER))[0]?.agentName).toBe("Subagent");
       const updated = await threads.updateStatus(THREAD, "idle");
       expect(updated?.agentName).toBe("Subagent");
-      const home = await repos.homeFeed.queryPage({
+      const feed = await repos.chatFeed.queryPage({
         projectId: PROJECT,
         userId: USER,
         after: null,
-        recentLimit: 10,
-        includeFeatured: true,
+        limit: 10,
+        favorite: false,
+        search: null,
       });
-      expect(home.continueChat?.agentName).toBe("Subagent");
+      expect(feed[0]?.agentName).toBe("Subagent");
+    });
+
+    it("searches chat feed titles case-insensitively with LIKE metacharacters taken literally", async () => {
+      const threads = createDrizzleThreadRepository(db);
+      const { createDrizzleRepositoriesForTest } = await import(
+        "../../threads/adapters/drizzle/repositories.js"
+      );
+      const repos = createDrizzleRepositoriesForTest(db);
+      await threads.updateTitle(THREAD, "50% Sect trials");
+      const titles = async (search: string) =>
+        (
+          await repos.chatFeed.queryPage({
+            projectId: PROJECT,
+            userId: USER,
+            after: null,
+            limit: 10,
+            favorite: false,
+            search,
+          })
+        ).map((item) => item.title);
+      expect(await titles("sect")).toEqual(["50% Sect trials"]);
+      expect(await titles("50%")).toEqual(["50% Sect trials"]);
+      expect(await titles("5_%")).toEqual([]);
+      expect(await titles("dragon")).toEqual([]);
     });
 
     it("chooses one complete prompt-freeze winner across independent connections", async () => {

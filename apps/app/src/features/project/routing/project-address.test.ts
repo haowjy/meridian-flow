@@ -48,7 +48,7 @@ describe("readable project addresses", () => {
     if (parsed.kind !== "valid") throw new Error(parsed.reason);
     const state = projectAddressState({
       ...parsed.address,
-      chat: { kind: "none" },
+
       work: { kind: "none" },
     });
     const restored = parseProjectAddress(href, "", state);
@@ -88,30 +88,27 @@ describe("readable project addresses", () => {
 
   it("preserves absent, explicitly empty, and malformed secondary selections", () => {
     expect(parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/editor")).toMatchObject({
-      address: { chat: { kind: "absent" }, work: { kind: "absent" } },
+      address: { work: { kind: "absent" } },
     });
     expect(
-      parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/editor", "?chat=&work="),
+      parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/editor", "?work="),
     ).toMatchObject({
       href: "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-      address: { chat: { kind: "none" }, work: { kind: "none" } },
+      address: { work: { kind: "none" } },
     });
     expect(
-      parseProjectAddress(
-        "/p/550e8400-e29b-41d4-a716-446655440000/editor",
-        "?chat=not+a+slug&work=bad%2Fwork",
-      ),
+      parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/editor", "?work=bad%2Fwork"),
     ).toMatchObject({
       address: {
-        chat: { kind: "malformed", value: "not a slug" },
         work: { kind: "malformed", value: "bad/work" },
       },
     });
   });
 
   it.each([
-    "?chat=&ch%61t=a",
-    "?chat=%",
+    "?work=a&work=",
+    "?settings=profile&settings=usage",
+    "?results=&results=1",
     "?unknown=%FE",
   ])("rejects raw query ambiguity %s", (search) => {
     expect(parseProjectAddress("/p/550e8400-e29b-41d4-a716-446655440000/editor", search).kind).toBe(
@@ -123,15 +120,15 @@ describe("readable project addresses", () => {
     expect(
       parseProjectAddress(
         "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md",
-        "?work=Revision&chat=550e8400-e29b-41d4-a716-446655440000&settings=usage&doc=ignored&unknown=1",
+        "?work=Revision&settings=usage&doc=ignored&unknown=1",
       ),
     ).toMatchObject({
-      href: "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?chat=550e8400-e29b-41d4-a716-446655440000&work=revision&settings=usage",
+      href: "/p/550e8400-e29b-41d4-a716-446655440000/manuscript/chapter.md?work=revision&settings=usage",
     });
     expect(
       parseProjectAddress(
         "/p/550e8400-e29b-41d4-a716-446655440000/chat/550e8400-e29b-41d4-a716-446655440000",
-        "?chat=other&work=revision&doc=ignored&results=&settings=profile",
+        "?work=revision&doc=ignored&results=&settings=profile",
       ),
     ).toMatchObject({
       href: "/p/550e8400-e29b-41d4-a716-446655440000/chat/550e8400-e29b-41d4-a716-446655440000?results=&settings=profile",

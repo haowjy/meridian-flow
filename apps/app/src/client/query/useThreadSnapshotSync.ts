@@ -6,7 +6,7 @@
  * installs that owner synchronously after first-send admission succeeds.
  */
 import { EventType, parseSeq } from "@meridian/contracts/protocol";
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { useLayoutEffect, useMemo } from "react";
 import {
   deserializeThreadSnapshot,
@@ -45,6 +45,19 @@ export type ThreadSnapshotSyncStatus = {
   activateProjection: (after?: string) => boolean;
 };
 
+/** Shared options for the live host and route's passive missing-identity
+ * observer (`useMissingChatFallback`). That observer stays `enabled: false`
+ * and only reads whatever the live host's own richer query already put in
+ * the shared cache entry, so this queryFn's simpler shape never actually
+ * runs; never replace it with skipToken, which would drop the shared key.
+ */
+export function threadSnapshotQueryOptions(threadId: string) {
+  return queryOptions({
+    queryKey: threadQueryKeys.snapshot(threadId),
+    queryFn: async () => deserializeThreadSnapshot(await getThreadSnapshot({ data: { threadId } })),
+  });
+}
+
 /** Pending creation gates HTTP and automatic subscription through first-send admission. */
 export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatus {
   const actions = useThreadActions();
@@ -56,6 +69,9 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
 
   const { data, isError, isFetching, refetch } = useQuery({
     queryKey: threadQueryKeys.snapshot(threadId),
+    // Always revalidate on activation: the thread may have advanced while the
+    // writer was elsewhere (for example a background child's report waking the
+    // parent). Cached turns still render first, so this stays navigate-first.
     queryFn: async ({ signal }) => {
       const requestSignal = AbortSignal.any([accountSignal, signal]);
       // The source check runs before TanStack Query can publish this response.

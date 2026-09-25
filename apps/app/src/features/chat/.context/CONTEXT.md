@@ -13,7 +13,7 @@ draft-control changes can be understood independently.
 - [Turn edit receipts](turn-edit-receipts.md) — committed change records, Undo/Redo,
   and conversation reveal.
 - [Composer write mode](composer-write-mode.md) — the Work-scoped Draft /
-  Auto-apply control, neutral shared presentation, Chat-landing and chat-detail adapters, and
+  Auto-apply control, neutral shared presentation, New-chat and chat-detail adapters, and
   composer sizing.
 - [Draft review](draft-review.md) — inline review session, pending projection,
   freshness, and draft-only tabs.
@@ -23,7 +23,9 @@ draft-control changes can be understood independently.
 - Durable acknowledged submissions — the account-stamped intent journal in
   `client/chat-submissions` and the reload reconciliation in
   `useChatSubmissionRecovery.ts` / `useThreadHandoff.ts`. The journal owns intent
-  identity only; the server owns outcome. A proved rejection retires the witness
+  identity only; the server owns outcome. First-send creation is replayed by
+  `useThreadHandoff` using current-chat identity; it never becomes lost-message
+  recovery copy. For later sends, a proved rejection retires the witness
   but keeps the failed user row with Retry / Edit (Retry remints the submission
   id, since the server never re-admits a rejected one); ambiguous sends keep the
   row with Check submission status / Start over. A Retry that is itself

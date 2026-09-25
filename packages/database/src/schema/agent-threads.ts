@@ -60,6 +60,8 @@ export const threads = pgTable(
     spawnStatus: text("spawn_status"),
     spawnDepth: integer("spawn_depth").notNull().default(0),
     activeLeafTurnId: uuid("active_leaf_turn_id").$type<TurnId>(),
+    lastActivityAt: timestamp("last_activity_at", { withTimezone: true }).defaultNow().notNull(),
+    conversationalLeafTurnId: uuid("conversational_leaf_turn_id").$type<TurnId>(),
     turnCount: integer("turn_count").notNull().default(0),
     totalCostUsd: numeric("total_cost_usd", { precision: 12, scale: 6 }).notNull().default("0"),
     nextSeq: bigint("next_seq", { mode: "bigint" }).notNull().default(sql`0`),
@@ -75,6 +77,11 @@ export const threads = pgTable(
     index("threads_project_updated_active")
       .on(table.projectId, table.updatedAt.desc())
       .where(sql`${table.deletedAt} IS NULL`),
+    index("threads_project_activity_primary_active")
+      .on(table.projectId, table.lastActivityAt.desc(), table.id.desc())
+      .where(
+        sql`${table.kind} = 'primary' AND ${table.deletedAt} IS NULL AND ${table.status} <> 'archived'`,
+      ),
     index("threads_created_by_active")
       .on(table.createdByUserId)
       .where(sql`${table.deletedAt} IS NULL`),

@@ -63,6 +63,39 @@ if (!enabled || !databaseUrl) {
             trigger_name: "enlist_turn_trail_work",
           },
         ]);
+        // The chat-activity projection's trigger family (migration
+        // 0000_baseline.sql; see domains/threads/.context/CONTEXT.md
+        // "Chat activity projection") stays a single owner across threads,
+        // turns, and turn_blocks.
+        const chatActivityTriggers = await target<
+          { event_object_table: string; trigger_name: string }[]
+        >`
+            -- DISTINCT: information_schema.triggers denormalizes a multi-event
+            -- trigger (INSERT OR UPDATE OF ...) into one row per event type.
+            SELECT DISTINCT event_object_table, trigger_name
+            FROM information_schema.triggers
+            WHERE trigger_schema = 'public'
+              AND trigger_name LIKE 'recompute_thread_chat_activity%'
+            ORDER BY trigger_name
+          `;
+        expect(chatActivityTriggers).toEqual([
+          {
+            event_object_table: "threads",
+            trigger_name: "recompute_thread_chat_activity_on_active_leaf",
+          },
+          {
+            event_object_table: "turn_blocks",
+            trigger_name: "recompute_thread_chat_activity_on_block_insert",
+          },
+          {
+            event_object_table: "turn_blocks",
+            trigger_name: "recompute_thread_chat_activity_on_block_update",
+          },
+          {
+            event_object_table: "turns",
+            trigger_name: "recompute_thread_chat_activity_on_turn",
+          },
+        ]);
         const functions = await target<{ name: string }[]>`
           SELECT p.proname AS name FROM pg_proc p
           JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -78,6 +111,11 @@ if (!enabled || !databaseUrl) {
           "consume_credit_lots_fifo",
           "enforce_thread_prompt_freeze",
           "enlist_turn_trail_work",
+          "recompute_thread_chat_activity",
+          "recompute_thread_chat_activity_from_block_insert",
+          "recompute_thread_chat_activity_from_block_update",
+          "recompute_thread_chat_activity_from_thread",
+          "recompute_thread_chat_activity_from_turn",
           "update_updated_at_column",
           "validate_active_leaf_is_leaf",
           "validate_active_leaf_same_thread",

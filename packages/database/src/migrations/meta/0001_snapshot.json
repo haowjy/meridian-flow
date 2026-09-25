@@ -1,6 +1,6 @@
 {
-  "id": "5f9c8bb0-6a18-47c4-916e-aede3f91ad5a",
-  "prevId": "69c573fe-7b16-4424-a6c5-5736928e98d6",
+  "id": "ea9a96eb-f7a9-4352-a992-5006367cc6ff",
+  "prevId": "bb3df78f-39bc-49b1-88d0-a1c6599c27e3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2267,6 +2267,19 @@
           "primaryKey": false,
           "notNull": false
         },
+        "last_activity_at": {
+          "name": "last_activity_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "conversational_leaf_turn_id": {
+          "name": "conversational_leaf_turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "turn_count": {
           "name": "turn_count",
           "type": "integer",
@@ -2352,6 +2365,34 @@
           "with": {},
           "method": "btree",
           "where": "\"threads\".\"deleted_at\" IS NULL",
+          "concurrently": false
+        },
+        "threads_project_activity_primary_active": {
+          "name": "threads_project_activity_primary_active",
+          "columns": [
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_activity_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "with": {},
+          "method": "btree",
+          "where": "\"threads\".\"kind\" = 'primary' AND \"threads\".\"deleted_at\" IS NULL AND \"threads\".\"status\" <> 'archived'",
           "concurrently": false
         },
         "threads_created_by_active": {
@@ -6113,12 +6154,6 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
-        "last_thread_id": {
-          "name": "last_thread_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "revision": {
           "name": "revision",
           "type": "integer",
@@ -6161,19 +6196,6 @@
           ],
           "onUpdate": "no action",
           "onDelete": "cascade"
-        },
-        "project_user_working_sets_last_thread_id_threads_id_fk": {
-          "name": "project_user_working_sets_last_thread_id_threads_id_fk",
-          "tableFrom": "project_user_working_sets",
-          "columnsFrom": [
-            "last_thread_id"
-          ],
-          "tableTo": "threads",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "set null"
         }
       },
       "compositePrimaryKeys": {

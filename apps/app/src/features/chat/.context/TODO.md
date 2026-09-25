@@ -32,3 +32,21 @@ Track with GitHub issue: #130.
 When mentions land, append ", @ for reference" to the rotating composer
 placeholder when the writer has not used `@` in seven days. Drive it from the
 real mention last-use timestamp rather than a disabled placeholder path.
+
+## Unbounded project chat list ([#593](https://github.com/haowjy/meridian-flow/issues/593))
+
+Every project load downloads every thread unpaged (`useProjectThreads` →
+`GET /api/projects/:id/threads`). The switcher lists and searches it, and
+title, Agent, and Work lookups read it by id. Chats grow without bound, so move
+the switcher onto the paged, server-searched chat feed the index uses
+(virtualized), point per-chat lookups at the thread snapshot or cached feed
+rows, and delete the whole-project list. Consumers are listed in the issue.
+
+## Favorite state applied three times ([#597](https://github.com/haowjy/meridian-flow/issues/597))
+
+A chat's Favorite reaches the screen three ways: projected onto each fetched
+feed page, rewritten into cached pages by `syncChatFeeds` after every command
+step, and read again per row by `useProjectChatUserState`. The cached copy exists
+only for the Favorites filter. Keep feed caches as server truth, hold Favorite
+records in one per-project map, and apply it at read time for rows and filter
+alike.

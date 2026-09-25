@@ -5,23 +5,34 @@ import { MessageSquare, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
-import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { DraftReviewBoundary } from "@/features/chat/DraftReviewProvider";
-import { ChatLandingScreen } from "../chat-landing/ChatLandingScreen";
+import { ChatSurface } from "../chat/ChatSurface";
+import { ChatIndex } from "../chat-index/ChatIndex";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeLabel } from "../context/context-schemes";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
+import { useDockViewStore } from "../dock/dock-view-store";
 import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
 import { EditorWorkRecovery } from "../EditorWorkRecovery";
 import type { ReviewScopedProjectProps } from "../ProjectView";
+import {
+  chatSurfaceThreadId,
+  displayedChatThreadId,
+  useChatNavigation,
+  useDockReveal,
+} from "../routing/chat-navigation";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { WorkScreen } from "../work/WorkScreen";
+import { ChatBreadcrumb } from "./ChatBreadcrumb";
 import { folderAncestry, pathLeafName } from "./context-location";
 import { MobileBreadcrumb, type MobileBreadcrumbSegment } from "./MobileBreadcrumb";
 import { MobileChatHost } from "./MobileChatHost";
+import { MobileChatSheetHeader } from "./MobileChatSheetHeader";
 import { MobileContextBrowser } from "./MobileContextBrowser";
 import { MobileCreateEntryMenu } from "./MobileCreateEntryMenu";
 import { MobileDocumentHost } from "./MobileDocumentHost";
+import { MobileKeyboardAware } from "./MobileKeyboardAware";
 import { MobileResultsView } from "./MobileResultsView";
 import { MobileTopBar } from "./MobileTopBar";
 import { NavigationDrawer } from "./NavigationDrawer";
@@ -29,6 +40,19 @@ import { NavigationDrawer } from "./NavigationDrawer";
 type MobileProjectProps = ReviewScopedProjectProps;
 
 export function MobileProject(props: MobileProjectProps) {
+  const { recoveringFirstSend } = useChatNavigation();
+  const setDockView = useDockViewStore((state) => state.setDockView);
+  // The sheet is the phone's dock: it opens over Work or Editor only. On the
+  // Chat screen the chat is already the page. A first send recovering after a
+  // reload opens it at mount.
+  const [chatOpen, setChatOpen] = useState(
+    () => props.activeScreen !== "chat" && recoveringFirstSend,
+  );
+  const openChatSheet = () => {
+    setDockView(props.activeScreen, "chat");
+    setChatOpen(true);
+  };
+  useDockReveal(openChatSheet);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { tabs } = useContextTabs(props.projectId);
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
@@ -44,9 +68,6 @@ export function MobileProject(props: MobileProjectProps) {
   // abandons an uncommitted create row — the row is location-scoped chrome.
   const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}|${props.resultsOpen}`;
   useEffect(() => setCreating(null), [contextLocation]);
-  // The phone shows one view at a time and has no rail to reveal into, so this
-  // is the one shell where opening a conversation still switches the view.
-  useConversationRevealRouting(props.onSelectThread);
   const crumbs = contextBreadcrumbSegments(props);
 
   return (
@@ -56,15 +77,21 @@ export function MobileProject(props: MobileProjectProps) {
     >
       <MobileTopBar
         activeScreen={props.activeScreen}
-        projectId={props.projectId}
         projectTitle={props.projectTitle}
-        activeThreadId={props.activeThreadId}
-        onSelectThread={props.onSelectThread}
         title={props.resultsOpen ? t`Results` : undefined}
         onOpenDrawer={() => setDrawerOpen(true)}
         breadcrumb={
-          !props.resultsOpen && crumbs.length > 0 ? (
+          props.resultsOpen ? undefined : props.activeScreen === "chat" ? (
+            <ChatBreadcrumb projectId={props.projectId} display={props.chatDisplay} />
+          ) : crumbs.length > 0 ? (
             <MobileBreadcrumb segments={crumbs} />
+          ) : undefined
+        }
+        chatAction={
+          props.activeScreen !== "chat" ? (
+            <PhoneIconButton aria-label={t`Open chat`} onClick={openChatSheet}>
+              <MessageSquare className="size-5" aria-hidden />
+            </PhoneIconButton>
           ) : undefined
         }
         actions={
@@ -87,18 +114,42 @@ export function MobileProject(props: MobileProjectProps) {
           retainWhileLoading={props.retainEditorWhileLoading}
           issue={
             props.routeIssues?.main ??
-            (props.activeScreen === "chat"
-              ? props.routeIssues?.chat
-              : props.activeScreen === "context"
-                ? props.editorScope.status === "ready"
-                  ? props.routeIssues?.editor
-                  : undefined
-                : undefined)
+            (props.activeScreen === "context" && props.editorScope.status === "ready"
+              ? props.routeIssues?.editor
+              : undefined)
           }
         >
           {renderActiveView(props, creating, () => setCreating(null), localTab)}
         </ProjectRouteBoundary>
       </main>
+      <Sheet open={chatOpen && props.activeScreen !== "chat"} onOpenChange={setChatOpen}>
+        <SheetContent
+          side="right"
+          showCloseButton={false}
+          className="w-full max-w-full gap-0 p-0 sm:max-w-full"
+        >
+          <SheetTitle className="sr-only">{t`Chat`}</SheetTitle>
+          <SheetDescription className="sr-only">{t`Chat alongside your current screen`}</SheetDescription>
+          <DraftReviewBoundary value={props.chatReview}>
+            <MobileKeyboardAware>
+              <ChatSurface
+                projectId={props.projectId}
+                threadId={chatSurfaceThreadId(props.chatDisplay)}
+                activeWork={props.chatWork}
+                availableWorks={props.availableWorks}
+                activeScreen={props.activeScreen}
+                placement="dock"
+                renderHeader={(args) => <MobileChatSheetHeader {...args} />}
+                // The sheet mounts the surface only while open: it is always
+                // visible, and closing the sheet ends it.
+                visible
+                onCloseDock={() => setChatOpen(false)}
+                onOpenContextTarget={props.onOpenContextTarget}
+              />
+            </MobileKeyboardAware>
+          </DraftReviewBoundary>
+        </SheetContent>
+      </Sheet>
       <NavigationDrawer
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
@@ -129,7 +180,7 @@ function trailingAction(
       </PhoneIconButton>
     );
   }
-  if (props.activeScreen === "chat" && !props.chatLanding) {
+  if (props.activeScreen === "chat" && props.chatDisplay.kind !== "index") {
     return (
       <PhoneIconButton onClick={props.onOpenResults} aria-label={t`Open results`}>
         <Sparkles className="size-5" aria-hidden />
@@ -165,20 +216,18 @@ function renderActiveView(
           projectId={props.projectId}
           routeWork={props.routeWork}
           routeCommands={props.routeCommands}
-          onOpenThread={props.onOpenThread}
         />
       );
     case "chat":
-      if (props.chatLanding)
-        return <ChatLandingScreen projectId={props.projectId} onOpenThread={props.onOpenThread} />;
+      if (props.chatDisplay.kind === "index")
+        return <ChatIndex projectId={props.projectId} namedByChrome />;
       return (
         <DraftReviewBoundary value={props.chatReview}>
           <MobileChatHost
             projectId={props.projectId}
-            threadId={props.activeThreadId}
+            threadId={displayedChatThreadId(props.chatDisplay)}
             activeWork={props.chatWork}
             availableWorks={props.availableWorks}
-            onSelectThread={props.onSelectThread}
             onOpenContextTarget={props.onOpenContextTarget}
           />
         </DraftReviewBoundary>

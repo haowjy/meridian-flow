@@ -6,8 +6,8 @@ targets = [
     ".opencode",
     ".pi",
     ".codex",
+    ".claude",
 ]
-
 models_cache_ttl_hours = 24
 
 [settings.meridian.agent_copy]
@@ -19,4 +19,5 @@ agents = [
     "reviewer",
     "prober",
     "coder",
+    "subagent"
 ]

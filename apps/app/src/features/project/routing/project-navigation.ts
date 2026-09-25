@@ -22,7 +22,6 @@ export type ProjectNavigationPort = {
   ): Promise<void>;
 };
 export type DisplayedProjectSelection = {
-  chatId: string | null;
   workSlug: string | null;
   /** Existing local ownership pointer, never content or a new draft instance. */
   local?: { accountId: string; projectId: string; resourceHandle: string };
@@ -133,12 +132,6 @@ export function createProjectNavigation(
     const shown = displayed();
     const frozen: ProjectAddress = {
       ...current,
-      chat:
-        current.chat.kind === "absent"
-          ? shown.chatId
-            ? { kind: "slug", slug: shown.chatId }
-            : { kind: "none" }
-          : current.chat,
       work:
         current.work.kind === "absent"
           ? shown.workSlug
@@ -264,7 +257,6 @@ export function createProjectNavigation(
     repairQuerySelections(
       ticket: ProjectNavigationTicket,
       catalogs: {
-        chat: AddressCatalog<{ slug: string | null }>;
         work: AddressCatalog<{ slug: string | null }>;
       },
     ): void {
