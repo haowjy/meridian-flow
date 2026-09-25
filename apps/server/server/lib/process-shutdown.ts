@@ -41,7 +41,7 @@ export async function withDeadline<T>(
 
 export async function runShutdownSteps(
   steps: readonly ShutdownStep[],
-  input: { eventSink: EventSink; signal: NodeJS.Signals; deadlineAt: number },
+  input: { eventSink: EventSink; signal: NodeJS.Signals },
 ): Promise<boolean> {
   let failed = false;
   for (const step of steps) {
@@ -51,11 +51,8 @@ export async function runShutdownSteps(
       name: `shutdown.${step.name}.started`,
       payload: { signal: input.signal },
     });
-    const deadlineAt = Math.min(
-      input.deadlineAt,
-      step.timeoutMs === undefined ? input.deadlineAt : Date.now() + step.timeoutMs,
-    );
-    const result = await withDeadline(step.callback, deadlineAt);
+    const stageDeadline = Date.now() + (step.timeoutMs ?? 25_000);
+    const result = await withDeadline(step.callback, stageDeadline);
     if (result.status === "deadline") {
       failed = true;
       emitEvent(input.eventSink, {
@@ -109,9 +106,8 @@ export function installProcessShutdownHooks(eventSink: EventSink): void {
         let failed = await runShutdownSteps(shutdownSteps, {
           eventSink,
           signal,
-          deadlineAt,
         });
-        const flush = await withDeadline(() => eventSink.flush(), deadlineAt);
+        const flush = await withDeadline(() => eventSink.flush(), Date.now() + 4_000);
         if (flush.status !== "completed") {
           failed = true;
           const reason = flush.status === "deadline" ? "deadline" : String(flush.error);
@@ -127,6 +123,12 @@ export function installProcessShutdownHooks(eventSink: EventSink): void {
       })();
       const result = await withDeadline(() => sequence, deadlineAt);
       if (result.status !== "completed") {
+        emitEvent(eventSink, {
+          level: "error",
+          source: "process.shutdown",
+          name: "shutdown.incomplete.global-deadline",
+          payload: { signal, reason: "deadline" },
+        });
         process.stderr.write("shutdown.incomplete.global-deadline\n");
         process.exit(1);
       }

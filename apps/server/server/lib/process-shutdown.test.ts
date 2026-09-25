@@ -32,7 +32,7 @@ describe("process shutdown", () => {
           },
         },
       ],
-      { eventSink: testEventSink(events), signal: "SIGTERM", deadlineAt: Date.now() + 100 },
+      { eventSink: testEventSink(events), signal: "SIGTERM" },
     );
 
     expect(failed).toBe(true);
