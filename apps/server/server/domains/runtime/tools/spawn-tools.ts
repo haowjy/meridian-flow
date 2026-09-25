@@ -3,10 +3,13 @@
  * into a thread), and return_result (child-side). Handlers are thin —
  * ChildRunCoordinator owns lifecycle; these only validate input.
  */
-import type { InvocationPatch } from "@meridian/contracts/agents";
+import { type InvocationPatch, invocationPatchSchema } from "@meridian/contracts/agents";
 import type { ArtifactRef } from "@meridian/contracts/interrupt";
+import { meridianErrorFromSystem } from "@meridian/contracts/interrupt";
 import type { SpawnResult } from "@meridian/contracts/spawn";
 import type { JsonValue } from "@meridian/contracts/threads";
+import { ZodError } from "zod";
+import { InvocationPatchError } from "../spawn/apply-invocation-patch.js";
 import type {
   ReturnResultToolHandlerContext,
   SpawnToolHandlerContext,
@@ -43,9 +46,24 @@ export function parseSpawnToolArgs(input: unknown): SpawnToolArgs {
       ? { append_system_prompt: rec.append_system_prompt }
       : {}),
     ...(rec.overrides !== null && typeof rec.overrides === "object" && !Array.isArray(rec.overrides)
-      ? { overrides: rec.overrides as InvocationPatch }
+      ? { overrides: parseInvocationPatch(rec.overrides) }
       : {}),
   };
+}
+
+function parseInvocationPatch(input: unknown): InvocationPatch {
+  try {
+    return invocationPatchSchema.parse(input);
+  } catch (error) {
+    if (error instanceof ZodError) {
+      throw new InvocationPatchError(
+        error.issues
+          .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
+          .join("; "),
+      );
+    }
+    throw error;
+  }
 }
 
 /** Roster-aware spawn description; the caller's binding supplies whether it has named targets. */
@@ -160,7 +178,15 @@ export function createSpawnToolRegistrations(): ToolRegistration[] {
       execution: {
         type: "server",
         handler: async (input: unknown, ctx: SpawnToolHandlerContext) => {
-          return ctx.spawn(parseSpawnToolArgs(input));
+          try {
+            return await ctx.spawn(parseSpawnToolArgs(input));
+          } catch (error) {
+            if (!(error instanceof InvocationPatchError)) throw error;
+            return {
+              ok: false,
+              error: meridianErrorFromSystem("spawn_invocation_patch_invalid", error.message),
+            };
+          }
         },
       },
       sequential: true,

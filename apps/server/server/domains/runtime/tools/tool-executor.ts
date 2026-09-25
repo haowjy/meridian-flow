@@ -221,9 +221,6 @@ async function runWithTimeout(
       timedOut: false as const,
       result,
     }));
-    void handlerPromise.catch(() => {
-      // Outcome may be decided by timeout or abort before the handler settles.
-    });
     const abortPromise = abortOutcome(externalSignal);
     return await Promise.race(
       abortPromise
@@ -239,11 +236,7 @@ async function runWithTimeout(
 
 /** Returns whether the registered tool must run alone. */
 function isSequentialTool(registry: ToolRegistry, name: string): boolean {
-  try {
-    return registry.getRegistration(name)?.sequential === true;
-  } catch {
-    return false;
-  }
+  return registry.getRegistration(name)?.sequential === true;
 }
 
 function handlerContextForRegistration(
@@ -390,9 +383,6 @@ export function createToolExecutor(registry: ToolRegistry): ToolExecutorWithBatc
       const handlerPromise = handler(call.arguments, effectiveHandlerContext).then((result) => ({
         result,
       }));
-      void handlerPromise.catch(() => {
-        // Outcome may be decided by caller abort before the handler settles.
-      });
       const abortPromise = abortOutcome(ctx.signal);
       const outcome = await Promise.race(
         abortPromise ? [handlerPromise, abortPromise] : [handlerPromise],

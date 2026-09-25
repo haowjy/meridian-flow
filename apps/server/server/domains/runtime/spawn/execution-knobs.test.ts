@@ -1,5 +1,5 @@
 /** One execution-knob contract across compile, resolve, patch, and provider params. */
-import type { ResolvedAgentConfiguration } from "@meridian/contracts/agents";
+import { invocationPatchSchema, type ResolvedAgentConfiguration } from "@meridian/contracts/agents";
 import { describe, expect, it } from "vitest";
 import {
   createInMemoryAgentRevisionStore,
@@ -77,14 +77,14 @@ describe("one definition across all four surfaces", () => {
 
     const patched = await applyInvocationPatch({
       baseline,
-      patch: {
+      patch: invocationPatchSchema.parse({
         model: "patched-model",
         effort: "none",
         tools: { shell: "allow" },
         "disallowed-tools": ["edit"],
         subagents: ["critic"],
         skills: { load: ["outline"], available: [] },
-      },
+      }),
       caller: baseline,
       store: revisions,
       packageRevisionId: installed.packageRevisionId,

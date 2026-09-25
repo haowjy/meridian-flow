@@ -120,7 +120,7 @@ export function createRunSessions(deps: {
         },
         Math.floor(DEFAULT_LEASE_TTL_MS / 3),
       );
-      heartbeat.unref?.();
+      heartbeat.unref();
       const resumeAfterSeq = (await deps.headSeq(threadId)).toString();
       const loop = await deps.setup({
         ...input,

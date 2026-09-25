@@ -1,5 +1,6 @@
 /** Spawn/thread_message tool argument parsing and the advertised JSON schema. */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { InvocationPatchError } from "../spawn/apply-invocation-patch.js";
 import {
   createSpawnToolRegistrations,
   parseSpawnToolArgs,
@@ -24,6 +25,23 @@ describe("parseSpawnToolArgs", () => {
     );
     expect(parseSpawnToolArgs({ prompt: "go", overrides: "nope" })).not.toHaveProperty("overrides");
     expect(parseSpawnToolArgs({ prompt: "go", overrides: null })).not.toHaveProperty("overrides");
+    expect(() => parseSpawnToolArgs({ prompt: "go", overrides: { effort: "invalid" } })).toThrow(
+      InvocationPatchError,
+    );
+  });
+
+  it("maps malformed nested patches before spawning", async () => {
+    const spawn = vi.fn();
+    const registration = createSpawnToolRegistrations().find(
+      (entry) => entry.definition.name === "spawn",
+    );
+    if (registration?.execution.type !== "server") throw new Error("missing spawn");
+    const result = await registration.execution.handler(
+      { prompt: "go", overrides: { effort: "invalid" } },
+      { spawn } as never,
+    );
+    expect(result).toMatchObject({ ok: false, error: { code: "spawn_invocation_patch_invalid" } });
+    expect(spawn).not.toHaveBeenCalled();
   });
 });
 
