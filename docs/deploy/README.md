@@ -27,7 +27,7 @@ one replica. Use Neon direct TLS URLs (`sslmode=require`, no `-pooler` or
 | PR labels | Result |
 |---|---|
 | `release:skip` | Skip that merge (takes precedence) |
-| `release:patch` or `release:stable` | Stable patch |
+| `release:patch` | Stable patch |
 | `release:minor` | Stable minor |
 | `release:major` | Stable major |
 | `release:rc`, unknown `release:*`, or no release label | Patch RC on latest stable |

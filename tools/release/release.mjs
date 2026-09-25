@@ -10,12 +10,11 @@ export function resolveIntent(labels) {
   if (unique.includes("release:skip")) return { release: false, kind: "skip" };
   const rel = unique.filter((label) => label.startsWith("release:"));
   if (!rel.length) return { release: true, kind: "rc", bump: "patch" };
-  const unknown = rel.some((label) => !/^release:(skip|patch|stable|minor|major|rc)$/.test(label));
+  const unknown = rel.some((label) => !/^release:(skip|patch|minor|major|rc)$/.test(label));
   if (unknown || rel.includes("release:rc")) return { release: true, kind: "rc", bump: "patch" };
   if (rel.includes("release:major")) return { release: true, kind: "stable", bump: "major" };
   if (rel.includes("release:minor")) return { release: true, kind: "stable", bump: "minor" };
-  if (rel.some((label) => ["release:patch", "release:stable"].includes(label)))
-    return { release: true, kind: "stable", bump: "patch" };
+  if (rel.includes("release:patch")) return { release: true, kind: "stable", bump: "patch" };
   return { release: true, kind: "rc", bump: "patch" };
 }
 

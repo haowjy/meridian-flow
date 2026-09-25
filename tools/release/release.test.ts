@@ -12,7 +12,7 @@ describe("release intent", () => {
   it.each([
     [[], { release: true, kind: "rc", bump: "patch" }],
     [["release:patch"], { release: true, kind: "stable", bump: "patch" }],
-    [["release:stable"], { release: true, kind: "stable", bump: "patch" }],
+    [["release:stable"], { release: true, kind: "rc", bump: "patch" }],
     [["release:minor"], { release: true, kind: "stable", bump: "minor" }],
     [["release:major"], { release: true, kind: "stable", bump: "major" }],
     [["release:rc"], { release: true, kind: "rc", bump: "patch" }],
