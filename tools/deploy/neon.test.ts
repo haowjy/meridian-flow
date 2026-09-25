@@ -20,14 +20,14 @@ async function fakeNeon(
     } else if (url.pathname.endsWith("/operations/op-1")) {
       operationReads += 1;
       if (scenario === "timeout")
-        response.end(JSON.stringify({ status: "running", failures_count: 0 }));
+        response.end(JSON.stringify({ operation: { status: "running", failures_count: 0 } }));
       else if (scenario === "failed")
-        response.end(JSON.stringify({ status: "failed", failures_count: 1 }));
+        response.end(JSON.stringify({ operation: { status: "failed", failures_count: 1 } }));
       else if (operationReads === 1)
-        response.end(JSON.stringify({ status: "scheduling", failures_count: 0 }));
+        response.end(JSON.stringify({ operation: { status: "scheduling", failures_count: 0 } }));
       else if (operationReads === 2)
-        response.end(JSON.stringify({ status: "running", failures_count: 0 }));
-      else response.end(JSON.stringify({ status: "finished", failures_count: 0 }));
+        response.end(JSON.stringify({ operation: { status: "running", failures_count: 0 } }));
+      else response.end(JSON.stringify({ operation: { status: "finished", failures_count: 0 } }));
     } else if (url.pathname.endsWith("/snapshots")) {
       const names = url.searchParams;
       void names;

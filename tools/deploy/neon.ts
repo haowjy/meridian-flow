@@ -103,9 +103,13 @@ export async function createConfirmedSnapshot(options: NeonOptions): Promise<Neo
     while (true) {
       if (Date.now() >= deadline) error(`operation ${id} timed out before completion`);
       const operationUrl = new URL(`${base}/operations/${encodeURIComponent(id)}`);
-      const operation = (await request(operationUrl)) as Record<string, unknown>;
-      const status = String(operation.status ?? "").toLowerCase();
-      const rawFailures = operation.failures_count ?? operation.failuresCount;
+      const response = (await request(operationUrl)) as Record<string, unknown>;
+      const operation = response.operation;
+      if (!operation || typeof operation !== "object" || Array.isArray(operation))
+        error(`operation ${id} response contained no operation object`);
+      const operationData = operation as Record<string, unknown>;
+      const status = String(operationData.status ?? "").toLowerCase();
+      const rawFailures = operationData.failures_count ?? operationData.failuresCount;
       const failures = Number(rawFailures);
       if (status === "finished") {
         if (rawFailures === undefined || !Number.isFinite(failures) || failures !== 0)
