@@ -88,7 +88,7 @@ type ReviewHunkBase = {
     relStart: string;
     relEnd: string;
   };
-  /** True when branch and live CRDT structs interleave in the same text node. */
+  /** True when branch and live CRDT structs interleave in one text node; this marks a merge artifact, not authorship. */
   mergeArtifact?: boolean;
 };
 

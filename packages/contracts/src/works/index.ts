@@ -22,7 +22,7 @@ export interface Work {
   aiWriteMode: AiWriteMode;
   /** Durable per-entity ordering fence. JSON form of a monotonic bigint. */
   entityRevision: string;
-  /** Server-counted unpushed branch-write rows across this Work's branches. */
+  /** Server count of unpushed branch-write rows across this Work's branches; never derive from visible rows. */
   unpushedChangeCount?: number | null;
   createdAt: string;
   updatedAt: string;
