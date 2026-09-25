@@ -63,7 +63,7 @@ for attempt in 1 2 3; do
     echo "::error::Computed tag ${version} already exists locally but has no matching release trigger."; exit 1
   fi
   release_date="$(date -u +%F)"
-  node tools/release/release.mjs bump package.json "$version"
+  node tools/release/release.mjs bump package.json "${version#v}"
   node tools/release/release.mjs changelog CHANGELOG.md "${version#v}" "$release_date"
   git add package.json CHANGELOG.md
   git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m "release: ${version}" -m "Release-Trigger: ${TRIGGER_SHA}"
