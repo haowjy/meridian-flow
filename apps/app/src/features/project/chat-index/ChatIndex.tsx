@@ -35,9 +35,19 @@ export type ChatIndexProps = {
   namedByChrome?: boolean;
 };
 
+/**
+ * The index's search and filter per project, for this page session: opening a
+ * chat unmounts the index, and coming back (Back, the index chip) finds the
+ * list as the writer left it.
+ */
+const listViews = new Map<string, { filter: Filter; searchText: string }>();
+
 export function ChatIndex({ projectId, namedByChrome = false }: ChatIndexProps) {
-  const [filter, setFilter] = useState<Filter>("all");
-  const [searchText, setSearchText] = useState("");
+  const [filter, setFilter] = useState<Filter>(() => listViews.get(projectId)?.filter ?? "all");
+  const [searchText, setSearchText] = useState(() => listViews.get(projectId)?.searchText ?? "");
+  useEffect(() => {
+    listViews.set(projectId, { filter, searchText });
+  }, [projectId, filter, searchText]);
   const search = useSettledSearch(searchText);
   const feed = useProjectChatFeed(projectId, filter === "favorites", search);
   const now = useMinuteClock();
@@ -96,7 +106,7 @@ export function ChatIndex({ projectId, namedByChrome = false }: ChatIndexProps) 
 
 /** Search as typed, settled briefly so each keystroke is not its own request. */
 function useSettledSearch(text: string): string | null {
-  const [settled, setSettled] = useState<string | null>(null);
+  const [settled, setSettled] = useState<string | null>(() => text.trim() || null);
   useEffect(() => {
     const next = text.trim() || null;
     const timer = window.setTimeout(() => setSettled(next), next ? 200 : 0);
