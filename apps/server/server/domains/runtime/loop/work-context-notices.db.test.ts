@@ -371,9 +371,9 @@ else
         ]);
         expect(work?.prevTurnId).toBe(earlierWriter ? firstWriterId : assistant.id);
         expect(boundary.drain.turns.at(-1)?.prevTurnId).toBe(work?.id);
-        const rendered = boundary.drain.rendered.map((message) => JSON.stringify(message.content));
-        expect(rendered).toHaveLength(earlierWriter ? 3 : 2);
-        expect(rendered[earlierWriter ? 1 : 0]).toContain("system_update");
+        expect(
+          boundary.drain.blocks.find((block) => block.turnId === work?.id)?.textContent,
+        ).toContain("system_update");
         expect(boundary.next.prevTurnId).toBe(writerId);
         expect(await updates()).toHaveLength(1);
       } finally {

@@ -91,6 +91,7 @@ import { readActivatedSkillSlugs } from "./activated-skills.js";
 import { loadUserSkillBody } from "./available-skills.js";
 import { contentForBlockInput, localBlockFromEvent } from "./block-helpers.js";
 import {
+  type ActivatedSkillBody,
   attachNoticesToLatestUserMessage,
   attachSkillBodiesToLatestUserMessage,
   insertPostToolNotices,
@@ -963,6 +964,7 @@ async function persistReferenceReads(input: {
 }
 
 async function buildGenerateRequest(input: {
+  skillBodiesByTurn: ReadonlyMap<TurnId, readonly ActivatedSkillBody[]>;
   deps: OrchestratorDeps;
   runInput: RunLoopInput;
   thread: Thread;
@@ -979,6 +981,7 @@ async function buildGenerateRequest(input: {
     thread: input.thread,
     turns: input.turns,
     blocks: input.blocks,
+    skillBodiesByTurn: input.skillBodiesByTurn,
     agentRevisions: input.deps.agentRevisions,
     toolRegistry: input.deps.toolRegistry,
     gateway: input.deps.gateway,
@@ -1185,6 +1188,7 @@ async function executeLoop(
     ...inheritedBlocks,
     ...(await repos.blocks.listByThread(input.threadId)),
   ];
+  const skillBodiesByTurn = new Map<TurnId, readonly ActivatedSkillBody[]>();
   let queuedDrain: Awaited<ReturnType<typeof drainInbox>> | undefined;
   let endTurnRequested = false;
 
@@ -1211,6 +1215,9 @@ async function executeLoop(
   }
   function acceptBoundary(result: AdoptedBatch) {
     allTurns.push(...result.drain.turns);
+    for (const [turnId, skills] of result.drain.skillBodiesByTurn) {
+      skillBodiesByTurn.set(turnId, skills);
+    }
     for (const block of result.drain.blocks) {
       const index = allBlocks.findIndex((existing) => existing.id === block.id);
       if (index < 0) allBlocks.push(block);
@@ -1362,6 +1369,7 @@ async function executeLoop(
         thread,
         turns: allTurns,
         blocks: allBlocks,
+        skillBodiesByTurn,
         gatewaySignal: gatewayAbort.signal,
       });
       thread = built.thread;
@@ -1380,14 +1388,7 @@ async function executeLoop(
       writerMessageIndex ??= lastUserMessageIndex(request.messages);
       const baseMessageCount = request.messages.length;
       const inboxAckIds = drain.ackIds;
-      // These are the same ordered durable message turns, with request-only
-      // skill bodies and rich reference reads resolved at adoption.
-      if (drain.rendered.length > 0)
-        request.messages.splice(
-          request.messages.length - drain.rendered.length,
-          drain.rendered.length,
-          ...drain.rendered,
-        );
+      // Adopted turns use the same whole-request image projection as history.
       if (iteration === 1) {
         preTurnNotices.push(...drain.notices);
       } else if (drain.notices.length > 0) {
