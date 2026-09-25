@@ -1,27 +1,39 @@
 # Project chat index contracts
 
-`useProjectChatFeed` reads flat `{ items, nextCursor }` pages. All and Favorites
-have distinct query keys; the server applies Favorite filtering before keyset
-pagination. `project-chat-feed-cache.ts` maps fields and deduplicates pages,
-without categories. Pending Favorite membership is projected into cached
-filtered pages without changing their server cursors, and stale first-page
-responses retain Favorite commands that completed after the request began.
+`useProjectChatFeed` reads flat `{ items, nextCursor }` pages, keeps the
+previous filter/search page on screen (`placeholderData: keepPreviousData`)
+while the next settles, and memoizes the flattened, favorite-filtered `items`
+so a keystroke elsewhere does not invalidate every row. All and Favorites have
+distinct query keys; the server applies Favorite filtering before keyset
+pagination. `client/query/chat-projections.ts` is the one canonical writer for
+every cache that holds a denormalized chat row (the project thread list, every
+chat-feed page, every Work-feed page): a mutation patches or removes
+(`null`) a row there, applied to all of them in one batch, instead of each
+mutation hand-listing a subset. It also owns `flattenChatFeed`. Pending
+Favorite membership is projected into cached filtered pages without changing
+their server cursors, and stale first-page responses retain Favorite commands
+that completed after the request began.
 
 `thread-user-state-commands.ts` owns normalized Favorite intent, serialization,
-stale-response fencing, and failure. `ProjectChatRow` is shared with Work detail.
-The index delegates selection to route commands. Creation lives in
-`features/chat/CreationComposer`: the `hero` variant above the feed here, the
-pinned variant in the empty chat pane. Recency groups are computed per render from the flat,
-newest-first pages, so pagination continues inside the last group.
+stale-response fencing, and failure, routed through `chat-projections`.
+`ProjectChatFeedRow` (in `chat-list/ProjectChatRow.tsx`) is the one row entry
+point shared with Work detail: it reads the row's user state itself, and both
+lists pass it only the item and commands. The index delegates selection to
+route commands. Creation lives in `features/chat/CreationComposer`: the `hero`
+variant above the feed here, the pinned variant in the empty chat pane. Recency
+groups are computed per render from the flat, newest-first pages, so
+pagination continues inside the last group.
 
 A project with no chats shows the composer and one muted "No chats yet." line.
-Search settles for 200 ms, then asks the server for title matches (`q`,
-case-insensitive, LIKE metacharacters literal, applied with Favorites before
-pagination); search and filter are part of the feed query key
-(`chatFeedFilter`). Every page is exactly the server's matches. An empty search
-result names the query. Search text and filter persist per project for the page
-session, so returning to the index finds the list as the writer left it.
-An empty Favorites filter is one muted line under the heading row.
+Search settles for 200 ms in a small local field that reports only the settled
+value up, then asks the server for title matches (`q`, case-insensitive, LIKE
+metacharacters literal, applied with Favorites before pagination); search and
+filter are part of the feed query key (`chatFeedFilter`). Every page is exactly
+the server's matches. An empty search result names the query, suppressed while
+placeholder data from a different filter/search is still on screen. Search text
+and filter are router search params on this route (`q`, `filter`), not
+component state, so Back restores exactly what the writer left. An empty
+Favorites filter is one muted line under the heading row.
 
 The pagination sentinel observes only while a page can be requested, so a stale
 observer callback cannot request a page. It sits after the virtualized list,
@@ -39,9 +51,12 @@ so Favorite is a standing mark: a star icon button right beside the Agent name,
 filled for favorites and shown on hover (always on touch) for the rest, next to
 the overflow's Favorite item. The overflow also offers Delete chat when the
 list passes `onDelete`. Every list takes Favorite and Delete from
-`chat-list/useChatRowCommands`: it confirms through `DeleteChatDialog`, calls
-the server soft delete (`deleteProjectChat` drops the chat from the thread list
-and every chat feed), and clears it as the current chat. Work is not the row identity. Rows use the shared
+`chat-list/useChatRowCommands`: confirming closes `DeleteChatDialog` at once and
+deletes optimistically — the row leaves every projection and the current chat
+is forgotten immediately, ahead of `deleteProjectChat`'s server confirmation. A
+failed delete restores the row from its pre-delete snapshot and surfaces the
+error on that row (the same `InlineErrorRow` + Retry treatment as a failed
+Favorite), not the (already-closed) dialog. Work is not the row identity. Rows use the shared
 inset list-row hover (`bg-dropdown-hover`, rounded), the chat switcher's recipe.
 Real and loading rows use the same two-line layout: a flexible title/preview
 lane, a right-side Agent lane (`data-project-chat-row-work` for geometry; the

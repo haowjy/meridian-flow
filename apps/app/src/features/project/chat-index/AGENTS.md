@@ -16,6 +16,6 @@ Chats grow without bound, so the list pages from the server, searches there
   reads `Chats`.
 - The center header door (`ChatIndexButton.tsx`) wears the tab-chip grammar.
   Do not copy the Work collection UI here.
-- `ProjectChatRow` is shared with Work detail; keep them one row.
+- `ProjectChatFeedRow` (over `ProjectChatRow`) is shared with Work detail; keep them one row.
 
 Read [`.context/CONTEXT.md`](.context/CONTEXT.md) before changing feed behavior.

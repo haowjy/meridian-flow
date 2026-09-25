@@ -3,8 +3,9 @@ import { t } from "@lingui/core/macro";
 import { useLingui } from "@lingui/react";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { Star } from "lucide-react";
-import { useEffect, useId, useState } from "react";
+import { memo, useEffect, useId, useState } from "react";
 import type { ThreadUserStateCommandView } from "@/client/query/thread-user-state-commands";
+import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { WorkIdentity } from "@/components/app/WorkIdentity";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -12,7 +13,15 @@ import { IconButton } from "@/components/ui/icon-button";
 import { OverflowMenu } from "@/components/ui/overflow-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { formatProjectChatActivity } from "./project-chat-activity-date";
+import {
+  formatFullProjectChatActivity,
+  formatProjectChatActivity,
+} from "./project-chat-activity-date";
+
+export type ProjectChatDeleteError = {
+  error: Error;
+  onRetry: () => void;
+};
 
 export type ProjectChatRowProps = {
   item: ProjectChatItem;
@@ -22,6 +31,8 @@ export type ProjectChatRowProps = {
   favorite: ThreadUserStateCommandView;
   /** Opens the list's delete confirmation; omitted where a list cannot delete. */
   onDelete?: (item: ProjectChatItem) => void;
+  /** Set only for the row whose optimistic delete failed and was restored. */
+  deleteError?: ProjectChatDeleteError;
   onActiveChange?: (id: string, active: boolean) => void;
 };
 
@@ -44,13 +55,14 @@ export function ProjectChatRowSkeleton({ ruled = false }: { ruled?: boolean }) {
   );
 }
 
-export function ProjectChatRow({
+export const ProjectChatRow = memo(function ProjectChatRow({
   item,
   now,
   onOpen,
   onFavorite,
   favorite,
   onDelete,
+  deleteError,
   onActiveChange,
 }: ProjectChatRowProps) {
   const { i18n } = useLingui();
@@ -63,10 +75,7 @@ export function ProjectChatRow({
   const favoriteSuppressed = favorite.pending;
   const retryFavoriteValue = favorite.retryValue;
   const activity = formatProjectChatActivity(item.lastActivityAt, now, i18n.locale);
-  const fullActivity = new Intl.DateTimeFormat(i18n.locale, {
-    dateStyle: "full",
-    timeStyle: "short",
-  }).format(new Date(item.lastActivityAt));
+  const fullActivity = formatFullProjectChatActivity(item.lastActivityAt, i18n.locale);
   const agentName = item.agentName ?? "General";
   const agentLabel = t`Agent: ${agentName}`;
   const active = menuOpen || focusWithin;
@@ -223,6 +232,25 @@ export function ProjectChatRow({
           />
         </div>
       ) : null}
+      {deleteError ? (
+        <div className="relative z-10">
+          <InlineErrorRow message={t`Couldn't delete this chat`} onRetry={deleteError.onRetry} />
+        </div>
+      ) : null}
     </div>
   );
-}
+});
+
+/**
+ * One row entry point for both the chat index and Work detail: reads the
+ * row's normalized user state itself, so a list only has to supply the item
+ * and its commands.
+ */
+export const ProjectChatFeedRow = memo(function ProjectChatFeedRow({
+  projectId,
+  item,
+  ...rowProps
+}: { projectId: string; item: ProjectChatItem } & Omit<ProjectChatRowProps, "item" | "favorite">) {
+  const state = useProjectChatUserState(projectId, item);
+  return <ProjectChatRow {...rowProps} {...state} />;
+});

@@ -11,6 +11,10 @@ export type ProjectSearch = {
   path?: string;
   results?: "";
   work?: string;
+  /** The chat index's Favorites filter; owned by `features/project/chat-index`. */
+  filter?: "favorites";
+  /** The chat index's settled search text; owned by `features/project/chat-index`. */
+  q?: string;
 };
 
 export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): boolean {
@@ -21,7 +25,9 @@ export function projectSearchEquals(left: ProjectSearch, right: ProjectSearch): 
     left.folder === right.folder &&
     left.path === right.path &&
     left.results === right.results &&
-    left.work === right.work
+    left.work === right.work &&
+    left.filter === right.filter &&
+    left.q === right.q
   );
 }
 
