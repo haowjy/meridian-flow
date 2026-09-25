@@ -13,6 +13,8 @@
 
 ### Changed
 
+- Start fresh databases from one baseline. Existing dev databases require `pnpm db:reset`.
+
 - Verify stream deadlines and journal eviction with controlled time. Drain rollback notifications with committed barriers.
 
 - Share runtime and execution-report test scenarios. Exercise rich writer sends and hidden child notifications through real delivery.

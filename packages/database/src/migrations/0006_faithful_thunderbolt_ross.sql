@@ -1,1 +1,0 @@
-ALTER TABLE "document_yjs_heads" ADD CONSTRAINT "document_yjs_heads_latest_checkpoint_id_document_yjs_checkpoints_id_fk" FOREIGN KEY ("latest_checkpoint_id") REFERENCES "public"."document_yjs_checkpoints"("id") ON DELETE set null ON UPDATE no action; -- migration-lint: skip ADD_FOREIGN_KEY_NOT_VALID -- greenfield DB, no rows to scan

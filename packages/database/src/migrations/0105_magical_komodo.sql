@@ -1,1 +1,0 @@
-DROP TABLE "child_report_deliveries" CASCADE;

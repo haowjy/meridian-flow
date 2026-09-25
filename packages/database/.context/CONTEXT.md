@@ -130,9 +130,17 @@ after the remaining chain runs. Cull the fixture once the migration is
 superseded and frozen: pre-launch schema freedom means old migration history is
 not a live contract.
 
-The journal is a squashed baseline (`0000_thankful_tarantula`) plus additive
-migrations (`0001_serious_red_skull`, …); prefer additive migrations over
-re-squashing.
+The journal starts at `0000_baseline`; future schema changes append migrations.
+Existing databases that ran the pre-relaunch chain must be reset with
+`pnpm db:reset` (local data is destroyed), not incrementally migrated.
+
+The baseline includes `pg_trgm`, all Drizzle-declared CHECKs, and the two
+change-trail lifecycle functions/triggers on `branch_write_journal`. The six
+functions in `src/functions/` remain a separate post-migration install. Fresh
+installs seed no users, Projects, or Works: the historical No Work and thread
+binding backfills had no rows to transform. Application project bootstrap
+creates locked No Work; thread admission establishes the primary binding.
+Legacy user imports belong in a separate ETL, not universal schema migrations.
 
 ### Merge renumbering
 
@@ -141,9 +149,9 @@ whose ordinals collide with newly deployed ones, renumber only the branch
 migrations behind the deployed tail and regenerate their snapshots. The
 journal tail must maintain strictly monotonic `when` timestamps; renumbering
 ordinals without advancing timestamps can make an incremental database skip
-the renumbered entries while a fresh database applies them normally. A
-monotonic-order regression test (`fresh-migrations.db.test.ts`) covers the
-changed tail after any renumber.
+the renumbered entries while a fresh database applies them normally.
+`fresh-migrations.db.test.ts` checks strict journal ordering and the installed
+baseline hash without preventing future additive migrations.
 
 ### Works columns that must not return
 
