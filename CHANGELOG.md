@@ -9,6 +9,8 @@
 
 ### Changed
 
+- Exercise report-publication rollback after inbox and publication marker writes, then replay recovery.
+
 - Drop fake rollback and repeated-abort tests that did not exercise transaction rollback or billing replay.
 
 - While an agent is working, Enter sends a typed follow-up and the composer swaps Stop for a ringed Send action. Escape still stops the run.
