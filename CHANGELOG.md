@@ -9,6 +9,8 @@
 
 ### Changed
 
+- Replay cold thread subscriptions once; skip journal drains on unobserved replicas.
+
 - While an agent is working, Enter sends a typed follow-up and the composer swaps Stop for a ringed Send action. Escape still stops the run.
 - Trim redundant app, server, and shared tests and fake-only scaffolding. Retire frozen migration fixtures.
 

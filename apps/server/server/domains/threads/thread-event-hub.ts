@@ -1,10 +1,10 @@
-import type { MeridianError } from "@meridian/contracts/interrupt";
 /**
  * Thread event hub: the live fan-out + replay surface for a thread's AG-UI
  * events. Maintains a bounded hot cache, replays from the journal on
  * subscribe/cursor, and projects orchestrator events into AG-UI events for
  * subscribers. Owns the realtime delivery layer over the event journal.
  */
+import type { MeridianError } from "@meridian/contracts/interrupt";
 import { type AGUIEvent, EventType, type SequencedEvent } from "@meridian/contracts/protocol";
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { OrchestratorEvent } from "@meridian/contracts/threads";
@@ -178,7 +178,9 @@ export function createThreadEventHub(
   }
 
   async function drainCommittedJournal(threadId: ThreadId): Promise<void> {
-    const state = getState(threadId);
+    const state = threads.get(threadId);
+    if (!state) return;
+    cancelEviction(threadId);
     if (state.draining) {
       state.drainRequested = true;
       return state.draining;
@@ -257,8 +259,9 @@ export function createThreadEventHub(
     },
 
     async catchup(threadId: ThreadId, afterSeq: bigint = 0n): Promise<SequencedEventInternal[]> {
-      await drainCommittedJournal(threadId);
-      return readCatchup(threadId, afterSeq);
+      const { catchup, unsubscribe } = await this.catchupAndSubscribe(threadId, afterSeq, () => {});
+      unsubscribe();
+      return catchup;
     },
 
     subscribe(threadId: ThreadId, listener: (event: SequencedEventInternal) => void): () => void {
@@ -284,6 +287,7 @@ export function createThreadEventHub(
       unsubscribe: () => void;
     }> {
       const state = getState(threadId);
+      const cold = state.journalCursor === 0n;
       const bufferedLive: SequencedEventInternal[] = [];
       const guardListener = (entry: SequencedEventInternal) => {
         if (entry.seq > afterSeq) bufferedLive.push(entry);
@@ -293,7 +297,7 @@ export function createThreadEventHub(
       let catchupEvents: SequencedEventInternal[];
       try {
         await drainCommittedJournal(threadId);
-        catchupEvents = await readCatchup(threadId, afterSeq);
+        catchupEvents = cold ? [] : await readCatchup(threadId, afterSeq);
       } catch (error) {
         state.listeners.delete(guardListener);
         onListenerRemoved(threadId);
@@ -302,14 +306,11 @@ export function createThreadEventHub(
       state.listeners.delete(guardListener);
       state.listeners.add(listener);
 
-      const catchupSeqs = new Set(catchupEvents.map((entry) => entry.seq));
       const maxCatchupSeq = catchupEvents.reduce(
         (max, entry) => (entry.seq > max ? entry.seq : max),
         afterSeq,
       );
-      const tailLive = bufferedLive.filter(
-        (entry) => entry.seq > afterSeq && entry.seq > maxCatchupSeq && !catchupSeqs.has(entry.seq),
-      );
+      const tailLive = bufferedLive.filter((entry) => entry.seq > maxCatchupSeq);
       const catchup = [...catchupEvents, ...tailLive].sort((a, b) =>
         a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0,
       );

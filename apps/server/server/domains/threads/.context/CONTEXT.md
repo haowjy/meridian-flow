@@ -77,7 +77,9 @@ instead of the N:1 `threads.workId` column.
   the ordering model. Turns have no `seq` column.
 - **ThreadEventHub** — in-memory pub/sub + hot cache that sits on top of the
   journal. Local appends schedule only a committed-journal invalidation; local
-  and PostgreSQL invalidations share one ordered per-thread drain, which reads
+  and PostgreSQL invalidations only drain existing observed/cached threads. Explicit
+  catchup/subscription creates state; cold catchup seeds the projector and cache
+  while collecting replay in the same pass. One ordered per-thread drain reads
   and projects committed rows after its journal cursor. Late joiners catch up
   from the hot cache or a cursor-paged replay from zero through the live
   projector's reached journal cursor. Replay projects the prefix to reconstruct

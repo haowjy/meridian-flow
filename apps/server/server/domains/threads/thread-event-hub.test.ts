@@ -573,3 +573,24 @@ describe("thread event hub complete replay", () => {
     replay.unsubscribe();
   });
 });
+
+it("ignores unobserved invalidations and seeds cold catchup in one journal pass", async () => {
+  const reader = createCappedReader(3000, 3000n);
+  const readAfter = vi.spyOn(reader, "readAfter");
+  const hub = createThreadEventHub(
+    {
+      journalReader: reader,
+      journalWriter: { appendEvent: async () => 0n },
+      eventSink: createNoopEventSink(),
+    },
+    { evictionGraceMs: 1 },
+  );
+  hub.invalidateCommittedJournal(THREAD_ID);
+  await Promise.resolve();
+  expect(hub.hasThreadState(THREAD_ID)).toBe(false);
+  expect(readAfter).not.toHaveBeenCalled();
+  const { catchup, unsubscribe } = await hub.catchupAndSubscribe(THREAD_ID, 1000n, () => {});
+  expect(catchup).toHaveLength(2999);
+  expect(readAfter).toHaveBeenCalledTimes(3);
+  unsubscribe();
+});
