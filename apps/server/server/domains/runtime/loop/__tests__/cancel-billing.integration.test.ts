@@ -1,7 +1,4 @@
-/**
- * Cancel billing integration tests: soft-cancel debits consumed usage through
- * the real createGateway path and explicit cancel remains idempotent.
- */
+/** Real-gateway partial-cancel billing and non-cancelling WebSocket disconnects. */
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createThreadWebSocketSession, type WsPeer } from "../../../../lib/ws-thread-handler.js";

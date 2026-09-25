@@ -1,4 +1,4 @@
-/** The best-effort RunStarter: a live run is swallowed, a real failure is not. */
+/** Best-effort wake: contention is quiet; unexpected failures produce a diagnostic. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import { describe, expect, it } from "vitest";
 import { createInMemoryEventSink } from "../../observability/index.js";
