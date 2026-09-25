@@ -186,8 +186,10 @@ services:
         MERIDIAN_RELEASE_SHA: ${MERIDIAN_RELEASE_SHA:-local}
     environment:
       PORT: "8080"
-      APP_UPSTREAM: app:3000
-      SERVER_UPSTREAM: server:3000
+      APP_UPSTREAM_HOST: app
+      APP_UPSTREAM_PORT: "3000"
+      SERVER_UPSTREAM_HOST: server
+      SERVER_UPSTREAM_PORT: "3000"
     ports:
       - "18080:8080"
     depends_on:
@@ -200,8 +202,6 @@ services:
       interval: 3s
       timeout: 5s
       retries: 20
-
-  # The release lane will add the backup+migrate one-shot service here.
 
 volumes:
   postgres-data:

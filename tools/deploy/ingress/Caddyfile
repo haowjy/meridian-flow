@@ -2,6 +2,36 @@
 	auto_https off
 }
 
+(to_app) {
+	reverse_proxy {
+		lb_try_duration 10s
+		lb_try_interval 250ms
+		dynamic a {$APP_UPSTREAM_HOST} {$APP_UPSTREAM_PORT} {
+			refresh 5s
+		}
+		header_up X-Forwarded-Proto https
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 60s
+		}
+	}
+}
+
+(to_server) {
+	reverse_proxy {
+		lb_try_duration 10s
+		lb_try_interval 250ms
+		dynamic a {$SERVER_UPSTREAM_HOST} {$SERVER_UPSTREAM_PORT} {
+			refresh 5s
+		}
+		header_up X-Forwarded-Proto https
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 60s
+		}
+	}
+}
+
 :{$PORT:8080} {
 	@ingressHealth path /_ingress/health
 	handle @ingressHealth {
@@ -10,18 +40,7 @@
 
 	@serverHealth path /healthz /readyz
 	handle @serverHealth {
-		reverse_proxy {
-			lb_try_duration 10s
-			lb_try_interval 250ms
-			dynamic a {$SERVER_UPSTREAM_HOST} {$SERVER_UPSTREAM_PORT} {
-				refresh 5s
-			}
-			header_up X-Forwarded-Proto https
-			transport http {
-				dial_timeout 5s
-				response_header_timeout 60s
-			}
-		}
+		import to_server
 	}
 
 	request_body {
@@ -30,48 +49,15 @@
 
 	@appOwned path /api/auth/callback /api/auth/dev-login
 	handle @appOwned {
-		reverse_proxy {
-			lb_try_duration 10s
-			lb_try_interval 250ms
-			dynamic a {$APP_UPSTREAM_HOST} {$APP_UPSTREAM_PORT} {
-				refresh 5s
-			}
-			header_up X-Forwarded-Proto https
-			transport http {
-				dial_timeout 5s
-				response_header_timeout 60s
-			}
-		}
+		import to_app
 	}
 
 	@serverOwned path /api/* /ws/*
 	handle @serverOwned {
-		reverse_proxy {
-			lb_try_duration 10s
-			lb_try_interval 250ms
-			dynamic a {$SERVER_UPSTREAM_HOST} {$SERVER_UPSTREAM_PORT} {
-				refresh 5s
-			}
-			header_up X-Forwarded-Proto https
-			transport http {
-				dial_timeout 5s
-				response_header_timeout 60s
-			}
-		}
+		import to_server
 	}
 
 	handle {
-		reverse_proxy {
-			lb_try_duration 10s
-			lb_try_interval 250ms
-			dynamic a {$APP_UPSTREAM_HOST} {$APP_UPSTREAM_PORT} {
-				refresh 5s
-			}
-			header_up X-Forwarded-Proto https
-			transport http {
-				dial_timeout 5s
-				response_header_timeout 60s
-			}
-		}
+		import to_app
 	}
 }
