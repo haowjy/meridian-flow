@@ -2,10 +2,8 @@
 import { serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getQuery, getRouterParam } from "nitro/h3";
 import { requireProjectOwner } from "../../../../domains/projects/index.js";
-import {
-  getProjectChatFeedPage,
-  InvalidProjectFeedCursorError,
-} from "../../../../domains/threads/domain/chat-feed.js";
+import { getProjectChatFeedPage } from "../../../../domains/threads/domain/chat-feed.js";
+import { InvalidChatFeedCursorError } from "../../../../domains/threads/domain/chat-feed-page.js";
 import { requireAppUser } from "../../../../lib/auth-gate.js";
 import { isUuid } from "../../../../shared/uuid.js";
 
@@ -38,7 +36,7 @@ export default defineEventHandler(async (event) => {
       }),
     );
   } catch (cause) {
-    if (cause instanceof InvalidProjectFeedCursorError) {
+    if (cause instanceof InvalidChatFeedCursorError) {
       throw createError({ statusCode: 400, statusMessage: cause.message });
     }
     throw cause;
