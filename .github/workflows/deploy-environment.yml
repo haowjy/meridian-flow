@@ -1,0 +1,84 @@
+name: Deploy Environment
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: GitHub and Railway environment name
+        required: true
+        type: string
+      version:
+        description: Release version without the leading v
+        required: true
+        type: string
+    secrets:
+      RAILWAY_TOKEN:
+        required: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.PUBLIC_URL }}
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: Validate deployment config
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          missing=()
+          [[ -n "$RAILWAY_TOKEN" ]] || missing+=("secrets.RAILWAY_TOKEN")
+          [[ -n "$PUBLIC_URL" ]] || missing+=("vars.PUBLIC_URL")
+          if [[ -n "$PUBLIC_URL" && ! "$PUBLIC_URL" =~ ^https?:// ]]; then missing+=("vars.PUBLIC_URL (must be an http(s) URL)"); fi
+          if (( ${#missing[@]} )); then
+            joined=$(IFS=', '; echo "${missing[*]}")
+            echo "::error::Missing $joined. Set them in GitHub → Settings → Environments → $ENVIRONMENT."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - name: Download release manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh release download "v${VERSION}" --repo "$GITHUB_REPOSITORY" --pattern release-manifest.json --dir "$RUNNER_TEMP/release"
+          jq -e --arg version "$VERSION" --arg tag "v${VERSION}" '.version == $version and .tag == $tag' "$RUNNER_TEMP/release/release-manifest.json" >/dev/null || { echo "::error::Release manifest does not match requested v${VERSION}"; exit 1; }
+      - name: Install pinned Railway CLI
+        run: npm i -g @railway/cli@5.62.1
+      - name: Deploy digest-pinned images
+        id: deploy
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: node tools/deploy/deploy.ts "${{ inputs.environment }}" "$RUNNER_TEMP/release/release-manifest.json"
+      - name: Runtime smoke check
+        id: smoke
+        env:
+          PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          release_sha=$(jq -r .sha "$RUNNER_TEMP/release/release-manifest.json")
+          node tools/deploy/smoke-check.ts "$PUBLIC_URL" --expect-version "$VERSION" --expect-release "$release_sha"
+      - name: Set deployment commit status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          VERSION: ${{ inputs.version }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        run: |
+          tag="v${VERSION}"
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha)
+          if [[ $(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.type) == tag ]]; then
+            sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$sha" --jq .object.sha)
+          fi
+          state=failure
+          description="${ENVIRONMENT} deploy failed"
+          if [[ "$DEPLOY_OUTCOME" == success && "$SMOKE_OUTCOME" == success ]]; then state=success; description="${ENVIRONMENT} deploy and smoke passed"; fi
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$sha" -f state="$state" -f context="deploy/$ENVIRONMENT" -f description="$description" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"

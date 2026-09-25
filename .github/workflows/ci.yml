@@ -12,8 +12,9 @@ on:
   workflow_call:
 
 concurrency:
-  # PR updates supersede one another; unique non-PR groups also keep GitHub
-  # from replacing a pending main push with a later push to the same ref.
+  # PR updates supersede one another. Every non-PR run gets its own group so a
+  # later push to main can neither cancel nor replace a pending one: the staging
+  # deploy waits on CI for each release commit.
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 

@@ -1,0 +1,46 @@
+name: Deploy Production
+
+# Roll back by dispatching any older version that has passed staging; image digests are reused.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version tag to promote (or roll back to), e.g. v1.2.3
+        required: true
+        type: string
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: read
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Validate version, staging status, and manifest
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || { echo "::error::Version must match vX.Y.Z or vX.Y.Z-rc.N"; exit 1; }
+          tag="$VERSION"
+          ref=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" 2>/dev/null) || { echo "::error::Tag $tag does not exist"; exit 1; }
+          sha=$(jq -r .object.sha <<< "$ref")
+          if [[ $(jq -r .object.type <<< "$ref") == tag ]]; then sha=$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$sha" --jq .object.sha); fi
+          state=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/status" --jq '[.statuses[] | select(.context == "deploy/staging")] | sort_by(.created_at) | last | .state // "missing"')
+          [[ "$state" == success ]] || { echo "::error::$tag was not deployed to staging successfully — deploy it to staging first"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/release"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern release-manifest.json --dir "$RUNNER_TEMP/release"
+          manifest_sha=$(jq -r .sha "$RUNNER_TEMP/release/release-manifest.json")
+          [[ "$manifest_sha" == "$sha" ]] || { echo "::error::Release manifest sha $manifest_sha does not match $tag commit $sha"; exit 1; }
+          echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+
+  promote:
+    needs: verify
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: production
+      version: ${{ needs.verify.outputs.version }}
+    secrets: inherit
