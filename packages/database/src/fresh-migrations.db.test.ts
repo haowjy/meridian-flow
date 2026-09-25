@@ -76,6 +76,7 @@ if (!enabled || !databaseUrl) {
         expect(functions.map((row) => row.name)).toEqual([
           "complete_turn_trail_work",
           "consume_credit_lots_fifo",
+          "enforce_thread_prompt_freeze",
           "enlist_turn_trail_work",
           "update_updated_at_column",
           "validate_active_leaf_is_leaf",

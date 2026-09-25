@@ -203,6 +203,15 @@ The schema stays ordinary Postgres with no provider-specific auth coupling
 (identity is app-owned `public.users` keyed by WorkOS `external_id`). The Date
 vs string `mode` split is a known inconsistency, not a pattern to extend.
 
+### Frozen thread prompts
+
+The `threads_frozen_prompt` trigger rejects changes to either prompt bake field
+once `baked_skill_slugs` is non-null (including `[]`). First bake remains a CAS;
+identical-value writes and unrelated updates remain legal. No compaction rebake
+exists. A future compaction feature must introduce one named thread-repository
+operation and its narrowly scoped database authorization together; never disable
+the trigger for ordinary thread updates.
+
 ### Retained Agent definitions
 
 `agent_package_revisions` retains complete source snapshots. Its coordinate/digest

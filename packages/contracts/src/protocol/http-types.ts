@@ -362,6 +362,12 @@ export type CreateThreadRequest = {
 
 export type CreateThreadResponse = Thread;
 
+/** Omission or the parent's revision retains its frozen prompt and Agent configuration. */
+export type ForkThreadRequest = {
+  agentSelection?: AgentSelection;
+  originTurnId?: string | null;
+};
+
 export type UpdateWorkWriteModeRequest = {
   aiWriteMode: AiWriteMode;
   confirmedPush?: boolean;

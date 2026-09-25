@@ -5,7 +5,25 @@ the event journal that bridges orchestrator writes to AG-UI client streams.
 Threads now use an M:N membership model with Works (`thread_works` join table)
 instead of the N:1 `threads.workId` column.
 
-`domain/bound-conversation.ts` owns atomic thread creation, retained Agent configuration and optional Work membership. Root and child creation and the `derive-conversation.ts` handoff/fork operations use it. Derived requests require exact catalog selection rather than mutable target slugs; each mode includes required history and provenance writes in its outer transaction. Spawn execution begins only after commit.
+`domain/bound-conversation.ts` owns atomic thread creation, retained Agent configuration and optional Work membership. Root and child creation and the `derive-conversation.ts` handoff/fork operations use it. Fork selection is optional: omitted or same-revision selection inherits the retained Agent configuration and frozen prompt, independent of catalog changes. Handoff to the same revision also retains the prompt; selecting a different Agent revision starts unfrozen. Explicit changes require exact catalog selection rather than mutable target slugs; each mode includes required history and provenance writes in its outer transaction. Spawn execution begins only after commit.
+
+## Prompt lifetime
+
+A thread's system prompt is frozen at first context assembly, including failed
+or cancelled provider attempts. The database rejects later changes to either
+`composed_system_prompt` or `baked_skill_slugs`. Forks copy that bake under the
+parent row lock; an unfrozen parent yields an unfrozen fork. Inherited bakes
+receive a current-Work refresh through conversation content so a historical fork
+point or summary-only handoff cannot leave stale Work authority. A subagent-only
+or generic binding cannot become a primary thread without selecting a primary
+Agent. Work changes,
+notices, child results, skills and working state are in-place conversation
+content, never system-prompt edits. Fork/handoff seed turns render as user-role
+`<system_update>` content. Only an Agent-changing derivation gets a new prompt.
+Compaction is the only planned in-thread exception; no compaction path exists
+yet. Its eventual implementation must own one named repository operation and
+the corresponding narrow DB authorization (see the
+[database contract](../../../../../../packages/database/.context/CONTEXT.md)).
 
 ## What it owns
 

@@ -7,6 +7,9 @@
 
 ## [Unreleased]
 
+- Freeze thread prompts at the database boundary.
+- Keep the same Agent and prompt when forking by default.
+
 - Open new chats immediately; subscribe once after first-send acceptance, without missing-thread errors.
 
 - Resolve images sent while a reply streams. Share history image limits and keep saved image identities.

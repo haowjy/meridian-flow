@@ -1,7 +1,6 @@
 /** POST /api/threads/[threadId]/fork: create a new primary thread from a fork point. */
 
-import type { AgentSelection } from "@meridian/contracts/agents";
-import { serializeTransport } from "@meridian/contracts/protocol";
+import { type ForkThreadRequest, serializeTransport } from "@meridian/contracts/protocol";
 import { createError, defineEventHandler, getRouterParam, readBody } from "nitro/h3";
 import { AgentSelectionError } from "../../../../../domains/packages/index.js";
 import { forkThreadAgent, type ThreadAgentSwapDeps } from "../../../../../domains/threads/index.js";
@@ -15,9 +14,7 @@ import {
 export default defineEventHandler(async (event) => {
   const { app, user } = await requireAppUser(event);
   const threadId = requireRequestId(getRouterParam(event, "threadId"), "threadId");
-  const body =
-    (await readBody<{ agentSelection?: AgentSelection; originTurnId?: string | null }>(event)) ??
-    {};
+  const body = (await readBody<ForkThreadRequest>(event)) ?? {};
   try {
     const thread = await forkThreadAgent(
       {
@@ -29,6 +26,7 @@ export default defineEventHandler(async (event) => {
         transaction: app.repos.transaction,
         projects: app.projectRepo,
         works: app.workRepo,
+        workContextNotices: app.workContextNotices,
         agentCatalog: app.agentCatalog,
         agentRevisions: app.agentRevisions,
         eventWriter: app.journalWriter,
@@ -36,7 +34,10 @@ export default defineEventHandler(async (event) => {
       {
         threadId,
         userId: user.userId,
-        agentSelection: requireAgentSelection(body.agentSelection),
+        agentSelection:
+          body.agentSelection === undefined
+            ? undefined
+            : requireAgentSelection(body.agentSelection),
         originTurnId: parseNullableRequestId(body.originTurnId, "originTurnId"),
       },
     );
