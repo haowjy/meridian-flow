@@ -21,13 +21,6 @@ inform, and undo recovers. Never add approval gates, refusal vetoes, or
 
 ## Engineering principles
 
-**Load `/dev-principles` before planning or changing code.** It is the source
-for simplicity, boundaries, naming, deletion, consistency, and testing
-restraint. Make the code easy to change.
-
-**Design reusable modules.** Give modules deep public interfaces and keep
-app-specific wiring outside them so they can become shared libraries later.
-
 **Fix structural debt in the same PR.** Do not defer parallel hierarchies,
 leaking abstractions, shallow modules, split ownership, or obvious
 simplification.
@@ -79,11 +72,7 @@ hidden constraints, surprising invariants, and workarounds.
 parentheses, never `·`, `•`, `—`, or `|`. See the
 [copy separation decision](https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/writer-copy-separation.md).
 
-**Debugging.** Follow [docs/debugging.md](docs/debugging.md). Query existing
-evidence before adding a signal. Use a marked console probe for a one-off; use
-`EventSink` for a signal another agent will need. `pnpm check` blocks temporary
-probes. The guide also covers browser evidence and cleanup. `EventSink` is
-diagnostic evidence, not product feature tracking or analytics.
+**Debugging.** Follow [docs/debugging.md](docs/debugging.md).
 
 ## Knowledge and structure
 
@@ -92,17 +81,8 @@ shells over `packages/` and `apps/server/server/domains/`; dev and CI scripts
 live in `tools/`. See [.context/CONTEXT.md](.context/CONTEXT.md) for the root
 architecture.
 
-Before reading source in an area:
-
-1. Run `meridian qi graph <path>` for its `AGENTS.md` chain and
-   `.context/CONTEXT.md`.
-2. Read that guidance for intent, contracts, and invariants.
-3. Use `ls` and source to confirm current structure.
-
-Load `/knowledge-layers` before placing durable knowledge and `/qi-layer`
-before editing `AGENTS.md` or `.context/`. Update the relevant `AGENTS.md`,
-`.context/`, or KB material when a change shifts the mental model, contracts, or
-decisions.
+Update the relevant `AGENTS.md`, `.context/`, or KB material when a change
+shifts the mental model, contracts, or decisions.
 
 ## Command output
 
@@ -125,19 +105,11 @@ Setup: [DEVELOPMENT.md](DEVELOPMENT.md). Dev tooling rules:
 
 ## Build and test
 
-`pnpm check` runs lint, negative-space, typecheck, unit tests, graph checks, and
-the DB suite when local Postgres is reachable. An unreachable Postgres is a
-loud skip; use `pnpm test:db` when the DB gate must run.
-
-Runtime changes also require a real probe before merge: start the full stack,
-exercise the affected workflow, inspect logs, streams, and DB state, and compare
-with a baseline. The probe verdict is the runtime merge gate.
+`pnpm check` is the full gate. `pnpm test:db` forces the DB suite.
 
 ## Git workflow
 
-Commit each self-contained change after its checks pass. When a feature branch
-is complete and `pnpm check` is green, push it, open or update its PR, report it,
-and stop.
+Commit often, one self-contained change at a time.
 
 A human merges into `main` or `staging` unless explicitly instructing the agent
 to merge. Merges between working branches need no gate. Docs-only `AGENTS.md`,
@@ -150,15 +122,6 @@ path to spawns with `--task-dir`:
 ```bash
 git worktree add ../meridian-flow.worktrees/<name> -b <branch> <base>
 ```
-
-Clean one merged or abandoned lane from a different checkout:
-
-```bash
-pnpm dev:prune-worktrees -- --target <work-id|path|branch|pr> --dry-run
-```
-
-Inspect the plan before running it without `--dry-run`. Do not use `--auto` for
-routine cleanup.
 
 ## Links
 
