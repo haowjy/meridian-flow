@@ -1,7 +1,7 @@
 /** Route seam coverage for create-with-content followed by the public read projection. */
 
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import { createProjectRepositoryForTest } from "../../domains/projects/test-support/project-repository.js";
 import { createTestWorkProjectionMutation } from "../../test-support/work-projection.js";
@@ -49,6 +49,10 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
       prepareSuite: (db) => truncateDrizzleTables(db, [schema.users]),
     });
     let db = database.current;
+    const fixtures: Array<{
+      collab: ReturnType<typeof createCollabDomain>;
+      hocuspocus: InstanceType<typeof Hocuspocus>;
+    }> = [];
 
     beforeEach(async () => {
       db = database.current;
@@ -58,32 +62,57 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         .values({ id: PROJECT_ID, userId: USER_ID, name: "Project", slug: "project" });
     });
 
+    function createFixture(options: { load?: boolean; store?: boolean } = {}) {
+      const collab = createCollabDomain({
+        db,
+        workProjectionMutation: createTestWorkProjectionMutation(db),
+        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
+        documentAccess: createDrizzleDocumentAccess(db),
+      });
+      const hocuspocus = new Hocuspocus({
+        yDocOptions: { gc: false, gcFilter: () => true },
+        ...(options.load === false
+          ? {}
+          : {
+              async onLoadDocument({ documentName, document }) {
+                const state = await collab.loadHocuspocusDocument(documentName);
+                if (state) Y.applyUpdate(document, state);
+              },
+            }),
+        ...(options.store === false
+          ? {}
+          : {
+              onStoreDocument: ({ documentName, document }) =>
+                collab.storeHocuspocusDocument(documentName, document),
+            }),
+      });
+      collab.bindHocuspocus(hocuspocus);
+      fixtures.push({ collab, hocuspocus });
+      return {
+        collab,
+        hocuspocus,
+        contextPorts: createProductionUnifiedContextPortFactory({
+          db,
+          documentSync: collab,
+          manifestMembership: collab,
+        }),
+      };
+    }
+
+    afterEach(async () => {
+      for (const { collab, hocuspocus } of fixtures.splice(0)) {
+        hocuspocus.closeConnections();
+        hocuspocus.flushPendingStores();
+        await collab.drainHocuspocusPersistence();
+      }
+    });
+
     for (const { path, schemaType } of [
       { path: "chapter.prose", schemaType: "document" },
       { path: "script.py", schemaType: "code" },
     ] as const) {
       it(`creates and reads ${path} with the ${schemaType} schema`, async () => {
-        const collab = createCollabDomain({
-          db,
-          workProjectionMutation: createTestWorkProjectionMutation(db),
-          workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-          documentAccess: createDrizzleDocumentAccess(db),
-        });
-        const hocuspocus = new Hocuspocus({
-          yDocOptions: { gc: false, gcFilter: () => true },
-          async onLoadDocument({ documentName, document }) {
-            const state = await collab.loadHocuspocusDocument(documentName);
-            if (state) Y.applyUpdate(document, state);
-          },
-          onStoreDocument: ({ documentName, document }) =>
-            collab.storeHocuspocusDocument(documentName, document),
-        });
-        collab.bindHocuspocus(hocuspocus);
-        const contextPorts = createProductionUnifiedContextPortFactory({
-          db,
-          documentSync: collab,
-          manifestMembership: collab,
-        });
+        const { collab, hocuspocus, contextPorts } = createFixture();
         const port = contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
         const content =
           schemaType === "code" ? "print('hello')\n" : `Initial content for ${path}.\n`;
@@ -148,24 +177,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     it.each([
       "cover.png",
     ])("rejects binary-suffixed tracked create for %s without persisting a document", async (path) => {
-      const collab = createCollabDomain({
-        db,
-        workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
-      });
-      collab.bindHocuspocus(
-        new Hocuspocus({
-          yDocOptions: { gc: false, gcFilter: () => true },
-          onStoreDocument: ({ documentName, document }) =>
-            collab.storeHocuspocusDocument(documentName, document),
-        }),
-      );
-      const contextPorts = createProductionUnifiedContextPortFactory({
-        db,
-        documentSync: collab,
-        manifestMembership: collab,
-      });
+      const { contextPorts } = createFixture({ load: false });
 
       await expect(
         createContextEntry({
@@ -187,27 +199,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("allows exactly one concurrent create and preserves the winner's content", async () => {
-      const collab = createCollabDomain({
-        db,
-        workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
-      });
-      const hocuspocus = new Hocuspocus({
-        yDocOptions: { gc: false, gcFilter: () => true },
-        async onLoadDocument({ documentName, document }) {
-          const state = await collab.loadHocuspocusDocument(documentName);
-          if (state) Y.applyUpdate(document, state);
-        },
-        onStoreDocument: ({ documentName, document }) =>
-          collab.storeHocuspocusDocument(documentName, document),
-      });
-      collab.bindHocuspocus(hocuspocus);
-      const contextPorts = createProductionUnifiedContextPortFactory({
-        db,
-        documentSync: collab,
-        manifestMembership: collab,
-      });
+      const { contextPorts } = createFixture();
       const port = contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
       const create = (content: string) =>
         createContextEntry({
@@ -233,27 +225,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
     });
 
     it("registers kb and user documents and unregisters deleted documents", async () => {
-      const collab = createCollabDomain({
-        db,
-        workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
-      });
-      const hocuspocus = new Hocuspocus({
-        yDocOptions: { gc: false, gcFilter: () => true },
-        async onLoadDocument({ documentName, document }) {
-          const state = await collab.loadHocuspocusDocument(documentName);
-          if (state) Y.applyUpdate(document, state);
-        },
-        onStoreDocument: ({ documentName, document }) =>
-          collab.storeHocuspocusDocument(documentName, document),
-      });
-      collab.bindHocuspocus(hocuspocus);
-      const contextPorts = createProductionUnifiedContextPortFactory({
-        db,
-        documentSync: collab,
-        manifestMembership: collab,
-      });
+      const { collab, contextPorts } = createFixture();
       const port = contextPorts.forProject(PROJECT_ID, USER_ID, new Map());
 
       const create = async (targetPort: typeof port, scheme: "kb" | "user", path: string) => {
@@ -321,23 +293,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Scratch Work",
         slug: "scratch-work",
       });
-      const collab = createCollabDomain({
-        db,
-        workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
-      });
-      const hocuspocus = new Hocuspocus({
-        yDocOptions: { gc: false, gcFilter: () => true },
-        onStoreDocument: ({ documentName, document }) =>
-          collab.storeHocuspocusDocument(documentName, document),
-      });
-      collab.bindHocuspocus(hocuspocus);
-      const contextPorts = createProductionUnifiedContextPortFactory({
-        db,
-        documentSync: collab,
-        manifestMembership: collab,
-      });
+      const { collab, contextPorts } = createFixture({ load: false });
       const authority = await createDrizzleProjectWorkAuthorityResolver(db).byId(
         PROJECT_ID,
         WORK_ID,
@@ -412,13 +368,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         name: "Scratch Work",
         slug: "scratch-work",
       });
-      const collab = createCollabDomain({
-        db,
-        workProjectionMutation: createTestWorkProjectionMutation(db),
-        workAuthorityResolver: createDrizzleProjectWorkAuthorityResolver(db),
-        documentAccess: createDrizzleDocumentAccess(db),
-      });
-      collab.bindHocuspocus(new Hocuspocus({ yDocOptions: { gc: false, gcFilter: () => true } }));
+      const { collab } = createFixture({ load: false, store: false });
 
       await collab.resolveManifestMembership({ projectId: PROJECT_ID as never });
 
