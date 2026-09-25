@@ -2,7 +2,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { readMigrationFiles } from "drizzle-orm/migrator";
-import postgres from "postgres";
+import postgres, { type Sql, type TransactionSql } from "postgres";
 
 interface MigrationJournal {
   entries: Array<{ tag: string; when: number }>;
@@ -44,31 +44,27 @@ function compareMigrationHistory(
   return applied.length > migrations.length ? "ahead" : "current";
 }
 
+async function readAppliedHistory(
+  sql: Sql | TransactionSql,
+): Promise<AppliedMigration[] | undefined> {
+  const [table] = await sql<Array<{ exists: boolean }>>`
+    SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS exists
+  `;
+  if (!table?.exists) return undefined;
+  return sql<AppliedMigration[]>`
+    SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id ASC
+  `;
+}
+
 /** Compare the database ledger with the exact release bundle journal. */
 export async function getSchemaStatus(input: {
-  databaseUrl: string;
+  sql: Sql;
   migrationsDirectory: string;
-  readAppliedHistory?: () => Promise<AppliedMigration[] | undefined>;
 }): Promise<SchemaStatus> {
   const { migrations } = readReleaseMigrations(input.migrationsDirectory);
-  if (input.readAppliedHistory) {
-    const applied = await input.readAppliedHistory();
-    if (!applied) return migrations.length === 0 ? "current" : "behind";
-    return compareMigrationHistory(applied, migrations);
-  }
-  const client = postgres(input.databaseUrl, { max: 1, onnotice: () => {} });
-  try {
-    const [table] = await client<Array<{ exists: boolean }>>`
-      SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS exists
-    `;
-    if (!table?.exists) return migrations.length === 0 ? "current" : "behind";
-    const applied = await client<AppliedMigration[]>`
-      SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id ASC
-    `;
-    return compareMigrationHistory(applied, migrations);
-  } finally {
-    await client.end();
-  }
+  const applied = await readAppliedHistory(input.sql);
+  if (!applied) return migrations.length === 0 ? "current" : "behind";
+  return compareMigrationHistory(applied, migrations);
 }
 
 class MigrationStatementError extends Error {
@@ -123,9 +119,7 @@ export async function runRelease(input: {
           created_at bigint
         )
       `;
-      const applied = await tx<Array<{ hash: string; created_at: string | number | null }>>`
-        SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id ASC
-      `;
+      const applied = (await readAppliedHistory(tx)) ?? [];
       const schemaStatus = compareMigrationHistory(applied, migrations);
       if (schemaStatus === "divergent") {
         throw new Error(
