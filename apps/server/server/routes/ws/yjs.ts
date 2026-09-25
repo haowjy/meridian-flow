@@ -47,8 +47,24 @@ export function stopAcceptingYjsWebSockets(): void {
 
 export async function shutdownYjsWebSockets(): Promise<void> {
   stopAcceptingYjsWebSockets();
-  await gateway?.drain();
-  for (const peer of peers) peer.close(1012, "server-shutdown");
+  const errors: unknown[] = [];
+  for (const peer of [...peers]) {
+    try {
+      peer.close(1012, "server-shutdown");
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  try {
+    await gateway?.drain();
+  } catch (error) {
+    errors.push(error);
+  } finally {
+    peers.clear();
+  }
+  if (errors.length > 0) {
+    throw new AggregateError(errors, "Yjs websocket shutdown did not complete cleanly.");
+  }
 }
 
 export function getYjsGateway(app: AppServices): YjsGateway {
