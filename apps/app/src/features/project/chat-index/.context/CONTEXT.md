@@ -19,7 +19,8 @@ Search settles for 200 ms, then asks the server for title matches (`q`,
 case-insensitive, LIKE metacharacters literal, applied with Favorites before
 pagination); search and filter are part of the feed query key
 (`chatFeedFilter`). Every page is exactly the server's matches. An empty search
-result names the query.
+result names the query. Search text and filter persist per project for the page
+session, so returning to the index finds the list as the writer left it.
 An empty Favorites filter is one muted line under the heading row.
 
 The pagination sentinel observes only while a page can be requested, so a stale
