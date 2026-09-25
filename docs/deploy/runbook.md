@@ -206,7 +206,7 @@ Migrations run before new code; old code may run against the expanded schema, an
    image needs them. Do not combine destructive rename/drop or incompatible
    type/meaning changes with the rollout that stops using the old shape.
 
-Local production-shaped rehearsal builds all four images, backs up Postgres, then migrates before serving traffic. From repository root:
+Local production-shaped rehearsal builds server, app, and ingress, backs up Postgres, then migrates before serving traffic. The local stack omits WWW because smoke does not exercise it. From repository root:
 
 ```sh
 export MERIDIAN_VERSION=0.0.0-local
