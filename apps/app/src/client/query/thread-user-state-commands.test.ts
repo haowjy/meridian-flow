@@ -51,11 +51,11 @@ const PROJECT_ID = "project-1";
 
 function seededClient(isFavorite = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  client.setQueryData(projectQueryKeys.homeFeed(PROJECT_ID), {
+  client.setQueryData(projectQueryKeys.chatFeed(PROJECT_ID), {
     pages: [
       {
-        featured: { continueChat: null, favoriteChats: [] },
-        recentChats: { items: [item(isFavorite)], nextCursor: null },
+        items: [item(isFavorite)],
+        nextCursor: null,
       },
     ],
     pageParams: [null],

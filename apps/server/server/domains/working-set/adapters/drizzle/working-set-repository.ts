@@ -28,7 +28,6 @@ export function createDrizzleWorkingSetRepository(deps: { db: Database }): Worki
           target: [projectUserWorkingSets.userId, projectUserWorkingSets.projectId],
           set: {
             recentRoutes: snapshot.recentRoutes,
-            lastThreadId: snapshot.lastThreadId,
             revision: sql`${projectUserWorkingSets.revision} + 1`,
             updatedAt: new Date(),
           },

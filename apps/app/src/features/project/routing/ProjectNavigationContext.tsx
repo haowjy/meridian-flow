@@ -21,7 +21,6 @@ const ProjectNavigationContext = createContext<{
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
   screen?: ScreenKey;
   open: OpenContextRoute;
-  openNewChat?: () => Promise<void>;
   capture?: () => () => boolean;
 } | null>(null);
 
@@ -29,7 +28,6 @@ export function ProjectNavigationProvider({
   children,
   openContextRoute,
   captureNavigation,
-  openNewChat,
   screen,
   registerLeaveGuard,
 }: {
@@ -37,7 +35,6 @@ export function ProjectNavigationProvider({
   children: ReactNode;
   openContextRoute: OpenContextRoute;
   captureNavigation?: () => () => boolean;
-  openNewChat?: () => Promise<void>;
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
 }) {
   return (
@@ -46,7 +43,6 @@ export function ProjectNavigationProvider({
         screen,
         open: openContextRoute,
         capture: captureNavigation,
-        openNewChat,
         registerLeaveGuard,
       }}
     >
@@ -62,10 +58,6 @@ export function useOpenContextRoute(): OpenContextRoute | null {
 /** Capture before an asynchronous create; completion must not steal a later destination. */
 export function useCaptureProjectNavigation() {
   return useContext(ProjectNavigationContext)?.capture;
-}
-
-export function useOpenNewChatRoute() {
-  return useContext(ProjectNavigationContext)?.openNewChat;
 }
 
 export function useProjectScreen(): ScreenKey {

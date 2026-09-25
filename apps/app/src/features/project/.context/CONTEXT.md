@@ -32,7 +32,7 @@ Slot topology (`layout/desktop-layout.ts`), one grid row across every screen:
 ```
 
 - **`rail-l`** — the left sidebar (destinations + project file tree).
-- **`center`** — the destination's main pane (Chat landing/Work route pane, or the
+- **`center`** — the destination's main pane (Chat index/Work route pane, or the
   Chat/Editor center surface).
 - **`dock`** — the shared right dock. The context-rail occupies it on Chat; Chat
   occupies it on Work/Editor. It reads as **one persistent
@@ -65,7 +65,7 @@ active draft. One-shot focus intents bridge detail close/delete to the collectio
 they are route continuity, not Work selection or persistent state.
 Detail composes identity and lifecycle, Goal, Description, pending drafts, Scratch,
 Uploads, and associated chats. Associated chats use bounded cursor pages and the
-same virtualized, borderless project chat row as the Chat landing without adding a nested
+same virtualized, borderless project chat row as the Chat index without adding a nested
 scroll owner. The external-scroll hook measures the list in that owner's
 coordinates and owns stable keys plus focused/menu row pinning. Their membership
 is historical while the displayed Work is the
@@ -75,27 +75,66 @@ to an adjacent row. Both shells share this route-owned module. At phone geometry
 must wrap without horizontal overflow and product controls retain coarse-pointer touch
 targets.
 
-The Chat landing is the project root (`/p/<project>`), a shared,
-container-responsive Composer-led surface on desktop and phone, followed by the
-server-owned Continue, Favorites, and cursor-paginated Recent feed. There is no
-second project Home or `/chats` destination. First Send mints a stable thread
-ID, navigates immediately, then creates and reconciles the canonical thread in
-the background. The Chat landing uses the saved prospective Work/Agent
-choices. Without a saved Work choice, creation
-starts with the first active Work or No Work; archived Works are not defaults.
-Loading, error, and authoritative empty catalogs remain distinct. The submitted
-Work ID is an immutable reconciliation fact, along with project and Agent, and
-no cache, handoff, visibility, admission, or route effect may run until the
-canonical thread matches those captured facts.
+The chat index is the project root (`/p/<project>`). It reads a flat,
+cursor-paginated primary-chat feed ordered by last activity. Favorites is a
+server-side filter, applied before pagination, and so is title search. The
+shared row also serves Work detail. The index leads with the centered
+`CreationComposer` (`hero` variant, autofocused on fine pointers): on the Chat
+screen the index is New chat. The dock's empty chat owns the pinned variant,
+with the same prospective Work and Agent choices, in the `ChatSurface` frame a
+live chat uses so the first Send never moves the composer. Only an explicit New
+chat focuses the pinned composer (a one-shot focus-request id in
+`chat-navigation`, consumed by whichever composer renders it), never a page
+load.
 
-The QueryClient owns one normalized Favorite record per project/thread so
-navigation and stale page arrival cannot discard pending writer intent. Work
-feeds remain immutable membership/order pages; only the Chat landing moves the
-affected thread between its categories. Project chat lists have no read/unread or
-open-acknowledgement state, and opening a chat performs no state mutation.
-Thread lifecycle projection owns the independent `actionRequired` fact and
-converges live and snapshot changes across Project, the Chat landing, and every
-matching Work feed cache without writing Favorite.
+The index door sits in each pane's 40px band after the sidebar toggle, on the
+same x as the Editor's Recently opened chip (`chat-index/ChatIndexButton.tsx`).
+Center wears the tab-chip grammar: on the index the door is the active chip and
+the current chat waits beside it as an inactive chip that reopens it. The dock has no index: its always-present header
+carries the chat switcher, which lists the chats and New chat. Phone reaches the
+index through the `Chats` breadcrumb ancestor instead of a door.
+
+`routing/chat-navigation.tsx` owns one current chat per browser, account, and
+project (`client/current-chat.ts`, never synced): a thread identity (primary or
+subagent) or none. It publishes one `ChatDisplay` variant, derived at render
+from the URL (never the reverse): the index with the current chat's id (for its
+reopen chip), a URL-addressed thread, or the dock's thread-or-none. Consumers
+switch on the variant instead of ANDing a thread id with an index flag; there is
+no separate "current thread id" prop. The Chat screen's center is the index or
+a chat path; the dock shows the current chat, or an empty New chat when there
+is none. A chat path becomes the current chat, persisted only in an effect so
+the URL always wins the same render. Chat nav reopens the current chat, or the
+index when there is none. Commands keep the writer's screen: on the Chat screen
+they navigate through the route's coordinator; elsewhere they point the dock at
+the chat and call the shell's registered dock reveal (`useConversationRevealRouting`
+lives inside `useProjectChatNavigation`, so every shell shares one reveal path).
+Dock selection does not write the URL. Behind the index the chat surface keeps
+the current chat mounted and hidden — its persistent thread id always tracks
+the display's underlying chat, warm or not. **What is displayed, though, goes
+to nothing on the index**: the context rail (`ContextSidebar`) and the draft
+review scope both key off the *displayed* chat, which is null while the index
+is showing, even though the surface stays warm behind it. Only the index's
+reopen chip (`ChatIndexController`'s `CurrentChatChip`) reads the remembered
+current chat directly. A confirmed snapshot 404 clears the current chat; a chat
+path is replaced (never pushed) with the index so Back cannot land on it again.
+Reload recovery (`recoveringFirstSend`) is decided once at mount; the phone
+opens its chat sheet for it over Work or Editor.
+
+First Send writes the durable account-stamped intent before selecting the new
+thread. From the index it pushes `/p/<project>/chat/<id>`, so Back returns to
+the index; dock selection remembers the chat and leaves the destination
+untouched. Reload recovery
+uses current chat identity, not a URL-only selector. The submitted Work, Agent,
+and project are immutable reconciliation facts; no admission or visibility
+handoff may run until the canonical thread matches them.
+
+The QueryClient owns normalized Favorite intent per project/thread, fenced
+against stale page arrival. A Favorite projects onto every cached row of that
+chat at once; the Favorites filter hides an unfavorited row locally, but no feed
+guesses membership. Favorite completion refetches only Favorites feeds. Work
+membership is unchanged. No feed owns read/unread state. Lifecycle projection updates
+`actionRequired` in cached rows when a subscribed thread emits; unsubscribed
+threads are only refreshed by ordinary query reads, not a background signal.
 
 Draft review follows the same persistent-shell rule with two sibling owners.
 The hydrated project owns one Chat review value (Chat Work plus thread) and one
@@ -107,7 +146,7 @@ the matching Editor, advertises them only after route success, and claims them
 only after Work, manuscript path, mounted document, and draft membership agree;
 it survives phone view unmounts because the owner does not.
 
-A chat has one current Work binding. The landing's Work choice is prospective creation
+A chat has one current Work binding. The new-chat Work choice is prospective creation
 state only; it never invokes the rebind command. The Chat composer may explicitly
 rebind an idle existing chat through the canonical durable transition, and the
 model's explicit `work.switch` command uses that same separate authority. Work
@@ -262,11 +301,10 @@ push/replace behavior. The legacy slug project routes and `?screen`/`?thread`
 grammar are gone. `project-route.ts` retains stable-ID command types and the
 context-removal CAS snapshot only; it is not a second address grammar.
 
-Empty Chat/Work selections are stored in href-scoped browser history state, not
-serialized as `?chat=&work=`. Only Editor-related destinations carry the empty
-Editor Work marker; other screens must not write state their address parser
-discards, or normalization can race a blocked departure back to its source.
-Actual selections remain readable query parameters.
+Empty Editor Work selections are stored in href-scoped browser history state.
+Only Editor-related destinations carry this marker; other screens must not
+write state their address parser discards. Actual Work selections remain
+readable query parameters. Current chat selection belongs to the working set.
 A fresh copied URL without these parameters may use local defaults; Back/Forward
 and reload preserve the entry's explicit no-selection intent.
 Resolving those defaults does not itself replace the route. The departure
@@ -276,21 +314,19 @@ uses the accepted URL and browser-local layout. Document
 admission still canonicalizes document paths and scope independently.
 
 A project address has explicit selections, not defaults: absent, no-Work,
-slug, malformed, and unavailable remain distinct. Only genuinely absent Chat
-or Editor selections may use their respective local continuity rules.
+slug, malformed, and unavailable remain distinct. Only genuinely absent Editor selections may use local continuity.
 The navigation coordinator matches rendered entries by history key, because
 router and native URLs can spell the same query differently. Async tickets
 still retain and validate the native URL, entry key, and navigation revision.
-The shared query guard clears malformed or confirmed-missing optional Chat/Work
+The shared query guard clears malformed or confirmed-missing optional Work
 selectors using synchronous, entry-guarded history replacement, pinning no selection
 without empty URL parameters. This same-destination repair bypasses blockers;
 it never queues a competing navigation behind a pending dirty-edit decision.
 Pending catalog refreshes and catalog errors never prove absence. Valid and omitted selectors are not rewritten. Duplicate query keys,
 invalid percent encoding, and conflicting path/query Work scope remain parser
 errors, not recoverable selector values. Required path identities never fall
-back. Work and document path misses stay unavailable. Path `/chat/{id}` is
-identity, not a primary-list lookup; ChatScreen's snapshot miss is the error,
-not the destination overlay. Query `?chat=` still drops missing primaries.
+back. Work and document path misses stay unavailable. Path and remembered chat IDs are identity, not primary-list lookups. A confirmed
+snapshot miss falls back to the index.
 Editor can seed its initially absent Work
 from the selected Chat once; afterwards Editor Work is independent from Chat Work.
 With no selected Chat it is explicit no-Work. The Work catalog never selects a
@@ -322,17 +358,17 @@ content startup belong to the document host. An explicitly unavailable address
 stays unavailable rather than selecting a fallback. Context paths are reusable
 locations, never document identity.
 
-The Chat navigation item opens the composer-and-history landing, including from
-a chat detail. An already-open landing is a no-op. The switcher’s New chat
-shortcut targets that same landing; there is no separate `/chats` or `/chats/new` route.
+The Chat navigation item reopens the current chat. New chat and chat selection
+stay in the center on Chat, and in the dock on Work or Editor.
 
 Chat switching lives in `features/chat/ThreadSwitcherPopover`; it filters by
 chat title, groups chats by Work when meaningful, and delegates actual
-navigation to the route owner. `ProjectView` resolves a primary-list chat once
-and passes its current Work to context hydration, Draft Review, the chat body,
-and headers. Descendants must not independently derive those listed-primary
-values. Path `/chat/{id}` is identity, so a subagent is not in that list and
-does not receive that Work projection.
+navigation to the route owner. The route resolves current chat by exact identity,
+including subagents. `ProjectView` uses a primary-list lookup only for the Work
+projection passed to context hydration, Draft Review, and headers; that lookup
+never chooses or rejects the chat body identity. Descendants must not re-derive
+these projections. Subagents absent from the primary list do not receive that
+Work projection.
 
 ## Don't
 

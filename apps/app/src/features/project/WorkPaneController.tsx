@@ -12,7 +12,6 @@ export type WorkPaneControllerProps = {
   chatToggle: PaneHeaderRailToggle;
   routeWork: RouteWorkResolution;
   routeCommands: ProjectRouteCommands;
-  onOpenThread: (threadId: string) => void;
 };
 
 export function WorkPaneController({
@@ -21,7 +20,6 @@ export function WorkPaneController({
   chatToggle,
   routeWork,
   routeCommands,
-  onOpenThread,
 }: WorkPaneControllerProps) {
   return (
     <main className="main-pane flex min-h-0 flex-1 flex-col">
@@ -35,12 +33,7 @@ export function WorkPaneController({
         right={chatToggle}
       />
       <div className="page-sheet">
-        <WorkScreen
-          projectId={projectId}
-          routeWork={routeWork}
-          routeCommands={routeCommands}
-          onOpenThread={onOpenThread}
-        />
+        <WorkScreen projectId={projectId} routeWork={routeWork} routeCommands={routeCommands} />
       </div>
     </main>
   );

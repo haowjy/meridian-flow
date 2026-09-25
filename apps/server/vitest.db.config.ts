@@ -18,6 +18,8 @@ const workerDatabaseUrls = process.env.DB_TEST_DATABASE_URLS
 const expectedSuites = [
   "apps/server/server/domains/packages/__tests__/account-skill-install-store.db.test.ts",
   "apps/server/server/domains/packages/__tests__/agent-revision-store.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/chat-feed-activity.db.test.ts",
+  "apps/server/server/domains/threads/adapters/drizzle/chat-feed.adapter-contract.db.test.ts",
   "apps/server/server/domains/billing/adapters/__conformance__/drizzle-credit-ledger.db.test.ts",
   "apps/server/server/domains/collab/adapters/__conformance__/drizzle-branches.adapter-contract.db.test.ts",
   "apps/server/server/domains/collab/adapters/__conformance__/drizzle-journal.recovery-redo.db.test.ts",

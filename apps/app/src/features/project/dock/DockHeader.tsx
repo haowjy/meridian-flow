@@ -1,12 +1,19 @@
 /**
- * DockHeader — the single header row for the tabbed right dock.
+ * DockHeader — the desktop dock's single header row.
  *
  * The header is part of the dock's ONE uniform chrome surface — it paints
  * nothing of its own (the dock slot owns the material) and carries no bottom
  * border. Layout: `[left slot] … [segmented view switch] [close]`. The left
  * slot hosts the chat select/rename dropdown while Chat is active; the view
- * switch carries the view identity, so there is no separate section title.
- * The left slot truncates before the switch or close ever compress.
+ * switch carries the view identity, so there is no separate section title. The
+ * switch disappears when only one view is available because a single segment
+ * cannot select anything. The left slot truncates before the switch or close
+ * ever compress.
+ *
+ * Desktop-only: the phone chat sheet supplies its own header
+ * (`mobile/MobileChatSheetHeader.tsx`), built from `MobileTopBar`'s
+ * status-bar-aware chrome instead of branching this one. `DockShell` takes
+ * either as a header slot.
  *
  * Replaces the per-occupant RailHeader chrome in the dock: same `h-10` shell
  * and the canonical `PanelToggleButton` close, so the collapse control still
@@ -17,15 +24,18 @@ import { Trans } from "@lingui/react/macro";
 import { PanelRightClose } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { cn } from "@/lib/utils";
+import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 
 import { PanelToggleButton } from "../shell/PanelToggleButton";
 import type { DockView } from "./dock-view-store";
 
-export type DockHeaderProps = {
+export type DockHeaderSlotArgs = {
   view: DockView;
   views: readonly DockView[];
   onSelectView: (view: DockView) => void;
+};
+
+export type DockHeaderProps = DockHeaderSlotArgs & {
   onClose?: () => void;
   threadSelect?: ReactNode;
 };
@@ -35,13 +45,11 @@ export function DockHeader({ view, views, onSelectView, onClose, threadSelect }:
     <header className="flex h-10 shrink-0 items-stretch pl-2">
       {/* No overflow-hidden: truncation is owned by the min-w-0/truncate chain
           inside, and clipping here shears the trigger's hover pill (it
-          reaches 6px left of the slot for optical text alignment). */}
-      <div className="flex min-w-0 flex-1 items-center pr-1.5">
+          bleeds left of the slot). */}
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 pr-1.5">
         {view === "chat" ? threadSelect : null}
       </div>
-      {views.length > 1 ? (
-        <DockViewSwitch views={views} view={view} onSelectView={onSelectView} />
-      ) : null}
+      <DockViewSwitch view={view} views={views} onSelectView={onSelectView} />
       {onClose ? (
         // px-2 matches ContextTabBar's trailing zone so the collapse toggle
         // sits exactly where the expand toggle appears when the dock closes —
@@ -54,53 +62,19 @@ export function DockHeader({ view, views, onSelectView, onClose, threadSelect }:
   );
 }
 
-/**
- * DockViewSwitch — a contained segmented switch, deliberately NOT tabs: the
- * dock is one uniform chrome surface and nothing "rises" out of it (only the
- * page does that, via the document tab strip). The recessed track gives the
- * control a complete boundary — a bare pressed pill floating at the window's
- * top corner read as a tab with its base cut off. The active segment surfaces
- * the paper tone inside the track; selection is tonal, never an outline. The
- * The switch disappears when only one view is available because a single
- * segment cannot select anything. No count or badge appears on any segment —
- * the composer DraftDock strip carries discovery.
- */
-function DockViewSwitch({
-  views,
-  view,
-  onSelectView,
-}: {
-  views: readonly DockView[];
-  view: DockView;
-  onSelectView: (view: DockView) => void;
-}) {
+/** The segmented view switch, shared by the desktop header and the phone chat sheet header. */
+export function DockViewSwitch({ view, views, onSelectView }: DockHeaderSlotArgs) {
+  if (views.length <= 1) return null;
   return (
-    <div
-      role="tablist"
-      aria-label={t`Dock view`}
-      className="flex shrink-0 items-center self-center rounded-lg bg-foreground/6 p-0.5"
-    >
-      {views.map((segment) => {
-        const active = segment === view;
-        return (
-          <button
-            key={segment}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onSelectView(segment)}
-            className={cn(
-              "focus-ring h-6 shrink-0 rounded-[calc(var(--radius-lg)-2px)] px-2.5 text-xs transition-colors",
-              active
-                ? "bg-background font-medium text-foreground"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <DockViewLabel view={segment} />
-          </button>
-        );
-      })}
-    </div>
+    <SegmentedTabs
+      label={t`Dock view`}
+      value={view}
+      onChange={onSelectView}
+      options={views.map((segment) => ({
+        value: segment,
+        label: <DockViewLabel view={segment} />,
+      }))}
+    />
   );
 }
 

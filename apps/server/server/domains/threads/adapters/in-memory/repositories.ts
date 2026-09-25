@@ -789,7 +789,7 @@ export function createInMemoryRepositories(
     },
   };
 
-  const { homeFeed, workChatFeed, threadUserState, conversationalHead } =
+  const { chatFeed, workChatFeed, threadUserState, conversationalHead } =
     createInMemoryProjectChatAdapter(
       {
         threads: () => threads.values(),
@@ -806,7 +806,7 @@ export function createInMemoryRepositories(
 
   return {
     threads: threadRepo,
-    homeFeed,
+    chatFeed,
     workChatFeed,
     threadUserState,
     threadWorks: threadWorksRepo,

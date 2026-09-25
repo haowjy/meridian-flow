@@ -15,7 +15,12 @@ landscape heights stay on desktop.
 
 The shell reuses the same route-owned `ProjectViewProps`, data hooks, chat,
 context tree, document editor/viewers, results body, and thread drawer content.
-Only the chrome changes: top bar, drawer, and one active view at a time.
+Only the chrome changes: top bar, drawer, and one active destination. A local
+chat Sheet can open over Work or Editor without navigating or unmounting the
+underlying destination. The shell registers it as the dock reveal, so chat
+selection outside Chat opens it; its toolbar entry opens it without selecting a
+thread. Pending first-send recovery reopens that Sheet after reload. The Sheet
+mounts the chat only while open: closing it ends that chat surface.
 
 Same-Work pending document navigation retains the prior document presentation
 and breadcrumb until address resolution settles. The shared review-scope owner
@@ -35,7 +40,7 @@ and never construct paths or query strings. Primary destinations live beneath
 `/p/<project-id>` (`/chat/<chat-uuid>`, `/works`,
 `/work/<work-slug>`, `/editor`, and context browse/document paths). Context
 paths carry scheme and location in path segments; Work-scoped paths carry their
-Work slug in the path. `chat`, `work`, `settings`, and `results` are the only
+Work slug in the path. `work`, `settings`, and `results` are the only
 recognized query keys. The removed `screen`, `thread`, `scheme`, `folder`, and
 `path` query parameters are not compatibility inputs.
 
@@ -90,13 +95,15 @@ ProjectView
 MobileProject
   ├─ MobileTopBar
   │   ├─ hamburger on every screen
-  │   ├─ breadcrumb for context screens
+  │   ├─ breadcrumb for context screens and `Chats › <chat switcher>` on Chat
+  │   ├─ Open chat action outside Chat
   │   └─ trailing slot: chat ⇄ results toggle, or `+` create menu in Files
   ├─ one active main view
-  │   ├─ ChatLandingScreen or WorkScreen → shared project-screen body and one screen scroll owner
+  │   ├─ ChatIndex or WorkScreen → one screen scroll owner
   │   ├─ MobileChatHost → ChatScreen + MobileKeyboardAware
   │   ├─ MobileContextBrowser or MobileDocumentHost
   │   └─ MobileResultsView → ResultsRailBody + MobileResultViewerOverlay
+  ├─ local chat Sheet → ChatSurface above the retained Work/Editor view
   └─ NavigationDrawer → Sheet + WorkspaceNavBody + ContextTreePanel + account menu
 ```
 
@@ -115,10 +122,22 @@ the document session registry.
 - Every destination shows a truncated project title above its screen identity.
   Context screens keep a left-aligned breadcrumb on the second line; the
   breadcrumb remains Files-rooted: `Files › scheme › folders › file`.
-- Chat landing/Work/chat/results keep their current screen/thread title on the
-  second line. The leading hamburger and trailing action reserve are both
-  `44px`, so non-breadcrumb titles remain centered. The drawer edits the
+- Chat uses the same breadcrumb grammar (`ChatBreadcrumb`): `Chats` is a
+  never-truncating ancestor that opens the index, and the current segment is
+  the chat switcher. The index shows a lone `Chats`, so its body hides the
+  duplicate heading (`namedByChrome`). Work and Results keep a centered title;
+  the leading side reserves as many 44px slots as the trailing side. Crumb
+  targets stay 44px with negative margin so the trail fits the 56px band. The drawer edits the
   project title inline without closing, and offers an explicit View projects link.
+- Outside Chat, a separate Open chat action opens a local Sheet without
+  changing the destination. The registered dock reveal and pending first-send
+  reload recovery open the same Sheet and select its Chat tab. The Sheet renders
+  `ChatSurface` with `renderHeader` supplying `MobileChatSheetHeader`: a 56px
+  status-bar-aware header carrying the chat switcher and a 44px close, built
+  from `MobileTopBar`'s chrome primitives rather than the desktop `DockHeader`.
+  Like the desktop dock it has no index, so no `Chats` trail. The Sheet opens
+  only over Work or Editor: on the Chat screen commands navigate instead of
+  revealing.
 - The trailing slot is a per-screen dispatcher (`trailingAction()` in
   `MobileProject`): chat carries the Results entry, Results carries the way
   back to chat, and the Files browser inside a scheme (scheme root or folder,

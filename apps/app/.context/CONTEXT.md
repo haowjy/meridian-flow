@@ -9,10 +9,10 @@ Recurring traps (layout `shouldReload`, relative-time clocks, editor vendor
 chunks, streaming memo/coalesce) live in [frontend-perf.md](frontend-perf.md).
 `EditorView` is a static host dependency; do not lazy-load it.
 
-## Project Chat landing
+## Project Chat index
 
-The Chat landing feed/row contract and interaction ownership live with the feature in
-[`src/features/project/chat-landing/.context/CONTEXT.md`](../src/features/project/chat-landing/.context/CONTEXT.md).
+The Chat index feed/row contract and interaction ownership live with the feature in
+[`src/features/project/chat-index/.context/CONTEXT.md`](../src/features/project/chat-index/.context/CONTEXT.md).
 
 ## Server config and auth surface
 
@@ -56,7 +56,7 @@ Two interfaces are the only paths between the visual layer and the substrate:
   (Zustand vanilla store, one instance per `ThreadStoreProvider`, SSR-safe).
   **Public imports:** `@/client/stores` only — do not reach into store internals from features.
   UI reads via `useThreadStore(selector)`, `useThreadTurns(threadId)`; writes via
-  `useThreadActions()` only. Before navigation or dispatch, the project Chat landing and
+  `useThreadActions()` only. Before navigation or dispatch, the project new-chat composer and
   existing-thread sends write an unresolved intent to the account-stamped chat
   submission journal. Destination Chat owns persistence, idempotent replay,
   acknowledgement, and recovery. Ambiguous sends retain their journal witness;
@@ -70,7 +70,7 @@ Two interfaces are the only paths between the visual layer and the substrate:
   The store depends on this port, not `QueryClient` directly — list/snapshot
   projections stay in Query; per-thread turn state stays in the store. Its
   lifecycle projector converges `actionRequired` across project thread lists,
-  the Chat landing, and every matching Work feed while Favorite remains normalized separately.
+  the Chat index, and every matching Work feed while Favorite remains normalized separately.
 - **`useRenameThread`** (`src/client/query/useRenameThread.ts`) — P1 thread-title
   command. It projects the requested title into the project thread list
   immediately, fences per-thread overlap and stale completions through
@@ -89,16 +89,17 @@ Two interfaces are the only paths between the visual layer and the substrate:
   `useProjectList`, `useProjectThreads`, `useWorks`, `useThreadSnapshotSync`).
   `project-invalidation` supplies project-level invalidators;
   `work-projection-cache` is the one Work-entity/binding convergence policy. Any
-  thread or Work transition that can change the Chat landing also invalidates `homeFeed`.
+  thread or Work transition that can change the Chat index also invalidates `chatFeed`.
   Terminal turns and Work rebinds enter through
   `invalidateThreadProjectionDependencies`. Snapshot synchronization applies
   history and action-required lifecycle state. Favorite commands share one
-  normalized project/thread authority across Chat landing and Work rows; the landing alone
-  projects the affected item between its categories without invalidation. A
+  normalized project/thread authority across index and Work rows. The flat
+  project feed projects Favorite flags and filtered membership optimistically,
+  fences pre-command page arrival, then invalidates both filter keys. A
   failed favorite keeps the last confirmed star, exposes the exact failed
   intent through an inline row-scoped Retry on the shared row, and still
   announces the error.
-  `useWorks` exposes named catalog Works plus `noWork`. The Chat landing derives its
+  `useWorks` exposes named catalog Works plus `noWork`. The new-chat composer derives its
   initial prospective choice from the first active (then first available) named
   catalog Work, or No Work. Omitted or explicit-null root creation binds the
   locked No Work row as primary.
@@ -185,7 +186,8 @@ remains the pending destination until creation is confirmed or reconciled by
 that ID. An uncertain outcome stays on the form for retry, not on an unconfirmed
 project screen.
 
-Chat landing Send mints a thread id, writes local turns, replaces the URL, then
+New-chat Send journals its intent, mints local turns, selects its current chat
+in place (center replaces the URL; dock leaves the destination unchanged), then
 `useThreadHandoff` persists create-or-get + admit + run on those ids. Failure
 stays on that chat. An empty working turn shows "Couldn't send" with Retry on
 the turn, which resubmits the same thread and message ids. `useThreadHandoff`
@@ -193,7 +195,10 @@ clears that chrome once persist and run succeed. It also resumes each distinct
 active run once, including a server-initiated run that wakes the parent, so a
 background child's continuation streams live; see
 [`features/chat/.context/thread-live-updates.md`](../src/features/chat/.context/thread-live-updates.md).
-Do not bounce to the project library or show Check status, Start over, or saved-first-message recovery.
+First-send creation must replay or reconcile its durable intent in place; never
+replace it with lost-message recovery copy or bounce to the project library.
+Later ambiguous sends use the separate acknowledged-submission recovery
+contract in `features/chat/.context/CONTEXT.md`.
 
 ### Thread snapshot reconciliation
 
@@ -277,7 +282,7 @@ not a remembered destination.
 
 `/projects/new` is a separate creation destination. Its title form keeps
 network pending and failure there until the server returns the authoritative
-project ID, then enters that project's Chat landing. No account-level composer or
+project ID, then enters that project's Chat index. No account-level composer or
 project-less quick-chat entry is exposed. The existing personal-project
 bootstrap may still place a starter project in the library for a new account;
 this UI change does not decide zero-project onboarding.
@@ -294,12 +299,12 @@ There is no `/project/<UUID>` or `/projects/<UUID>` project route and no
 remains the deliberately independent chat route and is outside project-address
 cutover scope.
 
-Path destinations are the Chat landing (`/p/<project>`) and chat detail
-(`/chat/<chat-slug>`), Work collection/detail
+Path destinations are the Chat index (`/p/<project>`) and chat detail
+(`/chat/<chat-UUID>`), Work collection/detail
 (`/works`, `/work/<work-slug>`), Editor (`/editor`), and context browse or
 document paths. A Work-scoped context path carries its Work slug in the path;
 project-scoped context can use the explicit `work` query selector. The only
-project-address query keys are `chat`, `work`, `settings`, and `results`.
+project-address query keys are `work`, `settings`, and `results`.
 Selectors distinguish omitted, explicit no-Work (empty), a slug, and malformed
 input; duplicate recognized keys and malformed encodings are invalid rather
 than normalized into another destination. Case and trailing-slash canonical
@@ -307,12 +312,14 @@ replacement use the address serializer. Settings remains the layout-owned
 overlay; Results remains auxiliary state.
 
 `ReadableProjectRoute` is the sole browser-address parser/resolver and
-`createProjectNavigation` owns history admission. The project UUID and Work/chat
-slugs resolve only through successful owner/project catalogs. An unavailable or
+`createProjectNavigation` owns history admission. Project identity and Work
+slugs resolve through successful owner/project catalogs. Chat UUIDs resolve by
+snapshot identity, including subagents absent from the primary list. An unavailable or
 malformed explicit target parks/disables its requested host; it never falls
 through to a remembered or catalog-default target. Main-destination navigation
-pushes a concrete selection; dock selection, canonicalization, and repair
-replace only when their captured entry is still current. Keep route parsing and
+pushes a concrete selection. Dock chat selection updates browser-local current
+chat without writing history. Canonicalization and repair replace only when
+their captured entry is still current. Keep route parsing and
 browser history behavior out of `routing/project-route.ts`: that module now
 contains stable-ID navigation command types plus `ProjectSearch`, the
 compare-and-swap snapshot used only by context-removal repair, not URL grammar.
@@ -328,7 +335,7 @@ The dedicated Work screen presents Active Work first and keeps Archived Work in
 a default-collapsed disclosure. Work management has no project-wide selection
 state and never resolves, repairs, or changes a chat binding. The catalog is
 catalog-only and omits No Work. Omitted or null root creation binds locked
-No Work; the catalog never does. The Chat landing and Work each own one
+No Work; the catalog never does. The Chat index and Work each own one
 screen-level `app-scroll`; neither adds a nested scroll owner.
 
 ## Visual conventions

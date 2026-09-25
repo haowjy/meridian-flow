@@ -1,15 +1,20 @@
 /**
- * ChatScreen — project workspace destination that renders the selected thread
- * as the primary pane. It coordinates desktop/mobile rail visibility without
- * owning thread routing itself.
+ * ChatScreen — renders the resolved thread in whichever pane hosts the chat
+ * (center, dock, phone), or the empty New chat when there is none. It never
+ * owns thread routing itself; it reads `useChatNavigation()` for the commands
+ * a chat surface needs (opening the parent of a subagent, focusing a freshly
+ * requested New chat composer).
  */
-import { Trans } from "@lingui/react/macro";
+import { t } from "@lingui/core/macro";
 import type { Thread, Work } from "@meridian/contracts/protocol";
 import { useProjectThreads } from "@/client/query/useProjectThreads";
 import { useThreadSnapshotSync } from "@/client/query/useThreadSnapshotSync";
 import { QueryErrorRow } from "@/components/app/QueryErrorRow";
+import { ChatSurface as ChatFrame } from "@/features/chat/ChatSurface";
 import { ChatThreadNavigationProvider } from "@/features/chat/ChatThreadNavigation";
 import { ChatView } from "@/features/chat/ChatView";
+import { CreationComposer } from "@/features/chat/CreationComposer";
+import { useChatNavigation } from "../routing/chat-navigation";
 import type { ContextRouteTarget } from "../routing/project-route";
 import { ProjectChatContextNavigationProvider } from "./ProjectChatContextNavigationProvider";
 import { SubagentBanner } from "./SubagentBanner";
@@ -21,8 +26,6 @@ export type ChatScreenProps = {
   threadId: string | null;
   activeWork: Work | null;
   availableWorks: readonly Work[];
-  /** Called when the user clicks the parent breadcrumb in a subagent banner. */
-  onSelectThread: (threadId: string) => void;
   onOpenContextTarget?: (target: ContextRouteTarget) => void;
 };
 
@@ -32,27 +35,28 @@ export function ChatScreen({
   threadId,
   activeWork,
   availableWorks,
-  onSelectThread,
   onOpenContextTarget,
 }: ChatScreenProps) {
-  const { threads: projectThreads, isError, refetch } = useProjectThreads(projectId);
+  const { threads: projectThreads } = useProjectThreads(projectId);
+  const { openChat, newChatFocusRequestId, consumeNewChatFocusRequest } = useChatNavigation();
 
+  // New chat: the same frame a live chat uses, with nothing above the composer
+  // yet, so the first Send grows a transcript without moving the composer.
   if (threadId === null) {
-    if (isError) {
-      return (
-        <div className="px-4 py-3">
-          <QueryErrorRow onRetry={refetch} />
-        </div>
-      );
-    }
-    if (projectThreads !== null && projectThreads.length === 0) {
-      return (
-        <div className="grid h-full place-items-center px-6 text-sm text-muted-foreground">
-          <Trans>This project has no chats yet.</Trans>
-        </div>
-      );
-    }
-    return null;
+    return (
+      <ChatFrame
+        title={t`New chat`}
+        footer={
+          <CreationComposer
+            projectId={projectId}
+            newChatFocusRequestId={newChatFocusRequestId}
+            onNewChatFocusHandled={consumeNewChatFocusRequest}
+          />
+        }
+      >
+        {null}
+      </ChatFrame>
+    );
   }
 
   return (
@@ -62,7 +66,7 @@ export function ChatScreen({
       activeWork={activeWork}
       availableWorks={availableWorks}
       projectThreads={projectThreads ?? []}
-      onSelectThread={onSelectThread}
+      onSelectThread={openChat}
       onOpenContextTarget={onOpenContextTarget}
     />
   );

@@ -1,11 +1,8 @@
 /** Persistence boundary for one user's cross-device working-set snapshot in a project. */
 import type { WorkingSetRoute } from "@meridian/contracts/protocol";
-import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
+import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 
-export type WorkingSetSnapshot = {
-  recentRoutes: WorkingSetRoute[];
-  lastThreadId: ThreadId | null;
-};
+export type WorkingSetSnapshot = { recentRoutes: WorkingSetRoute[] };
 
 export type WorkingSetRow = WorkingSetSnapshot & {
   userId: UserId;

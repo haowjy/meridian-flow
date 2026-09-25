@@ -6,7 +6,7 @@
  * streaming transport, not persisted history.
  */
 import { EventType } from "@meridian/contracts/protocol";
-import { useQuery } from "@tanstack/react-query";
+import { queryOptions, useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
 
 import {
@@ -37,6 +37,16 @@ export type ThreadSnapshotSyncStatus = {
   refetch: () => void;
 };
 
+/** Shared options for the live host and route's passive missing-identity observer.
+ * A disabled observer still updates query options: never replace this queryFn with skipToken.
+ */
+export function threadSnapshotQueryOptions(threadId: string) {
+  return queryOptions({
+    queryKey: threadQueryKeys.snapshot(threadId),
+    queryFn: async () => deserializeThreadSnapshot(await getThreadSnapshot({ data: { threadId } })),
+  });
+}
+
 /**
  * Suppressed while the thread is still pending optimistic server creation —
  * `POST /api/threads` races `GET /api/threads/:id/snapshot` from the chat
@@ -48,11 +58,7 @@ export function useThreadSnapshotSync(threadId: string): ThreadSnapshotSyncStatu
   const transport = useThreadTransport();
 
   const { data, isError, isFetching, refetch } = useQuery({
-    queryKey: threadQueryKeys.snapshot(threadId),
-    queryFn: async () => {
-      const snapshot = await getThreadSnapshot({ data: { threadId } });
-      return deserializeThreadSnapshot(snapshot);
-    },
+    ...threadSnapshotQueryOptions(threadId),
     // Always revalidate on activation: the thread may have advanced while the
     // writer was elsewhere (for example a background child's report waking the
     // parent). Cached turns still render first, so this stays navigate-first.
