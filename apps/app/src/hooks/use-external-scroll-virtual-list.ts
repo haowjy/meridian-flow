@@ -12,7 +12,7 @@ export function useExternalScrollVirtualList<T>({
   items: readonly T[];
   scrollOwner: React.RefObject<HTMLElement | null>;
   getItemKey: (item: T) => React.Key;
-  estimateSize: () => number;
+  estimateSize: (index: number) => number;
   overscan?: number;
 }) {
   const [list, setList] = useState<HTMLElement | null>(null);

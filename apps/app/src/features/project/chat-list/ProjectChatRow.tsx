@@ -26,9 +26,12 @@ export type ProjectChatRowProps = {
 };
 
 /** Loading anatomy kept with the real row so their three lanes cannot drift. */
-export function ProjectChatRowSkeleton() {
+export function ProjectChatRowSkeleton({ ruled = false }: { ruled?: boolean }) {
   return (
-    <li data-project-chat-row-layout className="project-chat-row-layout grid px-2 py-1.5">
+    <li
+      data-project-chat-row-layout
+      className={cn("project-chat-row-layout relative grid px-2 py-1.5", ruled && "row-rule")}
+    >
       <Skeleton className="col-start-1 row-start-1 mr-2 h-4 motion-reduce:animate-none" />
       <div data-project-chat-row-work className="px-1">
         <Skeleton className="h-4 w-full motion-reduce:animate-none" />

@@ -24,7 +24,11 @@ session, so returning to the index finds the list as the writer left it.
 An empty Favorites filter is one muted line under the heading row.
 
 The pagination sentinel observes only while a page can be requested, so a stale
-observer callback cannot request a page. Lifecycle hints are snapshots, not live
+observer callback cannot request a page. It sits after the virtualized list,
+whose height is the measured total, so it is reached as the writer scrolls to
+the last loaded row. Recency labels and rows are one flat run of virtual
+entries; a row is ruled only when the next entry is a row of its group, and a
+row with an open menu or focus stays mounted when scrolled away. Lifecycle hints are snapshots, not live
 signals for unsubscribed chats.
 
 ## Row layout and feed behavior
@@ -54,6 +58,6 @@ and overflow share that trailing center; the action replaces the date on hover,
 focus-within, or an open menu without reflow. On coarse/no-hover inputs, the
 44 × 44 px action remains in the trailing lane and the date follows the preview
 inline. Fine rows retain a 53.6 px rhythm and coarse rows a 56 px rhythm; loading
-must match it. Rows are ruled by `divide-row-rule`, a 1px line drawn over the row's bottom
-edge (adding no height) and inset by the list's 8px bleed so it spans only the
-text column.
+must match it. Rows are ruled by `row-rule`, a 1px line drawn over the row's bottom edge
+(adding no height) and inset by the list's 8px bleed so it spans only the text
+column.
