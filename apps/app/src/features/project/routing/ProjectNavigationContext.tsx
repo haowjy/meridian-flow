@@ -22,6 +22,12 @@ const ProjectNavigationContext = createContext<{
   screen?: ScreenKey;
   open: OpenContextRoute;
   openNewChat?: () => Promise<void>;
+  openChatIndex?: () => Promise<void>;
+  acceptCreatedChat?: (threadId: string) => void;
+  dockChatView?: "chat" | "index";
+  dockChatReveal?: number;
+  revealDockChat?: () => void;
+  recoveringFirstSend?: boolean;
   capture?: () => () => boolean;
 } | null>(null);
 
@@ -30,6 +36,12 @@ export function ProjectNavigationProvider({
   openContextRoute,
   captureNavigation,
   openNewChat,
+  openChatIndex,
+  acceptCreatedChat,
+  dockChatView,
+  dockChatReveal,
+  revealDockChat,
+  recoveringFirstSend,
   screen,
   registerLeaveGuard,
 }: {
@@ -38,6 +50,12 @@ export function ProjectNavigationProvider({
   openContextRoute: OpenContextRoute;
   captureNavigation?: () => () => boolean;
   openNewChat?: () => Promise<void>;
+  openChatIndex?: () => Promise<void>;
+  acceptCreatedChat?: (threadId: string) => void;
+  dockChatView?: "chat" | "index";
+  dockChatReveal?: number;
+  revealDockChat?: () => void;
+  recoveringFirstSend?: boolean;
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
 }) {
   return (
@@ -47,6 +65,12 @@ export function ProjectNavigationProvider({
         open: openContextRoute,
         capture: captureNavigation,
         openNewChat,
+        openChatIndex,
+        acceptCreatedChat,
+        dockChatView,
+        dockChatReveal,
+        revealDockChat,
+        recoveringFirstSend,
         registerLeaveGuard,
       }}
     >
@@ -88,4 +112,9 @@ export function useProjectLeaveGuard(guard: ProjectLeaveGuard) {
       }),
     [register],
   );
+}
+
+/** Commands are pane-aware at the route boundary; consumers never write a URL. */
+export function useProjectChatNavigation() {
+  return useContext(ProjectNavigationContext);
 }

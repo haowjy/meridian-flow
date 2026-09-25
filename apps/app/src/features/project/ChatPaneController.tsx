@@ -5,10 +5,11 @@
  * screen switch. This controller renders only the destination chrome that keeps
  * sidebar/context rail reopen controls reachable above that surface.
  */
-import { Trans } from "@lingui/react/macro";
+import { t } from "@lingui/core/macro";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
+import { ThreadSwitcherPopover } from "@/features/chat/ThreadSwitcherPopover";
+import { useOpenNewChatRoute } from "./routing/ProjectNavigationContext";
 
-import { PaneTitle } from "./PaneTitle";
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
 
 export type ChatPaneControllerProps = {
@@ -26,6 +27,7 @@ export function ChatPaneController({
   contextToggle,
   onSelectThread,
 }: ChatPaneControllerProps) {
+  const openNewChat = useOpenNewChatRoute();
   return (
     <PaneHeader
       title={
@@ -39,9 +41,14 @@ export function ChatPaneController({
             variant="tab"
           />
         ) : (
-          <PaneTitle>
-            <Trans>Chat</Trans>
-          </PaneTitle>
+          <ThreadSwitcherPopover
+            projectId={projectId}
+            activeThreadId={null}
+            title={t`New chat`}
+            onSelectThread={onSelectThread}
+            onNewChat={openNewChat}
+            variant="tab"
+          />
         )
       }
       left={sidebarToggle}

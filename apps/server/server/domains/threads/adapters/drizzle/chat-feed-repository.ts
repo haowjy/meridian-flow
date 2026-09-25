@@ -1,7 +1,7 @@
-/** One-statement PostgreSQL projection for Continue, Favorite, and Recent Home chats. */
+/** One-statement PostgreSQL projection for flat project chats. */
 import { GENERIC_SUBAGENT_NAME } from "@meridian/contracts/agents";
 import { sql } from "drizzle-orm";
-import type { HomeChatFeedRepository } from "../../ports/repositories.js";
+import type { ProjectChatFeedRepository } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDatabase } from "./repositories.js";
 import {
   exactUtcTimestampSql,
@@ -12,11 +12,9 @@ import {
   visibleConversationalTurnSql,
 } from "./visible-conversation-sql.js";
 
-type HomeRow = ProjectChatSqlRow & {
-  section: "continue" | "favorite" | "recent";
-};
-
-export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeChatFeedRepository {
+export function createDrizzleProjectChatFeedRepository(
+  db: DrizzleDatabase,
+): ProjectChatFeedRepository {
   return {
     async queryPage(input) {
       const cursorActivity = input.after?.sortAt ?? null;
@@ -73,46 +71,25 @@ export function createDrizzleHomeChatFeedRepository(db: DrizzleDatabase): HomeCh
               headStatus: sql`vh.status`,
             })} AS action_required
           FROM eligible e LEFT JOIN visible_heads vh ON vh.thread_id = e.thread_id
-        ), continue_row AS (
-          SELECT thread_id FROM base ORDER BY last_activity_at DESC, thread_id DESC LIMIT 1
         ), selected AS (
-          SELECT 'continue'::text AS section, b.* FROM base b
-          JOIN continue_row c USING (thread_id) WHERE ${input.includeFeatured}
-          UNION ALL
-          SELECT 'favorite', b.* FROM base b
-          WHERE ${input.includeFeatured} AND b.is_favorite
-            AND b.thread_id <> (SELECT thread_id FROM continue_row)
-          UNION ALL
-          SELECT 'recent', recent.* FROM (
-            SELECT b.* FROM base b
-            WHERE NOT b.is_favorite
-              AND b.thread_id <> (SELECT thread_id FROM continue_row)
-              AND (${cursorActivity}::text IS NULL OR
-                (b.last_activity_at, b.thread_id) <
-                (${cursorActivity}::timestamptz, ${cursorThreadId}::uuid))
-            ORDER BY b.last_activity_at DESC, b.thread_id DESC
-            LIMIT ${input.recentLimit}
-          ) recent
+          SELECT b.* FROM base b
+          WHERE (NOT ${input.favorite} OR b.is_favorite)
+            AND (${cursorActivity}::text IS NULL OR
+              (b.last_activity_at, b.thread_id) <
+              (${cursorActivity}::timestamptz, ${cursorThreadId}::uuid))
+          ORDER BY b.last_activity_at DESC, b.thread_id DESC
+          LIMIT ${input.limit}
         )
-        SELECT selected.section, selected.thread_id, selected.title,
+        SELECT selected.thread_id, selected.title,
           selected.work_id, selected.work_title, selected.agent_name,
           selected.action_required, selected.is_favorite,
           conversation_preview.last_message_preview,
           ${exactUtcTimestampSql(sql`selected.last_activity_at`)} AS last_activity_at_exact
         FROM selected
         LEFT JOIN ${projectChatPreviewLateral(sql`selected.conversational_leaf_turn_id`)} ON true
-        ORDER BY CASE selected.section WHEN 'continue' THEN 0 WHEN 'favorite' THEN 1 ELSE 2 END,
-          selected.last_activity_at DESC, selected.thread_id DESC
+        ORDER BY selected.last_activity_at DESC, selected.thread_id DESC
       `);
-      const mapped = Array.from(rows as unknown as Iterable<HomeRow>).map((row) => ({
-        section: row.section,
-        item: mapProjectChatRow(row),
-      }));
-      return {
-        continueChat: mapped.find((row) => row.section === "continue")?.item ?? null,
-        favorites: mapped.filter((row) => row.section === "favorite").map((row) => row.item),
-        recent: mapped.filter((row) => row.section === "recent").map((row) => row.item),
-      };
+      return Array.from(rows as unknown as Iterable<ProjectChatSqlRow>).map(mapProjectChatRow);
     },
   };
 }

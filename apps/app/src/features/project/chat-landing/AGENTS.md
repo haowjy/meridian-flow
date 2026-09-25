@@ -1,9 +1,7 @@
-# Project Chat landing
+# Project chat index
 
-The project Chat landing is the composer and Continue, Favorite, and Recent feed
-at `/p/{projectId}`. Its first Send navigates to `/p/{projectId}/chat/{uuid}`
-before persisting in the background. It owns the landing composition and feed
-presentation; route ownership remains in the parent project feature.
+The index lists top-level project chats without a composer. It is the center
+project root or a dock-local view. Route-owned commands keep opening chats and
+new chat in the invoking pane. The shared row also belongs to Work detail.
 
-Read [`.context/CONTEXT.md`](.context/CONTEXT.md) before changing the landing,
-feed behavior, Home-backed query semantics, or row geometry.
+Read [`.context/CONTEXT.md`](.context/CONTEXT.md) before changing feed behavior.

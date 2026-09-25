@@ -2,8 +2,15 @@
 
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { bindChatSubmissions, readChatSubmissions } from "@/client/chat-submissions";
+import { DeviceChatSubmissionJournal } from "@/client/chat-submissions/store";
 import type { ThreadStoreActions } from "@/client/stores";
-import { inflightChatHref, type SendProjectChatArgs, sendProjectChat } from "./send-project-chat";
+import { WorkingSetSyncDriver } from "@/client/working-set/driver";
+import { DeviceWorkingSetStore } from "@/client/working-set/store";
+import {
+  rehydrateFirstSendSubmission,
+  type SendProjectChatArgs,
+  sendProjectChat,
+} from "./send-project-chat";
 
 vi.mock("./thread-title", () => ({
   deriveTitleFromMessage: (text: string) => text.trim().slice(0, 40),
@@ -21,6 +28,7 @@ function actions(): ThreadStoreActions & { calls: string[] } {
   const calls: string[] = [];
   return {
     calls,
+    turns: vi.fn(() => []),
     ensureThread: vi.fn(() => calls.push("ensureThread")),
     markPendingCreation: vi.fn(() => calls.push("markPendingCreation")),
     markHandoffPending: vi.fn(() => calls.push("markHandoffPending")),
@@ -33,13 +41,13 @@ function actions(): ThreadStoreActions & { calls: string[] } {
   } as unknown as ThreadStoreActions & { calls: string[] };
 }
 
-function send(overrides: Partial<Omit<SendProjectChatArgs, "threadActions" | "replace">> = {}): {
+function send(overrides: Partial<Omit<SendProjectChatArgs, "threadActions" | "selectChat">> = {}): {
   result: ReturnType<typeof sendProjectChat>;
   threadActions: ThreadStoreActions & { calls: string[] };
-  replace: Mock<(href: string) => void>;
+  selectChat: Mock<(href: string) => void>;
 } {
   const threadActions = actions();
-  const replace = vi.fn<(href: string) => void>();
+  const selectChat = vi.fn<(href: string) => void>();
   const result = sendProjectChat({
     accountId: ACCOUNT,
     projectId: "550e8400-e29b-41d4-a716-446655440000",
@@ -49,9 +57,9 @@ function send(overrides: Partial<Omit<SendProjectChatArgs, "threadActions" | "re
     workId: null,
     ...overrides,
     threadActions,
-    replace,
+    selectChat,
   });
-  return { result, threadActions, replace };
+  return { result, threadActions, selectChat };
 }
 
 beforeEach(() => {
@@ -65,16 +73,16 @@ afterEach(() => {
 });
 
 describe("sendProjectChat", () => {
-  it("mints a uuid, writes local state, and replaces before persist", () => {
+  it("mints a uuid, writes local state, and selectChats before persist", () => {
     const uuid = "550e8400-e29b-41d4-a716-446655440000";
     vi.spyOn(crypto, "randomUUID")
       .mockReturnValueOnce(uuid)
       .mockReturnValue("11111111-1111-4111-8111-111111111111");
 
-    const { result, threadActions, replace } = send();
+    const { result, threadActions, selectChat } = send();
 
     expect(result?.threadId).toBe(uuid);
-    expect(replace).toHaveBeenCalledWith(`/p/550e8400-e29b-41d4-a716-446655440000/chat/${uuid}`);
+    expect(selectChat).toHaveBeenCalledWith(uuid);
     expect(threadActions.calls).toEqual([
       "ensureThread",
       "markPendingCreation",
@@ -83,7 +91,7 @@ describe("sendProjectChat", () => {
       "ensureAssistantTurn",
       "markPendingStream",
     ]);
-    expect(replace.mock.invocationCallOrder[0]).toBeGreaterThan(
+    expect(selectChat.mock.invocationCallOrder[0]).toBeGreaterThan(
       (threadActions.markPendingStream as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0],
     );
     // Durable witness exists for the identity we just navigated to.
@@ -93,12 +101,12 @@ describe("sendProjectChat", () => {
   });
 
   it("skips navigation on follow-up send", () => {
-    const { threadActions, replace } = send({
+    const { threadActions, selectChat } = send({
       threadId: "550e8400-e29b-41d4-a716-446655440000",
       text: "Continue",
       submissionId: "sub-2",
     });
-    expect(replace).not.toHaveBeenCalled();
+    expect(selectChat).not.toHaveBeenCalled();
     expect(threadActions.ensureThread).not.toHaveBeenCalled();
     expect(threadActions.markPendingStream).not.toHaveBeenCalled();
   });
@@ -109,10 +117,10 @@ describe("sendProjectChat", () => {
     });
 
     try {
-      const { result, threadActions, replace } = send();
+      const { result, threadActions, selectChat } = send();
 
       expect(result).toBeNull();
-      expect(replace).not.toHaveBeenCalled();
+      expect(selectChat).not.toHaveBeenCalled();
       expect(threadActions.calls).toEqual([]);
       expect(setItem).toHaveBeenCalled();
     } finally {
@@ -120,12 +128,36 @@ describe("sendProjectChat", () => {
     }
   });
 
-  it("builds a uuid chat address", () => {
-    expect(
-      inflightChatHref(
-        "550e8400-e29b-41d4-a716-446655440000",
-        "550e8400-e29b-41d4-a716-446655440000",
-      ),
-    ).toBe("/p/550e8400-e29b-41d4-a716-446655440000/chat/550e8400-e29b-41d4-a716-446655440000");
+  it("recovers a dock first send after reload without a URL chat identity", () => {
+    const projectId = "550e8400-e29b-41d4-a716-446655440000";
+    const store = new DeviceWorkingSetStore(window.localStorage);
+    const driver = new WorkingSetSyncDriver(store, vi.fn());
+    driver.configure(ACCOUNT, false);
+    window.history.replaceState({}, "", `/p/${projectId}/editor`);
+    const result = sendProjectChat({
+      accountId: ACCOUNT,
+      projectId,
+      text: "Keep this first send",
+      submissionId: "dock-reload",
+      agent,
+      workId: null,
+      threadActions: actions(),
+      selectChat: (threadId) => driver.setCurrentChat(projectId, { kind: "thread", threadId }),
+    });
+    expect(window.location.pathname).toBe(`/p/${projectId}/editor`);
+    const reloadedStore = new DeviceWorkingSetStore(window.localStorage);
+    reloadedStore.setUser(ACCOUNT);
+    const currentId = reloadedStore.read(projectId)?.snapshot.lastThreadId;
+    expect(currentId).toBe(result?.threadId);
+    const reloadedJournal = new DeviceChatSubmissionJournal(window.localStorage);
+    reloadedJournal.setUser(ACCOUNT);
+    const intent = reloadedJournal.entries().find((entry) => entry.threadId === currentId);
+    if (intent?.kind !== "first-send") throw new Error("First-send intent was lost");
+    const recovery = rehydrateFirstSendSubmission(intent, actions(), ACCOUNT);
+    expect(recovery).toMatchObject({
+      text: "Keep this first send",
+      submissionId: "dock-reload",
+      projectId,
+    });
   });
 });

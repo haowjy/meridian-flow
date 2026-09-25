@@ -28,7 +28,6 @@ export type ProjectDestination =
 export type ProjectAddress = {
   projectId: string;
   destination: ProjectDestination;
-  chat: AddressSelection;
   work: AddressSelection;
   settings?: SettingsSection;
   results: boolean;
@@ -37,7 +36,7 @@ export type ParsedProjectAddress =
   | { kind: "valid"; address: ProjectAddress; href: string }
   | { kind: "invalid"; reason: string };
 const ABSENT: AddressSelection = { kind: "absent" };
-const RECOGNIZED_QUERY = new Set(["chat", "work", "settings", "results"]);
+const RECOGNIZED_QUERY = new Set(["work", "settings", "results"]);
 const HANDLE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -56,13 +55,6 @@ function selection(value: string | null): AddressSelection {
   if (value === "") return { kind: "none" };
   const slug = handle(value);
   return slug ? { kind: "slug", slug } : { kind: "malformed", value };
-}
-
-function chatSelection(value: string | null): AddressSelection {
-  if (value === null) return ABSENT;
-  if (value === "") return { kind: "none" };
-  const id = uuid(value);
-  return id ? { kind: "slug", slug: id } : { kind: "malformed", value };
 }
 
 function parseDestination(parts: string[]): ProjectDestination | null {
@@ -145,10 +137,6 @@ export function parseProjectAddress(
   const address: ProjectAddress = {
     projectId,
     destination,
-    chat:
-      destination.kind === "chat" || destination.kind === "chat-index"
-        ? ABSENT
-        : chatSelection(query.get("chat")),
     work,
     ...(isSettingsSection(settings) ? { settings } : {}),
     results: (editor || destination.kind === "chat") && query.has("results"),
@@ -164,8 +152,6 @@ export function parseProjectAddress(
     "href" in empty &&
     empty.href === projectAddressHref({ ...address, settings: undefined, results: false })
   ) {
-    if (address.chat.kind === "absent" && "chat" in empty && empty.chat === true)
-      address.chat = { kind: "none" };
     if (editor && address.work.kind === "absent" && "work" in empty && empty.work === true)
       address.work = { kind: "none" };
   }
@@ -202,7 +188,6 @@ export function projectAddressHref(address: ProjectAddress): string {
       break;
   }
   const query = new URLSearchParams();
-  if (d.kind !== "chat" && d.kind !== "chat-index") writeSelection(query, "chat", address.chat);
   const context = d.kind === "editor" || d.kind === "document" || d.kind === "browse";
   const pathOwnsWork =
     (d.kind === "document" || d.kind === "browse") &&
@@ -227,13 +212,11 @@ export function projectAddressState(
     address.work.kind === "none";
   return {
     ...state,
-    meridianProjectEmptySelection:
-      address.chat.kind === "none" || noWork
-        ? {
-            href: projectAddressHref({ ...address, settings: undefined, results: false }),
-            chat: address.chat.kind === "none",
-            work: noWork,
-          }
-        : undefined,
+    meridianProjectEmptySelection: noWork
+      ? {
+          href: projectAddressHref({ ...address, settings: undefined, results: false }),
+          work: noWork,
+        }
+      : undefined,
   };
 }

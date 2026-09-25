@@ -1,4 +1,4 @@
-/** Focused in-memory adapter for Home/Work Project-chat projections and writer state. */
+/** Focused in-memory adapter for Project/Work Project-chat projections and writer state. */
 import type { ThreadId } from "@meridian/contracts/runtime";
 import type { Block, ProjectChatItem, Thread, Turn } from "@meridian/contracts/threads";
 import {
@@ -6,7 +6,7 @@ import {
   isVisibleConversationalTurn,
 } from "../../domain/visible-conversation-policy.js";
 import type {
-  HomeChatFeedRepository,
+  ProjectChatFeedRepository,
   ThreadUserStateRepository,
   WorkChatFeedRepository,
 } from "../../ports/repositories.js";
@@ -97,7 +97,7 @@ export function createInMemoryProjectChatAdapter(
     };
   }
 
-  const homeFeed: HomeChatFeedRepository = {
+  const chatFeed: ProjectChatFeedRepository = {
     async queryPage(input) {
       const eligible: ProjectChatItem[] = [];
       for (const thread of source.threads()) {
@@ -113,20 +113,15 @@ export function createInMemoryProjectChatAdapter(
       eligible.sort(
         (a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || b.id.localeCompare(a.id),
       );
-      const continueChat = eligible[0] ?? null;
-      const favorites = input.includeFeatured
-        ? eligible.filter((item) => item.id !== continueChat?.id && item.isFavorite)
-        : [];
-      const recent = eligible
-        .filter((item) => item.id !== continueChat?.id && !item.isFavorite)
+      return eligible
+        .filter((item) => !input.favorite || item.isFavorite)
         .filter(
           (item) =>
             !input.after ||
             item.lastActivityAt < input.after.sortAt ||
             (item.lastActivityAt === input.after.sortAt && item.id < input.after.threadId),
         )
-        .slice(0, input.recentLimit);
-      return { continueChat: input.includeFeatured ? continueChat : null, favorites, recent };
+        .slice(0, input.limit);
     },
   };
 
@@ -174,5 +169,5 @@ export function createInMemoryProjectChatAdapter(
     },
   };
 
-  return { homeFeed, workChatFeed, threadUserState, conversationalHead };
+  return { chatFeed, workChatFeed, threadUserState, conversationalHead };
 }

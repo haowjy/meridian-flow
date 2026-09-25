@@ -97,7 +97,7 @@ function projectTitle(client: QueryClient, threadId: string, title: string | nul
  * patching a second cache by hand; inactive feeds are only marked stale.
  */
 function invalidateThreadTitleFeeds(client: QueryClient, projectId: string): void {
-  void client.invalidateQueries({ queryKey: projectQueryKeys.homeFeed(projectId), exact: true });
+  void client.invalidateQueries({ queryKey: projectQueryKeys.chatFeed(projectId) });
   void client.invalidateQueries({ queryKey: projectQueryKeys.workThreads(projectId) });
 }
 

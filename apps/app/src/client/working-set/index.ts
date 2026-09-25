@@ -1,14 +1,15 @@
 /** Public client working-set store and sync-driver surface. */
 
 export {
+  type CurrentChat,
   configureWorkingSetSync,
   hydrateWorkingSet,
+  readCurrentChat,
   readRecentRoutes,
-  readRememberedThread,
   reconcileContextRoutes,
   replaceRecentRoutes,
   retryWorkingSetHydration,
-  setThread,
+  setCurrentChat,
 } from "./driver";
 export type { WorkingSetHydrationPlan } from "./hydration";
 export type { ReconcileContextRoutesInput } from "./store";

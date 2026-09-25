@@ -1,4 +1,4 @@
-/** Minimal Lingui runtime for the production Home-row browser fixture. */
+/** Minimal Lingui runtime for the production project-chat-row browser fixture. */
 import type { ReactNode } from "react";
 
 export function t(strings: TemplateStringsArray, ...values: unknown[]) {

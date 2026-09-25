@@ -31,6 +31,7 @@ export type MobileTopBarProps = Pick<ProjectViewProps, "activeScreen"> & {
   /** Left-aligned location trail; replaces the centered title when set. */
   breadcrumb?: ReactNode;
   actions?: ReactNode;
+  chatAction?: ReactNode;
   title?: ReactNode;
 };
 
@@ -43,6 +44,7 @@ export function MobileTopBar({
   onOpenDrawer,
   breadcrumb,
   actions,
+  chatAction,
   title,
 }: MobileTopBarProps) {
   return (
@@ -88,6 +90,7 @@ export function MobileTopBar({
               ))}
           </div>
         </div>
+        {chatAction}
         <div className="flex size-11 shrink-0 items-center justify-end">{actions}</div>
       </div>
     </header>

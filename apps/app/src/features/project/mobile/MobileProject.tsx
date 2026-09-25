@@ -15,15 +15,19 @@ import { MessageSquare, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ContextTab, useContextTabs } from "@/client/stores";
 import { PhoneIconButton } from "@/components/ui/phone-icon-button";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { useConversationRevealRouting } from "@/features/chat/conversation-reveal";
 import { DraftReviewBoundary } from "@/features/chat/DraftReviewProvider";
+import { ChatSurface } from "../chat/ChatSurface";
 import { ChatLandingScreen } from "../chat-landing/ChatLandingScreen";
 import type { ContextCreateKind } from "../context/context-create-kind";
 import { schemeLabel } from "../context/context-schemes";
 import type { TreeCreationRequest } from "../context/TreeCreationProvider";
+import { useDockViewStore } from "../dock/dock-view-store";
 import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
 import { EditorWorkRecovery } from "../EditorWorkRecovery";
 import type { ReviewScopedProjectProps } from "../ProjectView";
+import { useProjectChatNavigation } from "../routing/ProjectNavigationContext";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { WorkScreen } from "../work/WorkScreen";
 import { folderAncestry, pathLeafName } from "./context-location";
@@ -32,6 +36,7 @@ import { MobileChatHost } from "./MobileChatHost";
 import { MobileContextBrowser } from "./MobileContextBrowser";
 import { MobileCreateEntryMenu } from "./MobileCreateEntryMenu";
 import { MobileDocumentHost } from "./MobileDocumentHost";
+import { MobileKeyboardAware } from "./MobileKeyboardAware";
 import { MobileResultsView } from "./MobileResultsView";
 import { MobileTopBar } from "./MobileTopBar";
 import { NavigationDrawer } from "./NavigationDrawer";
@@ -39,6 +44,15 @@ import { NavigationDrawer } from "./NavigationDrawer";
 type MobileProjectProps = ReviewScopedProjectProps;
 
 export function MobileProject(props: MobileProjectProps) {
+  const chatNavigation = useProjectChatNavigation();
+  const setDockView = useDockViewStore((state) => state.setDockView);
+  const [chatOpen, setChatOpen] = useState(chatNavigation?.recoveringFirstSend ?? false);
+  useEffect(() => {
+    if (chatNavigation?.dockChatReveal || chatNavigation?.recoveringFirstSend) {
+      setDockView(props.activeScreen, "chat");
+      setChatOpen(true);
+    }
+  }, [chatNavigation?.dockChatReveal, chatNavigation?.recoveringFirstSend, setDockView]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { tabs } = useContextTabs(props.projectId);
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
@@ -54,8 +68,7 @@ export function MobileProject(props: MobileProjectProps) {
   // abandons an uncommitted create row — the row is location-scoped chrome.
   const contextLocation = `${props.activeScreen}|${props.activeContextScheme ?? ""}|${props.activeContextFolder ?? ""}|${props.activeContextPath ?? ""}|${props.resultsOpen}`;
   useEffect(() => setCreating(null), [contextLocation]);
-  // The phone shows one view at a time and has no rail to reveal into, so this
-  // is the one shell where opening a conversation still switches the view.
+  // Chat opens above the retained destination; the route still owns identity.
   useConversationRevealRouting(props.onSelectThread);
   const crumbs = contextBreadcrumbSegments(props);
 
@@ -75,6 +88,19 @@ export function MobileProject(props: MobileProjectProps) {
         breadcrumb={
           !props.resultsOpen && crumbs.length > 0 ? (
             <MobileBreadcrumb segments={crumbs} />
+          ) : undefined
+        }
+        chatAction={
+          props.activeScreen !== "chat" ? (
+            <PhoneIconButton
+              aria-label={t`Open chat dock`}
+              onClick={() => {
+                setDockView(props.activeScreen, "chat");
+                setChatOpen(true);
+              }}
+            >
+              <MessageSquare className="size-5" aria-hidden />
+            </PhoneIconButton>
           ) : undefined
         }
         actions={
@@ -109,6 +135,32 @@ export function MobileProject(props: MobileProjectProps) {
           {renderActiveView(props, creating, () => setCreating(null), localTab)}
         </ProjectRouteBoundary>
       </main>
+      <Sheet open={chatOpen && props.activeScreen !== "chat"} onOpenChange={setChatOpen}>
+        <SheetContent
+          side="right"
+          showCloseButton={false}
+          className="w-full max-w-full gap-0 p-0 sm:max-w-full"
+        >
+          <SheetTitle className="sr-only">{t`Chat`}</SheetTitle>
+          <SheetDescription className="sr-only">{t`Chat alongside your current screen`}</SheetDescription>
+          <DraftReviewBoundary value={props.chatReview}>
+            <MobileKeyboardAware>
+              <ChatSurface
+                projectId={props.projectId}
+                threadId={props.activeThreadId}
+                activeWork={props.chatWork}
+                availableWorks={props.availableWorks}
+                activeScreen={props.activeScreen}
+                onSelectThread={props.onSelectThread}
+                placement="dock"
+                visible={chatOpen}
+                onCloseDock={() => setChatOpen(false)}
+                onOpenContextTarget={props.onOpenContextTarget}
+              />
+            </MobileKeyboardAware>
+          </DraftReviewBoundary>
+        </SheetContent>
+      </Sheet>
       <NavigationDrawer
         open={drawerOpen}
         onOpenChange={setDrawerOpen}

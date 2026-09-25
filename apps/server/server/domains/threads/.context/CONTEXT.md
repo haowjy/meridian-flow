@@ -82,7 +82,7 @@ instead of the N:1 `threads.workId` column.
 | Port | Surface |
 |---|---|
 | `ThreadRepository` | Thread lifecycle plus writer-facing project lists (`kind: "primary"` only) and the hard-bounded `listRecentByWork` model summary. It does not expose an unbounded Work list. Get-by-id still returns subagents. |
-| `HomeChatFeedRepository` | Continue/Favorite/Recent policy over the neutral Project-chat projection of primary threads. Home retains its set-oriented whole-project ranking. |
+| `ProjectChatFeedRepository` | Flat primary-chat pages ranked by latest visible activity, with an optional Favorite filter before pagination. |
 | `WorkChatFeedRepository` | Bounded historical-Work association pages over the same primary Project-chat projection, ordered by `(threads.updated_at DESC, threads.id DESC)`. |
 | `ThreadUserStateRepository` | Per-writer favorite authority. |
 | `TurnRepository` | `create / findById / listByThread / getLatestByThread / updateStatus / recomputeRollups` |
@@ -104,7 +104,7 @@ Entity types (`Thread`, `Turn`, `Block`, `ModelResponse`) and event unions
 
 - **Drizzle** (production) and **in-memory** (test/dev) adapters for all
   repositories and journal reader/writer. The focused Project-chat adapter owns
-  Home and Work visible-head projection in memory; the Drizzle projection module
+  Project and Work visible-head projection in memory; the Drizzle projection module
   owns the shared row mapping, preview, action-required fact, timestamp, and bounded Work
   candidate machinery.
 
@@ -239,15 +239,14 @@ contract shapes.
   child-report continuations, and non-custom system turns. Both visible-turn
   mirrors (`domain/visible-conversation-policy.ts` and the app's
   `visible-chat-turns.ts`) exclude the `child_report` system-update section so
-  the model-visible report never renders as a writer message. Home, project/Work
+  the model-visible report never renders as a writer message. Project and Work
   lists, and snapshots derive the
   independent `actionRequired` fact from a `waiting_interrupt` assistant head.
   Set-oriented SQL companions are parity-tested against the named domain policy.
-- Home returns Continue and Favorites only on the first page. Recent pagination
-  uses the strict shared Project-chat keyset codec over `(lastActivityAt DESC, threadId DESC)`;
-  every page excludes Continue and Favorites, so equal activity times remain
-  stable without duplicating a chat. Home, the project switcher (`listByProject`),
-  and Work-associated chats list `kind: "primary"` only. Subagent Open is get-by-id.
+- Project chat pages use the strict shared keyset codec over
+  `(lastActivityAt DESC, threadId DESC)`. Favorites filtering happens before the
+  cursor and limit. Project feed, switcher (`listByProject`), and Work-associated
+  chats list primary threads only. Subagent Open is get-by-id.
 - Work-associated chat pages use the same codec over thread update
   time plus thread ID. The association filter is M:N history among primary
   threads; row Work identity always comes from the current primary membership.

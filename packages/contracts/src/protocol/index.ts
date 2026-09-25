@@ -29,7 +29,7 @@ export { blockContentRecord } from "../threads/block-content-record.js";
 export { blockPlainText } from "../threads/block-plain-text.js";
 export { interruptIdForBlock } from "../threads/interrupt-id-for-block.js";
 export type {
-  HomeChatFeedPage,
+  ProjectChatFeedPage,
   ProjectChatItem,
   UpdateThreadUserStateRequest,
   UpdateThreadUserStateResponse,

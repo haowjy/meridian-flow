@@ -90,6 +90,7 @@ import {
   useMobileDocumentRoute,
 } from "./mobile/mobile-document-route";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
+import { useProjectChatNavigation } from "./routing/ProjectNavigationContext";
 import { ProjectRouteBoundary, type ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
@@ -156,7 +157,6 @@ export type ProjectViewProps = {
   resultsOpen: boolean;
   onSelectScreen: (screen: ScreenKey) => void;
   onSelectThread: (threadId: string) => Promise<void>;
-  onSelectDockThread: (threadId: string) => void;
   onSelectContextScheme: (scheme: ProjectContextTreeScheme) => void;
   onExitContextScheme: () => void;
   onSelectContextFolder: (folder: string) => void;
@@ -589,13 +589,7 @@ function expandToggle(
  * only the props they need.
  */
 export function DesktopProject(props: ReviewScopedProjectProps) {
-  // Private mount continuity is not a selected route or a source for URL defaults.
-  const priorChat = useRef<{ threadId: string; work: Work | null } | null>(null);
-  const currentChat =
-    props.activeThreadId && !props.routeIssues?.chat
-      ? { threadId: props.activeThreadId, work: props.chatWork }
-      : null;
-  const mountedChat = currentChat ?? priorChat.current;
+  const chatNavigation = useProjectChatNavigation();
   const priorEditor = useRef<Pick<
     ReviewScopedProjectProps,
     | "editorReview"
@@ -611,7 +605,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
     !props.routeIssues?.editor;
   const mountedEditor = editorActive ? props : priorEditor.current;
   useLayoutEffect(() => {
-    if (currentChat) priorChat.current = currentChat;
     if (editorActive) priorEditor.current = props;
   });
 
@@ -629,6 +622,13 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   useCompactDesktopAutoCollapse(setDockCollapsed, setSurfaceCollapsed);
   const setDockView = useDockViewStore((state) => state.setDockView);
 
+  useEffect(() => {
+    if (chatNavigation?.dockChatReveal && props.activeScreen !== "chat") {
+      setDockCollapsed(false);
+      setDockView(props.activeScreen, "chat");
+    }
+  }, [chatNavigation?.dockChatReveal, setDockCollapsed, setDockView]);
+
   // Opening a conversation reveals it where the writer already is. Desktop
   // mounts the chat surface on every screen — centered on Chat, docked on
   // Work/Editor — so a reveal only has to un-park the surface and point it at
@@ -638,7 +638,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
       setDockCollapsed(false);
       setDockView(props.activeScreen, "chat");
     }
-    props.onSelectDockThread(threadId);
+    props.onSelectThread(threadId);
   });
 
   const isOpen = (surfaceId: SurfaceId) => !layout[surfaceId].collapsed;
@@ -770,28 +770,25 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               moves between center and dock; placement changes only its chrome. */}
             <div
               className="min-h-0 flex-1 flex-col"
-              style={{ display: props.chatLanding || !props.activeThreadId ? "none" : "flex" }}
-              inert={!!props.chatLanding || !props.activeThreadId}
-              aria-hidden={!!props.chatLanding || !props.activeThreadId}
+              style={{ display: props.chatLanding ? "none" : "flex" }}
+              inert={!!props.chatLanding}
+              aria-hidden={!!props.chatLanding}
             >
               <DraftReviewBoundary value={props.chatReview}>
                 <ChatSurface
                   key="chat-surface"
                   projectId={props.projectId}
-                  threadId={mountedChat?.threadId ?? null}
-                  activeWork={mountedChat?.work ?? null}
+                  threadId={props.activeThreadId}
+                  activeWork={props.chatWork}
                   availableWorks={props.availableWorks}
                   activeScreen={screen}
                   // Primary chat navigation pushes a destination; dock selection
                   // replaces only the secondary chat.
-                  onSelectThread={
-                    chatPlacement === "center" ? props.onSelectThread : props.onSelectDockThread
-                  }
+                  onSelectThread={props.onSelectThread}
                   placement={chatPlacement}
                   // Mounted-but-hidden when the dock is collapsed, so the live
                   // conversation survives a close/reopen.
                   visible={
-                    !!props.activeThreadId &&
                     !props.chatLanding &&
                     !props.routeIssues?.chat &&
                     (chatPlacement === "center" || isOpen("chat"))
@@ -801,9 +798,6 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
                 />
               </DraftReviewBoundary>
             </div>
-            {!props.activeThreadId && !props.chatLanding ? (
-              <p className="p-6 text-sm text-muted-foreground">{t`Choose a chat to continue.`}</p>
-            ) : null}
             {props.chatLanding ? (
               <ChatLandingController
                 projectId={props.projectId}

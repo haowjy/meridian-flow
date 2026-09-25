@@ -13,6 +13,8 @@ export const WORKING_SET_STORAGE_KEY = "meridian:working-set";
 export type WorkingSetSnapshot = {
   recentRoutes: WorkingSetRoute[];
   lastThreadId: string | null;
+  /** Device-local empty-chat selection, never sent to the server. */
+  newChat?: boolean;
 };
 
 export type ReconcileContextRoutesInput = {
@@ -99,6 +101,7 @@ export function recentRouteForEditorWork(
 function snapshotEquals(left: WorkingSetSnapshot, right: WorkingSetSnapshot): boolean {
   return (
     left.lastThreadId === right.lastThreadId &&
+    !!left.newChat === !!right.newChat &&
     left.recentRoutes.length === right.recentRoutes.length &&
     left.recentRoutes.every((route, index) =>
       workingSetRouteEquals(route, right.recentRoutes[index] as WorkingSetRoute),
@@ -135,6 +138,7 @@ function parseProjectRecord(value: unknown): ProjectWorkingSetRecord | null {
     snapshot: {
       recentRoutes: routes.value,
       lastThreadId: snapshot.lastThreadId as string | null,
+      ...(snapshot.newChat === true ? { newChat: true } : {}),
     },
     ...(parsedPending ? { pending: parsedPending } : {}),
   };
@@ -262,6 +266,11 @@ export class DeviceWorkingSetStore {
   adopt(projectId: string, snapshot: WorkingSetSnapshot): void {
     if (!this.state) return;
     const current = this.state.projects[projectId];
+    snapshot = {
+      ...snapshot,
+      lastThreadId: current?.snapshot.lastThreadId ?? null,
+      newChat: current?.snapshot.newChat,
+    };
     if (current && !current.pending && snapshotEquals(current.snapshot, snapshot)) return;
     this.state.projects[projectId] = { snapshot };
     this.persist();
@@ -344,11 +353,4 @@ export function reconcileSnapshotContextRoutes(
       ? snapshot
       : { ...snapshot, recentRoutes };
   return input.promote ? promoteSnapshotRoute(reconciled, input.promote) : reconciled;
-}
-
-export function setSnapshotThread(
-  snapshot: WorkingSetSnapshot,
-  threadId: string,
-): WorkingSetSnapshot {
-  return snapshot.lastThreadId === threadId ? snapshot : { ...snapshot, lastThreadId: threadId };
 }
