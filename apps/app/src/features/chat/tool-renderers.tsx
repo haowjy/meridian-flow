@@ -22,7 +22,6 @@
  * JSON for debugging, it goes behind a dev-only setting — not into chat.
  */
 import { t } from "@lingui/core/macro";
-import { Trans } from "@lingui/react/macro";
 import {
   type JsonValue,
   meridianErrorFromStructuredToolOutput,
@@ -32,7 +31,7 @@ import { type ReactNode, useState } from "react";
 
 import { cn } from "@/lib/utils";
 import { Markdown } from "@/rich-content/Markdown";
-import { ArtifactGrid, isArtifactRef } from "./ArtifactGrid";
+import { isArtifactRef } from "./ArtifactGrid";
 import { BoundLine, ClippedProse } from "./ClippedExpand";
 import {
   type CommandExpand,
@@ -45,6 +44,7 @@ import { DocumentName } from "./DocumentName";
 import { documentDisplayName, folderDisplayName } from "./document-display-name";
 import type { ToolView } from "./group-delivery-segments";
 import { PassageDoor } from "./PassageDoor";
+import { payloadText, ReportContent } from "./ReportContent";
 import { type OutlineHeading, readPayloadMarkup, readPayloadOutline } from "./read-payload";
 import { stringInput, toolInputObject, type WriteMode } from "./tool-command";
 import {
@@ -554,8 +554,7 @@ const THREAD_REPORT_RENDERER: ToolRenderer = {
 };
 
 function reportPayloadText(payload: JsonValue | undefined): string {
-  if (payload === undefined) return "";
-  return typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+  return payloadText(payload);
 }
 
 const RENDERERS: Record<string, ToolRenderer> = {
@@ -625,39 +624,22 @@ function threadReportExpand(tool: ToolView): ToolExpand | null {
           : t`This report is unavailable.`}
       </p>
     );
-  if (!report.summary && report.payload === undefined && !report.artifacts?.length) {
-    return () => (
-      <div className="space-y-1 text-caption text-muted-foreground">
-        <p>
-          {report.outcome === "succeeded"
-            ? t`No report text was returned.`
-            : t`No partial report text was returned.`}
-        </p>
-        {report.reason ? (
-          <p>
-            <Trans>Reason: {report.reason}</Trans>
-          </p>
-        ) : null}
-      </div>
-    );
-  }
   return () => (
-    <div className="space-y-2">
-      {report.summary ? <Markdown variant="compact">{report.summary}</Markdown> : null}
-      {report.payload !== undefined ? (
-        <pre className="whitespace-pre-wrap break-words font-mono text-xs text-foreground">
-          {reportPayloadText(report.payload)}
-        </pre>
-      ) : null}
-      {report.artifacts?.length ? <ArtifactGrid artifacts={report.artifacts} /> : null}
-      {report.reason ? (
-        <p className="text-caption text-muted-foreground">
-          <Trans>Reason: {report.reason}</Trans>
-        </p>
-      ) : null}
-      {report.partial ? (
-        <p className="text-caption text-muted-foreground">{t`Partial result`}</p>
-      ) : null}
-    </div>
+    <ReportContent
+      report={{
+        summary: report.summary ?? "",
+        payload: report.payload,
+        artifacts: report.artifacts ?? [],
+        reason: report.reason,
+        partial: report.partial,
+      }}
+      empty={
+        report.outcome === "succeeded"
+          ? t`No report text was returned.`
+          : t`No partial report text was returned.`
+      }
+      className="space-y-2"
+      emptyClassName="space-y-1 text-caption text-muted-foreground"
+    />
   );
 }
