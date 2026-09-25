@@ -31,6 +31,37 @@ else
       return row?.rootThreadId ?? null;
     }
 
+    it("freezes both bake fields at the database boundary, including an empty skill list", async () => {
+      await repos.threads.bakeComposedSystemPrompt(ids.threadId, {
+        composedSystemPrompt: "Frozen prompt",
+        bakedSkillSlugs: [],
+      });
+      for (const patch of [
+        { composedSystemPrompt: "Changed prompt" },
+        { composedSystemPrompt: null },
+        { bakedSkillSlugs: ["new-skill"] },
+        { bakedSkillSlugs: null },
+      ]) {
+        await expect(
+          db.update(schema.threads).set(patch).where(eq(schema.threads.id, ids.threadId)),
+        ).rejects.toThrow();
+      }
+      await db
+        .update(schema.threads)
+        .set({
+          title: "Ordinary updates still work",
+          composedSystemPrompt: "Frozen prompt",
+          bakedSkillSlugs: [],
+        })
+        .where(eq(schema.threads.id, ids.threadId));
+      const frozen = await repos.threads.bakeComposedSystemPrompt(ids.threadId, {
+        composedSystemPrompt: "Losing CAS",
+        bakedSkillSlugs: ["ignored"],
+      });
+      expect(frozen.composedSystemPrompt).toBe("Frozen prompt");
+      expect(frozen.bakedSkillSlugs).toEqual([]);
+    });
+
     it("roots an organic primary at itself", async () => {
       const created = await repos.threads.create({
         userId: ids.userId,
