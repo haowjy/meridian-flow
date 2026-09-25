@@ -130,7 +130,7 @@ export function createInMemoryProjectChatAdapter(
 
   const workChatFeed: WorkChatFeedRepository = {
     async queryPage(input) {
-      const associated: Array<{ thread: Thread; updatedAt: string }> = [];
+      const associated: Thread[] = [];
       for (const thread of source.threads()) {
         if (
           thread.kind === "primary" &&
@@ -139,27 +139,23 @@ export function createInMemoryProjectChatAdapter(
           source.hasWorkMembership(thread.id as ThreadId, input.workId) &&
           (await source.isProjectVisible(thread))
         ) {
-          associated.push({ thread, updatedAt: exactTimestamp(thread.updatedAt) });
+          associated.push(thread);
         }
       }
-      return Promise.all(
-        associated
-          .filter(
-            ({ thread, updatedAt }) =>
-              !input.after ||
-              updatedAt < input.after.sortAt ||
-              (updatedAt === input.after.sortAt && thread.id < input.after.threadId),
-          )
-          .sort(
-            (a, b) =>
-              b.updatedAt.localeCompare(a.updatedAt) || b.thread.id.localeCompare(a.thread.id),
-          )
-          .slice(0, input.limit)
-          .map(async ({ thread, updatedAt }) => ({
-            item: await projectChatItem(thread, input.userId),
-            updatedAt,
-          })),
+      const items = await Promise.all(
+        associated.map((thread) => projectChatItem(thread, input.userId)),
       );
+      return items
+        .filter(
+          (item) =>
+            !input.after ||
+            item.lastActivityAt < input.after.sortAt ||
+            (item.lastActivityAt === input.after.sortAt && item.id < input.after.threadId),
+        )
+        .sort(
+          (a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt) || b.id.localeCompare(a.id),
+        )
+        .slice(0, input.limit);
     },
   };
 

@@ -85,9 +85,10 @@ export function getProjectChatFeed(
   favorite = false,
   search: string | null = null,
 ): Promise<ProjectChatFeedPage> {
-  return getJson<ProjectChatFeedPage>(apiProjectChatFeedPath(projectId, cursor, favorite, search), {
-    signal,
-  });
+  return getJson<ProjectChatFeedPage>(
+    apiProjectChatFeedPath(projectId, { cursor, favorite, search }),
+    { signal },
+  );
 }
 
 export async function listProjects(init?: RequestInitOptions): Promise<Project[]> {

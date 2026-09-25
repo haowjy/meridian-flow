@@ -1,6 +1,14 @@
-/** Drizzle BlockRepository: SQL for the thread blocks table (create/list), mapping rows via mappers.ts. Depends inward on the repository port; runs within the shared drizzle-db transaction context. */
+/**
+ * Drizzle BlockRepository: SQL for the thread blocks table (create/list),
+ * mapping rows via mappers.ts. Depends inward on the repository port; runs
+ * within the shared drizzle-db transaction context.
+ *
+ * The stored chat-activity projection is not maintained here: a Postgres
+ * trigger recomputes it for custom blocks only (see migration 0106 and
+ * domains/threads/.context/CONTEXT.md), so plain text/tool block writes never
+ * pay for it.
+ */
 
-import type { ThreadId } from "@meridian/contracts/runtime";
 import * as schema from "@meridian/database/schema";
 import { asc, eq } from "drizzle-orm";
 import type {
@@ -10,7 +18,6 @@ import type {
 } from "../../ports/repositories.js";
 import { mapBlock } from "./mappers.js";
 import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
-import { lockThreadOfTurn, recomputeThreadChatActivity } from "./turn-repository.js";
 
 function blockValues(input: CreateBlockInput) {
   const textContent = input.textContent ?? null;
@@ -33,28 +40,15 @@ function blockValues(input: CreateBlockInput) {
 export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
   return {
     async create(input: CreateBlockInput) {
-      const threadId =
-        input.blockType === CUSTOM_BLOCK ? await lockThreadOfTurn(db, input.turnId) : null;
       const [row] = await currentDrizzleDb(db)
         .insert(schema.turnBlocks)
         .values(blockValues(input))
         .returning();
       if (!row) throw new Error("Failed to create block");
-      if (threadId) await recomputeThreadChatActivity(db, threadId);
       return mapBlock(row);
     },
     async upsert(input: UpsertBlockInput) {
       const values = blockValues(input);
-      const [existing] = await currentDrizzleDb(db)
-        .select({ turnId: schema.turnBlocks.turnId, blockType: schema.turnBlocks.blockType })
-        .from(schema.turnBlocks)
-        .where(eq(schema.turnBlocks.id, input.id));
-      const threads = new Set<ThreadId>();
-      if (values.blockType === CUSTOM_BLOCK || existing?.blockType === CUSTOM_BLOCK) {
-        threads.add(await lockThreadOfTurn(db, values.turnId));
-        if (existing && existing.turnId !== values.turnId)
-          threads.add(await lockThreadOfTurn(db, existing.turnId));
-      }
       const [row] = await currentDrizzleDb(db)
         .insert(schema.turnBlocks)
         .values(values)
@@ -76,7 +70,6 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
         })
         .returning();
       if (!row) throw new Error("Failed to upsert block");
-      for (const threadId of threads) await recomputeThreadChatActivity(db, threadId);
       return mapBlock(row);
     },
     async findById(id) {
@@ -114,10 +107,3 @@ export function createDrizzleBlockRepository(db: DrizzleDb): BlockRepository {
     },
   };
 }
-
-/**
- * Blocks decide a turn's visibility only when a system turn carries a custom
- * block, so only custom blocks move a chat's activity. Streaming text and tool
- * blocks skip the recompute.
- */
-const CUSTOM_BLOCK = "custom";
