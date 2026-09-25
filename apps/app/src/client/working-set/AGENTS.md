@@ -34,7 +34,5 @@ Key rules:
 
 Depth: [.context/CONTEXT.md](.context/CONTEXT.md) (contracts and protocol).
 
-Current chat is browser-local: `readCurrentChat` / `setCurrentChat` retain a
-thread identity (including subagents), explicit new chat, or none. The local
-`newChat` flag is not sent in the working-set API. Server adoption preserves
-the local current chat while reconciling document recency.
+The current chat is not working-set state: it is device-local and never
+synced (`../current-chat.ts`).

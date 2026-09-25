@@ -27,7 +27,7 @@ import { useDockViewStore } from "../dock/dock-view-store";
 import { EditorReviewIntentClaimant } from "../dock/editor-review-handoff";
 import { EditorWorkRecovery } from "../EditorWorkRecovery";
 import type { ReviewScopedProjectProps } from "../ProjectView";
-import { useProjectChatNavigation } from "../routing/ProjectNavigationContext";
+import { useChatNavigation, useDockReveal } from "../routing/chat-navigation";
 import { ProjectRouteBoundary } from "../routing/ProjectRouteBoundary";
 import { WorkScreen } from "../work/WorkScreen";
 import { ChatBreadcrumb } from "./ChatBreadcrumb";
@@ -45,23 +45,19 @@ import { NavigationDrawer } from "./NavigationDrawer";
 type MobileProjectProps = ReviewScopedProjectProps;
 
 export function MobileProject(props: MobileProjectProps) {
-  const chatNavigation = useProjectChatNavigation();
+  const { openChatIndex, recoveringFirstSend } = useChatNavigation();
   const setDockView = useDockViewStore((state) => state.setDockView);
   // The sheet is the phone's dock: it opens over Work or Editor only. On the
-  // Chat screen the chat is already the page, so a reveal there must not latch
-  // the sheet open for the next screen.
-  const sheetScreen = props.activeScreen !== "chat";
+  // Chat screen the chat is already the page. A first send recovering after a
+  // reload opens it at mount.
   const [chatOpen, setChatOpen] = useState(
-    sheetScreen && (chatNavigation?.recoveringFirstSend ?? false),
+    () => props.activeScreen !== "chat" && recoveringFirstSend,
   );
-  useEffect(() => {
-    if (!sheetScreen) return;
-    if (chatNavigation?.dockChatReveal || chatNavigation?.recoveringFirstSend) {
-      setDockView(props.activeScreen, "chat");
-      setChatOpen(true);
-    }
-    // Reveal is an event: only a new reveal (or recovery at mount) opens the sheet.
-  }, [chatNavigation?.dockChatReveal, chatNavigation?.recoveringFirstSend, setDockView]);
+  const openChatSheet = () => {
+    setDockView(props.activeScreen, "chat");
+    setChatOpen(true);
+  };
+  useDockReveal(openChatSheet);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { tabs } = useContextTabs(props.projectId);
   const selectedLocal = tabs.find((tab) => tab.documentId === props.activeLocalDocumentId);
@@ -80,9 +76,6 @@ export function MobileProject(props: MobileProjectProps) {
   // Chat opens above the retained destination; the route still owns identity.
   useConversationRevealRouting(props.onSelectThread);
   const crumbs = contextBreadcrumbSegments(props);
-  const openChatIndex = chatNavigation?.openChatIndex
-    ? () => void chatNavigation.openChatIndex?.()
-    : undefined;
 
   return (
     <div
@@ -99,8 +92,8 @@ export function MobileProject(props: MobileProjectProps) {
             <ChatBreadcrumb
               projectId={props.projectId}
               threadId={props.activeThreadId}
-              index={!!props.chatLanding}
-              onOpenIndex={openChatIndex}
+              index={props.chatIndex}
+              onOpenIndex={() => void openChatIndex()}
               onSelectThread={props.onSelectThread}
             />
           ) : crumbs.length > 0 ? (
@@ -109,13 +102,7 @@ export function MobileProject(props: MobileProjectProps) {
         }
         chatAction={
           props.activeScreen !== "chat" ? (
-            <PhoneIconButton
-              aria-label={t`Open chat`}
-              onClick={() => {
-                setDockView(props.activeScreen, "chat");
-                setChatOpen(true);
-              }}
-            >
+            <PhoneIconButton aria-label={t`Open chat`} onClick={openChatSheet}>
               <MessageSquare className="size-5" aria-hidden />
             </PhoneIconButton>
           ) : undefined
@@ -167,7 +154,9 @@ export function MobileProject(props: MobileProjectProps) {
                 onSelectThread={props.onSelectThread}
                 placement="dock"
                 chrome="phone"
-                visible={chatOpen}
+                // The sheet mounts the surface only while open: it is always
+                // visible, and closing the sheet ends it.
+                visible
                 onCloseDock={() => setChatOpen(false)}
                 onOpenContextTarget={props.onOpenContextTarget}
               />
@@ -215,7 +204,7 @@ function trailingAction(
       </PhoneIconButton>
     );
   }
-  if (props.activeScreen === "chat" && !props.chatLanding) {
+  if (props.activeScreen === "chat" && !props.chatIndex) {
     return (
       <PhoneIconButton onClick={props.onOpenResults} aria-label={t`Open results`}>
         <Sparkles className="size-5" aria-hidden />
@@ -255,7 +244,7 @@ function renderActiveView(
         />
       );
     case "chat":
-      if (props.chatLanding)
+      if (props.chatIndex)
         return (
           <ChatIndex projectId={props.projectId} onOpenThread={props.onOpenThread} namedByChrome />
         );

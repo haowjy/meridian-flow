@@ -4,15 +4,12 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import type { Work } from "@meridian/contracts/works";
 import { useEffect, useState } from "react";
-import { useDeleteChat } from "@/client/query/useDeleteChat";
 import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { useWorkThreads } from "@/client/query/useWorkThreads";
-import { useAnnouncement } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Button } from "@/components/ui/button";
-import { DeleteChatDialog } from "../chat-list/DeleteChatDialog";
 import { ProjectChatRow } from "../chat-list/ProjectChatRow";
-import { useProjectChatNavigation } from "../routing/ProjectNavigationContext";
+import { useChatRowCommands } from "../chat-list/useChatRowCommands";
 import { useExternalScrollVirtualList } from "./useExternalScrollVirtualList";
 
 const chatKey = (item: ProjectChatItem) => item.id;
@@ -30,12 +27,7 @@ export function WorkAssociatedChats({
   requestOpen: (item: ProjectChatItem) => void;
 }) {
   const query = useWorkThreads(projectId, work.id);
-  const { announce, announceError } = useAnnouncement();
-  const navigation = useProjectChatNavigation();
-  const deletion = useDeleteChat(projectId, (threadId) => {
-    navigation?.forgetChat?.(threadId);
-    announce(t`Chat deleted`);
-  });
+  const { deleteDialog, ...commands } = useChatRowCommands(projectId);
   const [now, setNow] = useState(Date.now());
   const threads = query.threads ?? [];
   const { listRef, onActiveChange, virtualizer } = useExternalScrollVirtualList({
@@ -88,20 +80,7 @@ export function WorkAssociatedChats({
                     now={now}
                     onOpen={requestOpen}
                     onActiveChange={onActiveChange}
-                    onDelete={(chat) =>
-                      deletion.request({ id: chat.id, title: chat.title || t`New chat` })
-                    }
-                    onFavorite={(chat, value) => {
-                      void query.setFavorite(chat.id, value).then((saved) => {
-                        if (saved)
-                          announce(
-                            value
-                              ? t`${chat.title} added to favorites`
-                              : t`${chat.title} removed from favorites`,
-                          );
-                        else announceError(t`Favorite wasn’t saved`);
-                      });
-                    }}
+                    {...commands}
                   />
                 </li>
               ) : null;
@@ -126,13 +105,7 @@ export function WorkAssociatedChats({
           <Trans>No chats are associated with this Work.</Trans>
         </p>
       )}
-      <DeleteChatDialog
-        target={deletion.target}
-        isPending={deletion.isPending}
-        error={deletion.error}
-        onCancel={deletion.cancel}
-        onConfirm={deletion.confirm}
-      />
+      {deleteDialog}
     </>
   );
 }

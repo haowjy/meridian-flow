@@ -89,8 +89,8 @@ import {
   mobileEditableDocumentId,
   useMobileDocumentRoute,
 } from "./mobile/mobile-document-route";
+import { useDockReveal } from "./routing/chat-navigation";
 import type { OpenContextRoute } from "./routing/ProjectNavigationContext";
-import { useProjectChatNavigation } from "./routing/ProjectNavigationContext";
 import { ProjectRouteBoundary, type ProjectRouteIssue } from "./routing/ProjectRouteBoundary";
 import type { ProjectRouteCommands, RouteWorkResolution } from "./routing/project-route";
 import { ContextSidebar } from "./shell/ContextSidebar";
@@ -128,9 +128,13 @@ export type ProjectViewProps = {
   workingSetSyncEnabled: boolean;
   /** Resolved screen key from the route (defaults to Chat). */
   activeScreen: ScreenKey;
-  /** Active chat / subagent thread, also used by the persistent dock. */
+  /**
+   * The chat surface's thread: the URL's chat on the Chat screen, otherwise the
+   * current chat the dock shows. Null is an empty New chat.
+   */
   activeThreadId: string | null;
-  chatLanding?: boolean;
+  /** The Chat screen shows its index; the chat surface waits hidden. */
+  chatIndex: boolean;
   /** Explicit route Work state; loading/error never collapses into absence. */
   routeWork: RouteWorkResolution;
   editorRouteWork?: RouteWorkResolution;
@@ -589,7 +593,6 @@ function expandToggle(
  * only the props they need.
  */
 export function DesktopProject(props: ReviewScopedProjectProps) {
-  const chatNavigation = useProjectChatNavigation();
   const priorEditor = useRef<Pick<
     ReviewScopedProjectProps,
     | "editorReview"
@@ -622,12 +625,10 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   useCompactDesktopAutoCollapse(setDockCollapsed, setSurfaceCollapsed);
   const setDockView = useDockViewStore((state) => state.setDockView);
 
-  useEffect(() => {
-    if (chatNavigation?.dockChatReveal && props.activeScreen !== "chat") {
-      setDockCollapsed(false);
-      setDockView(props.activeScreen, "chat");
-    }
-  }, [chatNavigation?.dockChatReveal, setDockCollapsed, setDockView]);
+  useDockReveal(() => {
+    setDockCollapsed(false);
+    setDockView(props.activeScreen, "chat");
+  });
 
   // Opening a conversation reveals it where the writer already is. Desktop
   // mounts the chat surface on every screen — centered on Chat, docked on
@@ -666,6 +667,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
   // never remounts when the destination changes (no reload of the live
   // conversation). It moves center↔dock by changing its wrapper grid-area.
   const chatPlacement: ChatPlacement = screen === "chat" ? "center" : "dock";
+  const chatIndexShowing = chatPlacement === "center" && props.chatIndex;
 
   const stableSurfaces: SlotGridSurface[] = [
     {
@@ -691,7 +693,7 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
       children: (
         <DraftReviewBoundary value={props.chatReview}>
           <ContextSidebar
-            threadId={props.activeThreadId}
+            threadId={props.chatIndex ? null : props.activeThreadId}
             projectId={props.projectId}
             onClose={close("context-rail")}
           />
@@ -749,11 +751,11 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
         <ProjectRouteBoundary destinationKey={props.routeLocationKey}>
           <div
             className="flex min-h-0 flex-1 flex-col"
-            role={chatPlacement === "center" && !props.chatLanding ? "main" : undefined}
+            role={chatIndexShowing ? undefined : chatPlacement === "center" ? "main" : undefined}
           >
             {/* Stable keys pin chat-surface identity so toggling this header
               controller never risks reconciling the live conversation subtree. */}
-            {chatPlacement === "center" && !props.chatLanding ? (
+            {chatPlacement === "center" && !chatIndexShowing ? (
               <ChatPaneController
                 key="chat-pane-controller"
                 projectId={props.projectId}
@@ -764,34 +766,38 @@ export function DesktopProject(props: ReviewScopedProjectProps) {
               />
             ) : null}
             {/* This keyed surface remains the same mounted element when its slot
-              moves between center and dock; placement changes only its chrome. */}
-            <div
-              className="min-h-0 flex-1 flex-col"
-              style={{ display: props.chatLanding ? "none" : "flex" }}
-              inert={!!props.chatLanding}
-              aria-hidden={!!props.chatLanding}
-            >
-              <DraftReviewBoundary value={props.chatReview}>
-                <ChatSurface
-                  key="chat-surface"
-                  projectId={props.projectId}
-                  threadId={props.activeThreadId}
-                  activeWork={props.chatWork}
-                  availableWorks={props.availableWorks}
-                  activeScreen={screen}
-                  // Primary chat navigation pushes a destination; dock selection
-                  // replaces only the secondary chat.
-                  onSelectThread={props.onSelectThread}
-                  placement={chatPlacement}
-                  // Mounted-but-hidden when the dock is collapsed, so the live
-                  // conversation survives a close/reopen.
-                  visible={!props.chatLanding && (chatPlacement === "center" || isOpen("chat"))}
-                  onCloseDock={close("chat")}
-                  onOpenContextTarget={props.onOpenContextTarget}
-                />
-              </DraftReviewBoundary>
-            </div>
-            {props.chatLanding ? (
+              moves between center and dock; placement changes only its chrome.
+              Behind the index it keeps the current chat live, and with no
+              current chat there is nothing to keep. */}
+            {chatIndexShowing && props.activeThreadId === null ? null : (
+              <div
+                className="min-h-0 flex-1 flex-col"
+                style={{ display: chatIndexShowing ? "none" : "flex" }}
+                inert={chatIndexShowing}
+                aria-hidden={chatIndexShowing}
+              >
+                <DraftReviewBoundary value={props.chatReview}>
+                  <ChatSurface
+                    key="chat-surface"
+                    projectId={props.projectId}
+                    threadId={props.activeThreadId}
+                    activeWork={props.chatWork}
+                    availableWorks={props.availableWorks}
+                    activeScreen={screen}
+                    // Primary chat navigation pushes a destination; dock selection
+                    // replaces only the secondary chat.
+                    onSelectThread={props.onSelectThread}
+                    placement={chatPlacement}
+                    // Mounted-but-hidden when the dock is collapsed, so the live
+                    // conversation survives a close/reopen.
+                    visible={!chatIndexShowing && (chatPlacement === "center" || isOpen("chat"))}
+                    onCloseDock={close("chat")}
+                    onOpenContextTarget={props.onOpenContextTarget}
+                  />
+                </DraftReviewBoundary>
+              </div>
+            )}
+            {chatIndexShowing ? (
               <ChatIndexController
                 projectId={props.projectId}
                 sidebarToggle={surfaceToggle("threads", t`Expand sidebar`)}

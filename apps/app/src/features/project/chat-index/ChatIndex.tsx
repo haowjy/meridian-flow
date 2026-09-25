@@ -12,22 +12,19 @@ import { Trans } from "@lingui/react/macro";
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { useDeleteChat } from "@/client/query/useDeleteChat";
 import {
   type ProjectFeedNextPageIdentity,
   useProjectChatFeed,
 } from "@/client/query/useProjectChatFeed";
 import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
-import { useAnnouncement } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { Input } from "@/components/ui/input";
 import { SegmentedTabs } from "@/components/ui/segmented-tabs";
 import { CreationComposer } from "@/features/chat/CreationComposer";
 import { cn } from "@/lib/utils";
-import { DeleteChatDialog } from "../chat-list/DeleteChatDialog";
 import { ProjectChatRow, type ProjectChatRowProps } from "../chat-list/ProjectChatRow";
+import { useChatRowCommands } from "../chat-list/useChatRowCommands";
 import { RecencyGroupedList, useMinuteClock } from "../RecencyGroupedList";
-import { useProjectChatNavigation } from "../routing/ProjectNavigationContext";
 import { ChatIndexLoading } from "./ChatIndexLoading";
 
 type Filter = "all" | "favorites";
@@ -46,28 +43,10 @@ export function ChatIndex({ projectId, onOpenThread, namedByChrome = false }: Ch
   const [searchText, setSearchText] = useState("");
   const search = useSettledSearch(searchText);
   const feed = useProjectChatFeed(projectId, filter === "favorites", search);
-  const { announce, announceError } = useAnnouncement();
   const now = useMinuteClock();
   const finePointer = useFinePointer();
-  const navigation = useProjectChatNavigation();
-  const deletion = useDeleteChat(projectId, (threadId) => {
-    navigation?.forgetChat?.(threadId);
-    announce(t`Chat deleted`);
-  });
-  const rowProps: RowProps = {
-    now,
-    onDelete: (item) => deletion.request({ id: item.id, title: item.title || t`New chat` }),
-    onOpen: (item) => onOpenThread(item.id),
-    onFavorite: (item, value) => {
-      void feed.setFavorite(item.id, value).then((saved) => {
-        if (saved)
-          announce(
-            value ? t`${item.title} added to Favorites` : t`${item.title} removed from Favorites`,
-          );
-        else announceError(t`Favorite wasn’t saved`);
-      });
-    },
-  };
+  const { deleteDialog, ...commands } = useChatRowCommands(projectId);
+  const rowProps: RowProps = { ...commands, now, onOpen: (item) => onOpenThread(item.id) };
 
   return (
     // One scroll for the whole page; the list's tools stick once scrolled past.
@@ -112,13 +91,7 @@ export function ChatIndex({ projectId, onOpenThread, namedByChrome = false }: Ch
           />
         </div>
       </div>
-      <DeleteChatDialog
-        target={deletion.target}
-        isPending={deletion.isPending}
-        error={deletion.error}
-        onCancel={deletion.cancel}
-        onConfirm={deletion.confirm}
-      />
+      {deleteDialog}
     </div>
   );
 }

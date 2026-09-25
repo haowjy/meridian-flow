@@ -3,9 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import { bindChatSubmissions, readChatSubmissions } from "@/client/chat-submissions";
 import { DeviceChatSubmissionJournal } from "@/client/chat-submissions/store";
+import { readCurrentChat, writeCurrentChat } from "@/client/current-chat";
 import type { ThreadStoreActions } from "@/client/stores";
-import { WorkingSetSyncDriver } from "@/client/working-set/driver";
-import { DeviceWorkingSetStore } from "@/client/working-set/store";
 import {
   rehydrateFirstSendSubmission,
   type SendProjectChatArgs,
@@ -130,9 +129,6 @@ describe("sendProjectChat", () => {
 
   it("recovers a dock first send after reload without a URL chat identity", () => {
     const projectId = "550e8400-e29b-41d4-a716-446655440000";
-    const store = new DeviceWorkingSetStore(window.localStorage);
-    const driver = new WorkingSetSyncDriver(store, vi.fn());
-    driver.configure(ACCOUNT, false);
     window.history.replaceState({}, "", `/p/${projectId}/editor`);
     const result = sendProjectChat({
       accountId: ACCOUNT,
@@ -142,12 +138,10 @@ describe("sendProjectChat", () => {
       agent,
       workId: null,
       threadActions: actions(),
-      selectChat: (threadId) => driver.setCurrentChat(projectId, { kind: "thread", threadId }),
+      selectChat: (threadId) => writeCurrentChat(ACCOUNT, projectId, threadId),
     });
     expect(window.location.pathname).toBe(`/p/${projectId}/editor`);
-    const reloadedStore = new DeviceWorkingSetStore(window.localStorage);
-    reloadedStore.setUser(ACCOUNT);
-    const currentId = reloadedStore.read(projectId)?.snapshot.lastThreadId;
+    const currentId = readCurrentChat(ACCOUNT, projectId);
     expect(currentId).toBe(result?.threadId);
     const reloadedJournal = new DeviceChatSubmissionJournal(window.localStorage);
     reloadedJournal.setUser(ACCOUNT);

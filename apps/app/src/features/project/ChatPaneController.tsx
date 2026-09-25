@@ -7,7 +7,7 @@
  */
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
 import { ChatIndexChip } from "./chat-index/ChatIndexButton";
-import { useProjectChatNavigation } from "./routing/ProjectNavigationContext";
+import { useChatNavigation } from "./routing/chat-navigation";
 
 import { PaneHeader, type PaneHeaderRailToggle } from "./shell/PaneHeader";
 
@@ -26,15 +26,10 @@ export function ChatPaneController({
   contextToggle,
   onSelectThread,
 }: ChatPaneControllerProps) {
-  const navigation = useProjectChatNavigation();
+  const { openChatIndex } = useChatNavigation();
   return (
     <PaneHeader
-      leading={
-        <ChatIndexChip
-          active={false}
-          onClick={navigation?.openChatIndex && (() => void navigation.openChatIndex?.())}
-        />
-      }
+      leading={<ChatIndexChip active={false} onClick={() => void openChatIndex()} />}
       title={
         <ChatThreadTitle
           projectId={projectId}

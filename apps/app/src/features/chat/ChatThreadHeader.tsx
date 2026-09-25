@@ -14,7 +14,7 @@ import { useRenameThread } from "@/client/query/useRenameThread";
 import { announce } from "@/client/stores";
 import { InlineErrorRow } from "@/components/app/InlineErrorRow";
 import { useProjectThreadGroups } from "@/features/project/data/project-thread-groups";
-import { useOpenNewChatRoute } from "@/features/project/routing/ProjectNavigationContext";
+import { useChatNavigation } from "@/features/project/routing/chat-navigation";
 import { displayThreadTitle } from "@/lib/thread-title";
 import { ThreadSwitcherPopover } from "./ThreadSwitcherPopover";
 
@@ -61,7 +61,7 @@ type ChatThreadTitleProps = {
 };
 
 export function ChatThreadTitle(props: ChatThreadTitleProps) {
-  const openNewChat = useOpenNewChatRoute();
+  const { openNewChat } = useChatNavigation();
   if (props.threadId === null)
     return (
       <ThreadSwitcherPopover
@@ -83,7 +83,7 @@ function ExistingThreadTitle({
   onSelectThread,
   variant,
 }: ChatThreadTitleProps & { threadId: string }) {
-  const openNewChat = useOpenNewChatRoute();
+  const { openNewChat } = useChatNavigation();
   const { threadById } = useProjectThreadGroups(projectId);
   const resolved = activeThread ?? threadById.get(threadId) ?? null;
   const title = displayThreadTitle(resolved?.title);

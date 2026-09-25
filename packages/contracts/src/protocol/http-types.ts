@@ -203,7 +203,6 @@ export type ProjectWorkingSet = {
   userId: string;
   projectId: string;
   recentRoutes: WorkingSetRoute[];
-  lastThreadId: string | null;
   revision: number;
   updatedAt: string;
 };

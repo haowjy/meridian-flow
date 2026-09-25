@@ -10,12 +10,7 @@ import type { DocumentId } from "@meridian/contracts/runtime";
 
 export const WORKING_SET_STORAGE_KEY = "meridian:working-set";
 
-export type WorkingSetSnapshot = {
-  recentRoutes: WorkingSetRoute[];
-  lastThreadId: string | null;
-  /** Device-local empty-chat selection, never sent to the server. */
-  newChat?: boolean;
-};
+export type WorkingSetSnapshot = { recentRoutes: WorkingSetRoute[] };
 
 export type ReconcileContextRoutesInput = {
   removedLocators: readonly WorkingSetRoute[];
@@ -42,7 +37,7 @@ type PersistedWorkingSets = {
 
 export type WorkingSetStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-const EMPTY_SNAPSHOT: WorkingSetSnapshot = { recentRoutes: [], lastThreadId: null };
+const EMPTY_SNAPSHOT: WorkingSetSnapshot = { recentRoutes: [] };
 
 /**
  * Canonical WorkingSetRoute builder from tab/route coordinates. Returns null
@@ -100,8 +95,6 @@ export function recentRouteForEditorWork(
 
 function snapshotEquals(left: WorkingSetSnapshot, right: WorkingSetSnapshot): boolean {
   return (
-    left.lastThreadId === right.lastThreadId &&
-    !!left.newChat === !!right.newChat &&
     left.recentRoutes.length === right.recentRoutes.length &&
     left.recentRoutes.every((route, index) =>
       workingSetRouteEquals(route, right.recentRoutes[index] as WorkingSetRoute),
@@ -131,15 +124,10 @@ function parseProjectRecord(value: unknown): ProjectWorkingSetRecord | null {
   if (!snapshot || typeof snapshot !== "object") return null;
   const routes = parseWorkingSetRouteList(snapshot.recentRoutes);
   if (!routes.ok || routes.value.length > 3) return null;
-  if (snapshot.lastThreadId !== null && typeof snapshot.lastThreadId !== "string") return null;
   const parsedPending = pending === undefined ? undefined : parsePending(pending);
   if (pending !== undefined && !parsedPending) return null;
   return {
-    snapshot: {
-      recentRoutes: routes.value,
-      lastThreadId: snapshot.lastThreadId as string | null,
-      ...(snapshot.newChat === true ? { newChat: true } : {}),
-    },
+    snapshot: { recentRoutes: routes.value },
     ...(parsedPending ? { pending: parsedPending } : {}),
   };
 }
@@ -266,11 +254,6 @@ export class DeviceWorkingSetStore {
   adopt(projectId: string, snapshot: WorkingSetSnapshot): void {
     if (!this.state) return;
     const current = this.state.projects[projectId];
-    snapshot = {
-      ...snapshot,
-      lastThreadId: current?.snapshot.lastThreadId ?? null,
-      newChat: current?.snapshot.newChat,
-    };
     if (current && !current.pending && snapshotEquals(current.snapshot, snapshot)) return;
     this.state.projects[projectId] = { snapshot };
     this.persist();

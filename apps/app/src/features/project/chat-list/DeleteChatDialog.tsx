@@ -1,6 +1,5 @@
 /** Confirmation for deleting a chat, in the same shape as deleting a file. */
 import { Trans } from "@lingui/react/macro";
-import type { DeleteChatTarget } from "@/client/query/useDeleteChat";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,6 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
+export type DeleteChatTarget = { id: string; title: string };
 
 export function DeleteChatDialog({
   target,

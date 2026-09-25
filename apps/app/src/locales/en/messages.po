@@ -104,13 +104,13 @@ msgstr "{0, plural, one {read # document} other {read # documents}}"
 
 #. placeholder {0}: chat.title
 #: src/features/project/work/WorkAssociatedChats.tsx
-msgid "{0} added to favorites"
-msgstr "{0} added to favorites"
+#~ msgid "{0} added to favorites"
+#~ msgstr "{0} added to favorites"
 
 #. placeholder {0}: item.title
 #: src/features/project/chat-index/ChatIndex.tsx
-msgid "{0} added to Favorites"
-msgstr "{0} added to Favorites"
+#~ msgid "{0} added to Favorites"
+#~ msgstr "{0} added to Favorites"
 
 #. placeholder {0}: formatUsd(data.purchasedBalanceUsd)
 #: src/features/billing/UsageCard.tsx
@@ -159,13 +159,13 @@ msgstr "{0} isn't in {section}."
 
 #. placeholder {0}: chat.title
 #: src/features/project/work/WorkAssociatedChats.tsx
-msgid "{0} removed from favorites"
-msgstr "{0} removed from favorites"
+#~ msgid "{0} removed from favorites"
+#~ msgstr "{0} removed from favorites"
 
 #. placeholder {0}: item.title
 #: src/features/project/chat-index/ChatIndex.tsx
-msgid "{0} removed from Favorites"
-msgstr "{0} removed from Favorites"
+#~ msgid "{0} removed from Favorites"
+#~ msgstr "{0} removed from Favorites"
 
 #. placeholder {0}: fieldLabel(target)
 #: src/features/project/work/WorkMetadata.tsx
@@ -246,6 +246,14 @@ msgstr "{shown} of {total}"
 #: src/features/chat/thinking-digest.ts
 msgid "{steps, plural, one {# step} other {# steps}}"
 msgstr "{steps, plural, one {# step} other {# steps}}"
+
+#: src/features/project/chat-list/useChatRowCommands.tsx
+msgid "{title} added to Favorites"
+msgstr "{title} added to Favorites"
+
+#: src/features/project/chat-list/useChatRowCommands.tsx
+msgid "{title} removed from Favorites"
+msgstr "{title} removed from Favorites"
 
 #. placeholder {0}: target.name
 #: src/features/project/context/ContextEntryActions.tsx
@@ -716,8 +724,7 @@ msgstr "Chat context"
 #~ msgid "Chat creation is still being reconciled."
 #~ msgstr "Chat creation is still being reconciled."
 
-#: src/features/project/chat-index/ChatIndex.tsx
-#: src/features/project/work/WorkAssociatedChats.tsx
+#: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "Chat deleted"
 msgstr "Chat deleted"
 
@@ -1658,9 +1665,8 @@ msgstr "Failed to load image"
 #~ msgid "Favorite"
 #~ msgstr "Favorite"
 
-#: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
-#: src/features/project/work/WorkAssociatedChats.tsx
+#: src/features/project/chat-list/useChatRowCommands.tsx
 msgid "Favorite wasn’t saved"
 msgstr "Favorite wasn’t saved"
 
@@ -2271,11 +2277,8 @@ msgstr "New"
 #: src/features/chat/ChatView.tsx
 #: src/features/chat/IndependentChatView.tsx
 #: src/features/chat/ThreadSwitcherPopover.tsx
-#: src/features/project/chat-index/ChatIndex.tsx
 #: src/features/project/chat-list/ProjectChatRow.tsx
 #: src/features/project/chat/ChatScreen.tsx
-#: src/features/project/ChatIndexController.tsx
-#: src/features/project/work/WorkAssociatedChats.tsx
 #: src/lib/thread-title.ts
 msgid "New chat"
 msgstr "New chat"

@@ -11,7 +11,7 @@ import { DEFAULT_AGENT_SLUG } from "@/features/agents";
 import { useReferenceBrowserCatalog } from "@/features/editor/references/useReferenceBrowserCatalog";
 import { NewThreadComposerToolbar } from "@/features/project/chat/NewThreadComposerToolbar";
 import { useOpenProjectDocument } from "@/features/project/context/open-project-document";
-import { useProjectChatNavigation } from "@/features/project/routing/ProjectNavigationContext";
+import { useChatNavigation } from "@/features/project/routing/chat-navigation";
 import { useCreationComposer } from "./useCreationComposer";
 
 export function CreationComposer({
@@ -26,21 +26,21 @@ export function CreationComposer({
 }) {
   const creation = useCreationComposer(projectId);
   const composerRef = useRef<ComposerHandle>(null);
-  const navigation = useProjectChatNavigation();
-  const focusRequested = navigation?.newChatFocusRequested ?? false;
-  const consumeFocus = navigation?.consumeNewChatFocus;
-  // An explicit New chat focuses whichever empty composer shows it: at mount
-  // when the request created this composer, or in place when one was already
-  // showing. The frame lets a just-revealed dock drop `inert` first.
-  const [focusAtMount] = useState(focusRequested);
+  const { registerNewChatFocus } = useChatNavigation();
+  // An explicit New chat focuses the empty composer showing it. The hero is
+  // not New chat's target: it focuses at mount where a keyboard is likely.
+  // The frame lets a just-revealed dock drop `inert` first.
   useEffect(() => {
-    if (!focusRequested) return;
-    const frame = requestAnimationFrame(() => {
-      composerRef.current?.focus();
-      consumeFocus?.();
+    if (variant === "hero") return;
+    let frame = 0;
+    const unregister = registerNewChatFocus(() => {
+      frame = requestAnimationFrame(() => composerRef.current?.focus());
     });
-    return () => cancelAnimationFrame(frame);
-  }, [focusRequested, consumeFocus]);
+    return () => {
+      unregister();
+      cancelAnimationFrame(frame);
+    };
+  }, [registerNewChatFocus, variant]);
   const works = useWorks(projectId);
   const agents = useAgentCatalog(true, projectId);
   const choices = creation.choices;
@@ -85,7 +85,7 @@ export function CreationComposer({
       <Composer
         ref={composerRef}
         variant={variant}
-        autoFocus={focusAtMount || autoFocus}
+        autoFocus={autoFocus}
         onSubmit={async (envelope) => ({
           kind:
             choicesReady && context && (await creation.submit(envelope, context))
