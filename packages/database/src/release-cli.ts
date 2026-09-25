@@ -1,5 +1,6 @@
 /** Deploy-time command for backup-confirmed atomic database releases. */
 import path from "node:path";
+import { assertSupportedDatabaseUrl } from "./database-url.js";
 import { formatMigrationFailure, runRelease } from "./release-runner.js";
 
 function log(message: string): void {
@@ -36,6 +37,7 @@ async function main(): Promise<void> {
 
   const databaseUrl = process.env.DATABASE_URL?.trim();
   if (!databaseUrl) throw new Error("Missing required environment variable: DATABASE_URL");
+  assertSupportedDatabaseUrl(databaseUrl, process.env.APP_ENV);
   const releaseSha = process.env.MERIDIAN_RELEASE_SHA?.trim() || "unknown";
   log(`release: command=${command} database=${databaseLabel(databaseUrl)} sha=${releaseSha}`);
   if (bypass) log("backup-check: explicitly bypassed for local/dev use");

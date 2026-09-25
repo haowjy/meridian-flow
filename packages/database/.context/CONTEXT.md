@@ -107,6 +107,13 @@ whose applied history extends the bundle's exact prefix is a valid rollback
 target with zero pending migrations; divergent history fails. Local development
 does not load deploy config and can explicitly use `--no-backup-check`.
 
+The release image carries only migration SQL, the journal and function SQL.
+`getSchemaStatus` shares the release runner's journal and applied-ledger
+comparison; server `/readyz` rejects a behind or divergent schema while
+allowing a DB whose matching history is ahead (rollback). Keep the
+`channel_binding` and live Neon direct-endpoint checks centralized in
+`assertSupportedDatabaseUrl`, used by both API startup and release CLI.
+
 A row-transform migration MUST ship with a populated upgrade fixture in
 `fresh-migrations.db.test.ts`. Apply the committed prefix, seed the pre-migration
 shape, and prove the fixture fails before the transform (pre-fix red) and passes

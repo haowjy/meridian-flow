@@ -1,10 +1,26 @@
 /** GET /readyz: readiness probe verifying the app composes and the database answers, returning 503 otherwise. Depends on the app singleton and db. */
-import { sql } from "drizzle-orm";
+
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { getSchemaStatus } from "@meridian/database";
 import { defineEventHandler, setResponseStatus } from "nitro/h3";
 import { emitEvent, unknownToEventPayload } from "../domains/observability";
 import { getApp } from "../lib/app";
-import { getDb } from "../lib/db";
 import { getProcessEventSink } from "../lib/observability";
+
+function releaseMigrationsDirectory(): string {
+  const candidates = [
+    path.resolve(process.cwd(), "release/migrations"),
+    path.resolve(process.cwd(), "packages/database/src/migrations"),
+    path.resolve(process.cwd(), "../../packages/database/src/migrations"),
+  ];
+  const directory = candidates.find((candidate) =>
+    existsSync(path.join(candidate, "meta/_journal.json")),
+  );
+  if (!directory)
+    throw new Error("The release migration journal is missing from the runtime bundle.");
+  return directory;
+}
 
 export default defineEventHandler(async (event) => {
   try {
@@ -26,7 +42,19 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    await getDb().execute(sql`SELECT 1`);
+    const schemaStatus = await getSchemaStatus({
+      databaseUrl: process.env.DATABASE_URL ?? "",
+      migrationsDirectory: releaseMigrationsDirectory(),
+    });
+    if (schemaStatus === "behind" || schemaStatus === "divergent") {
+      setResponseStatus(event, 503);
+      return {
+        status: "error",
+        service: "api",
+        ready: false,
+        reason: schemaStatus === "behind" ? "schema_behind" : "schema_divergent",
+      };
+    }
   } catch (error) {
     emitEvent(getProcessEventSink(), {
       level: "error",

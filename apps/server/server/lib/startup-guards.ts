@@ -3,6 +3,8 @@
  * The checks fail fast for missing persistence, cloud object storage without
  * credentials, and production auth placeholders.
  */
+
+import { assertSupportedDatabaseUrl } from "@meridian/database";
 import type { ObjectStoreProvider } from "./backend-policy.js";
 
 const DEFAULT_DEV_SECRETS = new Set(["", "dev-workos-key", "dev-workos-client"]);
@@ -110,6 +112,13 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
   const allowWorkosTestApiKey = config.APP_ENV === "staging";
 
   requireValue(errors, "DATABASE_URL", config.DATABASE_URL, "required for persistence.");
+  if (hasValue(config.DATABASE_URL)) {
+    try {
+      assertSupportedDatabaseUrl(config.DATABASE_URL, config.APP_ENV);
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   if (config.OBJECT_STORE_PROVIDER === "s3") {
     requireValue(

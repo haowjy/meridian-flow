@@ -41,6 +41,19 @@ a pre-migration backup for that exact release. Local development can explicitly
 use `--no-backup-check` with `APP_ENV=dev`, `development`, or `local`; the
 image's default command must not use that escape hatch.
 
+The release bundle contains migration SQL, `meta/_journal.json`, and canonical
+function SQL only; Drizzle snapshot JSON is build-time metadata and is not read
+by the release runner. `getSchemaStatus` uses the same journal parsing and
+ledger comparison as the release runner. A matching prefix that is shorter
+than the image is `behind`, a mismatched history is `divergent`, and a database
+ahead of the image remains a valid rollback target. Server `/readyz` uses this
+check to keep a new image unhealthy until its schema is ready.
+
+`assertSupportedDatabaseUrl` is shared by server startup guards and the release
+CLI. Remove `channel_binding` from `DATABASE_URL` (retain `sslmode=require`);
+postgres.js does not support it. Staging and production also require a Neon
+direct endpoint rather than a `-pooler` host because the server uses LISTEN.
+
 ## Auth boundary
 
 - Identity is app-owned **`public.users`** (`external_id` = WorkOS user id).

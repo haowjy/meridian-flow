@@ -43,6 +43,20 @@ describe("staging and production startup guards", () => {
     expect(outcome.errors.join("\n")).toContain("S3_BUCKET");
   });
 
+  it("rejects unsupported postgres startup parameters and Neon pooler URLs", () => {
+    const channelBinding = evaluateApiStartupGuards({
+      ...baseConfig,
+      DATABASE_URL: "postgres://u:p@db.example/meridian?sslmode=require&channel_binding=require",
+    });
+    expect(channelBinding.errors.join("\n")).toContain("remove channel_binding");
+
+    const pooler = evaluateApiStartupGuards({
+      ...baseConfig,
+      DATABASE_URL: "postgres://u:p@ep-pooler.example.neon.tech/db?sslmode=require",
+    });
+    expect(pooler.errors.join("\n")).toContain("direct endpoint");
+  });
+
   it("rejects mock-only model setup for a live APP_ENV", () => {
     const outcome = evaluateApiStartupGuards({
       ...baseConfig,

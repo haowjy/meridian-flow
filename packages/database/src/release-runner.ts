@@ -8,6 +8,61 @@ interface MigrationJournal {
   entries: Array<{ tag: string; when: number }>;
 }
 
+export type SchemaStatus = "current" | "behind" | "divergent";
+
+function readReleaseMigrations(migrationsDirectory: string) {
+  const journal = JSON.parse(
+    readFileSync(path.join(migrationsDirectory, "meta/_journal.json"), "utf8"),
+  ) as MigrationJournal;
+  const migrations = readMigrationFiles({ migrationsFolder: migrationsDirectory });
+  if (journal.entries.length !== migrations.length) {
+    throw new Error("Migration journal does not match the committed migration files");
+  }
+  for (const [index, migration] of migrations.entries()) {
+    const entry = journal.entries[index];
+    if (!entry || entry.when !== migration.folderMillis) {
+      throw new Error(`Migration journal entry ${index} does not match its SQL file`);
+    }
+  }
+  return { journal, migrations };
+}
+
+function compareMigrationHistory(
+  applied: Array<{ hash: string; created_at: string | number | null }>,
+  migrations: ReturnType<typeof readMigrationFiles>,
+): SchemaStatus {
+  const compared = Math.min(applied.length, migrations.length);
+  for (let index = 0; index < compared; index += 1) {
+    const row = applied[index];
+    const migration = migrations[index];
+    if (row.hash !== migration.hash || Number(row.created_at) !== migration.folderMillis) {
+      return "divergent";
+    }
+  }
+  return applied.length < migrations.length ? "behind" : "current";
+}
+
+/** Compare the database ledger with the exact release bundle journal. */
+export async function getSchemaStatus(input: {
+  databaseUrl: string;
+  migrationsDirectory: string;
+}): Promise<SchemaStatus> {
+  const { migrations } = readReleaseMigrations(input.migrationsDirectory);
+  const client = postgres(input.databaseUrl, { max: 1, onnotice: () => {} });
+  try {
+    const [table] = await client<Array<{ exists: boolean }>>`
+      SELECT to_regclass('drizzle.__drizzle_migrations') IS NOT NULL AS exists
+    `;
+    if (!table?.exists) return migrations.length === 0 ? "current" : "behind";
+    const applied = await client<Array<{ hash: string; created_at: string | number | null }>>`
+      SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id ASC
+    `;
+    return compareMigrationHistory(applied, migrations);
+  } finally {
+    await client.end();
+  }
+}
+
 class MigrationStatementError extends Error {
   constructor(
     readonly migrationPath: string,
@@ -32,13 +87,7 @@ export async function runRelease(input: {
 }): Promise<{ appliedMigrations: number }> {
   const client = postgres(input.databaseUrl, { max: 1, onnotice: () => {} });
   try {
-    const journal = JSON.parse(
-      readFileSync(path.join(input.migrationsDirectory, "meta/_journal.json"), "utf8"),
-    ) as MigrationJournal;
-    const migrations = readMigrationFiles({ migrationsFolder: input.migrationsDirectory });
-    if (journal.entries.length !== migrations.length) {
-      throw new Error("Migration journal does not match the committed migration files");
-    }
+    const { journal, migrations } = readReleaseMigrations(input.migrationsDirectory);
     for (const name of functionFiles) {
       if (!readdirSync(input.functionsDirectory).includes(name)) {
         throw new Error(`Missing canonical function SQL file: ${name}`);
@@ -62,15 +111,10 @@ export async function runRelease(input: {
     const applied = await client<Array<{ hash: string; created_at: string | number | null }>>`
       SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY id ASC
     `;
-    const compared = Math.min(applied.length, migrations.length);
-    for (let index = 0; index < compared; index += 1) {
-      const row = applied[index];
-      const migration = migrations[index];
-      if (row.hash !== migration.hash || Number(row.created_at) !== migration.folderMillis) {
-        throw new Error(
-          `Divergent migration history at ordinal ${index}: database ledger does not match the release journal`,
-        );
-      }
+    if (compareMigrationHistory(applied, migrations) === "divergent") {
+      throw new Error(
+        "Divergent migration history at ordinal 0 or later: database ledger does not match the release journal",
+      );
     }
     const pending =
       applied.length >= migrations.length

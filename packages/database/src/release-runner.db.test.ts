@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
-import { runRelease } from "./release-runner";
+import { getSchemaStatus, runRelease } from "./release-runner";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.RUN_DB_TESTS === "1" || process.env.RUN_DB_TESTS === "true";
@@ -126,6 +126,35 @@ if (!enabled || !databaseUrl) {
         await expect(
           runRelease({ databaseUrl, migrationsDirectory, functionsDirectory: sourceFunctions }),
         ).rejects.toThrow(/Divergent migration history at ordinal 0/);
+      } finally {
+        await rm(fixtureDirectory, { recursive: true, force: true });
+      }
+    });
+
+    it("reports behind when the bundle journal contains an unapplied migration", async () => {
+      await runRelease({
+        databaseUrl,
+        migrationsDirectory: sourceMigrations,
+        functionsDirectory: sourceFunctions,
+      });
+      const fixtureDirectory = await mkdtemp(join(tmpdir(), "meridian-release-behind-"));
+      const migrationsDirectory = join(fixtureDirectory, "migrations");
+      try {
+        await cp(sourceMigrations, migrationsDirectory, { recursive: true });
+        const journalPath = join(migrationsDirectory, "meta/_journal.json");
+        const journal = JSON.parse(await readFile(journalPath, "utf8")) as {
+          entries: Array<Record<string, unknown>>;
+        };
+        journal.entries.push({
+          idx: journal.entries.length,
+          version: "7",
+          when: Date.now() + 1,
+          tag: "9999_unapplied_probe",
+          breakpoints: true,
+        });
+        await writeFile(journalPath, JSON.stringify(journal));
+        await writeFile(join(migrationsDirectory, "9999_unapplied_probe.sql"), "SELECT 1;");
+        expect(await getSchemaStatus({ databaseUrl, migrationsDirectory })).toBe("behind");
       } finally {
         await rm(fixtureDirectory, { recursive: true, force: true });
       }
