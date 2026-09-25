@@ -55,6 +55,7 @@ Set these secret values manually in the Railway $environment environment (names 
   server: DATABASE_URL (Neon direct URL with sslmode=require; omit channel_binding and -pooler), WORKOS_API_KEY, WORKOS_CLIENT_ID, WORKOS_COOKIE_PASSWORD, S3_ACCESS_KEY, S3_SECRET_KEY
   model providers (at least one live key is required in staging/production): ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY
   app: WORKOS_API_KEY, WORKOS_CLIENT_ID, WORKOS_COOKIE_PASSWORD, WORKOS_REDIRECT_URI
+If the uploads preset does not expose the referenced keys in Railway Credentials UI, set server variables S3_BUCKET, S3_ENDPOINT, S3_PUBLIC_ENDPOINT, S3_REGION, S3_ACCESS_KEY, and S3_SECRET_KEY manually (the last two are secrets).
 Example, without exposing the value in shell history:
   read -rsp 'Secret value: ' VALUE; echo; printf %s "\$VALUE" | railway variable set -s server -e $environment --skip-deploys --stdin DATABASE_URL; unset VALUE
 EOF2
