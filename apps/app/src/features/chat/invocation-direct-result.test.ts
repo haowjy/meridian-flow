@@ -59,6 +59,28 @@ describe("direct invocation result join", () => {
     });
   });
 
+  it("admits report artifacts through the shared complete shape guard", () => {
+    const [use, savedResult] = toolResult("spawn", {
+      status: "completed",
+      execution: "execution-1",
+      outcome: "succeeded",
+      report: {
+        artifacts: [
+          { type: "image", url: "https://example.test/image.png", label: "Cover" },
+          { type: "object", uri: "scratch://draft" },
+          { type: "image", url: "https://example.test/bad.png", mimeType: 42 },
+          { type: "liveView", url: "https://example.test/view", expiresAt: false },
+        ],
+      },
+    });
+    const invocation = card();
+    const result = directResultsForTurn([use, invocation, savedResult]).get(invocation.id);
+    expect(result?.artifacts).toEqual([
+      { type: "image", url: "https://example.test/image.png", label: "Cover" },
+      { type: "object", uri: "scratch://draft" },
+    ]);
+  });
+
   it.each([
     [
       "empty",

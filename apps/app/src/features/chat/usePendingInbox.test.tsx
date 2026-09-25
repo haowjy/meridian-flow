@@ -1,10 +1,22 @@
 // @vitest-environment jsdom
+
+import type { Turn } from "@meridian/contracts/protocol";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ThreadTransport, ThreadTransportHandlers } from "@/core/transport";
 import { writerTurnQueueStatus } from "./pending-inbox";
+import { UserTurn } from "./UserTurn";
 import { usePendingInbox } from "./usePendingInbox";
+
+vi.mock("@lingui/core/macro", () => ({ t: (strings: TemplateStringsArray) => strings[0] }));
+vi.mock("@/features/project/context/open-project-document", () => ({
+  useOpenProjectDocument: () => () => undefined,
+  useProjectDocumentNavigationProjectId: () => null,
+}));
+vi.mock("@/rich-content/Markdown", () => ({
+  Markdown: ({ children }: { children: React.ReactNode }) => children,
+}));
 
 const harness = vi.hoisted(() => ({ transport: null as ThreadTransport | null }));
 vi.mock("@/client/providers/TransportProvider", () => ({
@@ -16,6 +28,7 @@ const subscriptions: Array<{
   handlers: ThreadTransportHandlers;
   active: boolean;
 }> = [];
+const cleanups: Array<() => Promise<void>> = [];
 const transport = {
   subscribe(threadId: string, handlers: ThreadTransportHandlers) {
     const entry = { threadId, handlers, active: true };
@@ -38,22 +51,50 @@ function inbox(state: "waiting" | "awaiting_run") {
         summary: "follow-up",
         enqueuedAt: "now",
       },
+      {
+        id: "child-note",
+        seq: 2,
+        intent: "notification",
+        provenance: { kind: "child", threadId: "child", reportId: "child-run" },
+        deliveryState: "waiting",
+        summary: "child report notification",
+        enqueuedAt: "now",
+      },
     ],
   };
 }
 
 describe("mounted pending inbox owner", () => {
-  afterEach(() => {
-    subscriptions.length = 0;
+  afterEach(async () => {
+    try {
+      for (const cleanup of cleanups.splice(0)) await cleanup();
+    } finally {
+      subscriptions.length = 0;
+    }
   });
 
   it("replaces queued with waiting, clears on ack, and ignores an old thread epoch", async () => {
     harness.transport = transport;
     const host = document.createElement("div");
     const root = createRoot(host);
+    let mounted = false;
+    cleanups.push(async () => {
+      if (mounted) await act(async () => root.unmount());
+      host.remove();
+    });
     function Probe({ threadId }: { threadId: string }) {
       const pending = usePendingInbox({ threadId, seed: null });
-      return createElement("output", null, writerTurnQueueStatus(pending).get("turn-1") ?? "clear");
+      const queueStatus = writerTurnQueueStatus(pending).get("turn-1");
+      return createElement(UserTurn, {
+        turn: {
+          id: "turn-1",
+          threadId,
+          role: "user",
+          status: "complete",
+          blocks: [{ id: "block-1", sequence: 0, blockType: "text", textContent: "follow-up" }],
+        } as Turn,
+        queueStatus,
+      });
     }
     const deliver = async (
       owner: number,
@@ -66,9 +107,17 @@ describe("mounted pending inbox owner", () => {
           event: { type: "CUSTOM", name: "meridian.inbox.changed", value } as never,
         }),
       );
-      expect(host.textContent).toBe(expected);
+      expect(host.querySelector("[data-user-turn-status]")?.textContent).toBe(
+        expected === "clear"
+          ? undefined
+          : expected === "queued"
+            ? "Queued"
+            : "Waiting for response",
+      );
+      expect(host.textContent).not.toContain("child report notification");
     };
 
+    mounted = true;
     await act(async () => root.render(createElement(Probe, { threadId: "old" })));
     await act(async () => root.render(createElement(Probe, { threadId: "new" })));
     expect(subscriptions[1]?.active).toBe(true);
@@ -78,6 +127,6 @@ describe("mounted pending inbox owner", () => {
     await deliver(1, { items: [] }, "clear");
 
     await act(async () => root.unmount());
-    host.remove();
+    mounted = false;
   });
 });

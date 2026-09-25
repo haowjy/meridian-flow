@@ -4,7 +4,7 @@
  * First-send reload beyond sessionStorage: the durable journal alone rehydrates
  * the destination row and replays `persistCreation` with the same identity.
  */
-import type { Thread } from "@meridian/contracts/protocol";
+import type { SendMessageResponse, Thread } from "@meridian/contracts/protocol";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -16,7 +16,13 @@ import {
   recordChatSubmission,
 } from "@/client/chat-submissions";
 import type { ThreadRunController } from "@/client/copilot/ThreadRunController";
+import {
+  defaultSendResponse,
+  scenarioGate,
+  ThreadRunScenario,
+} from "@/client/copilot/test-support/ThreadRunScenario";
 import type { ThreadStoreActions } from "@/client/stores";
+import { ErrorBlock } from "./ErrorBlock";
 import { useThreadHandoff } from "./useThreadHandoff";
 
 (
@@ -30,6 +36,7 @@ const mocks = vi.hoisted(() => ({
   createProjectThread: vi.fn(),
   createThread: vi.fn(),
 }));
+const controllers: ThreadRunController[] = [];
 
 let accountEpoch = new AbortController();
 vi.mock("@/features/project/context/account-feature-context", () => ({
@@ -53,6 +60,13 @@ vi.mock("@/client/query/project-invalidation", () => ({
   invalidateProjectThreadData: vi.fn(),
   invalidateWorkThreads: vi.fn(),
 }));
+vi.mock("@/lib/send-project-chat", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/send-project-chat")>();
+  return {
+    ...actual,
+    retireFirstSendSubmission: vi.fn(actual.retireFirstSendSubmission),
+  };
+});
 
 function firstSend(): FirstSendChatSubmission {
   return {
@@ -113,11 +127,15 @@ function controller(): ThreadRunController {
 let cleanup: (() => Promise<void>) | undefined;
 
 afterEach(async () => {
-  await cleanup?.();
-  cleanup = undefined;
-  mocks.createProjectThread.mockReset();
-  mocks.createThread.mockReset();
-  window.localStorage.clear();
+  try {
+    await cleanup?.();
+  } finally {
+    cleanup = undefined;
+    for (const controller of controllers.splice(0)) controller.dispose();
+    mocks.createProjectThread.mockReset();
+    mocks.createThread.mockReset();
+    window.localStorage.clear();
+  }
 });
 
 beforeEach(() => {
@@ -129,7 +147,11 @@ beforeEach(() => {
 async function mount(
   threadActions: ThreadStoreActions,
   run: ThreadRunController,
-  options?: { activateProjection?: () => boolean; onRetry?: (retry: (() => void) | null) => void },
+  options?: {
+    activateProjection?: () => boolean;
+    onRetry?: (retry: (() => void) | null) => void;
+    renderError?: boolean;
+  },
 ) {
   function Probe() {
     const failed = useThreadHandoff(THREAD_ID, "project-1", ACCOUNT, run, threadActions, {
@@ -138,12 +160,19 @@ async function mount(
       activateProjection: options?.activateProjection ?? (() => true),
     });
     options?.onRetry?.(failed?.retry ?? null);
-    return null;
+    return options?.renderError && failed ? (
+      <ErrorBlock isLatest kind="send" onRetry={failed.retry} />
+    ) : null;
   }
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  cleanup = async () => {
+    await act(async () => root.unmount());
+    client.clear();
+    host.remove();
+  };
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
@@ -151,10 +180,6 @@ async function mount(
       </QueryClientProvider>,
     );
   });
-  cleanup = async () => {
-    await act(async () => root.unmount());
-    host.remove();
-  };
   return { host };
 }
 
@@ -305,6 +330,73 @@ describe("first-send account fence", () => {
       await creation.promise;
     });
     expect(run.submit).not.toHaveBeenCalled();
+    expect(readChatSubmissions(ACCOUNT)).toEqual([
+      expect.objectContaining({ submissionId: "sub-first" }),
+    ]);
+  });
+});
+
+describe("real-store first-send retry", () => {
+  it("keeps retry identity across creation failure and never revives Retry after accepted dispatch", async () => {
+    recordChatSubmission(ACCOUNT, firstSend());
+    const scenario = new ThreadRunScenario();
+    controllers.push(scenario.controller);
+    const dispatch = scenarioGate<SendMessageResponse>();
+    scenario.setAppend(() => dispatch.promise);
+    mocks.createProjectThread
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(persistedThread);
+
+    await mount(scenario.store.getState(), scenario.controller, { renderError: true });
+    await act(async () => {
+      await vi.waitFor(() => expect(document.body.textContent).toContain("Retry"));
+    });
+    const firstRowId = scenario.turns(THREAD_ID)[0]?.id;
+    expect(firstRowId).toBeDefined();
+    expect(readChatSubmissions(ACCOUNT)).toEqual([
+      expect.objectContaining({ threadId: THREAD_ID, submissionId: "sub-first" }),
+    ]);
+
+    await act(async () => document.body.querySelector("button")?.click());
+    await act(async () => {
+      await vi.waitFor(() => expect(scenario.appendRequests).toHaveLength(1));
+    });
+    expect(scenario.appendRequests[0]?.data).toMatchObject({
+      threadId: THREAD_ID,
+      submissionId: "sub-first",
+    });
+    expect(scenario.turns(THREAD_ID)[0]?.id).toBe(firstRowId);
+    dispatch.resolve(defaultSendResponse({ threadId: THREAD_ID }));
+    await act(async () => dispatch.promise);
+    expect(scenario.turns(THREAD_ID)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: "turn-user" })]),
+    );
+    expect(mocks.createProjectThread.mock.calls.map(([, input]) => input.id)).toEqual([
+      THREAD_ID,
+      THREAD_ID,
+    ]);
+    expect(document.body.textContent).not.toContain("Retry");
+    expect(readChatSubmissions(ACCOUNT)).toEqual([]);
+
+    recordChatSubmission(ACCOUNT, firstSend());
+    const retire = await import("@/lib/send-project-chat");
+    vi.mocked(retire.retireFirstSendSubmission).mockImplementationOnce(() => {
+      throw new Error("journal retire failed");
+    });
+    mocks.createProjectThread.mockResolvedValue(persistedThread);
+    // A fresh mount consumes the accepted entry and exercises retirement after
+    // dispatch without changing the already-settled bubble back to Retry.
+    await cleanup?.();
+    cleanup = undefined;
+    const accepted = new ThreadRunScenario();
+    controllers.push(accepted.controller);
+    accepted.setAppend(async ({ data: { threadId } }) => defaultSendResponse({ threadId }));
+    await mount(accepted.store.getState(), accepted.controller, { renderError: true });
+    await act(async () => {
+      await vi.waitFor(() => expect(accepted.appendRequests).toHaveLength(1));
+    });
+    await act(async () => Promise.resolve());
+    expect(document.body.textContent).not.toContain("Retry");
     expect(readChatSubmissions(ACCOUNT)).toEqual([
       expect.objectContaining({ submissionId: "sub-first" }),
     ]);

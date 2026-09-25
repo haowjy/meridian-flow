@@ -8,12 +8,9 @@
  * `subscribed`. The transport must move its resume point to the gap's `toSeq`
  * and converge after a single resubscribe.
  */
-import {
-  EventType,
-  encodeWsServerMessage,
-  parseWsClientMessage,
-} from "@meridian/contracts/protocol";
+import { EventType } from "@meridian/contracts/protocol";
 import { describe, expect, it, vi } from "vitest";
+import { FakeThreadSocket } from "./test-support/FakeThreadSocket";
 
 vi.mock("./dev-transport", () => ({
   buildThreadsWsUrl: () => "ws://test/api/threads/ws",
@@ -41,37 +38,6 @@ type FakeFrame = { type?: string; threadId?: string; lastSeq?: string; subscript
  * and lets the server push a reply back synchronously. `MAX_REPLIES` bounds a
  * pre-fix runaway loop so the assertion fails instead of recursing forever.
  */
-class FakeSocket extends EventTarget {
-  readyState = 0;
-  readonly sent: string[] = [];
-
-  constructor(private readonly onSend: (socket: FakeSocket, frame: unknown) => void) {
-    super();
-  }
-
-  send(data: string): void {
-    this.sent.push(data);
-    const frame = parseWsClientMessage(data);
-    if (frame) this.onSend(this, frame);
-  }
-
-  open(): void {
-    this.readyState = 1;
-    this.dispatchEvent(new Event("open"));
-  }
-
-  close(): void {
-    this.readyState = 3;
-    this.dispatchEvent(new Event("close"));
-  }
-
-  deliver(message: unknown): void {
-    const event = new Event("message");
-    Object.defineProperty(event, "data", { value: encodeWsServerMessage(message as never) });
-    this.dispatchEvent(event);
-  }
-}
-
 function isBeyondCap(lastSeq: string | undefined): boolean {
   return lastSeq !== undefined && BigInt(lastSeq) > CAP_WINDOW_SEQ;
 }
@@ -80,9 +46,9 @@ function createHarness(maxResubscribes = 5) {
   const subscribeFrames: FakeFrame[] = [];
   const gapEvents: Array<{ toSeq?: string; cause?: string }> = [];
   const deliveredEvents: string[] = [];
-  let socket: FakeSocket | null = null;
+  let socket: FakeThreadSocket | null = null;
 
-  const answer = (target: FakeSocket, lastSeq: string | undefined): void => {
+  const answer = (target: FakeThreadSocket, lastSeq: string | undefined): void => {
     if (!isBeyondCap(lastSeq)) {
       target.deliver({
         type: "gap",
@@ -102,7 +68,7 @@ function createHarness(maxResubscribes = 5) {
     });
   };
 
-  const respond = (target: FakeSocket, rawFrame: unknown): void => {
+  const respond = (target: FakeThreadSocket, rawFrame: unknown): void => {
     const frame = rawFrame as FakeFrame;
     if (frame.type === "resume") {
       const first = (frame.subscriptions as FakeFrame[] | undefined)?.[0];
@@ -121,7 +87,7 @@ function createHarness(maxResubscribes = 5) {
 
   const transport = new WsThreadTransport({
     webSocketFactory: () => {
-      socket = new FakeSocket(respond);
+      socket = new FakeThreadSocket(respond);
       return socket as unknown as WebSocket;
     },
   });
@@ -132,7 +98,7 @@ function createHarness(maxResubscribes = 5) {
   };
 
   const unsubscribe = transport.subscribe(THREAD_ID, handlers);
-  const activeSocket = socket as unknown as FakeSocket;
+  const activeSocket = socket as unknown as FakeThreadSocket;
   activeSocket.open();
   activeSocket.deliver({
     type: "connected",
@@ -155,10 +121,10 @@ function createHarness(maxResubscribes = 5) {
 describe("WsThreadTransport gap recovery", () => {
   it("does not resume past a head advertised without a delivered event", () => {
     const resumes: Array<{ subscriptions?: Array<{ lastSeq?: string }> }> = [];
-    let socket: FakeSocket | null = null;
+    let socket: FakeThreadSocket | null = null;
     const transport = new WsThreadTransport({
       webSocketFactory: () => {
-        socket = new FakeSocket((_target, frame) => {
+        socket = new FakeThreadSocket((_target, frame) => {
           if ((frame as { type?: string }).type === "resume") {
             resumes.push(frame as { subscriptions?: Array<{ lastSeq?: string }> });
           }
@@ -167,7 +133,7 @@ describe("WsThreadTransport gap recovery", () => {
       },
     });
     const unsubscribe = transport.subscribe(THREAD_ID, { onEvent: () => {} });
-    const activeSocket = socket as unknown as FakeSocket;
+    const activeSocket = socket as unknown as FakeThreadSocket;
     activeSocket.open();
     const connected = {
       type: "connected",
