@@ -5,7 +5,7 @@ set -euo pipefail
 usage() { echo "Usage: bash tools/deploy/railway/configure.sh <staging|production>" >&2; exit 2; }
 [[ $# == 1 && ( "$1" == staging || "$1" == production ) ]] || usage
 environment=$1
-command -v railway >/dev/null || { echo "Railway CLI 5.62.1 is required; install it with npm i -g @railway/cli@5.62.1" >&2; exit 1; }
+command -v railway >/dev/null || { echo "Railway CLI 5.62.1 is required; install it with pnpm add -g @railway/cli@5.62.1" >&2; exit 1; }
 [[ -n ${RAILWAY_TOKEN:-} ]] || { echo "RAILWAY_TOKEN is required; authenticate for the $environment environment before configuring it." >&2; exit 1; }
 version=$(railway --version)
 [[ $version == *5.62.1* ]] || { echo "Railway CLI 5.62.1 required, found: $version" >&2; exit 1; }
@@ -56,5 +56,5 @@ Set these secret values manually in the Railway $environment environment (names 
   model providers (at least one live key is required in staging/production): ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY
   app: WORKOS_API_KEY, WORKOS_CLIENT_ID, WORKOS_COOKIE_PASSWORD, WORKOS_REDIRECT_URI
 Example, without exposing the value in shell history:
-  read -rsp 'Secret value: ' VALUE; echo; printf %s "$VALUE" | railway variable set -s server -e $environment --skip-deploys --stdin DATABASE_URL; unset VALUE
+  read -rsp 'Secret value: ' VALUE; echo; printf %s "\$VALUE" | railway variable set -s server -e $environment --skip-deploys --stdin DATABASE_URL; unset VALUE
 EOF2
