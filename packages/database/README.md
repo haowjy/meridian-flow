@@ -31,6 +31,13 @@ command. It verifies an S3-compatible custom-format backup before applying
 pending migrations and function SQL in the same transaction. The bundle needs
 Node and `pg_dump` at runtime, but no `node_modules`.
 
+The release command requires `DATABASE_URL`, `BACKUP_S3_BUCKET`,
+`BACKUP_S3_REGION`, `BACKUP_S3_ENDPOINT`, `BACKUP_S3_ACCESS_KEY`, and
+`BACKUP_S3_SECRET_KEY`. `BACKUP_S3_FORCE_PATH_STYLE` defaults to `true`,
+`BACKUP_S3_PREFIX` defaults to `backups/<APP_ENV or unknown>`, and
+`MERIDIAN_RELEASE_SHA` defaults to `unknown`. `backup` runs only the backup;
+`migrate` also backs up unless explicitly passed `--no-backup`.
+
 ## Auth boundary
 
 - Identity is app-owned **`public.users`** (`external_id` = WorkOS user id).
