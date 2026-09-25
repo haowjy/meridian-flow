@@ -83,13 +83,23 @@ in Railway.
 | `EVENT_PROVIDER` | Optional; leave unset for live default (`local`) | Human Railway variable if explicitly selecting provider | Event sink override; live currently resolves to local sink. |
 | `DURABLE_EVENT_BACKEND` | Optional; currently defaults to `none` | Human Railway variable if explicitly used | Multi-instance event/log coordination; do not use to imply API scale-out is supported. |
 | `LOG_LEVEL` | Optional | Human Railway variable if needed | Runtime log level. |
+| `MODEL_CALL_TIMEOUT_MS` | Optional | Human Railway variable if needed | Model request timeout override. |
+| `OPENROUTER_BASE_URL` | Optional | Human Railway variable if needed | OpenRouter-compatible endpoint override. |
+| `OPENROUTER_HTTP_REFERER` | Optional | Human Railway variable if needed | OpenRouter request attribution header. |
+| `OPENROUTER_APP_NAME` | Optional | Human Railway variable if needed | OpenRouter application title header. |
+| `STRIPE_SECRET_KEY` | Optional | Human Railway secret | Enables Stripe-backed billing when configured with its webhook secret. |
+| `STRIPE_WEBHOOK_SECRET` | Optional | Human Railway secret | Verifies Stripe webhook requests. |
+| `STRIPE_PRICE_PLAN_FREE` | Optional | Human Railway variable | Stripe price ID for free plan if Stripe is enabled. |
+| `STRIPE_PRICE_PLAN_STANDARD` | Optional | Human Railway variable | Stripe price ID for standard plan if Stripe is enabled. |
+| `STRIPE_PRICE_PLAN_PREMIUM` | Optional | Human Railway variable | Stripe price ID for premium plan if Stripe is enabled. |
+| `WORKOS_DEV_AUTOLOGIN` | Must not be enabled | Do not set in staging/production | Development-only login shortcut. |
+| `WORKOS_DEV_LOGIN_EMAIL` | Must not be set | Do not set in staging/production | Development-only login identity. |
+| `WORKOS_DEV_LOGIN_PASSWORD` | Must not be set | Do not set in staging/production | Development-only login credential. |
 | Railway `deploy.drainingSeconds` | `30` seconds | `configure.sh` | Gives shutdown time for request drain, AI turn completion, Yjs checkpoint, and socket close. |
 
-Development-only values are not deployed: `WORKOS_DEV_AUTOLOGIN`,
-`WORKOS_DEV_LOGIN_EMAIL`, and `WORKOS_DEV_LOGIN_PASSWORD` are forbidden in
-staging and production. `LOCAL_OBJECT_STORE_DIR`,
-`LOCAL_OBJECT_STORE_SIGNED_URL_BASE_PATH`, and `OBJECT_STORE_SIGNING_SECRET`
-apply only when `OBJECT_STORE_PROVIDER=local`.
+Local-only values are not used when live backends are selected:
+`LOCAL_OBJECT_STORE_DIR`, `LOCAL_OBJECT_STORE_SIGNED_URL_BASE_PATH`, and
+`OBJECT_STORE_SIGNING_SECRET` apply only when `OBJECT_STORE_PROVIDER=local`.
 
 ### App service
 
@@ -107,6 +117,21 @@ apply only when `OBJECT_STORE_PROVIDER=local`.
 | `WORKOS_DEV_AUTOLOGIN` | Must not be set to `1` | Do not set in production | Development-only login shortcut. |
 | `WORKOS_DEV_LOGIN_EMAIL`, `WORKOS_DEV_LOGIN_PASSWORD` | Must not be set | Do not set in production | Development-only login credentials. |
 | `LOG_LEVEL` | Optional | Human Railway variable if needed | Runtime log level. |
+| `WORKOS_DEV_AUTOLOGIN` | Must not be enabled | Do not set in staging/production | Development-only login shortcut. |
+| `WORKOS_DEV_LOGIN_EMAIL` | Must not be set | Do not set in staging/production | Development-only login identity. |
+| `WORKOS_DEV_LOGIN_PASSWORD` | Must not be set | Do not set in staging/production | Development-only login credential. |
+
+### Release command in the server image
+
+| Variable | Required / value | Set by | Purpose |
+|---|---|---|---|
+| `DATABASE_URL` | Neon direct URL | Human Railway server secret | Connection used for the release migration. |
+| `APP_ENV` | `staging` or `production` | `configure.sh` | Controls backup bypass policy and URL validation. |
+| `MERIDIAN_RELEASE_SHA` | Full image release SHA | Image build argument / Dockerfile | Binds the pending-migration check to the confirmed snapshot ref. |
+| `MERIDIAN_BACKUP_REF` | `neon-snapshot:<id>:release=<sha>` | `tools/deploy/deploy.ts` | Confirms snapshot ID and matching release SHA; never hand-set. |
+
+The local-only `--no-backup-check` switch is rejected unless `APP_ENV` is
+`dev`, `development`, or `local`.
 
 ### WWW service
 
@@ -153,14 +178,9 @@ They identify the release visible to `/healthz` and app response headers.
 | `NEON_OPERATION_TIMEOUT_MS`, `NEON_POLL_MS`, `NEON_API_BASE_URL` | Deploy workflow runner, optional | Operator override | Neon operation timeout, poll interval, and API origin. |
 | `DEPLOY_TIMEOUT_MS`, `DEPLOY_POLL_MS`, `DEPLOY_DETECT_MS` | Deploy workflow runner, optional | Operator override | Railway terminal wait, poll interval, and new-deployment detection window. |
 
-Optional billing integrations use `STRIPE_SECRET_KEY` and
-`STRIPE_WEBHOOK_SECRET`; add `STRIPE_PRICE_PLAN_FREE`,
-`STRIPE_PRICE_PLAN_STANDARD`, and `STRIPE_PRICE_PLAN_PREMIUM` when configuring
-Stripe price IDs. None is required to boot. Optional model tuning includes
-`MODEL_CALL_TIMEOUT_MS`, `OPENROUTER_BASE_URL`, `OPENROUTER_HTTP_REFERER`,
-and `OPENROUTER_APP_NAME`. Local observability controls are `LOG_DIR`,
-`LOG_RETENTION_DAYS`, and `LOG_MAX_BYTES`; do not point these at ephemeral
-production storage unless log persistence is intentional.
+Local observability controls are `LOG_DIR`, `LOG_RETENTION_DAYS`, and
+`LOG_MAX_BYTES`; do not point these at ephemeral production storage unless log
+persistence is intentional.
 
 The [runbook](./runbook.md) shows exact GitHub and Railway provisioning,
 including secret entry without shell-history exposure. The local production-

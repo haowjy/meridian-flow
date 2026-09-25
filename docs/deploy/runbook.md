@@ -308,8 +308,18 @@ and Railway server pre-deploy logs before calling the release complete.
 ## Cost at beta scale
 
 The selected baseline—production and separate staging Neon Launch projects,
-each at 0.25 CU with 2 GB storage—is estimated at about **$40.10/month**
-before taxes, extra history/snapshot storage, and egress overage. A month at
+each at 0.25 CU with 2 GB storage—is estimated at about **$40.10/month**.
+For Railway application hosting, start on **Hobby** for beta: its $5/month
+minimum includes the first $5 of usage; resource usage above that is billed
+extra. Thus the known plan floor is about **$45.10/month** for Neon plus
+Railway, before any Railway usage above the included amount, taxes, Neon extra
+history/snapshot storage, egress overage, and model-provider spend. Railway
+usage depends on measured CPU, memory, network, and storage; after the first
+week inspect Workspace settings → Usage and use the invoice to project a real
+run rate. Move to Pro if team/workspace limits, capacity, or support needs
+require it ([Railway pricing plans][railway-pricing]).
+
+A month at 1 CU for production with staging at 0.25 CU is estimated around A month at
 1 CU for production with staging at 0.25 CU is estimated around **$98.13**.
 Actual autoscaling CU-time varies by workload. Railway still hosts the app
 services and S3-compatible bucket; its current plan/usage charge is separate.
@@ -317,4 +327,5 @@ See the [accepted Postgres host decision][postgres] for assumptions, competing
 options, and pricing sources.
 
 [gh-env]: https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments#required-reviewers
+[railway-pricing]: https://docs.railway.com/pricing/plans
 [postgres]: https://github.com/haowjy/meridian-flow-docs/blob/main/kb/decisions/platform/hosting/postgres-host.md
