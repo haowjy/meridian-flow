@@ -1059,13 +1059,21 @@ msgstr "Couldn't create a Work"
 msgid "Couldn't create this file."
 msgstr "Couldn't create this file."
 
+#: src/features/project/chat-list/useChatRowCommands.tsx
+msgid "Couldn't delete {title}"
+msgstr "Couldn't delete {title}"
+
 #: src/features/chat/command-descriptor.ts
 msgid "Couldn't delete that Work"
 msgstr "Couldn't delete that Work"
 
+#: src/features/project/chat-list/ProjectChatRow.tsx
+msgid "Couldn't delete this chat"
+msgstr "Couldn't delete this chat"
+
 #: src/features/project/chat-list/DeleteChatDialog.tsx
-msgid "Couldn't delete this chat. Try again."
-msgstr "Couldn't delete this chat. Try again."
+#~ msgid "Couldn't delete this chat. Try again."
+#~ msgstr "Couldn't delete this chat. Try again."
 
 #: src/features/project/context/ContextTreeRows.tsx
 msgid "Couldn't delete this document. Try again."
@@ -1378,7 +1386,6 @@ msgstr "Deleted Work {name}"
 msgid "Deleting a Work…"
 msgstr "Deleting a Work…"
 
-#: src/features/project/chat-list/DeleteChatDialog.tsx
 #: src/features/project/context/ContextEntryActions.tsx
 msgid "Deleting…"
 msgstr "Deleting…"
