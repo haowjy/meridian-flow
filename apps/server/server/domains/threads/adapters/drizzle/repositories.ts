@@ -26,7 +26,6 @@ import { createDrizzleThreadUserStateRepository } from "./thread-user-state-repo
 import { createDrizzleThreadWorksRepository } from "./thread-works-repository.js";
 import { createDrizzleTurnDocumentTouchRepository } from "./turn-document-touch-repository.js";
 import { createDrizzleTurnRepository, lockThreadForTurnTransition } from "./turn-repository.js";
-import { createDrizzleUsageRecorder } from "./usage-recorder.js";
 import { createDrizzleWorkChatFeedRepository } from "./work-chat-feed-repository.js";
 import { createDrizzleWorkContextDeliveryRepository } from "./work-context-delivery-repository.js";
 
@@ -37,7 +36,6 @@ function composeDrizzleRepositories(
   workActivity: Pick<WorkProjectionMutation, "touchWorks"> | null,
   statusReader?: ThreadStatusReader,
 ): InternalThreadRepositories {
-  const usageRecorder = createDrizzleUsageRecorder(db);
   return {
     threads: createDrizzleThreadRepository(db, { statusReader }),
     homeFeed: createDrizzleHomeChatFeedRepository(db),
@@ -66,7 +64,6 @@ function composeDrizzleRepositories(
         return operation();
       });
     },
-    recordModelResponseUsage: usageRecorder.recordModelResponseUsage,
   };
 }
 

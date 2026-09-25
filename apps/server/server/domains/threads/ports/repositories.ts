@@ -380,22 +380,6 @@ export interface TurnRepository {
   recomputeRollups(id: TurnId): Promise<Turn>;
 }
 
-/** Response row; rollups and thread cost derive from the turn owning `response.turnId`. */
-export interface RecordModelResponseUsageInput {
-  response: CreateModelResponseInput;
-}
-
-export interface RecordModelResponseUsageResult {
-  modelResponse: ModelResponse;
-  turn: Turn;
-}
-
-export interface UsageRecorder {
-  recordModelResponseUsage(
-    input: RecordModelResponseUsageInput,
-  ): Promise<RecordModelResponseUsageResult>;
-}
-
 export interface ThreadDocument {
   threadId: ThreadId;
   documentId: string;
@@ -497,7 +481,7 @@ export type ThreadRepositories = {
     expectedActiveLeafTurnId: TurnId | null,
     operation: () => Promise<T>,
   ): Promise<T>;
-} & UsageRecorder;
+};
 
 /** Adapter-level aggregate used only at composition time for internal spawn wiring. */
 export type InternalThreadRepositories = ThreadRepositories & {

@@ -929,17 +929,6 @@ export function createInMemoryRepositories(
         return operation();
       });
     },
-    async recordModelResponseUsage(input) {
-      const modelResponseResult = await modelResponseRepo.create(input.response);
-      if (!modelResponseResult.inserted) {
-        const turn = await turnRepo.findById(input.response.turnId);
-        if (!turn) throw new Error(`Turn not found: ${input.response.turnId}`);
-        return { modelResponse: modelResponseResult.row, turn };
-      }
-      const turn = await turnRepo.recomputeRollups(input.response.turnId);
-      await threadRepo.recomputeCostFromModelResponses(turn.threadId);
-      return { modelResponse: modelResponseResult.row, turn };
-    },
   };
 }
 

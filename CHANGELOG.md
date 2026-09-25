@@ -9,6 +9,8 @@
 
 ### Changed
 
+- Remove the unused alternate response-accounting API; journal projection remains the accounting owner.
+
 - Share immutable child-report state rules across storage adapters; decode saved captures at storage ingress.
 
 - Replay cold thread subscriptions once; skip journal drains on unobserved replicas.

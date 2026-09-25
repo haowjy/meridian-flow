@@ -5,7 +5,7 @@
  */
 import type { Block, ModelResponse, Thread, Turn, TurnUsage } from "@meridian/contracts/threads";
 import type * as schema from "@meridian/database/schema";
-import { toIsoString, toSeqString } from "../../domain/contract-serialization.js";
+import { toIsoString } from "../../domain/contract-serialization.js";
 
 function decimalString(value: string | null | undefined): string {
   if (value == null) return "0";
@@ -42,16 +42,16 @@ export function mapThread(
     status: row.status as Thread["status"],
     title: row.title === "" ? null : row.title,
     ref: row.ref,
-    composedSystemPrompt: isFrozen ? (row.composedSystemPrompt ?? null) : null,
-    bakedSkillSlugs: isFrozen ? (row.bakedSkillSlugs ?? []) : null,
+    composedSystemPrompt: isFrozen ? row.composedSystemPrompt : null,
+    bakedSkillSlugs: row.bakedSkillSlugs,
     workingState: row.workingState as Thread["workingState"],
     agentDefinitionRevisionId: row.agentDefinitionRevisionId ?? null,
     agentName: row.agentName ?? null,
-    nextSeq: toSeqString(row.nextSeq),
+    nextSeq: String(row.nextSeq),
     activeLeafTurnId: row.activeLeafTurnId,
     parentThreadId: row.parentThreadId,
-    originType: (row.originType as Thread["originType"]) ?? null,
-    originTurnId: row.originTurnId ?? null,
+    originType: row.originType as Thread["originType"],
+    originTurnId: row.originTurnId,
     rootThreadId: row.rootThreadId ?? row.id,
     spawnDepth: row.spawnDepth,
     spawnStatus: row.spawnStatus as Thread["spawnStatus"],
@@ -127,7 +127,7 @@ export function mapModelResponse(row: typeof schema.modelResponses.$inferSelect)
     sequence: row.sequence,
     provider: row.provider,
     model: row.model,
-    providerRequestId: row.providerRequestId ?? null,
+    providerRequestId: row.providerRequestId,
     inputTokens: row.inputTokens ?? 0,
     outputTokens: row.outputTokens ?? 0,
     reasoningTokens: row.reasoningTokens,
