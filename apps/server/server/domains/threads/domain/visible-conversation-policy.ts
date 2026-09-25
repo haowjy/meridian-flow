@@ -7,9 +7,13 @@ export function isVisibleConversationalTurn(input: {
   hasCustomBlock: boolean;
 }): boolean {
   if (input.role === "assistant") return true;
-  if (input.role === "system") return input.hasCustomBlock;
+  if (input.role === "system") {
+    const metadata = input.metadata as Record<string, unknown> | null;
+    return metadata?.kind !== "subagent_update" && input.hasCustomBlock;
+  }
   if (input.role !== "user") return false;
   const metadata = input.metadata as Record<string, unknown> | null;
+  if (metadata?.kind === "inbox_message") return false;
   if (metadata?.kind !== "system_update") return true;
   return metadata.section !== "work_context";
 }

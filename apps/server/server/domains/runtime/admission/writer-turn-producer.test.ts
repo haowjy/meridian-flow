@@ -138,7 +138,10 @@ describe("createWriterTurnProducer", () => {
 
     if (!("userTurnId" in result)) throw new Error("expected accepted admission");
     const turn = await repos.turns.findById(result.userTurnId);
-    expect(turn?.metadata).toEqual({ activatedSkillSlugs: ["writing-principles"] });
+    expect(turn?.metadata).toEqual({
+      kind: "inbox_message",
+      activatedSkillSlugs: ["writing-principles"],
+    });
   });
 
   it("merges a mid-run send onto the live assistant turn instead of conflicting", async () => {

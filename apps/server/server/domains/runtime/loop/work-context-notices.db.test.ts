@@ -219,7 +219,7 @@ else
         expect(boundary.split).toBe(true);
         expect(
           boundary.drain.turns.map((turn) => (turn.metadata as { kind: string }).kind),
-        ).toEqual(["system_update", "message"]);
+        ).toEqual(["system_update", "inbox_message"]);
         expect(boundary.drain.turns[0]?.prevTurnId).toBe(assistant.id);
         expect(boundary.drain.turns[1]?.prevTurnId).toBe(boundary.drain.turns[0]?.id);
         expect(boundary.next.prevTurnId).toBe(message.id);

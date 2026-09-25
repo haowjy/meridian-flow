@@ -78,7 +78,7 @@ function messageText(message: Message): string {
 function messageTurns(turns: readonly { role: string; metadata?: unknown }[]) {
   return turns.filter(
     (turn) =>
-      turn.role === "user" && (turn.metadata as { kind?: string } | null)?.kind === "message",
+      turn.role === "user" && (turn.metadata as { kind?: string } | null)?.kind === "inbox_message",
   );
 }
 
@@ -447,7 +447,8 @@ describe("inbox drain", () => {
     const turns = await repos.turns.listByThread(thread.id);
     const messageTurn = turns.find(
       (turn) =>
-        turn.role === "user" && (turn.metadata as { kind?: string } | null)?.kind === "message",
+        turn.role === "user" &&
+        (turn.metadata as { kind?: string } | null)?.kind === "inbox_message",
     );
     expect(messageTurn).toBeDefined();
     const blocks = await repos.blocks.listByTurn(messageTurn?.id as string);
@@ -517,9 +518,10 @@ describe("inbox drain", () => {
       (message) => message.role === "user" && messageText(message).includes("steer body"),
     );
     expect(writer).toBeDefined();
-    expect(messageText(writer as Message)).not.toContain("work context note");
-    expect(messageEntry).toBeDefined();
-    expect(messageText(messageEntry as Message)).toContain("work context note");
+    expect(writer).toBeDefined();
+    expect(messageText(writer as Message)).toContain("steer body");
+    expect(messageText(writer as Message)).toContain("work context note");
+    expect(messageEntry).toBe(writer);
   });
 });
 
@@ -542,7 +544,7 @@ describe("drain-only start", () => {
     expect(await inbox.selectPending(thread.id)).toEqual([]);
   });
 
-  it("delivers a hidden system notification without copying the saved report body", async () => {
+  it("delivers a structured subagent update without exposing its execution id or saved report body", async () => {
     const rig = await setup();
     const { thread, repos, orchestrator, requests, delivery, deps } = rig;
     const callerTurn = await repos.turns.create({
@@ -593,14 +595,25 @@ describe("drain-only start", () => {
     }).publish(child.id, execution.id);
     const [queued] = await delivery.selectPending(thread.id);
     await execute(await orchestrator.prepare({ threadId: thread.id, drain: true }));
-    expect(await repos.turns.findById(queued.id)).toMatchObject({ role: "system" });
+    expect(await repos.turns.findById(queued.id)).toMatchObject({
+      role: "system",
+      metadata: {
+        kind: "subagent_update",
+        handle: child.ref,
+        outcome: "succeeded",
+        execution: execution.id,
+      },
+    });
     const blocks = await repos.blocks.listByTurn(queued.id);
     expect(blocks).toHaveLength(1);
     expect(blocks[0]).toMatchObject({ blockType: "text" });
     const notification = requests[0].messages.find(
-      (message) => message.role === "system" && messageText(message).includes(execution.id),
+      (message) =>
+        message.role === "user" &&
+        messageText(message).includes(`Subagent ${child.ref} finished (succeeded)`),
     );
-    expect(messageText(notification as Message)).toContain(`"execution":"${execution.id}"`);
+    expect(messageText(notification as Message)).toContain(`thread_report({"ref":"${child.ref}"})`);
+    expect(messageText(notification as Message)).not.toContain(execution.id);
     expect(
       JSON.stringify([queued, blocks, requests, rig.projectedEvents.map(({ event }) => event)]),
     ).not.toContain(secret);

@@ -70,7 +70,13 @@ describe("projectPendingInbox", () => {
       inboxMessage({
         id: "c",
         seq: 3,
-        provenance: { kind: "child", threadId: "child-1", reportId: "report-1" },
+        provenance: {
+          kind: "child",
+          threadId: "child-1",
+          reportId: "report-1",
+          handle: "p1",
+          outcome: "succeeded",
+        },
         body: { kind: "text", text: "Read thread_report(...)" },
       }),
     ]);
@@ -91,6 +97,8 @@ describe("projectPendingInbox", () => {
       kind: "child",
       threadId: "child-1",
       reportId: "report-1",
+      handle: "p1",
+      outcome: "succeeded",
     });
   });
 

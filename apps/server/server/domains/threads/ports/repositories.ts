@@ -141,6 +141,7 @@ export interface ExecutionReportRepository {
     childThreadId: ThreadId,
     assistantTurnId: TurnId,
   ): Promise<SavedExecutionReport | null>;
+  listFinishedByChild(childThreadId: ThreadId): Promise<SavedExecutionReport[]>;
   /** Bounded metadata for admitted executions still lacking terminal truth. */
   listUnfinalized(
     limit: number,

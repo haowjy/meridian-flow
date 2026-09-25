@@ -76,21 +76,19 @@ describe("parseThreadMessageArgs", () => {
 });
 
 describe("thread_report tool contract", () => {
-  it("requires an exact ref and assistant execution selector", () => {
-    expect(parseThreadReportArgs({ ref: "p3", execution: "turn-uuid", latest: true })).toEqual({
-      ref: "p3",
-      execution: "turn-uuid",
-    });
+  it("selects the latest report by ref or an earlier run", () => {
+    expect(parseThreadReportArgs({ ref: "p3" })).toEqual({ ref: "p3" });
+    expect(parseThreadReportArgs({ ref: "p3", run: 2 })).toEqual({ ref: "p3", run: 2 });
     const registration = createSpawnToolRegistrations().find(
       (entry) => entry.definition.name === "thread_report",
     );
     expect(registration?.capability).toBe("thread_report");
     expect(registration?.advertise).toBe(true);
     expect(registration?.definition).toMatchObject({
-      inputSchema: { required: ["ref", "execution"], additionalProperties: false },
+      inputSchema: { required: ["ref"], additionalProperties: false },
     });
     expect(registration?.definition).toMatchObject({
-      inputSchema: { properties: { ref: { type: "string" }, execution: { type: "string" } } },
+      inputSchema: { properties: { ref: { type: "string" }, run: { type: "integer" } } },
     });
   });
 });

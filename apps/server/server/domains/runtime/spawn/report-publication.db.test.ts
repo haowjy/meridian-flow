@@ -132,7 +132,7 @@ else
         provenance: { kind: "child", threadId: ids.child, reportId: ids.execution },
       });
       expect(JSON.stringify(messages)).toContain(
-        `thread_report({\\"ref\\":\\"p1\\",\\"execution\\":\\"${ids.execution}\\"})`,
+        `Subagent p1 finished (succeeded). Read its report with thread_report({\\"ref\\":\\"p1\\"}).`,
       );
       expect(JSON.stringify(messages)).not.toContain("secret report body");
       expect(
@@ -161,13 +161,7 @@ else
         await readThreadReport({
           callerThreadId: ids.caller,
           ref: "p1",
-          execution: ids.execution,
           repos: freshRepos,
-          runningTurn: {
-            async readRunningTurnId() {
-              return null;
-            },
-          },
         }),
       ).toMatchObject({ payload, summary: "captured scalar", outcome: "succeeded" });
       const terminal = {
@@ -228,13 +222,7 @@ else
         await readThreadReport({
           callerThreadId: ids.caller,
           ref: "p1",
-          execution: ids.nextExecution,
           repos: freshRepos,
-          runningTurn: {
-            async readRunningTurnId() {
-              return null;
-            },
-          },
         }),
       ).toHaveProperty("payload", objectPayload);
 
@@ -334,13 +322,7 @@ else
         const result = await readThreadReport({
           callerThreadId: ids.caller,
           ref: "p1",
-          execution,
           repos,
-          runningTurn: {
-            async readRunningTurnId() {
-              return null;
-            },
-          },
         });
         if (payload === undefined) expect(result).not.toHaveProperty("payload");
         else expect(result).toHaveProperty("payload", payload);

@@ -107,6 +107,16 @@ export function createInMemoryExecutionReportRepository(
     async findByExecution(child, execution) {
       return find(child, execution);
     },
+    async listFinishedByChild(child) {
+      return [...rows.values()]
+        .filter((row) => row.childThreadId === child && row.outcome !== null)
+        .sort(
+          (a, b) =>
+            (deps.turns.get(a.assistantTurnId)?.createdAt ?? "").localeCompare(
+              deps.turns.get(b.assistantTurnId)?.createdAt ?? "",
+            ) || a.assistantTurnId.localeCompare(b.assistantTurnId),
+        );
+    },
     async listUnfinalized(limit, afterExecutionId) {
       if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limit must be positive");
       return [...rows.values()]

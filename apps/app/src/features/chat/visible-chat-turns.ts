@@ -1,16 +1,18 @@
 /**
  * Filters turns to only those that should render in the chat column.
  *
- * System turns are model-plumbing (commit echoes, agent-swap seeds) —
- * they carry context for the model's next request but are not user-facing
- * prose. Compaction turns are internal bookkeeping. Both are hidden.
+ * System turns are model-plumbing (commit echoes, agent-swap seeds); they carry
+ * context for the model's next request but are not standalone chat bubbles.
+ * Inbox delivery turns render inside the preceding assistant's activity rows.
  *
- * System turns with `custom` blocks (helper results, component blocks)
- * ARE visible — they carry UI content the user should see.
+ * Other system turns with custom blocks remain visible as UI content.
  */
 import type { Turn } from "@meridian/contracts/protocol";
 
-export function isVisibleChatTurn(turn: Turn): boolean {
+export function isVisibleChatTurn(
+  turn: Turn,
+  queueStatusByTurnId?: ReadonlyMap<string, "queued" | "waiting">,
+): boolean {
   if (turn.role === "user") {
     const metadata = turn.metadata;
     if (
@@ -22,14 +24,32 @@ export function isVisibleChatTurn(turn: Turn): boolean {
     ) {
       return false;
     }
+    if (
+      metadata &&
+      typeof metadata === "object" &&
+      !Array.isArray(metadata) &&
+      metadata.kind === "inbox_message"
+    )
+      return queueStatusByTurnId?.has(turn.id) ?? false;
     return true;
   }
   if (turn.role === "assistant") return true;
   if (turn.role === "compaction") return false;
-  // system turns: visible only if they carry at least one custom block
+  const metadata = turn.metadata;
+  if (
+    metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    metadata.kind === "subagent_update"
+  )
+    return false;
+  // other system turns are visible only if they carry at least one custom block
   return turn.blocks.some((block) => block.blockType === "custom");
 }
 
-export function filterVisibleTurns(turns: Turn[]): Turn[] {
-  return turns.filter(isVisibleChatTurn);
+export function filterVisibleTurns(
+  turns: Turn[],
+  queueStatusByTurnId?: ReadonlyMap<string, "queued" | "waiting">,
+): Turn[] {
+  return turns.filter((turn) => isVisibleChatTurn(turn, queueStatusByTurnId));
 }

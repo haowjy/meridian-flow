@@ -62,7 +62,7 @@ export type SavedExecutionReport = {
 export type ThreadReportResult =
   | {
       ref: string;
-      execution: TurnId;
+      run: number;
       outcome: SavedOutcome;
       source: ExecutionReportSource;
       summary: string;
@@ -71,7 +71,7 @@ export type ThreadReportResult =
       partial: boolean;
       reason: string | null;
     }
-  | { ref: string; execution: TurnId; status: "not_ready" | "unavailable" };
+  | { ref: string; status: "not_ready" | "unavailable" };
 
 export function isReturnResultOutcome(value: unknown): value is ReturnResultOutcome {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;

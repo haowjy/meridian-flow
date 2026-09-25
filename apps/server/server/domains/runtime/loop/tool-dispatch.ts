@@ -200,13 +200,12 @@ export async function dispatchToolCall(
           readThreadReport({
             callerThreadId: ctx.thread.id as never,
             ref: reportInput.ref,
-            execution: reportInput.execution,
+            run: reportInput.run,
             repos: {
               threads: deps.persistenceDeps.repos.threads,
               executionReports: deps.executionReports,
               readSnapshot: deps.readSnapshot,
             },
-            runningTurn: deps.runningTurn,
           })
       : undefined;
 

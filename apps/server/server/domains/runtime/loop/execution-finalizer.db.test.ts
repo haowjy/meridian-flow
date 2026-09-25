@@ -151,6 +151,8 @@ else
                   kind: "child",
                   threadId: ids.caller,
                   reportId: ids.callerTurn,
+                  handle: "p1",
+                  outcome: "succeeded",
                 },
                 body: { kind: "text", text: "child notification" },
                 idempotencyKey: "child",
@@ -197,9 +199,8 @@ else
                 lookup: await readThreadReport({
                   callerThreadId: ids.caller,
                   ref: "p1",
-                  execution: selector,
+
                   repos,
-                  runningTurn: authority,
                 }),
                 pending: await readPendingInbox(inbox, ids.child),
               };
@@ -295,7 +296,7 @@ else
             run: run.runId,
             oldCancel: false,
             report: { outcome: null, terminalAssistantTurnId: null },
-            lookup: { status: "not_ready" },
+            lookup: { status: "unavailable" },
             pending: {
               items: [{ deliveryState: "awaiting_run" }, { deliveryState: "awaiting_run" }],
             },

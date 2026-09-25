@@ -134,6 +134,8 @@ export function createReportPublisher(deps: {
               kind: "child",
               threadId: report.childThreadId,
               reportId: report.assistantTurnId,
+              handle: report.handle,
+              outcome: report.outcome,
             },
             body: { kind: "text", text: notificationText(report) },
             idempotencyKey: `child-report:${report.assistantTurnId}`,
@@ -181,5 +183,5 @@ export function createReportPublisher(deps: {
 }
 
 function notificationText(report: SavedExecutionReport): string {
-  return `Subagent ${report.handle} ${report.outcome}. Read the saved report with thread_report({"ref":"${report.handle}","execution":"${report.assistantTurnId}"}).`;
+  return `Subagent ${report.handle} finished (${report.outcome}). Read its report with thread_report({"ref":"${report.handle}"}).`;
 }

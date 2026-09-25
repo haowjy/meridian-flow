@@ -28,14 +28,15 @@ export function spawnOutputForTranscript(
   if (!isRecord(output)) return output;
   if (output.status === "completed" || output.status === "error") {
     const report = output.report;
-    if (!isRecord(report)) return output;
+    const { execution: _execution, ...modelOutput } = output;
+    if (!isRecord(report)) return modelOutput;
     const reportWithoutCost = { ...report };
     delete reportWithoutCost.costMillicredits;
     delete reportWithoutCost.threadId;
-    return { ...output, report: reportWithoutCost };
+    return { ...modelOutput, report: reportWithoutCost };
   }
   if (output.status === "background") {
-    const { threadId: _threadId, ...rest } = output;
+    const { threadId: _threadId, execution: _execution, ...rest } = output;
     return options.queuedNoReply ? { ...rest, note: QUEUED_NO_REPLY_NOTE } : rest;
   }
   return output;

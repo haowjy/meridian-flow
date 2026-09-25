@@ -66,7 +66,8 @@ describe("wake run", () => {
     const turns = await rig.repos.turns.listByThread(rig.thread.id);
     const messageTurn = turns.find(
       (turn) =>
-        turn.role === "user" && (turn.metadata as { kind?: string } | null)?.kind === "message",
+        turn.role === "user" &&
+        (turn.metadata as { kind?: string } | null)?.kind === "inbox_message",
     );
     const assistantTurn = turns.find((turn) => turn.role === "assistant");
     expect(messageTurn).toBeDefined();

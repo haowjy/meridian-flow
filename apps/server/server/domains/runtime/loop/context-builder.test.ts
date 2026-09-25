@@ -38,9 +38,9 @@ function thread(): Thread {
   };
 }
 
-function turn(role: Turn["role"]): Turn {
+function turn(role: Turn["role"], id = TURN_ID): Turn {
   return {
-    id: TURN_ID,
+    id,
     threadId: THREAD_ID,
     prevTurnId: null,
     parentTurnId: null,
@@ -82,8 +82,16 @@ function systemMessageTexts(messages: ReturnType<typeof buildContext>["messages"
     );
 }
 
-describe("buildContext system-turn helper-result projection", () => {
-  it("projects a completed helper-result card as system text", () => {
+function userMessageTexts(messages: ReturnType<typeof buildContext>["messages"]): string[] {
+  return messages
+    .filter((message) => message.role === "user")
+    .flatMap((message) =>
+      message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])),
+    );
+}
+
+describe("buildContext system-turn history projection", () => {
+  it("projects a completed helper-result card in place as a system update", () => {
     const content = buildHelperResultComponentContent({
       agentSlug: "critic",
       agentName: "Critic",
@@ -99,10 +107,8 @@ describe("buildContext system-turn helper-result projection", () => {
       blocks: [customBlock(content)],
     });
 
-    expect(systemMessageTexts(messages)).toContain(
-      ['Background subagent "Critic" reported.', "Two chapter breaks sag.", '{"chapter":3}'].join(
-        "\n",
-      ),
+    expect(userMessageTexts(messages)).toContain(
+      `<system_update>\n${['Background subagent "Critic" reported.', "Two chapter breaks sag.", '{"chapter":3}'].join("\n")}\n</system_update>`,
     );
   });
 
@@ -121,8 +127,8 @@ describe("buildContext system-turn helper-result projection", () => {
       blocks: [customBlock(content)],
     });
 
-    expect(systemMessageTexts(messages)).toContain(
-      ['Background subagent "Critic" failed.', "Provider returned 500."].join("\n"),
+    expect(userMessageTexts(messages)).toContain(
+      `<system_update>\n${['Background subagent "Critic" failed.', "Provider returned 500."].join("\n")}\n</system_update>`,
     );
   });
 
@@ -140,6 +146,7 @@ describe("buildContext system-turn helper-result projection", () => {
       blocks: [customBlock(content)],
     });
 
+    expect(userMessageTexts(messages)).toEqual([]);
     expect(systemMessageTexts(messages)).toEqual(["system prompt"]);
   });
 
@@ -160,5 +167,80 @@ describe("buildContext system-turn helper-result projection", () => {
 
     expect(messages.some((message) => message.role === "assistant")).toBe(false);
     expect(systemMessageTexts(messages)).toEqual(["system prompt"]);
+  });
+
+  it("keeps adopted inbox parts after a tool result in one user message without changing the prompt", () => {
+    const a = turn("assistant", "assistant-a");
+    const update = turn("system", "system-update");
+    const b = turn("user", "writer-1");
+    const c = turn("user", "writer-2");
+    const block = (
+      id: string,
+      turnId: string,
+      blockType: Block["blockType"],
+      textContent: string | null,
+      content: Block["content"] = null,
+      sequence = 0,
+    ) => ({
+      id,
+      turnId,
+      responseId: null,
+      blockType,
+      sequence,
+      textContent,
+      content,
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const turns = [a, update, b, c];
+    const blocks: Block[] = [
+      block(
+        "tool-use",
+        a.id,
+        "tool_use",
+        null,
+        { toolCallId: "call-1", toolName: "write", input: {} },
+        0,
+      ),
+      block(
+        "tool-result",
+        a.id,
+        "tool_result",
+        null,
+        { toolCallId: "call-1", output: { ok: true } },
+        1,
+      ),
+      block(
+        "update",
+        update.id,
+        "text",
+        'Subagent p2 finished (succeeded). Read its report with thread_report({"ref":"p2"}).',
+      ),
+      block("writer-1", "writer-1", "text", "Writer message 1"),
+      block("writer-2", "writer-2", "text", "Writer message 2"),
+    ];
+    const before = buildContext({ thread: thread(), turns: [], blocks: [] });
+    const messages = buildContext({
+      thread: thread(),
+      turns,
+      blocks,
+    }).messages;
+    expect(messages.map((message) => message.role)).toEqual([
+      "system",
+      "assistant",
+      "tool",
+      "user",
+    ]);
+    expect(messages.at(-1)).toEqual({
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: `<system_update>\nSubagent p2 finished (succeeded). Read its report with thread_report({"ref":"p2"}).\n</system_update>`,
+        },
+        { type: "text", text: "Writer message 1" },
+        { type: "text", text: "Writer message 2" },
+      ],
+    });
+    expect(systemMessageTexts(messages)).toEqual(systemMessageTexts(before.messages));
   });
 });

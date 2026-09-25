@@ -322,8 +322,9 @@ contract shapes.
   projections walk its active lineage past hidden Work-context, compaction,
   child-report continuations, and non-custom system turns. Both visible-turn
   mirrors (`domain/visible-conversation-policy.ts` and the app's
-  `visible-chat-turns.ts`) exclude the `child_report` system-update section so
-  the model-visible report never renders as a writer message. Home, project/Work
+  `visible-chat-turns.ts`) keep `subagent_update` and adopted inbox-message turns
+  out of the top-level bubble list; the app renders them inside the preceding
+  assistant's activity steps. Home, project/Work
   lists, and snapshots derive the
   independent `actionRequired` fact from a `waiting_interrupt` assistant head.
   Set-oriented SQL companions are parity-tested against the named domain policy.

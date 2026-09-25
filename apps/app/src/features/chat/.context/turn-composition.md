@@ -110,6 +110,16 @@ remain status-only; notification contains no report body and triggers no
 automatic fetch. `thread_report` is an ordinary expandable activity row,
 including saved artifacts, not another artifact card.
 
+Child completion delivery persists one system turn with `subagent_update`
+metadata. `visible-chat-turns.ts` and the server visible-conversation policy
+keep delivery turns out of the top-level bubble list; `AssistantTurn` renders
+them as quiet activity rows inside the preceding assistant's steps. The row
+shows the handle and outcome, and correlates the internal execution id to its
+invocation card for the optional short description and Open door. Adopted
+writer messages use the same inline tool-row chrome with the writer's text.
+This is consistent whether a completion wakes an idle parent or is adopted at
+a mid-run steer split; do not infer events by parsing notice text.
+
 Historical card replacement is sent over the existing
 `meridian.block.upserted` frame. Replace a loaded historical turn in place; if
 it is absent, invalidate/refetch its durable snapshot rather than creating a
@@ -265,3 +275,11 @@ Implemented in `partition-turn.ts`, `ProcessDisclosure.tsx`, and
 `process` items carry their ordered reasoning/activity runs, `text` and
 `artifact` items carry their block. `ProcessDisclosure` is a default-collapsed
 shell; process items compose reasoning rows and folded activity runs.
+
+Inbox delivery turns are not standalone bubbles after adoption. A writer turn
+keeps its visible `Queued`/`Waiting for response` row while pending, then the
+`inbox_message` marker hides that bubble once adopted. `AssistantTurn` renders
+the adopted inbox chain as ActivityRows after the assistant's final process
+item, preserving causal placement and the tool-step timeline chrome. Child
+completion rows correlate to invocation cards by their internal execution id
+for description and child-thread navigation.

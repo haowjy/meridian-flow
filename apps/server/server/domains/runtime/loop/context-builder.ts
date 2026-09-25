@@ -68,7 +68,14 @@ export function buildContext(input: BuildContextInput): {
   }
 
   if (input.thread.workingState) {
-    messages.push(system(`Working state:\n${JSON.stringify(input.thread.workingState)}`));
+    messages.push({
+      role: "user",
+      content: [
+        text(
+          `<system_update>\nWorking state:\n${JSON.stringify(input.thread.workingState)}\n</system_update>`,
+        ),
+      ],
+    });
   }
 
   const blocksByTurn = new Map<string, Block[]>();
@@ -106,7 +113,13 @@ export function buildContext(input: BuildContextInput): {
               : [],
         )
         .join("\n");
-      if (textParts) messages.push(system(textParts));
+      if (textParts) {
+        const update =
+          textParts.startsWith("<system_update>") && textParts.endsWith("</system_update>")
+            ? textParts
+            : `<system_update>\n${textParts}\n</system_update>`;
+        messages.push({ role: "user", content: [text(update)] });
+      }
       continue;
     }
 
@@ -143,9 +156,28 @@ export function buildContext(input: BuildContextInput): {
   }
 
   return {
-    messages: completeToolResultGroups(messages, sourceTurnStatusByMessage),
+    messages: mergeAdjacentUserMessages(
+      completeToolResultGroups(messages, sourceTurnStatusByMessage),
+    ),
     tools: input.tools?.length ? input.tools : undefined,
   };
+}
+
+/** Inbox turns retain durable graph identity but travel to the model as one delivery. */
+function mergeAdjacentUserMessages(messages: readonly Message[]): Message[] {
+  const merged: Message[] = [];
+  for (const message of messages) {
+    const previous = merged.at(-1);
+    if (previous?.role === "user" && message.role === "user") {
+      merged[merged.length - 1] = {
+        role: "user",
+        content: [...previous.content, ...message.content],
+      };
+    } else {
+      merged.push(message);
+    }
+  }
+  return merged;
 }
 
 function completeToolResultGroups(
@@ -381,7 +413,7 @@ export function insertPostToolNotices(
     role: "user",
     content: [text(`Meridian context after the preceding edits:\n${content}`)],
   });
-  return updated;
+  return mergeAdjacentUserMessages(updated);
 }
 
 export function formatNotices(notices: readonly Notice[]): string {
