@@ -6,11 +6,11 @@ RUN corepack enable && corepack prepare pnpm@10.34.3 --activate
 WORKDIR /workspace
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc lefthook.yml ./
 COPY patches/ ./patches/
-RUN pnpm fetch
+RUN --mount=type=cache,id=meridian-pnpm-store,target=/root/.local/share/pnpm/store pnpm fetch --network-concurrency=4 --fetch-retries=3
 COPY . .
 # git init lets the root prepare hook install lefthook; fetch+offline install
 # means workspace additions need no hand-maintained manifest list.
-RUN git init -q . && pnpm install --offline --frozen-lockfile --filter @meridian/server... \
+RUN --mount=type=cache,id=meridian-pnpm-store,target=/root/.local/share/pnpm/store git init -q . && pnpm install --offline --frozen-lockfile --filter @meridian/server... \
  && pnpm --filter @meridian/database build:release \
  && pnpm --filter @meridian/server build
 

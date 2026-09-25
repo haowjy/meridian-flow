@@ -10,6 +10,7 @@
 node_modules
 **/node_modules
 **/.output
+tools/deploy/local
 **/dist
 !packages/database/dist/
 !packages/database/dist/release/
