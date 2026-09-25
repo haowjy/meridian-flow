@@ -26,7 +26,6 @@ interface Rule {
   pattern: RegExp;
   severity: "error" | "warning";
   message: string;
-  enforcedFromOrdinal?: number;
 }
 
 const MIGRATION_DIRS = ["packages/database/src/migrations"];
@@ -39,9 +38,6 @@ const RULES: Rule[] = [
     severity: "error",
     message:
       "ADD COLUMN NOT NULL without DEFAULT cannot migrate a populated table. Add it nullable, backfill, then set NOT NULL.",
-    // The branch's unreleased migration tail begins here. Released history before
-    // this boundary remains covered by executable migration tests.
-    enforcedFromOrdinal: 60,
   },
   {
     id: "RENAME_COLUMN",
@@ -109,7 +105,6 @@ function lintFile(filePath: string): Finding[] {
   const lines = content.split("\n");
   const fileName = path.basename(filePath);
   const isInitialSchema = fileName.startsWith("0000_");
-  const ordinal = Number.parseInt(fileName.slice(0, 4), 10);
 
   for (let i = 0; i < lines.length; i++) {
     const lineContent = lines[i];
@@ -119,7 +114,6 @@ function lintFile(filePath: string): Finding[] {
     for (const rule of RULES) {
       if (!rule.pattern.test(lineContent)) continue;
       if (isInitialSchema && rule.id !== "DELETE_WITHOUT_WHERE") continue;
-      if (rule.enforcedFromOrdinal !== undefined && ordinal < rule.enforcedFromOrdinal) continue;
       if (rule.id === "ADD_FOREIGN_KEY_NOT_VALID" && !/ALTER\s+TABLE/i.test(lineContent)) continue;
 
       findings.push({

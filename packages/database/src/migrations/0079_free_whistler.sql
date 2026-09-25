@@ -1,1 +1,0 @@
-ALTER TABLE "works" ADD COLUMN "entity_revision" bigint DEFAULT 1 NOT NULL;
