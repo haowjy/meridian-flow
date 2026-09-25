@@ -5,7 +5,7 @@ import {
   type WorkAuthorityScheme,
   type WorkingSetRoute,
 } from "@meridian/contracts/protocol";
-import type { ProjectId, ThreadId, UserId } from "@meridian/contracts/runtime";
+import type { ProjectId, UserId } from "@meridian/contracts/runtime";
 import { createError } from "nitro/h3";
 import type { ProjectContextAvailabilityPort } from "../domains/context/index.js";
 import {
@@ -13,20 +13,15 @@ import {
   requireProjectOwner,
   type WorkRepository,
 } from "../domains/projects/index.js";
-import type { ThreadRepository } from "../domains/threads/ports/index.js";
 import type { WorkingSetRepository, WorkingSetRow } from "../domains/working-set/index.js";
 import { requireRequestId } from "./request-id.js";
 
-export type PutWorkingSetRequest = {
-  recentRoutes: WorkingSetRoute[];
-  lastThreadId: ThreadId | null;
-};
+export type PutWorkingSetRequest = { recentRoutes: WorkingSetRoute[] };
 
 export interface WorkingSetRouteDeps {
   projectRepo: ProjectRepository;
   workingSet: WorkingSetRepository;
   works: WorkRepository;
-  threads: ThreadRepository;
   projectContextAvailability: ProjectContextAvailabilityPort;
 }
 
@@ -46,9 +41,6 @@ export function parsePutWorkingSetRequest(raw: unknown): PutWorkingSetRequest {
   if (routes.value.length > 3) {
     throw createError({ statusCode: 400, message: "`recentRoutes` must contain at most 3 routes" });
   }
-  if (body.lastThreadId !== null && typeof body.lastThreadId !== "string") {
-    throw createError({ statusCode: 400, message: "`lastThreadId` must be a string or null" });
-  }
   const seenDocumentIds = new Set<string>();
   const recentRoutes = routes.value
     .map((route) => ({
@@ -63,11 +55,7 @@ export function parsePutWorkingSetRequest(raw: unknown): PutWorkingSetRequest {
       seenDocumentIds.add(route.documentId);
       return true;
     }) as WorkingSetRoute[];
-  const lastThreadId =
-    typeof body.lastThreadId === "string"
-      ? (requireRequestId(body.lastThreadId, "lastThreadId") as ThreadId)
-      : null;
-  return { recentRoutes, lastThreadId };
+  return { recentRoutes };
 }
 
 export async function handleGetWorkingSetRequest(
@@ -110,18 +98,6 @@ export async function handlePutWorkingSetRequest(
       )
     ) {
       throw createError({ statusCode: 400, message: "Invalid working-set route" });
-    }
-  }
-
-  if (input.body.lastThreadId !== null) {
-    const threadProjectId = await deps.threads.findProjectIdByIdIncludingDeleted(
-      input.body.lastThreadId,
-    );
-    if (threadProjectId !== input.projectId) {
-      throw createError({
-        statusCode: 400,
-        message: "`lastThreadId` does not belong to this project",
-      });
     }
   }
   return deps.workingSet.upsert(input.userId, input.projectId, input.body);

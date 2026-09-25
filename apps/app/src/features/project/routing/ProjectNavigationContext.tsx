@@ -1,7 +1,6 @@
 /** Route-owned command channel for project destination commands. */
 import { createContext, type ReactNode, useContext, useLayoutEffect, useRef } from "react";
 import type { ContextTab } from "@/client/stores";
-import type { CurrentChat } from "@/client/working-set";
 import type { ScreenKey } from "../shell/screens";
 import type { NavigationSettlement, ProjectLeaveGuard } from "./project-navigation";
 import type { ContextRouteTarget } from "./project-route";
@@ -22,17 +21,6 @@ const ProjectNavigationContext = createContext<{
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
   screen?: ScreenKey;
   open: OpenContextRoute;
-  openNewChat?: () => Promise<void>;
-  openChatIndex?: () => Promise<void>;
-  showCurrentChat?: () => Promise<void>;
-  currentChat?: CurrentChat;
-  newChatFocusRequested?: boolean;
-  consumeNewChatFocus?: () => void;
-  acceptCreatedChat?: (threadId: string) => void;
-  forgetChat?: (threadId: string) => void;
-  dockChatReveal?: number;
-  revealDockChat?: () => void;
-  recoveringFirstSend?: boolean;
   capture?: () => () => boolean;
 } | null>(null);
 
@@ -40,17 +28,6 @@ export function ProjectNavigationProvider({
   children,
   openContextRoute,
   captureNavigation,
-  openNewChat,
-  openChatIndex,
-  showCurrentChat,
-  currentChat,
-  newChatFocusRequested,
-  consumeNewChatFocus,
-  acceptCreatedChat,
-  forgetChat,
-  dockChatReveal,
-  revealDockChat,
-  recoveringFirstSend,
   screen,
   registerLeaveGuard,
 }: {
@@ -58,17 +35,6 @@ export function ProjectNavigationProvider({
   children: ReactNode;
   openContextRoute: OpenContextRoute;
   captureNavigation?: () => () => boolean;
-  openNewChat?: () => Promise<void>;
-  openChatIndex?: () => Promise<void>;
-  showCurrentChat?: () => Promise<void>;
-  currentChat?: CurrentChat;
-  newChatFocusRequested?: boolean;
-  consumeNewChatFocus?: () => void;
-  acceptCreatedChat?: (threadId: string) => void;
-  forgetChat?: (threadId: string) => void;
-  dockChatReveal?: number;
-  revealDockChat?: () => void;
-  recoveringFirstSend?: boolean;
   registerLeaveGuard?: (guard: ProjectLeaveGuard) => () => void;
 }) {
   return (
@@ -77,17 +43,6 @@ export function ProjectNavigationProvider({
         screen,
         open: openContextRoute,
         capture: captureNavigation,
-        openNewChat,
-        openChatIndex,
-        showCurrentChat,
-        currentChat,
-        newChatFocusRequested,
-        consumeNewChatFocus,
-        acceptCreatedChat,
-        forgetChat,
-        dockChatReveal,
-        revealDockChat,
-        recoveringFirstSend,
         registerLeaveGuard,
       }}
     >
@@ -103,10 +58,6 @@ export function useOpenContextRoute(): OpenContextRoute | null {
 /** Capture before an asynchronous create; completion must not steal a later destination. */
 export function useCaptureProjectNavigation() {
   return useContext(ProjectNavigationContext)?.capture;
-}
-
-export function useOpenNewChatRoute() {
-  return useContext(ProjectNavigationContext)?.openNewChat;
 }
 
 export function useProjectScreen(): ScreenKey {
@@ -129,9 +80,4 @@ export function useProjectLeaveGuard(guard: ProjectLeaveGuard) {
       }),
     [register],
   );
-}
-
-/** Commands are pane-aware at the route boundary; consumers never write a URL. */
-export function useProjectChatNavigation() {
-  return useContext(ProjectNavigationContext);
 }

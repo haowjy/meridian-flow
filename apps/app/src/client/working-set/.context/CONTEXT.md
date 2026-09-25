@@ -22,10 +22,8 @@ The reducer uses server revision lineage: unavailable stays local and cannot
 push, absent keeps local, matching pending lineage keeps local, and every other
 row adopts server. The account sync toggle guards the operation.
 
-Server adoption updates recency, never current chat or Editor tab membership.
-Current chat is local thread identity, explicit new chat, or none. A fresh
-browser does not adopt a remote thread. `lastThreadId` and the local-only
-`newChat` flag restore that selection before the route reads first-send intent. `selectEditorEntryTab` may rank existing tabs using recent routes;
+Server adoption updates recency, never Editor tab membership. The current
+chat lives outside the working set (`../current-chat.ts`). `selectEditorEntryTab` may rank existing tabs using recent routes;
 it never reopens a historical path. An empty browser-local workspace stays empty
 through screen entry and reload. Project-entry validation reconciles only tabs
 already restored from sessionStorage against the resource replica.

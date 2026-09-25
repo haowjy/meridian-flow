@@ -8,10 +8,13 @@
  * same instance between the centered Chat slot and the right dock slot by
  * changing only its persistent slot's grid-area.
  *
- * In the dock it renders through `DockShell`, which adds the tabbed header
- * (Chat | Changes) and can swap the body to the work-scoped Changes view. The
- * shell is a passthrough in `center` placement so this subtree keeps the same
- * tree position across center↔dock moves — the chat is never reconciled away.
+ * In the dock it renders through `DockShell`, which adds the chat switcher
+ * header and can swap the body to the work-scoped Changes view. The shell is a
+ * passthrough in `center` placement so this subtree keeps the same tree
+ * position across center↔dock moves — the chat is never reconciled away.
+ *
+ * The phone's chat sheet is the exception: it mounts the surface only while
+ * the sheet is open.
  */
 import type { Work } from "@meridian/contracts/protocol";
 import { ChatThreadTitle } from "@/features/chat/ChatThreadHeader";
@@ -21,7 +24,7 @@ import type { ContextRouteTarget } from "../routing/project-route";
 import type { ScreenKey } from "../shell/screens";
 import { ChatScreen } from "./ChatScreen";
 
-/** `center` = the wide main column (Chat dest); `dock` = right rail (Home/Context). */
+/** `center` = the wide main column (Chat screen); `dock` = right rail (Work, Editor). */
 export type ChatPlacement = "center" | "dock";
 
 /** Width of the docked chat — kept in sync with the content reflow padding. */

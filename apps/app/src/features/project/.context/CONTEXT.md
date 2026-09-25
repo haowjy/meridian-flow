@@ -77,37 +77,40 @@ targets.
 
 The chat index is the project root (`/p/<project>`). It reads a flat,
 cursor-paginated primary-chat feed ordered by last activity. Favorites is a
-server-side filter, applied before pagination. The shared row also serves Work
-detail. The index leads with the centered `CreationComposer` (`hero` variant,
-autofocused on fine pointers). The explicit new-chat state owns the pinned
-variant, with the same prospective Work and Agent choices, in the
-`features/chat/ChatSurface` frame a live chat uses so the first Send never moves
-the composer. Only an explicit New chat focuses the pinned composer (route
-`newChatFocusRequested`, consumed by the composer), never a page load.
+server-side filter, applied before pagination, and so is title search. The
+shared row also serves Work detail. The index leads with the centered
+`CreationComposer` (`hero` variant, autofocused on fine pointers): on the Chat
+screen the index is New chat. The dock's empty chat owns the pinned variant,
+with the same prospective Work and Agent choices, in the `ChatSurface` frame a
+live chat uses so the first Send never moves the composer. Only an explicit New
+chat focuses the pinned composer (a one-shot channel in `chat-navigation`), never
+a page load.
 
 The index door sits in each pane's 40px band after the sidebar toggle, on the
 same x as the Editor's Recently opened chip (`chat-index/ChatIndexButton.tsx`).
 Center wears the tab-chip grammar: on the index the door is the active chip and
-the remembered chat (or pending new chat) waits beside it as an inactive chip
-that calls `showCurrentChat`. The dock has no index: its always-present header
+the current chat waits beside it as an inactive chip that reopens it. The dock has no index: its always-present header
 carries the chat switcher, which lists the chats and New chat. Phone reaches the
 index through the `Chats` breadcrumb ancestor instead of a door.
 
-`ReadableProjectRoute` resolves one browser-local current chat from the working
-set: a thread identity (primary or subagent), new chat, or none. An explicit
-chat path selects that identity. Chat nav reopens the current chat, opens the
-index if none is remembered, and opens new chat for a project with zero chats.
-New chat and selecting a chat stay in the active pane. Dock selection does not
-write the URL. Center new chat uses the project root with entry-local
-`meridianNewChat` state to distinguish it from the index. A confirmed snapshot
-404 clears current identity; a chat path is replaced (never pushed) with the
-index so Back cannot land on it again, and the dock shows New chat. Reload
+`routing/chat-navigation.tsx` owns one current chat per browser, account, and
+project (`client/current-chat.ts`, never synced): a thread identity (primary or
+subagent) or none. The Chat screen's center is the index or a chat path; the
+dock shows the current chat, or an empty New chat when there is none. A chat
+path becomes the current chat. Chat nav reopens the current chat, or the index
+when there is none. Commands keep the writer's screen: on the Chat screen they
+navigate through the route's coordinator; elsewhere they point the dock at the
+chat and call the shell's registered dock reveal. Dock selection does not write
+the URL. Behind the index the chat surface keeps the current chat mounted and
+hidden. A confirmed snapshot 404 clears the current chat; a chat path is
+replaced (never pushed) with the index so Back cannot land on it again. Reload
 recovery (`recoveringFirstSend`) is decided once at mount; the phone opens its
-chat sheet for it, and for reveals, only over Work or Editor.
+chat sheet for it over Work or Editor.
 
 First Send writes the durable account-stamped intent before selecting the new
-thread. Center replaces to `/p/<project>/chat/<id>`; dock selection updates the
-working set synchronously and leaves the destination untouched. Reload recovery
+thread. From the index it pushes `/p/<project>/chat/<id>`, so Back returns to
+the index; dock selection remembers the chat and leaves the destination
+untouched. Reload recovery
 uses current chat identity, not a URL-only selector. The submitted Work, Agent,
 and project are immutable reconciliation facts; no admission or visibility
 handoff may run until the canonical thread matches them.

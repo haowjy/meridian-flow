@@ -33,10 +33,10 @@ name share line one; preview and activity date share line two. The list is flat,
 so Favorite is a standing mark: a star icon button right beside the Agent name,
 filled for favorites and shown on hover (always on touch) for the rest, next to
 the overflow's Favorite item. The overflow also offers Delete chat when the
-list passes `onDelete`: `client/query/useDeleteChat` confirms through
-`DeleteChatDialog`, calls the server soft delete, drops the chat from the thread
-list and every chat feed, and the route's `forgetChat` clears it as current
-chat. Work is not the row identity. Rows use the shared
+list passes `onDelete`. Every list takes Favorite and Delete from
+`chat-list/useChatRowCommands`: it confirms through `DeleteChatDialog`, calls
+the server soft delete (`deleteProjectChat` drops the chat from the thread list
+and every chat feed), and clears it as the current chat. Work is not the row identity. Rows use the shared
 inset list-row hover (`bg-dropdown-hover`, rounded), the chat switcher's recipe.
 Real and loading rows use the same two-line layout: a flexible title/preview
 lane, a right-side Agent lane (`data-project-chat-row-work` for geometry; the

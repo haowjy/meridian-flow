@@ -221,7 +221,7 @@ export async function getProjectWorkingSet(
 
 export async function updateProjectWorkingSet(
   projectId: string,
-  snapshot: { recentRoutes: WorkingSetRoute[]; lastThreadId: string | null },
+  snapshot: { recentRoutes: WorkingSetRoute[] },
   init?: RequestInitOptions,
 ): Promise<{ revision: number }> {
   return putJson<{ revision: number }>(

@@ -17,9 +17,10 @@ The shell reuses the same route-owned `ProjectViewProps`, data hooks, chat,
 context tree, document editor/viewers, results body, and thread drawer content.
 Only the chrome changes: top bar, drawer, and one active destination. A local
 chat Sheet can open over Work or Editor without navigating or unmounting the
-underlying destination. The shared route reveal command opens it for chat
-selection; its toolbar entry opens it without selecting a thread. Pending
-first-send recovery reopens that Sheet after reload.
+underlying destination. The shell registers it as the dock reveal, so chat
+selection outside Chat opens it; its toolbar entry opens it without selecting a
+thread. Pending first-send recovery reopens that Sheet after reload. The Sheet
+mounts the chat only while open: closing it ends that chat surface.
 
 Same-Work pending document navigation retains the prior document presentation
 and breadcrumb until address resolution settles. The shared review-scope owner
@@ -129,12 +130,12 @@ the document session registry.
   targets stay 44px with negative margin so the trail fits the 56px band. The drawer edits the
   project title inline without closing, and offers an explicit View projects link.
 - Outside Chat, a separate Open chat action opens a local Sheet without
-  changing the destination. Route chat-reveal commands and pending first-send
+  changing the destination. The registered dock reveal and pending first-send
   reload recovery open the same Sheet and select its Chat tab. The Sheet renders
   `ChatSurface` with `chrome="phone"`: a 56px status-bar-aware `DockHeader`
   carrying the chat switcher and a 44px close. Like the desktop dock it has no
-  index, so no `Chats` trail. The Sheet opens only over Work or Editor; a
-  reveal on the Chat screen never latches it open for the next screen.
+  index, so no `Chats` trail. The Sheet opens only over Work or Editor: on the
+  Chat screen commands navigate instead of revealing.
 - The trailing slot is a per-screen dispatcher (`trailingAction()` in
   `MobileProject`): chat carries the Results entry, Results carries the way
   back to chat, and the Files browser inside a scheme (scheme root or folder,
