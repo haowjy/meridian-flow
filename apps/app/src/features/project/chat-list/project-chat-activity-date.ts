@@ -12,3 +12,21 @@ export function formatProjectChatActivity(value: string, now: number, locale?: s
     ...(date.getFullYear() === new Date(now).getFullYear() ? {} : { year: "numeric" }),
   }).format(date);
 }
+
+// One formatter per locale: a row rebuilds this every render otherwise, and
+// every row shares the same handful of locales.
+const fullActivityFormatters = new Map<string, Intl.DateTimeFormat>();
+
+function fullActivityFormatter(locale: string): Intl.DateTimeFormat {
+  let formatter = fullActivityFormatters.get(locale);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat(locale, { dateStyle: "full", timeStyle: "short" });
+    fullActivityFormatters.set(locale, formatter);
+  }
+  return formatter;
+}
+
+/** The row's full, accessible activity timestamp (the `<time title>`). */
+export function formatFullProjectChatActivity(value: string, locale: string): string {
+  return fullActivityFormatter(locale).format(new Date(value));
+}

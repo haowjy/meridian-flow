@@ -8,13 +8,16 @@
  */
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { useCallback, useMemo } from "react";
-import { useProjectChatUserState } from "@/client/query/useProjectChatUserState";
 import { useExternalScrollVirtualList } from "@/hooks/use-external-scroll-virtual-list";
 import { cn } from "@/lib/utils";
-import { ProjectChatRow, type ProjectChatRowProps } from "../chat-list/ProjectChatRow";
+import { ProjectChatFeedRow, type ProjectChatRowProps } from "../chat-list/ProjectChatRow";
+import type { ChatRowDeleteFailure } from "../chat-list/useChatRowCommands";
 import { type RecencyGroup, RecencyGroupLabel, recencyGroups } from "../RecencyGroupedList";
 
-export type ChatIndexRowProps = Omit<ProjectChatRowProps, "item" | "favorite" | "onActiveChange">;
+export type ChatIndexRowProps = Omit<
+  ProjectChatRowProps,
+  "item" | "favorite" | "onActiveChange" | "deleteError"
+>;
 
 type Entry =
   | { kind: "group"; key: string; group: RecencyGroup; first: boolean }
@@ -29,6 +32,8 @@ export function ChatIndexList({
   busy,
   scrollOwner,
   rowProps,
+  deleteFailure,
+  retryDelete,
 }: {
   projectId: string;
   /** Loaded chats, newest first. */
@@ -38,6 +43,9 @@ export function ChatIndexList({
   busy: boolean;
   scrollOwner: React.RefObject<HTMLElement | null>;
   rowProps: ChatIndexRowProps;
+  /** Set only for the row whose optimistic delete failed and was restored. */
+  deleteFailure?: ChatRowDeleteFailure | null;
+  retryDelete?: () => void;
 }) {
   const entries = useMemo(() => {
     const flat: Entry[] = [];
@@ -93,18 +101,25 @@ export function ChatIndexList({
         const style = {
           transform: `translateY(${virtual.start - virtualizer.options.scrollMargin}px)`,
         };
-        return entry.kind === "group" ? (
-          <li
-            key={entry.key}
-            ref={virtualizer.measureElement}
-            data-index={virtual.index}
-            role="none"
-            className="absolute top-0 left-0 w-full px-2"
-            style={style}
-          >
-            <RecencyGroupLabel group={entry.group} first={entry.first} />
-          </li>
-        ) : (
+        if (entry.kind === "group") {
+          return (
+            <li
+              key={entry.key}
+              ref={virtualizer.measureElement}
+              data-index={virtual.index}
+              role="none"
+              className="absolute top-0 left-0 w-full px-2"
+              style={style}
+            >
+              <RecencyGroupLabel group={entry.group} first={entry.first} />
+            </li>
+          );
+        }
+        const deleteError =
+          deleteFailure?.id === entry.item.id && retryDelete
+            ? { error: deleteFailure.error, onRetry: retryDelete }
+            : undefined;
+        return (
           <li
             key={entry.key}
             ref={virtualizer.measureElement}
@@ -114,10 +129,11 @@ export function ChatIndexList({
             className={cn("absolute top-0 left-0 w-full", entry.ruled && "row-rule")}
             style={style}
           >
-            <ChatIndexRow
+            <ProjectChatFeedRow
               projectId={projectId}
               item={entry.item}
-              rowProps={rowProps}
+              {...rowProps}
+              deleteError={deleteError}
               onActiveChange={onActiveChange}
             />
           </li>
@@ -125,19 +141,4 @@ export function ChatIndexList({
       })}
     </ul>
   );
-}
-
-function ChatIndexRow({
-  projectId,
-  item,
-  rowProps,
-  onActiveChange,
-}: {
-  projectId: string;
-  item: ProjectChatItem;
-  rowProps: ChatIndexRowProps;
-  onActiveChange: (id: string, active: boolean) => void;
-}) {
-  const state = useProjectChatUserState(projectId, item);
-  return <ProjectChatRow {...rowProps} {...state} onActiveChange={onActiveChange} />;
 }

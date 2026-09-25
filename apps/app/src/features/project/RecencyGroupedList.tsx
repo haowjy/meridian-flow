@@ -5,7 +5,7 @@
  * so both read as one family: same buckets, labels, and row rhythm.
  */
 import { t } from "@lingui/core/macro";
-import { type ReactNode, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -17,16 +17,6 @@ function startOfDay(ms: number): number {
   const date = new Date(ms);
   date.setHours(0, 0, 0, 0);
   return date.getTime();
-}
-
-/** A clock that ticks each minute so relative ages and buckets stay current. */
-export function useMinuteClock(): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
-  return now;
 }
 
 function recencyGroup(iso: string, nowMs: number): RecencyGroup {

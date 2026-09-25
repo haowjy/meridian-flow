@@ -13,16 +13,16 @@ import {
 
 export type DeleteChatTarget = { id: string; title: string };
 
+/**
+ * Confirm-then-optimistic: confirming closes this dialog immediately, so it
+ * never itself waits on the server (a failure surfaces on the row instead).
+ */
 export function DeleteChatDialog({
   target,
-  isPending,
-  error,
   onCancel,
   onConfirm,
 }: {
   target: DeleteChatTarget | null;
-  isPending: boolean;
-  error: Error | null;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -40,19 +40,14 @@ export function DeleteChatDialog({
             </Trans>
           </DialogDescription>
         </DialogHeader>
-        {error ? (
-          <p className="text-sm text-destructive">
-            <Trans>Couldn't delete this chat. Try again.</Trans>
-          </p>
-        ) : null}
         <DialogFooter className="gap-2 sm:gap-0">
           <DialogClose asChild>
-            <Button variant="outline" size="sm" disabled={isPending}>
+            <Button variant="outline" size="sm">
               <Trans>Cancel</Trans>
             </Button>
           </DialogClose>
-          <Button variant="destructive" size="sm" disabled={isPending} onClick={onConfirm}>
-            {isPending ? <Trans>Deleting…</Trans> : <Trans>Delete</Trans>}
+          <Button variant="destructive" size="sm" onClick={onConfirm}>
+            <Trans>Delete</Trans>
           </Button>
         </DialogFooter>
       </DialogContent>
