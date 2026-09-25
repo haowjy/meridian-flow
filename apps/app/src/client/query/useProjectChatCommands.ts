@@ -3,7 +3,7 @@ import type { ThreadListItem } from "@meridian/contracts/protocol";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { deleteThread } from "@/client/api/threads-api";
-import type { ProjectFeedData } from "./project-chat-feed-cache";
+import type { ChatFeedData } from "./project-chat-feed-cache";
 import { invalidateProjectThreadData, invalidateWorkThreads } from "./project-invalidation";
 import { projectQueryKeys } from "./project-query-keys";
 import { runFavoriteCommand, type ThreadUserStateLifecycle } from "./thread-user-state-commands";
@@ -34,7 +34,7 @@ export async function deleteProjectChat(
   client.setQueryData<ThreadListItem[] | null>(projectQueryKeys.threads(projectId), (list) =>
     list ? list.filter((thread) => thread.id !== threadId) : list,
   );
-  const withoutChat = (data: ProjectFeedData | undefined) =>
+  const withoutChat = (data: ChatFeedData | undefined) =>
     data && {
       ...data,
       pages: data.pages.map((page) => ({
@@ -42,11 +42,11 @@ export async function deleteProjectChat(
         items: page.items.filter((item) => item.id !== threadId),
       })),
     };
-  client.setQueriesData<ProjectFeedData>(
+  client.setQueriesData<ChatFeedData>(
     { queryKey: projectQueryKeys.chatFeed(projectId) },
     withoutChat,
   );
-  client.setQueriesData<ProjectFeedData>(
+  client.setQueriesData<ChatFeedData>(
     { queryKey: projectQueryKeys.workThreads(projectId) },
     withoutChat,
   );

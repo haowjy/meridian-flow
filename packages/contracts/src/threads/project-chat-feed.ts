@@ -13,11 +13,7 @@ export interface ProjectChatItem {
   isFavorite: boolean;
 }
 
-export interface WorkChatFeedPage {
-  items: ProjectChatItem[];
-  nextCursor: string | null;
-}
-
+/** One keyset page of project chats: the chat index's feed or one Work's chats. */
 export interface ProjectChatFeedPage {
   items: ProjectChatItem[];
   nextCursor: string | null;

@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { ProjectChatRow, type ProjectChatRowProps } from "../chat-list/ProjectChatRow";
 import { useChatRowCommands } from "../chat-list/useChatRowCommands";
 import { RecencyGroupedList, useMinuteClock } from "../RecencyGroupedList";
+import { useChatNavigation } from "../routing/chat-navigation";
 import { ChatIndexLoading } from "./ChatIndexLoading";
 
 type Filter = "all" | "favorites";
@@ -30,12 +31,11 @@ type Feed = ReturnType<typeof useProjectChatFeed>;
 
 export type ChatIndexProps = {
   projectId: string;
-  onOpenThread: (threadId: string) => void;
   /** The host's chrome already reads "Chats" (the phone trail): less top space. */
   namedByChrome?: boolean;
 };
 
-export function ChatIndex({ projectId, onOpenThread, namedByChrome = false }: ChatIndexProps) {
+export function ChatIndex({ projectId, namedByChrome = false }: ChatIndexProps) {
   const [filter, setFilter] = useState<Filter>("all");
   const [searchText, setSearchText] = useState("");
   const search = useSettledSearch(searchText);
@@ -43,7 +43,8 @@ export function ChatIndex({ projectId, onOpenThread, namedByChrome = false }: Ch
   const now = useMinuteClock();
   const finePointer = useFinePointer();
   const { deleteDialog, ...commands } = useChatRowCommands(projectId);
-  const rowProps: RowProps = { ...commands, now, onOpen: (item) => onOpenThread(item.id) };
+  const { openChat } = useChatNavigation();
+  const rowProps: RowProps = { ...commands, now, onOpen: (item) => void openChat(item.id) };
 
   return (
     // One scroll for the whole page; the list's tools stick once scrolled past.

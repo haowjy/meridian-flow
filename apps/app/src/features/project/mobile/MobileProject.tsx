@@ -240,14 +240,11 @@ function renderActiveView(
           projectId={props.projectId}
           routeWork={props.routeWork}
           routeCommands={props.routeCommands}
-          onOpenThread={props.onOpenThread}
+          onOpenThread={props.onSelectThread}
         />
       );
     case "chat":
-      if (props.chatIndex)
-        return (
-          <ChatIndex projectId={props.projectId} onOpenThread={props.onOpenThread} namedByChrome />
-        );
+      if (props.chatIndex) return <ChatIndex projectId={props.projectId} namedByChrome />;
       return (
         <DraftReviewBoundary value={props.chatReview}>
           <MobileChatHost

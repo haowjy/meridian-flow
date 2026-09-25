@@ -5,7 +5,7 @@
 import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import { QueryClient } from "@tanstack/react-query";
 import { expect, it, vi } from "vitest";
-import { flattenProjectFeed, type ProjectFeedData } from "./project-chat-feed-cache";
+import { type ChatFeedData, flattenChatFeed } from "./project-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
 import { runFavoriteCommand } from "./thread-user-state-commands";
 
@@ -31,7 +31,7 @@ const allKey = projectQueryKeys.chatFeedFilter("project", { favorite: false, sea
 const searchKey = projectQueryKeys.chatFeedFilter("project", { favorite: false, search: "sc" });
 const favoriteKey = projectQueryKeys.chatFeedFilter("project", { favorite: true, search: null });
 const rows = (client: QueryClient, key: readonly unknown[]) =>
-  flattenProjectFeed(client.getQueryData<ProjectFeedData>(key));
+  flattenChatFeed(client.getQueryData<ChatFeedData>(key));
 
 it("projects a Favorite in place and refetches only Favorites membership", async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

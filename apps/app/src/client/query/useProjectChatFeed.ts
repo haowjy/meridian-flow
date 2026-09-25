@@ -1,5 +1,4 @@
 /** Infinite, filtered project chat feed with favorite state projected onto its rows. */
-import type { ProjectChatItem } from "@meridian/contracts/protocol";
 import {
   infiniteQueryOptions,
   type QueryClient,
@@ -8,7 +7,7 @@ import {
 } from "@tanstack/react-query";
 
 import { getProjectChatFeed } from "@/client/api/projects-api";
-import { flattenProjectFeed, projectFeedPage } from "./project-chat-feed-cache";
+import { flattenChatFeed, projectChatFeedPage } from "./project-chat-feed-cache";
 import { projectQueryKeys } from "./project-query-keys";
 import {
   admitThreadUserStateItems,
@@ -30,7 +29,7 @@ export function projectChatFeedQueryOptions(
       const requestGeneration = beginThreadUserStateFeedRequest(client, projectId);
       const page = await getProjectChatFeed(projectId, pageParam, signal, favorite, search);
       admitThreadUserStateItems(client, projectId, page.items, requestGeneration);
-      return projectFeedPage(page, (item) =>
+      return projectChatFeedPage(page, (item) =>
         projectThreadUserState(item, getThreadUserStateRecord(client, projectId, item)),
       );
     },
@@ -49,6 +48,6 @@ export function useProjectChatFeed(
   return {
     ...query,
     // An unfavorited row leaves Favorites at once, before the refetch confirms.
-    items: flattenProjectFeed(query.data).filter((item) => !favorite || item.isFavorite),
+    items: flattenChatFeed(query.data).filter((item) => !favorite || item.isFavorite),
   };
 }

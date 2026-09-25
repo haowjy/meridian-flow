@@ -33,7 +33,6 @@ export type {
   ProjectChatItem,
   UpdateThreadUserStateRequest,
   UpdateThreadUserStateResponse,
-  WorkChatFeedPage,
 } from "../threads/project-chat-feed.js";
 export { updateThreadUserStateRequestSchema } from "../threads/project-chat-feed.js";
 export type { RenameThreadRequest, RenameThreadResponse } from "../threads/rename-thread.js";

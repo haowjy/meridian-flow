@@ -1,5 +1,5 @@
 /** Cursor and bounded-page policy for chats historically associated with a Work. */
-import type { WorkChatFeedPage } from "@meridian/contracts/threads";
+import type { ProjectChatFeedPage } from "@meridian/contracts/threads";
 import type { WorkChatFeedRepository } from "../ports/repositories.js";
 import { decodeProjectChatCursor, encodeProjectChatCursor } from "./project-chat-cursor.js";
 
@@ -18,7 +18,7 @@ export async function getWorkChatFeedPage(input: {
   workId: string;
   userId: string;
   cursor?: string | null;
-}): Promise<WorkChatFeedPage> {
+}): Promise<ProjectChatFeedPage> {
   let after = null;
   try {
     after = input.cursor == null ? null : decodeProjectChatCursor(input.cursor);
