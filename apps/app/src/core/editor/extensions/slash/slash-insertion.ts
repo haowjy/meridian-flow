@@ -1,20 +1,4 @@
-/**
- * What a slash choice does to the document: which node it makes, where that
- * node lands, and where the caret ends up.
- *
- * Two rules from §5.7 shape everything here.
- *
- * **Entries create, they never restyle** (F4, law 6). Picking "Heading 2" in
- * the middle of a paragraph makes a NEW heading after it; it does not retype
- * the sentence the writer is standing in. The one apparent exception is the
- * empty paragraph, which converts — but converting an empty block is creating,
- * since there is nothing there to restyle.
- *
- * **Every insertion opens ready to work** (law 2). A table lands with the
- * caret in its first cell, a code block with the caret in the fence, a
- * heading with the caret in the heading. Landing the caret elsewhere would
- * make the writer's next act "find the thing I just asked for".
- */
+/** Inserts a selected slash-command result into the document. */
 
 import type { Editor, JSONContent, Range } from "@tiptap/core";
 import type { Node as PMNode, ResolvedPos } from "@tiptap/pm/model";
@@ -34,38 +18,14 @@ const TABLE_ROWS = 3;
 type SlashBlock = {
   /** The node the entry creates, in the schema's own JSON. */
   node: JSONContent;
-  /**
-   * `inside` puts the caret at the first text position within the new node.
-   * `after` is for a node with no inside — a divider — and guarantees a line
-   * to keep typing on.
-   */
+  /** `inside` puts the caret at the first text position within the new node. */
   caret: "inside" | "after";
 };
 
-/**
- * What an entry lands, which is the question availability has to ask.
- *
- * The two strategies are the two KINDS of thing the menu makes, and they ask
- * different questions of the same position. A block needs a level of the
- * document that will hold it, and §5.7's convert-or-insert-after rule decides
- * which. A picture is an inline atom, so it needs one thing only: that the very
- * paragraph the writer typed `/` in accepts an `image`.
- *
- * One boolean used to stand in for both, and it meant three things at once — the
- * host owns the dispatch, the entry may not convert, and the shape to ask
- * availability about is an empty paragraph. That bundle is what made an inline
- * picture indistinguishable from a block insert, and it is why `Image` died in
- * every table cell: "is there room for another block here" is a true question
- * with a true answer of no, and the wrong question to ask about a picture.
- */
+/** What an entry lands, which is the question availability has to ask. */
 type SlashInsertion =
   | ({ strategy: "block" } & SlashBlock)
-  /**
-   * A picture, inline where the trigger was. The lane's job ends at consuming
-   * the trigger and handing the host an anchor for that place: the file comes
-   * from the operating system's chooser, which outlives every raw position in
-   * the document (`images/image-uploads.ts`).
-   */
+  /** A picture, inline where the trigger was. */
   | { strategy: "image" };
 
 const emptyParagraph: JSONContent = { type: "paragraph" };
@@ -90,11 +50,7 @@ function heading(level: 1 | 2 | 3): SlashInsertion {
   return block({ type: "heading", attrs: { level } });
 }
 
-/**
- * One row per catalog id, `image` included. The picture's own dispatch is the
- * host's, but WHAT it lands is known here — an inline `image` — and availability
- * has to be answerable for every visible row, including that one.
- */
+/** One row per catalog id, `image` included. */
 const SLASH_INSERTIONS: Record<SlashCommandId, SlashInsertion> = {
   "heading-1": heading(1),
   "heading-2": heading(2),
@@ -111,7 +67,7 @@ const SLASH_INSERTIONS: Record<SlashCommandId, SlashInsertion> = {
     ],
   }),
   // "Diagram" means the catalog's first provider, and its starter source comes
-  // from the same row (law 2's sole auto-edit: a new diagram has nothing to view
+  // from the same row ( sole auto-edit: a new diagram has nothing to view
   // yet, so it opens on something that draws). Other dialects are reached
   // through the fence's language menu rather than a slash entry each.
   diagram: diagramInsertion(),
@@ -136,76 +92,26 @@ type SlashTarget =
   /** A picture stands exactly where the trigger was, among the same words. */
   | { mode: "inline"; pos: number };
 
-/**
- * What this entry would do at this position, or null when the schema holds
- * nothing it could make (a surface with no image node, a catalog id whose node
- * type is not in this document's schema).
- */
+/** What this entry would do at this position, or null when the schema holds nothing it could make (a surface with no image node, a catalog id whose node type is not in this document's schema). */
 function slashTarget(doc: PMNode, pos: number, insertion: SlashInsertion): SlashTarget | null {
   return insertion.strategy === "image"
     ? inlineImageTarget(doc, pos)
     : blockTarget(doc, pos, insertion);
 }
 
-/**
- * Where a picture goes: exactly where the trigger was, or nowhere.
- *
- * No outward walk, because there is nothing to walk out of. An inline atom
- * belongs in the sentence the writer typed `/` in, and every trigger position is
- * inside prose by definition (`allowsSlashTrigger`). A cell's paragraph accepts
- * a picture like any other paragraph does, and that is the whole of this entry's
- * cell exception: the picture lands IN the cell, so the ceiling the block walk
- * stops at is never approached.
- */
+/** Where a picture goes: exactly where the trigger was, or nowhere. */
 function inlineImageTarget(doc: PMNode, pos: number): SlashTarget | null {
   return acceptsInlineImage(doc, pos) ? { mode: "inline", pos } : null;
 }
 
-/**
- * Nodes whose parts are not free-standing blocks: a list item exists only as
- * part of its list, so a block asked for from inside a bullet belongs after
- * the whole list rather than wedged into the bullet. A blockquote is
- * deliberately absent — its children ARE ordinary blocks that happen to be
- * quoted, and a writer quoting a passage who asks for a code block wants it in
- * the quote.
- *
- * A table is absent for the opposite reason: a cell is never escaped at all
- * (see `cellFloor`), so there is nothing to walk out of — a cell holds any
- * block, and an entry asked for inside one lands inside it.
- *
- * Only the insert-after walk consults this. Convert cannot reach inside a list
- * item, which must open with a paragraph, so the schema refuses it there.
- */
+/** Nodes whose parts are not free-standing blocks: a list item exists only as part of its list, so a block asked for from inside a bullet belongs after the whole list rather than wedged into the bullet. */
 const OWNING_STRUCTURES: ReadonlySet<string> = new Set([
   "bullet_list",
   "ordered_list",
   "list_item",
 ]);
 
-/**
- * Where the chosen node goes, decided from the document AFTER the `/` and its
- * filter text are gone — so "is this block empty" is a plain question about
- * the block rather than arithmetic on the trigger's range.
- *
- * The outward search is the lane's own rather than prosemirror-transform's
- * `insertPoint`, which answers a different question. `insertPoint` takes the
- * first schema-legal parent and stops climbing the moment the position has a
- * sibling on the relevant side, so from a list item it lands a table INSIDE
- * the bullet (`list_item` permits `paragraph block*`). Structure is a domain
- * question here, not a schema one.
- *
- * The walk has a ceiling as well as a direction: **a table cell is never left**
- * (ruling). §5.7 lets `/` open in a cell, and a pick that answered by inserting
- * after the whole table would yank the caret out of the structure the writer is
- * standing in — the deepest owner, law 4. The ceiling costs nothing now: a
- * cell holds any block (`block+`), so the walk always finds a level inside the
- * cell before it reaches the floor, and every entry lands IN the cell. Nothing
- * but `canReplaceWith` is consulted, so the menu can never drift from the
- * schema.
- *
- * Returns null only when nothing from the caret up to the document will hold
- * the node, which no trigger position can produce.
- */
+/** Where the chosen node goes, decided from the document AFTER the `/` and its filter text are gone — so "is this block empty" is a plain question about the block rather than arithmetic on the trigger's range. */
 function blockTarget(doc: PMNode, pos: number, block: SlashBlock): SlashTarget | null {
   const type = doc.type.schema.nodes[block.node.type as string];
   const $pos = doc.resolve(pos);
@@ -235,11 +141,7 @@ function blockTarget(doc: PMNode, pos: number, block: SlashBlock): SlashTarget |
   return null;
 }
 
-/**
- * The depth of the cell the caret is in, or 0 outside a table. Read from the
- * schema's `tableRole` rather than a node name, because that is what makes a
- * cell a cell to prosemirror-tables.
- */
+/** The depth of the cell the caret is in, or 0 outside a table. */
 function cellFloor($pos: ResolvedPos): number {
   for (let level = $pos.depth; level >= 1; level -= 1) {
     const role = $pos.node(level).type.spec.tableRole;
@@ -306,19 +208,7 @@ export function applySlashCommand(
   return applied;
 }
 
-/**
- * Law 2's one exception: a just-created object has nothing to view yet, so it
- * opens ready to edit. Which objects those are is the object table's answer,
- * not a second list here — a type registered `engage: "surface"` gets the same
- * surface Enter would open, and everything else keeps the caret this module
- * already placed.
- *
- * The diagram is the only entry that reaches this today, and `"created"` is
- * what makes its opening the one the mockups draw: the object lane reads it
- * and opens the dialog on the starter source rather than on a picture nobody
- * has written yet. The caret this insertion already placed inside the fence is
- * where the writer lands if they close that dialog without touching it.
- */
+/** one exception: a just-created object has nothing to view yet, so it opens ready to edit. */
 function openNewObject(editor: Editor, pos: number) {
   const landed = editor.state.doc.nodeAt(pos);
   if (landed) engageObject(editor, { node: landed, pos }, "created");
