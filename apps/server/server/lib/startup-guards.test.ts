@@ -1,0 +1,43 @@
+import { describe, expect, it } from "vitest";
+import { type ApiStartupEnv, evaluateApiStartupGuards } from "./startup-guards.js";
+
+const baseConfig: ApiStartupEnv = {
+  NODE_ENV: "development",
+  APP_ENV: "staging",
+  DATABASE_URL: "postgres://service:secret@db.example.net:5432/meridian",
+  OBJECT_STORE_PROVIDER: "s3",
+  S3_ACCESS_KEY: "real-access-key",
+  S3_SECRET_KEY: "real-secret-key",
+  WORKOS_API_KEY: "sk_test_staging-key",
+  WORKOS_CLIENT_ID: "client_staging",
+  WORKOS_COOKIE_PASSWORD: "a-secure-cookie-password-of-32-chars",
+  WORKOS_REDIRECT_URI: "https://app.example.net/api/auth/callback",
+  MERIDIAN_BACKENDS: "live",
+  API_REPLICA_COUNT: 1,
+  DURABLE_EVENT_BACKEND: "none",
+};
+
+describe("staging and production startup guards", () => {
+  it("rejects dev placeholders based on APP_ENV even when NODE_ENV is development", () => {
+    const outcome = evaluateApiStartupGuards({
+      ...baseConfig,
+      DATABASE_URL: "postgres://localhost/meridian",
+      OBJECT_STORE_PROVIDER: "local",
+      WORKOS_API_KEY: "dev-workos-key",
+      WORKOS_CLIENT_ID: "dev-workos-client",
+      WORKOS_COOKIE_PASSWORD: "",
+      MERIDIAN_BACKENDS: "local",
+    });
+
+    expect(outcome.errors.join("\n")).toContain("MERIDIAN_BACKENDS");
+    expect(outcome.errors.join("\n")).toContain("OBJECT_STORE_PROVIDER");
+    expect(outcome.errors.join("\n")).toContain("DATABASE_URL");
+    expect(outcome.errors.join("\n")).toContain("WORKOS_API_KEY");
+    expect(outcome.errors.join("\n")).toContain("WORKOS_CLIENT_ID");
+    expect(outcome.errors.join("\n")).toContain("WORKOS_COOKIE_PASSWORD");
+  });
+
+  it("accepts complete staging configuration independent of NODE_ENV", () => {
+    expect(evaluateApiStartupGuards(baseConfig).errors).toEqual([]);
+  });
+});

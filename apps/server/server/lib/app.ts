@@ -7,7 +7,7 @@
 import { emitEvent, unknownToEventPayload } from "../domains/observability/index.js";
 import { listenForThreadEvents } from "../domains/threads/adapters/drizzle/event-relay.js";
 import { type AppServices, composeAppServices, createProductionAppPorts } from "./compose.js";
-import { getDb } from "./db.js";
+import { closeDb, getDb } from "./db.js";
 import { createEventSinkFromEnv } from "./event-sink-factory.js";
 import { getOrBindProcessObservability } from "./observability.js";
 
@@ -21,6 +21,39 @@ const CHANGE_TRAIL_POLL_MS = 1_000;
 const SYSTEM_UPDATE_SWEEP_MS = 1_000;
 
 let initPromise: Promise<AppServices> | undefined;
+const intervalHandles: ReturnType<typeof setInterval>[] = [];
+const activeBackgroundTasks = new Set<Promise<void>>();
+let unlistenThreadEvents: (() => Promise<void>) | undefined;
+let appResourcesStopped = false;
+
+export function stopAppBackgroundWork(): void {
+  for (const interval of intervalHandles.splice(0)) clearInterval(interval);
+}
+
+export async function drainAppBackgroundWork(): Promise<void> {
+  while (activeBackgroundTasks.size > 0) {
+    await Promise.all([...activeBackgroundTasks]);
+  }
+}
+
+function trackBackgroundTask(task: () => Promise<void>): void {
+  let running: Promise<void>;
+  running = Promise.resolve()
+    .then(task)
+    .finally(() => activeBackgroundTasks.delete(running));
+  activeBackgroundTasks.add(running);
+}
+
+export async function closeAppResources(): Promise<void> {
+  if (appResourcesStopped) return;
+  appResourcesStopped = true;
+  stopAppBackgroundWork();
+  try {
+    await unlistenThreadEvents?.();
+  } finally {
+    await closeDb();
+  }
+}
 
 async function createAppServices(): Promise<AppServices> {
   const db = getDb();
@@ -34,46 +67,62 @@ async function createAppServices(): Promise<AppServices> {
   });
   const app = composeAppServices(ports);
   const drain = () =>
-    void app.changeTrailDelivery.drain().catch((cause) => {
-      emitEvent(eventSink, {
-        level: "error",
-        source: "collab.change-trail-delivery",
-        name: "poll.failed",
-        payload: unknownToEventPayload(cause),
-      });
+    trackBackgroundTask(async () => {
+      try {
+        await app.changeTrailDelivery.drain();
+      } catch (cause) {
+        emitEvent(eventSink, {
+          level: "error",
+          source: "collab.change-trail-delivery",
+          name: "poll.failed",
+          payload: unknownToEventPayload(cause),
+        });
+      }
     });
   const sweepWorkContext = () =>
-    void app.workContextDelivery.sweep().catch((cause) => {
-      emitEvent(eventSink, {
-        level: "error",
-        source: "runtime.work-context-delivery",
-        name: "sweep.failed",
-        payload: unknownToEventPayload(cause),
-      });
+    trackBackgroundTask(async () => {
+      try {
+        await app.workContextDelivery.sweep();
+      } catch (cause) {
+        emitEvent(eventSink, {
+          level: "error",
+          source: "runtime.work-context-delivery",
+          name: "sweep.failed",
+          payload: unknownToEventPayload(cause),
+        });
+      }
     });
   const sweepChildReports = () =>
-    void app.childReportDelivery.sweep().catch((cause) => {
-      emitEvent(eventSink, {
-        level: "error",
-        source: "runtime.child-report-delivery",
-        name: "sweep.failed",
-        payload: unknownToEventPayload(cause),
-      });
+    trackBackgroundTask(async () => {
+      try {
+        await app.childReportDelivery.sweep();
+      } catch (cause) {
+        emitEvent(eventSink, {
+          level: "error",
+          source: "runtime.child-report-delivery",
+          name: "sweep.failed",
+          payload: unknownToEventPayload(cause),
+        });
+      }
     });
-  await listenForThreadEvents({
+  const listener = await listenForThreadEvents({
     db,
     journalReader: app.journalReader,
     eventHub: app.threadEventHub,
     eventSink,
   });
+  unlistenThreadEvents = listener.unlisten;
   drain();
   sweepWorkContext();
   sweepChildReports();
   // Polling is the recovery mechanism as well as the trigger: committed pushes need
   // no in-process callback to survive a crash or a different server process.
-  setInterval(drain, CHANGE_TRAIL_POLL_MS).unref();
-  setInterval(sweepWorkContext, SYSTEM_UPDATE_SWEEP_MS).unref();
-  setInterval(sweepChildReports, SYSTEM_UPDATE_SWEEP_MS).unref();
+  intervalHandles.push(
+    setInterval(drain, CHANGE_TRAIL_POLL_MS),
+    setInterval(sweepWorkContext, SYSTEM_UPDATE_SWEEP_MS),
+    setInterval(sweepChildReports, SYSTEM_UPDATE_SWEEP_MS),
+  );
+  for (const interval of intervalHandles) interval.unref();
   return app;
 }
 

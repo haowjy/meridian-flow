@@ -593,6 +593,10 @@ export function createYjsGateway(services: YjsGatewayServices) {
       connection?.hocuspocus.handleMessage(message);
     },
 
+    stopAccepting(): void {
+      acceptingConnections = false;
+    },
+
     close(
       connection: YjsGatewayConnection | undefined,
       event?: { code?: number; reason?: string },
@@ -615,7 +619,14 @@ export function createYjsGateway(services: YjsGatewayServices) {
 
     async drain(): Promise<void> {
       acceptingConnections = false;
-      hocuspocus.closeConnections();
+      // Hocuspocus keeps documents in memory after its debounce. The queue only
+      // covers admitted callbacks, so checkpoint each loaded live room as well.
+      for (const [roomName, document] of hocuspocus.documents) {
+        const room = parseYjsRoomName(roomName);
+        if (room?.kind === "live") {
+          await services.documentSync.storeHocuspocusDocument(room.documentId, document);
+        }
+      }
       emitEvent(services.eventSink, {
         level: "info",
         source: "collab.hocuspocus",

@@ -29,6 +29,11 @@ export type ApiStartupEnv = {
   WORKOS_API_KEY: string;
   WORKOS_CLIENT_ID: string;
   WORKOS_COOKIE_PASSWORD?: string;
+  WORKOS_REDIRECT_URI?: string;
+  WORKOS_DEV_AUTOLOGIN?: string;
+  WORKOS_DEV_LOGIN_EMAIL?: string;
+  WORKOS_DEV_LOGIN_PASSWORD?: string;
+  MERIDIAN_BACKENDS?: "local" | "live";
   API_REPLICA_COUNT?: number;
   DURABLE_EVENT_BACKEND: string;
 };
@@ -74,9 +79,25 @@ function requireRealSecret(
   if (!isRealSecret(key, value, options)) errors.push(`${key}: ${reason}`);
 }
 
+function isLocalUrl(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return (
+      hostname === "localhost" ||
+      hostname.endsWith(".localhost") ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1"
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOutcome {
   const errors: string[] = [];
   const warnings: string[] = [];
+  const isLiveEnvironment = config.APP_ENV === "staging" || config.APP_ENV === "production";
   const isProduction = config.NODE_ENV === "production";
   const allowWorkosTestApiKey = config.APP_ENV === "staging";
 
@@ -97,7 +118,28 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
     );
   }
 
-  if (isProduction) {
+  if (isLiveEnvironment) {
+    if (config.MERIDIAN_BACKENDS !== "live") {
+      errors.push("MERIDIAN_BACKENDS: must be explicitly set to live in staging/production.");
+    }
+    if (config.OBJECT_STORE_PROVIDER !== "s3") {
+      errors.push("OBJECT_STORE_PROVIDER: must be s3 in staging/production.");
+    }
+    if (isLocalUrl(config.DATABASE_URL)) {
+      errors.push("DATABASE_URL: localhost URLs are not allowed in staging/production.");
+    }
+    if (isLocalUrl(config.WORKOS_REDIRECT_URI)) {
+      errors.push("WORKOS_REDIRECT_URI: localhost URLs are not allowed in staging/production.");
+    }
+    if (
+      config.WORKOS_DEV_AUTOLOGIN === "1" ||
+      config.WORKOS_DEV_LOGIN_EMAIL ||
+      config.WORKOS_DEV_LOGIN_PASSWORD
+    ) {
+      errors.push(
+        "WORKOS_DEV_*: development login settings are not allowed in staging/production.",
+      );
+    }
     requireRealSecret(
       errors,
       "WORKOS_API_KEY",
@@ -117,10 +159,17 @@ export function evaluateApiStartupGuards(config: ApiStartupEnv): StartupGuardOut
       config.WORKOS_COOKIE_PASSWORD,
       "required for sealed session cookies in production.",
     );
+    if (config.WORKOS_COOKIE_PASSWORD && config.WORKOS_COOKIE_PASSWORD.length < 32) {
+      errors.push("WORKOS_COOKIE_PASSWORD: must be at least 32 characters in staging/production.");
+    }
   }
 
   const replicaCount = config.API_REPLICA_COUNT ?? null;
   const durableEventBackend = config.DURABLE_EVENT_BACKEND;
+
+  if (isLiveEnvironment && replicaCount !== 1) {
+    errors.push("API_REPLICA_COUNT: must be explicitly set to 1 in staging/production.");
+  }
 
   if (isProduction && replicaCount === null) {
     warnings.push(
@@ -153,6 +202,11 @@ export async function assertApiStartupGuards(): Promise<StartupGuardOutcome> {
     WORKOS_API_KEY: env.WORKOS_API_KEY,
     WORKOS_CLIENT_ID: env.WORKOS_CLIENT_ID,
     WORKOS_COOKIE_PASSWORD: env.WORKOS_COOKIE_PASSWORD,
+    WORKOS_REDIRECT_URI: env.WORKOS_REDIRECT_URI,
+    WORKOS_DEV_AUTOLOGIN: env.WORKOS_DEV_AUTOLOGIN,
+    WORKOS_DEV_LOGIN_EMAIL: env.WORKOS_DEV_LOGIN_EMAIL,
+    WORKOS_DEV_LOGIN_PASSWORD: env.WORKOS_DEV_LOGIN_PASSWORD,
+    MERIDIAN_BACKENDS: process.env.MERIDIAN_BACKENDS as "local" | "live" | undefined,
     API_REPLICA_COUNT: process.env.API_REPLICA_COUNT
       ? Number(process.env.API_REPLICA_COUNT)
       : undefined,
