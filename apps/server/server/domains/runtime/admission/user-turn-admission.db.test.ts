@@ -178,6 +178,7 @@ if (!RUN) {
           return true;
         },
         producer: createWriterTurnProducer({
+          inbox: createDrizzleInbox(firstDb),
           persistence: { repos, eventWriter: hub },
           hub,
           runner: { getRunningTurn: () => null },
@@ -280,6 +281,7 @@ if (!RUN) {
       });
 
       const producer = createWriterTurnProducer({
+        inbox: createDrizzleInbox(firstDb),
         persistence: {
           repos,
           eventWriter: hub,

@@ -24,6 +24,7 @@ interface RunTurnBase {
   };
   /** The run's held lease; the loop releases it through closeRun when it exits. */
   lease?: Lease;
+  onAssistantTurnChanged?: (turnId: TurnId) => void;
 }
 
 /** A run born from a new writer message: the setup mints the writer's user turn. */

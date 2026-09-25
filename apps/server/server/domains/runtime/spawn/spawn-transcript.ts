@@ -177,7 +177,7 @@ export async function persistReturnResult(
     toolCallId: string;
     outcome: ReturnResultOutcome;
     capture: ReturnResultCapture | undefined;
-    executionReports: Pick<ExecutionReportRepository, "captureOnce">;
+    executionReports: Pick<ExecutionReportRepository, "captureOnce" | "findByTurn">;
   },
 ): Promise<{ block: Block; endTurn: boolean }> {
   const persisted = await persistAndAppendEvents(
@@ -188,9 +188,14 @@ export async function persistReturnResult(
       if (output.ok) {
         if (!input.capture) throw new Error("Accepted return_result has no capture");
         try {
-          await input.executionReports.captureOnce(
+          const report = await input.executionReports.findByTurn(
             transcript.threadId,
             transcript.turnId as TurnId,
+          );
+          if (!report) throw new Error("Execution report was not admitted");
+          await input.executionReports.captureOnce(
+            transcript.threadId,
+            report.assistantTurnId,
             input.toolCallId,
             input.capture,
           );

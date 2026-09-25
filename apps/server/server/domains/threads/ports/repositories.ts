@@ -115,6 +115,7 @@ export interface AdmitExecutionReportInput extends ExecutionReportCorrelation {
   description?: string | null;
 }
 export interface FinalizeExecutionReportInput {
+  terminalAssistantTurnId?: TurnId;
   childThreadId: ThreadId;
   assistantTurnId: TurnId;
   outcome: SavedOutcome;
@@ -126,6 +127,8 @@ export interface FinalizeExecutionReportInput {
   costMillicredits?: number | null;
 }
 export interface ExecutionReportRepository {
+  /** Nearest admitted execution on this assistant's ancestor chain. */
+  findByTurn(childThreadId: ThreadId, turnId: TurnId): Promise<SavedExecutionReport | null>;
   admit(input: AdmitExecutionReportInput): Promise<SavedExecutionReport>;
   captureOnce(
     childThreadId: ThreadId,

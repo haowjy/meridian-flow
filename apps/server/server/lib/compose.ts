@@ -777,6 +777,7 @@ export function composeAppServices(ports: ProductionAppPorts): AppServices {
     eventSink: ports.eventSink,
   });
   const admissionProducer = createWriterTurnProducer({
+    inbox,
     persistence: {
       repos: ports.threadRepos,
       eventWriter: threadEventHub,

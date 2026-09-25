@@ -96,7 +96,7 @@ export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
         .select({
           inbox: schema.threadInboxMessages,
           turnId: schema.threadRunLeases.turnId,
-          metadata: schema.turns.metadata,
+          messageIds: schema.threadRunLeases.adoptedMessageIds,
         })
         .from(schema.threadInboxMessages)
         .leftJoin(
@@ -106,7 +106,6 @@ export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
             gt(schema.threadRunLeases.expiresAt, new Date()),
           ),
         )
-        .leftJoin(schema.turns, eq(schema.turns.id, schema.threadRunLeases.turnId))
         .where(
           and(
             eq(schema.threadInboxMessages.threadId, threadId),
@@ -115,18 +114,11 @@ export function createDrizzleInbox(db: DrizzleDatabase): Inbox {
         )
         .orderBy(asc(schema.threadInboxMessages.seq));
       const first = rows[0];
-      const metadata = first?.metadata as
-        | { inboxConsumption?: { messageIds?: unknown } }
-        | null
-        | undefined;
-      const messageIds = Array.isArray(metadata?.inboxConsumption?.messageIds)
-        ? metadata.inboxConsumption.messageIds.filter((id): id is string => typeof id === "string")
-        : [];
       return {
         messages: rows.map((row) => toInboxMessage(row.inbox)),
         run:
           first?.turnId !== null && first?.turnId !== undefined
-            ? { turnId: first.turnId, messageIds }
+            ? { turnId: first.turnId, messageIds: first.messageIds ?? [] }
             : first
               ? { turnId: null, messageIds: [] }
               : null,

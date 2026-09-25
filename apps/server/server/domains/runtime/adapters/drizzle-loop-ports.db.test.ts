@@ -380,46 +380,6 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
         await db.delete(schema.threadInboxMessages);
       }
 
-      it("keeps the run alive when a message commits before the final claim", async () => {
-        const inbox = createDrizzleInbox(db);
-        const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
-        const threadLock = createDrizzleThreadLock(db);
-        const lease = required(await authority.acquire(THREAD_A, "run-1"));
-
-        const enqueueHeld = deferred<void>();
-        const releaseEnqueue = deferred<void>();
-        const enqueue = threadLock.withThreadLock(THREAD_A, async () => {
-          await inbox.enqueue(message("in-window"));
-          enqueueHeld.resolve();
-          await releaseEnqueue.promise;
-        });
-        await enqueueHeld.promise;
-
-        let completed = false;
-        const closing = closeRun({
-          threadLock,
-          inbox,
-          runAuthority: authority,
-          threadId: THREAD_A,
-          lease,
-          continueOnPending: true,
-          complete: async () => {
-            completed = true;
-            return "terminal";
-          },
-        });
-        releaseEnqueue.resolve();
-        await enqueue;
-
-        expect(await closing).toMatchObject({ kind: "continue" });
-        expect(completed).toBe(false);
-        expect(await authority.holder(THREAD_A)).toBe("run-1");
-        expect((await inbox.claimPending(THREAD_A)).map((m) => m.idempotencyKey)).toEqual([
-          "in-window",
-        ]);
-        await authority.release(lease);
-      });
-
       it("completes then releases on an empty claim so a later message finds no live lease", async () => {
         const inbox = createDrizzleInbox(db);
         const authority = createDrizzleRunAuthority(db, { holderId: "holder-1" });
@@ -503,6 +463,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
               threadId: THREAD_A,
               lease,
               continueOnPending: true,
+              splitAndContinue: async () => "split",
               complete: async () => "terminal",
             }),
             threadedInbox.enqueue(message(`race-${attempt}`)),
@@ -512,7 +473,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           // The lock makes the two outcomes exhaustive: the run either saw the
           // message and kept its lease, or released first and the message is pending
           // for the wake sweep. Never released with the message already claimed.
-          expect(outcome.kind === "continue").toBe(holder !== null);
+          expect(outcome.kind === "split").toBe(holder !== null);
           expect(await inbox.claimPending(THREAD_A)).toHaveLength(1);
           if (holder !== null) await authority.release(lease);
         }
@@ -581,7 +542,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             item.deliveryState,
           ]),
         ).toEqual([
-          [f.id, "consuming"],
+          [f.id, "awaiting_run"],
           [g.id, "waiting"],
         ]);
         expect(projection.messages.every((message) => message.deliveredAt === null)).toBe(true);
@@ -595,7 +556,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           });
         });
         await runInDrizzleTransaction(db, async () => {
-          await authority.setInboxConsumption(lease, [g.id]);
+          await authority.setAdoptedMessageIds(lease, [g.id]);
           await journal.appendEvent(THREAD_A, {
             type: "inbox.changed",
             threadId: THREAD_A,
@@ -608,11 +569,12 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             item.id,
             item.deliveryState,
           ]),
-        ).toEqual([[g.id, "consuming"]]);
+        ).toEqual([[g.id, "awaiting_run"]]);
         expect(
           (await db.select().from(schema.turns).where(eq(schema.turns.id, ASSISTANT_TURN)))[0]
             .metadata,
-        ).toMatchObject({ retained: "value", inboxConsumption: { messageIds: [g.id] } });
+        ).toEqual({ retained: "value" });
+        expect(await authority.readAdoptedMessageIds(lease)).toEqual([g.id]);
 
         await authority.release(lease);
         await journal.appendEvent(THREAD_A, {
@@ -647,11 +609,11 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
           }),
         ).toEqual([
           [
-            [f.id, "consuming"],
+            [f.id, "awaiting_run"],
             [g.id, "waiting"],
           ],
           [[g.id, "waiting"]],
-          [[g.id, "consuming"]],
+          [[g.id, "awaiting_run"]],
           [[g.id, "awaiting_run"]],
           [],
         ]);
@@ -678,7 +640,7 @@ if (!RUN_DB_TESTS || !DATABASE_URL) {
             await authority.bindTurn(lease, ASSISTANT_TURN, [f.id]);
             const adopted = await inbox.readPendingProjection(THREAD_A);
             expect(projectPendingInbox(adopted.messages, adopted.run).items[0]?.deliveryState).toBe(
-              "consuming",
+              "awaiting_run",
             );
             await inbox.ack(THREAD_A, [f.id]);
             expect((await inbox.readPendingProjection(THREAD_A)).messages).toEqual([]);

@@ -204,6 +204,10 @@ export function createTurnRunner(deps: {
         drain: true,
         signal: controller.signal,
         lease: heldLease,
+        onAssistantTurnChanged: (turnId) => {
+          const active = running.get(input.threadId);
+          if (active) active.assistantTurnId = turnId;
+        },
       };
 
       const handle = await deps.orchestrator.runTurn(runInput);

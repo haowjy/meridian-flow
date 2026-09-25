@@ -290,7 +290,7 @@ describe("drainInbox", () => {
     // The same unacked message is redelivered; its turn is already durable.
     const drain = await drainInbox({
       persistence: { repos, eventWriter },
-      inbox,
+      batch: await inbox.claimPending(thread.id),
       notices: noopNotices(),
       threadId: thread.id,
       messages: [],
@@ -347,7 +347,7 @@ describe("drainInbox", () => {
 
     const drain = await drainInbox({
       persistence: { repos, eventWriter },
-      inbox,
+      batch: await inbox.claimPending(thread.id),
       notices: noopNotices(),
       threadId: thread.id,
       messages: [],

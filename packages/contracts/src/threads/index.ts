@@ -133,7 +133,7 @@ export type PendingInboxItem = {
   seq: number;
   intent: MessageIntent;
   provenance: MessageProvenance;
-  deliveryState: "awaiting_run" | "waiting" | "consuming";
+  deliveryState: "awaiting_run" | "waiting";
   /** Body text, or a report/notice summary. */
   summary: string;
   enqueuedAt: string;

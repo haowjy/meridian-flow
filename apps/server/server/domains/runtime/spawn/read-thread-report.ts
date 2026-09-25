@@ -32,10 +32,14 @@ export async function readThreadReport(input: {
       const running = record
         ? await input.runningTurn.readRunningTurnId(child.id as ThreadId)
         : null;
+      const runningReport = running
+        ? await input.repos.executionReports.findByTurn(child.id as ThreadId, running)
+        : null;
       return {
         ref: input.ref,
         execution: execution as TurnId,
-        status: record && running === execution ? "not_ready" : "unavailable",
+        status:
+          record && runningReport?.assistantTurnId === execution ? "not_ready" : "unavailable",
       };
     }
     return {

@@ -240,6 +240,7 @@ export const threadRunLeases = pgTable(
       .primaryKey()
       .references(() => threads.id, { onDelete: "cascade" }),
     runId: text("run_id").notNull(),
+    adoptedMessageIds: uuid("adopted_message_ids").array().notNull().default(sql`'{}'::uuid[]`),
     turnId: uuid("turn_id").$type<TurnId>(),
     holderId: text("holder_id").notNull(),
     phase: text("phase").notNull().default("generating"),
@@ -399,6 +400,9 @@ export const threadExecutionReports = pgTable(
     assistantTurnId: uuid("assistant_turn_id")
       .$type<TurnId>()
       .primaryKey()
+      .references(() => turns.id, { onDelete: "cascade" }),
+    terminalAssistantTurnId: uuid("terminal_assistant_turn_id")
+      .$type<TurnId>()
       .references(() => turns.id, { onDelete: "cascade" }),
     childThreadId: uuid("child_thread_id")
       .$type<ThreadId>()

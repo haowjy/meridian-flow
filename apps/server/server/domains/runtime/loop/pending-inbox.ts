@@ -31,7 +31,7 @@ export function projectPendingInbox(
         run === null || run.turnId === null
           ? "awaiting_run"
           : run.messageIds.includes(message.id)
-            ? "consuming"
+            ? "awaiting_run"
             : "waiting";
       return {
         id: message.id,

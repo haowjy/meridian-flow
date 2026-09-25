@@ -15,9 +15,10 @@ import type { ThreadId, TurnId } from "@meridian/contracts/runtime";
 import type { JsonValue } from "@meridian/contracts/threads";
 import type { WorkContextDelivery } from "../../projects/index.js";
 import { TurnStartConflictError } from "../../threads/index.js";
+import { planMessageTurns } from "./inbox-context.js";
 import { createLocalTurn } from "./local-turn.js";
 import { type PersistenceDeps, persistAndAppendTurnStartEvents } from "./persistence.js";
-import type { MessageDraft } from "./ports.js";
+import type { Inbox, MessageDraft } from "./ports.js";
 import type { ThreadedInbox } from "./threaded-inbox.js";
 import { writerUserTurnBlocks } from "./user-turn-blocks.js";
 
@@ -49,6 +50,7 @@ export async function persistWriterEnqueue<T>(input: {
   userBlocks: readonly UserMessageBlock[];
   userTurnMetadata?: JsonValue | null;
   threadedInbox: ThreadedInbox;
+  inbox: Pick<Inbox, "listPending">;
   draft: MessageDraft;
   /** Settles admission plus attachments; runs in the turn-start transaction. */
   settle: (settlement: WriterEnqueueSettlement) => Promise<T>;
@@ -70,10 +72,23 @@ export async function persistWriterEnqueue<T>(input: {
             input.threadId,
             thread.activeLeafTurnId,
             async () => {
+              // A queued child/agent message may predate this durable writer turn.
+              // Materialize that prefix now rather than later reparenting history.
+              const batch = await input.inbox.listPending(input.threadId);
+              const known = new Set(
+                (await input.persistence.repos.turns.listByThread(input.threadId)).map(
+                  (turn) => turn.id,
+                ),
+              );
+              const prefix = planMessageTurns({
+                batch,
+                prevTurnId: thread.activeLeafTurnId ?? null,
+                knownTurnIds: known,
+              });
               const userTurn = createLocalTurn({
                 id: input.userTurnId,
                 threadId: input.threadId,
-                prevTurnId: thread.activeLeafTurnId ?? null,
+                prevTurnId: prefix.leafTurnId,
                 role: "user",
                 status: "complete",
                 metadata: input.userTurnMetadata ?? null,
@@ -82,6 +97,7 @@ export async function persistWriterEnqueue<T>(input: {
               return {
                 result: { userTurn },
                 events: [
+                  ...prefix.events,
                   { type: "turn.created" as const, turn: userTurn },
                   ...blocks.map((block) => ({ type: "block.upserted" as const, block })),
                 ],

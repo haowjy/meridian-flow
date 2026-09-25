@@ -22,6 +22,7 @@ import type { WorkContextDelivery } from "../../projects/index.js";
 import { type TurnRepository, TurnStartConflictError } from "../../threads/index.js";
 import { activatedSkillMetadata } from "../loop/activated-skills.js";
 import type { PersistenceDeps } from "../loop/persistence.js";
+import type { Inbox } from "../loop/ports.js";
 import type { ThreadedInbox } from "../loop/threaded-inbox.js";
 import type { RunningTurnView } from "../loop/turn-runner.js";
 import { persistWriterEnqueue, WriterEnqueueRollback } from "../loop/writer-enqueue.js";
@@ -58,6 +59,7 @@ export function createWriterTurnProducer(deps: {
   /** Setup-window fallback only; consulted while the runner owns the thread. */
   turns: Pick<TurnRepository, "findRunningAssistantId">;
   threadedInbox: ThreadedInbox;
+  inbox: Pick<Inbox, "listPending">;
   workContextDelivery: Pick<WorkContextDelivery, "beforeTurn">;
   records: AdmissionPersistencePort;
   consumeUploads(documentIds: readonly string[]): Promise<void>;
@@ -106,6 +108,7 @@ export function createWriterTurnProducer(deps: {
             input.userTurnMetadata ??
             null,
           threadedInbox: deps.threadedInbox,
+          inbox: deps.inbox,
           draft: {
             id: userTurnId,
             threadId,

@@ -30,8 +30,11 @@ function recordingAuthority(): {
     },
     async publish() {},
     async bindTurn() {},
-    async setInboxConsumption() {
+    async setAdoptedMessageIds() {
       return true;
+    },
+    async readAdoptedMessageIds() {
+      return [];
     },
     async read(): Promise<ThreadStatus> {
       return { kind: "asleep" };
@@ -95,8 +98,11 @@ describe("RunAuthority heartbeat", () => {
       },
       async publish() {},
       async bindTurn() {},
-      async setInboxConsumption() {
+      async setAdoptedMessageIds() {
         return true;
+      },
+      async readAdoptedMessageIds() {
+        return [];
       },
       async read() {
         return { kind: "asleep" };
@@ -137,8 +143,11 @@ describe("RunAuthority heartbeat", () => {
       },
       async publish() {},
       async bindTurn() {},
-      async setInboxConsumption() {
+      async setAdoptedMessageIds() {
         return true;
+      },
+      async readAdoptedMessageIds() {
+        return [];
       },
       async read() {
         return { kind: "asleep" };
@@ -184,8 +193,11 @@ describe("RunAuthority heartbeat", () => {
       },
       async publish() {},
       async bindTurn() {},
-      async setInboxConsumption() {
+      async setAdoptedMessageIds() {
         return true;
+      },
+      async readAdoptedMessageIds() {
+        return [];
       },
       async read() {
         return { kind: "asleep" };
@@ -239,8 +251,11 @@ describe("RunAuthority heartbeat", () => {
       },
       async publish() {},
       async bindTurn() {},
-      async setInboxConsumption() {
+      async setAdoptedMessageIds() {
         return true;
+      },
+      async readAdoptedMessageIds() {
+        return [];
       },
       async read() {
         return { kind: "asleep" };

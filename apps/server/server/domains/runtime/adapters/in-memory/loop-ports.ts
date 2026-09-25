@@ -154,16 +154,22 @@ export function createInMemoryRunAuthority(
 
     async bindTurn(lease, turnId, messageIds) {
       const row = leases.get(lease.threadId);
-      if (!row || row.runId !== lease.runId) return;
+      if (!row || row.runId !== lease.runId || row.cancelRequested)
+        throw new Error("Cannot bind assistant turn after losing live run lease");
       row.turnId = turnId;
       row.messageIds = [...messageIds];
     },
 
-    async setInboxConsumption(lease, messageIds) {
+    async setAdoptedMessageIds(lease, messageIds) {
       const row = liveLease(lease.threadId);
       if (!row || row.runId !== lease.runId || !row.turnId) return false;
       row.messageIds = [...messageIds];
       return true;
+    },
+
+    async readAdoptedMessageIds(lease) {
+      const row = leases.get(lease.threadId);
+      return row?.runId === lease.runId ? [...row.messageIds] : [];
     },
 
     async read(threadId) {
