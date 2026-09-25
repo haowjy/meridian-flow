@@ -23,7 +23,11 @@ import type {
 } from "../../ports/repositories.js";
 import { currentDrizzleDb, type DrizzleDb } from "./repositories.js";
 
-type ExecutionReportRow = Omit<typeof schema.threadExecutionReports.$inferSelect, "payload"> & {
+type ExecutionReportRow = Omit<
+  typeof schema.threadExecutionReports.$inferSelect,
+  "payload" | "capture"
+> & {
+  capture: string | null;
   payload: string | null;
 };
 
@@ -42,7 +46,7 @@ function map(row: ExecutionReportRow): SavedExecutionReport {
     cardBlockId: row.cardBlockId,
     agentSlug: row.agentSlug,
     description: row.description,
-    capture: decodeReportCapture(row.capture),
+    capture: row.capture === null ? null : decodeReportCapture(JSON.parse(row.capture)),
     captureToolCallId: row.captureToolCallId,
     ...reportTerminalSchema.parse({ ...row, terminalAt: row.terminalAt?.toISOString() ?? null }),
     reason: row.reason,
@@ -59,6 +63,7 @@ export function createDrizzleExecutionReportRepository(db: DrizzleDb): Execution
   const reportSelection = {
     ...getTableColumns(table),
     payload: sql<string | null>`${table.payload}::text`,
+    capture: sql<string | null>`${table.capture}::text`,
   };
   const find = async (childThreadId: string, assistantTurnId: string) => {
     const [row] = await currentDrizzleDb(db)

@@ -163,6 +163,22 @@ else
       await db.close();
     });
 
+    it("rejects malformed stored capture instead of treating JSON null or scalar text as a capture", async () => {
+      const { eq, sql } = await import("drizzle-orm");
+      for (const value of [null, '{"summary":"not an object"}']) {
+        await db
+          .update(schema.threadExecutionReports)
+          .set({
+            capture: sql`${JSON.stringify(value)}::jsonb`,
+            captureToolCallId: "malformed",
+          })
+          .where(eq(schema.threadExecutionReports.assistantTurnId, ids.otherProjectExecution));
+        await expect(
+          repos.executionReports.findByExecution(ids.otherProjectChild, ids.otherProjectExecution),
+        ).rejects.toThrow();
+      }
+    });
+
     it("normalizes exact selectors and distinguishes active from stranded admissions", async () => {
       const input = {
         childThreadId: ids.child,

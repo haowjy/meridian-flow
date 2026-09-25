@@ -59,7 +59,9 @@ The public `payload` is an exact optional `JsonValue`: omitted content is SQL
 `NULL`, while JSON `null` remains a present value. The Drizzle report adapter
 reads `payload::text` and parses that database representation once; do not use
 the driver-decoded JSONB string with Drizzle's second JSON parse, which changes
-JSON-looking scalar strings into their parsed values.
+JSON-looking scalar strings into their parsed values. The capture codec also uses
+`::text`: SQL NULL is absent, while every present JSON value must validate as a
+ReturnResultCapture object (including rejecting JSON null).
 
 ### Thread-domain rollup columns
 

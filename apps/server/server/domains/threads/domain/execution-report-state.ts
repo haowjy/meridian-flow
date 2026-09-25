@@ -36,8 +36,8 @@ const captureSchema = z.object({
   artifacts: z.array(artifactSchema).optional(),
 });
 
-export function decodeReportCapture(value: JsonValue | null): ReturnResultCapture | null {
-  return value === null ? null : captureSchema.parse(value);
+export function decodeReportCapture(value: JsonValue): ReturnResultCapture {
+  return captureSchema.parse(value);
 }
 
 export const reportTerminalSchema = z.union([

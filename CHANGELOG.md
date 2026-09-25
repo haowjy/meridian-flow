@@ -31,6 +31,8 @@
 - Make Chat the only in-project landing at `/p/:slug`, combining the composer with Continue, Favorite, and Recent; remove the duplicate project Home and `/chats` destination. Project wordmarks now return to the account library.
 ### Fixed
 
+- Reject malformed saved report captures without confusing JSON null with an absent capture.
+
 - Keep thread snapshots and replay cursors on one consistent database view.
 
 - Preserve structured run errors in live and replayed thread events.
